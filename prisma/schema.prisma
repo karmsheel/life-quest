@@ -1,0 +1,120 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  domains        Domain[]
+  lifeEvents     LifeEvent[]
+  agentHires     AgentHire[]
+  hermesSettings HermesSettings?
+  decisionsResolved Decision[] @relation("DecisionResolver")
+}
+
+model Domain {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  color       String?
+  sortOrder   Int       @default(0)
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  documents DomainDocument[]
+  decisions Decision[]
+  events    LifeEvent[]
+  agents    AgentHire[]
+
+  @@index([userId])
+}
+
+model DomainDocument {
+  id           String   @id @default(cuid())
+  domainId     String
+  domain       Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  kind         String   // why | what | how
+  title        String
+  bodyMarkdown String   @default("")
+  status       String   @default("draft") // draft | refined | forged
+  forgedAt     DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  decisions Decision[]
+
+  @@unique([domainId, kind])
+  @@index([domainId])
+}
+
+model Decision {
+  id                    String    @id @default(cuid())
+  domainId              String
+  domain                Domain    @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  documentId            String
+  document              DomainDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  status                String    @default("pending") // pending | approved | rejected
+  title                 String
+  rationale             String?
+  proposedBodyMarkdown  String
+  previousBodyMarkdown  String?
+  createdAt             DateTime  @default(now())
+  resolvedAt            DateTime?
+  resolvedByUserId      String?
+  resolvedBy            User?     @relation("DecisionResolver", fields: [resolvedByUserId], references: [id])
+
+  @@index([domainId, status])
+}
+
+model LifeEvent {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  domainId   String?
+  domain     Domain?  @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  type       String
+  summary    String
+  payloadJson String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([domainId, createdAt])
+}
+
+model AgentHire {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  domainId      String?
+  domain        Domain?   @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  hermesAgentId String
+  name          String
+  roleLabel     String?
+  status        String    @default("active") // active | dismissed
+  createdAt     DateTime  @default(now())
+  dismissedAt   DateTime?
+
+  @@index([userId, status])
+}
+
+model HermesSettings {
+  userId    String  @id
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  baseUrl   String  @default("http://localhost:8642")
+  apiKey    String  @default("")
+  updatedAt DateTime @updatedAt
+}
