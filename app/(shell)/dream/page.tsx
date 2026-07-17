@@ -1,10 +1,10 @@
-import { StubPage } from "@/components/shell/StubPage";
+import { DocumentEditor } from "@/components/documents/DocumentEditor";
+import { RoomLockGate } from "@/components/shell/RoomLockGate";
 
 export default function DreamPage() {
   return (
-    <StubPage
-      title="Dream"
-      description="Why document surface — reasons for growth in the active domain. Full editor arrives in a later task."
-    />
+    <RoomLockGate room="dream">
+      <DocumentEditor kind="why" />
+    </RoomLockGate>
   );
 }
