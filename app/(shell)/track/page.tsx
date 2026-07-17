@@ -1,10 +1,10 @@
-import { StubPage } from "@/components/shell/StubPage";
+import { DocumentEditor } from "@/components/documents/DocumentEditor";
+import { RoomLockGate } from "@/components/shell/RoomLockGate";
 
 export default function TrackPage() {
   return (
-    <StubPage
-      title="Track"
-      description="How document surface — strategy, tactics, and habits. Unlocks after What has a non-empty body."
-    />
+    <RoomLockGate room="track">
+      <DocumentEditor kind="how" />
+    </RoomLockGate>
   );
 }
