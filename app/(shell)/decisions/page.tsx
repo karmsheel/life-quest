@@ -1,10 +1,5 @@
-import { StubPage } from "@/components/shell/StubPage";
+import { DecisionsInbox } from "@/components/decisions/DecisionsInbox";
 
 export default function DecisionsPage() {
-  return (
-    <StubPage
-      title="Decisions"
-      description="Human-in-the-loop inbox for forged document changes. Propose → approve / reject."
-    />
-  );
+  return <DecisionsInbox />;
 }
