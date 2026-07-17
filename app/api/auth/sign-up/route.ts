@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth.ts";
 import { ACTIVE_DOMAIN_COOKIE } from "@/lib/constants.ts";
 import { seedDomainsForUser } from "@/lib/domains.ts";
+import { appendLifeEvent } from "@/lib/life-log-write.ts";
 import { prisma } from "@/lib/prisma.ts";
 
 type SignUpBody = {
@@ -55,14 +56,12 @@ export async function POST(request: Request) {
   const domains = await seedDomainsForUser(user.id);
 
   for (const domain of domains) {
-    await prisma.lifeEvent.create({
-      data: {
-        userId: user.id,
-        domainId: domain.id,
-        type: "domain.created",
-        summary: `Created domain ${domain.name}`,
-        payloadJson: JSON.stringify({ name: domain.name }),
-      },
+    await appendLifeEvent({
+      userId: user.id,
+      domainId: domain.id,
+      type: "domain.created",
+      summary: `Created domain ${domain.name}`,
+      payload: { name: domain.name },
     });
   }
 
