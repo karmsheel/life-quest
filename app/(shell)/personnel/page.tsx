@@ -1,10 +1,5 @@
-import { StubPage } from "@/components/shell/StubPage";
+import { PersonnelStudio } from "@/components/personnel/PersonnelStudio";
 
 export default function PersonnelPage() {
-  return (
-    <StubPage
-      title="Personnel"
-      description="Hermes agent scan and hire/dismiss roster. Full studio UI arrives later."
-    />
-  );
+  return <PersonnelStudio />;
 }
