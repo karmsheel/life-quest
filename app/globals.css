@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "./tokens.css";
+/* tokens.css is imported from layout.tsx so Turbopack root resolution is stable */
 
 * {
   box-sizing: border-box;

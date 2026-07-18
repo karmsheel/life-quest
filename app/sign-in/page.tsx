@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { AuthForm } from "@/components/auth/AuthForm";
 
 export default function SignInPage() {
@@ -6,7 +7,9 @@ export default function SignInPage() {
       <div className="auth-card">
         <h1>LifeQuest</h1>
         <p className="muted">Continue locally or sign in</p>
-        <AuthForm mode="sign-in" />
+        <Suspense fallback={<p className="muted">Loading…</p>}>
+          <AuthForm mode="sign-in" />
+        </Suspense>
       </div>
     </main>
   );

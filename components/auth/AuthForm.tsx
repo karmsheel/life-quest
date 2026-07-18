@@ -7,13 +7,15 @@ type Mode = "sign-in" | "sign-up";
 
 type AuthFormProps = {
   mode: Mode;
+  /** Optional error from server redirect (e.g. local account failure) */
+  initialError?: string | null;
 };
 
-export function AuthForm({ mode }: AuthFormProps) {
+export function AuthForm({ mode, initialError = null }: AuthFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const [pending, setPending] = useState(false);
   const [localPending, setLocalPending] = useState(false);
 
@@ -21,35 +23,6 @@ export function AuthForm({ mode }: AuthFormProps) {
   const endpoint = isSignUp ? "/api/auth/sign-up" : "/api/auth/sign-in";
   const submitLabel = isSignUp ? "Sign up" : "Sign in";
   const busy = pending || localPending;
-
-  /** Full page load so the session cookie is definitely applied. */
-  function goHome() {
-    window.location.assign("/home");
-  }
-
-  async function onLocalAccount() {
-    setError(null);
-    setLocalPending(true);
-    try {
-      const res = await fetch("/api/auth/local", {
-        method: "POST",
-        credentials: "same-origin",
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        error?: string;
-      };
-      if (!res.ok) {
-        setError(data.error ?? "Could not start local account");
-        setLocalPending(false);
-        return;
-      }
-      goHome();
-      // Leave pending true until navigation unloads the page.
-    } catch {
-      setError("Network error — is the dev server running?");
-      setLocalPending(false);
-    }
-  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -62,7 +35,10 @@ export function AuthForm({ mode }: AuthFormProps) {
       const res = await fetch(endpoint, {
         method: "POST",
         credentials: "same-origin",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+        },
         body: JSON.stringify(body),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -73,7 +49,7 @@ export function AuthForm({ mode }: AuthFormProps) {
         setPending(false);
         return;
       }
-      goHome();
+      window.location.assign("/home");
     } catch {
       setError("Network error — is the dev server running?");
       setPending(false);
@@ -82,15 +58,28 @@ export function AuthForm({ mode }: AuthFormProps) {
 
   return (
     <div className="auth-form-stack">
+      {/*
+        Plain HTML form POST — works even when client JS fails to hydrate.
+        /api/auth/local sets cookies and 303-redirects to /home.
+      */}
       <div className="auth-local">
-        <button
-          type="button"
-          className="auth-submit auth-submit--local"
-          disabled={busy}
-          onClick={() => void onLocalAccount()}
+        <form
+          action="/api/auth/local"
+          method="post"
+          onSubmit={() => {
+            setError(null);
+            setLocalPending(true);
+          }}
         >
-          {localPending ? "Starting…" : "Continue with local account"}
-        </button>
+          <button
+            type="submit"
+            className="auth-submit auth-submit--local"
+            disabled={busy}
+            style={{ width: "100%" }}
+          >
+            {localPending ? "Starting…" : "Continue with local account"}
+          </button>
+        </form>
         <p className="auth-local__hint muted">
           No email or password — stays on this machine. Best for personal use.
         </p>
@@ -100,7 +89,7 @@ export function AuthForm({ mode }: AuthFormProps) {
         <span>or use email</span>
       </div>
 
-      <form onSubmit={onSubmit} className="auth-form">
+      <form method="post" onSubmit={onSubmit} className="auth-form">
         {isSignUp ? (
           <label className="auth-field">
             <span>Name</span>
