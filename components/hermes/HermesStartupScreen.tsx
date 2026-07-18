@@ -23,6 +23,7 @@ export function HermesStartupScreen() {
   const hadSavedConfig = useRef(false);
   const splashDone = useRef(false);
   const autoConnectStarted = useRef(false);
+  const autoConnectErrorShown = useRef(false);
 
   const [mounted, setMounted] = useState(false);
   const [phase, setPhase] = useState<StartupPhase>("splash");
@@ -42,16 +43,20 @@ export function HermesStartupScreen() {
   useEffect(() => {
     if (!mounted || splashDone.current) return;
 
+    let leaveTimer: number | undefined;
     const timer = window.setTimeout(() => {
       splashDone.current = true;
       setSplashLeaving(true);
-      window.setTimeout(() => {
+      leaveTimer = window.setTimeout(() => {
         setSplashLeaving(false);
         setPhase(hadSavedConfig.current ? "connecting" : "idle");
       }, 520);
     }, SPLASH_MS);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (leaveTimer !== undefined) window.clearTimeout(leaveTimer);
+    };
   }, [mounted]);
 
   useEffect(() => {
@@ -69,22 +74,6 @@ export function HermesStartupScreen() {
     }
   }, [isBusy, phase]);
 
-  useEffect(() => {
-    if (!splashDone.current || phase === "splash" || phase === "leaving") return;
-
-    if (isConnected) {
-      setErrorModalOpen(false);
-      setPhase("leaving");
-      return;
-    }
-
-    if (phase !== "connecting") return;
-
-    if (!isBusy && !isConnected) {
-      setPhase("idle");
-    }
-  }, [isBusy, isConnected, phase]);
-
   const refreshDiscovery = useCallback(async () => {
     try {
       const res = await fetch("/api/hermes/discover", { method: "POST" });
@@ -97,6 +86,37 @@ export function HermesStartupScreen() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!splashDone.current || phase === "splash" || phase === "leaving") return;
+
+    if (isConnected) {
+      setErrorModalOpen(false);
+      setPhase("leaving");
+      return;
+    }
+
+    // Returning users with saved config: after auto-connect settles on error,
+    // open the error modal once so they get setup/restart (not blank idle only).
+    if (
+      hadSavedConfig.current &&
+      !isBusy &&
+      !isConnected &&
+      status.state === "error" &&
+      !autoConnectErrorShown.current
+    ) {
+      autoConnectErrorShown.current = true;
+      void refreshDiscovery();
+      setErrorModalOpen(true);
+      setPhase("idle");
+      return;
+    }
+
+    if (phase !== "connecting") return;
+
+    if (!isBusy && !isConnected) {
+      setPhase("idle");
+    }
+  }, [isBusy, isConnected, phase, refreshDiscovery, status.state]);
   const handleExitComplete = useCallback(() => {
     void (async () => {
       // After Hermes connects: skip sign-in when a session already exists.
@@ -171,7 +191,7 @@ export function HermesStartupScreen() {
   }
 
   if (!mounted) {
-    return <GatewayConnectingOverlay />;
+    return <HermesSplashScreen />;
   }
 
   if (phase === "splash") {
