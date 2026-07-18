@@ -132,11 +132,15 @@ export function ShellProvider({ children }: { children: ReactNode }) {
         fetch("/api/domains", { credentials: "same-origin" }),
       ]);
 
-      if (meRes.status === 401) {
+      if (meRes.status === 401 || domainsRes.status === 401) {
         setUser(null);
         setDomains([]);
         setActiveDomainIdState(null);
         setError("Unauthorized");
+        // Bounce soft-session loss back to sign-in
+        if (typeof window !== "undefined" && !window.location.pathname.startsWith("/sign-")) {
+          window.location.assign("/sign-in");
+        }
         return;
       }
 

@@ -10,6 +10,21 @@ function secretKey() {
   return new TextEncoder().encode(s);
 }
 
+/**
+ * Cookie flags for local HTTP and production HTTPS.
+ * Default Secure=false so `next start` on http://localhost keeps session cookies.
+ * Set COOKIE_SECURE=true when serving over HTTPS.
+ */
+export function sessionCookieOptions(maxAge = 60 * 60 * 24 * 30) {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    path: "/",
+    secure: process.env.COOKIE_SECURE === "true",
+    maxAge,
+  };
+}
+
 export async function hashPassword(password: string) {
   return bcrypt.hash(password, 10);
 }
@@ -53,13 +68,7 @@ export async function requireUser() {
 
 export async function setSessionCookie(token: string) {
   const jar = await cookies();
-  jar.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  jar.set(SESSION_COOKIE, token, sessionCookieOptions());
 }
 
 export async function clearSessionCookie() {

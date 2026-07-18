@@ -64,6 +64,7 @@ AUTH_SECRET="dev-secret-change-me-min-32-chars-long!!"
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | Prisma SQLite URL. Relative paths resolve from the `prisma/` directory (`file:./dev.db` → `prisma/dev.db`). |
 | `AUTH_SECRET` | Yes | JWT signing secret for session cookies. Must be set and at least 16 characters. **Change this** before any shared or production deploy. |
+| `COOKIE_SECURE` | No | Set to `true` only when the app is served over **HTTPS**. Default is off so local HTTP (`npm run dev` / `next start` on localhost) can keep session cookies. |
 
 Hermes base URL and API key are **per-user** (Settings → Hermes), not env vars.
 

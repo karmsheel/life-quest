@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import {
   createSessionToken,
   hashPassword,
+  sessionCookieOptions,
   setSessionCookie,
 } from "./auth.ts";
 import {
@@ -67,13 +68,7 @@ export async function enterLocalAccount() {
 
   if (activeDomainId) {
     const jar = await cookies();
-    jar.set(ACTIVE_DOMAIN_COOKIE, activeDomainId, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 30,
-    });
+    jar.set(ACTIVE_DOMAIN_COOKIE, activeDomainId, sessionCookieOptions());
   }
 
   const token = await createSessionToken(user.id);

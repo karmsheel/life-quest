@@ -6,20 +6,31 @@ const PUBLIC_PATHS = new Set(["/sign-in", "/sign-up"]);
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Auth APIs are public (handlers enforce their own rules).
   if (pathname.startsWith("/api/auth")) {
     return NextResponse.next();
   }
 
-  if (PUBLIC_PATHS.has(pathname)) {
-    return NextResponse.next();
-  }
-
   const session = request.cookies.get(SESSION_COOKIE)?.value;
+  const isApi = pathname.startsWith("/api/");
+
   if (!session) {
+    // Never redirect API clients to HTML sign-in (that freezes fetch/json flows).
+    if (isApi) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (PUBLIC_PATHS.has(pathname)) {
+      return NextResponse.next();
+    }
     const url = request.nextUrl.clone();
     url.pathname = "/sign-in";
     url.search = "";
     return NextResponse.redirect(url);
+  }
+
+  // Already signed in: keep auth pages available but don't block shell.
+  if (PUBLIC_PATHS.has(pathname)) {
+    return NextResponse.next();
   }
 
   return NextResponse.next();

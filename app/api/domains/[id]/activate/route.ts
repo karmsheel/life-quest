@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { jsonError, jsonOk } from "@/lib/api.ts";
-import { requireUser } from "@/lib/auth.ts";
+import { requireUser, sessionCookieOptions } from "@/lib/auth.ts";
 import { ACTIVE_DOMAIN_COOKIE } from "@/lib/constants.ts";
 import { prisma } from "@/lib/prisma.ts";
 
@@ -22,13 +22,7 @@ export async function POST(_request: Request, context: RouteContext) {
   }
 
   const jar = await cookies();
-  jar.set(ACTIVE_DOMAIN_COOKIE, domain.id, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  jar.set(ACTIVE_DOMAIN_COOKIE, domain.id, sessionCookieOptions());
 
   return jsonOk({ activeDomainId: domain.id });
 }
