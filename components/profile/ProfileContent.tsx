@@ -1,9 +1,11 @@
 "use client";
 
 import { useShell } from "@/components/shell/ShellProvider";
+import { isLocalAccountEmail } from "@/lib/constants.ts";
 
 export function ProfileContent() {
   const { user, loading } = useShell();
+  const isLocal = user ? isLocalAccountEmail(user.email) : false;
 
   return (
     <div className="profile-content">
@@ -20,12 +22,16 @@ export function ProfileContent() {
       ) : user ? (
         <dl className="profile-dl">
           <div>
+            <dt className="muted">Account type</dt>
+            <dd>{isLocal ? "Local (no sign-in)" : "Email account"}</dd>
+          </div>
+          <div>
             <dt className="muted">Name</dt>
             <dd>{user.name || "—"}</dd>
           </div>
           <div>
             <dt className="muted">Email</dt>
-            <dd>{user.email}</dd>
+            <dd>{isLocal ? "—" : user.email}</dd>
           </div>
         </dl>
       ) : (

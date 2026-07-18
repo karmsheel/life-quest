@@ -5,7 +5,10 @@ import {
   hashPassword,
   setSessionCookie,
 } from "@/lib/auth.ts";
-import { ACTIVE_DOMAIN_COOKIE } from "@/lib/constants.ts";
+import {
+  ACTIVE_DOMAIN_COOKIE,
+  isLocalAccountEmail,
+} from "@/lib/constants.ts";
 import { seedDomainsForUser } from "@/lib/domains.ts";
 import { appendLifeEvent } from "@/lib/life-log-write.ts";
 import { prisma } from "@/lib/prisma.ts";
@@ -38,6 +41,12 @@ export async function POST(request: Request) {
 
   if (!email || !isValidEmail(email)) {
     return jsonError("Valid email is required", 400);
+  }
+  if (isLocalAccountEmail(email)) {
+    return jsonError(
+      "That address is reserved for the local account. Use Continue with local account.",
+      400,
+    );
   }
   if (password.length < 8) {
     return jsonError("Password must be at least 8 characters", 400);
