@@ -53,9 +53,14 @@ export function ChatbarPanel() {
     }
   }, [isOpen]);
 
+  const connected = hermes.isConnected;
+  const composerLocked = sending || !connected;
+  const busy =
+    hermes.status.state === "discovering" || hermes.status.state === "testing";
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (sending) return;
+    if (composerLocked) return;
     const text = draft.trim();
     if (!text) return;
     setDraft("");
@@ -65,16 +70,13 @@ export function ChatbarPanel() {
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (sending || !draft.trim()) return;
+      if (composerLocked || !draft.trim()) return;
       const text = draft.trim();
       setDraft("");
       void sendMessage(text);
     }
   }
 
-  const connected = hermes.isConnected;
-  const busy =
-    hermes.status.state === "discovering" || hermes.status.state === "testing";
   const pillClass = connected
     ? "chatbar-panel__pill chatbar-panel__pill--ok"
     : hermes.status.state === "error"
@@ -100,6 +102,7 @@ export function ChatbarPanel() {
       role="complementary"
       aria-label="Hermes chat"
       aria-hidden={!isOpen}
+      inert={!isOpen ? true : undefined}
     >
       <div className="chatbar-panel__header">
         <div className="chatbar-panel__brand">
@@ -234,11 +237,13 @@ export function ChatbarPanel() {
               id="chatbar-input"
               ref={inputRef}
               className="chatbar-panel__composer-input chatbar-panel__composer-input--live"
-              placeholder="Message Hermes…"
+              placeholder={
+                connected ? "Message Hermes…" : "Connect Hermes to chat…"
+              }
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKeyDown}
-              disabled={sending}
+              disabled={composerLocked}
               rows={2}
               aria-label="Message Hermes"
               autoComplete="off"
@@ -246,7 +251,7 @@ export function ChatbarPanel() {
             <button
               type="submit"
               className="chatbar-panel__send"
-              disabled={sending || !draft.trim()}
+              disabled={composerLocked || !draft.trim()}
               aria-label="Send message"
             >
               {sending ? "…" : "Send"}
