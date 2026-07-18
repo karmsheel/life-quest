@@ -27,17 +27,41 @@ export async function upsertHermesConfig(
   });
 }
 
+/** Resolve chat credentials: prefer body over stored DB config. */
+export function resolveChatCredentials(input: {
+  bodyBaseUrl?: string;
+  bodyApiKey?: string;
+  stored?: { baseUrl: string; apiKey: string };
+}): { baseUrl: string; apiKey: string } | null {
+  const baseUrl = (input.bodyBaseUrl || input.stored?.baseUrl || "")
+    .trim()
+    .replace(/\/$/, "");
+  const apiKey = (input.bodyApiKey ?? input.stored?.apiKey ?? "").trim();
+  if (!baseUrl || !apiKey) return null;
+  return { baseUrl, apiKey };
+}
+
+/** Fetch Hermes with explicit credentials (no DB lookup). */
+export async function hermesFetchWithConfig(
+  baseUrl: string,
+  apiKey: string,
+  path: string,
+  init: RequestInit = {},
+) {
+  const url = `${baseUrl.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+  const headers = new Headers(init.headers);
+  if (apiKey) headers.set("Authorization", `Bearer ${apiKey}`);
+  headers.set("Content-Type", headers.get("Content-Type") ?? "application/json");
+  return fetch(url, { ...init, headers });
+}
+
 export async function hermesFetch(
   userId: string,
   path: string,
   init: RequestInit = {},
 ) {
   const { baseUrl, apiKey } = await getHermesConfig(userId);
-  const url = `${baseUrl.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
-  const headers = new Headers(init.headers);
-  if (apiKey) headers.set("Authorization", `Bearer ${apiKey}`);
-  headers.set("Content-Type", headers.get("Content-Type") ?? "application/json");
-  return fetch(url, { ...init, headers });
+  return hermesFetchWithConfig(baseUrl, apiKey, path, init);
 }
 
 /** Probe Hermes gateway health. Used by settings test and scan reachability. */

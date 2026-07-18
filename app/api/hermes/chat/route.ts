@@ -1,6 +1,10 @@
 import { jsonError, jsonOk } from "@/lib/api.ts";
 import { requireUser } from "@/lib/auth.ts";
-import { hermesFetch } from "@/lib/hermes.ts";
+import {
+  getHermesConfig,
+  hermesFetchWithConfig,
+  resolveChatCredentials,
+} from "@/lib/hermes.ts";
 
 type ChatMessage = {
   role: string;
@@ -10,6 +14,8 @@ type ChatMessage = {
 type ChatBody = {
   messages?: unknown;
   model?: unknown;
+  baseUrl?: unknown;
+  apiKey?: unknown;
 };
 
 function parseMessages(raw: unknown): ChatMessage[] | null {
@@ -28,6 +34,7 @@ function parseMessages(raw: unknown): ChatMessage[] | null {
 /**
  * Proxy OpenAI-compatible chat completions to the user's Hermes gateway.
  * Skeleton: non-streaming only; no tools / no pillar injection.
+ * Prefers body baseUrl/apiKey over DB-stored credentials.
  */
 export async function POST(request: Request) {
   const user = await requireUser();
@@ -55,16 +62,34 @@ export async function POST(request: Request) {
       ? body.model.trim()
       : "default";
 
+  const stored = await getHermesConfig(user.id);
+  const creds = resolveChatCredentials({
+    bodyBaseUrl: typeof body.baseUrl === "string" ? body.baseUrl : undefined,
+    bodyApiKey: typeof body.apiKey === "string" ? body.apiKey : undefined,
+    stored,
+  });
+  if (!creds) {
+    return jsonError(
+      "Hermes is not configured. Connect on the startup screen or Settings → Hermes.",
+      400,
+    );
+  }
+
   let res: Response;
   try {
-    res = await hermesFetch(user.id, "/v1/chat/completions", {
-      method: "POST",
-      body: JSON.stringify({
-        model,
-        messages,
-        stream: false,
-      }),
-    });
+    res = await hermesFetchWithConfig(
+      creds.baseUrl,
+      creds.apiKey,
+      "/v1/chat/completions",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          model,
+          messages,
+          stream: false,
+        }),
+      },
+    );
   } catch (err) {
     const message =
       err instanceof Error
