@@ -115,6 +115,29 @@ export function ChatbarProvider({ children }: { children: ReactNode }) {
     saveChatbarSide(side);
   }, [side, hydrated]);
 
+  // Alt+H toggles chat when focus is not in a text field.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!e.altKey || (e.key !== "h" && e.key !== "H")) return;
+      const el = e.target;
+      if (el instanceof HTMLElement) {
+        const tag = el.tagName;
+        if (
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          el.isContentEditable
+        ) {
+          return;
+        }
+      }
+      e.preventDefault();
+      setResidencyState((current) => toggleChatbarResidency(current));
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const setResidency = useCallback((r: ChatbarResidency) => {
     setResidencyState(normalizeChatbarResidency(r));
   }, []);
