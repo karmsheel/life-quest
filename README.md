@@ -35,7 +35,10 @@ npx prisma migrate dev
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Sign up to seed four Domains (Health, Intellectual, Emotional, Financial).
+Open [http://localhost:3000](http://localhost:3000).
+
+- **Continue with local account** — no email/password; one local profile on this machine (recommended for personal use). Seeds four Domains on first use.
+- **Sign up / Sign in** — optional email accounts for multi-user.
 
 ### Scripts
 

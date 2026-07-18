@@ -4,6 +4,7 @@ import {
   setSessionCookie,
   verifyPassword,
 } from "@/lib/auth.ts";
+import { isLocalAccountEmail } from "@/lib/constants.ts";
 import { prisma } from "@/lib/prisma.ts";
 
 type SignInBody = {
@@ -25,6 +26,12 @@ export async function POST(request: Request) {
 
   if (!email || !password) {
     return jsonError("Email and password are required", 400);
+  }
+  if (isLocalAccountEmail(email)) {
+    return jsonError(
+      "Local account has no password. Use Continue with local account.",
+      400,
+    );
   }
 
   const user = await prisma.user.findUnique({ where: { email } });

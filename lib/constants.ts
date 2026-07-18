@@ -15,3 +15,11 @@ export const HOW_PLACEHOLDER = `# Strategy
 export const SESSION_COOKIE = "lq_session";
 export const ACTIVE_DOMAIN_COOKIE = "lq_active_domain";
 export const DEFAULT_HERMES_URL = "http://localhost:8642";
+
+/** Fixed identity for the no-sign-in local account path. */
+export const LOCAL_ACCOUNT_EMAIL = "local@lifequest.local";
+export const LOCAL_ACCOUNT_NAME = "Local";
+
+export function isLocalAccountEmail(email: string): boolean {
+  return email.trim().toLowerCase() === LOCAL_ACCOUNT_EMAIL;
+}
