@@ -2381,7 +2381,8 @@ a {
   font-size: 0.875rem;
 }
 
-.settings-field input {
+.settings-field input,
+.settings-field select {
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   padding: 0.55rem 0.7rem;
@@ -2390,7 +2391,8 @@ a {
   font: inherit;
 }
 
-.settings-field input:focus {
+.settings-field input:focus,
+.settings-field select:focus {
   outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
   outline-offset: 1px;
 }
