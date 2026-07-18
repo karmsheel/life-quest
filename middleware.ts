@@ -1,13 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/lib/constants.ts";
 
-const PUBLIC_PATHS = new Set(["/sign-in", "/sign-up"]);
+const PUBLIC_PATHS = new Set(["/", "/sign-in", "/sign-up"]);
+
+const PUBLIC_API_PREFIXES = [
+  "/api/auth",
+  "/api/hermes/discover",
+  "/api/hermes/test",
+  "/api/hermes/setup",
+  "/api/hermes/models",
+  "/api/hermes/gateway",
+];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Auth APIs are public (handlers enforce their own rules).
-  if (pathname.startsWith("/api/auth")) {
+  // Public APIs (handlers enforce their own rules / host checks).
+  if (
+    PUBLIC_API_PREFIXES.some(
+      (p) => pathname === p || pathname.startsWith(p + "/"),
+    )
+  ) {
     return NextResponse.next();
   }
 
