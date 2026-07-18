@@ -1,10 +1,9 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
 import { useShell } from "@/components/shell/ShellProvider";
-import { useTheme } from "@/components/theme/ThemeProvider";
 import type { DocumentKind } from "@/lib/document-kinds.ts";
 
 const PROGRESS: {
@@ -19,7 +18,6 @@ const PROGRESS: {
 
 export function HomeComposerStub() {
   const { activeDomain, documents, loading } = useShell();
-  const { theme } = useTheme();
   const [text, setText] = useState("");
 
   function onSubmit(e: FormEvent) {
@@ -33,8 +31,6 @@ export function HomeComposerStub() {
 
   return (
     <div className="home-composer">
-      <Toaster theme={theme} position="bottom-right" richColors closeButton />
-
       <header className="home-composer__header">
         <h1 className="stub-page__title">Home</h1>
         <p className="stub-page__desc muted">
