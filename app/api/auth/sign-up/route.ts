@@ -3,6 +3,7 @@ import { jsonError, jsonOk } from "@/lib/api.ts";
 import {
   createSessionToken,
   hashPassword,
+  sessionCookieOptions,
   setSessionCookie,
 } from "@/lib/auth.ts";
 import {
@@ -77,13 +78,7 @@ export async function POST(request: Request) {
   const firstDomain = domains[0];
   if (firstDomain) {
     const jar = await cookies();
-    jar.set(ACTIVE_DOMAIN_COOKIE, firstDomain.id, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 30,
-    });
+    jar.set(ACTIVE_DOMAIN_COOKIE, firstDomain.id, sessionCookieOptions());
   }
 
   const token = await createSessionToken(user.id);

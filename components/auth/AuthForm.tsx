@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
 type Mode = "sign-in" | "sign-up";
@@ -11,7 +10,6 @@ type AuthFormProps = {
 };
 
 export function AuthForm({ mode }: AuthFormProps) {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -24,27 +22,31 @@ export function AuthForm({ mode }: AuthFormProps) {
   const submitLabel = isSignUp ? "Sign up" : "Sign in";
   const busy = pending || localPending;
 
-  async function enterHome() {
-    router.push("/home");
-    router.refresh();
+  /** Full page load so the session cookie is definitely applied. */
+  function goHome() {
+    window.location.assign("/home");
   }
 
   async function onLocalAccount() {
     setError(null);
     setLocalPending(true);
     try {
-      const res = await fetch("/api/auth/local", { method: "POST" });
+      const res = await fetch("/api/auth/local", {
+        method: "POST",
+        credentials: "same-origin",
+      });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
       };
       if (!res.ok) {
         setError(data.error ?? "Could not start local account");
+        setLocalPending(false);
         return;
       }
-      await enterHome();
+      goHome();
+      // Leave pending true until navigation unloads the page.
     } catch {
-      setError("Network error");
-    } finally {
+      setError("Network error — is the dev server running?");
       setLocalPending(false);
     }
   }
@@ -59,6 +61,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
       const res = await fetch(endpoint, {
         method: "POST",
+        credentials: "same-origin",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
@@ -67,12 +70,12 @@ export function AuthForm({ mode }: AuthFormProps) {
       };
       if (!res.ok) {
         setError(data.error ?? "Something went wrong");
+        setPending(false);
         return;
       }
-      await enterHome();
+      goHome();
     } catch {
-      setError("Network error");
-    } finally {
+      setError("Network error — is the dev server running?");
       setPending(false);
     }
   }
