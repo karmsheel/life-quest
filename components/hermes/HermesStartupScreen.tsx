@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Plug } from "lucide-react";
 import { loadHermesConfig } from "@/lib/hermes-storage.ts";
+import { safeInternalPath } from "@/lib/safe-redirect.ts";
 import { GatewayConnectingOverlay } from "./GatewayConnectingOverlay";
 import { HermesConnectionErrorModal } from "./HermesConnectionErrorModal";
 import { HermesSplashScreen } from "./HermesSplashScreen";
@@ -16,7 +17,7 @@ type StartupPhase = "splash" | "connecting" | "idle" | "leaving";
 export function HermesStartupScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("from") || "/home";
+  const redirectTo = safeInternalPath(searchParams.get("from"));
   const { isConnected, isBusy, autoConnect, setupApiServer, restartGateway, status } =
     useHermesConnection();
 
