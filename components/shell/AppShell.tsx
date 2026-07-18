@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { ChatbarCollapsedTab } from "@/components/chatbar/ChatbarCollapsedTab";
 import { ChatbarPanel } from "@/components/chatbar/ChatbarPanel";
 import { useChatbar } from "@/components/chatbar/ChatbarProvider";
 import { NavRail } from "./NavRail";
@@ -8,17 +9,19 @@ import { TopBar } from "./TopBar";
 import { useShell } from "./ShellProvider";
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { open: chatOpen } = useChatbar();
+  const { isOpen, isLeft, side } = useChatbar();
   const { loading, error } = useShell();
 
+  const layoutClass = [
+    "app-shell",
+    isOpen ? "app-shell--chat-open" : "app-shell--chat-collapsed",
+    `app-shell--chat-side-${side}`,
+  ].join(" ");
+
   return (
-    <div
-      className={[
-        "app-shell",
-        chatOpen ? "app-shell--chat-open" : "app-shell--chat-collapsed",
-      ].join(" ")}
-    >
+    <div className={layoutClass}>
       <NavRail />
+      {isLeft ? <ChatbarPanel /> : null}
       <div className="app-shell__main">
         <TopBar />
         <div className="app-shell__content">
@@ -33,7 +36,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           {children}
         </div>
       </div>
-      <ChatbarPanel />
+      {!isLeft ? <ChatbarPanel /> : null}
+      <ChatbarCollapsedTab />
     </div>
   );
 }
