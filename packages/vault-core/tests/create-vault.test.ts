@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createVault } from "../src/create-vault.ts";
 import { openVault } from "../src/open-vault.ts";
+import { assertUnderRoot, safeJoin, vaultPaths } from "../src/paths.ts";
 
 describe("createVault", () => {
   let dir: string;
@@ -27,5 +28,76 @@ describe("createVault", () => {
     assert.match(why, /status: draft/);
     const opened = await openVault(root);
     assert.equal(opened.ok, true);
+  });
+
+  it("refuses when lifequest.json already exists", async () => {
+    const root = path.join(dir, "existing-vault");
+    const first = await createVault(root, "First");
+    assert.equal(first.ok, true);
+    const second = await createVault(root, "Second");
+    assert.equal(second.ok, false);
+    if (second.ok) return;
+    assert.match(second.error, /already exists/i);
+  });
+});
+
+describe("openVault", () => {
+  let dir: string;
+  before(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "lq-vault-open-"));
+  });
+  after(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it("refuses schemaVersion !== 1", async () => {
+    const root = path.join(dir, "bad-schema");
+    const created = await createVault(root, "BadSchema");
+    assert.equal(created.ok, true);
+    const metaPath = path.join(root, "lifequest.json");
+    const raw = JSON.parse(await fs.readFile(metaPath, "utf8")) as Record<string, unknown>;
+    raw.schemaVersion = 2;
+    await fs.writeFile(metaPath, `${JSON.stringify(raw, null, 2)}\n`);
+    const opened = await openVault(root);
+    assert.equal(opened.ok, false);
+    if (opened.ok) return;
+    assert.match(opened.error, /schemaVersion/i);
+    assert.match(opened.error, /2/);
+  });
+});
+
+describe("safeJoin / assertUnderRoot", () => {
+  const root = path.resolve("/tmp/lifequest-vault-root");
+
+  it("rejects path escape via safeJoin segments", () => {
+    assert.throws(
+      () => safeJoin(root, "domains", "../../outside"),
+      /escapes vault root/i,
+    );
+    assert.throws(
+      () => safeJoin(root, "..", "outside"),
+      /escapes vault root/i,
+    );
+  });
+
+  it("rejects path escape via vaultPaths slug helpers", () => {
+    const paths = vaultPaths(root);
+    // slug/id/kind that resolve outside root (need enough .. to climb past domains/.lifequest)
+    assert.throws(() => paths.domainDir("../../outside"), /escapes vault root/i);
+    assert.throws(() => paths.domainJson("../../outside"), /escapes vault root/i);
+    assert.throws(() => paths.documentMd("health", "../../../evil"), /escapes vault root/i);
+    assert.throws(() => paths.decisionJson("../../../escape"), /escapes vault root/i);
+  });
+
+  it("does not false-positive on ..foo segment names", () => {
+    const joined = safeJoin(root, "domains", "..foo");
+    assert.equal(joined, path.resolve(root, "domains", "..foo"));
+    assert.doesNotThrow(() => assertUnderRoot(root, path.join(root, "..foo")));
+  });
+
+  it("allows paths under root", () => {
+    const joined = safeJoin(root, "domains", "health", "why.md");
+    assert.equal(joined, path.resolve(root, "domains", "health", "why.md"));
+    assert.doesNotThrow(() => assertUnderRoot(root, joined));
   });
 });
