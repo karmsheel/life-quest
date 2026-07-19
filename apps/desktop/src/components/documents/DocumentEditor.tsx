@@ -68,6 +68,8 @@ export function DocumentEditor({ kind }: { kind: DocumentKind }) {
   const [proposeOpen, setProposeOpen] = useState(false);
   /** Last reloadGeneration applied — used to quiet-rehydrate after vault refresh. */
   const appliedGenerationRef = useRef(reloadGeneration);
+  /** Bumped on each load so stale documentGet results are ignored. */
+  const loadGenRef = useRef(0);
 
   const load = useCallback(
     async (opts?: { quiet?: boolean }) => {
@@ -80,6 +82,10 @@ export function DocumentEditor({ kind }: { kind: DocumentKind }) {
         return;
       }
 
+      const gen = ++loadGenRef.current;
+      const requestSlug = slug;
+      const requestKind = kind;
+
       // Quiet rehydrate keeps the editor mounted (no loading flash) while
       // still force-resetting draft from disk after external reload.
       if (!opts?.quiet) setLoading(true);
@@ -88,20 +94,31 @@ export function DocumentEditor({ kind }: { kind: DocumentKind }) {
       setActionMessage(null);
 
       try {
-        const result = await api().documentGet(slug, kind);
+        const result = await api().documentGet(requestSlug, requestKind);
+        // Ignore out-of-order responses after domain/kind switch or re-load.
+        if (gen !== loadGenRef.current) return;
         if (!result.ok) {
           setDocument(null);
           setLoadError(result.error);
           return;
         }
-        applyDocument(result.value, kind, setDocument, setTitleDraft, setDraft);
+        applyDocument(
+          result.value,
+          requestKind,
+          setDocument,
+          setTitleDraft,
+          setDraft,
+        );
       } catch (err) {
+        if (gen !== loadGenRef.current) return;
         setDocument(null);
         setLoadError(
           err instanceof Error ? err.message : "Failed to load document",
         );
       } finally {
-        setLoading(false);
+        if (gen === loadGenRef.current) {
+          setLoading(false);
+        }
       }
     },
     [slug, kind],

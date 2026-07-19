@@ -354,18 +354,24 @@ export async function settingsUpdate(
 }
 
 export async function secretsHasHermesKey(): Promise<boolean> {
-  if (!currentVaultId) return false;
-  return hasHermesKey(currentVaultId);
+  return enqueue(async () => {
+    if (!currentVaultId) return false;
+    return hasHermesKey(currentVaultId);
+  });
 }
 
 export async function secretsSetHermesKey(key: string): Promise<Result<true>> {
-  if (!currentVaultId) return noVaultError<true>();
-  return setHermesKey(currentVaultId, key);
+  return enqueue(async () => {
+    if (!currentVaultId) return noVaultError<true>();
+    return setHermesKey(currentVaultId, key);
+  });
 }
 
 export async function secretsClearHermesKey(): Promise<Result<true>> {
-  if (!currentVaultId) return noVaultError<true>();
-  return clearHermesKey(currentVaultId);
+  return enqueue(async () => {
+    if (!currentVaultId) return noVaultError<true>();
+    return clearHermesKey(currentVaultId);
+  });
 }
 
 async function loadHermesCreds(): Promise<
@@ -383,6 +389,19 @@ async function loadHermesCreds(): Promise<
     const baseUrl = (settings.hermesBaseUrl || "").trim().replace(/\/$/, "");
     if (!baseUrl) {
       return { ok: false, error: "Hermes base URL is not configured" };
+    }
+    // Defense in depth: reject non-http(s) even if settings were written offline.
+    let parsed: URL;
+    try {
+      parsed = new URL(baseUrl);
+    } catch {
+      return { ok: false, error: `Invalid Hermes base URL: ${baseUrl}` };
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return {
+        ok: false,
+        error: `Hermes base URL must be http(s): ${baseUrl}`,
+      };
     }
     const apiKey = await getHermesKey(currentVaultId);
     if (!apiKey) {
