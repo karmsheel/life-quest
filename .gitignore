@@ -6,4 +6,3 @@ prisma/*.db
 .worktrees/
 dist
 dist-electron
-
