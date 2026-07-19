@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { AppShell } from "@/components/shell/AppShell";
 import ActPage from "@/pages/ActPage";
+import DocumentsPage from "@/pages/DocumentsPage";
 import DomainsPage from "@/pages/DomainsPage";
 import HomePage from "@/pages/HomePage";
 import RoomPage from "@/pages/RoomPage";
@@ -108,7 +109,7 @@ function AppRoutes() {
         path="/documents"
         element={
           <ShellRoute>
-            <StubPage title="Documents" />
+            <DocumentsPage />
           </ShellRoute>
         }
       />
