@@ -2,3 +2,8 @@ export * from "./types.ts";
 export * from "./frontmatter.ts";
 export * from "./documents.ts";
 export * from "./unlock.ts";
+export * from "./paths.ts";
+export * from "./atomic-write.ts";
+export * from "./log.ts";
+export * from "./create-vault.ts";
+export * from "./open-vault.ts";
