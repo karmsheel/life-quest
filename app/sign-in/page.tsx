@@ -1,15 +1,22 @@
-import { Suspense } from "react";
 import { AuthForm } from "@/components/auth/AuthForm";
 
-export default function SignInPage() {
+type PageProps = {
+  searchParams?: Promise<{ error?: string }>;
+};
+
+export default async function SignInPage({ searchParams }: PageProps) {
+  const params = (await searchParams) ?? {};
+  const initialError =
+    params.error === "local"
+      ? "Could not start the local account. Check the server log and try again."
+      : null;
+
   return (
     <main className="auth-page">
       <div className="auth-card">
         <h1>LifeQuest</h1>
         <p className="muted">Continue locally or sign in</p>
-        <Suspense fallback={<p className="muted">Loading…</p>}>
-          <AuthForm mode="sign-in" />
-        </Suspense>
+        <AuthForm mode="sign-in" initialError={initialError} />
       </div>
     </main>
   );
