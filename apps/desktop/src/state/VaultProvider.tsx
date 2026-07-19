@@ -18,6 +18,8 @@ export type VaultContextValue = {
   activeSlug: string | null;
   /** True until first vaultGetSnapshot completes. */
   booting: boolean;
+  /** True when doctrine files changed on disk since last load. */
+  stale: boolean;
   recent: RecentVaultEntry[];
   error: string | null;
   busy: boolean;
@@ -45,6 +47,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
   const [activeSlug, setActiveSlugState] = useState<string | null>(null);
   const [booting, setBooting] = useState(true);
+  const [stale, setStale] = useState(false);
   const [recent, setRecent] = useState<RecentVaultEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -76,6 +79,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         return;
       }
       await applySnapshot(result.value);
+      setStale(false);
       setError(null);
       await reloadRecent();
     } catch (err) {
@@ -112,6 +116,17 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     };
   }, [applySnapshot]);
 
+  // External file change events from main (window focus mtime check).
+  useEffect(() => {
+    try {
+      return api().onVaultFileChanged(() => {
+        setStale(true);
+      });
+    } catch {
+      return undefined;
+    }
+  }, []);
+
   const setActiveSlug = useCallback(async (slug: string) => {
     const result = await api().domainSetActive(slug);
     if (!result.ok) {
@@ -125,6 +140,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const clearVault = useCallback(() => {
     setSnapshot(null);
     setActiveSlugState(null);
+    setStale(false);
     setError(null);
   }, []);
 
@@ -143,6 +159,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           return false;
         }
         await applySnapshot(result.value);
+        setStale(false);
         await reloadRecent();
         return true;
       } catch (err) {
@@ -167,6 +184,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         return false;
       }
       await applySnapshot(result.value);
+      setStale(false);
       await reloadRecent();
       return true;
     } catch (err) {
@@ -188,6 +206,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           return false;
         }
         await applySnapshot(result.value);
+        setStale(false);
         await reloadRecent();
         return true;
       } catch (err) {
@@ -205,6 +224,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       snapshot,
       activeSlug,
       booting,
+      stale,
       recent,
       error,
       busy,
@@ -221,6 +241,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       snapshot,
       activeSlug,
       booting,
+      stale,
       recent,
       error,
       busy,
@@ -236,7 +257,22 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <VaultContext.Provider value={value}>{children}</VaultContext.Provider>
+    <VaultContext.Provider value={value}>
+      {stale && snapshot ? (
+        <div className="vault-stale-banner" role="status">
+          <p>Files changed on disk</p>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => void refresh()}
+            disabled={busy}
+          >
+            Reload
+          </button>
+        </div>
+      ) : null}
+      {children}
+    </VaultContext.Provider>
   );
 }
 

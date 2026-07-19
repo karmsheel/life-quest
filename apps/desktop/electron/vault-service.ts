@@ -6,6 +6,7 @@ import {
   createDomain,
   createVault,
   dismissAgent,
+  DOCUMENT_KINDS,
   getDocument,
   hireAgent,
   listAgents,
@@ -17,6 +18,7 @@ import {
   setDocumentStatus,
   updateDomain,
   updateSettings,
+  vaultPaths,
   type AgentHire,
   type DecisionRecord,
   type DocumentKind,
@@ -51,6 +53,8 @@ import {
 let currentRoot: string | null = null;
 let currentVaultId: string | null = null;
 let queue: Promise<unknown> = Promise.resolve();
+/** Last-known mtimes for doctrine files (why/what/how.md) under the open vault. */
+let doctrineMtimes: Map<string, number> = new Map();
 
 function noVaultError<T>(): Result<T> {
   return { ok: false, error: "No vault is open" };
@@ -73,9 +77,59 @@ function withVault<T>(fn: (root: string) => Promise<Result<T>>): Promise<Result<
   });
 }
 
+/** Snapshot mtimes for all doctrine markdown files under the vault. */
+async function captureDoctrineMtimes(root: string): Promise<void> {
+  const paths = vaultPaths(root);
+  const next = new Map<string, number>();
+  try {
+    const domainEntries = await fs.readdir(paths.domainsDir, {
+      withFileTypes: true,
+    });
+    for (const entry of domainEntries) {
+      if (!entry.isDirectory()) continue;
+      for (const kind of DOCUMENT_KINDS) {
+        const filePath = paths.documentMd(entry.name, kind);
+        try {
+          const st = await fs.stat(filePath);
+          next.set(filePath, st.mtimeMs);
+        } catch {
+          // Missing doctrine file — omit from snapshot.
+        }
+      }
+    }
+  } catch {
+    // No domains dir — empty snapshot.
+  }
+  doctrineMtimes = next;
+}
+
+/**
+ * Re-stat tracked doctrine files. Returns paths whose mtimeMs differs from
+ * the last snapshot (or that are missing). Does not update the snapshot so
+ * the UI can keep prompting until the user reloads.
+ */
+export async function detectExternalDoctrineChanges(): Promise<
+  { path: string }[]
+> {
+  if (!currentRoot || doctrineMtimes.size === 0) return [];
+  const changed: { path: string }[] = [];
+  for (const [filePath, prevMtime] of doctrineMtimes) {
+    try {
+      const st = await fs.stat(filePath);
+      if (st.mtimeMs !== prevMtime) {
+        changed.push({ path: filePath });
+      }
+    } catch {
+      changed.push({ path: filePath });
+    }
+  }
+  return changed;
+}
+
 async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
   currentRoot = snapshot.rootPath;
   currentVaultId = snapshot.lifequest.id;
+  await captureDoctrineMtimes(snapshot.rootPath);
   await recordRecentVault({
     id: snapshot.lifequest.id,
     name: snapshot.lifequest.name,
@@ -129,7 +183,11 @@ export async function vaultOpen(
 export async function vaultGetSnapshot(): Promise<Result<VaultSnapshot | null>> {
   return enqueue(async () => {
     if (!currentRoot) return { ok: true, value: null };
-    return openVault(currentRoot);
+    const res = await openVault(currentRoot);
+    if (res.ok) {
+      await captureDoctrineMtimes(currentRoot);
+    }
+    return res;
   });
 }
 
@@ -141,7 +199,11 @@ export async function domainCreate(input: {
   name: string;
   slug?: string;
 }): Promise<Result<DomainRecord>> {
-  return withVault((root) => createDomain(root, input));
+  return withVault(async (root) => {
+    const res = await createDomain(root, input);
+    if (res.ok) await captureDoctrineMtimes(root);
+    return res;
+  });
 }
 
 export async function domainUpdate(
@@ -193,7 +255,14 @@ export async function documentSave(
   bodyMarkdown: string,
   title?: string,
 ): Promise<Result<DoctrineDocument>> {
-  return withVault((root) => saveDocument(root, slug, kind, bodyMarkdown, title));
+  return withVault(async (root) => {
+    const res = await saveDocument(root, slug, kind, bodyMarkdown, title);
+    if (res.ok) {
+      const filePath = vaultPaths(root).documentMd(slug, kind);
+      doctrineMtimes.set(filePath, res.value.mtimeMs);
+    }
+    return res;
+  });
 }
 
 export async function documentSetStatus(
@@ -201,7 +270,14 @@ export async function documentSetStatus(
   kind: DocumentKind,
   status: DocumentStatus,
 ): Promise<Result<DoctrineDocument>> {
-  return withVault((root) => setDocumentStatus(root, slug, kind, status));
+  return withVault(async (root) => {
+    const res = await setDocumentStatus(root, slug, kind, status);
+    if (res.ok) {
+      const filePath = vaultPaths(root).documentMd(slug, kind);
+      doctrineMtimes.set(filePath, res.value.mtimeMs);
+    }
+    return res;
+  });
 }
 
 export async function decisionList(): Promise<Result<DecisionRecord[]>> {
@@ -232,7 +308,12 @@ export async function decisionResolve(
   id: string,
   resolution: "approved" | "rejected",
 ): Promise<Result<DecisionRecord>> {
-  return withVault((root) => resolveDecision(root, id, resolution));
+  return withVault(async (root) => {
+    const res = await resolveDecision(root, id, resolution);
+    // Approval rewrites a doctrine file — refresh mtimes to avoid false stale.
+    if (res.ok) await captureDoctrineMtimes(root);
+    return res;
+  });
 }
 
 export async function logList(): Promise<Result<LifeEvent[]>> {
