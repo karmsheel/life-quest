@@ -11,12 +11,12 @@ export function vaultPaths(root: string) {
     agentsJson: path.join(rootPath, ".lifequest", "agents.json"),
     logJsonl: path.join(rootPath, ".lifequest", "log.jsonl"),
     decisionsDir: path.join(rootPath, ".lifequest", "decisions"),
-    domainDir: (slug: string) => path.join(rootPath, "domains", slug),
-    domainJson: (slug: string) => path.join(rootPath, "domains", slug, "domain.json"),
+    domainDir: (slug: string) => safeJoin(rootPath, "domains", slug),
+    domainJson: (slug: string) => safeJoin(rootPath, "domains", slug, "domain.json"),
     documentMd: (slug: string, kind: string) =>
-      path.join(rootPath, "domains", slug, `${kind}.md`),
+      safeJoin(rootPath, "domains", slug, `${kind}.md`),
     decisionJson: (id: string) =>
-      path.join(rootPath, ".lifequest", "decisions", `${id}.json`),
+      safeJoin(rootPath, ".lifequest", "decisions", `${id}.json`),
   };
 }
 
@@ -25,7 +25,9 @@ export function assertUnderRoot(rootPath: string, targetPath: string): void {
   const root = path.resolve(rootPath);
   const target = path.resolve(targetPath);
   const rel = path.relative(root, target);
-  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+  // Allow target === root (rel === ""). Reject only true parent traversal
+  // (not false positives like a relative segment named "..foo").
+  if (rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel)) {
     throw new Error(`Path escapes vault root: ${targetPath}`);
   }
 }
