@@ -56,6 +56,8 @@ function waitForPort(port, timeoutMs = 60_000) {
 }
 
 async function bundleElectron() {
+  // Bundle workspace packages (vault-core is TypeScript source).
+  // Keep electron external — provided by the Electron runtime.
   await build({
     entryPoints: [
       path.join(root, "electron/main.ts"),
@@ -65,7 +67,7 @@ async function bundleElectron() {
     bundle: true,
     platform: "node",
     format: "esm",
-    packages: "external",
+    external: ["electron"],
     sourcemap: true,
     target: "node20",
   });
