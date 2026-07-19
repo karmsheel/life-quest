@@ -7,3 +7,5 @@ export * from "./atomic-write.ts";
 export * from "./log.ts";
 export * from "./create-vault.ts";
 export * from "./open-vault.ts";
+export * from "./domains.ts";
+export * from "./domain-documents.ts";
