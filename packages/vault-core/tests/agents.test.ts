@@ -111,6 +111,41 @@ describe("agents + settings", () => {
     assert.equal(partial.value.hermesBaseUrl, "http://127.0.0.1:9000");
   });
 
+  it("updateSettings rejects non-http(s) hermesBaseUrl", async () => {
+    const beforeRaw = await fs.readFile(
+      path.join(root, ".lifequest", "settings.json"),
+      "utf8",
+    );
+    const before = JSON.parse(beforeRaw) as { hermesBaseUrl: string };
+
+    for (const bad of [
+      "file:///etc/passwd",
+      "javascript:alert(1)",
+      "ftp://example.com",
+      "not-a-url",
+      "",
+    ]) {
+      const res = await updateSettings(root, { hermesBaseUrl: bad });
+      assert.equal(res.ok, false, `expected reject for ${JSON.stringify(bad)}`);
+      if (res.ok) return;
+      assert.match(res.error, /http|empty|URL/i);
+    }
+
+    const afterRaw = await fs.readFile(
+      path.join(root, ".lifequest", "settings.json"),
+      "utf8",
+    );
+    const after = JSON.parse(afterRaw) as { hermesBaseUrl: string };
+    assert.equal(after.hermesBaseUrl, before.hermesBaseUrl);
+
+    const httpsOk = await updateSettings(root, {
+      hermesBaseUrl: "https://gateway.example.com/v1",
+    });
+    assert.equal(httpsOk.ok, true);
+    if (!httpsOk.ok) return;
+    assert.equal(httpsOk.value.hermesBaseUrl, "https://gateway.example.com/v1");
+  });
+
   it("dismissAgent fails for unknown id", async () => {
     const res = await dismissAgent(root, "does-not-exist");
     assert.equal(res.ok, false);

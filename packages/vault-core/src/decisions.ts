@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
+import { getDocument } from "./domain-documents.ts";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
@@ -72,6 +73,18 @@ export async function createDecision(
     }
     if (typeof input.proposedBodyMarkdown !== "string") {
       return { ok: false, error: "proposedBodyMarkdown is required" };
+    }
+
+    // Decisions only apply to forged (immutable) doctrine — load and require status.
+    const docRes = await getDocument(rootPath, domainSlug, input.documentKind);
+    if (!docRes.ok) {
+      return docRes;
+    }
+    if (docRes.value.status !== "forged") {
+      return {
+        ok: false,
+        error: `Document must be forged before proposing a change (current status: ${docRes.value.status})`,
+      };
     }
 
     const paths = vaultPaths(rootPath);
