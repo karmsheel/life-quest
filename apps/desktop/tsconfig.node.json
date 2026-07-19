@@ -2,16 +2,16 @@
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022"],
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "strict": true,
     "skipLibCheck": true,
-    "outDir": "dist-electron",
-    "rootDir": "electron",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
     "types": ["node"],
     "esModuleInterop": true,
-    "declaration": false,
-    "sourceMap": true
+    "isolatedModules": true,
+    "resolveJsonModule": true
   },
   "include": ["electron/**/*"]
 }

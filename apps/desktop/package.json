@@ -6,8 +6,8 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "node ./scripts/dev.mjs",
-    "build": "vite build && tsc -p tsconfig.node.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build": "vite build && node ./scripts/bundle-electron.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit"
   },
   "dependencies": {
     "@lifequest/vault-core": "*",
