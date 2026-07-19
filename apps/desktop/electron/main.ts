@@ -132,6 +132,22 @@ async function createWindow() {
     },
   });
 
+  // External edits: on focus, re-stat doctrine files and notify renderer.
+  // Channel name matches preload.ts (`vault:fileChanged`).
+  win.on("focus", () => {
+    void (async () => {
+      try {
+        const changes = await vault.detectExternalDoctrineChanges();
+        if (win.isDestroyed() || changes.length === 0) return;
+        for (const change of changes) {
+          win.webContents.send("vault:fileChanged", change);
+        }
+      } catch {
+        // Ignore focus-check failures (e.g. vault mid-close).
+      }
+    })();
+  });
+
   if (isDev) {
     const devUrl = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173";
     await win.loadURL(devUrl);
