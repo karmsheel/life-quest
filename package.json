@@ -2,11 +2,18 @@
   "name": "life-quest",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
-    "test": "node --experimental-strip-types --test tests/unit/*.test.ts",
+    "test": "npm run test -w @lifequest/vault-core",
+    "test:web": "node --experimental-strip-types --test tests/unit/*.test.ts",
+    "test:vault": "npm run test -w @lifequest/vault-core",
+    "dev:desktop": "npm run dev -w @lifequest/desktop",
     "lint": "eslint",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push"
