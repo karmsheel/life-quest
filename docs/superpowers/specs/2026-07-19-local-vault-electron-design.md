@@ -1,7 +1,7 @@
 # LifeQuest Local Vault (Electron) — Design Spec
 
 **Date:** 2026-07-19  
-**Status:** Approved in design session; awaiting user review of this written spec before implementation planning  
+**Status:** Approved — implementation plan ready (`docs/superpowers/plans/2026-07-19-local-vault-electron.md`)  
 **Product:** LifeQuest — local-first life-management studio with Hermes agents  
 **Supersedes (runtime):** Web multi-user Next.js + Prisma + SQLite as the product host  
 **Preserves (product IA):** Skeleton Domains / Why→What→How / rooms / Decisions / Life log / Personnel / Hermes chat from [2026-07-17 skeleton design](./2026-07-17-lifequest-skeleton-design.md)
