@@ -109,6 +109,8 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     setError(null);
   }
 
+  // Expand control stays outside any aria-hidden region so it remains
+  // keyboard/AT reachable when the panel is collapsed.
   return (
     <aside
       className={[
@@ -117,10 +119,9 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       ].join(" ")}
       role="complementary"
       aria-label="Hermes chat"
-      aria-hidden={!open}
     >
       {open ? (
-        <>
+        <div className="chat-panel__open">
           <div className="chat-panel__header">
             <div className="chat-panel__brand">
               <MessageSquare className="chat-panel__brand-icon" aria-hidden size={16} />
@@ -253,7 +254,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               </p>
             </form>
           </div>
-        </>
+        </div>
       ) : (
         <button
           type="button"
