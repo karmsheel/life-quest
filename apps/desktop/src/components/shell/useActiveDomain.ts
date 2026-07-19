@@ -4,8 +4,8 @@ import type {
   DoctrineDocument,
   DocumentKind,
   UnlockDoc,
-} from "@lifequest/vault-core";
-import { DOCUMENT_KINDS, getUnlockedRooms } from "@lifequest/vault-core";
+} from "@lifequest/vault-core/pure";
+import { DOCUMENT_KINDS, getUnlockedRooms } from "@lifequest/vault-core/pure";
 import { useVault } from "@/state/VaultProvider";
 
 /** Active domain from snapshot + activeSlug (falls back to first non-archived). */
@@ -32,7 +32,7 @@ export function documentsToUnlockDocs(
   }));
 }
 
-export function useUnlockedRooms(): Set<import("@lifequest/vault-core").RoomId> {
+export function useUnlockedRooms(): Set<import("@lifequest/vault-core/pure").RoomId> {
   const active = useActiveDomain();
   return useMemo(
     () => getUnlockedRooms(documentsToUnlockDocs(active?.documents)),

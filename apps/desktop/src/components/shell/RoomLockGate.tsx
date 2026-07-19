@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Lock } from "lucide-react";
-import type { RoomId } from "@lifequest/vault-core";
-import { isRoomUnlocked } from "@lifequest/vault-core";
+import type { RoomId } from "@lifequest/vault-core/pure";
+import { isRoomUnlocked } from "@lifequest/vault-core/pure";
 import {
   documentsToUnlockDocs,
   useActiveDomain,
