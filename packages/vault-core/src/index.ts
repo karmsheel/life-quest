@@ -9,3 +9,5 @@ export * from "./create-vault.ts";
 export * from "./open-vault.ts";
 export * from "./domains.ts";
 export * from "./domain-documents.ts";
+export * from "./decisions.ts";
+export * from "./agents.ts";
