@@ -116,7 +116,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     const result = await api().domainSetActive(slug);
     if (!result.ok) {
       setError(result.error);
-      return;
+      throw new Error(result.error);
     }
     setActiveSlugState(result.value);
     setError(null);

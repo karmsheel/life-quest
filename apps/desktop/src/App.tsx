@@ -6,23 +6,14 @@ import {
   Routes,
   useLocation,
 } from "react-router-dom";
+import { AppShell } from "@/components/shell/AppShell";
+import ActPage from "@/pages/ActPage";
+import DomainsPage from "@/pages/DomainsPage";
+import HomePage from "@/pages/HomePage";
+import RoomPage from "@/pages/RoomPage";
+import StubPage from "@/pages/StubPage";
 import WelcomePage from "@/pages/WelcomePage";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
-
-/** Placeholder for routes that land in later tasks (shell, rooms, etc.). */
-function StubPage({ title }: { title: string }) {
-  const { snapshot, activeSlug } = useVault();
-  return (
-    <main className="app-shell">
-      <h1>{title}</h1>
-      <p className="muted">
-        {snapshot
-          ? `Vault: ${snapshot.lifequest.name} · Active: ${activeSlug ?? "—"}`
-          : "No vault open"}
-      </p>
-    </main>
-  );
-}
 
 function RequireVault({ children }: { children: ReactNode }) {
   const { snapshot, booting } = useVault();
@@ -30,7 +21,7 @@ function RequireVault({ children }: { children: ReactNode }) {
 
   if (booting) {
     return (
-      <main className="app-shell">
+      <main className="centered-status">
         <p className="muted">Loading…</p>
       </main>
     );
@@ -43,12 +34,20 @@ function RequireVault({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function ShellRoute({ children }: { children: ReactNode }) {
+  return (
+    <RequireVault>
+      <AppShell>{children}</AppShell>
+    </RequireVault>
+  );
+}
+
 function AppRoutes() {
   const { snapshot, booting } = useVault();
 
   if (booting) {
     return (
-      <main className="app-shell">
+      <main className="centered-status">
         <p className="muted">Loading…</p>
       </main>
     );
@@ -60,102 +59,98 @@ function AppRoutes() {
       <Route
         path="/home"
         element={
-          <RequireVault>
-            <StubPage title="Home" />
-          </RequireVault>
+          <ShellRoute>
+            <HomePage />
+          </ShellRoute>
         }
       />
       <Route
         path="/domains"
         element={
-          <RequireVault>
-            <StubPage title="Domains" />
-          </RequireVault>
+          <ShellRoute>
+            <DomainsPage />
+          </ShellRoute>
         }
       />
       <Route
         path="/dream"
         element={
-          <RequireVault>
-            <StubPage title="Dream" />
-          </RequireVault>
+          <ShellRoute>
+            <RoomPage room="dream" />
+          </ShellRoute>
         }
       />
       <Route
         path="/chart"
         element={
-          <RequireVault>
-            <StubPage title="Chart" />
-          </RequireVault>
+          <ShellRoute>
+            <RoomPage room="chart" />
+          </ShellRoute>
         }
       />
       <Route
         path="/track"
         element={
-          <RequireVault>
-            <StubPage title="Track" />
-          </RequireVault>
+          <ShellRoute>
+            <RoomPage room="track" />
+          </ShellRoute>
         }
       />
       <Route
         path="/act"
         element={
-          <RequireVault>
-            <StubPage title="Act" />
-          </RequireVault>
+          <ShellRoute>
+            <ActPage />
+          </ShellRoute>
         }
       />
       <Route
         path="/documents"
         element={
-          <RequireVault>
+          <ShellRoute>
             <StubPage title="Documents" />
-          </RequireVault>
+          </ShellRoute>
         }
       />
       <Route
         path="/decisions"
         element={
-          <RequireVault>
+          <ShellRoute>
             <StubPage title="Decisions" />
-          </RequireVault>
+          </ShellRoute>
         }
       />
       <Route
         path="/log"
         element={
-          <RequireVault>
+          <ShellRoute>
             <StubPage title="Log" />
-          </RequireVault>
+          </ShellRoute>
         }
       />
       <Route
         path="/personnel"
         element={
-          <RequireVault>
+          <ShellRoute>
             <StubPage title="Personnel" />
-          </RequireVault>
+          </ShellRoute>
         }
       />
       <Route
         path="/settings"
         element={
-          <RequireVault>
+          <ShellRoute>
             <StubPage title="Settings" />
-          </RequireVault>
+          </ShellRoute>
         }
       />
       <Route
         path="/"
-        element={
-          <Navigate to={snapshot ? "/home" : "/welcome"} replace />
-        }
+        element={<Navigate to={snapshot ? "/home" : "/welcome"} replace />}
       />
       <Route
         path="*"
-        element={
-          <Navigate to={snapshot ? "/home" : "/welcome"} replace />
-        }
+        element={<Navigate to={snapshot ? "/home" : "/welcome"} replace />}
       />
     </Routes>
   );
