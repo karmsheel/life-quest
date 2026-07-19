@@ -668,3 +668,269 @@ a {
   margin: 0.15rem 0 0;
   font-size: 0.8rem;
 }
+
+/* —— Document editor —— */
+.doc-editor {
+  max-width: 48rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.doc-editor__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.doc-editor__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.doc-editor__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.doc-editor__domain {
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.doc-editor__coaching {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.doc-editor__forged-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.doc-editor__status {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.doc-editor__message {
+  margin: 0;
+  color: var(--success);
+  font-size: 0.875rem;
+}
+
+.doc-editor__placeholder-hint {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.doc-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.doc-editor__textarea {
+  min-height: 18rem;
+  resize: vertical;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    "Courier New",
+    monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--bg);
+  color: var(--fg);
+  width: 100%;
+}
+
+.field input:read-only,
+.field textarea:read-only,
+.doc-editor__textarea:read-only {
+  opacity: 0.85;
+  cursor: default;
+  background: var(--selected);
+}
+
+.field textarea {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.45rem 0.55rem;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+
+/* —— Status badge —— */
+.doc-status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: transparent;
+}
+
+.doc-status-badge--draft {
+  color: var(--muted);
+}
+
+.doc-status-badge--refined {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--selected);
+}
+
+.doc-status-badge--forged {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+/* —— Propose change dialog —— */
+.propose-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+
+.propose-dialog {
+  width: min(36rem, 100%);
+  max-height: min(90dvh, 40rem);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--bg);
+  padding: 1.15rem 1.25rem 1.25rem;
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--fg) 18%, transparent);
+}
+
+.propose-dialog__header h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.15rem;
+}
+
+.propose-dialog__hint {
+  margin: 0 0 0.85rem;
+  font-size: 0.85rem;
+}
+
+.propose-dialog__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.propose-dialog__body {
+  min-height: 12rem;
+  resize: vertical;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    "Courier New",
+    monospace;
+  font-size: 0.85rem;
+}
+
+.propose-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+/* —— Documents page cards —— */
+.documents-page {
+  max-width: 48rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.documents-page__header {
+  margin-bottom: 0.25rem;
+}
+
+.doc-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.75rem;
+}
+
+.doc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: transparent;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.doc-card:hover {
+  background: var(--selected);
+  border-color: var(--accent);
+}
+
+.doc-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.doc-card__label {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.doc-card__desc {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  flex: 1;
+}
+
+.doc-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.doc-card__room {
+  font-weight: 600;
+  color: var(--accent);
+}
