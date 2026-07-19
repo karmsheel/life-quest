@@ -96,6 +96,16 @@ export async function dismissAgent(
   }
 }
 
+/** Accept only http(s) Hermes gateway URLs (blocks file:, javascript:, etc.). */
+export function isHttpOrHttpsUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export async function updateSettings(
   rootPath: string,
   patch: Partial<VaultSettings>,
@@ -118,6 +128,20 @@ export async function updateSettings(
         patch.hermesBaseUrl !== undefined ? patch.hermesBaseUrl : current.hermesBaseUrl,
       theme: patch.theme !== undefined ? patch.theme : current.theme,
     };
+
+    if (patch.hermesBaseUrl !== undefined) {
+      const trimmed = String(patch.hermesBaseUrl).trim().replace(/\/$/, "");
+      if (!trimmed) {
+        return { ok: false, error: "Hermes base URL must not be empty" };
+      }
+      if (!isHttpOrHttpsUrl(trimmed)) {
+        return {
+          ok: false,
+          error: `Hermes base URL must be http(s): ${patch.hermesBaseUrl}`,
+        };
+      }
+      next.hermesBaseUrl = trimmed;
+    }
 
     if (patch.theme !== undefined) {
       if (next.theme !== "system" && next.theme !== "light" && next.theme !== "dark") {

@@ -133,6 +133,11 @@ describe("decisions", () => {
   });
 
   it("cannot resolve already-resolved decision", async () => {
+    // Target must be forged before createDecision is allowed.
+    assert.equal((await saveDocument(root, "emotional", "how", "how body")).ok, true);
+    assert.equal((await setDocumentStatus(root, "emotional", "how", "refined")).ok, true);
+    assert.equal((await setDocumentStatus(root, "emotional", "how", "forged")).ok, true);
+
     const created = await createDecision(root, {
       domainSlug: "emotional",
       documentKind: "how",
@@ -151,5 +156,54 @@ describe("decisions", () => {
     assert.equal(second.ok, false);
     if (second.ok) return;
     assert.match(second.error, /already|resolved|pending/i);
+  });
+
+  it("createDecision rejects draft (non-forged) documents", async () => {
+    // health/what is still draft by default after createVault
+    const draft = await getDocument(root, "health", "what");
+    assert.equal(draft.ok, true);
+    if (!draft.ok) return;
+    assert.equal(draft.value.status, "draft");
+
+    const created = await createDecision(root, {
+      domainSlug: "health",
+      documentKind: "what",
+      title: "Should fail",
+      rationale: null,
+      proposedBodyMarkdown: "nope",
+      previousBodyMarkdown: draft.value.bodyMarkdown,
+    });
+    assert.equal(created.ok, false);
+    if (created.ok) return;
+    assert.match(created.error, /forged/i);
+
+    // refined also fails
+    assert.equal((await saveDocument(root, "health", "what", "refined body")).ok, true);
+    assert.equal((await setDocumentStatus(root, "health", "what", "refined")).ok, true);
+    const refinedAttempt = await createDecision(root, {
+      domainSlug: "health",
+      documentKind: "what",
+      title: "Still should fail",
+      rationale: null,
+      proposedBodyMarkdown: "nope",
+      previousBodyMarkdown: null,
+    });
+    assert.equal(refinedAttempt.ok, false);
+    if (refinedAttempt.ok) return;
+    assert.match(refinedAttempt.error, /forged/i);
+  });
+
+  it("createDecision rejects missing document", async () => {
+    const created = await createDecision(root, {
+      domainSlug: "no-such-domain",
+      documentKind: "why",
+      title: "Missing",
+      rationale: null,
+      proposedBodyMarkdown: "x",
+      previousBodyMarkdown: null,
+    });
+    assert.equal(created.ok, false);
+    if (created.ok) return;
+    assert.match(created.error, /not found/i);
   });
 });
