@@ -4,11 +4,30 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import {
+  CHATBAR_RESIDENCY_MODES,
+  CHATBAR_SIDES,
+  DEFAULT_CHATBAR_RESIDENCY,
+  DEFAULT_CHATBAR_SIDE,
+  loadChatbarResidency,
+  loadChatbarSide,
+  normalizeChatbarResidency,
+  normalizeChatbarSide,
+  saveChatbarResidency,
+  saveChatbarSide,
+  toggleChatbarResidency,
+  toggleChatbarSide,
+  type ChatbarResidency,
+  type ChatbarSide,
+} from "@/lib/chatbar/residency";
+import { hermesApiBody } from "@/lib/hermes-models";
+import { loadHermesConfig } from "@/lib/hermes-storage";
 
 export type ChatRole = "user" | "assistant" | "system";
 
@@ -19,9 +38,19 @@ export type ChatMessage = {
 };
 
 type ChatbarContextValue = {
-  open: boolean;
-  setOpen: (open: boolean) => void;
+  residency: ChatbarResidency;
+  isOpen: boolean;
+  open: () => void;
+  collapse: () => void;
   toggle: () => void;
+  setResidency: (r: ChatbarResidency) => void;
+
+  side: ChatbarSide;
+  isLeft: boolean;
+  isRight: boolean;
+  setSide: (side: ChatbarSide) => void;
+  swapSide: () => void;
+
   messages: ChatMessage[];
   sending: boolean;
   error: string | null;
@@ -58,15 +87,79 @@ function extractAssistantContent(data: unknown): string | null {
 }
 
 export function ChatbarProvider({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
+  const [residency, setResidencyState] = useState<ChatbarResidency>(
+    DEFAULT_CHATBAR_RESIDENCY,
+  );
+  const [side, setSideState] = useState<ChatbarSide>(DEFAULT_CHATBAR_SIDE);
+  const [hydrated, setHydrated] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const sendingRef = useRef(false);
 
+  // Hydrate residency + side from localStorage after mount (SSR-safe).
+  useEffect(() => {
+    setResidencyState(loadChatbarResidency());
+    setSideState(loadChatbarSide());
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveChatbarResidency(residency);
+  }, [residency, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveChatbarSide(side);
+  }, [side, hydrated]);
+
+  // Alt+H toggles chat when focus is not in a text field.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!e.altKey || (e.key !== "h" && e.key !== "H")) return;
+      const el = e.target;
+      if (el instanceof HTMLElement) {
+        const tag = el.tagName;
+        if (
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          el.isContentEditable
+        ) {
+          return;
+        }
+      }
+      e.preventDefault();
+      setResidencyState((current) => toggleChatbarResidency(current));
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const setResidency = useCallback((r: ChatbarResidency) => {
+    setResidencyState(normalizeChatbarResidency(r));
+  }, []);
+
+  const setSide = useCallback((s: ChatbarSide) => {
+    setSideState(normalizeChatbarSide(s));
+  }, []);
+
+  const open = useCallback(() => {
+    setResidencyState(CHATBAR_RESIDENCY_MODES.OPEN);
+  }, []);
+
+  const collapse = useCallback(() => {
+    setResidencyState(CHATBAR_RESIDENCY_MODES.COLLAPSED);
+  }, []);
+
   const toggle = useCallback(() => {
-    setOpen((v) => !v);
+    setResidencyState((current) => toggleChatbarResidency(current));
+  }, []);
+
+  const swapSide = useCallback(() => {
+    setSideState((current) => toggleChatbarSide(current));
   }, []);
 
   const clearError = useCallback(() => setError(null), []);
@@ -80,6 +173,14 @@ export function ChatbarProvider({ children }: { children: ReactNode }) {
   const sendMessage = useCallback(async (content: string) => {
     const trimmed = content.trim();
     if (!trimmed || sendingRef.current) return;
+
+    const config = loadHermesConfig();
+    if (!config?.apiKey) {
+      setError(
+        "Not connected to Hermes. Open Settings or reconnect from the home screen.",
+      );
+      return;
+    }
 
     const userMsg: ChatMessage = {
       id: newId(),
@@ -105,7 +206,10 @@ export function ChatbarProvider({ children }: { children: ReactNode }) {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: payload }),
+        body: JSON.stringify({
+          messages: payload,
+          ...hermesApiBody(config),
+        }),
       });
 
       const data = (await res.json().catch(() => ({}))) as {
@@ -147,11 +251,23 @@ export function ChatbarProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const isOpen = residency === CHATBAR_RESIDENCY_MODES.OPEN;
+  const isLeft = side === CHATBAR_SIDES.LEFT;
+  const isRight = side === CHATBAR_SIDES.RIGHT;
+
   const value = useMemo(
     () => ({
+      residency,
+      isOpen,
       open,
-      setOpen,
+      collapse,
       toggle,
+      setResidency,
+      side,
+      isLeft,
+      isRight,
+      setSide,
+      swapSide,
       messages,
       sending,
       error,
@@ -160,8 +276,17 @@ export function ChatbarProvider({ children }: { children: ReactNode }) {
       sendMessage,
     }),
     [
+      residency,
+      isOpen,
       open,
+      collapse,
       toggle,
+      setResidency,
+      side,
+      isLeft,
+      isRight,
+      setSide,
+      swapSide,
       messages,
       sending,
       error,

@@ -12,6 +12,7 @@
   --shell-chatbar-height: 3rem;
   --shell-max-width: 80rem;
   --shell-topbar-height: 2.75rem;
+  --chatbar-width: 22.5rem;
 }
 
 @media (prefers-color-scheme: dark) {

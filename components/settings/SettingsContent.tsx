@@ -1,98 +1,90 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useTheme } from "@/components/theme/ThemeProvider";
-import { DEFAULT_HERMES_URL } from "@/lib/constants.ts";
+import { useHermesConnection } from "@/components/hermes/HermesConnectionProvider";
+import {
+  defaultHermesConfig,
+  loadHermesConfig,
+  saveHermesConfig,
+} from "@/lib/hermes-storage.ts";
+import type { HermesConfig } from "@/lib/hermes-types.ts";
 
-type HermesConfig = {
-  baseUrl: string;
-  apiKey: string;
-  hasApiKey: boolean;
-};
-
-type HermesProbe = {
-  ok: boolean;
-  baseUrl: string;
-  latencyMs: number;
-  error?: string;
-  status?: number;
-};
+function statusLabel(state: string): string {
+  switch (state) {
+    case "connected":
+      return "Connected";
+    case "testing":
+      return "Testing…";
+    case "discovering":
+      return "Discovering…";
+    case "error":
+      return "Error";
+    case "idle":
+    default:
+      return "Idle";
+  }
+}
 
 export function SettingsContent() {
   const { theme, setTheme } = useTheme();
-  const [baseUrl, setBaseUrl] = useState(DEFAULT_HERMES_URL);
+  const hermes = useHermesConnection();
+  const defaults = defaultHermesConfig();
+
+  const [baseUrl, setBaseUrl] = useState(defaults.baseUrl);
   const [apiKey, setApiKey] = useState("");
-  const [hasApiKey, setHasApiKey] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [model, setModel] = useState("");
+  const [hydrated, setHydrated] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [probe, setProbe] = useState<HermesProbe | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/settings/hermes", {
-        credentials: "same-origin",
-      });
-      const data = (await res.json().catch(() => ({}))) as HermesConfig & {
-        error?: string;
-      };
-      if (!res.ok) {
-        setError(data.error ?? "Failed to load Hermes settings");
-        return;
-      }
-      setBaseUrl(data.baseUrl || DEFAULT_HERMES_URL);
-      setHasApiKey(Boolean(data.hasApiKey));
-      // Masked keys stay blank in the form so Save does not overwrite with "***".
-      setApiKey("");
-    } catch {
-      setError("Network error loading settings");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    const saved = loadHermesConfig() ?? hermes.config ?? defaultHermesConfig();
+    setBaseUrl(saved.baseUrl || defaults.baseUrl);
+    setApiKey(saved.apiKey || "");
+    setModel(saved.model || hermes.selectedModel || "");
+    setHydrated(true);
+    // Mount-only hydrate from localStorage (primary) / provider (fallback).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional once
+  }, []);
+
+  function formConfig(): HermesConfig {
+    const next: HermesConfig = {
+      baseUrl: baseUrl.trim() || defaults.baseUrl,
+      apiKey: apiKey.trim(),
+    };
+    const trimmedModel = model.trim();
+    if (trimmedModel) next.model = trimmedModel;
+    return next;
+  }
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
     setMessage(null);
-    setProbe(null);
     try {
-      const body: { baseUrl: string; apiKey?: string } = {
-        baseUrl: baseUrl.trim() || DEFAULT_HERMES_URL,
-      };
-      // Only send apiKey when the user typed a new value (or cleared).
-      if (apiKey !== "") {
-        body.apiKey = apiKey;
-      }
+      const config = formConfig();
+      // Always persist localStorage first so chat/send picks up the new config.
+      saveHermesConfig(config);
 
-      const res = await fetch("/api/settings/hermes", {
-        method: "PUT",
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = (await res.json().catch(() => ({}))) as HermesConfig & {
-        error?: string;
-      };
-      if (!res.ok) {
-        setError(data.error ?? "Failed to save settings");
-        return;
+      if (config.apiKey) {
+        const ok = await hermes.saveConnection(config);
+        if (ok) {
+          setMessage("Hermes settings saved and connected.");
+        } else {
+          setMessage("Saved locally; connection test failed.");
+          setError("Connection test failed after save.");
+        }
+      } else {
+        setMessage(
+          "Hermes settings saved (no API key — connection not tested).",
+        );
       }
-      setBaseUrl(data.baseUrl || DEFAULT_HERMES_URL);
-      setHasApiKey(Boolean(data.hasApiKey));
-      setApiKey("");
-      setMessage("Hermes settings saved.");
     } catch {
-      setError("Network error saving settings");
+      setError("Failed to save settings");
     } finally {
       setSaving(false);
     }
@@ -102,44 +94,32 @@ export function SettingsContent() {
     setTesting(true);
     setError(null);
     setMessage(null);
-    setProbe(null);
     try {
-      // Prefer dedicated status probe; fall back is unnecessary if route exists.
-      const res = await fetch("/api/hermes/status", {
-        credentials: "same-origin",
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        baseUrl?: string;
-        latencyMs?: number;
-        error?: string;
-        status?: number;
-      };
-
-      if (!res.ok && data.ok === undefined) {
-        setError(data.error ?? "Connection test failed");
+      const config = formConfig();
+      if (!config.baseUrl || !config.apiKey) {
+        setError("Enter a base URL and API key to test.");
         return;
       }
-
-      const result: HermesProbe = {
-        ok: Boolean(data.ok),
-        baseUrl: data.baseUrl ?? baseUrl,
-        latencyMs: typeof data.latencyMs === "number" ? data.latencyMs : 0,
-        error: data.error,
-        status: data.status,
-      };
-      setProbe(result);
-      setMessage(
-        result.ok
-          ? `Connected to Hermes (${result.latencyMs}ms).`
-          : result.error ?? "Hermes is unreachable.",
-      );
+      // Persist before probe so chat send (loadHermesConfig) uses this config.
+      // Provider may re-save with a resolved model after a successful probe.
+      saveHermesConfig(config);
+      const ok = await hermes.testConnection(config);
+      if (ok) {
+        setMessage("Connected to Hermes. Settings saved.");
+      } else {
+        setError("Hermes is unreachable.");
+      }
     } catch {
       setError("Network error testing connection");
     } finally {
       setTesting(false);
     }
   }
+
+  const { status, availableModels, modelsLoading, isConnected, isBusy } =
+    hermes;
+  const probeOk = status.state === "connected";
+  const probeFail = status.state === "error";
 
   return (
     <div className="settings-content">
@@ -158,7 +138,7 @@ export function SettingsContent() {
       {message ? (
         <p
           className={
-            probe && !probe.ok
+            probeFail && !message.toLowerCase().includes("saved")
               ? "doc-editor__error"
               : "doc-editor__message"
           }
@@ -198,7 +178,28 @@ export function SettingsContent() {
 
       <section className="settings-section">
         <h2 className="settings-section__title">Hermes</h2>
-        {loading ? (
+
+        <p
+          className={
+            probeOk
+              ? "settings-hermes__probe settings-hermes__probe--ok"
+              : probeFail
+                ? "settings-hermes__probe settings-hermes__probe--fail"
+                : "settings-hermes__probe muted"
+          }
+          role="status"
+          aria-live="polite"
+        >
+          {statusLabel(status.state)}
+          {status.baseUrl ? ` · ${status.baseUrl}` : null}
+          {probeOk && typeof status.latencyMs === "number"
+            ? ` · ${status.latencyMs}ms`
+            : null}
+          {status.model ? ` · ${status.model}` : null}
+          {probeFail && status.error ? ` · ${status.error}` : null}
+        </p>
+
+        {!hydrated ? (
           <p className="muted">Loading connection settings…</p>
         ) : (
           <form className="settings-hermes" onSubmit={(e) => void onSave(e)}>
@@ -209,57 +210,84 @@ export function SettingsContent() {
                 name="baseUrl"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder={DEFAULT_HERMES_URL}
+                placeholder={defaults.baseUrl}
                 autoComplete="off"
                 required
               />
             </label>
             <label className="settings-field">
-              <span>
-                API key
-                {hasApiKey ? (
-                  <span className="muted"> (saved — leave blank to keep)</span>
-                ) : null}
-              </span>
+              <span>API key</span>
               <input
                 type="password"
                 name="apiKey"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder={hasApiKey ? "••••••••" : "Optional"}
+                placeholder="Required for connection"
                 autoComplete="off"
               />
             </label>
+            {availableModels.length > 0 || modelsLoading ? (
+              <label className="settings-field">
+                <span>Model</span>
+                <select
+                  name="model"
+                  value={model}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setModel(next);
+                    if (next && isConnected) {
+                      hermes.setModel(next);
+                    }
+                  }}
+                  disabled={modelsLoading || availableModels.length === 0}
+                >
+                  {modelsLoading && availableModels.length === 0 ? (
+                    <option value="">Loading models…</option>
+                  ) : null}
+                  {!model ? <option value="">Default</option> : null}
+                  {model &&
+                  !availableModels.some((m) => m.id === model) ? (
+                    <option value={model}>{model}</option>
+                  ) : null}
+                  {availableModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label || m.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className="settings-field">
+                <span>Model (optional)</span>
+                <input
+                  type="text"
+                  name="model"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="Leave blank for gateway default"
+                  autoComplete="off"
+                />
+              </label>
+            )}
             <div className="settings-hermes__actions">
               <button
                 type="submit"
                 className="doc-btn doc-btn--primary"
-                disabled={saving}
+                disabled={saving || isBusy}
               >
                 {saving ? "Saving…" : "Save"}
               </button>
               <button
                 type="button"
                 className="doc-btn"
-                disabled={testing}
+                disabled={testing || isBusy}
                 onClick={() => void onTest()}
               >
-                {testing ? "Testing…" : "Test connection"}
+                {testing || status.state === "testing"
+                  ? "Testing…"
+                  : "Test connection"}
               </button>
             </div>
-            {probe ? (
-              <p
-                className={
-                  probe.ok
-                    ? "settings-hermes__probe settings-hermes__probe--ok"
-                    : "settings-hermes__probe settings-hermes__probe--fail"
-                }
-              >
-                {probe.ok
-                  ? `OK · ${probe.baseUrl} · ${probe.latencyMs}ms`
-                  : `Failed · ${probe.baseUrl}${probe.error ? ` · ${probe.error}` : ""}`}
-              </p>
-            ) : null}
           </form>
         )}
       </section>
