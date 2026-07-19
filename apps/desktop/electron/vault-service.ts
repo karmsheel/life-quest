@@ -107,23 +107,26 @@ async function captureDoctrineMtimes(root: string): Promise<void> {
  * Re-stat tracked doctrine files. Returns paths whose mtimeMs differs from
  * the last snapshot (or that are missing). Does not update the snapshot so
  * the UI can keep prompting until the user reloads.
+ * Runs on the vault write queue so mtime reads do not race in-flight writes.
  */
 export async function detectExternalDoctrineChanges(): Promise<
   { path: string }[]
 > {
-  if (!currentRoot || doctrineMtimes.size === 0) return [];
-  const changed: { path: string }[] = [];
-  for (const [filePath, prevMtime] of doctrineMtimes) {
-    try {
-      const st = await fs.stat(filePath);
-      if (st.mtimeMs !== prevMtime) {
+  return enqueue(async () => {
+    if (!currentRoot || doctrineMtimes.size === 0) return [];
+    const changed: { path: string }[] = [];
+    for (const [filePath, prevMtime] of doctrineMtimes) {
+      try {
+        const st = await fs.stat(filePath);
+        if (st.mtimeMs !== prevMtime) {
+          changed.push({ path: filePath });
+        }
+      } catch {
         changed.push({ path: filePath });
       }
-    } catch {
-      changed.push({ path: filePath });
     }
-  }
-  return changed;
+    return changed;
+  });
 }
 
 async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {

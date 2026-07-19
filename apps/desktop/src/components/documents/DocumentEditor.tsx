@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   assertEditable,
   canTransitionStatus,
@@ -52,7 +52,7 @@ function applyDocument(
 }
 
 export function DocumentEditor({ kind }: { kind: DocumentKind }) {
-  const { refresh } = useVault();
+  const { refresh, reloadGeneration } = useVault();
   const activeDomain = useActiveDomain();
   const slug = activeDomain?.slug ?? null;
 
@@ -66,43 +66,58 @@ export function DocumentEditor({ kind }: { kind: DocumentKind }) {
   const [saving, setSaving] = useState(false);
   const [statusPending, setStatusPending] = useState(false);
   const [proposeOpen, setProposeOpen] = useState(false);
+  /** Last reloadGeneration applied — used to quiet-rehydrate after vault refresh. */
+  const appliedGenerationRef = useRef(reloadGeneration);
 
-  const load = useCallback(async () => {
-    if (!slug) {
-      setDocument(null);
-      setDraft("");
-      setTitleDraft("");
-      setLoadError(null);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setLoadError(null);
-    setActionError(null);
-    setActionMessage(null);
-
-    try {
-      const result = await api().documentGet(slug, kind);
-      if (!result.ok) {
+  const load = useCallback(
+    async (opts?: { quiet?: boolean }) => {
+      if (!slug) {
         setDocument(null);
-        setLoadError(result.error);
+        setDraft("");
+        setTitleDraft("");
+        setLoadError(null);
+        setLoading(false);
         return;
       }
-      applyDocument(result.value, kind, setDocument, setTitleDraft, setDraft);
-    } catch (err) {
-      setDocument(null);
-      setLoadError(
-        err instanceof Error ? err.message : "Failed to load document",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [slug, kind]);
 
+      // Quiet rehydrate keeps the editor mounted (no loading flash) while
+      // still force-resetting draft from disk after external reload.
+      if (!opts?.quiet) setLoading(true);
+      setLoadError(null);
+      setActionError(null);
+      setActionMessage(null);
+
+      try {
+        const result = await api().documentGet(slug, kind);
+        if (!result.ok) {
+          setDocument(null);
+          setLoadError(result.error);
+          return;
+        }
+        applyDocument(result.value, kind, setDocument, setTitleDraft, setDraft);
+      } catch (err) {
+        setDocument(null);
+        setLoadError(
+          err instanceof Error ? err.message : "Failed to load document",
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [slug, kind],
+  );
+
+  // Initial load + domain/kind switch.
   useEffect(() => {
     void load();
   }, [load]);
+
+  // After vault Reload / open / create: re-fetch and force-reset local draft.
+  useEffect(() => {
+    if (appliedGenerationRef.current === reloadGeneration) return;
+    appliedGenerationRef.current = reloadGeneration;
+    void load({ quiet: true });
+  }, [reloadGeneration, load]);
 
   const editable = document ? assertEditable(document.status) : { ok: true as const };
   const isForged = !editable.ok;
