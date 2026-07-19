@@ -20,6 +20,11 @@ export type VaultContextValue = {
   booting: boolean;
   /** True when doctrine files changed on disk since last load. */
   stale: boolean;
+  /**
+   * Increments after a successful vault refresh / open / create so open
+   * editors can re-fetch from disk and drop stale local drafts.
+   */
+  reloadGeneration: number;
   recent: RecentVaultEntry[];
   error: string | null;
   busy: boolean;
@@ -48,9 +53,14 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const [activeSlug, setActiveSlugState] = useState<string | null>(null);
   const [booting, setBooting] = useState(true);
   const [stale, setStale] = useState(false);
+  const [reloadGeneration, setReloadGeneration] = useState(0);
   const [recent, setRecent] = useState<RecentVaultEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const bumpReloadGeneration = useCallback(() => {
+    setReloadGeneration((g) => g + 1);
+  }, []);
 
   const reloadRecent = useCallback(async () => {
     try {
@@ -81,11 +91,12 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       await applySnapshot(result.value);
       setStale(false);
       setError(null);
+      bumpReloadGeneration();
       await reloadRecent();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [applySnapshot, reloadRecent]);
+  }, [applySnapshot, bumpReloadGeneration, reloadRecent]);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,6 +171,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         }
         await applySnapshot(result.value);
         setStale(false);
+        bumpReloadGeneration();
         await reloadRecent();
         return true;
       } catch (err) {
@@ -169,7 +181,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         setBusy(false);
       }
     },
-    [applySnapshot, reloadRecent],
+    [applySnapshot, bumpReloadGeneration, reloadRecent],
   );
 
   const openVault = useCallback(async (): Promise<boolean> => {
@@ -185,6 +197,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       }
       await applySnapshot(result.value);
       setStale(false);
+      bumpReloadGeneration();
       await reloadRecent();
       return true;
     } catch (err) {
@@ -193,7 +206,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     } finally {
       setBusy(false);
     }
-  }, [applySnapshot, reloadRecent]);
+  }, [applySnapshot, bumpReloadGeneration, reloadRecent]);
 
   const openRecent = useCallback(
     async (path: string): Promise<boolean> => {
@@ -207,6 +220,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         }
         await applySnapshot(result.value);
         setStale(false);
+        bumpReloadGeneration();
         await reloadRecent();
         return true;
       } catch (err) {
@@ -216,7 +230,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         setBusy(false);
       }
     },
-    [applySnapshot, reloadRecent],
+    [applySnapshot, bumpReloadGeneration, reloadRecent],
   );
 
   const value = useMemo<VaultContextValue>(
@@ -225,6 +239,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       activeSlug,
       booting,
       stale,
+      reloadGeneration,
       recent,
       error,
       busy,
@@ -242,6 +257,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       activeSlug,
       booting,
       stale,
+      reloadGeneration,
       recent,
       error,
       busy,
