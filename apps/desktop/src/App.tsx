@@ -13,8 +13,9 @@ import DocumentsPage from "@/pages/DocumentsPage";
 import DomainsPage from "@/pages/DomainsPage";
 import HomePage from "@/pages/HomePage";
 import LogPage from "@/pages/LogPage";
+import PersonnelPage from "@/pages/PersonnelPage";
 import RoomPage from "@/pages/RoomPage";
-import StubPage from "@/pages/StubPage";
+import SettingsPage from "@/pages/SettingsPage";
 import WelcomePage from "@/pages/WelcomePage";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
 
@@ -135,7 +136,7 @@ function AppRoutes() {
         path="/personnel"
         element={
           <ShellRoute>
-            <StubPage title="Personnel" />
+            <PersonnelPage />
           </ShellRoute>
         }
       />
@@ -143,7 +144,7 @@ function AppRoutes() {
         path="/settings"
         element={
           <ShellRoute>
-            <StubPage title="Settings" />
+            <SettingsPage />
           </ShellRoute>
         }
       />
