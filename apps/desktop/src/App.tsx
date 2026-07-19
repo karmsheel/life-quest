@@ -8,9 +8,11 @@ import {
 } from "react-router-dom";
 import { AppShell } from "@/components/shell/AppShell";
 import ActPage from "@/pages/ActPage";
+import DecisionsPage from "@/pages/DecisionsPage";
 import DocumentsPage from "@/pages/DocumentsPage";
 import DomainsPage from "@/pages/DomainsPage";
 import HomePage from "@/pages/HomePage";
+import LogPage from "@/pages/LogPage";
 import RoomPage from "@/pages/RoomPage";
 import StubPage from "@/pages/StubPage";
 import WelcomePage from "@/pages/WelcomePage";
@@ -117,7 +119,7 @@ function AppRoutes() {
         path="/decisions"
         element={
           <ShellRoute>
-            <StubPage title="Decisions" />
+            <DecisionsPage />
           </ShellRoute>
         }
       />
@@ -125,7 +127,7 @@ function AppRoutes() {
         path="/log"
         element={
           <ShellRoute>
-            <StubPage title="Log" />
+            <LogPage />
           </ShellRoute>
         }
       />
