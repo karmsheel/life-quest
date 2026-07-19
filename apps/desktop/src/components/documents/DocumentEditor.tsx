@@ -5,7 +5,7 @@ import {
   type DocumentKind,
   type DocumentStatus,
   type DoctrineDocument,
-} from "@lifequest/vault-core";
+} from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
