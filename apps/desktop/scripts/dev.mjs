@@ -56,13 +56,9 @@ function waitForPort(port, timeoutMs = 60_000) {
 }
 
 async function bundleElectron() {
-  // Bundle workspace packages (vault-core is TypeScript source).
-  // Keep electron external — provided by the Electron runtime.
+  // Main: ESM (.js, loaded natively by Electron main).
   await build({
-    entryPoints: [
-      path.join(root, "electron/main.ts"),
-      path.join(root, "electron/preload.ts"),
-    ],
+    entryPoints: [path.join(root, "electron/main.ts")],
     outdir: path.join(root, "dist-electron"),
     bundle: true,
     platform: "node",
@@ -71,10 +67,25 @@ async function bundleElectron() {
     sourcemap: true,
     target: "node20",
   });
+
+  // Preload: CommonJS. Electron's ESM preload loader requires the .mjs
+  // extension; an ESM-format .js preload is silently skipped, leaving
+  // window.lifequest undefined and breaking every IPC call from the renderer.
+  await build({
+    entryPoints: [path.join(root, "electron/preload.ts")],
+    outdir: path.join(root, "dist-electron"),
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    external: ["electron"],
+    sourcemap: true,
+    target: "node20",
+  });
 }
 
 function startVite() {
-  const viteBin = require.resolve("vite/bin/vite.js");
+  const vitePkg = require.resolve("vite/package.json");
+  const viteBin = path.join(path.dirname(vitePkg), "bin", "vite.js");
   const child = spawn(process.execPath, [viteBin], {
     cwd: root,
     stdio: "inherit",
