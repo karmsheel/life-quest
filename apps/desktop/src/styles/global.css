@@ -696,6 +696,235 @@ a {
   font-size: 0.8rem;
 }
 
+.act-page__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.act-page__eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.act-page__title {
+  margin: 0.1rem 0 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.act-page__alignment-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--success);
+  border: 1px solid var(--success);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  white-space: nowrap;
+}
+
+.act-page__alignment-badge--warn {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.act-page__section-sub {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.act-brief {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.act-brief__row {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.act-brief__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.act-brief__label {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.act-brief__room {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.act-brief__room:hover {
+  text-decoration: underline;
+}
+
+.act-brief__body {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 12rem;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.6rem;
+}
+
+.act-run__agent-field,
+.act-run__prompt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.act-run__agent-select {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  background: transparent;
+  color: var(--fg);
+  font-size: 0.9rem;
+}
+
+.act-run__prompt {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  background: transparent;
+  color: var(--fg);
+  font-size: 0.9rem;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.act-run__send {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.act-run__results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.25rem;
+}
+
+.act-run__result {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.act-run__result-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.act-run__result-agent {
+  font-weight: 700;
+}
+
+.act-run__result-ok {
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--success);
+  text-transform: uppercase;
+}
+
+.act-run__result-error {
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--danger);
+  text-transform: uppercase;
+}
+
+.act-run__reply {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.act-page__empty-note {
+  margin: 0;
+}
+
+.act-activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.act-activity-row {
+  display: grid;
+  grid-template-columns: minmax(6rem, auto) 1fr;
+  gap: 0.25rem 0.75rem;
+  align-items: baseline;
+  padding: 0.35rem 0.1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.act-activity-row:last-child {
+  border-bottom: none;
+}
+
+.act-activity-row__type {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.act-activity-row__summary {
+  line-height: 1.4;
+}
+
+.spin {
+  animation: act-spin 0.9s linear infinite;
+}
+
+@keyframes act-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* —— Document editor —— */
 .doc-editor {
   max-width: 48rem;
