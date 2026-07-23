@@ -1197,6 +1197,238 @@ a {
   white-space: nowrap;
 }
 
+/* —— Home dashboard —— */
+.home-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  max-width: var(--shell-max-width);
+}
+
+.home-dashboard__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.home-dashboard__eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.home-dashboard__title {
+  margin: 0.1rem 0 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.home-dashboard__subtitle {
+  font-weight: 500;
+  font-size: 1.1rem;
+}
+
+.home-dashboard__progress {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 12rem;
+}
+
+.home-dashboard__progress-label {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.home-progress-bar {
+  flex: 1;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.home-progress-bar__fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+.home-dashboard__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 0.9rem;
+}
+
+.home-card {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  background: transparent;
+}
+
+.home-card--wide {
+  grid-column: 1 / -1;
+}
+
+.home-card__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.home-card__count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  line-height: 1.4;
+}
+
+.home-card__empty {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.home-card__more {
+  margin-top: auto;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.home-card__more:hover {
+  text-decoration: underline;
+}
+
+.home-dashboard__inline-link {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.home-doctrine-list,
+.home-mini-list,
+.home-activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.home-doctrine-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.home-doctrine-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  text-decoration: none;
+  color: var(--fg);
+  flex: 1;
+  min-width: 0;
+}
+
+.home-doctrine-row__main:hover .home-doctrine-row__label {
+  color: var(--accent);
+}
+
+.home-doctrine-row__label {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.home-doctrine-row__lock {
+  font-size: 0.75rem;
+}
+
+.home-doctrine-row__meta {
+  font-size: 0.75rem;
+}
+
+.home-mini-list__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.home-mini-list__item:last-child {
+  border-bottom: none;
+}
+
+.home-mini-list__link {
+  font-size: 0.9rem;
+  color: var(--fg);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.home-mini-list__link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.home-mini-list__meta {
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.home-activity-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) minmax(6rem, auto) 1fr;
+  gap: 0.3rem 0.75rem;
+  align-items: baseline;
+  padding: 0.45rem 0.1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.home-activity-row:last-child {
+  border-bottom: none;
+}
+
+.home-activity-row__when {
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.home-activity-row__type {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.home-activity-row__summary {
+  line-height: 1.4;
+}
+
 /* —— Form feedback —— */
 .form-message {
   margin: 0;
