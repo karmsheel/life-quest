@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [react()],
   root: ".",
   base: "./",
-  server: { port: 5173, strictPort: true },
+  server: { host: "127.0.0.1", port: 5173, strictPort: true },
   build: { outDir: "dist", emptyOutDir: true },
   resolve: {
     alias: {
