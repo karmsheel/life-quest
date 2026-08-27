@@ -1,0 +1,114 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import type { SignalRecord } from "@lifequest/vault-core";
+import {
+  dayLabel,
+  filterSignals,
+  groupSignalsByDay,
+  localDayKey,
+} from "./signal-chain.ts";
+
+function signal(
+  partial: Pick<SignalRecord, "id" | "createdAt" | "type" | "body"> &
+    Partial<SignalRecord>,
+): SignalRecord {
+  return {
+    updatedAt: partial.createdAt,
+    deletedAt: null,
+    source: "manual",
+    sourceRef: null,
+    title: null,
+    domainSlug: null,
+    ...partial,
+  };
+}
+
+describe("localDayKey", () => {
+  it("uses the local calendar date, not UTC", () => {
+    const local = new Date(2026, 0, 15, 21, 0, 0);
+    assert.equal(localDayKey(local.toISOString()), "2026-01-15");
+  });
+});
+
+describe("dayLabel", () => {
+  const now = new Date(2026, 5, 10, 12, 0, 0);
+
+  it("labels today and yesterday", () => {
+    assert.equal(dayLabel("2026-06-10", now), "Today");
+    assert.equal(dayLabel("2026-06-09", now), "Yesterday");
+  });
+
+  it("formats older days with medium date style", () => {
+    const expected = new Date(2026, 0, 2).toLocaleDateString(undefined, {
+      dateStyle: "medium",
+    });
+    assert.equal(dayLabel("2026-01-02", now), expected);
+  });
+});
+
+describe("filterSignals", () => {
+  const records: SignalRecord[] = [
+    signal({
+      id: "a",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      type: "thought",
+      title: "Alpha",
+      body: "Hello world",
+      domainSlug: "health",
+    }),
+    signal({
+      id: "b",
+      createdAt: "2026-01-02T00:00:00.000Z",
+      type: "idea",
+      body: "Other note",
+      domainSlug: null,
+    }),
+  ];
+
+  it("filters by type, none-domain, and case-insensitive search", () => {
+    assert.equal(
+      filterSignals(records, { type: "idea", domainSlug: "all", query: "" })
+        .map((r) => r.id)
+        .join(),
+      "b",
+    );
+    assert.equal(
+      filterSignals(records, { type: "all", domainSlug: "none", query: "" })
+        .map((r) => r.id)
+        .join(),
+      "b",
+    );
+    assert.equal(
+      filterSignals(records, {
+        type: "all",
+        domainSlug: "health",
+        query: "HELLO",
+      })
+        .map((r) => r.id)
+        .join(),
+      "a",
+    );
+  });
+});
+
+describe("groupSignalsByDay", () => {
+  it("groups newest day first and keeps newest-first within a day", () => {
+    const now = new Date(2026, 5, 10, 18, 0, 0);
+    const todayMorning = new Date(2026, 5, 10, 8, 0, 0).toISOString();
+    const todayEvening = new Date(2026, 5, 10, 17, 0, 0).toISOString();
+    const yesterday = new Date(2026, 5, 9, 12, 0, 0).toISOString();
+    const records = [
+      signal({ id: "eve", createdAt: todayEvening, type: "thought", body: "e" }),
+      signal({ id: "morn", createdAt: todayMorning, type: "thought", body: "m" }),
+      signal({ id: "y", createdAt: yesterday, type: "idea", body: "y" }),
+    ];
+    const groups = groupSignalsByDay(records, now);
+    assert.equal(groups[0]?.label, "Today");
+    assert.deepEqual(
+      groups[0]?.items.map((i) => i.id),
+      ["eve", "morn"],
+    );
+    assert.equal(groups[1]?.label, "Yesterday");
+    assert.equal(groups[1]?.items[0]?.id, "y");
+  });
+});
