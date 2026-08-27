@@ -1,7 +1,7 @@
 # Life Signal Chain — Design Spec
 
 **Date:** 2026-08-27  
-**Status:** Approved in conversation — pending review of this document  
+**Status:** Approved — implementation plan ready (`docs/superpowers/plans/2026-08-27-life-signal-chain.md`)  
 **Product:** LifeQuest — local-first life-management studio  
 **Depends on:** [Local vault (Electron) design](./2026-07-19-local-vault-electron-design.md)
 
