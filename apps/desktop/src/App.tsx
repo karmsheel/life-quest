@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { AppShell } from "@/components/shell/AppShell";
 import ActPage from "@/pages/ActPage";
+import ChainPage from "@/pages/ChainPage";
 import DecisionsPage from "@/pages/DecisionsPage";
 import DocumentsPage from "@/pages/DocumentsPage";
 import DomainsPage from "@/pages/DomainsPage";
@@ -73,6 +74,14 @@ function AppRoutes() {
         element={
           <ShellRoute>
             <DomainsPage />
+          </ShellRoute>
+        }
+      />
+      <Route
+        path="/chain"
+        element={
+          <ShellRoute>
+            <ChainPage />
           </ShellRoute>
         }
       />

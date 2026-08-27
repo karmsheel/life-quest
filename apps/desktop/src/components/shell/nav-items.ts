@@ -5,6 +5,7 @@ import {
   FileText,
   Home,
   Map,
+  Radio,
   ScrollText,
   Settings,
   Sparkles,
@@ -23,7 +24,7 @@ export type NavItem = {
   section?: "main" | "governance" | "account";
 };
 
-/** Brief order: Home, Dream, Chart, Track, Act, Documents, Domains, Decisions, Log, Personnel, Settings */
+/** Brief order: Home, Dream, Chart, Track, Act, Documents, Domains, Chain, Decisions, Log, Personnel, Settings */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "home",
@@ -76,6 +77,13 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/domains",
     label: "Domains",
     icon: Building2,
+    section: "main",
+  },
+  {
+    id: "chain",
+    href: "/chain",
+    label: "Chain",
+    icon: Radio,
     section: "main",
   },
   {
