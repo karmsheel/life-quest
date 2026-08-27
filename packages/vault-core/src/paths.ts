@@ -11,12 +11,15 @@ export function vaultPaths(root: string) {
     agentsJson: path.join(rootPath, ".lifequest", "agents.json"),
     logJsonl: path.join(rootPath, ".lifequest", "log.jsonl"),
     decisionsDir: path.join(rootPath, ".lifequest", "decisions"),
+    signalChainDir: path.join(rootPath, ".lifequest", "signal-chain"),
     domainDir: (slug: string) => safeJoin(rootPath, "domains", slug),
     domainJson: (slug: string) => safeJoin(rootPath, "domains", slug, "domain.json"),
     documentMd: (slug: string, kind: string) =>
       safeJoin(rootPath, "domains", slug, `${kind}.md`),
     decisionJson: (id: string) =>
       safeJoin(rootPath, ".lifequest", "decisions", `${id}.json`),
+    signalChainJson: (id: string) =>
+      safeJoin(rootPath, ".lifequest", "signal-chain", `${id}.json`),
   };
 }
 

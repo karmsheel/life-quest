@@ -11,3 +11,4 @@ export * from "./domains.ts";
 export * from "./domain-documents.ts";
 export * from "./decisions.ts";
 export * from "./agents.ts";
+export * from "./signal-chain.ts";

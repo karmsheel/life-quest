@@ -71,6 +71,44 @@ export type LifeEvent = {
   createdAt: string;
 };
 
+export const SIGNAL_TYPES = ["thought", "idea", "notice", "other"] as const;
+export type SignalType = (typeof SIGNAL_TYPES)[number];
+
+export const SIGNAL_SOURCES = ["manual", "automation", "notion"] as const;
+export type SignalSource = (typeof SIGNAL_SOURCES)[number];
+
+export type SignalRecord = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  type: SignalType;
+  source: SignalSource;
+  sourceRef: string | null;
+  title: string | null;
+  body: string;
+  domainSlug: string | null;
+};
+
+export type SignalCreateInput = {
+  type: SignalType;
+  body: string;
+  title?: string | null;
+  domainSlug?: string | null;
+};
+
+export type SignalUpdatePatch = {
+  type?: SignalType;
+  body?: string;
+  title?: string | null;
+  domainSlug?: string | null;
+};
+
+export type SignalChainListResult = {
+  records: SignalRecord[];
+  skipped: number;
+};
+
 export type DecisionRecord = {
   id: string;
   domainSlug: string;
