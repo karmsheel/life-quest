@@ -10,6 +10,10 @@ import type {
   DomainRecord,
   LifeEvent,
   Result,
+  SignalChainListResult,
+  SignalCreateInput,
+  SignalRecord,
+  SignalUpdatePatch,
   VaultSettings,
   VaultSnapshot,
 } from "@lifequest/vault-core";
@@ -70,6 +74,13 @@ type LifequestApi = {
     resolution: "approved" | "rejected",
   ) => Promise<Result<DecisionRecord>>;
   logList: () => Promise<Result<LifeEvent[]>>;
+  signalChainList: () => Promise<Result<SignalChainListResult>>;
+  signalChainCreate: (input: SignalCreateInput) => Promise<Result<SignalRecord>>;
+  signalChainUpdate: (
+    id: string,
+    patch: SignalUpdatePatch,
+  ) => Promise<Result<SignalRecord>>;
+  signalChainDelete: (id: string) => Promise<Result<SignalRecord>>;
   agentsList: () => Promise<Result<AgentHire[]>>;
   agentsHire: (input: {
     hermesAgentId: string;

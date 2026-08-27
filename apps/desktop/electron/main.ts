@@ -88,6 +88,24 @@ function registerIpcHandlers() {
 
   ipcMain.handle("log:list", () => vault.logList());
 
+  ipcMain.handle("signalChain:list", () => vault.signalChainList());
+  ipcMain.handle(
+    "signalChain:create",
+    (_e, input: Parameters<typeof vault.signalChainCreate>[0]) =>
+      vault.signalChainCreate(input),
+  );
+  ipcMain.handle(
+    "signalChain:update",
+    (
+      _e,
+      id: string,
+      patch: Parameters<typeof vault.signalChainUpdate>[1],
+    ) => vault.signalChainUpdate(id, patch),
+  );
+  ipcMain.handle("signalChain:delete", (_e, id: string) =>
+    vault.signalChainDelete(id),
+  );
+
   ipcMain.handle("agents:list", () => vault.agentsList());
   ipcMain.handle(
     "agents:hire",

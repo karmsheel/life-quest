@@ -4,13 +4,16 @@ import {
   archiveDomain,
   createDecision,
   createDomain,
+  createSignal,
   createVault,
+  deleteSignal,
   dismissAgent,
   DOCUMENT_KINDS,
   getDocument,
   hireAgent,
   listAgents,
   listDecisions,
+  listSignals,
   openVault,
   readLog,
   resolveDecision,
@@ -18,6 +21,7 @@ import {
   setDocumentStatus,
   updateDomain,
   updateSettings,
+  updateSignal,
   vaultPaths,
   type AgentHire,
   type DecisionRecord,
@@ -28,6 +32,10 @@ import {
   type DomainRecord,
   type LifeEvent,
   type Result,
+  type SignalChainListResult,
+  type SignalCreateInput,
+  type SignalRecord,
+  type SignalUpdatePatch,
   type VaultSettings,
   type VaultSnapshot,
 } from "@lifequest/vault-core";
@@ -321,6 +329,29 @@ export async function decisionResolve(
 
 export async function logList(): Promise<Result<LifeEvent[]>> {
   return withVault((root) => readLog(root));
+}
+
+export async function signalChainList(): Promise<Result<SignalChainListResult>> {
+  return withVault((root) => listSignals(root));
+}
+
+export async function signalChainCreate(
+  input: SignalCreateInput,
+): Promise<Result<SignalRecord>> {
+  return withVault((root) => createSignal(root, input));
+}
+
+export async function signalChainUpdate(
+  id: string,
+  patch: SignalUpdatePatch,
+): Promise<Result<SignalRecord>> {
+  return withVault((root) => updateSignal(root, id, patch));
+}
+
+export async function signalChainDelete(
+  id: string,
+): Promise<Result<SignalRecord>> {
+  return withVault((root) => deleteSignal(root, id));
 }
 
 export async function agentsList(): Promise<Result<AgentHire[]>> {

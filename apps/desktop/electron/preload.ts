@@ -63,6 +63,17 @@ const lifequest = {
 
   logList: () => ipcRenderer.invoke("log:list") as Promise<Result<unknown>>,
 
+  signalChainList: () =>
+    ipcRenderer.invoke("signalChain:list") as Promise<Result<unknown>>,
+  signalChainCreate: (input: Record<string, unknown>) =>
+    ipcRenderer.invoke("signalChain:create", input) as Promise<Result<unknown>>,
+  signalChainUpdate: (id: string, patch: Record<string, unknown>) =>
+    ipcRenderer.invoke("signalChain:update", id, patch) as Promise<
+      Result<unknown>
+    >,
+  signalChainDelete: (id: string) =>
+    ipcRenderer.invoke("signalChain:delete", id) as Promise<Result<unknown>>,
+
   agentsList: () =>
     ipcRenderer.invoke("agents:list") as Promise<Result<unknown>>,
   agentsHire: (input: Record<string, unknown>) =>
