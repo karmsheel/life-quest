@@ -38,13 +38,26 @@ On launch:
 2. **Open vault** — pick an existing LifeQuest vault directory (or a recent path).
 3. Work offline against files on disk. API keys never enter the vault (OS secure storage via Electron `safeStorage`).
 
+### Use the packaged app (Windows)
+
+```bash
+npm run package
+```
+
+Then double-click `apps/desktop/release/win-unpacked/LifeQuest.exe`. No Node or `npm run dev` is required to *use* that build.
+
+Windows SmartScreen may warn on first launch (unsigned private build). Choose **More info → Run anyway**. Quit LifeQuest before running `npm run package` again — an running `.exe` can lock files under `release/`. Deleting `win-unpacked` removes that build only; vault folders and `%APPDATA%\LifeQuest` stay.
+
+`release/` is gitignored.
+
 ### Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `npm run dev` / `npm run dev:desktop` | Electron + Vite desktop app |
-| `npm test` | `@lifequest/vault-core` unit tests |
-| `npm run build` | Production Vite build + Electron main bundle |
+| `npm run dev` / `npm run dev:desktop` | Electron + Vite desktop app (develop) |
+| `npm run package` | Windows portable folder at `apps/desktop/release/win-unpacked/LifeQuest.exe` (use) |
+| `npm test` | `@lifequest/vault-core` unit tests + desktop packaging tests |
+| `npm run build` | Production Vite build + Electron main bundle (does not produce an `.exe`) |
 | `npm run typecheck` | Typecheck desktop renderer + main |
 
 ## Repository layout

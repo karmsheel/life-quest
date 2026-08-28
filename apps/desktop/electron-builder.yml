@@ -1,0 +1,19 @@
+appId: com.lifequest.desktop
+productName: LifeQuest
+executableName: LifeQuest
+directories:
+  output: release
+files:
+  - dist/**/*
+  - dist-electron/**/*
+asar: true
+npmRebuild: false
+forceCodeSigning: false
+extraMetadata:
+  main: dist-electron/main.js
+win:
+  target:
+    - target: dir
+      arch:
+        - x64
+publish: null

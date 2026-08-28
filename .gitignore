@@ -6,3 +6,4 @@ prisma/*.db
 .worktrees/
 dist
 dist-electron
+release
