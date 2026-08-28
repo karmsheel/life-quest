@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import * as vault from "./vault-service.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+app.setName("LifeQuest");
 const isDev = !app.isPackaged;
 
 function registerIpcHandlers() {
