@@ -31,6 +31,24 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
+function overlayColor(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("#") || trimmed.startsWith("rgb")) return trimmed;
+  return null;
+}
+
+function syncTitleBarOverlay() {
+  const chrome = window.lifequest?.windowChrome;
+  if (!chrome) return;
+  const styles = getComputedStyle(document.documentElement);
+  const color = overlayColor(styles.getPropertyValue("--bg"));
+  const symbolColor = overlayColor(styles.getPropertyValue("--text"));
+  if (!color || !symbolColor) return;
+  void chrome.setTitleBarOverlay({ color, symbolColor }).catch(() => {
+    /* overlay unsupported */
+  });
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>(getStoredTheme);
   const [resolved, setResolved] = useState<"light" | "dark">(() =>
@@ -42,6 +60,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const applyCurrentSkin = useCallback((name: string, mode: "light" | "dark") => {
     applySkin(resolveSkin(name), mode);
+    syncTitleBarOverlay();
   }, []);
 
   useLayoutEffect(() => {
