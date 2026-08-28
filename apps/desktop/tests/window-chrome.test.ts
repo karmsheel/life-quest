@@ -61,3 +61,29 @@ describe("window chrome (preload)", () => {
     assert.match(src, /window:maximizeChanged/);
   });
 });
+
+describe("window chrome (renderer)", () => {
+  it("mounts WindowTitleBar at the app root", () => {
+    const src = read("src/App.tsx");
+    assert.match(src, /import \{ WindowTitleBar \} from ["']@\/components\/shell\/WindowTitleBar["']/);
+    assert.match(src, /className="app-root"/);
+    assert.match(src, /<WindowTitleBar\s*\/>/);
+    assert.match(src, /className="app-root__body"/);
+  });
+
+  it("sizes the titlebar with overlay env vars and fills remaining height", () => {
+    const css = read("src/styles/global.css");
+    const tokens = read("src/styles/tokens.css");
+    assert.match(tokens, /--window-titlebar-height:\s*32px/);
+    assert.match(css, /\.app-root\b/);
+    assert.match(css, /\.window-titlebar\b/);
+    assert.match(css, /-webkit-app-region:\s*drag/);
+    assert.match(css, /titlebar-area-height/);
+    assert.match(css, /titlebar-area-width/);
+    assert.match(css, /titlebar-area-x/);
+    assert.equal(/\.shell \{[\s\S]*?min-height:\s*100vh/.test(css), false);
+    assert.equal(/\.nav-rail \{[\s\S]*?height:\s*100vh/.test(css), false);
+    assert.match(css, /\.welcome \{[\s\S]*?min-height:\s*100%/);
+    assert.match(css, /\.centered-status \{[\s\S]*?min-height:\s*100%/);
+  });
+});

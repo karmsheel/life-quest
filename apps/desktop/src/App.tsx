@@ -7,6 +7,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { AppShell } from "@/components/shell/AppShell";
+import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import ActPage from "@/pages/ActPage";
 import ChainPage from "@/pages/ChainPage";
 import DecisionsPage from "@/pages/DecisionsPage";
@@ -176,7 +177,12 @@ export default function App() {
     <HashRouter>
       <ThemeProvider>
         <VaultProvider>
-          <AppRoutes />
+          <div className="app-root">
+            <WindowTitleBar />
+            <div className="app-root__body">
+              <AppRoutes />
+            </div>
+          </div>
         </VaultProvider>
       </ThemeProvider>
     </HashRouter>
