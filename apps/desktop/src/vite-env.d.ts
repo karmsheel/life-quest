@@ -101,6 +101,18 @@ type LifequestApi = {
   ) => Promise<Result<{ content: string }>>;
   hermesScanAgents: () => Promise<Result<{ id: string; name: string }[]>>;
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => () => void;
+  windowChrome: {
+    get: () => Promise<{ overlay: boolean; platform: string }>;
+    setTitleBarOverlay: (opts: {
+      color: string;
+      symbolColor: string;
+    }) => Promise<void>;
+    minimize: () => void;
+    toggleMaximize: () => void;
+    close: () => void;
+    isMaximized: () => Promise<boolean>;
+    onMaximizeChange: (cb: (maximized: boolean) => void) => () => void;
+  };
 };
 
 declare global {
