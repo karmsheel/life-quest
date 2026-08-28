@@ -41,6 +41,8 @@ describe("package scripts and deps", () => {
     assert.match(wrapper, /CSC_IDENTITY_AUTO_DISCOVERY/);
     assert.match(wrapper, /--win/);
     assert.match(wrapper, /--dir/);
+    assert.match(wrapper, /--config\.electronVersion=/);
+    assert.match(wrapper, /electron\/package\.json/);
   });
 
   it("keeps bundled libraries out of production dependencies", () => {
@@ -50,6 +52,7 @@ describe("package scripts and deps", () => {
       devDependencies: Record<string, string>;
     };
     assert.equal(pkg.scripts.package, "npm run build && node ./scripts/package.mjs");
+    assert.equal(pkg.dependencies, undefined);
     assert.equal(pkg.dependencies?.react, undefined);
     assert.equal(pkg.dependencies?.["@lifequest/vault-core"], undefined);
     assert.ok(pkg.devDependencies.react);

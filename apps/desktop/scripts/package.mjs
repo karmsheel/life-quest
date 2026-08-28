@@ -37,6 +37,11 @@ const child = spawn(
   },
 );
 
+child.on("error", (err) => {
+  console.error(err);
+  process.exit(1);
+});
+
 child.on("exit", (code) => {
   process.exit(code ?? 1);
 });
