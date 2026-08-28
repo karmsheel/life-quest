@@ -18,6 +18,7 @@ import PersonnelPage from "@/pages/PersonnelPage";
 import RoomPage from "@/pages/RoomPage";
 import SettingsPage from "@/pages/SettingsPage";
 import WelcomePage from "@/pages/WelcomePage";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
 
 function RequireVault({ children }: { children: ReactNode }) {
@@ -173,9 +174,11 @@ export default function App() {
   // HashRouter works with file:// production loads (no server history API).
   return (
     <HashRouter>
-      <VaultProvider>
-        <AppRoutes />
-      </VaultProvider>
+      <ThemeProvider>
+        <VaultProvider>
+          <AppRoutes />
+        </VaultProvider>
+      </ThemeProvider>
     </HashRouter>
   );
 }

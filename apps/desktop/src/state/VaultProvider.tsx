@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { VaultSnapshot } from "@lifequest/vault-core";
+import type { Result, VaultSettings, VaultSnapshot } from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 import type { RecentVaultEntry } from "@/vite-env";
 
@@ -29,6 +29,10 @@ export type VaultContextValue = {
   error: string | null;
   busy: boolean;
   refresh: () => Promise<void>;
+  /** Patch vault settings without reloading doctrine editors. */
+  updateSettings: (
+    patch: Partial<VaultSettings>,
+  ) => Promise<Result<VaultSettings>>;
   setActiveSlug: (slug: string) => Promise<void>;
   clearVault: () => void;
   createVault: (name?: string) => Promise<boolean>;
@@ -138,6 +142,28 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const updateSettings = useCallback(
+    async (patch: Partial<VaultSettings>): Promise<Result<VaultSettings>> => {
+      try {
+        const result = await api().settingsUpdate(patch);
+        if (!result.ok) {
+          setError(result.error);
+          return result;
+        }
+        setSnapshot((prev) =>
+          prev ? { ...prev, settings: result.value } : prev,
+        );
+        setError(null);
+        return result;
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        setError(error);
+        return { ok: false, error };
+      }
+    },
+    [],
+  );
+
   const setActiveSlug = useCallback(async (slug: string) => {
     const result = await api().domainSetActive(slug);
     if (!result.ok) {
@@ -244,6 +270,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       error,
       busy,
       refresh,
+      updateSettings,
       setActiveSlug,
       clearVault,
       createVault,
@@ -262,6 +289,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       error,
       busy,
       refresh,
+      updateSettings,
       setActiveSlug,
       clearVault,
       createVault,

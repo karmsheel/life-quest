@@ -4,7 +4,7 @@ import {
   type SignalRecord,
   type SignalType,
   type SignalUpdatePatch,
-} from "@lifequest/vault-core";
+} from "@lifequest/vault-core/pure";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { api } from "@/lib/ipc";
 import {
