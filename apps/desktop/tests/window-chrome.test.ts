@@ -71,6 +71,14 @@ describe("window chrome (renderer)", () => {
     assert.match(src, /className="app-root__body"/);
   });
 
+  it("syncs overlay caption colors from theme tokens", () => {
+    const src = read("src/components/theme/ThemeProvider.tsx");
+    assert.match(src, /window\.lifequest\?\.windowChrome/);
+    assert.match(src, /setTitleBarOverlay/);
+    assert.match(src, /getPropertyValue\(["']--bg["']\)/);
+    assert.match(src, /getPropertyValue\(["']--text["']\)/);
+  });
+
   it("sizes the titlebar with overlay env vars and fills remaining height", () => {
     const css = read("src/styles/global.css");
     const tokens = read("src/styles/tokens.css");
