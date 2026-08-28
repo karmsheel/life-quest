@@ -1,7 +1,7 @@
 # Windows Portable Packaging — Design Spec
 
 **Date:** 2026-08-28  
-**Status:** Design approved in conversation — pending review of this file  
+**Status:** Approved — implementation plan ready (`docs/superpowers/plans/2026-08-28-windows-portable-packaging.md`)  
 **Product:** LifeQuest — local-first life-management studio  
 **Depends on:** [Local vault (Electron) design](./2026-07-19-local-vault-electron-design.md)
 
