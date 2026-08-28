@@ -46,7 +46,7 @@ npm run package
 
 Then double-click `apps/desktop/release/win-unpacked/LifeQuest.exe`. No Node or `npm run dev` is required to *use* that build.
 
-Windows SmartScreen may warn on first launch (unsigned private build). Choose **More info → Run anyway**. Quit LifeQuest before running `npm run package` again — an running `.exe` can lock files under `release/`. Deleting `win-unpacked` removes that build only; vault folders and `%APPDATA%\LifeQuest` stay.
+Windows SmartScreen may warn on first launch (unsigned private build). Choose **More info → Run anyway**. Quit LifeQuest before running `npm run package` again — a running `.exe` can lock files under `release/`. Deleting `win-unpacked` removes that build only; vault folders and `%APPDATA%\LifeQuest` stay.
 
 `release/` is gitignored.
 
