@@ -7,8 +7,10 @@
   "scripts": {
     "dev": "node ./scripts/dev.mjs",
     "build": "vite build && node ./scripts/bundle-electron.mjs",
+    "test": "node --experimental-strip-types --test tests/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit"
   },
+
   "dependencies": {
     "@lifequest/vault-core": "*",
     "lucide-react": "^0.511.0",
