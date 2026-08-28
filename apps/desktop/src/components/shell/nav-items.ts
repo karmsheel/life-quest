@@ -7,7 +7,6 @@ import {
   Map,
   Radio,
   ScrollText,
-  Settings,
   Sparkles,
   Target,
   Users,
@@ -21,7 +20,7 @@ export type NavItem = {
   label: string;
   icon: LucideIcon;
   room?: RoomId;
-  section?: "main" | "governance" | "account";
+  section?: "main" | "governance";
 };
 
 /** Brief order: Home, Dream, Chart, Track, Act, Documents, Domains, Chain, Decisions, Log, Personnel, Settings */
@@ -106,12 +105,5 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Personnel",
     icon: Users,
     section: "main",
-  },
-  {
-    id: "settings",
-    href: "/settings",
-    label: "Settings",
-    icon: Settings,
-    section: "account",
   },
 ];

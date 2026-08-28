@@ -1,7 +1,9 @@
 import { Lock } from "lucide-react";
 import { NavLink } from "react-router-dom";
-import { useActiveDomain, useUnlockedRooms } from "./useActiveDomain";
+import { SettingsMenu } from "@/components/settings/SettingsMenu";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
+import { NavThemeModeToggle } from "./NavThemeModeToggle";
+import { useActiveDomain, useUnlockedRooms } from "./useActiveDomain";
 
 export function NavRail() {
   const unlockedRooms = useUnlockedRooms();
@@ -9,7 +11,6 @@ export function NavRail() {
 
   const main = NAV_ITEMS.filter((i) => i.section === "main");
   const governance = NAV_ITEMS.filter((i) => i.section === "governance");
-  const account = NAV_ITEMS.filter((i) => i.section === "account");
 
   function renderItem(item: NavItem) {
     const locked = Boolean(item.room && !unlockedRooms.has(item.room));
@@ -68,7 +69,10 @@ export function NavRail() {
       <div className="nav-rail__section">{governance.map(renderItem)}</div>
       <div className="nav-rail__divider" role="separator" />
       <div className="nav-rail__section nav-rail__section--bottom">
-        {account.map(renderItem)}
+        <div className="nav-rail__settings-wrap">
+          <NavThemeModeToggle />
+          <SettingsMenu className="nav-rail__settings" placement="right-end" />
+        </div>
       </div>
     </nav>
   );
