@@ -107,6 +107,36 @@ const lifequest = {
       ipcRenderer.removeListener("vault:fileChanged", listener);
     };
   },
+
+  windowChrome: {
+    get: () =>
+      ipcRenderer.invoke("window:getChrome") as Promise<{
+        overlay: boolean;
+        platform: string;
+      }>,
+    setTitleBarOverlay: (opts: { color: string; symbolColor: string }) =>
+      ipcRenderer.invoke("window:setTitleBarOverlay", opts) as Promise<void>,
+    minimize: () => {
+      ipcRenderer.send("window:minimize");
+    },
+    toggleMaximize: () => {
+      ipcRenderer.send("window:toggleMaximize");
+    },
+    close: () => {
+      ipcRenderer.send("window:close");
+    },
+    isMaximized: () =>
+      ipcRenderer.invoke("window:isMaximized") as Promise<boolean>,
+    onMaximizeChange: (cb: (maximized: boolean) => void) => {
+      const listener = (_event: unknown, maximized: boolean) => {
+        cb(maximized);
+      };
+      ipcRenderer.on("window:maximizeChanged", listener);
+      return () => {
+        ipcRenderer.removeListener("window:maximizeChanged", listener);
+      };
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("lifequest", lifequest);

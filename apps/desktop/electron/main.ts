@@ -7,6 +7,51 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.setName("LifeQuest");
 const isDev = !app.isPackaged;
 
+const TITLEBAR_OVERLAY_HEIGHT = 32;
+const DEFAULT_OVERLAY_COLOR = "#1a1917";
+const DEFAULT_OVERLAY_SYMBOL = "#e8e4dc";
+
+function usesTitleBarOverlay(): boolean {
+  return process.platform === "win32" || process.platform === "linux";
+}
+
+function windowFromEvent(event: { sender: Electron.WebContents }): BrowserWindow | null {
+  return BrowserWindow.fromWebContents(event.sender);
+}
+
+function registerWindowAccelerators(win: BrowserWindow) {
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+    const ctrl = input.control || input.meta;
+    const key = input.key.toLowerCase();
+
+    if (ctrl && !input.alt && !input.shift && key === "r") {
+      event.preventDefault();
+      win.reload();
+      return;
+    }
+    if (ctrl && input.shift && !input.alt && key === "i") {
+      event.preventDefault();
+      win.webContents.toggleDevTools();
+      return;
+    }
+    if (input.key === "F12") {
+      event.preventDefault();
+      win.webContents.toggleDevTools();
+      return;
+    }
+    if (input.key === "F11") {
+      event.preventDefault();
+      win.setFullScreen(!win.isFullScreen());
+      return;
+    }
+    if (ctrl && !input.alt && !input.shift && key === "q") {
+      event.preventDefault();
+      app.quit();
+    }
+  });
+}
+
 function registerIpcHandlers() {
   ipcMain.handle("vault:create", (_e, rootPath: string, name?: string) =>
     vault.vaultCreate(rootPath, name),
@@ -138,18 +183,77 @@ function registerIpcHandlers() {
       vault.hermesChatCall(messages),
   );
   ipcMain.handle("hermes:scanAgents", () => vault.hermesScanAgentsCall());
+
+  ipcMain.handle("window:getChrome", () => ({
+    overlay: usesTitleBarOverlay(),
+    platform: process.platform,
+  }));
+  ipcMain.handle(
+    "window:setTitleBarOverlay",
+    (event, opts: { color: string; symbolColor: string }) => {
+      const win = windowFromEvent(event);
+      if (!win || win.isDestroyed()) return;
+      try {
+        win.setTitleBarOverlay({
+          color: opts.color,
+          symbolColor: opts.symbolColor,
+          height: TITLEBAR_OVERLAY_HEIGHT,
+        });
+      } catch {
+        // Overlay unsupported on this window (e.g. macOS).
+      }
+    },
+  );
+  ipcMain.handle("window:isMaximized", (event) => {
+    return windowFromEvent(event)?.isMaximized() ?? false;
+  });
+  ipcMain.on("window:minimize", (event) => {
+    windowFromEvent(event)?.minimize();
+  });
+  ipcMain.on("window:close", (event) => {
+    windowFromEvent(event)?.close();
+  });
+  ipcMain.on("window:toggleMaximize", (event) => {
+    const win = windowFromEvent(event);
+    if (!win || win.isDestroyed()) return;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
 }
 
 async function createWindow() {
+  const overlay = usesTitleBarOverlay();
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
+    titleBarStyle: "hidden",
+    ...(overlay
+      ? {
+          titleBarOverlay: {
+            color: DEFAULT_OVERLAY_COLOR,
+            symbolColor: DEFAULT_OVERLAY_SYMBOL,
+            height: TITLEBAR_OVERLAY_HEIGHT,
+          },
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  if (process.platform !== "darwin") {
+    win.removeMenu();
+  }
+  registerWindowAccelerators(win);
+
+  const sendMaximized = () => {
+    if (win.isDestroyed()) return;
+    win.webContents.send("window:maximizeChanged", win.isMaximized());
+  };
+  win.on("maximize", sendMaximized);
+  win.on("unmaximize", sendMaximized);
 
   // External edits: on focus, re-stat doctrine files and notify renderer.
   // Channel name matches preload.ts (`vault:fileChanged`).
