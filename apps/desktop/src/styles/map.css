@@ -1,0 +1,437 @@
+/* —— Life Map (Chart route) —— */
+
+.life-map {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.life-map__chrome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.life-map__chrome h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0;
+  margin-right: auto;
+}
+
+.life-map__chrome label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.life-map__chrome select {
+  height: 1.85rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0 0.4rem;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* —— North Star / How strip —— */
+.doctrine-strip {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--bg-panel);
+}
+
+.doctrine-strip__head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.doctrine-strip__label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.doctrine-strip__edit {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+.doctrine-strip__preview {
+  margin: 0.4rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* —— Dashboard —— */
+.life-map .dashboard h2 {
+  margin: 0 0 0.75rem;
+}
+
+.life-map .archive-banner {
+  margin: 0 0 0.75rem;
+  padding: 0.35rem 0.6rem;
+  background: #fff3cd;
+  border: 1px solid #e0c36a;
+  color: #5c4a12;
+}
+
+.life-map .dashboard-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.life-map .quarters {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.life-map .quarter {
+  display: grid;
+  grid-template-columns: 2.4rem repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.65rem;
+}
+
+.life-map .quarter h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.life-map .month-block {
+  min-width: 0;
+}
+
+.life-map .month-name {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.3rem;
+  background: #eef3f8;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.15rem 0.35rem;
+  cursor: pointer;
+  text-align: left;
+  font-weight: 600;
+}
+
+.life-map .month-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.life-map .day-cell {
+  min-height: 28px;
+  border: 1px solid var(--border);
+  background: #fbfcfd;
+  padding: 1px 2px;
+  cursor: crosshair;
+  user-select: none;
+  touch-action: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.life-map .day-cell.in-drag {
+  outline: 2px solid var(--accent);
+  background: #dbe7f3;
+}
+
+.life-map .day-num {
+  font-size: 0.7rem;
+  line-height: 1.1;
+}
+
+.life-map .color-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.life-map .color-bar {
+  display: block;
+  height: 4px;
+  border-radius: 1px;
+}
+
+.life-map .key-panel {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.7rem;
+}
+
+.life-map .key-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  margin: 0 0 0.5rem;
+}
+
+.life-map .key-panel h3 {
+  margin: 0;
+}
+
+.life-map .key-add {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+}
+
+.life-map .key-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.75rem;
+}
+
+.life-map .key-add-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+}
+
+.life-map .key-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.life-map .key-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.life-map .key-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.55rem;
+}
+
+.life-map .key-goal label,
+.life-map .paint-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+}
+
+.life-map .key-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.life-map .swatch {
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 1px solid #8b949e;
+  border-radius: 2px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.life-map .swatch.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.life-map .key-delete {
+  align-self: flex-start;
+  margin-top: 0.15rem;
+}
+
+.life-map .paint-dialog {
+  position: fixed;
+  right: 300px;
+  bottom: 1.25rem;
+  width: 240px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  z-index: 2;
+}
+
+.life-map .paint-dialog p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.life-map .paint-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.life-map .dashboard.is-archive .day-cell,
+.life-map .dashboard.is-archive .key-panel input,
+.life-map .dashboard.is-archive .key-panel button,
+.life-map .dashboard.is-archive .key-panel select {
+  pointer-events: none;
+}
+
+/* —— Month page —— */
+.life-map .month-page h2 {
+  margin: 0.65rem 0 0.75rem;
+}
+
+.life-map .month-calendar {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem;
+}
+
+.life-map .month-calendar-head,
+.life-map .month-calendar-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.life-map .month-calendar-head {
+  margin-bottom: 4px;
+}
+
+.life-map .month-weekday {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0.2rem 0.25rem;
+}
+
+.life-map .month-day-cell {
+  min-height: 7.5rem;
+  border: 1px solid var(--border);
+  background: #fbfcfd;
+  padding: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.life-map .month-day-cell.is-inert {
+  background: #eef1f4;
+  min-height: 7.5rem;
+}
+
+.life-map .month-day-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.life-map .month-day-text {
+  flex: 1;
+  width: 100%;
+  min-height: 5.5rem;
+  resize: vertical;
+  border: 1px solid #d5dbe1;
+  border-radius: 3px;
+  padding: 0.2rem 0.3rem;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.life-map .month-below {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) minmax(12rem, 1.4fr) minmax(12rem, 1.4fr);
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+}
+
+.life-map .month-period-goals,
+.life-map .month-field {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.65rem;
+}
+
+.life-map .month-period-goals h3,
+.life-map .month-field {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.life-map .month-period-goals ul {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.life-map .month-period-goals li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 400;
+}
+
+.life-map .month-goal-swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1px solid #8b949e;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.life-map .month-empty {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 400;
+}
+
+.life-map .month-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.life-map .month-field textarea {
+  flex: 1;
+  min-height: 6rem;
+  resize: vertical;
+  font: inherit;
+  font-weight: 400;
+  font-size: 0.9rem;
+}
+
+.life-map .month-page.is-archive textarea {
+  background: #f3f4f6;
+}
