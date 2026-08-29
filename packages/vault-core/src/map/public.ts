@@ -16,6 +16,7 @@ export type {
   GridBlock,
   Task,
   TaskColumn,
+  TaskLinks,
   ColorId,
   DetachedWeek,
   ResolvedWeek,
