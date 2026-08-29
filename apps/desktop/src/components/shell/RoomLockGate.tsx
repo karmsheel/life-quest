@@ -2,23 +2,20 @@ import type { ReactNode } from "react";
 import { Lock } from "lucide-react";
 import type { RoomId } from "@lifequest/vault-core/pure";
 import { isRoomUnlocked } from "@lifequest/vault-core/pure";
-import {
-  documentsToUnlockDocs,
-  useActiveDomain,
-} from "./useActiveDomain";
+import { useActiveDomain, useUnlockDomains } from "./useActiveDomain";
 
 const ROOM_LABELS: Record<RoomId, string> = {
   dream: "Dream",
-  chart: "Chart",
-  track: "Track",
+  chart: "Life Map",
+  track: "Architecture",
   act: "Act",
 };
 
 const UNLOCK_HINTS: Record<RoomId, string> = {
   dream: "Dream is always open.",
-  chart: "Save a non-empty Why document in Dream to unlock Chart.",
-  track: "Save a non-empty What document in Chart to unlock Track.",
-  act: "Save a non-empty How document in Track to unlock Act.",
+  chart: "Save a non-empty Why in any domain to unlock Life Map.",
+  track: "Save a non-empty Why in any domain to unlock Architecture.",
+  act: "Save a non-empty Why in any domain to unlock Act.",
 };
 
 export function RoomLockGate({
@@ -28,9 +25,9 @@ export function RoomLockGate({
   room: RoomId;
   children: ReactNode;
 }) {
+  const domains = useUnlockDomains();
   const activeDomain = useActiveDomain();
-  const docs = documentsToUnlockDocs(activeDomain?.documents);
-  const unlocked = isRoomUnlocked(room, docs);
+  const unlocked = isRoomUnlocked(room, domains);
 
   if (unlocked) {
     return <>{children}</>;

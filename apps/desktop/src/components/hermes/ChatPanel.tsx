@@ -10,6 +10,7 @@ import { Link } from "react-router-dom";
 import { MessageSquare, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { api } from "@/lib/ipc";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
+import { useVault } from "@/state/VaultProvider";
 
 export type ChatMessage = {
   id: string;
@@ -28,6 +29,7 @@ function nextId(): string {
 
 export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const activeDomain = useActiveDomain();
+  const { refresh } = useVault();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -66,11 +68,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
         role: m.role,
         content: m.content,
       }));
-      const result = await api().hermesChat(payload);
+      const result = await api().hermesChatTools(payload);
       if (!result.ok) {
         setError(result.error);
         return;
       }
+      // Map mutations performed by the agent loop should surface in the UI.
+      void refresh();
       setMessages((prev) => [
         ...prev,
         {

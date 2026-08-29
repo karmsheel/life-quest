@@ -2,6 +2,11 @@ import type { DocumentKind, RoomId } from "./types.ts";
 
 export type UnlockDoc = { kind: DocumentKind; bodyMarkdown: string };
 
+export type UnlockDomain = {
+  archivedAt: string | null;
+  documents: UnlockDoc[];
+};
+
 export function isNonEmptyBody(body: string): boolean {
   return body.trim().length > 0;
 }
@@ -10,14 +15,23 @@ function bodyOf(docs: UnlockDoc[], kind: DocumentKind): string {
   return docs.find((d) => d.kind === kind)?.bodyMarkdown ?? "";
 }
 
-export function getUnlockedRooms(docs: UnlockDoc[]): Set<RoomId> {
+export function getUnlockedRooms(domains: UnlockDomain[]): Set<RoomId> {
   const rooms = new Set<RoomId>(["dream"]);
-  if (isNonEmptyBody(bodyOf(docs, "why"))) rooms.add("chart");
-  if (isNonEmptyBody(bodyOf(docs, "what"))) rooms.add("track");
-  if (isNonEmptyBody(bodyOf(docs, "how"))) rooms.add("act");
+  const hasLiveWhy = domains.some(
+    (d) => !d.archivedAt && isNonEmptyBody(bodyOf(d.documents, "why")),
+  );
+  if (hasLiveWhy) {
+    rooms.add("chart");
+    rooms.add("track");
+    rooms.add("act");
+  }
   return rooms;
 }
 
-export function isRoomUnlocked(room: RoomId, docs: UnlockDoc[]): boolean {
-  return getUnlockedRooms(docs).has(room);
+export function isRoomUnlocked(room: RoomId, domains: UnlockDomain[]): boolean {
+  return getUnlockedRooms(domains).has(room);
+}
+
+export function canDispatchAgent(docs: UnlockDoc[]): boolean {
+  return isNonEmptyBody(bodyOf(docs, "how"));
 }

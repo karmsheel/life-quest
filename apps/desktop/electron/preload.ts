@@ -95,8 +95,22 @@ const lifequest = {
     ipcRenderer.invoke("hermes:test") as Promise<Result<unknown>>,
   hermesChat: (messages: { role: string; content: string }[]) =>
     ipcRenderer.invoke("hermes:chat", messages) as Promise<Result<unknown>>,
+  hermesChatTools: (
+    messages: { role: string; content: string }[],
+  ) =>
+    ipcRenderer.invoke("hermes:chatTools", messages) as Promise<Result<unknown>>,
   hermesScanAgents: () =>
     ipcRenderer.invoke("hermes:scanAgents") as Promise<Result<unknown>>,
+
+  mcpGetUrl: () =>
+    ipcRenderer.invoke("mcp:getUrl") as Promise<string>,
+  mcpGetError: () =>
+    ipcRenderer.invoke("mcp:getError") as Promise<string | null>,
+
+  mapGetState: () =>
+    ipcRenderer.invoke("map:getState") as Promise<Result<unknown>>,
+  mapApply: (command: unknown) =>
+    ipcRenderer.invoke("map:apply", command) as Promise<Result<unknown>>,
 
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => {
     const listener = (_event: unknown, payload: { path: string }) => {

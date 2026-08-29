@@ -23,7 +23,11 @@ import {
   updateSettings,
   updateSignal,
   vaultPaths,
+  applyMapCommand,
   type AgentHire,
+  type MapActor,
+  type MapCommand,
+  type MapStoreState,
   type DecisionRecord,
   type DocumentKind,
   type DocumentStatus,
@@ -57,12 +61,16 @@ import {
   hermesScanAgents,
   hermesTest,
 } from "./hermes-proxy.js";
+import { runPlannerLoop } from "./map-tools.js";
+import { startMcp, stopMcp } from "./mcp-server.js";
 
 let currentRoot: string | null = null;
 let currentVaultId: string | null = null;
 let queue: Promise<unknown> = Promise.resolve();
 /** Last-known mtimes for doctrine files (why/what/how.md) under the open vault. */
 let doctrineMtimes: Map<string, number> = new Map();
+/** Last MCP start error, surfaced in Settings while a vault is open. */
+let mcpError: string | null = null;
 
 function noVaultError<T>(): Result<T> {
   return { ok: false, error: "No vault is open" };
@@ -103,6 +111,15 @@ async function captureDoctrineMtimes(root: string): Promise<void> {
         } catch {
           // Missing doctrine file — omit from snapshot.
         }
+      }
+    }
+    // Watch Map store files so external edits surface in the focus reload prompt.
+    for (const mapFile of [paths.mapJson, paths.aboutMd]) {
+      try {
+        const st = await fs.stat(mapFile);
+        next.set(mapFile, st.mtimeMs);
+      } catch {
+        // Map store not yet created — omit.
       }
     }
   } catch {
@@ -156,6 +173,21 @@ async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
       await setActiveDomain(snapshot.lifequest.id, first);
     }
   }
+  // Open the loopback MCP door for this vault. A failed start keeps the vault
+  // open; we record the error for Settings instead of throwing.
+  mcpError = null;
+  const mcpResult = await startMcp(snapshot.rootPath, snapshot.lifequest.id);
+  if (!mcpResult.ok) {
+    mcpError = mcpResult.error;
+  }
+}
+
+export function getMcpError(): string | null {
+  return mcpError;
+}
+
+export function getMcpUrl(): string {
+  return mcpError ? "" : `http://127.0.0.1:8643/mcp`;
 }
 
 export function getCurrentRoot(): string | null {
@@ -466,10 +498,62 @@ export async function hermesChatCall(
   return hermesChat(creds.value.baseUrl, creds.value.apiKey, messages);
 }
 
+export async function hermesChatToolsCall(
+  messages: { role: string; content: string }[],
+): Promise<Result<{ content: string }>> {
+  const creds = await loadHermesCreds();
+  if (!creds.ok) return creds;
+  if (!currentRoot) return noVaultError<{ content: string }>();
+
+  // Build read-only context the planner loop injects as extra system text:
+  // active domain slug, About me, and whether the agent lock is engaged.
+  const activeSlug = currentVaultId ? await getActiveDomain(currentVaultId) : null;
+  const snap = await openVault(currentRoot);
+  const map = snap.ok ? snap.value.map : null;
+  const aboutMe = map?.aboutMe ?? "";
+  const locked = map?.locked ?? false;
+  const extraSystem = [
+    `Active domain: ${activeSlug ?? "none"}`,
+    `About me: ${aboutMe}`,
+    `Agent lock: ${locked}`,
+  ].join("\n");
+
+  return runPlannerLoop({
+    root: currentRoot,
+    activeSlug,
+    baseUrl: creds.value.baseUrl,
+    apiKey: creds.value.apiKey,
+    extraSystem,
+    messages,
+  });
+}
+
 export async function hermesScanAgentsCall(): Promise<
   Result<{ id: string; name: string }[]>
 > {
   const creds = await loadHermesCreds();
   if (!creds.ok) return creds;
   return hermesScanAgents(creds.value.baseUrl, creds.value.apiKey);
+}
+
+export async function mapGetState(): Promise<Result<MapStoreState>> {
+  return withVault(async (root) => {
+    const snap = await openVault(root);
+    if (!snap.ok) return snap;
+    if (!snap.value.map) {
+      return { ok: false, error: snap.value.mapError ?? "Map store unreadable" };
+    }
+    return { ok: true, value: snap.value.map };
+  });
+}
+
+export async function mapApply(
+  command: MapCommand,
+  actor: MapActor = "user",
+): Promise<Result<VaultSnapshot>> {
+  return withVault(async (root) => {
+    const applied = await applyMapCommand(root, command, actor);
+    if (!applied.ok) return applied;
+    return openVault(root);
+  });
 }

@@ -31,7 +31,7 @@ export function NavRail() {
         }
         title={
           locked
-            ? `${item.label} (locked — fill prior pillar document)`
+            ? `${item.label} (locked — write a Why in any domain)`
             : item.label
         }
         aria-disabled={locked || undefined}

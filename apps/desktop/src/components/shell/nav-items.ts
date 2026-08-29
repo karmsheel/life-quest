@@ -43,7 +43,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     id: "chart",
     href: "/chart",
-    label: "Chart",
+    label: "Life Map",
     icon: Map,
     room: "chart",
     section: "main",
@@ -51,7 +51,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     id: "track",
     href: "/track",
-    label: "Track",
+    label: "Architecture",
     icon: Target,
     room: "track",
     section: "main",

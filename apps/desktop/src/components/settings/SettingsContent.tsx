@@ -4,6 +4,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { SettingsAppearance } from "./SettingsAppearance";
 import { SettingsHermes } from "./SettingsHermes";
 import { SettingsVault } from "./SettingsVault";
+import { SettingsAbout } from "./SettingsAbout";
 
 function SettingsNavItem({
   active,
@@ -37,6 +38,8 @@ function SettingsPanel({ view }: { view: SettingsViewId }) {
       return <SettingsVault />;
     case "hermes":
       return <SettingsHermes />;
+    case "about":
+      return <SettingsAbout />;
     default:
       return <SettingsAppearance />;
   }

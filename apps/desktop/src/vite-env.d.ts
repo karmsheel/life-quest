@@ -9,6 +9,8 @@ import type {
   DomainMeta,
   DomainRecord,
   LifeEvent,
+  MapCommand,
+  MapStoreState,
   Result,
   SignalChainListResult,
   SignalCreateInput,
@@ -99,7 +101,14 @@ type LifequestApi = {
   hermesChat: (
     messages: { role: string; content: string }[],
   ) => Promise<Result<{ content: string }>>;
+  hermesChatTools: (
+    messages: { role: string; content: string }[],
+  ) => Promise<Result<{ content: string }>>;
   hermesScanAgents: () => Promise<Result<{ id: string; name: string }[]>>;
+  mcpGetUrl: () => Promise<string>;
+  mcpGetError: () => Promise<string | null>;
+  mapGetState: () => Promise<Result<MapStoreState>>;
+  mapApply: (command: MapCommand) => Promise<Result<VaultSnapshot>>;
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => () => void;
   windowChrome: {
     get: () => Promise<{ overlay: boolean; platform: string }>;

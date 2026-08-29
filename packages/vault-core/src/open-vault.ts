@@ -3,6 +3,7 @@ import path from "node:path";
 import { parseFrontmatter } from "./frontmatter.ts";
 import { readLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
+import { ensureMapOnOpen } from "./map/persist.ts";
 import {
   DOCUMENT_KINDS,
   SCHEMA_VERSION,
@@ -100,6 +101,15 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
       return a.slug.localeCompare(b.slug);
     });
 
+    let map: VaultSnapshot["map"] = null;
+    let mapError: string | null = null;
+    const mapRes = await ensureMapOnOpen(paths.root);
+    if (mapRes.ok) {
+      map = mapRes.value;
+    } else {
+      mapError = mapRes.error;
+    }
+
     return {
       ok: true,
       value: {
@@ -110,6 +120,8 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
         agents,
         decisions,
         log,
+        map,
+        mapError,
       },
     };
   } catch (e) {
