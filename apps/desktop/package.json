@@ -11,10 +11,12 @@
     "test": "node --experimental-strip-types --test tests/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit"
   },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.0.0"
+  },
   "devDependencies": {
     "@lifequest/vault-core": "*",
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "zod": "^4.0.0",
     "@types/node": "^20.19.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
