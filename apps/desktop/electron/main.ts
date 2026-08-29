@@ -145,6 +145,9 @@ function registerIpcHandlers() {
       vault.hermesChatToolsCall(messages),
   );
 
+  ipcMain.handle("mcp:getUrl", () => vault.getMcpUrl());
+  ipcMain.handle("mcp:getError", () => vault.getMcpError());
+
   ipcMain.handle("map:getState", () => vault.mapGetState());
   ipcMain.handle("map:apply", (_e, command: Parameters<typeof vault.mapApply>[0]) =>
     vault.mapApply(command, "user"),
@@ -193,6 +196,11 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", (event) => {
+  event.preventDefault();
+  void stopMcp().finally(() => app.exit(0));
 });
 
 app.on("activate", () => {

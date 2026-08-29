@@ -102,6 +102,11 @@ const lifequest = {
   hermesScanAgents: () =>
     ipcRenderer.invoke("hermes:scanAgents") as Promise<Result<unknown>>,
 
+  mcpGetUrl: () =>
+    ipcRenderer.invoke("mcp:getUrl") as Promise<string>,
+  mcpGetError: () =>
+    ipcRenderer.invoke("mcp:getError") as Promise<string | null>,
+
   mapGetState: () =>
     ipcRenderer.invoke("map:getState") as Promise<Result<unknown>>,
   mapApply: (command: unknown) =>
