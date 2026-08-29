@@ -126,7 +126,7 @@ function ActContent() {
       ...prev,
     ]);
     try {
-      const result = await api().hermesChat([
+      const result = await api().hermesChatTools([
         { role: "user", content: prompt },
       ]);
       setRuns((prev) =>
@@ -140,7 +140,11 @@ function ActContent() {
             : r,
         ),
       );
-      if (!result.ok) setError(result.error);
+      if (result.ok) {
+        void refresh();
+      } else {
+        setError(result.error);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to reach Hermes";
       setError(msg);
