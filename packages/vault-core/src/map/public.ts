@@ -3,6 +3,7 @@ export type {
   Command as MapCommand,
   Actor as MapActor,
   DomainError as MapDomainError,
+  IsoDate,
   YearRecord,
   PeriodGoal,
   Task,
