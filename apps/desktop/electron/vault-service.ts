@@ -61,6 +61,7 @@ import {
   hermesScanAgents,
   hermesTest,
 } from "./hermes-proxy.js";
+import { runPlannerLoop } from "./map-tools.js";
 
 let currentRoot: string | null = null;
 let currentVaultId: string | null = null;
@@ -477,6 +478,36 @@ export async function hermesChatCall(
   const creds = await loadHermesCreds();
   if (!creds.ok) return creds;
   return hermesChat(creds.value.baseUrl, creds.value.apiKey, messages);
+}
+
+export async function hermesChatToolsCall(
+  messages: { role: string; content: string }[],
+): Promise<Result<{ content: string }>> {
+  const creds = await loadHermesCreds();
+  if (!creds.ok) return creds;
+  if (!currentRoot) return noVaultError<{ content: string }>();
+
+  // Build read-only context the planner loop injects as extra system text:
+  // active domain slug, About me, and whether the agent lock is engaged.
+  const activeSlug = currentVaultId ? await getActiveDomain(currentVaultId) : null;
+  const snap = await openVault(currentRoot);
+  const map = snap.ok ? snap.value.map : null;
+  const aboutMe = map?.aboutMe ?? "";
+  const locked = map?.locked ?? false;
+  const extraSystem = [
+    `Active domain: ${activeSlug ?? "none"}`,
+    `About me: ${aboutMe}`,
+    `Agent lock: ${locked}`,
+  ].join("\n");
+
+  return runPlannerLoop({
+    root: currentRoot,
+    activeSlug,
+    baseUrl: creds.value.baseUrl,
+    apiKey: creds.value.apiKey,
+    extraSystem,
+    messages,
+  });
 }
 
 export async function hermesScanAgentsCall(): Promise<

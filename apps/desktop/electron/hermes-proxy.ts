@@ -157,6 +157,85 @@ function extractChatContent(data: unknown): string | null {
   return typeof content === "string" ? content : null;
 }
 
+export type HermesChatToolStep =
+  | { type: "text"; content: string }
+  | { type: "tool"; id: string; name: string; args: unknown; raw: unknown };
+
+export async function hermesChatWithTools(
+  baseUrl: string,
+  apiKey: ***
+  messages: unknown[],
+  tools: unknown[],
+  timeoutMs = 60_000,
+): Promise<Result<HermesChatToolStep>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await hermesFetchWithConfig(baseUrl, apiKey, "/v1/chat/completions", {
+      method: "POST",
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: "default",
+        messages,
+        tools,
+        stream: false,
+      }),
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      const detail = (await res.text().catch(() => "")).trim();
+      return {
+        ok: false,
+        error: detail || `Hermes chat failed (${res.status}).`,
+      };
+    }
+    const data = (await res.json()) as {
+      choices?: {
+        message?: {
+          content?: string | null;
+          tool_calls?: {
+            id: string;
+            type: string;
+            function: { name: string; arguments: string };
+          }[];
+        };
+      }[];
+    };
+    const message = data.choices?.[0]?.message;
+    const toolCall = message?.tool_calls?.[0];
+    if (toolCall && toolCall.type === "function") {
+      let args: unknown = {};
+      try {
+        args = JSON.parse(toolCall.function.arguments || "{}");
+      } catch {
+        args = {};
+      }
+      return {
+        ok: true,
+        value: {
+          type: "tool",
+          id: toolCall.id,
+          name: toolCall.function.name,
+          args,
+          raw: message,
+        },
+      };
+    }
+    const content = extractChatContent(data);
+    if (content === null) {
+      return { ok: false, error: "Hermes chat response missing content" };
+    }
+    return { ok: true, value: { type: "text", content } };
+  } catch (err) {
+    clearTimeout(timer);
+    const aborted = err instanceof Error && err.name === "AbortError";
+    return {
+      ok: false,
+      error: aborted ? "Chat request timed out." : err instanceof Error ? err.message : "Could not reach Hermes.",
+    };
+  }
+}
+
 export async function hermesScanAgents(
   baseUrl: string,
   apiKey: string,

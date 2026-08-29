@@ -139,6 +139,12 @@ function registerIpcHandlers() {
   );
   ipcMain.handle("hermes:scanAgents", () => vault.hermesScanAgentsCall());
 
+  ipcMain.handle(
+    "hermes:chatTools",
+    (_e, messages: { role: string; content: string }[]) =>
+      vault.hermesChatToolsCall(messages),
+  );
+
   ipcMain.handle("map:getState", () => vault.mapGetState());
   ipcMain.handle("map:apply", (_e, command: Parameters<typeof vault.mapApply>[0]) =>
     vault.mapApply(command, "user"),
