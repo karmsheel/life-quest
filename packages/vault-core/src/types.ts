@@ -1,3 +1,5 @@
+import type { StoreState as MapStoreState } from "./map/types.ts";
+
 export const SCHEMA_VERSION = 1 as const;
 export const DOCUMENT_KINDS = ["why", "what", "how"] as const;
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
@@ -133,7 +135,5 @@ export type VaultSnapshot = {
   map: MapStoreState | null;
   mapError: string | null;
 };
-
-import type { StoreState as MapStoreState } from "./map/types.ts";
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
