@@ -62,12 +62,15 @@ import {
   hermesTest,
 } from "./hermes-proxy.js";
 import { runPlannerLoop } from "./map-tools.js";
+import { startMcp, stopMcp } from "./mcp-server.js";
 
 let currentRoot: string | null = null;
 let currentVaultId: string | null = null;
 let queue: Promise<unknown> = Promise.resolve();
 /** Last-known mtimes for doctrine files (why/what/how.md) under the open vault. */
 let doctrineMtimes: Map<string, number> = new Map();
+/** Last MCP start error, surfaced in Settings while a vault is open. */
+let mcpError: string | null = null;
 
 function noVaultError<T>(): Result<T> {
   return { ok: false, error: "No vault is open" };
@@ -170,6 +173,21 @@ async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
       await setActiveDomain(snapshot.lifequest.id, first);
     }
   }
+  // Open the loopback MCP door for this vault. A failed start keeps the vault
+  // open; we record the error for Settings instead of throwing.
+  mcpError = null;
+  const mcpResult = await startMcp(snapshot.rootPath, snapshot.lifequest.id);
+  if (!mcpResult.ok) {
+    mcpError = mcpResult.error;
+  }
+}
+
+export function getMcpError(): string | null {
+  return mcpError;
+}
+
+export function getMcpUrl(): string {
+  return mcpError ? "" : `http://127.0.0.1:8643/mcp`;
 }
 
 export function getCurrentRoot(): string | null {

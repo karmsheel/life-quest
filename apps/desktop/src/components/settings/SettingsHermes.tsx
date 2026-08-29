@@ -15,6 +15,32 @@ export function SettingsHermes() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [probe, setProbe] = useState<{ ok: boolean; text: string } | null>(null);
+  const [mcpUrl, setMcpUrl] = useState("");
+  const [mcpErrorText, setMcpErrorText] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [url, err] = await Promise.all([
+          api().mcpGetUrl(),
+          api().mcpGetError(),
+        ]);
+        if (cancelled) return;
+        setMcpUrl(url);
+        setMcpErrorText(err);
+      } catch {
+        if (!cancelled) {
+          setMcpUrl("");
+          setMcpErrorText(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshot?.rootPath]);
 
   useEffect(() => {
     if (!snapshot) return;
@@ -261,6 +287,23 @@ export function SettingsHermes() {
             </button>
           </div>
         </form>
+      </div>
+
+      <div className="settings-card">
+        <h3 className="settings-panel__section-title">MCP door</h3>
+        {mcpErrorText ? (
+          <p className="form-error" role="alert">
+            {mcpErrorText}
+          </p>
+        ) : mcpUrl ? (
+          <p className="settings-hermes__probe muted" role="status">
+            MCP (while a vault is open): {mcpUrl}
+          </p>
+        ) : (
+          <p className="settings-hermes__probe muted" role="status">
+            MCP door is closed — open a vault to expose the Life Map store.
+          </p>
+        )}
       </div>
     </section>
   );
