@@ -29,6 +29,7 @@ export {
   liveYears,
   resolveWeek,
 } from "./map/public.ts";
+export { applyMapCommand, ensureMapOnOpen, loadMapState } from "./map/persist.ts";
 export type {
   MapStoreState,
   MapCommand,
