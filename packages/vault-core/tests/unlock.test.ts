@@ -1,6 +1,17 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { getUnlockedRooms, isNonEmptyBody, isRoomUnlocked } from "../src/unlock.ts";
+import {
+  canDispatchAgent,
+  getUnlockedRooms,
+  isNonEmptyBody,
+  isRoomUnlocked,
+  type UnlockDomain,
+} from "../src/unlock.ts";
+
+const whyLive = (body: string): UnlockDomain => ({
+  archivedAt: null,
+  documents: [{ kind: "why", bodyMarkdown: body }],
+});
 
 describe("isNonEmptyBody", () => {
   it("rejects empty and whitespace", () => {
@@ -13,28 +24,46 @@ describe("isNonEmptyBody", () => {
 });
 
 describe("getUnlockedRooms", () => {
-  it("always unlocks dream when domain exists (caller passes docs list)", () => {
+  it("unlocks only dream when no live Why exists", () => {
     const rooms = getUnlockedRooms([]);
     assert.ok(rooms.has("dream"));
     assert.equal(rooms.has("chart"), false);
-  });
-  it("unlocks chart when why has body", () => {
-    const rooms = getUnlockedRooms([{ kind: "why", bodyMarkdown: "reason" }]);
-    assert.ok(rooms.has("dream"));
-    assert.ok(rooms.has("chart"));
     assert.equal(rooms.has("track"), false);
+    assert.equal(rooms.has("act"), false);
   });
-  it("unlocks full chain", () => {
-    const rooms = getUnlockedRooms([
-      { kind: "why", bodyMarkdown: "w" },
-      { kind: "what", bodyMarkdown: "g" },
-      { kind: "how", bodyMarkdown: "h" },
-    ]);
+
+  it("unlocks chart, track, and act when any live Why has a body", () => {
+    const rooms = getUnlockedRooms([whyLive("reason")]);
     assert.deepEqual([...rooms].sort(), ["act", "chart", "dream", "track"]);
   });
-  it("empty why body does not unlock chart", () => {
-    const rooms = getUnlockedRooms([{ kind: "why", bodyMarkdown: "   " }]);
-    assert.equal(isRoomUnlocked("chart", [{ kind: "why", bodyMarkdown: "   " }]), false);
-    assert.ok(rooms.has("dream"));
+
+  it("ignores archived domains with a Why", () => {
+    const rooms = getUnlockedRooms([
+      {
+        archivedAt: "2026-01-01T00:00:00.000Z",
+        documents: [{ kind: "why", bodyMarkdown: "old" }],
+      },
+    ]);
+    assert.equal(rooms.has("chart"), false);
+  });
+
+  it("does not require What or How to unlock operational rooms", () => {
+    const rooms = getUnlockedRooms([whyLive("w")]);
+    assert.ok(rooms.has("track"));
+    assert.ok(rooms.has("act"));
+  });
+});
+
+describe("canDispatchAgent", () => {
+  it("is false until How has a body", () => {
+    assert.equal(canDispatchAgent([{ kind: "how", bodyMarkdown: "" }]), false);
+    assert.equal(canDispatchAgent([{ kind: "how", bodyMarkdown: "habit" }]), true);
+  });
+});
+
+describe("isRoomUnlocked", () => {
+  it("uses the domain list, not a single doc array", () => {
+    assert.equal(isRoomUnlocked("chart", [whyLive("x")]), true);
+    assert.equal(isRoomUnlocked("chart", [whyLive("  ")]), false);
   });
 });
