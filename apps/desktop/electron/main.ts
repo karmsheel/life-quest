@@ -138,6 +138,11 @@ function registerIpcHandlers() {
       vault.hermesChatCall(messages),
   );
   ipcMain.handle("hermes:scanAgents", () => vault.hermesScanAgentsCall());
+
+  ipcMain.handle("map:getState", () => vault.mapGetState());
+  ipcMain.handle("map:apply", (_e, command: Parameters<typeof vault.mapApply>[0]) =>
+    vault.mapApply(command, "user"),
+  );
 }
 
 async function createWindow() {

@@ -23,7 +23,11 @@ import {
   updateSettings,
   updateSignal,
   vaultPaths,
+  applyMapCommand,
   type AgentHire,
+  type MapActor,
+  type MapCommand,
+  type MapStoreState,
   type DecisionRecord,
   type DocumentKind,
   type DocumentStatus,
@@ -103,6 +107,15 @@ async function captureDoctrineMtimes(root: string): Promise<void> {
         } catch {
           // Missing doctrine file — omit from snapshot.
         }
+      }
+    }
+    // Watch Map store files so external edits surface in the focus reload prompt.
+    for (const mapFile of [paths.mapJson, paths.aboutMd]) {
+      try {
+        const st = await fs.stat(mapFile);
+        next.set(mapFile, st.mtimeMs);
+      } catch {
+        // Map store not yet created — omit.
       }
     }
   } catch {
@@ -472,4 +485,26 @@ export async function hermesScanAgentsCall(): Promise<
   const creds = await loadHermesCreds();
   if (!creds.ok) return creds;
   return hermesScanAgents(creds.value.baseUrl, creds.value.apiKey);
+}
+
+export async function mapGetState(): Promise<Result<MapStoreState>> {
+  return withVault(async (root) => {
+    const snap = await openVault(root);
+    if (!snap.ok) return snap;
+    if (!snap.value.map) {
+      return { ok: false, error: snap.value.mapError ?? "Map store unreadable" };
+    }
+    return { ok: true, value: snap.value.map };
+  });
+}
+
+export async function mapApply(
+  command: MapCommand,
+  actor: MapActor = "user",
+): Promise<Result<VaultSnapshot>> {
+  return withVault(async (root) => {
+    const applied = await applyMapCommand(root, command, actor);
+    if (!applied.ok) return applied;
+    return openVault(root);
+  });
 }
