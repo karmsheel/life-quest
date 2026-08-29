@@ -130,6 +130,10 @@ export type VaultSnapshot = {
   agents: AgentHire[];
   decisions: DecisionRecord[];
   log: LifeEvent[];
+  map: MapStoreState | null;
+  mapError: string | null;
 };
+
+import type { StoreState as MapStoreState } from "./map/types.ts";
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };

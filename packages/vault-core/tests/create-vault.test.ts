@@ -28,6 +28,10 @@ describe("createVault", () => {
     assert.match(why, /status: draft/);
     const opened = await openVault(root);
     assert.equal(opened.ok, true);
+    assert.ok(res.value.map);
+    assert.equal(res.value.mapError, null);
+    await fs.access(path.join(root, ".lifequest/map.json"));
+    await fs.access(path.join(root, ".lifequest/about.md"));
   });
 
   it("refuses when lifequest.json already exists", async () => {
