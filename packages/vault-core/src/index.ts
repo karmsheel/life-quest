@@ -12,3 +12,34 @@ export * from "./domain-documents.ts";
 export * from "./decisions.ts";
 export * from "./agents.ts";
 export * from "./signal-chain.ts";
+
+export {
+  applyMapCommandPure,
+  dashboardDays,
+  periodGoalsOverlappingMonth,
+  periodGoalsOnDate,
+  PALETTE,
+  COLOR_IDS,
+  todayLocalIso,
+  yearOf,
+  mondayOnOrBefore,
+  mondaysInYear,
+  daysInMonth,
+  findYear,
+  liveYears,
+  resolveWeek,
+} from "./map/public.ts";
+export type {
+  MapStoreState,
+  MapCommand,
+  MapActor,
+  MapDomainError,
+  YearRecord,
+  PeriodGoal,
+  Task,
+  TaskColumn,
+  ColorId,
+  DayType,
+  DetachedWeek,
+  ResolvedWeek,
+} from "./map/public.ts";
