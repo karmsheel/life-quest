@@ -131,12 +131,13 @@ export async function applyMapCommand(
   const saved = await writeMapState(rootPath, result.value);
   if (!saved.ok) return saved;
   const ev = mapLogEvent(command);
-  const logRes = await appendLog(rootPath, {
+  // Map + about are already persisted. Do not roll them back if the life-log
+  // append fails; the map command itself succeeded.
+  await appendLog(rootPath, {
     domainSlug: null,
     type: ev.type,
     summary: ev.summary,
     payload: ev.payload,
   });
-  if (!logRes.ok) return logRes;
   return { ok: true, value: result.value };
 }
