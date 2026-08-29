@@ -435,3 +435,241 @@
 .life-map .month-page.is-archive textarea {
   background: #f3f4f6;
 }
+
+/* —— Architecture (Track route) —— */
+.architecture {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.arch-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.arch-panel h3 {
+  margin: 0 0 0.65rem;
+  font-size: 1.05rem;
+}
+
+.arch-panel h4 {
+  margin: 0.55rem 0 0.35rem;
+  font-size: 0.9rem;
+}
+
+.arch-empty,
+.arch-hint {
+  margin: 0.25rem 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.arch-type-list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.arch-type-card,
+.arch-replace {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.55rem;
+}
+
+.arch-type-head,
+.arch-real-toolbar,
+.arch-create,
+.arch-add-item,
+.arch-replace-actions,
+.arch-place,
+.arch-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.arch-type-head label,
+.arch-create label,
+.arch-weekday,
+.arch-real-toolbar label,
+.arch-place,
+.arch-replace label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+}
+
+.arch-type-swatch {
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 1px solid #8b949e;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.arch-weekdays,
+.arch-real-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(8rem, 1fr));
+  gap: 0.5rem;
+}
+
+.arch-weekday,
+.arch-day-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.arch-day-col {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.4rem;
+}
+
+.arch-day-head {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.arch-checklist ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.arch-item input {
+  flex: 1;
+  min-width: 6rem;
+}
+
+.arch-priorities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.55rem;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.75rem;
+}
+
+.arch-priorities label {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.arch-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.arch-badge.is-inheriting {
+  background: #e8f0e4;
+  color: #2d4a22;
+}
+
+.arch-badge.is-detached {
+  background: #fde7cc;
+  color: #6a3d08;
+}
+
+.arch-week-goals ul {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.85rem;
+}
+
+.arch-week-goals li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.arch-grid-wrap {
+  margin-top: 0.65rem;
+  overflow-x: auto;
+}
+
+.arch-grid {
+  min-width: 48rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.arch-grid-head,
+.arch-grid-row {
+  display: grid;
+  grid-template-columns: 3.4rem repeat(7, minmax(0, 1fr));
+}
+
+.arch-grid-head {
+  background: #eef3f8;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.arch-grid-time,
+.arch-grid-day,
+.arch-grid-slot {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  min-height: 1.25rem;
+  padding: 0 0.2rem;
+  font-size: 0.7rem;
+}
+
+.arch-grid-time {
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+}
+
+.arch-grid-slot {
+  width: 100%;
+  background: #fbfcfd;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.arch-grid-slot.is-block {
+  background: #dbe7f3;
+}
+
+.arch-grid-slot.is-start {
+  font-weight: 600;
+}
+
+.architecture.is-archive input,
+.architecture.is-archive textarea {
+  background: #f3f4f6;
+}
+
