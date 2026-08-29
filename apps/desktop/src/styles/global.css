@@ -1,4 +1,5 @@
 @import "./tokens.css";
+@import "./map.css";
 
 * {
   box-sizing: border-box;
@@ -2943,4 +2944,16 @@ a.home-mini-list__link:hover {
 
 .ui-list-row__action {
   flex-shrink: 0;
+}
+
+/* —— Agent lock switch (top bar) —— */
+.lock-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.lock-label {
+  color: var(--muted);
 }

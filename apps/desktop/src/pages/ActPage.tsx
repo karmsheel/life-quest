@@ -6,10 +6,12 @@ import type {
   DocumentKind,
   LifeEvent,
 } from "@lifequest/vault-core";
+import { canDispatchAgent } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { RoomLockGate } from "@/components/shell/RoomLockGate";
-import { useActiveDomain } from "@/components/shell/useActiveDomain";
+import { useActiveDomain, documentsToUnlockDocs } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
+import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
 
 const BRIEF_KINDS: { kind: DocumentKind; label: string; room: string }[] = [
@@ -44,7 +46,7 @@ export default function ActPage() {
 }
 
 function ActContent() {
-  const { snapshot, reloadGeneration } = useVault();
+  const { snapshot, reloadGeneration, refresh } = useVault();
   const activeDomain = useActiveDomain();
 
   const activeAgents = useMemo(
@@ -124,7 +126,7 @@ function ActContent() {
       ...prev,
     ]);
     try {
-      const result = await api().hermesChat([
+      const result = await api().hermesChatTools([
         { role: "user", content: prompt },
       ]);
       setRuns((prev) =>
@@ -138,7 +140,11 @@ function ActContent() {
             : r,
         ),
       );
-      if (!result.ok) setError(result.error);
+      if (result.ok) {
+        void refresh();
+      } else {
+        setError(result.error);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to reach Hermes";
       setError(msg);
@@ -162,9 +168,21 @@ function ActContent() {
 
   const howDoc = activeDomain.documents.how;
   const howForged = howDoc?.status === "forged";
+  const canDispatch = canDispatchAgent(documentsToUnlockDocs(activeDomain.documents));
+
+  async function onMapCommand(command: import("@lifequest/vault-core/map").MapCommand) {
+    const result = await api().mapApply(command);
+    if (result.ok) await refresh();
+  }
 
   return (
     <div className="act-page">
+      {snapshot?.map ? (
+        <TaskBoard state={snapshot.map} onCommand={(c) => void onMapCommand(c)} />
+      ) : snapshot?.mapError ? (
+        <p className="form-error" role="alert">{snapshot.mapError}</p>
+      ) : null}
+
       <header className="act-page__header">
         <div>
           <p className="act-page__eyebrow muted">Act</p>
@@ -264,7 +282,7 @@ function ActContent() {
               type="button"
               className="btn btn-primary act-run__send"
               onClick={() => selectedAgent && void runAgent(selectedAgent)}
-              disabled={running || !selectedAgent}
+              disabled={running || !selectedAgent || !canDispatch}
             >
               {running ? (
                 <>

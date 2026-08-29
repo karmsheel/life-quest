@@ -9,7 +9,9 @@ import {
 import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import ActPage from "@/pages/ActPage";
+import ArchitecturePage from "@/pages/ArchitecturePage";
 import ChainPage from "@/pages/ChainPage";
+import ChartPage from "@/pages/ChartPage";
 import DecisionsPage from "@/pages/DecisionsPage";
 import DocumentsPage from "@/pages/DocumentsPage";
 import DomainsPage from "@/pages/DomainsPage";
@@ -99,7 +101,7 @@ function AppRoutes() {
         path="/chart"
         element={
           <ShellRoute>
-            <RoomPage room="chart" />
+            <ChartPage />
           </ShellRoute>
         }
       />
@@ -107,7 +109,7 @@ function AppRoutes() {
         path="/track"
         element={
           <ShellRoute>
-            <RoomPage room="track" />
+            <ArchitecturePage />
           </ShellRoute>
         }
       />

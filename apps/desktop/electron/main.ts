@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stopMcp } from "./mcp-server.js";
 import * as vault from "./vault-service.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -183,6 +184,19 @@ function registerIpcHandlers() {
       vault.hermesChatCall(messages),
   );
   ipcMain.handle("hermes:scanAgents", () => vault.hermesScanAgentsCall());
+  ipcMain.handle(
+    "hermes:chatTools",
+    (_e, messages: { role: string; content: string }[]) =>
+      vault.hermesChatToolsCall(messages),
+  );
+
+  ipcMain.handle("mcp:getUrl", () => vault.getMcpUrl());
+  ipcMain.handle("mcp:getError", () => vault.getMcpError());
+
+  ipcMain.handle("map:getState", () => vault.mapGetState());
+  ipcMain.handle("map:apply", (_e, command: Parameters<typeof vault.mapApply>[0]) =>
+    vault.mapApply(command, "user"),
+  );
 
   ipcMain.handle("window:getChrome", () => ({
     overlay: usesTitleBarOverlay(),
@@ -286,6 +300,11 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", (event) => {
+  event.preventDefault();
+  void stopMcp().finally(() => app.exit(0));
 });
 
 app.on("activate", () => {
