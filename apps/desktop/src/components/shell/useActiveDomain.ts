@@ -33,9 +33,24 @@ export function documentsToUnlockDocs(
 }
 
 export function useUnlockedRooms(): Set<import("@lifequest/vault-core/pure").RoomId> {
-  const active = useActiveDomain();
+  const { snapshot } = useVault();
+  return useMemo(() => {
+    const domains = (snapshot?.domains ?? []).map((d) => ({
+      archivedAt: d.meta.archivedAt,
+      documents: documentsToUnlockDocs(d.documents),
+    }));
+    return getUnlockedRooms(domains);
+  }, [snapshot]);
+}
+
+export function useUnlockDomains() {
+  const { snapshot } = useVault();
   return useMemo(
-    () => getUnlockedRooms(documentsToUnlockDocs(active?.documents)),
-    [active],
+    () =>
+      (snapshot?.domains ?? []).map((d) => ({
+        archivedAt: d.meta.archivedAt,
+        documents: documentsToUnlockDocs(d.documents),
+      })),
+    [snapshot],
   );
 }
