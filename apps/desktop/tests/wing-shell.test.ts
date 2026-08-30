@@ -53,4 +53,48 @@ describe("wing shell wiring", () => {
     assert.match(src, /!item\.wing/);
     assert.match(src, /to=["']\/home["']/);
   });
+
+  it("renders Outlet in AppShell instead of a children prop", () => {
+    const src = read("src/components/shell/AppShell.tsx");
+    assert.match(
+      src,
+      /import \{[^}]*\bOutlet\b[^}]*\} from ["']react-router-dom["']/,
+    );
+    assert.match(src, /<Outlet\s*\/>/);
+    assert.match(
+      src,
+      /className=["']shell__content["']>\s*<Outlet\s*\/>/,
+    );
+    assert.equal(/\bchildren\b/.test(src), false);
+  });
+
+  it("uses one layout AppShell with nested page routes", () => {
+    const src = read("src/App.tsx");
+    assert.equal(src.includes("ShellRoute"), false);
+    assert.equal(src.includes("<AppShell>"), false);
+    assert.match(src, /<AppShell\s*\/>/);
+
+    const layoutOpen =
+      /<Route\s+element=\{[\s\S]*?<AppShell\s*\/>[\s\S]*?\}\s*>/.exec(src);
+    assert.ok(
+      layoutOpen,
+      "expected a parent Route whose element is AppShell (or RequireVault wrapping AppShell)",
+    );
+
+    const afterOpen = src.slice(layoutOpen.index + layoutOpen[0].length);
+    const layoutEnd = afterOpen.indexOf("</Route>");
+    assert.ok(layoutEnd >= 0, "expected the layout Route to close");
+    const nested = afterOpen.slice(0, layoutEnd);
+
+    assert.match(nested, /<Route\s+path=["']\/home["']/);
+    assert.match(nested, /<Route\s+path=["']\/chart["']/);
+    assert.match(nested, /<Route\s+path=["']\/act["']/);
+    assert.match(nested, /<Route\s+path=["']\/log["']/);
+    assert.equal(nested.includes("/welcome"), false);
+
+    assert.match(
+      src,
+      /<Route\s+path=["']\/welcome["']\s+element=\{<WelcomePage\s*\/>\}\s*\/>/,
+    );
+  });
 });
