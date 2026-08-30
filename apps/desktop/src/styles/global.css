@@ -480,15 +480,9 @@ a {
   min-height: var(--shell-topbar-height);
 }
 
-.top-bar__title {
-  flex: 1 1 auto;
+.top-bar__wings {
+  flex: 0 1 auto;
   min-width: 0;
-}
-
-.top-bar__vault-name {
-  font-size: 0.9rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
 }
 
 .top-bar__controls {

@@ -1,6 +1,7 @@
 import { useVault } from "@/state/VaultProvider";
 import { api } from "@/lib/ipc";
 import { DomainSwitcher } from "./DomainSwitcher";
+import { WingTabs } from "./WingTabs";
 
 export function TopBar() {
   const { snapshot, refresh, busy } = useVault();
@@ -15,11 +16,7 @@ export function TopBar() {
 
   return (
     <header className="top-bar">
-      <div className="top-bar__title">
-        <span className="top-bar__vault-name">
-          {snapshot?.lifequest.name ?? "LifeQuest"}
-        </span>
-      </div>
+      <WingTabs />
       <div className="top-bar__controls">
         <DomainSwitcher />
         <label className="lock-switch">
