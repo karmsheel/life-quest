@@ -1,11 +1,12 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
+import { Outlet } from "react-router-dom";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
 import { NavRail } from "./NavRail";
 import { TopBar } from "./TopBar";
 import { WingProvider } from "./WingProvider";
 import { MapYearProvider } from "@/state/MapYearProvider";
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell() {
   const [chatOpen, setChatOpen] = useState(true);
 
   return (
@@ -20,7 +21,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <NavRail />
           <div className="shell__main">
             <TopBar />
-            <div className="shell__content">{children}</div>
+            <div className="shell__content">
+              <Outlet />
+            </div>
           </div>
           <ChatPanel open={chatOpen} onOpenChange={setChatOpen} />
         </div>

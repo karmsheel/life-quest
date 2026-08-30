@@ -43,14 +43,6 @@ function RequireVault({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function ShellRoute({ children }: { children: ReactNode }) {
-  return (
-    <RequireVault>
-      <AppShell>{children}</AppShell>
-    </RequireVault>
-  );
-}
-
 function AppRoutes() {
   const { snapshot, booting } = useVault();
 
@@ -66,101 +58,25 @@ function AppRoutes() {
     <Routes>
       <Route path="/welcome" element={<WelcomePage />} />
       <Route
-        path="/home"
         element={
-          <ShellRoute>
-            <HomePage />
-          </ShellRoute>
+          <RequireVault>
+            <AppShell />
+          </RequireVault>
         }
-      />
-      <Route
-        path="/domains"
-        element={
-          <ShellRoute>
-            <DomainsPage />
-          </ShellRoute>
-        }
-      />
-      <Route
-        path="/chain"
-        element={
-          <ShellRoute>
-            <ChainPage />
-          </ShellRoute>
-        }
-      />
-      <Route
-        path="/dream"
-        element={
-          <ShellRoute>
-            <RoomPage room="dream" />
-          </ShellRoute>
-        }
-      />
-      <Route
-        path="/chart"
-        element={
-          <ShellRoute>
-            <ChartPage />
-          </ShellRoute>
-        }
-      />
-      <Route
-        path="/track"
-        element={
-          <ShellRoute>
-            <ArchitecturePage />
-          </ShellRoute>
-        }
-      />
-      <Route
-        path="/act"
-        element={
-          <ShellRoute>
-            <ActPage />
-          </ShellRoute>
-        }
-      />
-      <Route
-        path="/documents"
-        element={
-          <ShellRoute>
-            <DocumentsPage />
-          </ShellRoute>
-        }
-      />
-      <Route
-        path="/decisions"
-        element={
-          <ShellRoute>
-            <DecisionsPage />
-          </ShellRoute>
-        }
-      />
-      <Route
-        path="/log"
-        element={
-          <ShellRoute>
-            <LogPage />
-          </ShellRoute>
-        }
-      />
-      <Route
-        path="/personnel"
-        element={
-          <ShellRoute>
-            <PersonnelPage />
-          </ShellRoute>
-        }
-      />
-      <Route
-        path="/settings"
-        element={
-          <ShellRoute>
-            <SettingsPage />
-          </ShellRoute>
-        }
-      />
+      >
+        <Route path="/home" element={<HomePage />} />
+        <Route path="/domains" element={<DomainsPage />} />
+        <Route path="/chain" element={<ChainPage />} />
+        <Route path="/dream" element={<RoomPage room="dream" />} />
+        <Route path="/chart" element={<ChartPage />} />
+        <Route path="/track" element={<ArchitecturePage />} />
+        <Route path="/act" element={<ActPage />} />
+        <Route path="/documents" element={<DocumentsPage />} />
+        <Route path="/decisions" element={<DecisionsPage />} />
+        <Route path="/log" element={<LogPage />} />
+        <Route path="/personnel" element={<PersonnelPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+      </Route>
       <Route
         path="/"
         element={<Navigate to={snapshot ? "/home" : "/welcome"} replace />}
