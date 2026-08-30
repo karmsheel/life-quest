@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { RoomId } from "@lifequest/vault-core";
+import type { WingId } from "./wing.ts";
 
 export type NavItem = {
   id: string;
@@ -21,9 +22,10 @@ export type NavItem = {
   icon: LucideIcon;
   room?: RoomId;
   section?: "main" | "governance";
+  wing?: WingId;
 };
 
-/** Brief order: Home, Dream, Chart, Track, Act, Documents, Domains, Chain, Decisions, Log, Personnel, Settings */
+/** Vision: Home, Dream, Domains, Chain, Documents, Personnel. Plan: Life Map, Architecture. Execute: Act. Pinned: Decisions, Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "home",
@@ -31,6 +33,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Home",
     icon: Home,
     section: "main",
+    wing: "vision",
   },
   {
     id: "dream",
@@ -39,6 +42,39 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Sparkles,
     room: "dream",
     section: "main",
+    wing: "vision",
+  },
+  {
+    id: "domains",
+    href: "/domains",
+    label: "Domains",
+    icon: Building2,
+    section: "main",
+    wing: "vision",
+  },
+  {
+    id: "chain",
+    href: "/chain",
+    label: "Chain",
+    icon: Radio,
+    section: "main",
+    wing: "vision",
+  },
+  {
+    id: "documents",
+    href: "/documents",
+    label: "Documents",
+    icon: FileText,
+    section: "main",
+    wing: "vision",
+  },
+  {
+    id: "personnel",
+    href: "/personnel",
+    label: "Personnel",
+    icon: Users,
+    section: "main",
+    wing: "vision",
   },
   {
     id: "chart",
@@ -47,6 +83,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Map,
     room: "chart",
     section: "main",
+    wing: "plan",
   },
   {
     id: "track",
@@ -55,6 +92,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Target,
     room: "track",
     section: "main",
+    wing: "plan",
   },
   {
     id: "act",
@@ -63,27 +101,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Zap,
     room: "act",
     section: "main",
-  },
-  {
-    id: "documents",
-    href: "/documents",
-    label: "Documents",
-    icon: FileText,
-    section: "main",
-  },
-  {
-    id: "domains",
-    href: "/domains",
-    label: "Domains",
-    icon: Building2,
-    section: "main",
-  },
-  {
-    id: "chain",
-    href: "/chain",
-    label: "Chain",
-    icon: Radio,
-    section: "main",
+    wing: "execute",
   },
   {
     id: "decisions",
@@ -98,12 +116,5 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Log",
     icon: ScrollText,
     section: "governance",
-  },
-  {
-    id: "personnel",
-    href: "/personnel",
-    label: "Personnel",
-    icon: Users,
-    section: "main",
   },
 ];

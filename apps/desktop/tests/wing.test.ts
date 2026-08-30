@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { NAV_ITEMS } from "../src/components/shell/nav-items.ts";
 import {
   applyPath,
   initialWingSession,
@@ -117,5 +118,26 @@ describe("selectWing", () => {
     };
     const next = selectWing(broken, "plan");
     assert.equal(next.pathname, "/chart");
+  });
+});
+
+describe("NAV_ITEMS wings", () => {
+  it("assigns Vision, Plan, Execute, and pinned items", () => {
+    assert.deepEqual(
+      NAV_ITEMS.filter((i) => i.wing === "vision").map((i) => i.id),
+      ["home", "dream", "domains", "chain", "documents", "personnel"],
+    );
+    assert.deepEqual(
+      NAV_ITEMS.filter((i) => i.wing === "plan").map((i) => i.id),
+      ["chart", "track"],
+    );
+    assert.deepEqual(
+      NAV_ITEMS.filter((i) => i.wing === "execute").map((i) => i.id),
+      ["act"],
+    );
+    assert.deepEqual(
+      NAV_ITEMS.filter((i) => i.wing == null).map((i) => i.id),
+      ["decisions", "log"],
+    );
   });
 });
