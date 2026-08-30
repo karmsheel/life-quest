@@ -1,7 +1,7 @@
 # Vision / Plan / Execute Wings — Design Spec
 
 **Date:** 2026-08-30  
-**Status:** Approved for implementation planning  
+**Status:** Approved — implementation plan ready (`docs/superpowers/plans/2026-08-30-vision-plan-execute-wings.md`)  
 **Product:** LifeQuest — local-first life-management studio  
 **Depends on:** [Custom window chrome](./2026-08-28-custom-window-chrome-design.md), [Life Map on Chart](./2026-08-27-life-map-chart-design.md)
 

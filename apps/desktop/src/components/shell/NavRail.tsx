@@ -4,13 +4,15 @@ import { SettingsMenu } from "@/components/settings/SettingsMenu";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
 import { NavThemeModeToggle } from "./NavThemeModeToggle";
 import { useActiveDomain, useUnlockedRooms } from "./useActiveDomain";
+import { useWing } from "./WingProvider";
 
 export function NavRail() {
   const unlockedRooms = useUnlockedRooms();
   const activeDomain = useActiveDomain();
+  const { active } = useWing();
 
-  const main = NAV_ITEMS.filter((i) => i.section === "main");
-  const governance = NAV_ITEMS.filter((i) => i.section === "governance");
+  const wingItems = NAV_ITEMS.filter((item) => item.wing === active);
+  const pinned = NAV_ITEMS.filter((item) => !item.wing);
 
   function renderItem(item: NavItem) {
     const locked = Boolean(item.room && !unlockedRooms.has(item.room));
@@ -64,9 +66,9 @@ export function NavRail() {
         <span className="nav-rail__brand-text">LifeQuest</span>
       </NavLink>
 
-      <div className="nav-rail__section">{main.map(renderItem)}</div>
+      <div className="nav-rail__section">{wingItems.map(renderItem)}</div>
       <div className="nav-rail__divider" role="separator" />
-      <div className="nav-rail__section">{governance.map(renderItem)}</div>
+      <div className="nav-rail__section">{pinned.map(renderItem)}</div>
       <div className="nav-rail__divider" role="separator" />
       <div className="nav-rail__section nav-rail__section--bottom">
         <div className="nav-rail__settings-wrap">
