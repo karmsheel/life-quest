@@ -45,4 +45,12 @@ describe("wing shell wiring", () => {
     assert.match(css, /\.top-bar__wings\s*\{/);
     assert.equal(css.includes(".top-bar__vault-name"), false);
   });
+
+  it("filters the nav rail by the active wing and keeps pinned items", () => {
+    const src = read("src/components/shell/NavRail.tsx");
+    assert.match(src, /useWing/);
+    assert.match(src, /item\.wing === active/);
+    assert.match(src, /!item\.wing/);
+    assert.match(src, /to=["']\/home["']/);
+  });
 });
