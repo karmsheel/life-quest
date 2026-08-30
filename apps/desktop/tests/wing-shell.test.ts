@@ -23,4 +23,26 @@ describe("wing shell wiring", () => {
     assert.match(src, /<WingProvider>/);
     assert.match(src, /<\/WingProvider>/);
   });
+
+  it("replaces the TopBar vault name with WingTabs", () => {
+    const topBar = read("src/components/shell/TopBar.tsx");
+    assert.match(
+      topBar,
+      /import \{ WingTabs \} from ["']\.\/WingTabs["']/,
+    );
+    assert.match(topBar, /<WingTabs\s*\/>/);
+    assert.equal(topBar.includes("top-bar__vault-name"), false);
+    assert.equal(topBar.includes("lifequest.name"), false);
+
+    const tabs = read("src/components/shell/WingTabs.tsx");
+    assert.match(tabs, /role="tablist"/);
+    assert.match(tabs, /aria-label="App wing"/);
+    assert.match(tabs, /role="tab"/);
+    assert.match(tabs, /ArrowLeft/);
+    assert.match(tabs, /ArrowRight/);
+
+    const css = read("src/styles/global.css");
+    assert.match(css, /\.top-bar__wings\s*\{/);
+    assert.equal(css.includes(".top-bar__vault-name"), false);
+  });
 });
