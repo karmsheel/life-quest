@@ -24,7 +24,7 @@ export type {
 export { applyCommand as applyMapCommandPure } from "./commands.ts";
 export { dashboardDays, periodGoalsOverlappingMonth, periodGoalsOnDate } from "./queries.ts";
 export { PALETTE, COLOR_IDS } from "./palette.ts";
-export { todayLocalIso, yearOf, mondayOnOrBefore, mondaysInYear, daysInMonth, addDays } from "./dates.ts";
+export { todayLocalIso, yearOf, mondayOnOrBefore, mondaysInYear, daysInMonth, addDays, compareIso } from "./dates.ts";
 export { findYear, liveYears } from "./years.ts";
 export { resolveWeek } from "./weeks.ts";
 export { dayTypeInUse } from "./day-types.ts";

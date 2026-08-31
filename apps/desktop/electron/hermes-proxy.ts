@@ -163,7 +163,7 @@ export type HermesChatToolStep =
 
 export async function hermesChatWithTools(
   baseUrl: string,
-  apiKey: ***
+  apiKey: string,
   messages: unknown[],
   tools: unknown[],
   timeoutMs = 60_000,
