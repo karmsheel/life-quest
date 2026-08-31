@@ -67,10 +67,10 @@ export function NavRail() {
       </NavLink>
 
       <div className="nav-rail__section">{wingItems.map(renderItem)}</div>
-      <div className="nav-rail__divider" role="separator" />
-      <div className="nav-rail__section">{pinned.map(renderItem)}</div>
-      <div className="nav-rail__divider" role="separator" />
       <div className="nav-rail__section nav-rail__section--bottom">
+        <div className="nav-rail__divider" role="separator" />
+        <div className="nav-rail__section">{pinned.map(renderItem)}</div>
+        <div className="nav-rail__divider" role="separator" />
         <div className="nav-rail__settings-wrap">
           <NavThemeModeToggle />
           <SettingsMenu className="nav-rail__settings" placement="right-end" />
