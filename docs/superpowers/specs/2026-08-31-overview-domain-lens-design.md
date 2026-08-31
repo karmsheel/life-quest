@@ -1,7 +1,7 @@
 # Overview Domain Lens — Design Spec
 
 **Date:** 2026-08-31  
-**Status:** Approved — awaiting implementation plan  
+**Status:** Approved — implementation plan ready (`docs/superpowers/plans/2026-08-31-overview-domain-lens.md`)  
 **Product:** LifeQuest — local-first life-management studio  
 **Depends on:** [Local vault (Electron)](./2026-07-19-local-vault-electron-design.md), [Life Signal Chain](./2026-08-27-life-signal-chain-design.md), [Vision / Plan / Execute wings](./2026-08-30-vision-plan-execute-wings-design.md)
 
