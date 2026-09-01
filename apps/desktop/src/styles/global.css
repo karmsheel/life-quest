@@ -498,22 +498,26 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
   font-size: 0.75rem;
 }
 
-.domain-switcher__label {
-  color: var(--muted);
-  white-space: nowrap;
+.domain-switcher__tabs {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
-.domain-switcher__select {
-  max-width: 10rem;
-  height: 1.85rem;
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  padding: 0 0.4rem;
-  background: var(--bg);
-  color: var(--fg);
+.domain-switcher__tabs .ui-segmented__option {
+  flex: 0 1 auto;
+}
+
+.domain-switcher__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 8.5rem;
 }
 
 .domain-switcher__error {
@@ -2026,6 +2030,10 @@ a.home-mini-list__link:hover {
     background: var(--bg-subtle);
   }
 
+  .settings-overlay__mobile-nav .ui-segmented {
+    flex-wrap: wrap;
+  }
+
   .settings-overlay__main-scroll {
     padding: 1rem 1rem 1.25rem;
   }
@@ -2906,6 +2914,11 @@ a.home-mini-list__link:hover {
   box-shadow: var(--shadow-xs);
 }
 
+.ui-segmented__option:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .ui-segmented__icon {
   display: inline-flex;
   flex-shrink: 0;
@@ -2950,4 +2963,73 @@ a.home-mini-list__link:hover {
 
 .lock-label {
   color: var(--muted);
+}
+
+/* —— Doctrine indexes (Dream / Architecture) —— */
+.dream-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.dream-page h1 {
+  margin: 0;
+}
+
+.doctrine-index {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.doctrine-index__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.doctrine-index__heading {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.doctrine-index__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.doctrine-index__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.doctrine-index__row.is-locked {
+  pointer-events: none;
+  opacity: 0.65;
+}
+
+.doctrine-index__label {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--fg);
+  text-decoration: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.doctrine-index__row:not(.is-locked) .doctrine-index__label:hover {
+  color: var(--accent);
+}
+
+.doctrine-index__lock {
+  font-size: 0.75rem;
 }

@@ -1,6 +1,5 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  Building2,
   ClipboardList,
   FileText,
   Home,
@@ -25,7 +24,7 @@ export type NavItem = {
   wing?: WingId;
 };
 
-/** Vision: Home, Dream, Domains, Chain, Documents, Personnel. Plan: Life Map, Architecture. Execute: Act. Pinned: Decisions, Log. */
+/** Vision: Home, Dream, Chain, Documents, Personnel. Plan: Life Map, Architecture. Execute: Act. Pinned: Decisions, Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "home",
@@ -41,14 +40,6 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Dream",
     icon: Sparkles,
     room: "dream",
-    section: "main",
-    wing: "vision",
-  },
-  {
-    id: "domains",
-    href: "/domains",
-    label: "Domains",
-    icon: Building2,
     section: "main",
     wing: "vision",
   },

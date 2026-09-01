@@ -8,17 +8,17 @@ import {
 } from "react-router-dom";
 import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
+import { DoctrineEditorPage } from "@/components/doctrine/DoctrineEditorPage";
 import ActPage from "@/pages/ActPage";
 import ArchitecturePage from "@/pages/ArchitecturePage";
 import ChainPage from "@/pages/ChainPage";
 import ChartPage from "@/pages/ChartPage";
 import DecisionsPage from "@/pages/DecisionsPage";
 import DocumentsPage from "@/pages/DocumentsPage";
-import DomainsPage from "@/pages/DomainsPage";
+import DreamPage from "@/pages/DreamPage";
 import HomePage from "@/pages/HomePage";
 import LogPage from "@/pages/LogPage";
 import PersonnelPage from "@/pages/PersonnelPage";
-import RoomPage from "@/pages/RoomPage";
 import SettingsPage from "@/pages/SettingsPage";
 import WelcomePage from "@/pages/WelcomePage";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
@@ -65,11 +65,22 @@ function AppRoutes() {
         }
       >
         <Route path="/home" element={<HomePage />} />
-        <Route path="/domains" element={<DomainsPage />} />
+        <Route
+          path="/domains"
+          element={<Navigate to="/settings?tab=domains" replace />}
+        />
         <Route path="/chain" element={<ChainPage />} />
-        <Route path="/dream" element={<RoomPage room="dream" />} />
+        <Route path="/dream" element={<DreamPage />} />
+        <Route
+          path="/dream/:slug/:kind"
+          element={<DoctrineEditorPage backTo="/dream" />}
+        />
         <Route path="/chart" element={<ChartPage />} />
         <Route path="/track" element={<ArchitecturePage />} />
+        <Route
+          path="/track/:slug/:kind"
+          element={<DoctrineEditorPage backTo="/track" />}
+        />
         <Route path="/act" element={<ActPage />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/decisions" element={<DecisionsPage />} />

@@ -5,21 +5,26 @@ import { useActiveDomain } from "@/components/shell/useActiveDomain";
 
 export function DoctrineStrip({ kind }: { kind: DocumentKind }) {
   const domain = useActiveDomain();
-  const doc = domain?.documents[kind];
+  if (!domain) return null;
+  const doc = domain.documents[kind];
   const label = kind === "what" ? "North Star" : "How";
   const body = doc?.bodyMarkdown.trim() ?? "";
   const preview = body ? body.slice(0, 180) : `No ${kind} yet.`;
+  const editTo =
+    kind === "what"
+      ? `/dream/${domain.slug}/what`
+      : `/track/${domain.slug}/how`;
 
   return (
     <aside className="doctrine-strip">
       <div className="doctrine-strip__head">
         <span className="doctrine-strip__label">
           {label}
-          {domain ? ` · ${domain.meta.name}` : ""}
+          {` · ${domain.meta.name}`}
         </span>
         <DocumentStatusBadge status={doc?.status ?? "draft"} />
-        <Link to="/documents" className="doctrine-strip__edit">
-          Edit in Documents
+        <Link to={editTo} className="doctrine-strip__edit">
+          Edit
         </Link>
       </div>
       <p className="doctrine-strip__preview muted">{preview}</p>

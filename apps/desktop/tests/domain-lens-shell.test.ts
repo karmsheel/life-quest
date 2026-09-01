@@ -87,3 +87,21 @@ describe("lens filtering", () => {
     assert.match(chat, /Overview/);
   });
 });
+
+describe("doctrine indexes", () => {
+  it("routes Dream/Architecture editors by slug and kind", () => {
+    const app = read("src/App.tsx");
+    assert.match(app, /path="\/dream\/:slug\/:kind"/);
+    assert.match(app, /path="\/track\/:slug\/:kind"/);
+    assert.match(app, /DreamPage/);
+    assert.equal(app.includes('RoomPage room="dream"'), false);
+
+    const editor = read("src/components/documents/DocumentEditor.tsx");
+    assert.match(editor, /slug: string/);
+    assert.equal(editor.includes("useActiveDomain"), false);
+
+    const index = read("src/components/doctrine/DoctrineIndex.tsx");
+    assert.match(index, /isNonEmptyBody/);
+    assert.match(index, /\/dream\//);
+  });
+});

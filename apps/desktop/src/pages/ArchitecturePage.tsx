@@ -1,7 +1,7 @@
 import { DayTypes } from "@/components/architecture/DayTypes";
 import { DefaultWeek } from "@/components/architecture/DefaultWeek";
 import { RealWeek } from "@/components/architecture/RealWeek";
-import { DoctrineStrip } from "@/components/doctrine/DoctrineStrip";
+import { DoctrineIndex } from "@/components/doctrine/DoctrineIndex";
 import { RoomLockGate } from "@/components/shell/RoomLockGate";
 import { useVault } from "@/state/VaultProvider";
 import { useMapYear } from "@/state/MapYearProvider";
@@ -48,7 +48,7 @@ function ArchitectureContent() {
         </label>
       </header>
       {selected?.status === "archive" && <p className="archive-banner">Read-only archive</p>}
-      <DoctrineStrip kind="how" />
+      <DoctrineIndex kinds={["how"]} />
       {selected && (
         <>
           <DayTypes state={map} year={selected} onCommand={onCommand} />
