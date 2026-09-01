@@ -9,7 +9,6 @@ import {
   type Result,
 } from "@lifequest/vault-core";
 import { executeTool } from "./map-tools.js";
-import { getActiveDomain } from "./recent-vaults.js";
 
 const MCP_HOST = "127.0.0.1";
 const MCP_PORT = 8643;
@@ -18,6 +17,7 @@ const MCP_PATH = "/mcp";
 let server: Server | null = null;
 let mcpRoot: string | null = null;
 let mcpVaultId: string | null = null;
+let getActiveSlug: () => string | null = () => null;
 
 function toZod(prop: unknown): ZodTypeAny {
   const p = prop as {
@@ -72,7 +72,7 @@ function registerTools(mcp: McpServer): void {
       toolDef.name,
       { description: toolDef.description, inputSchema },
       async (toolArgs) => {
-        const activeSlug = mcpVaultId ? await getActiveDomain(mcpVaultId) : null;
+        const activeSlug = getActiveSlug();
         const result = await executeTool(mcpRoot as string, activeSlug, toolDef.name, toolArgs as Record<string, unknown>);
         return {
           content: [{ type: "text" as const, text: JSON.stringify(result) }],
@@ -97,11 +97,13 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
 }
 
 export async function startMcp(
-  root: string,
+  rootPath: string,
   vaultId: string,
+  getLens: () => string | null = () => null,
 ): Promise<Result<{ url: string }>> {
+  getActiveSlug = getLens;
   if (server) return { ok: true, value: { url: `http://${MCP_HOST}:${MCP_PORT}${MCP_PATH}` } };
-  mcpRoot = root;
+  mcpRoot = rootPath;
   mcpVaultId = vaultId;
   const httpServer = createServer((req, res) => {
     const url = req.url ?? "";

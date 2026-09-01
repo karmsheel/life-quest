@@ -24,8 +24,8 @@ const lifequest = {
     >,
   domainArchive: (slug: string) =>
     ipcRenderer.invoke("domain:archive", slug) as Promise<Result<unknown>>,
-  domainSetActive: (slug: string) =>
-    ipcRenderer.invoke("domain:setActive", slug) as Promise<Result<string>>,
+  domainSetActive: (slug: string | null) =>
+    ipcRenderer.invoke("domain:setActive", slug) as Promise<Result<string | null>>,
   domainGetActive: () =>
     ipcRenderer.invoke("domain:getActive") as Promise<string | null>,
 
@@ -73,6 +73,14 @@ const lifequest = {
     >,
   signalChainDelete: (id: string) =>
     ipcRenderer.invoke("signalChain:delete", id) as Promise<Result<unknown>>,
+
+  libraryList: () => ipcRenderer.invoke("library:list"),
+  libraryCreate: (input: Record<string, unknown>) =>
+    ipcRenderer.invoke("library:create", input),
+  libraryGet: (id: string) => ipcRenderer.invoke("library:get", id),
+  libraryUpdate: (id: string, patch: Record<string, unknown>) =>
+    ipcRenderer.invoke("library:update", id, patch),
+  libraryDelete: (id: string) => ipcRenderer.invoke("library:delete", id),
 
   agentsList: () =>
     ipcRenderer.invoke("agents:list") as Promise<Result<unknown>>,
