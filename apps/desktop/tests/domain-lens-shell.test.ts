@@ -54,9 +54,13 @@ describe("renderer domain lens", () => {
     assert.match(switcher, /Overview/);
     assert.match(switcher, /aria-label="Domain lens"/);
     assert.match(switcher, /overviewLens/);
+    assert.match(switcher, /OVERVIEW_KEY = ["']__overview__["']/);
+    assert.match(switcher, /!result\.ok/);
+    assert.match(switcher, /result\.error/);
 
     const settings = read("src/components/settings/SettingsDomains.tsx");
     assert.match(settings, /setActiveSlug\(null\)/);
+    assert.equal(settings.includes("setActiveSlug(result.value.slug)"), false);
   });
 });
 
@@ -82,6 +86,10 @@ describe("lens filtering", () => {
     const home = read("src/pages/HomePage.tsx");
     assert.match(home, /\/dream\/\$\{.*\}\/what|\/dream\/.+\/what/);
     assert.equal(home.includes('href: "/chart"'), false);
+    assert.match(home, /to=["']\/dream["']/);
+    assert.equal(home.includes('to="/documents"'), false);
+    assert.match(home, /isNonEmptyBody/);
+    assert.match(home, /rowLocked/);
 
     const chat = read("src/components/hermes/ChatPanel.tsx");
     assert.match(chat, /Overview/);

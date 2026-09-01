@@ -3,10 +3,11 @@ import { Link } from "react-router-dom";
 import type {
   DecisionRecord,
   DocumentKind,
+  DomainRecord,
   LifeEvent,
   RoomId,
 } from "@lifequest/vault-core";
-import { recordVisible } from "@lifequest/vault-core/pure";
+import { isNonEmptyBody, recordVisible } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import {
@@ -32,6 +33,14 @@ function doctrineHref(kind: DocumentKind, slug: string): string {
   if (kind === "how") return `/track/${slug}/how`;
   if (kind === "what") return `/dream/${slug}/what`;
   return `/dream/${slug}/why`;
+}
+
+function rowLocked(kind: DocumentKind, domain: DomainRecord): boolean {
+  if (kind === "why") return false;
+  if (kind === "what") {
+    return !isNonEmptyBody(domain.documents.why.bodyMarkdown);
+  }
+  return !isNonEmptyBody(domain.documents.what.bodyMarkdown);
 }
 
 function formatWhen(iso: string): string {
@@ -178,36 +187,51 @@ export default function HomePage() {
                   const status = doc?.status ?? "draft";
                   const chars = doc?.bodyMarkdown.trim().length ?? 0;
                   const isUnlocked = unlocked.has(row.room);
+                  const locked = rowLocked(row.kind, domain);
                   const label =
                     visibleDomains.length > 1
                       ? `${domain.meta.name} · ${row.label}`
                       : row.label;
+                  const showLock = locked || !isUnlocked;
+                  const main = (
+                    <>
+                      <span className="home-doctrine-row__label">
+                        {label}
+                        {showLock ? (
+                          <span
+                            className="home-doctrine-row__lock muted"
+                            title="Locked — complete the prior pillar first"
+                            aria-label="locked"
+                          >
+                            {" "}
+                            🔒
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="home-doctrine-row__meta muted">
+                        {chars > 0 ? `${chars} chars` : "empty body"}
+                      </span>
+                    </>
+                  );
                   return (
                     <li
                       key={`${domain.slug}-${row.kind}`}
-                      className="home-doctrine-row"
+                      className={
+                        locked
+                          ? "home-doctrine-row is-locked"
+                          : "home-doctrine-row"
+                      }
                     >
-                      <Link
-                        to={doctrineHref(row.kind, domain.slug)}
-                        className="home-doctrine-row__main"
-                      >
-                        <span className="home-doctrine-row__label">
-                          {label}
-                          {!isUnlocked ? (
-                            <span
-                              className="home-doctrine-row__lock muted"
-                              title="Locked — complete the prior pillar first"
-                              aria-label="locked"
-                            >
-                              {" "}
-                              🔒
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className="home-doctrine-row__meta muted">
-                          {chars > 0 ? `${chars} chars` : "empty body"}
-                        </span>
-                      </Link>
+                      {locked ? (
+                        <span className="home-doctrine-row__main">{main}</span>
+                      ) : (
+                        <Link
+                          to={doctrineHref(row.kind, domain.slug)}
+                          className="home-doctrine-row__main"
+                        >
+                          {main}
+                        </Link>
+                      )}
                       <DocumentStatusBadge status={status} />
                     </li>
                   );
@@ -215,7 +239,7 @@ export default function HomePage() {
               )}
             </ul>
           )}
-          <Link to="/documents" className="home-card__more">
+          <Link to="/dream" className="home-card__more">
             View documents →
           </Link>
         </section>

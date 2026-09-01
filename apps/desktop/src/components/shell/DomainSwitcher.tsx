@@ -3,7 +3,7 @@ import { domainLens, overviewLens } from "@lifequest/vault-core/pure";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "./useActiveDomain";
 
-const OVERVIEW_KEY = "overview";
+const OVERVIEW_KEY = "__overview__";
 
 export function DomainSwitcher() {
   const { snapshot, setLens, booting } = useVault();
@@ -35,7 +35,12 @@ export function DomainSwitcher() {
     setPending(true);
     setError(null);
     try {
-      await setLens(nextSlug ? domainLens(nextSlug) : overviewLens());
+      const result = await setLens(
+        nextSlug ? domainLens(nextSlug) : overviewLens(),
+      );
+      if (!result.ok) {
+        setError(result.error);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to switch domain");
     } finally {
