@@ -4,19 +4,24 @@ import { Loader2, Play, Send } from "lucide-react";
 import type {
   AgentHire,
   DocumentKind,
+  DomainRecord,
   LifeEvent,
 } from "@lifequest/vault-core";
-import { canDispatchAgent } from "@lifequest/vault-core/pure";
+import { canDispatchAgent, recordVisible } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { RoomLockGate } from "@/components/shell/RoomLockGate";
-import { useActiveDomain, documentsToUnlockDocs } from "@/components/shell/useActiveDomain";
+import {
+  documentsToUnlockDocs,
+  useActiveDomain,
+  useDomainLens,
+} from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
 
 const BRIEF_KINDS: { kind: DocumentKind; label: string; room: string }[] = [
   { kind: "why", label: "Why", room: "Dream" },
-  { kind: "what", label: "What", room: "Chart" },
+  { kind: "what", label: "What", room: "Dream" },
   { kind: "how", label: "How", room: "Track" },
 ];
 
@@ -29,12 +34,21 @@ type AgentRun = {
   error: string | null;
 };
 
-function buildBrief(active: ReturnType<typeof useActiveDomain>): string {
-  if (!active) return "";
+function domainBrief(domain: DomainRecord): string {
   return BRIEF_KINDS.map(({ kind, label }) => {
-    const body = active.documents[kind]?.bodyMarkdown.trim() ?? "";
+    const body = domain.documents[kind]?.bodyMarkdown.trim() ?? "";
     return `## ${label}\n${body || "(empty)"}`;
   }).join("\n\n");
+}
+
+function buildBrief(
+  active: DomainRecord | null,
+  liveDomains: DomainRecord[],
+): string {
+  if (active) return domainBrief(active);
+  return liveDomains
+    .map((d) => `## ${d.meta.name}\n${domainBrief(d)}`)
+    .join("\n\n");
 }
 
 export default function ActPage() {
@@ -47,7 +61,17 @@ export default function ActPage() {
 
 function ActContent() {
   const { snapshot, reloadGeneration, refresh } = useVault();
+  const lens = useDomainLens();
   const activeDomain = useActiveDomain();
+
+  const liveDomains = useMemo(
+    () =>
+      (snapshot?.domains ?? [])
+        .filter((d) => !d.meta.archivedAt)
+        .slice()
+        .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder),
+    [snapshot],
+  );
 
   const activeAgents = useMemo(
     () => (snapshot?.agents ?? []).filter((a) => a.status === "active"),
@@ -63,22 +87,17 @@ function ActContent() {
   const [recentEvents, setRecentEvents] = useState<LifeEvent[]>([]);
   const [brief, setBrief] = useState("");
 
-  const activeSlug = activeDomain?.slug ?? null;
+  const title = activeDomain?.meta.name ?? "Overview";
 
   useEffect(() => {
-    if (!activeDomain) {
-      setBrief("");
-      setRecentEvents([]);
-      return;
-    }
-    setBrief(buildBrief(activeDomain));
+    setBrief(buildBrief(activeDomain, liveDomains));
     void (async () => {
       try {
         const result = await api().logList();
         if (!result.ok) return;
-        const scoped = activeSlug
-          ? result.value.filter((e) => e.domainSlug === activeSlug)
-          : result.value;
+        const scoped = result.value.filter((e) =>
+          recordVisible(lens, e.domainSlug),
+        );
         setRecentEvents(
           scoped
             .slice()
@@ -89,7 +108,7 @@ function ActContent() {
         setRecentEvents([]);
       }
     })();
-  }, [activeDomain, activeSlug, reloadGeneration]);
+  }, [activeDomain, liveDomains, lens, reloadGeneration]);
 
   // Default the selected agent once the roster loads.
   useEffect(() => {
@@ -107,12 +126,12 @@ function ActContent() {
     (agent: AgentHire): string => {
       const head = `You are acting as "${agent.name}"${
         agent.roleLabel ? ` (${agent.roleLabel})` : ""
-      } for the domain "${activeDomain?.meta.name ?? "this domain"}".`;
+      } for the domain "${title}".`;
       return `${head}\n\nExecute against this doctrine — stay aligned with Why → What → How:\n\n${brief}\n\nTask: ${
         promptDraft.trim() || "Propose the next concrete action for this domain."
       }`;
     },
-    [brief, promptDraft, activeDomain],
+    [brief, promptDraft, title],
   );
 
   async function runAgent(agent: AgentHire) {
@@ -156,19 +175,16 @@ function ActContent() {
     }
   }
 
-  if (!activeDomain) {
-    return (
-      <div className="act-page">
-        <p className="muted">
-          Select or create a domain to begin acting on it.
-        </p>
-      </div>
-    );
-  }
+  const howForged = activeDomain
+    ? activeDomain.documents.how?.status === "forged"
+    : liveDomains.some((d) => d.documents.how?.status === "forged");
+  const canDispatch = activeDomain
+    ? canDispatchAgent(documentsToUnlockDocs(activeDomain.documents))
+    : liveDomains.some((d) =>
+        canDispatchAgent(documentsToUnlockDocs(d.documents)),
+      );
 
-  const howDoc = activeDomain.documents.how;
-  const howForged = howDoc?.status === "forged";
-  const canDispatch = canDispatchAgent(documentsToUnlockDocs(activeDomain.documents));
+  const briefDomains = activeDomain ? [activeDomain] : liveDomains;
 
   async function onMapCommand(command: import("@lifequest/vault-core/map").MapCommand) {
     const result = await api().mapApply(command);
@@ -186,7 +202,7 @@ function ActContent() {
       <header className="act-page__header">
         <div>
           <p className="act-page__eyebrow muted">Act</p>
-          <h1 className="act-page__title">{activeDomain.meta.name}</h1>
+          <h1 className="act-page__title">{title}</h1>
         </div>
         {howForged ? (
           <span className="act-page__alignment-badge" title="How is forged — execution is doctrine-locked">
@@ -209,24 +225,35 @@ function ActContent() {
           execution.
         </p>
         <div className="act-brief">
-          {BRIEF_KINDS.map(({ kind, label, room }) => {
-            const doc = activeDomain.documents[kind];
-            const body = doc?.bodyMarkdown.trim() ?? "";
-            return (
-              <div key={kind} className="act-brief__row">
-                <div className="act-brief__head">
-                  <span className="act-brief__label">{label}</span>
-                  <Link to={`/${room.toLowerCase()}`} className="act-brief__room">
-                    {room}
-                  </Link>
-                  <DocumentStatusBadge status={doc?.status ?? "draft"} />
-                </div>
-                <pre className="act-brief__body">
-                  {body || "(empty)"}
-                </pre>
+          {briefDomains.length === 0 ? (
+            <p className="muted">No live domains yet.</p>
+          ) : (
+            briefDomains.map((domain) => (
+              <div key={domain.slug}>
+                {briefDomains.length > 1 ? (
+                  <p className="act-brief__label">{domain.meta.name}</p>
+                ) : null}
+                {BRIEF_KINDS.map(({ kind, label, room }) => {
+                  const doc = domain.documents[kind];
+                  const body = doc?.bodyMarkdown.trim() ?? "";
+                  return (
+                    <div key={kind} className="act-brief__row">
+                      <div className="act-brief__head">
+                        <span className="act-brief__label">{label}</span>
+                        <Link to={`/${room.toLowerCase()}`} className="act-brief__room">
+                          {room}
+                        </Link>
+                        <DocumentStatusBadge status={doc?.status ?? "draft"} />
+                      </div>
+                      <pre className="act-brief__body">
+                        {body || "(empty)"}
+                      </pre>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            ))
+          )}
         </div>
       </section>
 

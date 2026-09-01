@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { AgentHire } from "@lifequest/vault-core";
+import { lensSlug, recordVisible } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
-import { useActiveDomain } from "@/components/shell/useActiveDomain";
+import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 
 type ScannedAgent = {
@@ -12,7 +13,7 @@ type ScannedAgent = {
 
 export function PersonnelStudio() {
   const { snapshot, refresh } = useVault();
-  const activeDomain = useActiveDomain();
+  const lens = useDomainLens();
   const domains = snapshot?.domains ?? [];
 
   const [hires, setHires] = useState<AgentHire[]>([]);
@@ -97,7 +98,7 @@ export function PersonnelStudio() {
       const result = await api().agentsHire({
         hermesAgentId: agent.id,
         name: agent.name,
-        domainSlug: activeDomain?.slug ?? null,
+        domainSlug: lensSlug(lens),
       });
       if (!result.ok) {
         setError(result.error);
@@ -134,6 +135,9 @@ export function PersonnelStudio() {
     }
   }
 
+  const visibleHires = hires.filter((h) =>
+    recordVisible(lens, h.domainSlug),
+  );
   const hiredAgentIds = new Set(hires.map((h) => h.hermesAgentId));
 
   return (
@@ -240,13 +244,13 @@ export function PersonnelStudio() {
 
         {hiresLoading ? (
           <p className="muted">Loading hires…</p>
-        ) : hires.length === 0 ? (
+        ) : visibleHires.length === 0 ? (
           <p className="muted personnel-studio__empty">
             No active agents. Scan Hermes and hire someone to get started.
           </p>
         ) : (
           <ul className="personnel-studio__list">
-            {hires.map((h) => {
+            {visibleHires.map((h) => {
               const domain = domainName(h.domainSlug);
               return (
                 <li key={h.id} className="personnel-card">
