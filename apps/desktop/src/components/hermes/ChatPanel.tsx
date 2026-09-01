@@ -29,6 +29,7 @@ function nextId(): string {
 
 export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const activeDomain = useActiveDomain();
+  const domainName = activeDomain?.meta.name ?? "Overview";
   const { refresh } = useVault();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -133,14 +134,12 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                 <p className="chat-panel__eyebrow">Agent</p>
                 <span className="chat-panel__title">Hermes</span>
               </div>
-              {activeDomain ? (
-                <span
-                  className="chat-panel__domain-chip"
-                  title="Active domain context"
-                >
-                  {activeDomain.meta.name}
-                </span>
-              ) : null}
+              <span
+                className="chat-panel__domain-chip"
+                title="Active domain context"
+              >
+                {domainName}
+              </span>
             </div>
             <div className="chat-panel__header-actions">
               {messages.length > 0 ? (
@@ -189,10 +188,8 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                 <div className="chat-panel__empty-orb" aria-hidden />
                 <p className="chat-panel__empty-title">Ask Hermes</p>
                 <p className="chat-panel__empty-copy">
-                  Send a message to your Hermes gateway.
-                  {activeDomain
-                    ? ` Active domain: ${activeDomain.meta.name}.`
-                    : ""}
+                  Send a message to your Hermes gateway. Active domain:{" "}
+                  {domainName}.
                 </p>
                 <Link to="/settings" className="chat-panel__link chat-panel__cta">
                   Configure in Settings

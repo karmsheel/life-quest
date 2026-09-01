@@ -59,3 +59,31 @@ describe("renderer domain lens", () => {
     assert.match(settings, /setActiveSlug\(null\)/);
   });
 });
+
+describe("lens filtering", () => {
+  it("Signal-Chain timeline has no in-page domain filter", () => {
+    const src = read("src/components/signal-chain/SignalChainFeed.tsx");
+    assert.match(src, /recordVisible/);
+    assert.equal(src.includes("filterDomain"), false);
+    assert.match(src, /lensSlug|useDomainLens/);
+  });
+
+  it("Home, Log, Act, Personnel, and Decisions use recordVisible", () => {
+    for (const file of [
+      "src/pages/HomePage.tsx",
+      "src/pages/ActPage.tsx",
+      "src/components/log/LifeLogFeed.tsx",
+      "src/components/personnel/PersonnelStudio.tsx",
+      "src/components/decisions/DecisionsInbox.tsx",
+    ]) {
+      const src = read(file);
+      assert.match(src, /recordVisible/, file);
+    }
+    const home = read("src/pages/HomePage.tsx");
+    assert.match(home, /\/dream\/\$\{.*\}\/what|\/dream\/.+\/what/);
+    assert.equal(home.includes('href: "/chart"'), false);
+
+    const chat = read("src/components/hermes/ChatPanel.tsx");
+    assert.match(chat, /Overview/);
+  });
+});

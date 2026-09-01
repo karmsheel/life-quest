@@ -6,23 +6,33 @@ import type {
   LifeEvent,
   RoomId,
 } from "@lifequest/vault-core";
+import { recordVisible } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
-import { useActiveDomain, useUnlockedRooms } from "@/components/shell/useActiveDomain";
+import {
+  useActiveDomain,
+  useDomainLens,
+  useUnlockedRooms,
+} from "@/components/shell/useActiveDomain";
 import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
 
 type DoctrineRow = {
   kind: DocumentKind;
   label: string;
   room: Exclude<RoomId, "act">;
-  href: string;
 };
 
 const DOCTRINE_ROWS: DoctrineRow[] = [
-  { kind: "why", label: "Why", room: "dream", href: "/dream" },
-  { kind: "what", label: "What", room: "chart", href: "/chart" },
-  { kind: "how", label: "How", room: "track", href: "/track" },
+  { kind: "why", label: "Why", room: "dream" },
+  { kind: "what", label: "What", room: "chart" },
+  { kind: "how", label: "How", room: "track" },
 ];
+
+function doctrineHref(kind: DocumentKind, slug: string): string {
+  if (kind === "how") return `/track/${slug}/how`;
+  if (kind === "what") return `/dream/${slug}/what`;
+  return `/dream/${slug}/why`;
+}
 
 function formatWhen(iso: string): string {
   try {
@@ -37,11 +47,11 @@ function formatWhen(iso: string): string {
 
 export default function HomePage() {
   const { snapshot, reloadGeneration } = useVault();
+  const lens = useDomainLens();
   const activeDomain = useActiveDomain();
   const unlocked = useUnlockedRooms();
 
-  const activeSlug = activeDomain?.slug ?? null;
-  const domainName = activeDomain?.meta.name ?? "No domain";
+  const title = activeDomain?.meta.name ?? "Overview";
 
   const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
   const [events, setEvents] = useState<LifeEvent[]>([]);
@@ -54,8 +64,7 @@ export default function HomePage() {
         api().decisionList(),
         api().logList(),
       ]);
-      const allDecisions =
-        decResult.ok ? decResult.value : [];
+      const allDecisions = decResult.ok ? decResult.value : [];
       const allEvents = logResult.ok ? logResult.value : [];
 
       setDecisions(
@@ -64,9 +73,9 @@ export default function HomePage() {
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       );
 
-      const scoped = activeSlug
-        ? allEvents.filter((e) => e.domainSlug === activeSlug)
-        : allEvents;
+      const scoped = allEvents.filter((e) =>
+        recordVisible(lens, e.domainSlug),
+      );
       setEvents(
         scoped
           .slice()
@@ -79,7 +88,7 @@ export default function HomePage() {
     } finally {
       setLoading(false);
     }
-  }, [activeSlug]);
+  }, [lens]);
 
   useEffect(() => {
     void load();
@@ -90,19 +99,29 @@ export default function HomePage() {
     [snapshot],
   );
 
+  const visibleDomains = useMemo(() => {
+    return (snapshot?.domains ?? [])
+      .filter((d) => !d.meta.archivedAt && recordVisible(lens, d.slug))
+      .slice()
+      .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder);
+  }, [snapshot, lens]);
+
+  const doctrineTotal = visibleDomains.length * DOCTRINE_ROWS.length;
+
   const forgedCount = useMemo(() => {
-    if (!activeDomain) return 0;
-    return DOCTRINE_ROWS.filter(
-      (r) => activeDomain.documents[r.kind]?.status === "forged",
-    ).length;
-  }, [activeDomain]);
+    return visibleDomains.reduce((n, domain) => {
+      return (
+        n +
+        DOCTRINE_ROWS.filter(
+          (r) => domain.documents[r.kind]?.status === "forged",
+        ).length
+      );
+    }, 0);
+  }, [visibleDomains]);
 
   const pendingForDomain = useMemo(
-    () =>
-      activeSlug
-        ? decisions.filter((d) => d.domainSlug === activeSlug)
-        : decisions,
-    [decisions, activeSlug],
+    () => decisions.filter((d) => recordVisible(lens, d.domainSlug)),
+    [decisions, lens],
   );
 
   const todayTasks = useMemo(
@@ -114,27 +133,8 @@ export default function HomePage() {
     [snapshot?.map?.tasks],
   );
 
-  if (!activeDomain) {
-    return (
-      <div className="home-dashboard">
-        <header className="home-dashboard__header">
-          <div>
-            <p className="home-dashboard__eyebrow muted">Home</p>
-            <h1 className="home-dashboard__title">Welcome to LifeQuest</h1>
-          </div>
-        </header>
-        <p className="muted">
-          Select or create a domain to see your dashboard. Use{" "}
-          <Link to="/domains" className="home-dashboard__inline-link">
-            Domains
-          </Link>{" "}
-          to get started.
-        </p>
-      </div>
-    );
-  }
-
-  const progressPct = Math.round((forgedCount / DOCTRINE_ROWS.length) * 100);
+  const progressPct =
+    doctrineTotal === 0 ? 0 : Math.round((forgedCount / doctrineTotal) * 100);
 
   return (
     <div className="home-dashboard">
@@ -142,16 +142,19 @@ export default function HomePage() {
         <div>
           <p className="home-dashboard__eyebrow muted">Home</p>
           <h1 className="home-dashboard__title">
-            {domainName}
+            {title}
             <span className="home-dashboard__subtitle muted">
               {" "}
               Why → What → How
             </span>
           </h1>
         </div>
-        <div className="home-dashboard__progress" title={`${forgedCount} of 3 pillars forged`}>
+        <div
+          className="home-dashboard__progress"
+          title={`${forgedCount} of ${doctrineTotal} pillars forged`}
+        >
           <span className="muted home-dashboard__progress-label">
-            {forgedCount}/{DOCTRINE_ROWS.length} forged
+            {forgedCount}/{doctrineTotal} forged
           </span>
           <div className="home-progress-bar">
             <div
@@ -165,36 +168,53 @@ export default function HomePage() {
       <div className="home-dashboard__grid">
         <section className="home-card home-card--doctrine">
           <h2 className="home-card__title">Doctrine</h2>
-          <ul className="home-doctrine-list">
-            {DOCTRINE_ROWS.map((row) => {
-              const doc = activeDomain.documents[row.kind];
-              const status = doc?.status ?? "draft";
-              const chars = doc?.bodyMarkdown.trim().length ?? 0;
-              const isUnlocked = unlocked.has(row.room);
-              return (
-                <li key={row.kind} className="home-doctrine-row">
-                  <Link to={row.href} className="home-doctrine-row__main">
-                    <span className="home-doctrine-row__label">
-                      {row.label}
-                      {!isUnlocked ? (
-                        <span
-                          className="home-doctrine-row__lock muted"
-                          title="Locked — complete the prior pillar first"
-                          aria-label="locked"
-                        >
-                          {" "}🔒
+          {visibleDomains.length === 0 ? (
+            <p className="muted home-card__empty">No live domains yet.</p>
+          ) : (
+            <ul className="home-doctrine-list">
+              {visibleDomains.flatMap((domain) =>
+                DOCTRINE_ROWS.map((row) => {
+                  const doc = domain.documents[row.kind];
+                  const status = doc?.status ?? "draft";
+                  const chars = doc?.bodyMarkdown.trim().length ?? 0;
+                  const isUnlocked = unlocked.has(row.room);
+                  const label =
+                    visibleDomains.length > 1
+                      ? `${domain.meta.name} · ${row.label}`
+                      : row.label;
+                  return (
+                    <li
+                      key={`${domain.slug}-${row.kind}`}
+                      className="home-doctrine-row"
+                    >
+                      <Link
+                        to={doctrineHref(row.kind, domain.slug)}
+                        className="home-doctrine-row__main"
+                      >
+                        <span className="home-doctrine-row__label">
+                          {label}
+                          {!isUnlocked ? (
+                            <span
+                              className="home-doctrine-row__lock muted"
+                              title="Locked — complete the prior pillar first"
+                              aria-label="locked"
+                            >
+                              {" "}
+                              🔒
+                            </span>
+                          ) : null}
                         </span>
-                      ) : null}
-                    </span>
-                    <span className="home-doctrine-row__meta muted">
-                      {chars > 0 ? `${chars} chars` : "empty body"}
-                    </span>
-                  </Link>
-                  <DocumentStatusBadge status={status} />
-                </li>
-              );
-            })}
-          </ul>
+                        <span className="home-doctrine-row__meta muted">
+                          {chars > 0 ? `${chars} chars` : "empty body"}
+                        </span>
+                      </Link>
+                      <DocumentStatusBadge status={status} />
+                    </li>
+                  );
+                }),
+              )}
+            </ul>
+          )}
           <Link to="/documents" className="home-card__more">
             View documents →
           </Link>
@@ -305,9 +325,7 @@ export default function HomePage() {
           {loading ? (
             <p className="muted">Loading…</p>
           ) : events.length === 0 ? (
-            <p className="muted home-card__empty">
-              No activity yet for this domain.
-            </p>
+            <p className="muted home-card__empty">No activity yet.</p>
           ) : (
             <ul className="home-activity-list">
               {events.map((e) => (

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DecisionRecord } from "@lifequest/vault-core";
+import { recordVisible } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
+import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 
 type Tab = "pending" | "history";
@@ -25,6 +27,7 @@ function domainLabel(
 
 export function DecisionsInbox() {
   const { snapshot, refresh } = useVault();
+  const lens = useDomainLens();
   const domains = snapshot?.domains ?? [];
 
   const [tab, setTab] = useState<Tab>("pending");
@@ -50,6 +53,7 @@ export function DecisionsInbox() {
       } else {
         list = list.filter((d) => d.status !== "pending");
       }
+      list = list.filter((d) => recordVisible(lens, d.domainSlug));
       // Newest first
       list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       setItems(list);
@@ -59,7 +63,7 @@ export function DecisionsInbox() {
     } finally {
       setLoading(false);
     }
-  }, [tab]);
+  }, [tab, lens]);
 
   useEffect(() => {
     void load();

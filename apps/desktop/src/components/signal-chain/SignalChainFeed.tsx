@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   SIGNAL_TYPES,
+  lensSlug,
+  recordVisible,
   type SignalRecord,
   type SignalType,
   type SignalUpdatePatch,
 } from "@lifequest/vault-core/pure";
-import { useActiveDomain } from "@/components/shell/useActiveDomain";
+import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { api } from "@/lib/ipc";
 import {
   filterSignals,
@@ -24,7 +26,7 @@ const TYPE_LABEL: Record<SignalType, string> = {
 
 export function SignalChainFeed() {
   const { snapshot } = useVault();
-  const activeDomain = useActiveDomain();
+  const lens = useDomainLens();
   const liveDomains = (snapshot?.domains ?? []).filter((d) => !d.meta.archivedAt);
 
   const [records, setRecords] = useState<SignalRecord[]>([]);
@@ -34,24 +36,19 @@ export function SignalChainFeed() {
   const [busy, setBusy] = useState(false);
 
   const [type, setType] = useState<SignalType>("thought");
-  const [domainSlug, setDomainSlug] = useState<string>(
-    activeDomain?.slug ?? "",
-  );
-  const domainDefaulted = useRef(Boolean(activeDomain?.slug));
+  const [domainSlug, setDomainSlug] = useState(lensSlug(lens) ?? "");
+  const domainDirty = useRef(false);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
 
   const [filterType, setFilterType] = useState<SignalFilters["type"]>("all");
-  const [filterDomain, setFilterDomain] =
-    useState<SignalFilters["domainSlug"]>("all");
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (domainDefaulted.current || !activeDomain?.slug) return;
-    setDomainSlug(activeDomain.slug);
-    domainDefaulted.current = true;
-  }, [activeDomain?.slug]);
+    if (domainDirty.current) return;
+    setDomainSlug(lensSlug(lens) ?? "");
+  }, [lens]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,15 +75,10 @@ export function SignalChainFeed() {
     void load();
   }, [load]);
 
-  const visible = useMemo(
-    () =>
-      filterSignals(records, {
-        type: filterType,
-        domainSlug: filterDomain,
-        query,
-      }),
-    [records, filterType, filterDomain, query],
-  );
+  const visible = useMemo(() => {
+    const scoped = records.filter((r) => recordVisible(lens, r.domainSlug));
+    return filterSignals(scoped, { type: filterType, domainSlug: "all", query });
+  }, [records, filterType, query, lens]);
   const groups = useMemo(() => groupSignalsByDay(visible), [visible]);
 
   function domainName(slug: string | null): string | null {
@@ -114,6 +106,8 @@ export function SignalChainFeed() {
       setTitle("");
       setBody("");
       setEditingId(null);
+      domainDirty.current = false;
+      setDomainSlug(lensSlug(lens) ?? "");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add signal");
@@ -190,9 +184,12 @@ export function SignalChainFeed() {
           Domain
           <select
             value={domainSlug}
-            onChange={(e) => setDomainSlug(e.target.value)}
+            onChange={(e) => {
+              domainDirty.current = true;
+              setDomainSlug(e.target.value);
+            }}
           >
-            <option value="">None</option>
+            <option value="">Unassigned</option>
             {liveDomains.map((d) => (
               <option key={d.slug} value={d.slug}>
                 {d.meta.name}
@@ -239,23 +236,6 @@ export function SignalChainFeed() {
             {SIGNAL_TYPES.map((t) => (
               <option key={t} value={t}>
                 {TYPE_LABEL[t]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          Domain
-          <select
-            value={filterDomain}
-            onChange={(e) =>
-              setFilterDomain(e.target.value as SignalFilters["domainSlug"])
-            }
-          >
-            <option value="all">All</option>
-            <option value="none">None</option>
-            {liveDomains.map((d) => (
-              <option key={d.slug} value={d.slug}>
-                {d.meta.name}
               </option>
             ))}
           </select>
