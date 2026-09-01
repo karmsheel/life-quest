@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import { SETTINGS_SECTIONS, type SettingsViewId } from "@/lib/settings-views";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { SettingsAppearance } from "./SettingsAppearance";
+import { SettingsDomains } from "./SettingsDomains";
 import { SettingsHermes } from "./SettingsHermes";
 import { SettingsVault } from "./SettingsVault";
 import { SettingsAbout } from "./SettingsAbout";
@@ -34,6 +35,8 @@ function SettingsPanel({ view }: { view: SettingsViewId }) {
   switch (view) {
     case "appearance":
       return <SettingsAppearance />;
+    case "domains":
+      return <SettingsDomains />;
     case "vault":
       return <SettingsVault />;
     case "hermes":
