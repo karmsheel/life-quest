@@ -19,7 +19,6 @@ const PINNED_PATHS = new Set(["/log", "/decisions", "/settings"]);
 const PATH_WING: Record<string, WingId> = {
   "/home": "vision",
   "/dream": "vision",
-  "/domains": "vision",
   "/chain": "vision",
   "/documents": "vision",
   "/personnel": "vision",
@@ -45,7 +44,10 @@ export function isPinnedPath(pathname: string): boolean {
 }
 
 export function wingForPath(pathname: string): WingId | null {
-  return PATH_WING[pathname] ?? null;
+  if (PATH_WING[pathname]) return PATH_WING[pathname];
+  if (pathname.startsWith("/dream/")) return "vision";
+  if (pathname.startsWith("/track/")) return "plan";
+  return null;
 }
 
 function isUsableLastPath(pathname: string, wing: WingId): boolean {

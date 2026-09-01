@@ -7,7 +7,6 @@ import {
   type DoctrineDocument,
 } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
-import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 import { DocumentStatusBadge } from "./DocumentStatusBadge";
 import { ProposeChangeDialog } from "./ProposeChangeDialog";
@@ -51,10 +50,15 @@ function applyDocument(
   setDraft(initialEditorBody(kind, doc.bodyMarkdown));
 }
 
-export function DocumentEditor({ kind }: { kind: DocumentKind }) {
-  const { refresh, reloadGeneration } = useVault();
-  const activeDomain = useActiveDomain();
-  const slug = activeDomain?.slug ?? null;
+export function DocumentEditor({
+  kind,
+  slug,
+}: {
+  kind: DocumentKind;
+  slug: string;
+}) {
+  const { refresh, reloadGeneration, snapshot } = useVault();
+  const domainName = snapshot?.domains.find((d) => d.slug === slug)?.meta.name;
 
   const [document, setDocument] = useState<DoctrineDocument | null>(null);
   const [draft, setDraft] = useState("");
@@ -77,7 +81,7 @@ export function DocumentEditor({ kind }: { kind: DocumentKind }) {
         setDocument(null);
         setDraft("");
         setTitleDraft("");
-        setLoadError(null);
+        setLoadError("Document not found");
         setLoading(false);
         return;
       }
@@ -259,10 +263,10 @@ export function DocumentEditor({ kind }: { kind: DocumentKind }) {
         <div className="doc-editor__heading">
           <h1 className="doc-editor__title">
             {KIND_LABELS[kind]}
-            {activeDomain ? (
+            {domainName ? (
               <span className="doc-editor__domain muted">
                 {" "}
-                · {activeDomain.meta.name}
+                · {domainName}
               </span>
             ) : null}
           </h1>
