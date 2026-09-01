@@ -111,6 +111,33 @@ export type SignalChainListResult = {
   skipped: number;
 };
 
+export type LibraryDocument = {
+  id: string;
+  title: string;
+  bodyMarkdown: string;
+  domainSlugs: string[];
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+};
+
+export type LibraryCreateInput = {
+  title: string;
+  bodyMarkdown?: string;
+  domainSlugs?: string[];
+};
+
+export type LibraryUpdatePatch = {
+  title?: string;
+  bodyMarkdown?: string;
+  domainSlugs?: string[];
+};
+
+export type LibraryListResult = {
+  records: LibraryDocument[];
+  skipped: number;
+};
+
 export type DecisionRecord = {
   id: string;
   domainSlug: string;
