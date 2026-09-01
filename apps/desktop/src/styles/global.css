@@ -1280,6 +1280,81 @@ a {
   color: var(--accent);
 }
 
+.library-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.library-list .doc-card {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.library-list .doc-card.is-selected {
+  border-color: var(--accent);
+  background: var(--selected-soft);
+}
+
+.library-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+}
+
+.library-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--selected) 55%, transparent);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.library-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.library-composer .field textarea {
+  min-height: 8rem;
+  width: 100%;
+}
+
+.library-tag-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.85rem;
+}
+
+.library-tag-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.library-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.library-row__when {
+  font-size: 0.75rem;
+}
+
 /* —— Decisions inbox —— */
 .decisions-inbox {
   max-width: 48rem;

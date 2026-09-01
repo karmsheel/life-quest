@@ -105,3 +105,13 @@ describe("doctrine indexes", () => {
     assert.match(index, /\/dream\//);
   });
 });
+
+describe("documents library page", () => {
+  it("is a library, not doctrine cards", () => {
+    const src = read("src/pages/DocumentsPage.tsx");
+    assert.match(src, /libraryList/);
+    assert.match(src, /recordVisibleMulti/);
+    assert.equal(src.includes("DOC_CARDS"), false);
+    assert.equal(src.includes('href: "/dream"'), false);
+  });
+});
