@@ -11,6 +11,11 @@ import {
   DOCUMENT_KINDS,
   getDocument,
   hireAgent,
+  libraryCreate,
+  libraryDelete,
+  libraryGet,
+  libraryList,
+  libraryUpdate,
   listAgents,
   listDecisions,
   listSignals,
@@ -34,6 +39,10 @@ import {
   type DoctrineDocument,
   type DomainMeta,
   type DomainRecord,
+  type LibraryCreateInput,
+  type LibraryDocument,
+  type LibraryListResult,
+  type LibraryUpdatePatch,
   type LifeEvent,
   type Result,
   type SignalChainListResult,
@@ -44,10 +53,8 @@ import {
   type VaultSnapshot,
 } from "@lifequest/vault-core";
 import {
-  getActiveDomain,
   listRecentVaults,
   recordRecentVault,
-  setActiveDomain,
   type RecentEntry,
 } from "./recent-vaults.js";
 import {
@@ -66,6 +73,7 @@ import { startMcp, stopMcp } from "./mcp-server.js";
 
 let currentRoot: string | null = null;
 let currentVaultId: string | null = null;
+let currentLens: string | null = null;
 let queue: Promise<unknown> = Promise.resolve();
 /** Last-known mtimes for doctrine files (why/what/how.md) under the open vault. */
 let doctrineMtimes: Map<string, number> = new Map();
@@ -157,26 +165,21 @@ export async function detectExternalDoctrineChanges(): Promise<
 async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
   currentRoot = snapshot.rootPath;
   currentVaultId = snapshot.lifequest.id;
+  currentLens = null;
   await captureDoctrineMtimes(snapshot.rootPath);
   await recordRecentVault({
     id: snapshot.lifequest.id,
     name: snapshot.lifequest.name,
     path: snapshot.rootPath,
   });
-  // Seed active domain if unset (new vaults → first domain, typically health).
-  const existing = await getActiveDomain(snapshot.lifequest.id);
-  if (!existing) {
-    const first =
-      snapshot.domains.find((d) => !d.meta.archivedAt)?.slug ??
-      snapshot.domains[0]?.slug;
-    if (first) {
-      await setActiveDomain(snapshot.lifequest.id, first);
-    }
-  }
   // Open the loopback MCP door for this vault. A failed start keeps the vault
   // open; we record the error for Settings instead of throwing.
   mcpError = null;
-  const mcpResult = await startMcp(snapshot.rootPath, snapshot.lifequest.id);
+  const mcpResult = await startMcp(
+    snapshot.rootPath,
+    snapshot.lifequest.id,
+    () => currentLens,
+  );
   if (!mcpResult.ok) {
     mcpError = mcpResult.error;
   }
@@ -262,10 +265,13 @@ export async function domainArchive(
   return withVault((root) => archiveDomain(root, slug));
 }
 
-export async function domainSetActive(slug: string): Promise<Result<string>> {
+export async function domainSetActive(slug: string | null): Promise<Result<string | null>> {
   return enqueue(async () => {
-    if (!currentRoot || !currentVaultId) return noVaultError<string>();
-    // Validate domain exists and is not archived.
+    if (!currentRoot || !currentVaultId) return noVaultError<string | null>();
+    if (slug === null) {
+      currentLens = null;
+      return { ok: true, value: null };
+    }
     const snap = await openVault(currentRoot);
     if (!snap.ok) return snap;
     const domain = snap.value.domains.find((d) => d.slug === slug);
@@ -275,14 +281,14 @@ export async function domainSetActive(slug: string): Promise<Result<string>> {
     if (domain.meta.archivedAt) {
       return { ok: false, error: `Domain is archived: ${slug}` };
     }
-    await setActiveDomain(currentVaultId, slug);
+    currentLens = slug;
     return { ok: true, value: slug };
   });
 }
 
 export async function domainGetActive(): Promise<string | null> {
   if (!currentVaultId) return null;
-  return getActiveDomain(currentVaultId);
+  return currentLens;
 }
 
 export async function documentGet(
@@ -384,6 +390,35 @@ export async function signalChainDelete(
   id: string,
 ): Promise<Result<SignalRecord>> {
   return withVault((root) => deleteSignal(root, id));
+}
+
+export async function libraryListCall(): Promise<Result<LibraryListResult>> {
+  return withVault((root) => libraryList(root));
+}
+
+export async function libraryCreateCall(
+  input: LibraryCreateInput,
+): Promise<Result<LibraryDocument>> {
+  return withVault((root) => libraryCreate(root, input));
+}
+
+export async function libraryGetCall(
+  id: string,
+): Promise<Result<LibraryDocument>> {
+  return withVault((root) => libraryGet(root, id));
+}
+
+export async function libraryUpdateCall(
+  id: string,
+  patch: LibraryUpdatePatch,
+): Promise<Result<LibraryDocument>> {
+  return withVault((root) => libraryUpdate(root, id, patch));
+}
+
+export async function libraryDeleteCall(
+  id: string,
+): Promise<Result<LibraryDocument>> {
+  return withVault((root) => libraryDelete(root, id));
 }
 
 export async function agentsList(): Promise<Result<AgentHire[]>> {
@@ -507,13 +542,13 @@ export async function hermesChatToolsCall(
 
   // Build read-only context the planner loop injects as extra system text:
   // active domain slug, About me, and whether the agent lock is engaged.
-  const activeSlug = currentVaultId ? await getActiveDomain(currentVaultId) : null;
+  const activeSlug = currentLens;
   const snap = await openVault(currentRoot);
   const map = snap.ok ? snap.value.map : null;
   const aboutMe = map?.aboutMe ?? "";
   const locked = map?.locked ?? false;
   const extraSystem = [
-    `Active domain: ${activeSlug ?? "none"}`,
+    `Active domain: ${activeSlug ?? "overview"}`,
     `About me: ${aboutMe}`,
     `Agent lock: ${locked}`,
   ].join("\n");

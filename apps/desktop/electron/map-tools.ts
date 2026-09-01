@@ -75,18 +75,38 @@ export async function executeTool(
   if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
   if (name === "get_state") return { state: snap.value.map };
   if (name === "get_doctrine") {
-    const slug =
-      (rec.domainSlug as string | undefined) ??
-      activeSlug ??
-      snap.value.domains.find((d) => !d.meta.archivedAt)?.slug;
-    const domain = snap.value.domains.find((d) => d.slug === slug);
-    if (!domain) return { error: { code: "NOT_FOUND", message: "Domain not found" } };
+    const requested = rec.domainSlug as string | undefined;
+    const live = snap.value.domains.filter((d) => !d.meta.archivedAt);
+    if (requested) {
+      const domain = snap.value.domains.find((d) => d.slug === requested);
+      if (!domain) return { error: { code: "NOT_FOUND", message: "Domain not found" } };
+      return {
+        slug: domain.slug,
+        name: domain.meta.name,
+        why: domain.documents.why,
+        what: domain.documents.what,
+        how: domain.documents.how,
+      };
+    }
+    if (activeSlug) {
+      const domain = live.find((d) => d.slug === activeSlug);
+      if (!domain) return { error: { code: "NOT_FOUND", message: "Domain not found" } };
+      return {
+        slug: domain.slug,
+        name: domain.meta.name,
+        why: domain.documents.why,
+        what: domain.documents.what,
+        how: domain.documents.how,
+      };
+    }
     return {
-      slug: domain.slug,
-      name: domain.meta.name,
-      why: domain.documents.why,
-      what: domain.documents.what,
-      how: domain.documents.how,
+      domains: live.map((domain) => ({
+        slug: domain.slug,
+        name: domain.meta.name,
+        why: domain.documents.why,
+        what: domain.documents.what,
+        how: domain.documents.how,
+      })),
     };
   }
   if (name === "get_week") {

@@ -91,7 +91,7 @@ function registerIpcHandlers() {
   ipcMain.handle("domain:archive", (_e, slug: string) =>
     vault.domainArchive(slug),
   );
-  ipcMain.handle("domain:setActive", (_e, slug: string) =>
+  ipcMain.handle("domain:setActive", (_e, slug: string | null) =>
     vault.domainSetActive(slug),
   );
   ipcMain.handle("domain:getActive", () => vault.domainGetActive());
@@ -151,6 +151,25 @@ function registerIpcHandlers() {
   );
   ipcMain.handle("signalChain:delete", (_e, id: string) =>
     vault.signalChainDelete(id),
+  );
+
+  ipcMain.handle("library:list", () => vault.libraryListCall());
+  ipcMain.handle(
+    "library:create",
+    (_e, input: Parameters<typeof vault.libraryCreateCall>[0]) =>
+      vault.libraryCreateCall(input),
+  );
+  ipcMain.handle("library:get", (_e, id: string) => vault.libraryGetCall(id));
+  ipcMain.handle(
+    "library:update",
+    (
+      _e,
+      id: string,
+      patch: Parameters<typeof vault.libraryUpdateCall>[1],
+    ) => vault.libraryUpdateCall(id, patch),
+  );
+  ipcMain.handle("library:delete", (_e, id: string) =>
+    vault.libraryDeleteCall(id),
   );
 
   ipcMain.handle("agents:list", () => vault.agentsList());

@@ -8,6 +8,10 @@ import type {
   DoctrineDocument,
   DomainMeta,
   DomainRecord,
+  LibraryCreateInput,
+  LibraryDocument,
+  LibraryListResult,
+  LibraryUpdatePatch,
   LifeEvent,
   MapCommand,
   MapStoreState,
@@ -45,7 +49,7 @@ type LifequestApi = {
     >,
   ) => Promise<Result<DomainRecord>>;
   domainArchive: (slug: string) => Promise<Result<DomainRecord>>;
-  domainSetActive: (slug: string) => Promise<Result<string>>;
+  domainSetActive: (slug: string | null) => Promise<Result<string | null>>;
   domainGetActive: () => Promise<string | null>;
   documentGet: (
     slug: string,
@@ -83,6 +87,14 @@ type LifequestApi = {
     patch: SignalUpdatePatch,
   ) => Promise<Result<SignalRecord>>;
   signalChainDelete: (id: string) => Promise<Result<SignalRecord>>;
+  libraryList: () => Promise<Result<LibraryListResult>>;
+  libraryCreate: (input: LibraryCreateInput) => Promise<Result<LibraryDocument>>;
+  libraryGet: (id: string) => Promise<Result<LibraryDocument>>;
+  libraryUpdate: (
+    id: string,
+    patch: LibraryUpdatePatch,
+  ) => Promise<Result<LibraryDocument>>;
+  libraryDelete: (id: string) => Promise<Result<LibraryDocument>>;
   agentsList: () => Promise<Result<AgentHire[]>>;
   agentsHire: (input: {
     hermesAgentId: string;
