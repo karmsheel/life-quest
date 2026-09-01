@@ -1,7 +1,12 @@
 import type { LucideIcon } from "lucide-react";
-import { Building2, Palette, Sparkles, User } from "lucide-react";
+import { Building2, Layers, Palette, Sparkles, User } from "lucide-react";
 
-export type SettingsViewId = "appearance" | "vault" | "hermes" | "about";
+export type SettingsViewId =
+  | "appearance"
+  | "domains"
+  | "vault"
+  | "hermes"
+  | "about";
 
 export interface SettingsSection {
   id: SettingsViewId;
@@ -11,6 +16,7 @@ export interface SettingsSection {
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "domains", label: "Domains", icon: Layers },
   { id: "vault", label: "Vault", icon: Building2 },
   { id: "hermes", label: "Hermes", icon: Sparkles },
   { id: "about", label: "About me", icon: User },

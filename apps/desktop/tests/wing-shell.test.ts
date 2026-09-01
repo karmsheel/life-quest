@@ -46,6 +46,21 @@ describe("wing shell wiring", () => {
     assert.equal(css.includes(".top-bar__vault-name"), false);
   });
 
+  it("renders the domain switcher as open segmented buttons", () => {
+    const src = read("src/components/shell/DomainSwitcher.tsx");
+    assert.match(src, /className="ui-segmented domain-switcher__tabs"/);
+    assert.match(src, /ui-segmented__option/);
+    assert.match(src, /role="radiogroup"/);
+    assert.match(src, /ArrowLeft/);
+    assert.match(src, /ArrowRight/);
+    assert.equal(src.includes("<select"), false);
+    assert.equal(src.includes("domain-switcher__select"), false);
+
+    const css = read("src/styles/global.css");
+    assert.equal(css.includes(".domain-switcher__select"), false);
+    assert.match(css, /\.domain-switcher__tabs\s*\{/);
+  });
+
   it("filters the nav rail by the active wing and keeps pinned items", () => {
     const src = read("src/components/shell/NavRail.tsx");
     assert.match(src, /useWing/);
