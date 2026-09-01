@@ -37,3 +37,25 @@ describe("main-process domain lens", () => {
     assert.match(tools, /activeSlug/);
   });
 });
+
+describe("renderer domain lens", () => {
+  it("drops the first-live-domain fallback and exposes Overview", () => {
+    const hook = read("src/components/shell/useActiveDomain.ts");
+    assert.equal(hook.includes("live[0]"), false);
+    assert.match(hook, /useDomainLens/);
+    assert.match(hook, /overviewLens|kind === "overview"|kind === 'overview'/);
+
+    const provider = read("src/state/VaultProvider.tsx");
+    assert.match(provider, /setLens/);
+    assert.match(provider, /overviewLens/);
+    assert.equal(provider.includes("domainGetActive"), false);
+
+    const switcher = read("src/components/shell/DomainSwitcher.tsx");
+    assert.match(switcher, /Overview/);
+    assert.match(switcher, /aria-label="Domain lens"/);
+    assert.match(switcher, /overviewLens/);
+
+    const settings = read("src/components/settings/SettingsDomains.tsx");
+    assert.match(settings, /setActiveSlug\(null\)/);
+  });
+});
