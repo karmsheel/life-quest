@@ -42,8 +42,8 @@ export type VaultContextValue = {
   updateSettings: (
     patch: Partial<VaultSettings>,
   ) => Promise<Result<VaultSettings>>;
-  setLens: (next: DomainLens) => Promise<void>;
-  setActiveSlug: (slug: string | null) => Promise<void>;
+  setLens: (next: DomainLens) => Promise<Result<string | null>>;
+  setActiveSlug: (slug: string | null) => Promise<Result<string | null>>;
   clearVault: () => void;
   createVault: (name?: string) => Promise<boolean>;
   openVault: () => Promise<boolean>;
@@ -92,11 +92,12 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     } else {
       setError(null);
     }
+    return result;
   }, []);
 
   const setActiveSlug = useCallback(
     async (slug: string | null) => {
-      await setLens(slug ? domainLens(slug) : overviewLens());
+      return setLens(slug ? domainLens(slug) : overviewLens());
     },
     [setLens],
   );

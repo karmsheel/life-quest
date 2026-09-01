@@ -1743,7 +1743,11 @@ a {
   min-width: 0;
 }
 
-.home-doctrine-row__main:hover .home-doctrine-row__label {
+.home-doctrine-row.is-locked {
+  opacity: 0.65;
+}
+
+a.home-doctrine-row__main:hover .home-doctrine-row__label {
   color: var(--accent);
 }
 

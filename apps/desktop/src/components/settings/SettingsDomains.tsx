@@ -40,11 +40,6 @@ export function SettingsDomains() {
       }
       setName("");
       await refresh();
-      try {
-        await setActiveSlug(result.value.slug);
-      } catch {
-        /* list already refreshed */
-      }
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Failed to create");
     } finally {
@@ -112,7 +107,11 @@ export function SettingsDomains() {
     setBusySlug(slug);
     setActionError(null);
     try {
-      await setActiveSlug(slug);
+      const result = await setActiveSlug(slug);
+      if (!result.ok) {
+        setActionError(result.error);
+        return;
+      }
       await refresh();
     } catch (err) {
       setActionError(
