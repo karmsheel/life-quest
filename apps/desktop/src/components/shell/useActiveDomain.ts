@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type {
+  DomainLens,
   DomainRecord,
   DoctrineDocument,
   DocumentKind,
@@ -8,18 +9,22 @@ import type {
 import { DOCUMENT_KINDS, getUnlockedRooms } from "@lifequest/vault-core/pure";
 import { useVault } from "@/state/VaultProvider";
 
-/** Active domain from snapshot + activeSlug (falls back to first non-archived). */
+export function useDomainLens(): DomainLens {
+  const { lens } = useVault();
+  return lens;
+}
+
+/** Live domain for a domain lens; null in Overview (no first-live fallback). */
 export function useActiveDomain(): DomainRecord | null {
-  const { snapshot, activeSlug } = useVault();
+  const { snapshot, lens } = useVault();
   return useMemo(() => {
-    if (!snapshot) return null;
-    const live = snapshot.domains.filter((d) => !d.meta.archivedAt);
-    if (activeSlug) {
-      const match = live.find((d) => d.slug === activeSlug);
-      if (match) return match;
-    }
-    return live[0] ?? null;
-  }, [snapshot, activeSlug]);
+    if (!snapshot || lens.kind === "overview") return null;
+    return (
+      snapshot.domains.find(
+        (d) => d.slug === lens.slug && !d.meta.archivedAt,
+      ) ?? null
+    );
+  }, [snapshot, lens]);
 }
 
 export function documentsToUnlockDocs(
