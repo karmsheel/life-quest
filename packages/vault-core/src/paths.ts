@@ -22,6 +22,9 @@ export function vaultPaths(root: string) {
       safeJoin(rootPath, ".lifequest", "signal-chain", `${id}.json`),
     mapJson: path.join(rootPath, ".lifequest", "map.json"),
     aboutMd: path.join(rootPath, ".lifequest", "about.md"),
+    documentsDir: path.join(rootPath, "documents"),
+    libraryDocumentMd: (id: string) =>
+      safeJoin(rootPath, "documents", `${id}.md`),
   };
 }
 
