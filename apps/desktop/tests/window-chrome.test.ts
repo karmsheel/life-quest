@@ -75,8 +75,11 @@ describe("window chrome (renderer)", () => {
     const src = read("src/components/theme/ThemeProvider.tsx");
     assert.match(src, /window\.lifequest\?\.windowChrome/);
     assert.match(src, /setTitleBarOverlay/);
-    assert.match(src, /getPropertyValue\(["']--bg["']\)/);
-    assert.match(src, /getPropertyValue\(["']--text["']\)/);
+    assert.match(src, /getPropertyValue\(["']--background["']\)/);
+    assert.match(src, /getPropertyValue\(["']--foreground["']\)/);
+    assert.equal(src.includes('getPropertyValue("--bg")'), false);
+    assert.equal(src.includes("getPropertyValue('--bg')"), false);
+    assert.equal(src.includes('getPropertyValue("--text")'), false);
   });
 
   it("sizes the titlebar with overlay env vars and fills remaining height", () => {
