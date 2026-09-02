@@ -41,8 +41,8 @@ function syncTitleBarOverlay() {
   const chrome = window.lifequest?.windowChrome;
   if (!chrome) return;
   const styles = getComputedStyle(document.documentElement);
-  const color = overlayColor(styles.getPropertyValue("--bg"));
-  const symbolColor = overlayColor(styles.getPropertyValue("--text"));
+  const color = overlayColor(styles.getPropertyValue("--background"));
+  const symbolColor = overlayColor(styles.getPropertyValue("--foreground"));
   if (!color || !symbolColor) return;
   void chrome.setTitleBarOverlay({ color, symbolColor }).catch(() => {
     /* overlay unsupported */
