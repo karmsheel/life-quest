@@ -1,4 +1,7 @@
 import { useEffect, useState } from "react";
+import { User } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { SettingsSection } from "@/components/ui/SettingsSection";
 import { useVault } from "@/state/VaultProvider";
 import { api } from "@/lib/ipc";
 import type { MapCommand } from "@lifequest/vault-core/map";
@@ -26,12 +29,11 @@ export function SettingsAbout() {
   }
 
   return (
-    <div className="settings-about">
-      <h3 className="settings-about__title">About me</h3>
-      <p className="muted settings-about__hint">
-        Agents treat this as lifestyle context. They cannot edit it while Agent
-        locked is on.
-      </p>
+    <SettingsSection
+      icon={<User size={16} />}
+      title="About me"
+      subtitle="Agents treat this as lifestyle context, not a command surface."
+    >
       <label className="field">
         <span>Lifestyle context</span>
         <textarea
@@ -43,18 +45,17 @@ export function SettingsAbout() {
         />
       </label>
       <div className="settings-about__actions">
-        <button
-          type="button"
-          className="btn btn-primary"
+        <Button
+          variant="primary"
           onClick={() => void onSave()}
           disabled={saving || text === aboutMe}
         >
           {saving ? "Saving…" : "Save"}
-        </button>
+        </Button>
         {savedAt ? (
           <span className="muted settings-about__saved">Saved.</span>
         ) : null}
       </div>
-    </div>
+    </SettingsSection>
   );
 }
