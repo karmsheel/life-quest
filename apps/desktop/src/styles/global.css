@@ -88,6 +88,15 @@ a {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--accent-fill);
+}
+
 /* —— External vault file change prompt —— */
 .vault-stale-banner {
   display: flex;
