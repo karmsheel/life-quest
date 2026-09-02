@@ -1,7 +1,7 @@
 # BERD Systems Phase 1 — Design Spec
 
 **Date:** 2026-09-02  
-**Status:** Draft — awaiting user review  
+**Status:** Approved — implementation plan at docs/superpowers/plans/2026-09-02-berd-systems-phase-1.md  
 **Product:** LifeQuest — local-first life-management studio  
 **Reference:** [block/berd](https://github.com/block/berd) design contract (systems only; not a visual fork)  
 **Depends on:** [Local vault (Electron)](./2026-07-19-local-vault-electron-design.md), [Custom window chrome](./2026-08-28-custom-window-chrome-design.md)
