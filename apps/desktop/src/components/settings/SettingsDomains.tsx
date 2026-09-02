@@ -1,5 +1,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import { Layers } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { SettingsSection } from "@/components/ui/SettingsSection";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 
@@ -127,20 +129,12 @@ export function SettingsDomains() {
   }
 
   return (
-    <section>
-      <div className="settings-panel__heading">
-        <div className="settings-panel__icon">
-          <Layers size={16} />
-        </div>
-        <div>
-          <h2 className="settings-panel__title">Domains</h2>
-          <p className="settings-panel__subtitle">
-            Activate a domain to filter the app. Overview shows everything.
-          </p>
-        </div>
-      </div>
-
-      <div className="domains-manager">
+    <SettingsSection
+      icon={<Layers size={16} />}
+      title="Domains"
+      subtitle="Activate a domain to filter the app. Overview shows everything."
+      contentClassName="domains-manager"
+    >
         <form
           className="domains-manager__create"
           onSubmit={(e) => void onCreate(e)}
@@ -158,13 +152,13 @@ export function SettingsDomains() {
                 disabled={creating}
               />
             </label>
-            <button
+            <Button
               type="submit"
-              className="btn btn-primary"
+              variant="primary"
               disabled={creating || !name.trim()}
             >
               {creating ? "Creating…" : "Create"}
-            </button>
+            </Button>
           </div>
           {createError ? (
             <p className="form-error" role="alert">
@@ -243,51 +237,46 @@ export function SettingsDomains() {
                   <div className="domain-card__actions">
                     {renaming ? (
                       <>
-                        <button
-                          type="button"
-                          className="btn btn-primary"
+                        <Button
+                          variant="primary"
                           disabled={busy}
                           onClick={() => void submitRename(d.slug)}
                         >
                           Save
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
+                        </Button>
+                        <Button
+                          variant="outline"
                           disabled={busy}
                           onClick={() => setRenamingSlug(null)}
                         >
                           Cancel
-                        </button>
+                        </Button>
                       </>
                     ) : (
                       <>
                         {!active ? (
-                          <button
-                            type="button"
-                            className="btn btn-primary"
+                          <Button
+                            variant="primary"
                             disabled={busy}
                             onClick={() => void onActivate(d.slug)}
                           >
                             Activate
-                          </button>
+                          </Button>
                         ) : null}
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
+                        <Button
+                          variant="outline"
                           disabled={busy}
                           onClick={() => startRename(d.slug, d.meta.name)}
                         >
                           Rename
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-danger"
+                        </Button>
+                        <Button
+                          destructive
                           disabled={busy}
                           onClick={() => void archiveDomain(d.slug)}
                         >
                           Archive
-                        </button>
+                        </Button>
                       </>
                     )}
                   </div>
@@ -310,7 +299,6 @@ export function SettingsDomains() {
             </ul>
           </>
         ) : null}
-      </div>
-    </section>
+    </SettingsSection>
   );
 }

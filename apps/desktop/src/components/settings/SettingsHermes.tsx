@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { SettingsSection } from "@/components/ui/SettingsSection";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 
@@ -179,116 +181,98 @@ export function SettingsHermes() {
   }
 
   return (
-    <section>
-      <div className="settings-panel__heading">
-        <div className="settings-panel__icon">
-          <Sparkles size={16} />
-        </div>
-        <div>
-          <h2 className="settings-panel__title">Hermes</h2>
-          <p className="settings-panel__subtitle">Local BYOK gateway connection</p>
-        </div>
-      </div>
-
-      {error ? (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {message ? (
-        <p className="form-message" role="status">
-          {message}
-        </p>
-      ) : null}
-
-      <div className="settings-card">
-        {probe ? (
-          <p
-            className={
-              probe.ok
-                ? "settings-hermes__probe settings-hermes__probe--ok"
-                : "settings-hermes__probe settings-hermes__probe--fail"
-            }
-            role="status"
-          >
-            {probe.text}
-          </p>
-        ) : (
-          <p className="settings-hermes__probe muted" role="status">
-            {hasKey
-              ? "API key is stored for this vault."
-              : "No API key stored yet."}
-          </p>
-        )}
-
-        <form className="settings-hermes" onSubmit={(e) => void onSaveHermes(e)}>
-          <label className="settings-field">
-            <span>Base URL</span>
-            <input
-              type="url"
-              name="baseUrl"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="http://localhost:8642"
-              autoComplete="off"
-            />
-          </label>
-
-          <label className="settings-field">
-            <span>
-              API key{" "}
-              <span className="muted">
-                ({hasKey ? "stored — enter a new value to replace" : "not stored"})
-              </span>
-            </span>
-            <input
-              type="password"
-              name="apiKey"
-              value={apiKeyDraft}
-              onChange={(e) => setApiKeyDraft(e.target.value)}
-              placeholder={hasKey ? "•••••••• (unchanged)" : "Enter Hermes API key"}
-              autoComplete="off"
-            />
-          </label>
-
-          <div className="settings-hermes__actions">
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={savingSettings}
-            >
-              {savingSettings ? "Saving…" : "Save base URL"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={savingKey || !apiKeyDraft.trim()}
-              onClick={() => void onSetKey()}
-            >
-              {savingKey ? "…" : hasKey ? "Replace key" : "Store key"}
-            </button>
-            {hasKey ? (
-              <button
-                type="button"
-                className="btn btn-danger"
-                disabled={savingKey}
-                onClick={() => void onClearKey()}
-              >
-                Clear key
-              </button>
+    <>
+      <SettingsSection
+        icon={<Sparkles size={16} />}
+        title="Hermes"
+        subtitle="Local BYOK gateway connection"
+        banner={
+          <>
+            {error ? (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
             ) : null}
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={testing}
-              onClick={() => void onTest()}
-            >
-              {testing ? "Testing…" : "Test connection"}
-            </button>
-          </div>
-        </form>
-      </div>
+            {message ? (
+              <p className="form-message" role="status">
+                {message}
+              </p>
+            ) : null}
+          </>
+        }
+      >
+      {probe ? (
+        <p
+          className={
+            probe.ok
+              ? "settings-hermes__probe settings-hermes__probe--ok"
+              : "settings-hermes__probe settings-hermes__probe--fail"
+          }
+          role="status"
+        >
+          {probe.text}
+        </p>
+      ) : (
+        <p className="settings-hermes__probe muted" role="status">
+          {hasKey
+            ? "API key is stored for this vault."
+            : "No API key stored yet."}
+        </p>
+      )}
 
+      <form className="settings-hermes" onSubmit={(e) => void onSaveHermes(e)}>
+        <label className="settings-field">
+          <span>Base URL</span>
+          <input
+            type="url"
+            name="baseUrl"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="http://localhost:8642"
+            autoComplete="off"
+          />
+        </label>
+
+        <label className="settings-field">
+          <span>
+            API key{" "}
+            <span className="muted">
+              ({hasKey ? "stored — enter a new value to replace" : "not stored"})
+            </span>
+          </span>
+          <input
+            type="password"
+            name="apiKey"
+            value={apiKeyDraft}
+            onChange={(e) => setApiKeyDraft(e.target.value)}
+            placeholder={hasKey ? "•••••••• (unchanged)" : "Enter Hermes API key"}
+            autoComplete="off"
+          />
+        </label>
+
+        <div className="settings-hermes__actions">
+          <Button type="submit" variant="primary" disabled={savingSettings}>
+            {savingSettings ? "Saving…" : "Save base URL"}
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            disabled={savingKey || !apiKeyDraft.trim()}
+            onClick={() => void onSetKey()}
+          >
+            {savingKey ? "…" : hasKey ? "Replace key" : "Store key"}
+          </Button>
+          {hasKey ? (
+            <Button type="button" destructive disabled={savingKey} onClick={() => void onClearKey()}>
+              Clear key
+            </Button>
+          ) : null}
+          <Button type="button" disabled={testing} onClick={() => void onTest()}>
+            {testing ? "Testing…" : "Test connection"}
+          </Button>
+        </div>
+      </form>
+      </SettingsSection>
       <div className="settings-card">
         <h3 className="settings-panel__section-title">MCP door</h3>
         {mcpErrorText ? (
@@ -305,6 +289,6 @@ export function SettingsHermes() {
           </p>
         )}
       </div>
-    </section>
+    </>
   );
 }

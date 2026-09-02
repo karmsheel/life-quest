@@ -1,6 +1,8 @@
 import { Monitor, Moon, Palette, Sun } from "lucide-react";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { SettingsRow } from "@/components/ui/SettingsRow";
+import { SettingsSection } from "@/components/ui/SettingsSection";
 import type { ThemePreference } from "@/lib/theme";
 import { SkinPicker } from "./SkinPicker";
 
@@ -26,36 +28,25 @@ export function SettingsAppearance() {
   const { preference, setPreference } = useTheme();
 
   return (
-    <section>
-      <div className="settings-panel__heading">
-        <div className="settings-panel__icon">
-          <Palette size={16} />
-        </div>
-        <div>
-          <h2 className="settings-panel__title">Appearance</h2>
-          <p className="settings-panel__subtitle">Color mode and themes</p>
-        </div>
-      </div>
-
-      <div className="settings-card">
-        <div className="settings-card__row settings-card__row--theme">
-          <div className="settings-card__copy">
-            <div className="settings-card__label">Theme</div>
-            <p className="settings-card__desc">
-              Pick a built-in skin. System shows themes with both day and night
-              palettes; Light and Dark show only matching skins.
-            </p>
-          </div>
+    <SettingsSection
+      icon={<Palette size={16} />}
+      title="Appearance"
+      subtitle="Color mode and themes"
+    >
+      <SettingsRow
+        className="settings-card__row--theme"
+        label="Theme"
+        description="Pick a built-in skin. System shows themes with both day and night palettes; Light and Dark show only matching skins."
+        action={
           <SegmentedControl
             value={preference}
             options={THEME_OPTIONS}
             ariaLabel="Color mode"
             onChange={setPreference}
-            className="settings-card__control"
           />
-        </div>
-        <SkinPicker />
-      </div>
-    </section>
+        }
+      />
+      <SkinPicker />
+    </SettingsSection>
   );
 }

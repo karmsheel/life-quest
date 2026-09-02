@@ -44,3 +44,42 @@ describe("domains settings wiring", () => {
     assert.equal(fs.existsSync(pagePath), false);
   });
 });
+
+describe("about me copy", () => {
+  it("treats about me as lifestyle context, not a command surface", () => {
+    const src = read("src/components/settings/SettingsAbout.tsx");
+    assert.match(src, /Agents treat this as lifestyle context/);
+    assert.equal(/agent\s+lock/i.test(src), false);
+  });
+});
+
+describe("settings primitives migration", () => {
+  const files = [
+    "src/components/settings/SettingsAppearance.tsx",
+    "src/components/settings/SettingsVault.tsx",
+    "src/components/settings/SettingsHermes.tsx",
+    "src/components/settings/SettingsAbout.tsx",
+    "src/components/settings/SettingsDomains.tsx",
+  ];
+
+  it("uses SettingsSection in every settings view", () => {
+    for (const file of files) {
+      const src = read(file);
+      assert.match(src, /SettingsSection/, file);
+      assert.equal(src.includes("settings-panel__heading"), false, file);
+    }
+  });
+
+  it("replaces raw btn classes with Button", () => {
+    for (const file of files) {
+      const src = read(file);
+      assert.equal(src.includes('className="btn'), false, file);
+    }
+    const hermes = read("src/components/settings/SettingsHermes.tsx");
+    assert.match(hermes, /from ["']@\/components\/ui\/Button["']/);
+    assert.match(hermes, /variant=["']primary["']/);
+    assert.match(hermes, /destructive/);
+    const appearance = read("src/components/settings/SettingsAppearance.tsx");
+    assert.match(appearance, /SettingsRow/);
+  });
+});
