@@ -1,5 +1,4 @@
-/* Hermes Forge design tokens — Open Design–style theme layers.
-   :root = light · [data-theme="dark"] = dark · system follows OS via media query */
+/* Semantic contract + legacy aliases. Hex lives in semantic/extension tokens only. */
 
 :root {
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
@@ -15,47 +14,49 @@
   --window-titlebar-height: 32px;
   --chatbar-width: 22.5rem;
 
-  /* Light surfaces */
-  --bg: #faf9f7;
-  --bg-app: #faf9f7;
+  --background: #faf9f7;
+  --foreground: #1a1916;
+  --card: #fffefc;
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --muted-surface: #eef1f5;
+  --muted-foreground: #74716b;
+  --primary: #c96442;
+  --primary-foreground: #ffffff;
+  --secondary: #f5d8cb;
+  --secondary-foreground: var(--foreground);
+  --accent-fill: rgba(37, 99, 235, 0.16);
+  --accent-fill-foreground: var(--foreground);
+  --destructive: #9c2a25;
+  --destructive-foreground: #ffffff;
+  --border: #e1e5eb;
+  --input: #c9d0da;
+  --ring: #2563eb;
+
   --bg-panel: #fdfcfa;
   --bg-subtle: #f4f5f7;
-  --bg-muted: #eef1f5;
-  --bg-elevated: #fffefc;
   --bg-fill-tertiary: rgba(0, 0, 0, 0.03);
   --bg-fill-secondary: rgba(0, 0, 0, 0.06);
-
-  --border: #e1e5eb;
-  --border-strong: #c9d0da;
   --border-soft: #edf0f4;
   --line: var(--border);
   --sidebar-border: var(--border);
+  --text-strong: #0d0c0a;
+  --text-soft: #989590;
+  --text-faint: #b3b0a8;
+  --primary-hover: #b45a3b;
+  --primary-hover-foreground: #ffffff;
+  --accent-soft: #f5d8cb;
+  --accent-tint: #fbeee5;
 
-  --composer-bg: var(--bg-elevated);
-  --composer-fg: var(--text);
-  --composer-fg-muted: var(--text-muted);
+  --composer-bg: var(--card);
+  --composer-fg: var(--foreground);
+  --composer-fg-muted: var(--muted-foreground);
   --composer-fg-soft: var(--text-soft);
   --composer-fg-faint: var(--text-faint);
   --composer-border: var(--line);
   --composer-border-soft: var(--border-soft);
-  --composer-border-strong: var(--border-strong);
-
-  --text: #1a1916;
-  --text-strong: #0d0c0a;
-  --text-muted: #74716b;
-  --text-soft: #989590;
-  --text-faint: #b3b0a8;
-
-  --accent: #c96442;
-  --accent-fg: #ffffff;
-  --accent-strong: #b45a3b;
-  --accent-soft: #f5d8cb;
-  --accent-tint: #fbeee5;
-  --accent-hover: #b45a3b;
-  --accent-hover-fg: #ffffff;
-
-  --selected: #2563eb;
-  --selected-soft: rgba(37, 99, 235, 0.16);
+  --composer-border-strong: var(--input);
 
   --green: #1f7a3a;
   --green-bg: #e8f7ee;
@@ -65,7 +66,6 @@
   --blue-border: #c8d6ff;
   --amber: #b26200;
   --amber-bg: #fff3e0;
-  --red: #9c2a25;
   --red-bg: #fdecea;
   --red-border: #f5c6c2;
 
@@ -77,7 +77,7 @@
     0 0.5rem 0.75rem -0.375rem color-mix(in srgb, #000 6%, transparent),
     0 1.25rem 1.75rem -0.875rem color-mix(in srgb, #000 6%, transparent),
     0 2.25rem 3rem -1.75rem color-mix(in srgb, #000 0%, transparent);
-  --stroke-nous: color-mix(in srgb, var(--text) 8%, transparent);
+  --stroke-nous: color-mix(in srgb, var(--foreground) 8%, transparent);
 
   --radius-xs: 4px;
   --radius-sm: 6px;
@@ -91,16 +91,38 @@
   --dur-enter: 200ms;
   --dur-exit: 140ms;
 
-  --color-bg: var(--bg);
-  --color-text: var(--text);
-  --color-muted: var(--text-muted);
-  --color-focus: var(--selected);
+  --map-gold: #d4a84b;
+  --map-red: #c45c58;
+  --map-blue: #4d7ec8;
+  --map-green: #4d8f5a;
+  --map-orange: #d4893a;
+  --map-purple: #8b5cad;
+  --map-teal: #3d8a92;
+  --map-pink: #c45d8a;
 
-  /* LifeQuest aliases used by existing CSS */
-  --fg: var(--text);
-  --muted: var(--text-muted);
-  --danger: var(--red);
+  --bg: var(--background);
+  --bg-app: var(--background);
+  --bg-elevated: var(--card);
+  --bg-muted: var(--muted-surface);
+  --text: var(--foreground);
+  --fg: var(--foreground);
+  --text-muted: var(--muted-foreground);
+  --muted: var(--muted-foreground);
+  --accent: var(--primary);
+  --accent-fg: var(--primary-foreground);
+  --accent-hover: var(--primary-hover);
+  --accent-strong: var(--primary-hover);
+  --accent-hover-fg: var(--primary-hover-foreground);
+  --danger: var(--destructive);
+  --red: var(--destructive);
   --success: var(--green);
+  --selected: var(--ring);
+  --selected-soft: var(--accent-fill);
+  --border-strong: var(--input);
+  --color-bg: var(--background);
+  --color-text: var(--foreground);
+  --color-muted: var(--muted-foreground);
+  --color-focus: var(--ring);
 
   color-scheme: light;
 }
@@ -108,41 +130,49 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #1a1917;
-  --bg-app: #1a1917;
+  --background: #1a1917;
+  --foreground: #e8e4dc;
+  --card: #2a2825;
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --muted-surface: #2e2c29;
+  --muted-foreground: #9a9690;
+  --primary: #d97a56;
+  --primary-foreground: #1a1917;
+  --secondary: #3d2318;
+  --secondary-foreground: var(--foreground);
+  --accent-fill: rgba(217, 122, 86, 0.18);
+  --accent-fill-foreground: var(--foreground);
+  --destructive: #e06b65;
+  --destructive-foreground: #1a1917;
+  --border: #333128;
+  --input: #46433c;
+  --ring: #2563eb;
+
   --bg-panel: #222120;
   --bg-subtle: #252321;
-  --bg-muted: #2e2c29;
-  --bg-elevated: #2a2825;
   --bg-fill-tertiary: rgba(255, 255, 255, 0.06);
   --bg-fill-secondary: rgba(255, 255, 255, 0.1);
-
-  --border: #333128;
-  --border-strong: #46433c;
   --border-soft: #2a2825;
   --line: var(--border);
   --sidebar-border: var(--border);
-
-  --text: #e8e4dc;
   --text-strong: #f2ede4;
-  --text-muted: #9a9690;
   --text-soft: #6e6b65;
   --text-faint: #4e4b46;
-
-  --accent: #d97a56;
-  --accent-fg: #1a1917;
-  --accent-strong: #e8896a;
+  --primary-hover: #e8896a;
+  --primary-hover-foreground: #1a1917;
   --accent-soft: #3d2318;
   --accent-tint: #2e1a12;
-  --accent-hover: #e8896a;
-  --accent-hover-fg: #1a1917;
 
-  --selected-soft: rgba(217, 122, 86, 0.18);
-
-  --fg: var(--text);
-  --muted: var(--text-muted);
-  --danger: var(--red);
-  --success: var(--green);
+  --map-gold: #e0c36a;
+  --map-red: #e06b65;
+  --map-blue: #6b8fe8;
+  --map-green: #4caf72;
+  --map-orange: #e09a40;
+  --map-purple: #b794d4;
+  --map-teal: #5eb3b8;
+  --map-pink: #d489b0;
 
   --green: #4caf72;
   --green-bg: #0f2a18;
@@ -152,7 +182,6 @@
   --blue-border: #1a2c58;
   --amber: #e09a40;
   --amber-bg: #2a1a04;
-  --red: #e06b65;
   --red-bg: #2a0e0c;
   --red-border: #451714;
 
@@ -164,46 +193,54 @@
     0 0.5rem 0.75rem -0.375rem color-mix(in srgb, #000 10%, transparent),
     0 1.25rem 1.75rem -0.875rem color-mix(in srgb, #000 10%, transparent),
     0 2.25rem 3rem -1.75rem color-mix(in srgb, #000 0%, transparent);
-  --stroke-nous: color-mix(in srgb, var(--text) 6%, transparent);
+  --stroke-nous: color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
   html:not([data-theme]) {
     color-scheme: dark;
 
-    --bg: #1a1917;
-    --bg-app: #1a1917;
+    --background: #1a1917;
+    --foreground: #e8e4dc;
+    --card: #2a2825;
+    --card-foreground: var(--foreground);
+    --popover: var(--card);
+    --popover-foreground: var(--foreground);
+    --muted-surface: #2e2c29;
+    --muted-foreground: #9a9690;
+    --primary: #d97a56;
+    --primary-foreground: #1a1917;
+    --secondary: #3d2318;
+    --secondary-foreground: var(--foreground);
+    --accent-fill: rgba(217, 122, 86, 0.18);
+    --accent-fill-foreground: var(--foreground);
+    --destructive: #e06b65;
+    --destructive-foreground: #1a1917;
+    --border: #333128;
+    --input: #46433c;
+    --ring: #2563eb;
+
     --bg-panel: #222120;
     --bg-subtle: #252321;
-    --bg-muted: #2e2c29;
-    --bg-elevated: #2a2825;
     --bg-fill-tertiary: rgba(255, 255, 255, 0.06);
     --bg-fill-secondary: rgba(255, 255, 255, 0.1);
-
-    --border: #333128;
-    --border-strong: #46433c;
     --border-soft: #2a2825;
-
-    --text: #e8e4dc;
     --text-strong: #f2ede4;
-    --text-muted: #9a9690;
     --text-soft: #6e6b65;
     --text-faint: #4e4b46;
-
-    --accent: #d97a56;
-    --accent-fg: #1a1917;
-    --accent-strong: #e8896a;
+    --primary-hover: #e8896a;
+    --primary-hover-foreground: #1a1917;
     --accent-soft: #3d2318;
     --accent-tint: #2e1a12;
-    --accent-hover: #e8896a;
-    --accent-hover-fg: #1a1917;
 
-    --selected-soft: rgba(217, 122, 86, 0.18);
-
-    --fg: var(--text);
-    --muted: var(--text-muted);
-    --danger: var(--red);
-    --success: var(--green);
+    --map-gold: #e0c36a;
+    --map-red: #e06b65;
+    --map-blue: #6b8fe8;
+    --map-green: #4caf72;
+    --map-orange: #e09a40;
+    --map-purple: #b794d4;
+    --map-teal: #5eb3b8;
+    --map-pink: #d489b0;
 
     --green: #4caf72;
     --green-bg: #0f2a18;
@@ -213,7 +250,6 @@
     --blue-border: #1a2c58;
     --amber: #e09a40;
     --amber-bg: #2a1a04;
-    --red: #e06b65;
     --red-bg: #2a0e0c;
     --red-border: #451714;
 
@@ -225,6 +261,6 @@
       0 0.5rem 0.75rem -0.375rem color-mix(in srgb, #000 10%, transparent),
       0 1.25rem 1.75rem -0.875rem color-mix(in srgb, #000 10%, transparent),
       0 2.25rem 3rem -1.75rem color-mix(in srgb, #000 0%, transparent);
-    --stroke-nous: color-mix(in srgb, var(--text) 6%, transparent);
+    --stroke-nous: color-mix(in srgb, var(--foreground) 6%, transparent);
   }
 }
