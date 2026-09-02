@@ -3,44 +3,32 @@ import { Link } from "react-router-dom";
 import type {
   DecisionRecord,
   DocumentKind,
-  DomainRecord,
   LifeEvent,
-  RoomId,
 } from "@lifequest/vault-core";
-import { isNonEmptyBody, recordVisible } from "@lifequest/vault-core/pure";
+import { recordVisible } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import {
   useActiveDomain,
   useDomainLens,
-  useUnlockedRooms,
 } from "@/components/shell/useActiveDomain";
 import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
 
 type DoctrineRow = {
   kind: DocumentKind;
   label: string;
-  room: Exclude<RoomId, "act">;
 };
 
 const DOCTRINE_ROWS: DoctrineRow[] = [
-  { kind: "why", label: "Why", room: "dream" },
-  { kind: "what", label: "What", room: "chart" },
-  { kind: "how", label: "How", room: "track" },
+  { kind: "why", label: "Why" },
+  { kind: "what", label: "What" },
+  { kind: "how", label: "How" },
 ];
 
 function doctrineHref(kind: DocumentKind, slug: string): string {
   if (kind === "how") return `/track/${slug}/how`;
   if (kind === "what") return `/dream/${slug}/what`;
   return `/dream/${slug}/why`;
-}
-
-function rowLocked(kind: DocumentKind, domain: DomainRecord): boolean {
-  if (kind === "why") return false;
-  if (kind === "what") {
-    return !isNonEmptyBody(domain.documents.why.bodyMarkdown);
-  }
-  return !isNonEmptyBody(domain.documents.what.bodyMarkdown);
 }
 
 function formatWhen(iso: string): string {
@@ -58,7 +46,6 @@ export default function HomePage() {
   const { snapshot, reloadGeneration } = useVault();
   const lens = useDomainLens();
   const activeDomain = useActiveDomain();
-  const unlocked = useUnlockedRooms();
 
   const title = activeDomain?.meta.name ?? "Overview";
 
@@ -149,7 +136,7 @@ export default function HomePage() {
     <div className="home-dashboard">
       <header className="home-dashboard__header">
         <div>
-          <p className="home-dashboard__eyebrow muted">Home</p>
+          <p className="home-dashboard__eyebrow muted">Dashboard</p>
           <h1 className="home-dashboard__title">
             {title}
             <span className="home-dashboard__subtitle muted">
@@ -186,52 +173,24 @@ export default function HomePage() {
                   const doc = domain.documents[row.kind];
                   const status = doc?.status ?? "draft";
                   const chars = doc?.bodyMarkdown.trim().length ?? 0;
-                  const isUnlocked = unlocked.has(row.room);
-                  const locked = rowLocked(row.kind, domain);
                   const label =
                     visibleDomains.length > 1
                       ? `${domain.meta.name} · ${row.label}`
                       : row.label;
-                  const showLock = locked || !isUnlocked;
-                  const main = (
-                    <>
-                      <span className="home-doctrine-row__label">
-                        {label}
-                        {showLock ? (
-                          <span
-                            className="home-doctrine-row__lock muted"
-                            title="Locked — complete the prior pillar first"
-                            aria-label="locked"
-                          >
-                            {" "}
-                            🔒
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="home-doctrine-row__meta muted">
-                        {chars > 0 ? `${chars} chars` : "empty body"}
-                      </span>
-                    </>
-                  );
                   return (
                     <li
                       key={`${domain.slug}-${row.kind}`}
-                      className={
-                        locked
-                          ? "home-doctrine-row is-locked"
-                          : "home-doctrine-row"
-                      }
+                      className="home-doctrine-row"
                     >
-                      {locked ? (
-                        <span className="home-doctrine-row__main">{main}</span>
-                      ) : (
-                        <Link
-                          to={doctrineHref(row.kind, domain.slug)}
-                          className="home-doctrine-row__main"
-                        >
-                          {main}
-                        </Link>
-                      )}
+                      <Link
+                        to={doctrineHref(row.kind, domain.slug)}
+                        className="home-doctrine-row__main"
+                      >
+                        <span className="home-doctrine-row__label">{label}</span>
+                        <span className="home-doctrine-row__meta muted">
+                          {chars > 0 ? `${chars} chars` : "empty body"}
+                        </span>
+                      </Link>
                       <DocumentStatusBadge status={status} />
                     </li>
                   );

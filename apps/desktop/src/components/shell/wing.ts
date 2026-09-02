@@ -1,15 +1,17 @@
-export type WingId = "vision" | "plan" | "execute";
+export type WingId = "home" | "vision" | "plan" | "execute";
 
-export const WING_IDS: WingId[] = ["vision", "plan", "execute"];
+export const WING_IDS: WingId[] = ["home", "vision", "plan", "execute"];
 
 export const WING_LABELS: Record<WingId, string> = {
+  home: "Home",
   vision: "Vision",
   plan: "Plan",
   execute: "Execute",
 };
 
 export const WING_DEFAULTS: Record<WingId, string> = {
-  vision: "/home",
+  home: "/home",
+  vision: "/dream",
   plan: "/chart",
   execute: "/act",
 };
@@ -17,11 +19,11 @@ export const WING_DEFAULTS: Record<WingId, string> = {
 const PINNED_PATHS = new Set(["/log", "/decisions", "/settings"]);
 
 const PATH_WING: Record<string, WingId> = {
-  "/home": "vision",
+  "/home": "home",
+  "/chain": "home",
+  "/personnel": "home",
   "/dream": "vision",
-  "/chain": "vision",
   "/documents": "vision",
-  "/personnel": "vision",
   "/chart": "plan",
   "/track": "plan",
   "/act": "execute",
@@ -34,7 +36,7 @@ export type WingSession = {
 
 export function initialWingSession(): WingSession {
   return {
-    active: "vision",
+    active: "home",
     lastPath: { ...WING_DEFAULTS },
   };
 }

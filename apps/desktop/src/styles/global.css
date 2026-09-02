@@ -454,20 +454,9 @@ a {
   font-weight: 600;
 }
 
-.nav-rail__link--locked {
-  opacity: 0.55;
-}
-
 .nav-rail__icon-wrap {
   position: relative;
   display: inline-flex;
-}
-
-.nav-rail__lock {
-  position: absolute;
-  right: -4px;
-  bottom: -3px;
-  color: var(--muted);
 }
 
 .nav-rail__label {
@@ -569,38 +558,6 @@ a {
 .room-meta dd {
   margin: 0;
   font-weight: 500;
-}
-
-/* —— Room lock gate —— */
-.room-lock-gate {
-  max-width: 28rem;
-  padding: 2rem 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.room-lock-gate__icon {
-  display: inline-flex;
-  color: var(--muted);
-  margin-bottom: 0.25rem;
-}
-
-.room-lock-gate__title {
-  margin: 0;
-  font-size: 1.35rem;
-  font-weight: 700;
-}
-
-.room-lock-gate__hint {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.45;
-}
-
-.room-lock-gate__domain {
-  margin: 0.5rem 0 0;
-  font-size: 0.85rem;
 }
 
 /* —— Domains manager —— */
@@ -1752,10 +1709,6 @@ a {
   min-width: 0;
 }
 
-.home-doctrine-row.is-locked {
-  opacity: 0.65;
-}
-
 a.home-doctrine-row__main:hover .home-doctrine-row__label {
   color: var(--accent);
 }
@@ -1763,10 +1716,6 @@ a.home-doctrine-row__main:hover .home-doctrine-row__label {
 .home-doctrine-row__label {
   font-weight: 700;
   font-size: 0.95rem;
-}
-
-.home-doctrine-row__lock {
-  font-size: 0.75rem;
 }
 
 .home-doctrine-row__meta {
@@ -3041,18 +2990,6 @@ a.home-mini-list__link:hover {
   flex-shrink: 0;
 }
 
-/* —— Agent lock switch (top bar) —— */
-.lock-switch {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-}
-
-.lock-label {
-  color: var(--muted);
-}
-
 /* —— Doctrine indexes (Dream / Architecture) —— */
 .dream-page {
   display: flex;
@@ -3100,11 +3037,6 @@ a.home-mini-list__link:hover {
   border-radius: 0.5rem;
 }
 
-.doctrine-index__row.is-locked {
-  pointer-events: none;
-  opacity: 0.65;
-}
-
 .doctrine-index__label {
   font-weight: 700;
   font-size: 0.95rem;
@@ -3114,10 +3046,6 @@ a.home-mini-list__link:hover {
   min-width: 0;
 }
 
-.doctrine-index__row:not(.is-locked) .doctrine-index__label:hover {
+.doctrine-index__label:hover {
   color: var(--accent);
-}
-
-.doctrine-index__lock {
-  font-size: 0.75rem;
 }

@@ -9,7 +9,6 @@ import type {
 } from "@lifequest/vault-core";
 import { canDispatchAgent, recordVisible } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
-import { RoomLockGate } from "@/components/shell/RoomLockGate";
 import {
   documentsToUnlockDocs,
   useActiveDomain,
@@ -52,11 +51,7 @@ function buildBrief(
 }
 
 export default function ActPage() {
-  return (
-    <RoomLockGate room="act">
-      <ActContent />
-    </RoomLockGate>
-  );
+  return <ActContent />;
 }
 
 function ActContent() {

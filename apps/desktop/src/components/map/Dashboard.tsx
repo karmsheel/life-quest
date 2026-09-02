@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { compareIso } from "@lifequest/vault-core/map";
+import {
+  COLOR_IDS,
+  compareIso,
+  dashboardDays,
+} from "@lifequest/vault-core/map";
 import type { ColorId, MapCommand, IsoDate, YearRecord } from "@lifequest/vault-core/map";
 import { KeyPanel } from "./KeyPanel";
 import { rangeFromDrag } from "./paintRange";
@@ -158,7 +162,7 @@ export function Dashboard({ year, onSelectMonth, onCommand }: Props) {
                                 <span
                                   key={`${color}-${i}`}
                                   className="color-bar"
-                                  style={{ background: PALETTE[color] }}
+                                  data-map-color={color}
                                 />
                               ))}
                             </span>
@@ -193,7 +197,7 @@ export function Dashboard({ year, onSelectMonth, onCommand }: Props) {
                 key={id}
                 type="button"
                 className={id === paintColor ? "swatch selected" : "swatch"}
-                style={{ background: PALETTE[id] }}
+                data-map-color={id}
                 aria-label={id}
                 onClick={() => setPaintColor(id)}
               />
