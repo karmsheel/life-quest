@@ -187,18 +187,20 @@ export function SettingsHermes() {
         title="Hermes"
         subtitle="Local BYOK gateway connection"
         banner={
-          <>
-            {error ? (
-              <p className="form-error" role="alert">
-                {error}
-              </p>
-            ) : null}
-            {message ? (
-              <p className="form-message" role="status">
-                {message}
-              </p>
-            ) : null}
-          </>
+          error || message ? (
+            <>
+              {error ? (
+                <p className="form-error" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              {message ? (
+                <p className="form-message" role="status">
+                  {message}
+                </p>
+              ) : null}
+            </>
+          ) : undefined
         }
       >
       {probe ? (

@@ -34,27 +34,29 @@ export function SettingsAbout() {
       title="About me"
       subtitle="Agents treat this as lifestyle context, not a command surface."
     >
-      <label className="field">
-        <span>Lifestyle context</span>
-        <textarea
-          className="settings-about__textarea"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={8}
-          placeholder="Who you are, constraints, rhythms, preferences…"
-        />
-      </label>
-      <div className="settings-about__actions">
-        <Button
-          variant="primary"
-          onClick={() => void onSave()}
-          disabled={saving || text === aboutMe}
-        >
-          {saving ? "Saving…" : "Save"}
-        </Button>
-        {savedAt ? (
-          <span className="muted settings-about__saved">Saved.</span>
-        ) : null}
+      <div className="settings-about">
+        <label className="field">
+          <span>Lifestyle context</span>
+          <textarea
+            className="settings-about__textarea"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={8}
+            placeholder="Who you are, constraints, rhythms, preferences…"
+          />
+        </label>
+        <div className="settings-about__actions">
+          <Button
+            variant="primary"
+            onClick={() => void onSave()}
+            disabled={saving || text === aboutMe}
+          >
+            {saving ? "Saving…" : "Save"}
+          </Button>
+          {savedAt ? (
+            <span className="muted settings-about__saved">Saved.</span>
+          ) : null}
+        </div>
       </div>
     </SettingsSection>
   );
