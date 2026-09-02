@@ -43,6 +43,7 @@ const FORBIDDEN = [
   "--bg-elevated",
   "--bg-muted",
   "--text-muted",
+  "--border-strong",
 ];
 
 describe("forgeVarsFromColors", () => {

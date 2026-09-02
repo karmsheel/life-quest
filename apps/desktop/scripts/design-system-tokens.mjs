@@ -14,6 +14,7 @@ export const FORBIDDEN_INLINE_KEYS = [
   "--muted",
   "--danger",
   "--red",
+  "--border-strong",
 ];
 
 const HEX = /#[0-9A-Fa-f]{3,8}/g;
