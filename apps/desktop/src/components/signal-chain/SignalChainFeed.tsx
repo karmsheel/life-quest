@@ -160,7 +160,7 @@ export function SignalChainFeed() {
   return (
     <div className="signal-chain">
       <header className="signal-chain__header">
-        <h1 className="stub-page__title">Life Signal Chain</h1>
+        <h1 className="stub-page__title">Life-Chain</h1>
         <p className="stub-page__desc muted">
           Dump thoughts, ideas, and things you notice.
         </p>

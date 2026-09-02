@@ -23,7 +23,6 @@ export function emptyYear(year: number): YearRecord {
 
 export function emptyState(): StoreState {
   return {
-    locked: false,
     dayTypes: [],
     defaultWeek: emptyDefaultWeek(),
     years: [],

@@ -24,12 +24,14 @@ describe("map persist", () => {
     if (!res.ok) return;
     assert.ok(res.value.map);
     assert.equal(res.value.mapError, null);
-    assert.equal(res.value.map?.locked, false);
+    assert.equal("locked" in (res.value.map ?? {}), false);
     assert.ok(res.value.map?.years.some((y) => y.status === "live"));
     const raw = JSON.parse(await fs.readFile(vaultPaths(root).mapJson, "utf8")) as {
       aboutMe?: unknown;
+      locked?: unknown;
     };
     assert.equal("aboutMe" in raw, false);
+    assert.equal("locked" in raw, false);
     const about = await fs.readFile(vaultPaths(root).aboutMd, "utf8");
     assert.equal(about, "");
   });
@@ -82,27 +84,40 @@ describe("map persist", () => {
     assert.equal("aboutMe" in raw, false);
   });
 
-  it("agent setLock is refused; user setLock persists", async () => {
-    const root = path.join(dir, "lock");
+  it("loads map.json that omits locked", async () => {
+    const root = path.join(dir, "no-lock-field");
     const created = await createVault(root, "Personal");
     assert.equal(created.ok, true);
+    const p = vaultPaths(root).mapJson;
+    const raw = JSON.parse(await fs.readFile(p, "utf8")) as Record<string, unknown>;
+    delete raw.locked;
+    await fs.writeFile(p, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+    const opened = await openVault(root);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    assert.ok(opened.value.map);
+    assert.equal(opened.value.mapError, null);
+    assert.equal("locked" in (opened.value.map ?? {}), false);
+  });
+
+  it("ignores leftover locked in map.json and drops it on write", async () => {
+    const root = path.join(dir, "legacy-lock");
+    const created = await createVault(root, "Personal");
+    assert.equal(created.ok, true);
+    const p = vaultPaths(root).mapJson;
+    const raw = JSON.parse(await fs.readFile(p, "utf8")) as Record<string, unknown>;
+    raw.locked = true;
+    await fs.writeFile(p, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
     const agent = await applyMapCommand(
       root,
-      { type: "setLock", locked: true },
+      { type: "setAboutMe", text: "early nights" },
       "agent",
       "2026-08-27",
     );
-    assert.equal(agent.ok, false);
-    if (agent.ok) return;
-    assert.match(agent.error, /AGENT_CANNOT_LOCK/);
-    const user = await applyMapCommand(
-      root,
-      { type: "setLock", locked: true },
-      "user",
-      "2026-08-27",
-    );
-    assert.equal(user.ok, true);
-    if (!user.ok) return;
-    assert.equal(user.value.locked, true);
+    assert.equal(agent.ok, true);
+    if (!agent.ok) return;
+    assert.equal("locked" in agent.value, false);
+    const after = JSON.parse(await fs.readFile(p, "utf8")) as Record<string, unknown>;
+    assert.equal("locked" in after, false);
   });
 });

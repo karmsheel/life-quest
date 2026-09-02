@@ -1,18 +1,13 @@
 import { Dashboard } from "@/components/map/Dashboard";
 import { MonthPage } from "@/components/map/MonthPage";
 import { DoctrineStrip } from "@/components/doctrine/DoctrineStrip";
-import { RoomLockGate } from "@/components/shell/RoomLockGate";
 import { useVault } from "@/state/VaultProvider";
 import { useMapYear } from "@/state/MapYearProvider";
 import { api } from "@/lib/ipc";
 import { findYear, liveYears, todayLocalIso, yearOf, type MapCommand, type YearRecord } from "@lifequest/vault-core/map";
 
 export default function ChartPage() {
-  return (
-    <RoomLockGate room="chart">
-      <ChartContent />
-    </RoomLockGate>
-  );
+  return <ChartContent />;
 }
 
 function yearHasContent(year: YearRecord): boolean {

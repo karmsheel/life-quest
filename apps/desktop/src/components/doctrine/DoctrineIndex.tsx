@@ -1,9 +1,5 @@
 import { Link } from "react-router-dom";
-import {
-  isNonEmptyBody,
-  type DocumentKind,
-  type DomainRecord,
-} from "@lifequest/vault-core/pure";
+import { type DocumentKind } from "@lifequest/vault-core/pure";
 import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
@@ -13,14 +9,6 @@ const KIND_LABELS: Record<DocumentKind, string> = {
   what: "What",
   how: "How",
 };
-
-function rowLocked(kind: DocumentKind, domain: DomainRecord): boolean {
-  if (kind === "why") return false;
-  if (kind === "what") {
-    return !isNonEmptyBody(domain.documents.why.bodyMarkdown);
-  }
-  return !isNonEmptyBody(domain.documents.what.bodyMarkdown);
-}
 
 function rowHref(kind: DocumentKind, slug: string): string {
   if (kind === "how") return `/track/${slug}/how`;
@@ -48,38 +36,16 @@ export function DoctrineIndex({ kinds }: { kinds: DocumentKind[] }) {
           <h2 className="doctrine-index__heading">{domain.meta.name}</h2>
           <ul className="doctrine-index__list">
             {kinds.map((kind) => {
-              const locked = rowLocked(kind, domain);
               const doc = domain.documents[kind];
               const label = KIND_LABELS[kind];
               return (
-                <li
-                  key={kind}
-                  className={
-                    locked
-                      ? "doctrine-index__row is-locked"
-                      : "doctrine-index__row"
-                  }
-                >
-                  {locked ? (
-                    <span className="doctrine-index__label">
-                      {label}
-                      <span
-                        className="doctrine-index__lock muted"
-                        title="Locked — complete the prior pillar first"
-                        aria-label="locked"
-                      >
-                        {" "}
-                        🔒
-                      </span>
-                    </span>
-                  ) : (
-                    <Link
-                      to={rowHref(kind, domain.slug)}
-                      className="doctrine-index__label"
-                    >
-                      {label}
-                    </Link>
-                  )}
+                <li key={kind} className="doctrine-index__row">
+                  <Link
+                    to={rowHref(kind, domain.slug)}
+                    className="doctrine-index__label"
+                  >
+                    {label}
+                  </Link>
                   <DocumentStatusBadge status={doc?.status ?? "draft"} />
                 </li>
               );

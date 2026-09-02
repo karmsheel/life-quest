@@ -27,13 +27,27 @@
   font-size: 0.85rem;
 }
 
+.life-map__chrome button,
+.life-map input,
+.life-map select,
+.life-map textarea,
+.life-map .paint-actions button,
+.life-map .key-panel button:not(.swatch) {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.life-map__chrome button:hover:not(:disabled),
+.life-map .paint-actions button:hover:not(:disabled),
+.life-map .key-panel button:not(.swatch):hover:not(:disabled) {
+  background: var(--bg-muted);
+}
+
 .life-map__chrome select {
   height: 1.85rem;
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
   padding: 0 0.4rem;
-  background: var(--bg);
-  color: var(--fg);
 }
 
 /* —— North Star / How strip —— */
@@ -77,9 +91,9 @@
 .life-map .archive-banner {
   margin: 0 0 0.75rem;
   padding: 0.35rem 0.6rem;
-  background: #fff3cd;
-  border: 1px solid #e0c36a;
-  color: #5c4a12;
+  background: var(--amber-bg);
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--border));
+  color: var(--amber);
 }
 
 .life-map .dashboard-body {
@@ -120,7 +134,8 @@
   display: block;
   width: 100%;
   margin-bottom: 0.3rem;
-  background: #eef3f8;
+  background: var(--bg-muted);
+  color: var(--text);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 0.15rem 0.35rem;
@@ -138,7 +153,8 @@
 .life-map .day-cell {
   min-height: 28px;
   border: 1px solid var(--border);
-  background: #fbfcfd;
+  background: var(--bg-elevated);
+  color: var(--text);
   padding: 1px 2px;
   cursor: crosshair;
   user-select: none;
@@ -150,7 +166,7 @@
 
 .life-map .day-cell.in-drag {
   outline: 2px solid var(--accent);
-  background: #dbe7f3;
+  background: var(--selected-soft);
 }
 
 .life-map .day-num {
@@ -169,6 +185,15 @@
   height: 4px;
   border-radius: 1px;
 }
+
+[data-map-color="gold"] { background-color: var(--map-gold); }
+[data-map-color="red"] { background-color: var(--map-red); }
+[data-map-color="blue"] { background-color: var(--map-blue); }
+[data-map-color="green"] { background-color: var(--map-green); }
+[data-map-color="orange"] { background-color: var(--map-orange); }
+[data-map-color="purple"] { background-color: var(--map-purple); }
+[data-map-color="teal"] { background-color: var(--map-teal); }
+[data-map-color="pink"] { background-color: var(--map-pink); }
 
 .life-map .key-panel {
   width: 260px;
@@ -250,7 +275,7 @@
 .life-map .swatch {
   width: 1.05rem;
   height: 1.05rem;
-  border: 1px solid #8b949e;
+  border: 1px solid var(--border-strong);
   border-radius: 2px;
   padding: 0;
   cursor: pointer;
@@ -274,7 +299,7 @@
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-md);
   padding: 0.75rem;
   display: flex;
   flex-direction: column;
@@ -333,7 +358,8 @@
 .life-map .month-day-cell {
   min-height: 7.5rem;
   border: 1px solid var(--border);
-  background: #fbfcfd;
+  background: var(--bg-elevated);
+  color: var(--text);
   padding: 3px;
   display: flex;
   flex-direction: column;
@@ -341,7 +367,7 @@
 }
 
 .life-map .month-day-cell.is-inert {
-  background: #eef1f4;
+  background: var(--bg-muted);
   min-height: 7.5rem;
 }
 
@@ -357,7 +383,9 @@
   width: 100%;
   min-height: 5.5rem;
   resize: vertical;
-  border: 1px solid #d5dbe1;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
   border-radius: 3px;
   padding: 0.2rem 0.3rem;
   font: inherit;
@@ -405,7 +433,7 @@
 .life-map .month-goal-swatch {
   width: 0.75rem;
   height: 0.75rem;
-  border: 1px solid #8b949e;
+  border: 1px solid var(--border-strong);
   border-radius: 2px;
   flex-shrink: 0;
 }
@@ -433,7 +461,7 @@
 }
 
 .life-map .month-page.is-archive textarea {
-  background: #f3f4f6;
+  background: var(--bg-muted);
 }
 
 /* —— Architecture (Track route) —— */
@@ -515,7 +543,7 @@
 .arch-type-swatch {
   width: 0.9rem;
   height: 0.9rem;
-  border: 1px solid #8b949e;
+  border: 1px solid var(--border-strong);
   border-radius: 2px;
   flex-shrink: 0;
 }
@@ -587,13 +615,13 @@
 }
 
 .arch-badge.is-inheriting {
-  background: #e8f0e4;
-  color: #2d4a22;
+  background: var(--green-bg);
+  color: var(--green);
 }
 
 .arch-badge.is-detached {
-  background: #fde7cc;
-  color: #6a3d08;
+  background: var(--amber-bg);
+  color: var(--amber);
 }
 
 .arch-week-goals ul {
@@ -629,7 +657,8 @@
 }
 
 .arch-grid-head {
-  background: #eef3f8;
+  background: var(--bg-muted);
+  color: var(--text);
   font-size: 0.75rem;
   font-weight: 600;
 }
@@ -652,7 +681,8 @@
 
 .arch-grid-slot {
   width: 100%;
-  background: #fbfcfd;
+  background: var(--bg-elevated);
+  color: var(--text);
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -661,7 +691,7 @@
 }
 
 .arch-grid-slot.is-block {
-  background: #dbe7f3;
+  background: var(--selected-soft);
 }
 
 .arch-grid-slot.is-start {
@@ -670,7 +700,7 @@
 
 .architecture.is-archive input,
 .architecture.is-archive textarea {
-  background: #f3f4f6;
+  background: var(--bg-muted);
 }
 
 /* —— Task board (Act route) —— */
@@ -741,7 +771,7 @@
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 0.45rem;
-  background: #fbfcfd;
+  background: var(--bg-elevated);
 }
 
 .task-card.is-open {
@@ -761,7 +791,7 @@
 
 .task-missing {
   margin: 0.3rem 0 0;
-  color: #8a2b2b;
+  color: var(--danger);
   font-size: 0.8rem;
 }
 

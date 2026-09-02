@@ -33,6 +33,9 @@ describe("wing shell wiring", () => {
     assert.match(topBar, /<WingTabs\s*\/>/);
     assert.equal(topBar.includes("top-bar__vault-name"), false);
     assert.equal(topBar.includes("lifequest.name"), false);
+    assert.equal(topBar.includes("Agent locked"), false);
+    assert.equal(topBar.includes("setLock"), false);
+    assert.equal(topBar.includes("lock-switch"), false);
 
     const tabs = read("src/components/shell/WingTabs.tsx");
     assert.match(tabs, /role="tablist"/);
@@ -44,6 +47,8 @@ describe("wing shell wiring", () => {
     const css = read("src/styles/global.css");
     assert.match(css, /\.top-bar__wings\s*\{/);
     assert.equal(css.includes(".top-bar__vault-name"), false);
+    assert.equal(css.includes(".lock-switch"), false);
+    assert.equal(css.includes(".lock-label"), false);
   });
 
   it("renders the domain switcher as open segmented buttons", () => {
@@ -67,6 +72,34 @@ describe("wing shell wiring", () => {
     assert.match(src, /item\.wing === active/);
     assert.match(src, /!item\.wing/);
     assert.match(src, /to=["']\/home["']/);
+    assert.equal(src.includes("useUnlockedRooms"), false);
+    assert.equal(src.includes("nav-rail__link--locked"), false);
+    assert.equal(src.includes("nav-rail__lock"), false);
+  });
+
+  it("labels Dashboard and Life-Chain on the page", () => {
+    const home = read("src/pages/HomePage.tsx");
+    assert.match(home, /home-dashboard__eyebrow[^>]*>Dashboard</);
+    assert.equal(home.includes('muted">Home<'), false);
+
+    const chain = read("src/components/signal-chain/SignalChainFeed.tsx");
+    assert.match(chain, />Life-Chain</);
+    assert.equal(chain.includes("Life Signal Chain"), false);
+  });
+
+  it("does not gate Plan or Execute pages behind a room lock", () => {
+    for (const file of [
+      "src/pages/ChartPage.tsx",
+      "src/pages/ArchitecturePage.tsx",
+      "src/pages/ActPage.tsx",
+      "src/pages/RoomPage.tsx",
+    ]) {
+      const src = read(file);
+      assert.equal(src.includes("RoomLockGate"), false, file);
+    }
+    const css = read("src/styles/global.css");
+    assert.equal(css.includes(".room-lock-gate"), false);
+    assert.equal(css.includes(".nav-rail__link--locked"), false);
   });
 
   it("renders Outlet in AppShell instead of a children prop", () => {

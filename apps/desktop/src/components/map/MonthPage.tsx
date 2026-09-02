@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { PALETTE } from "@lifequest/vault-core/map";
 import {
   periodGoalsOnDate,
   periodGoalsOverlappingMonth,
@@ -76,7 +75,7 @@ export function MonthPage({ year, month, onBack, onCommand }: Props) {
                         <span
                           key={`${color}-${i}`}
                           className="color-bar"
-                          style={{ background: PALETTE[color] }}
+                          data-map-color={color}
                         />
                       ))}
                     </span>
@@ -111,7 +110,7 @@ export function MonthPage({ year, month, onBack, onCommand }: Props) {
                 <li key={goal.id}>
                   <span
                     className="month-goal-swatch"
-                    style={{ background: PALETTE[goal.color] }}
+                    data-map-color={goal.color}
                     aria-hidden
                   />
                   {goal.name}

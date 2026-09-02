@@ -541,16 +541,14 @@ export async function hermesChatToolsCall(
   if (!currentRoot) return noVaultError<{ content: string }>();
 
   // Build read-only context the planner loop injects as extra system text:
-  // active domain slug, About me, and whether the agent lock is engaged.
+  // active domain slug and About me.
   const activeSlug = currentLens;
   const snap = await openVault(currentRoot);
   const map = snap.ok ? snap.value.map : null;
   const aboutMe = map?.aboutMe ?? "";
-  const locked = map?.locked ?? false;
   const extraSystem = [
     `Active domain: ${activeSlug ?? "overview"}`,
     `About me: ${aboutMe}`,
-    `Agent lock: ${locked}`,
   ].join("\n");
 
   return runPlannerLoop({

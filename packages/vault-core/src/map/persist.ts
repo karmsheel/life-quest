@@ -15,7 +15,6 @@ type MapFile = Omit<StoreState, "aboutMe">;
 
 function toFile(state: StoreState): MapFile {
   return {
-    locked: state.locked,
     dayTypes: state.dayTypes,
     defaultWeek: state.defaultWeek,
     years: state.years,
@@ -24,14 +23,19 @@ function toFile(state: StoreState): MapFile {
 }
 
 function fromFile(file: MapFile, aboutMe: string): StoreState {
-  return { ...file, aboutMe };
+  return {
+    dayTypes: file.dayTypes,
+    defaultWeek: file.defaultWeek,
+    years: file.years,
+    tasks: file.tasks,
+    aboutMe,
+  };
 }
 
 function isMapFile(value: unknown): value is MapFile {
   if (!value || typeof value !== "object") return false;
   const v = value as Partial<MapFile>;
   return (
-    typeof v.locked === "boolean" &&
     Array.isArray(v.dayTypes) &&
     !!v.defaultWeek &&
     Array.isArray(v.years) &&

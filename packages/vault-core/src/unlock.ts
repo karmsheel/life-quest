@@ -1,4 +1,4 @@
-import type { DocumentKind, RoomId } from "./types.ts";
+import { ROOM_IDS, type DocumentKind, type RoomId } from "./types.ts";
 
 export type UnlockDoc = { kind: DocumentKind; bodyMarkdown: string };
 
@@ -15,17 +15,8 @@ function bodyOf(docs: UnlockDoc[], kind: DocumentKind): string {
   return docs.find((d) => d.kind === kind)?.bodyMarkdown ?? "";
 }
 
-export function getUnlockedRooms(domains: UnlockDomain[]): Set<RoomId> {
-  const rooms = new Set<RoomId>(["dream"]);
-  const hasLiveWhy = domains.some(
-    (d) => !d.archivedAt && isNonEmptyBody(bodyOf(d.documents, "why")),
-  );
-  if (hasLiveWhy) {
-    rooms.add("chart");
-    rooms.add("track");
-    rooms.add("act");
-  }
-  return rooms;
+export function getUnlockedRooms(_domains: UnlockDomain[]): Set<RoomId> {
+  return new Set<RoomId>(ROOM_IDS);
 }
 
 export function isRoomUnlocked(room: RoomId, domains: UnlockDomain[]): boolean {

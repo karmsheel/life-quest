@@ -6,7 +6,7 @@ import type {
   DocumentKind,
   UnlockDoc,
 } from "@lifequest/vault-core/pure";
-import { DOCUMENT_KINDS, getUnlockedRooms } from "@lifequest/vault-core/pure";
+import { DOCUMENT_KINDS } from "@lifequest/vault-core/pure";
 import { useVault } from "@/state/VaultProvider";
 
 export function useDomainLens(): DomainLens {
@@ -35,27 +35,4 @@ export function documentsToUnlockDocs(
     kind,
     bodyMarkdown: documents[kind]?.bodyMarkdown ?? "",
   }));
-}
-
-export function useUnlockedRooms(): Set<import("@lifequest/vault-core/pure").RoomId> {
-  const { snapshot } = useVault();
-  return useMemo(() => {
-    const domains = (snapshot?.domains ?? []).map((d) => ({
-      archivedAt: d.meta.archivedAt,
-      documents: documentsToUnlockDocs(d.documents),
-    }));
-    return getUnlockedRooms(domains);
-  }, [snapshot]);
-}
-
-export function useUnlockDomains() {
-  const { snapshot } = useVault();
-  return useMemo(
-    () =>
-      (snapshot?.domains ?? []).map((d) => ({
-        archivedAt: d.meta.archivedAt,
-        documents: documentsToUnlockDocs(d.documents),
-      })),
-    [snapshot],
-  );
 }

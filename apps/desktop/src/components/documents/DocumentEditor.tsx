@@ -304,8 +304,7 @@ export function DocumentEditor({
 
       {kind === "how" && document.bodyMarkdown.trim().length === 0 ? (
         <p className="doc-editor__placeholder-hint muted">
-          Template is local only until you Save — opening Track does not unlock
-          Act.
+          Template is local only until you Save.
         </p>
       ) : null}
 

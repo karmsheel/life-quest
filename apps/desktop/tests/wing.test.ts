@@ -8,14 +8,17 @@ import {
   selectWing,
   wingForPath,
   WING_DEFAULTS,
+  WING_IDS,
 } from "../src/components/shell/wing.ts";
 
 describe("initialWingSession", () => {
-  it("starts on Vision with the three defaults", () => {
+  it("starts on Home with the four defaults", () => {
     const session = initialWingSession();
-    assert.equal(session.active, "vision");
+    assert.deepEqual(WING_IDS, ["home", "vision", "plan", "execute"]);
+    assert.equal(session.active, "home");
     assert.deepEqual(session.lastPath, {
-      vision: "/home",
+      home: "/home",
+      vision: "/dream",
       plan: "/chart",
       execute: "/act",
     });
@@ -25,11 +28,11 @@ describe("initialWingSession", () => {
 
 describe("wingForPath", () => {
   it("maps wing-owned paths", () => {
-    assert.equal(wingForPath("/home"), "vision");
+    assert.equal(wingForPath("/home"), "home");
+    assert.equal(wingForPath("/chain"), "home");
+    assert.equal(wingForPath("/personnel"), "home");
     assert.equal(wingForPath("/dream"), "vision");
-    assert.equal(wingForPath("/chain"), "vision");
     assert.equal(wingForPath("/documents"), "vision");
-    assert.equal(wingForPath("/personnel"), "vision");
     assert.equal(wingForPath("/chart"), "plan");
     assert.equal(wingForPath("/track"), "plan");
     assert.equal(wingForPath("/act"), "execute");
@@ -62,13 +65,19 @@ describe("applyPath", () => {
     const next = applyPath(initialWingSession(), "/chart");
     assert.equal(next.active, "plan");
     assert.equal(next.lastPath.plan, "/chart");
-    assert.equal(next.lastPath.vision, "/home");
+    assert.equal(next.lastPath.home, "/home");
   });
 
-  it("keeps Vision on /log and records it as Vision last path", () => {
+  it("selects Home on /home", () => {
+    const next = applyPath(initialWingSession(), "/home");
+    assert.equal(next.active, "home");
+    assert.equal(next.lastPath.home, "/home");
+  });
+
+  it("keeps Home on /log and records it as Home last path", () => {
     const next = applyPath(initialWingSession(), "/log");
-    assert.equal(next.active, "vision");
-    assert.equal(next.lastPath.vision, "/log");
+    assert.equal(next.active, "home");
+    assert.equal(next.lastPath.home, "/log");
     assert.equal(next.lastPath.plan, "/chart");
   });
 
@@ -76,7 +85,7 @@ describe("applyPath", () => {
     const session = initialWingSession();
     const next = applyPath(session, "/nope");
     assert.equal(next, session);
-    assert.equal(next.active, "vision");
+    assert.equal(next.active, "home");
   });
 });
 
@@ -87,20 +96,27 @@ describe("selectWing", () => {
     assert.equal(fromHome.pathname, "/chart");
   });
 
-  it("after Log then Plan, returning to Vision goes to Log", () => {
+  it("selects Vision at /dream from a fresh session", () => {
+    const next = selectWing(initialWingSession(), "vision");
+    assert.equal(next.session.active, "vision");
+    assert.equal(next.pathname, "/dream");
+  });
+
+  it("after Log then Plan, returning to Home goes to Log", () => {
     const afterLog = applyPath(initialWingSession(), "/log");
     const afterPlan = selectWing(afterLog, "plan");
     assert.equal(afterPlan.pathname, "/chart");
-    const back = selectWing(afterPlan.session, "vision");
+    const back = selectWing(afterPlan.session, "home");
     assert.equal(back.pathname, "/log");
-    assert.equal(back.session.active, "vision");
+    assert.equal(back.session.active, "home");
   });
 
   it("falls back to the wing default when last path is unknown", () => {
     const broken = {
       ...initialWingSession(),
       lastPath: {
-        vision: "/home",
+        home: "/home",
+        vision: "/dream",
         plan: "/nope",
         execute: "/act",
       },
@@ -114,7 +130,8 @@ describe("selectWing", () => {
     const broken = {
       ...initialWingSession(),
       lastPath: {
-        vision: "/home",
+        home: "/home",
+        vision: "/dream",
         plan: "/home",
         execute: "/act",
       },
@@ -125,10 +142,14 @@ describe("selectWing", () => {
 });
 
 describe("NAV_ITEMS wings", () => {
-  it("assigns Vision, Plan, Execute, and pinned items", () => {
+  it("assigns Home, Vision, Plan, Execute, and pinned items", () => {
+    assert.deepEqual(
+      NAV_ITEMS.filter((i) => i.wing === "home").map((i) => i.id),
+      ["dashboard", "chain", "personnel"],
+    );
     assert.deepEqual(
       NAV_ITEMS.filter((i) => i.wing === "vision").map((i) => i.id),
-      ["home", "dream", "chain", "documents", "personnel"],
+      ["dream", "documents"],
     );
     assert.deepEqual(
       NAV_ITEMS.filter((i) => i.wing === "plan").map((i) => i.id),
@@ -142,5 +163,14 @@ describe("NAV_ITEMS wings", () => {
       NAV_ITEMS.filter((i) => i.wing == null).map((i) => i.id),
       ["decisions", "log"],
     );
+  });
+
+  it("labels Dashboard and Life-Chain", () => {
+    const dashboard = NAV_ITEMS.find((i) => i.id === "dashboard");
+    const chain = NAV_ITEMS.find((i) => i.id === "chain");
+    assert.equal(dashboard?.label, "Dashboard");
+    assert.equal(dashboard?.href, "/home");
+    assert.equal(chain?.label, "Life-Chain");
+    assert.equal(chain?.href, "/chain");
   });
 });

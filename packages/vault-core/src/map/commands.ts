@@ -8,8 +8,7 @@ import {
   setDefaultWeekdayType,
   setDefaultWeeklyItems,
 } from "./default-week.ts";
-import { fail, ok } from "./errors.ts";
-import { guardAgentWrite } from "./lock.ts";
+import { fail } from "./errors.ts";
 import {
   setMonthDay,
   setMonthNotes,
@@ -45,12 +44,7 @@ export function applyCommand(
   command: Command,
   ctx: ApplyContext,
 ): Result<StoreState> {
-  const guard = guardAgentWrite(state, ctx, command);
-  if (!guard.ok) return guard;
-
   switch (command.type) {
-    case "setLock":
-      return ok({ ...state, locked: command.locked });
     case "createYear":
       return createLiveYear(ensureCurrentYear(state, ctx.today), command.year, ctx.today);
     case "deleteYear":

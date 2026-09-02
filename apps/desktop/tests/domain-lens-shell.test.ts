@@ -88,8 +88,9 @@ describe("lens filtering", () => {
     assert.equal(home.includes('href: "/chart"'), false);
     assert.match(home, /to=["']\/dream["']/);
     assert.equal(home.includes('to="/documents"'), false);
-    assert.match(home, /isNonEmptyBody/);
-    assert.match(home, /rowLocked/);
+    assert.equal(home.includes("rowLocked"), false);
+    assert.equal(home.includes("is-locked"), false);
+    assert.equal(home.includes("useUnlockedRooms"), false);
 
     const chat = read("src/components/hermes/ChatPanel.tsx");
     assert.match(chat, /Overview/);
@@ -109,8 +110,10 @@ describe("doctrine indexes", () => {
     assert.equal(editor.includes("useActiveDomain"), false);
 
     const index = read("src/components/doctrine/DoctrineIndex.tsx");
-    assert.match(index, /isNonEmptyBody/);
     assert.match(index, /\/dream\//);
+    assert.equal(index.includes("rowLocked"), false);
+    assert.equal(index.includes("is-locked"), false);
+    assert.equal(index.includes("isNonEmptyBody"), false);
   });
 });
 

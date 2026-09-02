@@ -15,8 +15,6 @@ export type Priority = "required" | "semi-optional" | "optional";
 export type YearStatus = "live" | "archive";
 
 export type DomainErrorCode =
-  | "LOCKED"
-  | "AGENT_CANNOT_LOCK"
   | "ARCHIVE_READ_ONLY"
   | "YEAR_CAP"
   | "CANNOT_DELETE_CURRENT_YEAR"
@@ -123,7 +121,6 @@ export type Task = {
 };
 
 export type StoreState = {
-  locked: boolean;
   dayTypes: DayType[];
   defaultWeek: DefaultWeek;
   years: YearRecord[];
@@ -138,7 +135,6 @@ export type ApplyContext = {
 };
 
 export type Command =
-  | { type: "setLock"; locked: boolean }
   | { type: "createYear"; year: number }
   | { type: "deleteYear"; year: number }
   | {

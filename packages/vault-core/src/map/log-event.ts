@@ -6,12 +6,6 @@ export function mapLogEvent(command: Command): {
   payload: Record<string, unknown>;
 } {
   switch (command.type) {
-    case "setLock":
-      return {
-        type: "map.lock.set",
-        summary: command.locked ? "Agents locked" : "Agents unlocked",
-        payload: { locked: command.locked },
-      };
     case "setAboutMe":
       return { type: "map.about.updated", summary: "Updated About me", payload: {} };
     case "createYear":

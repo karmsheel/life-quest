@@ -2,18 +2,13 @@ import { DayTypes } from "@/components/architecture/DayTypes";
 import { DefaultWeek } from "@/components/architecture/DefaultWeek";
 import { RealWeek } from "@/components/architecture/RealWeek";
 import { DoctrineIndex } from "@/components/doctrine/DoctrineIndex";
-import { RoomLockGate } from "@/components/shell/RoomLockGate";
 import { useVault } from "@/state/VaultProvider";
 import { useMapYear } from "@/state/MapYearProvider";
 import { api } from "@/lib/ipc";
 import { findYear, type MapCommand } from "@lifequest/vault-core/map";
 
 export default function ArchitecturePage() {
-  return (
-    <RoomLockGate room="track">
-      <ArchitectureContent />
-    </RoomLockGate>
-  );
+  return <ArchitectureContent />;
 }
 
 function ArchitectureContent() {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { COLOR_IDS, PALETTE } from "@lifequest/vault-core/map";
+import { COLOR_IDS } from "@lifequest/vault-core/map";
 import type { ColorId, MapCommand, PeriodGoal, YearRecord } from "@lifequest/vault-core/map";
 
 type Props = {
@@ -76,7 +76,7 @@ export function KeyPanel({ year, readOnly, onCommand }: Props) {
                 key={id}
                 type="button"
                 className={id === color ? "swatch selected" : "swatch"}
-                style={{ background: PALETTE[id] }}
+                data-map-color={id}
                 aria-label={id}
                 onClick={() => setColor(id)}
               />
@@ -170,7 +170,7 @@ function GoalEditor({
             key={id}
             type="button"
             className={id === goal.color ? "swatch selected" : "swatch"}
-            style={{ background: PALETTE[id] }}
+            data-map-color={id}
             aria-label={id}
             disabled={readOnly}
             onClick={() => {

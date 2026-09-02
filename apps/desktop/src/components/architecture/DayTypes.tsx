@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { dayTypeInUse } from "@lifequest/vault-core/map";
-import { COLOR_IDS, PALETTE } from "@lifequest/vault-core/map";
+import { COLOR_IDS } from "@lifequest/vault-core/map";
 import type {
   ChecklistItem,
   ColorId,
@@ -77,7 +77,7 @@ export function DayTypes({ state, year, onCommand }: Props) {
                 key={id}
                 type="button"
                 className={id === color ? "swatch selected" : "swatch"}
-                style={{ background: PALETTE[id] }}
+                data-map-color={id}
                 aria-label={id}
                 onClick={() => setColor(id)}
               />
@@ -153,7 +153,7 @@ function TypeEditor({
       <div className="arch-type-head">
         <span
           className="arch-type-swatch"
-          style={{ background: PALETTE[type.color] }}
+          data-map-color={type.color}
           aria-hidden
         />
         <label>
@@ -175,7 +175,7 @@ function TypeEditor({
             key={id}
             type="button"
             className={id === type.color ? "swatch selected" : "swatch"}
-            style={{ background: PALETTE[id] }}
+            data-map-color={id}
             aria-label={id}
             disabled={readOnly}
             onClick={() => {

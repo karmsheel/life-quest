@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { addDays, mondayOnOrBefore, todayLocalIso } from "@lifequest/vault-core/map";
-import { PALETTE } from "@lifequest/vault-core/map";
+
 import { periodGoalsOnDate } from "@lifequest/vault-core/map";
 import type {
   MapCommand,
@@ -172,7 +172,7 @@ export function RealWeek({ state, year, onCommand }: Props) {
               <li key={goal.id}>
                 <span
                   className="month-goal-swatch"
-                  style={{ background: PALETTE[goal.color] }}
+                  data-map-color={goal.color}
                   aria-hidden
                 />
                 {goal.name}
@@ -293,7 +293,7 @@ function DayColumn({
         {color && (
           <span
             className="arch-type-swatch"
-            style={{ background: PALETTE[color] }}
+            data-map-color={color}
             aria-hidden
           />
         )}

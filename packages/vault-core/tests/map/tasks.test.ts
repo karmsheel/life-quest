@@ -12,8 +12,6 @@ const user: ApplyContext = {
   today: "2026-08-18",
   id: () => `x${++n}`,
 };
-const agent: ApplyContext = { ...user, actor: "agent" };
-
 function base() {
   n = 0;
   return ensureCurrentYear(emptyState(), user.today);
@@ -91,27 +89,5 @@ describe("tasks and about me", () => {
     if (!del.ok) return;
     assert.equal(del.value.tasks[0].links.periodGoalId, "x1");
     assert.deepEqual(del.value.years[0].periodGoals, []);
-  });
-
-  it("locked agent cannot write About me or tasks; user can", () => {
-    let s = applyCommand(base(), { type: "setLock", locked: true }, user);
-    assert.equal(s.ok, true);
-    if (!s.ok) return;
-    const aboutAgent = applyCommand(
-      s.value,
-      { type: "setAboutMe", text: "Night owl" },
-      agent,
-    );
-    assert.equal(aboutAgent.ok, false);
-    if (aboutAgent.ok) return;
-    assert.equal(aboutAgent.error.code, "LOCKED");
-    const aboutUser = applyCommand(
-      s.value,
-      { type: "setAboutMe", text: "Night owl" },
-      user,
-    );
-    assert.equal(aboutUser.ok, true);
-    if (!aboutUser.ok) return;
-    assert.equal(aboutUser.value.aboutMe, "Night owl");
   });
 });

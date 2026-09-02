@@ -11,7 +11,6 @@ import {
   Users,
   Zap,
 } from "lucide-react";
-import type { RoomId } from "@lifequest/vault-core";
 import type { WingId } from "./wing.ts";
 
 export type NavItem = {
@@ -19,37 +18,35 @@ export type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
-  room?: RoomId;
   section?: "main" | "governance";
   wing?: WingId;
 };
 
-/** Vision: Home, Dream, Chain, Documents, Personnel. Plan: Life Map, Architecture. Execute: Act. Pinned: Decisions, Log. */
+/** Home: Dashboard, Life-Chain, Personnel. Vision: Dream, Documents. Plan: Life Map, Architecture. Execute: Act. Pinned: Decisions, Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
-    id: "home",
+    id: "dashboard",
     href: "/home",
-    label: "Home",
+    label: "Dashboard",
     icon: Home,
     section: "main",
-    wing: "vision",
+    wing: "home",
   },
   {
     id: "dream",
     href: "/dream",
     label: "Dream",
     icon: Sparkles,
-    room: "dream",
     section: "main",
     wing: "vision",
   },
   {
     id: "chain",
     href: "/chain",
-    label: "Chain",
+    label: "Life-Chain",
     icon: Radio,
     section: "main",
-    wing: "vision",
+    wing: "home",
   },
   {
     id: "documents",
@@ -65,14 +62,13 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Personnel",
     icon: Users,
     section: "main",
-    wing: "vision",
+    wing: "home",
   },
   {
     id: "chart",
     href: "/chart",
     label: "Life Map",
     icon: Map,
-    room: "chart",
     section: "main",
     wing: "plan",
   },
@@ -81,7 +77,6 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/track",
     label: "Architecture",
     icon: Target,
-    room: "track",
     section: "main",
     wing: "plan",
   },
@@ -90,7 +85,6 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/act",
     label: "Act",
     icon: Zap,
-    room: "act",
     section: "main",
     wing: "execute",
   },

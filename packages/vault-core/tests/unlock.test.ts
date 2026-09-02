@@ -24,31 +24,31 @@ describe("isNonEmptyBody", () => {
 });
 
 describe("getUnlockedRooms", () => {
-  it("unlocks only dream when no live Why exists", () => {
-    const rooms = getUnlockedRooms([]);
-    assert.ok(rooms.has("dream"));
-    assert.equal(rooms.has("chart"), false);
-    assert.equal(rooms.has("track"), false);
-    assert.equal(rooms.has("act"), false);
+  it("unlocks every room with no domains", () => {
+    assert.deepEqual(
+      [...getUnlockedRooms([])].sort(),
+      ["act", "chart", "dream", "track"],
+    );
   });
 
-  it("unlocks chart, track, and act when any live Why has a body", () => {
+  it("unlocks every room even without a live Why", () => {
+    const rooms = getUnlockedRooms([whyLive("  ")]);
+    assert.deepEqual([...rooms].sort(), ["act", "chart", "dream", "track"]);
+  });
+
+  it("unlocks every room when a live Why exists", () => {
     const rooms = getUnlockedRooms([whyLive("reason")]);
     assert.deepEqual([...rooms].sort(), ["act", "chart", "dream", "track"]);
   });
 
-  it("ignores archived domains with a Why", () => {
+  it("unlocks operational rooms even if the only Why is archived", () => {
     const rooms = getUnlockedRooms([
       {
         archivedAt: "2026-01-01T00:00:00.000Z",
         documents: [{ kind: "why", bodyMarkdown: "old" }],
       },
     ]);
-    assert.equal(rooms.has("chart"), false);
-  });
-
-  it("does not require What or How to unlock operational rooms", () => {
-    const rooms = getUnlockedRooms([whyLive("w")]);
+    assert.ok(rooms.has("chart"));
     assert.ok(rooms.has("track"));
     assert.ok(rooms.has("act"));
   });
@@ -62,8 +62,9 @@ describe("canDispatchAgent", () => {
 });
 
 describe("isRoomUnlocked", () => {
-  it("uses the domain list, not a single doc array", () => {
+  it("is true for every room regardless of Why", () => {
     assert.equal(isRoomUnlocked("chart", [whyLive("x")]), true);
-    assert.equal(isRoomUnlocked("chart", [whyLive("  ")]), false);
+    assert.equal(isRoomUnlocked("chart", [whyLive("  ")]), true);
+    assert.equal(isRoomUnlocked("act", []), true);
   });
 });
