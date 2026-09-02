@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isThemePreference, resolveThemePreference } from "./theme.ts";
+import { isThemePreference, resolveThemePreference } from "../src/lib/theme.ts";
 import {
   BUILTIN_SKINS,
   DEFAULT_SKIN_NAME,
   filterSkinsForPreference,
   skinSupportsBothModes,
-} from "./themes/presets.ts";
+} from "../src/lib/themes/presets.ts";
 
 describe("resolveThemePreference", () => {
   it("keeps an explicit light or dark preference", () => {
