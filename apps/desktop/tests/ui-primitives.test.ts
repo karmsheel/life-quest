@@ -38,3 +38,27 @@ describe("Button source", () => {
     assert.equal(src.includes("@radix-ui"), false);
   });
 });
+
+describe("settings primitives source", () => {
+  it("SettingsSection uses existing heading and card classes", () => {
+    const src = fs.readFileSync(
+      path.join(desktopRoot, "src/components/ui/SettingsSection.tsx"),
+      "utf8",
+    );
+    assert.match(src, /settings-panel__heading/);
+    assert.match(src, /settings-panel__title/);
+    assert.match(src, /settings-card/);
+    assert.match(src, /contentClassName/);
+    assert.match(src, /banner/);
+  });
+
+  it("SettingsRow is not a button", () => {
+    const src = fs.readFileSync(
+      path.join(desktopRoot, "src/components/ui/SettingsRow.tsx"),
+      "utf8",
+    );
+    assert.match(src, /settings-card__row/);
+    assert.match(src, /settings-card__label/);
+    assert.equal(/<button/.test(src), false);
+  });
+});

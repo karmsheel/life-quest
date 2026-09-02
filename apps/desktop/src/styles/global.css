@@ -3029,12 +3029,12 @@ a.home-mini-list__link:hover {
 
 .ui-list-row__label {
   font-size: 0.8125rem;
-  color: var(--text);
+  color: var(--foreground);
 }
 
 .ui-list-row__desc {
   font-size: 0.6875rem;
-  color: var(--text-muted);
+  color: var(--muted-foreground);
 }
 
 .ui-list-row__action {
