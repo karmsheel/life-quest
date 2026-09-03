@@ -13,7 +13,8 @@ function readTokens(): string {
 describe("token contract", () => {
   it("defines semantic tokens with the current light hex values", () => {
     const css = readTokens();
-    assert.match(css, /--background:\s*#faf9f7/);
+    assert.match(css, /--canvas-base:\s*#faf9f7/);
+    assert.match(css, /--background:\s*#fffefc/);
     assert.match(css, /--foreground:\s*#1a1916/);
     assert.match(css, /--card:\s*#fffefc/);
     assert.match(css, /--muted-surface:\s*#eef1f5/);
@@ -53,8 +54,28 @@ describe("token contract", () => {
 
   it("keeps dark paper values on semantic tokens", () => {
     const css = readTokens();
-    assert.match(css, /\[data-theme="dark"\][\s\S]*--background:\s*#1a1917/);
+    assert.match(css, /\[data-theme="dark"\][\s\S]*--canvas-base:\s*#1a1917/);
+    assert.match(css, /\[data-theme="dark"\][\s\S]*--background:\s*#2a2825/);
+    assert.match(css, /\[data-theme="dark"\][\s\S]*--card:\s*#2a2825/);
     assert.match(css, /\[data-theme="dark"\][\s\S]*--primary:\s*#d97a56/);
     assert.match(css, /\[data-theme="dark"\][\s\S]*--foreground:\s*#e8e4dc/);
+  });
+
+  it("defines concentric radii and the shell frame", () => {
+    const css = readTokens();
+    assert.match(css, /--radius-xs:\s*6px/);
+    assert.match(css, /--radius-sm:\s*12px/);
+    assert.match(css, /--radius:\s*12px/);
+    assert.match(css, /--radius-md:\s*18px/);
+    assert.match(css, /--radius-lg:\s*24px/);
+    assert.match(css, /--radius-pill:\s*999px/);
+    assert.match(css, /--shell-frame:\s*20px/);
+  });
+
+  it("does not alias --canvas-base through --background", () => {
+    const css = readTokens();
+    assert.equal(/--canvas-base:\s*var\(/.test(css), false);
+    assert.match(css, /--bg:\s*var\(--background\)/);
+    assert.match(css, /--accent:\s*var\(--primary\)/);
   });
 });
