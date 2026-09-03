@@ -356,6 +356,11 @@ a {
   padding: 1.25rem 1.5rem 1.5rem;
 }
 
+.shell__content--bleed {
+  padding: 0;
+  overflow: hidden;
+}
+
 /* —— Nav rail —— */
 .nav-rail {
   border-right: 1px solid var(--sidebar-border, var(--border));

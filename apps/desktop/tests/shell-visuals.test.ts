@@ -48,4 +48,18 @@ describe("shell visuals", () => {
     assert.match(css, /\.settings-panel__icon\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
     assert.match(css, /\.settings-nav-item\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
   });
+
+  it("bleeds Life Map inside the studio sheet on /chart only", () => {
+    const css = readCss();
+    assert.match(css, /\.shell__content--bleed\s*\{[\s\S]*?padding:\s*0/);
+    const shell = fs.readFileSync(
+      path.join(desktopRoot, "src/components/shell/AppShell.tsx"),
+      "utf8",
+    );
+    assert.match(shell, /useLocation/);
+    assert.match(shell, /pathname === ["']\/chart["']/);
+    assert.match(shell, /shell__content--bleed/);
+    assert.equal(shell.includes('pathname === "/dream"'), false);
+    assert.equal(shell.includes('pathname === "/track"'), false);
+  });
 });
