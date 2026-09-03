@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { forgeVarsFromColors, forgeVarsFromSkin } from "../src/lib/themes/apply-skin.ts";
+import { mix } from "../src/lib/themes/color.ts";
 import { BUILTIN_SKINS, DEFAULT_SKIN_NAME } from "../src/lib/themes/presets.ts";
 import type { SkinColors } from "../src/lib/themes/types.ts";
 
@@ -49,19 +50,42 @@ const FORBIDDEN = [
 describe("forgeVarsFromColors", () => {
   it("writes semantic tokens from SkinColors fields", () => {
     const vars = forgeVarsFromColors(sample);
-    assert.equal(vars["--background"], "#111111");
-    assert.equal(vars["--foreground"], "#eeeeee");
     assert.equal(vars["--card"], "#222222");
+    assert.equal(vars["--background"], "#222222");
+    assert.equal(vars["--canvas-base"], "#111111");
+    assert.equal(vars["--foreground"], "#eeeeee");
     assert.equal(vars["--primary"], "#ff0000");
     assert.equal(vars["--primary-foreground"], "#ffffff");
     assert.equal(vars["--destructive"], "#990000");
     assert.equal(vars["--border"], "#666666");
-    // --input is the former --border-strong (computed), not raw SkinColors.input
     assert.equal(vars["--input"], "#969696");
     assert.equal(vars["--ring"], "#0000ff");
     assert.equal(vars["--muted-foreground"], "#aaaaaa");
     assert.equal(vars["--muted-surface"], "#333333");
     assert.match(vars["--accent-fill"] ?? "", /#0000ff|0,\s*0,\s*255/);
+  });
+
+  it("mixes canvas-base when background equals card", () => {
+    const light = forgeVarsFromColors({
+      ...sample,
+      background: "#faf9f7",
+      card: "#faf9f7",
+      popover: "#faf9f7",
+      foreground: "#1a1916",
+    });
+    assert.equal(light["--background"], "#faf9f7");
+    assert.equal(light["--card"], "#faf9f7");
+    assert.equal(light["--canvas-base"], mix("#faf9f7", "#1a1916", 0.06));
+    assert.notEqual(light["--canvas-base"], light["--card"]);
+
+    const darkSame = forgeVarsFromColors({
+      ...sample,
+      background: "#111111",
+      card: "#111111",
+      popover: "#111111",
+    });
+    assert.equal(darkSame["--canvas-base"], mix("#111111", "#000000", 0.15));
+    assert.notEqual(darkSame["--canvas-base"], darkSame["--card"]);
   });
 
   it("does not treat Forge accent as brand primary", () => {
@@ -83,6 +107,9 @@ describe("forgeVarsFromSkin", () => {
     const vars = forgeVarsFromSkin(BUILTIN_SKINS[DEFAULT_SKIN_NAME], "light");
     assert.ok(vars["--background"]);
     assert.ok(vars["--primary"]);
+    assert.ok(vars["--canvas-base"]);
+    assert.equal(vars["--background"], vars["--card"]);
+    assert.notEqual(vars["--canvas-base"], vars["--card"]);
     assert.equal(vars["--bg"], undefined);
     assert.equal(vars["--accent"], undefined);
   });
