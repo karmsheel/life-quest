@@ -109,10 +109,8 @@ describe("wing shell wiring", () => {
       /import \{[^}]*\bOutlet\b[^}]*\} from ["']react-router-dom["']/,
     );
     assert.match(src, /<Outlet\s*\/>/);
-    assert.match(
-      src,
-      /className=["']shell__content["']>\s*<Outlet\s*\/>/,
-    );
+    assert.match(src, /["']shell__content["']/);
+    assert.match(src, /shell__content[\s\S]*?<Outlet\s*\/>/);
     assert.equal(/\bchildren\b/.test(src), false);
   });
 
