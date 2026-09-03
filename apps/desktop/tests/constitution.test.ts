@@ -19,13 +19,15 @@ describe("product constitution", () => {
     assert.match(src, /chatbot wrapper/);
   });
 
-  it("has DESIGN.md with token collisions and Phase 2 do-not-do", () => {
+  it("has DESIGN.md with canvas ladder and remaining Phase 2 do-not-do", () => {
     const src = read("DESIGN.md");
     assert.match(src, /Grounded life studio/);
     assert.match(src, /--accent-fill/);
     assert.match(src, /--muted-surface/);
-    assert.match(src, /Phase 2/);
-    assert.match(src, /rounded-full/);
+    assert.match(src, /--canvas-base/);
+    assert.match(src, /PageShell/);
+    assert.match(src, /card-glass/);
+    assert.match(src, /--radius-pill/);
   });
 
   it("has RFC-style laws", () => {
@@ -42,5 +44,7 @@ describe("product constitution", () => {
     const src = read("apps/desktop/src/components/ui/AGENTS.md");
     assert.match(src, /Button/);
     assert.match(src, /hex/);
+    assert.match(src, /pill/);
+    assert.match(src, /\.shell/);
   });
 });
