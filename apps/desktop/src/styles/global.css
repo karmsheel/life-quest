@@ -15,7 +15,7 @@ body,
 }
 
 body {
-  background: var(--bg);
+  background: var(--canvas-base);
   color: var(--fg);
   font-family: var(--font-sans);
 }
@@ -148,6 +148,11 @@ a {
   align-items: center;
   justify-content: center;
   padding: 2rem;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
 .welcome-card {
@@ -241,6 +246,7 @@ a {
   flex-direction: column;
   height: 100%;
   min-height: 100%;
+  background: var(--canvas-base);
 }
 
 .app-root__body {
@@ -249,10 +255,11 @@ a {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  padding: var(--shell-frame);
 }
 
 .app-root__body > * {
-  height: 100%;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -261,9 +268,8 @@ a {
   display: flex;
   align-items: center;
   height: env(titlebar-area-height, var(--window-titlebar-height));
-  background: var(--bg);
+  background: var(--canvas-base);
   color: var(--fg);
-  border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
   user-select: none;
   overflow: hidden;
@@ -307,6 +313,7 @@ a {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  border-radius: 0;
 }
 
 .window-titlebar__btn:hover {
@@ -322,8 +329,12 @@ a {
   display: grid;
   grid-template-columns: var(--shell-nav-width) 1fr var(--chatbar-width);
   height: 100%;
-  background: var(--bg);
+  background: var(--card);
   color: var(--fg);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
 .shell--chat-collapsed {
