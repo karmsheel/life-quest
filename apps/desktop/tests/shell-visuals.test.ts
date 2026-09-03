@@ -10,6 +10,10 @@ function readCss(): string {
   return fs.readFileSync(path.join(desktopRoot, "src/styles/global.css"), "utf8");
 }
 
+function readMapCss(): string {
+  return fs.readFileSync(path.join(desktopRoot, "src/styles/map.css"), "utf8");
+}
+
 describe("shell visuals", () => {
   it("paints the window as canvas and the studio as a sheet", () => {
     const css = readCss();
@@ -52,6 +56,20 @@ describe("shell visuals", () => {
   it("bleeds Life Map inside the studio sheet on /chart only", () => {
     const css = readCss();
     assert.match(css, /\.shell__content--bleed\s*\{[\s\S]*?padding:\s*0/);
+    assert.match(css, /\.shell__content--bleed\s*\{[\s\S]*?overflow:\s*hidden/);
+    const mapCss = readMapCss();
+    assert.match(
+      mapCss,
+      /\.shell__content--bleed\s*>\s*\.life-map\s*\{[\s\S]*?height:\s*100%/,
+    );
+    assert.match(
+      mapCss,
+      /\.shell__content--bleed\s*>\s*\.life-map\s*\{[\s\S]*?overflow:\s*auto/,
+    );
+    assert.match(
+      mapCss,
+      /\.shell__content--bleed\s*>\s*\.life-map\s*\{[\s\S]*?min-height:\s*0/,
+    );
     const shell = fs.readFileSync(
       path.join(desktopRoot, "src/components/shell/AppShell.tsx"),
       "utf8",
@@ -61,5 +79,14 @@ describe("shell visuals", () => {
     assert.match(shell, /shell__content--bleed/);
     assert.equal(shell.includes('pathname === "/dream"'), false);
     assert.equal(shell.includes('pathname === "/track"'), false);
+  });
+
+  it("lets Welcome scroll long content inside the sheet", () => {
+    const css = readCss();
+    assert.equal(/\.welcome\s*\{[^}]*overflow:\s*hidden/.test(css), false);
+    assert.match(css, /\.welcome\s*\{[\s\S]*?background:\s*var\(--card\)/);
+    assert.match(css, /\.welcome\s*\{[\s\S]*?border-radius:\s*var\(--radius-lg\)/);
+    assert.match(css, /\.welcome\s*\{[\s\S]*?border:\s*1px solid var\(--border\)/);
+    assert.match(css, /\.welcome\s*\{[\s\S]*?box-shadow:\s*var\(--shadow-sm\)/);
   });
 });

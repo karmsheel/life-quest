@@ -1,5 +1,11 @@
 /* —— Life Map (Chart route) —— */
 
+.shell__content--bleed > .life-map {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
 .life-map {
   display: flex;
   flex-direction: column;
