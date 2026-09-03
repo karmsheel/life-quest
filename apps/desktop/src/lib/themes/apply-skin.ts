@@ -9,6 +9,15 @@ function pickHex(...candidates: (string | undefined)[]): string {
   return "#000000";
 }
 
+function canvasBaseFromColors(
+  c: SkinColors,
+  elevated: string,
+  dark: boolean,
+): string {
+  if (c.background.toLowerCase() !== elevated.toLowerCase()) return c.background;
+  return dark ? mix(c.background, "#000000", 0.15) : mix(c.background, c.foreground, 0.06);
+}
+
 function composerVars(
   c: SkinColors,
   border: string,
@@ -141,7 +150,8 @@ export function forgeVarsFromColors(c: SkinColors): ForgeSkinVars {
   const chromaticFg = Boolean(fgHsl && fgHsl.s >= 10);
 
   const vars: ForgeSkinVars = {
-    "--background": bg,
+    "--background": elevated,
+    "--canvas-base": canvasBaseFromColors(c, elevated, dark),
     "--foreground": c.foreground,
     "--card": elevated,
     "--card-foreground": c.cardForeground ?? c.foreground,
@@ -237,6 +247,7 @@ export function applySkinVars(
 export function clearSkinVars(el: HTMLElement = document.documentElement): void {
   const toRemove = [
     "--background",
+    "--canvas-base",
     "--foreground",
     "--card",
     "--card-foreground",

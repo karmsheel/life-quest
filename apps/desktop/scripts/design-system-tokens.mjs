@@ -52,6 +52,9 @@ export function auditDesignSystem(root) {
   if (!applySkin.includes('"--primary"') && !applySkin.includes("'--primary'")) {
     findings.push("apply-skin.ts does not write --primary");
   }
+  if (!applySkin.includes('"--canvas-base"') && !applySkin.includes("'--canvas-base'")) {
+    findings.push("apply-skin.ts does not write --canvas-base");
+  }
 
   for (const file of walkUiFiles(path.join(root, "src/components/ui"))) {
     const rel = path.relative(root, file).replaceAll("\\", "/");
