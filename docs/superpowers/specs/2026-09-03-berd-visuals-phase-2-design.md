@@ -1,7 +1,7 @@
 # BERD Visuals Phase 2 — Design Spec
 
 **Date:** 2026-09-03  
-**Status:** Draft — review before implementation plan  
+**Status:** Approved — implementation plan at docs/superpowers/plans/2026-09-03-berd-visuals-phase-2.md  
 **Product:** LifeQuest — local-first life-management studio  
 **Reference:** [block/berd](https://github.com/block/berd) selected visuals (not a visual fork)  
 **Depends on:** [BERD Systems Phase 1](./2026-09-02-berd-systems-phase-1-design.md), [Custom window chrome](./2026-08-28-custom-window-chrome-design.md)
