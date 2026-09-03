@@ -51,7 +51,7 @@ a {
 .btn {
   appearance: none;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-pill);
   padding: 0.55rem 1rem;
   cursor: pointer;
   background: var(--bg);
@@ -136,7 +136,7 @@ a {
 
 .field input {
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--radius-sm);
   padding: 0.45rem 0.55rem;
   background: var(--bg);
 }
@@ -215,7 +215,7 @@ a {
   text-align: left;
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   cursor: pointer;
 }
@@ -378,7 +378,7 @@ a {
   align-items: center;
   gap: 0.2rem;
   padding: 0.5rem 0.25rem 0.65rem;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-sm);
   margin-bottom: 0.25rem;
 }
 
@@ -392,7 +392,7 @@ a {
   justify-content: center;
   width: 2rem;
   height: 2rem;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-sm);
   background: var(--accent);
   color: var(--accent-fg);
   font-size: 0.7rem;
@@ -430,7 +430,7 @@ a {
   align-items: center;
   gap: 0.15rem;
   padding: 0.45rem 0.2rem;
-  border-radius: 0.45rem;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   font-size: 0.6rem;
   line-height: 1.1;
@@ -1862,7 +1862,7 @@ a.home-mini-list__link:hover {
   align-items: center;
   gap: 0.5rem;
   border: 1px solid transparent;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-sm);
   padding: 0.5rem 0.75rem;
   background: transparent;
   color: var(--text-muted);
@@ -1914,7 +1914,7 @@ a.home-mini-list__link:hover {
   justify-content: center;
   width: 2.25rem;
   height: 2.25rem;
-  border-radius: 0.75rem;
+  border-radius: var(--radius-sm);
   background: var(--bg-muted);
   color: var(--accent);
 }
@@ -1934,7 +1934,7 @@ a.home-mini-list__link:hover {
 .settings-card {
   padding: 1.25rem 1.5rem;
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--bg);
 }
 

@@ -37,4 +37,15 @@ describe("shell visuals", () => {
     const css = readCss();
     assert.equal(/\.centered-status\s*\{[^}]*border-radius:\s*var\(--radius-lg\)/.test(css), false);
   });
+
+  it("pills buttons and uses the concentric scale on shared chrome", () => {
+    const css = readCss();
+    assert.match(css, /\.btn\s*\{[\s\S]*?border-radius:\s*var\(--radius-pill\)/);
+    assert.match(css, /\.field input\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+    assert.match(css, /\.settings-card\s*\{[\s\S]*?border-radius:\s*var\(--radius-md\)/);
+    assert.match(css, /\.nav-rail__link\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+    assert.match(css, /\.recent-item\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+    assert.match(css, /\.settings-panel__icon\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+    assert.match(css, /\.settings-nav-item\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+  });
 });
