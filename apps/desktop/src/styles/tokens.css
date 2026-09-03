@@ -12,9 +12,11 @@
   --shell-max-width: 80rem;
   --shell-topbar-height: 2.75rem;
   --window-titlebar-height: 32px;
+  --shell-frame: 20px;
   --chatbar-width: 22.5rem;
 
-  --background: #faf9f7;
+  --canvas-base: #faf9f7;
+  --background: #fffefc;
   --foreground: #1a1916;
   --card: #fffefc;
   --card-foreground: var(--foreground);
@@ -79,11 +81,11 @@
     0 2.25rem 3rem -1.75rem color-mix(in srgb, #000 0%, transparent);
   --stroke-nous: color-mix(in srgb, var(--foreground) 8%, transparent);
 
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius: 8px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
+  --radius-xs: 6px;
+  --radius-sm: 12px;
+  --radius: 12px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
   --radius-pill: 999px;
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -131,7 +133,8 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --background: #1a1917;
+  --canvas-base: #1a1917;
+  --background: #2a2825;
   --foreground: #e8e4dc;
   --card: #2a2825;
   --card-foreground: var(--foreground);
@@ -201,7 +204,8 @@
   html:not([data-theme]) {
     color-scheme: dark;
 
-    --background: #1a1917;
+    --canvas-base: #1a1917;
+    --background: #2a2825;
     --foreground: #e8e4dc;
     --card: #2a2825;
     --card-foreground: var(--foreground);
