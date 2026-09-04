@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { Link } from "react-router-dom";
-import { MessageSquare, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { MessageSquare, PanelRightOpen } from "lucide-react";
 import { api } from "@/lib/ipc";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
@@ -278,15 +278,6 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                 disabled={sending}
               >
                 New
-              </button>
-              <button
-                type="button"
-                className="chat-panel__icon-btn"
-                onClick={() => onOpenChange(false)}
-                aria-label="Collapse chat"
-                title="Collapse"
-              >
-                <PanelRightClose size={14} />
               </button>
             </div>
           </div>
