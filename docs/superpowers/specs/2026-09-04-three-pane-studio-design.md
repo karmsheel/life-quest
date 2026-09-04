@@ -1,7 +1,7 @@
 # Three-pane studio — Design Spec
 
 **Date:** 2026-09-04  
-**Status:** Draft — review before implementation plan  
+**Status:** Approved — implementation plan at docs/superpowers/plans/2026-09-04-three-pane-studio.md  
 **Product:** LifeQuest — local-first life-management studio  
 **Depends on:** [BERD Visuals Phase 2](./2026-09-03-berd-visuals-phase-2-design.md)
 

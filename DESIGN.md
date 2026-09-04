@@ -8,7 +8,7 @@ This file is the contract for tokens and primitives. It is not a license to rest
 
 Primitives (hex in `tokens.css` and skin palettes) → semantic CSS variables → Life Quest extensions. Legacy `--bg`, `--text`, `--accent`, `--muted` are aliases only.
 
-`--canvas-base` is the window mat. `--card` is the studio sheet. `--background` is paper on the sheet (aliases `--bg`) so outline controls blend. Skins write `--canvas-base` from the palette background, or mix toward ink when background equals card.
+`--canvas-base` is the window mat. `--card` is paper for the three studio panes and Welcome. `--background` is paper on the sheet (aliases `--bg`) so outline controls blend. Skins write `--canvas-base` from the palette background, or mix toward ink when background equals card.
 
 `--accent` is brand (`var(--primary)`). Hover fill is `--accent-fill`. `--muted` is text (`var(--muted-foreground)`). Quiet fill is `--muted-surface`.
 
@@ -30,9 +30,9 @@ ThemeProvider may apply a named skin and light/dark/system. It must not generate
 
 `Button`: `primary` | `outline` | `ghost`, plus `destructive` (maps to `.btn-danger`). Pill radius via `.btn`. Links via `to`. No Radix.
 
-`SettingsSection` / `SettingsRow` own settings heading and row chrome. Settings cards use `--radius-md`.
+`SettingsSection` / `SettingsRow` own settings heading and row chrome. Settings cards use `--radius-sm`.
 
-The studio sheet is `.shell` / `.welcome` CSS, not a primitive.
+The studio is three `--card` panes (`.nav-rail`, `.shell__main`, `.chat-panel`) at `--radius-sm` on a `--shell-frame` (12px) canvas mat. `.shell` is the grid tray, not a sheet. Welcome is one card at the same radius. Feature files must not add a second frame.
 
 ## Remaining visual do-not-do
 
