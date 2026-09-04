@@ -149,7 +149,7 @@ a {
   justify-content: center;
   padding: 2rem;
   background: var(--card);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   overflow: auto;
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
@@ -329,12 +329,8 @@ a {
   display: grid;
   grid-template-columns: var(--shell-nav-width) 1fr var(--chatbar-width);
   height: 100%;
-  background: var(--card);
   color: var(--fg);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
+  gap: var(--shell-frame);
 }
 
 .shell--chat-collapsed {
@@ -347,6 +343,10 @@ a {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  background: var(--card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
 .shell__content {
@@ -363,8 +363,10 @@ a {
 
 /* —— Nav rail —— */
 .nav-rail {
-  border-right: 1px solid var(--sidebar-border, var(--border));
-  background: var(--bg-panel, var(--bg));
+  background: var(--card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1939,7 +1941,7 @@ a.home-mini-list__link:hover {
 .settings-card {
   padding: 1.25rem 1.5rem;
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--bg);
 }
 
@@ -2207,9 +2209,11 @@ a.home-mini-list__link:hover {
   position: sticky;
   top: 0;
   align-self: stretch;
-  background: var(--bg);
+  background: var(--card);
   color: var(--fg);
-  border-left: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
   z-index: 20;
   overflow: hidden;
 }
