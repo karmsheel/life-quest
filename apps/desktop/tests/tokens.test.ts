@@ -69,7 +69,7 @@ describe("token contract", () => {
     assert.match(css, /--radius-md:\s*18px/);
     assert.match(css, /--radius-lg:\s*24px/);
     assert.match(css, /--radius-pill:\s*999px/);
-    assert.match(css, /--shell-frame:\s*20px/);
+    assert.match(css, /--shell-frame:\s*12px/);
   });
 
   it("does not alias --canvas-base through --background", () => {
