@@ -6,8 +6,10 @@ import {
   MCP_URL,
   PROFILE_NAME,
   RESERVED_PORTS,
+  attachCandidateBaseUrls,
   ensureMcpServer,
   hermesRoot,
+  portFromBaseUrl,
   profileDir,
   readEnv,
   shouldSeedSoul,
@@ -19,6 +21,7 @@ const RESERVED = new Set<number>(RESERVED_PORTS);
 export type CompanionReady = {
   kind: "ready";
   port: number;
+  baseUrl: string;
   startedByLifeQuest: boolean;
   profilePath: string;
   cliPath: string;
@@ -44,8 +47,8 @@ export type CompanionIo = {
   writeFile: (p: string, body: string) => Promise<void>;
   mkdirp: (p: string) => Promise<void>;
   isPortFree: (port: number) => Promise<boolean>;
-  health: (port: number) => Promise<boolean>;
-  capabilities: (port: number, key: string) => Promise<unknown | null>;
+  health: (url: string) => Promise<boolean>;
+  capabilities: (baseUrl: string, key: string) => Promise<unknown | null>;
   spawnGateway: (cli: string, profileDirPath: string) => Promise<{ pid: number }>;
   stopPid: (pid: number) => Promise<void>;
   listeningPid: (port: number) => Promise<number | null>;
@@ -115,26 +118,16 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
   const existing = readEnv(envText);
   const apiKey =
     existing.API_SERVER_KEY?.trim() || randomBytes(24).toString("hex");
-
-  let port: number;
-  try {
-    port = await choosePort(envText, io.isPortFree);
-  } catch (e) {
-    return {
-      kind: "profile_error",
-      message: e instanceof Error ? e.message : String(e),
-      path: envPath,
-    };
-  }
-
-  envText = upsertEnv(envText, {
-    API_SERVER_ENABLED: "true",
-    API_SERVER_HOST: "127.0.0.1",
-    API_SERVER_PORT: String(port),
-    API_SERVER_KEY: apiKey,
-  });
+  const envPort = Number.parseInt(existing.API_SERVER_PORT ?? "", 10);
+  const knownPort = Number.isFinite(envPort) && envPort > 0 ? envPort : null;
 
   try {
+    envText = upsertEnv(envText, {
+      API_SERVER_ENABLED: "true",
+      API_SERVER_HOST: "127.0.0.1",
+      API_SERVER_KEY: apiKey,
+      ...(knownPort ? { API_SERVER_PORT: String(knownPort) } : {}),
+    });
     await io.writeFile(envPath, envText);
     const yaml = (await io.readFile(configPath)) ?? "";
     await io.writeFile(configPath, ensureMcpServer(yaml, PROFILE_NAME, MCP_URL));
@@ -150,27 +143,63 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
     };
   }
 
-  let startedByLifeQuest = false;
-  let childPid: number | null = null;
-  const up = await io.health(port);
-  if (!up) {
-    try {
-      const child = await io.spawnGateway(cli, dir);
-      childPid = child.pid;
-      startedByLifeQuest = true;
-    } catch (e) {
-      return {
-        kind: "gateway_exited",
-        stderr: e instanceof Error ? e.message : String(e),
-      };
+  for (const baseUrl of attachCandidateBaseUrls(knownPort)) {
+    if (!(await io.health(baseUrl))) continue;
+    const caps = await io.capabilities(baseUrl, apiKey);
+    if (!capabilitiesSupportSessions(caps)) {
+      return { kind: "hermes_too_old" };
     }
-    const ready = await io.health(port);
-    if (!ready) {
-      return { kind: "gateway_exited", stderr: "Gateway did not become healthy." };
-    }
+    return {
+      kind: "ready",
+      port: portFromBaseUrl(baseUrl),
+      baseUrl,
+      startedByLifeQuest: false,
+      profilePath: dir,
+      cliPath: cli,
+      apiKey,
+      childPid: null,
+    };
   }
 
-  const caps = await io.capabilities(port, apiKey);
+  let port: number;
+  try {
+    port = await choosePort(envText, io.isPortFree);
+  } catch (e) {
+    return {
+      kind: "profile_error",
+      message: e instanceof Error ? e.message : String(e),
+      path: envPath,
+    };
+  }
+
+  try {
+    envText = upsertEnv(envText, { API_SERVER_PORT: String(port) });
+    await io.writeFile(envPath, envText);
+  } catch (e) {
+    return {
+      kind: "profile_error",
+      message: e instanceof Error ? e.message : String(e),
+      path: envPath,
+    };
+  }
+
+  let childPid: number | null = null;
+  try {
+    const child = await io.spawnGateway(cli, dir);
+    childPid = child.pid;
+  } catch (e) {
+    return {
+      kind: "gateway_exited",
+      stderr: e instanceof Error ? e.message : String(e),
+    };
+  }
+  const dedicated = `http://127.0.0.1:${port}`;
+  const ready = await io.health(dedicated);
+  if (!ready) {
+    return { kind: "gateway_exited", stderr: "Gateway did not become healthy." };
+  }
+
+  const caps = await io.capabilities(dedicated, apiKey);
   if (!capabilitiesSupportSessions(caps)) {
     return { kind: "hermes_too_old" };
   }
@@ -178,7 +207,8 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
   return {
     kind: "ready",
     port,
-    startedByLifeQuest,
+    baseUrl: dedicated,
+    startedByLifeQuest: true,
     profilePath: dir,
     cliPath: cli,
     apiKey,

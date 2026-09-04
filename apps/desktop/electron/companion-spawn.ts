@@ -15,6 +15,7 @@ export function hermesSpawnSpec(
   platform: NodeJS.Platform,
   cli: string,
   args: string[],
+  extraEnv: Record<string, string> = {},
 ): HermesSpawnSpec {
   const win = platform === "win32";
   const isExe = /\.exe$/i.test(cli);
@@ -27,7 +28,7 @@ export function hermesSpawnSpec(
       shell,
       windowsHide: win,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env },
+      env: { ...process.env, ...extraEnv },
     },
   };
 }

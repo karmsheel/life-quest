@@ -38,14 +38,14 @@ describe("capabilitiesSupportSessions", () => {
 });
 
 describe("choosePort", () => {
-  it("keeps 8644 when free", async () => {
-    const port = await choosePort("API_SERVER_PORT=8644\n", async () => true);
-    assert.equal(port, 8644);
+  it("keeps the env port when free", async () => {
+    const port = await choosePort("API_SERVER_PORT=8650\n", async () => true);
+    assert.equal(port, 8650);
   });
 
-  it("skips 8642 and 8643 when 8644 is taken", async () => {
-    const port = await choosePort("", async (p) => p !== 8644);
-    assert.equal(port, 8645);
+  it("skips reserved ports when the default is taken", async () => {
+    const port = await choosePort("", async (p) => p !== 8650);
+    assert.equal(port, 8651);
   });
 });
 
@@ -114,6 +114,7 @@ describe("ensureCompanion", () => {
     );
     assert.equal(status.kind, "ready");
     assert.equal((status as CompanionReady).startedByLifeQuest, false);
+    assert.match((status as CompanionReady).baseUrl, /\/p\/lifequest$/);
     assert.equal(spawned, false);
   });
 
@@ -157,6 +158,7 @@ describe("shutdownCompanion", () => {
       {
         kind: "ready",
         port: 8644,
+        baseUrl: "http://127.0.0.1:8644/p/lifequest",
         startedByLifeQuest: true,
         profilePath: "p",
         cliPath: "c",
@@ -177,6 +179,7 @@ describe("shutdownCompanion", () => {
       {
         kind: "ready",
         port: 8644,
+        baseUrl: "http://127.0.0.1:8644/p/lifequest",
         startedByLifeQuest: true,
         profilePath: "p",
         cliPath: "c",

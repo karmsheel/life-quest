@@ -35,6 +35,7 @@ type CompanionStatus =
   | {
       kind: "ready";
       port: number;
+      baseUrl: string;
       startedByLifeQuest: boolean;
       profilePath: string;
       cliPath: string;
