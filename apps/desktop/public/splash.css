@@ -1,0 +1,102 @@
+.splash {
+  position: fixed;
+  top: var(--window-titlebar-height, 32px);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  margin: 0;
+  background: var(--canvas-base, #faf9f7);
+  color: var(--foreground, #1a1916);
+  font-family: var(
+    --font-sans,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif
+  );
+  transition: opacity 200ms ease;
+}
+
+[data-theme="dark"] .splash {
+  background: var(--canvas-base, #1a1917);
+  color: var(--foreground, #e8e4dc);
+}
+
+.splash__title {
+  margin: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  font-size: clamp(2.5rem, 8vw, 4.5rem);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1;
+}
+
+.splash__letter {
+  display: inline-block;
+  opacity: 0;
+  animation: splash-letter 320ms ease-out forwards;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+
+.splash__letter--space {
+  width: 0.4em;
+}
+
+.splash__bar {
+  width: 8rem;
+  height: 2px;
+  background: var(--primary, #c96442);
+  opacity: 0;
+  animation: splash-bar 1.2s ease-in-out infinite;
+  animation-delay: 400ms;
+}
+
+.splash--out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.splash--done,
+.splash[hidden] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+@keyframes splash-letter {
+  from {
+    opacity: 0;
+    transform: translateY(0.15em);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes splash-bar {
+  0%,
+  100% {
+    opacity: 0.28;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash__letter,
+  .splash__bar {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

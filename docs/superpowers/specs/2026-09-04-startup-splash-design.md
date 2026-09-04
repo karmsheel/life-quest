@@ -1,7 +1,7 @@
 # Startup splash — Design Spec
 
 **Date:** 2026-09-04  
-**Status:** Draft — review before implementation plan  
+**Status:** Approved — implemented on feat/hermes-companion-profile  
 **Product:** LifeQuest — local-first life-management studio  
 **Depends on:** [Local vault (Electron)](./2026-07-19-local-vault-electron-design.md), [BERD Visuals Phase 2](./2026-09-03-berd-visuals-phase-2-design.md), [Three-pane studio](./2026-09-04-three-pane-studio-design.md)
 

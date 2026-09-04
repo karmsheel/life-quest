@@ -7,6 +7,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { AppShell } from "@/components/shell/AppShell";
+import { SplashGate } from "@/components/shell/SplashGate";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import { DoctrineEditorPage } from "@/components/doctrine/DoctrineEditorPage";
 import ActPage from "@/pages/ActPage";
@@ -23,6 +24,7 @@ import SettingsPage from "@/pages/SettingsPage";
 import WelcomePage from "@/pages/WelcomePage";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
+import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
 
@@ -31,11 +33,7 @@ function RequireVault({ children }: { children: ReactNode }) {
   const location = useLocation();
 
   if (booting) {
-    return (
-      <main className="centered-status">
-        <p className="muted">Loading…</p>
-      </main>
-    );
+    return null;
   }
 
   if (!snapshot && location.pathname !== "/welcome") {
@@ -54,11 +52,7 @@ function AppRoutes() {
   }
 
   if (booting) {
-    return (
-      <main className="centered-status">
-        <p className="muted">Loading…</p>
-      </main>
-    );
+    return null;
   }
 
   return (
@@ -114,12 +108,15 @@ export default function App() {
       <ThemeProvider>
         <CompanionProvider>
           <VaultProvider>
-            <div className="app-root">
-              <WindowTitleBar />
-              <div className="app-root__body">
-                <AppRoutes />
+            <SplashGate />
+            <ChatDockProvider>
+              <div className="app-root">
+                <WindowTitleBar />
+                <div className="app-root__body">
+                  <AppRoutes />
+                </div>
               </div>
-            </div>
+            </ChatDockProvider>
           </VaultProvider>
         </CompanionProvider>
       </ThemeProvider>
