@@ -23,6 +23,7 @@ import {
 export type PublicCompanionStatus = Exclude<CompanionStatus, { kind: "ready" }> | {
   kind: "ready";
   port: number;
+  baseUrl: string;
   startedByLifeQuest: boolean;
   profilePath: string;
   cliPath: string;
@@ -102,11 +103,11 @@ function isPortFree(port: number): Promise<boolean> {
   });
 }
 
-async function health(port: number): Promise<boolean> {
+async function health(baseUrl: string): Promise<boolean> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 800);
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/health`, {
       signal: ctrl.signal,
     });
     return res.ok;
@@ -117,9 +118,9 @@ async function health(port: number): Promise<boolean> {
   }
 }
 
-async function capabilities(port: number, key: string): Promise<unknown | null> {
+async function capabilities(baseUrl: string, key: string): Promise<unknown | null> {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/v1/capabilities`, {
+    const res = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/capabilities`, {
       headers: { Authorization: `Bearer ${key}` },
     });
     if (!res.ok) return null;
@@ -130,7 +131,21 @@ async function capabilities(port: number, key: string): Promise<unknown | null> 
 }
 
 async function spawnGateway(cli: string, profileDirPath: string): Promise<{ pid: number }> {
-  const spec = hermesSpawnSpec(process.platform, cli, ["-p", "lifequest", "gateway"]);
+  let extraEnv: Record<string, string> = {};
+  try {
+    const envText = await fs.readFile(path.join(profileDirPath, ".env"), "utf8");
+    extraEnv = readEnv(envText);
+  } catch {
+    /* profile .env may not exist yet */
+  }
+  const hermesHome = path.dirname(path.dirname(profileDirPath));
+  extraEnv.HERMES_HOME = hermesHome;
+  const spec = hermesSpawnSpec(
+    process.platform,
+    cli,
+    ["-p", "lifequest", "gateway"],
+    extraEnv,
+  );
   const proc = await new Promise<ChildProcess>((resolve, reject) => {
     let settled = false;
     let spawned: ChildProcess;
@@ -155,7 +170,7 @@ async function spawnGateway(cli: string, profileDirPath: string): Promise<{ pid:
   if (proc.pid == null) {
     throw new Error("Failed to spawn hermes gateway");
   }
-  let port = 8644;
+  let port = 8650;
   try {
     const envText = await fs.readFile(path.join(profileDirPath, ".env"), "utf8");
     const parsed = Number.parseInt(readEnv(envText).API_SERVER_PORT ?? "", 10);
@@ -163,8 +178,9 @@ async function spawnGateway(cli: string, profileDirPath: string): Promise<{ pid:
   } catch {
     /* default port */
   }
-  for (let i = 0; i < 40; i++) {
-    if (await health(port)) break;
+  const dedicated = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 80; i++) {
+    if (await health(dedicated)) break;
     await new Promise((r) => setTimeout(r, 250));
   }
   return { pid: proc.pid };
@@ -244,7 +260,8 @@ async function hermesFetch(
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  return fetch(`http://127.0.0.1:${st.port}${pathname}`, { ...init, headers });
+  const base = st.baseUrl.replace(/\/$/, "");
+  return fetch(`${base}${pathname}`, { ...init, headers });
 }
 
 function asSessions(payload: unknown): HermesSession[] {

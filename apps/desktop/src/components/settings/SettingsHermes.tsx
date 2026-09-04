@@ -11,7 +11,7 @@ function statusSummary(status: CompanionStatus | null, ensuring: boolean): strin
   if (ensuring || !status) return "Connecting…";
   if (status.kind === "ready") {
     const how = status.startedByLifeQuest ? "started by LifeQuest" : "attached";
-    return `Ready · port ${status.port} · ${how}`;
+    return `Ready · ${status.baseUrl} · ${how}`;
   }
   if (status.kind === "needs_install") return "Hermes CLI not found on PATH.";
   if (status.kind === "profile_error") return status.message;
@@ -113,8 +113,8 @@ export function SettingsHermes() {
               <p className="muted">{ready.profilePath}</p>
             </div>
             <div className="settings-field">
-              <span>API port</span>
-              <p className="muted">{ready.port}</p>
+              <span>API</span>
+              <p className="muted">{ready.baseUrl}</p>
             </div>
           </dl>
         ) : null}

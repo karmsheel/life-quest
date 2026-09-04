@@ -6,9 +6,11 @@ import {
   MCP_URL,
   PROFILE_NAME,
   RESERVED_PORTS,
+  attachCandidateBaseUrls,
   ensureMcpServer,
   hermesRoot,
   nextFreePort,
+  portFromBaseUrl,
   profileDir,
   readEnv,
   shouldSeedSoul,
@@ -18,18 +20,24 @@ import {
 describe("companion-profile", () => {
   it("names the lifequest profile and reserved ports", () => {
     assert.equal(PROFILE_NAME, "lifequest");
-    assert.equal(DEFAULT_API_PORT, 8644);
-    assert.deepEqual([...RESERVED_PORTS], [8642, 8643]);
+    assert.equal(DEFAULT_API_PORT, 8650);
+    assert.deepEqual([...RESERVED_PORTS], [8642, 8643, 8644]);
     assert.equal(MCP_URL, "http://127.0.0.1:8643/mcp");
     assert.match(COMPANION_SOUL, /LifeQuest companion/);
     assert.match(COMPANION_SOUL, /LOCKED/);
     assert.match(COMPANION_SOUL, /get_doctrine/);
   });
 
-  it("resolves hermes root from HERMES_HOME or homedir", () => {
+  it("resolves hermes root from HERMES_HOME, LOCALAPPDATA, or homedir", () => {
     assert.equal(
       hermesRoot({ HERMES_HOME: "D:\\data\\hermes" }, "C:\\Users\\x"),
       "D:\\data\\hermes",
+    );
+    assert.ok(
+      hermesRoot(
+        { LOCALAPPDATA: "C:\\Users\\x\\AppData\\Local" },
+        "C:\\Users\\x",
+      ).replace(/\\/g, "/").endsWith("AppData/Local/hermes"),
     );
     assert.ok(hermesRoot({}, "C:\\Users\\x").endsWith(".hermes"));
   });
@@ -79,8 +87,16 @@ describe("companion-profile", () => {
     assert.equal(shouldSeedSoul("You are already named."), false);
   });
 
-  it("never picks 8642 or 8643 as the companion port", () => {
-    assert.equal(nextFreePort(new Set([8644]), 8644), 8645);
+  it("never picks 8642, 8643, or 8644 as the companion port", () => {
+    assert.equal(nextFreePort(new Set([8650]), 8650), 8651);
     assert.equal(nextFreePort(new Set([8642, 8643, 8644]), 8642), 8645);
+  });
+
+  it("probes /p/lifequest on shared gateways before a dedicated port", () => {
+    const urls = attachCandidateBaseUrls(8645);
+    assert.equal(urls[0], "http://127.0.0.1:8645/p/lifequest");
+    assert.ok(urls.includes("http://127.0.0.1:8644/p/lifequest"));
+    assert.ok(urls.includes("http://127.0.0.1:8642/p/lifequest"));
+    assert.equal(portFromBaseUrl("http://127.0.0.1:8644/p/lifequest"), 8644);
   });
 });

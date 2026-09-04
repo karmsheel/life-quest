@@ -1,8 +1,10 @@
 import path from "node:path";
 
 export const PROFILE_NAME = "lifequest";
-export const DEFAULT_API_PORT = 8644;
-export const RESERVED_PORTS = [8642, 8643] as const;
+/** Dedicated listener if we must spawn. 8644 is Hermes' webhook adapter. */
+export const DEFAULT_API_PORT = 8650;
+export const RESERVED_PORTS = [8642, 8643, 8644] as const;
+export const DISCOVERY_PORTS = [8642, 8644, 8645, 8650] as const;
 export const MCP_URL = "http://127.0.0.1:8643/mcp";
 export const COMPANION_SOUL = `You are the LifeQuest companion. Help the user set up and use LifeQuest: vaults, domains, Why → What → How, Life Map, Architecture, tasks, and the agent lock. Prefer LifeQuest MCP tools (lifequest) for map and task changes. If a tool returns LOCKED, tell the user the map is locked and do not retry writes. Do not rewrite Why, What, or How; use get_doctrine to read them. Do not flip the agent lock. You also exist in Hermes Desktop and other channels on this same profile — stay consistent.
 `;
@@ -22,7 +24,41 @@ export function hermesRoot(
     }
     return normalized;
   }
+  const local = env.LOCALAPPDATA?.trim();
+  if (local) {
+    return path.join(local, "hermes");
+  }
   return path.join(homedir, ".hermes");
+}
+
+/** Bases to probe before spawning. Prefer /p/lifequest on a shared gateway. */
+export function attachCandidateBaseUrls(envPort: number | null): string[] {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const add = (url: string) => {
+    if (seen.has(url)) return;
+    seen.add(url);
+    urls.push(url);
+  };
+  const prefix = (port: number) => `http://127.0.0.1:${port}/p/${PROFILE_NAME}`;
+  const raw = (port: number) => `http://127.0.0.1:${port}`;
+  if (envPort && envPort > 0) {
+    add(prefix(envPort));
+    add(raw(envPort));
+  }
+  for (const port of DISCOVERY_PORTS) {
+    add(prefix(port));
+  }
+  return urls;
+}
+
+export function portFromBaseUrl(baseUrl: string): number {
+  try {
+    const port = Number.parseInt(new URL(baseUrl).port, 10);
+    return Number.isFinite(port) && port > 0 ? port : DEFAULT_API_PORT;
+  } catch {
+    return DEFAULT_API_PORT;
+  }
 }
 
 export function profileDir(root: string): string {
