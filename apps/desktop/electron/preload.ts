@@ -115,6 +115,41 @@ const lifequest = {
   mcpGetError: () =>
     ipcRenderer.invoke("mcp:getError") as Promise<string | null>,
 
+  companionEnsure: () => ipcRenderer.invoke("companion:ensure"),
+  companionStatus: () => ipcRenderer.invoke("companion:status"),
+  companionSessionsList: () => ipcRenderer.invoke("companion:sessionsList"),
+  companionSessionCreate: (title: string) =>
+    ipcRenderer.invoke("companion:sessionCreate", title),
+  companionSessionMessages: (id: string) =>
+    ipcRenderer.invoke("companion:sessionMessages", id),
+  companionChatStream: (payload: {
+    sessionId: string;
+    input: string;
+    instructionsContext: {
+      domainName: string | null;
+      domainSlug: string | null;
+      aboutMe: string;
+      locked: boolean;
+      vaultOpen: boolean;
+    };
+  }) => ipcRenderer.invoke("companion:chatStream", payload),
+  companionApproval: (payload: {
+    runId: string;
+    requestId: string;
+    allow: boolean;
+  }) => ipcRenderer.invoke("companion:approval", payload),
+  companionOpenProfileFolder: () =>
+    ipcRenderer.invoke("companion:openProfileFolder"),
+  onCompanionStream: (cb: (evt: unknown) => void) => {
+    const listener = (_event: unknown, evt: unknown) => {
+      cb(evt);
+    };
+    ipcRenderer.on("companion:stream", listener);
+    return () => {
+      ipcRenderer.removeListener("companion:stream", listener);
+    };
+  },
+
   mapGetState: () =>
     ipcRenderer.invoke("map:getState") as Promise<Result<unknown>>,
   mapApply: (command: unknown) =>

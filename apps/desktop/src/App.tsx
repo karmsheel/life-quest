@@ -22,6 +22,8 @@ import PersonnelPage from "@/pages/PersonnelPage";
 import SettingsPage from "@/pages/SettingsPage";
 import WelcomePage from "@/pages/WelcomePage";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
+import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
 
 function RequireVault({ children }: { children: ReactNode }) {
@@ -45,6 +47,11 @@ function RequireVault({ children }: { children: ReactNode }) {
 
 function AppRoutes() {
   const { snapshot, booting } = useVault();
+  const { status, ensuring } = useCompanion();
+
+  if (ensuring || !status || status.kind !== "ready") {
+    return <CompanionSetupScreen />;
+  }
 
   if (booting) {
     return (
@@ -105,14 +112,16 @@ export default function App() {
   return (
     <HashRouter>
       <ThemeProvider>
-        <VaultProvider>
-          <div className="app-root">
-            <WindowTitleBar />
-            <div className="app-root__body">
-              <AppRoutes />
+        <CompanionProvider>
+          <VaultProvider>
+            <div className="app-root">
+              <WindowTitleBar />
+              <div className="app-root__body">
+                <AppRoutes />
+              </div>
             </div>
-          </div>
-        </VaultProvider>
+          </VaultProvider>
+        </CompanionProvider>
       </ThemeProvider>
     </HashRouter>
   );
