@@ -194,6 +194,7 @@ type LifequestApi = {
 declare global {
   interface Window {
     lifequest?: LifequestApi;
+    __LQ_SPLASH_T0?: number;
   }
 }
 
