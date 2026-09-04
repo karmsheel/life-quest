@@ -31,7 +31,18 @@ function toZod(prop: unknown): ZodTypeAny {
     if (vals.length > 0 && vals.every((v) => typeof v === "string")) {
       return z.enum(vals as [string, ...string[]]);
     }
-    return z.union(vals.map((v) => z.literal(v)) as ZodTypeAny[]);
+    const literals = vals.filter(
+      (v): v is string | number | boolean | bigint | null =>
+        v === null ||
+        typeof v === "string" ||
+        typeof v === "number" ||
+        typeof v === "boolean" ||
+        typeof v === "bigint",
+    );
+    if (literals.length === 0) return z.unknown();
+    if (literals.length === 1) return z.literal(literals[0]);
+    const [first, second, ...rest] = literals.map((v) => z.literal(v));
+    return z.union([first, second, ...rest]);
   }
   if (Array.isArray(p.type)) {
     const nonNull = p.type.filter((t) => t !== "null");

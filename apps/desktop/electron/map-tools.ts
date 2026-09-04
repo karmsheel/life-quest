@@ -16,7 +16,7 @@ export async function runPlannerLoop(opts: {
   root: string;
   activeSlug: string | null;
   baseUrl: string;
-  apiKey: string | null;
+  apiKey: string;
   extraSystem: string;
   messages: { role: string; content: string }[];
 }): Promise<Result<{ content: string }>> {
