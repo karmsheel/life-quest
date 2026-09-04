@@ -11,7 +11,7 @@ import {
 } from "../electron/companion-lifecycle.ts";
 
 describe("capabilitiesSupportSessions", () => {
-  it("requires session_list and a stream flag", () => {
+  it("requires session list and a stream flag", () => {
     assert.equal(
       capabilitiesSupportSessions({
         features: { session_list: true, session_chat_stream: true },
@@ -28,6 +28,18 @@ describe("capabilitiesSupportSessions", () => {
       capabilitiesSupportSessions({
         features: { session_list: true },
         endpoints: { session_chat_stream: "/api/sessions/{id}/chat/stream" },
+      }),
+      true,
+    );
+    assert.equal(
+      capabilitiesSupportSessions({
+        features: { session_chat: true, session_chat_streaming: true },
+      }),
+      true,
+    );
+    assert.equal(
+      capabilitiesSupportSessions({
+        features: { session_resources: true, session_chat_streaming: true },
       }),
       true,
     );
@@ -148,6 +160,17 @@ describe("ensureCompanion", () => {
       }),
     );
     assert.equal(status.kind, "hermes_too_old");
+  });
+
+  it("returns auth_error when capabilities cannot be read", async () => {
+    const status = await ensureCompanion(
+      io({
+        whichHermes: async () => "C:\\hermes\\hermes.exe",
+        health: async () => true,
+        capabilities: async () => null,
+      }),
+    );
+    assert.equal(status.kind, "auth_error");
   });
 });
 

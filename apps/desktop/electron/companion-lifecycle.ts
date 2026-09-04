@@ -61,10 +61,22 @@ export function capabilitiesSupportSessions(payload: unknown): boolean {
     endpoints?: Record<string, unknown>;
   };
   const features = obj.features ?? {};
-  if (features.session_list !== true) return false;
+  const hasSessions =
+    features.session_list === true ||
+    features.session_resources === true ||
+    features.session_chat === true;
+  if (!hasSessions) return false;
   if (features.session_chat_stream === true) return true;
+  if (features.session_chat_streaming === true) return true;
   if (features.chat_stream === true) return true;
   return typeof obj.endpoints?.session_chat_stream === "string";
+}
+
+function sessionCapsKind(
+  caps: unknown,
+): "ok" | "auth_error" | "hermes_too_old" {
+  if (caps == null) return "auth_error";
+  return capabilitiesSupportSessions(caps) ? "ok" : "hermes_too_old";
 }
 
 export async function choosePort(
@@ -146,9 +158,8 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
   for (const baseUrl of attachCandidateBaseUrls(knownPort)) {
     if (!(await io.health(baseUrl))) continue;
     const caps = await io.capabilities(baseUrl, apiKey);
-    if (!capabilitiesSupportSessions(caps)) {
-      return { kind: "hermes_too_old" };
-    }
+    const capsKind = sessionCapsKind(caps);
+    if (capsKind !== "ok") return { kind: capsKind };
     return {
       kind: "ready",
       port: portFromBaseUrl(baseUrl),
@@ -200,9 +211,8 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
   }
 
   const caps = await io.capabilities(dedicated, apiKey);
-  if (!capabilitiesSupportSessions(caps)) {
-    return { kind: "hermes_too_old" };
-  }
+  const capsKind = sessionCapsKind(caps);
+  if (capsKind !== "ok") return { kind: capsKind };
 
   return {
     kind: "ready",
