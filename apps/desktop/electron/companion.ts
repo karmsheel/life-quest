@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { shell } from "electron";
 import { readEnv } from "./companion-profile.ts";
+import { hermesSpawnSpec } from "./companion-spawn.ts";
 import {
   buildInstructions,
   splitSse,
@@ -36,6 +37,15 @@ export function publicStatus(status: CompanionStatus): PublicCompanionStatus {
 
 let current: CompanionStatus = { kind: "needs_install" };
 let child: ChildProcess | null = null;
+
+function spawnError(cli: string, err: unknown): Error {
+  const code =
+    err && typeof err === "object" && "code" in err
+      ? String((err as { code?: unknown }).code)
+      : "";
+  const msg = err instanceof Error ? err.message : String(err);
+  return new Error(`spawn ${code || "error"} (${cli}): ${msg}`);
+}
 
 function processAlive(pid: number): boolean {
   try {
@@ -120,10 +130,26 @@ async function capabilities(port: number, key: string): Promise<unknown | null> 
 }
 
 async function spawnGateway(cli: string, profileDirPath: string): Promise<{ pid: number }> {
-  const proc = spawn(cli, ["-p", "lifequest", "gateway"], {
-    windowsHide: true,
-    stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env },
+  const spec = hermesSpawnSpec(process.platform, cli, ["-p", "lifequest", "gateway"]);
+  const proc = await new Promise<ChildProcess>((resolve, reject) => {
+    let settled = false;
+    let spawned: ChildProcess;
+    try {
+      spawned = spawn(spec.file, spec.args, spec.options);
+    } catch (err) {
+      reject(spawnError(cli, err));
+      return;
+    }
+    spawned.once("error", (err) => {
+      if (settled) return;
+      settled = true;
+      reject(spawnError(cli, err));
+    });
+    spawned.once("spawn", () => {
+      if (settled) return;
+      settled = true;
+      resolve(spawned);
+    });
   });
   child = proc;
   if (proc.pid == null) {
