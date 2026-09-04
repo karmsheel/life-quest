@@ -290,16 +290,26 @@ a {
   text-overflow: ellipsis;
 }
 
+.window-titlebar:has(.window-titlebar__trailing) .window-titlebar__label,
 .window-titlebar:has(.window-titlebar__controls) .window-titlebar__label {
   width: auto;
   flex: 1 1 auto;
 }
 
-.window-titlebar__controls {
+.window-titlebar__trailing {
   -webkit-app-region: no-drag;
   display: flex;
   align-items: stretch;
-  margin-left: auto;
+  height: 100%;
+  flex: 0 0 auto;
+  margin-right: calc(
+    100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%)
+  );
+}
+
+.window-titlebar__controls {
+  display: flex;
+  align-items: stretch;
   height: 100%;
 }
 
@@ -309,7 +319,11 @@ a {
   background: transparent;
   color: var(--fg);
   width: 2.75rem;
-  display: inline-flex;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+  display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
@@ -323,6 +337,48 @@ a {
 .window-titlebar__btn--close:hover {
   background: var(--red);
   color: #fff;
+}
+
+.window-titlebar__settings {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+}
+
+.window-titlebar__trailing .theme-mode-toggle,
+.window-titlebar__trailing .settings-menu__trigger {
+  appearance: none;
+  width: 2.75rem;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--fg);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.window-titlebar__trailing .theme-mode-toggle:hover,
+.window-titlebar__trailing .settings-menu__trigger:hover {
+  background: var(--selected-soft);
+  color: var(--fg);
+  border-color: transparent;
+}
+
+.window-titlebar__trailing svg {
+  display: block;
+  flex-shrink: 0;
+  transform: translateY(1px);
+}
+
+.window-titlebar__trailing .theme-mode-toggle svg,
+.window-titlebar__trailing .settings-menu__trigger svg {
+  width: 14px;
+  height: 14px;
 }
 
 .shell {
@@ -443,22 +499,6 @@ a {
   line-height: 1.1;
   text-align: center;
   cursor: pointer;
-}
-
-.nav-rail__settings-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.15rem;
-  width: 100%;
-  position: relative;
-}
-
-.nav-rail__settings-wrap .settings-menu__trigger,
-.nav-rail__settings-wrap .theme-mode-toggle {
-  width: 2.25rem;
-  height: 2.25rem;
 }
 
 .nav-rail__link:hover {

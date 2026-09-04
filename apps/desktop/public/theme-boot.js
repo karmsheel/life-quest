@@ -9,4 +9,5 @@
       document.documentElement.setAttribute("data-theme", "dark");
     }
   } catch (e) {}
+  window.__LQ_SPLASH_T0 = performance.now();
 })();

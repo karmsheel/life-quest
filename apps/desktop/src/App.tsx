@@ -7,6 +7,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { AppShell } from "@/components/shell/AppShell";
+import { SplashGate } from "@/components/shell/SplashGate";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import { DoctrineEditorPage } from "@/components/doctrine/DoctrineEditorPage";
 import ActPage from "@/pages/ActPage";
@@ -22,6 +23,9 @@ import PersonnelPage from "@/pages/PersonnelPage";
 import SettingsPage from "@/pages/SettingsPage";
 import WelcomePage from "@/pages/WelcomePage";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
+import { ChatDockProvider } from "@/state/ChatDockProvider";
+import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
 
 function RequireVault({ children }: { children: ReactNode }) {
@@ -29,11 +33,7 @@ function RequireVault({ children }: { children: ReactNode }) {
   const location = useLocation();
 
   if (booting) {
-    return (
-      <main className="centered-status">
-        <p className="muted">Loading…</p>
-      </main>
-    );
+    return null;
   }
 
   if (!snapshot && location.pathname !== "/welcome") {
@@ -45,13 +45,14 @@ function RequireVault({ children }: { children: ReactNode }) {
 
 function AppRoutes() {
   const { snapshot, booting } = useVault();
+  const { status, ensuring } = useCompanion();
+
+  if (ensuring || !status || status.kind !== "ready") {
+    return <CompanionSetupScreen />;
+  }
 
   if (booting) {
-    return (
-      <main className="centered-status">
-        <p className="muted">Loading…</p>
-      </main>
-    );
+    return null;
   }
 
   return (
@@ -105,14 +106,19 @@ export default function App() {
   return (
     <HashRouter>
       <ThemeProvider>
-        <VaultProvider>
-          <div className="app-root">
-            <WindowTitleBar />
-            <div className="app-root__body">
-              <AppRoutes />
-            </div>
-          </div>
-        </VaultProvider>
+        <CompanionProvider>
+          <VaultProvider>
+            <SplashGate />
+            <ChatDockProvider>
+              <div className="app-root">
+                <WindowTitleBar />
+                <div className="app-root__body">
+                  <AppRoutes />
+                </div>
+              </div>
+            </ChatDockProvider>
+          </VaultProvider>
+        </CompanionProvider>
       </ThemeProvider>
     </HashRouter>
   );

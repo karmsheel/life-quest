@@ -99,4 +99,53 @@ describe("window chrome (renderer)", () => {
     assert.match(css, /\.welcome \{[\s\S]*?min-height:\s*100%/);
     assert.match(css, /\.centered-status \{[\s\S]*?min-height:\s*100%/);
   });
+
+  it("puts the chat collapse toggle in the titlebar next to window controls", () => {
+    const titlebar = read("src/components/shell/WindowTitleBar.tsx");
+    const chat = read("src/components/hermes/ChatPanel.tsx");
+    const shell = read("src/components/shell/AppShell.tsx");
+    const app = read("src/App.tsx");
+    const css = read("src/styles/global.css");
+
+    assert.match(titlebar, /Collapse chat/);
+    assert.match(titlebar, /Expand chat/);
+    assert.match(titlebar, /useChatDock/);
+    assert.match(titlebar, /window-titlebar__trailing/);
+    assert.match(titlebar, /window-titlebar__btn/);
+    assert.equal(chat.includes("Collapse chat"), false);
+    assert.match(shell, /useChatDock/);
+    assert.match(app, /ChatDockProvider/);
+    assert.match(
+      css,
+      /\.window-titlebar__trailing\s*\{[\s\S]*?titlebar-area-width/,
+    );
+    assert.match(
+      css,
+      /\.window-titlebar__trailing\s*\{[\s\S]*?-webkit-app-region:\s*no-drag/,
+    );
+  });
+
+  it("vertically centers titlebar control icons in their hit targets", () => {
+    const css = read("src/styles/global.css");
+    assert.match(css, /\.window-titlebar__btn\s*\{[^}]*height:\s*100%/);
+    assert.match(css, /\.window-titlebar__btn\s*\{[^}]*padding:\s*0/);
+    assert.match(css, /\.window-titlebar__btn\s*\{[^}]*line-height:\s*0/);
+    assert.match(css, /\.window-titlebar__trailing svg\s*\{[^}]*display:\s*block/);
+    assert.match(
+      css,
+      /\.window-titlebar__trailing svg\s*\{[^}]*transform:\s*translateY\(1px\)/,
+    );
+  });
+
+  it("puts settings and day/night toggles in the titlebar next to chat collapse", () => {
+    const titlebar = read("src/components/shell/WindowTitleBar.tsx");
+    const nav = read("src/components/shell/NavRail.tsx");
+
+    assert.match(titlebar, /NavThemeModeToggle/);
+    assert.match(titlebar, /SettingsMenu/);
+    assert.match(titlebar, /placement=["']bottom-end["']/);
+    assert.equal(nav.includes("NavThemeModeToggle"), false);
+    assert.equal(nav.includes("SettingsMenu"), false);
+    assert.equal(nav.includes("nav-rail__settings"), false);
+  });
 });

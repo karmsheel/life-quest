@@ -1,15 +1,21 @@
-import { useState } from "react";
+import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
+import { useChatDock } from "@/state/ChatDockProvider";
 import { NavRail } from "./NavRail";
 import { TopBar } from "./TopBar";
 import { WingProvider } from "./WingProvider";
 import { MapYearProvider } from "@/state/MapYearProvider";
 
 export function AppShell() {
-  const [chatOpen, setChatOpen] = useState(true);
+  const { open: chatOpen, setOpen: setChatOpen, setPresent } = useChatDock();
   const { pathname } = useLocation();
   const chartBleed = pathname === "/chart";
+
+  useEffect(() => {
+    setPresent(true);
+    return () => setPresent(false);
+  }, [setPresent]);
 
   return (
     <MapYearProvider>

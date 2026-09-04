@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -7,10 +8,11 @@ import {
   type KeyboardEvent,
 } from "react";
 import { Link } from "react-router-dom";
-import { MessageSquare, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { MessageSquare, PanelRightOpen } from "lucide-react";
 import { api } from "@/lib/ipc";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
+import type { ChatStreamEvent, HermesSession } from "@/vite-env";
 
 export type ChatMessage = {
   id: string;
@@ -23,6 +25,8 @@ type ChatPanelProps = {
   onOpenChange: (open: boolean) => void;
 };
 
+const LAST_SESSION_KEY = "lifequest.companion.lastSessionId";
+
 function nextId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -30,14 +34,70 @@ function nextId(): string {
 export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const activeDomain = useActiveDomain();
   const domainName = activeDomain?.meta.name ?? "Overview";
-  const { refresh } = useVault();
+  const { snapshot, refresh } = useVault();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessions, setSessions] = useState<HermesSession[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [approval, setApproval] = useState<{
+    runId: string;
+    requestId: string;
+    summary: string;
+  } | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const assistantId = useRef<string | null>(null);
   const inputId = useId();
+
+  const loadSession = useCallback(async (id: string) => {
+    const result = await api().companionSessionMessages(id);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setSessionId(id);
+    window.localStorage.setItem(LAST_SESSION_KEY, id);
+    setMessages(
+      result.value.map((m) => ({
+        id: nextId(),
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      })),
+    );
+  }, []);
+
+  const ensureSession = useCallback(async () => {
+    const listed = await api().companionSessionsList();
+    if (!listed.ok) {
+      setError(listed.error);
+      return;
+    }
+    setSessions(listed.value);
+    const stored = window.localStorage.getItem(LAST_SESSION_KEY);
+    const existing =
+      listed.value.find((s) => s.id === stored) ?? listed.value[0] ?? null;
+    if (existing) {
+      await loadSession(existing.id);
+      return;
+    }
+    const title = snapshot?.lifequest.name
+      ? `LifeQuest · ${snapshot.lifequest.name}`
+      : "LifeQuest";
+    const created = await api().companionSessionCreate(title);
+    if (!created.ok) {
+      setError(created.error);
+      return;
+    }
+    setSessions((prev) => [created.value, ...prev]);
+    await loadSession(created.value.id);
+  }, [loadSession, snapshot?.lifequest.name]);
+
+  useEffect(() => {
+    if (!open) return;
+    void ensureSession();
+  }, [open, ensureSession]);
 
   useEffect(() => {
     if (!open || !listRef.current) return;
@@ -45,45 +105,94 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   }, [open, messages, sending, error]);
 
   useEffect(() => {
-    if (open) {
-      inputRef.current?.focus();
-    }
+    if (open) inputRef.current?.focus();
   }, [open]);
+
+  useEffect(() => {
+    return api().onCompanionStream((evt: ChatStreamEvent) => {
+      if (evt.type === "assistant.delta") {
+        const id = assistantId.current ?? nextId();
+        assistantId.current = id;
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === id);
+          if (idx === -1) {
+            return [...prev, { id, role: "assistant", content: evt.text }];
+          }
+          const copy = prev.slice();
+          const cur = copy[idx]!;
+          copy[idx] = { ...cur, content: cur.content + evt.text };
+          return copy;
+        });
+        return;
+      }
+      if (evt.type === "tool.started") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextId(),
+            role: "assistant",
+            content: `tool: ${evt.name}`,
+          },
+        ]);
+        return;
+      }
+      if (evt.type === "tool.completed") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextId(),
+            role: "assistant",
+            content: evt.ok ? `tool done: ${evt.name}` : `tool failed: ${evt.name}`,
+          },
+        ]);
+        return;
+      }
+      if (evt.type === "approval.request") {
+        setApproval({
+          runId: evt.runId,
+          requestId: evt.requestId,
+          summary: evt.summary,
+        });
+        return;
+      }
+      if (evt.type === "error") {
+        setError(evt.message);
+        return;
+      }
+      if (evt.type === "run.completed") {
+        void refresh();
+      }
+    });
+  }, [refresh]);
 
   async function sendMessage(text: string) {
     const content = text.trim();
-    if (!content || sending) return;
+    if (!content || sending || !sessionId) return;
 
-    const userMsg: ChatMessage = {
-      id: nextId(),
-      role: "user",
-      content,
-    };
-    const nextMessages = [...messages, userMsg];
-    setMessages(nextMessages);
+    setMessages((prev) => [
+      ...prev,
+      { id: nextId(), role: "user", content },
+    ]);
     setSending(true);
     setError(null);
+    assistantId.current = null;
 
     try {
-      const payload = nextMessages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-      const result = await api().hermesChatTools(payload);
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      // Map mutations performed by the agent loop should surface in the UI.
-      void refresh();
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: nextId(),
-          role: "assistant",
-          content: result.value.content,
+      const result = await api().companionChatStream({
+        sessionId,
+        input: content,
+        instructionsContext: {
+          domainName: activeDomain?.meta.name ?? null,
+          domainSlug: activeDomain?.slug ?? null,
+          aboutMe: snapshot?.map?.aboutMe ?? "",
+          locked: false,
+          vaultOpen: Boolean(snapshot),
         },
-      ]);
+      });
+      if ("ok" in result && result.ok === false) {
+        setError(result.error);
+      }
+      void refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to reach Hermes");
     } finally {
@@ -109,13 +218,20 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     }
   }
 
-  function clearMessages() {
+  async function newSession() {
+    const title = snapshot?.lifequest.name
+      ? `LifeQuest · ${snapshot.lifequest.name}`
+      : "LifeQuest";
+    const created = await api().companionSessionCreate(title);
+    if (!created.ok) {
+      setError(created.error);
+      return;
+    }
+    setSessions((prev) => [created.value, ...prev]);
     setMessages([]);
-    setError(null);
+    await loadSession(created.value.id);
   }
 
-  // Expand control stays outside any aria-hidden region so it remains
-  // keyboard/AT reachable when the panel is collapsed.
   return (
     <aside
       className={[
@@ -142,24 +258,26 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               </span>
             </div>
             <div className="chat-panel__header-actions">
-              {messages.length > 0 ? (
-                <button
-                  type="button"
-                  className="chat-panel__text-btn"
-                  onClick={clearMessages}
-                  disabled={sending}
-                >
-                  Clear
-                </button>
-              ) : null}
+              <select
+                className="chat-panel__session-select"
+                aria-label="Companion session"
+                value={sessionId ?? ""}
+                disabled={sending}
+                onChange={(e) => void loadSession(e.target.value)}
+              >
+                {sessions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.title}
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
-                className="chat-panel__icon-btn"
-                onClick={() => onOpenChange(false)}
-                aria-label="Collapse chat"
-                title="Collapse"
+                className="chat-panel__text-btn"
+                onClick={() => void newSession()}
+                disabled={sending}
               >
-                <PanelRightClose size={14} />
+                New
               </button>
             </div>
           </div>
@@ -183,16 +301,52 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               </div>
             ) : null}
 
+            {approval ? (
+              <div className="chat-panel__error" role="alertdialog">
+                <p>{approval.summary}</p>
+                <div className="chat-panel__error-actions">
+                  <button
+                    type="button"
+                    className="chat-panel__text-btn"
+                    onClick={() => {
+                      void api().companionApproval({
+                        runId: approval.runId,
+                        requestId: approval.requestId,
+                        allow: true,
+                      });
+                      setApproval(null);
+                    }}
+                  >
+                    Allow once
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-panel__text-btn"
+                    onClick={() => {
+                      void api().companionApproval({
+                        runId: approval.runId,
+                        requestId: approval.requestId,
+                        allow: false,
+                      });
+                      setApproval(null);
+                    }}
+                  >
+                    Deny
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             {messages.length === 0 && !sending ? (
               <div className="chat-panel__empty">
                 <div className="chat-panel__empty-orb" aria-hidden />
                 <p className="chat-panel__empty-title">Ask Hermes</p>
                 <p className="chat-panel__empty-copy">
-                  Send a message to your Hermes gateway. Active domain:{" "}
-                  {domainName}.
+                  This is your LifeQuest companion on the lifequest Hermes
+                  profile. Active domain: {domainName}.
                 </p>
                 <Link to="/settings" className="chat-panel__link chat-panel__cta">
-                  Configure in Settings
+                  Companion status
                 </Link>
               </div>
             ) : (
@@ -236,7 +390,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={onKeyDown}
-                  disabled={sending}
+                  disabled={sending || !sessionId}
                   rows={2}
                   aria-label="Message Hermes"
                   autoComplete="off"
@@ -244,7 +398,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                 <button
                   type="submit"
                   className="chat-panel__send"
-                  disabled={sending || !draft.trim()}
+                  disabled={sending || !draft.trim() || !sessionId}
                   aria-label="Send message"
                 >
                   {sending ? "…" : "Send"}
