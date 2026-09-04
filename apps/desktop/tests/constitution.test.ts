@@ -28,6 +28,9 @@ describe("product constitution", () => {
     assert.match(src, /PageShell/);
     assert.match(src, /card-glass/);
     assert.match(src, /--radius-pill/);
+    assert.match(src, /--shell-frame/);
+    assert.match(src, /\.nav-rail/);
+    assert.match(src, /\.chat-panel/);
   });
 
   it("has RFC-style laws", () => {
@@ -46,5 +49,6 @@ describe("product constitution", () => {
     assert.match(src, /hex/);
     assert.match(src, /pill/);
     assert.match(src, /\.shell/);
+    assert.match(src, /pane/);
   });
 });
