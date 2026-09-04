@@ -2,6 +2,8 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stopMcp } from "./mcp-server.js";
+import * as companion from "./companion.js";
+import type { CompanionInstructionsInput } from "./companion-client.js";
 import * as vault from "./vault-service.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -212,6 +214,46 @@ function registerIpcHandlers() {
   ipcMain.handle("mcp:getUrl", () => vault.getMcpUrl());
   ipcMain.handle("mcp:getError", () => vault.getMcpError());
 
+  ipcMain.handle("companion:ensure", () => companion.companionEnsure());
+  ipcMain.handle("companion:status", () => companion.companionStatus());
+  ipcMain.handle("companion:sessionsList", () => companion.companionSessionsList());
+  ipcMain.handle("companion:sessionCreate", (_e, title: string) =>
+    companion.companionSessionCreate(title || "LifeQuest"),
+  );
+  ipcMain.handle("companion:sessionMessages", (_e, id: string) =>
+    companion.companionSessionMessages(id),
+  );
+  ipcMain.handle(
+    "companion:chatStream",
+    async (
+      event,
+      payload: {
+        sessionId: string;
+        input: string;
+        instructionsContext: CompanionInstructionsInput;
+      },
+    ) => {
+      return companion.companionChatStream(
+        payload.sessionId,
+        payload.input,
+        payload.instructionsContext,
+        (evt) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send("companion:stream", evt);
+          }
+        },
+      );
+    },
+  );
+  ipcMain.handle(
+    "companion:approval",
+    (_e, payload: { runId: string; requestId: string; allow: boolean }) =>
+      companion.companionApproval(payload.runId, payload.requestId, payload.allow),
+  );
+  ipcMain.handle("companion:openProfileFolder", () =>
+    companion.companionOpenProfileFolder(),
+  );
+
   ipcMain.handle("map:getState", () => vault.mapGetState());
   ipcMain.handle("map:apply", (_e, command: Parameters<typeof vault.mapApply>[0]) =>
     vault.mapApply(command, "user"),
@@ -323,7 +365,10 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", (event) => {
   event.preventDefault();
-  void stopMcp().finally(() => app.exit(0));
+  void companion
+    .companionShutdown()
+    .finally(() => stopMcp())
+    .finally(() => app.exit(0));
 });
 
 app.on("activate", () => {

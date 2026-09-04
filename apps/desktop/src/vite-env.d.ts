@@ -31,6 +31,41 @@ type RecentVaultEntry = {
   lastOpenedAt: string;
 };
 
+type CompanionStatus =
+  | {
+      kind: "ready";
+      port: number;
+      startedByLifeQuest: boolean;
+      profilePath: string;
+      cliPath: string;
+      childPid: number | null;
+    }
+  | { kind: "needs_install" }
+  | { kind: "profile_error"; message: string; path?: string }
+  | { kind: "port_busy"; port: number }
+  | { kind: "gateway_exited"; stderr: string }
+  | { kind: "disconnected" }
+  | { kind: "hermes_too_old"; version?: string }
+  | { kind: "auth_error" };
+
+type CompanionInstructionsContext = {
+  domainName: string | null;
+  domainSlug: string | null;
+  aboutMe: string;
+  locked: boolean;
+  vaultOpen: boolean;
+};
+
+type ChatStreamEvent =
+  | { type: "assistant.delta"; text: string }
+  | { type: "tool.started"; name: string }
+  | { type: "tool.completed"; name: string; ok: boolean }
+  | { type: "approval.request"; runId: string; requestId: string; summary: string }
+  | { type: "run.completed" }
+  | { type: "error"; message: string };
+
+type HermesSession = { id: string; title: string };
+
 /** Frozen IPC API exposed on window.lifequest via preload. */
 type LifequestApi = {
   vaultCreate: (path: string, name?: string) => Promise<Result<VaultSnapshot>>;
@@ -119,6 +154,25 @@ type LifequestApi = {
   hermesScanAgents: () => Promise<Result<{ id: string; name: string }[]>>;
   mcpGetUrl: () => Promise<string>;
   mcpGetError: () => Promise<string | null>;
+  companionEnsure: () => Promise<CompanionStatus>;
+  companionStatus: () => Promise<CompanionStatus>;
+  companionSessionsList: () => Promise<Result<HermesSession[]>>;
+  companionSessionCreate: (title: string) => Promise<Result<HermesSession>>;
+  companionSessionMessages: (
+    id: string,
+  ) => Promise<Result<{ role: string; content: string }[]>>;
+  companionChatStream: (payload: {
+    sessionId: string;
+    input: string;
+    instructionsContext: CompanionInstructionsContext;
+  }) => Promise<Result<true> | { ok: true } | { ok: false; error: string }>;
+  companionApproval: (payload: {
+    runId: string;
+    requestId: string;
+    allow: boolean;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  companionOpenProfileFolder: () => Promise<void>;
+  onCompanionStream: (cb: (evt: ChatStreamEvent) => void) => () => void;
   mapGetState: () => Promise<Result<MapStoreState>>;
   mapApply: (command: MapCommand) => Promise<Result<VaultSnapshot>>;
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => () => void;
@@ -142,4 +196,12 @@ declare global {
   }
 }
 
-export type { LifequestApi, RecentVaultEntry, Result };
+export type {
+  ChatStreamEvent,
+  CompanionInstructionsContext,
+  CompanionStatus,
+  HermesSession,
+  LifequestApi,
+  RecentVaultEntry,
+  Result,
+};
