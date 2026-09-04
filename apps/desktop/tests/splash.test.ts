@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { shouldHoldSplash } from "../src/components/shell/splashHold.ts";
+import { lastVaultToReopen } from "../src/state/lastVault.ts";
 
 const desktopRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -30,7 +31,7 @@ describe("shouldHoldSplash", () => {
   it("holds while vault is booting after the floor", () => {
     assert.equal(
       shouldHoldSplash({
-        elapsedMs: 900,
+        elapsedMs: 2000,
         booting: true,
         ensuring: false,
         kind: "ready",
@@ -42,7 +43,7 @@ describe("shouldHoldSplash", () => {
   it("holds while companion is ensuring", () => {
     assert.equal(
       shouldHoldSplash({
-        elapsedMs: 900,
+        elapsedMs: 2000,
         booting: false,
         ensuring: true,
         kind: null,
@@ -51,10 +52,22 @@ describe("shouldHoldSplash", () => {
     );
   });
 
-  it("releases when ready, not booting, and past the floor", () => {
+  it("holds at 800ms when ready so the floor can reach 1500ms", () => {
     assert.equal(
       shouldHoldSplash({
         elapsedMs: 800,
+        booting: false,
+        ensuring: false,
+        kind: "ready",
+      }),
+      true,
+    );
+  });
+
+  it("releases when ready, not booting, and past the floor", () => {
+    assert.equal(
+      shouldHoldSplash({
+        elapsedMs: 1500,
         booting: false,
         ensuring: false,
         kind: "ready",
@@ -76,6 +89,24 @@ describe("shouldHoldSplash", () => {
   });
 });
 
+describe("lastVaultToReopen", () => {
+  it("returns the most recent path when no vault is open", () => {
+    assert.equal(
+      lastVaultToReopen(null, [
+        { path: "C:\\vaults\\life" },
+        { path: "C:\\vaults\\old" },
+      ]),
+      "C:\\vaults\\life",
+    );
+  });
+
+  it("returns null when a vault is already open or recents are empty", () => {
+    assert.equal(lastVaultToReopen({ root: "x" }, [{ path: "C:\\vaults\\life" }]), null);
+    assert.equal(lastVaultToReopen(null, []), null);
+    assert.equal(lastVaultToReopen(null, [{ path: "  " }]), null);
+  });
+});
+
 describe("splash markup and gate", () => {
   it("puts LIFE QUEST in a #splash sibling of #root", () => {
     const html = read("index.html");
@@ -86,6 +117,12 @@ describe("splash markup and gate", () => {
     const splashIdx = html.indexOf('id="splash"');
     const rootIdx = html.indexOf('id="root"');
     assert.ok(splashIdx !== -1 && rootIdx !== -1 && splashIdx < rootIdx);
+  });
+
+  it("reopens the most recent vault during boot", () => {
+    const src = read("src/state/VaultProvider.tsx");
+    assert.match(src, /lastVaultToReopen/);
+    assert.match(src, /vaultOpen\(reopen\)/);
   });
 
   it("gates boot with SplashGate instead of Loading copy", () => {

@@ -17,6 +17,7 @@ import {
 } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import type { RecentVaultEntry } from "@/vite-env";
+import { lastVaultToReopen } from "./lastVault.ts";
 
 export type VaultContextValue = {
   /** Null when no vault is open (welcome flow). */
@@ -148,6 +149,18 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           applySnapshot(snapResult.value);
         }
         setRecent(list);
+        const reopen = lastVaultToReopen(
+          snapResult.ok ? snapResult.value : null,
+          list,
+        );
+        if (reopen) {
+          const opened = await api().vaultOpen(reopen);
+          if (cancelled) return;
+          if (opened.ok) {
+            applySnapshot(opened.value);
+            setError(null);
+          }
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));

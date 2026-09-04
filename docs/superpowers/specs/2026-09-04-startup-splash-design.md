@@ -17,7 +17,7 @@ The first thing you see when LifeQuest opens should be the name, not an empty wi
 
 - From window open, **LIFE QUEST** is on canvas in extra-bold block letters, one line, wide tracking.
 - Letters stagger in; a thin `--primary` bar under the title pulses until dismiss.
-- Splash holds until vault is not booting, companion is `ready` (or needs an action), **and** at least **800ms** have elapsed since first splash paint.
+- Splash holds until vault is not booting, companion is `ready` (or needs an action), **and** at least **1500ms** have elapsed since first splash paint.
 - Fade out (~200ms), no hard cut.
 - `CompanionSetupScreen` still appears for `needs_install` and other blocking kinds.
 - Titlebar is visible once React mounts. No new fonts, spinner, or second BrowserWindow.
@@ -30,7 +30,7 @@ The first thing you see when LifeQuest opens should be the name, not an empty wi
 | # | Topic | Decision |
 |---|--------|----------|
 | 1 | When | **Cold start only.** Not every in-app wait. |
-| 2 | Duration | Until ready **plus 800ms floor** from first splash paint. Then fade. |
+| 2 | Duration | Until ready **plus 1500ms floor** from first splash paint. Then fade. |
 | 3 | Copy | **LIFE QUEST** — two words, one line, extra-bold, wide tracking. |
 | 4 | Motion | Letters stagger fade-in (~40ms per glyph). Then bar opacity pulse (~1.2s ease-in-out infinite). |
 | 5 | Bar | Thin `--primary` underline (~8rem × 2px), centered under the title. |
@@ -67,14 +67,14 @@ Let `t0 = window.__LQ_SPLASH_T0`.
 
 **Hold** if any of:
 
-- `Date.now`/`performance.now() - t0 < 800`
+- `Date.now`/`performance.now() - t0 < 1500`
 - companion `ensuring` or `status` is null
 - companion `status.kind === "ready"` **and** vault `booting`
 
 **Dismiss** (add `splash--out`, then hide after 200ms) if:
 
 - companion `status.kind` is set and not `"ready"` and not ensuring, **or**
-- companion is `ready` and vault is not `booting` and elapsed ≥ 800ms
+- companion is `ready` and vault is not `booting` and elapsed ≥ 1500ms
 
 Replace both `centered-status` “Loading…” branches in `App.tsx` (`AppRoutes` and `RequireVault`). While the splash is up, those branches render `null` (splash is outside `#root`). After dismiss, normal routes run.
 
@@ -108,7 +108,7 @@ No hex in `components/ui`. Fallbacks in `splash.css` are allowed (loads before `
 - `index.html` contains `id="splash"`, `LIFE QUEST`, `__LQ_SPLASH_T0`.
 - `App.tsx` does not contain the vault-boot `Loading…` copy; contains `SplashGate`.
 - Companion setup test still requires `CompanionSetupScreen` and `needs_install`.
-- Helper `shouldHoldSplash({ elapsedMs, booting, ensuring, kind })` unit-tested: hold at 0ms even if ready; hold while booting; hold while ensuring; release when ready + 800ms; release immediately on `needs_install`.
+- Helper `shouldHoldSplash({ elapsedMs, booting, ensuring, kind })` unit-tested: hold at 0ms even if ready; hold while booting; hold while ensuring; release when ready + 1500ms; release immediately on `needs_install`.
 
 ### 3.5 Rejected alternatives
 
@@ -126,10 +126,10 @@ No hex in `components/ui`. Fallbacks in `splash.css` are allowed (loads before `
 
 - Missing `#splash` (tests / odd loads): `SplashGate` no-ops; app still boots.
 - StrictMode double mount: `t0` is on `window`, not React state.
-- Reduced motion: if `prefers-reduced-motion: reduce`, skip stagger/pulse; show title + bar at full opacity; still honor 800ms floor and fade.
+- Reduced motion: if `prefers-reduced-motion: reduce`, skip stagger/pulse; show title + bar at full opacity; still honor 1500ms floor and fade.
 
 ---
 
 ## 5. Open questions
 
-None. Cold start, 800ms floor, letter stagger + bar pulse, HTML sibling + React gate were approved in design review.
+None. Cold start, 1500ms floor, letter stagger + bar pulse, HTML sibling + React gate were approved in design review.

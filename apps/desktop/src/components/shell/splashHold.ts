@@ -1,4 +1,4 @@
-export const SPLASH_FLOOR_MS = 800;
+export const SPLASH_FLOOR_MS = 1500;
 
 export type SplashHoldInput = {
   elapsedMs: number;
