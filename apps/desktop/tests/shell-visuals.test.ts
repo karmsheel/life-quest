@@ -15,16 +15,20 @@ function readMapCss(): string {
 }
 
 describe("shell visuals", () => {
-  it("paints the window as canvas and the studio as a sheet", () => {
+  it("paints three studio panes on a gapped canvas tray", () => {
     const css = readCss();
     assert.match(css, /body\s*\{[\s\S]*?background:\s*var\(--canvas-base\)/);
     assert.match(css, /\.app-root\s*\{[\s\S]*?background:\s*var\(--canvas-base\)/);
     assert.match(css, /\.app-root__body\s*\{[\s\S]*?padding:\s*var\(--shell-frame\)/);
-    assert.match(css, /\.shell\s*\{[\s\S]*?background:\s*var\(--card\)/);
-    assert.match(css, /\.shell\s*\{[\s\S]*?border-radius:\s*var\(--radius-lg\)/);
-    assert.match(css, /\.shell\s*\{[\s\S]*?box-shadow:\s*var\(--shadow-sm\)/);
-    assert.match(css, /\.welcome\s*\{[\s\S]*?background:\s*var\(--card\)/);
-    assert.match(css, /\.welcome\s*\{[\s\S]*?border-radius:\s*var\(--radius-lg\)/);
+    assert.match(css, /\.shell\s*\{[\s\S]*?gap:\s*var\(--shell-frame\)/);
+    assert.equal(/\.shell\s*\{[^}]*background:\s*var\(--card\)/.test(css), false);
+    assert.equal(/\.shell\s*\{[^}]*border-radius:\s*var\(--radius-lg\)/.test(css), false);
+    assert.match(css, /\.nav-rail\s*\{[\s\S]*?background:\s*var\(--card\)/);
+    assert.match(css, /\.nav-rail\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+    assert.match(css, /\.shell__main\s*\{[\s\S]*?background:\s*var\(--card\)/);
+    assert.match(css, /\.shell__main\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+    assert.match(css, /\.chat-panel\s*\{[\s\S]*?background:\s*var\(--card\)/);
+    assert.match(css, /\.chat-panel\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
   });
 
   it("keeps the titlebar flush on canvas", () => {
@@ -46,7 +50,7 @@ describe("shell visuals", () => {
     const css = readCss();
     assert.match(css, /\.btn\s*\{[\s\S]*?border-radius:\s*var\(--radius-pill\)/);
     assert.match(css, /\.field input\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
-    assert.match(css, /\.settings-card\s*\{[\s\S]*?border-radius:\s*var\(--radius-md\)/);
+    assert.match(css, /\.settings-card\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
     assert.match(css, /\.nav-rail__link\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
     assert.match(css, /\.recent-item\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
     assert.match(css, /\.settings-panel__icon\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
@@ -85,7 +89,7 @@ describe("shell visuals", () => {
     const css = readCss();
     assert.equal(/\.welcome\s*\{[^}]*overflow:\s*hidden/.test(css), false);
     assert.match(css, /\.welcome\s*\{[\s\S]*?background:\s*var\(--card\)/);
-    assert.match(css, /\.welcome\s*\{[\s\S]*?border-radius:\s*var\(--radius-lg\)/);
+    assert.match(css, /\.welcome\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
     assert.match(css, /\.welcome\s*\{[\s\S]*?border:\s*1px solid var\(--border\)/);
     assert.match(css, /\.welcome\s*\{[\s\S]*?box-shadow:\s*var\(--shadow-sm\)/);
   });
