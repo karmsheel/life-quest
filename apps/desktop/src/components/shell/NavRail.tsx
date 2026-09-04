@@ -1,7 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { SettingsMenu } from "@/components/settings/SettingsMenu";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
-import { NavThemeModeToggle } from "./NavThemeModeToggle";
 import { useActiveDomain } from "./useActiveDomain";
 import { useWing } from "./WingProvider";
 
@@ -55,11 +53,6 @@ export function NavRail() {
       <div className="nav-rail__section nav-rail__section--bottom">
         <div className="nav-rail__divider" role="separator" />
         <div className="nav-rail__section">{pinned.map(renderItem)}</div>
-        <div className="nav-rail__divider" role="separator" />
-        <div className="nav-rail__settings-wrap">
-          <NavThemeModeToggle />
-          <SettingsMenu className="nav-rail__settings" placement="right-end" />
-        </div>
       </div>
     </nav>
   );

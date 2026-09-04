@@ -8,9 +8,27 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
     />
     <title>LifeQuest</title>
+    <link rel="stylesheet" href="./splash.css" />
     <script src="./theme-boot.js"></script>
   </head>
   <body>
+    <div id="splash" class="splash" aria-hidden="true">
+      <p class="splash__title" aria-label="LIFE QUEST">
+        <span class="splash__letter" style="--i: 0">L</span>
+        <span class="splash__letter" style="--i: 1">I</span>
+        <span class="splash__letter" style="--i: 2">F</span>
+        <span class="splash__letter" style="--i: 3">E</span>
+        <span class="splash__letter splash__letter--space" style="--i: 4"
+          >&nbsp;</span
+        >
+        <span class="splash__letter" style="--i: 5">Q</span>
+        <span class="splash__letter" style="--i: 6">U</span>
+        <span class="splash__letter" style="--i: 7">E</span>
+        <span class="splash__letter" style="--i: 8">S</span>
+        <span class="splash__letter" style="--i: 9">T</span>
+      </p>
+      <div class="splash__bar"></div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
