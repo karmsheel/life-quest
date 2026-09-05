@@ -40,6 +40,30 @@ export function formatSignalTime(iso: string): string {
   }
 }
 
+export function signalDomainLabel(
+  slug: string | null,
+  domains: { slug: string; name: string }[],
+): string {
+  if (!slug) return "General";
+  return domains.find((d) => d.slug === slug)?.name ?? slug;
+}
+
+export function formatSignalWhen(iso: string, now: Date = new Date()): string {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    const time = d.toLocaleTimeString(undefined, { timeStyle: "short" });
+    const label = dayLabel(localDayKey(iso), now);
+    if (label === "Today" || label === "Yesterday") return `${label}, ${time}`;
+    return d.toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return iso;
+  }
+}
+
 export function filterSignals(
   records: SignalRecord[],
   filters: SignalFilters,
