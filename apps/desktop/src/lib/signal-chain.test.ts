@@ -4,8 +4,10 @@ import type { SignalRecord } from "@lifequest/vault-core";
 import {
   dayLabel,
   filterSignals,
+  formatSignalWhen,
   groupSignalsByDay,
   localDayKey,
+  signalDomainLabel,
 } from "./signal-chain.ts";
 
 function signal(
@@ -110,5 +112,62 @@ describe("groupSignalsByDay", () => {
     );
     assert.equal(groups[1]?.label, "Yesterday");
     assert.equal(groups[1]?.items[0]?.id, "y");
+  });
+});
+
+describe("signalDomainLabel", () => {
+  it("labels null as General", () => {
+    assert.equal(signalDomainLabel(null, []), "General");
+  });
+
+  it("prefers domain name over slug", () => {
+    assert.equal(
+      signalDomainLabel("health", [{ slug: "health", name: "Health" }]),
+      "Health",
+    );
+  });
+
+  it("uses meta.name for an archived slug", () => {
+    assert.equal(
+      signalDomainLabel("health", [{ slug: "health", name: "Health" }]),
+      "Health",
+    );
+  });
+
+  it("falls back to the raw slug when unknown", () => {
+    assert.equal(signalDomainLabel("mystery", []), "mystery");
+  });
+});
+
+describe("formatSignalWhen", () => {
+  const now = new Date(2026, 5, 10, 12, 0, 0);
+
+  it("labels today and yesterday with a time", () => {
+    const today = new Date(2026, 5, 10, 15, 42, 0).toISOString();
+    const yesterday = new Date(2026, 5, 9, 15, 42, 0).toISOString();
+    const todayTime = new Date(today).toLocaleTimeString(undefined, {
+      timeStyle: "short",
+    });
+    const yesterdayTime = new Date(yesterday).toLocaleTimeString(undefined, {
+      timeStyle: "short",
+    });
+    assert.equal(formatSignalWhen(today, now), `Today, ${todayTime}`);
+    assert.equal(
+      formatSignalWhen(yesterday, now),
+      `Yesterday, ${yesterdayTime}`,
+    );
+  });
+
+  it("formats older days with medium date and short time", () => {
+    const older = new Date(2026, 0, 2, 9, 15, 0);
+    const expected = older.toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+    assert.equal(formatSignalWhen(older.toISOString(), now), expected);
+  });
+
+  it("returns the raw iso string when the date is invalid", () => {
+    assert.equal(formatSignalWhen("not-a-date"), "not-a-date");
   });
 });
