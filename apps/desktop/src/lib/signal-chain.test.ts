@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { SignalRecord } from "@lifequest/vault-core";
+import {
+  domainLens,
+  overviewLens,
+  type SignalRecord,
+} from "@lifequest/vault-core";
 import {
   dayLabel,
   filterSignals,
@@ -8,6 +12,7 @@ import {
   groupSignalsByDay,
   localDayKey,
   signalDomainLabel,
+  signalVisible,
 } from "./signal-chain.ts";
 
 function signal(
@@ -116,8 +121,8 @@ describe("groupSignalsByDay", () => {
 });
 
 describe("signalDomainLabel", () => {
-  it("labels null as General", () => {
-    assert.equal(signalDomainLabel(null, []), "General");
+  it("labels null as - unassigned -", () => {
+    assert.equal(signalDomainLabel(null, []), "- unassigned -");
   });
 
   it("prefers domain name over slug", () => {
@@ -169,5 +174,21 @@ describe("formatSignalWhen", () => {
 
   it("returns the raw iso string when the date is invalid", () => {
     assert.equal(formatSignalWhen("not-a-date"), "not-a-date");
+  });
+});
+
+describe("signalVisible", () => {
+  it("shows every signal in Overview", () => {
+    const lens = overviewLens();
+    assert.equal(signalVisible(lens, null), true);
+    assert.equal(signalVisible(lens, "health"), true);
+    assert.equal(signalVisible(lens, "financial"), true);
+  });
+
+  it("on a domain tab shows unassigned plus that domain", () => {
+    const lens = domainLens("health");
+    assert.equal(signalVisible(lens, null), true);
+    assert.equal(signalVisible(lens, "health"), true);
+    assert.equal(signalVisible(lens, "financial"), false);
   });
 });

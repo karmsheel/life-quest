@@ -69,9 +69,10 @@ describe("lens filtering", () => {
     const src = read("src/components/signal-chain/SignalChainFeed.tsx");
     assert.equal(src.includes("recordVisible"), false);
     assert.equal(src.includes("filterDomain"), false);
-    assert.equal(src.includes("useDomainLens"), false);
     assert.equal(src.includes("lensSlug"), false);
-    assert.match(src, /General/);
+    assert.match(src, /useDomainLens/);
+    assert.match(src, /signalVisible/);
+    assert.match(src, /- unassigned -/);
   });
 
   it("Home, Log, Act, Personnel, and Decisions use recordVisible", () => {

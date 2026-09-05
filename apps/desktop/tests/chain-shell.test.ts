@@ -82,7 +82,7 @@ describe("Life-Chain quick-fire capture", () => {
       const window = src.slice(start, m.index + m[0].length);
       assert.match(window, /!opts\?\.quiet/);
     }
-    for (const name of ["onAdd", "onSave", "onDelete"]) {
+    for (const name of ["onAdd", "onSave", "onAssign", "onDelete"]) {
       const fn = src.match(
         new RegExp(`async function ${name}[\\s\\S]*?finally \\{[\\s\\S]*?\\n  \\}`),
       );
@@ -98,7 +98,7 @@ describe("Life-Chain quick-fire capture", () => {
     assert.equal(src.includes("domainDirty"), false);
     const onAdd = src.match(/async function onAdd[\s\S]*?finally \{[\s\S]*?\n  \}/);
     assert.ok(onAdd, "onAdd function");
-    assert.equal(onAdd[0].includes("setDomainSlug"), false);
+    assert.match(onAdd[0], /setDomainSlug\(""\)/);
   });
 
   it("empty copy is Write something above", () => {
@@ -106,12 +106,26 @@ describe("Life-Chain quick-fire capture", () => {
     assert.match(src, /Write something above/);
   });
 
-  it("domain blank option is General", () => {
+  it("domain blank option is - unassigned -", () => {
     const src = read("src/components/signal-chain/SignalChainFeed.tsx");
-    assert.match(src, /General/);
-    assert.equal(src.includes("Unassigned"), false);
+    assert.match(src, /- unassigned -/);
+    assert.equal(src.includes("General"), false);
     assert.equal(src.includes(">None<"), false);
     assert.equal(src.includes("No domain"), false);
+  });
+
+  it("row domain selector assigns without an edit form", () => {
+    const src = read("src/components/signal-chain/SignalChainFeed.tsx");
+    assert.match(src, /aria-label="Domain"/);
+    assert.match(src, /onAssign/);
+    const assign = src.match(
+      /signalChainUpdate\(id,\s*\{([^}]+)\}\)/,
+    );
+    assert.ok(assign, "onAssign update patch");
+    assert.match(assign[1], /domainSlug/);
+    assert.equal(assign[1].includes("body"), false);
+    assert.equal(assign[1].includes("title"), false);
+    assert.equal(assign[1].includes("type"), false);
   });
 
   it("autoFocus is on the composer textarea", () => {

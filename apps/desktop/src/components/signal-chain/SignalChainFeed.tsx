@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -11,8 +12,9 @@ import type {
   SignalUpdatePatch,
 } from "@lifequest/vault-core/pure";
 import { Button } from "@/components/ui/Button";
+import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { api } from "@/lib/ipc";
-import { formatSignalWhen, signalDomainLabel } from "@/lib/signal-chain";
+import { formatSignalWhen, signalVisible } from "@/lib/signal-chain";
 import { useVault } from "@/state/VaultProvider";
 
 function onComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -25,6 +27,7 @@ function onComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
 
 export function SignalChainFeed() {
   const { snapshot } = useVault();
+  const lens = useDomainLens();
   const liveDomains = (snapshot?.domains ?? []).filter((d) => !d.meta.archivedAt);
   const allDomains = (snapshot?.domains ?? []).map((d) => ({
     slug: d.slug,
@@ -41,6 +44,11 @@ export function SignalChainFeed() {
   const [domainSlug, setDomainSlug] = useState("");
   const [body, setBody] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  const visible = useMemo(
+    () => records.filter((r) => signalVisible(lens, r.domainSlug)),
+    [records, lens],
+  );
 
   const load = useCallback(async (opts?: { quiet?: boolean }) => {
     if (!opts?.quiet) setLoading(true);
@@ -85,6 +93,7 @@ export function SignalChainFeed() {
         return;
       }
       setBody("");
+      setDomainSlug("");
       setEditingId(null);
       await load({ quiet: true });
     } catch (err) {
@@ -107,6 +116,30 @@ export function SignalChainFeed() {
         return;
       }
       setEditingId(null);
+      await load({ quiet: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update signal");
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function onAssign(id: string, nextDomain: string | null) {
+    const current = records.find((r) => r.id === id)?.domainSlug ?? null;
+    if (current === nextDomain) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api().signalChainUpdate(id, {
+        domainSlug: nextDomain,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       await load({ quiet: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update signal");
@@ -169,7 +202,7 @@ export function SignalChainFeed() {
               value={domainSlug}
               onChange={(e) => setDomainSlug(e.target.value)}
             >
-              <option value="">General</option>
+              <option value="">- unassigned -</option>
               {liveDomains.map((d) => (
                 <option key={d.slug} value={d.slug}>
                   {d.meta.name}
@@ -203,13 +236,16 @@ export function SignalChainFeed() {
         <p className="muted signal-chain__empty">
           Nothing on the chain yet. Write something above.
         </p>
+      ) : visible.length === 0 ? (
+        <p className="muted signal-chain__empty">
+          No unassigned or matching signals in this domain.
+        </p>
       ) : (
         <ul className="signal-chain__list">
-          {records.map((item) => (
+          {visible.map((item) => (
             <SignalRow
               key={item.id}
               signal={item}
-              domainLabel={signalDomainLabel(item.domainSlug, allDomains)}
               liveDomains={liveDomains.map((d) => ({
                 slug: d.slug,
                 name: d.meta.name,
@@ -220,6 +256,7 @@ export function SignalChainFeed() {
               onEdit={() => setEditingId(item.id)}
               onCancel={() => setEditingId(null)}
               onSave={onSave}
+              onAssign={(id, slug) => void onAssign(id, slug)}
               onDelete={() => void onDelete(item.id)}
             />
           ))}
@@ -231,7 +268,6 @@ export function SignalChainFeed() {
 
 function SignalRow(props: {
   signal: SignalRecord;
-  domainLabel: string;
   liveDomains: { slug: string; name: string }[];
   allDomains: { slug: string; name: string }[];
   editing: boolean;
@@ -239,6 +275,7 @@ function SignalRow(props: {
   onEdit: () => void;
   onCancel: () => void;
   onSave: (id: string, patch: SignalUpdatePatch) => Promise<void>;
+  onAssign: (id: string, domainSlug: string | null) => void;
   onDelete: () => void;
 }) {
   const s = props.signal;
@@ -299,7 +336,7 @@ function SignalRow(props: {
               value={domainSlug}
               onChange={(e) => setDomainSlug(e.target.value)}
             >
-              <option value="">General</option>
+              <option value="">- unassigned -</option>
               {domainOptions.map((d) => (
                 <option key={d.slug} value={d.slug}>
                   {d.name}
@@ -338,7 +375,25 @@ function SignalRow(props: {
       <time className="signal-row__when muted" dateTime={s.createdAt}>
         {formatSignalWhen(s.createdAt)}
       </time>
-      <span className="signal-row__domain muted">{props.domainLabel}</span>
+      <select
+        className="signal-row__domain"
+        aria-label="Domain"
+        value={s.domainSlug ?? ""}
+        disabled={props.busy}
+        onChange={(e) => {
+          const v = e.target.value.trim();
+          const next = v ? v : null;
+          if (next === s.domainSlug) return;
+          props.onAssign(s.id, next);
+        }}
+      >
+        <option value="">- unassigned -</option>
+        {domainOptions.map((d) => (
+          <option key={d.slug} value={d.slug}>
+            {d.name}
+          </option>
+        ))}
+      </select>
       <div className="signal-row__actions">
         <Button
           type="button"

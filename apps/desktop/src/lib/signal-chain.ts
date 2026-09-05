@@ -1,4 +1,8 @@
-import type { SignalRecord, SignalType } from "@lifequest/vault-core";
+import type {
+  DomainLens,
+  SignalRecord,
+  SignalType,
+} from "@lifequest/vault-core";
 
 export type SignalFilters = {
   type: SignalType | "all";
@@ -44,8 +48,17 @@ export function signalDomainLabel(
   slug: string | null,
   domains: { slug: string; name: string }[],
 ): string {
-  if (!slug) return "General";
+  if (!slug) return "- unassigned -";
   return domains.find((d) => d.slug === slug)?.name ?? slug;
+}
+
+/** Overview: all. A domain tab: unassigned plus that domain. */
+export function signalVisible(
+  lens: DomainLens,
+  domainSlug: string | null,
+): boolean {
+  if (lens.kind === "overview") return true;
+  return domainSlug === null || domainSlug === lens.slug;
 }
 
 export function formatSignalWhen(iso: string, now: Date = new Date()): string {

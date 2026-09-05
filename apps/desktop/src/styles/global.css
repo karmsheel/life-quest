@@ -2678,7 +2678,15 @@ a.home-mini-list__link:hover {
 
 .signal-row__domain {
   grid-area: domain;
+  justify-self: start;
+  max-width: 100%;
+  font: inherit;
   font-size: 0.78rem;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.15rem 0.4rem;
 }
 
 .signal-row__actions {
