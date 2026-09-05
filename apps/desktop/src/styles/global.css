@@ -275,25 +275,64 @@ a {
   overflow: hidden;
 }
 
-.window-titlebar__label {
+.window-titlebar__leading {
   box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
   margin-left: env(titlebar-area-x, 0px);
   width: env(titlebar-area-width, 100%);
   max-width: 100%;
+}
+
+.window-titlebar:has(.window-titlebar__trailing) .window-titlebar__leading,
+.window-titlebar:has(.window-titlebar__controls) .window-titlebar__leading {
+  width: auto;
+  flex: 1 1 auto;
+}
+
+.window-titlebar__brand {
+  -webkit-app-region: no-drag;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 0.45rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.window-titlebar__logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.window-titlebar__brand:hover .window-titlebar__logo {
+  background: var(--accent-hover);
+}
+
+.window-titlebar__label {
+  box-sizing: border-box;
   min-width: 0;
-  padding: 0 0.75rem;
+  flex: 1 1 auto;
+  padding: 0 0.5rem 0 0.15rem;
   font-size: 0.8rem;
   font-weight: 600;
   letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.window-titlebar:has(.window-titlebar__trailing) .window-titlebar__label,
-.window-titlebar:has(.window-titlebar__controls) .window-titlebar__label {
-  width: auto;
-  flex: 1 1 auto;
 }
 
 .window-titlebar__trailing {
@@ -433,42 +472,6 @@ a {
   height: 100%;
   position: sticky;
   top: 0;
-}
-
-.nav-rail__brand {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.5rem 0.25rem 0.65rem;
-  border-radius: var(--radius-sm);
-  margin-bottom: 0.25rem;
-}
-
-.nav-rail__brand:hover {
-  background: var(--selected-soft);
-}
-
-.nav-rail__logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: var(--accent-fg);
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.nav-rail__brand-text {
-  font-size: 0.55rem;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .nav-rail__section {
@@ -2300,60 +2303,12 @@ a.home-mini-list__link:hover {
 .chat-panel__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 0.5rem;
   min-height: 3rem;
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-}
-
-.chat-panel__brand {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
-.chat-panel__brand-icon {
-  color: var(--accent);
-  flex-shrink: 0;
-}
-
-.chat-panel__brand-copy {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  line-height: 1.15;
-}
-
-.chat-panel__eyebrow {
-  margin: 0;
-  font-size: 0.625rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.chat-panel__title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--fg);
-}
-
-.chat-panel__domain-chip {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: var(--muted);
-  padding: 0.15rem 0.4rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--selected) 60%, transparent);
-  max-width: 7rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .chat-panel__header-actions {

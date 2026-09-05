@@ -16,11 +16,10 @@ export const WING_DEFAULTS: Record<WingId, string> = {
   execute: "/act",
 };
 
-const PINNED_PATHS = new Set(["/log", "/decisions", "/settings"]);
+const PINNED_PATHS = new Set(["/chain", "/log", "/decisions", "/settings"]);
 
 const PATH_WING: Record<string, WingId> = {
   "/home": "home",
-  "/chain": "home",
   "/personnel": "home",
   "/dream": "vision",
   "/documents": "vision",

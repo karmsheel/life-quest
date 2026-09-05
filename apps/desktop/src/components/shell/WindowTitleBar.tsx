@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { NavLink } from "react-router-dom";
 import { Copy, Minus, PanelRightClose, PanelRightOpen, Square, X } from "lucide-react";
 import { SettingsMenu } from "@/components/settings/SettingsMenu";
 import { useChatDock } from "@/state/ChatDockProvider";
@@ -44,7 +45,19 @@ export function WindowTitleBar() {
 
   return (
     <header className="window-titlebar">
-      <span className="window-titlebar__label">{label}</span>
+      <div className="window-titlebar__leading">
+        <NavLink
+          to="/home"
+          className="window-titlebar__brand"
+          title="Home"
+          aria-label="Home"
+        >
+          <span className="window-titlebar__logo" aria-hidden>
+            LQ
+          </span>
+        </NavLink>
+        <span className="window-titlebar__label">{label}</span>
+      </div>
       {showTrailing ? (
         <div className="window-titlebar__trailing">
           {chatPresent ? (

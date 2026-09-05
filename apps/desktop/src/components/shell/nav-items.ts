@@ -20,15 +20,40 @@ export type NavItem = {
   icon: LucideIcon;
   section?: "main" | "governance";
   wing?: WingId;
+  pin?: "top" | "bottom";
 };
 
-/** Home: Dashboard, Life-Chain, Personnel. Vision: Dream, Documents. Plan: Life Map, Architecture. Execute: Act. Pinned: Decisions, Log. */
+/** Top: Life-Chain, Decisions. Home: Dashboard, Personnel. Vision: Dream, Documents. Plan: Life Map, Architecture. Execute: Act. Bottom: Log. */
 export const NAV_ITEMS: NavItem[] = [
+  {
+    id: "chain",
+    href: "/chain",
+    label: "Life-Chain",
+    icon: Radio,
+    section: "main",
+    pin: "top",
+  },
+  {
+    id: "decisions",
+    href: "/decisions",
+    label: "Decisions",
+    icon: ClipboardList,
+    section: "governance",
+    pin: "top",
+  },
   {
     id: "dashboard",
     href: "/home",
     label: "Dashboard",
     icon: Home,
+    section: "main",
+    wing: "home",
+  },
+  {
+    id: "personnel",
+    href: "/personnel",
+    label: "Personnel",
+    icon: Users,
     section: "main",
     wing: "home",
   },
@@ -41,28 +66,12 @@ export const NAV_ITEMS: NavItem[] = [
     wing: "vision",
   },
   {
-    id: "chain",
-    href: "/chain",
-    label: "Life-Chain",
-    icon: Radio,
-    section: "main",
-    wing: "home",
-  },
-  {
     id: "documents",
     href: "/documents",
     label: "Documents",
     icon: FileText,
     section: "main",
     wing: "vision",
-  },
-  {
-    id: "personnel",
-    href: "/personnel",
-    label: "Personnel",
-    icon: Users,
-    section: "main",
-    wing: "home",
   },
   {
     id: "chart",
@@ -89,17 +98,11 @@ export const NAV_ITEMS: NavItem[] = [
     wing: "execute",
   },
   {
-    id: "decisions",
-    href: "/decisions",
-    label: "Decisions",
-    icon: ClipboardList,
-    section: "governance",
-  },
-  {
     id: "log",
     href: "/log",
     label: "Log",
     icon: ScrollText,
     section: "governance",
+    pin: "bottom",
   },
 ];

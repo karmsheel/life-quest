@@ -148,4 +148,24 @@ describe("window chrome (renderer)", () => {
     assert.equal(nav.includes("SettingsMenu"), false);
     assert.equal(nav.includes("nav-rail__settings"), false);
   });
+
+  it("puts the LQ badge in the titlebar, not the nav rail", () => {
+    const titlebar = read("src/components/shell/WindowTitleBar.tsx");
+    const nav = read("src/components/shell/NavRail.tsx");
+    const css = read("src/styles/global.css");
+
+    assert.match(titlebar, /window-titlebar__leading/);
+    assert.match(titlebar, /window-titlebar__brand/);
+    assert.match(titlebar, /to=["']\/home["']/);
+    assert.match(titlebar, /window-titlebar__logo[\s\S]*?LQ/);
+    assert.equal(titlebar.includes("LifeQuest</span>"), false);
+    assert.equal(nav.includes("nav-rail__brand"), false);
+    assert.equal(nav.includes("nav-rail__logo"), false);
+    assert.match(
+      css,
+      /\.window-titlebar__brand\s*\{[\s\S]*?-webkit-app-region:\s*no-drag/,
+    );
+    assert.equal(css.includes(".nav-rail__brand"), false);
+    assert.equal(css.includes(".nav-rail__logo"), false);
+  });
 });
