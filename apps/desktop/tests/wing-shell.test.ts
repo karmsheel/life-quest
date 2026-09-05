@@ -70,11 +70,22 @@ describe("wing shell wiring", () => {
     const src = read("src/components/shell/NavRail.tsx");
     assert.match(src, /useWing/);
     assert.match(src, /item\.wing === active/);
-    assert.match(src, /!item\.wing/);
-    assert.match(src, /to=["']\/home["']/);
+    assert.match(src, /item\.pin === ["']top["']/);
+    assert.match(src, /item\.pin === ["']bottom["']/);
+    assert.equal(src.includes("nav-rail__brand"), false);
     assert.equal(src.includes("useUnlockedRooms"), false);
     assert.equal(src.includes("nav-rail__link--locked"), false);
     assert.equal(src.includes("nav-rail__lock"), false);
+  });
+
+  it("pins Life-Chain and Decisions at the top, then a divider, then wing items and Log", () => {
+    const src = read("src/components/shell/NavRail.tsx");
+    assert.match(
+      src,
+      /topPinned\.map\(renderItem\)[\s\S]*nav-rail__divider[\s\S]*wingItems\.map\(renderItem\)[\s\S]*nav-rail__divider[\s\S]*bottomPinned\.map\(renderItem\)/,
+    );
+    const dividers = src.match(/nav-rail__divider/g) ?? [];
+    assert.equal(dividers.length, 2);
   });
 
   it("labels Dashboard and Life-Chain on the page", () => {

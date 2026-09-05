@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { Link } from "react-router-dom";
-import { MessageSquare, PanelRightOpen } from "lucide-react";
+import { PanelRightOpen } from "lucide-react";
 import { api } from "@/lib/ipc";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
@@ -244,19 +244,6 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       {open ? (
         <div className="chat-panel__open">
           <div className="chat-panel__header">
-            <div className="chat-panel__brand">
-              <MessageSquare className="chat-panel__brand-icon" aria-hidden size={16} />
-              <div className="chat-panel__brand-copy">
-                <p className="chat-panel__eyebrow">Agent</p>
-                <span className="chat-panel__title">Hermes</span>
-              </div>
-              <span
-                className="chat-panel__domain-chip"
-                title="Active domain context"
-              >
-                {domainName}
-              </span>
-            </div>
             <div className="chat-panel__header-actions">
               <select
                 className="chat-panel__session-select"

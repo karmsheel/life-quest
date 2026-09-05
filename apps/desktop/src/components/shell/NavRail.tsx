@@ -1,14 +1,13 @@
 import { NavLink } from "react-router-dom";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
-import { useActiveDomain } from "./useActiveDomain";
 import { useWing } from "./WingProvider";
 
 export function NavRail() {
-  const activeDomain = useActiveDomain();
   const { active } = useWing();
 
+  const topPinned = NAV_ITEMS.filter((item) => item.pin === "top");
   const wingItems = NAV_ITEMS.filter((item) => item.wing === active);
-  const pinned = NAV_ITEMS.filter((item) => !item.wing);
+  const bottomPinned = NAV_ITEMS.filter((item) => item.pin === "bottom");
 
   function renderItem(item: NavItem) {
     const Icon = item.icon;
@@ -34,25 +33,12 @@ export function NavRail() {
 
   return (
     <nav className="nav-rail" aria-label="Main">
-      <NavLink
-        to="/home"
-        className="nav-rail__brand"
-        title={
-          activeDomain
-            ? `LifeQuest — active: ${activeDomain.meta.name}`
-            : "LifeQuest"
-        }
-      >
-        <span className="nav-rail__logo" aria-hidden>
-          LQ
-        </span>
-        <span className="nav-rail__brand-text">LifeQuest</span>
-      </NavLink>
-
+      <div className="nav-rail__section">{topPinned.map(renderItem)}</div>
+      <div className="nav-rail__divider" role="separator" />
       <div className="nav-rail__section">{wingItems.map(renderItem)}</div>
       <div className="nav-rail__section nav-rail__section--bottom">
         <div className="nav-rail__divider" role="separator" />
-        <div className="nav-rail__section">{pinned.map(renderItem)}</div>
+        <div className="nav-rail__section">{bottomPinned.map(renderItem)}</div>
       </div>
     </nav>
   );
