@@ -55,13 +55,21 @@ describe("Life-Chain quick-fire capture", () => {
     assert.ok(save, "Save button");
     assert.match(save[0], /type="submit"/);
 
-    for (const label of ["Edit", "Delete", "Cancel"]) {
-      const btn = src.match(
-        new RegExp(`<Button\\b[^>]*>\\s*${label}\\s*</Button>`),
-      );
-      assert.ok(btn, `${label} button`);
-      assert.match(btn[0], /type="button"/, label);
-    }
+    const cancel = src.match(/<Button\b[^>]*>\s*Cancel\s*<\/Button>/);
+    assert.ok(cancel, "Cancel button");
+    assert.match(cancel[0], /type="button"/);
+  });
+
+  it("row actions are a top-right domain picker with pencil and red trash", () => {
+    const src = read("src/components/signal-chain/SignalChainFeed.tsx");
+    assert.match(src, /signal-row__side/);
+    assert.match(src, /Pencil/);
+    assert.match(src, /Trash2/);
+    assert.match(src, /aria-label="Edit"/);
+    assert.match(src, /aria-label="Delete"/);
+    assert.match(src, /\bdestructive\b/);
+    const css = read("src/styles/global.css");
+    assert.match(css, /"content side"/);
   });
 
   it("Escape cancels the edit form", () => {

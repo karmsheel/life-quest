@@ -11,6 +11,7 @@ import type {
   SignalRecord,
   SignalUpdatePatch,
 } from "@lifequest/vault-core/pure";
+import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { api } from "@/lib/ipc";
@@ -375,42 +376,49 @@ function SignalRow(props: {
       <time className="signal-row__when muted" dateTime={s.createdAt}>
         {formatSignalWhen(s.createdAt)}
       </time>
-      <select
-        className="signal-row__domain"
-        aria-label="Domain"
-        value={s.domainSlug ?? ""}
-        disabled={props.busy}
-        onChange={(e) => {
-          const v = e.target.value.trim();
-          const next = v ? v : null;
-          if (next === s.domainSlug) return;
-          props.onAssign(s.id, next);
-        }}
-      >
-        <option value="">- unassigned -</option>
-        {domainOptions.map((d) => (
-          <option key={d.slug} value={d.slug}>
-            {d.name}
-          </option>
-        ))}
-      </select>
-      <div className="signal-row__actions">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={props.onEdit}
+      <div className="signal-row__side">
+        <select
+          className="signal-row__domain"
+          aria-label="Domain"
+          value={s.domainSlug ?? ""}
           disabled={props.busy}
+          onChange={(e) => {
+            const v = e.target.value.trim();
+            const next = v ? v : null;
+            if (next === s.domainSlug) return;
+            props.onAssign(s.id, next);
+          }}
         >
-          Edit
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={props.onDelete}
-          disabled={props.busy}
-        >
-          Delete
-        </Button>
+          <option value="">- unassigned -</option>
+          {domainOptions.map((d) => (
+            <option key={d.slug} value={d.slug}>
+              {d.name}
+            </option>
+          ))}
+        </select>
+        <div className="signal-row__actions">
+          <Button
+            type="button"
+            variant="ghost"
+            className="signal-row__icon-btn"
+            aria-label="Edit"
+            onClick={props.onEdit}
+            disabled={props.busy}
+          >
+            <Pencil size={16} aria-hidden />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            destructive
+            className="signal-row__icon-btn"
+            aria-label="Delete"
+            onClick={props.onDelete}
+            disabled={props.busy}
+          >
+            <Trash2 size={16} aria-hidden />
+          </Button>
+        </div>
       </div>
     </li>
   );

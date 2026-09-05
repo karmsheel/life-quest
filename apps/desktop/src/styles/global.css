@@ -2659,10 +2659,10 @@ a.home-mini-list__link:hover {
 
 .signal-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr auto;
   grid-template-areas:
-    "content content content"
-    "when domain actions";
+    "content side"
+    "when side";
   gap: 0.25rem 0.7rem;
   padding: 0.7rem 0.8rem;
   border: 1px solid var(--border);
@@ -2676,10 +2676,16 @@ a.home-mini-list__link:hover {
   white-space: nowrap;
 }
 
+.signal-row__side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
 .signal-row__domain {
-  grid-area: domain;
-  justify-self: start;
-  max-width: 100%;
+  max-width: 11rem;
   font: inherit;
   font-size: 0.78rem;
   color: var(--text-muted);
@@ -2690,10 +2696,17 @@ a.home-mini-list__link:hover {
 }
 
 .signal-row__actions {
-  grid-area: actions;
   display: flex;
-  gap: 0.35rem;
+  gap: 0.2rem;
   justify-content: flex-end;
+}
+
+.signal-row__icon-btn {
+  padding: 0.35rem;
+  line-height: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .signal-row__content {
@@ -2726,12 +2739,10 @@ a.home-mini-list__link:hover {
 
 @media (max-width: 36rem) {
   .signal-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr auto;
     grid-template-areas:
-      "content"
-      "when"
-      "domain"
-      "actions";
+      "content side"
+      "when side";
   }
 
   .signal-row--editing {
