@@ -2680,10 +2680,13 @@ a.home-mini-list__link:hover {
 
 .signal-chain .field textarea,
 .signal-chain__composer > textarea {
-  min-height: 8rem;
   resize: vertical;
   font: inherit;
   line-height: 1.45;
+}
+
+.signal-chain__composer > textarea {
+  min-height: 8rem;
 }
 
 .signal-chain__empty {
@@ -2747,12 +2750,15 @@ a.home-mini-list__link:hover {
 
 .signal-row--editing {
   grid-template-columns: 1fr;
+  grid-template-areas: "form";
 }
 
 .signal-row__form {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
 }
 
 @media (max-width: 36rem) {
@@ -2763,6 +2769,10 @@ a.home-mini-list__link:hover {
       "when"
       "domain"
       "actions";
+  }
+
+  .signal-row--editing {
+    grid-template-areas: "form";
   }
 }
 

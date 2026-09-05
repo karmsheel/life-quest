@@ -82,6 +82,14 @@ describe("Life-Chain quick-fire capture", () => {
       const window = src.slice(start, m.index + m[0].length);
       assert.match(window, /!opts\?\.quiet/);
     }
+    for (const name of ["onAdd", "onSave", "onDelete"]) {
+      const fn = src.match(
+        new RegExp(`async function ${name}[\\s\\S]*?finally \\{[\\s\\S]*?\\n  \\}`),
+      );
+      assert.ok(fn, `${name} function`);
+      assert.match(fn[0], /busyRef\.current = true/, name);
+      assert.match(fn[0], /busyRef\.current = false/, name);
+    }
   });
 
   it("does not reset domain via lensSlug", () => {

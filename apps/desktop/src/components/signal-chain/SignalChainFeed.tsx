@@ -96,6 +96,8 @@ export function SignalChainFeed() {
   }
 
   async function onSave(id: string, patch: SignalUpdatePatch) {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -109,6 +111,7 @@ export function SignalChainFeed() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update signal");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -119,6 +122,8 @@ export function SignalChainFeed() {
     ) {
       return;
     }
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -132,6 +137,7 @@ export function SignalChainFeed() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete signal");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
