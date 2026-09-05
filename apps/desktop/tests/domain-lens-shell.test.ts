@@ -67,9 +67,11 @@ describe("renderer domain lens", () => {
 describe("lens filtering", () => {
   it("Signal-Chain timeline has no in-page domain filter", () => {
     const src = read("src/components/signal-chain/SignalChainFeed.tsx");
-    assert.match(src, /recordVisible/);
+    assert.equal(src.includes("recordVisible"), false);
     assert.equal(src.includes("filterDomain"), false);
-    assert.match(src, /lensSlug|useDomainLens/);
+    assert.equal(src.includes("useDomainLens"), false);
+    assert.equal(src.includes("lensSlug"), false);
+    assert.match(src, /General/);
   });
 
   it("Home, Log, Act, Personnel, and Decisions use recordVisible", () => {

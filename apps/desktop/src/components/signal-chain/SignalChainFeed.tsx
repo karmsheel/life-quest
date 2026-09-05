@@ -1,57 +1,49 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  SIGNAL_TYPES,
-  lensSlug,
-  recordVisible,
-  type SignalRecord,
-  type SignalType,
-  type SignalUpdatePatch,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
+import type {
+  SignalRecord,
+  SignalUpdatePatch,
 } from "@lifequest/vault-core/pure";
-import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/ipc";
-import {
-  filterSignals,
-  formatSignalTime,
-  groupSignalsByDay,
-  type SignalFilters,
-} from "@/lib/signal-chain";
+import { formatSignalWhen, signalDomainLabel } from "@/lib/signal-chain";
 import { useVault } from "@/state/VaultProvider";
 
-const TYPE_LABEL: Record<SignalType, string> = {
-  thought: "Thought",
-  idea: "Idea",
-  notice: "Notice",
-  other: "Other",
-};
+function onComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+  if (e.key !== "Enter" || e.shiftKey) return;
+  if (e.repeat) return;
+  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+  e.preventDefault();
+  e.currentTarget.form?.requestSubmit();
+}
 
 export function SignalChainFeed() {
   const { snapshot } = useVault();
-  const lens = useDomainLens();
   const liveDomains = (snapshot?.domains ?? []).filter((d) => !d.meta.archivedAt);
+  const allDomains = (snapshot?.domains ?? []).map((d) => ({
+    slug: d.slug,
+    name: d.meta.name,
+  }));
 
   const [records, setRecords] = useState<SignalRecord[]>([]);
   const [skipped, setSkipped] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
-  const [type, setType] = useState<SignalType>("thought");
-  const [domainSlug, setDomainSlug] = useState(lensSlug(lens) ?? "");
-  const domainDirty = useRef(false);
-  const [title, setTitle] = useState("");
+  const [domainSlug, setDomainSlug] = useState("");
   const [body, setBody] = useState("");
-
-  const [filterType, setFilterType] = useState<SignalFilters["type"]>("all");
-  const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (domainDirty.current) return;
-    setDomainSlug(lensSlug(lens) ?? "");
-  }, [lens]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoading(true);
     setError(null);
     try {
       const result = await api().signalChainList();
@@ -67,7 +59,7 @@ export function SignalChainFeed() {
       setError(err instanceof Error ? err.message : "Failed to load chain");
       setRecords([]);
     } finally {
-      setLoading(false);
+      if (!opts?.quiet) setLoading(false);
     }
   }, []);
 
@@ -75,48 +67,37 @@ export function SignalChainFeed() {
     void load();
   }, [load]);
 
-  const visible = useMemo(() => {
-    const scoped = records.filter((r) => recordVisible(lens, r.domainSlug));
-    return filterSignals(scoped, { type: filterType, domainSlug: "all", query });
-  }, [records, filterType, query, lens]);
-  const groups = useMemo(() => groupSignalsByDay(visible), [visible]);
-
-  function domainName(slug: string | null): string | null {
-    if (!slug) return null;
-    const match = snapshot?.domains.find((d) => d.slug === slug);
-    return match?.meta.name ?? slug;
-  }
-
-  async function onAdd(e: React.FormEvent) {
+  async function onAdd(e: FormEvent) {
     e.preventDefault();
-    if (!body.trim() || busy) return;
+    if (!body.trim() || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     try {
       const result = await api().signalChainCreate({
-        type,
+        type: "thought",
+        title: null,
         body,
-        title: title.trim() ? title : null,
         domainSlug: domainSlug.trim() ? domainSlug : null,
       });
       if (!result.ok) {
         setError(result.error);
         return;
       }
-      setTitle("");
       setBody("");
       setEditingId(null);
-      domainDirty.current = false;
-      setDomainSlug(lensSlug(lens) ?? "");
-      await load();
+      await load({ quiet: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add signal");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
 
   async function onSave(id: string, patch: SignalUpdatePatch) {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -126,10 +107,11 @@ export function SignalChainFeed() {
         return;
       }
       setEditingId(null);
-      await load();
+      await load({ quiet: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update signal");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -140,6 +122,8 @@ export function SignalChainFeed() {
     ) {
       return;
     }
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -149,10 +133,11 @@ export function SignalChainFeed() {
         return;
       }
       if (editingId === id) setEditingId(null);
-      await load();
+      await load({ quiet: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete signal");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -162,93 +147,44 @@ export function SignalChainFeed() {
       <header className="signal-chain__header">
         <h1 className="stub-page__title">Life-Chain</h1>
         <p className="stub-page__desc muted">
-          Dump thoughts, ideas, and things you notice.
+          A database of what you notice. Log now; assign later.
         </p>
       </header>
 
       <form className="signal-chain__composer" onSubmit={onAdd}>
-        <label className="field">
-          Type
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value as SignalType)}
-          >
-            {SIGNAL_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {TYPE_LABEL[t]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          Domain
-          <select
-            value={domainSlug}
-            onChange={(e) => {
-              domainDirty.current = true;
-              setDomainSlug(e.target.value);
-            }}
-          >
-            <option value="">Unassigned</option>
-            {liveDomains.map((d) => (
-              <option key={d.slug} value={d.slug}>
-                {d.meta.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field signal-chain__title-field">
-          Title (optional)
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            maxLength={200}
-          />
-        </label>
-        <label className="field signal-chain__body-field">
-          Signal
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={4}
-            required
-          />
-        </label>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={busy || !body.trim()}
-        >
-          Add
-        </button>
+        <textarea
+          aria-label="Log a signal"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          onKeyDown={onComposerKeyDown}
+          placeholder="What's on your mind?"
+          rows={6}
+          required
+          autoFocus
+        />
+        <div className="signal-chain__composer-footer">
+          <label className="field">
+            Domain
+            <select
+              value={domainSlug}
+              onChange={(e) => setDomainSlug(e.target.value)}
+            >
+              <option value="">General</option>
+              {liveDomains.map((d) => (
+                <option key={d.slug} value={d.slug}>
+                  {d.meta.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button type="submit" variant="ghost" disabled={busy || !body.trim()}>
+            Log
+          </Button>
+        </div>
+        <p className="signal-chain__hint">
+          <kbd>Enter</kbd> to log · <kbd>Shift+Enter</kbd> for a new line
+        </p>
       </form>
-
-      <div className="signal-chain__filters">
-        <label className="field">
-          Type
-          <select
-            value={filterType}
-            onChange={(e) =>
-              setFilterType(e.target.value as SignalFilters["type"])
-            }
-          >
-            <option value="all">All</option>
-            {SIGNAL_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {TYPE_LABEL[t]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field signal-chain__search">
-          Search
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Title or text"
-          />
-        </label>
-      </div>
 
       {skipped > 0 ? (
         <p className="form-error" role="status">
@@ -265,43 +201,29 @@ export function SignalChainFeed() {
         <p className="muted">Loading chain…</p>
       ) : records.length === 0 ? (
         <p className="muted signal-chain__empty">
-          Nothing on the chain yet. Add a signal above.
-        </p>
-      ) : visible.length === 0 ? (
-        <p className="muted signal-chain__empty">
-          No signals match these filters.
+          Nothing on the chain yet. Write something above.
         </p>
       ) : (
-        <div className="signal-chain__timeline">
-          {groups.map((group) => (
-            <section key={group.dayKey} className="signal-chain__day">
-              <h2 className="signal-chain__day-header">{group.label}</h2>
-              <ul className="signal-chain__list">
-                {group.items.map((item) => (
-                  <SignalRow
-                    key={item.id}
-                    signal={item}
-                    domainName={domainName(item.domainSlug)}
-                    liveDomains={liveDomains.map((d) => ({
-                      slug: d.slug,
-                      name: d.meta.name,
-                    }))}
-                    allDomains={(snapshot?.domains ?? []).map((d) => ({
-                      slug: d.slug,
-                      name: d.meta.name,
-                    }))}
-                    editing={editingId === item.id}
-                    busy={busy}
-                    onEdit={() => setEditingId(item.id)}
-                    onCancel={() => setEditingId(null)}
-                    onSave={onSave}
-                    onDelete={() => void onDelete(item.id)}
-                  />
-                ))}
-              </ul>
-            </section>
+        <ul className="signal-chain__list">
+          {records.map((item) => (
+            <SignalRow
+              key={item.id}
+              signal={item}
+              domainLabel={signalDomainLabel(item.domainSlug, allDomains)}
+              liveDomains={liveDomains.map((d) => ({
+                slug: d.slug,
+                name: d.meta.name,
+              }))}
+              allDomains={allDomains}
+              editing={editingId === item.id}
+              busy={busy}
+              onEdit={() => setEditingId(item.id)}
+              onCancel={() => setEditingId(null)}
+              onSave={onSave}
+              onDelete={() => void onDelete(item.id)}
+            />
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );
@@ -309,7 +231,7 @@ export function SignalChainFeed() {
 
 function SignalRow(props: {
   signal: SignalRecord;
-  domainName: string | null;
+  domainLabel: string;
   liveDomains: { slug: string; name: string }[];
   allDomains: { slug: string; name: string }[];
   editing: boolean;
@@ -320,29 +242,29 @@ function SignalRow(props: {
   onDelete: () => void;
 }) {
   const s = props.signal;
-  const [type, setType] = useState<SignalType>(s.type);
   const [domainSlug, setDomainSlug] = useState(s.domainSlug ?? "");
-  const [title, setTitle] = useState(s.title ?? "");
   const [body, setBody] = useState(s.body);
 
   useEffect(() => {
     if (!props.editing) return;
-    setType(s.type);
     setDomainSlug(s.domainSlug ?? "");
-    setTitle(s.title ?? "");
     setBody(s.body);
   }, [props.editing, s]);
 
   const domainOptions = props.liveDomains.slice();
-  if (
-    s.domainSlug &&
-    !domainOptions.some((d) => d.slug === s.domainSlug)
-  ) {
+  if (s.domainSlug && !domainOptions.some((d) => d.slug === s.domainSlug)) {
     const archived = props.allDomains.find((d) => d.slug === s.domainSlug);
     domainOptions.push({
       slug: s.domainSlug,
       name: archived?.name ?? s.domainSlug,
     });
+  }
+
+  function onEditKeyDown(e: KeyboardEvent<HTMLFormElement>) {
+    if (e.key !== "Escape") return;
+    if (e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    props.onCancel();
   }
 
   if (props.editing) {
@@ -353,50 +275,15 @@ function SignalRow(props: {
           onSubmit={(e) => {
             e.preventDefault();
             void props.onSave(s.id, {
-              type,
               body,
-              title: title.trim() ? title : null,
               domainSlug: domainSlug.trim() ? domainSlug : null,
             });
           }}
+          onKeyDown={onEditKeyDown}
         >
           <span className="muted signal-row__when">
-            {formatSignalTime(s.createdAt)}
+            {formatSignalWhen(s.createdAt)}
           </span>
-          <label className="field">
-            Type
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as SignalType)}
-            >
-              {SIGNAL_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {TYPE_LABEL[t]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            Domain
-            <select
-              value={domainSlug}
-              onChange={(e) => setDomainSlug(e.target.value)}
-            >
-              <option value="">None</option>
-              {domainOptions.map((d) => (
-                <option key={d.slug} value={d.slug}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            Title
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </label>
           <label className="field">
             Signal
             <textarea
@@ -406,22 +293,36 @@ function SignalRow(props: {
               required
             />
           </label>
+          <label className="field">
+            Domain
+            <select
+              value={domainSlug}
+              onChange={(e) => setDomainSlug(e.target.value)}
+            >
+              <option value="">General</option>
+              {domainOptions.map((d) => (
+                <option key={d.slug} value={d.slug}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="signal-row__actions">
-            <button
+            <Button
               type="submit"
-              className="btn btn-primary"
+              variant="ghost"
               disabled={props.busy || !body.trim()}
             >
               Save
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="btn btn-secondary"
+              variant="ghost"
               onClick={props.onCancel}
               disabled={props.busy}
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </form>
       </li>
@@ -430,39 +331,31 @@ function SignalRow(props: {
 
   return (
     <li className="signal-row">
-      <time
-        className="signal-row__when muted"
-        dateTime={s.createdAt}
-      >
-        {formatSignalTime(s.createdAt)}
-      </time>
-      <span className="signal-row__type">{TYPE_LABEL[s.type]}</span>
-      {props.domainName ? (
-        <span className="signal-row__domain muted">{props.domainName}</span>
-      ) : (
-        <span className="signal-row__domain muted">No domain</span>
-      )}
       <div className="signal-row__content">
-        {s.title ? <h3 className="signal-row__title">{s.title}</h3> : null}
         <p className="signal-row__body">{s.body}</p>
+        {s.title ? <h3 className="signal-row__title">{s.title}</h3> : null}
       </div>
+      <time className="signal-row__when muted" dateTime={s.createdAt}>
+        {formatSignalWhen(s.createdAt)}
+      </time>
+      <span className="signal-row__domain muted">{props.domainLabel}</span>
       <div className="signal-row__actions">
-        <button
+        <Button
           type="button"
-          className="btn btn-secondary"
+          variant="ghost"
           onClick={props.onEdit}
           disabled={props.busy}
         >
           Edit
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className="btn btn-secondary"
+          variant="ghost"
           onClick={props.onDelete}
           disabled={props.busy}
         >
           Delete
-        </button>
+        </Button>
       </div>
     </li>
   );
