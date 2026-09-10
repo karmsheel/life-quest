@@ -7,3 +7,4 @@ prisma/*.db
 dist
 dist-electron
 release
+.superpowers/
