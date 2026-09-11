@@ -20,9 +20,11 @@ import {
   listDecisions,
   listSignals,
   openVault,
+  readDocumentMedia,
   readLog,
   resolveDecision,
   saveDocument,
+  saveDocumentMedia,
   setDocumentStatus,
   updateDomain,
   updateSettings,
@@ -327,6 +329,20 @@ export async function documentSetStatus(
     }
     return res;
   });
+}
+
+export async function documentMediaSave(
+  slug: string,
+  input: { bytes: Uint8Array; mime: string },
+): Promise<Result<{ relPath: string }>> {
+  return withVault((root) => saveDocumentMedia(root, slug, input));
+}
+
+export async function documentMediaRead(
+  slug: string,
+  relPath: string,
+): Promise<Result<{ bytes: Uint8Array; mime: string }>> {
+  return withVault((root) => readDocumentMedia(root, slug, relPath));
 }
 
 export async function decisionList(): Promise<Result<DecisionRecord[]>> {

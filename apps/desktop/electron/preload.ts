@@ -51,6 +51,17 @@ const lifequest = {
       kind,
       status,
     ) as Promise<Result<unknown>>,
+  documentMediaSave: (
+    slug: string,
+    input: { bytes: Uint8Array; mime: string },
+  ) =>
+    ipcRenderer.invoke("document:mediaSave", slug, input) as Promise<
+      Result<{ relPath: string }>
+    >,
+  documentMediaRead: (slug: string, relPath: string) =>
+    ipcRenderer.invoke("document:mediaRead", slug, relPath) as Promise<
+      Result<{ bytes: Uint8Array; mime: string }>
+    >,
 
   decisionList: () =>
     ipcRenderer.invoke("decision:list") as Promise<Result<unknown>>,

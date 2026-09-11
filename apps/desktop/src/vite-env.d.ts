@@ -102,6 +102,14 @@ type LifequestApi = {
     kind: DocumentKind,
     status: DocumentStatus,
   ) => Promise<Result<DoctrineDocument>>;
+  documentMediaSave: (
+    slug: string,
+    input: { bytes: Uint8Array; mime: string },
+  ) => Promise<Result<{ relPath: string }>>;
+  documentMediaRead: (
+    slug: string,
+    relPath: string,
+  ) => Promise<Result<{ bytes: Uint8Array; mime: string }>>;
   decisionList: () => Promise<Result<DecisionRecord[]>>;
   decisionCreate: (input: {
     domainSlug: string;

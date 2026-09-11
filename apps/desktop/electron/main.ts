@@ -122,6 +122,19 @@ function registerIpcHandlers() {
       status: Parameters<typeof vault.documentSetStatus>[2],
     ) => vault.documentSetStatus(slug, kind, status),
   );
+  ipcMain.handle(
+    "document:mediaSave",
+    (
+      _e,
+      slug: string,
+      input: { bytes: Uint8Array; mime: string },
+    ) => vault.documentMediaSave(slug, input),
+  );
+  ipcMain.handle(
+    "document:mediaRead",
+    (_e, slug: string, relPath: string) =>
+      vault.documentMediaRead(slug, relPath),
+  );
 
   ipcMain.handle("decision:list", () => vault.decisionList());
   ipcMain.handle(
