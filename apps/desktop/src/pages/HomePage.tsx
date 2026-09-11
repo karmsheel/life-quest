@@ -2,10 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type {
   DecisionRecord,
-  DocumentKind,
   LifeEvent,
 } from "@lifequest/vault-core";
-import { recordVisible } from "@lifequest/vault-core/pure";
+import {
+  DOCUMENT_KIND_LABELS,
+  DREAM_DOCUMENT_KINDS,
+  recordVisible,
+  type DocumentKind,
+} from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import {
@@ -14,21 +18,14 @@ import {
 } from "@/components/shell/useActiveDomain";
 import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
 
-type DoctrineRow = {
-  kind: DocumentKind;
-  label: string;
-};
-
-const DOCTRINE_ROWS: DoctrineRow[] = [
-  { kind: "why", label: "Why" },
-  { kind: "what", label: "What" },
-  { kind: "how", label: "How" },
-];
+const DOCTRINE_ROWS = DREAM_DOCUMENT_KINDS.map((kind) => ({
+  kind,
+  label: DOCUMENT_KIND_LABELS[kind],
+}));
 
 function doctrineHref(kind: DocumentKind, slug: string): string {
   if (kind === "how") return `/track/${slug}/how`;
-  if (kind === "what") return `/dream/${slug}/what`;
-  return `/dream/${slug}/why`;
+  return `/dream/${slug}/${kind}`;
 }
 
 function formatWhen(iso: string): string {
@@ -141,7 +138,7 @@ export default function HomePage() {
             {title}
             <span className="home-dashboard__subtitle muted">
               {" "}
-              Why → What → How
+              Premise → Vision → Purpose → Strategy (How)
             </span>
           </h1>
         </div>

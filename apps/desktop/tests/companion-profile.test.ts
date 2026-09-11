@@ -26,6 +26,9 @@ describe("companion-profile", () => {
     assert.match(COMPANION_SOUL, /LifeQuest companion/);
     assert.match(COMPANION_SOUL, /LOCKED/);
     assert.match(COMPANION_SOUL, /get_doctrine/);
+    assert.match(COMPANION_SOUL, /Premise/);
+    assert.match(COMPANION_SOUL, /Strategy \(How\)/);
+    assert.match(COMPANION_SOUL, /Do not rewrite/);
   });
 
   it("resolves hermes root from HERMES_HOME, LOCALAPPDATA, or homedir", () => {

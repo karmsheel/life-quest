@@ -1,5 +1,8 @@
 import { Link } from "react-router-dom";
-import type { DocumentKind } from "@lifequest/vault-core/pure";
+import {
+  DOCUMENT_KIND_LABELS,
+  type DocumentKind,
+} from "@lifequest/vault-core/pure";
 import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 
@@ -7,9 +10,9 @@ export function DoctrineStrip({ kind }: { kind: DocumentKind }) {
   const domain = useActiveDomain();
   if (!domain) return null;
   const doc = domain.documents[kind];
-  const label = kind === "what" ? "North Star" : "How";
+  const label = DOCUMENT_KIND_LABELS[kind];
   const body = doc?.bodyMarkdown.trim() ?? "";
-  const preview = body ? body.slice(0, 180) : `No ${kind} yet.`;
+  const preview = body ? body.slice(0, 180) : `No ${label} yet.`;
   const editTo =
     kind === "what"
       ? `/dream/${domain.slug}/what`

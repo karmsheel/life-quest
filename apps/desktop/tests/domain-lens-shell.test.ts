@@ -87,7 +87,10 @@ describe("lens filtering", () => {
       assert.match(src, /recordVisible/, file);
     }
     const home = read("src/pages/HomePage.tsx");
-    assert.match(home, /\/dream\/\$\{.*\}\/what|\/dream\/.+\/what/);
+    assert.match(
+      home,
+      /\/dream\/\$\{slug\}\/\$\{kind\}|\/dream\/\$\{.*\}\/what|\/dream\/.+\/what/,
+    );
     assert.equal(home.includes('href: "/chart"'), false);
     assert.match(home, /to=["']\/dream["']/);
     assert.equal(home.includes('to="/documents"'), false);

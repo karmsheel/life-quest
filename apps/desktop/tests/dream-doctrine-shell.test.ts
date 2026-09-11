@@ -79,3 +79,22 @@ describe("Dream cards", () => {
     assert.match(index, /\/dream\/\$\{slug\}\/how|\/dream\/\$\{.*\}\/how/);
   });
 });
+
+describe("doctrine labels on other surfaces", () => {
+  it("Home How still goes to Architecture; other kinds to Dream", () => {
+    const home = read("src/pages/HomePage.tsx");
+    assert.match(home, /DOCUMENT_KIND_LABELS|DREAM_DOCUMENT_KINDS/);
+    assert.match(home, /\/track\/\$\{slug\}\/how|\/track\/\$\{.*\}\/how/);
+    assert.match(home, /\/dream\/\$\{slug\}\/\$\{kind\}|\/dream\/\$\{.*\}\/\$\{kind\}|\/dream\/\$\{slug\}\/\$\{row\.kind\}/);
+    const act = read("src/pages/ActPage.tsx");
+    assert.match(act, /DOCUMENT_KIND_LABELS/);
+    const strip = read("src/components/doctrine/DoctrineStrip.tsx");
+    assert.match(strip, /DOCUMENT_KIND_LABELS/);
+    assert.equal(strip.includes("North Star"), false);
+    const editorPage = read("src/components/doctrine/DoctrineEditorPage.tsx");
+    assert.match(editorPage, /DOCUMENT_KIND_LABELS/);
+    const tools = read("electron/map-tools.ts");
+    assert.match(tools, /premise: domain\.documents\.premise/);
+  });
+});
+

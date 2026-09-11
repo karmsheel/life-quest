@@ -3,11 +3,15 @@ import { Link } from "react-router-dom";
 import { Loader2, Play, Send } from "lucide-react";
 import type {
   AgentHire,
-  DocumentKind,
   DomainRecord,
   LifeEvent,
 } from "@lifequest/vault-core";
-import { canDispatchAgent, recordVisible } from "@lifequest/vault-core/pure";
+import {
+  canDispatchAgent,
+  DOCUMENT_KIND_LABELS,
+  DREAM_DOCUMENT_KINDS,
+  recordVisible,
+} from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import {
   documentsToUnlockDocs,
@@ -18,11 +22,11 @@ import { useVault } from "@/state/VaultProvider";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
 
-const BRIEF_KINDS: { kind: DocumentKind; label: string; room: string }[] = [
-  { kind: "why", label: "Why", room: "Dream" },
-  { kind: "what", label: "What", room: "Dream" },
-  { kind: "how", label: "How", room: "Track" },
-];
+const BRIEF_KINDS = DREAM_DOCUMENT_KINDS.map((kind) => ({
+  kind,
+  label: DOCUMENT_KIND_LABELS[kind],
+  room: kind === "how" ? "Track" : "Dream",
+}));
 
 type AgentRun = {
   id: string;
@@ -122,7 +126,7 @@ function ActContent() {
       const head = `You are acting as "${agent.name}"${
         agent.roleLabel ? ` (${agent.roleLabel})` : ""
       } for the domain "${title}".`;
-      return `${head}\n\nExecute against this doctrine — stay aligned with Why → What → How:\n\n${brief}\n\nTask: ${
+      return `${head}\n\nExecute against this doctrine — stay aligned with Premise → Vision → Purpose → Strategy (How):\n\n${brief}\n\nTask: ${
         promptDraft.trim() || "Propose the next concrete action for this domain."
       }`;
     },
@@ -200,15 +204,15 @@ function ActContent() {
           <h1 className="act-page__title">{title}</h1>
         </div>
         {howForged ? (
-          <span className="act-page__alignment-badge" title="How is forged — execution is doctrine-locked">
+          <span className="act-page__alignment-badge" title="Strategy (How) is forged — execution is doctrine-locked">
             Aligned
           </span>
         ) : (
           <span
             className="act-page__alignment-badge act-page__alignment-badge--warn"
-            title="Forge the How to lock execution to doctrine"
+            title="Forge the Strategy (How) to lock execution to doctrine"
           >
-            How not forged
+            Strategy (How) not forged
           </span>
         )}
       </header>
@@ -216,8 +220,8 @@ function ActContent() {
       <section className="act-page__section">
         <h2 className="act-page__section-title">Execution brief</h2>
         <p className="muted act-page__section-sub">
-          Read-only Why → What → How for this domain. Forge the How to align
-          execution.
+          Read-only Premise → Vision → Purpose → Strategy (How) for this
+          domain. Forge the Strategy (How) to align execution.
         </p>
         <div className="act-brief">
           {briefDomains.length === 0 ? (

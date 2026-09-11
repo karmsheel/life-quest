@@ -1,5 +1,9 @@
 import { FormEvent, useMemo, useState } from "react";
 import { Layers } from "lucide-react";
+import {
+  DOCUMENT_KIND_LABELS,
+  DOCUMENT_KINDS,
+} from "@lifequest/vault-core/pure";
 import { Button } from "@/components/ui/Button";
 import { SettingsSection } from "@/components/ui/SettingsSection";
 import { api } from "@/lib/ipc";
@@ -183,10 +187,10 @@ export function SettingsDomains() {
               const active = d.slug === activeSlug;
               const busy = busySlug === d.slug;
               const renaming = renamingSlug === d.slug;
-              const docs = (["why", "what", "how"] as const).map((kind) => {
+              const docs = DOCUMENT_KINDS.map((kind) => {
                 const doc = d.documents[kind];
                 const len = doc?.bodyMarkdown.trim().length ?? 0;
-                return `${kind}: ${doc?.status ?? "draft"}${
+                return `${DOCUMENT_KIND_LABELS[kind]}: ${doc?.status ?? "draft"}${
                   len > 0 ? ` (${len})` : " (empty)"
                 }`;
               });

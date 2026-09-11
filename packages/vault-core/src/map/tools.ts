@@ -362,7 +362,7 @@ export const MAP_TOOL_DEFS: MapToolDef[] = [
   },
   {
     name: "get_doctrine",
-    description: "Read Why / What / How for a domain (default: active domain)",
+    description: "Read Premise / Vision / Purpose / Strategy (How) for a domain (default: active domain)",
     parameters: {
       type: "object",
       properties: { domainSlug: STRING },
