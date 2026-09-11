@@ -1,7 +1,7 @@
 # Dream Doctrine Four Documents — Design Spec
 
 **Date:** 2026-09-10  
-**Status:** Draft — awaiting user review  
+**Status:** Approved — implementation plan ready (`docs/superpowers/plans/2026-09-11-dream-doctrine-four-docs.md`)  
 **Product:** LifeQuest — local-first life-management studio  
 **Depends on:** [Local vault (Electron)](./2026-07-19-local-vault-electron-design.md), [Overview Domain Lens](./2026-08-31-overview-domain-lens-design.md), [Vision / Plan / Execute wings](./2026-08-30-vision-plan-execute-wings-design.md)
 
