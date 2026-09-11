@@ -16,6 +16,9 @@ export function vaultPaths(root: string) {
     domainJson: (slug: string) => safeJoin(rootPath, "domains", slug, "domain.json"),
     documentMd: (slug: string, kind: string) =>
       safeJoin(rootPath, "domains", slug, `${kind}.md`),
+    domainMediaDir: (slug: string) => safeJoin(rootPath, "domains", slug, "media"),
+    domainMediaFile: (slug: string, name: string) =>
+      safeJoin(rootPath, "domains", slug, "media", name),
     decisionJson: (id: string) =>
       safeJoin(rootPath, ".lifequest", "decisions", `${id}.json`),
     signalChainJson: (id: string) =>

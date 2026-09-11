@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
-import { atomicWriteFile } from "./atomic-write.ts";
+import { atomicWriteBytes, atomicWriteFile } from "./atomic-write.ts";
 import { assertEditable, canTransitionStatus } from "./documents.ts";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
@@ -12,6 +13,24 @@ import {
   type DoctrineDocument,
   type Result,
 } from "./types.ts";
+
+export const DOCUMENT_MEDIA_MAX_BYTES = 8 * 1024 * 1024;
+export const DOCUMENT_MEDIA_REL = /^media\/[A-Za-z0-9._-]+$/;
+
+const MEDIA_EXT: Record<string, { ext: string; mime: string }> = {
+  "image/png": { ext: "png", mime: "image/png" },
+  "image/jpeg": { ext: "jpg", mime: "image/jpeg" },
+  "image/gif": { ext: "gif", mime: "image/gif" },
+  "image/webp": { ext: "webp", mime: "image/webp" },
+};
+
+const EXT_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+};
 
 function isDocumentKind(kind: string): kind is DocumentKind {
   return (DOCUMENT_KINDS as readonly string[]).includes(kind);
@@ -190,6 +209,54 @@ export async function setDocumentStatus(
     const doc = await readDoctrineFile(filePath, kind);
     return { ok: true, value: doc };
   } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function saveDocumentMedia(
+  rootPath: string,
+  slug: string,
+  input: { bytes: Uint8Array; mime: string },
+): Promise<Result<{ relPath: string }>> {
+  try {
+    const kind = MEDIA_EXT[input.mime];
+    if (!kind) return { ok: false, error: `Unsupported image type: ${input.mime}` };
+    if (input.bytes.byteLength === 0) {
+      return { ok: false, error: "Image is empty" };
+    }
+    if (input.bytes.byteLength > DOCUMENT_MEDIA_MAX_BYTES) {
+      return { ok: false, error: "Image is larger than 8 MB" };
+    }
+    const paths = vaultPaths(rootPath);
+    const name = `${randomUUID()}.${kind.ext}`;
+    const filePath = paths.domainMediaFile(slug, name);
+    await atomicWriteBytes(filePath, input.bytes);
+    return { ok: true, value: { relPath: `media/${name}` } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function readDocumentMedia(
+  rootPath: string,
+  slug: string,
+  relPath: string,
+): Promise<Result<{ bytes: Uint8Array; mime: string }>> {
+  try {
+    if (!DOCUMENT_MEDIA_REL.test(relPath)) {
+      return { ok: false, error: `Invalid media path: ${relPath}` };
+    }
+    const name = relPath.slice("media/".length);
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+    const mime = EXT_MIME[ext];
+    if (!mime) return { ok: false, error: `Unsupported image type: ${ext}` };
+    const filePath = vaultPaths(rootPath).domainMediaFile(slug, name);
+    const buf = await fs.readFile(filePath);
+    return { ok: true, value: { bytes: new Uint8Array(buf), mime } };
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      return { ok: false, error: `Media not found: ${slug}/${relPath}` };
+    }
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
