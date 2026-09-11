@@ -1,14 +1,17 @@
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "../atomic-write.ts";
+import { listDomains } from "../domains.ts";
+import { loadGoals } from "../goals.ts";
 import { appendLog } from "../log.ts";
 import { vaultPaths } from "../paths.ts";
 import type { Result } from "../types.ts";
 import { applyCommand } from "./commands.ts";
 import { emptyState } from "./empty.ts";
+import { isMapEvent } from "./events.ts";
 import { mapLogEvent } from "./log-event.ts";
 import { todayLocalIso } from "./dates.ts";
-import type { Actor, Command, StoreState } from "./types.ts";
+import type { Actor, Command, StoreState, Task, YearRecord } from "./types.ts";
 import { ensureCurrentYear, rollover } from "./years.ts";
 
 type MapFile = Omit<StoreState, "aboutMe">;
@@ -22,12 +25,43 @@ function toFile(state: StoreState): MapFile {
   };
 }
 
+function normalizeLinks(links: Record<string, unknown> | undefined): Task["links"] {
+  const next: Task["links"] = {};
+  if (!links || typeof links !== "object") return next;
+  if (typeof links.goalId === "string") next.goalId = links.goalId;
+  if (typeof links.date === "string") next.date = links.date;
+  if (links.weekItem && typeof links.weekItem === "object") {
+    next.weekItem = links.weekItem as Task["links"]["weekItem"];
+  }
+  return next;
+}
+
+function normalizeYear(raw: Record<string, unknown>): YearRecord {
+  const events = Array.isArray(raw.events)
+    ? raw.events.filter(isMapEvent)
+    : [];
+  return {
+    year: raw.year as number,
+    status: raw.status as YearRecord["status"],
+    events,
+    months: raw.months as YearRecord["months"],
+    detachedWeeks: (raw.detachedWeeks as YearRecord["detachedWeeks"]) ?? {},
+    snapshot: raw.snapshot as YearRecord["snapshot"],
+  };
+}
+
 function fromFile(file: MapFile, aboutMe: string): StoreState {
   return {
     dayTypes: file.dayTypes,
     defaultWeek: file.defaultWeek,
-    years: file.years,
-    tasks: file.tasks,
+    years: (file.years as unknown as Record<string, unknown>[]).map(normalizeYear),
+    tasks: file.tasks.map((t) => ({
+      id: t.id,
+      title: t.title,
+      notes: t.notes,
+      column: t.column,
+      links: normalizeLinks(t.links as unknown as Record<string, unknown>),
+    })),
     aboutMe,
   };
 }
@@ -67,8 +101,10 @@ export async function writeMapState(
   }
 }
 
-export async function loadMapState(rootPath: string): Promise<
-  Result<StoreState> | { ok: false; error: string; malformed: true }
+async function readMapFile(rootPath: string): Promise<
+  | { ok: true; file: MapFile; aboutMe: string }
+  | { ok: false; error: string }
+  | { ok: false; error: string; malformed: true }
 > {
   const paths = vaultPaths(rootPath);
   try {
@@ -83,7 +119,7 @@ export async function loadMapState(rootPath: string): Promise<
       return { ok: false, error: "Map store has invalid shape", malformed: true };
     }
     const aboutMe = await readAboutMe(rootPath);
-    return { ok: true, value: fromFile(parsed, aboutMe) };
+    return { ok: true, file: parsed, aboutMe };
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") {
       return { ok: false, error: "ENOENT" };
@@ -92,15 +128,30 @@ export async function loadMapState(rootPath: string): Promise<
   }
 }
 
+export async function loadMapState(rootPath: string): Promise<
+  Result<StoreState> | { ok: false; error: string; malformed: true }
+> {
+  const loaded = await readMapFile(rootPath);
+  if (!loaded.ok) return loaded;
+  return { ok: true, value: fromFile(loaded.file, loaded.aboutMe) };
+}
+
 export async function ensureMapOnOpen(
   rootPath: string,
   today: string = todayLocalIso(),
 ): Promise<Result<StoreState>> {
-  const loaded = await loadMapState(rootPath);
+  const loaded = await readMapFile(rootPath);
   if (loaded.ok) {
-    const next = ensureCurrentYear(rollover(loaded.value, today), today);
+    const value = fromFile(loaded.file, loaded.aboutMe);
+    const next = ensureCurrentYear(rollover(value, today), today);
     const persistNeeded =
-      JSON.stringify(toFile(next)) !== JSON.stringify(toFile(loaded.value));
+      JSON.stringify(toFile(next)) !==
+      JSON.stringify({
+        dayTypes: loaded.file.dayTypes,
+        defaultWeek: loaded.file.defaultWeek,
+        years: loaded.file.years,
+        tasks: loaded.file.tasks,
+      });
     if (persistNeeded) {
       const saved = await writeMapState(rootPath, next);
       if (!saved.ok) return saved;
@@ -124,10 +175,18 @@ export async function applyMapCommand(
 ): Promise<Result<StoreState>> {
   const ensured = await ensureMapOnOpen(rootPath, today);
   if (!ensured.ok) return ensured;
+  const domains = await listDomains(rootPath);
+  const live = domains.ok
+    ? domains.value.filter((d) => !d.meta.archivedAt).map((d) => d.slug)
+    : [];
+  const goals = await loadGoals(rootPath);
+  const goalIds = goals.ok ? goals.value.map((g) => g.id) : [];
   const result = applyCommand(ensured.value, command, {
     actor,
     today,
     id: () => randomUUID(),
+    liveDomainSlugs: live,
+    goalIds,
   });
   if (!result.ok) {
     return { ok: false, error: `${result.error.code}: ${result.error.message}` };
@@ -138,7 +197,8 @@ export async function applyMapCommand(
   // Map + about are already persisted. Do not roll them back if the life-log
   // append fails; the map command itself succeeded.
   await appendLog(rootPath, {
-    domainSlug: null,
+    domainSlug:
+      "domainSlug" in command ? ((command.domainSlug as string | null | undefined) ?? null) : null,
     type: ev.type,
     summary: ev.summary,
     payload: ev.payload,
