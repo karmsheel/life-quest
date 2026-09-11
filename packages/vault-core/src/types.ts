@@ -1,8 +1,22 @@
 import type { StoreState as MapStoreState } from "./map/types.ts";
 
 export const SCHEMA_VERSION = 1 as const;
-export const DOCUMENT_KINDS = ["why", "what", "how"] as const;
+export const DOCUMENT_KINDS = ["why", "what", "how", "premise"] as const;
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
+
+export const DOCUMENT_KIND_LABELS: Record<DocumentKind, string> = {
+  premise: "Beliefs & Premise",
+  what: "Vision & Desire",
+  why: "Purpose",
+  how: "Strategy (How)",
+};
+
+export const DREAM_DOCUMENT_KINDS: readonly DocumentKind[] = [
+  "premise",
+  "what",
+  "why",
+  "how",
+];
 export const DOCUMENT_STATUSES = ["draft", "refined", "forged"] as const;
 export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;
