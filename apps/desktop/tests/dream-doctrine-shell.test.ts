@@ -45,3 +45,18 @@ describe("doctrine coaching", () => {
     assert.match(copy, /RECIPE for the Vision you want to create/);
   });
 });
+
+describe("DocumentEditor", () => {
+  it("is a split editor with coaching and no How template", () => {
+    const src = read("src/components/documents/DocumentEditor.tsx");
+    assert.equal(src.includes("HOW_PLACEHOLDER"), false);
+    assert.equal(src.includes("# Tactics"), false);
+    assert.match(src, /DOCUMENT_KIND_COACHING/);
+    assert.match(src, /DOCUMENT_KIND_LABELS/);
+    assert.match(src, /doc-editor__split/);
+    assert.match(src, /MarkdownView/);
+    assert.match(src, /onPaste/);
+    assert.match(src, /onDrop/);
+    assert.match(src, /documentMediaSave/);
+  });
+});

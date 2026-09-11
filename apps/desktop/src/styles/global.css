@@ -1138,6 +1138,31 @@ a {
   background: var(--selected-soft);
 }
 
+.doc-editor__split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+.doc-editor__preview {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  min-height: 12rem;
+  overflow: auto;
+}
+.doc-editor__preview-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+.md-view img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.35rem;
+}
+
 .field textarea {
   border: 1px solid var(--border);
   border-radius: 0.4rem;

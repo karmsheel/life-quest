@@ -1,53 +1,69 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+} from "react";
 import {
   assertEditable,
   canTransitionStatus,
+  DOCUMENT_KIND_LABELS,
   type DocumentKind,
   type DocumentStatus,
   type DoctrineDocument,
+  type Result,
 } from "@lifequest/vault-core/pure";
+import { DOCUMENT_KIND_COACHING } from "@/lib/doctrine-copy";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { DocumentStatusBadge } from "./DocumentStatusBadge";
+import { MarkdownView } from "./MarkdownView";
 import { ProposeChangeDialog } from "./ProposeChangeDialog";
 
-/** Local-only How template when body is empty — never auto-saved. */
-export const HOW_PLACEHOLDER = `# Strategy
+function insertAtCaret(
+  value: string,
+  start: number,
+  end: number,
+  insert: string,
+): { next: string; caret: number } {
+  const next = `${value.slice(0, start)}${insert}${value.slice(end)}`;
+  return { next, caret: start + insert.length };
+}
 
-# Tactics
+async function saveImageFile(
+  slug: string,
+  file: File,
+): Promise<Result<{ relPath: string }>> {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  return api().documentMediaSave(slug, { bytes: buf, mime: file.type });
+}
 
-# Habits
-`;
-
-const COACHING: Record<DocumentKind, string> = {
-  why: "Why pursue growth in this domain?",
-  what: "What is your North Star for this domain?",
-  how: "Strategy, tactics, and habits.",
-};
-
-const KIND_LABELS: Record<DocumentKind, string> = {
-  why: "Why",
-  what: "What",
-  how: "How",
-};
-
-function initialEditorBody(kind: DocumentKind, bodyMarkdown: string): string {
-  if (kind === "how" && bodyMarkdown.trim().length === 0) {
-    return HOW_PLACEHOLDER;
+function firstImageFile(data: DataTransfer | null): File | null {
+  if (!data) return null;
+  for (const item of data.items) {
+    if (item.kind === "file" && item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+      if (file) return file;
+    }
   }
-  return bodyMarkdown;
+  for (const file of data.files) {
+    if (file.type.startsWith("image/")) return file;
+  }
+  return null;
 }
 
 function applyDocument(
   doc: DoctrineDocument,
-  kind: DocumentKind,
   setDocument: (d: DoctrineDocument) => void,
   setTitleDraft: (t: string) => void,
   setDraft: (b: string) => void,
 ) {
   setDocument(doc);
   setTitleDraft(doc.title);
-  setDraft(initialEditorBody(kind, doc.bodyMarkdown));
+  setDraft(doc.bodyMarkdown);
 }
 
 export function DocumentEditor({
@@ -74,6 +90,7 @@ export function DocumentEditor({
   const appliedGenerationRef = useRef(reloadGeneration);
   /** Bumped on each load so stale documentGet results are ignored. */
   const loadGenRef = useRef(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const load = useCallback(
     async (opts?: { quiet?: boolean }) => {
@@ -106,13 +123,7 @@ export function DocumentEditor({
           setLoadError(result.error);
           return;
         }
-        applyDocument(
-          result.value,
-          requestKind,
-          setDocument,
-          setTitleDraft,
-          setDraft,
-        );
+        applyDocument(result.value, setDocument, setTitleDraft, setDraft);
       } catch (err) {
         if (gen !== loadGenRef.current) return;
         setDocument(null);
@@ -145,9 +156,8 @@ export function DocumentEditor({
   const isDirty = useMemo(() => {
     if (!document) return false;
     if (titleDraft !== document.title) return true;
-    const baseline = initialEditorBody(kind, document.bodyMarkdown);
-    return draft !== baseline;
-  }, [document, draft, titleDraft, kind]);
+    return draft !== document.bodyMarkdown;
+  }, [document, draft, titleDraft]);
 
   async function persistBody(
     current: DoctrineDocument,
@@ -165,7 +175,7 @@ export function DocumentEditor({
       setActionError(result.error);
       return null;
     }
-    applyDocument(result.value, kind, setDocument, setTitleDraft, setDraft);
+    applyDocument(result.value, setDocument, setTitleDraft, setDraft);
     return result.value;
   }
 
@@ -212,7 +222,7 @@ export function DocumentEditor({
         setActionError(result.error);
         return;
       }
-      applyDocument(result.value, kind, setDocument, setTitleDraft, setDraft);
+      applyDocument(result.value, setDocument, setTitleDraft, setDraft);
       setActionMessage(to === "forged" ? "Forged" : "Marked refined");
       await refresh();
     } catch (err) {
@@ -227,7 +237,7 @@ export function DocumentEditor({
   if (!slug) {
     return (
       <p className="muted doc-editor__status">
-        Select a domain to edit its {KIND_LABELS[kind]} document.
+        Select a domain to edit its {DOCUMENT_KIND_LABELS[kind]} document.
       </p>
     );
   }
@@ -257,12 +267,49 @@ export function DocumentEditor({
   const canForge = canTransitionStatus(document.status, "forged");
   const busy = saving || statusPending;
 
+  async function insertSavedImage(file: File) {
+    const result = await saveImageFile(slug, file);
+    if (!result.ok) {
+      setActionError(result.error);
+      return;
+    }
+    const el = textareaRef.current;
+    const value = el?.value ?? draft;
+    const start = el?.selectionStart ?? value.length;
+    const end = el?.selectionEnd ?? start;
+    const insert = `\n![](${result.value.relPath})\n`;
+    const { next, caret } = insertAtCaret(value, start, end, insert);
+    setDraft(next);
+    requestAnimationFrame(() => {
+      const node = textareaRef.current;
+      if (!node) return;
+      node.focus();
+      node.setSelectionRange(caret, caret);
+    });
+  }
+
+  async function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    if (isForged) return;
+    const file = firstImageFile(e.clipboardData);
+    if (!file) return;
+    e.preventDefault();
+    await insertSavedImage(file);
+  }
+
+  async function onDrop(e: DragEvent<HTMLTextAreaElement>) {
+    if (isForged) return;
+    const file = firstImageFile(e.dataTransfer);
+    if (!file) return;
+    e.preventDefault();
+    await insertSavedImage(file);
+  }
+
   return (
     <div className="doc-editor">
       <header className="doc-editor__header">
         <div className="doc-editor__heading">
           <h1 className="doc-editor__title">
-            {KIND_LABELS[kind]}
+            {DOCUMENT_KIND_LABELS[kind]}
             {domainName ? (
               <span className="doc-editor__domain muted">
                 {" "}
@@ -272,7 +319,9 @@ export function DocumentEditor({
           </h1>
           <DocumentStatusBadge status={document.status} />
         </div>
-        <p className="doc-editor__coaching muted">{COACHING[kind]}</p>
+        <p className="doc-editor__coaching muted">
+          {DOCUMENT_KIND_COACHING[kind]}
+        </p>
         {!editable.ok ? (
           <p className="doc-editor__forged-hint muted">{editable.reason}</p>
         ) : null}
@@ -289,24 +338,30 @@ export function DocumentEditor({
         />
       </label>
 
-      <label className="field doc-editor__body-field">
-        <span>Markdown</span>
-        <textarea
-          className="doc-editor__textarea"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          readOnly={isForged}
-          disabled={busy}
-          rows={18}
-          spellCheck
-        />
-      </label>
-
-      {kind === "how" && document.bodyMarkdown.trim().length === 0 ? (
-        <p className="doc-editor__placeholder-hint muted">
-          Template is local only until you Save.
-        </p>
-      ) : null}
+      <div className="doc-editor__split">
+        <label className="field doc-editor__body-field">
+          <span>Markdown</span>
+          <textarea
+            ref={textareaRef}
+            className="doc-editor__textarea"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onPaste={(e) => void onPaste(e)}
+            onDrop={(e) => void onDrop(e)}
+            onDragOver={(e) => {
+              if (!isForged) e.preventDefault();
+            }}
+            readOnly={isForged}
+            disabled={busy}
+            rows={18}
+            spellCheck
+          />
+        </label>
+        <div className="doc-editor__preview">
+          <span className="doc-editor__preview-label">Preview</span>
+          <MarkdownView markdown={draft} slug={slug} />
+        </div>
+      </div>
 
       {actionError ? (
         <p className="form-error" role="alert">
