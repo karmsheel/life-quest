@@ -29,3 +29,25 @@ export function recordVisibleMulti(
   if (lens.kind === "overview") return true;
   return domainSlugs.includes(lens.slug);
 }
+
+export function filterByLens<T extends { domainSlug: string | null }>(
+  items: readonly T[],
+  lens: DomainLens,
+): T[] {
+  return items.filter((item) => recordVisible(lens, item.domainSlug));
+}
+
+export function effectiveDomainSlug(
+  domainSlug: string | null,
+  liveSlugs: ReadonlySet<string> | readonly string[],
+): string | null {
+  if (!domainSlug) return null;
+  const set = liveSlugs instanceof Set ? liveSlugs : new Set(liveSlugs);
+  return set.has(domainSlug) ? domainSlug : null;
+}
+
+export function liveDomainSlugs(
+  domains: readonly { slug: string; meta: { archivedAt: string | null } }[],
+): string[] {
+  return domains.filter((d) => !d.meta.archivedAt).map((d) => d.slug);
+}

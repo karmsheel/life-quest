@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   domainLens,
+  effectiveDomainSlug,
+  filterByLens,
   lensSlug,
+  liveDomainSlugs,
   overviewLens,
   recordVisible,
   recordVisibleMulti,
@@ -46,5 +49,45 @@ describe("recordVisibleMulti", () => {
     assert.equal(recordVisibleMulti(health, tags), true);
     assert.equal(recordVisibleMulti(financial, tags), true);
     assert.equal(recordVisibleMulti(domainLens("intellectual"), tags), false);
+  });
+});
+
+describe("filterByLens", () => {
+  const items = [
+    { id: "1", domainSlug: "health" },
+    { id: "2", domainSlug: null },
+    { id: "3", domainSlug: "gone" },
+  ];
+  it("overview includes assigned, unassigned, and unknown", () => {
+    assert.deepEqual(
+      filterByLens(items, overview).map((i) => i.id),
+      ["1", "2", "3"],
+    );
+  });
+  it("domain tab hides unassigned and unknown", () => {
+    assert.deepEqual(
+      filterByLens(items, health).map((i) => i.id),
+      ["1"],
+    );
+  });
+});
+
+describe("effectiveDomainSlug", () => {
+  it("unknown or archived slug becomes unassigned", () => {
+    assert.equal(effectiveDomainSlug("health", ["health"]), "health");
+    assert.equal(effectiveDomainSlug("gone", ["health"]), null);
+    assert.equal(effectiveDomainSlug(null, ["health"]), null);
+  });
+});
+
+describe("liveDomainSlugs", () => {
+  it("drops archived domains", () => {
+    assert.deepEqual(
+      liveDomainSlugs([
+        { slug: "health", meta: { archivedAt: null } },
+        { slug: "old", meta: { archivedAt: "2026-01-01T00:00:00.000Z" } },
+      ]),
+      ["health"],
+    );
   });
 });

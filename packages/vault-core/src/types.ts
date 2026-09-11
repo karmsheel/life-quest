@@ -202,6 +202,8 @@ export type VaultSnapshot = {
   log: LifeEvent[];
   map: MapStoreState | null;
   mapError: string | null;
+  goals: Goal[];
+  goalsError: string | null;
 };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };

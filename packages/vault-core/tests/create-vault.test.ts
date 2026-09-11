@@ -43,6 +43,8 @@ describe("createVault", () => {
     assert.equal(opened.ok, true);
     assert.ok(res.value.map);
     assert.equal(res.value.mapError, null);
+    assert.deepEqual(res.value.goals, []);
+    assert.equal(res.value.goalsError, null);
     await fs.access(path.join(root, ".lifequest/map.json"));
     await fs.access(path.join(root, ".lifequest/about.md"));
   });

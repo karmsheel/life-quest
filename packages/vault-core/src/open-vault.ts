@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readOrCreateDoctrineFile } from "./domain-documents.ts";
+import { loadGoals } from "./goals.ts";
 import { readLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
 import { ensureMapOnOpen } from "./map/persist.ts";
@@ -13,6 +14,7 @@ import {
   type DoctrineDocument,
   type DomainMeta,
   type DomainRecord,
+  type Goal,
   type LifequestJson,
   type Result,
   type VaultSettings,
@@ -97,6 +99,15 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
       mapError = mapRes.error;
     }
 
+    let goals: Goal[] = [];
+    let goalsError: string | null = null;
+    const goalsRes = await loadGoals(paths.root);
+    if (goalsRes.ok) {
+      goals = goalsRes.value;
+    } else {
+      goalsError = goalsRes.error;
+    }
+
     return {
       ok: true,
       value: {
@@ -109,6 +120,8 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
         log,
         map,
         mapError,
+        goals,
+        goalsError,
       },
     };
   } catch (e) {
