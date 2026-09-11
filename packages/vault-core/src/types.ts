@@ -165,6 +165,33 @@ export type DecisionRecord = {
   resolvedAt: string | null;
 };
 
+export type GoalStatus = "open" | "done";
+
+export type Goal = {
+  id: string;
+  name: string;
+  notes: string;
+  status: GoalStatus;
+  domainSlug: string | null;
+};
+
+export type GoalsCommand =
+  | { type: "createGoal"; name: string; notes?: string; domainSlug?: string | null }
+  | {
+      type: "updateGoal";
+      id: string;
+      name?: string;
+      notes?: string;
+      status?: GoalStatus;
+      domainSlug?: string | null;
+    }
+  | { type: "deleteGoal"; id: string };
+
+export type GoalsApplyContext = {
+  id: () => string;
+  liveDomainSlugs: readonly string[];
+};
+
 export type VaultSnapshot = {
   rootPath: string;
   lifequest: LifequestJson;

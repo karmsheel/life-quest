@@ -24,6 +24,7 @@ export function vaultPaths(root: string) {
     signalChainJson: (id: string) =>
       safeJoin(rootPath, ".lifequest", "signal-chain", `${id}.json`),
     mapJson: path.join(rootPath, ".lifequest", "map.json"),
+    goalsJson: path.join(rootPath, ".lifequest", "goals.json"),
     aboutMd: path.join(rootPath, ".lifequest", "about.md"),
     documentsDir: path.join(rootPath, "documents"),
     libraryDocumentMd: (id: string) =>
