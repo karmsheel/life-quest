@@ -60,3 +60,22 @@ describe("DocumentEditor", () => {
     assert.match(src, /documentMediaSave/);
   });
 });
+
+describe("Dream cards", () => {
+  it("lists four kinds as cards and sends How to /dream/:slug/how", () => {
+    const dream = read("src/pages/DreamPage.tsx");
+    assert.match(dream, /DREAM_DOCUMENT_KINDS/);
+    assert.match(dream, /howHref=["']dream["']/);
+    assert.match(dream, /layout=["']cards["']/);
+    const arch = read("src/pages/ArchitecturePage.tsx");
+    assert.match(arch, /kinds=\{\["how"\]\}/);
+    assert.equal(arch.includes('layout="cards"'), false);
+    const index = read("src/components/doctrine/DoctrineIndex.tsx");
+    assert.match(index, /DOCUMENT_KIND_LABELS/);
+    assert.match(index, /DOCUMENT_KIND_COACHING/);
+    assert.match(index, /MarkdownView/);
+    assert.match(index, /howHref/);
+    assert.match(index, /layout/);
+    assert.match(index, /\/dream\/\$\{slug\}\/how|\/dream\/\$\{.*\}\/how/);
+  });
+});

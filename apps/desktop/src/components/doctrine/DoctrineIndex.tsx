@@ -1,21 +1,36 @@
 import { Link } from "react-router-dom";
-import { type DocumentKind } from "@lifequest/vault-core/pure";
+import {
+  DOCUMENT_KIND_LABELS,
+  type DocumentKind,
+} from "@lifequest/vault-core/pure";
 import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
+import { MarkdownView } from "@/components/documents/MarkdownView";
+import { DOCUMENT_KIND_COACHING } from "@/lib/doctrine-copy";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 
-const KIND_LABELS: Record<DocumentKind, string> = {
-  why: "Why",
-  what: "What",
-  how: "How",
-};
-
-function rowHref(kind: DocumentKind, slug: string): string {
-  if (kind === "how") return `/track/${slug}/how`;
+function rowHref(
+  kind: DocumentKind,
+  slug: string,
+  howHref: "dream" | "track",
+): string {
+  if (kind === "how") {
+    return howHref === "dream"
+      ? `/dream/${slug}/how`
+      : `/track/${slug}/how`;
+  }
   return `/dream/${slug}/${kind}`;
 }
 
-export function DoctrineIndex({ kinds }: { kinds: DocumentKind[] }) {
+export function DoctrineIndex({
+  kinds,
+  howHref = "track",
+  layout = "list",
+}: {
+  kinds: DocumentKind[];
+  howHref?: "dream" | "track";
+  layout?: "list" | "cards";
+}) {
   const { snapshot } = useVault();
   const lens = useDomainLens();
 
@@ -34,23 +49,55 @@ export function DoctrineIndex({ kinds }: { kinds: DocumentKind[] }) {
       {domains.map((domain) => (
         <section key={domain.slug} className="doctrine-index__group">
           <h2 className="doctrine-index__heading">{domain.meta.name}</h2>
-          <ul className="doctrine-index__list">
-            {kinds.map((kind) => {
-              const doc = domain.documents[kind];
-              const label = KIND_LABELS[kind];
-              return (
-                <li key={kind} className="doctrine-index__row">
+          {layout === "cards" ? (
+            <div className="doctrine-index__cards">
+              {kinds.map((kind) => {
+                const doc = domain.documents[kind];
+                const body = doc?.bodyMarkdown ?? "";
+                const empty = body.trim().length === 0;
+                return (
                   <Link
-                    to={rowHref(kind, domain.slug)}
-                    className="doctrine-index__label"
+                    key={kind}
+                    to={rowHref(kind, domain.slug, howHref)}
+                    className="doctrine-index__card"
                   >
-                    {label}
+                    <div className="doctrine-index__card-head">
+                      <span className="doctrine-index__card-title">
+                        {DOCUMENT_KIND_LABELS[kind]}
+                      </span>
+                      <DocumentStatusBadge status={doc?.status ?? "draft"} />
+                    </div>
+                    <div className="doctrine-index__card-body">
+                      {empty ? (
+                        <p className="doctrine-index__help muted">
+                          {DOCUMENT_KIND_COACHING[kind]}
+                        </p>
+                      ) : (
+                        <MarkdownView markdown={body} slug={domain.slug} />
+                      )}
+                    </div>
                   </Link>
-                  <DocumentStatusBadge status={doc?.status ?? "draft"} />
-                </li>
-              );
-            })}
-          </ul>
+                );
+              })}
+            </div>
+          ) : (
+            <ul className="doctrine-index__list">
+              {kinds.map((kind) => {
+                const doc = domain.documents[kind];
+                return (
+                  <li key={kind} className="doctrine-index__row">
+                    <Link
+                      to={rowHref(kind, domain.slug, howHref)}
+                      className="doctrine-index__label"
+                    >
+                      {DOCUMENT_KIND_LABELS[kind]}
+                    </Link>
+                    <DocumentStatusBadge status={doc?.status ?? "draft"} />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       ))}
     </div>
