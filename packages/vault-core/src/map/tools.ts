@@ -1,3 +1,4 @@
+import type { GoalStatus, GoalsCommand } from "../types.ts";
 import type {
   ChecklistItem,
   ColorId,
@@ -104,7 +105,7 @@ export const MAP_TOOL_DEFS: MapToolDef[] = [
   },
   {
     name: "create_event",
-    description: "Create a map event",
+    description: "Create a single-date Life Map event / deadline",
     parameters: {
       type: "object",
       properties: {
@@ -112,15 +113,15 @@ export const MAP_TOOL_DEFS: MapToolDef[] = [
         title: STRING,
         date: STRING,
         notes: STRING,
-        domainSlug: { type: ["string", "null"] },
-        goalId: { type: ["string", "null"] },
+        domainSlug: STRING,
+        goalId: STRING,
       },
       required: ["year", "title", "date"],
     },
   },
   {
     name: "update_event",
-    description: "Update a map event",
+    description: "Update a single-date Life Map event / deadline",
     parameters: {
       type: "object",
       properties: {
@@ -129,15 +130,15 @@ export const MAP_TOOL_DEFS: MapToolDef[] = [
         title: STRING,
         date: STRING,
         notes: STRING,
-        domainSlug: { type: ["string", "null"] },
-        goalId: { type: ["string", "null"] },
+        domainSlug: STRING,
+        goalId: STRING,
       },
       required: ["year", "id"],
     },
   },
   {
     name: "delete_event",
-    description: "Delete a map event",
+    description: "Delete a Life Map event / deadline",
     parameters: {
       type: "object",
       properties: { year: NUMBER, id: STRING },
@@ -554,6 +555,76 @@ export function commandForTool(
       break;
     case "set_about_me":
       command = { type: "setAboutMe", text: args.text as string };
+      break;
+    default:
+      command = null;
+  }
+  return command === null ? null : omitUndefined(command);
+}
+
+export const GOALS_TOOL_DEFS: MapToolDef[] = [
+  { name: "list_goals", description: "List vault-wide Goals", parameters: { type: "object", properties: {} } },
+  {
+    name: "create_goal",
+    description: "Create a vault-wide Goal outcome",
+    parameters: {
+      type: "object",
+      properties: { name: STRING, notes: STRING, domainSlug: STRING },
+      required: ["name"],
+    },
+  },
+  {
+    name: "update_goal",
+    description: "Update a Goal",
+    parameters: {
+      type: "object",
+      properties: {
+        id: STRING,
+        name: STRING,
+        notes: STRING,
+        status: { type: "string", enum: ["open", "done"] },
+        domainSlug: STRING,
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "delete_goal",
+    description: "Delete a Goal",
+    parameters: { type: "object", properties: { id: STRING }, required: ["id"] },
+  },
+];
+
+/**
+ * Map a goal tool name + args to a Goals command. list_goals and unknown
+ * tools return null — the Electron planner loop handles the read.
+ */
+export function commandForGoalTool(
+  name: string,
+  args: Record<string, unknown>,
+): GoalsCommand | null {
+  let command: GoalsCommand | null = null;
+  switch (name) {
+    case "create_goal":
+      command = {
+        type: "createGoal",
+        name: args.name as string,
+        notes: args.notes as string | undefined,
+        domainSlug: args.domainSlug as string | null | undefined,
+      };
+      break;
+    case "update_goal":
+      command = {
+        type: "updateGoal",
+        id: args.id as string,
+        name: args.name as string | undefined,
+        notes: args.notes as string | undefined,
+        status: args.status as GoalStatus | undefined,
+        domainSlug: args.domainSlug as string | null | undefined,
+      };
+      break;
+    case "delete_goal":
+      command = { type: "deleteGoal", id: args.id as string };
       break;
     default:
       command = null;

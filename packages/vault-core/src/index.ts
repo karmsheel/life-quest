@@ -33,7 +33,12 @@ export {
   resolveWeek,
 } from "./map/public.ts";
 export { applyMapCommand, ensureMapOnOpen, loadMapState } from "./map/persist.ts";
-export { commandForTool, MAP_TOOL_DEFS } from "./map/tools.ts";
+export {
+  commandForGoalTool,
+  commandForTool,
+  GOALS_TOOL_DEFS,
+  MAP_TOOL_DEFS,
+} from "./map/tools.ts";
 export type { MapToolDef } from "./map/tools.ts";
 export type {
   MapStoreState,
