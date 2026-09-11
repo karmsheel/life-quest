@@ -1,7 +1,7 @@
 # Goals Page and Life Map Events — Design Spec
 
 **Date:** 2026-09-11  
-**Status:** Approved — awaiting implementation plan  
+**Status:** Approved — implementation plan ready (`docs/superpowers/plans/2026-09-11-goals-and-map-events.md`)  
 **Product:** LifeQuest — local-first life-management studio  
 **Depends on:** [Life Map on Chart](./2026-08-27-life-map-chart-design.md), [Vision / Plan / Execute wings](./2026-08-30-vision-plan-execute-wings-design.md), [Home wing](./2026-09-02-home-wing-design.md), [Overview Domain Lens](./2026-08-31-overview-domain-lens-design.md)
 
