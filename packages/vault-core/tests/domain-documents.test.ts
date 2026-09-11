@@ -163,4 +163,18 @@ describe("document media", () => {
     const absolute = await readDocumentMedia(root, "health", "/etc/passwd");
     assert.equal(absolute.ok, false);
   });
+
+  it("saveDocumentMedia on a missing domain fails and does not mkdir", async () => {
+    const slug = "no-such-domain";
+    const saved = await saveDocumentMedia(root, slug, {
+      bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      mime: "image/png",
+    });
+    assert.equal(saved.ok, false);
+    if (!saved.ok) {
+      assert.match(saved.error, /Domain not found/i);
+    }
+    const entries = await fs.readdir(path.join(root, "domains"));
+    assert.equal(entries.includes(slug), false);
+  });
 });

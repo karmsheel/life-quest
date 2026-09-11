@@ -273,6 +273,7 @@ export function DocumentEditor({
       setActionError(result.error);
       return;
     }
+    setActionError(null);
     const el = textareaRef.current;
     const value = el?.value ?? draft;
     const start = el?.selectionStart ?? value.length;

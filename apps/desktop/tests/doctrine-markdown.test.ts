@@ -22,4 +22,18 @@ describe("doctrineMarkdownToHtml", () => {
     assert.equal(html.includes("<script>"), false);
     assert.match(html, /&lt;script&gt;/);
   });
+
+  it("opens http(s) links in a new window", () => {
+    const html = doctrineMarkdownToHtml(
+      "See [docs](https://example.com/a) and [more](http://example.com/b).",
+    );
+    assert.match(
+      html,
+      /<a href="https:\/\/example\.com\/a" target="_blank" rel="noopener noreferrer">docs<\/a>/,
+    );
+    assert.match(
+      html,
+      /<a href="http:\/\/example\.com\/b" target="_blank" rel="noopener noreferrer">more<\/a>/,
+    );
+  });
 });

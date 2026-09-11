@@ -19,7 +19,7 @@ function inlineFormat(text: string): string {
   );
   s = s.replace(
     /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
-    '<a href="$2" rel="noopener noreferrer">$1</a>',
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
   );
   s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
   s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");

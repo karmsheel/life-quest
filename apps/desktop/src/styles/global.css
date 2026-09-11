@@ -1097,11 +1097,6 @@ a {
   font-size: 0.875rem;
 }
 
-.doc-editor__placeholder-hint {
-  margin: 0;
-  font-size: 0.8rem;
-}
-
 .doc-editor__actions {
   display: flex;
   flex-wrap: wrap;
@@ -3142,6 +3137,9 @@ a.home-mini-list__link:hover {
   padding: 0.55rem 0.65rem 0.7rem;
   max-height: 12rem;
   overflow: auto;
+}
+.doctrine-index__card .md-view a {
+  pointer-events: none;
 }
 .doctrine-index__help {
   margin: 0;

@@ -228,6 +228,14 @@ export async function saveDocumentMedia(
       return { ok: false, error: "Image is larger than 8 MB" };
     }
     const paths = vaultPaths(rootPath);
+    try {
+      await fs.access(paths.domainJson(slug));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+        return { ok: false, error: `Domain not found: ${slug}` };
+      }
+      throw e;
+    }
     const name = `${randomUUID()}.${kind.ext}`;
     const filePath = paths.domainMediaFile(slug, name);
     await atomicWriteBytes(filePath, input.bytes);
