@@ -6,7 +6,7 @@ export type {
   DomainError as MapDomainError,
   IsoDate,
   YearRecord,
-  PeriodGoal,
+  MapEvent,
   ChecklistItem,
   DayType,
   DefaultWeek,
@@ -22,7 +22,7 @@ export type {
   ResolvedWeek,
 } from "./types.ts";
 export { applyCommand as applyMapCommandPure } from "./commands.ts";
-export { dashboardDays, periodGoalsOverlappingMonth, periodGoalsOnDate } from "./queries.ts";
+export { dashboardDays, eventsInMonth, eventsOnDate } from "./queries.ts";
 export { PALETTE, COLOR_IDS } from "./palette.ts";
 export { todayLocalIso, yearOf, mondayOnOrBefore, mondaysInYear, daysInMonth, addDays, compareIso } from "./dates.ts";
 export { findYear, liveYears } from "./years.ts";

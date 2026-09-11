@@ -52,42 +52,14 @@ describe("tasks and about me", () => {
     assert.equal(res.error.code, "MALFORMED");
   });
 
-  it("keeps a dangling period-goal link when the goal is deleted", () => {
-    let s = base();
-    const goal = applyCommand(
-      s,
-      {
-        type: "createPeriodGoal",
-        year: 2026,
-        name: "Airdrop",
-        color: "gold",
-        start: "2026-04-01",
-        end: "2026-04-02",
-      },
-      user,
-    );
-    assert.equal(goal.ok, true);
-    if (!goal.ok) return;
-    s = goal.value;
+  it("stores a goalId link on a task", () => {
     const task = applyCommand(
-      s,
-      {
-        type: "createTask",
-        title: "Write guide",
-        links: { periodGoalId: "x1" },
-      },
+      base(),
+      { type: "createTask", title: "Write guide", links: { goalId: "goal-1" } },
       user,
     );
     assert.equal(task.ok, true);
     if (!task.ok) return;
-    const del = applyCommand(
-      task.value,
-      { type: "deletePeriodGoal", year: 2026, id: "x1" },
-      user,
-    );
-    assert.equal(del.ok, true);
-    if (!del.ok) return;
-    assert.equal(del.value.tasks[0].links.periodGoalId, "x1");
-    assert.deepEqual(del.value.years[0].periodGoals, []);
+    assert.equal(task.value.tasks[0].links.goalId, "goal-1");
   });
 });

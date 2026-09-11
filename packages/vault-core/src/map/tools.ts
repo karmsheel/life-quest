@@ -65,7 +65,7 @@ const GRID_BLOCK = {
 const TASK_LINKS = {
   type: "object",
   properties: {
-    periodGoalId: STRING,
+    goalId: STRING,
     date: STRING,
     weekItem: {
       type: "object",
@@ -103,39 +103,41 @@ export const MAP_TOOL_DEFS: MapToolDef[] = [
     },
   },
   {
-    name: "create_period_goal",
-    description: "Create a period goal (Key)",
+    name: "create_event",
+    description: "Create a map event",
     parameters: {
       type: "object",
       properties: {
         year: NUMBER,
-        name: STRING,
-        color: COLOR_ENUM,
-        start: STRING,
-        end: STRING,
+        title: STRING,
+        date: STRING,
+        notes: STRING,
+        domainSlug: { type: ["string", "null"] },
+        goalId: { type: ["string", "null"] },
       },
-      required: ["year", "name", "color", "start", "end"],
+      required: ["year", "title", "date"],
     },
   },
   {
-    name: "update_period_goal",
-    description: "Update a period goal",
+    name: "update_event",
+    description: "Update a map event",
     parameters: {
       type: "object",
       properties: {
         year: NUMBER,
         id: STRING,
-        name: STRING,
-        color: COLOR_ENUM,
-        start: STRING,
-        end: STRING,
+        title: STRING,
+        date: STRING,
+        notes: STRING,
+        domainSlug: { type: ["string", "null"] },
+        goalId: { type: ["string", "null"] },
       },
       required: ["year", "id"],
     },
   },
   {
-    name: "delete_period_goal",
-    description: "Delete a period goal",
+    name: "delete_event",
+    description: "Delete a map event",
     parameters: {
       type: "object",
       properties: { year: NUMBER, id: STRING },
@@ -395,29 +397,31 @@ export function commandForTool(
     case "delete_year":
       command = { type: "deleteYear", year: args.year as number };
       break;
-    case "create_period_goal":
+    case "create_event":
       command = {
-        type: "createPeriodGoal",
+        type: "createEvent",
         year: args.year as number,
-        name: args.name as string,
-        color: args.color as ColorId,
-        start: args.start as string,
-        end: args.end as string,
+        title: args.title as string,
+        date: args.date as string,
+        notes: args.notes as string | undefined,
+        domainSlug: args.domainSlug as string | null | undefined,
+        goalId: args.goalId as string | null | undefined,
       };
       break;
-    case "update_period_goal":
+    case "update_event":
       command = {
-        type: "updatePeriodGoal",
+        type: "updateEvent",
         year: args.year as number,
         id: args.id as string,
-        name: args.name as string | undefined,
-        color: args.color as ColorId | undefined,
-        start: args.start as string | undefined,
-        end: args.end as string | undefined,
+        title: args.title as string | undefined,
+        date: args.date as string | undefined,
+        notes: args.notes as string | undefined,
+        domainSlug: args.domainSlug as string | null | undefined,
+        goalId: args.goalId as string | null | undefined,
       };
       break;
-    case "delete_period_goal":
-      command = { type: "deletePeriodGoal", year: args.year as number, id: args.id as string };
+    case "delete_event":
+      command = { type: "deleteEvent", year: args.year as number, id: args.id as string };
       break;
     case "set_month_day":
       command = {

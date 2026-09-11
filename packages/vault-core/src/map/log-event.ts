@@ -20,22 +20,22 @@ export function mapLogEvent(command: Command): {
         summary: `Deleted year ${command.year}`,
         payload: { year: command.year },
       };
-    case "createPeriodGoal":
+    case "createEvent":
       return {
-        type: "map.period_goal.created",
-        summary: `Created period goal ${command.name}`,
-        payload: { year: command.year, name: command.name },
+        type: "map.event.created",
+        summary: `Created event ${command.title}`,
+        payload: { year: command.year, title: command.title, date: command.date },
       };
-    case "updatePeriodGoal":
+    case "updateEvent":
       return {
-        type: "map.period_goal.updated",
-        summary: "Updated period goal",
+        type: "map.event.updated",
+        summary: "Updated event",
         payload: { year: command.year, id: command.id },
       };
-    case "deletePeriodGoal":
+    case "deleteEvent":
       return {
-        type: "map.period_goal.deleted",
-        summary: "Deleted period goal",
+        type: "map.event.deleted",
+        summary: "Deleted event",
         payload: { year: command.year, id: command.id },
       };
     case "setMonthDay":

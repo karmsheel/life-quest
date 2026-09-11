@@ -15,7 +15,7 @@ export function emptyYear(year: number): YearRecord {
   return {
     year,
     status: "live",
-    periodGoals: [],
+    events: [],
     months: Array.from({ length: 12 }, () => emptyMonth()),
     detachedWeeks: {},
   };

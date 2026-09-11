@@ -1,51 +1,40 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-
 import { emptyYear } from "../../src/map/empty.ts";
 import {
   dashboardDays,
-  periodGoalsOnDate,
-  periodGoalsOverlappingMonth,
+  eventsInMonth,
+  eventsOnDate,
 } from "../../src/map/queries.ts";
-import type { PeriodGoal } from "../../src/map/types.ts";
+import type { MapEvent } from "../../src/map/types.ts";
 
-const goal: PeriodGoal = {
-  id: "g1",
-  name: "Airdrop Guide",
-  color: "gold",
-  start: "2026-04-01",
-  end: "2026-05-15",
+const ev: MapEvent = {
+  id: "e1",
+  title: "File taxes",
+  date: "2026-04-15",
+  notes: "",
+  domainSlug: "health",
+  goalId: null,
 };
 
-describe("queries", () => {
-  it("lists goals that overlap a month without writing objectives", () => {
-    const year = { ...emptyYear(2026), periodGoals: [goal] };
-    assert.deepEqual(periodGoalsOverlappingMonth(year, 4).map((g) => g.id), ["g1"]);
-    assert.deepEqual(periodGoalsOverlappingMonth(year, 5).map((g) => g.id), ["g1"]);
-    assert.deepEqual(periodGoalsOverlappingMonth(year, 6), []);
-    assert.equal(year.months[3].objectives, "");
+describe("event queries", () => {
+  it("lists events in a month", () => {
+    const year = { ...emptyYear(2026), events: [ev] };
+    assert.deepEqual(eventsInMonth(year, 4).map((e) => e.id), ["e1"]);
+    assert.deepEqual(eventsInMonth(year, 5), []);
   });
 
-  it("stacks colors on overlapping days", () => {
+  it("stacks events on one day in dashboardDays", () => {
     const year = {
       ...emptyYear(2026),
-      periodGoals: [
-        goal,
-        {
-          id: "g2",
-          name: "Other",
-          color: "red" as const,
-          start: "2026-04-10",
-          end: "2026-04-10",
-        },
+      events: [
+        ev,
+        { ...ev, id: "e2", title: "Other", date: "2026-04-15", domainSlug: null },
       ],
     };
-    assert.deepEqual(periodGoalsOnDate(year, "2026-04-10").map((g) => g.color), [
-      "gold",
-      "red",
-    ]);
+    assert.deepEqual(eventsOnDate(year, "2026-04-15").map((e) => e.id), ["e1", "e2"]);
     const days = dashboardDays(year, 4);
     assert.equal(days.length, 30);
-    assert.deepEqual(days[9].colors, ["gold", "red"]);
+    assert.deepEqual(days[14].events.map((e) => e.id), ["e1", "e2"]);
   });
 });

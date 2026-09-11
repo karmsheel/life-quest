@@ -9,22 +9,18 @@ import {
   setDefaultWeeklyItems,
 } from "./default-week.ts";
 import { fail } from "./errors.ts";
+import { createEvent, deleteEvent, updateEvent } from "./events.ts";
 import {
   setMonthDay,
   setMonthNotes,
   setMonthObjectives,
 } from "./months.ts";
-import {
-  createPeriodGoal,
-  deletePeriodGoal,
-  updatePeriodGoal,
-} from "./period-goals.ts";
 import { createTask, deleteTask, updateTask } from "./tasks.ts";
 import type {
   ApplyContext,
   Command,
   DayType,
-  PeriodGoal,
+  MapEvent,
   Result,
   StoreState,
   Task,
@@ -49,27 +45,30 @@ export function applyCommand(
       return createLiveYear(ensureCurrentYear(state, ctx.today), command.year, ctx.today);
     case "deleteYear":
       return deleteYear(state, command.year, ctx.today);
-    case "createPeriodGoal":
-      return createPeriodGoal(
+    case "createEvent":
+      return createEvent(
         state,
         command.year,
-        command.name,
-        command.color,
-        command.start,
-        command.end,
+        command.title,
+        command.date,
         ctx,
+        command.notes,
+        command.domainSlug,
+        command.goalId,
       );
-    case "updatePeriodGoal": {
-      const patch: Partial<Pick<PeriodGoal, "name" | "color" | "start" | "end">> =
-        {};
-      if (command.name !== undefined) patch.name = command.name;
-      if (command.color !== undefined) patch.color = command.color;
-      if (command.start !== undefined) patch.start = command.start;
-      if (command.end !== undefined) patch.end = command.end;
-      return updatePeriodGoal(state, command.year, command.id, patch);
+    case "updateEvent": {
+      const patch: Partial<
+        Pick<MapEvent, "title" | "date" | "notes" | "domainSlug" | "goalId">
+      > = {};
+      if (command.title !== undefined) patch.title = command.title;
+      if (command.date !== undefined) patch.date = command.date;
+      if (command.notes !== undefined) patch.notes = command.notes;
+      if (command.domainSlug !== undefined) patch.domainSlug = command.domainSlug;
+      if (command.goalId !== undefined) patch.goalId = command.goalId;
+      return updateEvent(state, command.year, command.id, patch, ctx);
     }
-    case "deletePeriodGoal":
-      return deletePeriodGoal(state, command.year, command.id);
+    case "deleteEvent":
+      return deleteEvent(state, command.year, command.id);
     case "setMonthDay":
       return setMonthDay(
         state,

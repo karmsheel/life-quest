@@ -30,12 +30,13 @@ export type Result<T> =
   | { ok: true; value: T }
   | { ok: false; error: DomainError };
 
-export type PeriodGoal = {
+export type MapEvent = {
   id: string;
-  name: string;
-  color: ColorId;
-  start: IsoDate;
-  end: IsoDate;
+  title: string;
+  date: IsoDate;
+  notes: string;
+  domainSlug: string | null;
+  goalId: string | null;
 };
 
 export type MonthData = {
@@ -98,7 +99,7 @@ export type YearSnapshot = {
 export type YearRecord = {
   year: number;
   status: YearStatus;
-  periodGoals: PeriodGoal[];
+  events: MapEvent[];
   months: MonthData[];
   detachedWeeks: Record<string, DetachedWeek>;
   snapshot?: YearSnapshot;
@@ -107,7 +108,7 @@ export type YearRecord = {
 export type TaskColumn = "backlog" | "this-week" | "today" | "done";
 
 export type TaskLinks = {
-  periodGoalId?: string;
+  goalId?: string;
   date?: IsoDate;
   weekItem?: { year: number; monday: IsoDate; itemId: string };
 };
@@ -132,29 +133,33 @@ export type ApplyContext = {
   actor: Actor;
   today: IsoDate;
   id: () => string;
+  liveDomainSlugs?: readonly string[];
+  goalIds?: readonly string[];
 };
 
 export type Command =
   | { type: "createYear"; year: number }
   | { type: "deleteYear"; year: number }
   | {
-      type: "createPeriodGoal";
+      type: "createEvent";
       year: number;
-      name: string;
-      color: ColorId;
-      start: IsoDate;
-      end: IsoDate;
+      title: string;
+      date: IsoDate;
+      notes?: string;
+      domainSlug?: string | null;
+      goalId?: string | null;
     }
   | {
-      type: "updatePeriodGoal";
+      type: "updateEvent";
       year: number;
       id: string;
-      name?: string;
-      color?: ColorId;
-      start?: IsoDate;
-      end?: IsoDate;
+      title?: string;
+      date?: IsoDate;
+      notes?: string;
+      domainSlug?: string | null;
+      goalId?: string | null;
     }
-  | { type: "deletePeriodGoal"; year: number; id: string }
+  | { type: "deleteEvent"; year: number; id: string }
   | {
       type: "setMonthDay";
       year: number;
