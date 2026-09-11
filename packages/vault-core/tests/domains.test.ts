@@ -11,6 +11,7 @@ import {
   slugifyDomainName,
   updateDomain,
 } from "../src/domains.ts";
+import { openVault } from "../src/open-vault.ts";
 
 describe("slugifyDomainName", () => {
   it("lowercases and hyphenates", () => {
@@ -39,25 +40,55 @@ describe("createDomain / archiveDomain / updateDomain", () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it("createDomain Career → slug career and three md files", async () => {
+  it("createDomain Career → slug career and four md files", async () => {
     const res = await createDomain(root, { name: "Career" });
     assert.equal(res.ok, true);
     if (!res.ok) return;
     assert.equal(res.value.slug, "career");
     assert.equal(res.value.meta.name, "Career");
     assert.equal(res.value.meta.archivedAt, null);
+    assert.ok(res.value.documents.premise);
     assert.ok(res.value.documents.why);
     assert.ok(res.value.documents.what);
     assert.ok(res.value.documents.how);
+    assert.equal(res.value.documents.premise.title, "Beliefs & Premise");
 
-    for (const kind of ["why", "what", "how"] as const) {
-      const md = await fs.readFile(path.join(root, "domains", "career", `${kind}.md`), "utf8");
+    for (const kind of ["why", "what", "how", "premise"] as const) {
+      const md = await fs.readFile(
+        path.join(root, "domains", "career", `${kind}.md`),
+        "utf8",
+      );
       assert.match(md, /^---\n/);
       assert.match(md, /status: draft/);
     }
     const metaRaw = await fs.readFile(path.join(root, "domains", "career", "domain.json"), "utf8");
     const meta = JSON.parse(metaRaw) as { name: string };
     assert.equal(meta.name, "Career");
+  });
+
+  it("openVault creates missing premise.md as an empty draft", async () => {
+    const created = await createDomain(root, { name: "Legacy Three" });
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const premisePath = path.join(
+      root,
+      "domains",
+      created.value.slug,
+      "premise.md",
+    );
+    await fs.rm(premisePath, { force: true });
+    const opened = await openVault(root);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const domain = opened.value.domains.find(
+      (d) => d.slug === created.value.slug,
+    );
+    assert.ok(domain);
+    assert.equal(domain.documents.premise.bodyMarkdown.trim(), "");
+    assert.equal(domain.documents.premise.status, "draft");
+    assert.equal(domain.documents.premise.title, "Beliefs & Premise");
+    const raw = await fs.readFile(premisePath, "utf8");
+    assert.match(raw, /title: "?Beliefs & Premise"?/);
   });
 
   it("disambiguates colliding slugs with -2, -3", async () => {

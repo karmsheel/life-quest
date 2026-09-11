@@ -1,23 +1,18 @@
 import fs from "node:fs/promises";
 import { atomicWriteFile } from "./atomic-write.ts";
-import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
+import { readOrCreateDoctrineFile } from "./domain-documents.ts";
+import { serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
 import {
+  DOCUMENT_KIND_LABELS,
   DOCUMENT_KINDS,
   type DocumentKind,
-  type DocumentStatus,
   type DoctrineDocument,
   type DomainMeta,
   type DomainRecord,
   type Result,
 } from "./types.ts";
-
-const KIND_TITLES: Record<DocumentKind, string> = {
-  why: "Why",
-  what: "What",
-  how: "How",
-};
 
 export function slugifyDomainName(name: string): string {
   const s = name
@@ -47,24 +42,6 @@ async function uniqueSlug(rootPath: string, base: string): Promise<string> {
   return `${base}-${n}`;
 }
 
-async function readDoctrineFile(
-  filePath: string,
-  kind: DocumentKind,
-): Promise<DoctrineDocument> {
-  const raw = await fs.readFile(filePath, "utf8");
-  const st = await fs.stat(filePath);
-  const { data, body } = parseFrontmatter(raw);
-  return {
-    kind,
-    title: typeof data.title === "string" ? data.title : KIND_TITLES[kind],
-    status: (data.status as DocumentStatus) || "draft",
-    forgedAt: (data.forgedAt as string | null) ?? null,
-    updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : st.mtime.toISOString(),
-    bodyMarkdown: body,
-    mtimeMs: st.mtimeMs,
-  };
-}
-
 export async function loadDomainRecord(
   rootPath: string,
   slug: string,
@@ -75,7 +52,10 @@ export async function loadDomainRecord(
   const meta = JSON.parse(metaRaw) as DomainMeta;
   const documents = {} as Record<DocumentKind, DoctrineDocument>;
   for (const kind of DOCUMENT_KINDS) {
-    documents[kind] = await readDoctrineFile(paths.documentMd(slug, kind), kind);
+    documents[kind] = await readOrCreateDoctrineFile(
+      paths.documentMd(slug, kind),
+      kind,
+    );
   }
   return { slug, meta, documents };
 }
@@ -140,7 +120,7 @@ export async function createDomain(
     for (const kind of DOCUMENT_KINDS) {
       const md = serializeFrontmatter(
         {
-          title: KIND_TITLES[kind],
+          title: DOCUMENT_KIND_LABELS[kind],
           status: "draft",
           forgedAt: null,
           updatedAt: now,

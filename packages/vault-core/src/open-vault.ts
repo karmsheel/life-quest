@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parseFrontmatter } from "./frontmatter.ts";
+import { readOrCreateDoctrineFile } from "./domain-documents.ts";
 import { readLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
 import { ensureMapOnOpen } from "./map/persist.ts";
@@ -10,7 +10,6 @@ import {
   type AgentHire,
   type DecisionRecord,
   type DocumentKind,
-  type DocumentStatus,
   type DoctrineDocument,
   type DomainMeta,
   type DomainRecord,
@@ -20,28 +19,16 @@ import {
   type VaultSnapshot,
 } from "./types.ts";
 
-async function readDoctrineFile(filePath: string, kind: DocumentKind): Promise<DoctrineDocument> {
-  const raw = await fs.readFile(filePath, "utf8");
-  const st = await fs.stat(filePath);
-  const { data, body } = parseFrontmatter(raw);
-  return {
-    kind,
-    title: typeof data.title === "string" ? data.title : kind[0]!.toUpperCase() + kind.slice(1),
-    status: (data.status as DocumentStatus) || "draft",
-    forgedAt: (data.forgedAt as string | null) ?? null,
-    updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : st.mtime.toISOString(),
-    bodyMarkdown: body,
-    mtimeMs: st.mtimeMs,
-  };
-}
-
 async function loadDomain(rootPath: string, slug: string): Promise<DomainRecord> {
   const paths = vaultPaths(rootPath);
   const metaRaw = await fs.readFile(paths.domainJson(slug), "utf8");
   const meta = JSON.parse(metaRaw) as DomainMeta;
   const documents = {} as Record<DocumentKind, DoctrineDocument>;
   for (const kind of DOCUMENT_KINDS) {
-    documents[kind] = await readDoctrineFile(paths.documentMd(slug, kind), kind);
+    documents[kind] = await readOrCreateDoctrineFile(
+      paths.documentMd(slug, kind),
+      kind,
+    );
   }
   return { slug, meta, documents };
 }

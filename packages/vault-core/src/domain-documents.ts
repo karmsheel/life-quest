@@ -5,18 +5,13 @@ import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
 import {
+  DOCUMENT_KIND_LABELS,
   DOCUMENT_KINDS,
   type DocumentKind,
   type DocumentStatus,
   type DoctrineDocument,
   type Result,
 } from "./types.ts";
-
-const KIND_TITLES: Record<DocumentKind, string> = {
-  why: "Why",
-  what: "What",
-  how: "How",
-};
 
 function isDocumentKind(kind: string): kind is DocumentKind {
   return (DOCUMENT_KINDS as readonly string[]).includes(kind);
@@ -31,13 +26,32 @@ async function readDoctrineFile(
   const { data, body } = parseFrontmatter(raw);
   return {
     kind,
-    title: typeof data.title === "string" ? data.title : KIND_TITLES[kind],
+    title: typeof data.title === "string" ? data.title : DOCUMENT_KIND_LABELS[kind],
     status: (data.status as DocumentStatus) || "draft",
     forgedAt: (data.forgedAt as string | null) ?? null,
     updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : st.mtime.toISOString(),
     bodyMarkdown: body,
     mtimeMs: st.mtimeMs,
   };
+}
+
+export async function readOrCreateDoctrineFile(
+  filePath: string,
+  kind: DocumentKind,
+): Promise<DoctrineDocument> {
+  try {
+    return await readDoctrineFile(filePath, kind);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
+  const now = new Date().toISOString();
+  const title = DOCUMENT_KIND_LABELS[kind];
+  const md = serializeFrontmatter(
+    { title, status: "draft", forgedAt: null, updatedAt: now },
+    "",
+  );
+  await atomicWriteFile(filePath, md);
+  return readDoctrineFile(filePath, kind);
 }
 
 export async function getDocument(

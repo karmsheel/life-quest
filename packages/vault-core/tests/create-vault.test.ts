@@ -26,6 +26,19 @@ describe("createVault", () => {
     const why = await fs.readFile(path.join(root, "domains/health/why.md"), "utf8");
     assert.match(why, /^---\n/);
     assert.match(why, /status: draft/);
+    const premise = await fs.readFile(
+      path.join(root, "domains/health/premise.md"),
+      "utf8",
+    );
+    assert.match(premise, /^---\n/);
+    assert.match(premise, /title: "?Beliefs & Premise"?/);
+    assert.match(premise, /status: draft/);
+    const health = res.value.domains.find((d) => d.slug === "health");
+    assert.ok(health);
+    assert.equal(health.documents.premise.title, "Beliefs & Premise");
+    assert.equal(health.documents.why.title, "Purpose");
+    assert.equal(health.documents.what.title, "Vision & Desire");
+    assert.equal(health.documents.how.title, "Strategy (How)");
     const opened = await openVault(root);
     assert.equal(opened.ok, true);
     assert.ok(res.value.map);

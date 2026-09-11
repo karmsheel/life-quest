@@ -7,6 +7,7 @@ import { openVault } from "./open-vault.ts";
 import { vaultPaths } from "./paths.ts";
 import {
   DEFAULT_HERMES_URL,
+  DOCUMENT_KIND_LABELS,
   DOCUMENT_KINDS,
   SCHEMA_VERSION,
   SEED_DOMAINS,
@@ -16,12 +17,6 @@ import {
   type VaultSettings,
   type VaultSnapshot,
 } from "./types.ts";
-
-const KIND_TITLES: Record<(typeof DOCUMENT_KINDS)[number], string> = {
-  why: "Why",
-  what: "What",
-  how: "How",
-};
 
 export async function createVault(
   rootPath: string,
@@ -76,7 +71,7 @@ export async function createVault(
       for (const kind of DOCUMENT_KINDS) {
         const md = serializeFrontmatter(
           {
-            title: KIND_TITLES[kind],
+            title: DOCUMENT_KIND_LABELS[kind],
             status: "draft",
             forgedAt: null,
             updatedAt: now,
