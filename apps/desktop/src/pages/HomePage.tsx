@@ -55,6 +55,8 @@ export default function HomePage() {
   const [events, setEvents] = useState<LifeEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [goalBusyId, setGoalBusyId] = useState<string | null>(null);
+  const [pendingDoneId, setPendingDoneId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -142,13 +144,23 @@ export default function HomePage() {
     patch: { current?: number | null; status?: "done" },
   ) {
     setGoalBusyId(goalId);
+    setError(null);
     try {
       const result = await api().goalsApply({
         type: "updateGoal",
         id: goalId,
         ...patch,
       });
-      if (result.ok) await refresh();
+      if (!result.ok) {
+        setError(result.error);
+        setPendingDoneId(null);
+        return;
+      }
+      await refresh();
+      setPendingDoneId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to apply goal");
+      setPendingDoneId(null);
     } finally {
       setGoalBusyId(null);
     }
@@ -166,6 +178,7 @@ export default function HomePage() {
 
   function onDefinitionDone(goal: Goal, checked: boolean) {
     if (!checked || goalBusyId) return;
+    setPendingDoneId(goal.id);
     void applyGoalUpdate(goal.id, { status: "done" });
   }
 
@@ -206,6 +219,11 @@ export default function HomePage() {
               <span className="home-card__count">{openGoals.length}</span>
             ) : null}
           </h2>
+          {error ? (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          ) : null}
           {openGoals.length === 0 ? (
             <p className="muted home-card__empty">No open goals in this lens.</p>
           ) : (
@@ -250,7 +268,7 @@ export default function HomePage() {
                         <label className="home-goal-row__dod">
                           <input
                             type="checkbox"
-                            checked={false}
+                            checked={pendingDoneId === goal.id}
                             disabled={busy}
                             onChange={(e) =>
                               onDefinitionDone(goal, e.target.checked)

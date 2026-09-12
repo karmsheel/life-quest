@@ -41,6 +41,20 @@ describe("Home dashboard live goal progress (KAR-8)", () => {
     assert.match(home, /goalsApply/);
   });
 
+  it("keeps the checkbox checked while applying and surfaces apply errors", () => {
+    const home = read("src/pages/HomePage.tsx");
+    assert.match(home, /if\s*\(\s*!result\.ok\s*\)/);
+    assert.match(home, /className="form-error"/);
+    assert.match(home, /role="alert"/);
+    assert.match(home, /setError\(/);
+    assert.equal(
+      /checked=\{false\}/.test(home),
+      false,
+      "DoD checkbox must not be locked unchecked; keep it checked while apply is in flight",
+    );
+    assert.match(home, /checked=\{/);
+  });
+
   it("filters goals with the domain lens (recordVisible / filterByLens)", () => {
     const home = read("src/pages/HomePage.tsx");
     assert.match(home, /filterByLens\(/);
