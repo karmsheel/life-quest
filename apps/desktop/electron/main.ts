@@ -114,13 +114,17 @@ function registerIpcHandlers() {
     ) => vault.documentSave(slug, kind, bodyMarkdown, title),
   );
   ipcMain.handle(
-    "document:setStatus",
+    "document:setLocked",
     (
       _e,
       slug: string,
-      kind: Parameters<typeof vault.documentSetStatus>[1],
-      status: Parameters<typeof vault.documentSetStatus>[2],
-    ) => vault.documentSetStatus(slug, kind, status),
+      kind: Parameters<typeof vault.documentSetLocked>[1],
+      locked: Parameters<typeof vault.documentSetLocked>[2],
+    ) => vault.documentSetLocked(slug, kind, locked),
+  );
+  ipcMain.handle(
+    "library:setLocked",
+    (_e, id: string, locked: boolean) => vault.librarySetLocked(id, locked),
   );
   ipcMain.handle(
     "document:mediaSave",

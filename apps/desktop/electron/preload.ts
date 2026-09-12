@@ -44,13 +44,15 @@ const lifequest = {
       bodyMarkdown,
       title,
     ) as Promise<Result<unknown>>,
-  documentSetStatus: (slug: string, kind: string, status: string) =>
+  documentSetLocked: (slug: string, kind: string, locked: boolean) =>
     ipcRenderer.invoke(
-      "document:setStatus",
+      "document:setLocked",
       slug,
       kind,
-      status,
+      locked,
     ) as Promise<Result<unknown>>,
+  librarySetLocked: (id: string, locked: boolean) =>
+    ipcRenderer.invoke("library:setLocked", id, locked) as Promise<Result<unknown>>,
   documentMediaSave: (
     slug: string,
     input: { bytes: Uint8Array; mime: string },
