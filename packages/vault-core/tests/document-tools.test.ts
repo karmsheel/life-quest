@@ -47,6 +47,33 @@ describe("document tools", () => {
     assert.equal((updated as { record?: { bodyMarkdown: string } }).record?.bodyMarkdown, "v2");
   });
 
+  it("list_documents returns 4 doctrine items per live domain with correct domainSlug", async () => {
+    // health is a seeded domain; all four kinds exist.
+    const result = await executeDocumentTool(root, agent, "list_documents", {});
+    assert.equal(result.error, undefined, "list_documents should succeed");
+    const recs = (result as { records: unknown[] }).records;
+    const healthDoctrine = recs.filter(
+      (r) =>
+        (r as Record<string, unknown>).type === "doctrine" &&
+        String((r as Record<string, unknown>).domainSlug) === "health",
+    );
+    assert.equal(healthDoctrine.length, 4, "health should have 4 doctrine items");
+    const kinds = healthDoctrine.map((r) => (r as Record<string, unknown>).kind).sort();
+    assert.deepEqual(kinds, ["how", "premise", "what", "why"]);
+    for (const r of healthDoctrine) {
+      assert.equal(
+        String((r as Record<string, unknown>).domainSlug),
+        "health",
+        "domainSlug must be the domain, not the kind",
+      );
+      assert.ok((r as Record<string, unknown>).title, "each doctrine item should have a title");
+      assert.ok(
+        typeof (r as Record<string, unknown>).locked === "boolean",
+        "each doctrine item should carry locked",
+      );
+    }
+  });
+
   it("update_document on locked doctrine creates a pending decision", async () => {
     assert.equal((await setDocumentLocked(root, "health", "why", true)).ok, true);
     const result = await executeDocumentTool(root, agent, "update_document", {

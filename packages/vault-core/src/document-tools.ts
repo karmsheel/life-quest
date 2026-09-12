@@ -5,11 +5,10 @@ import {
   libraryUpdate,
   libraryList,
   libraryGet,
-  getDocument,
-  saveDocument,
-  listDomains,
-  createDecision,
-} from "./index.ts";
+} from "./library-documents.ts";
+import { getDocument, saveDocument } from "./domain-documents.ts";
+import { listDomains } from "./domains.ts";
+import { createDecision } from "./decisions.ts";
 
 export const DOCUMENT_TOOL_DEFS: MapToolDef[] = [
   {
@@ -75,10 +74,10 @@ function asLibraryRecord(doc: LibraryDocument): Record<string, unknown> {
   };
 }
 
-function asDoctrineRecord(doc: DoctrineDocument): Record<string, unknown> {
+function asDoctrineRecord(doc: DoctrineDocument, domainSlug: string): Record<string, unknown> {
   return {
     type: "doctrine",
-    domainSlug: doc.kind,
+    domainSlug,
     kind: doc.kind,
     title: doc.title,
     bodyMarkdown: doc.bodyMarkdown,
@@ -110,8 +109,7 @@ export async function executeDocumentTool(
         for (const kind of ["premise", "what", "why", "how"] as DocumentKind[]) {
           const doc = await getDocument(root, domain.slug, kind);
           if (doc.ok) {
-            records.push(asDoctrineRecord(doc.value));
-            break;
+            records.push(asDoctrineRecord(doc.value, domain.slug));
           }
         }
       }
@@ -139,7 +137,7 @@ export async function executeDocumentTool(
       if (!docResult.ok) {
         return { error: { code: "MALFORMED", message: docResult.error } };
       }
-      return asDoctrineRecord(docResult.value);
+      return asDoctrineRecord(docResult.value, domainSlug);
     }
 
     case "create_library_document": {
@@ -203,7 +201,7 @@ export async function executeDocumentTool(
         if (!updated.ok) {
           return { error: { code: "MALFORMED", message: updated.error } };
         }
-        return { record: asDoctrineRecord(updated.value) };
+        return { record: asDoctrineRecord(updated.value, domainSlug) };
       }
       const decisionResult = await createDecision(root, {
         target: { type: "doctrine", domainSlug, kind },
