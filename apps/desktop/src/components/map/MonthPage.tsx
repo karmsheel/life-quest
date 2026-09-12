@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
-import {
-  periodGoalsOnDate,
-  periodGoalsOverlappingMonth,
-} from "@lifequest/vault-core/map";
+import { useEffect, useMemo, useState } from "react";
+import { eventsInMonth, eventsOnDate } from "@lifequest/vault-core/map";
 import type { MapCommand, YearRecord } from "@lifequest/vault-core/map";
+import {
+  filterByLens,
+  type DomainLens,
+  type DomainRecord,
+} from "@lifequest/vault-core/pure";
+import { eventMarkColor } from "./eventColor";
 import { monthGrid } from "./monthGrid";
 
 const MONTH_NAMES = [
@@ -28,16 +31,31 @@ type Props = {
   month: number;
   onBack: () => void;
   onCommand: (command: MapCommand) => void;
+  domains: DomainRecord[];
+  lens: DomainLens;
 };
 
 function isoFor(year: number, month: number, day: number): string {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-export function MonthPage({ year, month, onBack, onCommand }: Props) {
+export function MonthPage({
+  year,
+  month,
+  onBack,
+  onCommand,
+  domains,
+  lens,
+}: Props) {
   const readOnly = year.status === "archive";
   const data = year.months[month - 1];
-  const goals = periodGoalsOverlappingMonth(year, month);
+  const events = useMemo(
+    () =>
+      filterByLens(eventsInMonth(year, month), lens)
+        .slice()
+        .sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title)),
+    [year, month, lens],
+  );
   const grid = monthGrid(year.year, month);
 
   return (
@@ -65,17 +83,19 @@ export function MonthPage({ year, month, onBack, onCommand }: Props) {
               }
               const day = cell.day;
               const date = isoFor(year.year, month, day);
-              const colors = periodGoalsOnDate(year, date).map((g) => g.color);
+              const marks = filterByLens(eventsOnDate(year, date), lens);
               return (
                 <div key={date} className="month-day-cell">
                   <div className="month-day-meta">
                     <span className="day-num">{day}</span>
                     <span className="color-stack">
-                      {colors.map((color, i) => (
+                      {marks.map((ev) => (
                         <span
-                          key={`${color}-${i}`}
-                          className="color-bar"
-                          data-map-color={color}
+                          key={ev.id}
+                          className="event-mark"
+                          style={{
+                            background: eventMarkColor(ev.domainSlug, domains),
+                          }}
                         />
                       ))}
                     </span>
@@ -100,20 +120,20 @@ export function MonthPage({ year, month, onBack, onCommand }: Props) {
         ))}
       </div>
       <div className="month-below">
-        <section className="month-period-goals">
-          <h3>Period goals</h3>
-          {goals.length === 0 ? (
-            <p className="month-empty">No period goals this month.</p>
+        <section className="month-events">
+          <h3>Events</h3>
+          {events.length === 0 ? (
+            <p className="month-empty">No events this month.</p>
           ) : (
             <ul>
-              {goals.map((goal) => (
-                <li key={goal.id}>
+              {events.map((ev) => (
+                <li key={ev.id}>
                   <span
-                    className="month-goal-swatch"
-                    data-map-color={goal.color}
+                    className="event-mark"
+                    style={{ background: eventMarkColor(ev.domainSlug, domains) }}
                     aria-hidden
                   />
-                  {goal.name}
+                  {ev.title}
                 </li>
               ))}
             </ul>

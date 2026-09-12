@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { addDays, mondayOnOrBefore, todayLocalIso } from "@lifequest/vault-core/map";
-
-import { periodGoalsOnDate } from "@lifequest/vault-core/map";
+import {
+  addDays,
+  eventsOnDate,
+  mondayOnOrBefore,
+  resolveWeek,
+  todayLocalIso,
+} from "@lifequest/vault-core/map";
 import type {
   MapCommand,
   DayType,
   GridBlock,
-  PeriodGoal,
+  MapEvent,
   Priority,
   ResolvedWeek,
   StoreState,
@@ -14,7 +18,10 @@ import type {
   Weekday,
   YearRecord,
 } from "@lifequest/vault-core/map";
-import { resolveWeek } from "@lifequest/vault-core/map";
+import { filterByLens } from "@lifequest/vault-core/pure";
+import { eventMarkColor } from "@/components/map/eventColor";
+import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { useVault } from "@/state/VaultProvider";
 import { TypeSelect } from "./DefaultWeek";
 import { weekOptions } from "./weekList";
 
@@ -86,17 +93,20 @@ function itemLabel(week: ResolvedWeek, itemId: string): string {
   return week.weeklyItems.find((i) => i.id === itemId)?.text ?? itemId;
 }
 
-function weekGoals(year: YearRecord, monday: string): PeriodGoal[] {
-  const seen = new Map<string, PeriodGoal>();
+function weekEvents(year: YearRecord, monday: string): MapEvent[] {
+  const seen = new Map<string, MapEvent>();
   for (let i = 0; i < 7; i++) {
-    for (const goal of periodGoalsOnDate(year, addDays(monday, i))) {
-      seen.set(goal.id, goal);
+    for (const event of eventsOnDate(year, addDays(monday, i))) {
+      seen.set(event.id, event);
     }
   }
   return [...seen.values()];
 }
 
 export function RealWeek({ state, year, onCommand }: Props) {
+  const { snapshot } = useVault();
+  const lens = useDomainLens();
+  const domains = snapshot?.domains ?? [];
   const readOnly = year.status === "archive";
   const types = typesFor(state, year);
   const options = useMemo(() => weekOptions(year.year), [year.year]);
@@ -109,7 +119,11 @@ export function RealWeek({ state, year, onCommand }: Props) {
   }, [year.year]);
 
   const week = monday ? resolveWeek(state, year.year, monday) : null;
-  const goals = monday ? weekGoals(year, monday) : [];
+  const events = monday
+    ? filterByLens(weekEvents(year, monday), lens).slice().sort(
+        (a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title),
+      )
+    : [];
 
   const placeable = week
     ? [
@@ -164,18 +178,18 @@ export function RealWeek({ state, year, onCommand }: Props) {
           </button>
         )}
       </div>
-      {goals.length > 0 && (
+      {events.length > 0 && (
         <div className="arch-week-goals">
-          <h4>Period goals this week</h4>
+          <h4>Events this week</h4>
           <ul>
-            {goals.map((goal) => (
-              <li key={goal.id}>
+            {events.map((event) => (
+              <li key={event.id}>
                 <span
-                  className="month-goal-swatch"
-                  data-map-color={goal.color}
+                  className="event-mark"
+                  style={{ background: eventMarkColor(event.domainSlug, domains) }}
                   aria-hidden
                 />
-                {goal.name}
+                {event.title}
               </li>
             ))}
           </ul>

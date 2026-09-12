@@ -1,6 +1,7 @@
 import { Dashboard } from "@/components/map/Dashboard";
 import { MonthPage } from "@/components/map/MonthPage";
 import { DoctrineStrip } from "@/components/doctrine/DoctrineStrip";
+import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 import { useMapYear } from "@/state/MapYearProvider";
 import { api } from "@/lib/ipc";
@@ -11,7 +12,7 @@ export default function ChartPage() {
 }
 
 function yearHasContent(year: YearRecord): boolean {
-  if (year.periodGoals.length > 0) return true;
+  if (year.events.length > 0) return true;
   if (Object.keys(year.detachedWeeks).length > 0) return true;
   return year.months.some(
     (m) =>
@@ -23,6 +24,7 @@ function yearHasContent(year: YearRecord): boolean {
 
 function ChartContent() {
   const { snapshot, refresh } = useVault();
+  const lens = useDomainLens();
   const { yearNum, month, setYearNum, setMonth } = useMapYear();
   const map = snapshot?.map ?? null;
 
@@ -34,7 +36,7 @@ function ChartContent() {
   if (snapshot?.mapError && !map) {
     return <p className="form-error" role="alert">{snapshot.mapError}</p>;
   }
-  if (!map || yearNum == null) return <p className="muted">Loading map…</p>;
+  if (!snapshot || !map || yearNum == null) return <p className="muted">Loading map…</p>;
 
   const selected = findYear(map, yearNum);
   const todayYear = yearOf(todayLocalIso());
@@ -80,7 +82,7 @@ function ChartContent() {
         )}
         {selected?.status === "live" && selected.year !== todayYear && (
           <button type="button" onClick={() => {
-            if (yearHasContent(selected) && !window.confirm(`Delete ${selected.year}? It has Keys, month text, or detached weeks.`)) return;
+            if (yearHasContent(selected) && !window.confirm(`Delete ${selected.year}? It has events, month text, or detached weeks.`)) return;
             void onCommand({ type: "deleteYear", year: selected.year });
           }}>
             Delete year
@@ -94,7 +96,14 @@ function ChartContent() {
       </header>
       <DoctrineStrip kind="what" />
       {selected && month == null && (
-        <Dashboard year={selected} onSelectMonth={setMonth} onCommand={onCommand} />
+        <Dashboard
+          year={selected}
+          onSelectMonth={setMonth}
+          onCommand={onCommand}
+          domains={snapshot.domains}
+          goals={snapshot.goals}
+          lens={lens}
+        />
       )}
       {selected && month != null && (
         <MonthPage
@@ -102,6 +111,8 @@ function ChartContent() {
           month={month}
           onBack={() => setMonth(null)}
           onCommand={onCommand}
+          domains={snapshot.domains}
+          lens={lens}
         />
       )}
     </div>

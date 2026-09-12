@@ -14,30 +14,25 @@ function read(rel: string): string {
 }
 
 describe("Life Map dashboard", () => {
-  it("imports COLOR_IDS and dashboardDays from vault-core/map", () => {
+  it("imports dashboardDays from vault-core/map and has no period-goal paint", () => {
     const src = read("src/components/map/Dashboard.tsx");
-    assert.match(
-      src,
-      /import \{[^}]*\bCOLOR_IDS\b[^}]*\} from ["']@lifequest\/vault-core\/map["']/,
-    );
     assert.match(
       src,
       /import \{[^}]*\bdashboardDays\b[^}]*\} from ["']@lifequest\/vault-core\/map["']/,
     );
+    assert.equal(src.includes("createPeriodGoal"), false);
+    assert.equal(src.includes("startPaint"), false);
+    assert.equal(src.includes("KeyPanel"), false);
+    assert.match(src, /EventPanel/);
   });
 
-  it("paints key colors with themed data-map-color, not hardcoded PALETTE hex", () => {
-    const dashboard = read("src/components/map/Dashboard.tsx");
-    assert.match(dashboard, /data-map-color=\{/);
-    assert.equal(dashboard.includes("PALETTE"), false);
-
-    const month = read("src/components/map/MonthPage.tsx");
-    assert.match(month, /data-map-color=\{/);
-    assert.equal(month.includes("PALETTE"), false);
-
-    const keys = read("src/components/map/KeyPanel.tsx");
-    assert.match(keys, /data-map-color=\{/);
-    assert.equal(keys.includes("PALETTE"), false);
+  it("EventPanel adds createEvent with a domain picker", () => {
+    const panel = read("src/components/map/EventPanel.tsx");
+    assert.match(panel, /type: "createEvent"/);
+    assert.match(panel, /domainSlug/);
+    assert.match(panel, /goalId/);
+    assert.equal(panel.includes("createPeriodGoal"), false);
+    assert.equal(panel.includes("PALETTE"), false);
   });
 });
 
@@ -66,5 +61,6 @@ describe("Life Map theme", () => {
     assert.match(src, /\.life-map \.day-cell[\s\S]*?background:\s*var\(--bg-elevated\)/);
     assert.match(src, /\.life-map \.month-name[\s\S]*?background:\s*var\(--bg-muted\)/);
     assert.match(src, /\[data-map-color="gold"\]/);
+    assert.match(src, /--map-event-default/);
   });
 });
