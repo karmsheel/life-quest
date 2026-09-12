@@ -16,6 +16,8 @@ import type {
 
 const STATUSES: GoalStatus[] = ["open", "done"];
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 function assertDomain(
   slug: string | null,
   live: ReadonlySet<string>,
@@ -23,6 +25,37 @@ function assertDomain(
   if (slug === null) return ok(undefined);
   if (!live.has(slug)) return fail("MALFORMED", "Domain is not a live domain");
   return ok(undefined);
+}
+
+function parseDeadline(value: string | null | undefined): MapResult<string | null> {
+  if (value === undefined || value === null || value.trim() === "") return ok(null);
+  const s = value.trim();
+  if (!ISO_DATE.test(s) || !Number.isFinite(Date.parse(`${s}T00:00:00Z`))) {
+    return fail("MALFORMED", "Deadline must be YYYY-MM-DD");
+  }
+  return ok(s);
+}
+
+function parseMeasure(
+  metric: string | null | undefined,
+  target: number | null | undefined,
+): MapResult<{ metric: string | null; target: number | null }> {
+  const m =
+    metric === undefined || metric === null ? null : metric.trim() || null;
+  const t = target === undefined || target === null ? null : target;
+  if (t !== null && !Number.isFinite(t)) {
+    return fail("MALFORMED", "Target must be a number");
+  }
+  if ((m === null) !== (t === null)) {
+    return fail("MALFORMED", "Metric and target must be set together");
+  }
+  return ok({ metric: m, target: t });
+}
+
+function parseDefinition(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  const s = value.trim();
+  return s === "" ? null : s;
 }
 
 export function applyGoalCommand(
@@ -38,12 +71,20 @@ export function applyGoalCommand(
       const domainSlug = command.domainSlug ?? null;
       const domain = assertDomain(domainSlug, live);
       if (!domain.ok) return domain;
+      const deadline = parseDeadline(command.deadline);
+      if (!deadline.ok) return deadline;
+      const measure = parseMeasure(command.metric, command.target);
+      if (!measure.ok) return measure;
       const goal: Goal = {
         id: ctx.id(),
         name,
         notes: command.notes ?? "",
         status: "open",
         domainSlug,
+        deadline: deadline.value,
+        metric: measure.value.metric,
+        target: measure.value.target,
+        definitionOfDone: parseDefinition(command.definitionOfDone),
       };
       return ok([...goals, goal]);
     }
@@ -68,6 +109,23 @@ export function applyGoalCommand(
         if (!domain.ok) return domain;
         next.domainSlug = command.domainSlug;
       }
+      if (command.deadline !== undefined) {
+        const deadline = parseDeadline(command.deadline);
+        if (!deadline.ok) return deadline;
+        next.deadline = deadline.value;
+      }
+      if (command.metric !== undefined || command.target !== undefined) {
+        const measure = parseMeasure(
+          command.metric !== undefined ? command.metric : next.metric,
+          command.target !== undefined ? command.target : next.target,
+        );
+        if (!measure.ok) return measure;
+        next.metric = measure.value.metric;
+        next.target = measure.value.target;
+      }
+      if (command.definitionOfDone !== undefined) {
+        next.definitionOfDone = parseDefinition(command.definitionOfDone);
+      }
       const copy = goals.slice();
       copy[idx] = next;
       return ok(copy);
@@ -85,16 +143,42 @@ export function applyGoalCommand(
   }
 }
 
-function isGoal(value: unknown): value is Goal {
-  if (!value || typeof value !== "object") return false;
-  const g = value as Partial<Goal>;
-  return (
-    typeof g.id === "string" &&
-    typeof g.name === "string" &&
-    typeof g.notes === "string" &&
-    (g.status === "open" || g.status === "done") &&
-    (g.domainSlug === null || typeof g.domainSlug === "string")
-  );
+function coerceGoal(value: unknown): Goal | null {
+  if (!value || typeof value !== "object") return null;
+  const g = value as Record<string, unknown>;
+  if (typeof g.id !== "string" || typeof g.name !== "string" || typeof g.notes !== "string") {
+    return null;
+  }
+  if (g.status !== "open" && g.status !== "done") return null;
+  if (g.domainSlug !== null && typeof g.domainSlug !== "string") return null;
+  if (g.deadline !== undefined && g.deadline !== null && typeof g.deadline !== "string") {
+    return null;
+  }
+  if (g.metric !== undefined && g.metric !== null && typeof g.metric !== "string") {
+    return null;
+  }
+  if (g.target !== undefined && g.target !== null && typeof g.target !== "number") {
+    return null;
+  }
+  if (
+    g.definitionOfDone !== undefined &&
+    g.definitionOfDone !== null &&
+    typeof g.definitionOfDone !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: g.id,
+    name: g.name,
+    notes: g.notes,
+    status: g.status,
+    domainSlug: g.domainSlug,
+    deadline: g.deadline === undefined ? null : (g.deadline as string | null),
+    metric: g.metric === undefined ? null : (g.metric as string | null),
+    target: g.target === undefined ? null : (g.target as number | null),
+    definitionOfDone:
+      g.definitionOfDone === undefined ? null : (g.definitionOfDone as string | null),
+  };
 }
 
 export async function loadGoals(
@@ -112,12 +196,15 @@ export async function loadGoals(
     if (
       !parsed ||
       typeof parsed !== "object" ||
-      !Array.isArray((parsed as { goals?: unknown }).goals) ||
-      !(parsed as { goals: unknown[] }).goals.every(isGoal)
+      !Array.isArray((parsed as { goals?: unknown }).goals)
     ) {
       return { ok: false, error: "Goals store has invalid shape", malformed: true };
     }
-    return { ok: true, value: (parsed as { goals: Goal[] }).goals };
+    const coerced = (parsed as { goals: unknown[] }).goals.map(coerceGoal);
+    if (coerced.some((g) => g === null)) {
+      return { ok: false, error: "Goals store has invalid shape", malformed: true };
+    }
+    return { ok: true, value: coerced as Goal[] };
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") {
       return { ok: true, value: [] };

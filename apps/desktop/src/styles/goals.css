@@ -21,6 +21,16 @@
   gap: 0.65rem;
 }
 
+.goals-page__shape {
+  align-self: flex-start;
+}
+
+.goals-page__measure {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+
 .goals-page .field select,
 .goals-page .field textarea {
   border: 1px solid var(--border);

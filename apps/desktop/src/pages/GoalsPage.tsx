@@ -18,6 +18,12 @@ import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 
 type StatusFilter = "open" | "done" | "all";
+type GoalShape = "numeric" | "done";
+
+function shapeOf(goal: Goal): GoalShape {
+  if (goal.definitionOfDone) return "done";
+  return "numeric";
+}
 
 function domainLabel(
   slug: string | null,
@@ -43,6 +49,11 @@ export default function GoalsPage() {
   const [notes, setNotes] = useState("");
   const [domainValue, setDomainValue] = useState("");
   const [status, setStatus] = useState<GoalStatus>("open");
+  const [deadline, setDeadline] = useState("");
+  const [shape, setShape] = useState<GoalShape>("numeric");
+  const [metric, setMetric] = useState("");
+  const [target, setTarget] = useState("");
+  const [definitionOfDone, setDefinitionOfDone] = useState("");
   const [domainDirty, setDomainDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +76,11 @@ export default function GoalsPage() {
     setName("");
     setNotes("");
     setStatus("open");
+    setDeadline("");
+    setShape("numeric");
+    setMetric("");
+    setTarget("");
+    setDefinitionOfDone("");
     setDomainDirty(false);
     setDomainValue(defaultDomain());
   }, [defaultDomain]);
@@ -119,6 +135,11 @@ export default function GoalsPage() {
     setNotes(goal.notes);
     setStatus(goal.status);
     setDomainValue(goal.domainSlug ?? "");
+    setDeadline(goal.deadline ?? "");
+    setShape(shapeOf(goal));
+    setMetric(goal.metric ?? "");
+    setTarget(goal.target === null ? "" : String(goal.target));
+    setDefinitionOfDone(goal.definitionOfDone ?? "");
     setDomainDirty(true);
     setError(null);
   }
@@ -147,6 +168,20 @@ export default function GoalsPage() {
     const trimmed = name.trim();
     if (!trimmed || busy) return;
     const domainSlug = domainValue === "" ? null : domainValue;
+    const deadlineValue = deadline.trim() === "" ? null : deadline.trim();
+    const measure =
+      shape === "numeric"
+        ? {
+            metric: metric.trim() === "" ? null : metric.trim(),
+            target: target.trim() === "" ? null : Number(target),
+            definitionOfDone: null as string | null,
+          }
+        : {
+            metric: null as string | null,
+            target: null as number | null,
+            definitionOfDone:
+              definitionOfDone.trim() === "" ? null : definitionOfDone.trim(),
+          };
     if (editingId) {
       const current = goals.find((g) => g.id === editingId);
       const patch: Extract<GoalsCommand, { type: "updateGoal" }> = {
@@ -155,6 +190,10 @@ export default function GoalsPage() {
         name: trimmed,
         notes,
         status,
+        deadline: deadlineValue,
+        metric: measure.metric,
+        target: measure.target,
+        definitionOfDone: measure.definitionOfDone,
       };
       if ((current?.domainSlug ?? null) !== domainSlug) {
         patch.domainSlug = domainSlug;
@@ -168,6 +207,10 @@ export default function GoalsPage() {
       name: trimmed,
       notes,
       domainSlug,
+      deadline: deadlineValue,
+      metric: measure.metric,
+      target: measure.target,
+      definitionOfDone: measure.definitionOfDone,
     });
     if (ok) resetComposer();
   }
@@ -188,7 +231,8 @@ export default function GoalsPage() {
       <header className="goals-page__header">
         <h1 className="stub-page__title">Goals</h1>
         <p className="stub-page__desc muted">
-          Vault-wide outcomes. Dates live on Life Map events.
+          Vault-wide outcomes. A deadline and either a metric or a definition of
+          done live on the goal.
         </p>
       </header>
 
@@ -258,6 +302,66 @@ export default function GoalsPage() {
               ))}
             </select>
           </label>
+          <label className="field">
+            Deadline
+            <input
+              type="date"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+            />
+          </label>
+          <div
+            className="ui-segmented goals-page__shape"
+            role="radiogroup"
+            aria-label="Goal measure"
+          >
+            {(
+              [
+                ["numeric", "Metric"],
+                ["done", "Definition of done"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={shape === value}
+                className={`ui-segmented__option${shape === value ? " is-active" : ""}`}
+                onClick={() => setShape(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {shape === "numeric" ? (
+            <div className="goals-page__measure">
+              <label className="field">
+                Metric
+                <input
+                  value={metric}
+                  onChange={(e) => setMetric(e.target.value)}
+                  placeholder="km, pages, sessions"
+                />
+              </label>
+              <label className="field">
+                Target
+                <input
+                  type="number"
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                />
+              </label>
+            </div>
+          ) : (
+            <label className="field">
+              Definition of done
+              <textarea
+                value={definitionOfDone}
+                onChange={(e) => setDefinitionOfDone(e.target.value)}
+                rows={3}
+              />
+            </label>
+          )}
           {editingId ? (
             <label className="field">
               Status
@@ -337,6 +441,15 @@ export default function GoalsPage() {
                   <span className="goals-page__row-meta">
                     <span>{goal.status === "done" ? "Done" : "Open"}</span>
                     <span>{domainLabel(goal.domainSlug, snapshot.domains)}</span>
+                    {goal.deadline ? <span>{goal.deadline}</span> : null}
+                    {goal.metric && goal.target !== null ? (
+                      <span>
+                        {goal.metric} {goal.target}
+                      </span>
+                    ) : null}
+                    {goal.definitionOfDone ? (
+                      <span>{truncateNotes(goal.definitionOfDone)}</span>
+                    ) : null}
                     <span>{count} events</span>
                   </span>
                   {goal.notes.trim() ? (

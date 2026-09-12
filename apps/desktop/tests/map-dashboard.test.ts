@@ -100,4 +100,12 @@ describe("Goals empty copy", () => {
     const src = read("src/pages/GoalsPage.tsx");
     assert.match(src, /No open goals/);
   });
+
+  it("edits deadline and either metric/target or definition of done", () => {
+    const src = read("src/pages/GoalsPage.tsx");
+    assert.match(src, /type="date"/);
+    assert.match(src, /definitionOfDone/);
+    assert.match(src, /setMetric/);
+    assert.match(src, /setTarget/);
+  });
 });

@@ -173,10 +173,23 @@ export type Goal = {
   notes: string;
   status: GoalStatus;
   domainSlug: string | null;
+  deadline: string | null;
+  metric: string | null;
+  target: number | null;
+  definitionOfDone: string | null;
 };
 
 export type GoalsCommand =
-  | { type: "createGoal"; name: string; notes?: string; domainSlug?: string | null }
+  | {
+      type: "createGoal";
+      name: string;
+      notes?: string;
+      domainSlug?: string | null;
+      deadline?: string | null;
+      metric?: string | null;
+      target?: number | null;
+      definitionOfDone?: string | null;
+    }
   | {
       type: "updateGoal";
       id: string;
@@ -184,6 +197,10 @@ export type GoalsCommand =
       notes?: string;
       status?: GoalStatus;
       domainSlug?: string | null;
+      deadline?: string | null;
+      metric?: string | null;
+      target?: number | null;
+      definitionOfDone?: string | null;
     }
   | { type: "deleteGoal"; id: string };
 

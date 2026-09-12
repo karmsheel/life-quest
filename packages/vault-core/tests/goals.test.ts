@@ -33,8 +33,71 @@ describe("applyGoalCommand", () => {
         notes: "",
         status: "open",
         domainSlug: null,
+        deadline: null,
+        metric: null,
+        target: null,
+        definitionOfDone: null,
       } satisfies Goal,
     ]);
+  });
+
+  it("creates a numeric goal with deadline, metric, and target", () => {
+    const res = applyGoalCommand(
+      [],
+      {
+        type: "createGoal",
+        name: "Run",
+        deadline: "2026-12-31",
+        metric: "km",
+        target: 100,
+      },
+      ctx,
+    );
+    assert.equal(res.ok, true);
+    if (!res.ok) return;
+    assert.equal(res.value[0].deadline, "2026-12-31");
+    assert.equal(res.value[0].metric, "km");
+    assert.equal(res.value[0].target, 100);
+    assert.equal(res.value[0].definitionOfDone, null);
+  });
+
+  it("creates a definition-of-done goal", () => {
+    const res = applyGoalCommand(
+      [],
+      {
+        type: "createGoal",
+        name: "Finish the book",
+        definitionOfDone: "Draft is published",
+      },
+      ctx,
+    );
+    assert.equal(res.ok, true);
+    if (!res.ok) return;
+    assert.equal(res.value[0].definitionOfDone, "Draft is published");
+    assert.equal(res.value[0].metric, null);
+    assert.equal(res.value[0].target, null);
+  });
+
+  it("rejects a deadline that is not YYYY-MM-DD", () => {
+    const res = applyGoalCommand(
+      [],
+      { type: "createGoal", name: "X", deadline: "31/12/2026" },
+      ctx,
+    );
+    assert.equal(res.ok, false);
+    if (res.ok) return;
+    assert.equal(res.error.code, "MALFORMED");
+  });
+
+  it("rejects a target without a metric", () => {
+    const res = applyGoalCommand(
+      [],
+      { type: "createGoal", name: "X", target: 10 },
+      ctx,
+    );
+    assert.equal(res.ok, false);
+    if (res.ok) return;
+    assert.equal(res.error.code, "MALFORMED");
   });
 
   it("rejects an empty name", () => {
@@ -134,6 +197,41 @@ describe("goals persist", () => {
     assert.equal(raw.goals[0].name, "Run");
     const log = await fs.readFile(vaultPaths(root).logJsonl, "utf8");
     assert.match(log, /"type":"goal.created"/);
+  });
+
+  it("loads legacy goals missing new fields as nulls", async () => {
+    const root = path.join(dir, "legacy");
+    const created = await createVault(root, "Personal");
+    assert.equal(created.ok, true);
+    const p = vaultPaths(root).goalsJson;
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.writeFile(
+      p,
+      `${JSON.stringify({
+        goals: [
+          {
+            id: "old",
+            name: "Legacy",
+            notes: "",
+            status: "open",
+            domainSlug: null,
+          },
+        ],
+      })}\n`,
+      "utf8",
+    );
+    const loaded = await loadGoals(root);
+    assert.equal(loaded.ok, true);
+    if (!loaded.ok) return;
+    assert.equal(loaded.value[0].name, "Legacy");
+    assert.equal(loaded.value[0].deadline, null);
+    assert.equal(loaded.value[0].metric, null);
+    assert.equal(loaded.value[0].target, null);
+    assert.equal(loaded.value[0].definitionOfDone, null);
+    const still = JSON.parse(await fs.readFile(p, "utf8")) as {
+      goals: Array<Record<string, unknown>>;
+    };
+    assert.equal("deadline" in still.goals[0], false);
   });
 
   it("malformed goals.json is not overwritten", async () => {

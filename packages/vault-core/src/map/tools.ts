@@ -570,7 +570,15 @@ export const GOALS_TOOL_DEFS: MapToolDef[] = [
     description: "Create a vault-wide Goal outcome",
     parameters: {
       type: "object",
-      properties: { name: STRING, notes: STRING, domainSlug: STRING_OR_NULL },
+      properties: {
+        name: STRING,
+        notes: STRING,
+        domainSlug: STRING_OR_NULL,
+        deadline: STRING_OR_NULL,
+        metric: STRING_OR_NULL,
+        target: { type: ["number", "null"] },
+        definitionOfDone: STRING_OR_NULL,
+      },
       required: ["name"],
     },
   },
@@ -585,6 +593,10 @@ export const GOALS_TOOL_DEFS: MapToolDef[] = [
         notes: STRING,
         status: { type: "string", enum: ["open", "done"] },
         domainSlug: STRING_OR_NULL,
+        deadline: STRING_OR_NULL,
+        metric: STRING_OR_NULL,
+        target: { type: ["number", "null"] },
+        definitionOfDone: STRING_OR_NULL,
       },
       required: ["id"],
     },
@@ -612,6 +624,10 @@ export function commandForGoalTool(
         name: args.name as string,
         notes: args.notes as string | undefined,
         domainSlug: args.domainSlug as string | null | undefined,
+        deadline: args.deadline as string | null | undefined,
+        metric: args.metric as string | null | undefined,
+        target: args.target as number | null | undefined,
+        definitionOfDone: args.definitionOfDone as string | null | undefined,
       };
       break;
     case "update_goal":
@@ -622,6 +638,10 @@ export function commandForGoalTool(
         notes: args.notes as string | undefined,
         status: args.status as GoalStatus | undefined,
         domainSlug: args.domainSlug as string | null | undefined,
+        deadline: args.deadline as string | null | undefined,
+        metric: args.metric as string | null | undefined,
+        target: args.target as number | null | undefined,
+        definitionOfDone: args.definitionOfDone as string | null | undefined,
       };
       break;
     case "delete_goal":
