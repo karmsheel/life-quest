@@ -22,6 +22,7 @@ import HomePage from "@/pages/HomePage";
 import LogPage from "@/pages/LogPage";
 import PersonnelPage from "@/pages/PersonnelPage";
 import SettingsPage from "@/pages/SettingsPage";
+import StubPage from "@/pages/StubPage";
 import WelcomePage from "@/pages/WelcomePage";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
@@ -85,6 +86,11 @@ function AppRoutes() {
           element={<DoctrineEditorPage backTo="/track" />}
         />
         <Route path="/act" element={<ActPage />} />
+        <Route path="/review/daily" element={<StubPage title="Daily Review" />} />
+        <Route path="/review/weekly" element={<StubPage title="Weekly Review" />} />
+        <Route path="/review/monthly" element={<StubPage title="Monthly Review" />} />
+        <Route path="/review/quarterly" element={<StubPage title="Quarterly Review" />} />
+        <Route path="/review/yearly" element={<StubPage title="Yearly Review" />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/decisions" element={<DecisionsPage />} />
         <Route path="/log" element={<LogPage />} />
