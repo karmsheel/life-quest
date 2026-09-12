@@ -2,17 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { weekOptions } from "../architecture/weekList";
 import type {
   MapCommand,
-  PeriodGoal,
   StoreState,
   Task,
   TaskColumn,
   TaskLinks,
 } from "@lifequest/vault-core/map";
 import { resolveWeek } from "@lifequest/vault-core/map";
+import type { Goal } from "@lifequest/vault-core/pure";
 import { groupTasks } from "./groupTasks";
 
 type Props = {
   state: StoreState;
+  goals: Goal[];
   onCommand: (command: MapCommand) => void;
 };
 
@@ -23,31 +24,24 @@ const COLUMNS: { id: TaskColumn; label: string }[] = [
   { id: "done", label: "Done" },
 ];
 
-type GoalOption = { id: string; name: string; year: number };
-
-function liveGoals(state: StoreState): GoalOption[] {
-  return state.years
-    .filter((y) => y.status === "live")
-    .sort((a, b) => a.year - b.year)
-    .flatMap((y) =>
-      y.periodGoals.map((g: PeriodGoal) => ({
-        id: g.id,
-        name: g.name,
-        year: y.year,
-      })),
-    );
+function openGoals(goals: Goal[]): Goal[] {
+  return goals.filter((g) => g.status === "open");
 }
 
-function goalExists(state: StoreState, id: string): boolean {
-  return state.years.some((y) => y.periodGoals.some((g) => g.id === id));
-}
-
-function findGoalName(state: StoreState, id: string): string | undefined {
-  for (const y of state.years) {
-    const g = y.periodGoals.find((goal) => goal.id === id);
-    if (g) return g.name;
+function goalPickerOptions(
+  goals: Goal[],
+  currentId: string | undefined,
+): { id: string; label: string }[] {
+  const options = openGoals(goals).map((g) => ({ id: g.id, label: g.name }));
+  if (!currentId) return options;
+  if (options.some((g) => g.id === currentId)) return options;
+  const found = goals.find((g) => g.id === currentId);
+  if (!found) {
+    options.push({ id: currentId, label: `${currentId} (missing)` });
+  } else if (found.status === "done") {
+    options.push({ id: found.id, label: `${found.name} (done)` });
   }
-  return undefined;
+  return options;
 }
 
 function weekHasLinkedItem(
@@ -82,15 +76,14 @@ function resolvedWeekItems(
 
 function patchLinks(task: Task, patch: TaskLinks): TaskLinks {
   const next: TaskLinks = { ...task.links, ...patch };
-  if ("periodGoalId" in patch && !patch.periodGoalId) delete next.periodGoalId;
+  if ("goalId" in patch && !patch.goalId) delete next.goalId;
   if ("date" in patch && !patch.date) delete next.date;
   if ("weekItem" in patch && !patch.weekItem) delete next.weekItem;
   return next;
 }
 
-export function TaskBoard({ state, onCommand }: Props) {
+export function TaskBoard({ state, goals, onCommand }: Props) {
   const grouped = useMemo(() => groupTasks(state.tasks), [state.tasks]);
-  const goals = useMemo(() => liveGoals(state), [state]);
   const [title, setTitle] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -136,13 +129,8 @@ export function TaskBoard({ state, onCommand }: Props) {
                       open={openId === task.id}
                       goals={goals}
                       missingGoal={
-                        Boolean(task.links.periodGoalId) &&
-                        !goalExists(state, task.links.periodGoalId!)
-                      }
-                      missingGoalName={
-                        task.links.periodGoalId
-                          ? findGoalName(state, task.links.periodGoalId)
-                          : undefined
+                        Boolean(task.links.goalId) &&
+                        !goals.some((g) => g.id === task.links.goalId)
                       }
                       missingWeekItem={
                         Boolean(task.links.weekItem) &&
@@ -170,7 +158,6 @@ function TaskCard({
   open,
   goals,
   missingGoal,
-  missingGoalName,
   missingWeekItem,
   state,
   onToggle,
@@ -178,9 +165,8 @@ function TaskCard({
 }: {
   task: Task;
   open: boolean;
-  goals: GoalOption[];
+  goals: Goal[];
   missingGoal: boolean;
-  missingGoalName?: string;
   missingWeekItem: boolean;
   state: StoreState;
   onToggle: () => void;
@@ -226,8 +212,6 @@ function TaskCard({
         <TaskEditor
           task={task}
           goals={goals}
-          missingGoal={missingGoal}
-          missingGoalName={missingGoalName}
           missingWeekItem={missingWeekItem}
           state={state}
           onCommand={onCommand}
@@ -240,16 +224,12 @@ function TaskCard({
 function TaskEditor({
   task,
   goals,
-  missingGoal,
-  missingGoalName,
   missingWeekItem,
   state,
   onCommand,
 }: {
   task: Task;
-  goals: GoalOption[];
-  missingGoal: boolean;
-  missingGoalName?: string;
+  goals: Goal[];
   missingWeekItem: boolean;
   state: StoreState;
   onCommand: (command: MapCommand) => void;
@@ -328,8 +308,8 @@ function TaskEditor({
   const mondayInPicker = mondayChoices.some((o) => o.monday === monday);
   const itemInPicker = itemChoices.some((i) => i.id === itemId);
 
-  const selectedGoal = task.links.periodGoalId ?? "";
-  const selectedInPicker = goals.some((g) => g.id === selectedGoal);
+  const selectedGoal = task.links.goalId ?? "";
+  const pickerGoals = goalPickerOptions(goals, task.links.goalId);
 
   return (
     <div className="task-editor">
@@ -343,29 +323,23 @@ function TaskEditor({
         />
       </label>
       <label>
-        Period goal
+        Goal
         <select
           value={selectedGoal}
-          aria-label={`${task.title} period goal`}
+          aria-label={`${task.title} goal`}
           onChange={(e) => {
-            const periodGoalId = e.target.value || undefined;
+            const goalId = e.target.value || undefined;
             onCommand({
               type: "updateTask",
               id: task.id,
-              links: patchLinks(task, { periodGoalId }),
+              links: patchLinks(task, { goalId }),
             });
           }}
         >
           <option value="">None</option>
-          {missingGoal && selectedGoal && (
-            <option value={selectedGoal}>missing link</option>
-          )}
-          {!missingGoal && selectedGoal && !selectedInPicker && (
-            <option value={selectedGoal}>{missingGoalName ?? selectedGoal}</option>
-          )}
-          {goals.map((g) => (
+          {pickerGoals.map((g) => (
             <option key={g.id} value={g.id}>
-              {g.name} ({g.year})
+              {g.label}
             </option>
           ))}
         </select>

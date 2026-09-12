@@ -193,7 +193,7 @@ function ActContent() {
   return (
     <div className="act-page">
       {snapshot?.map ? (
-        <TaskBoard state={snapshot.map} onCommand={(c) => void onMapCommand(c)} />
+        <TaskBoard state={snapshot.map} goals={snapshot.goals} onCommand={(c) => void onMapCommand(c)} />
       ) : snapshot?.mapError ? (
         <p className="form-error" role="alert">{snapshot.mapError}</p>
       ) : null}
