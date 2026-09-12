@@ -40,17 +40,8 @@ export {
   MAP_TOOL_DEFS,
 } from "./map/tools.ts";
 export type { MapToolDef } from "./map/tools.ts";
-export type {
-  MapStoreState,
-  MapCommand,
-  MapActor,
-  MapDomainError,
-  YearRecord,
-  MapEvent,
-  Task,
-  TaskColumn,
-  ColorId,
-  DayType,
-  DetachedWeek,
-  ResolvedWeek,
-} from "./map/public.ts";
+export {
+  DOCUMENT_TOOL_DEFS,
+  executeDocumentTool,
+} from "./document-tools.ts";
+export type { MapStoreState, MapCommand, MapActor, MapDomainError, YearRecord, MapEvent, Task, TaskColumn, ColorId, DayType, DetachedWeek, ResolvedWeek } from "./map/public.ts";
