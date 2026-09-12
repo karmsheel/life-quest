@@ -3,7 +3,7 @@ import {
   DOCUMENT_KIND_LABELS,
   type DocumentKind,
 } from "@lifequest/vault-core/pure";
-import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
+import { DocumentLockBadge } from "@/components/documents/DocumentLockBadge";
 import { MarkdownView } from "@/components/documents/MarkdownView";
 import { DOCUMENT_KIND_COACHING } from "@/lib/doctrine-copy";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
@@ -65,7 +65,7 @@ export function DoctrineIndex({
                       <span className="doctrine-index__card-title">
                         {DOCUMENT_KIND_LABELS[kind]}
                       </span>
-                      <DocumentStatusBadge status={doc?.status ?? "draft"} />
+                      <DocumentLockBadge locked={doc?.locked ?? false} />
                     </div>
                     <div className="doctrine-index__card-body">
                       {empty ? (
@@ -92,7 +92,7 @@ export function DoctrineIndex({
                     >
                       {DOCUMENT_KIND_LABELS[kind]}
                     </Link>
-                    <DocumentStatusBadge status={doc?.status ?? "draft"} />
+                    <DocumentLockBadge locked={doc?.locked ?? false} />
                   </li>
                 );
               })}

@@ -124,3 +124,16 @@ describe("document tools wiring", () => {
     assert.match(mcp, /DOCUMENT_TOOL_DEFS/);
   });
 });
+
+describe("DocumentEditor lock", () => {
+  it("uses lock toggle and Propose, not Refine/Forge", () => {
+    const src = read("src/components/documents/DocumentEditor.tsx");
+    assert.match(src, /documentSetLocked/);
+    assert.match(src, /Unlock to edit, or propose a change/);
+    assert.match(src, /Propose change/);
+    assert.equal(src.includes("Mark refined"), false);
+    assert.equal(src.includes(">Forge<") || src.includes("Forge\n"), false);
+    assert.equal(src.includes("canForge"), false);
+    assert.equal(src.includes("documentSetStatus"), false);
+  });
+});

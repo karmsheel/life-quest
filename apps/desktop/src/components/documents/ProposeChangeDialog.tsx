@@ -4,8 +4,8 @@ import { api } from "@/lib/ipc";
 
 export type ProposeChangeDialogProps = {
   open: boolean;
-  domainSlug: string;
-  documentKind: DocumentKind;
+  target: { type: "doctrine"; domainSlug: string; kind: DocumentKind };
+  currentTitle: string;
   currentBody: string;
   onClose: () => void;
   onSubmitted?: () => void;
@@ -13,8 +13,8 @@ export type ProposeChangeDialogProps = {
 
 export function ProposeChangeDialog({
   open,
-  domainSlug,
-  documentKind,
+  target,
+  currentTitle,
   currentBody,
   onClose,
   onSubmitted,
@@ -27,13 +27,13 @@ export function ProposeChangeDialog({
 
   useEffect(() => {
     if (open) {
-      setTitle("");
+      setTitle(currentTitle);
       setRationale("");
       setProposedBody(currentBody);
       setError(null);
       setPending(false);
     }
-  }, [open, currentBody]);
+  }, [open, currentTitle, currentBody]);
 
   if (!open) return null;
 
@@ -43,12 +43,12 @@ export function ProposeChangeDialog({
     setPending(true);
     try {
       const result = await api().decisionCreate({
-        domainSlug,
-        documentKind,
-        title: title.trim(),
-        rationale: rationale.trim() || null,
+        target,
+        proposedTitle: title.trim(),
+        previousTitle: currentTitle,
         proposedBodyMarkdown: proposedBody,
         previousBodyMarkdown: currentBody,
+        rationale: rationale.trim() || null,
       });
       if (!result.ok) {
         setError(result.error);
@@ -80,7 +80,7 @@ export function ProposeChangeDialog({
         <header className="propose-dialog__header">
           <h2 id="propose-dialog-title">Propose change</h2>
           <p className="muted propose-dialog__hint">
-            Forged documents stay read-only until a Decision is approved.
+            This proposal goes to Decisions. The document stays locked.
           </p>
         </header>
 

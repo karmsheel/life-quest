@@ -1081,7 +1081,7 @@ a {
   line-height: 1.45;
 }
 
-.doc-editor__forged-hint {
+.doc-editor__lock-hint {
   margin: 0;
   font-size: 0.85rem;
   line-height: 1.4;
@@ -1184,17 +1184,11 @@ a {
   background: transparent;
 }
 
-.doc-status-badge--draft {
+.doc-status-badge--unlocked {
   color: var(--muted);
 }
 
-.doc-status-badge--refined {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--selected-soft);
-}
-
-.doc-status-badge--forged {
+.doc-status-badge--locked {
   color: var(--success);
   border-color: var(--success);
 }

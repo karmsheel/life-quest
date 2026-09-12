@@ -9,17 +9,15 @@ import {
 } from "react";
 import {
   assertEditable,
-  canTransitionStatus,
   DOCUMENT_KIND_LABELS,
   type DocumentKind,
-  type DocumentStatus,
   type DoctrineDocument,
   type Result,
 } from "@lifequest/vault-core/pure";
 import { DOCUMENT_KIND_COACHING } from "@/lib/doctrine-copy";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
-import { DocumentStatusBadge } from "./DocumentStatusBadge";
+import { DocumentLockBadge } from "./DocumentLockBadge";
 import { MarkdownView } from "./MarkdownView";
 import { ProposeChangeDialog } from "./ProposeChangeDialog";
 
@@ -84,7 +82,7 @@ export function DocumentEditor({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [statusPending, setStatusPending] = useState(false);
+  const [lockPending, setLockPending] = useState(false);
   const [proposeOpen, setProposeOpen] = useState(false);
   /** Last reloadGeneration applied — used to quiet-rehydrate after vault refresh. */
   const appliedGenerationRef = useRef(reloadGeneration);
@@ -151,8 +149,8 @@ export function DocumentEditor({
     void load({ quiet: true });
   }, [reloadGeneration, load]);
 
-  const editable = document ? assertEditable(document.status) : { ok: true as const };
-  const isForged = !editable.ok;
+  const locked = document ? document.locked : false;
+  const editable = document ? assertEditable(locked) : { ok: true as const };
   const isDirty = useMemo(() => {
     if (!document) return false;
     if (titleDraft !== document.title) return true;
@@ -180,7 +178,7 @@ export function DocumentEditor({
   }
 
   async function onSave() {
-    if (!slug || !document || isForged) return;
+    if (!slug || !document || locked) return;
     setSaving(true);
     setActionError(null);
     setActionMessage(null);
@@ -198,39 +196,27 @@ export function DocumentEditor({
     }
   }
 
-  async function onStatus(to: Extract<DocumentStatus, "refined" | "forged">) {
-    if (!slug || !document || isForged) return;
-    if (!canTransitionStatus(document.status, to)) {
-      setActionError(
-        `Invalid status transition: ${document.status} → ${to}`,
-      );
-      return;
-    }
-
-    setStatusPending(true);
+  async function onLock(lock: boolean) {
+    if (!slug || !document || lockPending) return;
+    setLockPending(true);
     setActionError(null);
     setActionMessage(null);
     try {
-      // Persist body first if dirty so forge/refine sees latest content.
-      if (isDirty) {
-        const saved = await persistBody(document);
-        if (!saved) return;
-      }
-
-      const result = await api().documentSetStatus(slug, kind, to);
+      const result = await api().documentSetLocked(slug, kind, lock);
       if (!result.ok) {
         setActionError(result.error);
         return;
       }
-      applyDocument(result.value, setDocument, setTitleDraft, setDraft);
-      setActionMessage(to === "forged" ? "Forged" : "Marked refined");
+      // Re-fetch so the document reflects the new locked state.
       await refresh();
+      await load({ quiet: true });
+      setActionMessage(lock ? "Locked" : "Unlocked");
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : "Failed to update status",
+        err instanceof Error ? err.message : "Failed to update lock",
       );
     } finally {
-      setStatusPending(false);
+      setLockPending(false);
     }
   }
 
@@ -263,9 +249,7 @@ export function DocumentEditor({
     );
   }
 
-  const canRefine = canTransitionStatus(document.status, "refined");
-  const canForge = canTransitionStatus(document.status, "forged");
-  const busy = saving || statusPending;
+  const busy = saving || lockPending;
 
   async function insertSavedImage(file: File) {
     const result = await saveImageFile(slug, file);
@@ -290,7 +274,7 @@ export function DocumentEditor({
   }
 
   async function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
-    if (isForged) return;
+    if (locked) return;
     const file = firstImageFile(e.clipboardData);
     if (!file) return;
     e.preventDefault();
@@ -298,7 +282,7 @@ export function DocumentEditor({
   }
 
   async function onDrop(e: DragEvent<HTMLTextAreaElement>) {
-    if (isForged) return;
+    if (locked) return;
     const file = firstImageFile(e.dataTransfer);
     if (!file) return;
     e.preventDefault();
@@ -318,13 +302,15 @@ export function DocumentEditor({
               </span>
             ) : null}
           </h1>
-          <DocumentStatusBadge status={document.status} />
+          <DocumentLockBadge locked={locked} />
         </div>
         <p className="doc-editor__coaching muted">
           {DOCUMENT_KIND_COACHING[kind]}
         </p>
         {!editable.ok ? (
-          <p className="doc-editor__forged-hint muted">{editable.reason}</p>
+          <p className="doc-editor__lock-hint muted">
+            Document is locked. Unlock to edit, or propose a change.
+          </p>
         ) : null}
       </header>
 
@@ -334,7 +320,7 @@ export function DocumentEditor({
           type="text"
           value={titleDraft}
           onChange={(e) => setTitleDraft(e.target.value)}
-          readOnly={isForged}
+          readOnly={locked}
           disabled={busy}
         />
       </label>
@@ -350,9 +336,9 @@ export function DocumentEditor({
             onPaste={(e) => void onPaste(e)}
             onDrop={(e) => void onDrop(e)}
             onDragOver={(e) => {
-              if (!isForged) e.preventDefault();
+              if (!locked) e.preventDefault();
             }}
-            readOnly={isForged}
+            readOnly={locked}
             disabled={busy}
             rows={18}
             spellCheck
@@ -376,7 +362,7 @@ export function DocumentEditor({
       ) : null}
 
       <div className="doc-editor__actions">
-        {!isForged ? (
+        {!locked ? (
           <>
             <button
               type="button"
@@ -386,43 +372,41 @@ export function DocumentEditor({
             >
               {saving ? "Saving…" : "Save"}
             </button>
-            {canRefine ? (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => void onStatus("refined")}
-                disabled={busy}
-              >
-                Mark refined
-              </button>
-            ) : null}
-            {canForge ? (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => void onStatus("forged")}
-                disabled={busy}
-              >
-                Forge
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void onLock(true)}
+              disabled={busy}
+            >
+              {lockPending ? "Locking…" : "Lock"}
+            </button>
           </>
         ) : (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setProposeOpen(true)}
-            disabled={busy}
-          >
-            Propose change
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void onLock(false)}
+              disabled={busy}
+            >
+              {lockPending ? "Unlocking…" : "Unlock"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setProposeOpen(true)}
+              disabled={busy}
+            >
+              Propose change
+            </button>
+          </>
         )}
       </div>
 
       <ProposeChangeDialog
         open={proposeOpen}
-        domainSlug={slug}
-        documentKind={kind}
+        target={{ type: "doctrine", domainSlug: slug, kind }}
+        currentTitle={document.title}
         currentBody={document.bodyMarkdown}
         onClose={() => setProposeOpen(false)}
         onSubmitted={() => {

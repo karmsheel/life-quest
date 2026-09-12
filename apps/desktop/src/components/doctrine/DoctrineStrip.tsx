@@ -3,7 +3,7 @@ import {
   DOCUMENT_KIND_LABELS,
   type DocumentKind,
 } from "@lifequest/vault-core/pure";
-import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
+import { DocumentLockBadge } from "@/components/documents/DocumentLockBadge";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 
 export function DoctrineStrip({ kind }: { kind: DocumentKind }) {
@@ -25,7 +25,7 @@ export function DoctrineStrip({ kind }: { kind: DocumentKind }) {
           {label}
           {` · ${domain.meta.name}`}
         </span>
-        <DocumentStatusBadge status={doc?.status ?? "draft"} />
+        <DocumentLockBadge locked={doc?.locked ?? false} />
         <Link to={editTo} className="doctrine-strip__edit">
           Edit
         </Link>
