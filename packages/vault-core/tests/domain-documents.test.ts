@@ -10,10 +10,10 @@ import {
   readDocumentMedia,
   saveDocument,
   saveDocumentMedia,
-  setDocumentStatus,
+  setDocumentLocked,
 } from "../src/domain-documents.ts";
 
-describe("domain documents get/save/status", () => {
+describe("domain documents get/save/lock", () => {
   let dir: string;
   let root: string;
 
@@ -45,58 +45,80 @@ describe("domain documents get/save/status", () => {
     assert.equal(got.value.bodyMarkdown, "x\n");
   });
 
-  it("setDocumentStatus draft→refined ok", async () => {
-    // ensure draft via intellectual what
-    const refined = await setDocumentStatus(root, "intellectual", "what", "refined");
-    assert.equal(refined.ok, true);
-    if (!refined.ok) return;
-    assert.equal(refined.value.status, "refined");
-    assert.equal(refined.value.forgedAt, null);
-
-    const raw = await fs.readFile(
-      path.join(root, "domains", "intellectual", "what.md"),
-      "utf8",
-    );
-    assert.match(raw, /status: refined/);
-  });
-
-  it("setDocumentStatus forged → saveDocument fails with editable reason", async () => {
-    const forged = await setDocumentStatus(root, "emotional", "how", "forged");
-    assert.equal(forged.ok, true);
-    if (!forged.ok) return;
-    assert.equal(forged.value.status, "forged");
-    assert.notEqual(forged.value.forgedAt, null);
-    assert.ok(typeof forged.value.forgedAt === "string");
-
+  it("setDocumentLocked true → saveDocument fails", async () => {
+    const locked = await setDocumentLocked(root, "emotional", "how", true);
+    assert.equal(locked.ok, true);
+    if (!locked.ok) return;
+    assert.equal(locked.value.locked, true);
     const raw = await fs.readFile(path.join(root, "domains", "emotional", "how.md"), "utf8");
-    assert.match(raw, /status: forged/);
-    assert.match(raw, /forgedAt:/);
+    assert.match(raw, /locked: true/);
+    assert.equal(raw.includes("status:"), false);
+    assert.equal(raw.includes("forgedAt:"), false);
 
     const save = await saveDocument(root, "emotional", "how", "should not write");
     assert.equal(save.ok, false);
     if (save.ok) return;
-    assert.match(save.error, /read-only|Forged|Decisions/i);
+    assert.match(save.error, /locked/i);
   });
 
-  it("rejects invalid status transitions", async () => {
-    // financial why is draft; refined then try back to draft
-    const toRefined = await setDocumentStatus(root, "financial", "why", "refined");
-    assert.equal(toRefined.ok, true);
+  it("setDocumentLocked false allows save again", async () => {
+    const unlocked = await setDocumentLocked(root, "emotional", "how", false);
+    assert.equal(unlocked.ok, true);
+    if (!unlocked.ok) return;
+    assert.equal(unlocked.value.locked, false);
+    const save = await saveDocument(root, "emotional", "how", "after unlock");
+    assert.equal(save.ok, true);
+  });
 
-    const back = await setDocumentStatus(root, "financial", "why", "draft");
-    assert.equal(back.ok, false);
-    if (back.ok) return;
-    assert.match(back.error, /transition|status/i);
+  it("rejects agent lock toggle", async () => {
+    const res = await setDocumentLocked(
+      root,
+      "financial",
+      "why",
+      true,
+      { type: "agent", id: "a1", name: "Hermes" },
+    );
+    assert.equal(res.ok, false);
+    if (res.ok) return;
+    assert.match(res.error, /user/i);
+    const doc = await getDocument(root, "financial", "why");
+    assert.equal(doc.ok, true);
+    if (!doc.ok) return;
+    assert.equal(doc.value.locked, false);
+  });
 
-    // forged cannot change further
-    const toForged = await setDocumentStatus(root, "financial", "why", "forged");
-    assert.equal(toForged.ok, true);
-    const again = await setDocumentStatus(root, "financial", "why", "refined");
-    assert.equal(again.ok, false);
+  it("reads legacy status: forged as locked", async () => {
+    const filePath = path.join(root, "domains", "health", "what.md");
+    await fs.writeFile(
+      filePath,
+      "---\ntitle: Vision\nstatus: forged\nforgedAt: 2026-01-01T00:00:00.000Z\nupdatedAt: 2026-01-01T00:00:00.000Z\n---\nlegacy\n",
+      "utf8",
+    );
+    const got = await getDocument(root, "health", "what");
+    assert.equal(got.ok, true);
+    if (!got.ok) return;
+    assert.equal(got.value.locked, true);
+    assert.equal(got.value.bodyMarkdown.trim(), "legacy");
+  });
+
+  it("logs actor on save and lock", async () => {
+    const saved = await saveDocument(root, "health", "why", "logged body");
+    assert.equal(saved.ok, true);
+    const locked = await setDocumentLocked(root, "health", "why", true);
+    assert.equal(locked.ok, true);
+    const { readLog } = await import("../src/log.ts");
+    const log = await readLog(root);
+    assert.equal(log.ok, true);
+    if (!log.ok) return;
+    const updated = log.value.find((e) => e.type === "document.updated");
+    const lockEvt = log.value.find((e) => e.type === "document.lock_changed");
+    assert.equal(updated?.actor?.type, "user");
+    assert.equal(lockEvt?.actor?.type, "user");
+    assert.equal((lockEvt?.payload as { locked?: boolean })?.locked, true);
   });
 
   it("saveDocument can update title when editable", async () => {
-    const saved = await saveDocument(root, "health", "what", "body text", "Custom What");
+    const saved = await saveDocument(root, "intellectual", "why", "body text", "Custom What");
     assert.equal(saved.ok, true);
     if (!saved.ok) return;
     assert.equal(saved.value.title, "Custom What");

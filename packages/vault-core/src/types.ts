@@ -17,8 +17,17 @@ export const DREAM_DOCUMENT_KINDS: readonly DocumentKind[] = [
   "why",
   "how",
 ];
-export const DOCUMENT_STATUSES = ["draft", "refined", "forged"] as const;
-export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
+
+export type Actor =
+  | { type: "user" }
+  | { type: "agent"; id: string; name: string };
+
+export const USER_ACTOR: Actor = { type: "user" };
+
+export type DocumentTarget =
+  | { type: "doctrine"; domainSlug: string; kind: DocumentKind }
+  | { type: "library"; id: string };
+
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;
 export type RoomId = (typeof ROOM_IDS)[number];
 export const SEED_DOMAINS = [
@@ -49,8 +58,7 @@ export type DomainMeta = {
 export type DoctrineDocument = {
   kind: DocumentKind;
   title: string;
-  status: DocumentStatus;
-  forgedAt: string | null;
+  locked: boolean;
   updatedAt: string;
   bodyMarkdown: string;
   mtimeMs: number;
@@ -85,6 +93,7 @@ export type LifeEvent = {
   summary: string;
   payload: unknown;
   createdAt: string;
+  actor: Actor | null;
 };
 
 export const SIGNAL_TYPES = ["thought", "idea", "notice", "other"] as const;
@@ -133,6 +142,7 @@ export type LibraryDocument = {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  locked: boolean;
 };
 
 export type LibraryCreateInput = {
@@ -154,13 +164,16 @@ export type LibraryListResult = {
 
 export type DecisionRecord = {
   id: string;
-  domainSlug: string;
-  documentKind: DocumentKind;
+  target: DocumentTarget;
+  domainSlugs: string[];
   status: "pending" | "approved" | "rejected";
   title: string;
   rationale: string | null;
+  proposedTitle: string | null;
+  previousTitle: string | null;
   proposedBodyMarkdown: string;
   previousBodyMarkdown: string | null;
+  actor: Actor;
   createdAt: string;
   resolvedAt: string | null;
 };
