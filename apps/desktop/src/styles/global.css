@@ -1,5 +1,6 @@
 @import "./tokens.css";
 @import "./map.css";
+@import "./goals.css";
 
 * {
   box-sizing: border-box;

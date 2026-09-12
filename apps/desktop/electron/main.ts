@@ -271,6 +271,9 @@ function registerIpcHandlers() {
   ipcMain.handle("map:apply", (_e, command: Parameters<typeof vault.mapApply>[0]) =>
     vault.mapApply(command, "user"),
   );
+  ipcMain.handle("goals:apply", (_e, command: Parameters<typeof vault.goalsApply>[0]) =>
+    vault.goalsApply(command),
+  );
 
   ipcMain.handle("window:getChrome", () => ({
     overlay: usesTitleBarOverlay(),

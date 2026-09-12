@@ -165,6 +165,8 @@ const lifequest = {
     ipcRenderer.invoke("map:getState") as Promise<Result<unknown>>,
   mapApply: (command: unknown) =>
     ipcRenderer.invoke("map:apply", command) as Promise<Result<unknown>>,
+  goalsApply: (command: unknown) =>
+    ipcRenderer.invoke("goals:apply", command) as Promise<Result<unknown>>,
 
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => {
     const listener = (_event: unknown, payload: { path: string }) => {

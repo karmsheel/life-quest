@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   ClipboardList,
   FileText,
+  Goal,
   Home,
   Map,
   Radio,
@@ -23,7 +24,7 @@ export type NavItem = {
   pin?: "top" | "bottom";
 };
 
-/** Top: Life-Chain, Decisions. Home: Dashboard, Personnel. Vision: Dream, Documents. Plan: Life Map, Architecture. Execute: Act. Bottom: Log. */
+/** Top: Life-Chain, Decisions. Home: Dashboard, Personnel. Vision: Dream, Documents. Plan: Goals, Life Map, Architecture. Execute: Act. Bottom: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -72,6 +73,14 @@ export const NAV_ITEMS: NavItem[] = [
     icon: FileText,
     section: "main",
     wing: "vision",
+  },
+  {
+    id: "goals",
+    href: "/goals",
+    label: "Goals",
+    icon: Goal,
+    section: "main",
+    wing: "plan",
   },
   {
     id: "chart",

@@ -12,7 +12,7 @@ export const WING_LABELS: Record<WingId, string> = {
 export const WING_DEFAULTS: Record<WingId, string> = {
   home: "/home",
   vision: "/dream",
-  plan: "/chart",
+  plan: "/goals",
   execute: "/act",
 };
 
@@ -23,6 +23,7 @@ const PATH_WING: Record<string, WingId> = {
   "/personnel": "home",
   "/dream": "vision",
   "/documents": "vision",
+  "/goals": "plan",
   "/chart": "plan",
   "/track": "plan",
   "/act": "execute",

@@ -30,8 +30,10 @@ import {
   updateSettings,
   updateSignal,
   vaultPaths,
+  applyGoalsCommand,
   applyMapCommand,
   type AgentHire,
+  type GoalsCommand,
   type MapActor,
   type MapCommand,
   type MapStoreState,
@@ -123,8 +125,8 @@ async function captureDoctrineMtimes(root: string): Promise<void> {
         }
       }
     }
-    // Watch Map store files so external edits surface in the focus reload prompt.
-    for (const mapFile of [paths.mapJson, paths.aboutMd]) {
+    // Watch Map store and Goals files so external edits surface in the focus reload prompt.
+    for (const mapFile of [paths.mapJson, paths.aboutMd, paths.goalsJson]) {
       try {
         const st = await fs.stat(mapFile);
         next.set(mapFile, st.mtimeMs);
@@ -602,6 +604,16 @@ export async function mapApply(
 ): Promise<Result<VaultSnapshot>> {
   return withVault(async (root) => {
     const applied = await applyMapCommand(root, command, actor);
+    if (!applied.ok) return applied;
+    return openVault(root);
+  });
+}
+
+export async function goalsApply(
+  command: GoalsCommand,
+): Promise<Result<VaultSnapshot>> {
+  return withVault(async (root) => {
+    const applied = await applyGoalsCommand(root, command);
     if (!applied.ok) return applied;
     return openVault(root);
   });

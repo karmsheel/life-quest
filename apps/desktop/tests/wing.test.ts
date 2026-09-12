@@ -19,7 +19,7 @@ describe("initialWingSession", () => {
     assert.deepEqual(session.lastPath, {
       home: "/home",
       vision: "/dream",
-      plan: "/chart",
+      plan: "/goals",
       execute: "/act",
     });
     assert.deepEqual(WING_DEFAULTS, session.lastPath);
@@ -32,6 +32,7 @@ describe("wingForPath", () => {
     assert.equal(wingForPath("/personnel"), "home");
     assert.equal(wingForPath("/dream"), "vision");
     assert.equal(wingForPath("/documents"), "vision");
+    assert.equal(wingForPath("/goals"), "plan");
     assert.equal(wingForPath("/chart"), "plan");
     assert.equal(wingForPath("/track"), "plan");
     assert.equal(wingForPath("/act"), "execute");
@@ -79,7 +80,7 @@ describe("applyPath", () => {
     const next = applyPath(initialWingSession(), "/log");
     assert.equal(next.active, "home");
     assert.equal(next.lastPath.home, "/log");
-    assert.equal(next.lastPath.plan, "/chart");
+    assert.equal(next.lastPath.plan, "/goals");
   });
 
   it("does not change the session for an unknown path", () => {
@@ -94,7 +95,13 @@ describe("selectWing", () => {
   it("navigates to the last path, or the default if none usable", () => {
     const fromHome = selectWing(initialWingSession(), "plan");
     assert.equal(fromHome.session.active, "plan");
-    assert.equal(fromHome.pathname, "/chart");
+    assert.equal(fromHome.pathname, "/goals");
+  });
+
+  it("keeps session memory of the last Plan path", () => {
+    const afterChart = applyPath(initialWingSession(), "/chart");
+    const back = selectWing(afterChart, "plan");
+    assert.equal(back.pathname, "/chart");
   });
 
   it("selects Vision at /dream from a fresh session", () => {
@@ -106,7 +113,7 @@ describe("selectWing", () => {
   it("after Log then Plan, returning to Home goes to Log", () => {
     const afterLog = applyPath(initialWingSession(), "/log");
     const afterPlan = selectWing(afterLog, "plan");
-    assert.equal(afterPlan.pathname, "/chart");
+    assert.equal(afterPlan.pathname, "/goals");
     const back = selectWing(afterPlan.session, "home");
     assert.equal(back.pathname, "/log");
     assert.equal(back.session.active, "home");
@@ -123,7 +130,7 @@ describe("selectWing", () => {
       },
     };
     const next = selectWing(broken, "plan");
-    assert.equal(next.pathname, "/chart");
+    assert.equal(next.pathname, "/goals");
     assert.equal(next.session.active, "plan");
   });
 
@@ -138,7 +145,7 @@ describe("selectWing", () => {
       },
     };
     const next = selectWing(broken, "plan");
-    assert.equal(next.pathname, "/chart");
+    assert.equal(next.pathname, "/goals");
   });
 });
 
@@ -154,7 +161,7 @@ describe("NAV_ITEMS wings", () => {
     );
     assert.deepEqual(
       NAV_ITEMS.filter((i) => i.wing === "plan").map((i) => i.id),
-      ["chart", "track"],
+      ["goals", "chart", "track"],
     );
     assert.deepEqual(
       NAV_ITEMS.filter((i) => i.wing === "execute").map((i) => i.id),

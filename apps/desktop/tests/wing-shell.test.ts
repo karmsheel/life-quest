@@ -144,6 +144,7 @@ describe("wing shell wiring", () => {
     const nested = afterOpen.slice(0, layoutEnd);
 
     assert.match(nested, /<Route\s+path=["']\/home["']/);
+    assert.match(nested, /<Route\s+path=["']\/goals["']/);
     assert.match(nested, /<Route\s+path=["']\/chart["']/);
     assert.match(nested, /<Route\s+path=["']\/act["']/);
     assert.match(nested, /<Route\s+path=["']\/log["']/);

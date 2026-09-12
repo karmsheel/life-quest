@@ -8,6 +8,7 @@ import type {
   DoctrineDocument,
   DomainMeta,
   DomainRecord,
+  GoalsCommand,
   LibraryCreateInput,
   LibraryDocument,
   LibraryListResult,
@@ -184,6 +185,7 @@ type LifequestApi = {
   onCompanionStream: (cb: (evt: ChatStreamEvent) => void) => () => void;
   mapGetState: () => Promise<Result<MapStoreState>>;
   mapApply: (command: MapCommand) => Promise<Result<VaultSnapshot>>;
+  goalsApply: (command: GoalsCommand) => Promise<Result<VaultSnapshot>>;
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => () => void;
   windowChrome: {
     get: () => Promise<{ overlay: boolean; platform: string }>;

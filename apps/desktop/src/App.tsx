@@ -17,6 +17,7 @@ import ChartPage from "@/pages/ChartPage";
 import DecisionsPage from "@/pages/DecisionsPage";
 import DocumentsPage from "@/pages/DocumentsPage";
 import DreamPage from "@/pages/DreamPage";
+import GoalsPage from "@/pages/GoalsPage";
 import HomePage from "@/pages/HomePage";
 import LogPage from "@/pages/LogPage";
 import PersonnelPage from "@/pages/PersonnelPage";
@@ -76,6 +77,7 @@ function AppRoutes() {
           path="/dream/:slug/:kind"
           element={<DoctrineEditorPage backTo="/dream" />}
         />
+        <Route path="/goals" element={<GoalsPage />} />
         <Route path="/chart" element={<ChartPage />} />
         <Route path="/track" element={<ArchitecturePage />} />
         <Route
