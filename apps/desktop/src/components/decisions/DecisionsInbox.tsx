@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DecisionRecord } from "@lifequest/vault-core";
-import { recordVisible } from "@lifequest/vault-core/pure";
+import {
+  actorDisplayName,
+  DOCUMENT_KIND_LABELS,
+  recordVisibleMulti,
+} from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
@@ -53,7 +57,7 @@ export function DecisionsInbox() {
       } else {
         list = list.filter((d) => d.status !== "pending");
       }
-      list = list.filter((d) => recordVisible(lens, d.domainSlug));
+      list = list.filter((d) => recordVisibleMulti(lens, d.domainSlugs));
       // Newest first
       list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       setItems(list);
@@ -101,8 +105,7 @@ export function DecisionsInbox() {
       <header className="decisions-inbox__header">
         <h1 className="stub-page__title">Decisions</h1>
         <p className="stub-page__desc muted">
-          Human-in-the-loop inbox for forged document changes. Propose → approve
-          / reject.
+          Proposals to locked documents. Approve or reject.
         </p>
       </header>
 
@@ -159,7 +162,7 @@ export function DecisionsInbox() {
       ) : items.length === 0 ? (
         <p className="muted decisions-inbox__empty">
           {tab === "pending"
-            ? "No pending decisions. Propose a change on a forged document to see it here."
+            ? "No pending proposals."
             : "No resolved decisions yet."}
         </p>
       ) : (
@@ -168,9 +171,19 @@ export function DecisionsInbox() {
             <li key={d.id} className="decision-card">
               <div className="decision-card__top">
                 <div>
-                  <h2 className="decision-card__title">{d.title}</h2>
+                  <h2 className="decision-card__title">
+                    {tab === "pending" && d.proposedTitle
+                      ? d.proposedTitle
+                      : d.title}
+                  </h2>
                   <p className="decision-card__meta muted">
-                    {domainLabel(d.domainSlug, domains)} · {d.documentKind} ·{" "}
+                    {actorDisplayName(d.actor)} ·{" "}
+                    {d.domainSlugs.map((slug) => domainLabel(slug, domains)).join(", ")}
+                    {" · "}
+                    {d.target.kind === "doctrine"
+                      ? DOCUMENT_KIND_LABELS[d.target.kind]
+                      : d.proposedTitle ?? d.title}
+                    {" · "}
                     {formatWhen(d.createdAt)}
                     {d.status !== "pending" ? (
                       <>
@@ -190,6 +203,14 @@ export function DecisionsInbox() {
               {d.rationale ? (
                 <p className="decision-card__rationale">
                   <span className="muted">Rationale:</span> {d.rationale}
+                </p>
+              ) : null}
+
+              {tab === "pending" && d.status === "pending" &&
+                d.previousTitle != null &&
+                d.previousTitle !== (d.proposedTitle ?? "") ? (
+                <p className="decision-card__title-change muted">
+                  Title: {d.previousTitle} → {d.proposedTitle}
                 </p>
               ) : null}
 
