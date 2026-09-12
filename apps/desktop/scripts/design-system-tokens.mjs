@@ -55,6 +55,9 @@ export function auditDesignSystem(root) {
   if (!applySkin.includes('"--canvas-base"') && !applySkin.includes("'--canvas-base'")) {
     findings.push("apply-skin.ts does not write --canvas-base");
   }
+  if (!applySkin.includes('"--card-glass"') && !applySkin.includes("'--card-glass'")) {
+    findings.push("apply-skin.ts does not write --card-glass");
+  }
 
   for (const file of walkUiFiles(path.join(root, "src/components/ui"))) {
     const rel = path.relative(root, file).replaceAll("\\", "/");

@@ -78,4 +78,25 @@ describe("token contract", () => {
     assert.match(css, /--bg:\s*var\(--background\)/);
     assert.match(css, /--accent:\s*var\(--primary\)/);
   });
+
+  it("defines quiet frost glass tokens", () => {
+    const css = readTokens();
+    assert.match(
+      css,
+      /:root\s*\{[\s\S]*?--card-glass:\s*color-mix\(in srgb,\s*var\(--card\)\s*52%,\s*transparent\)/,
+    );
+    assert.match(
+      css,
+      /:root\s*\{[\s\S]*?--backdrop-panel:\s*blur\(18px\)\s*saturate\(160%\)\s*brightness\(1\.02\)/,
+    );
+    assert.match(
+      css,
+      /\[data-theme="dark"\]\s*\{[\s\S]*?--card-glass:\s*color-mix\(in srgb,\s*var\(--card\)\s*60%,\s*transparent\)/,
+    );
+    assert.match(
+      css,
+      /\[data-theme="dark"\]\s*\{[\s\S]*?--backdrop-panel:\s*blur\(18px\)\s*saturate\(160%\)\s*brightness\(1\.08\)/,
+    );
+    assert.equal(/--card-glass:\s*var\(--card\)/.test(css), false);
+  });
 });

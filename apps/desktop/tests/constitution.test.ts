@@ -32,18 +32,21 @@ describe("product constitution", () => {
     assert.doesNotMatch(src, /## Hermes \(optional\)/);
   });
 
-  it("has DESIGN.md with canvas ladder and remaining Phase 2 do-not-do", () => {
+  it("has DESIGN.md with canvas ladder, glass chrome, and remaining do-not-do", () => {
     const src = read("DESIGN.md");
     assert.match(src, /Grounded life studio/);
     assert.match(src, /--accent-fill/);
     assert.match(src, /--muted-surface/);
     assert.match(src, /--canvas-base/);
+    assert.match(src, /--card-glass/);
+    assert.match(src, /--backdrop-panel/);
     assert.match(src, /PageShell/);
     assert.match(src, /card-glass/);
     assert.match(src, /--radius-pill/);
     assert.match(src, /--shell-frame/);
     assert.match(src, /\.nav-rail/);
     assert.match(src, /\.chat-panel/);
+    assert.match(src, /Do not add dot-grid/);
   });
 
   it("has RFC-style laws", () => {

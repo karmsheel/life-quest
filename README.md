@@ -15,6 +15,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 | [BERD systems phase 1](docs/superpowers/specs/2026-09-02-berd-systems-phase-1-design.md) | CSS-native design contract |
 | [BERD visuals phase 2](docs/superpowers/specs/2026-09-03-berd-visuals-phase-2-design.md) | Canvas/sheet, concentric radii, pill buttons |
 | [Three-pane studio](docs/superpowers/specs/2026-09-04-three-pane-studio-design.md) | Rail, main, and chat as separate 12px cards |
+| [Glass chrome](docs/superpowers/specs/2026-09-12-glass-chrome-design.md) | Quiet frost on rail and chat; main stays paper |
 | [Local vault (Electron) design](docs/superpowers/specs/2026-07-19-local-vault-electron-design.md) | Current product host & vault layout |
 | [Local vault plan](docs/superpowers/plans/2026-07-19-local-vault-electron.md) | Implementation plan |
 | [Skeleton design](docs/superpowers/specs/2026-07-17-lifequest-skeleton-design.md) | Product IA (Domains / rooms / forge / log) |

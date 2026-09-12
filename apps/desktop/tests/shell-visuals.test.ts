@@ -23,12 +23,23 @@ describe("shell visuals", () => {
     assert.match(css, /\.shell\s*\{[\s\S]*?gap:\s*var\(--shell-frame\)/);
     assert.equal(/\.shell\s*\{[^}]*background:\s*var\(--card\)/.test(css), false);
     assert.equal(/\.shell\s*\{[^}]*border-radius:\s*var\(--radius-lg\)/.test(css), false);
-    assert.match(css, /\.nav-rail\s*\{[\s\S]*?background:\s*var\(--card\)/);
+    assert.match(css, /\.nav-rail\s*\{[\s\S]*?background:\s*var\(--card-glass\)/);
+    assert.match(css, /\.nav-rail\s*\{[\s\S]*?backdrop-filter:\s*var\(--backdrop-panel\)/);
+    assert.match(css, /\.nav-rail\s*\{[\s\S]*?-webkit-backdrop-filter:\s*var\(--backdrop-panel\)/);
+    assert.match(css, /\.nav-rail\s*\{[\s\S]*?box-shadow:[\s\S]*?inset 0 1px 0/);
     assert.match(css, /\.nav-rail\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
     assert.match(css, /\.shell__main\s*\{[\s\S]*?background:\s*var\(--card\)/);
     assert.match(css, /\.shell__main\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
-    assert.match(css, /\.chat-panel\s*\{[\s\S]*?background:\s*var\(--card\)/);
+    assert.equal(/\.shell__main\s*\{[^}]*background:\s*var\(--card-glass\)/.test(css), false);
+    assert.match(css, /\.chat-panel\s*\{[\s\S]*?background:\s*var\(--card-glass\)/);
+    assert.match(css, /\.chat-panel\s*\{[\s\S]*?backdrop-filter:\s*var\(--backdrop-panel\)/);
+    assert.match(css, /\.chat-panel\s*\{[\s\S]*?-webkit-backdrop-filter:\s*var\(--backdrop-panel\)/);
+    assert.match(css, /\.chat-panel\s*\{[\s\S]*?box-shadow:[\s\S]*?inset 0 1px 0/);
     assert.match(css, /\.chat-panel\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+    assert.match(
+      css,
+      /@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)[\s\S]*?\.nav-rail[\s\S]*?background:\s*var\(--card\)/,
+    );
   });
 
   it("keeps the titlebar flush on canvas", () => {

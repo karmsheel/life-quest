@@ -20,6 +20,8 @@
   --foreground: #1a1916;
   --card: #fffefc;
   --card-foreground: var(--foreground);
+  --card-glass: color-mix(in srgb, var(--card) 52%, transparent);
+  --backdrop-panel: blur(18px) saturate(160%) brightness(1.02);
   --popover: var(--card);
   --popover-foreground: var(--foreground);
   --muted-surface: #eef1f5;
@@ -138,6 +140,8 @@
   --foreground: #e8e4dc;
   --card: #2a2825;
   --card-foreground: var(--foreground);
+  --card-glass: color-mix(in srgb, var(--card) 60%, transparent);
+  --backdrop-panel: blur(18px) saturate(160%) brightness(1.08);
   --popover: var(--card);
   --popover-foreground: var(--foreground);
   --muted-surface: #2e2c29;
@@ -209,6 +213,8 @@
     --foreground: #e8e4dc;
     --card: #2a2825;
     --card-foreground: var(--foreground);
+    --card-glass: color-mix(in srgb, var(--card) 60%, transparent);
+    --backdrop-panel: blur(18px) saturate(160%) brightness(1.08);
     --popover: var(--card);
     --popover-foreground: var(--foreground);
     --muted-surface: #2e2c29;

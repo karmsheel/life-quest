@@ -100,6 +100,24 @@ describe("forgeVarsFromColors", () => {
       assert.equal(vars[key], undefined, key);
     }
   });
+
+  it("writes --card-glass from card and skips --backdrop-panel", () => {
+    const dark = forgeVarsFromColors(sample);
+    assert.match(dark["--card-glass"] ?? "", /#222222/);
+    assert.match(dark["--card-glass"] ?? "", /60%/);
+    assert.equal(dark["--backdrop-panel"], undefined);
+
+    const light = forgeVarsFromColors({
+      ...sample,
+      background: "#faf9f7",
+      card: "#faf9f7",
+      popover: "#faf9f7",
+      foreground: "#1a1916",
+    });
+    assert.match(light["--card-glass"] ?? "", /#faf9f7/);
+    assert.match(light["--card-glass"] ?? "", /52%/);
+    assert.equal(light["--backdrop-panel"], undefined);
+  });
 });
 
 describe("forgeVarsFromSkin", () => {
