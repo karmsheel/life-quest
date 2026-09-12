@@ -392,7 +392,6 @@ export async function resolveDecision(
       if (!applyRes.ok) return applyRes;
     }
 
-    const previousBody = decision.previousBodyMarkdown;
     decision = {
       ...decision,
       status: resolution,

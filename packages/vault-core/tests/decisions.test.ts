@@ -96,6 +96,37 @@ describe("decisions", () => {
     assert.equal(after.value.locked, true);
   });
 
+  it("approve writes library title and body through lock", async () => {
+    const note = await libraryCreate(root, { title: "Budget", bodyMarkdown: "keep" });
+    assert.equal(note.ok, true);
+    if (!note.ok) return;
+    const refreshed = await libraryGet(root, note.value.id);
+    assert.equal(refreshed.ok, true);
+    if (!refreshed.ok) return;
+    const keepBody = refreshed.value.bodyMarkdown;
+    assert.equal((await setLibraryLocked(root, note.value.id, true)).ok, true);
+    const created = await createDecision(root, {
+      target: { type: "library", id: note.value.id },
+      proposedTitle: "Budget v2",
+      previousTitle: "Budget",
+      proposedBodyMarkdown: "approved new body",
+      previousBodyMarkdown: keepBody,
+      actor: agent,
+    });
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    assert.equal(created.value.actor.type, "agent");
+    const resolved = await resolveDecision(root, created.value.id, "approved");
+    assert.equal(resolved.ok, true);
+    if (!resolved.ok) return;
+    const after = await libraryGet(root, note.value.id);
+    assert.equal(after.ok, true);
+    if (!after.ok) return;
+    assert.equal(after.value.title, "Budget v2");
+    assert.equal(after.value.bodyMarkdown, "approved new body\n");
+    assert.equal(after.value.locked, true);
+  });
+
   it("reads legacy decision JSON without target as doctrine", async () => {
     const { vaultPaths } = await import("../src/paths.ts");
     const paths = vaultPaths(root);
