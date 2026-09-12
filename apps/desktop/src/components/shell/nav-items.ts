@@ -1,5 +1,10 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Calendar,
+  CalendarCheck,
+  CalendarClock,
+  CalendarDays,
+  CalendarRange,
   ClipboardList,
   FileText,
   Goal,
@@ -24,7 +29,7 @@ export type NavItem = {
   pin?: "top" | "bottom";
 };
 
-/** Top: Life-Chain, Decisions. Home: Dashboard, Personnel. Vision: Dream, Documents. Plan: Goals, Life Map, Architecture. Execute: Act. Bottom: Log. */
+/** Top: Life-Chain, Decisions. Home: Dashboard, Personnel. Vision: Dream, Documents. Plan: Goals, Life Map, Architecture. Execute: Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -105,6 +110,46 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Zap,
     section: "main",
     wing: "execute",
+  },
+  {
+    id: "daily",
+    href: "/review/daily",
+    label: "Daily",
+    icon: Calendar,
+    section: "main",
+    wing: "review",
+  },
+  {
+    id: "weekly",
+    href: "/review/weekly",
+    label: "Weekly",
+    icon: CalendarDays,
+    section: "main",
+    wing: "review",
+  },
+  {
+    id: "monthly",
+    href: "/review/monthly",
+    label: "Monthly",
+    icon: CalendarRange,
+    section: "main",
+    wing: "review",
+  },
+  {
+    id: "quarterly",
+    href: "/review/quarterly",
+    label: "Quarterly",
+    icon: CalendarClock,
+    section: "main",
+    wing: "review",
+  },
+  {
+    id: "yearly",
+    href: "/review/yearly",
+    label: "Yearly",
+    icon: CalendarCheck,
+    section: "main",
+    wing: "review",
   },
   {
     id: "log",

@@ -207,7 +207,7 @@ describe("selectWing", () => {
 });
 
 describe("NAV_ITEMS wings", () => {
-  it("assigns Home, Vision, Plan, Execute, and pinned items", () => {
+  it("assigns Home, Vision, Plan, Execute, Review, and pinned items", () => {
     assert.deepEqual(
       NAV_ITEMS.filter((i) => i.wing === "home").map((i) => i.id),
       ["dashboard", "personnel"],
@@ -223,6 +223,10 @@ describe("NAV_ITEMS wings", () => {
     assert.deepEqual(
       NAV_ITEMS.filter((i) => i.wing === "execute").map((i) => i.id),
       ["act"],
+    );
+    assert.deepEqual(
+      NAV_ITEMS.filter((i) => i.wing === "review").map((i) => i.id),
+      ["daily", "weekly", "monthly", "quarterly", "yearly"],
     );
     assert.deepEqual(
       NAV_ITEMS.filter((i) => i.pin === "top").map((i) => i.id),
@@ -241,5 +245,21 @@ describe("NAV_ITEMS wings", () => {
     assert.equal(dashboard?.href, "/home");
     assert.equal(chain?.label, "Life-Chain");
     assert.equal(chain?.href, "/chain");
+  });
+
+  it("labels Review cadences and points at /review/…", () => {
+    const expected = [
+      ["daily", "Daily", "/review/daily"],
+      ["weekly", "Weekly", "/review/weekly"],
+      ["monthly", "Monthly", "/review/monthly"],
+      ["quarterly", "Quarterly", "/review/quarterly"],
+      ["yearly", "Yearly", "/review/yearly"],
+    ] as const;
+    for (const [id, label, href] of expected) {
+      const item = NAV_ITEMS.find((i) => i.id === id);
+      assert.equal(item?.label, label);
+      assert.equal(item?.href, href);
+      assert.equal(item?.wing, "review");
+    }
   });
 });
