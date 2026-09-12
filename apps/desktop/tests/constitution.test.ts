@@ -17,6 +17,19 @@ describe("product constitution", () => {
     assert.match(src, /## Product Purpose/);
     assert.match(src, /## Anti-references/);
     assert.match(src, /chatbot wrapper/);
+    assert.match(src, /Premise → Vision → Purpose → Strategy/);
+    assert.match(src, /does not open without the companion/);
+    assert.match(src, /Capture is not the studio/);
+    assert.doesNotMatch(src, /optionally talking to Hermes/);
+  });
+
+  it("README.md matches VISION identity", () => {
+    const src = read("README.md");
+    assert.match(src, /Premise → Vision → Purpose → Strategy/);
+    assert.match(src, /does not open without the companion/);
+    assert.doesNotMatch(src, /Hermes remains an optional/);
+    assert.doesNotMatch(src, /Why → What → How/);
+    assert.doesNotMatch(src, /## Hermes \(optional\)/);
   });
 
   it("has DESIGN.md with canvas ladder and remaining Phase 2 do-not-do", () => {
@@ -41,6 +54,8 @@ describe("product constitution", () => {
     assert.match(read("LAWS/DOMAIN-FILTER.md"), /domain switcher MUST/);
     assert.match(read("LAWS/WINGS.md"), /MUST NOT filter/);
     assert.match(read("LAWS/DOCTRINE.md"), /MUST NOT be edited in place/);
+    assert.match(read("LAWS/DOCTRINE.md"), /four doctrine sections/);
+    assert.match(read("LAWS/COMPANION.md"), /MUST NOT open without the companion/);
   });
 
   it("documents shared UI rules", () => {

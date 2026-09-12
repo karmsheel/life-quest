@@ -1,6 +1,6 @@
 # LifeQuest
 
-**Local-first life-management studio** for the desktop. Open or create a **vault folder** on your machine; Domains, doctrine (Why → What → How), Decisions, Life log, and agent roster live as plain files beside each other. Hermes remains an optional local BYOK gateway.
+**Local-first life-management studio** for the desktop. Open or create a **vault folder** on your machine; Domains, doctrine (Premise → Vision → Purpose → Strategy), Decisions, Life log, and agent roster live as plain files beside each other. The studio does not open without the companion. Capture is not the studio.
 
 The product runtime is **Electron + Vite + React**. There is no cloud account and no Prisma/SQLite in the desktop path.
 
@@ -26,7 +26,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 |------|--------|
 | **Node.js 20+** | Developed on Node 22; 20 LTS minimum target |
 | **npm** | Workspaces monorepo |
-| **Hermes gateway** (optional) | Default `http://localhost:8642` for chat / test / Personnel scan |
+| **Hermes gateway** | Required for the studio. Default `http://localhost:8642`. Capture is not the studio. |
 
 ## Quick start
 
@@ -41,7 +41,7 @@ npm run dev
 
 On launch:
 
-1. **Create vault** — pick an empty folder; LifeQuest seeds four Domains (Health, Intellectual, Emotional, Financial) with empty Why / What / How Markdown.
+1. **Create vault** — pick an empty folder; LifeQuest seeds four Domains (Health, Intellectual, Emotional, Financial) with empty Premise / Vision / Purpose / Strategy Markdown.
 2. **Open vault** — pick an existing LifeQuest vault directory (or a recent path).
 3. Work offline against files on disk. API keys never enter the vault (OS secure storage via Electron `safeStorage`).
 
@@ -76,13 +76,15 @@ docs/superpowers/      Design specs and implementation plans
 archive/web-skeleton/  Frozen Next.js + Prisma multi-user web app (not product runtime)
 ```
 
-## Hermes (optional)
+## Hermes (required for the studio)
+
+The studio does not open without the companion. Capture is not the studio.
 
 1. Run a Hermes / OpenAI-compatible gateway (default **`http://localhost:8642`**).
 2. In the app: **Settings → Hermes** — base URL, API key if required, **Test connection**.
 3. Chat and Personnel scan go through the **Electron main process** proxy; the renderer never holds the raw key.
 
-Skeleton Hermes scope: connection + chat + agent scan — no tool-use auto-decisions in v1.
+LifeQuest owns the vault, the MCP door, and the UI. Hermes owns the agent loop, memory, skills, and transcripts.
 
 ## Vault identity
 
