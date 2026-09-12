@@ -1,7 +1,7 @@
 # Review Wing — Design Spec
 
 **Date:** 2026-09-12  
-**Status:** Draft — awaiting review  
+**Status:** Approved — implementation plan ready (`docs/superpowers/plans/2026-09-12-review-wing.md`)  
 **Product:** LifeQuest — local-first life-management studio  
 **Depends on:** [Vision / Plan / Execute wings](./2026-08-30-vision-plan-execute-wings-design.md), [Home wing](./2026-09-02-home-wing-design.md)
 
