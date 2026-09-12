@@ -23,6 +23,7 @@ export type MapToolDef = {
 const COLORS = ["gold", "red", "blue", "green", "orange", "purple", "teal", "pink"];
 
 const STRING = { type: "string" };
+const STRING_OR_NULL = { type: ["string", "null"] };
 const NUMBER = { type: "number" };
 
 const WEEKDAY_ENUM = { type: "number", enum: [0, 1, 2, 3, 4, 5, 6] };
@@ -113,8 +114,8 @@ export const MAP_TOOL_DEFS: MapToolDef[] = [
         title: STRING,
         date: STRING,
         notes: STRING,
-        domainSlug: STRING,
-        goalId: STRING,
+        domainSlug: STRING_OR_NULL,
+        goalId: STRING_OR_NULL,
       },
       required: ["year", "title", "date"],
     },
@@ -130,8 +131,8 @@ export const MAP_TOOL_DEFS: MapToolDef[] = [
         title: STRING,
         date: STRING,
         notes: STRING,
-        domainSlug: STRING,
-        goalId: STRING,
+        domainSlug: STRING_OR_NULL,
+        goalId: STRING_OR_NULL,
       },
       required: ["year", "id"],
     },
@@ -569,7 +570,7 @@ export const GOALS_TOOL_DEFS: MapToolDef[] = [
     description: "Create a vault-wide Goal outcome",
     parameters: {
       type: "object",
-      properties: { name: STRING, notes: STRING, domainSlug: STRING },
+      properties: { name: STRING, notes: STRING, domainSlug: STRING_OR_NULL },
       required: ["name"],
     },
   },
@@ -583,7 +584,7 @@ export const GOALS_TOOL_DEFS: MapToolDef[] = [
         name: STRING,
         notes: STRING,
         status: { type: "string", enum: ["open", "done"] },
-        domainSlug: STRING,
+        domainSlug: STRING_OR_NULL,
       },
       required: ["id"],
     },

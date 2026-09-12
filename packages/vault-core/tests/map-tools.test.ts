@@ -41,6 +41,21 @@ describe("commandForTool", () => {
     assert.equal(commandForTool("create_period_goal", {}), null);
     assert.equal(commandForTool("forge_document", {}), null);
   });
+  it("keeps explicit null domainSlug and goalId on update_event", () => {
+    const cmd = commandForTool("update_event", {
+      year: 2026,
+      id: "e1",
+      domainSlug: null,
+      goalId: null,
+    });
+    assert.deepEqual(cmd, {
+      type: "updateEvent",
+      year: 2026,
+      id: "e1",
+      domainSlug: null,
+      goalId: null,
+    });
+  });
 });
 
 describe("tool defs", () => {
@@ -56,6 +71,20 @@ describe("tool defs", () => {
       "delete_goal",
     ]);
   });
+  it("allows JSON null for domainSlug and goalId on event and goal tools", () => {
+    const nullable = { type: ["string", "null"] };
+    for (const name of ["create_event", "update_event"] as const) {
+      const def = MAP_TOOL_DEFS.find((t) => t.name === name);
+      assert.ok(def);
+      assert.deepEqual(def.parameters.properties.domainSlug, nullable);
+      assert.deepEqual(def.parameters.properties.goalId, nullable);
+    }
+    for (const name of ["create_goal", "update_goal"] as const) {
+      const def = GOALS_TOOL_DEFS.find((t) => t.name === name);
+      assert.ok(def);
+      assert.deepEqual(def.parameters.properties.domainSlug, nullable);
+    }
+  });
 });
 
 describe("commandForGoalTool", () => {
@@ -63,6 +92,13 @@ describe("commandForGoalTool", () => {
     assert.deepEqual(commandForGoalTool("create_goal", { name: "Ship" }), {
       type: "createGoal",
       name: "Ship",
+    });
+  });
+  it("keeps explicit null domainSlug on update_goal", () => {
+    assert.deepEqual(commandForGoalTool("update_goal", { id: "g1", domainSlug: null }), {
+      type: "updateGoal",
+      id: "g1",
+      domainSlug: null,
     });
   });
 });

@@ -5,6 +5,7 @@ import {
   filterByLens,
   type DomainLens,
   type DomainRecord,
+  type Result,
 } from "@lifequest/vault-core/pure";
 import { eventMarkColor } from "./eventColor";
 import { monthGrid } from "./monthGrid";
@@ -30,7 +31,7 @@ type Props = {
   year: YearRecord;
   month: number;
   onBack: () => void;
-  onCommand: (command: MapCommand) => void;
+  onCommand: (command: MapCommand) => Promise<Result<unknown>>;
   domains: DomainRecord[];
   lens: DomainLens;
 };

@@ -6,6 +6,7 @@ import {
   type DomainLens,
   type DomainRecord,
   type Goal,
+  type Result,
 } from "@lifequest/vault-core/pure";
 import { EventPanel } from "./EventPanel";
 import { eventMarkColor } from "./eventColor";
@@ -35,7 +36,7 @@ const QUARTERS: { id: string; months: number[] }[] = [
 type Props = {
   year: YearRecord;
   onSelectMonth: (month: number) => void;
-  onCommand: (command: MapCommand) => void;
+  onCommand: (command: MapCommand) => Promise<Result<unknown>>;
   domains: DomainRecord[];
   goals: Goal[];
   lens: DomainLens;
@@ -114,6 +115,7 @@ export function Dashboard({
           ))}
         </div>
         <EventPanel
+          key={year.year}
           year={year}
           readOnly={readOnly}
           onCommand={onCommand}

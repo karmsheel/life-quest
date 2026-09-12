@@ -68,6 +68,23 @@ describe("map events", () => {
     assert.equal(res.error.code, "MALFORMED");
   });
 
+  it("rejects a domainSlug that is not live", () => {
+    const res = applyCommand(
+      base(),
+      {
+        type: "createEvent",
+        year: 2026,
+        title: "X",
+        date: "2026-01-01",
+        domainSlug: "nope",
+      },
+      ctx,
+    );
+    assert.equal(res.ok, false);
+    if (res.ok) return;
+    assert.equal(res.error.code, "MALFORMED");
+  });
+
   it("rejects a new goalId that is missing", () => {
     const res = applyCommand(
       base(),

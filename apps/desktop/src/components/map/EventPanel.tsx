@@ -5,13 +5,16 @@ import {
   type DomainLens,
   type DomainRecord,
   type Goal,
+  type Result,
 } from "@lifequest/vault-core/pure";
 import type { MapCommand, MapEvent, YearRecord } from "@lifequest/vault-core/map";
+
+type CommandHandler = (command: MapCommand) => Promise<Result<unknown>>;
 
 type Props = {
   year: YearRecord;
   readOnly: boolean;
-  onCommand: (command: MapCommand) => void;
+  onCommand: CommandHandler;
   goals: Goal[];
   domains: DomainRecord[];
   lens: DomainLens;
@@ -74,6 +77,7 @@ export function EventPanel({
   const [notes, setNotes] = useState("");
   const [domainValue, setDomainValue] = useState(lensSlug(lens) ?? "");
   const [goalValue, setGoalValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   const visible = useMemo(
     () =>
@@ -96,6 +100,7 @@ export function EventPanel({
     setDate(nextDate);
     setDomainValue(lensSlug(lens) ?? "");
     setGoalValue("");
+    setError(null);
   }
 
   useEffect(() => {
@@ -105,20 +110,29 @@ export function EventPanel({
     onConsumedSeed();
   }, [seedDate, readOnly]);
 
-  function submitAdd() {
+  async function submitAdd() {
     const trimmed = title.trim();
     if (!trimmed || readOnly) return;
-    onCommand({
-      type: "createEvent",
-      year: year.year,
-      title: trimmed,
-      date,
-      notes,
-      domainSlug: domainValue === "" ? null : domainValue,
-      goalId: goalValue === "" ? null : goalValue,
-    });
-    setAdding(false);
-    resetAdd();
+    setError(null);
+    try {
+      const result = await onCommand({
+        type: "createEvent",
+        year: year.year,
+        title: trimmed,
+        date,
+        notes,
+        domainSlug: domainValue === "" ? null : domainValue,
+        goalId: goalValue === "" ? null : goalValue,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setAdding(false);
+      resetAdd();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to apply event");
+    }
   }
 
   return (
@@ -143,7 +157,7 @@ export function EventPanel({
           className="event-add-form"
           onSubmit={(e) => {
             e.preventDefault();
-            submitAdd();
+            void submitAdd();
           }}
         >
           <label>
@@ -209,6 +223,11 @@ export function EventPanel({
               Cancel
             </button>
           </div>
+          {error ? (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          ) : null}
         </form>
       )}
       {visible.length === 0 && !adding ? (
@@ -250,13 +269,14 @@ function EventEditor({
   readOnly: boolean;
   goals: Goal[];
   domains: DomainRecord[];
-  onCommand: (command: MapCommand) => void;
+  onCommand: CommandHandler;
 }) {
   const [title, setTitle] = useState(event.title);
   const [date, setDate] = useState(event.date);
   const [notes, setNotes] = useState(event.notes);
   const [domainValue, setDomainValue] = useState(event.domainSlug ?? "");
   const [goalValue, setGoalValue] = useState(event.goalId ?? "");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setTitle(event.title);
@@ -269,14 +289,38 @@ function EventEditor({
   const pickerDomains = domainPickerOptions(domains, event.domainSlug);
   const pickerGoals = goalPickerOptions(goals, event.goalId);
 
-  function commit(patch: {
+  function revertPatch(patch: {
     title?: string;
     date?: string;
     notes?: string;
     domainSlug?: string | null;
     goalId?: string | null;
   }) {
-    onCommand({ type: "updateEvent", year, id: event.id, ...patch });
+    if (patch.title !== undefined) setTitle(event.title);
+    if (patch.date !== undefined) setDate(event.date);
+    if (patch.notes !== undefined) setNotes(event.notes);
+    if (patch.domainSlug !== undefined) setDomainValue(event.domainSlug ?? "");
+    if (patch.goalId !== undefined) setGoalValue(event.goalId ?? "");
+  }
+
+  async function commit(patch: {
+    title?: string;
+    date?: string;
+    notes?: string;
+    domainSlug?: string | null;
+    goalId?: string | null;
+  }) {
+    setError(null);
+    try {
+      const result = await onCommand({ type: "updateEvent", year, id: event.id, ...patch });
+      if (!result.ok) {
+        revertPatch(patch);
+        setError(result.error);
+      }
+    } catch (err) {
+      revertPatch(patch);
+      setError(err instanceof Error ? err.message : "Failed to apply event");
+    }
   }
 
   return (
@@ -289,7 +333,7 @@ function EventEditor({
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => {
             const trimmed = title.trim();
-            if (trimmed && trimmed !== event.title) commit({ title: trimmed });
+            if (trimmed && trimmed !== event.title) void commit({ title: trimmed });
             else setTitle(event.title);
           }}
         />
@@ -304,7 +348,7 @@ function EventEditor({
           max={`${year}-12-31`}
           onChange={(e) => setDate(e.target.value)}
           onBlur={() => {
-            if (date !== event.date && date) commit({ date });
+            if (date !== event.date && date) void commit({ date });
           }}
         />
       </label>
@@ -316,7 +360,7 @@ function EventEditor({
           rows={3}
           onChange={(e) => setNotes(e.target.value)}
           onBlur={() => {
-            if (notes !== event.notes) commit({ notes });
+            if (notes !== event.notes) void commit({ notes });
           }}
         />
       </label>
@@ -329,7 +373,7 @@ function EventEditor({
             const next = e.target.value;
             setDomainValue(next);
             const slug = next === "" ? null : next;
-            if (slug !== event.domainSlug) commit({ domainSlug: slug });
+            if (slug !== event.domainSlug) void commit({ domainSlug: slug });
           }}
         >
           <option value="">Unassigned</option>
@@ -350,7 +394,7 @@ function EventEditor({
             setGoalValue(next);
             const goalId = next === "" ? null : next;
             if (goalId === event.goalId) return;
-            commit({ goalId });
+            void commit({ goalId });
           }}
         >
           <option value="">None</option>
@@ -365,10 +409,25 @@ function EventEditor({
         type="button"
         className="event-delete"
         disabled={readOnly}
-        onClick={() => onCommand({ type: "deleteEvent", year, id: event.id })}
+        onClick={() => {
+          void (async () => {
+            setError(null);
+            try {
+              const result = await onCommand({ type: "deleteEvent", year, id: event.id });
+              if (!result.ok) setError(result.error);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Failed to apply event");
+            }
+          })();
+        }}
       >
         Delete
       </button>
+      {error ? (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -313,6 +313,10 @@ export default function GoalsPage() {
             ? "No goals yet."
             : `No goals in ${domainName}.`}
         </p>
+      ) : listed.length === 0 ? (
+        <p className="muted">
+          {statusFilter === "done" ? "No done goals." : "No open goals."}
+        </p>
       ) : (
         <ul className="goals-page__list">
           {listed.map((goal) => {

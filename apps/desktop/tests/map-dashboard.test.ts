@@ -34,6 +34,36 @@ describe("Life Map dashboard", () => {
     assert.equal(panel.includes("createPeriodGoal"), false);
     assert.equal(panel.includes("PALETTE"), false);
   });
+
+  it("keeps the add form and surfaces apply errors", () => {
+    const chart = read("src/pages/ChartPage.tsx");
+    assert.match(chart, /return result/);
+
+    const panel = read("src/components/map/EventPanel.tsx");
+    assert.match(panel, /await onCommand\(/);
+    assert.match(panel, /if \(!result\.ok\)/);
+    assert.match(panel, /className="form-error"/);
+    assert.match(panel, /role="alert"/);
+    assert.match(panel, /setAdding\(false\)/);
+    assert.equal(
+      /onCommand\(\{[\s\S]*type: "createEvent"[\s\S]*\}\);\s*setAdding\(false\)/.test(panel),
+      false,
+      "submitAdd must not close the form before apply succeeds",
+    );
+  });
+
+  it("resets EventPanel when the year changes", () => {
+    const dash = read("src/components/map/Dashboard.tsx");
+    assert.match(dash, /<EventPanel[\s\S]*key=\{year\.year\}/);
+  });
+
+  it("list_goals returns goalsError so agents see a malformed goals file", () => {
+    const tools = read("electron/map-tools.ts");
+    assert.match(
+      tools,
+      /if \(name === "list_goals"\) return \{ goals: snap\.value\.goals, goalsError: snap\.value\.goalsError \}/,
+    );
+  });
 });
 
 describe("Life Map theme", () => {
@@ -62,5 +92,12 @@ describe("Life Map theme", () => {
     assert.match(src, /\.life-map \.month-name[\s\S]*?background:\s*var\(--bg-muted\)/);
     assert.match(src, /\[data-map-color="gold"\]/);
     assert.match(src, /--map-event-default/);
+  });
+});
+
+describe("Goals empty copy", () => {
+  it("explains an empty open/done filter instead of a blank list", () => {
+    const src = read("src/pages/GoalsPage.tsx");
+    assert.match(src, /No open goals/);
   });
 });

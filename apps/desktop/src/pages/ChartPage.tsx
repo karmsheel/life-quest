@@ -31,6 +31,7 @@ function ChartContent() {
   async function onCommand(command: MapCommand) {
     const result = await api().mapApply(command);
     if (result.ok) await refresh();
+    return result;
   }
 
   if (snapshot?.mapError && !map) {

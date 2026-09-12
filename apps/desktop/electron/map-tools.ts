@@ -115,7 +115,7 @@ export async function executeTool(
       week: resolveWeek(snap.value.map, rec.year as number, rec.monday as string),
     };
   }
-  if (name === "list_goals") return { goals: snap.value.goals };
+  if (name === "list_goals") return { goals: snap.value.goals, goalsError: snap.value.goalsError };
   const goalCmd = commandForGoalTool(name, rec);
   if (goalCmd) {
     const applied = await applyGoalsCommand(root, goalCmd);
