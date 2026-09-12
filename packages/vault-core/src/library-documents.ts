@@ -3,6 +3,13 @@ import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
 import { vaultPaths } from "./paths.ts";
+import {
+  actorDisplayName,
+  assertEditable,
+  lockedFromFrontmatter,
+} from "./documents.ts";
+import { appendLog } from "./log.ts";
+import { USER_ACTOR, type Actor } from "./types.ts";
 import type {
   LibraryCreateInput,
   LibraryDocument,
@@ -89,6 +96,7 @@ function parseLibraryFile(id: string, raw: string): LibraryDocument | null {
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
     deletedAt: data.deletedAt,
+    locked: lockedFromFrontmatter(data),
   };
 }
 
@@ -105,6 +113,7 @@ async function writeLibraryFile(
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       deletedAt: record.deletedAt,
+      locked: record.locked,
     },
     record.bodyMarkdown,
   );
@@ -185,6 +194,7 @@ export async function libraryList(
 export async function libraryCreate(
   rootPath: string,
   input: LibraryCreateInput,
+  actor: Actor = USER_ACTOR,
 ): Promise<Result<LibraryDocument>> {
   try {
     const title = input.title.trim();
@@ -200,8 +210,17 @@ export async function libraryCreate(
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
+      locked: false,
     };
     await writeLibraryFile(rootPath, record);
+    const logged = await appendLog(rootPath, {
+      domainSlug: record.domainSlugs[0] ?? null,
+      type: "document.created",
+      summary: `${actorDisplayName(actor)} created ${record.title}`,
+      payload: { id: record.id, title: record.title },
+      actor,
+    });
+    if (!logged.ok) return logged;
     return ok(record);
   } catch (e) {
     return fail(asError(e));
@@ -219,10 +238,13 @@ export async function libraryUpdate(
   rootPath: string,
   id: string,
   patch: LibraryUpdatePatch,
+  actor: Actor = USER_ACTOR,
 ): Promise<Result<LibraryDocument>> {
   try {
     const loaded = await readLiveLibrary(rootPath, id);
     if (!loaded.ok) return loaded;
+    const editable = assertEditable(loaded.value.locked);
+    if (!editable.ok) return fail(editable.reason);
     let title = loaded.value.title;
     if (patch.title !== undefined) {
       title = patch.title.trim();
@@ -245,6 +267,14 @@ export async function libraryUpdate(
       updatedAt: new Date().toISOString(),
     };
     await writeLibraryFile(rootPath, next);
+    const logged = await appendLog(rootPath, {
+      domainSlug: next.domainSlugs[0] ?? null,
+      type: "document.updated",
+      summary: `${actorDisplayName(actor)} updated ${next.title}`,
+      payload: { id: next.id, title: next.title },
+      actor,
+    });
+    if (!logged.ok) return logged;
     return ok(next);
   } catch (e) {
     return fail(asError(e));
@@ -269,4 +299,35 @@ export async function libraryDelete(
   } catch (e) {
     return fail(asError(e));
   }
+}
+
+export async function setLibraryLocked(
+  rootPath: string,
+  id: string,
+  locked: boolean,
+  actor: Actor = USER_ACTOR,
+): Promise<Result<LibraryDocument>> {
+  if (actor.type !== "user") {
+    return fail("Only the user may lock or unlock library notes.");
+  }
+  const loaded = await readLiveLibrary(rootPath, id);
+  if (!loaded.ok) return loaded;
+  if (loaded.value.locked === locked) {
+    return ok(loaded.value);
+  }
+  const next: LibraryDocument = {
+    ...loaded.value,
+    locked,
+    updatedAt: new Date().toISOString(),
+  };
+  await writeLibraryFile(rootPath, next);
+  const logged = await appendLog(rootPath, {
+    domainSlug: next.domainSlugs[0] ?? null,
+    type: "document.lock_changed",
+    summary: `${actorDisplayName(actor)} ${locked ? "locked" : "unlocked"} ${next.title}`,
+    payload: { id: next.id, locked },
+    actor,
+  });
+  if (!logged.ok) return logged;
+  return ok(next);
 }
