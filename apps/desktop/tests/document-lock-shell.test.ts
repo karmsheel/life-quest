@@ -35,3 +35,14 @@ describe("Life log actor", () => {
     assert.match(src, /actorDisplayName/);
   });
 });
+
+describe("Home and Act lock copy", () => {
+  it("Home and Act say locked not forged", () => {
+    const home = read("src/pages/HomePage.tsx");
+    assert.match(home, /locked/);
+    assert.equal(/forged/i.test(home), false);
+    const act = read("src/pages/ActPage.tsx");
+    assert.match(act, /not locked/);
+    assert.equal(/forged/i.test(act), false);
+  });
+});

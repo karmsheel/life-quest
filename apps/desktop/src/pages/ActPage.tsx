@@ -174,9 +174,9 @@ function ActContent() {
     }
   }
 
-  const howForged = activeDomain
-    ? activeDomain.documents.how?.status === "forged"
-    : liveDomains.some((d) => d.documents.how?.status === "forged");
+  const howLocked = activeDomain
+    ? activeDomain.documents.how?.locked
+    : liveDomains.some((d) => d.documents.how?.locked);
   const canDispatch = activeDomain
     ? canDispatchAgent(documentsToUnlockDocs(activeDomain.documents))
     : liveDomains.some((d) =>
@@ -203,16 +203,16 @@ function ActContent() {
           <p className="act-page__eyebrow muted">Act</p>
           <h1 className="act-page__title">{title}</h1>
         </div>
-        {howForged ? (
-          <span className="act-page__alignment-badge" title="Strategy (How) is forged — execution is doctrine-locked">
+        {howLocked ? (
+          <span className="act-page__alignment-badge" title="Strategy (How) is locked — execution is doctrine-aligned">
             Aligned
           </span>
         ) : (
           <span
             className="act-page__alignment-badge act-page__alignment-badge--warn"
-            title="Forge the Strategy (How) to lock execution to doctrine"
+            title="Lock the Strategy (How) to align execution to doctrine"
           >
-            Strategy (How) not forged
+            Strategy (How) not locked
           </span>
         )}
       </header>
@@ -221,7 +221,7 @@ function ActContent() {
         <h2 className="act-page__section-title">Execution brief</h2>
         <p className="muted act-page__section-sub">
           Read-only Premise → Vision → Purpose → Strategy (How) for this
-          domain. Forge the Strategy (How) to align execution.
+          domain. Lock the Strategy (How) to align execution.
         </p>
         <div className="act-brief">
           {briefDomains.length === 0 ? (
@@ -243,8 +243,8 @@ function ActContent() {
                           {room}
                         </Link>
                         <DocumentLockBadge locked={doc?.locked ?? false} />
-                                            </div>
-                                            <pre className="act-brief__body">
+                      </div>
+                      <pre className="act-brief__body">
                         {body || "(empty)"}
                       </pre>
                     </div>

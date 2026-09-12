@@ -41,6 +41,7 @@ import {
   type MapStoreState,
   type DecisionRecord,
   type DocumentKind,
+  type DocumentTarget,
   type DoctrineDocument,
   type DomainMeta,
   type DomainRecord,

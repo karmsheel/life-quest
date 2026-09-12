@@ -31,7 +31,11 @@ export async function readLog(rootPath: string): Promise<Result<LifeEvent[]>> {
 
 export async function appendLog(
   rootPath: string,
-  event: Omit<LifeEvent, "id" | "createdAt"> & { id?: string; createdAt?: string },
+  event: Omit<LifeEvent, "id" | "createdAt" | "actor"> & {
+    id?: string;
+    createdAt?: string;
+    actor?: Actor | null;
+  },
 ): Promise<Result<LifeEvent>> {
   try {
     const full: LifeEvent = {

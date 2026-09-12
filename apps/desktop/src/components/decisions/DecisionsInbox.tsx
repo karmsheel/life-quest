@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import type { DecisionRecord } from "@lifequest/vault-core";
 import {
   actorDisplayName,
   DOCUMENT_KIND_LABELS,
   recordVisibleMulti,
 } from "@lifequest/vault-core/pure";
+import type { DecisionRecord } from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
@@ -179,11 +179,11 @@ export function DecisionsInbox() {
                   <p className="decision-card__meta muted">
                     {actorDisplayName(d.actor)} ·{" "}
                     {d.domainSlugs.map((slug) => domainLabel(slug, domains)).join(", ")}
-                    {" · "}
-                    {d.target.kind === "doctrine"
+                    ·{" "}
+                    {d.target.type === "doctrine"
                       ? DOCUMENT_KIND_LABELS[d.target.kind]
                       : d.proposedTitle ?? d.title}
-                    {" · "}
+                    ·{" "}
                     {formatWhen(d.createdAt)}
                     {d.status !== "pending" ? (
                       <>

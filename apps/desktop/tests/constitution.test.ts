@@ -41,6 +41,8 @@ describe("product constitution", () => {
     assert.match(read("LAWS/DOMAIN-FILTER.md"), /domain switcher MUST/);
     assert.match(read("LAWS/WINGS.md"), /MUST NOT filter/);
     assert.match(read("LAWS/DOCTRINE.md"), /MUST NOT be edited in place/);
+    assert.match(read("LAWS/DOCTRINE.md"), /Agents MUST NOT lock or unlock/);
+    assert.match(read("LAWS/DOCTRINE.md"), /pending Decision/);
   });
 
   it("documents shared UI rules", () => {
@@ -50,5 +52,11 @@ describe("product constitution", () => {
     assert.match(src, /pill/);
     assert.match(src, /\.shell/);
     assert.match(src, /pane/);
+  });
+
+  it("LAWS/DOCTRINE.md has agent lock rules", () => {
+    const src = read("LAWS/DOCTRINE.md");
+    assert.match(src, /Agents MUST NOT lock or unlock/);
+    assert.match(src, /pending Decision/);
   });
 });

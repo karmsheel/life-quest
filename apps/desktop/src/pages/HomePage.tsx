@@ -8,6 +8,7 @@ import {
   DOCUMENT_KIND_LABELS,
   DREAM_DOCUMENT_KINDS,
   recordVisible,
+  recordVisibleMulti,
   type DocumentKind,
 } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
@@ -101,19 +102,16 @@ export default function HomePage() {
 
   const doctrineTotal = visibleDomains.length * DOCTRINE_ROWS.length;
 
-  const forgedCount = useMemo(() => {
+  const lockedCount = useMemo(() => {
     return visibleDomains.reduce((n, domain) => {
       return (
-        n +
-        DOCTRINE_ROWS.filter(
-          (r) => domain.documents[r.kind]?.status === "forged",
-        ).length
+        n + DOCTRINE_ROWS.filter((r) => domain.documents[r.kind]?.locked).length
       );
     }, 0);
   }, [visibleDomains]);
 
   const pendingForDomain = useMemo(
-    () => decisions.filter((d) => recordVisible(lens, d.domainSlug)),
+    () => decisions.filter((d) => recordVisibleMulti(lens, d.domainSlugs)),
     [decisions, lens],
   );
 
@@ -127,7 +125,7 @@ export default function HomePage() {
   );
 
   const progressPct =
-    doctrineTotal === 0 ? 0 : Math.round((forgedCount / doctrineTotal) * 100);
+    doctrineTotal === 0 ? 0 : Math.round((lockedCount / doctrineTotal) * 100);
 
   return (
     <div className="home-dashboard">
@@ -144,10 +142,10 @@ export default function HomePage() {
         </div>
         <div
           className="home-dashboard__progress"
-          title={`${forgedCount} of ${doctrineTotal} pillars forged`}
+          title={`${lockedCount} of ${doctrineTotal} locked`}
         >
           <span className="muted home-dashboard__progress-label">
-            {forgedCount}/{doctrineTotal} forged
+            {lockedCount}/{doctrineTotal} locked
           </span>
           <div className="home-progress-bar">
             <div
@@ -210,8 +208,7 @@ export default function HomePage() {
             <p className="muted">Loading…</p>
           ) : pendingForDomain.length === 0 ? (
             <p className="muted home-card__empty">
-              No pending decisions. Forge a document and propose a change to see
-              it here.
+              No pending proposals.
             </p>
           ) : (
             <ul className="home-mini-list">
@@ -221,7 +218,9 @@ export default function HomePage() {
                     {d.title}
                   </Link>
                   <span className="muted home-mini-list__meta">
-                    {d.documentKind}
+                    {d.target.type === "doctrine"
+                      ? DOCUMENT_KIND_LABELS[d.target.kind]
+                      : d.proposedTitle ?? d.title}
                   </span>
                 </li>
               ))}

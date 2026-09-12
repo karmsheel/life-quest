@@ -1,5 +1,11 @@
 import type { MapToolDef } from "./map/tools.ts";
-import type { Actor, DocumentKind, LibraryDocument, DoctrineDocument } from "./types.ts";
+import type {
+  Actor,
+  DocumentKind,
+  DoctrineDocument,
+  LibraryDocument,
+  LibraryUpdatePatch,
+} from "./types.ts";
 import {
   libraryCreate,
   libraryUpdate,
@@ -164,8 +170,7 @@ export async function executeDocumentTool(
         if (!libResult.ok) {
           return { error: { code: "MALFORMED", message: libResult.error } };
         }
-        const current = libResult.value;
-        const patch: Parameters<Parameters<typeof libraryUpdate>[2]>[0] = {};
+        const patch: LibraryUpdatePatch = {};
         if (typeof args.title === "string" && args.title.trim()) patch.title = args.title;
         if (typeof args.body === "string") patch.bodyMarkdown = args.body;
         if (patch.title === undefined && patch.bodyMarkdown === undefined) {

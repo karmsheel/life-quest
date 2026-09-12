@@ -1,10 +1,10 @@
 import { FormEvent, useEffect, useState } from "react";
-import type { DocumentKind } from "@lifequest/vault-core";
+import type { DocumentTarget } from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 
 export type ProposeChangeDialogProps = {
   open: boolean;
-  target: { type: "doctrine"; domainSlug: string; kind: DocumentKind };
+  target: DocumentTarget;
   currentTitle: string;
   currentBody: string;
   onClose: () => void;

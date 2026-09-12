@@ -45,14 +45,15 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     (isDoctrineExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isLibraryExplicitTarget(explicitTarget as Record<string, unknown>))
   ) {
+    const t = explicitTarget as Record<string, unknown>;
     target =
-      (explicitTarget as Record<string, unknown>).type === "doctrine"
+      t.type === "doctrine"
         ? {
             type: "doctrine",
-            domainSlug: String(explicitTarget.domainSlug),
-            kind: String(explicitTarget.kind) as DocumentKind,
+            domainSlug: String(t.domainSlug),
+            kind: String(t.kind) as DocumentKind,
           }
-        : { type: "library", id: String(explicitTarget.id) };
+        : { type: "library", id: String(t.id) };
   } else if (
     typeof raw.documentKind === "string" &&
     isDocumentKind(raw.documentKind) &&
@@ -322,7 +323,7 @@ async function applyApprovedBody(
         decision.proposedBodyMarkdown,
       );
       await atomicWriteFile(docPath, md);
-      return { ok: true };
+      return { ok: true, value: undefined };
     } else {
       // Library: load record (including locked), write title + body, keep locked.
       const noteRes = await libraryGet(rootPath, decision.target.id);
@@ -348,7 +349,7 @@ async function applyApprovedBody(
       const raw = md.replace(/^title: "([^"\\]+)"$/m, "title: $1");
       const paths = vaultPaths(rootPath);
       await atomicWriteFile(paths.libraryDocumentMd(decision.target.id), raw);
-      return { ok: true };
+      return { ok: true, value: undefined };
     }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

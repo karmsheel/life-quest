@@ -2,7 +2,7 @@
 
 ## Users
 
-LifeQuest is for one person running a local vault on their desktop: organizing life into Domains, forging Premise → Vision → Purpose → Strategy (How), reviewing Decisions, keeping a Life log, and optionally talking to Hermes agents.
+LifeQuest is for one person running a local vault on their desktop: organizing life into Domains, locking Premise → Vision → Purpose → Strategy (How), reviewing Decisions, keeping a Life log, and optionally talking to Hermes agents.
 
 ## Product Purpose
 
