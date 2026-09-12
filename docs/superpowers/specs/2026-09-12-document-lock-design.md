@@ -1,7 +1,7 @@
 # Document Lock — Design Spec
 
 **Date:** 2026-09-12  
-**Status:** Draft — awaiting review before implementation plan  
+**Status:** Approved — implementation plan ready (`docs/superpowers/plans/2026-09-12-document-lock.md`)  
 **Product:** LifeQuest — local-first life-management studio  
 **Depends on:** [Local vault (Electron)](./2026-07-19-local-vault-electron-design.md), [Overview Domain Lens](./2026-08-31-overview-domain-lens-design.md), [Dream doctrine four docs](./2026-09-10-dream-doctrine-four-docs-design.md), [Hermes companion profile](./2026-09-04-hermes-companion-profile-design.md)
 
