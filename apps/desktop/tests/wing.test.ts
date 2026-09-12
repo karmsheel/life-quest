@@ -12,15 +12,22 @@ import {
 } from "../src/components/shell/wing.ts";
 
 describe("initialWingSession", () => {
-  it("starts on Home with the four defaults", () => {
+  it("starts on Home with the five defaults", () => {
     const session = initialWingSession();
-    assert.deepEqual(WING_IDS, ["home", "vision", "plan", "execute"]);
+    assert.deepEqual(WING_IDS, [
+      "home",
+      "vision",
+      "plan",
+      "execute",
+      "review",
+    ]);
     assert.equal(session.active, "home");
     assert.deepEqual(session.lastPath, {
       home: "/home",
       vision: "/dream",
       plan: "/goals",
       execute: "/act",
+      review: "/review/daily",
     });
     assert.deepEqual(WING_DEFAULTS, session.lastPath);
   });
@@ -36,6 +43,11 @@ describe("wingForPath", () => {
     assert.equal(wingForPath("/chart"), "plan");
     assert.equal(wingForPath("/track"), "plan");
     assert.equal(wingForPath("/act"), "execute");
+    assert.equal(wingForPath("/review/daily"), "review");
+    assert.equal(wingForPath("/review/weekly"), "review");
+    assert.equal(wingForPath("/review/monthly"), "review");
+    assert.equal(wingForPath("/review/quarterly"), "review");
+    assert.equal(wingForPath("/review/yearly"), "review");
     assert.equal(wingForPath("/dream/health/why"), "vision");
     assert.equal(wingForPath("/dream/health/what"), "vision");
     assert.equal(wingForPath("/track/health/how"), "plan");
@@ -48,6 +60,10 @@ describe("wingForPath", () => {
     assert.equal(wingForPath("/settings"), null);
     assert.equal(wingForPath("/domains"), null);
     assert.equal(wingForPath("/unknown"), null);
+    assert.equal(wingForPath("/review"), null);
+    assert.equal(wingForPath("/review/nope"), null);
+    assert.equal(wingForPath("/review/daily/extra"), null);
+    assert.equal(wingForPath("/daily"), null);
   });
 });
 
@@ -76,6 +92,13 @@ describe("applyPath", () => {
     assert.equal(next.lastPath.home, "/home");
   });
 
+  it("selects Review and records /review/weekly", () => {
+    const next = applyPath(initialWingSession(), "/review/weekly");
+    assert.equal(next.active, "review");
+    assert.equal(next.lastPath.review, "/review/weekly");
+    assert.equal(next.lastPath.home, "/home");
+  });
+
   it("keeps Home on /log and records it as Home last path", () => {
     const next = applyPath(initialWingSession(), "/log");
     assert.equal(next.active, "home");
@@ -83,11 +106,25 @@ describe("applyPath", () => {
     assert.equal(next.lastPath.plan, "/goals");
   });
 
+  it("keeps Review on /log and records it as Review last path", () => {
+    const onReview = applyPath(initialWingSession(), "/review/weekly");
+    const next = applyPath(onReview, "/log");
+    assert.equal(next.active, "review");
+    assert.equal(next.lastPath.review, "/log");
+  });
+
   it("does not change the session for an unknown path", () => {
     const session = initialWingSession();
     const next = applyPath(session, "/nope");
     assert.equal(next, session);
     assert.equal(next.active, "home");
+  });
+
+  it("does not change the session for unknown /review paths", () => {
+    const session = initialWingSession();
+    assert.equal(applyPath(session, "/review"), session);
+    assert.equal(applyPath(session, "/review/nope"), session);
+    assert.equal(applyPath(session, "/daily"), session);
   });
 });
 
@@ -110,6 +147,12 @@ describe("selectWing", () => {
     assert.equal(next.pathname, "/dream");
   });
 
+  it("selects Review at /review/daily from a fresh session", () => {
+    const next = selectWing(initialWingSession(), "review");
+    assert.equal(next.session.active, "review");
+    assert.equal(next.pathname, "/review/daily");
+  });
+
   it("after Log then Plan, returning to Home goes to Log", () => {
     const afterLog = applyPath(initialWingSession(), "/log");
     const afterPlan = selectWing(afterLog, "plan");
@@ -117,6 +160,15 @@ describe("selectWing", () => {
     const back = selectWing(afterPlan.session, "home");
     assert.equal(back.pathname, "/log");
     assert.equal(back.session.active, "home");
+  });
+
+  it("after Weekly then Plan, returning to Review goes to Weekly", () => {
+    const afterWeekly = applyPath(initialWingSession(), "/review/weekly");
+    const afterPlan = selectWing(afterWeekly, "plan");
+    assert.equal(afterPlan.pathname, "/goals");
+    const back = selectWing(afterPlan.session, "review");
+    assert.equal(back.pathname, "/review/weekly");
+    assert.equal(back.session.active, "review");
   });
 
   it("falls back to the wing default when last path is unknown", () => {
@@ -127,6 +179,7 @@ describe("selectWing", () => {
         vision: "/dream",
         plan: "/nope",
         execute: "/act",
+        review: "/review/daily",
       },
     };
     const next = selectWing(broken, "plan");
@@ -142,10 +195,14 @@ describe("selectWing", () => {
         vision: "/dream",
         plan: "/home",
         execute: "/act",
+        review: "/home",
       },
     };
     const next = selectWing(broken, "plan");
     assert.equal(next.pathname, "/goals");
+    const review = selectWing(broken, "review");
+    assert.equal(review.pathname, "/review/daily");
+    assert.equal(review.session.active, "review");
   });
 });
 
