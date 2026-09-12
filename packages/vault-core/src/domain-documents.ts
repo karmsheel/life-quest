@@ -1,15 +1,20 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { atomicWriteBytes, atomicWriteFile } from "./atomic-write.ts";
-import { assertEditable, canTransitionStatus } from "./documents.ts";
+import {
+  actorDisplayName,
+  assertEditable,
+  lockedFromFrontmatter,
+} from "./documents.ts";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
 import {
   DOCUMENT_KIND_LABELS,
   DOCUMENT_KINDS,
+  USER_ACTOR,
+  type Actor,
   type DocumentKind,
-  type DocumentStatus,
   type DoctrineDocument,
   type Result,
 } from "./types.ts";
@@ -36,6 +41,10 @@ function isDocumentKind(kind: string): kind is DocumentKind {
   return (DOCUMENT_KINDS as readonly string[]).includes(kind);
 }
 
+function doctrineMatter(title: string, locked: boolean, updatedAt: string) {
+  return { title, locked, updatedAt };
+}
+
 async function readDoctrineFile(
   filePath: string,
   kind: DocumentKind,
@@ -46,8 +55,7 @@ async function readDoctrineFile(
   return {
     kind,
     title: typeof data.title === "string" ? data.title : DOCUMENT_KIND_LABELS[kind],
-    status: (data.status as DocumentStatus) || "draft",
-    forgedAt: (data.forgedAt as string | null) ?? null,
+    locked: lockedFromFrontmatter(data),
     updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : st.mtime.toISOString(),
     bodyMarkdown: body,
     mtimeMs: st.mtimeMs,
@@ -66,7 +74,7 @@ export async function readOrCreateDoctrineFile(
   const now = new Date().toISOString();
   const title = DOCUMENT_KIND_LABELS[kind];
   const md = serializeFrontmatter(
-    { title, status: "draft", forgedAt: null, updatedAt: now },
+    doctrineMatter(title, false, now),
     "",
   );
   await atomicWriteFile(filePath, md);
@@ -104,6 +112,7 @@ export async function saveDocument(
   kind: DocumentKind,
   bodyMarkdown: string,
   title?: string,
+  actor: Actor = USER_ACTOR,
 ): Promise<Result<DoctrineDocument>> {
   try {
     if (!isDocumentKind(kind)) {
@@ -122,7 +131,7 @@ export async function saveDocument(
       throw e;
     }
 
-    const editable = assertEditable(existing.status);
+    const editable = assertEditable(existing.locked);
     if (!editable.ok) {
       return { ok: false, error: editable.reason };
     }
@@ -130,12 +139,7 @@ export async function saveDocument(
     const now = new Date().toISOString();
     const nextTitle = title !== undefined ? title : existing.title;
     const md = serializeFrontmatter(
-      {
-        title: nextTitle,
-        status: existing.status,
-        forgedAt: existing.forgedAt,
-        updatedAt: now,
-      },
+      doctrineMatter(nextTitle, existing.locked, now),
       bodyMarkdown,
     );
     await atomicWriteFile(filePath, md);
@@ -143,8 +147,9 @@ export async function saveDocument(
     const logRes = await appendLog(paths.root, {
       domainSlug: slug,
       type: "document.updated",
-      summary: `Updated ${kind} for ${slug}`,
+      summary: `${actorDisplayName(actor)} updated ${DOCUMENT_KIND_LABELS[kind]}`,
       payload: { kind, title: nextTitle },
+      actor,
     });
     if (!logRes.ok) return logRes;
 
@@ -155,15 +160,19 @@ export async function saveDocument(
   }
 }
 
-export async function setDocumentStatus(
+export async function setDocumentLocked(
   rootPath: string,
   slug: string,
   kind: DocumentKind,
-  status: DocumentStatus,
+  locked: boolean,
+  actor: Actor = USER_ACTOR,
 ): Promise<Result<DoctrineDocument>> {
   try {
     if (!isDocumentKind(kind)) {
       return { ok: false, error: `Invalid document kind: ${kind}` };
+    }
+    if (actor.type !== "user") {
+      return { ok: false, error: "Only the user can lock or unlock documents" };
     }
     const paths = vaultPaths(rootPath);
     const filePath = paths.documentMd(slug, kind);
@@ -178,31 +187,23 @@ export async function setDocumentStatus(
       throw e;
     }
 
-    if (!canTransitionStatus(existing.status, status)) {
-      return {
-        ok: false,
-        error: `Invalid status transition: ${existing.status} → ${status}`,
-      };
+    if (existing.locked === locked) {
+      return { ok: true, value: existing };
     }
 
     const now = new Date().toISOString();
-    const forgedAt = status === "forged" ? now : existing.forgedAt;
     const md = serializeFrontmatter(
-      {
-        title: existing.title,
-        status,
-        forgedAt,
-        updatedAt: now,
-      },
+      doctrineMatter(existing.title, locked, now),
       existing.bodyMarkdown,
     );
     await atomicWriteFile(filePath, md);
 
     const logRes = await appendLog(paths.root, {
       domainSlug: slug,
-      type: "document.status_changed",
-      summary: `Status ${existing.status} → ${status} for ${slug}/${kind}`,
-      payload: { kind, from: existing.status, to: status },
+      type: "document.lock_changed",
+      summary: `${actorDisplayName(actor)} ${locked ? "locked" : "unlocked"} ${DOCUMENT_KIND_LABELS[kind]}`,
+      payload: { kind, locked },
+      actor,
     });
     if (!logRes.ok) return logRes;
 

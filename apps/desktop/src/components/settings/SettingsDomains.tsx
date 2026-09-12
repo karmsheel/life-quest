@@ -190,7 +190,7 @@ export function SettingsDomains() {
               const docs = DOCUMENT_KINDS.map((kind) => {
                 const doc = d.documents[kind];
                 const len = doc?.bodyMarkdown.trim().length ?? 0;
-                return `${DOCUMENT_KIND_LABELS[kind]}: ${doc?.status ?? "draft"}${
+                return `${DOCUMENT_KIND_LABELS[kind]}: ${doc?.locked ? "locked" : "unlocked"}${
                   len > 0 ? ` (${len})` : " (empty)"
                 }`;
               });

@@ -89,7 +89,7 @@ LifeQuest owns the vault, the MCP door, and the UI. Hermes owns the agent loop, 
 ## Vault identity
 
 - Opening a vault **is** identity — no sign-up / sign-in.
-- Doctrine is Markdown with frontmatter (`status: draft | refined | forged`).
+- Doctrine is Markdown with frontmatter (`locked: true | false`).
 - Structured state is git-friendly JSON / JSONL under the vault’s prescribed layout.
 - Active domain and recent vaults live in app `userData`, not inside the vault.
 

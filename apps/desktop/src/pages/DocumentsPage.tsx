@@ -14,6 +14,7 @@ import {
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
+import { ProposeChangeDialog } from "@/components/documents/ProposeChangeDialog";
 
 function formatWhen(iso: string): string {
   try {
@@ -46,6 +47,8 @@ export default function DocumentsPage() {
     const slug = lensSlug(lens);
     return slug ? [slug] : [];
   });
+  const [editingLocked, setEditingLocked] = useState(false);
+  const [proposeOpen, setProposeOpen] = useState(false);
   const tagsDirty = useRef(false);
 
   const liveDomains = useMemo(
@@ -153,6 +156,7 @@ export default function DocumentsPage() {
       setTitle(note.title);
       setBody(note.bodyMarkdown);
       setDomainSlugs(note.domainSlugs);
+      setEditingLocked(note.locked);
       tagsDirty.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to open note");
@@ -216,6 +220,56 @@ export default function DocumentsPage() {
     }
   }
 
+  async function onLock() {
+    if (!editingId || editingLocked || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api().librarySetLocked(editingId, true);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setEditingLocked(true);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to lock note");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onUnlock() {
+    if (!editingId || !editingLocked || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api().librarySetLocked(editingId, false);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setEditingLocked(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to unlock note");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function onProposeOpen() {
+    setProposeOpen(true);
+  }
+
+  function onProposeClose() {
+    setProposeOpen(false);
+  }
+
+  async function onProposeSubmitted() {
+    await load();
+  }
+
   return (
     <div className="documents-page">
       <header className="documents-page__header">
@@ -233,6 +287,7 @@ export default function DocumentsPage() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
+            readOnly={editingLocked}
           />
         </label>
         <label className="field">
@@ -241,6 +296,7 @@ export default function DocumentsPage() {
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={6}
+            readOnly={editingLocked}
           />
         </label>
         <div className="field">
@@ -258,6 +314,7 @@ export default function DocumentsPage() {
                     type="checkbox"
                     checked={domainSlugs.includes(d.slug)}
                     onChange={() => toggleSlug(d.slug)}
+                    disabled={editingLocked}
                   />
                   {d.name}
                 </label>
@@ -269,7 +326,7 @@ export default function DocumentsPage() {
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={busy || !title.trim()}
+            disabled={busy || !title.trim() || editingLocked}
           >
             {editingId ? "Save" : "Create"}
           </button>
@@ -291,6 +348,38 @@ export default function DocumentsPage() {
               >
                 Delete
               </button>
+              {editingLocked ? (
+                <>
+                  <span className="muted library-lock-hint">
+                    Unlock to edit, or propose a change.
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => void onUnlock()}
+                    disabled={busy}
+                  >
+                    Unlock
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => void onProposeOpen()}
+                    disabled={busy}
+                  >
+                    Propose change
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => void onLock()}
+                  disabled={busy}
+                >
+                  Lock
+                </button>
+              )}
             </>
           ) : null}
         </div>
@@ -350,6 +439,14 @@ export default function DocumentsPage() {
           ))}
         </ul>
       )}
+      <ProposeChangeDialog
+        open={proposeOpen}
+        target={{ type: "library", id: editingId! }}
+        currentTitle={title}
+        currentBody={body}
+        onClose={onProposeClose}
+        onSubmitted={onProposeSubmitted}
+      />
     </div>
   );
 }

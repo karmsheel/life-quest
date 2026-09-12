@@ -4,13 +4,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createVault } from "../src/create-vault.ts";
-import { setDocumentStatus, getDocument, saveDocument } from "../src/domain-documents.ts";
-import {
-  createDecision,
-  listDecisions,
-  resolveDecision,
-} from "../src/decisions.ts";
-import { readLog } from "../src/log.ts";
+import { USER_ACTOR } from "../src/types.ts";
+import { setDocumentLocked, getDocument, saveDocument } from "../src/domain-documents.ts";
+import { libraryCreate, libraryGet, setLibraryLocked } from "../src/library-documents.ts";
+import { createDecision, listDecisions, resolveDecision } from "../src/decisions.ts";
+
+const agent = { type: "agent" as const, id: "a1", name: "Hermes" };
 
 describe("decisions", () => {
   let dir: string;
@@ -27,180 +26,199 @@ describe("decisions", () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it("approve: forge why, createDecision, resolve approved → body equals proposed", async () => {
-    // Seed body then forge health/why
-    const seeded = await saveDocument(root, "health", "why", "original why body");
-    assert.equal(seeded.ok, true);
-
-    const refined = await setDocumentStatus(root, "health", "why", "refined");
-    assert.equal(refined.ok, true);
-    const forged = await setDocumentStatus(root, "health", "why", "forged");
-    assert.equal(forged.ok, true);
-    if (!forged.ok) return;
-
-    const proposed = "proposed why body from decision";
+  it("approve locked doctrine: body and title apply, locked stays true", async () => {
+    assert.equal((await saveDocument(root, "health", "why", "original")).ok, true);
+    assert.equal((await setDocumentLocked(root, "health", "why", true)).ok, true);
     const created = await createDecision(root, {
-      domainSlug: "health",
-      documentKind: "why",
-      title: "Update health why",
+      target: { type: "doctrine", domainSlug: "health", kind: "why" },
       rationale: "Better framing",
-      proposedBodyMarkdown: proposed,
-      previousBodyMarkdown: forged.value.bodyMarkdown,
+      proposedTitle: "Purpose v2",
+      previousTitle: "Purpose",
+      proposedBodyMarkdown: "proposed why body from decision",
+      previousBodyMarkdown: "original\n",
+      actor: USER_ACTOR,
     });
     assert.equal(created.ok, true);
     if (!created.ok) return;
     assert.equal(created.value.status, "pending");
-    assert.equal(created.value.resolvedAt, null);
-    assert.equal(created.value.proposedBodyMarkdown, proposed);
-    assert.ok(created.value.id);
-
-    const listed = await listDecisions(root);
-    assert.equal(listed.ok, true);
-    if (!listed.ok) return;
-    assert.ok(listed.value.some((d) => d.id === created.value.id));
+    assert.equal(created.value.target.type, "doctrine");
+    assert.equal(created.value.actor.type, "user");
+    assert.match(created.value.title, /Purpose/);
 
     const resolved = await resolveDecision(root, created.value.id, "approved");
     assert.equal(resolved.ok, true);
-    if (!resolved.ok) return;
-    assert.equal(resolved.value.status, "approved");
-    assert.ok(resolved.value.resolvedAt);
-
     const doc = await getDocument(root, "health", "why");
     assert.equal(doc.ok, true);
     if (!doc.ok) return;
-    assert.equal(doc.value.status, "forged");
+    assert.equal(doc.value.locked, true);
+    assert.equal(doc.value.title, "Purpose v2");
     assert.match(doc.value.bodyMarkdown, /proposed why body from decision/);
-
-    const raw = await fs.readFile(path.join(root, "domains", "health", "why.md"), "utf8");
-    assert.match(raw, /status: forged/);
-    assert.match(raw, /proposed why body from decision/);
-
-    const log = await readLog(root);
-    assert.equal(log.ok, true);
-    if (!log.ok) return;
-    const evt = log.value.find(
-      (e) => e.type === "decision.resolved" && (e.payload as { id?: string })?.id === created.value.id,
-    );
-    assert.ok(evt, "expected decision.resolved log entry");
-    assert.equal((evt!.payload as { resolution?: string }).resolution, "approved");
   });
 
-  it("reject path leaves body unchanged", async () => {
-    // Use intellectual what: seed, refine, forge
-    const seeded = await saveDocument(root, "intellectual", "what", "keep this body");
-    assert.equal(seeded.ok, true);
-    assert.equal((await setDocumentStatus(root, "intellectual", "what", "refined")).ok, true);
-    const forged = await setDocumentStatus(root, "intellectual", "what", "forged");
-    assert.equal(forged.ok, true);
-    if (!forged.ok) return;
-
-    const beforeBody = forged.value.bodyMarkdown;
-
+  it("createDecision rejects unlocked documents", async () => {
     const created = await createDecision(root, {
-      domainSlug: "intellectual",
-      documentKind: "what",
-      title: "Bad proposal",
-      rationale: null,
+      target: { type: "doctrine", domainSlug: "health", kind: "what" },
+      proposedTitle: "Vision",
+      proposedBodyMarkdown: "nope",
+      actor: USER_ACTOR,
+    });
+    assert.equal(created.ok, false);
+    if (created.ok) return;
+    assert.match(created.error, /locked/i);
+  });
+
+  it("reject leaves library body unchanged; approve writes through lock", async () => {
+    const note = await libraryCreate(root, { title: "Budget", bodyMarkdown: "keep" });
+    assert.equal(note.ok, true);
+    if (!note.ok) return;
+    // Re-read to get the canonical stored body (serializeFrontmatter appends a trailing newline).
+    const refreshed = await libraryGet(root, note.value.id);
+    assert.equal(refreshed.ok, true);
+    if (!refreshed.ok) return;
+    const keepBody = refreshed.value.bodyMarkdown;
+    assert.equal((await setLibraryLocked(root, note.value.id, true)).ok, true);
+    const created = await createDecision(root, {
+      target: { type: "library", id: note.value.id },
+      proposedTitle: "Budget",
+      previousTitle: "Budget",
       proposedBodyMarkdown: "should never land",
-      previousBodyMarkdown: beforeBody,
+      previousBodyMarkdown: keepBody,
+      actor: agent,
     });
     assert.equal(created.ok, true);
     if (!created.ok) return;
+    assert.equal(created.value.actor.type, "agent");
+    assert.equal((await resolveDecision(root, created.value.id, "rejected")).ok, true);
+    const after = await libraryGet(root, note.value.id);
+    assert.equal(after.ok, true);
+    if (!after.ok) return;
+    assert.equal(after.value.bodyMarkdown, keepBody);
+    assert.equal(after.value.locked, true);
+  });
 
+  it("approve writes library title and body through lock", async () => {
+    const note = await libraryCreate(root, { title: "Budget", bodyMarkdown: "keep" });
+    assert.equal(note.ok, true);
+    if (!note.ok) return;
+    const refreshed = await libraryGet(root, note.value.id);
+    assert.equal(refreshed.ok, true);
+    if (!refreshed.ok) return;
+    const keepBody = refreshed.value.bodyMarkdown;
+    assert.equal((await setLibraryLocked(root, note.value.id, true)).ok, true);
+    const created = await createDecision(root, {
+      target: { type: "library", id: note.value.id },
+      proposedTitle: "Budget v2",
+      previousTitle: "Budget",
+      proposedBodyMarkdown: "approved new body",
+      previousBodyMarkdown: keepBody,
+      actor: agent,
+    });
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    assert.equal(created.value.actor.type, "agent");
+    const resolved = await resolveDecision(root, created.value.id, "approved");
+    assert.equal(resolved.ok, true);
+    if (!resolved.ok) return;
+    const after = await libraryGet(root, note.value.id);
+    assert.equal(after.ok, true);
+    if (!after.ok) return;
+    assert.equal(after.value.title, "Budget v2");
+    assert.equal(after.value.bodyMarkdown, "approved new body\n");
+    assert.equal(after.value.locked, true);
+  });
+
+  it("reads legacy decision JSON without target as doctrine", async () => {
+    const { vaultPaths } = await import("../src/paths.ts");
+    const paths = vaultPaths(root);
+    await fs.mkdir(paths.decisionsDir, { recursive: true });
+    const id = "legacy-decision-id";
+    await fs.writeFile(
+      paths.decisionJson(id),
+      JSON.stringify({
+        id,
+        domainSlug: "health",
+        documentKind: "how",
+        status: "pending",
+        title: "Old forge proposal",
+        rationale: null,
+        proposedBodyMarkdown: "legacy body",
+        previousBodyMarkdown: "",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        resolvedAt: null,
+      }) + "\n",
+      "utf8",
+    );
+    assert.equal((await setDocumentLocked(root, "health", "how", true)).ok, true);
+    const listed = await listDecisions(root);
+    assert.equal(listed.ok, true);
+    if (!listed.ok) return;
+    const legacy = listed.value.find((d) => d.id === id);
+    assert.ok(legacy);
+    assert.equal(legacy.target.type, "doctrine");
+    if (legacy.target.type === "doctrine") {
+      assert.equal(legacy.target.kind, "how");
+      assert.equal(legacy.target.domainSlug, "health");
+    }
+    assert.equal(legacy.actor.type, "user");
+    assert.equal(legacy.proposedTitle, null);
+    const resolved = await resolveDecision(root, id, "approved");
+    assert.equal(resolved.ok, true);
+    const doc = await getDocument(root, "health", "how");
+    assert.equal(doc.ok, true);
+    if (!doc.ok) return;
+    assert.match(doc.value.bodyMarkdown, /legacy body/);
+    assert.equal(doc.value.title, "Strategy (How)");
+  });
+
+  it("reject leaves doctrine body unchanged", async () => {
+    const saved = await saveDocument(root, "intellectual", "what", "keep this body");
+    assert.equal(saved.ok, true);
+    if (!saved.ok) return;
+    const beforeBody = saved.value.bodyMarkdown;
+    assert.equal((await setDocumentLocked(root, "intellectual", "what", true)).ok, true);
+    const created = await createDecision(root, {
+      target: { type: "doctrine", domainSlug: "intellectual", kind: "what" },
+      proposedTitle: "Bad proposal",
+      proposedBodyMarkdown: "should never land",
+      actor: USER_ACTOR,
+    });
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
     const rejected = await resolveDecision(root, created.value.id, "rejected");
     assert.equal(rejected.ok, true);
     if (!rejected.ok) return;
-    assert.equal(rejected.value.status, "rejected");
-    assert.ok(rejected.value.resolvedAt);
-
     const doc = await getDocument(root, "intellectual", "what");
     assert.equal(doc.ok, true);
     if (!doc.ok) return;
     assert.equal(doc.value.bodyMarkdown, beforeBody);
-    assert.match(doc.value.bodyMarkdown, /keep this body/);
-    assert.equal(doc.value.status, "forged");
-
-    const log = await readLog(root);
-    assert.equal(log.ok, true);
-    if (!log.ok) return;
-    const evt = log.value.find(
-      (e) =>
-        e.type === "decision.resolved" &&
-        (e.payload as { id?: string })?.id === created.value.id &&
-        (e.payload as { resolution?: string }).resolution === "rejected",
-    );
-    assert.ok(evt, "expected rejected decision.resolved log");
+    assert.equal(doc.value.locked, true);
   });
 
   it("cannot resolve already-resolved decision", async () => {
-    // Target must be forged before createDecision is allowed.
     assert.equal((await saveDocument(root, "emotional", "how", "how body")).ok, true);
-    assert.equal((await setDocumentStatus(root, "emotional", "how", "refined")).ok, true);
-    assert.equal((await setDocumentStatus(root, "emotional", "how", "forged")).ok, true);
-
+    assert.equal((await setDocumentLocked(root, "emotional", "how", true)).ok, true);
     const created = await createDecision(root, {
-      domainSlug: "emotional",
-      documentKind: "how",
-      title: "Double resolve",
-      rationale: null,
+      target: { type: "doctrine", domainSlug: "emotional", kind: "how" },
+      proposedTitle: "Double resolve",
       proposedBodyMarkdown: "x",
-      previousBodyMarkdown: null,
+      actor: USER_ACTOR,
     });
     assert.equal(created.ok, true);
     if (!created.ok) return;
-
     const first = await resolveDecision(root, created.value.id, "rejected");
     assert.equal(first.ok, true);
-
     const second = await resolveDecision(root, created.value.id, "approved");
     assert.equal(second.ok, false);
     if (second.ok) return;
     assert.match(second.error, /already|resolved|pending/i);
   });
 
-  it("createDecision rejects draft (non-forged) documents", async () => {
-    // health/what is still draft by default after createVault
-    const draft = await getDocument(root, "health", "what");
-    assert.equal(draft.ok, true);
-    if (!draft.ok) return;
-    assert.equal(draft.value.status, "draft");
-
-    const created = await createDecision(root, {
-      domainSlug: "health",
-      documentKind: "what",
-      title: "Should fail",
-      rationale: null,
-      proposedBodyMarkdown: "nope",
-      previousBodyMarkdown: draft.value.bodyMarkdown,
-    });
-    assert.equal(created.ok, false);
-    if (created.ok) return;
-    assert.match(created.error, /forged/i);
-
-    // refined also fails
-    assert.equal((await saveDocument(root, "health", "what", "refined body")).ok, true);
-    assert.equal((await setDocumentStatus(root, "health", "what", "refined")).ok, true);
-    const refinedAttempt = await createDecision(root, {
-      domainSlug: "health",
-      documentKind: "what",
-      title: "Still should fail",
-      rationale: null,
-      proposedBodyMarkdown: "nope",
-      previousBodyMarkdown: null,
-    });
-    assert.equal(refinedAttempt.ok, false);
-    if (refinedAttempt.ok) return;
-    assert.match(refinedAttempt.error, /forged/i);
-  });
-
   it("createDecision rejects missing document", async () => {
     const created = await createDecision(root, {
-      domainSlug: "no-such-domain",
-      documentKind: "why",
-      title: "Missing",
-      rationale: null,
+      target: { type: "doctrine", domainSlug: "no-such-domain", kind: "why" },
+      proposedTitle: "Missing",
       proposedBodyMarkdown: "x",
-      previousBodyMarkdown: null,
+      actor: USER_ACTOR,
     });
     assert.equal(created.ok, false);
     if (created.ok) return;

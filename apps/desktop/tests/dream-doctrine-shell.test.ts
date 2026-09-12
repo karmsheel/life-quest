@@ -76,7 +76,7 @@ describe("Dream cards", () => {
     assert.match(index, /MarkdownView/);
     assert.match(index, /howHref/);
     assert.match(index, /layout/);
-    assert.match(index, /\/dream\/\$\{slug\}\/how|\/dream\/\$\{.*\}\/how/);
+    assert.match(index, /\/(?:dream|track)\/\$\{slug\}\/how/);
   });
 });
 
@@ -98,3 +98,42 @@ describe("doctrine labels on other surfaces", () => {
   });
 });
 
+describe("document lock IPC", () => {
+  it("exposes documentSetLocked and librarySetLocked, not documentSetStatus", () => {
+    const service = read("electron/vault-service.ts");
+    assert.match(service, /export async function documentSetLocked/);
+    assert.match(service, /export async function librarySetLocked/);
+    assert.equal(service.includes("documentSetStatus"), false);
+    const main = read("electron/main.ts");
+    assert.match(main, /document:setLocked/);
+    assert.match(main, /library:setLocked/);
+    assert.equal(main.includes("document:setStatus"), false);
+    const preload = read("electron/preload.ts");
+    assert.match(preload, /documentSetLocked/);
+    assert.match(preload, /librarySetLocked/);
+  });
+});
+
+describe("document tools wiring", () => {
+  it("registers DOCUMENT_TOOL_DEFS and executeDocumentTool", () => {
+    const mapTools = read("electron/map-tools.ts");
+    assert.match(mapTools, /DOCUMENT_TOOL_DEFS/);
+    assert.match(mapTools, /executeDocumentTool/);
+    assert.match(mapTools, /update_document/);
+    const mcp = read("electron/mcp-server.ts");
+    assert.match(mcp, /DOCUMENT_TOOL_DEFS/);
+  });
+});
+
+describe("DocumentEditor lock", () => {
+  it("uses lock toggle and Propose, not Refine/Forge", () => {
+    const src = read("src/components/documents/DocumentEditor.tsx");
+    assert.match(src, /documentSetLocked/);
+    assert.match(src, /Unlock to edit, or propose a change/);
+    assert.match(src, /Propose change/);
+    assert.equal(src.includes("Mark refined"), false);
+    assert.equal(src.includes(">Forge<") || src.includes("Forge\n"), false);
+    assert.equal(src.includes("canForge"), false);
+    assert.equal(src.includes("documentSetStatus"), false);
+  });
+});

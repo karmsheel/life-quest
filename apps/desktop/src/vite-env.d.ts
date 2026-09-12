@@ -4,8 +4,8 @@ import type {
   AgentHire,
   DecisionRecord,
   DocumentKind,
-  DocumentStatus,
   DoctrineDocument,
+  DocumentTarget,
   DomainMeta,
   DomainRecord,
   GoalsCommand,
@@ -98,11 +98,12 @@ type LifequestApi = {
     bodyMarkdown: string,
     title?: string,
   ) => Promise<Result<DoctrineDocument>>;
-  documentSetStatus: (
+  documentSetLocked: (
     slug: string,
     kind: DocumentKind,
-    status: DocumentStatus,
+    locked: boolean,
   ) => Promise<Result<DoctrineDocument>>;
+  librarySetLocked: (id: string, locked: boolean) => Promise<Result<LibraryDocument>>;
   documentMediaSave: (
     slug: string,
     input: { bytes: Uint8Array; mime: string },
@@ -113,10 +114,10 @@ type LifequestApi = {
   ) => Promise<Result<{ bytes: Uint8Array; mime: string }>>;
   decisionList: () => Promise<Result<DecisionRecord[]>>;
   decisionCreate: (input: {
-    domainSlug: string;
-    documentKind: DocumentKind;
-    title: string;
+    target: DocumentTarget;
     rationale?: string | null;
+    proposedTitle?: string | null;
+    previousTitle?: string | null;
     proposedBodyMarkdown: string;
     previousBodyMarkdown?: string | null;
   }) => Promise<Result<DecisionRecord>>;

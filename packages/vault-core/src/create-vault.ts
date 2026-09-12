@@ -72,8 +72,7 @@ export async function createVault(
         const md = serializeFrontmatter(
           {
             title: DOCUMENT_KIND_LABELS[kind],
-            status: "draft",
-            forgedAt: null,
+            locked: false,
             updatedAt: now,
           },
           "",

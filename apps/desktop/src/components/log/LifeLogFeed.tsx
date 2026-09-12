@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import type { LifeEvent } from "@lifequest/vault-core";
-import { recordVisible } from "@lifequest/vault-core/pure";
+import {
+  actorDisplayName,
+  recordVisible,
+} from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import {
   useActiveDomain,
@@ -90,7 +93,11 @@ export function LifeLogFeed() {
       ) : (
         <ul className="life-log-feed__list">
           {events.map((e) => (
-            <li key={e.id} className="life-log-event">
+            <li
+              key={e.id}
+              className="life-log-event"
+              data-actor={e.actor ? actorDisplayName(e.actor) : undefined}
+            >
               <time
                 className="life-log-event__when muted"
                 dateTime={e.createdAt}

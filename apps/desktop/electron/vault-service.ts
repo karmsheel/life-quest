@@ -25,10 +25,12 @@ import {
   resolveDecision,
   saveDocument,
   saveDocumentMedia,
-  setDocumentStatus,
+  setDocumentLocked,
+  setLibraryLocked,
   updateDomain,
   updateSettings,
   updateSignal,
+  USER_ACTOR,
   vaultPaths,
   applyGoalsCommand,
   applyMapCommand,
@@ -39,7 +41,7 @@ import {
   type MapStoreState,
   type DecisionRecord,
   type DocumentKind,
-  type DocumentStatus,
+  type DocumentTarget,
   type DoctrineDocument,
   type DomainMeta,
   type DomainRecord,
@@ -318,19 +320,26 @@ export async function documentSave(
   });
 }
 
-export async function documentSetStatus(
+export async function documentSetLocked(
   slug: string,
   kind: DocumentKind,
-  status: DocumentStatus,
+  locked: boolean,
 ): Promise<Result<DoctrineDocument>> {
   return withVault(async (root) => {
-    const res = await setDocumentStatus(root, slug, kind, status);
+    const res = await setDocumentLocked(root, slug, kind, locked, USER_ACTOR);
     if (res.ok) {
       const filePath = vaultPaths(root).documentMd(slug, kind);
       doctrineMtimes.set(filePath, res.value.mtimeMs);
     }
     return res;
   });
+}
+
+export async function librarySetLocked(
+  id: string,
+  locked: boolean,
+): Promise<Result<LibraryDocument>> {
+  return withVault((root) => setLibraryLocked(root, id, locked, USER_ACTOR));
 }
 
 export async function documentMediaSave(
@@ -352,21 +361,17 @@ export async function decisionList(): Promise<Result<DecisionRecord[]>> {
 }
 
 export async function decisionCreate(input: {
-  domainSlug: string;
-  documentKind: DocumentKind;
-  title: string;
+  target: DocumentTarget;
   rationale?: string | null;
+  proposedTitle?: string | null;
+  previousTitle?: string | null;
   proposedBodyMarkdown: string;
   previousBodyMarkdown?: string | null;
 }): Promise<Result<DecisionRecord>> {
   return withVault((root) =>
     createDecision(root, {
-      domainSlug: input.domainSlug,
-      documentKind: input.documentKind,
-      title: input.title,
-      rationale: input.rationale ?? null,
-      proposedBodyMarkdown: input.proposedBodyMarkdown,
-      previousBodyMarkdown: input.previousBodyMarkdown ?? null,
+      ...input,
+      actor: USER_ACTOR,
     }),
   );
 }

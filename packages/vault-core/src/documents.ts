@@ -1,22 +1,39 @@
-import type { DocumentStatus } from "./types.ts";
+import {
+  DOCUMENT_KIND_LABELS,
+  USER_ACTOR,
+  type Actor,
+  type DocumentKind,
+  type DocumentTarget,
+} from "./types.ts";
 
-export function canTransitionStatus(from: DocumentStatus, to: DocumentStatus): boolean {
-  if (from === to) return false;
-  if (from === "forged") return false;
-  if (to === "draft") return false;
-  if (from === "draft" && (to === "refined" || to === "forged")) return true;
-  if (from === "refined" && to === "forged") return true;
-  return false;
+export function lockedFromFrontmatter(data: Record<string, unknown>): boolean {
+  if (typeof data.locked === "boolean") return data.locked;
+  return data.status === "forged";
 }
 
 export function assertEditable(
-  status: DocumentStatus,
+  locked: boolean,
 ): { ok: true } | { ok: false; reason: string } {
-  if (status === "forged") {
+  if (locked) {
     return {
       ok: false,
-      reason: "Forged documents are read-only; propose a change via Decisions.",
+      reason: "Document is locked. Unlock to edit, or propose a change.",
     };
   }
   return { ok: true };
 }
+
+export function actorDisplayName(actor: Actor): string {
+  return actor.type === "user" ? "You" : actor.name;
+}
+
+export function documentTargetLabel(
+  target: DocumentTarget,
+  fallbackTitle: string,
+): string {
+  if (target.type === "doctrine") return DOCUMENT_KIND_LABELS[target.kind];
+  return fallbackTitle;
+}
+
+export { USER_ACTOR };
+export type { Actor, DocumentKind, DocumentTarget };
