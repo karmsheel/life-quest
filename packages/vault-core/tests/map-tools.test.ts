@@ -101,4 +101,38 @@ describe("commandForGoalTool", () => {
       domainSlug: null,
     });
   });
+  it("maps current on create_goal and update_goal", () => {
+    assert.deepEqual(
+      commandForGoalTool("create_goal", {
+        name: "Run",
+        metric: "km",
+        target: 40,
+        current: 7,
+      }),
+      {
+        type: "createGoal",
+        name: "Run",
+        metric: "km",
+        target: 40,
+        current: 7,
+      },
+    );
+    assert.deepEqual(
+      commandForGoalTool("update_goal", { id: "g1", current: 9 }),
+      {
+        type: "updateGoal",
+        id: "g1",
+        current: 9,
+      },
+    );
+  });
+  it("declares current on create_goal and update_goal tool defs", () => {
+    for (const name of ["create_goal", "update_goal"] as const) {
+      const def = GOALS_TOOL_DEFS.find((t) => t.name === name);
+      assert.ok(def);
+      assert.deepEqual(def.parameters.properties.current, {
+        type: ["number", "null"],
+      });
+    }
+  });
 });

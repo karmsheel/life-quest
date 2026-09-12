@@ -577,6 +577,7 @@ export const GOALS_TOOL_DEFS: MapToolDef[] = [
         deadline: STRING_OR_NULL,
         metric: STRING_OR_NULL,
         target: { type: ["number", "null"] },
+        current: { type: ["number", "null"] },
         definitionOfDone: STRING_OR_NULL,
       },
       required: ["name"],
@@ -596,6 +597,7 @@ export const GOALS_TOOL_DEFS: MapToolDef[] = [
         deadline: STRING_OR_NULL,
         metric: STRING_OR_NULL,
         target: { type: ["number", "null"] },
+        current: { type: ["number", "null"] },
         definitionOfDone: STRING_OR_NULL,
       },
       required: ["id"],
@@ -627,6 +629,7 @@ export function commandForGoalTool(
         deadline: args.deadline as string | null | undefined,
         metric: args.metric as string | null | undefined,
         target: args.target as number | null | undefined,
+        current: args.current as number | null | undefined,
         definitionOfDone: args.definitionOfDone as string | null | undefined,
       };
       break;
@@ -641,6 +644,7 @@ export function commandForGoalTool(
         deadline: args.deadline as string | null | undefined,
         metric: args.metric as string | null | undefined,
         target: args.target as number | null | undefined,
+        current: args.current as number | null | undefined,
         definitionOfDone: args.definitionOfDone as string | null | undefined,
       };
       break;

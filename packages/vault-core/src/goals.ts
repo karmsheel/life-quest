@@ -58,6 +58,18 @@ function parseDefinition(value: string | null | undefined): string | null {
   return s === "" ? null : s;
 }
 
+function parseCurrent(
+  metric: string | null,
+  current: number | null | undefined,
+): MapResult<number | null> {
+  if (metric === null) return ok(null);
+  if (current === undefined || current === null) return ok(0);
+  if (!Number.isFinite(current)) {
+    return fail("MALFORMED", "Current must be a number");
+  }
+  return ok(current);
+}
+
 export function applyGoalCommand(
   goals: Goal[],
   command: GoalsCommand,
@@ -75,6 +87,8 @@ export function applyGoalCommand(
       if (!deadline.ok) return deadline;
       const measure = parseMeasure(command.metric, command.target);
       if (!measure.ok) return measure;
+      const current = parseCurrent(measure.value.metric, command.current);
+      if (!current.ok) return current;
       const goal: Goal = {
         id: ctx.id(),
         name,
@@ -85,6 +99,7 @@ export function applyGoalCommand(
         metric: measure.value.metric,
         target: measure.value.target,
         definitionOfDone: parseDefinition(command.definitionOfDone),
+        current: current.value,
       };
       return ok([...goals, goal]);
     }
@@ -122,6 +137,18 @@ export function applyGoalCommand(
         if (!measure.ok) return measure;
         next.metric = measure.value.metric;
         next.target = measure.value.target;
+        if (measure.value.metric === null) {
+          next.current = null;
+        } else if (next.current === null) {
+          next.current = 0;
+        }
+      }
+      if (command.current !== undefined) {
+        const current = parseCurrent(next.metric, command.current);
+        if (!current.ok) return current;
+        next.current = current.value;
+      } else if (next.metric === null) {
+        next.current = null;
       }
       if (command.definitionOfDone !== undefined) {
         next.definitionOfDone = parseDefinition(command.definitionOfDone);
@@ -167,17 +194,30 @@ function coerceGoal(value: unknown): Goal | null {
   ) {
     return null;
   }
+  if (g.current !== undefined && g.current !== null && typeof g.current !== "number") {
+    return null;
+  }
+  const metric = g.metric === undefined ? null : (g.metric as string | null);
+  let current: number | null;
+  if (metric === null) {
+    current = null;
+  } else if (g.current === undefined || g.current === null) {
+    current = 0;
+  } else {
+    current = g.current as number;
+  }
   return {
     id: g.id,
     name: g.name,
     notes: g.notes,
     status: g.status,
-    domainSlug: g.domainSlug,
+    domainSlug: g.domainSlug as string | null,
     deadline: g.deadline === undefined ? null : (g.deadline as string | null),
-    metric: g.metric === undefined ? null : (g.metric as string | null),
+    metric,
     target: g.target === undefined ? null : (g.target as number | null),
     definitionOfDone:
       g.definitionOfDone === undefined ? null : (g.definitionOfDone as string | null),
+    current,
   };
 }
 

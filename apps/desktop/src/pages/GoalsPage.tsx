@@ -52,9 +52,10 @@ export default function GoalsPage() {
   const [deadline, setDeadline] = useState("");
   const [shape, setShape] = useState<GoalShape>("numeric");
   const [metric, setMetric] = useState("");
-  const [target, setTarget] = useState("");
-  const [definitionOfDone, setDefinitionOfDone] = useState("");
-  const [domainDirty, setDomainDirty] = useState(false);
+    const [target, setTarget] = useState("");
+    const [current, setCurrent] = useState("");
+    const [definitionOfDone, setDefinitionOfDone] = useState("");
+    const [domainDirty, setDomainDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,9 +80,10 @@ export default function GoalsPage() {
     setDeadline("");
     setShape("numeric");
     setMetric("");
-    setTarget("");
-    setDefinitionOfDone("");
-    setDomainDirty(false);
+        setTarget("");
+        setCurrent("");
+        setDefinitionOfDone("");
+        setDomainDirty(false);
     setDomainValue(defaultDomain());
   }, [defaultDomain]);
 
@@ -138,9 +140,10 @@ export default function GoalsPage() {
     setDeadline(goal.deadline ?? "");
     setShape(shapeOf(goal));
     setMetric(goal.metric ?? "");
-    setTarget(goal.target === null ? "" : String(goal.target));
-    setDefinitionOfDone(goal.definitionOfDone ?? "");
-    setDomainDirty(true);
+        setTarget(goal.target === null ? "" : String(goal.target));
+        setCurrent(goal.current === null || goal.current === undefined ? "" : String(goal.current));
+        setDefinitionOfDone(goal.definitionOfDone ?? "");
+        setDomainDirty(true);
     setError(null);
   }
 
@@ -170,48 +173,55 @@ export default function GoalsPage() {
     const domainSlug = domainValue === "" ? null : domainValue;
     const deadlineValue = deadline.trim() === "" ? null : deadline.trim();
     const measure =
-      shape === "numeric"
-        ? {
-            metric: metric.trim() === "" ? null : metric.trim(),
-            target: target.trim() === "" ? null : Number(target),
-            definitionOfDone: null as string | null,
-          }
-        : {
-            metric: null as string | null,
-            target: null as number | null,
-            definitionOfDone:
-              definitionOfDone.trim() === "" ? null : definitionOfDone.trim(),
+          shape === "numeric"
+            ? {
+                metric: metric.trim() === "" ? null : metric.trim(),
+                target: target.trim() === "" ? null : Number(target),
+                current:
+                  current.trim() === ""
+                    ? null
+                    : Number(current),
+                definitionOfDone: null as string | null,
+              }
+            : {
+                metric: null as string | null,
+                target: null as number | null,
+                current: null as number | null,
+                definitionOfDone:
+                  definitionOfDone.trim() === "" ? null : definitionOfDone.trim(),
+              };
+        if (editingId) {
+          const existing = goals.find((g) => g.id === editingId);
+          const patch: Extract<GoalsCommand, { type: "updateGoal" }> = {
+            type: "updateGoal",
+            id: editingId,
+            name: trimmed,
+            notes,
+            status,
+            deadline: deadlineValue,
+            metric: measure.metric,
+            target: measure.target,
+            current: measure.current,
+            definitionOfDone: measure.definitionOfDone,
           };
-    if (editingId) {
-      const current = goals.find((g) => g.id === editingId);
-      const patch: Extract<GoalsCommand, { type: "updateGoal" }> = {
-        type: "updateGoal",
-        id: editingId,
-        name: trimmed,
-        notes,
-        status,
-        deadline: deadlineValue,
-        metric: measure.metric,
-        target: measure.target,
-        definitionOfDone: measure.definitionOfDone,
-      };
-      if ((current?.domainSlug ?? null) !== domainSlug) {
-        patch.domainSlug = domainSlug;
-      }
-      const saved = await apply(patch);
-      if (saved) resetComposer();
-      return;
-    }
-    const ok = await apply({
-      type: "createGoal",
-      name: trimmed,
-      notes,
-      domainSlug,
-      deadline: deadlineValue,
-      metric: measure.metric,
-      target: measure.target,
-      definitionOfDone: measure.definitionOfDone,
-    });
+          if ((existing?.domainSlug ?? null) !== domainSlug) {
+            patch.domainSlug = domainSlug;
+          }
+          const saved = await apply(patch);
+          if (saved) resetComposer();
+          return;
+        }
+        const ok = await apply({
+          type: "createGoal",
+          name: trimmed,
+          notes,
+          domainSlug,
+          deadline: deadlineValue,
+          metric: measure.metric,
+          target: measure.target,
+          current: measure.current,
+          definitionOfDone: measure.definitionOfDone,
+        });
     if (ok) resetComposer();
   }
 
@@ -334,25 +344,34 @@ export default function GoalsPage() {
             ))}
           </div>
           {shape === "numeric" ? (
-            <div className="goals-page__measure">
-              <label className="field">
-                Metric
-                <input
-                  value={metric}
-                  onChange={(e) => setMetric(e.target.value)}
-                  placeholder="km, pages, sessions"
-                />
-              </label>
-              <label className="field">
-                Target
-                <input
-                  type="number"
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                />
-              </label>
-            </div>
-          ) : (
+                      <div className="goals-page__measure">
+                        <label className="field">
+                          Metric
+                          <input
+                            value={metric}
+                            onChange={(e) => setMetric(e.target.value)}
+                            placeholder="km, pages, sessions"
+                          />
+                        </label>
+                        <label className="field">
+                          Current
+                          <input
+                            type="number"
+                            value={current}
+                            onChange={(e) => setCurrent(e.target.value)}
+                            placeholder="0"
+                          />
+                        </label>
+                        <label className="field">
+                          Target
+                          <input
+                            type="number"
+                            value={target}
+                            onChange={(e) => setTarget(e.target.value)}
+                          />
+                        </label>
+                      </div>
+                    ) : (
             <label className="field">
               Definition of done
               <textarea
@@ -443,10 +462,10 @@ export default function GoalsPage() {
                     <span>{domainLabel(goal.domainSlug, snapshot.domains)}</span>
                     {goal.deadline ? <span>{goal.deadline}</span> : null}
                     {goal.metric && goal.target !== null ? (
-                      <span>
-                        {goal.metric} {goal.target}
-                      </span>
-                    ) : null}
+                                          <span>
+                                            {goal.current ?? 0}/{goal.target} {goal.metric}
+                                          </span>
+                                        ) : null}
                     {goal.definitionOfDone ? (
                       <span>{truncateNotes(goal.definitionOfDone)}</span>
                     ) : null}

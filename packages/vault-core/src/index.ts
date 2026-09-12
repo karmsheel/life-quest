@@ -15,6 +15,8 @@ export * from "./signal-chain.ts";
 export * from "./domain-lens.ts";
 export * from "./library-documents.ts";
 export { applyGoalCommand, applyGoalsCommand, loadGoals } from "./goals.ts";
+export { formatGoalPace, goalPace } from "./goal-progress.ts";
+export type { GoalPace } from "./goal-progress.ts";
 
 export {
   applyMapCommandPure,

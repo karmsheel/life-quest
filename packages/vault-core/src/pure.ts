@@ -4,3 +4,5 @@ export * from "./frontmatter.ts";
 export * from "./documents.ts";
 export * from "./unlock.ts";
 export * from "./domain-lens.ts";
+export { formatGoalPace, goalPace } from "./goal-progress.ts";
+export type { GoalPace } from "./goal-progress.ts";

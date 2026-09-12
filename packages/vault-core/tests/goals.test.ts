@@ -8,6 +8,7 @@ import {
   applyGoalsCommand,
   loadGoals,
 } from "../src/goals.ts";
+import { formatGoalPace, goalPace } from "../src/goal-progress.ts";
 import { createVault } from "../src/create-vault.ts";
 import { vaultPaths } from "../src/paths.ts";
 import type { Goal, GoalsApplyContext } from "../src/types.ts";
@@ -37,6 +38,7 @@ describe("applyGoalCommand", () => {
         metric: null,
         target: null,
         definitionOfDone: null,
+        current: null,
       } satisfies Goal,
     ]);
   });
@@ -58,7 +60,25 @@ describe("applyGoalCommand", () => {
     assert.equal(res.value[0].deadline, "2026-12-31");
     assert.equal(res.value[0].metric, "km");
     assert.equal(res.value[0].target, 100);
+    assert.equal(res.value[0].current, 0);
     assert.equal(res.value[0].definitionOfDone, null);
+  });
+
+  it("creates a numeric goal with an explicit current", () => {
+    const res = applyGoalCommand(
+      [],
+      {
+        type: "createGoal",
+        name: "Run",
+        metric: "km",
+        target: 100,
+        current: 12,
+      },
+      ctx,
+    );
+    assert.equal(res.ok, true);
+    if (!res.ok) return;
+    assert.equal(res.value[0].current, 12);
   });
 
   it("creates a definition-of-done goal", () => {
@@ -76,6 +96,50 @@ describe("applyGoalCommand", () => {
     assert.equal(res.value[0].definitionOfDone, "Draft is published");
     assert.equal(res.value[0].metric, null);
     assert.equal(res.value[0].target, null);
+    assert.equal(res.value[0].current, null);
+  });
+
+  it("update can set current on a numeric goal", () => {
+    const created = applyGoalCommand(
+      [],
+      { type: "createGoal", name: "Run", metric: "km", target: 40 },
+      ctx,
+    );
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const updated = applyGoalCommand(
+      created.value,
+      { type: "updateGoal", id: "g1", current: 18 },
+      ctx,
+    );
+    assert.equal(updated.ok, true);
+    if (!updated.ok) return;
+    assert.equal(updated.value[0].current, 18);
+  });
+
+  it("clearing metric clears current", () => {
+    const created = applyGoalCommand(
+      [],
+      { type: "createGoal", name: "Run", metric: "km", target: 40, current: 5 },
+      ctx,
+    );
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const updated = applyGoalCommand(
+      created.value,
+      {
+        type: "updateGoal",
+        id: "g1",
+        metric: null,
+        target: null,
+        definitionOfDone: "Done when shipped",
+      },
+      ctx,
+    );
+    assert.equal(updated.ok, true);
+    if (!updated.ok) return;
+    assert.equal(updated.value[0].metric, null);
+    assert.equal(updated.value[0].current, null);
   });
 
   it("rejects a deadline that is not YYYY-MM-DD", () => {
@@ -154,7 +218,10 @@ describe("applyGoalCommand", () => {
     const del = applyGoalCommand(b.value, { type: "deleteGoal", id: "g1" }, twoCtx);
     assert.equal(del.ok, true);
     if (!del.ok) return;
-    assert.deepEqual(del.value.map((g) => g.id), ["g2"]);
+    assert.deepEqual(
+      del.value.map((g) => g.id),
+      ["g2"],
+    );
   });
 });
 
@@ -228,10 +295,45 @@ describe("goals persist", () => {
     assert.equal(loaded.value[0].metric, null);
     assert.equal(loaded.value[0].target, null);
     assert.equal(loaded.value[0].definitionOfDone, null);
+    assert.equal(loaded.value[0].current, null);
     const still = JSON.parse(await fs.readFile(p, "utf8")) as {
       goals: Array<Record<string, unknown>>;
     };
     assert.equal("deadline" in still.goals[0], false);
+    assert.equal("current" in still.goals[0], false);
+  });
+
+  it("coerces missing current to 0 when metric is set, without rewriting the file", async () => {
+    const root = path.join(dir, "legacy-metric");
+    const created = await createVault(root, "Personal");
+    assert.equal(created.ok, true);
+    const p = vaultPaths(root).goalsJson;
+    await fs.mkdir(path.dirname(p), { recursive: true });
+    await fs.writeFile(
+      p,
+      `${JSON.stringify({
+        goals: [
+          {
+            id: "old-m",
+            name: "Legacy metric",
+            notes: "",
+            status: "open",
+            domainSlug: null,
+            metric: "km",
+            target: 50,
+          },
+        ],
+      })}\n`,
+      "utf8",
+    );
+    const loaded = await loadGoals(root);
+    assert.equal(loaded.ok, true);
+    if (!loaded.ok) return;
+    assert.equal(loaded.value[0].current, 0);
+    const still = JSON.parse(await fs.readFile(p, "utf8")) as {
+      goals: Array<Record<string, unknown>>;
+    };
+    assert.equal("current" in still.goals[0], false);
   });
 
   it("malformed goals.json is not overwritten", async () => {
@@ -248,5 +350,63 @@ describe("goals persist", () => {
     assert.equal(applied.ok, false);
     const still = await fs.readFile(p, "utf8");
     assert.equal(still, "{not-json");
+  });
+});
+
+describe("goalPace", () => {
+  it("returns null without a numeric target or deadline", () => {
+    assert.equal(
+      goalPace({
+        metric: null,
+        target: null,
+        current: null,
+        deadline: "2026-12-31",
+      }),
+      null,
+    );
+    assert.equal(
+      goalPace({
+        metric: "km",
+        target: 40,
+        current: 10,
+        deadline: null,
+      }),
+      null,
+    );
+  });
+
+  it("reports remaining days and remaining units without inventing a start date", () => {
+    const pace = goalPace(
+      {
+        metric: "km",
+        target: 40,
+        current: 28,
+        deadline: "2026-09-24",
+      },
+      "2026-09-12",
+    );
+    assert.deepEqual(pace, {
+      daysLeft: 12,
+      remaining: 12,
+      metric: "km",
+      current: 28,
+      target: 40,
+    });
+    assert.equal(formatGoalPace(pace), "12 days left · 12 km remaining");
+  });
+
+  it("clamps remaining units at zero when current meets or exceeds target", () => {
+    const pace = goalPace(
+      {
+        metric: "pages",
+        target: 10,
+        current: 12,
+        deadline: "2026-09-20",
+      },
+      "2026-09-18",
+    );
+    assert.ok(pace);
+    assert.equal(pace.remaining, 0);
+    assert.equal(formatGoalPace(pace), "2 days left · 0 pages remaining");
   });
 });

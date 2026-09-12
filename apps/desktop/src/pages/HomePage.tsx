@@ -2,11 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type {
   DecisionRecord,
+  Goal,
   LifeEvent,
 } from "@lifequest/vault-core";
 import {
   DOCUMENT_KIND_LABELS,
   DREAM_DOCUMENT_KINDS,
+  filterByLens,
+  formatGoalPace,
+  goalPace,
   recordVisible,
   recordVisibleMulti,
   type DocumentKind,
@@ -41,7 +45,7 @@ function formatWhen(iso: string): string {
 }
 
 export default function HomePage() {
-  const { snapshot, reloadGeneration } = useVault();
+  const { snapshot, reloadGeneration, refresh } = useVault();
   const lens = useDomainLens();
   const activeDomain = useActiveDomain();
 
@@ -50,6 +54,7 @@ export default function HomePage() {
   const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
   const [events, setEvents] = useState<LifeEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [goalBusyId, setGoalBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -100,6 +105,11 @@ export default function HomePage() {
       .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder);
   }, [snapshot, lens]);
 
+  const openGoals = useMemo(() => {
+    const goals = snapshot?.goals ?? [];
+    return filterByLens(goals, lens).filter((g) => g.status === "open");
+  }, [snapshot?.goals, lens]);
+
   const doctrineTotal = visibleDomains.length * DOCTRINE_ROWS.length;
 
   const lockedCount = useMemo(() => {
@@ -126,6 +136,38 @@ export default function HomePage() {
 
   const progressPct =
     doctrineTotal === 0 ? 0 : Math.round((lockedCount / doctrineTotal) * 100);
+
+  async function applyGoalUpdate(
+    goalId: string,
+    patch: { current?: number | null; status?: "done" },
+  ) {
+    setGoalBusyId(goalId);
+    try {
+      const result = await api().goalsApply({
+        type: "updateGoal",
+        id: goalId,
+        ...patch,
+      });
+      if (result.ok) await refresh();
+    } finally {
+      setGoalBusyId(null);
+    }
+  }
+
+  function onCurrentChange(goal: Goal, raw: string) {
+    if (goalBusyId) return;
+    const trimmed = raw.trim();
+    if (trimmed === "") return;
+    const n = Number(trimmed);
+    if (!Number.isFinite(n)) return;
+    if (n === (goal.current ?? 0)) return;
+    void applyGoalUpdate(goal.id, { current: n });
+  }
+
+  function onDefinitionDone(goal: Goal, checked: boolean) {
+    if (!checked || goalBusyId) return;
+    void applyGoalUpdate(goal.id, { status: "done" });
+  }
 
   return (
     <div className="home-dashboard">
@@ -157,6 +199,79 @@ export default function HomePage() {
       </header>
 
       <div className="home-dashboard__grid">
+        <section className="home-card home-card--wide">
+          <h2 className="home-card__title">
+            Goals
+            {openGoals.length > 0 ? (
+              <span className="home-card__count">{openGoals.length}</span>
+            ) : null}
+          </h2>
+          {openGoals.length === 0 ? (
+            <p className="muted home-card__empty">No open goals in this lens.</p>
+          ) : (
+            <ul className="home-mini-list home-goal-list">
+              {openGoals.map((goal) => {
+                const numeric =
+                  goal.metric !== null && goal.target !== null;
+                const paceText = numeric
+                  ? formatGoalPace(goalPace(goal))
+                  : null;
+                const busy = goalBusyId === goal.id;
+                return (
+                  <li key={goal.id} className="home-mini-list__item home-goal-row">
+                    <div className="home-goal-row__main">
+                      <span className="home-mini-list__link">{goal.name}</span>
+                      {numeric ? (
+                        <div className="home-goal-row__measure muted">
+                          <label className="home-goal-row__current">
+                            <span className="visually-hidden">Current</span>
+                            <input
+                              type="number"
+                              className="home-goal-current-input"
+                              defaultValue={goal.current ?? 0}
+                              key={`${goal.id}-${goal.current ?? 0}`}
+                              disabled={busy}
+                              onBlur={(e) => onCurrentChange(goal, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  (e.target as HTMLInputElement).blur();
+                                }
+                              }}
+                            />
+                          </label>
+                          <span>
+                            / {goal.target} {goal.metric}
+                          </span>
+                          {paceText ? (
+                            <span className="home-goal-row__pace">{paceText}</span>
+                          ) : null}
+                        </div>
+                      ) : goal.definitionOfDone ? (
+                        <label className="home-goal-row__dod">
+                          <input
+                            type="checkbox"
+                            checked={false}
+                            disabled={busy}
+                            onChange={(e) =>
+                              onDefinitionDone(goal, e.target.checked)
+                            }
+                          />
+                          <span className="muted">{goal.definitionOfDone}</span>
+                        </label>
+                      ) : (
+                        <span className="muted home-mini-list__meta">Open</span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <Link to="/goals" className="home-card__more">
+            Open Goals →
+          </Link>
+        </section>
+
         <section className="home-card home-card--doctrine">
           <h2 className="home-card__title">Doctrine</h2>
           {visibleDomains.length === 0 ? (

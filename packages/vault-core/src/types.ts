@@ -190,6 +190,8 @@ export type Goal = {
   metric: string | null;
   target: number | null;
   definitionOfDone: string | null;
+  /** Progress toward target; null when the goal is not numeric. */
+  current: number | null;
 };
 
 export type GoalsCommand =
@@ -202,6 +204,7 @@ export type GoalsCommand =
       metric?: string | null;
       target?: number | null;
       definitionOfDone?: string | null;
+      current?: number | null;
     }
   | {
       type: "updateGoal";
@@ -214,6 +217,7 @@ export type GoalsCommand =
       metric?: string | null;
       target?: number | null;
       definitionOfDone?: string | null;
+      current?: number | null;
     }
   | { type: "deleteGoal"; id: string };
 
