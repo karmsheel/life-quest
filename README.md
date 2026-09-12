@@ -8,6 +8,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 
 | Doc | Description |
 |-----|-------------|
+| [VISION.md](VISION.md) | Acceptance policy for future change |
 | [PRODUCT.md](PRODUCT.md) | Users, purpose, anti-references |
 | [DESIGN.md](DESIGN.md) | Token contract and primitives |
 | [LAWS/](LAWS/) | Observable product invariants |
