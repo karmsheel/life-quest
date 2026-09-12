@@ -16,7 +16,7 @@ import {
   useActiveDomain,
   useDomainLens,
 } from "@/components/shell/useActiveDomain";
-import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
+import { DocumentLockBadge } from "@/components/documents/DocumentLockBadge";
 
 const DOCTRINE_ROWS = DREAM_DOCUMENT_KINDS.map((kind) => ({
   kind,
@@ -168,7 +168,6 @@ export default function HomePage() {
               {visibleDomains.flatMap((domain) =>
                 DOCTRINE_ROWS.map((row) => {
                   const doc = domain.documents[row.kind];
-                  const status = doc?.status ?? "draft";
                   const chars = doc?.bodyMarkdown.trim().length ?? 0;
                   const label =
                     visibleDomains.length > 1
@@ -188,7 +187,7 @@ export default function HomePage() {
                           {chars > 0 ? `${chars} chars` : "empty body"}
                         </span>
                       </Link>
-                      <DocumentStatusBadge status={status} />
+                      <DocumentLockBadge locked={doc?.locked ?? false} />
                     </li>
                   );
                 }),

@@ -20,7 +20,7 @@ import {
 } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
-import { DocumentStatusBadge } from "@/components/documents/DocumentStatusBadge";
+import { DocumentLockBadge } from "@/components/documents/DocumentLockBadge";
 
 const BRIEF_KINDS = DREAM_DOCUMENT_KINDS.map((kind) => ({
   kind,
@@ -242,9 +242,9 @@ function ActContent() {
                         <Link to={`/${room.toLowerCase()}`} className="act-brief__room">
                           {room}
                         </Link>
-                        <DocumentStatusBadge status={doc?.status ?? "draft"} />
-                      </div>
-                      <pre className="act-brief__body">
+                        <DocumentLockBadge locked={doc?.locked ?? false} />
+                                            </div>
+                                            <pre className="act-brief__body">
                         {body || "(empty)"}
                       </pre>
                     </div>
