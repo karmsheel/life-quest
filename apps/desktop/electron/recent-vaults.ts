@@ -2,6 +2,14 @@ import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+function localIsoDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export type RecentEntry = {
   id: string;
   name: string;
@@ -12,6 +20,8 @@ export type RecentEntry = {
 export type UserPrefs = {
   recent: RecentEntry[];
   activeDomainByVaultId: Record<string, string>;
+  deadlineDismissedOnByVaultId: Record<string, string>;
+  deadlineNotifiedOnByVaultId: Record<string, string>;
 };
 
 const MAX_RECENT = 20;
@@ -23,6 +33,8 @@ function prefsPath(): string {
 const emptyPrefs = (): UserPrefs => ({
   recent: [],
   activeDomainByVaultId: {},
+  deadlineDismissedOnByVaultId: {},
+  deadlineNotifiedOnByVaultId: {},
 });
 
 export async function loadPrefs(): Promise<UserPrefs> {
@@ -35,6 +47,16 @@ export async function loadPrefs(): Promise<UserPrefs> {
         parsed.activeDomainByVaultId &&
         typeof parsed.activeDomainByVaultId === "object"
           ? parsed.activeDomainByVaultId
+          : {},
+      deadlineDismissedOnByVaultId:
+        parsed.deadlineDismissedOnByVaultId &&
+        typeof parsed.deadlineDismissedOnByVaultId === "object"
+          ? parsed.deadlineDismissedOnByVaultId
+          : {},
+      deadlineNotifiedOnByVaultId:
+        parsed.deadlineNotifiedOnByVaultId &&
+        typeof parsed.deadlineNotifiedOnByVaultId === "object"
+          ? parsed.deadlineNotifiedOnByVaultId
           : {},
     };
   } catch (e) {
@@ -90,5 +112,27 @@ export async function setActiveDomain(
 ): Promise<void> {
   const prefs = await loadPrefs();
   prefs.activeDomainByVaultId[vaultId] = slug;
+  await savePrefs(prefs);
+}
+
+export async function getDeadlineDismissedOn(vaultId: string): Promise<string | null> {
+  const prefs = await loadPrefs();
+  return prefs.deadlineDismissedOnByVaultId[vaultId] ?? null;
+}
+
+export async function setDeadlineDismissedOn(vaultId: string): Promise<void> {
+  const prefs = await loadPrefs();
+  prefs.deadlineDismissedOnByVaultId[vaultId] = localIsoDate();
+  await savePrefs(prefs);
+}
+
+export async function getDeadlineNotifiedOn(vaultId: string): Promise<string | null> {
+  const prefs = await loadPrefs();
+  return prefs.deadlineNotifiedOnByVaultId[vaultId] ?? null;
+}
+
+export async function setDeadlineNotifiedOn(vaultId: string): Promise<void> {
+  const prefs = await loadPrefs();
+  prefs.deadlineNotifiedOnByVaultId[vaultId] = localIsoDate();
   await savePrefs(prefs);
 }

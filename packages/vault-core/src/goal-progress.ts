@@ -65,3 +65,40 @@ export function formatGoalPace(pace: GoalPace | null): string | null {
         : `${pace.daysLeft} days left`;
   return `${dayLabel} · ${pace.remaining} ${pace.metric} remaining`;
 }
+
+/**
+ * UTC calendar days from `todayIso` to `deadline`. Same math as `goalPace`.
+ * Negative when overdue, zero when due today.
+ */
+export function daysUntilDeadline(
+  deadline: string,
+  todayIso?: string,
+): number {
+  const today =
+    todayIso ?? localIsoDate();
+  return daysBetweenUtc(today, deadline);
+}
+
+function localIsoDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function deadlinePressureGoals<T extends {
+  status: string;
+  deadline: string | null;
+}>(
+  goals: T[],
+  todayIso?: string,
+): T[] {
+  const now = todayIso ?? localIsoDate();
+  return goals.filter((goal) => {
+    if (goal.status !== "open") return false;
+    if (!goal.deadline) return false;
+    const days = daysUntilDeadline(goal.deadline, now);
+    return days <= 7;
+  });
+}

@@ -14,6 +14,8 @@ import {
   recordVisible,
   recordVisibleMulti,
   type DocumentKind,
+  deadlinePressureGoals,
+  daysUntilDeadline,
 } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
@@ -31,6 +33,14 @@ const DOCTRINE_ROWS = DREAM_DOCUMENT_KINDS.map((kind) => ({
 function doctrineHref(kind: DocumentKind, slug: string): string {
   if (kind === "how") return `/track/${slug}/how`;
   return `/dream/${slug}/${kind}`;
+}
+
+function localIsoDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function formatWhen(iso: string): string {
@@ -57,16 +67,29 @@ export default function HomePage() {
   const [goalBusyId, setGoalBusyId] = useState<string | null>(null);
   const [pendingDoneId, setPendingDoneId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const [dismissedToday, setDismissedToday] = useState(false);
+  const [notifyInFlight, setNotifyInFlight] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setNotifyInFlight(true);
     try {
-      const [decResult, logResult] = await Promise.all([
+      const [decResult, logResult, dismissedRes] = await Promise.all([
         api().decisionList(),
         api().logList(),
+        api().deadlineGetDismissed(),
       ]);
       const allDecisions = decResult.ok ? decResult.value : [];
       const allEvents = logResult.ok ? logResult.value : [];
+
+      // Check if this vault dismissed today
+      if (dismissedRes.ok && dismissedRes.value) {
+        const today = localIsoDate();
+        setDismissedToday(dismissedRes.value === today);
+      } else {
+        setDismissedToday(false);
+      }
 
       setDecisions(
         allDecisions
@@ -83,11 +106,15 @@ export default function HomePage() {
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
           .slice(0, 5),
       );
+
+      // Trigger Windows notification if appropriate (main process).
+      void api().deadlineMaybeNotify();
     } catch {
       setDecisions([]);
       setEvents([]);
     } finally {
       setLoading(false);
+      setNotifyInFlight(false);
     }
   }, [lens]);
 
@@ -110,6 +137,16 @@ export default function HomePage() {
   const openGoals = useMemo(() => {
     const goals = snapshot?.goals ?? [];
     return filterByLens(goals, lens).filter((g) => g.status === "open");
+  }, [snapshot?.goals, lens]);
+
+  const pressureGoals = useMemo(() => {
+    const goals = snapshot?.goals ?? [];
+    const today = localIsoDate();
+    return deadlinePressureGoals(goals, today)
+      .filter((g) =>
+        filterByLens([g], lens).length > 0
+      )
+      .sort((a, b) => daysUntilDeadline(a.deadline!, today) - daysUntilDeadline(b.deadline!, today));
   }, [snapshot?.goals, lens]);
 
   const doctrineTotal = visibleDomains.length * DOCTRINE_ROWS.length;
@@ -182,6 +219,13 @@ export default function HomePage() {
     void applyGoalUpdate(goal.id, { status: "done" });
   }
 
+  async function dismissDeadline() {
+    const ok = await api().deadlineDismiss();
+    if (ok?.ok) {
+      setDismissed(true);
+    }
+  }
+
   return (
     <div className="home-dashboard">
       <header className="home-dashboard__header">
@@ -210,6 +254,31 @@ export default function HomePage() {
           </div>
         </div>
       </header>
+
+      {pressureGoals.length > 0 && !dismissed && !dismissedToday && (
+        <div role="status" className="deadline-banner" aria-live="polite">
+          <div className="deadline-banner__content">
+            <span className="deadline-banner__label muted">Deadline pressure</span>
+            <span className="deadline-banner__text">
+              {pressureGoals.length === 1 ? (
+                pressureGoals[0].name
+              ) : (
+                <>
+                  {pressureGoals[0].name} and {pressureGoals.length - 1} other{pressureGoals.length > 2 ? "s" : ""}
+                </>
+              )}
+            </span>
+          </div>
+          <button
+            className="deadline-banner__dismiss"
+            onClick={dismissDeadline}
+            disabled={notifyInFlight}
+            title="Dismiss until tomorrow"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="home-dashboard__grid">
         <section className="home-card home-card--wide">

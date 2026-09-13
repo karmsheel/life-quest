@@ -1,13 +1,26 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Notification } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stopMcp } from "./mcp-server.js";
 import * as companion from "./companion.js";
 import type { CompanionInstructionsInput } from "./companion-client.js";
 import * as vault from "./vault-service.js";
+import {
+  setDeadlineDismissedOn,
+  setDeadlineNotifiedOn,
+  getDeadlineDismissedOn,
+  getDeadlineNotifiedOn,
+} from "./recent-vaults.js";
+import {
+  deadlinePressureGoals,
+  daysUntilDeadline,
+} from "@lifequest/vault-core/pure";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.setName("LifeQuest");
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.lifequest.desktop");
+}
 const isDev = !app.isPackaged;
 
 const TITLEBAR_OVERLAY_HEIGHT = 32;
@@ -16,6 +29,14 @@ const DEFAULT_OVERLAY_SYMBOL = "#e8e4dc";
 
 function usesTitleBarOverlay(): boolean {
   return process.platform === "win32" || process.platform === "linux";
+}
+
+function localIsoDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function windowFromEvent(event: { sender: Electron.WebContents }): BrowserWindow | null {
@@ -278,6 +299,50 @@ function registerIpcHandlers() {
   ipcMain.handle("goals:apply", (_e, command: Parameters<typeof vault.goalsApply>[0]) =>
     vault.goalsApply(command),
   );
+
+  ipcMain.handle("deadline:dismiss", async (_e) => {
+    const vaultId = vault.getCurrentVaultId();
+    if (!vaultId) return { ok: false, error: "No vault is open" };
+    await setDeadlineDismissedOn(vaultId);
+    return { ok: true };
+  });
+
+  ipcMain.handle("deadline:getDismissed", async () => {
+    const vaultId = vault.getCurrentVaultId();
+    if (!vaultId) return { ok: true, value: null };
+    const dismissedOn = await getDeadlineDismissedOn(vaultId);
+    return { ok: true, value: dismissedOn };
+  });
+
+  ipcMain.handle("deadline:maybeNotify", async () => {
+    const vaultId = vault.getCurrentVaultId();
+    if (!vaultId) return { ok: false, error: "No vault is open" };
+    const snap = await vault.vaultGetSnapshot();
+    if (!snap.ok || !snap.value) return { ok: false, error: "Snapshot unavailable" };
+    const today = localIsoDate();
+    const dismissed = await getDeadlineDismissedOn(vaultId);
+    if (dismissed === today) return { ok: true, notified: false };
+    const notified = await getDeadlineNotifiedOn(vaultId);
+    if (notified === today) return { ok: true, notified: false };
+    const pressured = deadlinePressureGoals(snap.value.goals, today)
+      .sort((a, b) => daysUntilDeadline(a.deadline, today) - daysUntilDeadline(b.deadline, today));
+    if (pressured.length === 0) return { ok: true, notified: false };
+    await setDeadlineNotifiedOn(vaultId);
+    const soonest = pressured[0];
+    const days = daysUntilDeadline(soonest.deadline, today);
+    const body = days < 0
+      ? `${soonest.name} — overdue`
+      : days === 0
+        ? `${soonest.name} — due today`
+        : `${soonest.name} — due in ${days} days`;
+    const title = pressured.length > 1
+      ? `LifeQuest: ${pressured.length} deadlines approaching`
+      : `LifeQuest: deadline pressure`;
+    if (Notification.isSupported()) {
+      new Notification({ title, body }).show();
+    }
+    return { ok: true, notified: true, title, body };
+  });
 
   ipcMain.handle("window:getChrome", () => ({
     overlay: usesTitleBarOverlay(),

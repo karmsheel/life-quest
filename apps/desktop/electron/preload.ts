@@ -170,6 +170,19 @@ const lifequest = {
   goalsApply: (command: unknown) =>
     ipcRenderer.invoke("goals:apply", command) as Promise<Result<unknown>>,
 
+  deadlineDismiss: () =>
+    ipcRenderer.invoke("deadline:dismiss") as Promise<Result<true>>,
+
+  deadlineGetDismissed: () =>
+    ipcRenderer.invoke("deadline:getDismissed") as Promise<
+      Result<{ ok: true; value: string | null }>
+    >,
+
+  deadlineMaybeNotify: () =>
+    ipcRenderer.invoke("deadline:maybeNotify") as Promise<
+      Result<{ ok: true; notified: boolean; title: string; body: string }>
+    >,
+
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => {
     const listener = (_event: unknown, payload: { path: string }) => {
       cb(payload);

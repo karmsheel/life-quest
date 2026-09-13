@@ -1644,6 +1644,55 @@ a {
   max-width: var(--shell-max-width);
 }
 
+.deadline-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+
+.deadline-banner__content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.deadline-banner__label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.deadline-banner__text {
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+
+.deadline-banner__dismiss {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 0.35rem 0.85rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.deadline-banner__dismiss:hover:not(:disabled) {
+  background: var(--accent-fill);
+  color: var(--fg);
+}
+
+.deadline-banner__dismiss:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .home-dashboard__header {
   display: flex;
   align-items: flex-end;

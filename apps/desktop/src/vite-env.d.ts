@@ -187,6 +187,12 @@ type LifequestApi = {
   mapGetState: () => Promise<Result<MapStoreState>>;
   mapApply: (command: MapCommand) => Promise<Result<VaultSnapshot>>;
   goalsApply: (command: GoalsCommand) => Promise<Result<VaultSnapshot>>;
+  deadlineDismiss: () => Promise<Result<true>>;
+  deadlineGetDismissed: () =>
+    Promise<Result<{ ok: true; value: string | null }>>;
+  deadlineMaybeNotify: () => Promise<
+    Result<{ ok: true; notified: boolean; title: string; body: string }>
+  >;
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => () => void;
   windowChrome: {
     get: () => Promise<{ overlay: boolean; platform: string }>;

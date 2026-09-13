@@ -8,7 +8,7 @@ import {
   applyGoalsCommand,
   loadGoals,
 } from "../src/goals.ts";
-import { formatGoalPace, goalPace } from "../src/goal-progress.ts";
+import { formatGoalPace, goalPace, daysUntilDeadline, deadlinePressureGoals } from "../src/goal-progress.ts";
 import { createVault } from "../src/create-vault.ts";
 import { vaultPaths } from "../src/paths.ts";
 import type { Goal, GoalsApplyContext } from "../src/types.ts";
@@ -408,5 +408,83 @@ describe("goalPace", () => {
     assert.ok(pace);
     assert.equal(pace.remaining, 0);
     assert.equal(formatGoalPace(pace), "2 days left · 0 pages remaining");
+  });
+});
+
+describe("daysUntilDeadline", () => {
+  it("returns UTC calendar days from today to deadline", () => {
+    assert.equal(daysUntilDeadline("2026-09-20", "2026-09-12"), 8);
+  });
+
+  it("returns 0 when today equals deadline", () => {
+    assert.equal(daysUntilDeadline("2026-09-12", "2026-09-12"), 0);
+  });
+
+  it("returns negative for overdue deadlines", () => {
+    assert.equal(daysUntilDeadline("2026-09-10", "2026-09-12"), -2);
+  });
+
+  it("defaults todayIso to the local calendar date", () => {
+    const result = daysUntilDeadline("2026-09-20");
+    assert.ok(Number.isInteger(result));
+  });
+});
+
+describe("deadlinePressureGoals", () => {
+  const goals = [
+    { status: "open" as const, deadline: "2026-09-19", name: "A" },
+    { status: "open" as const, deadline: "2026-09-21", name: "B" },
+    { status: "open" as const, deadline: "2026-09-18", name: "C" },
+    { status: "done" as const, deadline: "2026-09-20", name: "D" },
+    { status: "open" as const, deadline: null, name: "E" },
+    { status: "open" as const, deadline: "" as unknown as string, name: "F" },
+  ];
+
+  it("includes goals due within 7 days", () => {
+    const pressured = deadlinePressureGoals(goals, "2026-09-12");
+    assert.deepStrictEqual(
+      pressured.map((g) => g.name).sort(),
+      ["A", "C"],
+    );
+  });
+
+  it("excludes goals due in 8 or more days", () => {
+    const pressured = deadlinePressureGoals(
+      [{ status: "open" as const, deadline: "2026-09-20", name: "X" }],
+      "2026-09-12",
+    );
+    assert.equal(pressured.length, 0);
+  });
+
+  it("includes goals due today", () => {
+    const pressured = deadlinePressureGoals(
+      [{ status: "open" as const, deadline: "2026-09-12", name: "Today" }],
+      "2026-09-12",
+    );
+    assert.equal(pressured.length, 1);
+  });
+
+  it("includes overdue goals", () => {
+    const pressured = deadlinePressureGoals(
+      [{ status: "open" as const, deadline: "2026-09-10", name: "Overdue" }],
+      "2026-09-12",
+    );
+    assert.equal(pressured.length, 1);
+  });
+
+  it("excludes goals without a deadline", () => {
+    const pressured = deadlinePressureGoals(
+      [{ status: "open" as const, deadline: null, name: "NoDeadline" }],
+      "2026-09-12",
+    );
+    assert.equal(pressured.length, 0);
+  });
+
+  it("excludes goals that are not open", () => {
+    const pressured = deadlinePressureGoals(
+      [{ status: "done" as const, deadline: "2026-09-20", name: "Done" }],
+      "2026-09-12",
+    );
+    assert.equal(pressured.length, 0);
   });
 });
