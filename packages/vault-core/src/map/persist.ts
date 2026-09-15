@@ -34,6 +34,7 @@ function normalizeLinks(links: Record<string, unknown> | undefined): Task["links
   if (links.weekItem && typeof links.weekItem === "object") {
     next.weekItem = links.weekItem as Task["links"]["weekItem"];
   }
+  if (typeof links.signalId === "string") next.signalId = links.signalId;
   return next;
 }
 

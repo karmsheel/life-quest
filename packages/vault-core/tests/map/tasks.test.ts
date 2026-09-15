@@ -62,4 +62,23 @@ describe("tasks and about me", () => {
     if (!task.ok) return;
     assert.equal(task.value.tasks[0].links.goalId, "goal-1");
   });
+
+  it("stores a signalId link on a task", () => {
+    const task = applyCommand(
+      base(),
+      {
+        type: "createTask",
+        title: "From chain",
+        notes: "full body",
+        column: "backlog",
+        links: { signalId: "sig-1" },
+      },
+      user,
+    );
+    assert.equal(task.ok, true);
+    if (!task.ok) return;
+    assert.equal(task.value.tasks[0].links.signalId, "sig-1");
+    assert.equal(task.value.tasks[0].column, "backlog");
+    assert.equal(task.value.tasks[0].notes, "full body");
+  });
 });

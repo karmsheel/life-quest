@@ -111,6 +111,7 @@ export type TaskLinks = {
   goalId?: string;
   date?: IsoDate;
   weekItem?: { year: number; monday: IsoDate; itemId: string };
+  signalId?: string;
 };
 
 export type Task = {

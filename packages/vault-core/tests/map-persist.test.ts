@@ -221,4 +221,71 @@ describe("map persist", () => {
     );
     assert.equal(missing.ok, false);
   });
+
+  it("persists task links.signalId across openVault", async () => {
+    const root = path.join(dir, "signal-link");
+    const created = await createVault(root, "Personal");
+    assert.equal(created.ok, true);
+    const applied = await applyMapCommand(
+      root,
+      {
+        type: "createTask",
+        title: "From chain",
+        notes: "full body",
+        column: "backlog",
+        links: { signalId: "sig-1" },
+      },
+      "user",
+      "2026-09-15",
+    );
+    assert.equal(applied.ok, true);
+    if (!applied.ok) return;
+    assert.equal(applied.value.tasks.at(-1)?.links.signalId, "sig-1");
+    const opened = await openVault(root);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const task = opened.value.map?.tasks.find((t) => t.links.signalId === "sig-1");
+    assert.ok(task);
+    assert.equal(task.title, "From chain");
+    assert.equal(task.notes, "full body");
+    assert.equal(task.column, "backlog");
+  });
+
+  it("keeps string signalId and drops junk link keys", async () => {
+    const root = path.join(dir, "signal-link-junk");
+    const created = await createVault(root, "Personal");
+    assert.equal(created.ok, true);
+    const p = vaultPaths(root).mapJson;
+    const raw = JSON.parse(await fs.readFile(p, "utf8")) as {
+      tasks: Array<Record<string, unknown>>;
+    };
+    raw.tasks = [
+      {
+        id: "t1",
+        title: "Old",
+        notes: "",
+        column: "backlog",
+        links: { signalId: "sig-1", periodGoalId: "old", signalIdNum: 1 },
+      },
+      {
+        id: "t2",
+        title: "Bad",
+        notes: "",
+        column: "backlog",
+        links: { signalId: 99 },
+      },
+    ];
+    await fs.writeFile(p, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+    const opened = await openVault(root);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const t1 = opened.value.map?.tasks.find((t) => t.id === "t1");
+    const t2 = opened.value.map?.tasks.find((t) => t.id === "t2");
+    assert.equal(t1?.links.signalId, "sig-1");
+    assert.equal(
+      (t1?.links as Record<string, unknown>).periodGoalId,
+      undefined,
+    );
+    assert.equal(t2?.links.signalId, undefined);
+  });
 });
