@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Loader2, Play, Send } from "lucide-react";
 import type {
   AgentHire,
@@ -60,6 +60,8 @@ export default function ActPage() {
 
 function ActContent() {
   const { snapshot, reloadGeneration, refresh } = useVault();
+  const [params] = useSearchParams();
+  const taskParam = params.get("task");
   const lens = useDomainLens();
   const activeDomain = useActiveDomain();
 
@@ -193,7 +195,12 @@ function ActContent() {
   return (
     <div className="act-page">
       {snapshot?.map ? (
-        <TaskBoard state={snapshot.map} goals={snapshot.goals} onCommand={(c) => void onMapCommand(c)} />
+        <TaskBoard
+          state={snapshot.map}
+          goals={snapshot.goals}
+          onCommand={(c) => void onMapCommand(c)}
+          initialOpenId={taskParam}
+        />
       ) : snapshot?.mapError ? (
         <p className="form-error" role="alert">{snapshot.mapError}</p>
       ) : null}

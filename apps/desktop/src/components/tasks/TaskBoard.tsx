@@ -15,6 +15,7 @@ type Props = {
   state: StoreState;
   goals: Goal[];
   onCommand: (command: MapCommand) => void;
+  initialOpenId?: string | null;
 };
 
 const COLUMNS: { id: TaskColumn; label: string }[] = [
@@ -82,10 +83,22 @@ function patchLinks(task: Task, patch: TaskLinks): TaskLinks {
   return next;
 }
 
-export function TaskBoard({ state, goals, onCommand }: Props) {
+export function TaskBoard({
+  state,
+  goals,
+  onCommand,
+  initialOpenId = null,
+}: Props) {
   const grouped = useMemo(() => groupTasks(state.tasks), [state.tasks]);
   const [title, setTitle] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!initialOpenId) return;
+    if (state.tasks.some((t) => t.id === initialOpenId)) {
+      setOpenId(initialOpenId);
+    }
+  }, [initialOpenId, state.tasks]);
 
   function create() {
     const trimmed = title.trim();
