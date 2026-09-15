@@ -10,8 +10,8 @@ import { applyCommand } from "./commands.ts";
 import { emptyState } from "./empty.ts";
 import { isMapEvent } from "./events.ts";
 import { mapLogEvent } from "./log-event.ts";
-import { todayLocalIso } from "./dates.ts";
-import type { Actor, Command, StoreState, Task, YearRecord } from "./types.ts";
+import { isIsoDate, todayLocalIso } from "./dates.ts";
+import type { Actor, Command, IsoDate, LiveBlock, LiveDay, LiveLeftoverItem, LiveSource, StoreState, Task, YearRecord } from "./types.ts";
 import { ensureCurrentYear, rollover } from "./years.ts";
 
 type MapFile = Omit<StoreState, "aboutMe">;
@@ -22,6 +22,7 @@ function toFile(state: StoreState): MapFile {
     defaultWeek: state.defaultWeek,
     years: state.years,
     tasks: state.tasks,
+    liveDays: state.liveDays,
   };
 }
 
@@ -62,8 +63,57 @@ function fromFile(file: MapFile, aboutMe: string): StoreState {
       column: t.column,
       links: normalizeLinks(t.links as unknown as Record<string, unknown>),
     })),
+    liveDays: normalizeLiveDays(file.liveDays),
     aboutMe,
   };
+}
+
+function isLiveSource(value: unknown): value is LiveSource {
+  if (!value || typeof value !== "object") return false;
+  const s = value as LiveSource;
+  if (s.type === "ad-hoc") return true;
+  if (s.type === "template" && typeof s.dayTypeItemId === "string") return true;
+  if (s.type === "task" && typeof s.taskId === "string") return true;
+  return false;
+}
+
+function normalizeLiveDays(raw: unknown): Record<string, LiveDay> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, LiveDay> = {};
+  for (const [date, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!isIsoDate(date) || !value || typeof value !== "object") continue;
+    const v = value as Record<string, unknown>;
+    const leftover = Array.isArray(v.leftover) ? v.leftover : [];
+    const blocks = Array.isArray(v.blocks) ? v.blocks : [];
+    out[date] = {
+      date,
+      dayTypeId: typeof v.dayTypeId === "string" ? v.dayTypeId : null,
+      leftover: leftover.filter((row) => {
+        const r = row as LiveLeftoverItem;
+        return (
+          r &&
+          typeof r.id === "string" &&
+          typeof r.text === "string" &&
+          typeof r.done === "boolean" &&
+          isLiveSource(r.source) &&
+          r.source.type !== "task"
+        );
+      }),
+      blocks: blocks.filter((row) => {
+        const r = row as LiveBlock;
+        return (
+          r &&
+          typeof r.id === "string" &&
+          typeof r.text === "string" &&
+          typeof r.done === "boolean" &&
+          Number.isInteger(r.startMinutes) &&
+          Number.isInteger(r.durationMinutes) &&
+          isLiveSource(r.source)
+        );
+      }),
+    };
+  }
+  return out;
 }
 
 function isMapFile(value: unknown): value is MapFile {
@@ -151,6 +201,7 @@ export async function ensureMapOnOpen(
         defaultWeek: loaded.file.defaultWeek,
         years: loaded.file.years,
         tasks: loaded.file.tasks,
+        liveDays: loaded.file.liveDays,
       });
     if (persistNeeded) {
       const saved = await writeMapState(rootPath, next);

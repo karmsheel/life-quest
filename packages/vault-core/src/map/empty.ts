@@ -27,6 +27,7 @@ export function emptyState(): StoreState {
     defaultWeek: emptyDefaultWeek(),
     years: [],
     tasks: [],
+    liveDays: {},
     aboutMe: "",
   };
 }

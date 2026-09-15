@@ -169,6 +169,20 @@ describe("map persist", () => {
     assert.equal(saved.tasks[0].links.periodGoalId, undefined);
   });
 
+  it("loads map.json that omits liveDays as empty", async () => {
+    const root = path.join(dir, "no-live-days");
+    const created = await createVault(root, "Personal");
+    assert.equal(created.ok, true);
+    const p = vaultPaths(root).mapJson;
+    const raw = JSON.parse(await fs.readFile(p, "utf8")) as Record<string, unknown>;
+    delete raw.liveDays;
+    await fs.writeFile(p, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+    const opened = await openVault(root);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    assert.deepEqual(opened.value.map?.liveDays, {});
+  });
+
   it("applyMapCommand createEvent validates goalId against goals.json", async () => {
     const root = path.join(dir, "event-goal");
     const created = await createVault(root, "Personal");

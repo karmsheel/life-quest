@@ -8,6 +8,7 @@ import {
   isIsoDate,
   mondayOnOrBefore,
   mondaysInYear,
+  weekdayOf,
   yearOf,
 } from "../../src/map/dates.ts";
 
@@ -41,5 +42,11 @@ describe("dates", () => {
     assert.equal(isIsoDate("2026-13-01"), false);
     assert.equal(isIsoDate("2026-08-17"), true);
     assert.ok(compareIso("2026-01-02", "2026-01-01") > 0);
+  });
+
+  it("weekdayOf is Monday = 0", () => {
+    assert.equal(weekdayOf("2026-09-14"), 0);
+    assert.equal(weekdayOf("2026-09-15"), 1);
+    assert.equal(weekdayOf("2026-09-20"), 6);
   });
 });

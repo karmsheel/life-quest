@@ -1,4 +1,4 @@
-import type { IsoDate } from "./types.ts";
+import type { IsoDate, Weekday } from "./types.ts";
 
 const ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -35,6 +35,11 @@ export function daysInMonth(year: number, month: number): number {
 function utc(date: IsoDate): Date {
   const [y, m, d] = date.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d));
+}
+
+export function weekdayOf(date: IsoDate): Weekday {
+  const day = utc(date).getUTCDay();
+  return ((day + 6) % 7) as Weekday;
 }
 
 function toIso(dt: Date): IsoDate {

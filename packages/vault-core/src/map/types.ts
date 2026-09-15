@@ -126,7 +126,36 @@ export type StoreState = {
   defaultWeek: DefaultWeek;
   years: YearRecord[];
   tasks: Task[];
+  liveDays: Record<IsoDate, LiveDay>;
   aboutMe: string;
+};
+
+export type LiveSource =
+  | { type: "template"; dayTypeItemId: string }
+  | { type: "ad-hoc" }
+  | { type: "task"; taskId: string };
+
+export type LiveLeftoverItem = {
+  id: string;
+  text: string;
+  done: boolean;
+  source: Exclude<LiveSource, { type: "task" }>;
+};
+
+export type LiveBlock = {
+  id: string;
+  text: string;
+  startMinutes: number;
+  durationMinutes: number;
+  done: boolean;
+  source: LiveSource;
+};
+
+export type LiveDay = {
+  date: IsoDate;
+  dayTypeId: string | null;
+  leftover: LiveLeftoverItem[];
+  blocks: LiveBlock[];
 };
 
 export type ApplyContext = {
@@ -230,4 +259,26 @@ export type Command =
       links?: TaskLinks;
     }
   | { type: "deleteTask"; id: string }
-  | { type: "setAboutMe"; text: string };
+  | { type: "setAboutMe"; text: string }
+  | { type: "ensureLiveDay"; date: IsoDate }
+  | { type: "setLiveDayType"; date: IsoDate; dayTypeId: string | null }
+  | { type: "addLiveAdHoc"; date: IsoDate; text: string }
+  | {
+      type: "placeLiveBlock";
+      date: IsoDate;
+      leftoverId?: string;
+      taskId?: string;
+      startMinutes: number;
+      durationMinutes: number;
+    }
+  | {
+      type: "updateLiveBlock";
+      date: IsoDate;
+      blockId: string;
+      startMinutes?: number;
+      durationMinutes?: number;
+    }
+  | { type: "unplaceLiveBlock"; date: IsoDate; blockId: string }
+  | { type: "completeLiveLeftover"; date: IsoDate; leftoverId: string }
+  | { type: "completeLiveBlock"; date: IsoDate; blockId: string }
+  | { type: "deleteLiveAdHoc"; date: IsoDate; leftoverId: string };
