@@ -15,6 +15,17 @@ import {
   setMonthNotes,
   setMonthObjectives,
 } from "./months.ts";
+import {
+  addLiveAdHoc,
+  completeLiveBlock,
+  completeLiveLeftover,
+  deleteLiveAdHoc,
+  ensureLiveDay,
+  placeLiveBlock,
+  setLiveDayType,
+  unplaceLiveBlock,
+  updateLiveBlock,
+} from "./live-days.ts";
 import { createTask, deleteTask, updateTask } from "./tasks.ts";
 import type {
   ApplyContext,
@@ -153,6 +164,37 @@ export function applyCommand(
       return deleteTask(state, command.id);
     case "setAboutMe":
       return setAboutMe(state, command.text);
+    case "ensureLiveDay":
+      return ensureLiveDay(state, command.date, ctx);
+    case "setLiveDayType":
+      return setLiveDayType(state, command.date, command.dayTypeId, ctx);
+    case "addLiveAdHoc":
+      return addLiveAdHoc(state, command.date, command.text, ctx);
+    case "placeLiveBlock":
+      return placeLiveBlock(
+        state,
+        command.date,
+        {
+          leftoverId: command.leftoverId,
+          taskId: command.taskId,
+          startMinutes: command.startMinutes,
+          durationMinutes: command.durationMinutes,
+        },
+        ctx,
+      );
+    case "updateLiveBlock":
+      return updateLiveBlock(state, command.date, command.blockId, {
+        startMinutes: command.startMinutes,
+        durationMinutes: command.durationMinutes,
+      });
+    case "unplaceLiveBlock":
+      return unplaceLiveBlock(state, command.date, command.blockId);
+    case "completeLiveLeftover":
+      return completeLiveLeftover(state, command.date, command.leftoverId);
+    case "completeLiveBlock":
+      return completeLiveBlock(state, command.date, command.blockId);
+    case "deleteLiveAdHoc":
+      return deleteLiveAdHoc(state, command.date, command.leftoverId);
     default: {
       const _exhaustive: never = command;
       return fail("MALFORMED", `Unhandled command ${JSON.stringify(_exhaustive)}`);

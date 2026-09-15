@@ -32,3 +32,5 @@ export { todayLocalIso, yearOf, mondayOnOrBefore, mondaysInYear, daysInMonth, ad
 export { findYear, liveYears } from "./years.ts";
 export { resolveWeek } from "./weeks.ts";
 export { dayTypeInUse } from "./day-types.ts";
+export { liveDayView } from "./live-days.ts";
+export type { LiveLeftoverView } from "./live-days.ts";

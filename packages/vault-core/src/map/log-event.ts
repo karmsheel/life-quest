@@ -64,6 +64,64 @@ export function mapLogEvent(command: Command): {
         summary: "Deleted task",
         payload: { id: command.id },
       };
+    case "ensureLiveDay":
+      return {
+        type: "map.liveDay.ensured",
+        summary: "Ensured live day",
+        payload: { date: command.date },
+      };
+    case "setLiveDayType":
+      return {
+        type: "map.liveDay.typeSet",
+        summary: "Set live day type",
+        payload: { date: command.date },
+      };
+    case "addLiveAdHoc":
+      return {
+        type: "map.liveDay.adHocAdded",
+        summary: "Added schedule item",
+        payload: { date: command.date },
+      };
+    case "placeLiveBlock":
+      return {
+        type: "map.liveDay.blockPlaced",
+        summary: "Placed schedule block",
+        payload: {
+          date: command.date,
+          leftoverId: command.leftoverId,
+          taskId: command.taskId,
+        },
+      };
+    case "updateLiveBlock":
+      return {
+        type: "map.liveDay.blockUpdated",
+        summary: "Updated schedule block",
+        payload: { date: command.date, blockId: command.blockId },
+      };
+    case "unplaceLiveBlock":
+      return {
+        type: "map.liveDay.blockUnplaced",
+        summary: "Unplaced schedule block",
+        payload: { date: command.date, blockId: command.blockId },
+      };
+    case "completeLiveLeftover":
+      return {
+        type: "map.liveDay.leftoverCompleted",
+        summary: "Toggled leftover item",
+        payload: { date: command.date, leftoverId: command.leftoverId },
+      };
+    case "completeLiveBlock":
+      return {
+        type: "map.liveDay.blockCompleted",
+        summary: "Toggled schedule block",
+        payload: { date: command.date, blockId: command.blockId },
+      };
+    case "deleteLiveAdHoc":
+      return {
+        type: "map.liveDay.adHocDeleted",
+        summary: "Deleted schedule item",
+        payload: { date: command.date, leftoverId: command.leftoverId },
+      };
     default:
       return {
         type: `map.${command.type}`,
