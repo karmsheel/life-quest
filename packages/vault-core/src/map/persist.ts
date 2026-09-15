@@ -96,7 +96,7 @@ function normalizeLiveDays(raw: unknown): Record<string, LiveDay> {
           typeof r.text === "string" &&
           typeof r.done === "boolean" &&
           isLiveSource(r.source) &&
-          (r.source as LiveSource).type !== "task"
+          r.source.type !== "task"
         );
       }),
       blocks: blocks.filter((row) => {
