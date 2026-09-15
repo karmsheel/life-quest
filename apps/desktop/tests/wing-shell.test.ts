@@ -175,4 +175,14 @@ describe("wing shell wiring", () => {
       /import StubPage from ["']@\/pages\/StubPage["']/,
     );
   });
+
+  it("Daily Schedule page has clock and leftover", () => {
+    const src = read("src/pages/DailySchedulePage.tsx");
+    assert.match(src, />Daily Schedule</);
+    assert.match(src, />Clock</);
+    assert.match(src, />Leftover</);
+    assert.match(src, /ensureLiveDay/);
+    assert.match(src, /liveDayView/);
+    assert.equal(src.includes("RoomLockGate"), false);
+  });
 });

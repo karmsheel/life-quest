@@ -1,6 +1,7 @@
 @import "./tokens.css";
 @import "./map.css";
 @import "./goals.css";
+@import "./schedule.css";
 
 * {
   box-sizing: border-box;
