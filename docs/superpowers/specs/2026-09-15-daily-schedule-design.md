@@ -1,7 +1,7 @@
 # Daily Schedule — Design Spec
 
 **Date:** 2026-09-15  
-**Status:** Draft — awaiting review  
+**Status:** Approved — implementation plan ready (`docs/superpowers/plans/2026-09-15-daily-schedule.md`)  
 **Product:** LifeQuest — local-first life-management studio  
 **Issue:** [KAR-12](https://linear.app/karmsheel/issue/KAR-12/execute-daily-schedule)  
 **Depends on:** [Life Map on Chart](./2026-08-27-life-map-chart-design.md), [Vision / Plan / Execute wings](./2026-08-30-vision-plan-execute-wings-design.md), [Home wing](./2026-09-02-home-wing-design.md), [Review wing](./2026-09-12-review-wing-design.md)
