@@ -1,7 +1,7 @@
 # Life-Chain Make Task — Design Spec
 
 **Date:** 2026-09-15  
-**Status:** Approved — awaiting implementation plan  
+**Status:** Approved — implementation plan ready (`docs/superpowers/plans/2026-09-15-life-chain-make-task.md`)  
 **Product:** LifeQuest — local-first life-management studio  
 **Issue:** [KAR-11](https://linear.app/karmsheel/issue/KAR-11/life-chain-make-task)  
 **Depends on:** [Life Signal Chain](./2026-08-27-life-signal-chain-design.md), [Life-Chain Quick-Fire Capture](./2026-09-04-life-chain-quick-fire-capture-design.md), [Life Map on Chart](./2026-08-27-life-map-chart-design.md)
