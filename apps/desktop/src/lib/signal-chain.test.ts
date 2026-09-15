@@ -13,6 +13,8 @@ import {
   localDayKey,
   signalDomainLabel,
   signalVisible,
+  taskForSignal,
+  taskFromSignalBody,
 } from "./signal-chain.ts";
 
 function signal(
@@ -190,5 +192,43 @@ describe("signalVisible", () => {
     assert.equal(signalVisible(lens, null), true);
     assert.equal(signalVisible(lens, "health"), true);
     assert.equal(signalVisible(lens, "financial"), false);
+  });
+});
+
+describe("taskFromSignalBody", () => {
+  it("uses the first non-empty line as title and the full body as notes", () => {
+    const body = "\n  Inbox zero  \nmore\n";
+    assert.deepEqual(taskFromSignalBody(body), {
+      title: "Inbox zero",
+      notes: body,
+    });
+  });
+
+  it("caps title at 80 characters with an ellipsis", () => {
+    const line = "a".repeat(81);
+    const body = `${line}\nrest`;
+    const derived = taskFromSignalBody(body);
+    assert.equal(derived.title, `${"a".repeat(80)}...`);
+    assert.equal(derived.title.length, 83);
+    assert.equal(derived.notes, body);
+  });
+
+  it("returns an empty title when the body is only whitespace", () => {
+    assert.deepEqual(taskFromSignalBody("  \n\t\n"), {
+      title: "",
+      notes: "  \n\t\n",
+    });
+  });
+});
+
+describe("taskForSignal", () => {
+  it("returns the first task with a matching signalId", () => {
+    const tasks = [
+      { id: "a", links: { goalId: "g" } },
+      { id: "b", links: { signalId: "sig-1" } },
+      { id: "c", links: { signalId: "sig-1" } },
+    ];
+    assert.equal(taskForSignal(tasks, "sig-1")?.id, "b");
+    assert.equal(taskForSignal(tasks, "missing"), undefined);
   });
 });

@@ -116,3 +116,24 @@ export function groupSignalsByDay(
   }
   return groups;
 }
+
+export function taskFromSignalBody(body: string): { title: string; notes: string } {
+  const notes = body;
+  let title = "";
+  for (const line of body.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed) {
+      title = trimmed;
+      break;
+    }
+  }
+  if (title.length > 80) title = `${title.slice(0, 80)}...`;
+  return { title, notes };
+}
+
+export function taskForSignal(
+  tasks: readonly { id: string; links: { signalId?: string } }[],
+  signalId: string,
+): { id: string } | undefined {
+  return tasks.find((t) => t.links.signalId === signalId);
+}
