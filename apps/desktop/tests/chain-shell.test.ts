@@ -90,7 +90,7 @@ describe("Life-Chain quick-fire capture", () => {
       const window = src.slice(start, m.index + m[0].length);
       assert.match(window, /!opts\?\.quiet/);
     }
-    for (const name of ["onAdd", "onSave", "onAssign", "onDelete"]) {
+    for (const name of ["onAdd", "onSave", "onAssign", "onDelete", "onMakeTask"]) {
       const fn = src.match(
         new RegExp(`async function ${name}[\\s\\S]*?finally \\{[\\s\\S]*?\\n  \\}`),
       );
@@ -151,5 +151,36 @@ describe("Life-Chain quick-fire capture", () => {
     assert.equal(src.includes("signal-chain__filters"), false);
     const css = read("src/styles/global.css");
     assert.equal(css.includes(".signal-chain__filters"), false);
+  });
+
+  it("row has Make task or Open task before Edit", () => {
+    const src = read("src/components/signal-chain/SignalChainFeed.tsx");
+    assert.match(src, />Make task</);
+    assert.match(src, />Open task</);
+    assert.match(src, /taskForSignal/);
+    assert.match(src, /taskFromSignalBody/);
+    assert.match(src, /mapApply/);
+    assert.match(src, /type:\s*"createTask"/);
+    assert.match(src, /column:\s*"backlog"/);
+    assert.match(src, /signalId/);
+    assert.match(src, /\/act\?task=/);
+    assert.equal(src.includes("sourceRef"), false);
+    const makeIdx = src.indexOf(">Make task<");
+    const editIdx = src.indexOf('aria-label="Edit"');
+    assert.ok(makeIdx > 0 && editIdx > makeIdx);
+  });
+
+  it("Make task uses busyRef and does not flash Loading chain", () => {
+    const src = read("src/components/signal-chain/SignalChainFeed.tsx");
+    const fn = src.match(
+      /async function onMakeTask[\s\S]*?finally \{[\s\S]*?\n  \}/,
+    );
+    assert.ok(fn, "onMakeTask function");
+    assert.match(fn[0], /busyRef\.current = true/);
+    assert.match(fn[0], /busyRef\.current = false/);
+    assert.match(fn[0], /refresh\(/);
+    assert.equal(fn[0].includes("setLoading(true)"), false);
+    assert.equal(fn[0].includes("signalChainUpdate"), false);
+    assert.equal(fn[0].includes("signalChainCreate"), false);
   });
 });

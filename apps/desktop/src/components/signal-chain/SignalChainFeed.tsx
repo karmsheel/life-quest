@@ -15,7 +15,12 @@ import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { api } from "@/lib/ipc";
-import { formatSignalWhen, signalVisible } from "@/lib/signal-chain";
+import {
+  formatSignalWhen,
+  signalVisible,
+  taskForSignal,
+  taskFromSignalBody,
+} from "@/lib/signal-chain";
 import { useVault } from "@/state/VaultProvider";
 
 function onComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -27,7 +32,7 @@ function onComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
 }
 
 export function SignalChainFeed() {
-  const { snapshot } = useVault();
+  const { snapshot, refresh } = useVault();
   const lens = useDomainLens();
   const liveDomains = (snapshot?.domains ?? []).filter((d) => !d.meta.archivedAt);
   const allDomains = (snapshot?.domains ?? []).map((d) => ({
@@ -176,6 +181,36 @@ export function SignalChainFeed() {
     }
   }
 
+  async function onMakeTask(signal: SignalRecord) {
+    if (busyRef.current) return;
+    const existing = taskForSignal(snapshot?.map?.tasks ?? [], signal.id);
+    if (existing) return;
+    const derived = taskFromSignalBody(signal.body);
+    if (!derived.title) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api().mapApply({
+        type: "createTask",
+        title: derived.title,
+        notes: derived.notes,
+        column: "backlog",
+        links: { signalId: signal.id },
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to make task");
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="signal-chain">
       <header className="signal-chain__header">
@@ -230,6 +265,11 @@ export function SignalChainFeed() {
           {error}
         </p>
       ) : null}
+      {snapshot?.mapError ? (
+        <p className="form-error" role="alert">
+          {snapshot.mapError}
+        </p>
+      ) : null}
 
       {loading ? (
         <p className="muted">Loading chain…</p>
@@ -254,11 +294,14 @@ export function SignalChainFeed() {
               allDomains={allDomains}
               editing={editingId === item.id}
               busy={busy}
+              mapReady={Boolean(snapshot?.map)}
+              linkedTaskId={taskForSignal(snapshot?.map?.tasks ?? [], item.id)?.id}
               onEdit={() => setEditingId(item.id)}
               onCancel={() => setEditingId(null)}
               onSave={onSave}
               onAssign={(id, slug) => void onAssign(id, slug)}
               onDelete={() => void onDelete(item.id)}
+              onMakeTask={() => void onMakeTask(item)}
             />
           ))}
         </ul>
@@ -273,11 +316,14 @@ function SignalRow(props: {
   allDomains: { slug: string; name: string }[];
   editing: boolean;
   busy: boolean;
+  mapReady: boolean;
+  linkedTaskId: string | undefined;
   onEdit: () => void;
   onCancel: () => void;
   onSave: (id: string, patch: SignalUpdatePatch) => Promise<void>;
   onAssign: (id: string, domainSlug: string | null) => void;
   onDelete: () => void;
+  onMakeTask: () => void;
 }) {
   const s = props.signal;
   const [domainSlug, setDomainSlug] = useState(s.domainSlug ?? "");
@@ -397,6 +443,19 @@ function SignalRow(props: {
           ))}
         </select>
         <div className="signal-row__actions">
+          {props.linkedTaskId ? (
+            <Button
+              variant="ghost"
+              to={"/act?task=" + encodeURIComponent(props.linkedTaskId)}
+            >Open task</Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={props.onMakeTask}
+              disabled={props.busy || !props.mapReady || !s.body.trim()}
+            >Make task</Button>
+          )}
           <Button
             type="button"
             variant="ghost"

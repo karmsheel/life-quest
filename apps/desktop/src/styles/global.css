@@ -2777,8 +2777,10 @@ a.home-mini-list__link:hover {
 
 .signal-row__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.2rem;
   justify-content: flex-end;
+  align-items: center;
 }
 
 .signal-row__icon-btn {
