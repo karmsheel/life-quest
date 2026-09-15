@@ -26,7 +26,7 @@ describe("initialWingSession", () => {
       home: "/home",
       vision: "/dream",
       plan: "/goals",
-      execute: "/act",
+      execute: "/daily",
       review: "/review/daily",
     });
     assert.deepEqual(WING_DEFAULTS, session.lastPath);
@@ -43,6 +43,7 @@ describe("wingForPath", () => {
     assert.equal(wingForPath("/chart"), "plan");
     assert.equal(wingForPath("/track"), "plan");
     assert.equal(wingForPath("/act"), "execute");
+    assert.equal(wingForPath("/daily"), "execute");
     assert.equal(wingForPath("/review/daily"), "review");
     assert.equal(wingForPath("/review/weekly"), "review");
     assert.equal(wingForPath("/review/monthly"), "review");
@@ -63,7 +64,6 @@ describe("wingForPath", () => {
     assert.equal(wingForPath("/review"), null);
     assert.equal(wingForPath("/review/nope"), null);
     assert.equal(wingForPath("/review/daily/extra"), null);
-    assert.equal(wingForPath("/daily"), null);
   });
 });
 
@@ -124,7 +124,13 @@ describe("applyPath", () => {
     const session = initialWingSession();
     assert.equal(applyPath(session, "/review"), session);
     assert.equal(applyPath(session, "/review/nope"), session);
-    assert.equal(applyPath(session, "/daily"), session);
+  });
+
+  it("selects Execute on /daily", () => {
+    const next = applyPath(initialWingSession(), "/daily");
+    assert.equal(next.active, "execute");
+    assert.equal(next.lastPath.execute, "/daily");
+    assert.equal(next.lastPath.home, "/home");
   });
 });
 
@@ -222,7 +228,7 @@ describe("NAV_ITEMS wings", () => {
     );
     assert.deepEqual(
       NAV_ITEMS.filter((i) => i.wing === "execute").map((i) => i.id),
-      ["act"],
+      ["schedule", "act"],
     );
     assert.deepEqual(
       NAV_ITEMS.filter((i) => i.wing === "review").map((i) => i.id),

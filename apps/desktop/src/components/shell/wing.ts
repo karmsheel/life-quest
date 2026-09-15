@@ -20,7 +20,7 @@ export const WING_DEFAULTS: Record<WingId, string> = {
   home: "/home",
   vision: "/dream",
   plan: "/goals",
-  execute: "/act",
+  execute: "/daily",
   review: "/review/daily",
 };
 
@@ -35,6 +35,7 @@ const PATH_WING: Record<string, WingId> = {
   "/chart": "plan",
   "/track": "plan",
   "/act": "execute",
+  "/daily": "execute",
   "/review/daily": "review",
   "/review/weekly": "review",
   "/review/monthly": "review",

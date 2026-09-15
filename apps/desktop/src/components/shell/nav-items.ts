@@ -6,6 +6,7 @@ import {
   CalendarDays,
   CalendarRange,
   ClipboardList,
+  Clock,
   FileText,
   Goal,
   Home,
@@ -29,7 +30,7 @@ export type NavItem = {
   pin?: "top" | "bottom";
 };
 
-/** Top: Life-Chain, Decisions. Home: Dashboard, Personnel. Vision: Dream, Documents. Plan: Goals, Life Map, Architecture. Execute: Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
+/** Top: Life-Chain, Decisions. Home: Dashboard, Personnel. Vision: Dream, Documents. Plan: Goals, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -102,6 +103,14 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Target,
     section: "main",
     wing: "plan",
+  },
+  {
+    id: "schedule",
+    href: "/daily",
+    label: "Daily Schedule",
+    icon: Clock,
+    section: "main",
+    wing: "execute",
   },
   {
     id: "act",

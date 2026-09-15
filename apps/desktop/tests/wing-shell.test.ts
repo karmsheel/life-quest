@@ -104,6 +104,7 @@ describe("wing shell wiring", () => {
       "src/pages/ArchitecturePage.tsx",
       "src/pages/ActPage.tsx",
       "src/pages/RoomPage.tsx",
+      "src/pages/DailySchedulePage.tsx",
     ]) {
       const src = read(file);
       assert.equal(src.includes("RoomLockGate"), false, file);
@@ -147,6 +148,7 @@ describe("wing shell wiring", () => {
     assert.match(nested, /<Route\s+path=["']\/goals["']/);
     assert.match(nested, /<Route\s+path=["']\/chart["']/);
     assert.match(nested, /<Route\s+path=["']\/act["']/);
+    assert.match(nested, /<Route\s+path=["']\/daily["']/);
     assert.match(nested, /<Route\s+path=["']\/review\/daily["']/);
     assert.match(nested, /<Route\s+path=["']\/review\/weekly["']/);
     assert.match(nested, /<Route\s+path=["']\/review\/monthly["']/);
