@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { Navigate, useParams, useNavigate } from "react-router-dom";
 import {
   currentPeriod,
   isCurrentPeriod,
@@ -26,16 +26,17 @@ const VALID_CADENCES: ReviewCadence[] = [
   "yearly",
 ];
 
-function resolveCadence(param: string | undefined): ReviewCadence {
+function resolveCadence(param: string | undefined): ReviewCadence | null {
   if (param && VALID_CADENCES.includes(param as ReviewCadence)) {
     return param as ReviewCadence;
   }
-  return "weekly";
+  return null;
 }
 
 export default function ReviewPage() {
   const { cadence: rawCadence } = useParams<{ cadence: string }>();
-  const cadence = resolveCadence(rawCadence);
+  const cadenceParam = resolveCadence(rawCadence);
+  const cadence: ReviewCadence = cadenceParam ?? "weekly";
   const navigate = useNavigate();
   const { snapshot, refresh, setActiveSlug } = useVault();
   const lens = useDomainLens();
@@ -50,12 +51,6 @@ export default function ReviewPage() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Snap to current period if future
-  const isFuture = useMemo(() => {
-    const now = currentPeriod(cadence, weekStartDay);
-    return isFuturePeriod(cadence, now, weekStartDay);
-  }, [cadence, weekStartDay]);
-
   const basePeriod = useMemo(
     () => currentPeriod(cadence, weekStartDay),
     [cadence, weekStartDay],
@@ -66,6 +61,13 @@ export default function ReviewPage() {
   useEffect(() => {
     setPeriod(basePeriod);
   }, [basePeriod]);
+
+  useEffect(() => {
+    if (isFuturePeriod(cadence, period, weekStartDay)) {
+      setPeriod(currentPeriod(cadence, weekStartDay));
+      setError("That period is in the future. Showing the current period.");
+    }
+  }, [cadence, period, weekStartDay]);
 
   // Active scope: overall when overview/unassigned/non-domain, domain slug otherwise
   const activeScope: "overall" | string = useMemo(() => {
@@ -135,11 +137,29 @@ export default function ReviewPage() {
     }
   }, [activeScope, cadence, chatDock, loadRecord, period, refresh, snapshot]);
 
-  const onEdit = useCallback(() => {
+  const onEdit = useCallback(async () => {
     if (record?.locked) return;
-    setDraft(record ? record.bodyMarkdown : "");
-    setEditing(true);
-  }, [record?.bodyMarkdown, record?.locked]);
+    setBusy(true);
+    setError(null);
+    try {
+      if (!record) {
+        const ensure = await api().reviewEnsure(cadence, period, activeScope);
+        if (!ensure.ok) {
+          setError(ensure.error);
+          return;
+        }
+        setRecord(ensure.value);
+        setDraft(ensure.value.bodyMarkdown);
+      } else {
+        setDraft(record.bodyMarkdown);
+      }
+      setEditing(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [activeScope, cadence, period, record]);
 
   const onSave = useCallback(async () => {
     if (!snapshot || record?.locked) return;
@@ -250,6 +270,10 @@ export default function ReviewPage() {
       ? null
       : snapshot?.domains.find((d) => d.slug === activeScope)?.meta.name ??
         null;
+
+  if (!cadenceParam) {
+    return <Navigate to="/review/weekly" replace />;
+  }
 
   if (!snapshot) {
     return <p className="muted">No vault open.</p>;

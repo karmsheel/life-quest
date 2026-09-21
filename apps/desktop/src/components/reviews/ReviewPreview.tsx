@@ -118,51 +118,45 @@ export function ReviewPreview({
           );
         })}
 
-        {domainSlugs.length > 0 ? (
-          <section className="review-preview__domains">
-            <h2 className="review-preview__heading">Domains</h2>
-            <ul className="review-preview__list">
-              {liveDomains.map((d) => {
-                const scopeState = record.scopes[d.slug];
-                const status: "Missing" | "Draft" | "Done" = !scopeState
-                  ? "Missing"
-                  : scopeState.status === "done"
-                    ? "Done"
-                    : "Draft";
-                return (
-                  <li key={d.slug} className="review-preview__list-item">
-                    <span className="review-preview__domain-name">{d.meta.name}</span>
-                    <span className={`review-preview__status review-preview__status--${status.toLowerCase()}`}>
-                      {status}
-                    </span>
-                    {scopeState ? (
-                      <Button variant="outline" onClick={() => onSetActiveSlug(d.slug)}>
-                        Open
-                      </Button>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </li>
-                );
-              })}
-              {extraSlugs.map((slug) => {
-                const scopeState = record.scopes[slug];
-                if (!scopeState) return null;
-                return (
-                  <li key={slug} className="review-preview__list-item">
-                    <span className="review-preview__domain-name">{slug}</span>
-                    <span className={`review-preview__status review-preview__status--${scopeState.status === "done" ? "done" : "draft"}`}>
-                      {scopeState.status === "done" ? "Done" : "Draft"}
-                    </span>
-                    <Button variant="outline" onClick={() => onSetActiveSlug(slug)}>
-                      Open
-                    </Button>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ) : null}
+        <section className="review-preview__domains">
+          <h2 className="review-preview__heading">Domains</h2>
+          <ul className="review-preview__list">
+            {liveDomains.map((d) => {
+              const scopeState = record.scopes[d.slug];
+              const status: "Missing" | "Draft" | "Done" = !scopeState
+                ? "Missing"
+                : scopeState.status === "done"
+                  ? "Done"
+                  : "Draft";
+              return (
+                <li key={d.slug} className="review-preview__list-item">
+                  <span className="review-preview__domain-name">{d.meta.name}</span>
+                  <span className={`review-preview__status review-preview__status--${status.toLowerCase()}`}>
+                    {status}
+                  </span>
+                  <Button variant="outline" onClick={() => onSetActiveSlug(d.slug)}>
+                    Open
+                  </Button>
+                </li>
+              );
+            })}
+            {extraSlugs.map((slug) => {
+              const scopeState = record.scopes[slug];
+              if (!scopeState) return null;
+              return (
+                <li key={slug} className="review-preview__list-item">
+                  <span className="review-preview__domain-name">{slug}</span>
+                  <span className={`review-preview__status review-preview__status--${scopeState.status === "done" ? "done" : "draft"}`}>
+                    {scopeState.status === "done" ? "Done" : "Draft"}
+                  </span>
+                  <Button variant="outline" onClick={() => onSetActiveSlug(slug)}>
+                    Open
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
 
         {!hasContent ? (
           <p className="muted review-preview__empty-overall">
