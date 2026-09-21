@@ -4,7 +4,6 @@ import { loadGoals } from "./goals.ts";
 import { readLog } from "./log.ts";
 import { loadMapState } from "./map/persist.ts";
 import {
-  currentPeriod,
   isCurrentPeriod,
   periodBounds,
   previousPeriod,
@@ -14,6 +13,7 @@ import { vaultPaths } from "./paths.ts";
 import type {
   Goal,
   LifeEvent,
+  LiveDay,
   MapEvent,
   PeriodPack,
   Result,
@@ -59,8 +59,8 @@ function extractDomainSections(
     const slug = nameToSlug.get(headingName.toLowerCase());
     if (!slug) continue;
 
-    // Collect body from after this H2 until next H2 or EOF
-    const sectionLines: string[] = [];
+    // Collect body from this H2 through the next H2 or EOF
+    const sectionLines: string[] = [line];
     for (let j = i + 1; j < lines.length; j++) {
       const nextLine = lines[j];
       if (/^##\s+/.test(nextLine)) break;
@@ -106,7 +106,7 @@ export async function getPeriodPack(
   // --- Map state (tasks, liveDays, events) ---
   const mapRes = await loadMapState(rootPath);
   let tasks: Task[] = [];
-  let liveDays: { date: string }[] = [];
+  let liveDays: LiveDay[] = [];
   let events: MapEvent[] = [];
   if (!mapRes.ok) {
     missingSources.push("map");
@@ -152,10 +152,12 @@ export async function getPeriodPack(
 
   // --- Goals ---
   let goals: Goal[] = [];
+  let goalsLoaded = false;
   const goalsRes = await loadGoals(rootPath);
   if (!goalsRes.ok) {
     missingSources.push("goals");
   } else {
+    goalsLoaded = true;
     goals = goalsRes.value.filter((g) => {
       if (g.status !== "open" && !g.deadline) return false;
       if (g.status === "open" || (g.deadline && inWindow(g.deadline, start, end))) {
@@ -167,9 +169,13 @@ export async function getPeriodPack(
       }
       return false;
     });
+  }
 
-    // Now filter tasks by goal domain (for domain packs)
-    if (!isOverall && mapRes.ok) {
+  // Domain-scoped tasks: fail-closed if goals didn't load
+  if (!isOverall) {
+    if (!goalsLoaded) {
+      tasks = [];
+    } else if (mapRes.ok) {
       const goalDomainMap = new Map<string, string | null>();
       for (const g of goalsRes.value) {
         goalDomainMap.set(g.id, g.domainSlug);
@@ -257,8 +263,8 @@ export async function getPeriodPack(
       log,
       tasks,
       goals,
-      liveDays: liveDays as PeriodPack["liveDays"],
-      events: events as PeriodPack["events"],
+      liveDays,
+      events,
       previousReview,
       domainSections,
       missingSources,

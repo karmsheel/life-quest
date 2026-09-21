@@ -9,10 +9,12 @@ import { applyGoalsCommand } from "../src/goals.ts";
 import { applyMapCommand } from "../src/map/persist.ts";
 import { ensureReview } from "../src/reviews.ts";
 import { getPeriodPack } from "../src/index.ts";
+import { currentPeriod } from "../src/period.ts";
 import { vaultPaths } from "../src/paths.ts";
 
 describe("period-pack", () => {
   let dir: string;
+  let vaultCounter = 0;
   before(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "lq-pack-"));
   });
@@ -21,8 +23,11 @@ describe("period-pack", () => {
   });
 
   async function seedVault() {
-    const root = path.join(dir, "vault");
-    await createVault(root, "Personal");
+    vaultCounter += 1;
+    const root = path.join(dir, `vault-${vaultCounter}`);
+    const res = await createVault(root, "Personal");
+    assert.equal(res.ok, true);
+    if (!res.ok) throw new Error("createVault failed");
 
     // 1. Log entries
     await appendLog(root, {
@@ -305,18 +310,27 @@ describe("period-pack", () => {
     );
     await applyMapCommand(root, { type: "ensureLiveDay", date: "2026-09-22" }, "user", "2026-09-23");
 
-    // Current period (whenever test runs, use currentPeriod)
-    // We can't know what "current" is, so we test the past-week exclusion:
-    // Pack a past week — the undated today-task should NOT be included.
-    const res = await getPeriodPack(root, {
+    // Current period — undated "today" task IS included
+    const cur = currentPeriod("weekly", "monday");
+    const curRes = await getPeriodPack(root, {
+      cadence: "weekly",
+      period: cur,
+      scope: "overall",
+    });
+    assert.equal(curRes.ok, true);
+    if (!curRes.ok) return;
+    assert.ok(curRes.value.tasks.map((t) => t.title).includes("Today task"));
+
+    // Past week — the same undated task is NOT included
+    const pastRes = await getPeriodPack(root, {
       cadence: "weekly",
       period: "2026-09-14",
       scope: "overall",
     });
-    assert.equal(res.ok, true);
-    if (!res.ok) return;
-    const taskTitles = res.value.tasks.map((t) => t.title);
-    assert.ok(!taskTitles.includes("Today task"));
+    assert.equal(pastRes.ok, true);
+    if (!pastRes.ok) return;
+    const pastTaskTitles = pastRes.value.tasks.map((t) => t.title);
+    assert.ok(!pastTaskTitles.includes("Today task"));
   });
 
   it("8. Inclusive bounds: start and end dates included", async () => {

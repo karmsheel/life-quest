@@ -1,4 +1,9 @@
-import type { StoreState as MapStoreState } from "./map/types.ts";
+import type {
+  StoreState as MapStoreState,
+  Task,
+  LiveDay,
+  MapEvent,
+} from "./map/types.ts";
 
 export const SCHEMA_VERSION = 1 as const;
 export const DOCUMENT_KINDS = ["why", "what", "how", "premise"] as const;
