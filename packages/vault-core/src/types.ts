@@ -292,3 +292,19 @@ export type VaultSnapshot = {
 };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
+
+export type PeriodPack = {
+  cadence: ReviewCadence;
+  period: string;
+  scope: "overall" | string;
+  bounds: { start: string; end: string };
+  log: LifeEvent[];
+  tasks: Task[];
+  goals: Goal[];
+  liveDays: LiveDay[];
+  events: MapEvent[];
+  previousReview: ReviewRecord | null;
+  domainSections: Array<{ slug: string; name: string; status: "draft" | "done"; body: string }>;
+  missingSources: string[];
+  truncated: boolean;
+};
