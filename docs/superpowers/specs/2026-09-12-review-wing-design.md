@@ -1,7 +1,7 @@
 # Review Wing — Design Spec
 
 **Date:** 2026-09-12  
-**Status:** Approved — implementation plan ready (`docs/superpowers/plans/2026-09-12-review-wing.md`)  
+**Status:** Approved — placeholders shipped. Page body superseded by [Reviews](./2026-09-21-reviews-design.md). Wing tabs, rails, routes, and session rules in this spec remain in force.  
 **Product:** LifeQuest — local-first life-management studio  
 **Depends on:** [Vision / Plan / Execute wings](./2026-08-30-vision-plan-execute-wings-design.md), [Home wing](./2026-09-02-home-wing-design.md)
 
