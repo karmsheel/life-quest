@@ -149,16 +149,7 @@ describe("wing shell wiring", () => {
     assert.match(nested, /<Route\s+path=["']\/chart["']/);
     assert.match(nested, /<Route\s+path=["']\/act["']/);
     assert.match(nested, /<Route\s+path=["']\/daily["']/);
-    assert.match(nested, /<Route\s+path=["']\/review\/daily["']/);
-    assert.match(nested, /<Route\s+path=["']\/review\/weekly["']/);
-    assert.match(nested, /<Route\s+path=["']\/review\/monthly["']/);
-    assert.match(nested, /<Route\s+path=["']\/review\/quarterly["']/);
-    assert.match(nested, /<Route\s+path=["']\/review\/yearly["']/);
-    assert.match(nested, /StubPage title=["']Daily Review["']/);
-    assert.match(nested, /StubPage title=["']Weekly Review["']/);
-    assert.match(nested, /StubPage title=["']Monthly Review["']/);
-    assert.match(nested, /StubPage title=["']Quarterly Review["']/);
-    assert.match(nested, /StubPage title=["']Yearly Review["']/);
+    assert.match(nested, /<Route\s+path=["']\/review\/:cadence["']/);
     assert.match(nested, /<Route\s+path=["']\/log["']/);
     assert.equal(nested.includes("/welcome"), false);
 
@@ -168,11 +159,11 @@ describe("wing shell wiring", () => {
     );
   });
 
-  it("imports StubPage for Review cadence routes", () => {
+  it("imports ReviewPage for Review cadence routes", () => {
     const src = read("src/App.tsx");
     assert.match(
       src,
-      /import StubPage from ["']@\/pages\/StubPage["']/,
+      /import ReviewPage from ["']@\/pages\/ReviewPage["']/,
     );
   });
 
