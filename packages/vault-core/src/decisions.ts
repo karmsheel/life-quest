@@ -28,10 +28,6 @@ function isLibraryTarget(t: DocumentTarget): t is Extract<DocumentTarget, { type
   return t.type === "library";
 }
 
-function isReviewTarget(t: DocumentTarget): t is Extract<DocumentTarget, { type: "review" }> {
-  return t.type === "review";
-}
-
 function isDoctrineTarget(t: DocumentTarget): t is Extract<DocumentTarget, { type: "doctrine" }> {
   return t.type === "doctrine";
 }

@@ -136,24 +136,41 @@ function canonicalizeBody(
 ): string {
   // Parse existing headings and their content blocks
   const lines = body.split("\n");
-  const sections: Array<{ level: number; text: string; content: string[] }> = [];
-  let current: { level: number; text: string; content: string[] } | null = null;
+  const sections: Array<{ level: number; text: string; content: string[]; parentH2: string | null }> = [];
+  let current: { level: number; text: string; content: string[]; parentH2: string | null } | null = null;
+  // Track the most recent H2 so level-3 headings under a domain can be keyed distinctly
+  let currentH2: string | null = null;
 
   for (const line of lines) {
     const m = /^(#{1,6})\s+(.*)$/.exec(line);
     if (m) {
       if (current) sections.push(current);
-      current = { level: m[1]!.length, text: m[2]!.trim(), content: [] };
+      const level = m[1]!.length;
+      const text = m[2]!.trim();
+      // Record which H2 this section falls under (only meaningful for H3+)
+      current = { level, text, content: [], parentH2: level >= 3 ? currentH2 : null };
+      if (level === 2) {
+        currentH2 = text;
+      }
     } else if (current) {
       current.content.push(line);
     }
   }
   if (current) sections.push(current);
 
-  // Map heading text → content lines so canonicalize preserves body under required headings
+  // Map heading → content lines. For level-2 overall required headings, key = text.
+  // For level-3 under a domain H2, key = "Domain\u0000Subsection" (matches emit key).
   const contentMap = new Map<string, string[]>();
   for (const section of sections) {
-    contentMap.set(section.text, section.content);
+    if (section.level === 2) {
+      contentMap.set(section.text, section.content);
+    } else if (section.level >= 3 && section.parentH2 !== null) {
+      // Only map under a domain H2, not the overall H2s
+      const isOverallH2 = DOMAIN_HEADINGS.includes(section.parentH2 as (typeof DOMAIN_HEADINGS)[number]);
+      if (!isOverallH2) {
+        contentMap.set(section.parentH2 + "\u0000" + section.text, section.content);
+      }
+    }
   }
 
   // Build required sections

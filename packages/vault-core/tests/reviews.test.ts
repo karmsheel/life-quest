@@ -330,4 +330,61 @@ describe("reviews", () => {
     assert.ok(corrupt);
     assert.ok(corrupt!.error);
   });
+
+  it("13. writeReview preserves overall Look-back and domain ### Look-back distinctly", async () => {
+    const root = path.join(dir, "vault-13");
+    const res = await createVault(root, "V13");
+    expectOk(res);
+    await ensureReview(root, {
+      cadence: "weekly",
+      period: "2026-09-21",
+      scope: "overall",
+    });
+    await ensureReview(root, {
+      cadence: "weekly",
+      period: "2026-09-21",
+      scope: "health",
+    });
+    const title = periodTitle("weekly", "2026-09-21", "monday");
+    const body = [
+      `# ${title}`,
+      "",
+      "## Look-back",
+      "overall-lb",
+      "",
+      "## Keep",
+      "",
+      "## Change",
+      "",
+      "## Next-period intent",
+      "",
+      "## Health",
+      "",
+      "### Look-back",
+      "health-lb",
+      "",
+      "### Keep",
+      "",
+      "### Change",
+      "",
+      "### Next-period intent",
+      "",
+    ].join("\n");
+    const r = await writeReview(root, {
+      cadence: "weekly",
+      period: "2026-09-21",
+      bodyMarkdown: body,
+      actor: USER,
+    });
+    assert.equal(r.ok, true);
+    if (!r.ok) return;
+    assert.match(r.value.bodyMarkdown, /overall-lb/);
+    assert.match(r.value.bodyMarkdown, /health-lb/);
+    // health-lb must appear after ## Health, not in the overall Look-back block
+    const overallLbIdx = r.value.bodyMarkdown.indexOf("overall-lb");
+    const healthLbIdx = r.value.bodyMarkdown.indexOf("health-lb");
+    const healthIdx = r.value.bodyMarkdown.indexOf("## Health");
+    assert.ok(overallLbIdx < healthIdx, "overall Look-back before ## Health");
+    assert.ok(healthLbIdx > healthIdx, "health-lb after ## Health");
+  });
 });
