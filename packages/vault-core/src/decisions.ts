@@ -17,6 +17,8 @@ import {
   type Result,
 } from "./types.ts";
 import { documentTargetLabel } from "./documents.ts";
+import { getReview, applyLockedReviewBody } from "./reviews.ts";
+import { isReviewCadence } from "./period.ts";
 
 function isDocumentKind(kind: string): kind is DocumentKind {
   return (DOCUMENT_KINDS as readonly string[]).includes(kind);
@@ -24,6 +26,10 @@ function isDocumentKind(kind: string): kind is DocumentKind {
 
 function isLibraryTarget(t: DocumentTarget): t is Extract<DocumentTarget, { type: "library" }> {
   return t.type === "library";
+}
+
+function isReviewTarget(t: DocumentTarget): t is Extract<DocumentTarget, { type: "review" }> {
+  return t.type === "review";
 }
 
 function isDoctrineTarget(t: DocumentTarget): t is Extract<DocumentTarget, { type: "doctrine" }> {
@@ -43,17 +49,21 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     typeof explicitTarget === "object" &&
     "type" in explicitTarget &&
     (isDoctrineExplicitTarget(explicitTarget as Record<string, unknown>) ||
-      isLibraryExplicitTarget(explicitTarget as Record<string, unknown>))
+      isLibraryExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isReviewExplicitTarget(explicitTarget as Record<string, unknown>))
   ) {
     const t = explicitTarget as Record<string, unknown>;
-    target =
-      t.type === "doctrine"
-        ? {
-            type: "doctrine",
-            domainSlug: String(t.domainSlug),
-            kind: String(t.kind) as DocumentKind,
-          }
-        : { type: "library", id: String(t.id) };
+    if (t.type === "review") {
+      target = { type: "review", cadence: String(t.cadence), period: String(t.period) };
+    } else if (t.type === "doctrine") {
+      target = {
+        type: "doctrine",
+        domainSlug: String(t.domainSlug),
+        kind: String(t.kind) as DocumentKind,
+      };
+    } else {
+      target = { type: "library", id: String(t.id) };
+    }
   } else if (
     typeof raw.documentKind === "string" &&
     isDocumentKind(raw.documentKind) &&
@@ -131,6 +141,16 @@ function isLibraryExplicitTarget(raw: Record<string, unknown>): boolean {
   return raw.type === "library" && typeof raw.id === "string" && raw.id.length > 0;
 }
 
+function isReviewExplicitTarget(raw: Record<string, unknown>): boolean {
+  return (
+    raw.type === "review" &&
+    typeof raw.cadence === "string" &&
+    isReviewCadence(raw.cadence) &&
+    typeof raw.period === "string" &&
+    raw.period.length > 0
+  );
+}
+
 async function readDecisionFile(filePath: string): Promise<DecisionRecord> {
   const raw = await fs.readFile(filePath, "utf8");
   const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -192,6 +212,13 @@ export async function createDecision(
       if (!input.target.id.trim()) {
         return { ok: false, error: "library id is required" };
       }
+    } else if (input.target.type === "review") {
+      if (!isReviewCadence(input.target.cadence)) {
+        return { ok: false, error: `Invalid review cadence: ${input.target.cadence}` };
+      }
+      if (!input.target.period.trim()) {
+        return { ok: false, error: "period is required" };
+      }
     } else {
       return { ok: false, error: "Invalid target type" };
     }
@@ -223,6 +250,16 @@ export async function createDecision(
           error: "Document must be locked before proposing a change",
         };
       }
+    } else if (input.target.type === "review") {
+      const reviewRes = await getReview(rootPath, input.target.cadence, input.target.period);
+      if (!reviewRes.ok) return reviewRes;
+      docLocked = reviewRes.value.locked;
+      if (!docLocked) {
+        return {
+          ok: false,
+          error: "Review must be locked before proposing a change",
+        };
+      }
     } else {
       const noteRes = await libraryGet(rootPath, input.target.id);
       if (!noteRes.ok) return noteRes;
@@ -240,7 +277,9 @@ export async function createDecision(
     const domainSlugs: string[] =
       input.target.type === "doctrine"
         ? [input.target.domainSlug]
-        : libraryNote!.value.domainSlugs;
+        : input.target.type === "review"
+          ? []
+          : libraryNote!.value.domainSlugs;
 
     const title = `Proposed change to ${documentTargetLabel(
       input.target,
@@ -291,6 +330,16 @@ async function applyApprovedBody(
   decision: DecisionRecord,
 ): Promise<Result<void>> {
   try {
+    if (decision.target.type === "review") {
+      const res = await applyLockedReviewBody(
+        rootPath,
+        decision.target.cadence,
+        decision.target.period,
+        decision.proposedBodyMarkdown,
+      );
+      if (!res.ok) return { ok: false, error: res.error };
+      return { ok: true, value: undefined };
+    }
     if (decision.target.type === "doctrine") {
       const paths = vaultPaths(rootPath);
       const docPath = paths.documentMd(decision.target.domainSlug, decision.target.kind);

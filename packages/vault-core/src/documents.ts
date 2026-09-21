@@ -5,6 +5,7 @@ import {
   type DocumentKind,
   type DocumentTarget,
 } from "./types.ts";
+import { periodTitle } from "./period.ts";
 
 export function lockedFromFrontmatter(data: Record<string, unknown>): boolean {
   if (typeof data.locked === "boolean") return data.locked;
@@ -32,6 +33,7 @@ export function documentTargetLabel(
   fallbackTitle: string,
 ): string {
   if (target.type === "doctrine") return DOCUMENT_KIND_LABELS[target.kind];
+  if (target.type === "review") return periodTitle(target.cadence, target.period, "monday");
   return fallbackTitle;
 }
 

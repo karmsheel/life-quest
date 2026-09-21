@@ -150,13 +150,21 @@ function canonicalizeBody(
   }
   if (current) sections.push(current);
 
+  // Map heading text → content lines so canonicalize preserves body under required headings
+  const contentMap = new Map<string, string[]>();
+  for (const section of sections) {
+    contentMap.set(section.text, section.content);
+  }
+
   // Build required sections
   const out: string[] = [];
   out.push(`# ${record.title}`);
 
-  // Overall required H2s
+  // Overall required H2s — preserve existing content
   for (const h of DOMAIN_HEADINGS) {
     out.push("", `## ${h}`, "");
+    const content = contentMap.get(h);
+    if (content && content.length > 0) out.push(...content);
   }
 
   // Domain sections (from frontmatter scopes, excluding overall)
@@ -166,6 +174,8 @@ function canonicalizeBody(
     out.push("", `## ${name}`, "");
     for (const h of DOMAIN_HEADINGS) {
       out.push(`### ${h}`, "");
+      const subContent = contentMap.get(name + "\u0000" + h);
+      if (subContent && subContent.length > 0) out.push(...subContent);
     }
   }
 
@@ -518,6 +528,16 @@ export async function applyLockedReviewBody(
     const existing = await parseReviewFile(rootPath, cadence, period);
     if (!existing.ok) return existing;
     const record = existing.value;
+
+    // Validate required headings before applying — a decision must not
+    // break the skeleton the same way writeReview rejects it.
+    const missing: string[] = [];
+    for (const h of DOMAIN_HEADINGS) {
+      if (!bodyMarkdown.includes(`## ${h}`)) missing.push(h);
+    }
+    if (missing.length > 0) {
+      return { ok: false, error: `Missing required headings: ${missing.join(", ")}` };
+    }
 
     const domainNames = await readDomainNames(rootPath);
     record.updatedAt = todayIso();
