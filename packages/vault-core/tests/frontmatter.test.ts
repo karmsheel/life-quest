@@ -19,4 +19,22 @@ describe("frontmatter", () => {
     assert.deepEqual(parsed.data, {});
     assert.equal(parsed.body, "just body\n");
   });
+
+  it("round-trips object values as JSON", () => {
+    const raw = serializeFrontmatter(
+      { scopes: { overall: { status: "draft", sessionId: null } } },
+      "body\n",
+    );
+    const parsed = parseFrontmatter(raw);
+    assert.deepEqual(parsed.data.scopes, { overall: { status: "draft", sessionId: null } });
+  });
+
+  it("round-trips array values as JSON", () => {
+    const raw = serializeFrontmatter(
+      { tags: ["a", "b"] },
+      "body\n",
+    );
+    const parsed = parseFrontmatter(raw);
+    assert.deepEqual(parsed.data.tags, ["a", "b"]);
+  });
 });
