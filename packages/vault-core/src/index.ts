@@ -47,6 +47,10 @@ export {
   executeDocumentTool,
 } from "./document-tools.ts";
 export {
+  REVIEW_TOOL_DEFS,
+  executeReviewTool,
+} from "./review-tools.ts";
+export {
   isReviewCadence,
   isWeekStartDay,
   weekStartOnOrBefore,

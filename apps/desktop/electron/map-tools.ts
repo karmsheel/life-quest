@@ -9,6 +9,8 @@ import {
   resolveWeek,
   DOCUMENT_TOOL_DEFS,
   executeDocumentTool,
+  REVIEW_TOOL_DEFS,
+  executeReviewTool,
   type MapCommand,
   type Result,
 } from "@lifequest/vault-core";
@@ -27,7 +29,7 @@ export async function runPlannerLoop(opts: {
   extraSystem: string;
   messages: { role: string; content: string }[];
 }): Promise<Result<{ content: string }>> {
-  const openaiTools = [...MAP_TOOL_DEFS, ...GOALS_TOOL_DEFS, ...DOCUMENT_TOOL_DEFS].map((t) => ({
+  const openaiTools = [...MAP_TOOL_DEFS, ...GOALS_TOOL_DEFS, ...DOCUMENT_TOOL_DEFS, ...REVIEW_TOOL_DEFS].map((t) => ({
     type: "function",
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
@@ -75,6 +77,11 @@ export async function executeTool(
 
   if (DOCUMENT_TOOL_DEFS.some((t) => t.name === name)) {
     return executeDocumentTool(root, AGENT_ACTOR, name, rec);
+  }
+
+  // get_review, list_reviews, write_review, mark_review_done, unlock_review, get_period_pack
+  if (REVIEW_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeReviewTool(root, AGENT_ACTOR, name, rec);
   }
 
   if (name === "get_state") return { state: snap.value.map };
