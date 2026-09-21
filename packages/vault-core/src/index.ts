@@ -68,4 +68,10 @@ export {
   listReviewIndex,
   applyLockedReviewBody,
 } from "./reviews.ts";
+export {
+  ensurePlanningStub,
+  getPlanningStub,
+  setPlanningSessionId,
+  listPlanningIndex,
+} from "./planning-stubs.ts";
 export type { MapStoreState, MapCommand, MapActor, MapDomainError, YearRecord, MapEvent, Task, TaskColumn, ColorId, DayType, DetachedWeek, ResolvedWeek } from "./map/public.ts";

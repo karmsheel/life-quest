@@ -112,6 +112,20 @@ export type ReviewIndexEntry = {
   error?: string;
 };
 
+export type PlanningStub = {
+  cadence: ReviewCadence;
+  period: string;
+  updatedAt: string;
+  scopes: Record<string, { sessionId: string | null }>;
+  bodyMarkdown: string; // empty string this spec
+};
+
+export type PlanningIndexEntry = {
+  cadence: ReviewCadence;
+  period: string;
+  scopes: Record<string, { sessionId: string | null }>;
+};
+
 export type AgentHire = {
   id: string;
   hermesAgentId: string;
