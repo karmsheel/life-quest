@@ -35,6 +35,39 @@ describe("buildInstructions", () => {
     assert.match(text, /Agent lock: false/);
     assert.match(text, /Vault: closed/);
   });
+
+  it("appends reviewContext when set", () => {
+    const text = buildInstructions({
+      domainName: null,
+      domainSlug: null,
+      aboutMe: "",
+      locked: false,
+      vaultOpen: true,
+      reviewContext: "BOUND_REVIEW_PACK_JSON",
+    });
+    assert.match(text, /BOUND_REVIEW_PACK_JSON/);
+    assert.match(text, /\n\nBOUND_REVIEW_PACK_JSON$/);
+  });
+
+  it("omits reviewContext when empty or unset", () => {
+    const plain = buildInstructions({
+      domainName: null,
+      domainSlug: null,
+      aboutMe: "",
+      locked: false,
+      vaultOpen: true,
+    });
+    assert.equal(plain.includes("BOUND_REVIEW"), false);
+    const empty = buildInstructions({
+      domainName: null,
+      domainSlug: null,
+      aboutMe: "",
+      locked: false,
+      vaultOpen: true,
+      reviewContext: "  ",
+    });
+    assert.equal(empty, plain);
+  });
 });
 
 describe("parseSseBlock", () => {

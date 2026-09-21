@@ -271,7 +271,7 @@ function registerIpcHandlers() {
         instructionsContext: CompanionInstructionsInput;
       },
     ) => {
-      return companion.companionChatStream(
+      return vault.companionChatStreamWithPack(
         payload.sessionId,
         payload.input,
         payload.instructionsContext,
@@ -354,6 +354,24 @@ function registerIpcHandlers() {
       period: string,
       scope: Parameters<typeof vault.planningEnsure>[2],
     ) => vault.planningEnsure(cadence, period, scope),
+  );
+  ipcMain.handle(
+    "review:startOrResume",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewStartOrResume>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewStartOrResume>[2],
+    ) => vault.reviewStartOrResume(cadence, period, scope),
+  );
+  ipcMain.handle(
+    "planning:startOrResume",
+    (
+      _e,
+      cadence: Parameters<typeof vault.planningStartOrResume>[0],
+      period: string,
+      scope: Parameters<typeof vault.planningStartOrResume>[2],
+    ) => vault.planningStartOrResume(cadence, period, scope),
   );
 
   ipcMain.handle("deadline:dismiss", async (_e) => {

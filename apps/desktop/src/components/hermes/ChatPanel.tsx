@@ -11,6 +11,7 @@ import { Link } from "react-router-dom";
 import { PanelRightOpen } from "lucide-react";
 import { api } from "@/lib/ipc";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
+import { useChatDock } from "@/state/ChatDockProvider";
 import { useVault } from "@/state/VaultProvider";
 import type { ChatStreamEvent, HermesSession } from "@/vite-env";
 
@@ -35,6 +36,11 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const activeDomain = useActiveDomain();
   const domainName = activeDomain?.meta.name ?? "Overview";
   const { snapshot, refresh } = useVault();
+  const {
+    requestedSessionId,
+    requestedKickoff,
+    clearRequestedSession,
+  } = useChatDock();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessions, setSessions] = useState<HermesSession[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -96,8 +102,9 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
 
   useEffect(() => {
     if (!open) return;
+    if (requestedSessionId) return;
     void ensureSession();
-  }, [open, ensureSession]);
+  }, [open, ensureSession, requestedSessionId]);
 
   useEffect(() => {
     if (!open || !listRef.current) return;
@@ -165,9 +172,10 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     });
   }, [refresh]);
 
-  async function sendMessage(text: string) {
+  async function sendMessage(text: string, overrideSessionId?: string) {
     const content = text.trim();
-    if (!content || sending || !sessionId) return;
+    const activeId = overrideSessionId ?? sessionId;
+    if (!content || sending || !activeId) return;
 
     setMessages((prev) => [
       ...prev,
@@ -179,7 +187,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
 
     try {
       const result = await api().companionChatStream({
-        sessionId,
+        sessionId: activeId,
         input: content,
         instructionsContext: {
           domainName: activeDomain?.meta.name ?? null,
@@ -199,6 +207,30 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       setSending(false);
     }
   }
+
+  useEffect(() => {
+    if (!requestedSessionId) return;
+    let cancelled = false;
+    const targetId = requestedSessionId;
+    const kickoff = requestedKickoff;
+    (async () => {
+      onOpenChange(true);
+      const listed = await api().companionSessionsList();
+      if (cancelled) return;
+      if (listed.ok) setSessions(listed.value);
+      await loadSession(targetId);
+      if (cancelled) return;
+      clearRequestedSession();
+      if (kickoff?.trim()) {
+        await sendMessage(kickoff, targetId);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Kickoff/send intentionally tied to the request id change only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedSessionId]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();

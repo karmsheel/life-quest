@@ -4,6 +4,7 @@ export type CompanionInstructionsInput = {
   aboutMe: string;
   locked: boolean;
   vaultOpen: boolean;
+  reviewContext?: string;
 };
 
 export type ChatStreamEvent =
@@ -25,7 +26,7 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
       ? `${input.domainName ?? "unnamed"}${input.domainSlug ? ` (${input.domainSlug})` : ""}`
       : "none";
   const about = input.aboutMe.trim() ? input.aboutMe.trim() : "(empty)";
-  return [
+  const base = [
     "You are chatting inside the LifeQuest app.",
     `Active domain: ${domain}`,
     `About me: ${about}`,
@@ -33,6 +34,9 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     `Vault: ${input.vaultOpen ? "open" : "closed"}`,
     "LifeQuest MCP server name is lifequest. Use it for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
   ].join("\n");
+  const reviewContext = input.reviewContext?.trim();
+  if (!reviewContext) return base;
+  return `${base}\n\n${reviewContext}`;
 }
 
 export function parseSseBlock(raw: string): ChatStreamEvent | null {

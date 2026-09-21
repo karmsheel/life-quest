@@ -196,6 +196,20 @@ const lifequest = {
     ipcRenderer.invoke("planning:ensure", cadence, period, scope) as Promise<
       Result<unknown>
     >,
+  reviewStartOrResume: (cadence: string, period: string, scope: string) =>
+    ipcRenderer.invoke(
+      "review:startOrResume",
+      cadence,
+      period,
+      scope,
+    ) as Promise<Result<unknown>>,
+  planningStartOrResume: (cadence: string, period: string, scope: string) =>
+    ipcRenderer.invoke(
+      "planning:startOrResume",
+      cadence,
+      period,
+      scope,
+    ) as Promise<Result<unknown>>,
 
   deadlineDismiss: () =>
     ipcRenderer.invoke("deadline:dismiss") as Promise<Result<true>>,

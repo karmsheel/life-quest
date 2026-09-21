@@ -87,6 +87,17 @@ import {
 } from "./hermes-proxy.js";
 import { runPlannerLoop } from "./map-tools.js";
 import { startMcp, stopMcp } from "./mcp-server.js";
+import * as companion from "./companion.js";
+import type {
+  ChatStreamEvent,
+  CompanionInstructionsInput,
+} from "./companion-client.js";
+import {
+  buildBoundReviewContext,
+  startOrResumePlanSession as startOrResumePlanSessionCore,
+  startOrResumeReviewSession as startOrResumeReviewSessionCore,
+  type BoundSessionResult,
+} from "./review-sessions.js";
 
 let currentRoot: string | null = null;
 let currentVaultId: string | null = null;
@@ -696,4 +707,58 @@ export async function planningEnsure(
   return withVault((root) =>
     ensurePlanningStub(root, { cadence, period, scope }),
   );
+}
+
+const companionSessionFns = {
+  list: () => companion.companionSessionsList(),
+  create: (title: string) => companion.companionSessionCreate(title),
+};
+
+export async function reviewStartOrResume(
+  cadence: ReviewCadence,
+  period: string,
+  scope: "overall" | string,
+): Promise<Result<BoundSessionResult>> {
+  return withVault((root) =>
+    startOrResumeReviewSessionCore(
+      root,
+      { cadence, period, scope },
+      companionSessionFns,
+    ),
+  );
+}
+
+export async function planningStartOrResume(
+  cadence: ReviewCadence,
+  period: string,
+  scope: "overall" | string,
+): Promise<Result<BoundSessionResult>> {
+  return withVault((root) =>
+    startOrResumePlanSessionCore(
+      root,
+      { cadence, period, scope },
+      companionSessionFns,
+    ),
+  );
+}
+
+export async function companionChatStreamWithPack(
+  sessionId: string,
+  input: string,
+  instructionsContext: CompanionInstructionsInput,
+  onEvent: (evt: ChatStreamEvent) => void,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx: CompanionInstructionsInput = { ...instructionsContext };
+  if (currentRoot) {
+    const snap = await openVault(currentRoot);
+    if (snap.ok) {
+      const reviewContext = await buildBoundReviewContext(
+        currentRoot,
+        snap.value,
+        sessionId,
+      );
+      if (reviewContext) ctx.reviewContext = reviewContext;
+    }
+  }
+  return companion.companionChatStream(sessionId, input, ctx, onEvent);
 }

@@ -54,4 +54,35 @@ describe("companion shell wiring", () => {
     assert.match(hermes, /Open profile folder/);
     assert.equal(hermes.includes("Base URL"), false);
   });
+
+  it("wires review/plan startOrResume IPC", () => {
+    const service = read("electron/vault-service.ts");
+    const main = read("electron/main.ts");
+    const preload = read("electron/preload.ts");
+    const viteEnv = read("src/vite-env.d.ts");
+    assert.match(
+      service,
+      /startOrResumeReviewSession|review:startOrResume/,
+    );
+    assert.match(service, /planning:startOrResume|startOrResumePlanSession/);
+    assert.match(main, /review:startOrResume/);
+    assert.match(main, /planning:startOrResume/);
+    assert.match(preload, /review:startOrResume/);
+    assert.match(preload, /planning:startOrResume/);
+    assert.match(viteEnv, /startOrResumeReviewSession|reviewStartOrResume/);
+    assert.match(viteEnv, /startOrResumePlanSession|planningStartOrResume/);
+  });
+
+  it("ChatDockProvider exposes requestSession and requestedSessionId", () => {
+    const dock = read("src/state/ChatDockProvider.tsx");
+    assert.match(dock, /requestSession/);
+    assert.match(dock, /requestedSessionId/);
+    assert.match(dock, /requestedKickoff/);
+    assert.match(dock, /clearRequestedSession/);
+  });
+
+  it("ChatPanel reads requestedSessionId", () => {
+    const chat = read("src/components/hermes/ChatPanel.tsx");
+    assert.match(chat, /requestedSessionId/);
+  });
 });

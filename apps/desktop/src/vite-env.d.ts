@@ -60,6 +60,7 @@ type CompanionInstructionsContext = {
   aboutMe: string;
   locked: boolean;
   vaultOpen: boolean;
+  reviewContext?: string;
 };
 
 type ChatStreamEvent =
@@ -224,6 +225,20 @@ type LifequestApi = {
     period: string,
     scope: "overall" | string,
   ) => Promise<Result<PlanningStub>>;
+  reviewStartOrResume: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+  ) => Promise<
+    Result<{ sessionId: string; created: boolean; kickoff: string }>
+  >;
+  planningStartOrResume: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+  ) => Promise<
+    Result<{ sessionId: string; created: boolean; kickoff: string }>
+  >;
   deadlineDismiss: () => Promise<Result<true>>;
   deadlineGetDismissed: () =>
     Promise<Result<{ ok: true; value: string | null }>>;
