@@ -187,6 +187,13 @@ type LifequestApi = {
   mapGetState: () => Promise<Result<MapStoreState>>;
   mapApply: (command: MapCommand) => Promise<Result<VaultSnapshot>>;
   goalsApply: (command: GoalsCommand) => Promise<Result<VaultSnapshot>>;
+  reviewGet: (cadence: string, period: string) => Promise<Result<unknown>>;
+  reviewEnsure: (cadence: string, period: string, scope: string) => Promise<Result<unknown>>;
+  reviewWrite: (cadence: string, period: string, body: string) => Promise<Result<unknown>>;
+  reviewMarkDone: (cadence: string, period: string, scope: string) => Promise<Result<unknown>>;
+  reviewUnlock: (cadence: string, period: string) => Promise<Result<unknown>>;
+  reviewPeriodPack: (cadence: string, period: string, scope: string) => Promise<Result<unknown>>;
+  planningEnsure: (cadence: string, period: string, scope: string) => Promise<Result<unknown>>;
   deadlineDismiss: () => Promise<Result<true>>;
   deadlineGetDismissed: () =>
     Promise<Result<{ ok: true; value: string | null }>>;

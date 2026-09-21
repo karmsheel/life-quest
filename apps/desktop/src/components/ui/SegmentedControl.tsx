@@ -12,18 +12,21 @@ export function SegmentedControl<T extends string>({
   onChange,
   ariaLabel,
   className = "",
+  disabled = false,
 }: {
   value: T;
   options: SegmentedOption<T>[];
   onChange: (value: T) => void;
   ariaLabel: string;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <div
       className={["ui-segmented", className].filter(Boolean).join(" ")}
       role="group"
       aria-label={ariaLabel}
+      aria-disabled={disabled}
     >
       {options.map((option) => {
         const active = value === option.value;
@@ -33,8 +36,9 @@ export function SegmentedControl<T extends string>({
             type="button"
             role="radio"
             aria-checked={active}
+            disabled={disabled}
             className={`ui-segmented__option${active ? " is-active" : ""}`}
-            onClick={() => onChange(option.value)}
+            onClick={() => !disabled && onChange(option.value)}
           >
             {option.icon ? (
               <span className="ui-segmented__icon">{option.icon}</span>

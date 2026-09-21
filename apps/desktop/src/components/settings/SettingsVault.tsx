@@ -64,6 +64,7 @@ export function SettingsVault() {
             options={WEEK_START_OPTIONS}
             ariaLabel="Week starts on"
             onChange={onWeekStartChange}
+            disabled={(snapshot.weeklyFileCount ?? 0) > 0}
           />
         }
       />

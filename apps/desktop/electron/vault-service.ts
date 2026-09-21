@@ -9,7 +9,11 @@ import {
   deleteSignal,
   dismissAgent,
   DOCUMENT_KINDS,
+  ensurePlanningStub,
+  ensureReview,
   getDocument,
+  getPeriodPack,
+  getReview,
   hireAgent,
   libraryCreate,
   libraryDelete,
@@ -19,6 +23,7 @@ import {
   listAgents,
   listDecisions,
   listSignals,
+  markReviewDone,
   openVault,
   readDocumentMedia,
   readLog,
@@ -27,11 +32,13 @@ import {
   saveDocumentMedia,
   setDocumentLocked,
   setLibraryLocked,
+  unlockReview,
   updateDomain,
   updateSettings,
   updateSignal,
   USER_ACTOR,
   vaultPaths,
+  writeReview,
   applyGoalsCommand,
   applyMapCommand,
   type AgentHire,
@@ -51,6 +58,7 @@ import {
   type LibraryUpdatePatch,
   type LifeEvent,
   type Result,
+  type ReviewCadence,
   type SignalChainListResult,
   type SignalCreateInput,
   type SignalRecord,
@@ -622,4 +630,60 @@ export async function goalsApply(
     if (!applied.ok) return applied;
     return openVault(root);
   });
+}
+
+export async function reviewGet(
+  cadence: ReviewCadence,
+  period: string,
+): Promise<Result<unknown>> {
+  return withVault((root) => getReview(root, cadence, period));
+}
+
+export async function reviewEnsure(
+  cadence: ReviewCadence,
+  period: string,
+  scope: string,
+): Promise<Result<unknown>> {
+  return withVault((root) => ensureReview(root, { cadence, period, scope }));
+}
+
+export async function reviewWrite(
+  cadence: ReviewCadence,
+  period: string,
+  body: string,
+): Promise<Result<unknown>> {
+  return withVault((root) =>
+    writeReview(root, { cadence, period, bodyMarkdown: body, actor: USER_ACTOR }),
+  );
+}
+
+export async function reviewMarkDone(
+  cadence: ReviewCadence,
+  period: string,
+  scope: string,
+): Promise<Result<unknown>> {
+  return withVault((root) => markReviewDone(root, { cadence, period, scope }));
+}
+
+export async function reviewUnlock(
+  cadence: ReviewCadence,
+  period: string,
+): Promise<Result<unknown>> {
+  return withVault((root) => unlockReview(root, { cadence, period }));
+}
+
+export async function reviewPeriodPack(
+  cadence: ReviewCadence,
+  period: string,
+  scope: string,
+): Promise<Result<unknown>> {
+  return withVault((root) => getPeriodPack(root, { cadence, period, scope }));
+}
+
+export async function planningEnsure(
+  cadence: ReviewCadence,
+  period: string,
+  scope: string,
+): Promise<Result<unknown>> {
+  return withVault((root) => ensurePlanningStub(root, { cadence, period, scope }));
 }

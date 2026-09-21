@@ -16,10 +16,15 @@ import {
   type DomainRecord,
   type Goal,
   type LifequestJson,
+  type PlanningIndexEntry,
   type Result,
+  type ReviewIndexEntry,
   type VaultSettings,
   type VaultSnapshot,
 } from "./types.ts";
+import { countWeeklyVaultFiles } from "./agents.ts";
+import { listPlanningIndex } from "./planning-stubs.ts";
+import { listReviewIndex } from "./reviews.ts";
 
 async function loadDomain(rootPath: string, slug: string): Promise<DomainRecord> {
   const paths = vaultPaths(rootPath);
@@ -116,6 +121,16 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
       goalsError = goalsRes.error;
     }
 
+    const reviews: ReviewIndexEntry[] = [];
+    const reviewsRes = await listReviewIndex(paths.root);
+    if (reviewsRes.ok) reviews.push(...reviewsRes.value);
+
+    const planning: PlanningIndexEntry[] = [];
+    const planningRes = await listPlanningIndex(paths.root);
+    if (planningRes.ok) planning.push(...planningRes.value);
+
+    const weeklyFileCount = await countWeeklyVaultFiles(paths.root);
+
     return {
       ok: true,
       value: {
@@ -130,6 +145,9 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
         mapError,
         goals,
         goalsError,
+        reviews,
+        planning,
+        weeklyFileCount,
       },
     };
   } catch (e) {
