@@ -300,6 +300,62 @@ function registerIpcHandlers() {
     vault.goalsApply(command),
   );
 
+  ipcMain.handle(
+    "review:get",
+    (_e, cadence: Parameters<typeof vault.reviewGet>[0], period: string) =>
+      vault.reviewGet(cadence, period),
+  );
+  ipcMain.handle(
+    "review:ensure",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewEnsure>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewEnsure>[2],
+    ) => vault.reviewEnsure(cadence, period, scope),
+  );
+  ipcMain.handle(
+    "review:write",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewWrite>[0],
+      period: string,
+      body: string,
+    ) => vault.reviewWrite(cadence, period, body),
+  );
+  ipcMain.handle(
+    "review:markDone",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewMarkDone>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewMarkDone>[2],
+    ) => vault.reviewMarkDone(cadence, period, scope),
+  );
+  ipcMain.handle(
+    "review:unlock",
+    (_e, cadence: Parameters<typeof vault.reviewUnlock>[0], period: string) =>
+      vault.reviewUnlock(cadence, period),
+  );
+  ipcMain.handle(
+    "review:periodPack",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewPeriodPack>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewPeriodPack>[2],
+    ) => vault.reviewPeriodPack(cadence, period, scope),
+  );
+  ipcMain.handle(
+    "planning:ensure",
+    (
+      _e,
+      cadence: Parameters<typeof vault.planningEnsure>[0],
+      period: string,
+      scope: Parameters<typeof vault.planningEnsure>[2],
+    ) => vault.planningEnsure(cadence, period, scope),
+  );
+
   ipcMain.handle("deadline:dismiss", async (_e) => {
     const vaultId = vault.getCurrentVaultId();
     if (!vaultId) return { ok: false, error: "No vault is open" };

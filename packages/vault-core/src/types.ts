@@ -294,6 +294,9 @@ export type VaultSnapshot = {
   mapError: string | null;
   goals: Goal[];
   goalsError: string | null;
+  reviews: ReviewIndexEntry[];
+  planning: PlanningIndexEntry[];
+  weeklyFileCount: number;
 };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };

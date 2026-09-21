@@ -16,7 +16,11 @@ import type {
   LifeEvent,
   MapCommand,
   MapStoreState,
+  PeriodPack,
+  PlanningStub,
   Result,
+  ReviewCadence,
+  ReviewRecord,
   SignalChainListResult,
   SignalCreateInput,
   SignalRecord,
@@ -187,6 +191,39 @@ type LifequestApi = {
   mapGetState: () => Promise<Result<MapStoreState>>;
   mapApply: (command: MapCommand) => Promise<Result<VaultSnapshot>>;
   goalsApply: (command: GoalsCommand) => Promise<Result<VaultSnapshot>>;
+  reviewGet: (
+    cadence: ReviewCadence,
+    period: string,
+  ) => Promise<Result<ReviewRecord>>;
+  reviewEnsure: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+  ) => Promise<Result<ReviewRecord>>;
+  reviewWrite: (
+    cadence: ReviewCadence,
+    period: string,
+    body: string,
+  ) => Promise<Result<ReviewRecord>>;
+  reviewMarkDone: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+  ) => Promise<Result<ReviewRecord>>;
+  reviewUnlock: (
+    cadence: ReviewCadence,
+    period: string,
+  ) => Promise<Result<ReviewRecord>>;
+  reviewPeriodPack: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+  ) => Promise<Result<PeriodPack>>;
+  planningEnsure: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+  ) => Promise<Result<PlanningStub>>;
   deadlineDismiss: () => Promise<Result<true>>;
   deadlineGetDismissed: () =>
     Promise<Result<{ ok: true; value: string | null }>>;

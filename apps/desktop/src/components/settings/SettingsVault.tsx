@@ -22,6 +22,7 @@ export function SettingsVault() {
   const { lifequest, rootPath, settings } = snapshot;
   const weekStartDay: WeekStartDay =
     settings.weekStartDay === "sunday" ? "sunday" : "monday";
+  const weekStartDisabled = (snapshot.weeklyFileCount ?? 0) > 0;
 
   async function onWeekStartChange(value: WeekStartDay) {
     const result = await updateSettings({ weekStartDay: value });
@@ -64,6 +65,7 @@ export function SettingsVault() {
             options={WEEK_START_OPTIONS}
             ariaLabel="Week starts on"
             onChange={onWeekStartChange}
+            disabled={weekStartDisabled}
           />
         }
       />

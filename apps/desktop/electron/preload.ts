@@ -170,6 +170,33 @@ const lifequest = {
   goalsApply: (command: unknown) =>
     ipcRenderer.invoke("goals:apply", command) as Promise<Result<unknown>>,
 
+  reviewGet: (cadence: string, period: string) =>
+    ipcRenderer.invoke("review:get", cadence, period) as Promise<Result<unknown>>,
+  reviewEnsure: (cadence: string, period: string, scope: string) =>
+    ipcRenderer.invoke("review:ensure", cadence, period, scope) as Promise<
+      Result<unknown>
+    >,
+  reviewWrite: (cadence: string, period: string, body: string) =>
+    ipcRenderer.invoke("review:write", cadence, period, body) as Promise<
+      Result<unknown>
+    >,
+  reviewMarkDone: (cadence: string, period: string, scope: string) =>
+    ipcRenderer.invoke("review:markDone", cadence, period, scope) as Promise<
+      Result<unknown>
+    >,
+  reviewUnlock: (cadence: string, period: string) =>
+    ipcRenderer.invoke("review:unlock", cadence, period) as Promise<
+      Result<unknown>
+    >,
+  reviewPeriodPack: (cadence: string, period: string, scope: string) =>
+    ipcRenderer.invoke("review:periodPack", cadence, period, scope) as Promise<
+      Result<unknown>
+    >,
+  planningEnsure: (cadence: string, period: string, scope: string) =>
+    ipcRenderer.invoke("planning:ensure", cadence, period, scope) as Promise<
+      Result<unknown>
+    >,
+
   deadlineDismiss: () =>
     ipcRenderer.invoke("deadline:dismiss") as Promise<Result<true>>,
 
