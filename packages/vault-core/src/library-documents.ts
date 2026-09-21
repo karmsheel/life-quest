@@ -69,6 +69,10 @@ async function normalizeDomains(
 }
 
 function parseDomainSlugs(value: unknown): string[] | null {
+  if (Array.isArray(value)) {
+    if (value.every((item) => typeof item === "string")) return value as string[];
+    return null;
+  }
   if (typeof value !== "string") return null;
   try {
     const parsed: unknown = JSON.parse(value);

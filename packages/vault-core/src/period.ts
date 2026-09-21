@@ -1,13 +1,11 @@
-import type { Result, WeekStartDay } from "./types.ts";
+import {
+  REVIEW_CADENCES,
+  type Result,
+  type ReviewCadence,
+  type WeekStartDay,
+} from "./types.ts";
 
-export const REVIEW_CADENCES = [
-  "daily",
-  "weekly",
-  "monthly",
-  "quarterly",
-  "yearly",
-] as const;
-export type ReviewCadence = (typeof REVIEW_CADENCES)[number];
+export { REVIEW_CADENCES, type ReviewCadence };
 
 const ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
 const MONTH = /^(\d{4})-(\d{2})$/;

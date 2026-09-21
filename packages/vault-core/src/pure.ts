@@ -7,7 +7,6 @@ export * from "./domain-lens.ts";
 export { formatGoalPace, goalPace, daysUntilDeadline, deadlinePressureGoals } from "./goal-progress.ts";
 export type { GoalPace } from "./goal-progress.ts";
 export {
-  REVIEW_CADENCES,
   isReviewCadence,
   isWeekStartDay,
   todayLocalIso as periodTodayLocalIso,
@@ -20,4 +19,3 @@ export {
   isCurrentPeriod,
   periodTitle,
 } from "./period.ts";
-export type { ReviewCadence } from "./period.ts";

@@ -12,7 +12,6 @@ import {
   type ReviewRecord,
   type ReviewScopeState,
   type WeekStartDay,
-  USER_ACTOR,
 } from "./types.ts";
 
 const OVERALL = "overall";

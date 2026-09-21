@@ -24,9 +24,19 @@ export type Actor =
 
 export const USER_ACTOR: Actor = { type: "user" };
 
+export const REVIEW_CADENCES = [
+  "daily",
+  "weekly",
+  "monthly",
+  "quarterly",
+  "yearly",
+] as const;
+export type ReviewCadence = (typeof REVIEW_CADENCES)[number];
+
 export type DocumentTarget =
   | { type: "doctrine"; domainSlug: string; kind: DocumentKind }
-  | { type: "library"; id: string };
+  | { type: "library"; id: string }
+  | { type: "review"; cadence: ReviewCadence; period: string };
 
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;
 export type RoomId = (typeof ROOM_IDS)[number];
@@ -77,6 +87,29 @@ export type VaultSettings = {
   hermesBaseUrl: string;
   theme: "system" | "light" | "dark";
   weekStartDay: WeekStartDay;
+};
+
+export type ReviewScopeStatus = "missing" | "draft" | "done";
+export type ReviewScopeState = {
+  status: "draft" | "done";
+  sessionId: string | null;
+};
+export type ReviewRecord = {
+  cadence: ReviewCadence;
+  period: string;
+  weekStartDay: WeekStartDay;
+  locked: boolean;
+  updatedAt: string;
+  title: string;
+  scopes: Record<string, ReviewScopeState>;
+  bodyMarkdown: string;
+};
+export type ReviewIndexEntry = {
+  cadence: ReviewCadence;
+  period: string;
+  locked: boolean;
+  scopes: Record<string, { status: "draft" | "done"; sessionId: string | null }>;
+  error?: string;
 };
 
 export type AgentHire = {

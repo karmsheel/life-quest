@@ -47,7 +47,6 @@ export {
   executeDocumentTool,
 } from "./document-tools.ts";
 export {
-  REVIEW_CADENCES,
   isReviewCadence,
   isWeekStartDay,
   weekStartOnOrBefore,
@@ -59,5 +58,14 @@ export {
   isCurrentPeriod,
   periodTitle,
 } from "./period.ts";
-export type { ReviewCadence } from "./period.ts";
+export {
+  ensureReview,
+  getReview,
+  writeReview,
+  markReviewDone,
+  unlockReview,
+  setReviewSessionId,
+  listReviewIndex,
+  applyLockedReviewBody,
+} from "./reviews.ts";
 export type { MapStoreState, MapCommand, MapActor, MapDomainError, YearRecord, MapEvent, Task, TaskColumn, ColorId, DayType, DetachedWeek, ResolvedWeek } from "./map/public.ts";
