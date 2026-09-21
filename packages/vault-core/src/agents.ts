@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { vaultPaths } from "./paths.ts";
-import type { AgentHire, Result, VaultSettings } from "./types.ts";
+import { isWeekStartDay } from "./period.ts";
+import type { AgentHire, Result, VaultSettings, WeekStartDay } from "./types.ts";
 
 type AgentsFile = { hires: AgentHire[] };
 
@@ -106,6 +107,23 @@ export function isHttpOrHttpsUrl(value: string): boolean {
   }
 }
 
+async function countMdFiles(dir: string): Promise<number> {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return entries.filter((e) => e.isFile() && e.name.endsWith(".md")).length;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    throw e;
+  }
+}
+
+export async function countWeeklyVaultFiles(rootPath: string): Promise<number> {
+  const paths = vaultPaths(rootPath);
+  const reviews = await countMdFiles(paths.reviewsCadenceDir("weekly"));
+  const planning = await countMdFiles(paths.planningCadenceDir("weekly"));
+  return reviews + planning;
+}
+
 export async function updateSettings(
   rootPath: string,
   patch: Partial<VaultSettings>,
@@ -123,10 +141,15 @@ export async function updateSettings(
       throw e;
     }
 
+    const currentWeekStart: WeekStartDay =
+      current.weekStartDay === "sunday" || current.weekStartDay === "monday"
+        ? current.weekStartDay
+        : "monday";
     const next: VaultSettings = {
       hermesBaseUrl:
         patch.hermesBaseUrl !== undefined ? patch.hermesBaseUrl : current.hermesBaseUrl,
       theme: patch.theme !== undefined ? patch.theme : current.theme,
+      weekStartDay: currentWeekStart,
     };
 
     if (patch.hermesBaseUrl !== undefined) {
@@ -147,6 +170,22 @@ export async function updateSettings(
       if (next.theme !== "system" && next.theme !== "light" && next.theme !== "dark") {
         return { ok: false, error: `Invalid theme: ${String(patch.theme)}` };
       }
+    }
+
+    if (patch.weekStartDay !== undefined) {
+      if (!isWeekStartDay(patch.weekStartDay)) {
+        return { ok: false, error: `Invalid weekStartDay: ${String(patch.weekStartDay)}` };
+      }
+      if (patch.weekStartDay !== currentWeekStart) {
+        const n = await countWeeklyVaultFiles(rootPath);
+        if (n > 0) {
+          return {
+            ok: false,
+            error: `Cannot change week start while ${n} weekly review/planning file(s) exist.`,
+          };
+        }
+      }
+      next.weekStartDay = patch.weekStartDay;
     }
 
     await atomicWriteFile(paths.settingsJson, `${JSON.stringify(next, null, 2)}\n`);

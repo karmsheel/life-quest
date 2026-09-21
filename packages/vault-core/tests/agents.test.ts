@@ -109,6 +109,7 @@ describe("agents + settings", () => {
     if (!partial.ok) return;
     assert.equal(partial.value.theme, "light");
     assert.equal(partial.value.hermesBaseUrl, "http://127.0.0.1:9000");
+    assert.equal(partial.value.weekStartDay, "monday");
   });
 
   it("updateSettings rejects non-http(s) hermesBaseUrl", async () => {
@@ -144,6 +145,26 @@ describe("agents + settings", () => {
     assert.equal(httpsOk.ok, true);
     if (!httpsOk.ok) return;
     assert.equal(httpsOk.value.hermesBaseUrl, "https://gateway.example.com/v1");
+  });
+
+  it("updateSettings rejects weekStartDay change when weekly review files exist", async () => {
+    const weeklyDir = path.join(root, "reviews", "weekly");
+    await fs.mkdir(weeklyDir, { recursive: true });
+    await fs.writeFile(path.join(weeklyDir, "2026-09-21.md"), "x\n", "utf8");
+    const blocked = await updateSettings(root, { weekStartDay: "sunday" });
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.match(blocked.error, /week start/i);
+    await fs.rm(path.join(root, "reviews"), { recursive: true, force: true });
+    const ok = await updateSettings(root, { weekStartDay: "sunday" });
+    assert.equal(ok.ok, true);
+    if (ok.ok) assert.equal(ok.value.weekStartDay, "sunday");
+  });
+
+  it("updateSettings theme patch preserves weekStartDay", async () => {
+    const next = await updateSettings(root, { theme: "dark" });
+    assert.equal(next.ok, true);
+    if (!next.ok) return;
+    assert.ok(next.value.weekStartDay === "monday" || next.value.weekStartDay === "sunday");
   });
 
   it("dismissAgent fails for unknown id", async () => {

@@ -53,6 +53,16 @@ describe("about me copy", () => {
   });
 });
 
+describe("vault week start", () => {
+  it("Vault settings exposes week start", () => {
+    const src = read("src/components/settings/SettingsVault.tsx");
+    assert.match(src, /Week starts on/);
+    assert.match(src, /weekStartDay/);
+    assert.match(src, /monday/);
+    assert.match(src, /sunday/);
+  });
+});
+
 describe("settings primitives migration", () => {
   const files = [
     "src/components/settings/SettingsAppearance.tsx",

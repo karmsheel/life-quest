@@ -70,9 +70,13 @@ export type DomainRecord = {
   documents: Record<DocumentKind, DoctrineDocument>;
 };
 
+export const WEEK_START_DAYS = ["monday", "sunday"] as const;
+export type WeekStartDay = (typeof WEEK_START_DAYS)[number];
+
 export type VaultSettings = {
   hermesBaseUrl: string;
   theme: "system" | "light" | "dark";
+  weekStartDay: WeekStartDay;
 };
 
 export type AgentHire = {

@@ -45,6 +45,7 @@ describe("createVault", () => {
     assert.equal(res.value.mapError, null);
     assert.deepEqual(res.value.goals, []);
     assert.equal(res.value.goalsError, null);
+    assert.equal(res.value.settings.weekStartDay, "monday");
     await fs.access(path.join(root, ".lifequest/map.json"));
     await fs.access(path.join(root, ".lifequest/about.md"));
   });

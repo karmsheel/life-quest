@@ -29,6 +29,16 @@ export function vaultPaths(root: string) {
     documentsDir: path.join(rootPath, "documents"),
     libraryDocumentMd: (id: string) =>
       safeJoin(rootPath, "documents", `${id}.md`),
+    reviewsDir: path.join(rootPath, "reviews"),
+    reviewsCadenceDir: (cadence: string) =>
+      safeJoin(rootPath, "reviews", cadence),
+    reviewMd: (cadence: string, period: string) =>
+      safeJoin(rootPath, "reviews", cadence, `${period}.md`),
+    planningDir: path.join(rootPath, "planning"),
+    planningCadenceDir: (cadence: string) =>
+      safeJoin(rootPath, "planning", cadence),
+    planningMd: (cadence: string, period: string) =>
+      safeJoin(rootPath, "planning", cadence, `${period}.md`),
   };
 }
 

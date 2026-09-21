@@ -48,7 +48,15 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
     }
 
     const settingsRaw = await fs.readFile(paths.settingsJson, "utf8");
-    const settings = JSON.parse(settingsRaw) as VaultSettings;
+    const parsedSettings = JSON.parse(settingsRaw) as VaultSettings;
+    const settings: VaultSettings = {
+      ...parsedSettings,
+      weekStartDay:
+        parsedSettings.weekStartDay === "sunday" ||
+        parsedSettings.weekStartDay === "monday"
+          ? parsedSettings.weekStartDay
+          : "monday",
+    };
 
     const agentsRaw = await fs.readFile(paths.agentsJson, "utf8");
     const agentsParsed = JSON.parse(agentsRaw) as { hires?: AgentHire[] };
