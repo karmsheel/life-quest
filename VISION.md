@@ -38,7 +38,7 @@ A task may be completed by the operator or handed to an agent.
 Hired agents may advise, or own a domain; when they act, the vault records which agent.
 Agents may complete tasks and rearrange the live Daily Schedule without a Decision.
 A domain-owning agent may prepare tomorrow's Daily Schedule overnight; the operator can discard it in the morning.
-Agent writes to doctrine, library, projects, goal records, and Architecture templates go through Decisions.
+Agent writes to doctrine, library, reviews, projects, goal records, and Architecture templates go through Decisions.
 The companion may file those Decisions whenever a chat turn implies a document change; the operator can disable that.
 Reads do not need approval.
 The operator writes directly.

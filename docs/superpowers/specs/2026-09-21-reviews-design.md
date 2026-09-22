@@ -1,7 +1,7 @@
 # Reviews — Design Spec
 
 **Date:** 2026-09-21  
-**Status:** Approved — implementation plan ready (`docs/superpowers/plans/2026-09-21-reviews.md`)  
+**Status:** Approved — implemented  
 **Product:** LifeQuest — local-first life-management studio  
 **Depends on:** [Review wing placeholders](./2026-09-12-review-wing-design.md), [Hermes companion](./2026-09-04-hermes-companion-profile-design.md), [Overview / domain lens](./2026-08-31-overview-domain-lens-design.md), [Document lock](./2026-09-12-document-lock-design.md)  
 **Supersedes:** the Review page body in `2026-09-12-review-wing-design.md` (stubs / “Coming soon”). Wing tabs, rails, routes, and session rules from that spec stay in force.

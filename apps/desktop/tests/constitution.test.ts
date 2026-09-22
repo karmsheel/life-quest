@@ -61,6 +61,8 @@ describe("product constitution", () => {
     assert.match(read("LAWS/DOCTRINE.md"), /Agents MUST NOT lock or unlock/);
     assert.match(read("LAWS/DOCTRINE.md"), /pending Decision/);
     assert.match(read("LAWS/COMPANION.md"), /MUST NOT open without the companion/);
+    assert.match(read("LAWS/REVIEWS.md"), /MUST/);
+    assert.match(read("LAWS/REVIEWS.md"), /lock|planning|week start/);
   });
 
   it("documents shared UI rules", () => {

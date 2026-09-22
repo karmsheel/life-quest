@@ -6,15 +6,18 @@ import {
   type FormEvent,
 } from "react";
 import {
+  currentPeriod,
   filterByLens,
   lensSlug,
   type Goal,
   type GoalStatus,
   type GoalsCommand,
+  type ReviewCadence,
 } from "@lifequest/vault-core/pure";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/ipc";
+import { useChatDock } from "@/state/ChatDockProvider";
 import { useVault } from "@/state/VaultProvider";
 
 type StatusFilter = "open" | "done" | "all";
@@ -58,6 +61,9 @@ export default function GoalsPage() {
     const [domainDirty, setDomainDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cadence, setCadence] = useState<ReviewCadence>("weekly");
+  const chatDock = useChatDock();
+  const weekStartDay = snapshot?.settings.weekStartDay ?? "monday";
 
   const liveDomains = useMemo(
     () =>
@@ -232,6 +238,28 @@ export default function GoalsPage() {
     if (ok) resetComposer();
   }
 
+  const onPlanThis = useCallback(async () => {
+    if (!snapshot) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const period = currentPeriod(cadence, weekStartDay);
+      const scope =
+        lens.kind === "domain" && lens.slug ? lens.slug : "overall";
+      const plan = await api().planningStartOrResume(cadence, period, scope);
+      if (!plan.ok) {
+        setError(plan.error);
+        return;
+      }
+      const kickoff = plan.value.created ? plan.value.kickoff : undefined;
+      chatDock.requestSession(plan.value.sessionId, kickoff);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [cadence, chatDock, lens, snapshot, weekStartDay]);
+
   if (!snapshot) {
     return <p className="muted">Loading goals…</p>;
   }
@@ -244,6 +272,36 @@ export default function GoalsPage() {
           Vault-wide outcomes. A deadline and either a metric or a definition of
           done live on the goal.
         </p>
+        <div className="goals-page__plan">
+          <div
+            className="ui-segmented goals-page__cadence"
+            role="radiogroup"
+            aria-label="Plan cadence"
+          >
+            {(
+              [
+                ["weekly", "Weekly"],
+                ["monthly", "Monthly"],
+                ["quarterly", "Quarterly"],
+                ["yearly", "Yearly"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={cadence === value}
+                className={`ui-segmented__option${cadence === value ? " is-active" : ""}`}
+                onClick={() => setCadence(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <Button variant="primary" onClick={onPlanThis} disabled={busy}>
+            Plan this period
+          </Button>
+        </div>
       </header>
 
       {goalsError ? (
