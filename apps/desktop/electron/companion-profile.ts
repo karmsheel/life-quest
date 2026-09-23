@@ -1,8 +1,8 @@
 import path from "node:path";
 
 export const PROFILE_NAME = "lifequest";
-/** Dedicated listener if we must spawn. 8644 is Hermes' webhook adapter. */
-export const DEFAULT_API_PORT = 8650;
+/** Host multiplexer API port (Hermes default). 8643 is LifeQuest MCP; 8644 is the webhook adapter. */
+export const DEFAULT_API_PORT = 8642;
 export const RESERVED_PORTS = [8642, 8643, 8644] as const;
 export const DISCOVERY_PORTS = [8642, 8644, 8645, 8650] as const;
 export const MCP_URL = "http://127.0.0.1:8643/mcp";
@@ -31,7 +31,7 @@ export function hermesRoot(
   return path.join(homedir, ".hermes");
 }
 
-/** Bases to probe before spawning. Prefer /p/lifequest on a shared gateway. */
+/** Host-multiplexer bases. Only `/p/lifequest` — a raw host URL is the default profile. */
 export function attachCandidateBaseUrls(envPort: number | null): string[] {
   const urls: string[] = [];
   const seen = new Set<string>();
@@ -41,14 +41,8 @@ export function attachCandidateBaseUrls(envPort: number | null): string[] {
     urls.push(url);
   };
   const prefix = (port: number) => `http://127.0.0.1:${port}/p/${PROFILE_NAME}`;
-  const raw = (port: number) => `http://127.0.0.1:${port}`;
-  if (envPort && envPort > 0) {
-    add(prefix(envPort));
-    add(raw(envPort));
-  }
-  for (const port of DISCOVERY_PORTS) {
-    add(prefix(port));
-  }
+  if (envPort && envPort > 0) add(prefix(envPort));
+  for (const port of DISCOVERY_PORTS) add(prefix(port));
   return urls;
 }
 

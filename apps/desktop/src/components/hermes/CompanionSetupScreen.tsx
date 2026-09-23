@@ -22,10 +22,13 @@ export function CompanionSetupScreen() {
       .join(" — ");
   } else if (!ensuring && kind === "port_busy") {
     title = "Companion port is busy";
-    body = `Something else is on port ${status && "port" in status ? status.port : ""}. Recheck to try the next free port (never 8642 or 8643).`;
+    body = `Something else is on port ${status && "port" in status ? status.port : ""}. Recheck after freeing the Hermes host gateway port.`;
   } else if (!ensuring && kind === "gateway_exited") {
     title = "Hermes gateway exited";
-    body = status && "stderr" in status ? status.stderr : "The profile gateway did not stay up.";
+    body =
+      status && "stderr" in status
+        ? status.stderr
+        : "The host Hermes gateway did not serve the lifequest profile.";
   } else if (!ensuring && kind === "hermes_too_old") {
     title = "Hermes is too old";
     body =
@@ -35,7 +38,7 @@ export function CompanionSetupScreen() {
     body = "The lifequest profile key was rejected. Recheck after fixing the profile .env.";
   } else if (!ensuring && kind === "disconnected") {
     title = "Companion disconnected";
-    body = "Could not reach the lifequest profile gateway.";
+    body = "Could not reach the lifequest profile on the Hermes host gateway.";
   }
 
   return (

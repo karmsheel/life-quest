@@ -49,7 +49,7 @@ export type CompanionIo = {
   isPortFree: (port: number) => Promise<boolean>;
   health: (url: string) => Promise<boolean>;
   capabilities: (baseUrl: string, key: string) => Promise<unknown | null>;
-  spawnGateway: (cli: string, profileDirPath: string) => Promise<{ pid: number }>;
+  ensureHostGateway: (cli: string, hermesHome: string) => Promise<void>;
   stopPid: (pid: number) => Promise<void>;
   listeningPid: (port: number) => Promise<number | null>;
 };
@@ -130,16 +130,9 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
   const existing = readEnv(envText);
   const apiKey =
     existing.API_SERVER_KEY?.trim() || randomBytes(24).toString("hex");
-  const envPort = Number.parseInt(existing.API_SERVER_PORT ?? "", 10);
-  const knownPort = Number.isFinite(envPort) && envPort > 0 ? envPort : null;
 
   try {
-    envText = upsertEnv(envText, {
-      API_SERVER_ENABLED: "true",
-      API_SERVER_HOST: "127.0.0.1",
-      API_SERVER_KEY: apiKey,
-      ...(knownPort ? { API_SERVER_PORT: String(knownPort) } : {}),
-    });
+    envText = upsertEnv(envText, { API_SERVER_KEY: apiKey });
     await io.writeFile(envPath, envText);
     const yaml = (await io.readFile(configPath)) ?? "";
     await io.writeFile(configPath, ensureMcpServer(yaml, PROFILE_NAME, MCP_URL));
@@ -155,74 +148,50 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
     };
   }
 
-  for (const baseUrl of attachCandidateBaseUrls(knownPort)) {
-    if (!(await io.health(baseUrl))) continue;
-    const caps = await io.capabilities(baseUrl, apiKey);
-    const capsKind = sessionCapsKind(caps);
-    if (capsKind !== "ok") return { kind: capsKind };
-    return {
-      kind: "ready",
-      port: portFromBaseUrl(baseUrl),
-      baseUrl,
-      startedByLifeQuest: false,
-      profilePath: dir,
-      cliPath: cli,
-      apiKey,
-      childPid: null,
-    };
-  }
+  const hostEnv = readEnv((await io.readFile(path.join(root, ".env"))) ?? "");
+  const hostPortParsed = Number.parseInt(hostEnv.API_SERVER_PORT ?? "", 10);
+  const hostPort =
+    Number.isFinite(hostPortParsed) && hostPortParsed > 0
+      ? hostPortParsed
+      : DEFAULT_API_PORT;
 
-  let port: number;
-  try {
-    port = await choosePort(envText, io.isPortFree);
-  } catch (e) {
-    return {
-      kind: "profile_error",
-      message: e instanceof Error ? e.message : String(e),
-      path: envPath,
-    };
-  }
+  const tryAttach = async (): Promise<CompanionStatus | null> => {
+    for (const baseUrl of attachCandidateBaseUrls(hostPort)) {
+      if (!(await io.health(baseUrl))) continue;
+      const caps = await io.capabilities(baseUrl, apiKey);
+      const capsKind = sessionCapsKind(caps);
+      if (capsKind !== "ok") return { kind: capsKind };
+      return {
+        kind: "ready",
+        port: portFromBaseUrl(baseUrl),
+        baseUrl,
+        startedByLifeQuest: false,
+        profilePath: dir,
+        cliPath: cli,
+        apiKey,
+        childPid: null,
+      };
+    }
+    return null;
+  };
+
+  const attached = await tryAttach();
+  if (attached) return attached;
 
   try {
-    envText = upsertEnv(envText, { API_SERVER_PORT: String(port) });
-    await io.writeFile(envPath, envText);
-  } catch (e) {
-    return {
-      kind: "profile_error",
-      message: e instanceof Error ? e.message : String(e),
-      path: envPath,
-    };
-  }
-
-  let childPid: number | null = null;
-  try {
-    const child = await io.spawnGateway(cli, dir);
-    childPid = child.pid;
+    await io.ensureHostGateway(cli, root);
   } catch (e) {
     return {
       kind: "gateway_exited",
       stderr: e instanceof Error ? e.message : String(e),
     };
   }
-  const dedicated = `http://127.0.0.1:${port}`;
-  const ready = await io.health(dedicated);
-  if (!ready) {
-    return { kind: "gateway_exited", stderr: "Gateway did not become healthy." };
-  }
 
-  const caps = await io.capabilities(dedicated, apiKey);
-  const capsKind = sessionCapsKind(caps);
-  if (capsKind !== "ok") return { kind: capsKind };
-
+  const after = await tryAttach();
+  if (after) return after;
   return {
-    kind: "ready",
-    port,
-    baseUrl: dedicated,
-    startedByLifeQuest: true,
-    profilePath: dir,
-    cliPath: cli,
-    apiKey,
-    childPid,
+    kind: "gateway_exited",
+    stderr: "Host gateway did not serve /p/lifequest.",
   };
 }
 

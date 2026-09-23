@@ -56,8 +56,8 @@ describe("choosePort", () => {
   });
 
   it("skips reserved ports when the default is taken", async () => {
-    const port = await choosePort("", async (p) => p !== 8650);
-    assert.equal(port, 8651);
+    const port = await choosePort("", async () => true);
+    assert.equal(port, 8645);
   });
 });
 
@@ -86,7 +86,7 @@ function io(partial: Partial<CompanionIo> & Pick<CompanionIo, "whichHermes" | "h
     capabilities: partial.capabilities ?? (async () => ({
       features: { session_list: true, session_chat_stream: true },
     })),
-    spawnGateway: partial.spawnGateway ?? (async () => ({ pid: 42 })),
+    ensureHostGateway: partial.ensureHostGateway ?? (async () => {}),
     stopPid: partial.stopPid ?? (async () => {}),
     listeningPid: partial.listeningPid ?? (async () => 42),
   };
@@ -101,9 +101,8 @@ describe("ensureCompanion", () => {
       io({
         whichHermes: async () => null,
         health: async () => false,
-        spawnGateway: async () => {
+        ensureHostGateway: async () => {
           spawned = true;
-          return { pid: 1 };
         },
       }),
     );
@@ -118,9 +117,8 @@ describe("ensureCompanion", () => {
         whichHermes: async () => "C:\\hermes\\hermes.exe",
         health: async () => true,
         capabilities: async () => caps,
-        spawnGateway: async () => {
+        ensureHostGateway: async () => {
           spawned = true;
-          return { pid: 1 };
         },
       }),
     );
@@ -130,25 +128,31 @@ describe("ensureCompanion", () => {
     assert.equal(spawned, false);
   });
 
-  it("spawns when health is down", async () => {
-    let spawned = false;
+  it("ensures the host multiplexer when /p/lifequest is down", async () => {
+    let ensured = false;
     let healthy = false;
+    const written: Record<string, string> = {};
     const status = await ensureCompanion(
       io({
         whichHermes: async () => "C:\\hermes\\hermes.exe",
         health: async () => healthy,
         capabilities: async () => caps,
-        spawnGateway: async () => {
-          spawned = true;
+        writeFile: async (p, body) => {
+          written[p.replace(/\\/g, "/")] = body;
+        },
+        ensureHostGateway: async () => {
+          ensured = true;
           healthy = true;
-          return { pid: 7 };
         },
       }),
     );
     assert.equal(status.kind, "ready");
-    assert.equal((status as CompanionReady).startedByLifeQuest, true);
-    assert.equal((status as CompanionReady).childPid, 7);
-    assert.equal(spawned, true);
+    assert.equal((status as CompanionReady).startedByLifeQuest, false);
+    assert.equal((status as CompanionReady).childPid, null);
+    assert.match((status as CompanionReady).baseUrl, /\/p\/lifequest$/);
+    assert.equal(ensured, true);
+    const envBody = Object.entries(written).find(([p]) => p.endsWith("/.env"))?.[1] ?? "";
+    assert.equal(/API_SERVER_PORT=/.test(envBody), false);
   });
 
   it("returns hermes_too_old when sessions are missing", async () => {

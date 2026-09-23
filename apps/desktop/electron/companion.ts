@@ -4,7 +4,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { shell } from "electron";
-import { readEnv } from "./companion-profile.ts";
+import {
+  DEFAULT_API_PORT,
+  PROFILE_NAME,
+  readEnv,
+} from "./companion-profile.ts";
 import { hermesSpawnSpec } from "./companion-spawn.ts";
 import {
   buildInstructions,
@@ -37,7 +41,6 @@ export function publicStatus(status: CompanionStatus): PublicCompanionStatus {
 }
 
 let current: CompanionStatus = { kind: "needs_install" };
-let child: ChildProcess | null = null;
 
 function spawnError(cli: string, err: unknown): Error {
   const code =
@@ -46,15 +49,6 @@ function spawnError(cli: string, err: unknown): Error {
       : "";
   const msg = err instanceof Error ? err.message : String(err);
   return new Error(`spawn ${code || "error"} (${cli}): ${msg}`);
-}
-
-function processAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function whichHermes(): Promise<string | null> {
@@ -130,24 +124,13 @@ async function capabilities(baseUrl: string, key: string): Promise<unknown | nul
   }
 }
 
-async function spawnGateway(cli: string, profileDirPath: string): Promise<{ pid: number }> {
-  let extraEnv: Record<string, string> = {};
-  try {
-    const envText = await fs.readFile(path.join(profileDirPath, ".env"), "utf8");
-    extraEnv = readEnv(envText);
-  } catch {
-    /* profile .env may not exist yet */
-  }
-  const hermesHome = path.dirname(path.dirname(profileDirPath));
-  extraEnv.HERMES_HOME = hermesHome;
-  const spec = hermesSpawnSpec(
-    process.platform,
-    cli,
-    ["-p", "lifequest", "gateway"],
-    extraEnv,
-  );
-  const proc = await new Promise<ChildProcess>((resolve, reject) => {
-    let settled = false;
+async function runHermes(
+  cli: string,
+  args: string[],
+  extraEnv: Record<string, string>,
+): Promise<void> {
+  const spec = hermesSpawnSpec(process.platform, cli, args, extraEnv);
+  await new Promise<void>((resolve, reject) => {
     let spawned: ChildProcess;
     try {
       spawned = spawn(spec.file, spec.args, spec.options);
@@ -155,35 +138,70 @@ async function spawnGateway(cli: string, profileDirPath: string): Promise<{ pid:
       reject(spawnError(cli, err));
       return;
     }
-    spawned.once("error", (err) => {
-      if (settled) return;
-      settled = true;
-      reject(spawnError(cli, err));
+    let stderr = "";
+    spawned.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
     });
-    spawned.once("spawn", () => {
-      if (settled) return;
-      settled = true;
-      resolve(spawned);
+    spawned.once("error", (err) => reject(spawnError(cli, err)));
+    spawned.once("close", (code) => {
+      if (code === 0) resolve();
+      else {
+        reject(
+          new Error(
+            stderr.trim() || `hermes ${args.join(" ")} exited ${code ?? "unknown"}`,
+          ),
+        );
+      }
     });
   });
-  child = proc;
-  if (proc.pid == null) {
-    throw new Error("Failed to spawn hermes gateway");
-  }
-  let port = 8650;
+}
+
+async function hostPort(hermesHome: string): Promise<number> {
   try {
-    const envText = await fs.readFile(path.join(profileDirPath, ".env"), "utf8");
+    const envText = await fs.readFile(path.join(hermesHome, ".env"), "utf8");
     const parsed = Number.parseInt(readEnv(envText).API_SERVER_PORT ?? "", 10);
-    if (Number.isFinite(parsed) && parsed > 0) port = parsed;
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
   } catch {
-    /* default port */
+    /* default */
   }
-  const dedicated = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 80; i++) {
-    if (await health(dedicated)) break;
-    await new Promise((r) => setTimeout(r, 250));
+  return DEFAULT_API_PORT;
+}
+
+async function waitForHealth(url: string, attempts: number, delayMs: number): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    if (await health(url)) return true;
+    await new Promise((r) => setTimeout(r, delayMs));
   }
-  return { pid: proc.pid };
+  return false;
+}
+
+async function ensureHostGateway(cli: string, hermesHome: string): Promise<void> {
+  const extraEnv: Record<string, string> = {
+    HERMES_HOME: hermesHome,
+    GATEWAY_MULTIPLEX_PROFILES: "true",
+  };
+  const port = await hostPort(hermesHome);
+  const hostBase = `http://127.0.0.1:${port}`;
+  const prefix = `${hostBase}/p/${PROFILE_NAME}`;
+  const hostUp = await health(hostBase);
+  if (hostUp && (await waitForHealth(prefix, 40, 500))) return;
+
+  await runHermes(
+    cli,
+    ["config", "set", "gateway.multiplex_profiles", "true"],
+    extraEnv,
+  );
+  if (hostUp) {
+    try {
+      await runHermes(cli, ["gateway", "restart"], extraEnv);
+    } catch {
+      await runHermes(cli, ["gateway", "start"], extraEnv);
+    }
+  } else {
+    await runHermes(cli, ["gateway", "start"], extraEnv);
+  }
+  if (await waitForHealth(prefix, 180, 500)) return;
+  throw new Error("Host gateway did not serve /p/lifequest.");
 }
 
 function realIo(): CompanionIo {
@@ -204,25 +222,11 @@ function realIo(): CompanionIo {
     isPortFree,
     health,
     capabilities,
-    spawnGateway: (cli, dir) => spawnGateway(cli, dir),
-    stopPid: async (pid) => {
-      try {
-        if (process.platform === "win32") {
-          await new Promise<void>((resolve) => {
-            execFile("taskkill", ["/PID", String(pid), "/T", "/F"], () => resolve());
-          });
-        } else {
-          process.kill(pid, "SIGTERM");
-        }
-      } catch {
-        /* already gone */
-      }
-      if (child?.pid === pid) child = null;
+    ensureHostGateway: (cli, home) => ensureHostGateway(cli, home),
+    stopPid: async () => {
+      /* Host multiplexer is not LifeQuest-owned. */
     },
-    listeningPid: async () => {
-      if (child?.pid && processAlive(child.pid)) return child.pid;
-      return null;
-    },
+    listeningPid: async () => null,
   };
 }
 
@@ -232,15 +236,11 @@ export function companionStatus(): PublicCompanionStatus {
 
 export async function companionEnsure(): Promise<PublicCompanionStatus> {
   current = await ensureCompanion(realIo());
-  if (current.kind === "ready" && current.startedByLifeQuest && current.childPid == null) {
-    current = { ...current, childPid: child?.pid ?? null };
-  }
   return publicStatus(current);
 }
 
 export async function companionShutdown(): Promise<void> {
   await shutdownCompanion(current, realIo());
-  child = null;
 }
 
 function readyOrError(): CompanionStatus & { kind: "ready" } {

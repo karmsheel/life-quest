@@ -20,7 +20,7 @@ import {
 describe("companion-profile", () => {
   it("names the lifequest profile and reserved ports", () => {
     assert.equal(PROFILE_NAME, "lifequest");
-    assert.equal(DEFAULT_API_PORT, 8650);
+    assert.equal(DEFAULT_API_PORT, 8642);
     assert.deepEqual([...RESERVED_PORTS], [8642, 8643, 8644]);
     assert.equal(MCP_URL, "http://127.0.0.1:8643/mcp");
     assert.match(COMPANION_SOUL, /LifeQuest companion/);
@@ -95,11 +95,15 @@ describe("companion-profile", () => {
     assert.equal(nextFreePort(new Set([8642, 8643, 8644]), 8642), 8645);
   });
 
-  it("probes /p/lifequest on shared gateways before a dedicated port", () => {
-    const urls = attachCandidateBaseUrls(8645);
-    assert.equal(urls[0], "http://127.0.0.1:8645/p/lifequest");
+  it("probes only /p/lifequest prefixes on the host listener", () => {
+    const urls = attachCandidateBaseUrls(8642);
+    assert.equal(urls[0], "http://127.0.0.1:8642/p/lifequest");
     assert.ok(urls.includes("http://127.0.0.1:8644/p/lifequest"));
-    assert.ok(urls.includes("http://127.0.0.1:8642/p/lifequest"));
-    assert.equal(portFromBaseUrl("http://127.0.0.1:8644/p/lifequest"), 8644);
+    assert.equal(
+      urls.some((url) => /^http:\/\/127\.0\.0\.1:\d+$/.test(url)),
+      false,
+      "raw host URLs would attach to the default profile",
+    );
+    assert.equal(portFromBaseUrl("http://127.0.0.1:8642/p/lifequest"), 8642);
   });
 });

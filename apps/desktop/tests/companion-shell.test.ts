@@ -21,6 +21,17 @@ describe("companion shell wiring", () => {
     assert.match(main, /companion:stream/);
   });
 
+  it("attaches to the host multiplexer instead of spawning a lifequest gateway", () => {
+    const companion = read("electron/companion.ts");
+    const lifecycle = read("electron/companion-lifecycle.ts");
+    assert.doesNotMatch(companion, /"-p",\s*"lifequest",\s*"gateway"/);
+    assert.match(companion, /gateway["'],\s*["']start["']/);
+    assert.match(companion, /gateway["'],\s*["']restart["']/);
+    assert.match(companion, /multiplex_profiles/);
+    assert.match(lifecycle, /ensureHostGateway/);
+    assert.doesNotMatch(lifecycle, /spawnGateway\(/);
+  });
+
   it("exposes companion methods and stream on the preload bridge", () => {
     const preload = read("electron/preload.ts");
     assert.match(preload, /companionEnsure/);
