@@ -15,6 +15,8 @@ import DailySchedulePage from "@/pages/DailySchedulePage";
 import ArchitecturePage from "@/pages/ArchitecturePage";
 import ChainPage from "@/pages/ChainPage";
 import ChartPage from "@/pages/ChartPage";
+import DataPage from "@/pages/DataPage";
+import DatabasePage from "@/pages/DatabasePage";
 import DecisionsPage from "@/pages/DecisionsPage";
 import DocumentsPage from "@/pages/DocumentsPage";
 import DreamPage from "@/pages/DreamPage";
@@ -69,6 +71,8 @@ function AppRoutes() {
         }
       >
         <Route path="/home" element={<HomePage />} />
+        <Route path="/data" element={<DataPage />} />
+        <Route path="/data/:slug/:dbId" element={<DatabasePage />} />
         <Route
           path="/domains"
           element={<Navigate to="/settings?tab=domains" replace />}

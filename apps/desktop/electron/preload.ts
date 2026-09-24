@@ -29,6 +29,26 @@ const lifequest = {
   domainGetActive: () =>
     ipcRenderer.invoke("domain:getActive") as Promise<string | null>,
 
+  // KAR-55 domain databases
+  dbList: (domainSlug: string | null) =>
+    ipcRenderer.invoke("db:list", domainSlug) as Promise<Result<unknown>>,
+  dbGet: (slug: string, dbId: string) =>
+    ipcRenderer.invoke("db:get", slug, dbId) as Promise<Result<unknown>>,
+  dbCreate: (slug: string, input: { name: string }) =>
+    ipcRenderer.invoke("db:create", slug, input) as Promise<Result<unknown>>,
+  dbAddColumn: (slug: string, dbId: string, input: { name: string; type: string; options?: string[]; relationDatabaseId?: string }) =>
+    ipcRenderer.invoke("db:addColumn", slug, dbId, input) as Promise<Result<unknown>>,
+  dbListRows: (slug: string, dbId: string) =>
+    ipcRenderer.invoke("db:listRows", slug, dbId) as Promise<Result<unknown>>,
+  dbGetRow: (slug: string, dbId: string, rowId: string) =>
+    ipcRenderer.invoke("db:getRow", slug, dbId, rowId) as Promise<Result<unknown>>,
+  dbUpsertRow: (slug: string, dbId: string, input: { id?: string; cells: Record<string, unknown> }) =>
+    ipcRenderer.invoke("db:upsertRow", slug, dbId, input) as Promise<Result<unknown>>,
+  dbDeleteRow: (slug: string, dbId: string, rowId: string) =>
+    ipcRenderer.invoke("db:deleteRow", slug, dbId, rowId) as Promise<Result<unknown>>,
+  dbFileSave: (slug: string, input: { bytes: Uint8Array; mime: string; name: string }) =>
+    ipcRenderer.invoke("db:fileSave", slug, input) as Promise<Result<unknown>>,
+
   documentGet: (slug: string, kind: string) =>
     ipcRenderer.invoke("document:get", slug, kind) as Promise<Result<unknown>>,
   documentSave: (

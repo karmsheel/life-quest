@@ -299,6 +299,62 @@ export type VaultSnapshot = {
   weeklyFileCount: number;
 };
 
+export const DATABASE_COLUMN_TYPES = [
+  "text",
+  "number",
+  "date",
+  "select",
+  "checkbox",
+  "relation",
+  "file",
+] as const;
+export type DatabaseColumnType = (typeof DATABASE_COLUMN_TYPES)[number];
+
+export const DATABASE_SOT_MODES = [
+  "local-only",
+  "linked-canonical",
+  "local-canonical-mirror",
+] as const;
+export type DatabaseSotMode = (typeof DATABASE_SOT_MODES)[number];
+
+export type DatabaseColumn = {
+  id: string;
+  name: string;
+  type: DatabaseColumnType;
+  options?: string[];
+  relationDatabaseId?: string;
+};
+
+export type DatabaseMeta = {
+  id: string;
+  name: string;
+  sotMode: DatabaseSotMode;
+  adapter: null | { kind: string; bindingId: string };
+  columns: DatabaseColumn[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DomainDatabaseRegistry = {
+  schemaVersion: 1;
+  databases: DatabaseMeta[];
+  installedKits: string[];
+};
+
+export type DatabaseRow = {
+  id: string;
+  databaseId: string;
+  domainSlug: string;
+  createdAt: string;
+  updatedAt: string;
+  cells: Record<string, unknown>;
+};
+
+export type DatabaseListEntry = {
+  domainSlug: string;
+  database: DatabaseMeta;
+};
+
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
 export type PeriodPack = {

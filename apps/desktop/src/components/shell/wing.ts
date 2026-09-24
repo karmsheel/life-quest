@@ -28,6 +28,7 @@ const PINNED_PATHS = new Set(["/chain", "/log", "/decisions", "/settings"]);
 
 const PATH_WING: Record<string, WingId> = {
   "/home": "home",
+  "/data": "home",
   "/personnel": "home",
   "/dream": "vision",
   "/documents": "vision",
@@ -63,6 +64,7 @@ export function wingForPath(pathname: string): WingId | null {
   if (PATH_WING[pathname]) return PATH_WING[pathname];
   if (pathname.startsWith("/dream/")) return "vision";
   if (pathname.startsWith("/track/")) return "plan";
+  if (pathname.startsWith("/data/")) return "home";
   return null;
 }
 

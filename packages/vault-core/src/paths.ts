@@ -39,6 +39,17 @@ export function vaultPaths(root: string) {
       safeJoin(rootPath, "planning", cadence),
     planningMd: (cadence: string, period: string) =>
       safeJoin(rootPath, "planning", cadence, `${period}.md`),
+    // KAR-55 domain database paths
+    domainDataDir: (slug: string) => safeJoin(rootPath, "domains", slug, "data"),
+    domainSqlite: (slug: string) =>
+      safeJoin(rootPath, "domains", slug, "data", "domain.sqlite"),
+    domainRegistry: (slug: string) =>
+      safeJoin(rootPath, "domains", slug, "data", "registry.json"),
+    domainFilesDir: (slug: string) =>
+      safeJoin(rootPath, "domains", slug, "data", "files"),
+    domainFile: (slug: string, fileId: string, name: string) =>
+      safeJoin(rootPath, "domains", slug, "data", "files", fileId, name),
+    cacheDir: path.join(rootPath, ".lifequest", "cache"),
   };
 }
 

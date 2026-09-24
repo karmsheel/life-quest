@@ -119,6 +119,17 @@ function registerIpcHandlers() {
   );
   ipcMain.handle("domain:getActive", () => vault.domainGetActive());
 
+  // KAR-55 domain databases
+  ipcMain.handle("db:list", (_e, domainSlug: string | null) => vault.dbList(domainSlug));
+  ipcMain.handle("db:get", (_e, slug: string, dbId: string) => vault.dbGet(slug, dbId));
+  ipcMain.handle("db:create", (_e, slug: string, input: { name: string }) => vault.dbCreate(slug, input));
+  ipcMain.handle("db:addColumn", (_e, slug: string, dbId: string, input: { name: string; type: string; options?: string[]; relationDatabaseId?: string }) => vault.dbAddColumn(slug, dbId, input));
+  ipcMain.handle("db:listRows", (_e, slug: string, dbId: string) => vault.dbListRows(slug, dbId));
+  ipcMain.handle("db:getRow", (_e, slug: string, dbId: string, rowId: string) => vault.dbGetRow(slug, dbId, rowId));
+  ipcMain.handle("db:upsertRow", (_e, slug: string, dbId: string, input: { id?: string; cells: Record<string, unknown> }) => vault.dbUpsertRow(slug, dbId, input));
+  ipcMain.handle("db:deleteRow", (_e, slug: string, dbId: string, rowId: string) => vault.dbDeleteRow(slug, dbId, rowId));
+  ipcMain.handle("db:fileSave", (_e, slug: string, input: { bytes: Uint8Array; mime: string; name: string }) => vault.dbFileSave(slug, input));
+
   ipcMain.handle(
     "document:get",
     (_e, slug: string, kind: Parameters<typeof vault.documentGet>[1]) =>

@@ -2,6 +2,9 @@
 
 import type {
   AgentHire,
+  DatabaseListEntry,
+  DatabaseMeta,
+  DatabaseRow,
   DecisionRecord,
   DocumentKind,
   DoctrineDocument,
@@ -245,6 +248,28 @@ type LifequestApi = {
   deadlineMaybeNotify: () => Promise<
     Result<{ ok: true; notified: boolean; title: string; body: string }>
   >;
+  // KAR-55 domain databases
+  dbList: (domainSlug: string | null) => Promise<Result<DatabaseListEntry[]>>;
+  dbGet: (slug: string, dbId: string) => Promise<Result<DatabaseMeta>>;
+  dbCreate: (slug: string, input: { name: string }) => Promise<Result<DatabaseMeta>>;
+  dbAddColumn: (slug: string, dbId: string, input: {
+    name: string;
+    type: string;
+    options?: string[];
+    relationDatabaseId?: string;
+  }) => Promise<Result<DatabaseMeta>>;
+  dbListRows: (slug: string, dbId: string) => Promise<Result<DatabaseRow[]>>;
+  dbGetRow: (slug: string, dbId: string, rowId: string) => Promise<Result<DatabaseRow>>;
+  dbUpsertRow: (slug: string, dbId: string, input: {
+    id?: string;
+    cells: Record<string, unknown>;
+  }) => Promise<Result<DatabaseRow>>;
+  dbDeleteRow: (slug: string, dbId: string, rowId: string) => Promise<Result<{ id: string }>>;
+  dbFileSave: (slug: string, input: {
+    bytes: Uint8Array;
+    mime: string;
+    name: string;
+  }) => Promise<Result<{ relPath: string; fileId: string }>>;
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => () => void;
   windowChrome: {
     get: () => Promise<{ overlay: boolean; platform: string }>;

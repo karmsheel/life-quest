@@ -79,4 +79,17 @@ export {
   listPlanningIndex,
 } from "./planning-stubs.ts";
 export { getPeriodPack } from "./period-pack.ts";
+export {
+  createDatabase,
+  listDatabases,
+  getDatabase,
+  addDatabaseColumn,
+  listRows,
+  getRow,
+  upsertRow,
+  deleteRow,
+  saveDatabaseFile,
+  ensureVaultDatabaseGitignore,
+  invalidateDomainCache,
+} from "./domain-databases.ts";
 export type { MapStoreState, MapCommand, MapActor, MapDomainError, YearRecord, MapEvent, Task, TaskColumn, ColorId, DayType, DetachedWeek, ResolvedWeek } from "./map/public.ts";

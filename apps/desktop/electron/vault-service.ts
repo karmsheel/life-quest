@@ -2,32 +2,40 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   archiveDomain,
+  createDatabase,
   createDecision,
   createDomain,
   createSignal,
   createVault,
+  deleteRow,
   deleteSignal,
   dismissAgent,
   DOCUMENT_KINDS,
   ensurePlanningStub,
   ensureReview,
+  getDatabase,
   getDocument,
   getPeriodPack,
   getReview,
+  getRow,
   hireAgent,
+  invalidateDomainCache,
   libraryCreate,
   libraryDelete,
   libraryGet,
   libraryList,
   libraryUpdate,
   listAgents,
+  listDatabases,
   listDecisions,
+  listRows,
   listSignals,
   markReviewDone,
   openVault,
   readDocumentMedia,
   readLog,
   resolveDecision,
+  saveDatabaseFile,
   saveDocument,
   saveDocumentMedia,
   setDocumentLocked,
@@ -36,12 +44,15 @@ import {
   updateDomain,
   updateSettings,
   updateSignal,
+  upsertRow,
   USER_ACTOR,
   vaultPaths,
   writeReview,
+  addDatabaseColumn,
   applyGoalsCommand,
   applyMapCommand,
   type AgentHire,
+  type DatabaseColumnType,
   type GoalsCommand,
   type MapActor,
   type MapCommand,
@@ -317,6 +328,54 @@ export async function domainSetActive(slug: string | null): Promise<Result<strin
 export async function domainGetActive(): Promise<string | null> {
   if (!currentVaultId) return null;
   return currentLens;
+}
+
+// KAR-55 domain databases
+export async function dbList(domainSlug: string | null): Promise<Result<import("@lifequest/vault-core").DatabaseListEntry[]>> {
+  return withVault((root) => listDatabases(root, domainSlug));
+}
+
+export async function dbGet(slug: string, dbId: string): Promise<Result<import("@lifequest/vault-core").DatabaseMeta>> {
+  return withVault((root) => getDatabase(root, slug, dbId));
+}
+
+export async function dbCreate(slug: string, input: { name: string }): Promise<Result<import("@lifequest/vault-core").DatabaseMeta>> {
+  return withVault((root) => createDatabase(root, slug, input));
+}
+
+export async function dbAddColumn(
+  slug: string,
+  dbId: string,
+  input: { name: string; type: DatabaseColumnType; options?: string[]; relationDatabaseId?: string },
+): Promise<Result<import("@lifequest/vault-core").DatabaseMeta>> {
+  return withVault((root) => addDatabaseColumn(root, slug, dbId, input));
+}
+
+export async function dbListRows(slug: string, dbId: string): Promise<Result<import("@lifequest/vault-core").DatabaseRow[]>> {
+  return withVault((root) => listRows(root, slug, dbId));
+}
+
+export async function dbGetRow(slug: string, dbId: string, rowId: string): Promise<Result<import("@lifequest/vault-core").DatabaseRow>> {
+  return withVault((root) => getRow(root, slug, dbId, rowId));
+}
+
+export async function dbUpsertRow(
+  slug: string,
+  dbId: string,
+  input: { id?: string; cells: Record<string, unknown> },
+): Promise<Result<import("@lifequest/vault-core").DatabaseRow>> {
+  return withVault((root) => upsertRow(root, slug, dbId, input));
+}
+
+export async function dbDeleteRow(slug: string, dbId: string, rowId: string): Promise<Result<{ id: string }>> {
+  return withVault((root) => deleteRow(root, slug, dbId, rowId));
+}
+
+export async function dbFileSave(
+  slug: string,
+  input: { bytes: Uint8Array; mime: string; name: string },
+): Promise<Result<{ relPath: string; fileId: string }>> {
+  return withVault((root) => saveDatabaseFile(root, slug, input));
 }
 
 export async function documentGet(
