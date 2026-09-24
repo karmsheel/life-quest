@@ -12,6 +12,7 @@ import {
   type PageBlockKind,
   type PageListEntry,
   type PageRecord,
+  type PageWriteResult,
   type Result,
 } from "./types.ts";
 

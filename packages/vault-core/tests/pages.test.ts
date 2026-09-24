@@ -7,7 +7,6 @@ import {
   createVault,
   openVault,
   createDatabase,
-  listDatabases,
   listPages,
   getPage,
   createPage,
@@ -17,6 +16,8 @@ import {
   setPins,
   defaultPins,
   addDatabaseColumn,
+  archiveDomain,
+  resolveDecision,
   USER_ACTOR,
   type PageBlock,
 } from "../src/index.ts";
@@ -160,6 +161,10 @@ describe("pages", () => {
   it("archived / missing domain: createPage fails", async () => {
     const missing = await createPage(root, "ghost", { title: "X" });
     assert.equal(missing.ok, false);
+    const archived = await archiveDomain(root, "intellectual");
+    assert.equal(archived.ok, true, archived.ok ? "" : archived.error);
+    const onArchived = await createPage(root, "intellectual", { title: "X" });
+    assert.equal(onArchived.ok, false);
     const o = await openVault(root);
     assert.ok(o.ok);
   });
@@ -197,6 +202,31 @@ describe("pages", () => {
     assert.ok(getRes2.ok);
     if (!getRes2.ok) return;
     assert.equal(getRes2.value.blocks.length, 1);
+  });
+
+  it("approve page Decision applies JSON", async () => {
+    const res = await createPage(root, "health", { title: "Approve Me" });
+    assert.ok(res.ok);
+    if (!res.ok) return;
+    const pageId = res.value.id;
+    const blocks: PageBlock[] = [
+      { id: "b1", kind: "markdown", markdown: "from decision" },
+    ];
+    const agentRes = await updatePage(root, "health", pageId, { title: "Approved title", blocks }, agent);
+    assert.equal(agentRes.ok, true);
+    if (!agentRes.ok) return;
+    assert.equal(agentRes.value.applied, false);
+    const decisionId = agentRes.value.decision.id;
+    const approved = await resolveDecision(root, decisionId, "approved");
+    assert.equal(approved.ok, true, approved.ok ? "" : approved.error);
+    const after = await getPage(root, "health", pageId);
+    assert.ok(after.ok);
+    if (!after.ok) return;
+    assert.equal(after.value.title, "Approved title");
+    assert.equal(after.value.blocks.length, 1);
+    if (after.value.blocks[0].kind === "markdown") {
+      assert.equal(after.value.blocks[0].markdown, "from decision");
+    }
   });
 
   it("deletePage removes json and strips page pins", async () => {

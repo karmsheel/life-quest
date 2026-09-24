@@ -166,9 +166,12 @@ export async function setPins(
       }
     } catch {}
 
-    // Validate page pins exist and belong to the right domain
     for (const pin of pins) {
-      if (pin.kind === "page") {
+      if (pin.kind === "system") {
+        if (!isSystemPinKind(pin.system)) {
+          return { ok: false, error: `Unknown system pin kind: ${String(pin.system)}` };
+        }
+      } else if (pin.kind === "page") {
         if (!liveSlugs.has(pin.domainSlug)) {
           return { ok: false, error: `Domain not live: ${pin.domainSlug}` };
         }
@@ -178,6 +181,8 @@ export async function setPins(
         if (domainSlug !== null && pin.domainSlug !== domainSlug) {
           return { ok: false, error: `Page pin belongs to different domain: ${pin.domainSlug}` };
         }
+      } else {
+        return { ok: false, error: `Invalid pin kind: ${String((pin as { kind?: unknown }).kind)}` };
       }
     }
 

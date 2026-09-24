@@ -1,10 +1,9 @@
 import { useMemo } from "react";
-import { DOCUMENT_KIND_LABELS, filterByLens } from "@lifequest/vault-core/pure";
+import { DOCUMENT_KIND_LABELS, recordVisible } from "@lifequest/vault-core/pure";
 import { Link } from "react-router-dom";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { DocumentLockBadge } from "@/components/documents/DocumentLockBadge";
-import type { DomainLens } from "@lifequest/vault-core/pure";
 
 const DOCTRINE_ROWS = (["premise", "what", "why", "how"] as const).map((kind) => ({
   kind,
@@ -20,21 +19,9 @@ export function DoctrineCard() {
   const { snapshot } = useVault();
   const lens = useDomainLens();
 
-  const visibleDomains = useMemo(() => {
-    return (snapshot?.domains ?? [])
-      .filter((d) => !d.meta.archivedAt && filterByLens([{ domainSlug: d.slug } as never], lens).length > 0)
-      .slice()
-      .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder);
-  }, [snapshot, lens]);
-
-  // Recompute filterByLens for domain records
   const filteredDomains = useMemo(() => {
     return (snapshot?.domains ?? [])
-      .filter((d) => {
-        if (d.meta.archivedAt) return false;
-        if (lens.kind === "overview") return true;
-        return d.slug === lens.slug;
-      })
+      .filter((d) => !d.meta.archivedAt && recordVisible(lens, d.slug))
       .slice()
       .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder);
   }, [snapshot, lens]);

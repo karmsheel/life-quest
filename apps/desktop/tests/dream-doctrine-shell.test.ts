@@ -84,7 +84,8 @@ describe("doctrine labels on other surfaces", () => {
   it("Home How still goes to Architecture; other kinds to Dream", () => {
     const home = read("src/pages/HomePage.tsx");
     const doctrine = read("src/pages/home-pins/DoctrineCard.tsx");
-    assert.match(home, /DOCUMENT_KIND_LABELS|DREAM_DOCUMENT_KINDS/);
+    assert.match(home, /DoctrineProgressCard/);
+    assert.match(doctrine, /DOCUMENT_KIND_LABELS|DREAM_DOCUMENT_KINDS/);
     assert.match(doctrine, /doctrineHref/);
     assert.match(doctrine, /track.*how/);
     assert.match(doctrine, /dream.*kind/);

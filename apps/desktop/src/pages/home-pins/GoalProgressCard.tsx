@@ -1,61 +1,21 @@
-import type { DecisionRecord, Goal, LifeEvent } from "@lifequest/vault-core";
+import type { Goal } from "@lifequest/vault-core";
 import {
-  DOCUMENT_KIND_LABELS,
   filterByLens,
   formatGoalPace,
   goalPace,
-  deadlinePressureGoals,
-  daysUntilDeadline,
-  recordVisible,
-  recordVisibleMulti,
 } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
-import { DocumentLockBadge } from "@/components/documents/DocumentLockBadge";
-import type { DomainLens } from "@lifequest/vault-core/pure";
-
-const DOCTRINE_ROWS = (["premise", "what", "why", "how"] as const).map((kind) => ({
-  kind,
-  label: DOCUMENT_KIND_LABELS[kind],
-}));
-
-function doctrineHref(kind: string, slug: string): string {
-  if (kind === "how") return `/track/${slug}/how`;
-  return `/dream/${slug}/${kind}`;
-}
-
-function localIsoDate(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-function formatWhen(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  } catch {
-    return iso;
-  }
-}
 
 export function GoalProgressCard() {
-  const { snapshot, reloadGeneration, refresh } = useVault();
+  const { snapshot, refresh } = useVault();
   const lens = useDomainLens();
   const [goalBusyId, setGoalBusyId] = useState<string | null>(null);
   const [pendingDoneId, setPendingDoneId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void reloadGeneration;
-  }, [reloadGeneration]);
 
   const openGoals = useMemo(() => {
     const goals = snapshot?.goals ?? [];

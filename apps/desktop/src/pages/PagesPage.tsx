@@ -48,7 +48,7 @@ export default function PagesPage() {
     }
     setBusy(true);
     try {
-      const res = await api().pageCreate(target, { name });
+      const res = await api().pageCreate(target, { title: name });
       if (!res.ok) {
         setError(res.error);
       } else {

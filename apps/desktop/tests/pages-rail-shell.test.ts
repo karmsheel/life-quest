@@ -51,6 +51,7 @@ describe("pages rail shell wiring (KAR-60)", () => {
     assert.match(src, /<select/);
     assert.match(src, /selectedDomain/);
     assert.match(src, /Select a domain to create a page in/);
+    assert.match(src, /pageCreate\(target, \{ title: name \}\)/);
   });
 
   it("PagesPage / PageCanvasPage do not call domainSetActive or setActiveSlug", () => {

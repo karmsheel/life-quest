@@ -5,17 +5,17 @@ import type {
   PageRecord,
   DatabaseListEntry,
   DatabaseRow,
-  DatabaseMeta,
-  Pin,
 } from "@lifequest/vault-core";
 import {
   PAGE_BLOCK_KINDS,
   METRIC_AGGS,
   CHART_TYPES,
+} from "@lifequest/vault-core";
+import {
   filterByLens,
   deadlinePressureGoals,
   daysUntilDeadline,
-} from "@lifequest/vault-core";
+} from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
@@ -57,16 +57,23 @@ function cellText(v: unknown): string {
   return String(v);
 }
 
+function rowDate(row: DatabaseRow, dateColumnIds: string[]): string | null {
+  for (const id of dateColumnIds) {
+    const v = row.cells?.[id];
+    if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  }
+  return row.createdAt ? row.createdAt.slice(0, 10) : null;
+}
+
 function filterRowsByDate(
   rows: DatabaseRow[],
   start: string | null,
   end: string | null,
+  dateColumnIds: string[] = [],
 ): DatabaseRow[] {
   if (!start && !end) return rows;
   return rows.filter((r) => {
-    const d = r.cells?.date;
-    const ds = typeof d === "string" ? d : null;
-    const dateStr = ds ?? (r.createdAt ? r.createdAt.slice(0, 10) : null);
+    const dateStr = rowDate(r, dateColumnIds);
     if (!dateStr) return false;
     if (start && dateStr < start) return false;
     if (end && dateStr > end) return false;
@@ -79,11 +86,16 @@ function computeMetric(
   columnId: string,
   agg: string,
 ): number | null {
+  if (agg === "count") {
+    return rows.filter((r) => {
+      const v = r.cells?.[columnId];
+      return v !== null && v !== undefined && v !== "";
+    }).length;
+  }
   const vals = rows
     .map((r) => r.cells?.[columnId])
     .filter((v) => typeof v === "number" && Number.isFinite(v)) as number[];
-  if (vals.length === 0) return agg === "count" ? 0 : null;
-  if (agg === "count") return vals.length;
+  if (vals.length === 0) return null;
   if (agg === "sum") return vals.reduce((a, b) => a + b, 0);
   return vals[vals.length - 1];
 }
@@ -176,6 +188,12 @@ export default function PageCanvasPage() {
       setTitle(p.title);
       setBlocks(p.blocks);
       setError(null);
+      const dbIds = p.blocks
+        .map((b) => ("databaseId" in b ? b.databaseId : null))
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+      for (const dbId of [...new Set(dbIds)]) {
+        void loadRows(dbId);
+      }
     } else {
       setError(res.error);
       setPage(null);
@@ -309,8 +327,9 @@ export default function PageCanvasPage() {
           }
           if (block.kind === "bound-table") {
             const b = block as Extract<PageBlock, { kind: "bound-table" }>;
-            const dbMeta = dbs.find((d) => d.databaseId === b.databaseId)?.database;
-            const rows = filterRowsByDate(rowsByDb[b.databaseId] ?? [], dateRange?.start ?? null, dateRange?.end ?? null);
+            const dbMeta = dbs.find((d) => d.database.id === b.databaseId)?.database;
+            const dateColIds = (dbMeta?.columns ?? []).filter((c) => c.type === "date").map((c) => c.id);
+            const rows = filterRowsByDate(rowsByDb[b.databaseId] ?? [], dateRange?.start ?? null, dateRange?.end ?? null, dateColIds);
             return (
               <section key={b.id} className="page-block">
                 <div className="page-block__head">
@@ -327,7 +346,7 @@ export default function PageCanvasPage() {
                 >
                   <option value="">Select database…</option>
                   {dbs.map((d) => (
-                    <option key={d.databaseId} value={d.databaseId}>{d.database.name}</option>
+                    <option key={d.database.id} value={d.database.id}>{d.database.name}</option>
                   ))}
                 </select>
                 {dbMeta && rows.length > 0 ? (
@@ -353,8 +372,9 @@ export default function PageCanvasPage() {
           }
           if (block.kind === "metric") {
             const b = block as Extract<PageBlock, { kind: "metric" }>;
-            const dbMeta = dbs.find((d) => d.databaseId === b.databaseId)?.database;
-            const rows = filterRowsByDate(rowsByDb[b.databaseId] ?? [], dateRange?.start ?? null, dateRange?.end ?? null);
+            const dbMeta = dbs.find((d) => d.database.id === b.databaseId)?.database;
+            const dateColIds = (dbMeta?.columns ?? []).filter((c) => c.type === "date").map((c) => c.id);
+            const rows = filterRowsByDate(rowsByDb[b.databaseId] ?? [], dateRange?.start ?? null, dateRange?.end ?? null, dateColIds);
             const val = dbMeta ? computeMetric(rows, b.columnId, b.agg) : null;
             return (
               <section key={b.id} className="page-block">
@@ -372,7 +392,7 @@ export default function PageCanvasPage() {
                     }}
                   >
                     <option value="">Database…</option>
-                    {dbs.map((d) => <option key={d.databaseId} value={d.databaseId}>{d.database.name}</option>)}
+                    {dbs.map((d) => <option key={d.database.id} value={d.database.id}>{d.database.name}</option>)}
                   </select>
                   <select
                     className="input-field"
@@ -426,8 +446,9 @@ export default function PageCanvasPage() {
           }
           if (block.kind === "chart") {
             const b = block as Extract<PageBlock, { kind: "chart" }>;
-            const dbMeta = dbs.find((d) => d.databaseId === b.databaseId)?.database;
-            const rows = filterRowsByDate(rowsByDb[b.databaseId] ?? [], dateRange?.start ?? null, dateRange?.end ?? null);
+            const dbMeta = dbs.find((d) => d.database.id === b.databaseId)?.database;
+            const dateColIds = (dbMeta?.columns ?? []).filter((c) => c.type === "date").map((c) => c.id);
+            const rows = filterRowsByDate(rowsByDb[b.databaseId] ?? [], dateRange?.start ?? null, dateRange?.end ?? null, dateColIds);
             return (
               <section key={b.id} className="page-block">
                 <div className="page-block__head">
@@ -451,7 +472,7 @@ export default function PageCanvasPage() {
                     }}
                   >
                     <option value="">Database…</option>
-                    {dbs.map((d) => <option key={d.databaseId} value={d.databaseId}>{d.database.name}</option>)}
+                    {dbs.map((d) => <option key={d.database.id} value={d.database.id}>{d.database.name}</option>)}
                   </select>
                   <select className="input-field" value={b.xColumnId} onChange={(e) => setBlock(b.id, { xColumnId: e.target.value })}>
                     <option value="">X column…</option>

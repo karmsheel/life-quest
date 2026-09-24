@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { DOCUMENT_KIND_LABELS } from "@lifequest/vault-core/pure";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { DoctrineCard } from "./DoctrineCard";
 
 const DOCTRINE_ROWS = (["premise", "what", "why", "how"] as const).map((kind) => ({
   kind,
@@ -36,8 +37,7 @@ export function DoctrineProgressCard() {
     doctrineTotal === 0 ? 0 : Math.round((lockedCount / doctrineTotal) * 100);
 
   return (
-    <section className="home-card home-card--doctrine">
-      <h2 className="home-card__title">Doctrine</h2>
+    <div className="home-doctrine-pin">
       <div className="home-dashboard__progress" title={`${lockedCount} of ${doctrineTotal} locked`}>
         <span className="muted home-dashboard__progress-label">
           {lockedCount}/{doctrineTotal} locked
@@ -49,6 +49,7 @@ export function DoctrineProgressCard() {
           />
         </div>
       </div>
-    </section>
+      <DoctrineCard />
+    </div>
   );
 }

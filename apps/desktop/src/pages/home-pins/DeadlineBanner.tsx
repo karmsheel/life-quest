@@ -1,7 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { deadlinePressureGoals, filterByLens, daysUntilDeadline } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
-import { useState } from "react";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 
@@ -27,13 +26,13 @@ export function DeadlineBanner() {
       .sort((a, b) => daysUntilDeadline(a.deadline!, today) - daysUntilDeadline(b.deadline!, today));
   }, [snapshot?.goals, lens]);
 
-  // Check dismissed on mount
-  useMemo(() => {
+  useEffect(() => {
     void (async () => {
       const res = await api().deadlineGetDismissed();
       if (res.ok && res.value) {
         setDismissedToday(res.value === localIsoDate());
       }
+      void api().deadlineMaybeNotify();
     })();
   }, []);
 
