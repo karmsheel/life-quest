@@ -44,7 +44,7 @@ function detectSourceKind(mime: string, name: string): IngestSourceKind | null {
   return null;
 }
 
-function fingerprintOf(columns: string[]): string {
+export function ingestFingerprint(columns: string[]): string {
   const normalized = columns
     .map((c) => c.trim().replace(/\s+/g, " ").toLowerCase())
     .filter((c) => c.length > 0);
@@ -303,7 +303,7 @@ export async function ingestFile(
     }
 
     // 6. Compute fingerprint
-    const fingerprint = fingerprintOf(sourceColumns);
+    const fingerprint = ingestFingerprint(sourceColumns);
 
     // 7. Look up mapping
     const existingMapping = await findMappingByFingerprint(

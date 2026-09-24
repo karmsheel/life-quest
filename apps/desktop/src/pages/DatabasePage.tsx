@@ -7,6 +7,7 @@ import type {
   DatabaseRow,
   IngestBatch,
   IngestRow,
+  SyncConflict,
 } from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
@@ -37,6 +38,13 @@ export default function DatabasePage() {
   const [colError, setColError] = useState<string | null>(null);
   const [domainDbs, setDomainDbs] = useState<DatabaseListEntry[]>([]);
   const [ingestBatches, setIngestBatches] = useState<IngestBatch[]>([]);
+
+  // KAR-59 adapter state
+  const [adapterKind, setAdapterKind] = useState<"google-sheet" | "notion" | "url">("google-sheet");
+  const [adapterBindingId, setAdapterBindingId] = useState("");
+  const [adapterSecret, setAdapterSecret] = useState("");
+  const [adapterSotMode, setAdapterSotMode] = useState<"linked-canonical" | "local-canonical-mirror">("linked-canonical");
+  const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
 
   const load = useCallback(async () => {
     const metaRes = await api().dbGet(slug, dbId);
@@ -197,6 +205,106 @@ export default function DatabasePage() {
 
       {error ? <p className="form-error" role="alert">{error}</p> : null}
       {colError ? <p className="form-error" role="alert">{colError}</p> : null}
+
+      {/* KAR-59 Adapter section */}
+      <section className="adapter-section">
+        <h2>Adapter</h2>
+        {meta.adapter ? (
+          <div className="adapter-linked">
+            <p className="muted">
+              Linked: {meta.adapter.kind} · {meta.sotMode} · last synced: {meta.adapter.lastSyncedAt ?? "never"}
+            </p>
+            <Button onClick={async () => {
+              const res = await api().dbSync(slug, dbId);
+              if (res.ok) {
+                await load();
+                // Refresh conflicts
+                const cRes = await api().dbListConflicts(slug, dbId);
+                if (cRes.ok) setConflicts(cRes.value as SyncConflict[]);
+              }
+            }}>Refresh</Button>
+            <Button destructive onClick={async () => {
+              const res = await api().dbUnlinkAdapter(slug, dbId);
+              if (res.ok) await load();
+            }}>Unlink</Button>
+          </div>
+        ) : (
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            const res = await api().dbLinkAdapter(slug, dbId, {
+              kind: adapterKind,
+              bindingId: adapterBindingId || undefined,
+              secret: adapterSecret,
+              sotMode: adapterSotMode,
+            });
+            if (res.ok) {
+              await load();
+            } else {
+              setError(res.error);
+            }
+          }} className="adapter-form">
+            <select value={adapterKind} onChange={(e) => setAdapterKind(e.target.value as "google-sheet" | "notion" | "url")} className="input-field">
+              <option value="google-sheet">Google Sheet</option>
+              <option value="notion">Notion</option>
+              <option value="url">Operator URL</option>
+            </select>
+            {adapterKind !== "url" ? (
+              <input
+                type="text"
+                placeholder={adapterKind === "google-sheet" ? "Spreadsheet ID" : "Notion Database ID"}
+                value={adapterBindingId}
+                onChange={(e) => setAdapterBindingId(e.target.value)}
+                className="input-field"
+              />
+            ) : null}
+            <input
+              type="password"
+              placeholder={adapterKind === "url" ? "URL" : "Token"}
+              value={adapterSecret}
+              onChange={(e) => setAdapterSecret(e.target.value)}
+              className="input-field"
+            />
+            <select value={adapterSotMode} onChange={(e) => setAdapterSotMode(e.target.value as "linked-canonical" | "local-canonical-mirror")} className="input-field">
+              <option value="linked-canonical">Linked canonical</option>
+              <option value="local-canonical-mirror">Local canonical (mirror)</option>
+            </select>
+            <Button type="submit">Link</Button>
+          </form>
+        )}
+
+        {/* KAR-59 Conflicts */}
+        {conflicts.length > 0 ? (
+          <div className="conflicts-list">
+            <h3>Conflicts</h3>
+            {conflicts.map((c) => (
+              <div key={c.id} className="conflict-item">
+                <p className="muted">Row {c.externalId} · default: {c.defaultChoice}</p>
+                <Button onClick={async () => {
+                  const res = await api().dbResolveConflict(slug, c.id, "keep-local");
+                  if (res.ok) {
+                    setConflicts((prev) => prev.filter((x) => x.id !== c.id));
+                    await load();
+                  }
+                }}>Keep local</Button>
+                <Button onClick={async () => {
+                  const res = await api().dbResolveConflict(slug, c.id, "keep-remote");
+                  if (res.ok) {
+                    setConflicts((prev) => prev.filter((x) => x.id !== c.id));
+                    await load();
+                  }
+                }}>Keep remote</Button>
+                <Button onClick={async () => {
+                  const res = await api().dbResolveConflict(slug, c.id, "skip");
+                  if (res.ok) {
+                    setConflicts((prev) => prev.filter((x) => x.id !== c.id));
+                    await load();
+                  }
+                }}>Skip</Button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </section>
 
       <form onSubmit={onAddColumn} className="data-add-column">
         <input

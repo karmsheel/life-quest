@@ -70,6 +70,12 @@ import {
   listMappings,
   proposeMapping,
   rejectIngestRows,
+  linkDatabaseAdapter,
+  unlinkDatabaseAdapter,
+  syncDatabase,
+  syncLinkedDatabases,
+  listSyncConflicts,
+  resolveSyncConflict,
   type AgentHire,
   type DatabaseColumnType,
   type GoalsCommand,
@@ -104,6 +110,9 @@ import {
   type SignalUpdatePatch,
   type VaultSettings,
   type VaultSnapshot,
+  type AdapterKind,
+  type SyncResult,
+  type SyncConflict,
 } from "@lifequest/vault-core";
 import {
   listRecentVaults,
@@ -115,7 +124,11 @@ import {
   getHermesKey,
   hasHermesKey,
   setHermesKey,
+  getAdapterSecret,
+  setAdapterSecret,
+  clearAdapterSecret,
 } from "./secrets.js";
+import { adapterTransport } from "./adapter-transport.js";
 import {
   hermesChat,
   hermesScanAgents,
@@ -286,6 +299,21 @@ export async function vaultOpen(
     const res = await openVault(abs);
     if (!res.ok) return res;
     await rememberOpen(res.value);
+    // KAR-59: sync linked adapters on open (try/catch — sync failure must not block open)
+    try {
+      const secretStore = {
+        get: (bindingId: string) => getAdapterSecret(bindingId),
+        put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
+        delete: (bindingId: string) => clearAdapterSecret(bindingId),
+      };
+      await syncLinkedDatabases(res.value.rootPath, null, {
+        secrets: secretStore,
+        transport: adapterTransport,
+        online: true,
+      });
+    } catch {
+      // Sync failure must not block vault open
+    }
     return res;
   });
 }
@@ -367,7 +395,30 @@ export async function ingestEditRow(slug: string, batchId: string, rowId: string
 }
 
 export async function ingestAccept(slug: string, batchId: string, rowIds?: string[]): Promise<Result<{ accepted: number; postedIds: string[] }>> {
-  return withVault((root) => acceptIngestRows(root, slug, batchId, rowIds));
+  return withVault(async (root) => {
+    const res = await acceptIngestRows(root, slug, batchId, rowIds);
+    // KAR-59: sync the database after accept (surface error without rolling back)
+    if (res.ok && currentRoot) {
+      try {
+        const dbId = res.value.postedIds[0] ? batchId : undefined;
+        if (dbId) {
+          const secretStore = {
+            get: (bindingId: string) => getAdapterSecret(bindingId),
+            put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
+            delete: (bindingId: string) => clearAdapterSecret(bindingId),
+          };
+          await syncDatabase(currentRoot, slug, dbId, {
+            secrets: secretStore,
+            transport: adapterTransport,
+            online: true,
+          });
+        }
+      } catch {
+        // Sync failure does not roll back accept
+      }
+    }
+    return res;
+  });
 }
 
 export async function ingestReject(slug: string, batchId: string, rowIds?: string[]): Promise<Result<{ rejected: number }>> {
@@ -952,4 +1003,94 @@ export async function companionChatStreamWithPack(
     }
   }
   return companion.companionChatStream(sessionId, input, ctx, onEvent);
+}
+
+// KAR-59 adapter secrets
+export async function secretsHasAdapterSecret(bindingId: string): Promise<boolean> {
+  return getAdapterSecret(bindingId).then((v) => v !== null);
+}
+
+export async function secretsSetAdapterSecret(bindingId: string, secret: string): Promise<Result<true>> {
+  return setAdapterSecret(bindingId, secret);
+}
+
+export async function secretsClearAdapterSecret(bindingId: string): Promise<Result<true>> {
+  return clearAdapterSecret(bindingId);
+}
+
+// KAR-59 adapter sync
+export async function dbLinkAdapter(
+  slug: string,
+  dbId: string,
+  input: {
+    kind: AdapterKind;
+    bindingId?: string;
+    secret: string;
+    sotMode: "linked-canonical" | "local-canonical-mirror";
+  },
+): Promise<Result<unknown>> {
+  return withVault(async (root) => {
+    const secretStore = {
+      get: (bindingId: string) => getAdapterSecret(bindingId),
+      put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
+      delete: (bindingId: string) => clearAdapterSecret(bindingId),
+    };
+    return linkDatabaseAdapter(root, slug, dbId, { ...input, actor: USER_ACTOR }, { secrets: secretStore });
+  });
+}
+
+export async function dbUnlinkAdapter(slug: string, dbId: string): Promise<Result<unknown>> {
+  return withVault(async (root) => {
+    const secretStore = {
+      get: (bindingId: string) => getAdapterSecret(bindingId),
+      put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
+      delete: (bindingId: string) => clearAdapterSecret(bindingId),
+    };
+    return unlinkDatabaseAdapter(root, slug, dbId, { secrets: secretStore }, USER_ACTOR);
+  });
+}
+
+export async function dbSync(slug: string, dbId?: string): Promise<Result<SyncResult | SyncResult[]>> {
+  return withVault(async (root) => {
+    const secretStore = {
+      get: (bindingId: string) => getAdapterSecret(bindingId),
+      put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
+      delete: (bindingId: string) => clearAdapterSecret(bindingId),
+    };
+    if (dbId) {
+      return syncDatabase(root, slug, dbId, {
+        secrets: secretStore,
+        transport: adapterTransport,
+        online: true,
+      });
+    }
+    return syncLinkedDatabases(root, slug, {
+      secrets: secretStore,
+      transport: adapterTransport,
+      online: true,
+    });
+  });
+}
+
+export async function dbListConflicts(slug: string, dbId?: string): Promise<Result<SyncConflict[]>> {
+  return withVault((root) => listSyncConflicts(root, slug, dbId));
+}
+
+export async function dbResolveConflict(
+  slug: string,
+  conflictId: string,
+  choice: "keep-local" | "keep-remote" | "skip",
+): Promise<Result<SyncConflict | null>> {
+  return withVault(async (root) => {
+    const secretStore = {
+      get: (bindingId: string) => getAdapterSecret(bindingId),
+      put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
+      delete: (bindingId: string) => clearAdapterSecret(bindingId),
+    };
+    return resolveSyncConflict(root, slug, conflictId, choice, {
+      secrets: secretStore,
+      transport: adapterTransport,
+      online: true,
+    });
+  });
 }

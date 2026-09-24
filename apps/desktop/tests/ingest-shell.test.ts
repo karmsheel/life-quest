@@ -82,13 +82,17 @@ describe("ingest shell wiring", () => {
     }
   });
 
-  it("source does not mention Google Sheet / Notion adapter connect UI", () => {
+  it("source does not mention Google Sheets / Notion connect UI (KAR-59 updates: adapter kinds now required)", () => {
     const dataPage = read("src/pages/DataPage.tsx");
     const dbPage = read("src/pages/DatabasePage.tsx");
-    assert.ok(!dataPage.includes("notion"), "DataPage should not mention notion");
-    assert.ok(!dataPage.includes("spreadsheets.google"), "DataPage should not mention Google Sheets");
-    assert.ok(!dbPage.includes("notion"), "DatabasePage should not mention notion");
-    assert.ok(!dbPage.includes("spreadsheets.google"), "DatabasePage should not mention Google Sheets");
+    // KAR-59: DatabasePage now requires google-sheet, notion, url adapter kinds
+    assert.ok(dbPage.includes("google-sheet"), "DatabasePage should mention google-sheet");
+    assert.ok(dbPage.includes("notion"), "DatabasePage should mention notion");
+    assert.ok(dbPage.includes("url"), "DatabasePage should mention url");
+    // DataPage should not mention spreadsheets.google (no connect UI there)
+    assert.ok(!dataPage.includes("spreadsheets.google"), "DataPage should not mention Google Sheets URL");
+    // DatabasePage should not contain the Google Sheets API URL (only in transport)
+    assert.ok(!dbPage.includes("spreadsheets.google"), "DatabasePage should not mention Google Sheets URL");
   });
 
   it("source does not add Finance kit install UI to DatabasePage", () => {

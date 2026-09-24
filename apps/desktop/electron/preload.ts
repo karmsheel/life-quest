@@ -55,6 +55,18 @@ const lifequest = {
   dbRestoreBooks: (slug: string, options: { confirm: boolean }) =>
     ipcRenderer.invoke("db:restoreBooks", slug, options) as Promise<Result<unknown>>,
 
+  // KAR-59 adapter IPC
+  dbLinkAdapter: (slug: string, dbId: string, input: { kind: string; bindingId?: string; secret: string; sotMode: string }) =>
+    ipcRenderer.invoke("db:linkAdapter", slug, dbId, input) as Promise<Result<unknown>>,
+  dbUnlinkAdapter: (slug: string, dbId: string) =>
+    ipcRenderer.invoke("db:unlinkAdapter", slug, dbId) as Promise<Result<unknown>>,
+  dbSync: (slug: string, dbId?: string) =>
+    ipcRenderer.invoke("db:sync", slug, dbId) as Promise<Result<unknown>>,
+  dbListConflicts: (slug: string, dbId?: string) =>
+    ipcRenderer.invoke("db:listConflicts", slug, dbId) as Promise<Result<unknown>>,
+  dbResolveConflict: (slug: string, conflictId: string, choice: string) =>
+    ipcRenderer.invoke("db:resolveConflict", slug, conflictId, choice) as Promise<Result<unknown>>,
+
   // KAR-60 pages and pins
   pageList: (domainSlug: string | null) =>
     ipcRenderer.invoke("page:list", domainSlug) as Promise<Result<unknown>>,

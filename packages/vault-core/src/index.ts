@@ -118,7 +118,16 @@ export {
   editIngestRow,
   acceptIngestRows,
   rejectIngestRows,
+  ingestFingerprint,
 } from "./ingest.ts";
+export {
+  linkDatabaseAdapter,
+  unlinkDatabaseAdapter,
+  syncDatabase,
+  syncLinkedDatabases,
+  listSyncConflicts,
+  resolveSyncConflict,
+} from "./adapters.ts";
 export {
   installFinanceKit,
   listInstalledKits,

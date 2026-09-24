@@ -283,6 +283,21 @@ type LifequestApi = {
     slug: string,
     options: { confirm: boolean },
   ) => Promise<Result<{ databases: number; rows: number }>>;
+  // KAR-59 adapter IPC
+  dbLinkAdapter: (slug: string, dbId: string, input: {
+    kind: "google-sheet" | "notion" | "url";
+    bindingId?: string;
+    secret: string;
+    sotMode: "linked-canonical" | "local-canonical-mirror";
+  }) => Promise<Result<unknown>>;
+  dbUnlinkAdapter: (slug: string, dbId: string) => Promise<Result<unknown>>;
+  dbSync: (slug: string, dbId?: string) => Promise<Result<unknown>>;
+  dbListConflicts: (slug: string, dbId?: string) => Promise<Result<unknown>>;
+  dbResolveConflict: (
+    slug: string,
+    conflictId: string,
+    choice: "keep-local" | "keep-remote" | "skip",
+  ) => Promise<Result<unknown>>;
   // KAR-60 pages and pins
   pageList: (domainSlug: string | null) => Promise<Result<PageListEntry[]>>;
   pageGet: (slug: string, pageId: string) => Promise<Result<PageRecord>>;

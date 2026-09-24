@@ -134,6 +134,13 @@ function registerIpcHandlers() {
   ipcMain.handle("db:exportBooks", (_e, slug: string) => vault.dbExportBooks(slug));
   ipcMain.handle("db:restoreBooks", (_e, slug: string, options: { confirm: boolean }) => vault.dbRestoreBooks(slug, options));
 
+  // KAR-59 adapter IPC
+  ipcMain.handle("db:linkAdapter", (_e, slug: string, dbId: string, input: { kind: string; bindingId?: string; secret: string; sotMode: string }) => vault.dbLinkAdapter(slug, dbId, input));
+  ipcMain.handle("db:unlinkAdapter", (_e, slug: string, dbId: string) => vault.dbUnlinkAdapter(slug, dbId));
+  ipcMain.handle("db:sync", (_e, slug: string, dbId?: string) => vault.dbSync(slug, dbId));
+  ipcMain.handle("db:listConflicts", (_e, slug: string, dbId?: string) => vault.dbListConflicts(slug, dbId));
+  ipcMain.handle("db:resolveConflict", (_e, slug: string, conflictId: string, choice: string) => vault.dbResolveConflict(slug, conflictId, choice as "keep-local" | "keep-remote" | "skip"));
+
   // KAR-60 pages and pins
   ipcMain.handle("page:list", (_e, domainSlug: string | null) => vault.pageList(domainSlug));
   ipcMain.handle("page:get", (_e, slug: string, pageId: string) => vault.pageGet(slug, pageId));

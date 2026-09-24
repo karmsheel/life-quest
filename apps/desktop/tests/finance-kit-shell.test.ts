@@ -55,14 +55,17 @@ describe("finance kit shell wiring (KAR-61)", () => {
     assert.match(viteEnv, /kitInstallFinance/);
   });
 
-  it("source does not mention Google Sheet / Notion connect UI", () => {
+  it("source does not mention Google Sheets / Notion connect UI (KAR-59: adapter kinds now required)", () => {
     const dataPage = read("src/pages/DataPage.tsx");
     const dbPage = read("src/pages/DatabasePage.tsx");
     const canvasPage = read("src/pages/PageCanvasPage.tsx");
-    assert.ok(!dataPage.includes("notion"), "DataPage should not mention notion");
-    assert.ok(!dataPage.includes("spreadsheets.google"), "DataPage should not mention Google Sheets");
-    assert.ok(!dbPage.includes("notion"), "DatabasePage should not mention notion");
-    assert.ok(!dbPage.includes("spreadsheets.google"), "DatabasePage should not mention Google Sheets");
-    assert.ok(!canvasPage.includes("notion"), "Canvas should not mention notion");
+    // KAR-59: DatabasePage now requires google-sheet, notion, url adapter kinds
+    assert.ok(dbPage.includes("google-sheet"), "DatabasePage should mention google-sheet");
+    assert.ok(dbPage.includes("notion"), "DatabasePage should mention notion");
+    assert.ok(dbPage.includes("url"), "DatabasePage should mention url");
+    // DataPage and Canvas should not mention the API URLs (only in transport)
+    assert.ok(!dataPage.includes("spreadsheets.google"), "DataPage should not mention Google Sheets URL");
+    assert.ok(!dbPage.includes("spreadsheets.google"), "DatabasePage should not mention Google Sheets URL");
+    assert.ok(!canvasPage.includes("spreadsheets.google"), "Canvas should not mention Google Sheets URL");
   });
 });

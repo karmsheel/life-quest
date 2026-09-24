@@ -6,6 +6,7 @@ import type { Result } from "@lifequest/vault-core";
 /** vaultId → base64(encrypted) Hermes API key */
 type SecretsFile = {
   hermesKeys: Record<string, string>;
+  adapterSecrets: Record<string, string>;
 };
 
 function secretsPath(): string {
@@ -21,10 +22,14 @@ async function loadSecrets(): Promise<SecretsFile> {
         parsed.hermesKeys && typeof parsed.hermesKeys === "object"
           ? parsed.hermesKeys
           : {},
+      adapterSecrets:
+        parsed.adapterSecrets && typeof parsed.adapterSecrets === "object"
+          ? parsed.adapterSecrets
+          : {},
     };
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-      return { hermesKeys: {} };
+      return { hermesKeys: {}, adapterSecrets: {} };
     }
     throw e;
   }
@@ -96,6 +101,49 @@ export async function clearHermesKey(vaultId: string): Promise<Result<true>> {
 export async function getHermesKey(vaultId: string): Promise<string | null> {
   const data = await loadSecrets();
   const enc = data.hermesKeys[vaultId];
+  if (!enc) return null;
+  return decryptString(enc);
+}
+
+// KAR-59 adapter secrets
+export async function hasAdapterSecret(bindingId: string): Promise<boolean> {
+  const data = await loadSecrets();
+  return Boolean(data.adapterSecrets[bindingId]);
+}
+
+export async function setAdapterSecret(
+  bindingId: string,
+  secret: string,
+): Promise<Result<true>> {
+  try {
+    const trimmed = secret.trim();
+    if (!trimmed) {
+      return { ok: false, error: "Secret must not be empty" };
+    }
+    const data = await loadSecrets();
+    data.adapterSecrets[bindingId] = encryptString(trimmed);
+    await saveSecrets(data);
+    return { ok: true, value: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function clearAdapterSecret(bindingId: string): Promise<Result<true>> {
+  try {
+    const data = await loadSecrets();
+    delete data.adapterSecrets[bindingId];
+    await saveSecrets(data);
+    return { ok: true, value: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Returns decrypted adapter secret, or null if missing. */
+export async function getAdapterSecret(bindingId: string): Promise<string | null> {
+  const data = await loadSecrets();
+  const enc = data.adapterSecrets[bindingId];
   if (!enc) return null;
   return decryptString(enc);
 }

@@ -531,7 +531,8 @@ async function applyApprovedBody(
         if (!c.source || typeof c.source !== "string" || !c.source.trim()) {
           return { ok: false, error: "Every mapping column needs a non-empty source" };
         }
-        if (!c.columnId || typeof c.columnId !== "string" || !validColIds.has(c.columnId)) {
+        // Empty columnId is allowed (unmapped column); non-empty must be valid
+        if (c.columnId && (typeof c.columnId !== "string" || !validColIds.has(c.columnId))) {
           return { ok: false, error: `Mapping column for source "${c.source}" needs a valid columnId` };
         }
       }

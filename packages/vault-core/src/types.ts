@@ -333,7 +333,7 @@ export type DatabaseMeta = {
   id: string;
   name: string;
   sotMode: DatabaseSotMode;
-  adapter: null | { kind: string; bindingId: string };
+  adapter: null | DatabaseAdapterBinding;
   columns: DatabaseColumn[];
   createdAt: string;
   updatedAt: string;
@@ -487,6 +487,73 @@ export type PinWriteResult =
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
+// KAR-59 adapter types
+export const ADAPTER_KINDS = ["google-sheet", "notion", "url"] as const;
+export type AdapterKind = (typeof ADAPTER_KINDS)[number];
+
+export type DatabaseAdapterBinding = {
+  kind: AdapterKind;
+  bindingId: string;
+  mappingId: string | null;
+  lastSyncedAt: string | null;
+};
+
+export type AdapterSecretStore = {
+  put(bindingId: string, secret: string): Promise<void>;
+  get(bindingId: string): Promise<string | null>;
+  delete(bindingId: string): Promise<void>;
+};
+
+export type RemotePull = {
+  columns: string[];
+  rows: { externalId: string; cells: Record<string, string> }[];
+  fx?: { usdZarRate: number; asOf: string } | null;
+};
+
+export type AdapterTransport = {
+  pull(input: {
+    kind: AdapterKind;
+    bindingId: string;
+    secret: string;
+  }): Promise<Result<RemotePull>>;
+  pushRow(input: {
+    kind: AdapterKind;
+    bindingId: string;
+    secret: string;
+    externalId: string;
+    cells: Record<string, string>;
+  }): Promise<Result<true>>;
+  deleteRow(input: {
+    kind: AdapterKind;
+    bindingId: string;
+    secret: string;
+    externalId: string;
+  }): Promise<Result<true>>;
+};
+
+export type SyncConflict = {
+  id: string;
+  databaseId: string;
+  externalId: string;
+  rowId: string | null;
+  localCells: Record<string, unknown>;
+  remoteCells: Record<string, unknown>;
+  fields: string[];
+  defaultChoice: "keep-local" | "keep-remote";
+};
+
+export type SyncResult = {
+  databaseId: string;
+  offline?: boolean;
+  error?: string;
+  pulled: number;
+  pushed: number;
+  queued: number;
+  conflicts: SyncConflict[];
+  warnings: string[];
+  needsMapping: boolean;
+};
+
 // KAR-58 JSON export/restore
 export type DomainBooksExport = {
   schemaVersion: 1;
@@ -504,7 +571,7 @@ export type DomainBooksDatabase = {
 };
 
 // KAR-53 ingest types
-export const INGEST_SOURCE_KINDS = ["csv", "pdf"] as const;
+export const INGEST_SOURCE_KINDS = ["csv", "pdf", "google-sheet", "notion", "url"] as const;
 export type IngestSourceKind = (typeof INGEST_SOURCE_KINDS)[number];
 
 export const INGEST_BATCH_STATUSES = ["awaiting-mapping", "staged", "accepted", "rejected"] as const;

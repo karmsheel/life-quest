@@ -55,6 +55,13 @@ export function vaultPaths(root: string) {
       safeJoin(rootPath, "domains", slug, "data", "mappings"),
     domainMapping: (slug: string, mappingId: string) =>
       safeJoin(rootPath, "domains", slug, "data", "mappings", `${mappingId}.json`),
+    // KAR-59 adapter sync files
+    domainSyncIndex: (slug: string) =>
+      safeJoin(rootPath, "domains", slug, "data", "sync-index.json"),
+    domainSyncQueue: (slug: string) =>
+      safeJoin(rootPath, "domains", slug, "data", "sync-queue.json"),
+    domainConflicts: (slug: string) =>
+      safeJoin(rootPath, "domains", slug, "data", "conflicts.json"),
     // KAR-60 page and pin paths
     domainPagesDir: (slug: string) => safeJoin(rootPath, "domains", slug, "pages"),
     domainPage: (slug: string, pageId: string) =>

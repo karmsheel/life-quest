@@ -297,6 +297,18 @@ export default function DataPage() {
         </div>
       )}
 
+      {/* KAR-59 Refresh linked adapters */}
+      <div className="data-rail__refresh-linked">
+        <Button onClick={async () => {
+          const res = await api().dbSync(domainSlug ?? "");
+          if (!res.ok) {
+            setError(res.error);
+          } else {
+            await load();
+          }
+        }}>Refresh linked</Button>
+      </div>
+
       {entries.length === 0 ? (
         <p className="muted">No databases yet.</p>
       ) : (
