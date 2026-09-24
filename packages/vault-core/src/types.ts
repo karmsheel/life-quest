@@ -41,7 +41,9 @@ export type ReviewCadence = (typeof REVIEW_CADENCES)[number];
 export type DocumentTarget =
   | { type: "doctrine"; domainSlug: string; kind: DocumentKind }
   | { type: "library"; id: string }
-  | { type: "review"; cadence: ReviewCadence; period: string };
+  | { type: "review"; cadence: ReviewCadence; period: string }
+  | { type: "page"; domainSlug: string; pageId: string }
+  | { type: "pins"; domainSlug: string | null };
 
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;
 export type RoomId = (typeof ROOM_IDS)[number];
@@ -354,6 +356,88 @@ export type DatabaseListEntry = {
   domainSlug: string;
   database: DatabaseMeta;
 };
+
+// KAR-60 pages and pins
+export const PAGE_BLOCK_KINDS = [
+  "markdown",
+  "bound-table",
+  "metric",
+  "date-range",
+  "chart",
+  "goal-progress",
+  "deadline",
+] as const;
+export type PageBlockKind = (typeof PAGE_BLOCK_KINDS)[number];
+
+export const METRIC_AGGS = ["sum", "count", "last"] as const;
+export type MetricAgg = (typeof METRIC_AGGS)[number];
+
+export const CHART_TYPES = ["bar", "line"] as const;
+export type ChartType = (typeof CHART_TYPES)[number];
+
+export type PageBlock =
+  | { id: string; kind: "markdown"; markdown: string }
+  | { id: string; kind: "bound-table"; databaseId: string }
+  | {
+      id: string;
+      kind: "metric";
+      databaseId: string;
+      columnId: string;
+      agg: MetricAgg;
+      convertToZar?: boolean;
+    }
+  | { id: string; kind: "date-range"; start: string | null; end: string | null }
+  | {
+      id: string;
+      kind: "chart";
+      chartType: ChartType;
+      databaseId: string;
+      xColumnId: string;
+      yColumnId: string;
+    }
+  | { id: string; kind: "goal-progress" }
+  | { id: string; kind: "deadline" };
+
+export type PageRecord = {
+  id: string;
+  domainSlug: string;
+  title: string;
+  blocks: PageBlock[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PageListEntry = {
+  domainSlug: string;
+  page: PageRecord;
+};
+
+export const SYSTEM_PIN_KINDS = [
+  "goal-progress",
+  "deadline",
+  "today-week",
+  "pending-decisions",
+  "recent-log",
+  "doctrine-progress",
+] as const;
+export type SystemPinKind = (typeof SYSTEM_PIN_KINDS)[number];
+
+export type Pin =
+  | { id: string; kind: "system"; system: SystemPinKind }
+  | { id: string; kind: "page"; domainSlug: string; pageId: string };
+
+export type PinBoard = {
+  schemaVersion: 1;
+  pins: Pin[];
+};
+
+export type PageWriteResult =
+  | { applied: true; page: PageRecord }
+  | { applied: false; decision: DecisionRecord };
+
+export type PinWriteResult =
+  | { applied: true; pins: Pin[] }
+  | { applied: false; decision: DecisionRecord };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 

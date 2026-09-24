@@ -5,8 +5,10 @@ import {
   createDatabase,
   createDecision,
   createDomain,
+  createPage,
   createSignal,
   createVault,
+  deletePage,
   deleteRow,
   deleteSignal,
   dismissAgent,
@@ -15,6 +17,7 @@ import {
   ensureReview,
   getDatabase,
   getDocument,
+  getPage,
   getPeriodPack,
   getReview,
   getRow,
@@ -27,6 +30,8 @@ import {
   listAgents,
   listDatabases,
   listDecisions,
+  listPages,
+  listPins,
   listRows,
   listSignals,
   markReviewDone,
@@ -39,8 +44,10 @@ import {
   saveDocumentMedia,
   setDocumentLocked,
   setLibraryLocked,
+  setPins,
   unlockReview,
   updateDomain,
+  updatePage,
   updateSettings,
   updateSignal,
   upsertRow,
@@ -375,6 +382,42 @@ export async function dbFileSave(
   input: { bytes: Uint8Array; mime: string; name: string },
 ): Promise<Result<{ relPath: string; fileId: string }>> {
   return withVault((root) => saveDatabaseFile(root, slug, input));
+}
+
+// KAR-60 pages and pins
+export async function pageList(domainSlug: string | null): Promise<Result<import("@lifequest/vault-core").PageListEntry[]>> {
+  return withVault((root) => listPages(root, domainSlug));
+}
+
+export async function pageGet(slug: string, pageId: string): Promise<Result<import("@lifequest/vault-core").PageRecord>> {
+  return withVault((root) => getPage(root, slug, pageId));
+}
+
+export async function pageCreate(slug: string, input: { title: string }): Promise<Result<import("@lifequest/vault-core").PageRecord>> {
+  return withVault((root) => createPage(root, slug, input));
+}
+
+export async function pageUpdate(
+  slug: string,
+  pageId: string,
+  input: { title?: string; blocks?: import("@lifequest/vault-core").PageBlock[] },
+): Promise<Result<import("@lifequest/vault-core").PageWriteResult>> {
+  return withVault((root) => updatePage(root, slug, pageId, input, USER_ACTOR));
+}
+
+export async function pageDelete(slug: string, pageId: string): Promise<Result<{ id: string }>> {
+  return withVault((root) => deletePage(root, slug, pageId));
+}
+
+export async function pinsList(domainSlug: string | null): Promise<Result<import("@lifequest/vault-core").Pin[]>> {
+  return withVault((root) => listPins(root, domainSlug));
+}
+
+export async function pinsSet(
+  domainSlug: string | null,
+  pins: import("@lifequest/vault-core").Pin[],
+): Promise<Result<import("@lifequest/vault-core").PinWriteResult>> {
+  return withVault((root) => setPins(root, domainSlug, pins, USER_ACTOR));
 }
 
 export async function documentGet(

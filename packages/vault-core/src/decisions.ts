@@ -46,7 +46,9 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     "type" in explicitTarget &&
     (isDoctrineExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isLibraryExplicitTarget(explicitTarget as Record<string, unknown>) ||
-      isReviewExplicitTarget(explicitTarget as Record<string, unknown>))
+      isReviewExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isPageExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isPinsExplicitTarget(explicitTarget as Record<string, unknown>))
   ) {
     const t = explicitTarget as Record<string, unknown>;
     if (t.type === "review") {
@@ -57,6 +59,14 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
         domainSlug: String(t.domainSlug),
         kind: String(t.kind) as DocumentKind,
       };
+    } else if (t.type === "page") {
+      target = {
+        type: "page",
+        domainSlug: String(t.domainSlug),
+        pageId: String(t.pageId),
+      };
+    } else if (t.type === "pins") {
+      target = { type: "pins", domainSlug: t.domainSlug === null ? null : String(t.domainSlug) };
     } else {
       target = { type: "library", id: String(t.id) };
     }
@@ -71,12 +81,16 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     target = { type: "doctrine", domainSlug: "", kind: "why" };
   }
 
-  // domainSlugs: array of strings if present, else doctrine [domainSlug], else [].
+  // domainSlugs: array of strings if present, else doctrine/page/pins [domainSlug], else [].
   let domainSlugs: string[];
   if (Array.isArray(raw.domainSlugs) && raw.domainSlugs.every((s) => typeof s === "string")) {
     domainSlugs = raw.domainSlugs as string[];
   } else if (target.type === "doctrine") {
     domainSlugs = [target.domainSlug];
+  } else if (target.type === "page") {
+    domainSlugs = [target.domainSlug];
+  } else if (target.type === "pins") {
+    domainSlugs = target.domainSlug ? [target.domainSlug] : [];
   } else {
     domainSlugs = [];
   }
@@ -144,6 +158,22 @@ function isReviewExplicitTarget(raw: Record<string, unknown>): boolean {
     isReviewCadence(raw.cadence) &&
     typeof raw.period === "string" &&
     raw.period.length > 0
+  );
+}
+
+function isPageExplicitTarget(raw: Record<string, unknown>): boolean {
+  return (
+    raw.type === "page" &&
+    typeof raw.domainSlug === "string" &&
+    typeof raw.pageId === "string" &&
+    raw.pageId.length > 0
+  );
+}
+
+function isPinsExplicitTarget(raw: Record<string, unknown>): boolean {
+  return (
+    raw.type === "pins" &&
+    (raw.domainSlug === null || typeof raw.domainSlug === "string")
   );
 }
 
@@ -215,6 +245,15 @@ export async function createDecision(
       if (!input.target.period.trim()) {
         return { ok: false, error: "period is required" };
       }
+    } else if (input.target.type === "page") {
+      if (!input.target.domainSlug.trim()) {
+        return { ok: false, error: "domainSlug is required" };
+      }
+      if (!input.target.pageId.trim()) {
+        return { ok: false, error: "pageId is required" };
+      }
+    } else if (input.target.type === "pins") {
+      // domainSlug null = overview, or a string. Both valid.
     } else {
       return { ok: false, error: "Invalid target type" };
     }
@@ -231,7 +270,7 @@ export async function createDecision(
       return { ok: false, error: "proposedBodyMarkdown is required" };
     }
 
-    // Load the target and confirm it is locked.
+    // Load the target and confirm it is locked (pages/pins are NOT lockable).
     let docLocked: boolean;
     let domainSlugForLog: string | null = null;
     let libraryNote: { value: { domainSlugs: string[] } } | null = null;
@@ -256,6 +295,17 @@ export async function createDecision(
           error: "Review must be locked before proposing a change",
         };
       }
+    } else if (input.target.type === "page") {
+      // Pages are not lockable. Verify the page exists.
+      const { getPage } = await import("./pages.ts");
+      const pageRes = await getPage(rootPath, input.target.domainSlug, input.target.pageId);
+      if (!pageRes.ok) return pageRes;
+      docLocked = false;
+      domainSlugForLog = input.target.domainSlug;
+    } else if (input.target.type === "pins") {
+      // Pins are not lockable. Target is always valid for live domain / overview.
+      docLocked = false;
+      domainSlugForLog = input.target.domainSlug;
     } else {
       const noteRes = await libraryGet(rootPath, input.target.id);
       if (!noteRes.ok) return noteRes;
@@ -273,9 +323,15 @@ export async function createDecision(
     const domainSlugs: string[] =
       input.target.type === "doctrine"
         ? [input.target.domainSlug]
-        : input.target.type === "review"
-          ? []
-          : libraryNote!.value.domainSlugs;
+        : input.target.type === "page"
+          ? [input.target.domainSlug]
+          : input.target.type === "pins"
+            ? input.target.domainSlug
+              ? [input.target.domainSlug]
+              : []
+            : input.target.type === "review"
+              ? []
+              : libraryNote!.value.domainSlugs;
 
     const title = `Proposed change to ${documentTargetLabel(
       input.target,
@@ -334,6 +390,51 @@ async function applyApprovedBody(
         decision.proposedBodyMarkdown,
       );
       if (!res.ok) return { ok: false, error: res.error };
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "page") {
+      const { getPage, updatePage } = await import("./pages.ts");
+      const { USER_ACTOR } = await import("./types.ts");
+      const pageRes = await getPage(rootPath, decision.target.domainSlug, decision.target.pageId);
+      if (!pageRes.ok) return pageRes;
+      const existing = pageRes.value;
+      const now = new Date().toISOString();
+      const nextTitle = decision.proposedTitle !== null ? decision.proposedTitle : existing.title;
+      // Parse proposedBodyMarkdown as JSON { title, blocks }
+      let blocks = existing.blocks;
+      try {
+        const parsed = JSON.parse(decision.proposedBodyMarkdown);
+        if (parsed && typeof parsed === "object" && Array.isArray(parsed.blocks)) {
+          blocks = parsed.blocks;
+        }
+      } catch {
+        // If not valid JSON, keep existing blocks
+      }
+      const updateRes = await updatePage(
+        rootPath,
+        decision.target.domainSlug,
+        decision.target.pageId,
+        { title: nextTitle, blocks },
+        USER_ACTOR,
+      );
+      if (!updateRes.ok) return updateRes;
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "pins") {
+      const { setPins, defaultPins } = await import("./pins.ts");
+      const { USER_ACTOR } = await import("./types.ts");
+      // Parse proposedBodyMarkdown as JSON { pins }
+      let pins = defaultPins();
+      try {
+        const parsed = JSON.parse(decision.proposedBodyMarkdown);
+        if (parsed && typeof parsed === "object" && Array.isArray(parsed.pins)) {
+          pins = parsed.pins;
+        }
+      } catch {
+        // If not valid JSON, fall back to defaults
+      }
+      const setRes = await setPins(rootPath, decision.target.domainSlug, pins, USER_ACTOR);
+      if (!setRes.ok) return setRes;
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "doctrine") {

@@ -15,33 +15,42 @@ function read(relFromDesktop: string): string {
 
 describe("Home deadline banner (KAR-15)", () => {
   it("uses deadlinePressureGoals and filterByLens for pressure goals", () => {
+    const banner = read("src/pages/home-pins/DeadlineBanner.tsx");
     const home = read("src/pages/HomePage.tsx");
-    assert.match(home, /deadlinePressureGoals/);
-    assert.match(home, /filterByLens/);
-    assert.match(home, /useDomainLens/);
+    assert.match(banner, /deadlinePressureGoals/);
+    assert.match(banner, /filterByLens/);
+    assert.match(banner, /useDomainLens/);
+    assert.match(home, /DeadlineBanner/);
   });
 
   it("renders a quiet status banner above the dashboard grid", () => {
-    const home = read("src/pages/HomePage.tsx");
-    assert.match(home, /role=["']status["']/);
-    assert.match(home, /deadline/);
-    assert.match(home, /Dismiss/);
+    const banner = read("src/pages/home-pins/DeadlineBanner.tsx");
+    assert.match(banner, /role=["']status["']/);
+    assert.match(banner, /deadline/);
+    assert.match(banner, /Dismiss/);
   });
 
   it("has a dismiss IPC call that writes today's date for this vault", () => {
-    const home = read("src/pages/HomePage.tsx");
-    assert.match(home, /api\(\)\./);
-    assert.match(home, /deadlineDismiss/);
+    const banner = read("src/pages/home-pins/DeadlineBanner.tsx");
+    assert.match(banner, /api\(\)\./);
+    assert.match(banner, /deadlineDismiss/);
   });
 
   it("does not add streaks, points, XP, celebration, scoreboard, or email", () => {
     const home = read("src/pages/HomePage.tsx");
+    const banner = read("src/pages/home-pins/DeadlineBanner.tsx");
     assert.equal(/streak/i.test(home), false);
     assert.equal(/\bpoints\b/i.test(home), false);
-    assert.equal(/xp\b/i.test(home), false);
+    assert.equal(/\bxp\b/i.test(home), false);
     assert.equal(/celebration/i.test(home), false);
     assert.equal(/scoreboard/i.test(home), false);
     assert.equal(/email/i.test(home), false);
+    assert.equal(/streak/i.test(banner), false);
+    assert.equal(/\bpoints\b/i.test(banner), false);
+    assert.equal(/\bxp\b/i.test(banner), false);
+    assert.equal(/celebration/i.test(banner), false);
+    assert.equal(/scoreboard/i.test(banner), false);
+    assert.equal(/email/i.test(banner), false);
   });
 
   it("ChatPanel.tsx has no new nag or deadline copy", () => {

@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Clock,
   Database,
+  FileStack,
   FileText,
   Goal,
   Home,
@@ -31,7 +32,7 @@ export type NavItem = {
   pin?: "top" | "bottom";
 };
 
-/** Top: Life-Chain, Decisions. Home: Dashboard, Personnel. Vision: Dream, Documents. Plan: Goals, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
+/** Top: Life-Chain, Decisions. Home: Dashboard, Data, Pages, Personnel. Vision: Dream, Documents. Plan: Goals, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -62,6 +63,14 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/data",
     label: "Data",
     icon: Database,
+    section: "main",
+    wing: "home",
+  },
+  {
+    id: "pages",
+    href: "/pages",
+    label: "Pages",
+    icon: FileStack,
     section: "main",
     wing: "home",
   },

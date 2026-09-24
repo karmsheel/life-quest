@@ -39,8 +39,10 @@ describe("Life log actor", () => {
 describe("Home and Act lock copy", () => {
   it("Home and Act say locked not forged", () => {
     const home = read("src/pages/HomePage.tsx");
-    assert.match(home, /locked/);
+    const doctrine = read("src/pages/home-pins/DoctrineCard.tsx");
+    assert.match(doctrine, /locked/);
     assert.equal(/forged/i.test(home), false);
+    assert.equal(/forged/i.test(doctrine), false);
     const act = read("src/pages/ActPage.tsx");
     assert.match(act, /not locked/);
     assert.equal(/forged/i.test(act), false);

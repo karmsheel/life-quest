@@ -17,6 +17,8 @@ import ChainPage from "@/pages/ChainPage";
 import ChartPage from "@/pages/ChartPage";
 import DataPage from "@/pages/DataPage";
 import DatabasePage from "@/pages/DatabasePage";
+import PagesPage from "@/pages/PagesPage";
+import PageCanvasPage from "@/pages/PageCanvasPage";
 import DecisionsPage from "@/pages/DecisionsPage";
 import DocumentsPage from "@/pages/DocumentsPage";
 import DreamPage from "@/pages/DreamPage";
@@ -73,6 +75,8 @@ function AppRoutes() {
         <Route path="/home" element={<HomePage />} />
         <Route path="/data" element={<DataPage />} />
         <Route path="/data/:slug/:dbId" element={<DatabasePage />} />
+        <Route path="/pages" element={<PagesPage />} />
+        <Route path="/pages/:slug/:pageId" element={<PageCanvasPage />} />
         <Route
           path="/domains"
           element={<Navigate to="/settings?tab=domains" replace />}

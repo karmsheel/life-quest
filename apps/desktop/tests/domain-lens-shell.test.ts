@@ -77,22 +77,19 @@ describe("lens filtering", () => {
 
   it("Home, Log, Act, Personnel, and Decisions use recordVisible", () => {
     for (const file of [
-      "src/pages/HomePage.tsx",
+      "src/pages/home-pins/DoctrineCard.tsx",
+      "src/pages/home-pins/GoalProgressCard.tsx",
+      "src/pages/home-pins/DeadlineBanner.tsx",
       "src/pages/ActPage.tsx",
       "src/components/log/LifeLogFeed.tsx",
       "src/components/personnel/PersonnelStudio.tsx",
       "src/components/decisions/DecisionsInbox.tsx",
     ]) {
       const src = read(file);
-      assert.match(src, /recordVisible/, file);
+      assert.match(src, /recordVisible|filterByLens/, file);
     }
     const home = read("src/pages/HomePage.tsx");
-    assert.match(
-      home,
-      /\/dream\/\$\{slug\}\/\$\{kind\}|\/dream\/\$\{.*\}\/what|\/dream\/.+\/what/,
-    );
     assert.equal(home.includes('href: "/chart"'), false);
-    assert.match(home, /to=["']\/dream["']/);
     assert.equal(home.includes('to="/documents"'), false);
     assert.equal(home.includes("rowLocked"), false);
     assert.equal(home.includes("is-locked"), false);

@@ -19,7 +19,13 @@ import type {
   LifeEvent,
   MapCommand,
   MapStoreState,
+  PageBlock,
+  PageListEntry,
+  PageRecord,
+  PageWriteResult,
   PeriodPack,
+  Pin,
+  PinWriteResult,
   PlanningStub,
   Result,
   ReviewCadence,
@@ -270,6 +276,17 @@ type LifequestApi = {
     mime: string;
     name: string;
   }) => Promise<Result<{ relPath: string; fileId: string }>>;
+  // KAR-60 pages and pins
+  pageList: (domainSlug: string | null) => Promise<Result<PageListEntry[]>>;
+  pageGet: (slug: string, pageId: string) => Promise<Result<PageRecord>>;
+  pageCreate: (slug: string, input: { title: string }) => Promise<Result<PageRecord>>;
+  pageUpdate: (slug: string, pageId: string, input: {
+    title?: string;
+    blocks?: PageBlock[];
+  }) => Promise<Result<PageWriteResult>>;
+  pageDelete: (slug: string, pageId: string) => Promise<Result<{ id: string }>>;
+  pinsList: (domainSlug: string | null) => Promise<Result<Pin[]>>;
+  pinsSet: (domainSlug: string | null, pins: Pin[]) => Promise<Result<PinWriteResult>>;
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => () => void;
   windowChrome: {
     get: () => Promise<{ overlay: boolean; platform: string }>;

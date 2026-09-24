@@ -49,6 +49,22 @@ const lifequest = {
   dbFileSave: (slug: string, input: { bytes: Uint8Array; mime: string; name: string }) =>
     ipcRenderer.invoke("db:fileSave", slug, input) as Promise<Result<unknown>>,
 
+  // KAR-60 pages and pins
+  pageList: (domainSlug: string | null) =>
+    ipcRenderer.invoke("page:list", domainSlug) as Promise<Result<unknown>>,
+  pageGet: (slug: string, pageId: string) =>
+    ipcRenderer.invoke("page:get", slug, pageId) as Promise<Result<unknown>>,
+  pageCreate: (slug: string, input: { title: string }) =>
+    ipcRenderer.invoke("page:create", slug, input) as Promise<Result<unknown>>,
+  pageUpdate: (slug: string, pageId: string, input: { title?: string; blocks?: unknown[] }) =>
+    ipcRenderer.invoke("page:update", slug, pageId, input) as Promise<Result<unknown>>,
+  pageDelete: (slug: string, pageId: string) =>
+    ipcRenderer.invoke("page:delete", slug, pageId) as Promise<Result<unknown>>,
+  pinsList: (domainSlug: string | null) =>
+    ipcRenderer.invoke("pins:list", domainSlug) as Promise<Result<unknown>>,
+  pinsSet: (domainSlug: string | null, pins: unknown[]) =>
+    ipcRenderer.invoke("pins:set", domainSlug, pins) as Promise<Result<unknown>>,
+
   documentGet: (slug: string, kind: string) =>
     ipcRenderer.invoke("document:get", slug, kind) as Promise<Result<unknown>>,
   documentSave: (

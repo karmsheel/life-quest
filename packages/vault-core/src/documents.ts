@@ -34,6 +34,8 @@ export function documentTargetLabel(
 ): string {
   if (target.type === "doctrine") return DOCUMENT_KIND_LABELS[target.kind];
   if (target.type === "review") return periodTitle(target.cadence, target.period, "monday");
+  if (target.type === "page") return fallbackTitle || "Page";
+  if (target.type === "pins") return target.domainSlug ? `${target.domainSlug} pins` : "Overview pins";
   return fallbackTitle;
 }
 

@@ -92,4 +92,16 @@ export {
   ensureVaultDatabaseGitignore,
   invalidateDomainCache,
 } from "./domain-databases.ts";
+export {
+  listPages,
+  getPage,
+  createPage,
+  updatePage,
+  deletePage,
+} from "./pages.ts";
+export {
+  listPins,
+  setPins,
+  defaultPins,
+} from "./pins.ts";
 export type { MapStoreState, MapCommand, MapActor, MapDomainError, YearRecord, MapEvent, Task, TaskColumn, ColorId, DayType, DetachedWeek, ResolvedWeek } from "./map/public.ts";

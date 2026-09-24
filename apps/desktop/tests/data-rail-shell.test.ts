@@ -117,10 +117,10 @@ describe("data rail shell wiring", () => {
     }
   });
 
-  it("source does not add a Pages nav item or /pages route", () => {
+  it("source does add a Pages nav item and /pages route (KAR-60)", () => {
     const navItems = read("src/components/shell/nav-items.ts");
     const app = read("src/App.tsx");
-    assert.ok(!navItems.includes('id: "pages"'), "should not have pages nav item");
-    assert.ok(!app.includes('path="/pages"'), "should not have /pages route");
+    assert.ok(navItems.includes('id: "pages"'), "should have pages nav item");
+    assert.ok(app.includes('path="/pages"'), "should have /pages route");
   });
 });

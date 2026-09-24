@@ -130,6 +130,15 @@ function registerIpcHandlers() {
   ipcMain.handle("db:deleteRow", (_e, slug: string, dbId: string, rowId: string) => vault.dbDeleteRow(slug, dbId, rowId));
   ipcMain.handle("db:fileSave", (_e, slug: string, input: { bytes: Uint8Array; mime: string; name: string }) => vault.dbFileSave(slug, input));
 
+  // KAR-60 pages and pins
+  ipcMain.handle("page:list", (_e, domainSlug: string | null) => vault.pageList(domainSlug));
+  ipcMain.handle("page:get", (_e, slug: string, pageId: string) => vault.pageGet(slug, pageId));
+  ipcMain.handle("page:create", (_e, slug: string, input: { title: string }) => vault.pageCreate(slug, input));
+  ipcMain.handle("page:update", (_e, slug: string, pageId: string, input: { title?: string; blocks?: Parameters<typeof vault.pageUpdate>[2]["blocks"] }) => vault.pageUpdate(slug, pageId, input));
+  ipcMain.handle("page:delete", (_e, slug: string, pageId: string) => vault.pageDelete(slug, pageId));
+  ipcMain.handle("pins:list", (_e, domainSlug: string | null) => vault.pinsList(domainSlug));
+  ipcMain.handle("pins:set", (_e, domainSlug: string | null, pins: Parameters<typeof vault.pinsSet>[1]) => vault.pinsSet(domainSlug, pins));
+
   ipcMain.handle(
     "document:get",
     (_e, slug: string, kind: Parameters<typeof vault.documentGet>[1]) =>

@@ -54,6 +54,8 @@ describe("wingForPath", () => {
     assert.equal(wingForPath("/dream/health/what"), "vision");
     assert.equal(wingForPath("/track/health/how"), "plan");
     assert.equal(wingForPath("/data/health/abc"), "home");
+    assert.equal(wingForPath("/pages"), "home");
+    assert.equal(wingForPath("/pages/health/abc"), "home");
   });
 
   it("returns null for pinned and unknown paths", () => {
@@ -218,7 +220,7 @@ describe("NAV_ITEMS wings", () => {
   it("assigns Home, Vision, Plan, Execute, Review, and pinned items", () => {
     assert.deepEqual(
       NAV_ITEMS.filter((i) => i.wing === "home").map((i) => i.id),
-      ["dashboard", "data", "personnel"],
+      ["dashboard", "data", "pages", "personnel"],
     );
     assert.deepEqual(
       NAV_ITEMS.filter((i) => i.wing === "vision").map((i) => i.id),
