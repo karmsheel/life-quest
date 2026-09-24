@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
+import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import type { WeekStartDay } from "@lifequest/vault-core/pure";
 
@@ -13,8 +14,7 @@ const WEEK_START_OPTIONS = [
 ];
 
 export function SettingsVault() {
-  const { snapshot, updateSettings, dbExportBooks, dbRestoreBooks } =
-    useVault();
+  const { snapshot, updateSettings } = useVault();
   const [weekStartError, setWeekStartError] = useState<string | null>(null);
   const [exportMessages, setExportMessages] = useState<Record<string, string>>(
     {},
@@ -45,7 +45,7 @@ export function SettingsVault() {
   async function onExportBooks(slug: string) {
     const domain = snapshot?.domains.find((d) => d.slug === slug);
     const domainName = domain?.meta.name ?? slug;
-    const res = await dbExportBooks(slug);
+    const res = await api().dbExportBooks(slug);
     if (res.ok) {
       setExportMessages((prev) => ({
         ...prev,
@@ -66,64 +66,63 @@ export function SettingsVault() {
       return;
     }
     setRestoreError(null);
-    const res = await dbRestoreBooks(slug, { confirm: true });
+    const res = await api().dbRestoreBooks(slug, { confirm: true });
     if (!res.ok) {
       setRestoreError(res.error);
-    } else {
-      setRestoreError(null);
     }
   }
 
   return (
-    <SettingsSection
-      icon={<Building2 size={16} />}
-      title="Vault"
-      subtitle="Identity and location on disk"
-    >
-      <dl className="settings-vault">
-        <div>
-          <dt className="muted">Name</dt>
-          <dd>{lifequest.name}</dd>
-        </div>
-        <div>
-          <dt className="muted">Id</dt>
-          <dd className="settings-vault__mono">{lifequest.id}</dd>
-        </div>
-        <div>
-          <dt className="muted">Path</dt>
-          <dd className="settings-vault__mono">{rootPath}</dd>
-        </div>
-      </dl>
-      <SettingsRow
-        label="Week starts on"
-        description={
-          weekStartError ??
-          "Cannot change while weekly review or planning files exist."
-        }
-        action={
-          <SegmentedControl
-            value={weekStartDay}
-            options={WEEK_START_OPTIONS}
-            ariaLabel="Week starts on"
-            onChange={onWeekStartChange}
-            disabled={weekStartDisabled}
-          />
-        }
-      />
-      <SettingsRow
-        label="Books"
-        description="Export or restore domain database books as JSON"
+    <>
+      <SettingsSection
+        icon={<Building2 size={16} />}
+        title="Vault"
+        subtitle="Identity and location on disk"
       >
-        <div className="settings-vault__books">
-          {snapshot.domains
-            .filter((d) => !d.meta.archivedAt)
-            .map((domain) => (
-              <div key={domain.slug} className="settings-vault__books-domain">
-                <div className="settings-vault__books-domain-name">
-                  <Database size={14} aria-hidden />
-                  {domain.meta.name}
-                </div>
-                <div className="settings-vault__books-actions">
+        <dl className="settings-vault">
+          <div>
+            <dt className="muted">Name</dt>
+            <dd>{lifequest.name}</dd>
+          </div>
+          <div>
+            <dt className="muted">Id</dt>
+            <dd className="settings-vault__mono">{lifequest.id}</dd>
+          </div>
+          <div>
+            <dt className="muted">Path</dt>
+            <dd className="settings-vault__mono">{rootPath}</dd>
+          </div>
+        </dl>
+        <SettingsRow
+          label="Week starts on"
+          description={
+            weekStartError ??
+            "Cannot change while weekly review or planning files exist."
+          }
+          action={
+            <SegmentedControl
+              value={weekStartDay}
+              options={WEEK_START_OPTIONS}
+              ariaLabel="Week starts on"
+              onChange={onWeekStartChange}
+              disabled={weekStartDisabled}
+            />
+          }
+        />
+      </SettingsSection>
+      <SettingsSection
+        icon={<Database size={16} />}
+        title="Books"
+        subtitle="Export a git-portable JSON of domain tables. Restore replaces the live SQLite book from books.json."
+      >
+        {snapshot.domains
+          .filter((d) => !d.meta.archivedAt)
+          .map((domain) => (
+            <SettingsRow
+              key={domain.slug}
+              label={domain.meta.name}
+              action={
+                <div>
                   <Button
                     type="button"
                     variant="outline"
@@ -131,7 +130,7 @@ export function SettingsVault() {
                   >
                     Export books
                   </Button>
-                  <label className="settings-vault__books-confirm">
+                  <label>
                     <input
                       type="checkbox"
                       checked={restoreConfirm[domain.slug] ?? false}
@@ -142,7 +141,8 @@ export function SettingsVault() {
                         }))
                       }
                     />
-                    Restore (replaces live SQLite book from books.json)
+                    Restore replaces the live SQLite book for this domain from
+                    books.json
                   </label>
                   <Button
                     type="button"
@@ -152,27 +152,27 @@ export function SettingsVault() {
                   >
                     Restore books
                   </Button>
+                  {exportMessages[domain.slug] ? (
+                    <p
+                      className={
+                        exportMessages[domain.slug].startsWith("Exported")
+                          ? "muted"
+                          : "form-error"
+                      }
+                    >
+                      {exportMessages[domain.slug]}
+                    </p>
+                  ) : null}
                 </div>
-                {exportMessages[domain.slug] ? (
-                  <p
-                    className={
-                      exportMessages[domain.slug].startsWith("Exported")
-                        ? "muted"
-                        : "form-error"
-                    }
-                  >
-                    {exportMessages[domain.slug]}
-                  </p>
-                ) : null}
-              </div>
-            ))}
-          {restoreError ? (
-            <p className="form-error" role="alert">
-              {restoreError}
-            </p>
-          ) : null}
-        </div>
-      </SettingsRow>
-    </SettingsSection>
+              }
+            />
+          ))}
+        {restoreError ? (
+          <p className="form-error" role="alert">
+            {restoreError}
+          </p>
+        ) : null}
+      </SettingsSection>
+    </>
   );
 }

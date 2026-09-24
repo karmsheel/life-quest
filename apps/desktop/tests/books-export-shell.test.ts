@@ -42,6 +42,14 @@ describe("books-export IPC wiring", () => {
     assert.match(src, /confirm/i);
     assert.match(src, /checkbox/i);
     assert.match(src, /Restore/i);
+    assert.match(src, /title=["']Books["']/);
+    assert.match(src, /api\(\)\.dbExportBooks/);
+    assert.match(src, /api\(\)\.dbRestoreBooks/);
+    // SettingsRow ignores children; Books controls must be the action prop.
+    assert.match(
+      src,
+      /title=["']Books["'][\s\S]*<SettingsRow[\s\S]*action=\{/,
+    );
   });
 
   it("Restore is not invoked on render (no unguarded dbRestoreBooks call)", () => {

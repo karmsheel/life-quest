@@ -103,6 +103,8 @@ describe("books-export", () => {
     if (!after.ok) return;
     assert.equal(after.value.length, 1);
     assert.equal(after.value[0].id, upserted.value.id);
+    assert.equal(after.value[0].createdAt, upserted.value.createdAt);
+    assert.equal(after.value[0].updatedAt, upserted.value.updatedAt);
     assert.deepEqual(after.value[0].cells, { [colId]: "hello" });
   });
 

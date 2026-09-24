@@ -8,12 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type {
-  DomainBooksExport,
-  Result,
-  VaultSettings,
-  VaultSnapshot,
-} from "@lifequest/vault-core";
+import type { Result, VaultSettings, VaultSnapshot } from "@lifequest/vault-core";
 import {
   domainLens,
   lensSlug,
@@ -56,11 +51,6 @@ export type VaultContextValue = {
   openRecent: (path: string) => Promise<boolean>;
   clearError: () => void;
   reloadRecent: () => Promise<void>;
-  dbExportBooks: (slug: string) => Promise<Result<DomainBooksExport>>;
-  dbRestoreBooks: (
-    slug: string,
-    options: { confirm: boolean },
-  ) => Promise<Result<{ databases: number; rows: number }>>;
 };
 
 const VaultContext = createContext<VaultContextValue | null>(null);
@@ -308,38 +298,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [applySnapshot, bumpReloadGeneration, reloadRecent, setLens],
   );
 
-  const dbExportBooks = useCallback(
-    async (slug: string): Promise<Result<DomainBooksExport>> => {
-      try {
-        const result = await api().dbExportBooks(slug);
-        return result;
-      } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
-        return { ok: false, error };
-      }
-    },
-    [],
-  );
-
-  const dbRestoreBooks = useCallback(
-    async (
-      slug: string,
-      options: { confirm: boolean },
-    ): Promise<Result<{ databases: number; rows: number }>> => {
-      try {
-        const result = await api().dbRestoreBooks(slug, options);
-        if (result.ok) {
-          await refresh();
-        }
-        return result;
-      } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
-        return { ok: false, error };
-      }
-    },
-    [refresh],
-  );
-
   const value = useMemo<VaultContextValue>(
     () => ({
       snapshot,
@@ -361,8 +319,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       openRecent,
       clearError,
       reloadRecent,
-      dbExportBooks,
-      dbRestoreBooks,
     }),
     [
       snapshot,
@@ -384,8 +340,6 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       openRecent,
       clearError,
       reloadRecent,
-      dbExportBooks,
-      dbRestoreBooks,
     ],
   );
 

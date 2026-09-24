@@ -10,22 +10,17 @@ import {
   type Result,
 } from "./types.ts";
 import {
-  getDatabase,
-  isDomainLive as _isDomainLive,
+  isDomainLive,
   listRows,
   readRegistry,
 } from "./domain-databases.ts";
-
-async function checkDomainLive(root: string, slug: string): Promise<boolean> {
-  return _isDomainLive(root, slug);
-}
 
 export async function exportDomainBooks(
   root: string,
   slug: string,
 ): Promise<Result<DomainBooksExport>> {
   try {
-    if (!(await checkDomainLive(root, slug))) {
+    if (!(await isDomainLive(root, slug))) {
       return { ok: false, error: `Domain not found or archived: ${slug}` };
     }
     const paths = vaultPaths(root);
@@ -36,7 +31,7 @@ export async function exportDomainBooks(
     for (const db of registry.databases) {
       const rowsRes = await listRows(root, slug, db.id);
       if (!rowsRes.ok) return rowsRes;
-      // Filter out ingest staging tables — only include non-ingest rows
+      // Registry databases only — ingest staging tables are not in registry.
       const rows: DatabaseRow[] = rowsRes.value;
       databases.push({
         id: db.id,
@@ -83,7 +78,7 @@ export async function restoreDomainBooks(
   }
 
   try {
-    if (!(await checkDomainLive(root, slug))) {
+    if (!(await isDomainLive(root, slug))) {
       return { ok: false, error: `Domain not found or archived: ${slug}` };
     }
     const paths = vaultPaths(root);
@@ -140,9 +135,6 @@ export async function restoreDomainBooks(
     // Read current registry (may have databases with no exported rows)
     const registryPath = paths.domainRegistry(slug);
     const registry = await readRegistry(registryPath);
-
-    // Build a set of exported database ids
-    const exportedDbIds = new Set(parsed.databases.map((db) => db.id));
 
     // For each exported db: ensure registry meta exists
     for (const exportedDb of parsed.databases) {

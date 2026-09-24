@@ -91,8 +91,6 @@ export {
   saveDatabaseFile,
   ensureVaultDatabaseGitignore,
   invalidateDomainCache,
-  isDomainLive,
-  readRegistry,
 } from "./domain-databases.ts";
 export {
   listPages,
