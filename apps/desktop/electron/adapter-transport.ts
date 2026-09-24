@@ -1,5 +1,11 @@
 import type { AdapterKind, AdapterTransport, Result, RemotePull } from "@lifequest/vault-core";
 
+const FETCH_TIMEOUT_MS = 15_000;
+
+function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+}
+
 // KAR-59 adapter transport — real HTTP lives only here.
 // Implements AdapterTransport from vault-core.
 
@@ -79,7 +85,7 @@ async function pullGoogleSheet(
   token: string,
 ): Promise<Result<RemotePull>> {
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/A1:ZZ`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
@@ -120,7 +126,7 @@ async function pushGoogleSheet(
 ): Promise<Result<true>> {
   // Find the row by external_id column, then update it
   const readUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/A1:ZZ`;
-  const readRes = await fetch(readUrl, {
+  const readRes = await fetchWithTimeout(readUrl, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!readRes.ok) {
@@ -148,7 +154,7 @@ async function pushGoogleSheet(
   const range = `A${rowIdx + 1}:${String.fromCharCode(65 + headers.length - 1)}${rowIdx + 1}`;
   const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${range}?valueInputOption=RAW`;
   const body = { values: [headers.map((h) => cells[h] ?? "")] };
-  const updateRes = await fetch(updateUrl, {
+  const updateRes = await fetchWithTimeout(updateUrl, {
     method: "PUT",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -169,7 +175,7 @@ async function pullNotion(
   token: string,
 ): Promise<Result<RemotePull>> {
   const url = `https://api.notion.com/v1/databases/${encodeURIComponent(databaseId)}/query`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -236,7 +242,7 @@ async function pushNotion(
 ): Promise<Result<true>> {
   // Find the page by external_id property
   const searchUrl = `https://api.notion.com/v1/databases/${encodeURIComponent(databaseId)}/query`;
-  const searchRes = await fetch(searchUrl, {
+  const searchRes = await fetchWithTimeout(searchUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -268,7 +274,7 @@ async function pushNotion(
   }
 
   const updateUrl = `https://api.notion.com/v1/pages/${encodeURIComponent(pageId)}`;
-  const updateRes = await fetch(updateUrl, {
+  const updateRes = await fetchWithTimeout(updateUrl, {
     method: "PATCH",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -289,7 +295,7 @@ async function deleteNotion(
   externalId: string,
 ): Promise<Result<true>> {
   const searchUrl = `https://api.notion.com/v1/databases/${encodeURIComponent(databaseId)}/query`;
-  const searchRes = await fetch(searchUrl, {
+  const searchRes = await fetchWithTimeout(searchUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -315,7 +321,7 @@ async function deleteNotion(
   const pageId = searchData.results[0]!.id;
 
   const archiveUrl = `https://api.notion.com/v1/pages/${encodeURIComponent(pageId)}`;
-  const archiveRes = await fetch(archiveUrl, {
+  const archiveRes = await fetchWithTimeout(archiveUrl, {
     method: "PATCH",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -333,7 +339,7 @@ async function deleteNotion(
 // ─── Operator URL ───
 
 async function pullUrl(url: string): Promise<Result<RemotePull>> {
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url);
   if (!res.ok) {
     return { ok: false, error: `URL fetch error: ${res.status}` };
   }
@@ -394,7 +400,7 @@ async function pushUrl(
   externalId: string,
   cells: Record<string, string>,
 ): Promise<Result<true>> {
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ externalId, cells }),
@@ -406,7 +412,7 @@ async function pushUrl(
 }
 
 async function deleteUrl(url: string, externalId: string): Promise<Result<true>> {
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ externalId }),

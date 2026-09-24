@@ -112,5 +112,10 @@ describe("adapter shell wiring (KAR-59)", () => {
     const acceptIdx = service.indexOf("acceptIngestRows");
     const syncIdx = service.indexOf("syncDatabase", acceptIdx);
     assert.ok(syncIdx > acceptIdx, "syncDatabase should appear after acceptIngestRows in ingestAccept");
+    const rejectIdx = service.indexOf("export async function ingestReject");
+    const body = service.slice(service.indexOf("export async function ingestAccept"), rejectIdx);
+    assert.match(body, /databaseId/);
+    assert.doesNotMatch(body, /postedIds\[0\]\s*\?\s*batchId/);
+    assert.doesNotMatch(body, /syncDatabase\([\s\S]*batchId/);
   });
 });

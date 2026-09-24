@@ -554,42 +554,59 @@ export async function syncDatabase(
         }
 
         if (remoteChanged && !localChanged) {
-          // Remote-only change: write remote into sqlite (linked-canonical)
-          if (db.sotMode === "linked-canonical") {
-            await upsertRow(root, slug, dbId, {
-              id: existingRowId,
-              cells: remoteCells as Record<string, unknown>,
-            });
+          if (db.sotMode === "local-canonical-mirror") {
+            const already = conflicts.conflicts.some(
+              (c) => c.databaseId === dbId && c.externalId === externalId,
+            );
+            if (!already) {
+              const fields = Object.keys(remoteCells).filter(
+                (colId) => JSON.stringify(remoteCells[colId]) !== JSON.stringify(localCells[colId]),
+              );
+              conflicts.conflicts.push({
+                id: randomUUID(),
+                databaseId: dbId,
+                externalId,
+                rowId: existingRowId,
+                localCells,
+                remoteCells,
+                fields: fields.length > 0 ? fields : Object.keys(remoteCells),
+                defaultChoice: "keep-local",
+              });
+            }
+            continue;
           }
+          const mergedCells = { ...localCells, ...remoteCells };
+          if (eidCol) mergedCells[eidCol.id] = externalId;
+          await upsertRow(root, slug, dbId, {
+            id: existingRowId,
+            cells: mergedCells,
+          });
           index.entries[existingRowId] = {
             externalId,
             rowId: existingRowId,
             lastSyncedRemote: remoteCells,
-            lastSyncedLocal: remoteCells,
+            lastSyncedLocal: mergedCells,
             updatedAt: new Date().toISOString(),
           };
           result.pulled += 1;
         } else if (localChanged && !remoteChanged) {
-          // Local-only change: push to remote (mirror)
-          if (db.sotMode === "local-canonical-mirror") {
-            const pushRes = await deps.transport.pushRow({
-              kind: db.adapter.kind,
-              bindingId: db.adapter.bindingId,
-              secret,
-              externalId,
-              cells: localCells as Record<string, string>,
-            });
-            if (pushRes.ok) {
-              result.pushed += 1;
-            }
-          }
-          index.entries[existingRowId] = {
+          const pushRes = await deps.transport.pushRow({
+            kind: db.adapter.kind,
+            bindingId: db.adapter.bindingId,
+            secret,
             externalId,
-            rowId: existingRowId,
-            lastSyncedRemote: remoteCells,
-            lastSyncedLocal: localCells,
-            updatedAt: new Date().toISOString(),
-          };
+            cells: localCells as Record<string, string>,
+          });
+          if (pushRes.ok) {
+            result.pushed += 1;
+            index.entries[existingRowId] = {
+              externalId,
+              rowId: existingRowId,
+              lastSyncedRemote: remoteCells,
+              lastSyncedLocal: localCells,
+              updatedAt: new Date().toISOString(),
+            };
+          }
         }
       } else {
         // New external id — insert
@@ -667,12 +684,11 @@ export async function syncDatabase(
     if (db.adapter.kind === "url" && pull.fx && typeof pull.fx.usdZarRate === "number" && Number.isFinite(pull.fx.usdZarRate) && pull.fx.asOf) {
       const registryPath = vaultPaths(root).domainRegistry("financial");
       const registry = await readJsonFile<{ finance?: { usdZarRate: number | null; usdZarAsOf: string | null } }>(registryPath, {});
-      if (!registry.finance) {
-        registry.finance = { usdZarRate: null, usdZarAsOf: null };
+      if (registry.finance) {
+        registry.finance.usdZarRate = pull.fx.usdZarRate;
+        registry.finance.usdZarAsOf = pull.fx.asOf;
+        await writeJsonFile(registryPath, registry);
       }
-      registry.finance.usdZarRate = pull.fx.usdZarRate;
-      registry.finance.usdZarAsOf = pull.fx.asOf;
-      await writeJsonFile(registryPath, registry);
     }
 
     // Save sync state

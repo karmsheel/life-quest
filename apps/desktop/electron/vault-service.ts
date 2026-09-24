@@ -396,23 +396,24 @@ export async function ingestEditRow(slug: string, batchId: string, rowId: string
 
 export async function ingestAccept(slug: string, batchId: string, rowIds?: string[]): Promise<Result<{ accepted: number; postedIds: string[] }>> {
   return withVault(async (root) => {
+    const batches = await listIngestBatches(root, slug);
+    const databaseId = batches.ok
+      ? batches.value.find((b) => b.id === batchId)?.databaseId
+      : undefined;
     const res = await acceptIngestRows(root, slug, batchId, rowIds);
-    // KAR-59: sync the database after accept (surface error without rolling back)
-    if (res.ok && currentRoot) {
+    // KAR-59: sync that database after accept. A sync failure does not roll back posted rows.
+    if (res.ok && databaseId) {
       try {
-        const dbId = res.value.postedIds[0] ? batchId : undefined;
-        if (dbId) {
-          const secretStore = {
-            get: (bindingId: string) => getAdapterSecret(bindingId),
-            put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
-            delete: (bindingId: string) => clearAdapterSecret(bindingId),
-          };
-          await syncDatabase(currentRoot, slug, dbId, {
-            secrets: secretStore,
-            transport: adapterTransport,
-            online: true,
-          });
-        }
+        const secretStore = {
+          get: (bindingId: string) => getAdapterSecret(bindingId),
+          put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
+          delete: (bindingId: string) => clearAdapterSecret(bindingId),
+        };
+        await syncDatabase(root, slug, databaseId, {
+          secrets: secretStore,
+          transport: adapterTransport,
+          online: true,
+        });
       } catch {
         // Sync failure does not roll back accept
       }

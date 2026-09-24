@@ -469,6 +469,59 @@ describe("adapters (KAR-59)", () => {
     assert.equal(decisionsAfter.value.length, countBefore);
   });
 
+  it("Linked-canonical local edit write-through pushes", async () => {
+    const root = await setupVault(dir, "write-through");
+    const db = await createDatabase(root, "health", { name: "Feed" });
+    assert.ok(db.ok);
+    if (!db.ok) return;
+
+    const meta = await makeColumns(root, db.value.id, ["external_id", "amount"], ["text", "number"]);
+    const eidColId = colId(meta, "external_id");
+    const amountColId = colId(meta, "amount");
+
+    const secrets = new MemorySecretStore();
+    const transport = new FakeTransport();
+
+    const linkRes = await linkDatabaseAdapter(root, "health", db.value.id, {
+      kind: "google-sheet",
+      bindingId: "sheet-1",
+      secret: "token",
+      sotMode: "linked-canonical",
+      actor: { type: "user" },
+    }, { secrets });
+    assert.ok(linkRes.ok);
+
+    const { upsertRow } = await import("../src/index.ts");
+    const seed = await upsertRow(root, "health", db.value.id, {
+      cells: { [eidColId]: "row:1", [amountColId]: 5 },
+    });
+    assert.ok(seed.ok);
+
+    transport.pulls.push({
+      columns: ["external_id", "amount"],
+      rows: [{ externalId: "row:1", cells: { external_id: "row:1", amount: "5" } }],
+    });
+    await syncDatabase(root, "health", db.value.id, { secrets, transport, online: true });
+    await approveMapping(root);
+    transport.pulls.push({
+      columns: ["external_id", "amount"],
+      rows: [{ externalId: "row:1", cells: { external_id: "row:1", amount: "5" } }],
+    });
+    await syncDatabase(root, "health", db.value.id, { secrets, transport, online: true });
+
+    await upsertRow(root, "health", db.value.id, {
+      id: seed.ok ? seed.value.id : undefined,
+      cells: { [eidColId]: "row:1", [amountColId]: 8 },
+    });
+    transport.pulls.push({
+      columns: ["external_id", "amount"],
+      rows: [{ externalId: "row:1", cells: { external_id: "row:1", amount: "5" } }],
+    });
+    const syncRes = await syncDatabase(root, "health", db.value.id, { secrets, transport, online: true });
+    assert.ok(syncRes.ok);
+    assert.equal(transport.pushCalls.length, 1);
+  });
+
   it("Mirror remote-only update is a conflict defaulting to keep local", async () => {
     const root = await setupVault(dir, "mirror-conflict");
     const db = await createDatabase(root, "health", { name: "Feed" });
@@ -512,14 +565,7 @@ describe("adapters (KAR-59)", () => {
     assert.ok(sync1.ok);
     await approveMapping(root);
 
-    // Local edit (not pushed yet)
-    const localEdit = await upsertRow(root, "health", db.value.id, {
-      id: seed.ok ? seed.value.id : undefined,
-      cells: { [eidColId]: "row:1", [amountColId]: 15 },
-    });
-    assert.ok(localEdit.ok);
-
-    // Remote also changed
+    // Remote-only change. Local amount stays 10.
     transport.pulls.push({
       columns: ["external_id", "amount"],
       rows: [{ externalId: "row:1", cells: { external_id: "row:1", amount: "99" } }],
@@ -538,7 +584,7 @@ describe("adapters (KAR-59)", () => {
     assert.ok(rows.ok);
     if (!rows.ok) return;
     assert.equal(rows.value.length, 1);
-    assert.equal(rows.value[0].cells[amountColId], 15);
+    assert.equal(rows.value[0].cells[amountColId], 10);
 
     // Conflict listed
     const conflicts = await listSyncConflicts(root, "health");
