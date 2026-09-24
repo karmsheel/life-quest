@@ -50,11 +50,8 @@ export default function HomePage() {
       setEvents(allEvents);
       setPins(pinsRes.ok ? (pinsRes.value as Pin[]) : []);
       setPages(pagesRes.ok ? (pagesRes.value as PageListEntry[]) : []);
-      // KAR-61 finance kit CTA
-      if (boardSlug) {
-        const kitRes = await api().kitList(boardSlug);
-        setInstalledKits(kitRes.ok ? (kitRes.value as string[]) : []);
-      }
+      const kitRes = await api().kitList("financial");
+      setInstalledKits(kitRes.ok ? (kitRes.value as string[]) : []);
     } catch {
       setDecisions([]);
       setEvents([]);
@@ -69,6 +66,14 @@ export default function HomePage() {
   }, [load, reloadGeneration]);
 
   const boardSlug = lens.kind === "domain" ? lens.slug : null;
+  const financialLive = (snapshot?.domains ?? []).some(
+    (d) => d.slug === "financial" && !d.meta.archivedAt,
+  );
+  const showFinanceInstall =
+    financialLive &&
+    installedKits !== null &&
+    !installedKits.includes("finance") &&
+    (lens.kind !== "domain" || lens.slug === "financial");
 
   function availableSystemKinds(): SystemPinKind[] {
     const onBoard = new Set(
@@ -225,14 +230,14 @@ export default function HomePage() {
         </div>
         </div>
 
-        {boardSlug && installedKits && !installedKits.includes("finance") && (
+        {showFinanceInstall ? (
         <div className="home-rail__finance-cta">
           <Button onClick={async () => {
             const res = await api().kitInstallFinance();
-            if (res.ok) window.location.reload();
+            if (res.ok) await load();
           }}>Install Finance kit</Button>
         </div>
-        )}
+        ) : null}
 
       {availableKinds.length > 0 || addablePages.length > 0 ? (
         <div className="home-pin-add">

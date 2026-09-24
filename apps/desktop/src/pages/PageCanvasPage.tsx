@@ -219,15 +219,19 @@ export default function PageCanvasPage() {
         const kits = kitRes.value as string[];
         setInstalledKits(kits);
         if (kits.includes("finance")) {
-          const rowsRes = await api().dbListRows(slug, "finance:assumption-sets");
+          const rowsRes = await api().dbListRows("financial", "finance:assumption-sets");
           if (rowsRes.ok) {
             setAssumptionSets((rowsRes.value as Array<{ id: string; cells: Record<string, unknown> }>).map((r) => ({
               id: r.id,
               name: String(r.cells.name ?? r.id),
             })));
           }
-        } else {
-          setInstalledKits(kits);
+          for (const dbId of ["finance:accounts", "finance:holdings", "finance:budgets"]) {
+            const extra = await api().dbListRows("financial", dbId);
+            if (extra.ok) {
+              setRowsByDb((prev) => ({ ...prev, [dbId]: extra.value as DatabaseRow[] }));
+            }
+          }
         }
       } else {
         setInstalledKits([]);

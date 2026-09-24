@@ -362,6 +362,10 @@ export async function createDecision(
       domainSlugForLog = input.target.domainSlug;
     } else if (input.target.type === "kit-install") {
       // Kit install is not lockable. Financial domain must be live.
+      const live = await isDomainLive(rootPath, "financial");
+      if (!live) {
+        return { ok: false, error: "Domain not found or archived: financial" };
+      }
       docLocked = false;
       domainSlugForLog = "financial";
     } else {

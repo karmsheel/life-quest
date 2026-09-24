@@ -19,8 +19,10 @@ describe("finance kit shell wiring (KAR-61)", () => {
     const homePage = read("src/pages/HomePage.tsx");
     assert.match(dataPage, /Install Finance kit/);
     assert.match(dataPage, /kitInstallFinance/);
+    assert.match(dataPage, /showFinanceInstall/);
     assert.match(homePage, /Install Finance kit/);
     assert.match(homePage, /kitInstallFinance/);
+    assert.match(homePage, /showFinanceInstall/);
   });
 
   it("DatabasePage does not mention Install Finance kit", () => {

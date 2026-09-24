@@ -101,11 +101,12 @@ describe("finance kit install", () => {
     assert.equal(pinIds[0], "sys:goal-progress");
     assert.equal(pinIds[1], "sys:deadline");
 
-    // Overview pins include starter page pins
+    // Overview pins include starter page pins and keep doctrine-progress
     const ovPinsRes = await listPins(root, null);
     assert.ok(ovPinsRes.ok);
     const ovPagePins = ovPinsRes.value.filter((p) => p.kind === "page");
     assert.ok(ovPagePins.length >= 6);
+    assert.ok(ovPinsRes.value.some((p) => p.kind === "system" && p.system === "doctrine-progress"));
 
     // Log has kit.installed
     const logRes = await readLog(root);
@@ -161,11 +162,15 @@ describe("finance kit install", () => {
     assert.ok(kitsRes2.value.includes("finance"));
   });
 
-  it("listInstalledKits with unknown slug returns empty", async () => {
+  it("listInstalledKits with unknown slug returns empty; path escape fails closed", async () => {
     const root = await freshVault();
     const res = await listInstalledKits(root, "nonexistent");
     assert.ok(res.ok);
     assert.deepEqual(res.value, []);
+    const evil = await listInstalledKits(root, "../evil");
+    assert.equal(evil.ok && evil.value.length > 0, false);
+    const parent = path.dirname(root);
+    await assert.rejects(() => fs.access(path.join(parent, "evil")));
   });
 
   it("empty finance blocks round-trip via updatePage/getPage", async () => {

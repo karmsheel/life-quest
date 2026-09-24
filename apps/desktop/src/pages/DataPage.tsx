@@ -35,6 +35,12 @@ export default function DataPage() {
   const domainSlug = lens.kind === "domain" ? lens.slug : null;
   const showDomainSelect = lens.kind !== "domain";
   const liveDomains = (snapshot?.domains ?? []).filter((d) => !d.meta.archivedAt);
+  const financialLive = liveDomains.some((d) => d.slug === "financial");
+  const showFinanceInstall =
+    financialLive &&
+    installedKits !== null &&
+    !installedKits.includes("finance") &&
+    (lens.kind !== "domain" || lens.slug === "financial");
 
   const load = useCallback(async () => {
   const res = await api().dbList(domainSlug);
@@ -43,12 +49,8 @@ export default function DataPage() {
   } else {
     setError(res.error);
   }
-  if (domainSlug) {
-    const kitRes = await api().kitList(domainSlug);
-    setInstalledKits(kitRes.ok ? (kitRes.value as string[]) : []);
-  } else {
-    setInstalledKits([]);
-  }
+  const kitRes = await api().kitList("financial");
+  setInstalledKits(kitRes.ok ? (kitRes.value as string[]) : []);
   }, [domainSlug]);
 
   useEffect(() => {
@@ -281,7 +283,7 @@ export default function DataPage() {
         ) : null}
       </section>
 
-      {domainSlug && installedKits && !installedKits.includes("finance") && (
+      {showFinanceInstall && (
         <div className="data-rail__finance-cta">
           <Button onClick={async () => {
             const res = await api().kitInstallFinance();

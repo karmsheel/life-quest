@@ -287,12 +287,12 @@ async function writeFinancialPins(root: string): Promise<void> {
   const pins: Pin[] = [
     { id: "sys:goal-progress", kind: "system", system: "goal-progress" },
     { id: "sys:deadline", kind: "system", system: "deadline" },
-    { id: "page:ledger", kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.ledger },
-    { id: "page:spend", kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.spend },
-    { id: "page:budget", kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.budget },
-    { id: "page:net-worth", kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.netWorth },
-    { id: "page:scenario-1", kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.scenario1 },
-    { id: "page:scenario-2", kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.scenario2 },
+    { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.ledger}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.ledger },
+    { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.spend}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.spend },
+    { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.budget}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.budget },
+    { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.netWorth}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.netWorth },
+    { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.scenario1}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.scenario1 },
+    { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.scenario2}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.scenario2 },
   ];
 
   const board = { schemaVersion: 1, pins };
@@ -337,12 +337,12 @@ async function mergeOverviewPins(root: string): Promise<void> {
 
   // Append the six starter page pins if not present
   const pagePins: Pin[] = [
-    { id: "page:ledger", kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.ledger },
-    { id: "page:spend", kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.spend },
-    { id: "page:budget", kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.budget },
-    { id: "page:net-worth", kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.netWorth },
-    { id: "page:scenario-1", kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.scenario1 },
-    { id: "page:scenario-2", kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.scenario2 },
+    { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.ledger}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.ledger },
+    { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.spend}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.spend },
+    { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.budget}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.budget },
+    { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.netWorth}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.netWorth },
+    { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.scenario1}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.scenario1 },
+    { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.scenario2}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.scenario2 },
   ];
   const presentPageIds = new Set(pins.filter((p) => p.kind === "page").map((p) => `${p.domainSlug}:${p.pageId}`));
   for (const pp of pagePins) {
