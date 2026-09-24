@@ -56,6 +56,7 @@ export default function DatabasePage() {
     if (listRes.ok) {
       setDomainDbs(listRes.value as DatabaseListEntry[]);
     }
+    await loadBatches(slug, dbId, setIngestBatches, setError);
   }, [slug, dbId]);
 
   useEffect(() => {
@@ -262,7 +263,7 @@ export default function DatabasePage() {
       <Button onClick={onAddRow}>Add row</Button>
 
       {/* Ingest section */}
-      <IngestSection slug={slug} dbId={dbId} meta={meta} ingestBatches={ingestBatches} onReload={() => { void loadBatches(slug, dbId, setIngestBatches, setError); }} />
+      <IngestSection slug={slug} dbId={dbId} meta={meta} ingestBatches={ingestBatches} onReload={() => { void load(); }} />
     </div>
   );
 }
@@ -333,7 +334,27 @@ function IngestSection({ slug, dbId, meta, ingestBatches, onReload }: {
               {(rows[batch.id] ?? []).filter((r) => r.status === "proposed").map((row) => (
                 <tr key={row.id}>
                   {meta.columns.map((col) => (
-                    <td key={col.id}>{String(row.cells[col.id] ?? "")}</td>
+                    <td key={col.id}>
+                      <input
+                        className="data-cell-input"
+                        value={String(row.cells[col.id] ?? "")}
+                        onChange={(e) => {
+                          const next = { ...row, cells: { ...row.cells, [col.id]: e.target.value } };
+                          setRows((prev) => ({
+                            ...prev,
+                            [batch.id]: (prev[batch.id] ?? []).map((r) =>
+                              r.id === row.id ? next : r,
+                            ),
+                          }));
+                        }}
+                        onBlur={(e) => {
+                          void api().ingestEditRow(slug, batch.id, row.id, {
+                            ...row.cells,
+                            [col.id]: e.target.value,
+                          });
+                        }}
+                      />
+                    </td>
                   ))}
                   <td>{row.duplicate ? "Yes" : ""}</td>
                   <td>

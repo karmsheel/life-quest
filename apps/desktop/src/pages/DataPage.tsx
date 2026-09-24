@@ -1,6 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import type { DatabaseListEntry } from "@lifequest/vault-core";
+import type {
+  DatabaseListEntry,
+  IngestFileResult,
+  IngestSourceKind,
+} from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
@@ -19,6 +23,13 @@ export default function DataPage() {
   const [busy, setBusy] = useState(false);
   const [ingestStatus, setIngestStatus] = useState<string | null>(null);
   const [selectedDbId, setSelectedDbId] = useState<string>("");
+  const [pendingMap, setPendingMap] = useState<{
+    fingerprint: string;
+    sourceKind: IngestSourceKind;
+    sourceColumns: string[];
+    mappingId: string;
+    columnIds: Record<string, string>;
+  } | null>(null);
 
   const domainSlug = lens.kind === "domain" ? lens.slug : null;
   const showDomainSelect = lens.kind !== "domain";
@@ -90,13 +101,62 @@ export default function DataPage() {
       setError(res.error);
       return;
     }
-    const value = res.value as any;
+    const value = res.value as IngestFileResult;
     if (value.kind === "needs-mapping") {
-      setIngestStatus(`Mapping required for ${value.sourceColumns.length} columns. Review the pending Decision, then drop the file again to stage rows.`);
+      const db = domainEntries.find((e) => e.database.id === selectedDbId)?.database;
+      const columnIds: Record<string, string> = {};
+      for (const src of value.sourceColumns) {
+        const match = db?.columns.find(
+          (c) => c.name.toLowerCase() === src.trim().toLowerCase(),
+        );
+        columnIds[src] = match?.id ?? "";
+      }
+      const mappingId =
+        value.decision.target.type === "mapping"
+          ? value.decision.target.mappingId
+          : "";
+      setPendingMap({
+        fingerprint: value.fingerprint,
+        sourceKind: value.sourceKind,
+        sourceColumns: value.sourceColumns,
+        mappingId,
+        columnIds,
+      });
+      setIngestStatus(
+        "Map source columns, then submit. The mapping is a Decision; rows are not posted yet.",
+      );
     } else if (value.kind === "staged") {
+      setPendingMap(null);
       setIngestStatus(`Staged ${value.rows.length} rows.`);
       navigate(`/data/${targetDomain}/${selectedDbId}`);
     }
+  }
+
+  async function onProposeMapping(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!pendingMap || !targetDomain || !selectedDbId) {
+      setError("Select a domain and database to propose a mapping.");
+      return;
+    }
+    const res = await api().ingestProposeMapping(targetDomain, {
+      mappingId: pendingMap.mappingId || undefined,
+      databaseId: selectedDbId,
+      fingerprint: pendingMap.fingerprint,
+      sourceKind: pendingMap.sourceKind,
+      columns: pendingMap.sourceColumns.map((source) => ({
+        source,
+        columnId: pendingMap.columnIds[source] ?? "",
+      })),
+    });
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setPendingMap(null);
+    setIngestStatus(
+      "Mapping proposed as a Decision. Approve it, then drop the file again to stage rows.",
+    );
   }
 
   function onDrop(e: React.DragEvent) {
@@ -179,6 +239,39 @@ export default function DataPage() {
             if (f) void onIngestFile(f);
           }}
         />
+        {pendingMap ? (
+          <form onSubmit={onProposeMapping} className="ingest-mapping-form">
+            <p className="muted">Map each source column to a database column.</p>
+            {pendingMap.sourceColumns.map((src) => (
+              <label key={src}>
+                {src}
+                <select
+                  className="input-field"
+                  value={pendingMap.columnIds[src] ?? ""}
+                  onChange={(e) =>
+                    setPendingMap((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            columnIds: { ...prev.columnIds, [src]: e.target.value },
+                          }
+                        : prev,
+                    )
+                  }
+                >
+                  <option value="">—</option>
+                  {(domainEntries.find((en) => en.database.id === selectedDbId)?.database
+                    .columns ?? []).map((col) => (
+                    <option key={col.id} value={col.id}>
+                      {col.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+            <Button type="submit">Propose mapping</Button>
+          </form>
+        ) : null}
       </section>
 
       {entries.length === 0 ? (

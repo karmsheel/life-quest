@@ -737,8 +737,12 @@ export async function editIngestRow(
         return { ok: false, error: `Cannot edit row with status: ${existing.status}` };
       }
       const now = new Date().toISOString();
+      const merged: Record<string, unknown> = {
+        ...(JSON.parse(existing.cells) as Record<string, unknown>),
+        ...cells,
+      };
       db.prepare("UPDATE ingest_rows SET cells = ?, updated_at = ? WHERE batch_id = ? AND id = ?").run(
-        JSON.stringify(cells),
+        JSON.stringify(merged),
         now,
         batchId,
         rowId,
@@ -748,7 +752,7 @@ export async function editIngestRow(
         value: {
           id: existing.id,
           batchId: existing.batch_id,
-          cells,
+          cells: merged,
           sourceCells: JSON.parse(existing.source_cells),
           externalId: existing.external_id,
           provenance: JSON.parse(existing.provenance),
@@ -801,6 +805,7 @@ export async function acceptIngestRows(
         rows = db.prepare(
           `SELECT id, batch_id, cells, source_cells, external_id, provenance, duplicate, status, created_at, updated_at FROM ingest_rows WHERE batch_id = ? AND id IN (${placeholders})`,
         ).all(batchId, ...rowIds) as typeof rows;
+        rows = rows.filter((r) => r.status === "proposed");
       } else {
         rows = db.prepare(
           "SELECT id, batch_id, cells, source_cells, external_id, provenance, duplicate, status, created_at, updated_at FROM ingest_rows WHERE batch_id = ? AND status = ?",

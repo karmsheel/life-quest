@@ -17,6 +17,7 @@ describe("ingest shell wiring", () => {
   it("DataPage mentions drop / ingestFile / .csv / .pdf and requires a database", () => {
     const src = read("src/pages/DataPage.tsx");
     assert.match(src, /ingestFile/);
+    assert.match(src, /ingestProposeMapping/);
     assert.match(src, /\.csv/);
     assert.match(src, /\.pdf/);
     assert.match(src, /drop/i);
@@ -38,6 +39,7 @@ describe("ingest shell wiring", () => {
     assert.match(src, /ingestListBatches/);
     assert.match(src, /ingestAccept/);
     assert.match(src, /ingestReject/);
+    assert.match(src, /ingestEditRow/);
     assert.match(src, /No ingest rows/);
   });
 
