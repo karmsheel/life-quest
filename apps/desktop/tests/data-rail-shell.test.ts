@@ -53,6 +53,7 @@ describe("data rail shell wiring", () => {
     assert.match(src, /No databases yet/);
     assert.match(src, /<select/);
     assert.match(src, /selectedDomain/);
+    assert.match(src, /Select a domain to create a database in/);
   });
 
   it("DataPage and DatabasePage do not call domainSetActive or setActiveSlug", () => {
@@ -71,6 +72,8 @@ describe("data rail shell wiring", () => {
     assert.match(src, /dbUpsertRow/);
     assert.match(src, /dbAddColumn/);
     assert.match(src, /dbDeleteRow/);
+    assert.match(src, /dbList/);
+    assert.match(src, /Number\.isFinite/);
   });
 
   it("preload/main/vault-service/vite-env mention all db: channels and API names", () => {

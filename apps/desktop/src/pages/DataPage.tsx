@@ -1,12 +1,13 @@
 import { useEffect, useState, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import type { DatabaseListEntry } from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { Button } from "@/components/ui/Button";
 
 export default function DataPage() {
-  const { snapshot, refresh } = useVault();
+  const { snapshot } = useVault();
   const lens = useDomainLens();
   const navigate = useNavigate();
 
@@ -101,28 +102,34 @@ export default function DataPage() {
             ))}
           </select>
         ) : null}
-        <button type="submit" className="btn" disabled={busy || !name.trim()}>
+        <Button type="submit" disabled={busy || !name.trim()}>
           New database
-        </button>
+        </Button>
       </form>
 
       {entries.length === 0 ? (
         <p className="muted">No databases yet.</p>
       ) : (
         <ul className="database-list">
-          {entries.map((entry) => (
+          {entries.map((entry) => {
+            const domainName =
+              liveDomains.find((d) => d.slug === entry.domainSlug)?.meta.name ??
+              entry.domainSlug;
+            return (
             <li key={`${entry.domainSlug}-${entry.database.id}`} className="database-list__item">
               <button
+                type="button"
                 className="database-list__open"
                 onClick={() => navigate(`/data/${entry.domainSlug}/${entry.database.id}`)}
               >
                 <span className="database-list__name">{entry.database.name}</span>
                 {lens.kind !== "domain" ? (
-                  <span className="muted database-list__domain">{entry.domainSlug}</span>
+                  <span className="muted database-list__domain">{domainName}</span>
                 ) : null}
               </button>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </div>

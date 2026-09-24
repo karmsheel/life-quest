@@ -103,11 +103,14 @@ async function ensureVaultDatabaseGitignore(root: string): Promise<void> {
     current = "";
   }
   const lines = new Set(current.split("\n").map((l) => l.trim()));
-  const hasSqlite = lines.has("domains/*/domain.sqlite*") ||
-    lines.has("domains/*/data/domain.sqlite*");
+  const hasSqlite = lines.has("domains/*/data/domain.sqlite*");
   const hasCache = lines.has(".lifequest/cache/");
   let updated = current;
-  if (!hasSqlite) updated += (current.endsWith("\n") || current === "" ? "" : "\n") + "domains/*/domain.sqlite*\n" + "domains/*/data/domain.sqlite*\n";
+  if (!hasSqlite) {
+    updated +=
+      (current.endsWith("\n") || current === "" ? "" : "\n") +
+      "domains/*/data/domain.sqlite*\n";
+  }
   if (!hasCache) updated += ".lifequest/cache/\n";
   if (updated !== current) {
     await fs.writeFile(ignorePath, updated);
@@ -294,6 +297,7 @@ export async function addDatabaseColumn(
 function validateCells(
   registry: DomainDatabaseRegistry,
   dbId: string,
+  slug: string,
   cells: Record<string, unknown>,
 ): Result<true> {
   const db = registry.databases.find((d) => d.id === dbId);
@@ -346,14 +350,21 @@ function validateCells(
           return { ok: false, error: `Column ${col.name} relation target missing` };
         }
         break;
-      case "file":
+      case "file": {
         if (typeof val !== "string") {
           return { ok: false, error: `Column ${col.name} expects file path string` };
         }
-        if (path.isAbsolute(val) || val.includes("..")) {
+        const prefix = `domains/${slug}/data/files/`;
+        if (
+          path.isAbsolute(val) ||
+          val.includes("..") ||
+          val.includes("\\") ||
+          !val.startsWith(prefix)
+        ) {
           return { ok: false, error: `Column ${col.name} invalid file path` };
         }
         break;
+      }
     }
   }
 
@@ -368,6 +379,11 @@ export async function listRows(
   try {
     const paths = vaultPaths(root);
     const sqlitePath = paths.domainSqlite(slug);
+    try {
+      await fs.access(sqlitePath);
+    } catch {
+      return { ok: true, value: [] };
+    }
     const sqlite = openSqlite(sqlitePath);
     try {
       const stmt = sqlite.prepare(
@@ -406,6 +422,11 @@ export async function getRow(
   try {
     const paths = vaultPaths(root);
     const sqlitePath = paths.domainSqlite(slug);
+    try {
+      await fs.access(sqlitePath);
+    } catch {
+      return { ok: false, error: `Row not found: ${rowId}` };
+    }
     const sqlite = openSqlite(sqlitePath);
     try {
       const stmt = sqlite.prepare(
@@ -448,7 +469,7 @@ export async function upsertRow(
     const registry = await readRegistry(registryPath);
 
     // Validate cells against registry
-    const validation = validateCells(registry, dbId, input.cells);
+    const validation = validateCells(registry, dbId, slug, input.cells);
     if (!validation.ok) return validation;
 
     const id = input.id ?? randomUUID();
@@ -533,7 +554,7 @@ export async function saveDatabaseFile(
     const safeName = path.basename(name);
     const paths = vaultPaths(root);
     const fullPath = paths.domainFile(slug, fileId, safeName);
-    await fs.mkdir(paths.domainFilesDir(slug), { recursive: true });
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
     await fs.writeFile(fullPath, input.bytes);
 
     const relPath = `domains/${slug}/data/files/${fileId}/${safeName}`;

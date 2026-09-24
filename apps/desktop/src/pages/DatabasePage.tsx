@@ -1,8 +1,14 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { DatabaseColumn, DatabaseMeta, DatabaseRow, Result } from "@lifequest/vault-core";
+import type {
+  DatabaseColumn,
+  DatabaseListEntry,
+  DatabaseMeta,
+  DatabaseRow,
+} from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
+import { Button } from "@/components/ui/Button";
 
 export default function DatabasePage() {
   const { slug = "", dbId = "" } = useParams<{ slug: string; dbId: string }>();
@@ -11,23 +17,32 @@ export default function DatabasePage() {
 
   const [meta, setMeta] = useState<DatabaseMeta | null>(null);
   const [rows, setRows] = useState<DatabaseRow[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newColName, setNewColName] = useState("");
   const [newColType, setNewColType] = useState("text");
   const [newColOptions, setNewColOptions] = useState("");
   const [newColRelation, setNewColRelation] = useState("");
   const [colError, setColError] = useState<string | null>(null);
+  const [domainDbs, setDomainDbs] = useState<DatabaseListEntry[]>([]);
 
   const load = useCallback(async () => {
     const metaRes = await api().dbGet(slug, dbId);
     if (!metaRes.ok) {
-      setError(metaRes.error);
+      setLoadError(metaRes.error);
       return;
     }
+    setLoadError(null);
     setMeta(metaRes.value as DatabaseMeta);
-    const rowsRes = await api().dbListRows(slug, dbId);
+    const [rowsRes, listRes] = await Promise.all([
+      api().dbListRows(slug, dbId),
+      api().dbList(slug),
+    ]);
     if (rowsRes.ok) {
       setRows(rowsRes.value as DatabaseRow[]);
+    }
+    if (listRes.ok) {
+      setDomainDbs(listRes.value as DatabaseListEntry[]);
     }
   }, [slug, dbId]);
 
@@ -77,44 +92,78 @@ export default function DatabasePage() {
 
   async function onAddRow() {
     const res = await api().dbUpsertRow(slug, dbId, { cells: {} });
-    if (res.ok) {
-      await load();
+    if (!res.ok) {
+      setError(res.error);
+      return;
     }
+    await load();
   }
 
-  async function onCellChange(row: DatabaseRow, colId: string, value: string | boolean) {
+  async function onCellChange(
+    row: DatabaseRow,
+    col: DatabaseColumn,
+    value: string | boolean,
+  ) {
     const newCells = { ...row.cells };
     if (typeof value === "boolean") {
-      newCells[colId] = value;
+      newCells[col.id] = value;
     } else if (value === "") {
-      delete newCells[colId];
+      delete newCells[col.id];
+    } else if (col.type === "number") {
+      const n = Number(value);
+      if (!Number.isFinite(n)) {
+        setError(`Column ${col.name} expects a number`);
+        return;
+      }
+      newCells[col.id] = n;
     } else {
-      newCells[colId] = value;
+      newCells[col.id] = value;
     }
-    await api().dbUpsertRow(slug, dbId, { id: row.id, cells: newCells });
+    const res = await api().dbUpsertRow(slug, dbId, {
+      id: row.id,
+      cells: newCells,
+    });
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setError(null);
     await load();
   }
 
   async function onDeleteRow(rowId: string) {
-    await api().dbDeleteRow(slug, dbId, rowId);
+    const res = await api().dbDeleteRow(slug, dbId, rowId);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
     await load();
   }
 
   async function onFileUpload(row: DatabaseRow, colId: string, file: File) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const res = await api().dbFileSave(slug, { bytes, mime: file.type || "application/octet-stream", name: file.name });
-    if (res.ok) {
-      const newCells = { ...row.cells, [colId]: res.value.relPath };
-      await api().dbUpsertRow(slug, dbId, { id: row.id, cells: newCells });
-      await load();
+    if (!res.ok) {
+      setError(res.error);
+      return;
     }
+    const upsert = await api().dbUpsertRow(slug, dbId, {
+      id: row.id,
+      cells: { ...row.cells, [colId]: res.value.relPath },
+    });
+    if (!upsert.ok) {
+      setError(upsert.error);
+      return;
+    }
+    setError(null);
+    await load();
   }
 
-  if (error) {
+  if (loadError) {
     return (
       <div className="page-content">
-        <p className="form-error">{error}</p>
-        <button className="btn" onClick={() => navigate("/data")}>Back to Data</button>
+        <p className="form-error">{loadError}</p>
+        <Button onClick={() => navigate("/data")}>Back to Data</Button>
       </div>
     );
   }
@@ -128,12 +177,13 @@ export default function DatabasePage() {
   return (
     <div className="page-content database-page">
       <header className="stub-page__header">
-        <button className="btn btn--ghost" onClick={() => navigate("/data")}>← Back to Data</button>
+        <Button variant="ghost" onClick={() => navigate("/data")}>← Back to Data</Button>
         <h1 className="stub-page__title">{meta.name}</h1>
         <p className="muted">{domainName} · {slug}</p>
       </header>
 
-      {colError ? <p className="form-error">{colError}</p> : null}
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {colError ? <p className="form-error" role="alert">{colError}</p> : null}
 
       <form onSubmit={onAddColumn} className="data-add-column">
         <input
@@ -156,15 +206,20 @@ export default function DatabasePage() {
           />
         ) : null}
         {newColType === "relation" ? (
-          <input
-            type="text"
-            placeholder="Target database id"
+          <select
             value={newColRelation}
             onChange={(e) => setNewColRelation(e.target.value)}
             className="input-field"
-          />
+          >
+            <option value="">Select database…</option>
+            {domainDbs.map((entry) => (
+              <option key={entry.database.id} value={entry.database.id}>
+                {entry.database.name}
+              </option>
+            ))}
+          </select>
         ) : null}
-        <button type="submit" className="btn">Add column</button>
+        <Button type="submit">Add column</Button>
       </form>
 
       <table className="data-table">
@@ -181,18 +236,18 @@ export default function DatabasePage() {
             <tr key={row.id}>
               {meta.columns.map((col) => (
                 <td key={col.id}>
-                  <CellEditor column={col} value={row.cells[col.id]} onChange={(val) => onCellChange(row, col.id, val)} onFile={(file) => onFileUpload(row, col.id, file)} />
+                  <CellEditor column={col} value={row.cells[col.id]} onChange={(val) => onCellChange(row, col, val)} onFile={(file) => onFileUpload(row, col.id, file)} />
                 </td>
               ))}
               <td>
-                <button className="btn btn--danger" onClick={() => onDeleteRow(row.id)}>Delete</button>
+                <Button destructive onClick={() => onDeleteRow(row.id)}>Delete</Button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <button className="btn" onClick={onAddRow}>Add row</button>
+      <Button onClick={onAddRow}>Add row</Button>
     </div>
   );
 }

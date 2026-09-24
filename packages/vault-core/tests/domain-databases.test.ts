@@ -4,9 +4,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  archiveDomain,
   createDatabase,
   createVault,
-  getDatabase,
   invalidateDomainCache,
   listDatabases,
   listRows,
@@ -176,6 +176,18 @@ describe("domain-databases", () => {
     });
     assert.equal(insertRes.ok, false);
 
+    const fileCol = await addDatabaseColumn(root, "health", dbId, {
+      name: "Doc",
+      type: "file",
+    });
+    assert.ok(fileCol.ok);
+    if (!fileCol.ok) return;
+    const fileColId = fileCol.value.columns.find((c) => c.name === "Doc")!.id;
+    const badFile = await upsertRow(root, "health", dbId, {
+      cells: { [fileColId]: "documents/escape.txt" },
+    });
+    assert.equal(badFile.ok, false);
+
     const missingRel = await addDatabaseColumn(root, "health", dbId, {
       name: "Ref",
       type: "relation",
@@ -221,6 +233,16 @@ describe("domain-databases", () => {
       name: "C:/absolute.txt",
     });
     assert.equal(fileRes3.ok, false);
+
+    const okFile = await saveDatabaseFile(root, "health", {
+      bytes: Buffer.from("hello"),
+      mime: "text/plain",
+      name: "note.txt",
+    });
+    assert.equal(okFile.ok, true);
+    if (!okFile.ok) return;
+    assert.match(okFile.value.relPath, /^domains\/health\/data\/files\//);
+    await fs.access(path.join(root, ...okFile.value.relPath.split("/")));
   });
 
   it("gitignore", async () => {
@@ -250,9 +272,10 @@ describe("domain-databases", () => {
     const o1 = await openVault(root);
     assert.ok(o1.ok);
 
-    // Archive health then try to create db
-    const created = await createDatabase(root, "health", { name: "PreArchive" });
-    assert.ok(created.ok);
+    const archived = await archiveDomain(root, "health");
+    assert.ok(archived.ok);
+    const afterArchive = await createDatabase(root, "health", { name: "Nope" });
+    assert.equal(afterArchive.ok, false);
     const snap = await openVault(root);
     assert.ok(snap.ok);
   });
