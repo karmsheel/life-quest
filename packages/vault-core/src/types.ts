@@ -45,7 +45,8 @@ export type DocumentTarget =
   | { type: "page"; domainSlug: string; pageId: string }
   | { type: "pins"; domainSlug: string | null }
   | { type: "mapping"; domainSlug: string; mappingId: string }
-  | { type: "kit-install"; kit: "finance" };
+  | { type: "kit-install"; kit: "finance" }
+  | { type: "assumption-set"; rowId: string };
 
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;
 export type RoomId = (typeof ROOM_IDS)[number];
@@ -457,6 +458,7 @@ export type PageBlock =
       id: string;
       kind: "scenario-compare";
       assumptionSetId: string;
+      compareSetId?: string | null;
     };
 
 export type PageRecord = {
@@ -679,3 +681,68 @@ export type PeriodPack = {
   missingSources: string[];
   truncated: boolean;
 };
+
+export type FinanceCurrency = "ZAR" | "USD";
+
+export type AssumptionDelta =
+  | { kind: "income"; amount: number; currency: FinanceCurrency; categoryId?: string }
+  | { kind: "extra-payment"; amount: number; currency: FinanceCurrency; accountId?: string }
+  | { kind: "contribution"; amount: number; currency: FinanceCurrency; accountId?: string }
+  | { kind: "one-time"; amount: number; currency: FinanceCurrency; date: string }
+  | { kind: "spending-change"; amount: number; currency: FinanceCurrency; categoryId?: string };
+
+export type BudgetVsActualLine = {
+  budgetRowId: string;
+  period: string;
+  categoryId: string;
+  categoryName: string;
+  currency: FinanceCurrency;
+  planned: number;
+  spent: number;
+  remaining: number;
+};
+
+export type BudgetVsActualReport = {
+  empty: boolean;
+  lines: BudgetVsActualLine[];
+  warnings: string[];
+};
+
+export type NetWorthReport = {
+  empty: boolean;
+  asOf: string;
+  byCurrency: { ZAR: number; USD: number };
+  zar: number | null;
+  warnings: string[];
+};
+
+export type FinanceMonthPoint = {
+  month: string;
+  byCurrency: { ZAR: number; USD: number };
+  zar: number | null;
+  warnings: string[];
+};
+
+export type FinanceProjection = {
+  months: FinanceMonthPoint[];
+  warnings: string[];
+};
+
+export type ScenarioCompareReport = {
+  assumptionSetId: string;
+  assumptionSetName: string;
+  compareSetId: string | null;
+  compareSetName: string | null;
+  live: FinanceProjection;
+  primary: FinanceProjection;
+  secondary: FinanceProjection | null;
+};
+
+export type AssumptionSetSaveResult = {
+  rowId: string;
+  decision: DecisionRecord | null;
+};
+
+// KAR-57 finance plan round2
+
+

@@ -63,6 +63,10 @@ import {
   listInstalledKits,
   getFinanceKitSettings,
   setFinanceCaptureAccount,
+  budgetVsActual,
+  netWorth,
+  scenarioCompare,
+  saveAssumptionSet,
   acceptIngestRows,
   editIngestRow,
   ingestFile as ingestFileCore,
@@ -624,6 +628,32 @@ export async function kitFinanceSettings(): Promise<Result<unknown>> {
 
 export async function kitSetCaptureAccount(accountRowId: string | null): Promise<Result<unknown>> {
   return withVault((root) => setFinanceCaptureAccount(root, accountRowId));
+}
+
+// KAR-57 finance plan loop
+export async function financeBudgetVsActual(asOf: string): Promise<Result<unknown>> {
+  return withVault((root) => budgetVsActual(root, { asOf }));
+}
+
+export async function financeNetWorth(asOf: string): Promise<Result<unknown>> {
+  return withVault((root) => netWorth(root, { asOf }));
+}
+
+export async function financeScenarioCompare(input: {
+  asOf: string;
+  assumptionSetId: string;
+  compareSetId?: string | null;
+}): Promise<Result<unknown>> {
+  return withVault((root) => scenarioCompare(root, input));
+}
+
+export async function financeSaveAssumptionSet(input: {
+  rowId: string;
+  name: string;
+  horizonMonths: number;
+  deltas: unknown[];
+}): Promise<Result<unknown>> {
+  return withVault((root) => saveAssumptionSet(root, { ...input, actor: USER_ACTOR }));
 }
 
 export async function decisionList(): Promise<Result<DecisionRecord[]>> {

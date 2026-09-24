@@ -129,6 +129,11 @@ function validateBlocks(
       if (typeof b.assumptionSetId !== "string" || !(b.assumptionSetId as string).trim()) {
         return { ok: false, error: "scenario-compare requires a non-empty assumptionSetId" };
       }
+      if (b.compareSetId !== undefined && b.compareSetId !== null) {
+        if (typeof b.compareSetId !== "string" || !(b.compareSetId as string).trim()) {
+          return { ok: false, error: "scenario-compare compareSetId must be a non-empty string" };
+        }
+      }
     }
   }
   return { ok: true, value: blocks as PageBlock[] };

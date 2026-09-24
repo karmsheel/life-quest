@@ -68,6 +68,7 @@ const FINANCE_DB_DEFS: Array<{
       { id: "source_file", name: "source_file", type: "file" },
       { id: "provenance", name: "provenance", type: "text" },
       { id: "external_id", name: "external_id", type: "text" },
+      { id: "transfer_id", name: "transfer_id", type: "text" },
     ],
   },
   {

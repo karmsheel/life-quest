@@ -5,6 +5,9 @@ import type {
   PageRecord,
   DatabaseListEntry,
   DatabaseRow,
+  BudgetVsActualReport,
+  NetWorthReport,
+  ScenarioCompareReport,
 } from "@lifequest/vault-core";
 import {
   PAGE_BLOCK_KINDS,
@@ -180,6 +183,9 @@ export default function PageCanvasPage() {
   const [addKind, setAddKind] = useState<string>("markdown");
   const [installedKits, setInstalledKits] = useState<string[] | null>(null);
   const [assumptionSets, setAssumptionSets] = useState<Array<{ id: string; name: string }>>([]);
+  const [budgetReport, setBudgetReport] = useState<BudgetVsActualReport | null>(null);
+  const [netWorthReport, setNetWorthReport] = useState<NetWorthReport | null>(null);
+  const [scenarioReport, setScenarioReport] = useState<ScenarioCompareReport | null>(null);
 
   const [dbs, setDbs] = useState<DatabaseListEntry[]>([]);
   const [rowsByDb, setRowsByDb] = useState<Record<string, DatabaseRow[]>>({});
@@ -239,6 +245,42 @@ export default function PageCanvasPage() {
     })();
   }, [slug]);
 
+  // KAR-57: Fetch finance reports when budget/net-worth/scenario blocks exist
+  const hasBudgetBlock = blocks.some((b) => b.kind === "budget-vs-actual");
+  const hasNetWorthBlock = blocks.some((b) => b.kind === "net-worth");
+  const scenarioBlock = blocks.find((b) => b.kind === "scenario-compare") as
+    | { assumptionSetId: string; compareSetId?: string | null }
+    | undefined;
+
+  useEffect(() => {
+    if (!installedKits?.includes("finance")) return;
+    if (!hasBudgetBlock && !hasNetWorthBlock && !scenarioBlock) return;
+    const asOf = localIsoDate();
+
+    if (hasBudgetBlock) {
+      void (async () => {
+        const res = await api().financeBudgetVsActual(asOf);
+        if (res.ok) setBudgetReport(res.value as BudgetVsActualReport);
+      })();
+    }
+    if (hasNetWorthBlock) {
+      void (async () => {
+        const res = await api().financeNetWorth(asOf);
+        if (res.ok) setNetWorthReport(res.value as NetWorthReport);
+      })();
+    }
+    if (scenarioBlock && scenarioBlock.assumptionSetId) {
+      void (async () => {
+        const res = await api().financeScenarioCompare({
+          asOf,
+          assumptionSetId: scenarioBlock.assumptionSetId,
+          compareSetId: scenarioBlock.compareSetId ?? null,
+        });
+        if (res.ok) setScenarioReport(res.value as ScenarioCompareReport);
+      })();
+    }
+  }, [installedKits, hasBudgetBlock, hasNetWorthBlock, scenarioBlock?.assumptionSetId, scenarioBlock?.compareSetId]);
+
   async function loadRows(dbId: string) {
     if (rowsByDb[dbId]) return;
     const res = await api().dbListRows(slug!, dbId);
@@ -272,6 +314,7 @@ export default function PageCanvasPage() {
     }
     if (kind === "scenario-compare") {
       (base as unknown as { assumptionSetId: string }).assumptionSetId = "";
+      (base as unknown as { compareSetId?: string | null }).compareSetId = null;
     }
     setBlocks((prev) => [...prev, base]);
     if (kind === "bound-table" || kind === "metric" || kind === "chart") {
@@ -563,19 +606,39 @@ export default function PageCanvasPage() {
                 </section>
               );
             }
-            // Check if any budget rows exist
-            const budgetDb = dbs.find((d) => d.database.id === "finance:budgets");
-            const budgetRows = rowsByDb["finance:budgets"] ?? [];
+            const report = budgetReport;
             return (
               <section key={block.id} className="page-block">
                 <div className="page-block__head">
                   <span className="muted">Budget vs actual</span>
                   <button className="page-block__remove" onClick={() => removeBlock(block.id)}>Remove</button>
                 </div>
-                {budgetRows.length === 0 ? (
+                {!report ? (
+                  <p className="muted">Loading…</p>
+                ) : report.empty ? (
                   <p className="muted">No budgets yet.</p>
                 ) : (
-                  <p className="muted">Budgets: {budgetRows.length} rows.</p>
+                  <>
+                    {report.warnings.length > 0 && (
+                      <p className="muted">{report.warnings.join("; ")}</p>
+                    )}
+                    <table className="page-block__table">
+                      <thead>
+                        <tr><th>Category</th><th>Period</th><th>Planned</th><th>Spent</th><th>Remaining</th></tr>
+                      </thead>
+                      <tbody>
+                        {report.lines.map((l) => (
+                          <tr key={l.budgetRowId}>
+                            <td>{l.categoryName}</td>
+                            <td>{l.period}</td>
+                            <td>{l.planned}</td>
+                            <td>{l.spent}</td>
+                            <td>{l.remaining}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
                 )}
               </section>
             );
@@ -597,24 +660,35 @@ export default function PageCanvasPage() {
                 </section>
               );
             }
-            const accountsRows = rowsByDb["finance:accounts"] ?? [];
-            const holdingsRows = rowsByDb["finance:holdings"] ?? [];
+            const report = netWorthReport;
             return (
               <section key={block.id} className="page-block">
                 <div className="page-block__head">
                   <span className="muted">Net worth</span>
                   <button className="page-block__remove" onClick={() => removeBlock(block.id)}>Remove</button>
                 </div>
-                {accountsRows.length === 0 && holdingsRows.length === 0 ? (
+                {!report ? (
+                  <p className="muted">Loading…</p>
+                ) : report.empty ? (
                   <p className="muted">No accounts or holdings yet.</p>
                 ) : (
-                  <p className="muted">Accounts: {accountsRows.length}, Holdings: {holdingsRows.length}.</p>
+                  <>
+                    <p className="page-block__metric-value">
+                      {report.zar !== null ? (
+                        <>ZAR {report.zar}</>
+                      ) : (
+                        <span className="muted">ZAR conversion requires an FX rate</span>
+                      )}
+                    </p>
+                    <p className="muted">ZAR: {report.byCurrency.ZAR} · USD: {report.byCurrency.USD}</p>
+                  </>
                 )}
               </section>
             );
           }
           if (block.kind === "scenario-compare") {
             const sc = block as Extract<PageBlock, { kind: "scenario-compare" }>;
+            const scBlock = block as { kind: "scenario-compare"; assumptionSetId: string; compareSetId?: string | null };
             if (!installedKits || !installedKits.includes("finance")) {
               return (
                 <section key={block.id} className="page-block">
@@ -631,6 +705,7 @@ export default function PageCanvasPage() {
                 </section>
               );
             }
+            const report = scenarioReport;
             return (
               <section key={block.id} className="page-block">
                 <div className="page-block__head">
@@ -639,14 +714,43 @@ export default function PageCanvasPage() {
                 </div>
                 <select
                   className="input-field"
-                  value={sc.assumptionSetId}
-                  onChange={(e) => setBlock(block.id, { assumptionSetId: e.target.value })}
+                  value={scBlock.assumptionSetId}
+                  onChange={(e) => setBlock(block.id, { assumptionSetId: e.target.value, compareSetId: scBlock.compareSetId ?? null })}
                 >
                   {assumptionSets.map((a) => (
                     <option key={a.id} value={a.id}>{a.name}</option>
                   ))}
                 </select>
-                <p className="muted">No projection yet.</p>
+                <label className="muted" style={{ display: "block", marginTop: 8 }}>Compare with</label>
+                <select
+                  className="input-field"
+                  value={scBlock.compareSetId ?? ""}
+                  onChange={(e) => setBlock(block.id, { assumptionSetId: scBlock.assumptionSetId, compareSetId: e.target.value || null })}
+                >
+                  <option value="">Live only</option>
+                  {assumptionSets.filter((a) => a.id !== scBlock.assumptionSetId).map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+                {!report ? (
+                  <p className="muted">Select an assumption set to compare.</p>
+                ) : (
+                  <table className="page-block__table">
+                    <thead>
+                      <tr><th>Month</th><th>Live ZAR</th>{report.primary ? <th>Primary ZAR</th> : null}{report.secondary ? <th>Secondary ZAR</th> : null}</tr>
+                    </thead>
+                    <tbody>
+                      {report.live.months.map((m, i) => (
+                        <tr key={m.month}>
+                          <td>{m.month}</td>
+                          <td>{m.zar !== null ? m.zar : <span className="muted">ZAR conversion requires an FX rate</span>}</td>
+                          {report.primary ? (<td>{report.primary.months[i]?.zar !== null && report.primary.months[i]?.zar !== undefined ? report.primary.months[i].zar : <span className="muted">ZAR conversion requires an FX rate</span>}</td>) : null}
+                          {report.secondary ? (<td>{report.secondary.months[i]?.zar !== null && report.secondary.months[i]?.zar !== undefined ? report.secondary.months[i].zar : <span className="muted">ZAR conversion requires an FX rate</span>}</td>) : null}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </section>
             );
           }

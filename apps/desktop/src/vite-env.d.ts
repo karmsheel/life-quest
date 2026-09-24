@@ -314,6 +314,20 @@ type LifequestApi = {
   kitList: (slug: string) => Promise<Result<unknown>>;
   kitFinanceSettings: () => Promise<Result<unknown>>;
   kitSetCaptureAccount: (accountRowId: string | null) => Promise<Result<unknown>>;
+  // KAR-57 finance plan loop
+  financeBudgetVsActual: (asOf: string) => Promise<Result<unknown>>;
+  financeNetWorth: (asOf: string) => Promise<Result<unknown>>;
+  financeScenarioCompare: (input: {
+    asOf: string;
+    assumptionSetId: string;
+    compareSetId?: string | null;
+  }) => Promise<Result<unknown>>;
+  financeSaveAssumptionSet: (input: {
+    rowId: string;
+    name: string;
+    horizonMonths: number;
+    deltas: unknown[];
+  }) => Promise<Result<unknown>>;
   // KAR-53 ingest
   ingestFile: (slug: string, input: {
     databaseId: string;

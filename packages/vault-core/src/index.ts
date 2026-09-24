@@ -141,6 +141,14 @@ export {
   correctCapture,
 } from "./capture.ts";
 export {
+  budgetVsActual,
+  netWorth,
+  projectFinance,
+  scenarioCompare,
+  saveAssumptionSet,
+  round2,
+} from "./finance-plan.ts";
+export {
   CAPTURE_TOOL_DEFS,
   executeCaptureTool,
 } from "./capture-tools.ts";

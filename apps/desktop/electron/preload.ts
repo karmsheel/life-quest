@@ -92,6 +92,16 @@ const lifequest = {
     ipcRenderer.invoke("kit:financeSettings") as Promise<Result<unknown>>,
   kitSetCaptureAccount: (accountRowId: string | null) =>
     ipcRenderer.invoke("kit:setCaptureAccount", accountRowId) as Promise<Result<unknown>>,
+
+  // KAR-57 finance plan loop
+  financeBudgetVsActual: (asOf: string) =>
+    ipcRenderer.invoke("finance:budgetVsActual", asOf) as Promise<Result<unknown>>,
+  financeNetWorth: (asOf: string) =>
+    ipcRenderer.invoke("finance:netWorth", asOf) as Promise<Result<unknown>>,
+  financeScenarioCompare: (input: { asOf: string; assumptionSetId: string; compareSetId?: string | null }) =>
+    ipcRenderer.invoke("finance:scenarioCompare", input) as Promise<Result<unknown>>,
+  financeSaveAssumptionSet: (input: { rowId: string; name: string; horizonMonths: number; deltas: unknown[] }) =>
+    ipcRenderer.invoke("finance:saveAssumptionSet", input) as Promise<Result<unknown>>,
   ingestFile: (slug: string, input: { databaseId: string; bytes: Uint8Array; mime: string; name: string; extractedRows?: Record<string, string>[] }) =>
     ipcRenderer.invoke("ingest:file", slug, input) as Promise<Result<unknown>>,
   ingestProposeMapping: (slug: string, input: { mappingId?: string; databaseId: string; fingerprint: string; sourceKind: string; columns: Array<{ source: string; columnId: string }> }) =>

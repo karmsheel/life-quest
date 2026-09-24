@@ -16,7 +16,7 @@ import {
   type DocumentTarget,
   type Result,
 } from "./types.ts";
-import { getDatabase, isDomainLive } from "./domain-databases.ts";
+import { getDatabase, isDomainLive, readRegistry } from "./domain-databases.ts";
 import { documentTargetLabel } from "./documents.ts";
 import { getReview, applyLockedReviewBody } from "./reviews.ts";
 import { isReviewCadence } from "./period.ts";
@@ -51,7 +51,8 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       isPageExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isPinsExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isMappingExplicitTarget(explicitTarget as Record<string, unknown>) ||
-      isKitInstallExplicitTarget(explicitTarget as Record<string, unknown>))
+      isKitInstallExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isAssumptionSetExplicitTarget(explicitTarget as Record<string, unknown>))
   ) {
     const t = explicitTarget as Record<string, unknown>;
     if (t.type === "review") {
@@ -78,6 +79,11 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       };
     } else if (t.type === "kit-install") {
       target = { type: "kit-install", kit: "finance" as const };
+    } else if (t.type === "assumption-set") {
+      target = {
+        type: "assumption-set",
+        rowId: String(t.rowId),
+      };
     } else {
       target = { type: "library", id: String(t.id) };
     }
@@ -204,6 +210,10 @@ function isKitInstallExplicitTarget(raw: Record<string, unknown>): boolean {
   return raw.type === "kit-install" && raw.kit === "finance";
 }
 
+function isAssumptionSetExplicitTarget(raw: Record<string, unknown>): boolean {
+  return raw.type === "assumption-set" && typeof raw.rowId === "string" && raw.rowId.length > 0;
+}
+
 async function readDecisionFile(filePath: string): Promise<DecisionRecord> {
   const raw = await fs.readFile(filePath, "utf8");
   const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -289,6 +299,10 @@ export async function createDecision(
       if (input.target.kit !== "finance") {
         return { ok: false, error: `Invalid kit: ${String(input.target.kit)}` };
       }
+    } else if (input.target.type === "assumption-set") {
+      if (!input.target.rowId.trim()) {
+        return { ok: false, error: "rowId is required" };
+      }
     } else {
       return { ok: false, error: "Invalid target type" };
     }
@@ -368,6 +382,18 @@ export async function createDecision(
       }
       docLocked = false;
       domainSlugForLog = "financial";
+    } else if (input.target.type === "assumption-set") {
+      // Assumption sets are not lockable. Financial domain must be live and kit installed.
+      const live = await isDomainLive(rootPath, "financial");
+      if (!live) {
+        return { ok: false, error: "Domain not found or archived: financial" };
+      }
+      const registry = await readRegistry(vaultPaths(rootPath).domainRegistry("financial"));
+      if (!registry.installedKits.includes("finance")) {
+        return { ok: false, error: "Install the Finance kit first" };
+      }
+      docLocked = false;
+      domainSlugForLog = "financial";
     } else {
       const noteRes = await libraryGet(rootPath, input.target.id);
       if (!noteRes.ok) return noteRes;
@@ -395,9 +421,11 @@ export async function createDecision(
               ? [input.target.domainSlug]
               : input.target.type === "kit-install"
                 ? ["financial"]
-                : input.target.type === "review"
-                  ? []
-                  : libraryNote!.value.domainSlugs;
+                : input.target.type === "assumption-set"
+                  ? ["financial"]
+                  : input.target.type === "review"
+                    ? []
+                    : libraryNote!.value.domainSlugs;
 
     const title = `Proposed change to ${documentTargetLabel(
       input.target,
@@ -553,6 +581,26 @@ async function applyApprovedBody(
       const { applyFinanceKitInstall } = await import("./finance-kit.ts");
       const installRes = await applyFinanceKitInstall(rootPath);
       if (!installRes.ok) return installRes;
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "assumption-set") {
+      // Approved assumption-set Decision → upsert the row before the library else.
+      let payload: { rowId: string; name: string; horizonMonths: number; deltas: unknown[] };
+      try {
+        payload = JSON.parse(decision.proposedBodyMarkdown);
+      } catch {
+        return { ok: false, error: "Assumption set proposedBody must be valid JSON" };
+      }
+      const { upsertRow } = await import("./domain-databases.ts");
+      const res = await upsertRow(rootPath, "financial", "finance:assumption-sets", {
+        id: String(payload.rowId),
+        cells: {
+          name: String(payload.name ?? ""),
+          horizon_months: Number.isFinite(payload.horizonMonths) ? Math.max(1, Math.min(60, payload.horizonMonths)) : 12,
+          deltas: JSON.stringify(Array.isArray(payload.deltas) ? payload.deltas : []),
+        },
+      });
+      if (!res.ok) return res;
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "doctrine") {

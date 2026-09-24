@@ -208,6 +208,12 @@ function registerIpcHandlers() {
   ipcMain.handle("kit:financeSettings", () => vault.kitFinanceSettings());
   ipcMain.handle("kit:setCaptureAccount", (_e, accountRowId: string | null) => vault.kitSetCaptureAccount(accountRowId));
 
+  // KAR-57 finance plan loop
+  ipcMain.handle("finance:budgetVsActual", (_e, asOf: string) => vault.financeBudgetVsActual(asOf));
+  ipcMain.handle("finance:netWorth", (_e, asOf: string) => vault.financeNetWorth(asOf));
+  ipcMain.handle("finance:scenarioCompare", (_e, input: { asOf: string; assumptionSetId: string; compareSetId?: string | null }) => vault.financeScenarioCompare(input));
+  ipcMain.handle("finance:saveAssumptionSet", (_e, input: { rowId: string; name: string; horizonMonths: number; deltas: unknown[] }) => vault.financeSaveAssumptionSet(input));
+
   ipcMain.handle("decision:list", () => vault.decisionList());
   ipcMain.handle(
     "decision:create",
