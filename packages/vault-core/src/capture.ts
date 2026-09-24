@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { vaultPaths } from "./paths.ts";
 import {
@@ -373,11 +374,9 @@ export async function captureUtterance(
       };
     }
 
-    // Check if this thread already has a posted row (for correct behavior)
+    // Each capture is a new row. The thread file remembers only the latest for undo/correct.
     const threads = await readCaptureThreads(root);
-    const existingRowId = threads[threadId];
-
-    const rowId = existingRowId ?? `capture-${threadId}-${Date.now()}`;
+    const rowId = `capture-${randomUUID()}`;
 
     const accountName =
       accounts.find((a) => a.id === accountId)?.name ?? "";
@@ -406,7 +405,8 @@ export async function captureUtterance(
     threads[threadId] = rowId;
     await writeCaptureThreads(root, threads);
 
-    const receipt = `${amount < 0 ? "-" : ""}${Math.abs(amount)} ${parsed.currency} on ${parsed.date} • ${accountName} • ${categoryName}`;
+    const payeeBit = parsed.payee ? ` • ${parsed.payee}` : "";
+    const receipt = `${amount < 0 ? "-" : ""}${Math.abs(amount)} ${parsed.currency} on ${parsed.date} • ${accountName} • ${categoryName}${payeeBit}`;
 
     return {
       ok: true,
@@ -614,7 +614,8 @@ export async function correctCapture(
     );
     if (!upserted.ok) return { ok: false, error: upserted.error };
 
-    const receipt = `${amount < 0 ? "-" : ""}${Math.abs(amount)} ${parsed.currency} on ${parsed.date} • ${accountName} • ${categoryName}`;
+    const payeeBit = parsed.payee ? ` • ${parsed.payee}` : "";
+    const receipt = `${amount < 0 ? "-" : ""}${Math.abs(amount)} ${parsed.currency} on ${parsed.date} • ${accountName} • ${categoryName}${payeeBit}`;
 
     return {
       ok: true,

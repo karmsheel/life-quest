@@ -337,4 +337,38 @@ describe("conversational transaction capture (KAR-62)", () => {
     if (!res.value.posted) return;
     assert.equal(res.value.amount, 1000);
   });
+
+  it("a second capture in the same thread posts another row", async () => {
+    const root = await freshVault();
+    await installKit(root);
+    await createAccount(root, { name: "Cash", type: "checking", currency: "ZAR" });
+
+    const first = await captureUtterance(root, {
+      text: "Bought food for R85",
+      today: "2026-09-24",
+      threadId: "t13",
+      actor: USER_ACTOR,
+    });
+    const second = await captureUtterance(root, {
+      text: "Bought coffee for R20",
+      today: "2026-09-24",
+      threadId: "t13",
+      actor: USER_ACTOR,
+    });
+    assert.ok(first.ok && first.value.posted);
+    assert.ok(second.ok && second.value.posted);
+    if (!first.ok || !first.value.posted || !second.ok || !second.value.posted) return;
+    assert.notEqual(first.value.rowId, second.value.rowId);
+
+    const txns = await listRows(root, FINANCE, TRANSACTIONS_DB);
+    assert.ok(txns.ok);
+    assert.equal(txns.value.length, 2);
+
+    const undone = await undoCapture(root, { threadId: "t13", actor: USER_ACTOR });
+    assert.ok(undone.ok);
+    const left = await listRows(root, FINANCE, TRANSACTIONS_DB);
+    assert.ok(left.ok);
+    assert.equal(left.value.length, 1);
+    assert.equal(left.value[0].id, first.value.rowId);
+  });
 });
