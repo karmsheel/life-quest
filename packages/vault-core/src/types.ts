@@ -43,7 +43,8 @@ export type DocumentTarget =
   | { type: "library"; id: string }
   | { type: "review"; cadence: ReviewCadence; period: string }
   | { type: "page"; domainSlug: string; pageId: string }
-  | { type: "pins"; domainSlug: string | null };
+  | { type: "pins"; domainSlug: string | null }
+  | { type: "mapping"; domainSlug: string; mappingId: string };
 
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;
 export type RoomId = (typeof ROOM_IDS)[number];
@@ -456,6 +457,85 @@ export type DomainBooksDatabase = {
   columns: DatabaseColumn[];
   rows: DatabaseRow[];
 };
+
+// KAR-53 ingest types
+export const INGEST_SOURCE_KINDS = ["csv", "pdf"] as const;
+export type IngestSourceKind = (typeof INGEST_SOURCE_KINDS)[number];
+
+export const INGEST_BATCH_STATUSES = ["awaiting-mapping", "staged", "accepted", "rejected"] as const;
+export type IngestBatchStatus = (typeof INGEST_BATCH_STATUSES)[number];
+
+export const INGEST_ROW_STATUSES = ["proposed", "accepted", "rejected"] as const;
+export type IngestRowStatus = (typeof INGEST_ROW_STATUSES)[number];
+
+export type IngestColumnMapping = {
+  source: string;
+  columnId: string;
+};
+
+export type IngestMapping = {
+  id: string;
+  databaseId: string;
+  fingerprint: string;
+  sourceKind: IngestSourceKind;
+  columns: IngestColumnMapping[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type IngestProvenance = {
+  fileId: string;
+  relPath: string;
+  sourceKind: IngestSourceKind;
+  mappingId: string | null;
+};
+
+export type IngestBatch = {
+  id: string;
+  domainSlug: string;
+  databaseId: string;
+  mappingId: string | null;
+  fileId: string;
+  relPath: string;
+  sourceKind: IngestSourceKind;
+  fingerprint: string;
+  status: IngestBatchStatus;
+  createdAt: string;
+};
+
+export type IngestRow = {
+  id: string;
+  batchId: string;
+  cells: Record<string, unknown>;
+  sourceCells: Record<string, string>;
+  externalId: string | null;
+  provenance: IngestProvenance;
+  duplicate: boolean;
+  status: IngestRowStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type IngestFileResult =
+  | {
+      kind: "staged";
+      batch: IngestBatch;
+      rows: IngestRow[];
+    }
+  | {
+      kind: "needs-mapping";
+      fingerprint: string;
+      sourceKind: IngestSourceKind;
+      sourceColumns: string[];
+      fileId: string;
+      relPath: string;
+      sampleRows: Record<string, string>[];
+      decision: DecisionRecord;
+    };
+
+export type MappingWriteResult =
+  | { applied: true; mapping: IngestMapping }
+  | { applied: false; decision: DecisionRecord };
 
 export type PeriodPack = {
   cadence: ReviewCadence;

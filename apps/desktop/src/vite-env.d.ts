@@ -294,6 +294,27 @@ type LifequestApi = {
   pageDelete: (slug: string, pageId: string) => Promise<Result<{ id: string }>>;
   pinsList: (domainSlug: string | null) => Promise<Result<Pin[]>>;
   pinsSet: (domainSlug: string | null, pins: Pin[]) => Promise<Result<PinWriteResult>>;
+  // KAR-53 ingest
+  ingestFile: (slug: string, input: {
+    databaseId: string;
+    bytes: Uint8Array;
+    mime: string;
+    name: string;
+    extractedRows?: Record<string, string>[];
+  }) => Promise<Result<unknown>>;
+  ingestProposeMapping: (slug: string, input: {
+    mappingId?: string;
+    databaseId: string;
+    fingerprint: string;
+    sourceKind: string;
+    columns: Array<{ source: string; columnId: string }>;
+  }) => Promise<Result<unknown>>;
+  ingestListMappings: (slug: string, databaseId?: string) => Promise<Result<unknown>>;
+  ingestListBatches: (slug: string, databaseId?: string) => Promise<Result<unknown>>;
+  ingestListRows: (slug: string, batchId: string) => Promise<Result<unknown>>;
+  ingestEditRow: (slug: string, batchId: string, rowId: string, cells: Record<string, unknown>) => Promise<Result<unknown>>;
+  ingestAccept: (slug: string, batchId: string, rowIds?: string[]) => Promise<Result<unknown>>;
+  ingestReject: (slug: string, batchId: string, rowIds?: string[]) => Promise<Result<unknown>>;
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => () => void;
   windowChrome: {
     get: () => Promise<{ overlay: boolean; platform: string }>;

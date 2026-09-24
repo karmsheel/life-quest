@@ -143,6 +143,16 @@ function registerIpcHandlers() {
   ipcMain.handle("pins:list", (_e, domainSlug: string | null) => vault.pinsList(domainSlug));
   ipcMain.handle("pins:set", (_e, domainSlug: string | null, pins: Parameters<typeof vault.pinsSet>[1]) => vault.pinsSet(domainSlug, pins));
 
+  // KAR-53 ingest
+  ipcMain.handle("ingest:file", (_e, slug: string, input: { databaseId: string; bytes: Uint8Array; mime: string; name: string; extractedRows?: Record<string, string>[] }) => vault.ingestFile(slug, input));
+  ipcMain.handle("ingest:proposeMapping", (_e, slug: string, input: { mappingId?: string; databaseId: string; fingerprint: string; sourceKind: string; columns: Array<{ source: string; columnId: string }> }) => vault.ingestProposeMapping(slug, input));
+  ipcMain.handle("ingest:listMappings", (_e, slug: string, databaseId?: string) => vault.ingestListMappings(slug, databaseId));
+  ipcMain.handle("ingest:listBatches", (_e, slug: string, databaseId?: string) => vault.ingestListBatches(slug, databaseId));
+  ipcMain.handle("ingest:listRows", (_e, slug: string, batchId: string) => vault.ingestListRows(slug, batchId));
+  ipcMain.handle("ingest:editRow", (_e, slug: string, batchId: string, rowId: string, cells: Record<string, unknown>) => vault.ingestEditRow(slug, batchId, rowId, cells));
+  ipcMain.handle("ingest:accept", (_e, slug: string, batchId: string, rowIds?: string[]) => vault.ingestAccept(slug, batchId, rowIds));
+  ipcMain.handle("ingest:reject", (_e, slug: string, batchId: string, rowIds?: string[]) => vault.ingestReject(slug, batchId, rowIds));
+
   ipcMain.handle(
     "document:get",
     (_e, slug: string, kind: Parameters<typeof vault.documentGet>[1]) =>

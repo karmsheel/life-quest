@@ -108,4 +108,15 @@ export {
   exportDomainBooks,
   restoreDomainBooks,
 } from "./books-export.ts";
+export {
+  ingestFile,
+  proposeMapping,
+  listMappings,
+  getMapping,
+  listIngestBatches,
+  listIngestRows,
+  editIngestRow,
+  acceptIngestRows,
+  rejectIngestRows,
+} from "./ingest.ts";
 export type { MapStoreState, MapCommand, MapActor, MapDomainError, YearRecord, MapEvent, Task, TaskColumn, ColorId, DayType, DetachedWeek, ResolvedWeek } from "./map/public.ts";

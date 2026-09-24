@@ -70,8 +70,25 @@ const lifequest = {
     ipcRenderer.invoke("pins:list", domainSlug) as Promise<Result<unknown>>,
   pinsSet: (domainSlug: string | null, pins: unknown[]) =>
     ipcRenderer.invoke("pins:set", domainSlug, pins) as Promise<Result<unknown>>,
+  // KAR-53 ingest
+  ingestFile: (slug: string, input: { databaseId: string; bytes: Uint8Array; mime: string; name: string; extractedRows?: Record<string, string>[] }) =>
+    ipcRenderer.invoke("ingest:file", slug, input) as Promise<Result<unknown>>,
+  ingestProposeMapping: (slug: string, input: { mappingId?: string; databaseId: string; fingerprint: string; sourceKind: string; columns: Array<{ source: string; columnId: string }> }) =>
+    ipcRenderer.invoke("ingest:proposeMapping", slug, input) as Promise<Result<unknown>>,
+  ingestListMappings: (slug: string, databaseId?: string) =>
+    ipcRenderer.invoke("ingest:listMappings", slug, databaseId) as Promise<Result<unknown>>,
+  ingestListBatches: (slug: string, databaseId?: string) =>
+    ipcRenderer.invoke("ingest:listBatches", slug, databaseId) as Promise<Result<unknown>>,
+  ingestListRows: (slug: string, batchId: string) =>
+    ipcRenderer.invoke("ingest:listRows", slug, batchId) as Promise<Result<unknown>>,
+  ingestEditRow: (slug: string, batchId: string, rowId: string, cells: Record<string, unknown>) =>
+    ipcRenderer.invoke("ingest:editRow", slug, batchId, rowId, cells) as Promise<Result<unknown>>,
+  ingestAccept: (slug: string, batchId: string, rowIds?: string[]) =>
+    ipcRenderer.invoke("ingest:accept", slug, batchId, rowIds) as Promise<Result<unknown>>,
+  ingestReject: (slug: string, batchId: string, rowIds?: string[]) =>
+    ipcRenderer.invoke("ingest:reject", slug, batchId, rowIds) as Promise<Result<unknown>>,
 
-  documentGet: (slug: string, kind: string) =>
+  documentGet:
     ipcRenderer.invoke("document:get", slug, kind) as Promise<Result<unknown>>,
   documentSave: (
     slug: string,

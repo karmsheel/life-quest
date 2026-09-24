@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import type { DatabaseListEntry } from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
@@ -10,12 +10,15 @@ export default function DataPage() {
   const { snapshot } = useVault();
   const lens = useDomainLens();
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [entries, setEntries] = useState<DatabaseListEntry[]>([]);
   const [name, setName] = useState("");
   const [selectedDomain, setSelectedDomain] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ingestStatus, setIngestStatus] = useState<string | null>(null);
+  const [selectedDbId, setSelectedDbId] = useState<string>("");
 
   const domainSlug = lens.kind === "domain" ? lens.slug : null;
   const showDomainSelect = lens.kind !== "domain";
@@ -62,6 +65,46 @@ export default function DataPage() {
     }
   }
 
+  const targetDomain = showDomainSelect ? selectedDomain : domainSlug;
+  const domainEntries = entries.filter((e) => e.domainSlug === targetDomain);
+
+  async function onIngestFile(file: File) {
+    setError(null);
+    setIngestStatus(null);
+    if (!targetDomain) {
+      setError("Select a domain first.");
+      return;
+    }
+    if (!selectedDbId) {
+      setError("Select a database to ingest into.");
+      return;
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const res = await api().ingestFile(targetDomain, {
+      databaseId: selectedDbId,
+      bytes,
+      mime: file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "text/csv"),
+      name: file.name,
+    });
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    const value = res.value as any;
+    if (value.kind === "needs-mapping") {
+      setIngestStatus(`Mapping required for ${value.sourceColumns.length} columns. Review the pending Decision, then drop the file again to stage rows.`);
+    } else if (value.kind === "staged") {
+      setIngestStatus(`Staged ${value.rows.length} rows.`);
+      navigate(`/data/${targetDomain}/${selectedDbId}`);
+    }
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) void onIngestFile(file);
+  }
+
   if (!snapshot) {
     return <p className="muted">No vault open.</p>;
   }
@@ -74,9 +117,10 @@ export default function DataPage() {
       </header>
 
       {error ? (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
+        <p className="form-error" role="alert">{error}</p>
+      ) : null}
+      {ingestStatus ? (
+        <p className="form-info" role="status">{ingestStatus}</p>
       ) : null}
 
       <form onSubmit={onCreate} className="data-new-form">
@@ -96,16 +140,46 @@ export default function DataPage() {
           >
             <option value="">Select domain…</option>
             {liveDomains.map((d) => (
-              <option key={d.slug} value={d.slug}>
-                {d.meta.name}
-              </option>
+              <option key={d.slug} value={d.slug}>{d.meta.name}</option>
             ))}
           </select>
         ) : null}
-        <Button type="submit" disabled={busy || !name.trim()}>
-          New database
-        </Button>
+        <Button type="submit" disabled={busy || !name.trim()}>New database</Button>
       </form>
+
+      <section className="ingest-drop-zone">
+        <p className="muted">Drop a .csv or .pdf file here to ingest rows.</p>
+        <select
+          value={selectedDbId}
+          onChange={(e) => setSelectedDbId(e.target.value)}
+          className="input-field"
+        >
+          <option value="">Select target database…</option>
+          {domainEntries.map((entry) => (
+            <option key={entry.database.id} value={entry.database.id}>
+              {entry.database.name}
+            </option>
+          ))}
+        </select>
+        <div
+          className="drop-zone"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={onDrop}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          Drop .csv or .pdf file here
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,.pdf,text/csv,application/pdf"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void onIngestFile(f);
+          }}
+        />
+      </section>
 
       {entries.length === 0 ? (
         <p className="muted">No databases yet.</p>

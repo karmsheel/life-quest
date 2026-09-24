@@ -36,6 +36,7 @@ export function documentTargetLabel(
   if (target.type === "review") return periodTitle(target.cadence, target.period, "monday");
   if (target.type === "page") return fallbackTitle || "Page";
   if (target.type === "pins") return target.domainSlug ? `${target.domainSlug} pins` : "Overview pins";
+  if (target.type === "mapping") return fallbackTitle ? `${fallbackTitle}` : "Ingest mapping";
   return fallbackTitle;
 }
 

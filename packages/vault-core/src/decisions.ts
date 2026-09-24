@@ -16,6 +16,7 @@ import {
   type DocumentTarget,
   type Result,
 } from "./types.ts";
+import { getDatabase, isDomainLive } from "./domain-databases.ts";
 import { documentTargetLabel } from "./documents.ts";
 import { getReview, applyLockedReviewBody } from "./reviews.ts";
 import { isReviewCadence } from "./period.ts";
@@ -48,7 +49,8 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       isLibraryExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isReviewExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isPageExplicitTarget(explicitTarget as Record<string, unknown>) ||
-      isPinsExplicitTarget(explicitTarget as Record<string, unknown>))
+      isPinsExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isMappingExplicitTarget(explicitTarget as Record<string, unknown>))
   ) {
     const t = explicitTarget as Record<string, unknown>;
     if (t.type === "review") {
@@ -67,6 +69,12 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       };
     } else if (t.type === "pins") {
       target = { type: "pins", domainSlug: t.domainSlug === null ? null : String(t.domainSlug) };
+    } else if (t.type === "mapping") {
+      target = {
+        type: "mapping",
+        domainSlug: String(t.domainSlug),
+        mappingId: String(t.mappingId),
+      };
     } else {
       target = { type: "library", id: String(t.id) };
     }
@@ -91,6 +99,8 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     domainSlugs = [target.domainSlug];
   } else if (target.type === "pins") {
     domainSlugs = target.domainSlug ? [target.domainSlug] : [];
+  } else if (target.type === "mapping") {
+    domainSlugs = [target.domainSlug];
   } else {
     domainSlugs = [];
   }
@@ -177,6 +187,16 @@ function isPinsExplicitTarget(raw: Record<string, unknown>): boolean {
   );
 }
 
+function isMappingExplicitTarget(raw: Record<string, unknown>): boolean {
+  return (
+    raw.type === "mapping" &&
+    typeof raw.domainSlug === "string" &&
+    raw.domainSlug.length > 0 &&
+    typeof raw.mappingId === "string" &&
+    raw.mappingId.length > 0
+  );
+}
+
 async function readDecisionFile(filePath: string): Promise<DecisionRecord> {
   const raw = await fs.readFile(filePath, "utf8");
   const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -254,6 +274,10 @@ export async function createDecision(
       }
     } else if (input.target.type === "pins") {
       // domainSlug null = overview, or a string. Both valid.
+    } else if (input.target.type === "mapping") {
+      if (!input.target.domainSlug.trim() || !input.target.mappingId.trim()) {
+        return { ok: false, error: "domainSlug and mappingId are required" };
+      }
     } else {
       return { ok: false, error: "Invalid target type" };
     }
@@ -306,6 +330,25 @@ export async function createDecision(
       // Pins are not lockable. Target is always valid for live domain / overview.
       docLocked = false;
       domainSlugForLog = input.target.domainSlug;
+    } else if (input.target.type === "mapping") {
+      // Mappings are not lockable. Domain must be live; database in proposed JSON must exist.
+      const live = await isDomainLive(rootPath, input.target.domainSlug);
+      if (!live) {
+        return { ok: false, error: `Domain not found or archived: ${input.target.domainSlug}` };
+      }
+      // Validate database exists in proposed JSON
+      try {
+        const proposed = JSON.parse(input.proposedBodyMarkdown);
+        if (!proposed || typeof proposed !== "object" || !proposed.databaseId) {
+          return { ok: false, error: "Mapping proposedBody must be JSON with databaseId" };
+        }
+        const dbRes = await getDatabase(rootPath, input.target.domainSlug, proposed.databaseId);
+        if (!dbRes.ok) return dbRes;
+      } catch {
+        return { ok: false, error: "Mapping proposedBody must be valid JSON" };
+      }
+      docLocked = false;
+      domainSlugForLog = input.target.domainSlug;
     } else {
       const noteRes = await libraryGet(rootPath, input.target.id);
       if (!noteRes.ok) return noteRes;
@@ -329,9 +372,11 @@ export async function createDecision(
             ? input.target.domainSlug
               ? [input.target.domainSlug]
               : []
-            : input.target.type === "review"
-              ? []
-              : libraryNote!.value.domainSlugs;
+            : input.target.type === "mapping"
+              ? [input.target.domainSlug]
+              : input.target.type === "review"
+                ? []
+                : libraryNote!.value.domainSlugs;
 
     const title = `Proposed change to ${documentTargetLabel(
       input.target,
@@ -435,6 +480,50 @@ async function applyApprovedBody(
       }
       const setRes = await setPins(rootPath, decision.target.domainSlug, pins, USER_ACTOR);
       if (!setRes.ok) return setRes;
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "mapping") {
+      const paths = vaultPaths(rootPath);
+      // Parse proposedBodyMarkdown as JSON mapping
+      let mapping: Record<string, unknown>;
+      try {
+        mapping = JSON.parse(decision.proposedBodyMarkdown) as Record<string, unknown>;
+      } catch {
+        return { ok: false, error: "Mapping proposedBody must be valid JSON" };
+      }
+      // Validate columns
+      const columns = mapping.columns;
+      if (!Array.isArray(columns)) {
+        return { ok: false, error: "Mapping must have columns array" };
+      }
+      const databaseId = String(mapping.databaseId ?? "");
+      const fingerprint = String(mapping.fingerprint ?? "");
+      if (!databaseId) return { ok: false, error: "Mapping missing databaseId" };
+      if (!fingerprint) return { ok: false, error: "Mapping missing fingerprint" };
+      // Validate each columnId exists on database
+      const dbRes = await getDatabase(rootPath, decision.target.domainSlug, databaseId);
+      if (!dbRes.ok) return dbRes;
+      const dbMeta = dbRes.value;
+      const validColIds = new Set(dbMeta.columns.map((c) => c.id));
+      for (const col of columns) {
+        const c = col as { source?: string; columnId?: string };
+        if (!c.source || typeof c.source !== "string" || !c.source.trim()) {
+          return { ok: false, error: "Every mapping column needs a non-empty source" };
+        }
+        if (!c.columnId || typeof c.columnId !== "string" || !validColIds.has(c.columnId)) {
+          return { ok: false, error: `Mapping column for source "${c.source}" needs a valid columnId` };
+        }
+      }
+      // Write mapping file
+      const mappingPath = paths.domainMapping(decision.target.domainSlug, decision.target.mappingId);
+      await atomicWriteFile(mappingPath, `${JSON.stringify(mapping, null, 2)}\n`);
+      // Log
+      await appendLog(rootPath, {
+        domainSlug: decision.target.domainSlug,
+        type: "mapping.accepted",
+        summary: `Mapping accepted: ${decision.target.mappingId} (${databaseId})`,
+        payload: { mappingId: decision.target.mappingId, databaseId, fingerprint },
+      });
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "doctrine") {

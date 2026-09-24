@@ -51,6 +51,10 @@ export function vaultPaths(root: string) {
       safeJoin(rootPath, "domains", slug, "data", "files"),
     domainFile: (slug: string, fileId: string, name: string) =>
       safeJoin(rootPath, "domains", slug, "data", "files", fileId, name),
+    domainMappingsDir: (slug: string) =>
+      safeJoin(rootPath, "domains", slug, "data", "mappings"),
+    domainMapping: (slug: string, mappingId: string) =>
+      safeJoin(rootPath, "domains", slug, "data", "mappings", `${mappingId}.json`),
     // KAR-60 page and pin paths
     domainPagesDir: (slug: string) => safeJoin(rootPath, "domains", slug, "pages"),
     domainPage: (slug: string, pageId: string) =>

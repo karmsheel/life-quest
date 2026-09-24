@@ -5,10 +5,21 @@ import type {
   DatabaseListEntry,
   DatabaseMeta,
   DatabaseRow,
+  IngestBatch,
+  IngestRow,
 } from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { Button } from "@/components/ui/Button";
+
+async function loadBatches(slug: string, id: string, setBatches: (b: IngestBatch[]) => void, setErr: (e: string | null) => void) {
+  const res = await api().ingestListBatches(slug, id);
+  if (res.ok) {
+    setBatches((res.value as IngestBatch[]).filter((b) => b.status !== "accepted"));
+  } else {
+    setErr(res.error);
+  }
+}
 
 export default function DatabasePage() {
   const { slug = "", dbId = "" } = useParams<{ slug: string; dbId: string }>();
@@ -25,6 +36,7 @@ export default function DatabasePage() {
   const [newColRelation, setNewColRelation] = useState("");
   const [colError, setColError] = useState<string | null>(null);
   const [domainDbs, setDomainDbs] = useState<DatabaseListEntry[]>([]);
+  const [ingestBatches, setIngestBatches] = useState<IngestBatch[]>([]);
 
   const load = useCallback(async () => {
     const metaRes = await api().dbGet(slug, dbId);
@@ -248,7 +260,97 @@ export default function DatabasePage() {
       </table>
 
       <Button onClick={onAddRow}>Add row</Button>
+
+      {/* Ingest section */}
+      <IngestSection slug={slug} dbId={dbId} meta={meta} ingestBatches={ingestBatches} onReload={() => { void loadBatches(slug, dbId, setIngestBatches, setError); }} />
     </div>
+  );
+}
+
+function IngestSection({ slug, dbId, meta, ingestBatches, onReload }: {
+  slug: string;
+  dbId: string;
+  meta: DatabaseMeta;
+  ingestBatches: IngestBatch[];
+  onReload: () => void;
+}) {
+  const [rows, setRows] = useState<Record<string, IngestRow[]>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const next: Record<string, IngestRow[]> = {};
+      for (const batch of ingestBatches) {
+        const res = await api().ingestListRows(slug, batch.id);
+        if (res.ok) {
+          next[batch.id] = res.value as IngestRow[];
+        }
+      }
+      setRows(next);
+    })();
+  }, [ingestBatches, slug]);
+
+  async function onAccept(batchId: string, rowIds?: string[]) {
+    const res = await api().ingestAccept(slug, batchId, rowIds);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    onReload();
+  }
+
+  async function onReject(batchId: string, rowIds?: string[]) {
+    const res = await api().ingestReject(slug, batchId, rowIds);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    onReload();
+  }
+
+  if (ingestBatches.length === 0) {
+    return <p className="muted">No ingest rows.</p>;
+  }
+
+  return (
+    <section className="ingest-section">
+      <h2>Ingest</h2>
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {ingestBatches.map((batch) => (
+        <div key={batch.id} className="ingest-batch">
+          <p className="muted">{batch.fingerprint.slice(0, 16)}… ({batch.sourceKind})</p>
+          <table className="data-table">
+            <thead>
+              <tr>
+                {meta.columns.map((col) => (
+                  <th key={col.id}>{col.name}</th>
+                ))}
+                <th>Duplicate</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(rows[batch.id] ?? []).filter((r) => r.status === "proposed").map((row) => (
+                <tr key={row.id}>
+                  {meta.columns.map((col) => (
+                    <td key={col.id}>{String(row.cells[col.id] ?? "")}</td>
+                  ))}
+                  <td>{row.duplicate ? "Yes" : ""}</td>
+                  <td>
+                    <Button onClick={() => onAccept(batch.id, [row.id])}>Accept</Button>
+                    <Button destructive onClick={() => onReject(batch.id, [row.id])}>Reject</Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="ingest-batch__actions">
+            <Button onClick={() => onAccept(batch.id)}>Accept all</Button>
+            <Button destructive onClick={() => onReject(batch.id)}>Reject all</Button>
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }
 

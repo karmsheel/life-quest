@@ -59,9 +59,22 @@ import {
   restoreDomainBooks,
   applyGoalsCommand,
   applyMapCommand,
+  acceptIngestRows,
+  editIngestRow,
+  ingestFile as ingestFileCore,
+  listIngestBatches,
+  listIngestRows,
+  listMappings,
+  proposeMapping,
+  rejectIngestRows,
   type AgentHire,
   type DatabaseColumnType,
   type GoalsCommand,
+  type IngestBatch,
+  type IngestFileResult,
+  type IngestMapping,
+  type IngestRow,
+  type IngestSourceKind,
   type MapActor,
   type MapCommand,
   type MapStoreState,
@@ -76,6 +89,7 @@ import {
   type LibraryListResult,
   type LibraryUpdatePatch,
   type LifeEvent,
+  type MappingWriteResult,
   type PeriodPack,
   type PlanningStub,
   type Result,
@@ -310,6 +324,51 @@ export async function domainArchive(
   slug: string,
 ): Promise<Result<DomainRecord>> {
   return withVault((root) => archiveDomain(root, slug));
+}
+
+// KAR-53 ingest
+export async function ingestFile(slug: string, input: {
+  databaseId: string;
+  bytes: Uint8Array;
+  mime: string;
+  name: string;
+  extractedRows?: Record<string, string>[];
+}): Promise<Result<import("@lifequest/vault-core").IngestFileResult>> {
+  return withVault((root) => ingestFileCore(root, slug, { ...input, actor: USER_ACTOR }));
+}
+
+export async function ingestProposeMapping(slug: string, input: {
+  mappingId?: string;
+  databaseId: string;
+  fingerprint: string;
+  sourceKind: import("@lifequest/vault-core").IngestSourceKind;
+  columns: import("@lifequest/vault-core").IngestColumnMapping[];
+}): Promise<Result<import("@lifequest/vault-core").MappingWriteResult>> {
+  return withVault((root) => proposeMapping(root, slug, { ...input, actor: USER_ACTOR }));
+}
+
+export async function ingestListMappings(slug: string, databaseId?: string): Promise<Result<import("@lifequest/vault-core").IngestMapping[]>> {
+  return withVault((root) => listMappings(root, slug, databaseId));
+}
+
+export async function ingestListBatches(slug: string, databaseId?: string): Promise<Result<import("@lifequest/vault-core").IngestBatch[]>> {
+  return withVault((root) => listIngestBatches(root, slug, databaseId));
+}
+
+export async function ingestListRows(slug: string, batchId: string): Promise<Result<import("@lifequest/vault-core").IngestRow[]>> {
+  return withVault((root) => listIngestRows(root, slug, batchId));
+}
+
+export async function ingestEditRow(slug: string, batchId: string, rowId: string, cells: Record<string, unknown>): Promise<Result<import("@lifequest/vault-core").IngestRow>> {
+  return withVault((root) => editIngestRow(root, slug, batchId, rowId, cells));
+}
+
+export async function ingestAccept(slug: string, batchId: string, rowIds?: string[]): Promise<Result<{ accepted: number; postedIds: string[] }>> {
+  return withVault((root) => acceptIngestRows(root, slug, batchId, rowIds));
+}
+
+export async function ingestReject(slug: string, batchId: string, rowIds?: string[]): Promise<Result<{ rejected: number }>> {
+  return withVault((root) => rejectIngestRows(root, slug, batchId, rowIds));
 }
 
 export async function domainSetActive(slug: string | null): Promise<Result<string | null>> {
