@@ -294,6 +294,10 @@ type LifequestApi = {
   pageDelete: (slug: string, pageId: string) => Promise<Result<{ id: string }>>;
   pinsList: (domainSlug: string | null) => Promise<Result<Pin[]>>;
   pinsSet: (domainSlug: string | null, pins: Pin[]) => Promise<Result<PinWriteResult>>;
+  // KAR-61 finance kit
+  kitInstallFinance: () => Promise<Result<unknown>>;
+  kitList: (slug: string) => Promise<Result<unknown>>;
+  kitFinanceSettings: () => Promise<Result<unknown>>;
   // KAR-53 ingest
   ingestFile: (slug: string, input: {
     databaseId: string;

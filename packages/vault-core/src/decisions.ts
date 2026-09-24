@@ -50,7 +50,8 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       isReviewExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isPageExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isPinsExplicitTarget(explicitTarget as Record<string, unknown>) ||
-      isMappingExplicitTarget(explicitTarget as Record<string, unknown>))
+      isMappingExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isKitInstallExplicitTarget(explicitTarget as Record<string, unknown>))
   ) {
     const t = explicitTarget as Record<string, unknown>;
     if (t.type === "review") {
@@ -75,6 +76,8 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
         domainSlug: String(t.domainSlug),
         mappingId: String(t.mappingId),
       };
+    } else if (t.type === "kit-install") {
+      target = { type: "kit-install", kit: "finance" as const };
     } else {
       target = { type: "library", id: String(t.id) };
     }
@@ -197,6 +200,10 @@ function isMappingExplicitTarget(raw: Record<string, unknown>): boolean {
   );
 }
 
+function isKitInstallExplicitTarget(raw: Record<string, unknown>): boolean {
+  return raw.type === "kit-install" && raw.kit === "finance";
+}
+
 async function readDecisionFile(filePath: string): Promise<DecisionRecord> {
   const raw = await fs.readFile(filePath, "utf8");
   const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -278,6 +285,10 @@ export async function createDecision(
       if (!input.target.domainSlug.trim() || !input.target.mappingId.trim()) {
         return { ok: false, error: "domainSlug and mappingId are required" };
       }
+    } else if (input.target.type === "kit-install") {
+      if (input.target.kit !== "finance") {
+        return { ok: false, error: `Invalid kit: ${String(input.target.kit)}` };
+      }
     } else {
       return { ok: false, error: "Invalid target type" };
     }
@@ -349,6 +360,10 @@ export async function createDecision(
       }
       docLocked = false;
       domainSlugForLog = input.target.domainSlug;
+    } else if (input.target.type === "kit-install") {
+      // Kit install is not lockable. Financial domain must be live.
+      docLocked = false;
+      domainSlugForLog = "financial";
     } else {
       const noteRes = await libraryGet(rootPath, input.target.id);
       if (!noteRes.ok) return noteRes;
@@ -374,9 +389,11 @@ export async function createDecision(
               : []
             : input.target.type === "mapping"
               ? [input.target.domainSlug]
-              : input.target.type === "review"
-                ? []
-                : libraryNote!.value.domainSlugs;
+              : input.target.type === "kit-install"
+                ? ["financial"]
+                : input.target.type === "review"
+                  ? []
+                  : libraryNote!.value.domainSlugs;
 
     const title = `Proposed change to ${documentTargetLabel(
       input.target,
@@ -524,6 +541,13 @@ async function applyApprovedBody(
         summary: `Mapping accepted: ${decision.target.mappingId} (${databaseId})`,
         payload: { mappingId: decision.target.mappingId, databaseId, fingerprint },
       });
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "kit-install") {
+      // Approved kit-install Decision → run the install write path (user-level writes).
+      const { applyFinanceKitInstall } = await import("./finance-kit.ts");
+      const installRes = await applyFinanceKitInstall(rootPath);
+      if (!installRes.ok) return installRes;
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "doctrine") {

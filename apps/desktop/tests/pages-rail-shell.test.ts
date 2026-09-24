@@ -63,11 +63,11 @@ describe("pages rail shell wiring (KAR-60)", () => {
     assert.ok(!canvasPage.includes("setActiveSlug"), "PageCanvasPage should not call setActiveSlug");
   });
 
-  it("PageCanvasPage mentions pageGet, pageUpdate, the seven core kinds, and no script/finance kinds", () => {
+  it("PageCanvasPage mentions pageGet, pageUpdate, core kinds, and three finance kinds (no script)", () => {
     const src = read("src/pages/PageCanvasPage.tsx");
     assert.match(src, /pageGet/);
     assert.match(src, /pageUpdate/);
-    // Seven core kinds
+    // Core kinds
     assert.match(src, /markdown/);
     assert.match(src, /bound-table/);
     assert.match(src, /metric/);
@@ -75,11 +75,12 @@ describe("pages rail shell wiring (KAR-60)", () => {
     assert.match(src, /chart/);
     assert.match(src, /goal-progress/);
     assert.match(src, /deadline/);
-    // No script/finance kinds as addable
+    // KAR-61 finance kinds
+    assert.match(src, /budget-vs-actual/);
+    assert.match(src, /net-worth/);
+    assert.match(src, /scenario-compare/);
+    // No script as addable kind
     assert.equal(/script.*block|addable.*script/i.test(src), false);
-    assert.equal(src.includes("budget-vs-actual"), false);
-    assert.equal(src.includes("net-worth"), false);
-    assert.equal(src.includes("scenario-compare"), false);
   });
 
   it("preload/main/vault-service/vite-env mention all page: and pins: channels and API names", () => {
@@ -127,10 +128,10 @@ describe("pages rail shell wiring (KAR-60)", () => {
     assert.match(src, /deadline/);
   });
 
-  it("source does not add Finance kit install UI", () => {
+  it("source does not add Finance kit install UI to PagesPage, but PageCanvasPage may show Install", () => {
     const pagesPage = read("src/pages/PagesPage.tsx");
     const canvasPage = read("src/pages/PageCanvasPage.tsx");
     assert.equal(/install.*finance|finance.*install/i.test(pagesPage), false);
-    assert.equal(/install.*finance|finance.*install/i.test(canvasPage), false);
+    assert.match(canvasPage, /Install Finance kit/);
   });
 });

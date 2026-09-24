@@ -59,6 +59,9 @@ import {
   restoreDomainBooks,
   applyGoalsCommand,
   applyMapCommand,
+  installFinanceKit,
+  listInstalledKits,
+  getFinanceKitSettings,
   acceptIngestRows,
   editIngestRow,
   ingestFile as ingestFileCore,
@@ -551,6 +554,19 @@ export async function documentMediaRead(
   relPath: string,
 ): Promise<Result<{ bytes: Uint8Array; mime: string }>> {
   return withVault((root) => readDocumentMedia(root, slug, relPath));
+}
+
+// KAR-61 finance kit
+export async function kitInstallFinance(): Promise<Result<unknown>> {
+  return withVault((root) => installFinanceKit(root, USER_ACTOR));
+}
+
+export async function kitList(slug: string): Promise<Result<string[]>> {
+  return withVault((root) => listInstalledKits(root, slug));
+}
+
+export async function kitFinanceSettings(): Promise<Result<unknown>> {
+  return withVault((root) => getFinanceKitSettings(root));
 }
 
 export async function decisionList(): Promise<Result<DecisionRecord[]>> {

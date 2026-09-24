@@ -195,6 +195,11 @@ function registerIpcHandlers() {
       vault.documentMediaRead(slug, relPath),
   );
 
+  // KAR-61 finance kit
+  ipcMain.handle("kit:installFinance", () => vault.kitInstallFinance());
+  ipcMain.handle("kit:list", (_e, slug: string) => vault.kitList(slug));
+  ipcMain.handle("kit:financeSettings", () => vault.kitFinanceSettings());
+
   ipcMain.handle("decision:list", () => vault.decisionList());
   ipcMain.handle(
     "decision:create",

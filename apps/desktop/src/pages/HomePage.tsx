@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { DecisionRecord, LifeEvent, PageListEntry, Pin } from "@lifequest/vault-core";
 import { SYSTEM_PIN_KINDS, type SystemPinKind } from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
+import { Button } from "@/components/ui/Button";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { GoalProgressCard } from "@/pages/home-pins/GoalProgressCard";
@@ -27,6 +28,7 @@ export default function HomePage() {
   const [pins, setPins] = useState<Pin[]>([]);
   const [pages, setPages] = useState<PageListEntry[]>([]);
   const [moveBusy, setMoveBusy] = useState(false);
+  const [installedKits, setInstalledKits] = useState<string[] | null>(null);
 
   const load = useCallback(async () => {
     const boardSlug = lens.kind === "domain" ? lens.slug : null;
@@ -48,11 +50,17 @@ export default function HomePage() {
       setEvents(allEvents);
       setPins(pinsRes.ok ? (pinsRes.value as Pin[]) : []);
       setPages(pagesRes.ok ? (pagesRes.value as PageListEntry[]) : []);
+      // KAR-61 finance kit CTA
+      if (boardSlug) {
+        const kitRes = await api().kitList(boardSlug);
+        setInstalledKits(kitRes.ok ? (kitRes.value as string[]) : []);
+      }
     } catch {
       setDecisions([]);
       setEvents([]);
       setPins([]);
       setPages([]);
+      setInstalledKits([]);
     }
   }, [lens]);
 
@@ -215,7 +223,16 @@ export default function HomePage() {
         <div className="home-pin">
           <ActiveAgentsCard />
         </div>
-      </div>
+        </div>
+
+        {boardSlug && installedKits && !installedKits.includes("finance") && (
+        <div className="home-rail__finance-cta">
+          <Button onClick={async () => {
+            const res = await api().kitInstallFinance();
+            if (res.ok) window.location.reload();
+          }}>Install Finance kit</Button>
+        </div>
+        )}
 
       {availableKinds.length > 0 || addablePages.length > 0 ? (
         <div className="home-pin-add">

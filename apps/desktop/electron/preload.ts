@@ -71,6 +71,13 @@ const lifequest = {
   pinsSet: (domainSlug: string | null, pins: unknown[]) =>
     ipcRenderer.invoke("pins:set", domainSlug, pins) as Promise<Result<unknown>>,
   // KAR-53 ingest
+  // KAR-61 finance kit
+  kitInstallFinance: () =>
+    ipcRenderer.invoke("kit:installFinance") as Promise<Result<unknown>>,
+  kitList: (slug: string) =>
+    ipcRenderer.invoke("kit:list", slug) as Promise<Result<unknown>>,
+  kitFinanceSettings: () =>
+    ipcRenderer.invoke("kit:financeSettings") as Promise<Result<unknown>>,
   ingestFile: (slug: string, input: { databaseId: string; bytes: Uint8Array; mime: string; name: string; extractedRows?: Record<string, string>[] }) =>
     ipcRenderer.invoke("ingest:file", slug, input) as Promise<Result<unknown>>,
   ingestProposeMapping: (slug: string, input: { mappingId?: string; databaseId: string; fingerprint: string; sourceKind: string; columns: Array<{ source: string; columnId: string }> }) =>

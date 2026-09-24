@@ -124,7 +124,12 @@ function validateBlocks(
         }
       }
     }
-    // goal-progress and deadline have no extra fields to validate
+    // goal-progress, deadline, budget-vs-actual, net-worth have no extra fields to validate
+    if (b.kind === "scenario-compare") {
+      if (typeof b.assumptionSetId !== "string" || !(b.assumptionSetId as string).trim()) {
+        return { ok: false, error: "scenario-compare requires a non-empty assumptionSetId" };
+      }
+    }
   }
   return { ok: true, value: blocks as PageBlock[] };
 }

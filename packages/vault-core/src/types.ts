@@ -44,7 +44,8 @@ export type DocumentTarget =
   | { type: "review"; cadence: ReviewCadence; period: string }
   | { type: "page"; domainSlug: string; pageId: string }
   | { type: "pins"; domainSlug: string | null }
-  | { type: "mapping"; domainSlug: string; mappingId: string };
+  | { type: "mapping"; domainSlug: string; mappingId: string }
+  | { type: "kit-install"; kit: "finance" };
 
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;
 export type RoomId = (typeof ROOM_IDS)[number];
@@ -342,7 +343,41 @@ export type DomainDatabaseRegistry = {
   schemaVersion: 1;
   databases: DatabaseMeta[];
   installedKits: string[];
+  finance?: FinanceKitSettings;
 };
+
+export type FinanceKitSettings = {
+  homeCurrency: "ZAR";
+  usdZarRate: number | null;
+  usdZarAsOf: string | null; // YYYY-MM-DD or null
+};
+
+export type KitInstallResult =
+  | { applied: true; alreadyInstalled: boolean }
+  | { applied: false; decision: DecisionRecord };
+
+// KAR-61 Finance kit constants
+export const FINANCE_KIT_ID = "finance" as const;
+export const FINANCE_DOMAIN_SLUG = "financial" as const;
+
+export const FINANCE_DB_IDS = {
+  accounts: "finance:accounts",
+  categories: "finance:categories",
+  transactions: "finance:transactions",
+  budgets: "finance:budgets",
+  recurring: "finance:recurring",
+  holdings: "finance:holdings",
+  assumptionSets: "finance:assumption-sets",
+} as const;
+
+export const FINANCE_PAGE_IDS = {
+  ledger: "finance-page-ledger",
+  spend: "finance-page-spend",
+  budget: "finance-page-budget",
+  netWorth: "finance-page-net-worth",
+  scenario1: "finance-page-scenario-1",
+  scenario2: "finance-page-scenario-2",
+} as const;
 
 export type DatabaseRow = {
   id: string;
@@ -367,6 +402,9 @@ export const PAGE_BLOCK_KINDS = [
   "chart",
   "goal-progress",
   "deadline",
+  "budget-vs-actual",
+  "net-worth",
+  "scenario-compare",
 ] as const;
 export type PageBlockKind = (typeof PAGE_BLOCK_KINDS)[number];
 
@@ -397,7 +435,14 @@ export type PageBlock =
       yColumnId: string;
     }
   | { id: string; kind: "goal-progress" }
-  | { id: string; kind: "deadline" };
+  | { id: string; kind: "deadline" }
+  | { id: string; kind: "budget-vs-actual" }
+  | { id: string; kind: "net-worth" }
+  | {
+      id: string;
+      kind: "scenario-compare";
+      assumptionSetId: string;
+    };
 
 export type PageRecord = {
   id: string;

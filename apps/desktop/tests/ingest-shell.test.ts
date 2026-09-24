@@ -91,10 +91,11 @@ describe("ingest shell wiring", () => {
     assert.ok(!dbPage.includes("spreadsheets.google"), "DatabasePage should not mention Google Sheets");
   });
 
-  it("source does not add Finance kit install UI", () => {
+  it("source does not add Finance kit install UI to DatabasePage", () => {
     const dataPage = read("src/pages/DataPage.tsx");
     const dbPage = read("src/pages/DatabasePage.tsx");
-    assert.ok(!dataPage.includes("Install Finance kit"), "DataPage should not add Finance kit install UI");
+    // DataPage may show Install Finance kit for Financial domain
+    assert.ok(dataPage.includes("Install Finance kit"), "DataPage should add Finance kit install UI");
     assert.ok(!dbPage.includes("Install Finance kit"), "DatabasePage should not add Finance kit install UI");
   });
 });

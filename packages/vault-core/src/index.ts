@@ -119,4 +119,11 @@ export {
   acceptIngestRows,
   rejectIngestRows,
 } from "./ingest.ts";
+export {
+  installFinanceKit,
+  listInstalledKits,
+  getFinanceKitSettings,
+  applyFinanceKitInstall,
+} from "./finance-kit.ts";
+export type { FinanceKitSettings, KitInstallResult } from "./finance-kit.ts";
 export type { MapStoreState, MapCommand, MapActor, MapDomainError, YearRecord, MapEvent, Task, TaskColumn, ColorId, DayType, DetachedWeek, ResolvedWeek } from "./map/public.ts";

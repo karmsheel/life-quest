@@ -29,6 +29,9 @@ const BLOCK_LABELS: Record<string, string> = {
   chart: "Chart",
   "goal-progress": "Goal progress",
   deadline: "Deadline",
+  "budget-vs-actual": "Budget vs actual",
+  "net-worth": "Net worth",
+  "scenario-compare": "Scenario compare",
 };
 
 function genId(): string {
@@ -175,6 +178,8 @@ export default function PageCanvasPage() {
   const [title, setTitle] = useState("");
   const [blocks, setBlocks] = useState<PageBlock[]>([]);
   const [addKind, setAddKind] = useState<string>("markdown");
+  const [installedKits, setInstalledKits] = useState<string[] | null>(null);
+  const [assumptionSets, setAssumptionSets] = useState<Array<{ id: string; name: string }>>([]);
 
   const [dbs, setDbs] = useState<DatabaseListEntry[]>([]);
   const [rowsByDb, setRowsByDb] = useState<Record<string, DatabaseRow[]>>({});
@@ -209,6 +214,24 @@ export default function PageCanvasPage() {
     void (async () => {
       const res = await api().dbList(slug);
       if (res.ok) setDbs(res.value as DatabaseListEntry[]);
+      const kitRes = await api().kitList(slug);
+      if (kitRes.ok) {
+        const kits = kitRes.value as string[];
+        setInstalledKits(kits);
+        if (kits.includes("finance")) {
+          const rowsRes = await api().dbListRows(slug, "finance:assumption-sets");
+          if (rowsRes.ok) {
+            setAssumptionSets((rowsRes.value as Array<{ id: string; cells: Record<string, unknown> }>).map((r) => ({
+              id: r.id,
+              name: String(r.cells.name ?? r.id),
+            })));
+          }
+        } else {
+          setInstalledKits(kits);
+        }
+      } else {
+        setInstalledKits([]);
+      }
     })();
   }, [slug]);
 
@@ -242,6 +265,9 @@ export default function PageCanvasPage() {
       (base as { databaseId: string }).databaseId = "";
       (base as { xColumnId: string }).xColumnId = "";
       (base as { yColumnId: string }).yColumnId = "";
+    }
+    if (kind === "scenario-compare") {
+      (base as unknown as { assumptionSetId: string }).assumptionSetId = "";
     }
     setBlocks((prev) => [...prev, base]);
     if (kind === "bound-table" || kind === "metric" || kind === "chart") {
@@ -513,6 +539,110 @@ export default function PageCanvasPage() {
                     ))}
                   </ul>
                 )}
+              </section>
+            );
+          }
+          if (block.kind === "budget-vs-actual") {
+            if (!installedKits || !installedKits.includes("finance")) {
+              return (
+                <section key={block.id} className="page-block">
+                  <div className="page-block__head">
+                    <span className="muted">Budget vs actual</span>
+                    <button className="page-block__remove" onClick={() => removeBlock(block.id)}>Remove</button>
+                  </div>
+                  <p className="muted">Install the Finance kit to use this block.</p>
+                  <Button onClick={async () => {
+                    const res = await api().kitInstallFinance();
+                    if (!res.ok) setError(res.error);
+                    else window.location.reload();
+                  }}>Install Finance kit</Button>
+                </section>
+              );
+            }
+            // Check if any budget rows exist
+            const budgetDb = dbs.find((d) => d.database.id === "finance:budgets");
+            const budgetRows = rowsByDb["finance:budgets"] ?? [];
+            return (
+              <section key={block.id} className="page-block">
+                <div className="page-block__head">
+                  <span className="muted">Budget vs actual</span>
+                  <button className="page-block__remove" onClick={() => removeBlock(block.id)}>Remove</button>
+                </div>
+                {budgetRows.length === 0 ? (
+                  <p className="muted">No budgets yet.</p>
+                ) : (
+                  <p className="muted">Budgets: {budgetRows.length} rows.</p>
+                )}
+              </section>
+            );
+          }
+          if (block.kind === "net-worth") {
+            if (!installedKits || !installedKits.includes("finance")) {
+              return (
+                <section key={block.id} className="page-block">
+                  <div className="page-block__head">
+                    <span className="muted">Net worth</span>
+                    <button className="page-block__remove" onClick={() => removeBlock(block.id)}>Remove</button>
+                  </div>
+                  <p className="muted">Install the Finance kit to use this block.</p>
+                  <Button onClick={async () => {
+                    const res = await api().kitInstallFinance();
+                    if (!res.ok) setError(res.error);
+                    else window.location.reload();
+                  }}>Install Finance kit</Button>
+                </section>
+              );
+            }
+            const accountsRows = rowsByDb["finance:accounts"] ?? [];
+            const holdingsRows = rowsByDb["finance:holdings"] ?? [];
+            return (
+              <section key={block.id} className="page-block">
+                <div className="page-block__head">
+                  <span className="muted">Net worth</span>
+                  <button className="page-block__remove" onClick={() => removeBlock(block.id)}>Remove</button>
+                </div>
+                {accountsRows.length === 0 && holdingsRows.length === 0 ? (
+                  <p className="muted">No accounts or holdings yet.</p>
+                ) : (
+                  <p className="muted">Accounts: {accountsRows.length}, Holdings: {holdingsRows.length}.</p>
+                )}
+              </section>
+            );
+          }
+          if (block.kind === "scenario-compare") {
+            const sc = block as Extract<PageBlock, { kind: "scenario-compare" }>;
+            if (!installedKits || !installedKits.includes("finance")) {
+              return (
+                <section key={block.id} className="page-block">
+                  <div className="page-block__head">
+                    <span className="muted">Scenario compare</span>
+                    <button className="page-block__remove" onClick={() => removeBlock(block.id)}>Remove</button>
+                  </div>
+                  <p className="muted">Install the Finance kit to use this block.</p>
+                  <Button onClick={async () => {
+                    const res = await api().kitInstallFinance();
+                    if (!res.ok) setError(res.error);
+                    else window.location.reload();
+                  }}>Install Finance kit</Button>
+                </section>
+              );
+            }
+            return (
+              <section key={block.id} className="page-block">
+                <div className="page-block__head">
+                  <span className="muted">Scenario compare</span>
+                  <button className="page-block__remove" onClick={() => removeBlock(block.id)}>Remove</button>
+                </div>
+                <select
+                  className="input-field"
+                  value={sc.assumptionSetId}
+                  onChange={(e) => setBlock(block.id, { assumptionSetId: e.target.value })}
+                >
+                  {assumptionSets.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+                <p className="muted">No projection yet.</p>
               </section>
             );
           }

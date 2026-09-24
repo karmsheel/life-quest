@@ -23,6 +23,7 @@ export default function DataPage() {
   const [busy, setBusy] = useState(false);
   const [ingestStatus, setIngestStatus] = useState<string | null>(null);
   const [selectedDbId, setSelectedDbId] = useState<string>("");
+  const [installedKits, setInstalledKits] = useState<string[] | null>(null);
   const [pendingMap, setPendingMap] = useState<{
     fingerprint: string;
     sourceKind: IngestSourceKind;
@@ -36,12 +37,18 @@ export default function DataPage() {
   const liveDomains = (snapshot?.domains ?? []).filter((d) => !d.meta.archivedAt);
 
   const load = useCallback(async () => {
-    const res = await api().dbList(domainSlug);
-    if (res.ok) {
-      setEntries(res.value as DatabaseListEntry[]);
-    } else {
-      setError(res.error);
-    }
+  const res = await api().dbList(domainSlug);
+  if (res.ok) {
+    setEntries(res.value as DatabaseListEntry[]);
+  } else {
+    setError(res.error);
+  }
+  if (domainSlug) {
+    const kitRes = await api().kitList(domainSlug);
+    setInstalledKits(kitRes.ok ? (kitRes.value as string[]) : []);
+  } else {
+    setInstalledKits([]);
+  }
   }, [domainSlug]);
 
   useEffect(() => {
@@ -273,6 +280,20 @@ export default function DataPage() {
           </form>
         ) : null}
       </section>
+
+      {domainSlug && installedKits && !installedKits.includes("finance") && (
+        <div className="data-rail__finance-cta">
+          <Button onClick={async () => {
+            const res = await api().kitInstallFinance();
+            if (!res.ok) {
+              setError(res.error);
+            } else {
+              setInstalledKits(["finance"]);
+              await load();
+            }
+          }}>Install Finance kit</Button>
+        </div>
+      )}
 
       {entries.length === 0 ? (
         <p className="muted">No databases yet.</p>
