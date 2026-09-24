@@ -49,7 +49,7 @@ function safeParseRegistry(raw: string): DomainDatabaseRegistry | null {
   }
 }
 
-async function readRegistry(
+export async function readRegistry(
   registryPath: string,
 ): Promise<DomainDatabaseRegistry> {
   try {
@@ -76,7 +76,7 @@ function openSqlite(sqlitePath: string): DatabaseSync {
   return db;
 }
 
-async function isDomainLive(root: string, slug: string): Promise<boolean> {
+export async function isDomainLive(root: string, slug: string): Promise<boolean> {
   try {
     const metaPath = vaultPaths(root).domainJson(slug);
     const raw = await fs.readFile(metaPath, "utf8");

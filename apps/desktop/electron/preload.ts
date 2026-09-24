@@ -49,6 +49,12 @@ const lifequest = {
   dbFileSave: (slug: string, input: { bytes: Uint8Array; mime: string; name: string }) =>
     ipcRenderer.invoke("db:fileSave", slug, input) as Promise<Result<unknown>>,
 
+  // KAR-58 books export and restore
+  dbExportBooks: (slug: string) =>
+    ipcRenderer.invoke("db:exportBooks", slug) as Promise<Result<unknown>>,
+  dbRestoreBooks: (slug: string, options: { confirm: boolean }) =>
+    ipcRenderer.invoke("db:restoreBooks", slug, options) as Promise<Result<unknown>>,
+
   // KAR-60 pages and pins
   pageList: (domainSlug: string | null) =>
     ipcRenderer.invoke("page:list", domainSlug) as Promise<Result<unknown>>,

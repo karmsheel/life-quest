@@ -55,6 +55,8 @@ import {
   vaultPaths,
   writeReview,
   addDatabaseColumn,
+  exportDomainBooks,
+  restoreDomainBooks,
   applyGoalsCommand,
   applyMapCommand,
   type AgentHire,
@@ -382,6 +384,19 @@ export async function dbFileSave(
   input: { bytes: Uint8Array; mime: string; name: string },
 ): Promise<Result<{ relPath: string; fileId: string }>> {
   return withVault((root) => saveDatabaseFile(root, slug, input));
+}
+
+export async function dbExportBooks(
+  slug: string,
+): Promise<Result<import("@lifequest/vault-core").DomainBooksExport>> {
+  return withVault((root) => exportDomainBooks(root, slug));
+}
+
+export async function dbRestoreBooks(
+  slug: string,
+  options: { confirm: boolean },
+): Promise<Result<{ databases: number; rows: number }>> {
+  return withVault((root) => restoreDomainBooks(root, slug, options));
 }
 
 // KAR-60 pages and pins

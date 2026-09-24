@@ -130,6 +130,10 @@ function registerIpcHandlers() {
   ipcMain.handle("db:deleteRow", (_e, slug: string, dbId: string, rowId: string) => vault.dbDeleteRow(slug, dbId, rowId));
   ipcMain.handle("db:fileSave", (_e, slug: string, input: { bytes: Uint8Array; mime: string; name: string }) => vault.dbFileSave(slug, input));
 
+  // KAR-58 books export and restore
+  ipcMain.handle("db:exportBooks", (_e, slug: string) => vault.dbExportBooks(slug));
+  ipcMain.handle("db:restoreBooks", (_e, slug: string, options: { confirm: boolean }) => vault.dbRestoreBooks(slug, options));
+
   // KAR-60 pages and pins
   ipcMain.handle("page:list", (_e, domainSlug: string | null) => vault.pageList(domainSlug));
   ipcMain.handle("page:get", (_e, slug: string, pageId: string) => vault.pageGet(slug, pageId));

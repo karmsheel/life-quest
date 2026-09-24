@@ -91,6 +91,8 @@ export {
   saveDatabaseFile,
   ensureVaultDatabaseGitignore,
   invalidateDomainCache,
+  isDomainLive,
+  readRegistry,
 } from "./domain-databases.ts";
 export {
   listPages,
@@ -104,4 +106,8 @@ export {
   setPins,
   defaultPins,
 } from "./pins.ts";
+export {
+  exportDomainBooks,
+  restoreDomainBooks,
+} from "./books-export.ts";
 export type { MapStoreState, MapCommand, MapActor, MapDomainError, YearRecord, MapEvent, Task, TaskColumn, ColorId, DayType, DetachedWeek, ResolvedWeek } from "./map/public.ts";

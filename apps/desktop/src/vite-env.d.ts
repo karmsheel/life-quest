@@ -9,6 +9,7 @@ import type {
   DocumentKind,
   DoctrineDocument,
   DocumentTarget,
+  DomainBooksExport,
   DomainMeta,
   DomainRecord,
   GoalsCommand,
@@ -276,6 +277,12 @@ type LifequestApi = {
     mime: string;
     name: string;
   }) => Promise<Result<{ relPath: string; fileId: string }>>;
+  // KAR-58 books export and restore
+  dbExportBooks: (slug: string) => Promise<Result<DomainBooksExport>>;
+  dbRestoreBooks: (
+    slug: string,
+    options: { confirm: boolean },
+  ) => Promise<Result<{ databases: number; rows: number }>>;
   // KAR-60 pages and pins
   pageList: (domainSlug: string | null) => Promise<Result<PageListEntry[]>>;
   pageGet: (slug: string, pageId: string) => Promise<Result<PageRecord>>;

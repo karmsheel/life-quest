@@ -441,6 +441,22 @@ export type PinWriteResult =
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
+// KAR-58 JSON export/restore
+export type DomainBooksExport = {
+  schemaVersion: 1;
+  domainSlug: string;
+  exportedAt: string;
+  databases: DomainBooksDatabase[];
+};
+
+export type DomainBooksDatabase = {
+  id: string;
+  name: string;
+  sotMode: DatabaseSotMode;
+  columns: DatabaseColumn[];
+  rows: DatabaseRow[];
+};
+
 export type PeriodPack = {
   cadence: ReviewCadence;
   period: string;

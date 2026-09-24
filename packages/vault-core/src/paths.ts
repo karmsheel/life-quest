@@ -45,6 +45,8 @@ export function vaultPaths(root: string) {
       safeJoin(rootPath, "domains", slug, "data", "domain.sqlite"),
     domainRegistry: (slug: string) =>
       safeJoin(rootPath, "domains", slug, "data", "registry.json"),
+    domainBooks: (slug: string) =>
+      safeJoin(rootPath, "domains", slug, "data", "books.json"),
     domainFilesDir: (slug: string) =>
       safeJoin(rootPath, "domains", slug, "data", "files"),
     domainFile: (slug: string, fileId: string, name: string) =>
