@@ -313,6 +313,7 @@ type LifequestApi = {
   kitInstallFinance: () => Promise<Result<unknown>>;
   kitList: (slug: string) => Promise<Result<unknown>>;
   kitFinanceSettings: () => Promise<Result<unknown>>;
+  kitSetCaptureAccount: (accountRowId: string | null) => Promise<Result<unknown>>;
   // KAR-53 ingest
   ingestFile: (slug: string, input: {
     databaseId: string;

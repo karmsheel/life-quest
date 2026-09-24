@@ -24,6 +24,8 @@ export default function DataPage() {
   const [ingestStatus, setIngestStatus] = useState<string | null>(null);
   const [selectedDbId, setSelectedDbId] = useState<string>("");
   const [installedKits, setInstalledKits] = useState<string[] | null>(null);
+  const [defaultCaptureAccount, setDefaultCaptureAccount] = useState<string | null>(null);
+  const [transactionalAccounts, setTransactionalAccounts] = useState<Array<{ id: string; name: string }>>([]);
   const [pendingMap, setPendingMap] = useState<{
     fingerprint: string;
     sourceKind: IngestSourceKind;
@@ -43,15 +45,36 @@ export default function DataPage() {
     (lens.kind !== "domain" || lens.slug === "financial");
 
   const load = useCallback(async () => {
-  const res = await api().dbList(domainSlug);
-  if (res.ok) {
-    setEntries(res.value as DatabaseListEntry[]);
-  } else {
-    setError(res.error);
-  }
-  const kitRes = await api().kitList("financial");
-  setInstalledKits(kitRes.ok ? (kitRes.value as string[]) : []);
-  }, [domainSlug]);
+    const res = await api().dbList(domainSlug);
+    if (res.ok) {
+      setEntries(res.value as DatabaseListEntry[]);
+    } else {
+      setError(res.error);
+    }
+    const kitRes = await api().kitList("financial");
+    setInstalledKits(kitRes.ok ? (kitRes.value as string[]) : []);
+
+    // Load financial capture settings if financial domain is live and kit installed
+    const finLive = snapshot?.domains.some((d) => d.slug === "financial" && !d.meta.archivedAt);
+    const kitInstalled = kitRes.ok && (kitRes.value as string[]).includes("finance");
+    if (finLive && kitInstalled) {
+      const settingsRes = await api().kitFinanceSettings();
+      if (settingsRes.ok && settingsRes.value) {
+        const settings = settingsRes.value as { defaultCaptureAccountId?: string | null; homeCurrency?: string };
+        setDefaultCaptureAccount(settings.defaultCaptureAccountId ?? null);
+      }
+      // Load accounts
+      const accountsRes = await api().dbListRows("financial", "finance:accounts");
+      if (accountsRes.ok && Array.isArray(accountsRes.value)) {
+        const accounts = accountsRes.value as Array<{ id: string; cells: Record<string, unknown> }>;
+        const transactional = accounts.filter((a) => {
+          const type = a.cells.type as string;
+          return ["checking", "credit", "cash", "other"].includes(type);
+        });
+        setTransactionalAccounts(transactional.map((a) => ({ id: a.id, name: a.cells.name as string })));
+      }
+    }
+  }, [domainSlug, snapshot?.domains]);
 
   useEffect(() => {
     void load();
@@ -283,6 +306,7 @@ export default function DataPage() {
         ) : null}
       </section>
 
+
       {showFinanceInstall && (
         <div className="data-rail__finance-cta">
           <Button onClick={async () => {
@@ -297,7 +321,32 @@ export default function DataPage() {
         </div>
       )}
 
-      {/* KAR-59 Refresh linked adapters */}
+      {installedKits?.includes("finance") && (
+        <div className="data-rail__capture-account">
+          <label>
+            Default capture account
+            <select
+              value={defaultCaptureAccount ?? ""}
+              onChange={async (e) => {
+                const value = e.target.value || null;
+                const res = await api().kitSetCaptureAccount(value);
+                if (!res.ok) {
+                  setError(res.error);
+                } else {
+                  setDefaultCaptureAccount(value);
+                }
+              }}
+              className="input-field"
+            >
+              <option value="">Ask each time</option>
+              {transactionalAccounts.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
       <div className="data-rail__refresh-linked">
         <Button onClick={async () => {
           const res = await api().dbSync(domainSlug ?? "");

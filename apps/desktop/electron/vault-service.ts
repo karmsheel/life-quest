@@ -62,6 +62,7 @@ import {
   installFinanceKit,
   listInstalledKits,
   getFinanceKitSettings,
+  setFinanceCaptureAccount,
   acceptIngestRows,
   editIngestRow,
   ingestFile as ingestFileCore,
@@ -619,6 +620,10 @@ export async function kitList(slug: string): Promise<Result<string[]>> {
 
 export async function kitFinanceSettings(): Promise<Result<unknown>> {
   return withVault((root) => getFinanceKitSettings(root));
+}
+
+export async function kitSetCaptureAccount(accountRowId: string | null): Promise<Result<unknown>> {
+  return withVault((root) => setFinanceCaptureAccount(root, accountRowId));
 }
 
 export async function decisionList(): Promise<Result<DecisionRecord[]>> {

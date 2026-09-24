@@ -79,7 +79,7 @@ describe("finance kit install", () => {
     // Settings
     const settingsRes = await getFinanceKitSettings(root);
     assert.ok(settingsRes.ok);
-    assert.deepEqual(settingsRes.value, { homeCurrency: "ZAR", usdZarRate: null, usdZarAsOf: null });
+    assert.deepEqual(settingsRes.value, { homeCurrency: "ZAR", usdZarRate: null, usdZarAsOf: null, defaultCaptureAccountId: null });
 
     // Six pages
     const pagesRes = await listPages(root, "financial");

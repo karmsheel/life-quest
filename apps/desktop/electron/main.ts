@@ -206,6 +206,7 @@ function registerIpcHandlers() {
   ipcMain.handle("kit:installFinance", () => vault.kitInstallFinance());
   ipcMain.handle("kit:list", (_e, slug: string) => vault.kitList(slug));
   ipcMain.handle("kit:financeSettings", () => vault.kitFinanceSettings());
+  ipcMain.handle("kit:setCaptureAccount", (_e, accountRowId: string | null) => vault.kitSetCaptureAccount(accountRowId));
 
   ipcMain.handle("decision:list", () => vault.decisionList());
   ipcMain.handle(

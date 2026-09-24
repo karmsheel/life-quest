@@ -133,5 +133,15 @@ export {
   listInstalledKits,
   getFinanceKitSettings,
   applyFinanceKitInstall,
+  setFinanceCaptureAccount,
 } from "./finance-kit.ts";
+export {
+  captureUtterance,
+  undoCapture,
+  correctCapture,
+} from "./capture.ts";
+export {
+  CAPTURE_TOOL_DEFS,
+  executeCaptureTool,
+} from "./capture-tools.ts";
 export type { MapStoreState, MapCommand, MapActor, MapDomainError, YearRecord, MapEvent, Task, TaskColumn, ColorId, DayType, DetachedWeek, ResolvedWeek } from "./map/public.ts";

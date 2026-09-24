@@ -350,7 +350,22 @@ export type FinanceKitSettings = {
   homeCurrency: "ZAR";
   usdZarRate: number | null;
   usdZarAsOf: string | null; // YYYY-MM-DD or null
+  defaultCaptureAccountId: string | null;
 };
+
+export type CaptureOutcome =
+  | { posted: false; ask: string; rowId: null }
+  | {
+      posted: true;
+      rowId: string;
+      receipt: string;
+      amount: number;
+      currency: "ZAR" | "USD";
+      date: string;
+      accountName: string;
+      categoryName: string;
+      payee: string | null;
+    };
 
 export type KitInstallResult =
   | { applied: true; alreadyInstalled: boolean }

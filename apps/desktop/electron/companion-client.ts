@@ -33,6 +33,7 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     `Agent lock: ${input.locked}`,
     `Vault: ${input.vaultOpen ? "open" : "closed"}`,
     "LifeQuest MCP server name is lifequest. Use it for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
+    "Money the operator states must be logged with capture_transaction (or undo_capture / correct_capture in that thread). Do not claim a row was posted unless the tool result says posted: true. If the tool returns ask, ask that and do not invent an account.",
   ].join("\n");
   const reviewContext = input.reviewContext?.trim();
   if (!reviewContext) return base;

@@ -398,7 +398,9 @@ export async function applyFinanceKitInstall(root: string): Promise<Result<KitIn
   merged.installedKits = Array.from(new Set([...merged.installedKits, FINANCE_KIT_ID]));
 
   // 6. Set finance settings if missing
-  const financeSettings: FinanceKitSettings = merged.finance ?? { homeCurrency: "ZAR", usdZarRate: null, usdZarAsOf: null };
+  const financeSettings: FinanceKitSettings = merged.finance ?? { homeCurrency: "ZAR", usdZarRate: null, usdZarAsOf: null, defaultCaptureAccountId: null };
+  // Ensure defaultCaptureAccountId is present even if settings existed before
+  financeSettings.defaultCaptureAccountId = financeSettings.defaultCaptureAccountId ?? null;
   merged.finance = financeSettings;
 
   // Write registry (merge with existing to preserve operator-created generic DBs)
@@ -506,4 +508,67 @@ export async function getFinanceKitSettings(root: string): Promise<Result<Financ
   } catch {
     return { ok: true, value: null };
   }
+}
+
+export async function setFinanceCaptureAccount(
+  root: string,
+  accountRowId: string | null,
+): Promise<Result<FinanceKitSettings>> {
+  // 1. Refuse if kit is missing or financial is archived
+  const paths = vaultPaths(root);
+  const slug = FINANCE_DOMAIN_SLUG;
+
+  let metaRaw: string;
+  try {
+    metaRaw = await fs.readFile(paths.domainJson(slug), "utf8");
+  } catch {
+    return { ok: false, error: `Domain not found or archived: ${slug}` };
+  }
+  try {
+    const meta = JSON.parse(metaRaw);
+    if (meta.archivedAt != null) {
+      return { ok: false, error: `Domain not found or archived: ${slug}` };
+    }
+  } catch {
+    return { ok: false, error: `Domain not found or archived: ${slug}` };
+  }
+
+  const registry = await readRegistry(paths.domainRegistry(slug));
+  if (!registry.installedKits.includes(FINANCE_KIT_ID)) {
+    return { ok: false, error: "Install the Finance kit first" };
+  }
+
+  // 2. null clears the setting
+  if (accountRowId === null) {
+    if (!registry.finance) {
+      registry.finance = { homeCurrency: "ZAR", usdZarRate: null, usdZarAsOf: null, defaultCaptureAccountId: null };
+    } else {
+      registry.finance.defaultCaptureAccountId = null;
+    }
+    await atomicWriteFile(paths.domainRegistry(slug), JSON.stringify(registry, null, 2) + "\n");
+    return { ok: true, value: registry.finance };
+  }
+
+  // 3. Validate: row must exist, be in accounts DB, be transactional
+  const accounts = await listRows(root, slug, FINANCE_DB_IDS.accounts);
+  if (!accounts.ok) return accounts;
+
+  const account = accounts.value.find((r) => r.id === accountRowId);
+  if (!account) {
+    return { ok: false, error: `Unknown account row: ${accountRowId}` };
+  }
+
+  const type = account.cells.type as string;
+  if (!["checking", "credit", "cash", "other"].includes(type)) {
+    return { ok: false, error: `Account ${account.cells.name} is not a transactional account` };
+  }
+
+  // 4. Write
+  if (!registry.finance) {
+    registry.finance = { homeCurrency: "ZAR", usdZarRate: null, usdZarAsOf: null, defaultCaptureAccountId: accountRowId };
+  } else {
+    registry.finance.defaultCaptureAccountId = accountRowId;
+  }
+  await atomicWriteFile(paths.domainRegistry(slug), JSON.stringify(registry, null, 2) + "\n");
+  return { ok: true, value: registry.finance };
 }
