@@ -52,6 +52,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     requestId: string;
     summary: string;
   } | null>(null);
+  const [fileImplied, setFileImplied] = useState(true);
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const assistantId = useRef<string | null>(null);
@@ -65,6 +66,9 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     }
     setSessionId(id);
     window.localStorage.setItem(LAST_SESSION_KEY, id);
+    // Filing pref is per session id. Missing means on.
+    const filing = await api().companionGetFiling(id);
+    setFileImplied(filing);
     setMessages(
       result.value.map((m) => ({
         id: nextId(),
@@ -195,6 +199,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
           aboutMe: snapshot?.map?.aboutMe ?? "",
           locked: false,
           vaultOpen: Boolean(snapshot),
+          fileUnsolicited: fileImplied,
         },
       });
       if ("ok" in result && result.ok === false) {
@@ -231,6 +236,12 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     // Kickoff/send intentionally tied to the request id change only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedSessionId]);
+
+  async function onToggleFileImplied(next: boolean) {
+    setFileImplied(next);
+    if (!sessionId) return;
+    await api().companionSetFiling(sessionId, next);
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -290,6 +301,18 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                   </option>
                 ))}
               </select>
+              {sessionId ? (
+                <label className="chat-panel__filing">
+                  <input
+                    type="checkbox"
+                    aria-label="File implied changes"
+                    checked={fileImplied}
+                    disabled={sending}
+                    onChange={(e) => void onToggleFileImplied(e.target.checked)}
+                  />
+                  File implied changes
+                </label>
+              ) : null}
               <button
                 type="button"
                 className="chat-panel__text-btn"

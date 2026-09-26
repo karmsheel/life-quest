@@ -49,6 +49,68 @@ describe("buildInstructions", () => {
     assert.match(text, /\n\nBOUND_REVIEW_PACK_JSON$/);
   });
 
+  it("keeps reviewContext as the final paragraph when the fence rule is added", () => {
+    const text = buildInstructions({
+      domainName: null,
+      domainSlug: null,
+      aboutMe: "",
+      locked: false,
+      vaultOpen: true,
+      reviewContext: "BOUND_REVIEW_PACK_JSON",
+      fileUnsolicited: true,
+    });
+    assert.match(text, /\n\nBOUND_REVIEW_PACK_JSON$/);
+    assert.equal(text.endsWith("BOUND_REVIEW_PACK_JSON"), true);
+    const fenceIndex = text.indexOf("lifequest-decision");
+    assert.ok(fenceIndex !== -1, "fence rule present");
+    assert.ok(fenceIndex < text.indexOf("BOUND_REVIEW_PACK_JSON"));
+  });
+
+  it("says silence does not apply a proposal and project is not a document", () => {
+    const text = buildInstructions({
+      domainName: null,
+      domainSlug: null,
+      aboutMe: "",
+      locked: false,
+      vaultOpen: true,
+    });
+    assert.match(text, /lifequest-decision/);
+    assert.match(text, /[Ss]ilence/);
+    assert.match(text, /does not apply/);
+    assert.match(text, /project/);
+    assert.match(text, /not a document/);
+  });
+
+  it("tells the companion not to emit the fence when filing is off", () => {
+    const off = buildInstructions({
+      domainName: null,
+      domainSlug: null,
+      aboutMe: "",
+      locked: false,
+      vaultOpen: true,
+      fileUnsolicited: false,
+    });
+    assert.match(off, /Do not emit/);
+    assert.match(off, /lifequest-decision/);
+    const on = buildInstructions({
+      domainName: null,
+      domainSlug: null,
+      aboutMe: "",
+      locked: false,
+      vaultOpen: true,
+      fileUnsolicited: true,
+    });
+    assert.equal(on.includes("Do not emit"), false);
+    const omitted = buildInstructions({
+      domainName: null,
+      domainSlug: null,
+      aboutMe: "",
+      locked: false,
+      vaultOpen: true,
+    });
+    assert.equal(omitted, on, "omitted fileUnsolicited keeps the on wording");
+  });
+
   it("omits reviewContext when empty or unset", () => {
     const plain = buildInstructions({
       domainName: null,

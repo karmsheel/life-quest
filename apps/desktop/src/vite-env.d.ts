@@ -73,6 +73,7 @@ type CompanionInstructionsContext = {
   locked: boolean;
   vaultOpen: boolean;
   reviewContext?: string;
+  fileUnsolicited?: boolean;
 };
 
 type ChatStreamEvent =
@@ -200,6 +201,8 @@ type LifequestApi = {
     allow: boolean;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   companionOpenProfileFolder: () => Promise<void>;
+  companionGetFiling: (sessionId: string) => Promise<boolean>;
+  companionSetFiling: (sessionId: string, enabled: boolean) => Promise<void>;
   onCompanionStream: (cb: (evt: ChatStreamEvent) => void) => () => void;
   mapGetState: () => Promise<Result<MapStoreState>>;
   mapApply: (command: MapCommand) => Promise<Result<VaultSnapshot>>;

@@ -253,6 +253,10 @@ const lifequest = {
   }) => ipcRenderer.invoke("companion:approval", payload),
   companionOpenProfileFolder: () =>
     ipcRenderer.invoke("companion:openProfileFolder"),
+  companionGetFiling: (sessionId: string) =>
+    ipcRenderer.invoke("companion:getFiling", sessionId) as Promise<boolean>,
+  companionSetFiling: (sessionId: string, enabled: boolean) =>
+    ipcRenderer.invoke("companion:setFiling", sessionId, enabled) as Promise<void>,
   onCompanionStream: (cb: (evt: unknown) => void) => {
     const listener = (_event: unknown, evt: unknown) => {
       cb(evt);

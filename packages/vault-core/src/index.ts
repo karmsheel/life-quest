@@ -47,6 +47,17 @@ export {
   executeDocumentTool,
 } from "./document-tools.ts";
 export {
+  COMPANION_ACTOR,
+  WRITE_TOOL_NAMES,
+  fileImpliedChange,
+  shouldFileImpliedTurn,
+} from "./implied-decision.ts";
+export type {
+  ImpliedChange,
+  ImpliedTurnReason,
+  ImpliedTurnVerdict,
+} from "./implied-decision.ts";
+export {
   REVIEW_TOOL_DEFS,
   executeReviewTool,
 } from "./review-tools.ts";

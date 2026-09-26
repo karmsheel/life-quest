@@ -16,6 +16,7 @@ import {
   DOCUMENT_KINDS,
   ensurePlanningStub,
   ensureReview,
+  fileImpliedChange,
   getDatabase,
   getDocument,
   getPage,
@@ -46,6 +47,7 @@ import {
   saveDocumentMedia,
   setDocumentLocked,
   setLibraryLocked,
+  shouldFileImpliedTurn,
   setPins,
   unlockReview,
   updateDomain,
@@ -121,6 +123,7 @@ import {
   type SyncResult,
   type SyncConflict,
 } from "@lifequest/vault-core";
+import { getFileUnsolicited } from "./companion-filing.js";
 import {
   getActiveDomain,
   listRecentVaults,
@@ -1054,7 +1057,8 @@ export async function companionChatStreamWithPack(
   instructionsContext: CompanionInstructionsInput,
   onEvent: (evt: ChatStreamEvent) => void,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const ctx: CompanionInstructionsInput = { ...instructionsContext };
+  const fileUnsolicited = await getFileUnsolicited(sessionId).catch(() => true);
+  const ctx: CompanionInstructionsInput = { ...instructionsContext, fileUnsolicited };
   if (currentRoot) {
     const snap = await openVault(currentRoot);
     if (snap.ok) {
@@ -1066,7 +1070,34 @@ export async function companionChatStreamWithPack(
       if (reviewContext) ctx.reviewContext = reviewContext;
     }
   }
-  return companion.companionChatStream(sessionId, input, ctx, onEvent);
+
+  // Collect the turn so a fence in the assistant text can become one pending
+  // Decision after the stream returns. Collecting is not approving.
+  let assistantText = "";
+  const completedToolNames: string[] = [];
+  const forward = (evt: ChatStreamEvent) => {
+    if (evt.type === "assistant.delta") assistantText += evt.text;
+    else if (evt.type === "tool.completed") completedToolNames.push(evt.name);
+    onEvent(evt);
+  };
+
+  const result = await companion.companionChatStream(sessionId, input, ctx, forward);
+  if (result.ok && currentRoot) {
+    try {
+      const verdict = shouldFileImpliedTurn({
+        fileUnsolicited,
+        assistantText,
+        completedToolNames,
+      });
+      if (verdict.change) {
+        // Filing never approves; the operator still has to approve the Decision.
+        await fileImpliedChange(currentRoot, verdict.change);
+      }
+    } catch {
+      // A filing failure must not fail the chat.
+    }
+  }
+  return result;
 }
 
 // KAR-59 adapter secrets

@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stopMcp } from "./mcp-server.js";
 import * as companion from "./companion.js";
+import { getFileUnsolicited, setFileUnsolicited } from "./companion-filing.js";
 import type { CompanionInstructionsInput } from "./companion-client.js";
 import * as vault from "./vault-service.js";
 import {
@@ -346,6 +347,12 @@ function registerIpcHandlers() {
   );
   ipcMain.handle("companion:openProfileFolder", () =>
     companion.companionOpenProfileFolder(),
+  );
+  ipcMain.handle("companion:getFiling", (_e, sessionId: string) =>
+    getFileUnsolicited(sessionId),
+  );
+  ipcMain.handle("companion:setFiling", (_e, sessionId: string, enabled: boolean) =>
+    setFileUnsolicited(sessionId, enabled),
   );
 
   ipcMain.handle("map:getState", () => vault.mapGetState());
