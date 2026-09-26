@@ -46,7 +46,9 @@ export type DocumentTarget =
   | { type: "pins"; domainSlug: string | null }
   | { type: "mapping"; domainSlug: string; mappingId: string }
   | { type: "kit-install"; kit: "finance" }
-  | { type: "assumption-set"; rowId: string };
+  | { type: "assumption-set"; rowId: string }
+  | { type: "goal" }
+  | { type: "day-template" };
 
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;
 export type RoomId = (typeof ROOM_IDS)[number];
@@ -207,6 +209,8 @@ export type LibraryDocument = {
 };
 
 export type LibraryCreateInput = {
+  /** Use an explicit id (e.g. the id allocated for an approved Decision) instead of a fresh uuid. */
+  id?: string;
   title: string;
   bodyMarkdown?: string;
   domainSlugs?: string[];

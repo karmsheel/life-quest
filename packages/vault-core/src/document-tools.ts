@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { MapToolDef } from "./map/tools.ts";
 import type {
   Actor,
@@ -156,6 +157,21 @@ export async function executeDocumentTool(
         Array.isArray(args.domainSlugs) && args.domainSlugs.every((s) => typeof s === "string")
           ? args.domainSlugs
           : undefined;
+      if (actor.type === "agent") {
+        // An agent proposes a new note; the markdown file is created on approve.
+        const id = randomUUID();
+        const decisionResult = await createDecision(root, {
+          target: { type: "library", id },
+          proposedTitle: title,
+          proposedBodyMarkdown: body,
+          domainSlugs,
+          actor,
+        });
+        if (!decisionResult.ok) {
+          return { error: { code: "MALFORMED", message: decisionResult.error } };
+        }
+        return { decisionId: decisionResult.value.id, status: decisionResult.value.status };
+      }
       const created = await libraryCreate(root, { title, bodyMarkdown: body, domainSlugs }, actor);
       if (!created.ok) {
         return { error: { code: "MALFORMED", message: created.error } };
@@ -175,6 +191,23 @@ export async function executeDocumentTool(
         if (typeof args.body === "string") patch.bodyMarkdown = args.body;
         if (patch.title === undefined && patch.bodyMarkdown === undefined) {
           return { error: { code: "MALFORMED", message: "No changes provided" } };
+        }
+        if (actor.type === "agent") {
+          // An agent proposes the change; libraryUpdate is what approve ends up
+          // equivalent to, and it stays off this path.
+          const existing = libResult.value;
+          const decisionResult = await createDecision(root, {
+            target: { type: "library", id },
+            proposedTitle: patch.title ?? existing.title,
+            previousTitle: existing.title,
+            proposedBodyMarkdown: patch.bodyMarkdown ?? existing.bodyMarkdown,
+            previousBodyMarkdown: existing.bodyMarkdown,
+            actor,
+          });
+          if (!decisionResult.ok) {
+            return { error: { code: "MALFORMED", message: decisionResult.error } };
+          }
+          return { decisionId: decisionResult.value.id, status: decisionResult.value.status };
         }
         const updated = await libraryUpdate(root, id, patch, actor);
         if (!updated.ok) {
@@ -200,6 +233,21 @@ export async function executeDocumentTool(
       const proposedBodyMarkdown = typeof args.body === "string" ? args.body : current.value.bodyMarkdown;
       if (proposedTitle === current.value.title && proposedBodyMarkdown === current.value.bodyMarkdown) {
         return { error: { code: "MALFORMED", message: "No changes provided" } };
+      }
+      if (actor.type === "agent") {
+        // An agent always proposes, whether or not the document is locked.
+        const decisionResult = await createDecision(root, {
+          target: { type: "doctrine", domainSlug, kind },
+          proposedTitle,
+          previousTitle: current.value.title,
+          proposedBodyMarkdown,
+          previousBodyMarkdown: current.value.bodyMarkdown,
+          actor,
+        });
+        if (!decisionResult.ok) {
+          return { error: { code: "MALFORMED", message: decisionResult.error } };
+        }
+        return { decisionId: decisionResult.value.id, status: decisionResult.value.status };
       }
       if (!current.value.locked) {
         const updated = await saveDocument(root, domainSlug, kind, proposedBodyMarkdown, proposedTitle, actor);

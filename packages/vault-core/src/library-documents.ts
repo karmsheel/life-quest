@@ -207,7 +207,7 @@ export async function libraryCreate(
     if (!domains.ok) return domains;
     const now = new Date().toISOString();
     const record: LibraryDocument = {
-      id: randomUUID(),
+      id: input.id ?? randomUUID(),
       title,
       bodyMarkdown: input.bodyMarkdown ?? "",
       domainSlugs: domains.value,

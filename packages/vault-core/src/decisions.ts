@@ -14,8 +14,10 @@ import {
   type DecisionRecord,
   type DocumentKind,
   type DocumentTarget,
+  type GoalsCommand,
   type Result,
 } from "./types.ts";
+import type { Command as MapCommand } from "./map/types.ts";
 import { getDatabase, isDomainLive, readRegistry } from "./domain-databases.ts";
 import { documentTargetLabel } from "./documents.ts";
 import { getReview, applyLockedReviewBody } from "./reviews.ts";
@@ -52,7 +54,9 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       isPinsExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isMappingExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isKitInstallExplicitTarget(explicitTarget as Record<string, unknown>) ||
-      isAssumptionSetExplicitTarget(explicitTarget as Record<string, unknown>))
+      isAssumptionSetExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isGoalExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isDayTemplateExplicitTarget(explicitTarget as Record<string, unknown>))
   ) {
     const t = explicitTarget as Record<string, unknown>;
     if (t.type === "review") {
@@ -84,6 +88,10 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
         type: "assumption-set",
         rowId: String(t.rowId),
       };
+    } else if (t.type === "goal") {
+      target = { type: "goal" };
+    } else if (t.type === "day-template") {
+      target = { type: "day-template" };
     } else {
       target = { type: "library", id: String(t.id) };
     }
@@ -214,6 +222,14 @@ function isAssumptionSetExplicitTarget(raw: Record<string, unknown>): boolean {
   return raw.type === "assumption-set" && typeof raw.rowId === "string" && raw.rowId.length > 0;
 }
 
+function isGoalExplicitTarget(raw: Record<string, unknown>): boolean {
+  return raw.type === "goal";
+}
+
+function isDayTemplateExplicitTarget(raw: Record<string, unknown>): boolean {
+  return raw.type === "day-template";
+}
+
 async function readDecisionFile(filePath: string): Promise<DecisionRecord> {
   const raw = await fs.readFile(filePath, "utf8");
   const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -259,6 +275,11 @@ export async function createDecision(
     previousTitle?: string | null;
     proposedBodyMarkdown: string;
     previousBodyMarkdown?: string | null;
+    /**
+     * Domain slugs for a target that does not carry them itself. Only used for an
+     * agent library target whose file does not exist yet, and for a goal target.
+     */
+    domainSlugs?: string[];
     actor: Actor;
   },
 ): Promise<Result<DecisionRecord>> {
@@ -303,6 +324,8 @@ export async function createDecision(
       if (!input.target.rowId.trim()) {
         return { ok: false, error: "rowId is required" };
       }
+    } else if (input.target.type === "goal" || input.target.type === "day-template") {
+      // Goals and day templates are not documents. No shape to validate beyond the type.
     } else {
       return { ok: false, error: "Invalid target type" };
     }
@@ -319,7 +342,10 @@ export async function createDecision(
       return { ok: false, error: "proposedBodyMarkdown is required" };
     }
 
-    // Load the target and confirm it is locked (pages/pins are NOT lockable).
+    // Load the target and confirm it is locked (pages/pins/goals/day templates are NOT lockable).
+    // An agent actor skips the lock check for doctrine and library: the whole point of an
+    // agent write is to propose a change to a document the operator has not locked yet.
+    const isAgent = input.actor.type === "agent";
     let docLocked: boolean;
     let domainSlugForLog: string | null = null;
     let libraryNote: { value: { domainSlugs: string[] } } | null = null;
@@ -327,13 +353,17 @@ export async function createDecision(
       const docRes = await getDocument(rootPath, input.target.domainSlug, input.target.kind);
       if (!docRes.ok) return docRes;
       docLocked = docRes.value.locked;
-      domainSlugForLog = docRes.value.locked ? input.target.domainSlug : null;
-      if (!docLocked) {
+      domainSlugForLog = docRes.value.locked || isAgent ? input.target.domainSlug : null;
+      if (!docLocked && !isAgent) {
         return {
           ok: false,
           error: "Document must be locked before proposing a change",
         };
       }
+    } else if (input.target.type === "goal" || input.target.type === "day-template") {
+      // Neither goals nor day templates are lockable or pre-existing files.
+      docLocked = false;
+      domainSlugForLog = null;
     } else if (input.target.type === "review") {
       const reviewRes = await getReview(rootPath, input.target.cadence, input.target.period);
       if (!reviewRes.ok) return reviewRes;
@@ -396,15 +426,22 @@ export async function createDecision(
       domainSlugForLog = "financial";
     } else {
       const noteRes = await libraryGet(rootPath, input.target.id);
-      if (!noteRes.ok) return noteRes;
-      docLocked = noteRes.value.locked;
-      domainSlugForLog = noteRes.value.locked ? (noteRes.value.domainSlugs[0] ?? null) : null;
-      libraryNote = noteRes;
-      if (!docLocked) {
-        return {
-          ok: false,
-          error: "Document must be locked before proposing a change",
-        };
+      if (!noteRes.ok) {
+        // An agent may propose a note that does not exist yet; approve creates it.
+        // A user proposing a missing note is still an error.
+        if (!isAgent) return noteRes;
+        docLocked = false;
+        domainSlugForLog = input.domainSlugs?.[0] ?? null;
+      } else {
+        docLocked = noteRes.value.locked;
+        domainSlugForLog = noteRes.value.locked ? (noteRes.value.domainSlugs[0] ?? null) : null;
+        libraryNote = noteRes;
+        if (!docLocked && !isAgent) {
+          return {
+            ok: false,
+            error: "Document must be locked before proposing a change",
+          };
+        }
       }
     }
 
@@ -425,7 +462,13 @@ export async function createDecision(
                   ? ["financial"]
                   : input.target.type === "review"
                     ? []
-                    : libraryNote!.value.domainSlugs;
+                    : input.target.type === "goal"
+                      ? input.domainSlugs ?? []
+                      : input.target.type === "day-template"
+                        ? []
+                        : libraryNote
+                          ? libraryNote.value.domainSlugs
+                          : (input.domainSlugs ?? []);
 
     const title = `Proposed change to ${documentTargetLabel(
       input.target,
@@ -603,6 +646,37 @@ async function applyApprovedBody(
       if (!res.ok) return res;
       return { ok: true, value: undefined };
     }
+    if (decision.target.type === "goal") {
+      let command: GoalsCommand;
+      try {
+        command = JSON.parse(decision.proposedBodyMarkdown) as GoalsCommand;
+      } catch {
+        return { ok: false, error: "Goal proposedBody must be valid JSON" };
+      }
+      if (!command || typeof command !== "object" || typeof command.type !== "string") {
+        return { ok: false, error: "Goal proposedBody must be a GoalsCommand object" };
+      }
+      const { applyGoalsCommand } = await import("./goals.ts");
+      const res = await applyGoalsCommand(rootPath, command);
+      if (!res.ok) return { ok: false, error: res.error };
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "day-template") {
+      let command: MapCommand;
+      try {
+        command = JSON.parse(decision.proposedBodyMarkdown) as MapCommand;
+      } catch {
+        return { ok: false, error: "Day template proposedBody must be valid JSON" };
+      }
+      if (!command || typeof command !== "object" || typeof command.type !== "string") {
+        return { ok: false, error: "Day template proposedBody must be a map Command object" };
+      }
+      const { applyMapCommand } = await import("./map/persist.ts");
+      // Approved by the operator, so the map actor is "user" even when the agent proposed it.
+      const res = await applyMapCommand(rootPath, command, "user");
+      if (!res.ok) return { ok: false, error: res.error };
+      return { ok: true, value: undefined };
+    }
     if (decision.target.type === "doctrine") {
       const paths = vaultPaths(rootPath);
       const docPath = paths.documentMd(decision.target.domainSlug, decision.target.kind);
@@ -640,7 +714,20 @@ async function applyApprovedBody(
       // Library: load record (including locked), write title + body, keep locked.
       const noteRes = await libraryGet(rootPath, decision.target.id);
       if (!noteRes.ok) {
-        return { ok: false, error: "Document not found" };
+        // Agent-proposed note that did not exist at propose time. Approve creates it
+        // under the id the decision was filed with.
+        if (decision.proposedTitle === null) {
+          return { ok: false, error: "Document not found" };
+        }
+        const { libraryCreate } = await import("./library-documents.ts");
+        const created = await libraryCreate(rootPath, {
+          id: decision.target.id,
+          title: decision.proposedTitle,
+          bodyMarkdown: decision.proposedBodyMarkdown,
+          domainSlugs: decision.domainSlugs,
+        });
+        if (!created.ok) return { ok: false, error: created.error };
+        return { ok: true, value: undefined };
       }
       const existing = noteRes.value;
       const now = new Date().toISOString();

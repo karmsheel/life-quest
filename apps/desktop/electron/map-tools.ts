@@ -1,9 +1,10 @@
 import {
-  applyGoalsCommand,
   applyMapCommand,
   commandForGoalTool,
   commandForTool,
+  createDecision,
   GOALS_TOOL_DEFS,
+  loadGoals,
   MAP_TOOL_DEFS,
   openVault,
   resolveWeek,
@@ -15,6 +16,7 @@ import {
   executeCaptureTool,
   SCRIPT_TOOL_DEFS,
   executeScriptTool,
+  type GoalsCommand,
   type MapCommand,
   type MapToolDef,
   type Result,
@@ -149,16 +151,69 @@ export async function executeTool(
   if (name === "list_goals") return { goals: snap.value.goals, goalsError: snap.value.goalsError };
   const goalCmd = commandForGoalTool(name, rec);
   if (goalCmd) {
-    const applied = await applyGoalsCommand(root, goalCmd);
-    if (!applied.ok) return { error: { message: applied.error } };
-    return { goals: applied.value };
+    // Agent goal writes wait for approval: file a pending Decision, do not touch goals.json.
+    return proposeGoalDecision(root, goalCmd);
   }
   const command = commandForTool(name, rec) as MapCommand | null;
   if (!command) return { error: { code: "MALFORMED", message: `Unknown tool ${name}` } };
+  if (DAY_TEMPLATE_TOOLS.has(name)) {
+    // Agent Architecture day-template writes wait for approval too.
+    return proposeDayTemplateDecision(root, command);
+  }
+  // Every other map tool (tasks, the live week, years, events, month cells) applies now.
   const applied = await applyMapCommand(root, command, "agent");
   if (!applied.ok) {
     const [code, ...rest] = applied.error.split(": ");
     return { error: { code, message: rest.join(": ") } };
   }
   return { state: applied.value };
+}
+
+/** Agent map tools that write the Architecture day templates and therefore need approval. */
+const DAY_TEMPLATE_TOOLS = new Set<string>([
+  "create_day_type",
+  "update_day_type",
+  "delete_day_type",
+  "set_default_weekday_type",
+  "set_default_weekly_items",
+]);
+
+async function proposeGoalDecision(
+  root: string,
+  command: GoalsCommand,
+): Promise<unknown> {
+  const loaded = await loadGoals(root);
+  if (!loaded.ok) return { error: { message: loaded.error } };
+  const goalId = "id" in command ? command.id : null;
+  const existing = goalId ? loaded.value.find((g) => g.id === goalId) : undefined;
+  const proposedTitle =
+    "name" in command && typeof command.name === "string" && command.name.trim()
+      ? command.name
+      : (existing?.name ?? "Goal");
+  const domainSlug = "domainSlug" in command ? command.domainSlug : undefined;
+  const created = await createDecision(root, {
+    target: { type: "goal" },
+    proposedTitle,
+    proposedBodyMarkdown: JSON.stringify(command),
+    previousBodyMarkdown: existing ? JSON.stringify(existing) : null,
+    domainSlugs: typeof domainSlug === "string" && domainSlug ? [domainSlug] : [],
+    actor: AGENT_ACTOR,
+  });
+  if (!created.ok) return { error: { message: created.error } };
+  return { decisionId: created.value.id, status: created.value.status };
+}
+
+async function proposeDayTemplateDecision(
+  root: string,
+  command: MapCommand,
+): Promise<unknown> {
+  const name = "name" in command && typeof command.name === "string" ? command.name : "";
+  const created = await createDecision(root, {
+    target: { type: "day-template" },
+    proposedTitle: name && name.trim() ? name : "Day template",
+    proposedBodyMarkdown: JSON.stringify(command),
+    actor: AGENT_ACTOR,
+  });
+  if (!created.ok) return { error: { message: created.error } };
+  return { decisionId: created.value.id, status: created.value.status };
 }

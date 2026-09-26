@@ -6,7 +6,7 @@ import path from "node:path";
 import { createVault } from "../src/create-vault.ts";
 import { USER_ACTOR } from "../src/types.ts";
 import { setDocumentLocked, getDocument, saveDocument } from "../src/domain-documents.ts";
-import { libraryCreate, libraryGet, setLibraryLocked } from "../src/library-documents.ts";
+import { libraryCreate, libraryGet, libraryList, setLibraryLocked } from "../src/library-documents.ts";
 import { createDecision, listDecisions, resolveDecision } from "../src/decisions.ts";
 
 const agent = { type: "agent" as const, id: "a1", name: "Hermes" };
@@ -65,6 +65,66 @@ describe("decisions", () => {
     assert.equal(created.ok, false);
     if (created.ok) return;
     assert.match(created.error, /locked/i);
+  });
+
+  it("createDecision rejects an unlocked library note for a user actor", async () => {
+    const note = await libraryCreate(root, { title: "Unlocked user note", bodyMarkdown: "v1" });
+    assert.equal(note.ok, true);
+    if (!note.ok) return;
+    const created = await createDecision(root, {
+      target: { type: "library", id: note.value.id },
+      proposedTitle: "Unlocked user note",
+      proposedBodyMarkdown: "v2",
+      actor: USER_ACTOR,
+    });
+    assert.equal(created.ok, false, "a user actor must still hit the lock check");
+    if (created.ok) return;
+    assert.match(created.error, /locked/i);
+  });
+
+  it("createDecision rejects a library target with a missing file for a user actor", async () => {
+    const created = await createDecision(root, {
+      target: { type: "library", id: "00000000-0000-4000-8000-000000000000" },
+      proposedTitle: "Ghost",
+      proposedBodyMarkdown: "body",
+      actor: USER_ACTOR,
+    });
+    assert.equal(created.ok, false, "a user actor may not propose a brand new note");
+    if (created.ok) return;
+    assert.match(created.error, /not found|no such|not exist/i);
+  });
+
+  it("agent may propose against an unlocked doctrine document", async () => {
+    const created = await createDecision(root, {
+      target: { type: "doctrine", domainSlug: "health", kind: "how" },
+      proposedTitle: "Strategy",
+      proposedBodyMarkdown: "agent proposal on unlocked doctrine",
+      actor: agent,
+    });
+    assert.equal(created.ok, true, created.ok ? "" : created.error);
+    if (!created.ok) return;
+    assert.equal(created.value.status, "pending");
+  });
+
+  it("agent may propose a library note whose file does not exist yet", async () => {
+    const created = await createDecision(root, {
+      target: { type: "library", id: "11111111-1111-4111-8111-111111111111" },
+      proposedTitle: "Brand new note",
+      proposedBodyMarkdown: "the body",
+      domainSlugs: ["health"],
+      actor: agent,
+    });
+    assert.equal(created.ok, true, created.ok ? "" : created.error);
+    if (!created.ok) return;
+    assert.deepEqual(created.value.domainSlugs, ["health"]);
+    const listed = await libraryList(root);
+    assert.equal(listed.ok, true);
+    if (!listed.ok) return;
+    assert.equal(
+      listed.value.records.some((r) => r.title === "Brand new note"),
+      false,
+      "no file is created at propose time",
+    );
   });
 
   it("reject leaves library body unchanged; approve writes through lock", async () => {

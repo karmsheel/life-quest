@@ -4,9 +4,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createVault } from "../src/create-vault.ts";
-import { setDocumentLocked, getDocument } from "../src/domain-documents.ts";
+import { setDocumentLocked, getDocument, saveDocument } from "../src/domain-documents.ts";
 import { DOCUMENT_TOOL_DEFS, executeDocumentTool } from "../src/document-tools.ts";
-import { listDecisions } from "../src/decisions.ts";
+import { listDecisions, resolveDecision } from "../src/decisions.ts";
+import { libraryCreate, libraryGet, libraryList } from "../src/library-documents.ts";
+import { USER_ACTOR } from "../src/types.ts";
 
 const agent = { type: "agent" as const, id: "a1", name: "Hermes" };
 
@@ -32,19 +34,140 @@ describe("document tools", () => {
     assert.equal(names.includes("set_document_locked"), false);
   });
 
-  it("create_library_document then update unlocked writes", async () => {
+  it("agent create_library_document files a pending decision and writes no file", async () => {
     const created = await executeDocumentTool(root, agent, "create_library_document", {
       title: "From agent",
       body: "v1",
       domainSlugs: ["health"],
     });
+    const pending = created as { decisionId?: string; status?: string; record?: unknown };
+    assert.equal(pending.status, "pending");
+    assert.ok(pending.decisionId, "agent create must return a decisionId");
+    assert.equal(pending.record, undefined, "agent create must not write the note");
+    const listed = await libraryList(root);
+    assert.equal(listed.ok, true);
+    if (!listed.ok) return;
+    assert.equal(
+      listed.value.records.some((r) => r.title === "From agent"),
+      false,
+      "note must not exist before approve",
+    );
+    const approved = await resolveDecision(root, pending.decisionId!, "approved");
+    assert.equal(approved.ok, true, approved.ok ? "" : approved.error);
+    const after = await libraryList(root);
+    assert.equal(after.ok, true);
+    if (!after.ok) return;
+    const note = after.value.records.find((r) => r.title === "From agent");
+    assert.ok(note, "approve must create the note");
+    assert.equal(note!.bodyMarkdown.trim(), "v1");
+    assert.deepEqual(note!.domainSlugs, ["health"]);
+    assert.equal(after.value.records.length, listed.value.records.length + 1);
+  });
+
+  it("agent create_library_document reject creates nothing", async () => {
+    const created = await executeDocumentTool(root, agent, "create_library_document", {
+      title: "Rejected agent note",
+      body: "nope",
+    });
+    const pending = created as { decisionId?: string };
+    assert.ok(pending.decisionId);
+    const rejected = await resolveDecision(root, pending.decisionId!, "rejected");
+    assert.equal(rejected.ok, true);
+    const listed = await libraryList(root);
+    assert.equal(listed.ok, true);
+    if (!listed.ok) return;
+    assert.equal(
+      listed.value.records.some((r) => r.title === "Rejected agent note"),
+      false,
+      "reject must not create the note",
+    );
+  });
+
+  it("agent update_document on an unlocked library note leaves the body until approve", async () => {
+    const seeded = await libraryCreate(root, { title: "Unlocked note", bodyMarkdown: "v1" });
+    assert.equal(seeded.ok, true);
+    if (!seeded.ok) return;
+    const id = seeded.value.id;
+    const updated = await executeDocumentTool(root, agent, "update_document", {
+      id,
+      body: "v2",
+    });
+    const pending = updated as { decisionId?: string; status?: string; record?: unknown };
+    assert.equal(pending.status, "pending");
+    assert.ok(pending.decisionId);
+    assert.equal(pending.record, undefined, "agent update must not write the note");
+    const before = await libraryGet(root, id);
+    assert.equal(before.ok, true);
+    if (!before.ok) return;
+    // serializeFrontmatter appends a trailing newline, so compare the canonical body.
+    assert.equal(before.value.bodyMarkdown.includes("v2"), false, "body unchanged until approve");
+    const approved = await resolveDecision(root, pending.decisionId!, "approved");
+    assert.equal(approved.ok, true, approved.ok ? "" : approved.error);
+    const after = await libraryGet(root, id);
+    assert.equal(after.ok, true);
+    if (!after.ok) return;
+    assert.equal(after.value.bodyMarkdown.trim(), "v2");
+  });
+
+  it("user create_library_document then update unlocked writes", async () => {
+    const created = await executeDocumentTool(root, USER_ACTOR, "create_library_document", {
+      title: "From user",
+      body: "v1",
+      domainSlugs: ["health"],
+    });
     const rec = created as { record?: { id: string; locked: boolean } };
     assert.equal(rec.record?.locked, false);
-    const updated = await executeDocumentTool(root, agent, "update_document", {
+    const updated = await executeDocumentTool(root, USER_ACTOR, "update_document", {
       id: rec.record!.id,
       body: "v2",
     });
     assert.equal((updated as { record?: { bodyMarkdown: string } }).record?.bodyMarkdown, "v2");
+  });
+
+  it("agent update_document on unlocked doctrine files a decision; approve writes, reject does not", async () => {
+    assert.equal((await saveDocument(root, "health", "premise", "original premise")).ok, true);
+    const doc = await getDocument(root, "health", "premise");
+    assert.equal(doc.ok, true);
+    if (!doc.ok) return;
+    assert.equal(doc.value.locked, false, "precondition: premise is unlocked");
+    // serializeFrontmatter appends a trailing newline; keep the canonical stored body.
+    const originalBody = doc.value.bodyMarkdown;
+
+    const proposed = await executeDocumentTool(root, agent, "update_document", {
+      domainSlug: "health",
+      kind: "premise",
+      body: "agent premise proposal",
+    });
+    const pending = proposed as { decisionId?: string; status?: string; record?: unknown };
+    assert.equal(pending.status, "pending");
+    assert.ok(pending.decisionId);
+    assert.equal(pending.record, undefined, "agent must not write the doctrine file");
+    const unchanged = await getDocument(root, "health", "premise");
+    assert.equal(unchanged.ok, true);
+    if (!unchanged.ok) return;
+    assert.equal(unchanged.value.bodyMarkdown, originalBody);
+
+    const rejected = await resolveDecision(root, pending.decisionId!, "rejected");
+    assert.equal(rejected.ok, true);
+    const stillOld = await getDocument(root, "health", "premise");
+    assert.equal(stillOld.ok, true);
+    if (!stillOld.ok) return;
+    assert.equal(stillOld.value.bodyMarkdown, originalBody, "reject must not write");
+
+    const second = await executeDocumentTool(root, agent, "update_document", {
+      domainSlug: "health",
+      kind: "premise",
+      body: "agent premise proposal",
+    });
+    const secondPending = second as { decisionId?: string };
+    assert.ok(secondPending.decisionId);
+    const approved = await resolveDecision(root, secondPending.decisionId!, "approved");
+    assert.equal(approved.ok, true, approved.ok ? "" : approved.error);
+    const written = await getDocument(root, "health", "premise");
+    assert.equal(written.ok, true);
+    if (!written.ok) return;
+    assert.equal(written.value.bodyMarkdown.trim(), "agent premise proposal");
+    assert.equal(written.value.locked, false, "approve keeps the existing locked flag");
   });
 
   it("list_documents returns 4 doctrine items per live domain with correct domainSlug", async () => {

@@ -39,6 +39,8 @@ export function documentTargetLabel(
   if (target.type === "mapping") return fallbackTitle ? `${fallbackTitle}` : "Ingest mapping";
   if (target.type === "kit-install") return "Finance kit";
   if (target.type === "assumption-set") return "Assumption set";
+  if (target.type === "goal") return "Goal";
+  if (target.type === "day-template") return "Day template";
   return fallbackTitle;
 }
 
