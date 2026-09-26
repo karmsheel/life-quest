@@ -195,6 +195,14 @@ const lifequest = {
     ipcRenderer.invoke("library:update", id, patch),
   libraryDelete: (id: string) => ipcRenderer.invoke("library:delete", id),
 
+  // KAR-7 projects: direct operator writes, no Decision.
+  projectsList: () => ipcRenderer.invoke("projects:list"),
+  projectsGet: (id: string) => ipcRenderer.invoke("projects:get", id),
+  projectsCreate: (input: Record<string, unknown>) =>
+    ipcRenderer.invoke("projects:create", input),
+  projectsUpdate: (id: string, patch: Record<string, unknown>) =>
+    ipcRenderer.invoke("projects:update", id, patch),
+
   agentsList: () =>
     ipcRenderer.invoke("agents:list") as Promise<Result<unknown>>,
   agentsHire: (input: Record<string, unknown>) =>

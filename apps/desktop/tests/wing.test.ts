@@ -41,6 +41,7 @@ describe("wingForPath", () => {
     assert.equal(wingForPath("/dream"), "vision");
     assert.equal(wingForPath("/documents"), "vision");
     assert.equal(wingForPath("/goals"), "plan");
+    assert.equal(wingForPath("/projects"), "plan");
     assert.equal(wingForPath("/chart"), "plan");
     assert.equal(wingForPath("/track"), "plan");
     assert.equal(wingForPath("/act"), "execute");
@@ -228,7 +229,7 @@ describe("NAV_ITEMS wings", () => {
     );
     assert.deepEqual(
       NAV_ITEMS.filter((i) => i.wing === "plan").map((i) => i.id),
-      ["goals", "chart", "track"],
+      ["goals", "projects", "chart", "track"],
     );
     assert.deepEqual(
       NAV_ITEMS.filter((i) => i.wing === "execute").map((i) => i.id),

@@ -56,7 +56,8 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       isKitInstallExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isAssumptionSetExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isGoalExplicitTarget(explicitTarget as Record<string, unknown>) ||
-      isDayTemplateExplicitTarget(explicitTarget as Record<string, unknown>))
+      isDayTemplateExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isProjectExplicitTarget(explicitTarget as Record<string, unknown>))
   ) {
     const t = explicitTarget as Record<string, unknown>;
     if (t.type === "review") {
@@ -90,6 +91,8 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       };
     } else if (t.type === "goal") {
       target = { type: "goal" };
+    } else if (t.type === "project") {
+      target = { type: "project" };
     } else if (t.type === "day-template") {
       target = { type: "day-template" };
     } else {
@@ -230,6 +233,10 @@ function isDayTemplateExplicitTarget(raw: Record<string, unknown>): boolean {
   return raw.type === "day-template";
 }
 
+function isProjectExplicitTarget(raw: Record<string, unknown>): boolean {
+  return raw.type === "project";
+}
+
 async function readDecisionFile(filePath: string): Promise<DecisionRecord> {
   const raw = await fs.readFile(filePath, "utf8");
   const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -324,8 +331,13 @@ export async function createDecision(
       if (!input.target.rowId.trim()) {
         return { ok: false, error: "rowId is required" };
       }
-    } else if (input.target.type === "goal" || input.target.type === "day-template") {
-      // Goals and day templates are not documents. No shape to validate beyond the type.
+    } else if (
+      input.target.type === "goal" ||
+      input.target.type === "day-template" ||
+      input.target.type === "project"
+    ) {
+      // Goals, day templates, and projects are not lockable documents.
+      // No shape to validate beyond the type.
     } else {
       return { ok: false, error: "Invalid target type" };
     }
@@ -360,8 +372,13 @@ export async function createDecision(
           error: "Document must be locked before proposing a change",
         };
       }
-    } else if (input.target.type === "goal" || input.target.type === "day-template") {
-      // Neither goals nor day templates are lockable or pre-existing files.
+    } else if (
+      input.target.type === "goal" ||
+      input.target.type === "day-template" ||
+      input.target.type === "project"
+    ) {
+      // Neither goals, day templates, nor projects are lockable or pre-existing files.
+      // A project create is allowed to name a file that does not exist yet: approve creates it.
       docLocked = false;
       domainSlugForLog = null;
     } else if (input.target.type === "review") {
@@ -466,9 +483,11 @@ export async function createDecision(
                       ? input.domainSlugs ?? []
                       : input.target.type === "day-template"
                         ? []
-                        : libraryNote
-                          ? libraryNote.value.domainSlugs
-                          : (input.domainSlugs ?? []);
+                        : input.target.type === "project"
+                          ? (input.domainSlugs ?? [])
+                          : libraryNote
+                            ? libraryNote.value.domainSlugs
+                            : (input.domainSlugs ?? []);
 
     const title = `Proposed change to ${documentTargetLabel(
       input.target,
@@ -660,6 +679,44 @@ async function applyApprovedBody(
       const res = await applyGoalsCommand(rootPath, command);
       if (!res.ok) return { ok: false, error: res.error };
       return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "project") {
+      // Approved project Decision → run the project write path. The command carries
+      // the id allocated at propose time, so approve writes that exact file.
+      const { projectClose, projectCreate } = await import("./projects.ts");
+      // Parsed from JSON on disk, so treat it as untrusted rather than as the union:
+      // the runtime guards below must stay reachable for a body that is not a
+      // createProject/closeProject command.
+      let command: { type?: unknown; [key: string]: unknown };
+      try {
+        command = JSON.parse(decision.proposedBodyMarkdown);
+      } catch {
+        return { ok: false, error: "Project proposedBody must be valid JSON" };
+      }
+      if (!command || typeof command !== "object" || typeof command.type !== "string") {
+        return { ok: false, error: "Project proposedBody must be a ProjectCommand object" };
+      }
+      if (command.type === "createProject") {
+        const res = await projectCreate(rootPath, {
+          id: String(command.id),
+          title: String(command.title),
+          goalId: String(command.goalId),
+          domainSlug:
+            typeof command.domainSlug === "string" && command.domainSlug
+              ? command.domainSlug
+              : null,
+          bodyMarkdown:
+            typeof command.bodyMarkdown === "string" ? command.bodyMarkdown : undefined,
+        });
+        if (!res.ok) return { ok: false, error: res.error };
+        return { ok: true, value: undefined };
+      }
+      if (command.type === "closeProject") {
+        const res = await projectClose(rootPath, String(command.id));
+        if (!res.ok) return { ok: false, error: res.error };
+        return { ok: true, value: undefined };
+      }
+      return { ok: false, error: `Unknown project command: ${String(command.type)}` };
     }
     if (decision.target.type === "day-template") {
       let command: MapCommand;

@@ -68,6 +68,7 @@ const TASK_LINKS = {
   type: "object",
   properties: {
     goalId: STRING,
+    projectId: STRING,
     date: STRING,
     weekItem: {
       type: "object",

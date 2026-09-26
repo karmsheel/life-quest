@@ -22,6 +22,8 @@ export const COMPANION_ACTOR: Actor = { type: "agent", id: "companion", name: "H
 export const WRITE_TOOL_NAMES: readonly string[] = [
   "update_document",
   "create_library_document",
+  "create_project",
+  "close_project",
   "create_goal",
   "update_goal",
   "delete_goal",

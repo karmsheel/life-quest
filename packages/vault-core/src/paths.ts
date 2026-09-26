@@ -29,6 +29,9 @@ export function vaultPaths(root: string) {
     documentsDir: path.join(rootPath, "documents"),
     libraryDocumentMd: (id: string) =>
       safeJoin(rootPath, "documents", `${id}.md`),
+    // KAR-7 project documents
+    projectsDir: path.join(rootPath, "projects"),
+    projectMd: (id: string) => safeJoin(rootPath, "projects", `${id}.md`),
     reviewsDir: path.join(rootPath, "reviews"),
     reviewsCadenceDir: (cadence: string) =>
       safeJoin(rootPath, "reviews", cadence),

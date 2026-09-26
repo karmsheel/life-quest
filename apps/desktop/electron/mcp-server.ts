@@ -10,6 +10,7 @@ import {
   REVIEW_TOOL_DEFS,
   CAPTURE_TOOL_DEFS,
   SCRIPT_TOOL_DEFS,
+  PROJECT_TOOL_DEFS,
   type MapToolDef,
   type Result,
 } from "@lifequest/vault-core";
@@ -81,7 +82,7 @@ function buildShape(properties: Record<string, unknown>): Record<string, ZodType
 }
 
 function registerTools(mcp: McpServer): void {
-  for (const def of [...MAP_TOOL_DEFS, ...GOALS_TOOL_DEFS, ...DOCUMENT_TOOL_DEFS, ...REVIEW_TOOL_DEFS, ...CAPTURE_TOOL_DEFS, ...SCRIPT_TOOL_DEFS]) {
+  for (const def of [...MAP_TOOL_DEFS, ...GOALS_TOOL_DEFS, ...DOCUMENT_TOOL_DEFS, ...REVIEW_TOOL_DEFS, ...CAPTURE_TOOL_DEFS, ...SCRIPT_TOOL_DEFS, ...PROJECT_TOOL_DEFS]) {
     const toolDef = def as MapToolDef;
     const inputSchema = buildShape(toolDef.parameters.properties ?? {});
     mcp.registerTool(

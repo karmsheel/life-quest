@@ -8,12 +8,13 @@ import type {
   TaskLinks,
 } from "@lifequest/vault-core/map";
 import { resolveWeek } from "@lifequest/vault-core/map";
-import type { Goal } from "@lifequest/vault-core/pure";
+import type { Goal, Project } from "@lifequest/vault-core/pure";
 import { groupTasks } from "./groupTasks";
 
 type Props = {
   state: StoreState;
   goals: Goal[];
+  projects: Project[];
   onCommand: (command: MapCommand) => void;
   initialOpenId?: string | null;
 };
@@ -42,6 +43,18 @@ function goalPickerOptions(
   } else if (found.status === "done") {
     options.push({ id: found.id, label: `${found.name} (done)` });
   }
+  return options;
+}
+
+function projectPickerOptions(
+  projects: Project[],
+  currentId: string | undefined,
+): { id: string; label: string }[] {
+  const options = projects.map((p) => ({ id: p.id, label: p.title }));
+  if (!currentId) return options;
+  if (options.some((p) => p.id === currentId)) return options;
+  // Tasks may already hold a dangling projectId, same as a dangling goalId.
+  options.push({ id: currentId, label: `${currentId} (missing)` });
   return options;
 }
 
@@ -78,6 +91,8 @@ function resolvedWeekItems(
 function patchLinks(task: Task, patch: TaskLinks): TaskLinks {
   const next: TaskLinks = { ...task.links, ...patch };
   if ("goalId" in patch && !patch.goalId) delete next.goalId;
+  // A project link survives a goal change; clearing the select removes it.
+  if ("projectId" in patch && !patch.projectId) delete next.projectId;
   if ("date" in patch && !patch.date) delete next.date;
   if ("weekItem" in patch && !patch.weekItem) delete next.weekItem;
   return next;
@@ -86,6 +101,7 @@ function patchLinks(task: Task, patch: TaskLinks): TaskLinks {
 export function TaskBoard({
   state,
   goals,
+  projects,
   onCommand,
   initialOpenId = null,
 }: Props) {
@@ -141,6 +157,7 @@ export function TaskBoard({
                       task={task}
                       open={openId === task.id}
                       goals={goals}
+                      projects={projects}
                       missingGoal={
                         Boolean(task.links.goalId) &&
                         !goals.some((g) => g.id === task.links.goalId)
@@ -170,6 +187,7 @@ function TaskCard({
   task,
   open,
   goals,
+  projects,
   missingGoal,
   missingWeekItem,
   state,
@@ -179,6 +197,7 @@ function TaskCard({
   task: Task;
   open: boolean;
   goals: Goal[];
+  projects: Project[];
   missingGoal: boolean;
   missingWeekItem: boolean;
   state: StoreState;
@@ -225,6 +244,7 @@ function TaskCard({
         <TaskEditor
           task={task}
           goals={goals}
+          projects={projects}
           missingWeekItem={missingWeekItem}
           state={state}
           onCommand={onCommand}
@@ -237,12 +257,14 @@ function TaskCard({
 function TaskEditor({
   task,
   goals,
+  projects,
   missingWeekItem,
   state,
   onCommand,
 }: {
   task: Task;
   goals: Goal[];
+  projects: Project[];
   missingWeekItem: boolean;
   state: StoreState;
   onCommand: (command: MapCommand) => void;
@@ -323,6 +345,8 @@ function TaskEditor({
 
   const selectedGoal = task.links.goalId ?? "";
   const pickerGoals = goalPickerOptions(goals, task.links.goalId);
+  const selectedProject = task.links.projectId ?? "";
+  const pickerProjects = projectPickerOptions(projects, task.links.projectId);
 
   return (
     <div className="task-editor">
@@ -353,6 +377,28 @@ function TaskEditor({
           {pickerGoals.map((g) => (
             <option key={g.id} value={g.id}>
               {g.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Project
+        <select
+          value={selectedProject}
+          aria-label={`${task.title} project`}
+          onChange={(e) => {
+            const projectId = e.target.value || undefined;
+            onCommand({
+              type: "updateTask",
+              id: task.id,
+              links: patchLinks(task, { projectId }),
+            });
+          }}
+        >
+          <option value="">None</option>
+          {pickerProjects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
             </option>
           ))}
         </select>

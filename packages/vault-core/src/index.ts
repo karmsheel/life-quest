@@ -14,6 +14,15 @@ export * from "./agents.ts";
 export * from "./signal-chain.ts";
 export * from "./domain-lens.ts";
 export * from "./library-documents.ts";
+export {
+  commandForProjectTool,
+  projectClose,
+  projectCreate,
+  projectGet,
+  projectList,
+  projectUpdate,
+  PROJECT_TOOL_DEFS,
+} from "./projects.ts";
 export { applyGoalCommand, applyGoalsCommand, loadGoals } from "./goals.ts";
 export { formatGoalPace, goalPace } from "./goal-progress.ts";
 export type { GoalPace } from "./goal-progress.ts";

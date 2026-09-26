@@ -10,6 +10,7 @@ import {
   Database,
   FileStack,
   FileText,
+  FolderKanban,
   Goal,
   Home,
   Map,
@@ -32,7 +33,7 @@ export type NavItem = {
   pin?: "top" | "bottom";
 };
 
-/** Top: Life-Chain, Decisions. Home: Dashboard, Data, Pages, Personnel. Vision: Dream, Documents. Plan: Goals, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
+/** Top: Life-Chain, Decisions. Home: Dashboard, Data, Pages, Personnel. Vision: Dream, Documents. Plan: Goals, Projects, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -103,6 +104,14 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/goals",
     label: "Goals",
     icon: Goal,
+    section: "main",
+    wing: "plan",
+  },
+  {
+    id: "projects",
+    href: "/projects",
+    label: "Projects",
+    icon: FolderKanban,
     section: "main",
     wing: "plan",
   },

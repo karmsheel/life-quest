@@ -269,6 +269,23 @@ function registerIpcHandlers() {
     vault.libraryDeleteCall(id),
   );
 
+  // KAR-7 projects: direct operator writes, no Decision.
+  ipcMain.handle("projects:list", () => vault.projectsList());
+  ipcMain.handle("projects:get", (_e, id: string) => vault.projectsGet(id));
+  ipcMain.handle(
+    "projects:create",
+    (_e, input: Parameters<typeof vault.projectsCreate>[0]) =>
+      vault.projectsCreate(input),
+  );
+  ipcMain.handle(
+    "projects:update",
+    (
+      _e,
+      id: string,
+      patch: Parameters<typeof vault.projectsUpdate>[1],
+    ) => vault.projectsUpdate(id, patch),
+  );
+
   ipcMain.handle("agents:list", () => vault.agentsList());
   ipcMain.handle(
     "agents:hire",

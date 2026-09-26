@@ -48,7 +48,8 @@ export type DocumentTarget =
   | { type: "kit-install"; kit: "finance" }
   | { type: "assumption-set"; rowId: string }
   | { type: "goal" }
-  | { type: "day-template" };
+  | { type: "day-template" }
+  | { type: "project" };
 
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;
 export type RoomId = (typeof ROOM_IDS)[number];
@@ -226,6 +227,57 @@ export type LibraryListResult = {
   records: LibraryDocument[];
   skipped: number;
 };
+
+// KAR-7: a Project is one markdown file on disk, linked to one Goal.
+export type ProjectStatus = "open" | "closed";
+
+export const PROJECT_STATUSES: ProjectStatus[] = ["open", "closed"];
+
+export type Project = {
+  id: string;
+  title: string;
+  bodyMarkdown: string;
+  goalId: string;
+  /** Frontmatter key is `domain`; the in-memory field mirrors library `domainSlugs`. */
+  domainSlug: string | null;
+  status: ProjectStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProjectCreateInput = {
+  /** Use an explicit id (the id allocated for an approved Decision) instead of a fresh uuid. */
+  id?: string;
+  title: string;
+  goalId: string;
+  domainSlug?: string | null;
+  bodyMarkdown?: string;
+};
+
+export type ProjectUpdatePatch = {
+  title?: string;
+  bodyMarkdown?: string;
+  goalId?: string;
+  domainSlug?: string | null;
+  status?: ProjectStatus;
+};
+
+export type ProjectListResult = {
+  records: Project[];
+  skipped: number;
+};
+
+/** Commands an agent create/close Decision carries in its proposedBodyMarkdown. */
+export type ProjectCommand =
+  | {
+      type: "createProject";
+      id: string;
+      title: string;
+      goalId: string;
+      domainSlug: string | null;
+      bodyMarkdown?: string;
+    }
+  | { type: "closeProject"; id: string };
 
 export type DecisionRecord = {
   id: string;

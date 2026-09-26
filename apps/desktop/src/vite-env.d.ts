@@ -17,6 +17,11 @@ import type {
   LibraryDocument,
   LibraryListResult,
   LibraryUpdatePatch,
+  Project,
+  ProjectCreateInput,
+  ProjectListResult,
+  ProjectStatus,
+  ProjectUpdatePatch,
   LifeEvent,
   MapCommand,
   MapStoreState,
@@ -159,6 +164,14 @@ type LifequestApi = {
     patch: LibraryUpdatePatch,
   ) => Promise<Result<LibraryDocument>>;
   libraryDelete: (id: string) => Promise<Result<LibraryDocument>>;
+  // KAR-7 projects: direct operator writes, no Decision.
+  projectsList: () => Promise<Result<ProjectListResult>>;
+  projectsGet: (id: string) => Promise<Result<Project>>;
+  projectsCreate: (input: ProjectCreateInput) => Promise<Result<Project>>;
+  projectsUpdate: (
+    id: string,
+    patch: ProjectUpdatePatch,
+  ) => Promise<Result<Project>>;
   agentsList: () => Promise<Result<AgentHire[]>>;
   agentsHire: (input: {
     hermesAgentId: string;

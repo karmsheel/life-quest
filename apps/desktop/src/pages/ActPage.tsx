@@ -5,6 +5,7 @@ import type {
   AgentHire,
   DomainRecord,
   LifeEvent,
+  Project,
 } from "@lifequest/vault-core";
 import {
   canDispatchAgent,
@@ -86,6 +87,7 @@ function ActContent() {
   const [error, setError] = useState<string | null>(null);
 
   const [recentEvents, setRecentEvents] = useState<LifeEvent[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [brief, setBrief] = useState("");
 
   const title = activeDomain?.meta.name ?? "Overview";
@@ -107,6 +109,15 @@ function ActContent() {
         );
       } catch {
         setRecentEvents([]);
+      }
+    })();
+    // KAR-7: a task may point at a project, so the board needs the list.
+    void (async () => {
+      try {
+        const result = await api().projectsList();
+        setProjects(result.ok ? result.value.records : []);
+      } catch {
+        setProjects([]);
       }
     })();
   }, [activeDomain, liveDomains, lens, reloadGeneration]);
@@ -198,6 +209,7 @@ function ActContent() {
         <TaskBoard
           state={snapshot.map}
           goals={snapshot.goals}
+          projects={projects}
           onCommand={(c) => void onMapCommand(c)}
           initialOpenId={taskParam}
         />

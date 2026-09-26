@@ -109,6 +109,8 @@ export type TaskColumn = "backlog" | "this-week" | "today" | "done";
 
 export type TaskLinks = {
   goalId?: string;
+  /** KAR-7: a task may point at a project. A dangling id is stored, not rejected. */
+  projectId?: string;
   date?: IsoDate;
   weekItem?: { year: number; monday: IsoDate; itemId: string };
   signalId?: string;

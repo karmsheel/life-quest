@@ -38,6 +38,10 @@ import {
   listSignals,
   markReviewDone,
   openVault,
+  projectCreate,
+  projectGet,
+  projectList,
+  projectUpdate,
   readDocumentMedia,
   readLog,
   runScriptBlock,
@@ -106,6 +110,10 @@ import {
   type LibraryDocument,
   type LibraryListResult,
   type LibraryUpdatePatch,
+  type Project,
+  type ProjectCreateInput,
+  type ProjectListResult,
+  type ProjectUpdatePatch,
   type LifeEvent,
   type MappingWriteResult,
   type PeriodPack,
@@ -773,6 +781,30 @@ export async function libraryDeleteCall(
   id: string,
 ): Promise<Result<LibraryDocument>> {
   return withVault((root) => libraryDelete(root, id));
+}
+
+// KAR-7: operator project writes are direct. No Decision.
+export async function projectsList(): Promise<Result<ProjectListResult>> {
+  return withVault((root) => projectList(root));
+}
+
+export async function projectsGet(
+  id: string,
+): Promise<Result<Project>> {
+  return withVault((root) => projectGet(root, id));
+}
+
+export async function projectsCreate(
+  input: ProjectCreateInput,
+): Promise<Result<Project>> {
+  return withVault((root) => projectCreate(root, input));
+}
+
+export async function projectsUpdate(
+  id: string,
+  patch: ProjectUpdatePatch,
+): Promise<Result<Project>> {
+  return withVault((root) => projectUpdate(root, id, patch));
 }
 
 export async function agentsList(): Promise<Result<AgentHire[]>> {

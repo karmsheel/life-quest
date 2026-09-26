@@ -23,6 +23,7 @@ import DecisionsPage from "@/pages/DecisionsPage";
 import DocumentsPage from "@/pages/DocumentsPage";
 import DreamPage from "@/pages/DreamPage";
 import GoalsPage from "@/pages/GoalsPage";
+import ProjectsPage from "@/pages/ProjectsPage";
 import HomePage from "@/pages/HomePage";
 import LogPage from "@/pages/LogPage";
 import PersonnelPage from "@/pages/PersonnelPage";
@@ -88,6 +89,7 @@ function AppRoutes() {
           element={<DoctrineEditorPage backTo="/dream" />}
         />
         <Route path="/goals" element={<GoalsPage />} />
+        <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/chart" element={<ChartPage />} />
         <Route path="/track" element={<ArchitecturePage />} />
         <Route

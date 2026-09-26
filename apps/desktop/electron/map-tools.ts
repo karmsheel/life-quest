@@ -4,6 +4,7 @@ import {
   commandForTool,
   createDecision,
   GOALS_TOOL_DEFS,
+  listDomains,
   loadGoals,
   MAP_TOOL_DEFS,
   openVault,
@@ -16,6 +17,10 @@ import {
   executeCaptureTool,
   SCRIPT_TOOL_DEFS,
   executeScriptTool,
+  PROJECT_TOOL_DEFS,
+  commandForProjectTool,
+  projectGet,
+  type ProjectCommand,
   type GoalsCommand,
   type MapCommand,
   type MapToolDef,
@@ -36,7 +41,7 @@ export async function runPlannerLoop(opts: {
   extraSystem: string;
   messages: { role: string; content: string }[];
 }): Promise<Result<{ content: string }>> {
-  const openaiTools = [...MAP_TOOL_DEFS, ...GOALS_TOOL_DEFS, ...DOCUMENT_TOOL_DEFS, ...REVIEW_TOOL_DEFS, ...CAPTURE_TOOL_DEFS, ...SCRIPT_TOOL_DEFS].map((t) => ({
+  const openaiTools = [...MAP_TOOL_DEFS, ...GOALS_TOOL_DEFS, ...DOCUMENT_TOOL_DEFS, ...REVIEW_TOOL_DEFS, ...CAPTURE_TOOL_DEFS, ...SCRIPT_TOOL_DEFS, ...PROJECT_TOOL_DEFS].map((t) => ({
     type: "function",
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
@@ -149,6 +154,12 @@ export async function executeTool(
     };
   }
   if (name === "list_goals") return { goals: snap.value.goals, goalsError: snap.value.goalsError };
+  const projectCmd = commandForProjectTool(name, rec);
+  if (projectCmd) {
+    // KAR-7: agent project create and close wait for approval. File a pending
+    // Decision; the markdown file is written only on approve.
+    return proposeProjectDecision(root, projectCmd);
+  }
   const goalCmd = commandForGoalTool(name, rec);
   if (goalCmd) {
     // Agent goal writes wait for approval: file a pending Decision, do not touch goals.json.
@@ -197,6 +208,58 @@ async function proposeGoalDecision(
     proposedBodyMarkdown: JSON.stringify(command),
     previousBodyMarkdown: existing ? JSON.stringify(existing) : null,
     domainSlugs: typeof domainSlug === "string" && domainSlug ? [domainSlug] : [],
+    actor: AGENT_ACTOR,
+  });
+  if (!created.ok) return { error: { message: created.error } };
+  return { decisionId: created.value.id, status: created.value.status };
+}
+
+async function proposeProjectDecision(
+  root: string,
+  command: ProjectCommand,
+): Promise<unknown> {
+  let proposedTitle: string;
+  let previousBodyMarkdown: string | null = null;
+  const domainSlugs: string[] = [];
+
+  if (command.type === "createProject") {
+    // A create that names an already-invalid goal or domain is an error, not a Decision.
+    const goals = await loadGoals(root);
+    if (!goals.ok) return { error: { message: goals.error } };
+    if (!goals.value.some((g) => g.id === command.goalId)) {
+      return { error: { message: `Goal not found: ${command.goalId}` } };
+    }
+    if (command.domainSlug) {
+      const domains = await listDomains(root);
+      if (!domains.ok) return { error: { message: domains.error } };
+      const live = domains.value.some(
+        (d) => d.slug === command.domainSlug && !d.meta.archivedAt,
+      );
+      if (!live) {
+        return {
+          error: {
+            message: `Domain not found or archived: ${command.domainSlug}`,
+          },
+        };
+      }
+      domainSlugs.push(command.domainSlug);
+    }
+    proposedTitle = command.title;
+  } else {
+    // A close needs the project to exist; file nothing if it does not.
+    const loaded = await projectGet(root, command.id);
+    if (!loaded.ok) return { error: { message: loaded.error } };
+    proposedTitle = loaded.value.title;
+    previousBodyMarkdown = JSON.stringify(loaded.value);
+    if (loaded.value.domainSlug) domainSlugs.push(loaded.value.domainSlug);
+  }
+
+  const created = await createDecision(root, {
+    target: { type: "project" },
+    proposedTitle,
+    proposedBodyMarkdown: JSON.stringify(command),
+    previousBodyMarkdown,
+    domainSlugs,
     actor: AGENT_ACTOR,
   });
   if (!created.ok) return { error: { message: created.error } };
