@@ -2,7 +2,7 @@
 
 **Local-first life-management studio** for the desktop. Open or create a **vault folder** on your machine; Domains, doctrine (Premise → Vision → Purpose → Strategy), Decisions, Life log, and agent roster live as plain files beside each other. The studio does not open without the companion. Capture is not the studio.
 
-The product runtime is **Electron + Vite + React**. There is no cloud account and no Prisma/SQLite in the desktop path.
+The product runtime is **Electron + Vite + React**. There is no cloud account and no Prisma. Domain database rows live in a SQLite file inside the vault folder: that SQLite is the domain book, not the archived Prisma app, and it is not hosted.
 
 ## Design
 
@@ -20,6 +20,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 | [Local vault plan](docs/superpowers/plans/2026-07-19-local-vault-electron.md) | Implementation plan |
 | [Skeleton design](docs/superpowers/specs/2026-07-17-lifequest-skeleton-design.md) | Product IA (Domains / rooms / forge / log) |
 | [Hermes chatbar design](docs/superpowers/specs/2026-07-18-hermes-chatbar-connection-design.md) | Hermes connection UX |
+| [Domain databases & Finance kit](docs/superpowers/specs/2026-09-23-domain-databases-finance-kit-prs.md) | Domain-owned databases, pages, and the Finance kit |
 
 ## Prerequisites
 
@@ -93,6 +94,10 @@ LifeQuest owns the vault, the MCP door, and the UI. Hermes owns the agent loop, 
 - Doctrine is Markdown with frontmatter (`locked: true | false`).
 - Structured state is git-friendly JSON / JSONL under the vault’s prescribed layout.
 - Active domain and recent vaults live in app `userData`, not inside the vault.
+- Home includes **Data** and **Pages**.
+- A domain database is `domains/{slug}/data/domain.sqlite` in the vault folder.
+- Pages are `domains/{slug}/pages/{id}.json`.
+- Conversational capture posts only when the amount and the account are clear, and the receipt names what was logged.
 
 ## Archived web skeleton
 

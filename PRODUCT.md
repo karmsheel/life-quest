@@ -6,7 +6,7 @@ LifeQuest is for one person running a local vault on their desktop: organizing l
 
 ## Product Purpose
 
-A local-first life-management studio. Opening a vault is identity. Doctrine, goals, projects, map, library, capture, decisions, and log live as files on disk. Success is trusting the app as the daily surface for vision, goals, timeline, projects, and daily doing without an account or a LifeQuest-hosted copy of the vault. The companion is required for the studio and is not the product.
+A local-first life-management studio. Opening a vault is identity. Doctrine, goals, projects, map, library, capture, decisions, log, domain databases, and pages live in the vault folder. Success is trusting the app as the daily surface for vision, goals, timeline, projects, daily doing, and operator-owned tables without an account or a LifeQuest-hosted copy of the vault. The companion is required for the studio and is not the product.
 
 ## Brand Personality
 

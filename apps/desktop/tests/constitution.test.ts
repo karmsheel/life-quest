@@ -23,10 +23,20 @@ describe("product constitution", () => {
     assert.doesNotMatch(src, /optionally talking to Hermes/);
   });
 
+  it("has a Product Purpose that covers domain databases and pages", () => {
+    const src = read("PRODUCT.md");
+    const purpose = src.slice(src.indexOf("## Product Purpose"), src.indexOf("## Brand Personality"));
+    assert.match(purpose, /domain databases/);
+    assert.match(purpose, /operator-owned tables/);
+  });
+
   it("README.md matches VISION identity", () => {
     const src = read("README.md");
     assert.match(src, /Premise → Vision → Purpose → Strategy/);
     assert.match(src, /does not open without the companion/);
+    assert.match(src, /no Prisma/);
+    assert.match(src, /SQLite file inside the vault folder/);
+    assert.doesNotMatch(src, /no Prisma\/SQLite in the desktop path/);
     assert.doesNotMatch(src, /Hermes remains an optional/);
     assert.doesNotMatch(src, /Why → What → How/);
     assert.doesNotMatch(src, /## Hermes \(optional\)/);
@@ -63,6 +73,20 @@ describe("product constitution", () => {
     assert.match(read("LAWS/COMPANION.md"), /MUST NOT open without the companion/);
     assert.match(read("LAWS/REVIEWS.md"), /MUST/);
     assert.match(read("LAWS/REVIEWS.md"), /lock|planning|week start/);
+  });
+
+  it("LAWS/DATABASES.md states the domain database invariants", () => {
+    const src = read("LAWS/DATABASES.md");
+    assert.match(src, /## MUST \/ MUST NOT/);
+    assert.match(src, /Domain databases MUST live in the vault folder/);
+    assert.match(src, /MUST NOT require a LifeQuest-hosted database/);
+    assert.match(src, /MUST go through Decisions/);
+    assert.match(src, /MUST NOT post until/);
+    assert.match(src, /MUST NOT post when the amount or the account is missing/);
+    assert.match(src, /MUST name what was logged/);
+    assert.match(src, /JSON restore MUST require an explicit confirmed Settings action/);
+    assert.match(src, /goal progress and deadline/);
+    assert.match(src, /Gauges MUST NOT/);
   });
 
   it("documents shared UI rules", () => {
