@@ -116,6 +116,19 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Restore the persisted lens after boot/open (KAR-6).
+  // When no vault is open, `domainGetActive` returns null and we stay on Overview.
+  const restoreLens = useCallback(async () => {
+    try {
+      const persistedSlug = await api().domainGetActive();
+      if (persistedSlug !== null) {
+        setLensState(domainLens(persistedSlug));
+      }
+    } catch {
+      // Lens restore is best-effort; ignore errors.
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
       const result = await api().vaultGetSnapshot();
@@ -158,6 +171,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           if (cancelled) return;
           if (opened.ok) {
             applySnapshot(opened.value);
+            await restoreLens();
             setError(null);
           }
         }
@@ -172,7 +186,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [applySnapshot]);
+  }, [applySnapshot, restoreLens]);
 
   // External file change events from main (window focus mtime check).
   useEffect(() => {
@@ -257,8 +271,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         return false;
       }
       applySnapshot(result.value);
-      void setLens(overviewLens());
-      void api().domainSetActive(null);
+      await restoreLens();
       setStale(false);
       bumpReloadGeneration();
       await reloadRecent();
@@ -269,7 +282,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     } finally {
       setBusy(false);
     }
-  }, [applySnapshot, bumpReloadGeneration, reloadRecent, setLens]);
+  }, [applySnapshot, bumpReloadGeneration, reloadRecent, restoreLens]);
 
   const openRecent = useCallback(
     async (path: string): Promise<boolean> => {
@@ -282,8 +295,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           return false;
         }
         applySnapshot(result.value);
-        void setLens(overviewLens());
-        void api().domainSetActive(null);
+        await restoreLens();
         setStale(false);
         bumpReloadGeneration();
         await reloadRecent();
@@ -295,7 +307,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         setBusy(false);
       }
     },
-    [applySnapshot, bumpReloadGeneration, reloadRecent, setLens],
+    [applySnapshot, bumpReloadGeneration, reloadRecent, restoreLens],
   );
 
   const value = useMemo<VaultContextValue>(

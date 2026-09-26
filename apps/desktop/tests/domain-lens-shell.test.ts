@@ -48,7 +48,7 @@ describe("renderer domain lens", () => {
     const provider = read("src/state/VaultProvider.tsx");
     assert.match(provider, /setLens/);
     assert.match(provider, /overviewLens/);
-    assert.equal(provider.includes("domainGetActive"), false);
+    assert.match(provider, /domainGetActive/);
 
     const switcher = read("src/components/shell/DomainSwitcher.tsx");
     assert.match(switcher, /Overview/);

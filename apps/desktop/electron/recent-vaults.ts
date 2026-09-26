@@ -108,10 +108,14 @@ export async function getActiveDomain(vaultId: string): Promise<string | null> {
 
 export async function setActiveDomain(
   vaultId: string,
-  slug: string,
+  slug: string | null,
 ): Promise<void> {
   const prefs = await loadPrefs();
-  prefs.activeDomainByVaultId[vaultId] = slug;
+  if (slug === null) {
+    delete prefs.activeDomainByVaultId[vaultId];
+  } else {
+    prefs.activeDomainByVaultId[vaultId] = slug;
+  }
   await savePrefs(prefs);
 }
 

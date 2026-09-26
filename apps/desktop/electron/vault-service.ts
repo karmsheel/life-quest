@@ -122,8 +122,10 @@ import {
   type SyncConflict,
 } from "@lifequest/vault-core";
 import {
+  getActiveDomain,
   listRecentVaults,
   recordRecentVault,
+  setActiveDomain,
   type RecentEntry,
 } from "./recent-vaults.js";
 import {
@@ -249,7 +251,9 @@ export async function detectExternalDoctrineChanges(): Promise<
 async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
   currentRoot = snapshot.rootPath;
   currentVaultId = snapshot.lifequest.id;
-  currentLens = null;
+  // Restore the persisted lens for this vault (KAR-6).
+  const persisted = await getActiveDomain(snapshot.lifequest.id);
+  currentLens = persisted;
   await captureDoctrineMtimes(snapshot.rootPath);
   await recordRecentVault({
     id: snapshot.lifequest.id,
@@ -438,6 +442,7 @@ export async function domainSetActive(slug: string | null): Promise<Result<strin
     if (!currentRoot || !currentVaultId) return noVaultError<string | null>();
     if (slug === null) {
       currentLens = null;
+      await setActiveDomain(currentVaultId, null);
       return { ok: true, value: null };
     }
     const snap = await openVault(currentRoot);
@@ -450,6 +455,7 @@ export async function domainSetActive(slug: string | null): Promise<Result<strin
       return { ok: false, error: `Domain is archived: ${slug}` };
     }
     currentLens = slug;
+    await setActiveDomain(currentVaultId, slug);
     return { ok: true, value: slug };
   });
 }
