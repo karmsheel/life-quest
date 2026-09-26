@@ -39,16 +39,22 @@ describe("KAR-6: lens persistence across quit", () => {
 
   it("renderer restores the persisted lens on open instead of forcing Overview", () => {
     const provider = read("src/state/VaultProvider.tsx");
-    // domainGetActive is called in the boot/open flow to restore the lens
     assert.match(provider, /domainGetActive/);
-    // The boot effect must not blindly reset lens to Overview;
-    // applySnapshot must only reset when a domain was archived/missing.
+    assert.match(provider, /resolveRestoredLens/);
+    assert.match(provider, /shouldClearLensForSnapshot/);
+    // Opening a vault applies that vault's saved lens, including Overview.
+    assert.match(provider, /await restoreLens\(result\.value\)/);
+    assert.match(provider, /await restoreLens\(opened\.value\)/);
+    assert.match(provider, /await restoreLens\(snapResult\.value\)/);
     const applySnapshot = provider.match(
       /const applySnapshot = useCallback\([\s\S]*?\}, \[\]\);/,
     );
     assert.ok(applySnapshot, "applySnapshot callback");
-    // domainGetActive is called after vault open (not only on demand)
-    assert.match(provider, /await api\(\)\.domainGetActive\(\)/);
+    assert.match(applySnapshot[0], /shouldClearLensForSnapshot/);
+    assert.doesNotMatch(
+      applySnapshot[0],
+      /previousVaultId !== next\.lifequest\.id[\s\S]*domainSetActive\(null\)/,
+    );
   });
 
   it("lens switcher sends setLens with the domain lens during boot restore", () => {

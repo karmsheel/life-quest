@@ -18,11 +18,16 @@ import {
 import { api } from "@/lib/ipc";
 import type { RecentVaultEntry } from "@/vite-env";
 import { lastVaultToReopen } from "./lastVault.ts";
+import {
+  resolveRestoredLens,
+  shouldClearLensForSnapshot,
+  type RestoredLens,
+} from "./lens-persistence.ts";
 
 export type VaultContextValue = {
   /** Null when no vault is open (welcome flow). */
   snapshot: VaultSnapshot | null;
-  /** Session domain lens; Overview is the default. */
+  /** Domain lens for the open vault. Overview when none is saved. */
   lens: DomainLens;
   /** Active domain slug derived from the lens; null in Overview. */
   activeSlug: string | null;
@@ -55,15 +60,12 @@ export type VaultContextValue = {
 
 const VaultContext = createContext<VaultContextValue | null>(null);
 
-function domainStillLive(snapshot: VaultSnapshot, slug: string): boolean {
-  return snapshot.domains.some((d) => d.slug === slug && !d.meta.archivedAt);
-}
-
 export function VaultProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
   const [lens, setLensState] = useState<DomainLens>(overviewLens());
   const lensRef = useRef(lens);
   lensRef.current = lens;
+  const vaultIdRef = useRef<string | null>(null);
   const activeSlug = lensSlug(lens);
   const [booting, setBooting] = useState(true);
   const [stale, setStale] = useState(false);
@@ -103,31 +105,42 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     [setLens],
   );
 
-  const applySnapshot = useCallback((next: VaultSnapshot | null) => {
+  const applySnapshot = useCallback((next: VaultSnapshot | null, persistClear = true) => {
     setSnapshot(next);
     if (!next) {
+      vaultIdRef.current = null;
       setLensState(overviewLens());
       return;
     }
-    const current = lensRef.current;
-    if (current.kind === "domain" && !domainStillLive(next, current.slug)) {
+    const previousVaultId = vaultIdRef.current;
+    vaultIdRef.current = next.lifequest.id;
+    // Same-vault refresh only. A vault switch must not write Overview
+    // onto the destination; restoreLens applies that vault's own lens.
+    if (shouldClearLensForSnapshot(previousVaultId, next, lensRef.current)) {
       setLensState(overviewLens());
-      void api().domainSetActive(null);
+      if (persistClear) void api().domainSetActive(null);
     }
   }, []);
 
-  // Restore the persisted lens after boot/open (KAR-6).
-  // When no vault is open, `domainGetActive` returns null and we stay on Overview.
-  const restoreLens = useCallback(async () => {
+  // Read the saved lens, then publish the snapshot and that lens together.
+  const restoreLens = useCallback(async (next: VaultSnapshot) => {
+    let resolved: RestoredLens;
     try {
       const persistedSlug = await api().domainGetActive();
-      if (persistedSlug !== null) {
-        setLensState(domainLens(persistedSlug));
-      }
+      resolved = resolveRestoredLens(persistedSlug, next);
     } catch {
-      // Lens restore is best-effort; ignore errors.
+      resolved = { lens: overviewLens(), clearSaved: false };
     }
-  }, []);
+    applySnapshot(next, false);
+    setLensState(resolved.lens);
+    if (resolved.clearSaved) {
+      try {
+        await api().domainSetActive(null);
+      } catch {
+        // Screen is already Overview. A stale slug is cleared on the next open.
+      }
+    }
+  }, [applySnapshot]);
 
   const refresh = useCallback(async () => {
     try {
@@ -158,8 +171,11 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         if (!snapResult.ok) {
           setError(snapResult.error);
           setSnapshot(null);
+        } else if (snapResult.value) {
+          await restoreLens(snapResult.value);
+          if (cancelled) return;
         } else {
-          applySnapshot(snapResult.value);
+          applySnapshot(null);
         }
         setRecent(list);
         const reopen = lastVaultToReopen(
@@ -170,8 +186,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           const opened = await api().vaultOpen(reopen);
           if (cancelled) return;
           if (opened.ok) {
-            applySnapshot(opened.value);
-            await restoreLens();
+            await restoreLens(opened.value);
             setError(null);
           }
         }
@@ -223,6 +238,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
 
   const clearVault = useCallback(() => {
     setSnapshot(null);
+    vaultIdRef.current = null;
     setLensState(overviewLens());
     setStale(false);
     setError(null);
@@ -270,8 +286,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         setError(result.error);
         return false;
       }
-      applySnapshot(result.value);
-      await restoreLens();
+      await restoreLens(result.value);
       setStale(false);
       bumpReloadGeneration();
       await reloadRecent();
@@ -282,7 +297,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     } finally {
       setBusy(false);
     }
-  }, [applySnapshot, bumpReloadGeneration, reloadRecent, restoreLens]);
+  }, [bumpReloadGeneration, reloadRecent, restoreLens]);
 
   const openRecent = useCallback(
     async (path: string): Promise<boolean> => {
@@ -294,8 +309,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
           setError(result.error);
           return false;
         }
-        applySnapshot(result.value);
-        await restoreLens();
+        await restoreLens(result.value);
         setStale(false);
         bumpReloadGeneration();
         await reloadRecent();
@@ -307,7 +321,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         setBusy(false);
       }
     },
-    [applySnapshot, bumpReloadGeneration, reloadRecent, restoreLens],
+    [bumpReloadGeneration, reloadRecent, restoreLens],
   );
 
   const value = useMemo<VaultContextValue>(
