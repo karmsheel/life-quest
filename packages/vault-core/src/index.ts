@@ -152,4 +152,13 @@ export {
   CAPTURE_TOOL_DEFS,
   executeCaptureTool,
 } from "./capture-tools.ts";
+export {
+  applyScriptBlock,
+  runScriptBlock,
+  parseScriptSource,
+} from "./script-block.ts";
+export {
+  SCRIPT_TOOL_DEFS,
+  executeScriptTool,
+} from "./script-tools.ts";
 export type { MapStoreState, MapCommand, MapActor, MapDomainError, YearRecord, MapEvent, Task, TaskColumn, ColorId, DayType, DetachedWeek, ResolvedWeek } from "./map/public.ts";

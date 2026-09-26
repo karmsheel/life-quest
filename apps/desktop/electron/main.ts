@@ -147,6 +147,9 @@ function registerIpcHandlers() {
   ipcMain.handle("page:create", (_e, slug: string, input: { title: string }) => vault.pageCreate(slug, input));
   ipcMain.handle("page:update", (_e, slug: string, pageId: string, input: { title?: string; blocks?: Parameters<typeof vault.pageUpdate>[2]["blocks"] }) => vault.pageUpdate(slug, pageId, input));
   ipcMain.handle("page:delete", (_e, slug: string, pageId: string) => vault.pageDelete(slug, pageId));
+  // KAR-56 script blocks
+  ipcMain.handle("script:apply", (_e, input: { domainSlug: string; pageId: string; blockId?: string; name: string; source: string }) => vault.scriptApply(input));
+  ipcMain.handle("script:run", (_e, input: { domainSlug: string; source: string }) => vault.scriptRun(input));
   ipcMain.handle("pins:list", (_e, domainSlug: string | null) => vault.pinsList(domainSlug));
   ipcMain.handle("pins:set", (_e, domainSlug: string | null, pins: Parameters<typeof vault.pinsSet>[1]) => vault.pinsSet(domainSlug, pins));
 

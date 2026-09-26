@@ -421,6 +421,7 @@ export const PAGE_BLOCK_KINDS = [
   "budget-vs-actual",
   "net-worth",
   "scenario-compare",
+  "script",
 ] as const;
 export type PageBlockKind = (typeof PAGE_BLOCK_KINDS)[number];
 
@@ -459,7 +460,18 @@ export type PageBlock =
       kind: "scenario-compare";
       assumptionSetId: string;
       compareSetId?: string | null;
-    };
+    }
+  | { id: string; kind: "script"; name: string; source: string };
+
+// KAR-56 script block run types
+export type ScriptQueryResult = { sql: string; columns: string[]; rows: unknown[][] };
+export type ScriptFetchResult = { url: string; status: number; body: string };
+export type ScriptRunResult = {
+  queries: ScriptQueryResult[];
+  fetches: ScriptFetchResult[];
+  warnings: string[];
+};
+export type ScriptApplyResult = { applied: true; name: string; blockId: string; decision: null };
 
 export type PageRecord = {
   id: string;

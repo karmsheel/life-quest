@@ -78,6 +78,16 @@ const lifequest = {
     ipcRenderer.invoke("page:update", slug, pageId, input) as Promise<Result<unknown>>,
   pageDelete: (slug: string, pageId: string) =>
     ipcRenderer.invoke("page:delete", slug, pageId) as Promise<Result<unknown>>,
+  // KAR-56 script blocks
+  scriptApply: (input: {
+    domainSlug: string;
+    pageId: string;
+    blockId?: string;
+    name: string;
+    source: string;
+  }) => ipcRenderer.invoke("script:apply", input) as Promise<Result<unknown>>,
+  scriptRun: (input: { domainSlug: string; source: string }) =>
+    ipcRenderer.invoke("script:run", input) as Promise<Result<unknown>>,
   pinsList: (domainSlug: string | null) =>
     ipcRenderer.invoke("pins:list", domainSlug) as Promise<Result<unknown>>,
   pinsSet: (domainSlug: string | null, pins: unknown[]) =>

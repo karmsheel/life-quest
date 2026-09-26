@@ -61,9 +61,9 @@ describe("finance plan loop shell wiring (KAR-57)", () => {
     }
   });
 
-  it("PageCanvasPage still does not treat script as an addable kind", () => {
+  it("PageCanvasPage does not mention jupyter, notebook import, or a hosted runtime", () => {
     const canvasPage = read("src/pages/PageCanvasPage.tsx");
-    assert.equal(/script.*block|addable.*script/i.test(canvasPage), false);
+    assert.equal(/jupyter|notebook import|hosted runtime/i.test(canvasPage), false);
   });
 
   it("DatabasePage still does not mention Install Finance kit", () => {

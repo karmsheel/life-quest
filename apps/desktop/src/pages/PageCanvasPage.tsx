@@ -8,6 +8,7 @@ import type {
   BudgetVsActualReport,
   NetWorthReport,
   ScenarioCompareReport,
+  ScriptRunResult,
 } from "@lifequest/vault-core";
 import {
   PAGE_BLOCK_KINDS,
@@ -24,6 +25,11 @@ import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { Button } from "@/components/ui/Button";
 
+type ScriptRunState =
+  | { running: true }
+  | { running: false; result: ScriptRunResult }
+  | { running: false; error: string };
+
 const BLOCK_LABELS: Record<string, string> = {
   markdown: "Markdown",
   "bound-table": "Bound table",
@@ -35,6 +41,7 @@ const BLOCK_LABELS: Record<string, string> = {
   "budget-vs-actual": "Budget vs actual",
   "net-worth": "Net worth",
   "scenario-compare": "Scenario compare",
+  script: "Script",
 };
 
 function genId(): string {
@@ -104,6 +111,47 @@ function computeMetric(
   if (vals.length === 0) return null;
   if (agg === "sum") return vals.reduce((a, b) => a + b, 0);
   return vals[vals.length - 1];
+}
+
+function ScriptRunOutput({ result }: { result: ScriptRunResult }) {
+  return (
+    <div className="page-block__script-output">
+      {result.warnings.length > 0 ? (
+        <p className="muted">{result.warnings.join("; ")}</p>
+      ) : null}
+      {result.queries.map((q, i) => (
+        <div key={`q${i}`} className="page-block__script-query">
+          <p className="muted">{q.sql}</p>
+          {q.columns.length === 0 ? (
+            <p className="muted">No columns.</p>
+          ) : (
+            <table className="page-block__table">
+              <thead>
+                <tr>{q.columns.map((c) => <th key={c}>{c}</th>)}</tr>
+              </thead>
+              <tbody>
+                {q.rows.map((row, ri) => (
+                  <tr key={`r${ri}`}>
+                    {row.map((cell, ci) => <td key={`c${ci}`}>{cellText(cell)}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {q.rows.length === 0 ? <p className="muted">No rows.</p> : null}
+        </div>
+      ))}
+      {result.fetches.map((f, i) => (
+        <div key={`f${i}`} className="page-block__script-fetch">
+          <p className="muted">{f.url} — {f.status}</p>
+          <pre className="page-block__script-body">{f.body}</pre>
+        </div>
+      ))}
+      {result.queries.length === 0 && result.fetches.length === 0 ? (
+        <p className="muted">Nothing returned.</p>
+      ) : null}
+    </div>
+  );
 }
 
 function ChartSvg({
@@ -189,6 +237,29 @@ export default function PageCanvasPage() {
 
   const [dbs, setDbs] = useState<DatabaseListEntry[]>([]);
   const [rowsByDb, setRowsByDb] = useState<Record<string, DatabaseRow[]>>({});
+  // KAR-56: last run of the script block, keyed by block id
+  const [scriptRuns, setScriptRuns] = useState<Record<string, ScriptRunState>>({});
+
+  async function onRunScript(blockId: string, source: string) {
+    if (!slug) return;
+    setScriptRuns((prev) => ({ ...prev, [blockId]: { running: true } }));
+    try {
+      const res = await api().scriptRun({ domainSlug: page?.domainSlug ?? slug, source });
+      if (res.ok) {
+        setScriptRuns((prev) => ({
+          ...prev,
+          [blockId]: { running: false, result: res.value as ScriptRunResult },
+        }));
+      } else {
+        setScriptRuns((prev) => ({ ...prev, [blockId]: { running: false, error: res.error } }));
+      }
+    } catch (e) {
+      setScriptRuns((prev) => ({
+        ...prev,
+        [blockId]: { running: false, error: e instanceof Error ? e.message : "Run failed" },
+      }));
+    }
+  }
 
   const load = useCallback(async () => {
     if (!slug || !pageId) return;
@@ -315,6 +386,10 @@ export default function PageCanvasPage() {
     if (kind === "scenario-compare") {
       (base as unknown as { assumptionSetId: string }).assumptionSetId = "";
       (base as unknown as { compareSetId?: string | null }).compareSetId = null;
+    }
+    if (kind === "script") {
+      (base as unknown as { name: string }).name = "Script";
+      (base as unknown as { source: string }).source = "";
     }
     setBlocks((prev) => [...prev, base]);
     if (kind === "bound-table" || kind === "metric" || kind === "chart") {
@@ -751,6 +826,48 @@ export default function PageCanvasPage() {
                     </tbody>
                   </table>
                 )}
+              </section>
+            );
+          }
+          if (block.kind === "script") {
+            const b = block as Extract<PageBlock, { kind: "script" }>;
+            const run = scriptRuns[b.id];
+            return (
+              <section key={b.id} className="page-block">
+                <div className="page-block__head">
+                  <span className="muted">Script</span>
+                  <button className="page-block__remove" onClick={() => removeBlock(b.id)}>Remove</button>
+                </div>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={b.name}
+                  aria-label="Script name"
+                  onChange={(e) => setBlock(b.id, { name: e.target.value })}
+                />
+                <textarea
+                  className="page-block__markdown"
+                  value={b.source}
+                  aria-label="Script source"
+                  onChange={(e) => setBlock(b.id, { source: e.target.value })}
+                  rows={5}
+                />
+                <div className="page-canvas__add">
+                  <Button onClick={() => void onRunScript(b.id, b.source)} disabled={run?.running === true}>
+                    Run
+                  </Button>
+                  <span className="muted">Save writes the page; Run only reads this domain&apos;s database.</span>
+                </div>
+                {b.source.trim() === "" ? (
+                  <p className="muted">No script yet.</p>
+                ) : null}
+                {run?.running ? <p className="muted">Running…</p> : null}
+                {run && !run.running && "error" in run ? (
+                  <p className="form-error" role="alert">{run.error}</p>
+                ) : null}
+                {run && !run.running && "result" in run ? (
+                  <ScriptRunOutput result={run.result} />
+                ) : null}
               </section>
             );
           }

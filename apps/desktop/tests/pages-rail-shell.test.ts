@@ -63,7 +63,7 @@ describe("pages rail shell wiring (KAR-60)", () => {
     assert.ok(!canvasPage.includes("setActiveSlug"), "PageCanvasPage should not call setActiveSlug");
   });
 
-  it("PageCanvasPage mentions pageGet, pageUpdate, core kinds, and three finance kinds (no script)", () => {
+  it("PageCanvasPage mentions pageGet, pageUpdate, core kinds, finance kinds, and the script block", () => {
     const src = read("src/pages/PageCanvasPage.tsx");
     assert.match(src, /pageGet/);
     assert.match(src, /pageUpdate/);
@@ -79,8 +79,9 @@ describe("pages rail shell wiring (KAR-60)", () => {
     assert.match(src, /budget-vs-actual/);
     assert.match(src, /net-worth/);
     assert.match(src, /scenario-compare/);
-    // No script as addable kind
-    assert.equal(/script.*block|addable.*script/i.test(src), false);
+    // KAR-56 script block is addable
+    assert.match(src, /"script"/);
+    assert.equal(/jupyter|notebook import|hosted runtime/i.test(src), false);
   });
 
   it("preload/main/vault-service/vite-env mention all page: and pins: channels and API names", () => {

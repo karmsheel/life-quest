@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  applyScriptBlock,
   archiveDomain,
   createDatabase,
   createDecision,
@@ -38,6 +39,7 @@ import {
   openVault,
   readDocumentMedia,
   readLog,
+  runScriptBlock,
   resolveDecision,
   saveDatabaseFile,
   saveDocument,
@@ -541,6 +543,26 @@ export async function pageUpdate(
 
 export async function pageDelete(slug: string, pageId: string): Promise<Result<{ id: string }>> {
   return withVault((root) => deletePage(root, slug, pageId));
+}
+
+// KAR-56 script blocks
+export async function scriptApply(input: {
+  domainSlug: string;
+  pageId: string;
+  blockId?: string;
+  name: string;
+  source: string;
+}): Promise<Result<import("@lifequest/vault-core").ScriptApplyResult>> {
+  return withVault((root) =>
+    applyScriptBlock(root, { ...input, actor: USER_ACTOR }),
+  );
+}
+
+export async function scriptRun(input: {
+  domainSlug: string;
+  source: string;
+}): Promise<Result<import("@lifequest/vault-core").ScriptRunResult>> {
+  return withVault((root) => runScriptBlock(root, { domainSlug: input.domainSlug, source: input.source }));
 }
 
 export async function pinsList(domainSlug: string | null): Promise<Result<import("@lifequest/vault-core").Pin[]>> {

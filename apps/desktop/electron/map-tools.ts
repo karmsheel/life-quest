@@ -13,6 +13,8 @@ import {
   executeReviewTool,
   CAPTURE_TOOL_DEFS,
   executeCaptureTool,
+  SCRIPT_TOOL_DEFS,
+  executeScriptTool,
   type MapCommand,
   type MapToolDef,
   type Result,
@@ -32,7 +34,7 @@ export async function runPlannerLoop(opts: {
   extraSystem: string;
   messages: { role: string; content: string }[];
 }): Promise<Result<{ content: string }>> {
-  const openaiTools = [...MAP_TOOL_DEFS, ...GOALS_TOOL_DEFS, ...DOCUMENT_TOOL_DEFS, ...REVIEW_TOOL_DEFS, ...CAPTURE_TOOL_DEFS].map((t) => ({
+  const openaiTools = [...MAP_TOOL_DEFS, ...GOALS_TOOL_DEFS, ...DOCUMENT_TOOL_DEFS, ...REVIEW_TOOL_DEFS, ...CAPTURE_TOOL_DEFS, ...SCRIPT_TOOL_DEFS].map((t) => ({
     type: "function",
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
@@ -90,6 +92,11 @@ export async function executeTool(
   // capture_transaction, undo_capture, correct_capture
   if (CAPTURE_TOOL_DEFS.some((t) => t.name === name)) {
     return executeCaptureTool(root, AGENT_ACTOR, name, rec);
+  }
+
+  // apply_script_block, run_script_block
+  if (SCRIPT_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeScriptTool(root, AGENT_ACTOR, name, rec);
   }
 
   if (name === "get_state") return { state: snap.value.map };

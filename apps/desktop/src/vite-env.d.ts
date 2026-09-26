@@ -31,6 +31,8 @@ import type {
   Result,
   ReviewCadence,
   ReviewRecord,
+  ScriptApplyResult,
+  ScriptRunResult,
   SignalChainListResult,
   SignalCreateInput,
   SignalRecord,
@@ -307,6 +309,15 @@ type LifequestApi = {
     blocks?: PageBlock[];
   }) => Promise<Result<PageWriteResult>>;
   pageDelete: (slug: string, pageId: string) => Promise<Result<{ id: string }>>;
+  // KAR-56 script blocks
+  scriptApply: (input: {
+    domainSlug: string;
+    pageId: string;
+    blockId?: string;
+    name: string;
+    source: string;
+  }) => Promise<Result<ScriptApplyResult>>;
+  scriptRun: (input: { domainSlug: string; source: string }) => Promise<Result<ScriptRunResult>>;
   pinsList: (domainSlug: string | null) => Promise<Result<Pin[]>>;
   pinsSet: (domainSlug: string | null, pins: Pin[]) => Promise<Result<PinWriteResult>>;
   // KAR-61 finance kit

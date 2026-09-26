@@ -125,6 +125,14 @@ function validateBlocks(
       }
     }
     // goal-progress, deadline, budget-vs-actual, net-worth have no extra fields to validate
+    if (b.kind === "script") {
+      if (typeof b.name !== "string" || !b.name.trim()) {
+        return { ok: false, error: "script block requires a non-empty name" };
+      }
+      if (typeof b.source !== "string") {
+        return { ok: false, error: "script block requires a source string" };
+      }
+    }
     if (b.kind === "scenario-compare") {
       if (typeof b.assumptionSetId !== "string" || !(b.assumptionSetId as string).trim()) {
         return { ok: false, error: "scenario-compare requires a non-empty assumptionSetId" };
