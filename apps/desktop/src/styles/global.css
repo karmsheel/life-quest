@@ -1379,6 +1379,25 @@ a {
   width: 100%;
 }
 
+.library-preview {
+  min-height: 1.5rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.library-preview:empty {
+  display: none;
+}
+
+.library-preview .wiki-link {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .library-tag-picker {
   display: flex;
   flex-wrap: wrap;

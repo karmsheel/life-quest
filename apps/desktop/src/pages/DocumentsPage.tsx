@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 import {
   lensSlug,
@@ -12,6 +13,8 @@ import {
   type LibraryDocument,
 } from "@lifequest/vault-core/pure";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { doctrineMarkdownToHtml } from "@/lib/doctrine-markdown";
+import { createWikiResolver } from "@/lib/wiki-links";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { ProposeChangeDialog } from "@/components/documents/ProposeChangeDialog";
@@ -108,6 +111,32 @@ export default function DocumentsPage() {
     () => records.filter((note) => recordVisibleMulti(lens, note.domainSlugs)),
     [records, lens],
   );
+
+  const resolveWiki = useMemo(
+    () =>
+      createWikiResolver({
+        domains: liveDomains,
+        notes: records,
+      }),
+    [liveDomains, records],
+  );
+
+  const previewHtml = useMemo(
+    () => doctrineMarkdownToHtml(body, resolveWiki),
+    [body, resolveWiki],
+  );
+
+  // A library link stays in the composer: open the target note instead of
+  // navigating. Doctrine links are plain hashes and route normally.
+  function onPreviewClick(e: ReactMouseEvent<HTMLDivElement>) {
+    const anchor = (e.target as HTMLElement).closest<HTMLAnchorElement>(
+      "a[data-library-id]",
+    );
+    const id = anchor?.getAttribute("data-library-id");
+    if (!id) return;
+    e.preventDefault();
+    void openEdit(id);
+  }
 
   function domainName(slug: string): string {
     return snapshot?.domains.find((d) => d.slug === slug)?.meta.name ?? slug;
@@ -299,6 +328,12 @@ export default function DocumentsPage() {
             readOnly={editingLocked}
           />
         </label>
+        <div
+          className="field library-preview"
+          aria-label="Note preview"
+          onClick={onPreviewClick}
+          dangerouslySetInnerHTML={{ __html: previewHtml }}
+        />
         <div className="field">
           <span>Domains</span>
           {pickerDomains.length === 0 ? (

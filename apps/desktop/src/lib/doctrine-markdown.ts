@@ -1,4 +1,9 @@
+import type { WikiResolver } from "./wiki-links.ts";
+
 const MEDIA_SRC = /^media\/[A-Za-z0-9._-]+$/;
+
+/** A wiki token: `[[target]]`, not an embed, no nested brackets. */
+const WIKI_TOKEN = /(?<!!)\[\[([^[\]]+)\]\]/g;
 
 function escapeHtml(s: string): string {
   return s
@@ -8,8 +13,41 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function inlineFormat(text: string): string {
-  let s = escapeHtml(text);
+function wikiAnchor(target: string, href: string, libraryId?: string): string {
+  const id = libraryId ? ` data-library-id="${escapeHtml(libraryId)}"` : "";
+  return `<a href="${escapeHtml(href)}"${id} class="wiki-link">${escapeHtml(
+    target.trim(),
+  )}</a>`;
+}
+
+/** A private-use sentinel that escapeHtml and the inline rules leave alone. */
+const STASH = "\uE000";
+
+/**
+ * Swaps wiki tokens for sentinels before escaping, so a target can never inject
+ * HTML and the remaining inline rules cannot rewrite an anchor. An unresolved
+ * target is stashed back as its literal `[[target]]` characters.
+ */
+function stashWiki(text: string, resolve: WikiResolver): [string, string[]] {
+  const kept: string[] = [];
+  const stashed = text.replace(WIKI_TOKEN, (whole, raw: string) => {
+    const link = resolve(raw);
+    kept.push(link ? wikiAnchor(raw, link.href, link.libraryId) : escapeHtml(whole));
+    return `${STASH}${kept.length - 1}${STASH}`;
+  });
+  return [stashed, kept];
+}
+
+function unstashWiki(text: string, kept: string[]): string {
+  return text.replace(
+    new RegExp(`${STASH}(\\d+)${STASH}`, "g"),
+    (_m, i: string) => kept[Number(i)] ?? "",
+  );
+}
+
+function inlineFormat(text: string, resolve?: WikiResolver): string {
+  const [stashed, kept] = resolve ? stashWiki(text, resolve) : [text, []];
+  let s = escapeHtml(stashed);
   s = s.replace(
     /!\[([^\]]*)\]\(([^)]+)\)/g,
     (_m, alt: string, src: string) => {
@@ -24,10 +62,17 @@ function inlineFormat(text: string): string {
   s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
   s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   s = s.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, "<em>$1</em>");
-  return s;
+  return kept.length > 0 ? unstashWiki(s, kept) : s;
 }
 
-export function doctrineMarkdownToHtml(markdown: string): string {
+/**
+ * `resolveWiki` is optional on purpose: without it a `[[target]]` is ordinary
+ * text, so doctrine and review previews are unaffected.
+ */
+export function doctrineMarkdownToHtml(
+  markdown: string,
+  resolveWiki?: WikiResolver,
+): string {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
   let i = 0;
@@ -50,7 +95,7 @@ export function doctrineMarkdownToHtml(markdown: string): string {
 
   const flushPara = () => {
     if (para.length === 0) return;
-    out.push(`<p>${inlineFormat(para.join(" "))}</p>`);
+    out.push(`<p>${inlineFormat(para.join(" "), resolveWiki)}</p>`);
     para.length = 0;
   };
 
@@ -85,7 +130,7 @@ export function doctrineMarkdownToHtml(markdown: string): string {
       flushPara();
       closeLists();
       const level = h[1]!.length;
-      out.push(`<h${level}>${inlineFormat(h[2]!)}</h${level}>`);
+      out.push(`<h${level}>${inlineFormat(h[2]!, resolveWiki)}</h${level}>`);
       i += 1;
       continue;
     }
@@ -100,7 +145,7 @@ export function doctrineMarkdownToHtml(markdown: string): string {
         out.push("<ul>");
         inUl = true;
       }
-      out.push(`<li>${inlineFormat(ul[1]!)}</li>`);
+      out.push(`<li>${inlineFormat(ul[1]!, resolveWiki)}</li>`);
       i += 1;
       continue;
     }
@@ -115,7 +160,7 @@ export function doctrineMarkdownToHtml(markdown: string): string {
         out.push("<ol>");
         inOl = true;
       }
-      out.push(`<li>${inlineFormat(ol[1]!)}</li>`);
+      out.push(`<li>${inlineFormat(ol[1]!, resolveWiki)}</li>`);
       i += 1;
       continue;
     }
