@@ -14,7 +14,7 @@ import {
   PAGE_BLOCK_KINDS,
   METRIC_AGGS,
   CHART_TYPES,
-} from "@lifequest/vault-core";
+} from "@lifequest/vault-core/pure";
 import {
   filterByLens,
   deadlinePressureGoals,

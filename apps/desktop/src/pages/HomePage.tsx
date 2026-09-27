@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { DecisionRecord, LifeEvent, PageListEntry, Pin } from "@lifequest/vault-core";
-import { SYSTEM_PIN_KINDS, type SystemPinKind } from "@lifequest/vault-core";
+import { SYSTEM_PIN_KINDS, type SystemPinKind } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { Button } from "@/components/ui/Button";
 import { useVault } from "@/state/VaultProvider";

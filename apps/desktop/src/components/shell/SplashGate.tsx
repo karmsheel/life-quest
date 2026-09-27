@@ -44,6 +44,13 @@ export function SplashGate() {
     return () => {
       if (poll) clearInterval(poll);
       if (hideTimer) clearTimeout(hideTimer);
+      // A later boot update cleans this effect up before the fade timer
+      // fires. The dismiss already happened, so hide now instead of leaving
+      // the splash up with no second chance.
+      if (dismissed.current) {
+        el.setAttribute("hidden", "");
+        el.classList.add("splash--done");
+      }
     };
   }, [booting, ensuring, status?.kind]);
 

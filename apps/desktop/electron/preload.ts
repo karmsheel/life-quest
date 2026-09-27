@@ -129,7 +129,7 @@ const lifequest = {
   ingestReject: (slug: string, batchId: string, rowIds?: string[]) =>
     ipcRenderer.invoke("ingest:reject", slug, batchId, rowIds) as Promise<Result<unknown>>,
 
-  documentGet:
+  documentGet: (slug: string, kind: string) =>
     ipcRenderer.invoke("document:get", slug, kind) as Promise<Result<unknown>>,
   documentSave: (
     slug: string,
