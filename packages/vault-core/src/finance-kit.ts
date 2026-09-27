@@ -25,6 +25,7 @@ import {
   type Result,
   type PageRecord,
 } from "./types.ts";
+import { USER_ACTOR } from "./types.ts";
 
 // Re-export constants
 export const FINANCE_KIT_ID_CONST = FINANCE_KIT_ID;
@@ -361,7 +362,10 @@ async function mergeOverviewPins(root: string): Promise<void> {
  * The actual install write path — used by both user install and approved Decision.
  * Does NOT create Decisions.
  */
-export async function applyFinanceKitInstall(root: string): Promise<Result<KitInstallResult>> {
+export async function applyFinanceKitInstall(
+  root: string,
+  actor: Actor = USER_ACTOR,
+): Promise<Result<KitInstallResult>> {
   // 1. Refuse if financial is missing or archived
   const paths = vaultPaths(root);
   const slug = FINANCE_DOMAIN_SLUG;
@@ -441,6 +445,7 @@ export async function applyFinanceKitInstall(root: string): Promise<Result<KitIn
     type: "kit.installed",
     summary: `Installed finance kit into ${slug}`,
     payload: { kit: FINANCE_KIT_ID, domainSlug: slug },
+    actor,
   });
 
   return { ok: true, value: { applied: true, alreadyInstalled: false } };

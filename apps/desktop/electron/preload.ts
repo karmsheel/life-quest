@@ -226,8 +226,13 @@ const lifequest = {
     ipcRenderer.invoke("hermes:chat", messages) as Promise<Result<unknown>>,
   hermesChatTools: (
     messages: { role: string; content: string }[],
+    hire?: { id: string; name: string },
   ) =>
-    ipcRenderer.invoke("hermes:chatTools", messages) as Promise<Result<unknown>>,
+    ipcRenderer.invoke(
+      "hermes:chatTools",
+      messages,
+      hire,
+    ) as Promise<Result<unknown>>,
   hermesScanAgents: () =>
     ipcRenderer.invoke("hermes:scanAgents") as Promise<Result<unknown>>,
 

@@ -319,8 +319,11 @@ function registerIpcHandlers() {
   ipcMain.handle("hermes:scanAgents", () => vault.hermesScanAgentsCall());
   ipcMain.handle(
     "hermes:chatTools",
-    (_e, messages: { role: string; content: string }[]) =>
-      vault.hermesChatToolsCall(messages),
+    (
+    _e,
+    messages: { role: string; content: string }[],
+    hire?: { id: string; name: string },
+  ) => vault.hermesChatToolsCall(messages, hire),
   );
 
   ipcMain.handle("mcp:getUrl", () => vault.getMcpUrl());

@@ -316,6 +316,8 @@ export async function applyScriptBlock(
       type: "page.script-applied",
       summary: `Applied script block ${name}`,
       payload: { pageId: input.pageId, blockId, name, actor: input.actor?.type ?? "user" },
+      // KAR-9: the life-log line names the writer, not just the actor type.
+      actor: input.actor,
     });
 
     return { ok: true, value: { applied: true, name, blockId, decision: null } };

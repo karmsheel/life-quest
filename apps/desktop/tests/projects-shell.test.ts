@@ -67,7 +67,8 @@ describe("KAR-7: agent project tools file Decisions", () => {
 
   it("create_task still reaches applyMapCommand and is not gated", () => {
     const body = executeToolBody();
-    assert.match(body, /applyMapCommand\(root, command, "agent"\)/);
+    // KAR-9 added the vault actor after `today`; the map actor stays "agent".
+    assert.match(body, /applyMapCommand\(root, command, "agent", undefined, actor\)/);
     const gate = body.slice(body.indexOf("DAY_TEMPLATE_TOOLS.has(name)"));
     const before = gate.slice(0, gate.indexOf("applyMapCommand"));
     assert.equal(/create_task/.test(before), false);

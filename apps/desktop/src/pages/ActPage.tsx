@@ -157,9 +157,12 @@ function ActContent() {
       ...prev,
     ]);
     try {
-      const result = await api().hermesChatTools([
-        { role: "user", content: prompt },
-      ]);
+      // KAR-9: the hire is named in data so the life log can attribute the
+      // writes. No key ever crosses into the renderer.
+      const result = await api().hermesChatTools(
+        [{ role: "user", content: prompt }],
+        { id: agent.id, name: agent.name },
+      );
       setRuns((prev) =>
         prev.map((r) =>
           r.id === runId

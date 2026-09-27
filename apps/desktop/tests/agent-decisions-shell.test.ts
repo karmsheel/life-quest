@@ -47,7 +47,8 @@ describe("agent map tools file Decisions", () => {
 
   it("create_task is not gated and still falls through to applyMapCommand", () => {
     const body = executeToolBody(read("electron/map-tools.ts"));
-    assert.match(body, /applyMapCommand\(root, command, "agent"\)/);
+    // KAR-9 added the vault actor after `today`; the map actor stays "agent".
+    assert.match(body, /applyMapCommand\(root, command, "agent", undefined, actor\)/);
     // create_task must not be captured by the day-template gate, and it is not routed
     // through a Decision proposer: only goals and the five day templates are.
     const gate = body.slice(body.indexOf("DAY_TEMPLATE_TOOLS.has(name)"));
@@ -70,7 +71,11 @@ describe("operator IPC writes stay direct", () => {
       src.indexOf("export async function mapApply"),
       src.indexOf("export async function mapApply") + 400,
     );
-    assert.match(mapApply, /applyMapCommand\(root, command, actor\)/);
+    // KAR-9: the operator IPC names the operator on the life-log line.
+    assert.match(
+      mapApply,
+      /applyMapCommand\(root, command, actor, undefined, USER_ACTOR\)/,
+    );
   });
 
   it("vault-service does not route operator writes through createDecision", () => {

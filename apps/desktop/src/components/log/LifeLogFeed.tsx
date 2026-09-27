@@ -106,6 +106,13 @@ export function LifeLogFeed() {
               </time>
               <span className="life-log-event__type">{e.type}</span>
               <span className="life-log-event__summary">{e.summary}</span>
+              {/* KAR-9: name the writer when the line has an actor. Old lines
+                  with actor null render no name. */}
+              {e.actor ? (
+                <span className="life-log-event__actor muted">
+                  {actorDisplayName(e.actor)}
+                </span>
+              ) : null}
               <span className="life-log-event__domain muted">
                 {e.domainSlug ?? "unassigned"}
               </span>

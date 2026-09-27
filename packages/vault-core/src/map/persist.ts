@@ -6,12 +6,13 @@ import { loadGoals } from "../goals.ts";
 import { appendLog } from "../log.ts";
 import { vaultPaths } from "../paths.ts";
 import type { Result } from "../types.ts";
+import { USER_ACTOR, type Actor } from "../types.ts";
 import { applyCommand } from "./commands.ts";
 import { emptyState } from "./empty.ts";
 import { isMapEvent } from "./events.ts";
 import { mapLogEvent } from "./log-event.ts";
 import { isIsoDate, todayLocalIso } from "./dates.ts";
-import type { Actor, Command, IsoDate, LiveBlock, LiveDay, LiveLeftoverItem, LiveSource, StoreState, Task, YearRecord } from "./types.ts";
+import type { Actor as MapActor, Command, IsoDate, LiveBlock, LiveDay, LiveLeftoverItem, LiveSource, StoreState, Task, YearRecord } from "./types.ts";
 import { ensureCurrentYear, rollover } from "./years.ts";
 
 type MapFile = Omit<StoreState, "aboutMe">;
@@ -223,8 +224,9 @@ export async function ensureMapOnOpen(
 export async function applyMapCommand(
   rootPath: string,
   command: Command,
-  actor: Actor,
+  actor: MapActor,
   today: string = todayLocalIso(),
+  vaultActor: Actor = USER_ACTOR,
 ): Promise<Result<StoreState>> {
   const ensured = await ensureMapOnOpen(rootPath, today);
   if (!ensured.ok) return ensured;
@@ -255,6 +257,7 @@ export async function applyMapCommand(
     type: ev.type,
     summary: ev.summary,
     payload: ev.payload,
+    actor: vaultActor,
   });
   return { ok: true, value: result.value };
 }

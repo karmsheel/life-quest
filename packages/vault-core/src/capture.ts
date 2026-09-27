@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
+import { appendLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
 import {
   deleteRow,
@@ -408,6 +409,23 @@ export async function captureUtterance(
     const payeeBit = parsed.payee ? ` • ${parsed.payee}` : "";
     const receipt = `${amount < 0 ? "-" : ""}${Math.abs(amount)} ${parsed.currency} on ${parsed.date} • ${accountName} • ${categoryName}${payeeBit}`;
 
+    // KAR-9: a posted capture is a vault write, so the life log records who wrote it.
+    await appendLog(root, {
+      domainSlug: FINANCE_DOMAIN_SLUG,
+      type: "capture.posted",
+      summary: `Captured ${receipt}`,
+      payload: {
+        rowId,
+        amount,
+        currency: parsed.currency,
+        date: parsed.date,
+        accountName,
+        categoryName,
+        payee: parsed.payee,
+      },
+      actor,
+    });
+
     return {
       ok: true,
       value: {
@@ -480,6 +498,18 @@ export async function undoCapture(
   const receipt = rowInfo
     ? `Removed transaction of ${rowInfo.amount} from ${rowInfo.accountName}`
     : "Removed the last captured transaction";
+
+  await appendLog(root, {
+    domainSlug: FINANCE_DOMAIN_SLUG,
+    type: "capture.undone",
+    summary: receipt,
+    payload: {
+      rowId,
+      amount: rowInfo?.amount ?? null,
+      accountName: rowInfo?.accountName ?? null,
+    },
+    actor: input.actor,
+  });
 
   return {
     ok: true,

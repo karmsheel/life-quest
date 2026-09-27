@@ -25,6 +25,7 @@ import {
   type MapCommand,
   type MapToolDef,
   type Result,
+  type Actor as VaultActor,
 } from "@lifequest/vault-core";
 import { hermesChatWithTools } from "./hermes-proxy.js";
 import { getHermesKey } from "./secrets.js";
@@ -40,7 +41,10 @@ export async function runPlannerLoop(opts: {
   apiKey: string;
   extraSystem: string;
   messages: { role: string; content: string }[];
+  /** KAR-9: who is acting. The companion when no hire is passed. */
+  actor?: VaultActor;
 }): Promise<Result<{ content: string }>> {
+  const actor = opts.actor ?? AGENT_ACTOR;
   const openaiTools = [...MAP_TOOL_DEFS, ...GOALS_TOOL_DEFS, ...DOCUMENT_TOOL_DEFS, ...REVIEW_TOOL_DEFS, ...CAPTURE_TOOL_DEFS, ...SCRIPT_TOOL_DEFS, ...PROJECT_TOOL_DEFS].map((t) => ({
     type: "function",
     function: { name: t.name, description: t.description, parameters: t.parameters },
@@ -65,6 +69,7 @@ export async function runPlannerLoop(opts: {
       opts.activeSlug,
       step.value.name,
       step.value.args,
+      actor,
     );
     history.push(step.value.raw);
     history.push({
@@ -81,6 +86,8 @@ export async function executeTool(
   activeSlug: string | null,
   name: string,
   args: unknown,
+  /** KAR-9: the acting vault actor. Defaults to the companion. */
+  actor: VaultActor = AGENT_ACTOR,
 ): Promise<unknown> {
   const rec =
     args !== null && typeof args === "object" ? (args as Record<string, unknown>) : {};
@@ -88,22 +95,22 @@ export async function executeTool(
   if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
 
   if (DOCUMENT_TOOL_DEFS.some((t) => t.name === name)) {
-    return executeDocumentTool(root, AGENT_ACTOR, name, rec);
+    return executeDocumentTool(root, actor, name, rec);
   }
 
   // get_review, list_reviews, write_review, mark_review_done, unlock_review, get_period_pack
   if (REVIEW_TOOL_DEFS.some((t) => t.name === name)) {
-    return executeReviewTool(root, AGENT_ACTOR, name, rec);
+    return executeReviewTool(root, actor, name, rec);
   }
 
   // capture_transaction, undo_capture, correct_capture
   if (CAPTURE_TOOL_DEFS.some((t) => t.name === name)) {
-    return executeCaptureTool(root, AGENT_ACTOR, name, rec);
+    return executeCaptureTool(root, actor, name, rec);
   }
 
   // apply_script_block, run_script_block
   if (SCRIPT_TOOL_DEFS.some((t) => t.name === name)) {
-    return executeScriptTool(root, AGENT_ACTOR, name, rec);
+    return executeScriptTool(root, actor, name, rec);
   }
 
   if (name === "get_state") return { state: snap.value.map };
@@ -158,21 +165,23 @@ export async function executeTool(
   if (projectCmd) {
     // KAR-7: agent project create and close wait for approval. File a pending
     // Decision; the markdown file is written only on approve.
-    return proposeProjectDecision(root, projectCmd);
+    return proposeProjectDecision(root, projectCmd, actor);
   }
   const goalCmd = commandForGoalTool(name, rec);
   if (goalCmd) {
     // Agent goal writes wait for approval: file a pending Decision, do not touch goals.json.
-    return proposeGoalDecision(root, goalCmd);
+    return proposeGoalDecision(root, goalCmd, actor);
   }
   const command = commandForTool(name, rec) as MapCommand | null;
   if (!command) return { error: { code: "MALFORMED", message: `Unknown tool ${name}` } };
   if (DAY_TEMPLATE_TOOLS.has(name)) {
     // Agent Architecture day-template writes wait for approval too.
-    return proposeDayTemplateDecision(root, command);
+    return proposeDayTemplateDecision(root, command, actor);
   }
   // Every other map tool (tasks, the live week, years, events, month cells) applies now.
-  const applied = await applyMapCommand(root, command, "agent");
+  // KAR-9: the map actor stays the string, but the life-log line records the
+  // named vault actor that ran it.
+  const applied = await applyMapCommand(root, command, "agent", undefined, actor);
   if (!applied.ok) {
     const [code, ...rest] = applied.error.split(": ");
     return { error: { code, message: rest.join(": ") } };
@@ -192,6 +201,7 @@ const DAY_TEMPLATE_TOOLS = new Set<string>([
 async function proposeGoalDecision(
   root: string,
   command: GoalsCommand,
+  actor: VaultActor,
 ): Promise<unknown> {
   const loaded = await loadGoals(root);
   if (!loaded.ok) return { error: { message: loaded.error } };
@@ -208,7 +218,7 @@ async function proposeGoalDecision(
     proposedBodyMarkdown: JSON.stringify(command),
     previousBodyMarkdown: existing ? JSON.stringify(existing) : null,
     domainSlugs: typeof domainSlug === "string" && domainSlug ? [domainSlug] : [],
-    actor: AGENT_ACTOR,
+    actor,
   });
   if (!created.ok) return { error: { message: created.error } };
   return { decisionId: created.value.id, status: created.value.status };
@@ -217,6 +227,7 @@ async function proposeGoalDecision(
 async function proposeProjectDecision(
   root: string,
   command: ProjectCommand,
+  actor: VaultActor,
 ): Promise<unknown> {
   let proposedTitle: string;
   let previousBodyMarkdown: string | null = null;
@@ -260,7 +271,7 @@ async function proposeProjectDecision(
     proposedBodyMarkdown: JSON.stringify(command),
     previousBodyMarkdown,
     domainSlugs,
-    actor: AGENT_ACTOR,
+    actor,
   });
   if (!created.ok) return { error: { message: created.error } };
   return { decisionId: created.value.id, status: created.value.status };
@@ -269,13 +280,14 @@ async function proposeProjectDecision(
 async function proposeDayTemplateDecision(
   root: string,
   command: MapCommand,
+  actor: VaultActor,
 ): Promise<unknown> {
   const name = "name" in command && typeof command.name === "string" ? command.name : "";
   const created = await createDecision(root, {
     target: { type: "day-template" },
     proposedTitle: name && name.trim() ? name : "Day template",
     proposedBodyMarkdown: JSON.stringify(command),
-    actor: AGENT_ACTOR,
+    actor,
   });
   if (!created.ok) return { error: { message: created.error } };
   return { decisionId: created.value.id, status: created.value.status };

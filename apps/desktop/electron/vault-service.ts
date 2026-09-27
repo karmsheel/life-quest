@@ -921,6 +921,8 @@ export async function hermesChatCall(
 
 export async function hermesChatToolsCall(
   messages: { role: string; content: string }[],
+  /** KAR-9: a hire dispatched from Act. id + name only, never a key. */
+  hire?: { id: string; name: string },
 ): Promise<Result<{ content: string }>> {
   const creds = await loadHermesCreds();
   if (!creds.ok) return creds;
@@ -944,6 +946,11 @@ export async function hermesChatToolsCall(
     apiKey: creds.value.apiKey,
     extraSystem,
     messages,
+    // KAR-9: a named hire acts as itself; otherwise the companion acts.
+    actor:
+      hire && hire.id && hire.name
+        ? { type: "agent", id: hire.id, name: hire.name }
+        : undefined,
   });
 }
 
@@ -971,7 +978,8 @@ export async function mapApply(
   actor: MapActor = "user",
 ): Promise<Result<VaultSnapshot>> {
   return withVault(async (root) => {
-    const applied = await applyMapCommand(root, command, actor);
+    // The operator drove this from the UI, so the log names the operator.
+    const applied = await applyMapCommand(root, command, actor, undefined, USER_ACTOR);
     if (!applied.ok) return applied;
     return openVault(root);
   });

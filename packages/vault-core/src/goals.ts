@@ -7,12 +7,14 @@ import { fail, ok } from "./map/errors.ts";
 import type { Result as MapResult } from "./map/types.ts";
 import { vaultPaths } from "./paths.ts";
 import type {
+  Actor,
   Goal,
   GoalStatus,
   GoalsApplyContext,
   GoalsCommand,
   Result,
 } from "./types.ts";
+import { USER_ACTOR } from "./types.ts";
 
 const STATUSES: GoalStatus[] = ["open", "done"];
 
@@ -301,6 +303,7 @@ function logFor(
 export async function applyGoalsCommand(
   rootPath: string,
   command: GoalsCommand,
+  actor: Actor = USER_ACTOR,
 ): Promise<Result<Goal[]>> {
   const loaded = await loadGoals(rootPath);
   if (!loaded.ok) return { ok: false, error: loaded.error };
@@ -333,6 +336,7 @@ export async function applyGoalsCommand(
     type: ev.type,
     summary: ev.summary,
     payload: ev.payload,
+    actor,
   });
   return { ok: true, value: result.value };
 }

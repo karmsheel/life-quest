@@ -635,13 +635,15 @@ async function applyApprovedBody(
         type: "mapping.accepted",
         summary: `Mapping accepted: ${decision.target.mappingId} (${databaseId})`,
         payload: { mappingId: decision.target.mappingId, databaseId, fingerprint },
+        // KAR-9: the life-log line names the agent that proposed this mapping.
+        actor: decision.actor,
       });
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "kit-install") {
       // Approved kit-install Decision → run the install write path (user-level writes).
       const { applyFinanceKitInstall } = await import("./finance-kit.ts");
-      const installRes = await applyFinanceKitInstall(rootPath);
+      const installRes = await applyFinanceKitInstall(rootPath, decision.actor);
       if (!installRes.ok) return installRes;
       return { ok: true, value: undefined };
     }
@@ -676,7 +678,7 @@ async function applyApprovedBody(
         return { ok: false, error: "Goal proposedBody must be a GoalsCommand object" };
       }
       const { applyGoalsCommand } = await import("./goals.ts");
-      const res = await applyGoalsCommand(rootPath, command);
+      const res = await applyGoalsCommand(rootPath, command, decision.actor);
       if (!res.ok) return { ok: false, error: res.error };
       return { ok: true, value: undefined };
     }
@@ -707,12 +709,12 @@ async function applyApprovedBody(
               : null,
           bodyMarkdown:
             typeof command.bodyMarkdown === "string" ? command.bodyMarkdown : undefined,
-        });
+        }, decision.actor);
         if (!res.ok) return { ok: false, error: res.error };
         return { ok: true, value: undefined };
       }
       if (command.type === "closeProject") {
-        const res = await projectClose(rootPath, String(command.id));
+        const res = await projectClose(rootPath, String(command.id), decision.actor);
         if (!res.ok) return { ok: false, error: res.error };
         return { ok: true, value: undefined };
       }

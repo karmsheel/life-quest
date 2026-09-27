@@ -192,6 +192,7 @@ type LifequestApi = {
   ) => Promise<Result<{ content: string }>>;
   hermesChatTools: (
     messages: { role: string; content: string }[],
+    hire?: { id: string; name: string },
   ) => Promise<Result<{ content: string }>>;
   hermesScanAgents: () => Promise<Result<{ id: string; name: string }[]>>;
   mcpGetUrl: () => Promise<string>;
