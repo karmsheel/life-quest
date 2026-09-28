@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import { ALL_TOOL_DEFS, PROJECT_TOOL_DEFS } from "@lifequest/vault-core";
 
 const desktopRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -49,20 +50,23 @@ describe("KAR-7: agent project tools file Decisions", () => {
   });
 
   it("both project tool defs are registered in the OpenAI tool list and the MCP server", () => {
+    // KAR-63: the planner's list and the MCP server both spread the one composed
+    // constant, so membership is asserted against the arrays themselves.
+    for (const def of PROJECT_TOOL_DEFS) {
+      assert.ok(
+        ALL_TOOL_DEFS.some((t) => t.name === def.name),
+        `${def.name} must be in the composed list the planner and MCP server both use`,
+      );
+    }
     const mapTools = read("electron/map-tools.ts");
     const openaiList = mapTools.slice(
       mapTools.indexOf("const openaiTools"),
       mapTools.indexOf("const openaiTools") + 400,
     );
-    assert.match(openaiList, /PROJECT_TOOL_DEFS/);
+    assert.match(openaiList, /ALL_TOOL_DEFS/);
 
     const mcp = read("electron/mcp-server.ts");
-    assert.match(mcp, /PROJECT_TOOL_DEFS/);
-    const registration = mcp.slice(
-      mcp.indexOf("for (const def of ["),
-      mcp.indexOf("for (const def of [") + 300,
-    );
-    assert.match(registration, /PROJECT_TOOL_DEFS/);
+    assert.match(mcp, /ALL_TOOL_DEFS/);
   });
 
   it("create_task still reaches applyMapCommand and is not gated", () => {

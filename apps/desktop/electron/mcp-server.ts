@@ -3,17 +3,7 @@ import { createServer, type Server } from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z, type ZodTypeAny } from "zod";
-import {
-  GOALS_TOOL_DEFS,
-  MAP_TOOL_DEFS,
-  DOCUMENT_TOOL_DEFS,
-  REVIEW_TOOL_DEFS,
-  CAPTURE_TOOL_DEFS,
-  SCRIPT_TOOL_DEFS,
-  PROJECT_TOOL_DEFS,
-  type MapToolDef,
-  type Result,
-} from "@lifequest/vault-core";
+import { ALL_TOOL_DEFS, type MapToolDef, type Result } from "@lifequest/vault-core";
 import { executeTool } from "./map-tools.js";
 
 const MCP_HOST = "127.0.0.1";
@@ -31,6 +21,10 @@ function toZod(prop: unknown): ZodTypeAny {
     enum?: unknown[];
     items?: unknown;
     properties?: Record<string, unknown>;
+    // KAR-63: a free-form object (a cells map) declares no properties. Without
+    // this the object branch below would compile it to z.object({}) and Zod
+    // would strip every cell on the way in.
+    additionalProperties?: boolean;
   };
   if (Array.isArray(p.enum)) {
     const vals = p.enum;
@@ -67,6 +61,14 @@ function toZod(prop: unknown): ZodTypeAny {
     case "array":
       return z.array(p.items ? toZod(p.items) : z.unknown());
     case "object":
+      // A free-form object must keep every key: z.object({}) would strip all of
+      // them. The `!p.properties` guard (not an emptiness check) is what keeps
+      // existing property-less objects unaffected — list_documents declares
+      // `properties: {}`, so it still compiles to z.object({}), which is correct
+      // for a tool that takes no arguments.
+      if (!p.properties && p.additionalProperties) {
+        return z.record(z.string(), z.unknown());
+      }
       return z.object(buildShape(p.properties ?? {}));
     default:
       return z.unknown();
@@ -82,7 +84,9 @@ function buildShape(properties: Record<string, unknown>): Record<string, ZodType
 }
 
 function registerTools(mcp: McpServer): void {
-  for (const def of [...MAP_TOOL_DEFS, ...GOALS_TOOL_DEFS, ...DOCUMENT_TOOL_DEFS, ...REVIEW_TOOL_DEFS, ...CAPTURE_TOOL_DEFS, ...SCRIPT_TOOL_DEFS, ...PROJECT_TOOL_DEFS]) {
+  // One composed constant, so the MCP server and the planner cannot drift apart
+  // in which tools exist.
+  for (const def of ALL_TOOL_DEFS) {
     const toolDef = def as MapToolDef;
     const inputSchema = buildShape(toolDef.parameters.properties ?? {});
     mcp.registerTool(

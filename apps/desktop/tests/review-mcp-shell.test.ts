@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import { ALL_TOOL_DEFS, REVIEW_TOOL_DEFS } from "@lifequest/vault-core";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(desktopRoot, "../..");
@@ -16,9 +17,15 @@ function readRepo(rel: string): string {
 }
 
 describe("review MCP tools wiring", () => {
-  it("mcp-server registers REVIEW_TOOL_DEFS", () => {
+  it("mcp-server registers the composed constant, which includes REVIEW_TOOL_DEFS", () => {
     const mcp = readDesktop("electron/mcp-server.ts");
-    assert.match(mcp, /REVIEW_TOOL_DEFS/);
+    assert.match(mcp, /ALL_TOOL_DEFS/);
+    for (const def of REVIEW_TOOL_DEFS) {
+      assert.ok(
+        ALL_TOOL_DEFS.some((t) => t.name === def.name),
+        `${def.name} must be registered`,
+      );
+    }
   });
 
   it("map-tools dispatches REVIEW_TOOL_DEFS via executeReviewTool", () => {

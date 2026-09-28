@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import { ALL_TOOL_DEFS, CAPTURE_TOOL_DEFS } from "@lifequest/vault-core";
 
 const desktopRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -17,8 +18,15 @@ describe("conversational capture shell wiring (KAR-62)", () => {
   it("mcp-server.ts and map-tools.ts mention CAPTURE_TOOL_DEFS and executeCaptureTool", () => {
     const mcp = read("electron/mcp-server.ts");
     const mapTools = read("electron/map-tools.ts");
-    assert.match(mcp, /CAPTURE_TOOL_DEFS/);
-    assert.match(mcp, /CAPTURE_TOOL_DEFS/);
+    // mcp-server registers the one composed constant, so membership is asserted
+    // against the array itself rather than by grepping mcp-server for the name.
+    assert.match(mcp, /ALL_TOOL_DEFS/);
+    for (const def of CAPTURE_TOOL_DEFS) {
+      assert.ok(
+        ALL_TOOL_DEFS.some((t) => t.name === def.name),
+        `${def.name} must be registered`,
+      );
+    }
     assert.match(mapTools, /CAPTURE_TOOL_DEFS/);
     assert.match(mapTools, /executeCaptureTool/);
   });

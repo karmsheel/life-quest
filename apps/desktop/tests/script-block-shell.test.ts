@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import { ALL_TOOL_DEFS, SCRIPT_TOOL_DEFS } from "@lifequest/vault-core";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -45,7 +46,15 @@ describe("script block shell wiring (KAR-56)", () => {
   it("map-tools registers and dispatches the script tools; mcp-server exposes them", () => {
     const mcp = read("electron/mcp-server.ts");
     const mapTools = read("electron/map-tools.ts");
-    assert.match(mcp, /SCRIPT_TOOL_DEFS/);
+    // mcp-server registers the composed constant; membership is asserted against
+    // the array rather than by grepping the source for the name.
+    assert.match(mcp, /ALL_TOOL_DEFS/);
+    for (const def of SCRIPT_TOOL_DEFS) {
+      assert.ok(
+        ALL_TOOL_DEFS.some((t) => t.name === def.name),
+        `${def.name} must be registered`,
+      );
+    }
     // map-tools owns the dispatcher; mcp-server reaches it through executeTool
     assert.match(mapTools, /SCRIPT_TOOL_DEFS/);
     assert.match(mapTools, /executeScriptTool/);

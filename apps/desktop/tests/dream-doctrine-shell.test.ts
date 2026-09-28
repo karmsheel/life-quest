@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import { ALL_TOOL_DEFS, DOCUMENT_TOOL_DEFS } from "@lifequest/vault-core";
 
 const desktopRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -123,8 +124,16 @@ describe("document tools wiring", () => {
     assert.match(mapTools, /DOCUMENT_TOOL_DEFS/);
     assert.match(mapTools, /executeDocumentTool/);
     assert.match(mapTools, /update_document/);
+    // mcp-server registers the composed constant; membership is asserted against
+    // the array rather than by grepping the source for the name.
     const mcp = read("electron/mcp-server.ts");
-    assert.match(mcp, /DOCUMENT_TOOL_DEFS/);
+    assert.match(mcp, /ALL_TOOL_DEFS/);
+    for (const def of DOCUMENT_TOOL_DEFS) {
+      assert.ok(
+        ALL_TOOL_DEFS.some((t) => t.name === def.name),
+        `${def.name} must be registered`,
+      );
+    }
   });
 });
 

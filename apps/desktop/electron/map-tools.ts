@@ -18,6 +18,9 @@ import {
   SCRIPT_TOOL_DEFS,
   executeScriptTool,
   PROJECT_TOOL_DEFS,
+  ALL_TOOL_DEFS,
+  DATABASE_TOOL_DEFS,
+  executeDatabaseTool,
   commandForProjectTool,
   projectGet,
   type ProjectCommand,
@@ -45,7 +48,9 @@ export async function runPlannerLoop(opts: {
   actor?: VaultActor;
 }): Promise<Result<{ content: string }>> {
   const actor = opts.actor ?? AGENT_ACTOR;
-  const openaiTools = [...MAP_TOOL_DEFS, ...GOALS_TOOL_DEFS, ...DOCUMENT_TOOL_DEFS, ...REVIEW_TOOL_DEFS, ...CAPTURE_TOOL_DEFS, ...SCRIPT_TOOL_DEFS, ...PROJECT_TOOL_DEFS].map((t) => ({
+  // The same composed constant the MCP server registers, so the planner's tool
+  // list can never disagree with the server about what exists.
+  const openaiTools = ALL_TOOL_DEFS.map((t) => ({
     type: "function",
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));
@@ -111,6 +116,12 @@ export async function executeTool(
   // apply_script_block, run_script_block
   if (SCRIPT_TOOL_DEFS.some((t) => t.name === name)) {
     return executeScriptTool(root, actor, name, rec);
+  }
+
+  // list_databases, get_database, list_rows, get_row (and, from KAR-65, the
+  // Decision-gated write tools). Reads are direct and create no Decisions.
+  if (DATABASE_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeDatabaseTool(root, name, rec);
   }
 
   if (name === "get_state") return { state: snap.value.map };

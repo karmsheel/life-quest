@@ -185,3 +185,33 @@ export {
   executeScriptTool,
 } from "./script-tools.ts";
 export type { MapStoreState, MapCommand, MapActor, MapDomainError, YearRecord, MapEvent, Task, TaskColumn, ColorId, DayType, DetachedWeek, ResolvedWeek } from "./map/public.ts";
+export { DATABASE_TOOL_DEFS, executeDatabaseTool } from "./database-tools.ts";
+export type {
+  DatabaseToolResult,
+  DatabaseErrorCode,
+} from "./database-tools.ts";
+
+import { MAP_TOOL_DEFS, GOALS_TOOL_DEFS } from "./map/tools.ts";
+import { DOCUMENT_TOOL_DEFS } from "./document-tools.ts";
+import { REVIEW_TOOL_DEFS } from "./review-tools.ts";
+import { CAPTURE_TOOL_DEFS } from "./capture-tools.ts";
+import { SCRIPT_TOOL_DEFS } from "./script-tools.ts";
+import { PROJECT_TOOL_DEFS } from "./projects.ts";
+import { DATABASE_TOOL_DEFS } from "./database-tools.ts";
+import type { MapToolDef } from "./map/tools.ts";
+
+/**
+ * KAR-63 §7: the two spread sites used to name all seven arrays literally, which
+ * is two edits that can drift rather than one source of truth. Both sites now
+ * spread this single constant, so they cannot disagree about membership.
+ */
+export const ALL_TOOL_DEFS: MapToolDef[] = [
+  ...MAP_TOOL_DEFS,
+  ...GOALS_TOOL_DEFS,
+  ...DOCUMENT_TOOL_DEFS,
+  ...REVIEW_TOOL_DEFS,
+  ...CAPTURE_TOOL_DEFS,
+  ...SCRIPT_TOOL_DEFS,
+  ...PROJECT_TOOL_DEFS,
+  ...DATABASE_TOOL_DEFS,
+];
