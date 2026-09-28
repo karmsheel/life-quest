@@ -105,9 +105,11 @@ export {
   getDatabase,
   addDatabaseColumn,
   listRows,
+  countRows,
   getRow,
   upsertRow,
   deleteRow,
+  checkDatabaseCells,
   saveDatabaseFile,
   ensureVaultDatabaseGitignore,
   invalidateDomainCache,
@@ -139,6 +141,7 @@ export {
   acceptIngestRows,
   rejectIngestRows,
   ingestFingerprint,
+  lookupExternalId,
 } from "./ingest.ts";
 export {
   linkDatabaseAdapter,

@@ -182,7 +182,13 @@ export function DecisionsInbox() {
                     ·{" "}
                     {d.target.type === "doctrine"
                       ? DOCUMENT_KIND_LABELS[d.target.kind]
-                      : d.proposedTitle ?? d.title}
+                      : d.target.type === "database-row"
+                        ? d.target.rowId
+                          ? `Row in ${d.target.databaseId}`
+                          : `New row in ${d.target.databaseId}`
+                        : d.target.type === "database"
+                          ? `Database in ${d.target.domainSlug}`
+                          : d.proposedTitle ?? d.title}
                     ·{" "}
                     {formatWhen(d.createdAt)}
                     {d.status !== "pending" ? (
@@ -203,6 +209,16 @@ export function DecisionsInbox() {
               {d.rationale ? (
                 <p className="decision-card__rationale">
                   <span className="muted">Rationale:</span> {d.rationale}
+                </p>
+              ) : null}
+
+              {/* KAR-64: a Decision the operator approved whose apply failed
+                  terminally is rejected with a reason. It must not read like one
+                  they declined, so it is labelled and explained distinctly. */}
+              {d.reason ? (
+                <p className="decision-card__reason" role="note">
+                  <span className="muted">Rejected · proposal no longer applies.</span>{" "}
+                  {d.reason}
                 </p>
               ) : null}
 

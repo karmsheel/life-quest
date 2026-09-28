@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import { documentTargetLabel } from "@lifequest/vault-core";
+import type { DocumentTarget } from "@lifequest/vault-core";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 function read(rel: string): string {
@@ -90,5 +92,59 @@ describe("operator IPC writes stay direct", () => {
     );
     assert.equal(/createDecision/.test(goalsApply), false);
     assert.equal(/createDecision/.test(mapApply), false);
+  });
+});
+
+// KAR-64 spec Test Plan case 12: label and rendering. documentTargetLabel must
+// return a non-empty subject for both new target types, the inbox must render a
+// database-row target, and it must render `reason` for a rejected-on-apply
+// Decision and label it distinctly from an operator rejection.
+describe("KAR-64 database Decision labels and rendering", () => {
+  const ROW_TARGETS: DocumentTarget[] = [
+    { type: "database-row", domainSlug: "financial", databaseId: "finance:accounts", rowId: "r1" },
+    { type: "database-row", domainSlug: "health", databaseId: "db-1", rowId: null },
+  ];
+  const DB_TARGETS: DocumentTarget[] = [
+    { type: "database", domainSlug: "intellectual", databaseId: "minted-1" },
+  ];
+
+  it("documentTargetLabel returns a non-empty subject for both new targets", () => {
+    for (const target of ROW_TARGETS) {
+      const label = documentTargetLabel(target, "");
+      assert.ok(label.length > 0, `database-row label must not be empty: ${JSON.stringify(target)}`);
+      // Even with a fallback title it must never collapse to the bare prefix.
+      assert.doesNotMatch(label, /^$/);
+    }
+    for (const target of DB_TARGETS) {
+      const label = documentTargetLabel(target, "");
+      assert.ok(label.length > 0, `database label must not be empty: ${JSON.stringify(target)}`);
+    }
+  });
+
+  it("documentTargetLabel prefers the proposer-supplied title when present", () => {
+    const withTitle = documentTargetLabel(
+      { type: "database-row", domainSlug: "financial", databaseId: "finance:accounts", rowId: "r1" },
+      "Cheque account · 2026-09-27",
+    );
+    assert.equal(withTitle, "Cheque account · 2026-09-27");
+  });
+
+  it("the inbox renders a database-row target and its reason", () => {
+    const src = read("src/components/decisions/DecisionsInbox.tsx");
+    // The target is rendered, not filtered out or crashed on.
+    assert.match(src, /database-row|database/);
+    // reason is rendered when present.
+    assert.match(src, /d\.reason/);
+    // …and the two rejection kinds are labelled differently, so an operator who
+    // *approved* a Decision that then failed does not read it as their own refusal.
+    assert.match(src, /proposal no longer applies/);
+  });
+
+  it("the inbox does not treat a rejected-on-apply Decision as a plain rejection", () => {
+    const src = read("src/components/decisions/DecisionsInbox.tsx");
+    // The reason block is distinct from the status span.
+    assert.match(src, /decision-card__reason/);
+    // reason is optional: null/empty records must still render without it.
+    assert.match(src, /\{d\.reason \?/);
   });
 });

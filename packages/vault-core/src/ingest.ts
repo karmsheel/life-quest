@@ -194,7 +194,11 @@ async function findMappingByFingerprint(
   return null;
 }
 
-async function lookupExternalId(
+/**
+ * KAR-64: exported so the agent tool layer reuses this dedup predicate instead of
+ * re-implementing it. The rule keys on `external_id` alone, matching ingest.
+ */
+export async function lookupExternalId(
   root: string,
   slug: string,
   dbId: string,

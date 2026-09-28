@@ -42,6 +42,14 @@ export function documentTargetLabel(
   if (target.type === "goal") return "Goal";
   if (target.type === "project") return "Project";
   if (target.type === "day-template") return "Day template";
+  if (target.type === "database-row") {
+    // A row write is reviewed by row label where the proposer named one, else by
+    // the database it lands in. Never empty: the inbox renders this subject.
+    return fallbackTitle || (target.rowId ? `Row in ${target.databaseId}` : `New row in ${target.databaseId}`);
+  }
+  if (target.type === "database") {
+    return fallbackTitle || `Database in ${target.domainSlug}`;
+  }
   return fallbackTitle;
 }
 

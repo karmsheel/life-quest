@@ -8,6 +8,8 @@ import { vaultPaths } from "./paths.ts";
 import {
   DATABASE_COLUMN_TYPES,
   DATABASE_SOT_MODES,
+  FINANCE_DB_IDS,
+  FINANCE_DOMAIN_SLUG,
   type DatabaseColumn,
   type DatabaseColumnType,
   type DatabaseMeta,
@@ -117,10 +119,39 @@ async function ensureVaultDatabaseGitignore(root: string): Promise<void> {
   }
 }
 
+/**
+ * KAR-64: `createDatabase` and `addDatabaseColumn` are read-modify-write cycles on
+ * registry.json with no locking, and this design adds the agent as a second
+ * concurrent writer alongside the operator. An in-process async mutex keyed by
+ * registry path is enough — the engine runs in one Electron main process.
+ */
+const registryLocks = new Map<string, Promise<unknown>>();
+
+async function withRegistryLock<T>(registryPath: string, fn: () => Promise<T>): Promise<T> {
+  const previous = registryLocks.get(registryPath) ?? Promise.resolve();
+  // Chain onto the previous holder regardless of how it settled, so a rejected
+  // critical section does not poison every later one.
+  const run = previous.then(fn, fn);
+  registryLocks.set(
+    registryPath,
+    run.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  try {
+    return await run;
+  } finally {
+    if (registryLocks.get(registryPath) === undefined) registryLocks.delete(registryPath);
+  }
+}
+
 export async function createDatabase(
   root: string,
   slug: string,
-  input: { name: string },
+  // KAR-64: `id` is optional and defaults to a fresh UUID, so a Decision can name
+  // the database it proposes without the id having to be minted on apply.
+  input: { name: string; id?: string },
 ): Promise<Result<DatabaseMeta>> {
   try {
     const name = input.name?.trim();
@@ -134,12 +165,9 @@ export async function createDatabase(
     const registryPath = paths.domainRegistry(slug);
     const sqlitePath = paths.domainSqlite(slug);
 
-    // Read current registry
-    const registry = await readRegistry(registryPath);
-
     const now = new Date().toISOString();
     const dbMeta: DatabaseMeta = {
-      id: randomUUID(),
+      id: input.id ?? randomUUID(),
       name,
       sotMode: "local-only",
       adapter: null,
@@ -148,10 +176,14 @@ export async function createDatabase(
       updatedAt: now,
     };
 
-    registry.databases.push(dbMeta);
-
-    // Write registry
-    await atomicWriteFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
+    // Read-modify-write on registry.json under the per-path lock, and re-read
+    // *inside* the critical section so a lock taken after a stale read cannot
+    // still lose a concurrent writer's database.
+    await withRegistryLock(registryPath, async () => {
+      const registry = await readRegistry(registryPath);
+      registry.databases.push(dbMeta);
+      await atomicWriteFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
+    });
 
     // Open sqlite to create rows table
     const sqlite = openSqlite(sqlitePath);
@@ -263,32 +295,39 @@ export async function addDatabaseColumn(
 
     const paths = vaultPaths(root);
     const registryPath = paths.domainRegistry(slug);
-    const registry = await readRegistry(registryPath);
-    const db = registry.databases.find((d) => d.id === dbId);
-    if (!db) return { ok: false, error: `Database not found: ${dbId}` };
 
-    if (input.type === "relation") {
-      const targetExists = registry.databases.some(
-        (d) => d.id === input.relationDatabaseId,
-      );
-      if (!targetExists) {
-        return { ok: false, error: `Target database not found: ${input.relationDatabaseId}` };
+    // Same critical section as createDatabase, and the same re-read inside it.
+    return await withRegistryLock(registryPath, async () => {
+      const registry = await readRegistry(registryPath);
+      const db = registry.databases.find((d) => d.id === dbId);
+      if (!db) return { ok: false as const, error: `Database not found: ${dbId}` };
+
+      if (input.type === "relation") {
+        const targetExists = registry.databases.some(
+          (d) => d.id === input.relationDatabaseId,
+        );
+        if (!targetExists) {
+          return {
+            ok: false as const,
+            error: `Target database not found: ${input.relationDatabaseId}`,
+          };
+        }
       }
-    }
 
-    const col: DatabaseColumn = {
-      id: randomUUID(),
-      name: input.name.trim(),
-      type: input.type,
-    };
-    if (input.options) col.options = input.options;
-    if (input.relationDatabaseId) col.relationDatabaseId = input.relationDatabaseId;
+      const col: DatabaseColumn = {
+        id: randomUUID(),
+        name: input.name.trim(),
+        type: input.type,
+      };
+      if (input.options) col.options = input.options;
+      if (input.relationDatabaseId) col.relationDatabaseId = input.relationDatabaseId;
 
-    db.columns.push(col);
-    db.updatedAt = new Date().toISOString();
+      db.columns.push(col);
+      db.updatedAt = new Date().toISOString();
 
-    await atomicWriteFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
-    return { ok: true, value: db };
+      await atomicWriteFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
+      return { ok: true as const, value: db };
+    });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -371,10 +410,84 @@ function validateCells(
   return { ok: true, value: true };
 }
 
+/**
+ * KAR-64: the extra checks a proposed or applied database row write needs, beyond
+ * what `validateCells` does. validateCells type-checks values and confirms a
+ * relation's *target database* exists — it does not confirm the referenced *row*
+ * exists, and enforces no posted-transaction invariants. Deliberately narrow:
+ * these cover the posted-row rules the spec names, and are not a general
+ * constraint engine.
+ *
+ * Every failure here is permanent: re-running it on the same cells gives the same
+ * answer, so an approved apply that trips one must not stay retryable.
+ */
+export async function checkDatabaseCells(
+  root: string,
+  slug: string,
+  dbId: string,
+  cells: Record<string, unknown>,
+): Promise<Result<true>> {
+  const dbRes = await getDatabase(root, slug, dbId);
+  if (!dbRes.ok) return dbRes;
+  const db = dbRes.value;
+
+  for (const col of db.columns) {
+    const val = cells[col.id];
+    if (val === undefined || val === null) continue;
+    if (col.type === "relation") {
+      if (typeof val !== "string" || !val) {
+        return { ok: false, error: `Column ${col.name} expects relation row id` };
+      }
+      const target = await getRow(root, slug, col.relationDatabaseId as string, val);
+      if (!target.ok) {
+        return {
+          ok: false,
+          error: `Column ${col.name} references a row that does not exist: ${val}`,
+        };
+      }
+    }
+  }
+
+  if (slug === FINANCE_DOMAIN_SLUG && dbId === FINANCE_DB_IDS.transactions) {
+    // Columns are addressed by name so this holds regardless of the minted ids.
+    const colId = (name: string) => db.columns.find((c) => c.name.toLowerCase() === name)?.id;
+    const dateColId = colId("date");
+    const amountColId = colId("amount");
+    const provenanceColId = colId("provenance");
+    const date = dateColId ? cells[dateColId] : undefined;
+    if (date === undefined || date === null) {
+      return { ok: false, error: "A posted transaction needs a date" };
+    }
+    if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return { ok: false, error: "A posted transaction date must be YYYY-MM-DD" };
+    }
+    const amount = amountColId ? cells[amountColId] : undefined;
+    if (typeof amount !== "number" || !Number.isFinite(amount) || amount === 0) {
+      return { ok: false, error: "A posted transaction needs a finite non-zero amount" };
+    }
+    // provenance defaults to "agent" when absent; validateCells already types it.
+    if (provenanceColId) {
+      const prov = cells[provenanceColId];
+      if (prov !== undefined && prov !== null && typeof prov !== "string") {
+        return { ok: false, error: "provenance expects a string" };
+      }
+    }
+  }
+
+  return { ok: true, value: true };
+}
+
+/**
+ * KAR-64: `opts` is optional and defaults to the previous full-read behaviour, so
+ * every existing call site is unaffected. When a limit is given the paging is
+ * pushed into SQL — a tool-level slice of an unordered result set skips and
+ * duplicates rows, and a ledger grows every time the user chats.
+ */
 export async function listRows(
   root: string,
   slug: string,
   dbId: string,
+  opts?: { limit?: number; offset?: number },
 ): Promise<Result<DatabaseRow[]>> {
   try {
     const paths = vaultPaths(root);
@@ -384,12 +497,24 @@ export async function listRows(
     } catch {
       return { ok: true, value: [] };
     }
+    const limit =
+      opts?.limit !== undefined && Number.isInteger(opts.limit) && opts.limit > 0
+        ? opts.limit
+        : null;
+    const offset =
+      opts?.offset !== undefined && Number.isInteger(opts.offset) && opts.offset > 0
+        ? opts.offset
+        : 0;
     const sqlite = openSqlite(sqlitePath);
     try {
-      const stmt = sqlite.prepare(
-        "SELECT id, database_id, created_at, updated_at, cells FROM rows WHERE database_id = ?",
-      );
-      const rows = stmt.all(dbId) as Array<{
+      // Deterministic order, always: paged and unpaged reads must agree.
+      const base =
+        "SELECT id, database_id, created_at, updated_at, cells FROM rows " +
+        "WHERE database_id = ? ORDER BY created_at ASC, id ASC";
+      const stmt = limit === null
+        ? sqlite.prepare(base)
+        : sqlite.prepare(`${base} LIMIT ? OFFSET ?`);
+      const rows = (limit === null ? stmt.all(dbId) : stmt.all(dbId, limit, offset)) as Array<{
         id: string;
         database_id: string;
         created_at: string;
@@ -405,6 +530,38 @@ export async function listRows(
         cells: JSON.parse(r.cells),
       }));
       return { ok: true, value: result };
+    } finally {
+      sqlite.close();
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * KAR-64: the row count for a database, so `list_rows` can tell the agent
+ * "50 of 12,000 rows" from "these are all the rows". Without it a truncation is
+ * indistinguishable from a complete answer.
+ */
+export async function countRows(
+  root: string,
+  slug: string,
+  dbId: string,
+): Promise<Result<number>> {
+  try {
+    const paths = vaultPaths(root);
+    const sqlitePath = paths.domainSqlite(slug);
+    try {
+      await fs.access(sqlitePath);
+    } catch {
+      return { ok: true, value: 0 };
+    }
+    const sqlite = openSqlite(sqlitePath);
+    try {
+      const row = sqlite
+        .prepare("SELECT COUNT(*) AS n FROM rows WHERE database_id = ?")
+        .get(dbId) as { n: number } | undefined;
+      return { ok: true, value: row?.n ?? 0 };
     } finally {
       sqlite.close();
     }

@@ -49,7 +49,41 @@ export type DocumentTarget =
   | { type: "assumption-set"; rowId: string }
   | { type: "goal" }
   | { type: "day-template" }
-  | { type: "project" };
+  | { type: "project" }
+  // KAR-64: an agent row write, in any domain, under any sotMode. rowId is null
+  // for a create; a `database` target names the database the proposal mutates
+  // (for a create_database the id is minted at propose time).
+  | { type: "database-row"; domainSlug: string; databaseId: string; rowId: string | null }
+  | { type: "database"; domainSlug: string; databaseId: string };
+
+/**
+ * KAR-64: the payload a database Decision carries in its proposedBodyMarkdown.
+ * DecisionRecord has no cells field, so cells are serialised as JSON into the
+ * markdown fields — the same pattern the page, pins, and mapping branches use.
+ */
+export type DatabaseDecisionBody = {
+  op: "upsert" | "delete" | "create-database" | "add-column";
+  /** Resolved at propose time for the operator's benefit. */
+  databaseName: string | null;
+  /** Human label for the affected row, or null. */
+  rowLabel: string | null;
+  /** The row's cells at propose time, or null for a create. */
+  previousCells: Record<string, unknown> | null;
+  /** The proposed full cell set, or null for a delete / schema change. */
+  cells: Record<string, unknown> | null;
+  /** The row's updatedAt at propose time; the staleness guard. */
+  expectedUpdatedAt: string | null;
+  /** create-database only: the id minted at propose time. */
+  databaseId?: string;
+  /** create-database and add-column only. */
+  name?: string;
+  /** add-column only. */
+  type?: DatabaseColumnType;
+  /** add-column only, required for select. */
+  options?: string[];
+  /** add-column only, required for relation. */
+  relationDatabaseId?: string;
+};
 
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;
 export type RoomId = (typeof ROOM_IDS)[number];
@@ -293,6 +327,12 @@ export type DecisionRecord = {
   actor: Actor;
   createdAt: string;
   resolvedAt: string | null;
+  /**
+   * KAR-64: set when an approved apply failed terminally, so a Decision the
+   * operator *did* approve is distinguishable from one they declined. Null in
+   * every other case, including a transient apply failure that stays retryable.
+   */
+  reason: string | null;
 };
 
 export type GoalStatus = "open" | "done";

@@ -11,6 +11,8 @@ import {
   DOCUMENT_KIND_LABELS,
   USER_ACTOR,
   type Actor,
+  type DatabaseColumnType,
+  type DatabaseDecisionBody,
   type DecisionRecord,
   type DocumentKind,
   type DocumentTarget,
@@ -19,6 +21,7 @@ import {
 } from "./types.ts";
 import type { Command as MapCommand } from "./map/types.ts";
 import { getDatabase, isDomainLive, readRegistry } from "./domain-databases.ts";
+import { checkDatabaseCells } from "./domain-databases.ts";
 import { documentTargetLabel } from "./documents.ts";
 import { getReview, applyLockedReviewBody } from "./reviews.ts";
 import { isReviewCadence } from "./period.ts";
@@ -57,7 +60,9 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       isAssumptionSetExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isGoalExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isDayTemplateExplicitTarget(explicitTarget as Record<string, unknown>) ||
-      isProjectExplicitTarget(explicitTarget as Record<string, unknown>))
+      isProjectExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isDatabaseRowExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isDatabaseExplicitTarget(explicitTarget as Record<string, unknown>))
   ) {
     const t = explicitTarget as Record<string, unknown>;
     if (t.type === "review") {
@@ -95,6 +100,21 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       target = { type: "project" };
     } else if (t.type === "day-template") {
       target = { type: "day-template" };
+    } else if (t.type === "database-row") {
+      // Without this branch a persisted database-row target falls through to the
+      // legacy library path and rehydrates as { type: "library", id: "undefined" }.
+      target = {
+        type: "database-row",
+        domainSlug: String(t.domainSlug),
+        databaseId: String(t.databaseId),
+        rowId: t.rowId === null ? null : String(t.rowId),
+      };
+    } else if (t.type === "database") {
+      target = {
+        type: "database",
+        domainSlug: String(t.domainSlug),
+        databaseId: String(t.databaseId),
+      };
     } else {
       target = { type: "library", id: String(t.id) };
     }
@@ -121,6 +141,8 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     domainSlugs = target.domainSlug ? [target.domainSlug] : [];
   } else if (target.type === "mapping") {
     domainSlugs = [target.domainSlug];
+  } else if (target.type === "database-row" || target.type === "database") {
+    domainSlugs = [target.domainSlug];
   } else {
     domainSlugs = [];
   }
@@ -146,6 +168,9 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     typeof raw.previousBodyMarkdown === "string" ? raw.previousBodyMarkdown : null;
   const resolvedAt =
     typeof raw.resolvedAt === "string" ? raw.resolvedAt : null;
+  // KAR-64: reason must be in the rebuilt field set, not just on write, or it is
+  // dropped on every subsequent read.
+  const reason = typeof raw.reason === "string" ? raw.reason : null;
 
   // For legacy records missing proposedTitle, keep the file title as the decision title.
   const title =
@@ -165,6 +190,7 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     actor,
     createdAt,
     resolvedAt,
+    reason,
   };
 }
 
@@ -235,6 +261,27 @@ function isDayTemplateExplicitTarget(raw: Record<string, unknown>): boolean {
 
 function isProjectExplicitTarget(raw: Record<string, unknown>): boolean {
   return raw.type === "project";
+}
+
+function isDatabaseRowExplicitTarget(raw: Record<string, unknown>): boolean {
+  return (
+    raw.type === "database-row" &&
+    typeof raw.domainSlug === "string" &&
+    raw.domainSlug.length > 0 &&
+    typeof raw.databaseId === "string" &&
+    raw.databaseId.length > 0 &&
+    (raw.rowId === null || (typeof raw.rowId === "string" && raw.rowId.length > 0))
+  );
+}
+
+function isDatabaseExplicitTarget(raw: Record<string, unknown>): boolean {
+  return (
+    raw.type === "database" &&
+    typeof raw.domainSlug === "string" &&
+    raw.domainSlug.length > 0 &&
+    typeof raw.databaseId === "string" &&
+    raw.databaseId.length > 0
+  );
 }
 
 async function readDecisionFile(filePath: string): Promise<DecisionRecord> {
@@ -330,6 +377,18 @@ export async function createDecision(
     } else if (input.target.type === "assumption-set") {
       if (!input.target.rowId.trim()) {
         return { ok: false, error: "rowId is required" };
+      }
+    } else if (input.target.type === "database-row") {
+      // rowId null is a create; an empty-string rowId is a malformed target.
+      if (!input.target.domainSlug.trim() || !input.target.databaseId.trim()) {
+        return { ok: false, error: "domainSlug and databaseId are required" };
+      }
+      if (input.target.rowId !== null && !input.target.rowId.trim()) {
+        return { ok: false, error: "rowId is required" };
+      }
+    } else if (input.target.type === "database") {
+      if (!input.target.domainSlug.trim() || !input.target.databaseId.trim()) {
+        return { ok: false, error: "domainSlug and databaseId are required" };
       }
     } else if (
       input.target.type === "goal" ||
@@ -441,6 +500,24 @@ export async function createDecision(
       }
       docLocked = false;
       domainSlugForLog = "financial";
+    } else if (input.target.type === "database-row" || input.target.type === "database") {
+      // Databases are not lockable documents. For a row write the database must
+      // already exist; for a `database` target it must NOT (a create_database
+      // mints its id at propose time and the database appears only on approve).
+      const live = await isDomainLive(rootPath, input.target.domainSlug);
+      if (!live) {
+        return { ok: false, error: `Domain not found or archived: ${input.target.domainSlug}` };
+      }
+      if (input.target.type === "database-row") {
+        const dbRes = await getDatabase(
+          rootPath,
+          input.target.domainSlug,
+          input.target.databaseId,
+        );
+        if (!dbRes.ok) return dbRes;
+      }
+      docLocked = false;
+      domainSlugForLog = input.target.domainSlug;
     } else {
       const noteRes = await libraryGet(rootPath, input.target.id);
       if (!noteRes.ok) {
@@ -477,6 +554,8 @@ export async function createDecision(
                 ? ["financial"]
                 : input.target.type === "assumption-set"
                   ? ["financial"]
+                  : input.target.type === "database-row" || input.target.type === "database"
+                    ? [input.target.domainSlug]
                   : input.target.type === "review"
                     ? []
                     : input.target.type === "goal"
@@ -511,6 +590,7 @@ export async function createDecision(
       actor: input.actor,
       createdAt: now,
       resolvedAt: null,
+      reason: null,
     };
 
     await fs.mkdir(paths.decisionsDir, { recursive: true });
@@ -533,10 +613,33 @@ export async function createDecision(
 
 // Apply an approved decision's body/title directly to the target file,
 // without going through saveDocument / libraryUpdate (which reject locked).
+/**
+ * KAR-64: the validateCells failures that no retry can fix. Anything else from
+ * upsertRow (I/O, SQLite, a full disk) is transient and stays retryable.
+ */
+function isTerminalCellError(error: string): boolean {
+  return /Unknown column id in cells:| expects |value not in options|relation target missing|invalid file path/.test(
+    error,
+  );
+}
+
+/**
+ * KAR-64: the outcome of applying an approved Decision. `Result<T>` has no room
+ * for a terminal flag, so failures carry one here. The success arm is declared
+ * with `value?: undefined` so the existing `{ ok: true, value: undefined }`
+ * literals below stay assignable without editing each of them.
+ *
+ * `terminal: true` means re-approving can never succeed, so resolveDecision
+ * records the failure as a rejection instead of stranding the record pending.
+ */
+type ApplyOutcome =
+  | { ok: true; value?: undefined }
+  | { ok: false; error: string; terminal: boolean };
+
 async function applyApprovedBody(
   rootPath: string,
   decision: DecisionRecord,
-): Promise<Result<void>> {
+): Promise<ApplyOutcome> {
   try {
     if (decision.target.type === "review") {
       const res = await applyLockedReviewBody(
@@ -545,14 +648,14 @@ async function applyApprovedBody(
         decision.target.period,
         decision.proposedBodyMarkdown,
       );
-      if (!res.ok) return { ok: false, error: res.error };
+      if (!res.ok) return { ok: false, error: res.error, terminal: false };
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "page") {
       const { getPage, updatePage } = await import("./pages.ts");
       const { USER_ACTOR } = await import("./types.ts");
       const pageRes = await getPage(rootPath, decision.target.domainSlug, decision.target.pageId);
-      if (!pageRes.ok) return pageRes;
+      if (!pageRes.ok) return { ok: false, error: pageRes.error, terminal: false };
       const existing = pageRes.value;
       const now = new Date().toISOString();
       const nextTitle = decision.proposedTitle !== null ? decision.proposedTitle : existing.title;
@@ -573,7 +676,7 @@ async function applyApprovedBody(
         { title: nextTitle, blocks },
         USER_ACTOR,
       );
-      if (!updateRes.ok) return updateRes;
+      if (!updateRes.ok) return { ok: false, error: updateRes.error, terminal: false };
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "pins") {
@@ -590,7 +693,7 @@ async function applyApprovedBody(
         // If not valid JSON, fall back to defaults
       }
       const setRes = await setPins(rootPath, decision.target.domainSlug, pins, USER_ACTOR);
-      if (!setRes.ok) return setRes;
+      if (!setRes.ok) return { ok: false, error: setRes.error, terminal: false };
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "mapping") {
@@ -600,30 +703,30 @@ async function applyApprovedBody(
       try {
         mapping = JSON.parse(decision.proposedBodyMarkdown) as Record<string, unknown>;
       } catch {
-        return { ok: false, error: "Mapping proposedBody must be valid JSON" };
+        return { ok: false, error: "Mapping proposedBody must be valid JSON", terminal: false };
       }
       // Validate columns
       const columns = mapping.columns;
       if (!Array.isArray(columns)) {
-        return { ok: false, error: "Mapping must have columns array" };
+        return { ok: false, error: "Mapping must have columns array", terminal: false };
       }
       const databaseId = String(mapping.databaseId ?? "");
       const fingerprint = String(mapping.fingerprint ?? "");
-      if (!databaseId) return { ok: false, error: "Mapping missing databaseId" };
-      if (!fingerprint) return { ok: false, error: "Mapping missing fingerprint" };
+      if (!databaseId) return { ok: false, error: "Mapping missing databaseId", terminal: false };
+      if (!fingerprint) return { ok: false, error: "Mapping missing fingerprint", terminal: false };
       // Validate each columnId exists on database
       const dbRes = await getDatabase(rootPath, decision.target.domainSlug, databaseId);
-      if (!dbRes.ok) return dbRes;
+      if (!dbRes.ok) return { ok: false, error: dbRes.error, terminal: false };
       const dbMeta = dbRes.value;
       const validColIds = new Set(dbMeta.columns.map((c) => c.id));
       for (const col of columns) {
         const c = col as { source?: string; columnId?: string };
         if (!c.source || typeof c.source !== "string" || !c.source.trim()) {
-          return { ok: false, error: "Every mapping column needs a non-empty source" };
+          return { ok: false, error: "Every mapping column needs a non-empty source", terminal: false };
         }
         // Empty columnId is allowed (unmapped column); non-empty must be valid
         if (c.columnId && (typeof c.columnId !== "string" || !validColIds.has(c.columnId))) {
-          return { ok: false, error: `Mapping column for source "${c.source}" needs a valid columnId` };
+          return { ok: false, error: `Mapping column for source "${c.source}" needs a valid columnId`, terminal: false };
         }
       }
       // Write mapping file
@@ -644,7 +747,7 @@ async function applyApprovedBody(
       // Approved kit-install Decision → run the install write path (user-level writes).
       const { applyFinanceKitInstall } = await import("./finance-kit.ts");
       const installRes = await applyFinanceKitInstall(rootPath, decision.actor);
-      if (!installRes.ok) return installRes;
+      if (!installRes.ok) return { ok: false, error: installRes.error, terminal: false };
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "assumption-set") {
@@ -653,7 +756,7 @@ async function applyApprovedBody(
       try {
         payload = JSON.parse(decision.proposedBodyMarkdown);
       } catch {
-        return { ok: false, error: "Assumption set proposedBody must be valid JSON" };
+        return { ok: false, error: "Assumption set proposedBody must be valid JSON", terminal: false };
       }
       const { upsertRow } = await import("./domain-databases.ts");
       const res = await upsertRow(rootPath, "financial", "finance:assumption-sets", {
@@ -664,7 +767,7 @@ async function applyApprovedBody(
           deltas: JSON.stringify(Array.isArray(payload.deltas) ? payload.deltas : []),
         },
       });
-      if (!res.ok) return res;
+      if (!res.ok) return { ok: false, error: res.error, terminal: false };
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "goal") {
@@ -672,14 +775,14 @@ async function applyApprovedBody(
       try {
         command = JSON.parse(decision.proposedBodyMarkdown) as GoalsCommand;
       } catch {
-        return { ok: false, error: "Goal proposedBody must be valid JSON" };
+        return { ok: false, error: "Goal proposedBody must be valid JSON", terminal: false };
       }
       if (!command || typeof command !== "object" || typeof command.type !== "string") {
-        return { ok: false, error: "Goal proposedBody must be a GoalsCommand object" };
+        return { ok: false, error: "Goal proposedBody must be a GoalsCommand object", terminal: false };
       }
       const { applyGoalsCommand } = await import("./goals.ts");
       const res = await applyGoalsCommand(rootPath, command, decision.actor);
-      if (!res.ok) return { ok: false, error: res.error };
+      if (!res.ok) return { ok: false, error: res.error, terminal: false };
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "project") {
@@ -693,10 +796,10 @@ async function applyApprovedBody(
       try {
         command = JSON.parse(decision.proposedBodyMarkdown);
       } catch {
-        return { ok: false, error: "Project proposedBody must be valid JSON" };
+        return { ok: false, error: "Project proposedBody must be valid JSON", terminal: false };
       }
       if (!command || typeof command !== "object" || typeof command.type !== "string") {
-        return { ok: false, error: "Project proposedBody must be a ProjectCommand object" };
+        return { ok: false, error: "Project proposedBody must be a ProjectCommand object", terminal: false };
       }
       if (command.type === "createProject") {
         const res = await projectCreate(rootPath, {
@@ -710,31 +813,172 @@ async function applyApprovedBody(
           bodyMarkdown:
             typeof command.bodyMarkdown === "string" ? command.bodyMarkdown : undefined,
         }, decision.actor);
-        if (!res.ok) return { ok: false, error: res.error };
+        if (!res.ok) return { ok: false, error: res.error, terminal: false };
         return { ok: true, value: undefined };
       }
       if (command.type === "closeProject") {
         const res = await projectClose(rootPath, String(command.id), decision.actor);
-        if (!res.ok) return { ok: false, error: res.error };
+        if (!res.ok) return { ok: false, error: res.error, terminal: false };
         return { ok: true, value: undefined };
       }
-      return { ok: false, error: `Unknown project command: ${String(command.type)}` };
+      return { ok: false, error: `Unknown project command: ${String(command.type)}`, terminal: false };
     }
     if (decision.target.type === "day-template") {
       let command: MapCommand;
       try {
         command = JSON.parse(decision.proposedBodyMarkdown) as MapCommand;
       } catch {
-        return { ok: false, error: "Day template proposedBody must be valid JSON" };
+        return { ok: false, error: "Day template proposedBody must be valid JSON", terminal: false };
       }
       if (!command || typeof command !== "object" || typeof command.type !== "string") {
-        return { ok: false, error: "Day template proposedBody must be a map Command object" };
+        return { ok: false, error: "Day template proposedBody must be a map Command object", terminal: false };
       }
       const { applyMapCommand } = await import("./map/persist.ts");
       // Approved by the operator, so the map actor is "user" even when the agent proposed it.
       const res = await applyMapCommand(rootPath, command, "user");
-      if (!res.ok) return { ok: false, error: res.error };
+      if (!res.ok) return { ok: false, error: res.error, terminal: false };
       return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "database-row") {
+      const { getRow, upsertRow, deleteRow } = await import("./domain-databases.ts");
+      let body: DatabaseDecisionBody;
+      try {
+        body = JSON.parse(decision.proposedBodyMarkdown) as DatabaseDecisionBody;
+      } catch {
+        return { ok: false, error: "Database row proposedBody must be valid JSON", terminal: false };
+      }
+      if (!body || typeof body !== "object" || typeof body.op !== "string") {
+        return { ok: false, error: "Database row proposedBody must be a DatabaseDecisionBody", terminal: false };
+      }
+      const { domainSlug, databaseId, rowId } = decision.target;
+
+      // Archived is terminal: isDomainLive will not un-archive on a retry.
+      if (!(await isDomainLive(rootPath, domainSlug))) {
+        return {
+          ok: false,
+          error: `Domain not found or archived: ${domainSlug}`,
+          terminal: true,
+        };
+      }
+
+      if (body.op === "delete") {
+        if (!rowId) {
+          return { ok: false, error: "A delete Decision needs a rowId", terminal: false };
+        }
+        const deleted = await deleteRow(rootPath, domainSlug, databaseId, rowId);
+        if (!deleted.ok) {
+          // The row is gone for good: a retry cannot find it either.
+          return { ok: false, error: deleted.error, terminal: deleted.error.startsWith("Row not found") };
+        }
+        return { ok: true, value: undefined };
+      }
+
+      if (body.op !== "upsert") {
+        return { ok: false, error: `Unknown database row op: ${body.op}`, terminal: false };
+      }
+      if (!body.cells || typeof body.cells !== "object" || Array.isArray(body.cells)) {
+        return { ok: false, error: "Database row proposedBody needs a cells object", terminal: false };
+      }
+
+      // Staleness guard. upsertRow is a full replace, so applying cells captured
+      // before an intervening edit would erase everything that happened since.
+      if (typeof body.expectedUpdatedAt === "string" && body.expectedUpdatedAt) {
+        if (!rowId) {
+          return { ok: false, error: "expectedUpdatedAt given for a create", terminal: false };
+        }
+        const current = await getRow(rootPath, domainSlug, databaseId, rowId);
+        if (!current.ok) {
+          return {
+            ok: false,
+            error: `Row changed: the row this Decision proposed against is gone (${rowId})`,
+            terminal: true,
+          };
+        }
+        if (current.value.updatedAt !== body.expectedUpdatedAt) {
+          return {
+            ok: false,
+            error:
+              `Row changed since this was proposed (expected ${body.expectedUpdatedAt}, ` +
+              `found ${current.value.updatedAt}). Re-read the row and propose again.`,
+            terminal: true,
+          };
+        }
+      }
+
+      // Finance referential + posted-row rules, re-checked at apply time.
+      const referential = await checkDatabaseCells(rootPath, domainSlug, databaseId, body.cells);
+      if (!referential.ok) {
+        return { ok: false, error: referential.error, terminal: true };
+      }
+
+      const written = await upsertRow(rootPath, domainSlug, databaseId, {
+        id: rowId ?? undefined,
+        cells: body.cells,
+      });
+      if (!written.ok) {
+        // validateCells rejects unknown column ids and bad values; re-approving
+        // the same cells re-validates identically. Everything else is I/O.
+        return { ok: false, error: written.error, terminal: isTerminalCellError(written.error) };
+      }
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "database") {
+      const { createDatabase, addDatabaseColumn } = await import("./domain-databases.ts");
+      let body: DatabaseDecisionBody;
+      try {
+        body = JSON.parse(decision.proposedBodyMarkdown) as DatabaseDecisionBody;
+      } catch {
+        return { ok: false, error: "Database proposedBody must be valid JSON", terminal: false };
+      }
+      if (!body || typeof body !== "object" || typeof body.op !== "string") {
+        return { ok: false, error: "Database proposedBody must be a DatabaseDecisionBody", terminal: false };
+      }
+      const { domainSlug, databaseId } = decision.target;
+
+      if (!(await isDomainLive(rootPath, domainSlug))) {
+        return {
+          ok: false,
+          error: `Domain not found or archived: ${domainSlug}`,
+          terminal: true,
+        };
+      }
+
+      if (body.op === "create-database") {
+        // The id was minted at propose time, so the target can name the database
+        // it proposes. No name-uniqueness check is added (spec Open Question 6).
+        const created = await createDatabase(rootPath, domainSlug, {
+          name: String(body.name ?? ""),
+          id: databaseId,
+        });
+        if (!created.ok) {
+          return { ok: false, error: created.error, terminal: created.error === "Database name is required" };
+        }
+        return { ok: true, value: undefined };
+      }
+
+      if (body.op === "add-column") {
+        if (!(await isDomainLive(rootPath, domainSlug))) {
+          return { ok: false, error: `Domain not found or archived: ${domainSlug}`, terminal: true };
+        }
+        const added = await addDatabaseColumn(rootPath, domainSlug, databaseId, {
+          name: String(body.name ?? ""),
+          type: body.type as DatabaseColumnType,
+          options: Array.isArray(body.options) ? body.options.map(String) : undefined,
+          relationDatabaseId:
+            typeof body.relationDatabaseId === "string" ? body.relationDatabaseId : undefined,
+        });
+        if (!added.ok) {
+          // A bad type, a select with no options, a missing relation target, or a
+          // missing name: re-approving re-validates identically.
+          const terminal = /Unknown column type|select requires|relation requires|Target database not found|Column name is required/.test(
+            added.error,
+          );
+          return { ok: false, error: added.error, terminal };
+        }
+        return { ok: true, value: undefined };
+      }
+
+      return { ok: false, error: `Unknown database op: ${body.op}`, terminal: false };
     }
     if (decision.target.type === "doctrine") {
       const paths = vaultPaths(rootPath);
@@ -745,7 +989,7 @@ async function applyApprovedBody(
         raw = await fs.readFile(docPath, "utf8");
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-          return { ok: false, error: `Document not found: ${decision.target.domainSlug}/${decision.target.kind}` };
+          return { ok: false, error: `Document not found: ${decision.target.domainSlug}/${decision.target.kind}`, terminal: false };
         }
         throw e;
       }
@@ -776,7 +1020,7 @@ async function applyApprovedBody(
         // Agent-proposed note that did not exist at propose time. Approve creates it
         // under the id the decision was filed with.
         if (decision.proposedTitle === null) {
-          return { ok: false, error: "Document not found" };
+          return { ok: false, error: "Document not found", terminal: false };
         }
         const { libraryCreate } = await import("./library-documents.ts");
         const created = await libraryCreate(rootPath, {
@@ -785,7 +1029,7 @@ async function applyApprovedBody(
           bodyMarkdown: decision.proposedBodyMarkdown,
           domainSlugs: decision.domainSlugs,
         });
-        if (!created.ok) return { ok: false, error: created.error };
+        if (!created.ok) return { ok: false, error: created.error, terminal: false };
         return { ok: true, value: undefined };
       }
       const existing = noteRes.value;
@@ -810,7 +1054,7 @@ async function applyApprovedBody(
       return { ok: true, value: undefined };
     }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: e instanceof Error ? e.message : String(e), terminal: false };
   }
 }
 
@@ -848,7 +1092,30 @@ export async function resolveDecision(
 
     if (resolution === "approved") {
       const applyRes = await applyApprovedBody(rootPath, decision);
-      if (!applyRes.ok) return applyRes;
+      if (!applyRes.ok) {
+        if (applyRes.terminal) {
+          // Permanent: record the outcome instead of stranding the decision
+          // pending forever with no way for anyone to act on it. The operator
+          // did approve this, so `reason` is what tells the two rejections apart.
+          decision = {
+            ...decision,
+            status: "rejected",
+            reason: applyRes.error,
+            resolvedAt: now,
+          };
+          await writeDecisionFile(filePath, decision);
+          const failedLog = await appendLog(paths.root, {
+            domainSlug: decision.domainSlugs[0] ?? null,
+            type: "decision.resolved",
+            summary: `Decision rejected: proposal no longer applies (${decision.title})`,
+            payload: { id: decision.id, resolution: "rejected", documentKind: decision.target.type },
+            actor: decision.actor,
+          });
+          if (!failedLog.ok) return failedLog;
+        }
+        // Transient: the record is untouched and the operator can approve again.
+        return { ok: false, error: applyRes.error };
+      }
     }
 
     decision = {
