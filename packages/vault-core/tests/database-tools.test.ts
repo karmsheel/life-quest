@@ -26,7 +26,9 @@ import {
 } from "../src/index.ts";
 import { archiveDomain } from "../src/domains.ts";
 import { listInstalledKits } from "../src/finance-kit.ts";
-import type { DatabaseMeta } from "../src/index.ts";
+import type { Actor, DatabaseMeta } from "../src/index.ts";
+
+const AGENT: Actor = { type: "agent", id: "companion", name: "Hermes" };
 
 describe("KAR-63 database read tools", () => {
   let dir: string;
@@ -48,7 +50,7 @@ describe("KAR-63 database read tools", () => {
     it("with a domainSlug, kits has exactly one entry for that domain", async () => {
       const root14 = path.join(dir, "kits-single");
       assert.equal((await createVault(root14, "Kits")).ok, true);
-      const res = await executeDatabaseTool(root14, "list_databases", { domainSlug: "financial" });
+      const res = await executeDatabaseTool(root14, AGENT, "list_databases", { domainSlug: "financial" });
       assert.ok(!("error" in res));
       const kits = (res as { kits: Array<{ domainSlug: string; kits: string[] }> }).kits;
       assert.equal(kits.length, 1);
@@ -65,7 +67,7 @@ describe("KAR-63 database read tools", () => {
       const installed = await installFinanceKit(root14b, { type: "user", id: "u1", name: "You" });
       assert.equal(installed.ok, true);
 
-      const res = await executeDatabaseTool(root14b, "list_databases", {});
+      const res = await executeDatabaseTool(root14b, AGENT, "list_databases", {});
       assert.ok(!("error" in res));
       const payload = res as {
         kits: Array<{ domainSlug: string; kits: string[] }>;
@@ -94,7 +96,7 @@ describe("KAR-63 database read tools", () => {
       const root14c = path.join(dir, "kits-empty");
       assert.equal((await createVault(root14c, "KitsEmpty")).ok, true);
       // No database is created anywhere, and no registry.json is written.
-      const res = await executeDatabaseTool(root14c, "list_databases", {});
+      const res = await executeDatabaseTool(root14c, AGENT, "list_databases", {});
       assert.ok(!("error" in res));
       const payload = res as {
         kits: Array<{ domainSlug: string; kits: string[] }>;
@@ -119,7 +121,7 @@ describe("KAR-63 database read tools", () => {
       assert.equal(db.ok, true);
       assert.equal((await archiveDomain(root14d, "health")).ok, true);
 
-      const res = await executeDatabaseTool(root14d, "list_databases", {});
+      const res = await executeDatabaseTool(root14d, AGENT, "list_databases", {});
       assert.ok(!("error" in res));
       const payload = res as {
         kits: Array<{ domainSlug: string }>;
@@ -129,7 +131,7 @@ describe("KAR-63 database read tools", () => {
       assert.equal(payload.databases.some((d) => d.domainSlug === "health"), false);
 
       // Naming it explicitly is NOT_FOUND, and the message says why.
-      const named = await executeDatabaseTool(root14d, "list_databases", { domainSlug: "health" });
+      const named = await executeDatabaseTool(root14d, AGENT, "list_databases", { domainSlug: "health" });
       assert.ok("error" in named);
       assert.equal(named.error.code, "NOT_FOUND");
       assert.match(named.error.message, /health/);
@@ -173,10 +175,20 @@ describe("KAR-63 database read tools", () => {
       }
     });
 
-    it("the read half registers exactly the four read tools", () => {
+    it("all nine database tools are registered, and the read half is a prefix of them", () => {
       assert.deepEqual(
         DATABASE_TOOL_DEFS.map((t) => t.name).sort(),
-        ["get_database", "get_row", "list_databases", "list_rows"],
+        [
+          "add_column",
+          "create_database",
+          "delete_row",
+          "get_database",
+          "get_row",
+          "list_databases",
+          "list_decisions",
+          "list_rows",
+          "upsert_row",
+        ],
       );
     });
   });
@@ -236,7 +248,7 @@ describe("KAR-63 database read tools", () => {
         assert.equal((await upsertRow(root5, "health", db.value.id, { id: `w-${i}`, cells: { [ml]: i } })).ok, true);
       }
 
-      const res = await executeDatabaseTool(root5, "list_rows", {
+      const res = await executeDatabaseTool(root5, AGENT, "list_rows", {
         domainSlug: "health",
         databaseId: db.value.id,
         limit: 2,
@@ -256,7 +268,7 @@ describe("KAR-63 database read tools", () => {
       // Cells are keyed by column id, not hand-parsed JSON.
       assert.equal(typeof payload.rows[0].cells[ml], "number");
 
-      const second = await executeDatabaseTool(root5, "list_rows", {
+      const second = await executeDatabaseTool(root5, AGENT, "list_rows", {
         domainSlug: "health",
         databaseId: db.value.id,
         limit: 2,
@@ -275,7 +287,7 @@ describe("KAR-63 database read tools", () => {
       assert.equal(db.ok, true);
       if (!db.ok) return;
 
-      const defaults = await executeDatabaseTool(root5b, "list_rows", {
+      const defaults = await executeDatabaseTool(root5b, AGENT, "list_rows", {
         domainSlug: "health",
         databaseId: db.value.id,
       });
@@ -284,7 +296,7 @@ describe("KAR-63 database read tools", () => {
       assert.equal((defaults as { offset: number }).offset, 0);
 
       for (const bad of [0, 501, 1.5, "10"]) {
-        const res = await executeDatabaseTool(root5b, "list_rows", {
+        const res = await executeDatabaseTool(root5b, AGENT, "list_rows", {
           domainSlug: "health",
           databaseId: db.value.id,
           limit: bad,
@@ -292,7 +304,7 @@ describe("KAR-63 database read tools", () => {
         assert.ok("error" in res, `limit ${String(bad)} must be rejected`);
         assert.equal(res.error.code, "VALIDATION");
       }
-      const negOffset = await executeDatabaseTool(root5b, "list_rows", {
+      const negOffset = await executeDatabaseTool(root5b, AGENT, "list_rows", {
         domainSlug: "health",
         databaseId: db.value.id,
         offset: -1,
@@ -318,7 +330,7 @@ describe("KAR-63 database read tools", () => {
       assert.equal(seeded.ok, true);
       if (!seeded.ok) return;
 
-      const res = await executeDatabaseTool(root5c, "get_row", {
+      const res = await executeDatabaseTool(root5c, AGENT, "get_row", {
         domainSlug: "health",
         databaseId: db.value.id,
         id: "m-1",
@@ -328,7 +340,7 @@ describe("KAR-63 database read tools", () => {
       assert.equal(row.cells[nameCol], "Vitamin D");
       assert.equal(row.updatedAt, seeded.value.updatedAt);
 
-      const missing = await executeDatabaseTool(root5c, "get_row", {
+      const missing = await executeDatabaseTool(root5c, AGENT, "get_row", {
         domainSlug: "health",
         databaseId: db.value.id,
         id: "nope",
@@ -350,7 +362,7 @@ describe("KAR-63 database read tools", () => {
       });
       assert.equal(col.ok, true);
 
-      const res = await executeDatabaseTool(root5d, "get_database", {
+      const res = await executeDatabaseTool(root5d, AGENT, "get_database", {
         domainSlug: "financial",
         databaseId: db.value.id,
       });
@@ -366,12 +378,12 @@ describe("KAR-63 database read tools", () => {
   // ─── Validation and safety ──────────────────────────────────────────────────
   describe("validation and safety", () => {
     it("missing args are VALIDATION, checked before the engine", async () => {
-      const res = await executeDatabaseTool(root, "get_database", { databaseId: "x" });
+      const res = await executeDatabaseTool(root, AGENT, "get_database", { databaseId: "x" });
       assert.ok("error" in res);
       assert.equal(res.error.code, "VALIDATION");
       assert.match(res.error.message, /domainSlug/);
 
-      const noDb = await executeDatabaseTool(root, "get_row", { domainSlug: "health", id: "r" });
+      const noDb = await executeDatabaseTool(root, AGENT, "get_row", { domainSlug: "health", id: "r" });
       assert.ok("error" in noDb);
       assert.equal(noDb.error.code, "VALIDATION");
       assert.match(noDb.error.message, /databaseId/);
@@ -379,13 +391,13 @@ describe("KAR-63 database read tools", () => {
 
     it("an absent or archived domain is NOT_FOUND on every tool", async () => {
       for (const tool of ["get_database", "list_rows", "get_row"]) {
-        const absent = await executeDatabaseTool(root, tool, { domainSlug: "no-such", databaseId: "d" });
+        const absent = await executeDatabaseTool(root, AGENT, tool, { domainSlug: "no-such", databaseId: "d" });
         assert.ok("error" in absent, `${tool} on an absent domain`);
         assert.equal(absent.error.code, "NOT_FOUND");
         assert.match(absent.error.message, /no-such/, "the message must name the slug");
       }
       // list_databases too.
-      const listed = await executeDatabaseTool(root, "list_databases", { domainSlug: "no-such" });
+      const listed = await executeDatabaseTool(root, AGENT, "list_databases", { domainSlug: "no-such" });
       assert.ok("error" in listed);
       assert.equal(listed.error.code, "NOT_FOUND");
 
@@ -396,7 +408,7 @@ describe("KAR-63 database read tools", () => {
       assert.equal(db.ok, true);
       assert.equal((await archiveDomain(rootArch, "intellectual")).ok, true);
       for (const tool of ["get_database", "list_rows", "get_row"]) {
-        const res = await executeDatabaseTool(rootArch, tool, {
+        const res = await executeDatabaseTool(rootArch, AGENT, tool, {
           domainSlug: "intellectual",
           databaseId: db.ok ? db.value.id : "d",
         });
@@ -409,7 +421,7 @@ describe("KAR-63 database read tools", () => {
     it("a read against a missing domain is NOT_FOUND, not an empty result", async () => {
       // listRows returns ok:true, [] when the SQLite file is missing, which would
       // otherwise read to the agent as "no accounts".
-      const res = await executeDatabaseTool(root, "list_rows", {
+      const res = await executeDatabaseTool(root, AGENT, "list_rows", {
         domainSlug: "health",
         databaseId: "whatever",
       });
@@ -418,7 +430,7 @@ describe("KAR-63 database read tools", () => {
     });
 
     it("an unknown database is NOT_FOUND", async () => {
-      const res = await executeDatabaseTool(root, "list_rows", {
+      const res = await executeDatabaseTool(root, AGENT, "list_rows", {
         domainSlug: "health",
         databaseId: "no-such-db",
       });
@@ -442,10 +454,10 @@ describe("KAR-63 database read tools", () => {
       assert.equal(before.ok, true);
       const beforeCount = before.ok ? before.value.length : -1;
 
-      await executeDatabaseTool(rootR, "list_databases", {});
-      await executeDatabaseTool(rootR, "get_database", { domainSlug: "health", databaseId: db.value.id });
-      await executeDatabaseTool(rootR, "list_rows", { domainSlug: "health", databaseId: db.value.id });
-      await executeDatabaseTool(rootR, "get_row", { domainSlug: "health", databaseId: db.value.id, id: "q-1" });
+      await executeDatabaseTool(rootR, AGENT, "list_databases", {});
+      await executeDatabaseTool(rootR, AGENT, "get_database", { domainSlug: "health", databaseId: db.value.id });
+      await executeDatabaseTool(rootR, AGENT, "list_rows", { domainSlug: "health", databaseId: db.value.id });
+      await executeDatabaseTool(rootR, AGENT, "get_row", { domainSlug: "health", databaseId: db.value.id, id: "q-1" });
 
       const after = await listDecisions(rootR);
       assert.equal(after.ok, true);
@@ -454,7 +466,7 @@ describe("KAR-63 database read tools", () => {
     });
 
     it("an unknown database tool name is rejected", async () => {
-      const res = await executeDatabaseTool(root, "save_database_file", {});
+      const res = await executeDatabaseTool(root, AGENT, "save_database_file", {});
       assert.ok("error" in res);
       assert.equal(res.error.code, "VALIDATION");
     });

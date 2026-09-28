@@ -118,10 +118,12 @@ export async function executeTool(
     return executeScriptTool(root, actor, name, rec);
   }
 
-  // list_databases, get_database, list_rows, get_row (and, from KAR-65, the
-  // Decision-gated write tools). Reads are direct and create no Decisions.
+  // list_databases, get_database, list_rows, get_row, and the Decision-gated
+  // write tools (upsert_row, delete_row, create_database, add_column) plus the
+  // read-only list_decisions. The actor is passed in from executeTool and is
+  // never read from args.
   if (DATABASE_TOOL_DEFS.some((t) => t.name === name)) {
-    return executeDatabaseTool(root, name, rec);
+    return executeDatabaseTool(root, actor, name, rec);
   }
 
   if (name === "get_state") return { state: snap.value.map };

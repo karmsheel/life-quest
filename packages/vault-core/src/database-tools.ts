@@ -1,7 +1,30 @@
 import fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import type { MapToolDef } from "./map/tools.ts";
-import { countRows, getDatabase, getRow, isDomainLive, listDatabases, listRows } from "./domain-databases.ts";
+import type {
+  Actor,
+  DatabaseColumnType,
+  DatabaseDecisionBody,
+  DatabaseMeta,
+} from "./types.ts";
+import {
+  DATABASE_COLUMN_TYPES,
+  FINANCE_DB_IDS,
+  FINANCE_DOMAIN_SLUG,
+} from "./types.ts";
+import {
+  checkDatabaseCells,
+  countRows,
+  getDatabase,
+  getRow,
+  isDomainLive,
+  listDatabases,
+  listRows,
+} from "./domain-databases.ts";
+import { listSyncConflicts } from "./adapters.ts";
 import { listInstalledKits } from "./finance-kit.ts";
+import { createDecision, listDecisions } from "./decisions.ts";
+import { lookupExternalId } from "./ingest.ts";
 import { vaultPaths } from "./paths.ts";
 
 /**
@@ -79,6 +102,94 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
       required: ["domainSlug", "databaseId", "id"],
     },
   },
+  {
+    name: "list_decisions",
+    description:
+      "List Decisions filed by the agent, newest first. Read-only: this tool cannot approve or " +
+      "reject. Use it to check whether a proposed write was approved or rejected before proposing " +
+      "a replacement.",
+    parameters: {
+      type: "object",
+      properties: {
+        status: { type: "string", description: "Optional filter: 'pending' | 'approved' | 'rejected'." },
+        limit: { type: "number", description: "Max rows (default 20, max 100)." },
+      },
+    },
+  },
+  {
+    name: "upsert_row",
+    description:
+      "Propose creating or fully replacing a row in a database. Cells is a map of column id to " +
+      "value and MUST contain the complete set of cells for an existing row (read the row with " +
+      "get_row first); this is a replace, not a patch. Every call files a Decision; the operator " +
+      "approves it in Decisions. A rejected Decision must not be retried as a silent write.",
+    parameters: {
+      type: "object",
+      properties: {
+        domainSlug: { type: "string" },
+        databaseId: { type: "string" },
+        id: {
+          type: "string",
+          description: "Row id for an update. Omit entirely to create a new row (a UUID is generated).",
+        },
+        cells: {
+          type: "object",
+          additionalProperties: true,
+          description: "Map of column id to typed value. Free-form; must be a JSON object.",
+        },
+      },
+      required: ["domainSlug", "databaseId", "cells"],
+    },
+  },
+  {
+    name: "delete_row",
+    description:
+      "Propose deleting a row by id. Files a Decision. The operator approves or rejects it in " +
+      "Decisions; a rejected Decision must not be retried silently.",
+    parameters: {
+      type: "object",
+      properties: {
+        domainSlug: { type: "string" },
+        databaseId: { type: "string" },
+        id: { type: "string" },
+      },
+      required: ["domainSlug", "databaseId", "id"],
+    },
+  },
+  {
+    name: "create_database",
+    description:
+      "Propose creating a new empty database in a live domain. Files a Decision naming the database id " +
+      "it proposes. Columns are added by a separate add_column call, one per column (also " +
+      "Decision-gated).",
+    parameters: {
+      type: "object",
+      properties: { domainSlug: { type: "string" }, name: { type: "string" } },
+      required: ["domainSlug", "name"],
+    },
+  },
+  {
+    name: "add_column",
+    description:
+      "Propose adding one column to an existing database. Files a Decision. The relation target is " +
+      "an existing databaseId, so a self-referential or newly created column cannot be added in the " +
+      "same call.",
+    parameters: {
+      type: "object",
+      properties: {
+        domainSlug: { type: "string" },
+        databaseId: { type: "string" },
+        name: { type: "string" },
+        type: {
+          type: "string",
+          description: "One of: text, number, date, select, checkbox, relation, file.",
+        },
+        options: { type: "array", description: "Required for type 'select'." },
+        relationDatabaseId: { type: "string", description: "Required for type 'relation'." },
+      },
+      required: ["domainSlug", "databaseId", "name", "type"],
+    },
+  },
 ];
 
 export type DatabaseErrorCode = "NOT_FOUND" | "VALIDATION" | "CONFLICT" | "FAILED";
@@ -113,7 +224,17 @@ function engineError(error: string): DatabaseToolResult {
     error.includes("value not in options") ||
     error.includes("relation target missing") ||
     error.includes("invalid file path") ||
-    error === "Database name is required"
+    error === "Database name is required" ||
+    // The engine's own argument checks.
+    error === "select requires at least one option" ||
+    error === "relation requires relationDatabaseId" ||
+    // The extra proposed-write rules: a relation naming a row that does not
+    // exist, and the posted-transaction invariants. All are permanent.
+    error.includes("references a row that does not exist") ||
+    error.startsWith("A posted transaction") ||
+    error === "provenance expects a string" ||
+    // The dedup rule.
+    error.startsWith("An external_id of ")
   ) {
     return fail("VALIDATION", error);
   }
@@ -193,8 +314,134 @@ async function liveDomainSlugs(root: string): Promise<string[]> {
   return slugs;
 }
 
+/**
+ * KAR-65 §3.2: used only to title a Decision and enable the extra finance checks.
+ * It is deliberately NOT used to decide whether to gate: the gate is
+ * unconditional, for every database in every live domain under any sotMode.
+ */
+const isFinanceDb = (domainSlug: string, databaseId: string): boolean =>
+  domainSlug === FINANCE_DOMAIN_SLUG &&
+  (Object.values(FINANCE_DB_IDS) as string[]).includes(databaseId);
+
+/** A short human label for a row, for the Decision title the operator reads. */
+function rowLabel(db: DatabaseMeta, cells: Record<string, unknown>): string {
+  const byName = (name: string) => db.columns.find((c) => c.name.toLowerCase() === name)?.id;
+  for (const key of ["payee", "name", "title", "account", "category", "date"]) {
+    const id = byName(key);
+    if (!id) continue;
+    const v = cells[id];
+    if (typeof v === "string" && v.trim()) return v;
+  }
+  return "";
+}
+
+function decisionTitle(
+  op: DatabaseDecisionBody["op"],
+  db: DatabaseMeta | null,
+  domainSlug: string,
+  label: string | null,
+  name?: string,
+): string {
+  if (op === "create-database") return `New database "${name}" in ${domainSlug}`;
+  if (op === "add-column") return `Add column "${name}" to ${db?.name ?? "database"}`;
+  if (isFinanceDb(domainSlug, db?.id ?? "")) {
+    return `${label ? `${label} in ` : "Row in "}${db?.name ?? "finance"}`;
+  }
+  if (op === "delete") return `Delete row from ${db?.name ?? "database"}`;
+  return `${label ? `${label} in ` : "New row in "}${db?.name ?? "database"}`;
+}
+
+/**
+ * KAR-65 §4: a sync conflict on the target row blocks the proposal. The match is
+ * row-scoped, because conflicts are per row / external id — one unrelated conflict
+ * must not block every write to a database. rowId is matched first: it is the
+ * direct local row identifier and the tool already has it in hand. Matching on
+ * externalId alone never fires for a chat-posted row, which carries
+ * external_id: null.
+ *
+ * Conflict *resolution* stays operator-only: resolveSyncConflict is a write, and
+ * exposing it would be an ungated mutation path.
+ */
+async function checkConflicts(
+  root: string,
+  domainSlug: string,
+  db: DatabaseMeta,
+  rowId: string | null,
+  cells: Record<string, unknown> | null,
+): Promise<DatabaseToolResult | null> {
+  if (db.adapter === null) return null;
+  const listed = await listSyncConflicts(root, domainSlug, db.id);
+  const conflicts = listed.ok ? listed.value : [];
+  if (conflicts.length === 0) return null;
+
+  const names = conflicts.map((c) => c.rowId ?? c.externalId).join(", ");
+
+  if (rowId == null) {
+    // A create is unmatchable by construction: there is no external_id cell to
+    // compare and no row to match. This is the one case where the block is
+    // database-scoped, because a create genuinely cannot be attributed to a
+    // specific conflicting row.
+    return {
+      error: {
+        code: "CONFLICT",
+        message:
+          "Resolve the outstanding sync conflicts on this database before proposing a new row. " +
+          `Conflicting rows: ${names}`,
+      },
+    };
+  }
+
+  const externalIdColId = db.columns.find(
+    (c) => c.name.toLowerCase() === "external_id" || c.id === "external_id",
+  )?.id;
+  const proposedExternalId =
+    externalIdColId && cells ? (cells[externalIdColId] as string | undefined) : undefined;
+
+  const match = conflicts.find(
+    (c) =>
+      (c.rowId != null && c.rowId === rowId) ||
+      (proposedExternalId != null && c.externalId != null && c.externalId === proposedExternalId),
+  );
+  if (!match) return null;
+  return {
+    error: {
+      code: "CONFLICT",
+      message:
+        "This row has an unresolved sync conflict. Resolve it in the studio, then propose again. " +
+        `Conflicting rows: ${names}`,
+    },
+  };
+}
+
+/** File the Decision and return the tool's success shape. Nothing is written here. */
+async function fileDecision(
+  root: string,
+  actor: Actor,
+  input: {
+    target:
+      | { type: "database-row"; domainSlug: string; databaseId: string; rowId: string | null }
+      | { type: "database"; domainSlug: string; databaseId: string };
+    proposedTitle: string;
+    body: DatabaseDecisionBody;
+    previousBodyMarkdown: string | null;
+  },
+): Promise<DatabaseToolResult> {
+  const created = await createDecision(root, {
+    target: input.target,
+    proposedTitle: input.proposedTitle,
+    proposedBodyMarkdown: JSON.stringify(input.body, null, 2),
+    previousBodyMarkdown: input.previousBodyMarkdown,
+    // The actor is the one executeTool received, never one from args: a
+    // model-controlled parameter is not an identity source.
+    actor,
+  });
+  if (!created.ok) return engineError(created.error);
+  return { decisionId: created.value.id, status: created.value.status };
+}
+
 export async function executeDatabaseTool(
   root: string,
+  actor: Actor,
   name: string,
   args: Record<string, unknown>,
 ): Promise<DatabaseToolResult> {
@@ -295,6 +542,255 @@ export async function executeDatabaseTool(
       );
       if (!row.ok) return engineError(row.error);
       return { row: row.value };
+    }
+
+    case "list_decisions": {
+      // Read-only. The agent can see the outcome of its proposals but cannot
+      // resolve one: resolveDecision takes a resolution, so wiring it to MCP
+      // would hand the agent the approve button. This is what makes "do not
+      // retry a rejected write" enforceable.
+      const limit = pageInt(args.limit, { min: 1, max: 100, fallback: 20, label: "limit" });
+      if (!limit.ok) return limit.result;
+      if (args.status !== undefined && args.status !== null) {
+        if (args.status !== "pending" && args.status !== "approved" && args.status !== "rejected") {
+          return fail("VALIDATION", "status must be one of: pending, approved, rejected");
+        }
+      }
+      const listed = await listDecisions(root);
+      if (!listed.ok) return engineError(listed.error);
+      let items = listed.value;
+      if (args.status) items = items.filter((d) => d.status === args.status);
+      const ordered = [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return {
+        decisions: ordered.slice(0, limit.value).map((d) => ({
+          id: d.id,
+          status: d.status,
+          proposedTitle: d.proposedTitle,
+          createdAt: d.createdAt,
+          // A terminal apply failure records why, so the agent can tell a
+          // proposal to re-read and start over from one to leave alone.
+          reason: d.reason,
+        })),
+      };
+    }
+
+    // ─── Writes. Every one of these files a Decision; nothing is written here. ──
+    case "upsert_row": {
+      const live = await requireLiveDomain(root, args.domainSlug);
+      if (!live.ok) return live.result;
+      if (!isNonEmptyString(args.databaseId)) {
+        return fail("VALIDATION", "databaseId is required");
+      }
+      if (args.id !== undefined && args.id !== null && !isNonEmptyString(args.id)) {
+        return fail("VALIDATION", "id must be a non-empty string when provided");
+      }
+      const cells = args.cells;
+      if (cells === null || typeof cells !== "object" || Array.isArray(cells)) {
+        return fail("VALIDATION", "cells must be a JSON object keyed by column id");
+      }
+      const cellMap = cells as Record<string, unknown>;
+      // validateCells passes vacuously on {}, so an empty map is rejected here.
+      if (Object.keys(cellMap).length === 0) {
+        return fail("VALIDATION", "cells must not be empty");
+      }
+
+      const { slug: domainSlug } = live;
+      const databaseId = String(args.databaseId);
+      const rowId = isNonEmptyString(args.id) ? String(args.id) : null;
+
+      const db = await getDatabase(root, domainSlug, databaseId);
+      if (!db.ok) return engineError(db.error);
+      const dbMeta = db.value;
+
+      const conflict = await checkConflicts(root, domainSlug, dbMeta, rowId, cellMap);
+      if (conflict) return conflict;
+
+      // Dedup reuses the ingest predicate, keyed on external_id alone, so the
+      // agent's rule cannot drift from the path it mirrors. A chat-posted row
+      // carries external_id: null and is correctly not rejected by this.
+      const externalIdColId = dbMeta.columns.find(
+        (c) => c.name.toLowerCase() === "external_id" || c.id === "external_id",
+      )?.id;
+      const externalId = externalIdColId ? cellMap[externalIdColId] : undefined;
+      if (typeof externalId === "string" && externalId) {
+        if (await lookupExternalId(root, domainSlug, databaseId, externalId)) {
+          return fail("VALIDATION", `An external_id of ${externalId} already exists in this database`);
+        }
+      }
+
+      // Capture the current state so the inbox shows a real before/after, and so
+      // the apply can refuse a proposal made against a row that has moved on.
+      let previousCells: Record<string, unknown> | null = null;
+      let expectedUpdatedAt: string | null = null;
+      if (rowId) {
+        const existing = await getRow(root, domainSlug, databaseId, rowId);
+        if (!existing.ok) return engineError(existing.error);
+        previousCells = existing.value.cells as Record<string, unknown>;
+        expectedUpdatedAt = existing.value.updatedAt;
+      }
+
+      // The relation-row-exists and posted-transaction rules are checked at
+      // propose time too, so a bad proposal is never filed in the first place.
+      const referential = await checkDatabaseCells(root, domainSlug, databaseId, cellMap);
+      if (!referential.ok) return engineError(referential.error);
+
+      const label = rowLabel(dbMeta, cellMap) || null;
+      const body: DatabaseDecisionBody = {
+        op: "upsert",
+        databaseName: dbMeta.name,
+        rowLabel: label,
+        previousCells,
+        cells: cellMap,
+        expectedUpdatedAt,
+      };
+      return fileDecision(root, actor, {
+        target: { type: "database-row", domainSlug, databaseId, rowId },
+        proposedTitle: decisionTitle("upsert", dbMeta, domainSlug, label),
+        body,
+        previousBodyMarkdown: previousCells ? JSON.stringify(previousCells, null, 2) : null,
+      });
+    }
+
+    case "delete_row": {
+      const live = await requireLiveDomain(root, args.domainSlug);
+      if (!live.ok) return live.result;
+      if (!isNonEmptyString(args.databaseId)) {
+        return fail("VALIDATION", "databaseId is required");
+      }
+      if (!isNonEmptyString(args.id)) {
+        return fail("VALIDATION", "id is required");
+      }
+      const { slug: domainSlug } = live;
+      const databaseId = String(args.databaseId);
+      const rowId = String(args.id);
+
+      const db = await getDatabase(root, domainSlug, databaseId);
+      if (!db.ok) return engineError(db.error);
+      const dbMeta = db.value;
+
+      const existing = await getRow(root, domainSlug, databaseId, rowId);
+      if (!existing.ok) return engineError(existing.error);
+      const previousCells = existing.value.cells as Record<string, unknown>;
+
+      const conflict = await checkConflicts(root, domainSlug, dbMeta, rowId, previousCells);
+      if (conflict) return conflict;
+
+      const label = rowLabel(dbMeta, previousCells) || null;
+      const body: DatabaseDecisionBody = {
+        op: "delete",
+        databaseName: dbMeta.name,
+        rowLabel: label,
+        previousCells,
+        cells: null,
+        expectedUpdatedAt: existing.value.updatedAt,
+      };
+      return fileDecision(root, actor, {
+        target: { type: "database-row", domainSlug, databaseId, rowId },
+        proposedTitle: decisionTitle("delete", dbMeta, domainSlug, label),
+        body,
+        previousBodyMarkdown: JSON.stringify(previousCells, null, 2),
+      });
+    }
+
+    case "create_database": {
+      const live = await requireLiveDomain(root, args.domainSlug);
+      if (!live.ok) return live.result;
+      if (!isNonEmptyString(args.name)) {
+        return fail("VALIDATION", "name is required");
+      }
+      const { slug: domainSlug } = live;
+      const name = String(args.name).trim();
+
+      // The id is minted here, at propose time, and carried through the body. The
+      // alternative — creating the database before filing — is the ungated write
+      // this design exists to prevent, and it would leave an un-approved database
+      // behind on rejection. No name-uniqueness check: duplicate names stay legal
+      // for the agent and the operator alike.
+      const newDatabaseId = randomUUID();
+      const body: DatabaseDecisionBody = {
+        op: "create-database",
+        databaseId: newDatabaseId,
+        name,
+        databaseName: name,
+        rowLabel: null,
+        previousCells: null,
+        cells: null,
+        expectedUpdatedAt: null,
+      };
+      return fileDecision(root, actor, {
+        target: { type: "database", domainSlug, databaseId: newDatabaseId },
+        proposedTitle: decisionTitle("create-database", null, domainSlug, null, name),
+        body,
+        previousBodyMarkdown: null,
+      });
+    }
+
+    case "add_column": {
+      const live = await requireLiveDomain(root, args.domainSlug);
+      if (!live.ok) return live.result;
+      if (!isNonEmptyString(args.databaseId)) {
+        return fail("VALIDATION", "databaseId is required");
+      }
+      if (!isNonEmptyString(args.name)) {
+        return fail("VALIDATION", "name is required");
+      }
+      if (!isNonEmptyString(args.type)) {
+        return fail("VALIDATION", "type is required");
+      }
+      const type = String(args.type) as DatabaseColumnType;
+      if (!(DATABASE_COLUMN_TYPES as readonly string[]).includes(type)) {
+        return fail(
+          "VALIDATION",
+          `Unknown column type: ${type}. One of: ${DATABASE_COLUMN_TYPES.join(", ")}`,
+        );
+      }
+      const options = Array.isArray(args.options) ? args.options.map(String) : undefined;
+      if (type === "select" && (!options || options.length < 1)) {
+        return fail("VALIDATION", "select requires at least one option");
+      }
+      const relationDatabaseId = isNonEmptyString(args.relationDatabaseId)
+        ? String(args.relationDatabaseId)
+        : undefined;
+      if (type === "relation" && !relationDatabaseId) {
+        return fail("VALIDATION", "relation requires relationDatabaseId");
+      }
+      if (type !== "relation" && relationDatabaseId !== undefined) {
+        return fail("VALIDATION", "relationDatabaseId is only valid for type 'relation'");
+      }
+
+      const { slug: domainSlug } = live;
+      const databaseId = String(args.databaseId);
+      const db = await getDatabase(root, domainSlug, databaseId);
+      if (!db.ok) return engineError(db.error);
+      const dbMeta = db.value;
+
+      if (relationDatabaseId) {
+        const target = await getDatabase(root, domainSlug, relationDatabaseId);
+        if (!target.ok) return engineError(target.error);
+      }
+
+      // The target deliberately identifies only the database: addDatabaseColumn
+      // mints the column id itself, so the Decision cannot name a column. The
+      // column spec lives in the body, which is what the operator approves.
+      const name = String(args.name).trim();
+      const body: DatabaseDecisionBody = {
+        op: "add-column",
+        name,
+        type,
+        options,
+        relationDatabaseId,
+        databaseName: dbMeta.name,
+        rowLabel: null,
+        previousCells: null,
+        cells: null,
+        expectedUpdatedAt: null,
+      };
+      return fileDecision(root, actor, {
+        target: { type: "database", domainSlug, databaseId },
+        proposedTitle: decisionTitle("add-column", dbMeta, domainSlug, null, name),
+        body,
+        previousBodyMarkdown: null,
+      });
     }
 
     default:

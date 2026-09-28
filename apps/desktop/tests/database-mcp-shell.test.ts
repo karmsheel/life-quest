@@ -160,7 +160,7 @@ describe("KAR-63 tool list parity at both spread sites", () => {
     assert.notEqual(start, -1, "executeTool must exist");
     const body = src.slice(start, src.indexOf("/** Agent map tools that write"));
     assert.match(body, /DATABASE_TOOL_DEFS\.some\(\(t\) => t\.name === name\)/);
-    assert.match(body, /executeDatabaseTool\(root, name, rec\)/);
+    assert.match(body, /executeDatabaseTool\(root, actor, name, rec\)/);
   });
 
   it("the capture expense path is untouched", () => {

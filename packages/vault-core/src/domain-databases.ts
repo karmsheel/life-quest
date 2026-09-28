@@ -431,6 +431,17 @@ export async function checkDatabaseCells(
   if (!dbRes.ok) return dbRes;
   const db = dbRes.value;
 
+  // Unknown column ids are rejected up front, the same rule validateCells
+  // applies on write. Without this a typo'd column would pass every check here
+  // and only fail at approve time, leaving a Decision the operator reviewed and
+  // then could not apply.
+  const colIds = new Set(db.columns.map((c) => c.id));
+  for (const key of Object.keys(cells)) {
+    if (!colIds.has(key)) {
+      return { ok: false, error: `Unknown column id in cells: ${key}` };
+    }
+  }
+
   for (const col of db.columns) {
     const val = cells[col.id];
     if (val === undefined || val === null) continue;
