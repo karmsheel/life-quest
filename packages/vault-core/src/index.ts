@@ -110,6 +110,7 @@ export {
   countRows,
   getRow,
   upsertRow,
+  insertRows,
   deleteRow,
   checkDatabaseCells,
   saveDatabaseFile,

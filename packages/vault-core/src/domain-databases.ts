@@ -676,6 +676,57 @@ export async function upsertRow(
   }
 }
 
+export async function insertRows(
+  root: string,
+  slug: string,
+  dbId: string,
+  rows: Array<{ id: string; cells: Record<string, unknown> }>,
+): Promise<Result<{ ids: string[] }>> {
+  try {
+    if (rows.length < 1) return { ok: false, error: "rows must not be empty" };
+    const paths = vaultPaths(root);
+    const registry = await readRegistry(paths.domainRegistry(slug));
+    for (const row of rows) {
+      if (!row.id.trim()) return { ok: false, error: "Row id is required" };
+      const validation = validateCells(registry, dbId, slug, row.cells);
+      if (!validation.ok) return validation;
+    }
+
+    const now = new Date().toISOString();
+    const sqlite = openSqlite(paths.domainSqlite(slug));
+    try {
+      sqlite.exec("BEGIN");
+      const existing = sqlite.prepare(
+        "SELECT id FROM rows WHERE database_id = ? AND id = ?",
+      );
+      const insert = sqlite.prepare(
+        "INSERT INTO rows (database_id, id, created_at, updated_at, cells) VALUES (?, ?, ?, ?, ?)",
+      );
+      for (const row of rows) {
+        const found = existing.get(dbId, row.id) as { id: string } | undefined;
+        if (found) {
+          sqlite.exec("ROLLBACK");
+          return { ok: false, error: `Row id already exists: ${row.id}` };
+        }
+        insert.run(dbId, row.id, now, now, JSON.stringify(row.cells));
+      }
+      sqlite.exec("COMMIT");
+      return { ok: true, value: { ids: rows.map((row) => row.id) } };
+    } catch (e) {
+      try {
+        sqlite.exec("ROLLBACK");
+      } catch {
+        // The transaction is already closed.
+      }
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    } finally {
+      sqlite.close();
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function deleteRow(
   root: string,
   slug: string,
