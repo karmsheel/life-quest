@@ -24,6 +24,10 @@ const lifequest = {
     >,
   domainArchive: (slug: string) =>
     ipcRenderer.invoke("domain:archive", slug) as Promise<Result<unknown>>,
+  domainUnarchive: (slug: string) =>
+    ipcRenderer.invoke("domain:unarchive", slug) as Promise<Result<unknown>>,
+  domainDelete: (slug: string) =>
+    ipcRenderer.invoke("domain:delete", slug) as Promise<Result<unknown>>,
   domainSetActive: (slug: string | null) =>
     ipcRenderer.invoke("domain:setActive", slug) as Promise<Result<string | null>>,
   domainGetActive: () =>
@@ -266,10 +270,10 @@ const lifequest = {
   }) => ipcRenderer.invoke("companion:approval", payload),
   companionOpenProfileFolder: () =>
     ipcRenderer.invoke("companion:openProfileFolder"),
-  companionGetFiling: (sessionId: string) =>
-    ipcRenderer.invoke("companion:getFiling", sessionId) as Promise<boolean>,
-  companionSetFiling: (sessionId: string, enabled: boolean) =>
-    ipcRenderer.invoke("companion:setFiling", sessionId, enabled) as Promise<void>,
+  companionGetFiling: () =>
+    ipcRenderer.invoke("companion:getFiling") as Promise<boolean>,
+  companionSetFiling: (enabled: boolean) =>
+    ipcRenderer.invoke("companion:setFiling", enabled) as Promise<void>,
   onCompanionStream: (cb: (evt: unknown) => void) => {
     const listener = (_event: unknown, evt: unknown) => {
       cb(evt);

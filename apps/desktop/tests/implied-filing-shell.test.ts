@@ -27,11 +27,12 @@ describe("implied filing shell wiring", () => {
     assert.equal(fn.includes("resolveDecision"), false);
   });
 
-  it("stores the session pref in companion-filing.json", () => {
+  it("stores the app filing pref in companion-filing.json", () => {
     const filing = read("electron/companion-filing.ts");
     assert.match(filing, /companion-filing\.json/);
     assert.match(filing, /getFileUnsolicited/);
     assert.match(filing, /setFileUnsolicited/);
+    assert.equal(filing.includes("fileUnsolicitedBySessionId"), false);
   });
 
   it("wires companion:getFiling and companion:setFiling", () => {
@@ -46,11 +47,15 @@ describe("implied filing shell wiring", () => {
     assert.match(viteEnv, /companionSetFiling/);
   });
 
-  it("ChatPanel offers a File implied changes checkbox", () => {
+  it("Settings Hermes offers File implied changes and the chat panel does not", () => {
+    const hermes = read("src/components/settings/SettingsHermes.tsx");
     const chat = read("src/components/hermes/ChatPanel.tsx");
-    assert.match(chat, /aria-label="File implied changes"/);
-    assert.match(chat, /companionGetFiling/);
-    assert.match(chat, /companionSetFiling/);
+    assert.match(hermes, /aria-label="File implied changes"/);
+    assert.match(hermes, /companionGetFiling/);
+    assert.match(hermes, /companionSetFiling/);
+    assert.equal(chat.includes("File implied changes"), false);
+    assert.equal(chat.includes("companionGetFiling"), false);
+    assert.equal(chat.includes("companionSetFiling"), false);
   });
 
   it("allow: true stays only on the Allow once button", () => {

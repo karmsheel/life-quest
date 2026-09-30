@@ -43,6 +43,32 @@ describe("domains settings wiring", () => {
     const pagePath = path.join(desktopRoot, "src/pages/DomainsPage.tsx");
     assert.equal(fs.existsSync(pagePath), false);
   });
+
+  it("lets you delete a domain and unarchive an archived one", () => {
+    const settings = read("src/components/settings/SettingsDomains.tsx");
+    assert.match(settings, /domainDelete/);
+    assert.match(settings, /domainUnarchive/);
+    assert.match(settings, />\s*Unarchive\s*</);
+    const liveCards = settings.slice(
+      settings.indexOf("domain-card__actions"),
+      settings.indexOf("archived-list"),
+    );
+    assert.equal(liveCards.includes("Delete"), false);
+    assert.match(settings.slice(settings.indexOf("archived-list")), />\s*Delete\s*</);
+
+    const main = read("electron/main.ts");
+    assert.match(main, /domain:delete/);
+    assert.match(main, /domain:unarchive/);
+
+    const preload = read("electron/preload.ts");
+    assert.match(preload, /domainDelete/);
+    assert.match(preload, /domainUnarchive/);
+
+    const service = read("electron/vault-service.ts");
+    assert.match(service, /domainDelete/);
+    assert.match(service, /domainUnarchive/);
+    assert.match(service, /currentLens === slug/);
+  });
 });
 
 describe("about me copy", () => {

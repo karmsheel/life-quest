@@ -4,6 +4,7 @@ import {
   applyScriptBlock,
   archiveDomain,
   createDatabase,
+  deleteDomain,
   createDecision,
   createDomain,
   createPage,
@@ -53,6 +54,7 @@ import {
   setLibraryLocked,
   shouldFileImpliedTurn,
   setPins,
+  unarchiveDomain,
   unlockReview,
   updateDomain,
   updatePage,
@@ -377,6 +379,25 @@ export async function domainArchive(
   slug: string,
 ): Promise<Result<DomainRecord>> {
   return withVault((root) => archiveDomain(root, slug));
+}
+
+export async function domainUnarchive(
+  slug: string,
+): Promise<Result<DomainRecord>> {
+  return withVault((root) => unarchiveDomain(root, slug));
+}
+
+export async function domainDelete(
+  slug: string,
+): Promise<Result<{ slug: string }>> {
+  return withVault(async (root) => {
+    const res = await deleteDomain(root, slug);
+    if (res.ok && currentLens === slug && currentVaultId) {
+      currentLens = null;
+      await setActiveDomain(currentVaultId, null);
+    }
+    return res;
+  });
 }
 
 // KAR-53 ingest
@@ -1097,7 +1118,7 @@ export async function companionChatStreamWithPack(
   instructionsContext: CompanionInstructionsInput,
   onEvent: (evt: ChatStreamEvent) => void,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const fileUnsolicited = await getFileUnsolicited(sessionId).catch(() => true);
+  const fileUnsolicited = await getFileUnsolicited().catch(() => true);
   const ctx: CompanionInstructionsInput = { ...instructionsContext, fileUnsolicited };
   if (currentRoot) {
     const snap = await openVault(currentRoot);

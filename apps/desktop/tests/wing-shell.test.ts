@@ -88,6 +88,22 @@ describe("wing shell wiring", () => {
     assert.equal(dividers.length, 2);
   });
 
+  it("labels the desktop package version at the bottom of the nav rail", () => {
+    const pkg = JSON.parse(read("package.json")) as { version: string };
+    assert.equal(pkg.version, "0.1.0");
+
+    const src = read("src/components/shell/NavRail.tsx");
+    assert.match(src, /import \{ version \} from ["']\.\.\/\.\.\/\.\.\/package\.json["']/);
+    assert.match(
+      src,
+      /bottomPinned\.map\(renderItem\)[\s\S]*nav-rail__version[\s\S]*v\{version\}/,
+    );
+
+    const css = read("src/styles/global.css");
+    assert.match(css, /\.nav-rail__version\s*\{[^}]*text-align:\s*center/);
+    assert.match(css, /\.nav-rail__version\s*\{[^}]*color:\s*var\(--muted\)/);
+  });
+
   it("labels Dashboard and Life-Chain on the page", () => {
     const home = read("src/pages/HomePage.tsx");
     assert.match(home, /home-dashboard__eyebrow[^>]*>Dashboard</);

@@ -89,7 +89,12 @@ type ChatStreamEvent =
   | { type: "run.completed" }
   | { type: "error"; message: string };
 
-type HermesSession = { id: string; title: string };
+type HermesSession = {
+  id: string;
+  title: string;
+  preview: string | null;
+  lastActive: number | null;
+};
 
 /** Frozen IPC API exposed on window.lifequest via preload. */
 type LifequestApi = {
@@ -109,6 +114,8 @@ type LifequestApi = {
     >,
   ) => Promise<Result<DomainRecord>>;
   domainArchive: (slug: string) => Promise<Result<DomainRecord>>;
+  domainUnarchive: (slug: string) => Promise<Result<DomainRecord>>;
+  domainDelete: (slug: string) => Promise<Result<{ slug: string }>>;
   domainSetActive: (slug: string | null) => Promise<Result<string | null>>;
   domainGetActive: () => Promise<string | null>;
   documentGet: (
@@ -203,7 +210,7 @@ type LifequestApi = {
   companionSessionCreate: (title: string) => Promise<Result<HermesSession>>;
   companionSessionMessages: (
     id: string,
-  ) => Promise<Result<{ role: string; content: string }[]>>;
+  ) => Promise<Result<{ role: "user" | "assistant"; content: string }[]>>;
   companionChatStream: (payload: {
     sessionId: string;
     input: string;
@@ -215,8 +222,8 @@ type LifequestApi = {
     allow: boolean;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   companionOpenProfileFolder: () => Promise<void>;
-  companionGetFiling: (sessionId: string) => Promise<boolean>;
-  companionSetFiling: (sessionId: string, enabled: boolean) => Promise<void>;
+  companionGetFiling: () => Promise<boolean>;
+  companionSetFiling: (enabled: boolean) => Promise<void>;
   onCompanionStream: (cb: (evt: ChatStreamEvent) => void) => () => void;
   mapGetState: () => Promise<Result<MapStoreState>>;
   mapApply: (command: MapCommand) => Promise<Result<VaultSnapshot>>;

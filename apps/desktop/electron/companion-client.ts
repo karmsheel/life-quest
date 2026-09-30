@@ -20,7 +20,136 @@ export type ChatStreamEvent =
 export type HermesSession = {
   id: string;
   title: string;
+  /** First user message, already collapsed to one line. Null when the chat is empty. */
+  preview: string | null;
+  /** Unix seconds of last activity, or started_at when the chat has not been active yet. */
+  lastActive: number | null;
 };
+
+const PLACEHOLDER_TITLE = /^LifeQuest(?: · .+)?$/;
+
+function rowsOf(payload: unknown, keys: readonly string[]): unknown[] {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  const record = payload as Record<string, unknown>;
+  for (const key of keys) {
+    if (Array.isArray(record[key])) return record[key] as unknown[];
+  }
+  return [];
+}
+
+function flag(value: unknown): boolean {
+  return value === true || value === 1;
+}
+
+function unixSeconds(value: unknown): number | null {
+  const n = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  if (!Number.isFinite(n)) return null;
+  return n > 1e12 ? n / 1000 : n;
+}
+
+function oneLine(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function messageText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const part of content) {
+    if (typeof part === "string") parts.push(part);
+    else if (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string") {
+      parts.push((part as { text: string }).text);
+    }
+  }
+  return parts.join("");
+}
+
+export function sessionsFromPayload(payload: unknown): HermesSession[] {
+  const out: HermesSession[] = [];
+  for (const row of rowsOf(payload, ["sessions", "data", "items"])) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as {
+      id?: unknown;
+      session_id?: unknown;
+      title?: unknown;
+      name?: unknown;
+      preview?: unknown;
+      last_active?: unknown;
+      last_activity_at?: unknown;
+      started_at?: unknown;
+      hidden?: unknown;
+      archived?: unknown;
+    };
+    if (flag(r.hidden) || flag(r.archived)) continue;
+    const id = String(r.id ?? r.session_id ?? "").trim();
+    if (!id) continue;
+    const title = oneLine(r.title ?? r.name);
+    const preview = oneLine(r.preview);
+    out.push({
+      id,
+      title,
+      preview: preview || null,
+      lastActive: unixSeconds(r.last_active ?? r.last_activity_at ?? r.started_at),
+    });
+  }
+  return out;
+}
+
+export function createdSessionFromPayload(
+  payload: unknown,
+  fallbackTitle = "",
+): HermesSession | null {
+  if (!payload || typeof payload !== "object") return null;
+  const nested = (payload as { session?: unknown }).session;
+  const source = nested && typeof nested === "object" ? nested : payload;
+  const [row] = sessionsFromPayload([source]);
+  if (!row) return null;
+  const fallback = oneLine(fallbackTitle);
+  if (!row.title && fallback) return { ...row, title: fallback };
+  return row;
+}
+
+/** Visible chat name: a set title, otherwise the first thing the user asked. */
+export function sessionLabel(session: Pick<HermesSession, "title" | "preview">): string {
+  const title = session.title.trim();
+  const preview = oneLine(session.preview);
+  if (title && !PLACEHOLDER_TITLE.test(title)) return title;
+  if (preview) return preview;
+  if (title) return title;
+  return "New chat";
+}
+
+export function formatSessionWhen(lastActive: number | null, nowMs = Date.now()): string {
+  if (lastActive == null || !Number.isFinite(lastActive)) return "";
+  const date = new Date(lastActive * 1000);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date(nowMs);
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayDiff = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  if (dayDiff <= 0) {
+    return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  if (dayDiff === 1) return "Yesterday";
+  if (dayDiff < 7) return date.toLocaleDateString(undefined, { weekday: "short" });
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+export function messagesFromPayload(
+  payload: unknown,
+): { role: "user" | "assistant"; content: string }[] {
+  const value: { role: "user" | "assistant"; content: string }[] = [];
+  for (const row of rowsOf(payload, ["data", "messages", "items"])) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as { role?: unknown; content?: unknown };
+    if (r.role !== "user" && r.role !== "assistant") continue;
+    const content = messageText(r.content);
+    if (!content.trim()) continue;
+    value.push({ role: r.role, content });
+  }
+  return value;
+}
 
 export function buildInstructions(input: CompanionInstructionsInput): string {
   const domain =

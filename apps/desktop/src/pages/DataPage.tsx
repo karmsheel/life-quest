@@ -22,6 +22,7 @@ export default function DataPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ingestStatus, setIngestStatus] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [selectedDbId, setSelectedDbId] = useState<string>("");
   const [installedKits, setInstalledKits] = useState<string[] | null>(null);
   const [defaultCaptureAccount, setDefaultCaptureAccount] = useState<string | null>(null);
@@ -193,6 +194,7 @@ export default function DataPage() {
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
+    setDragOver(false);
     const file = e.dataTransfer.files[0];
     if (file) void onIngestFile(file);
   }
@@ -202,187 +204,261 @@ export default function DataPage() {
   }
 
   return (
-    <div className="page-content">
-      <header className="stub-page__header">
-        <p className="muted stub-page__eyebrow">Data</p>
-        <h1 className="stub-page__title">Data</h1>
+    <div className="page-content data-studio">
+      <header className="data-studio__header">
+        <p className="data-studio__eyebrow">Data</p>
+        <h1 className="data-studio__title">Databases</h1>
+        <p className="data-studio__lead">
+          Domain books in this vault. Create one here, or import rows from a file.
+        </p>
       </header>
 
       {error ? (
-        <p className="form-error" role="alert">{error}</p>
+        <p className="data-studio__banner data-studio__banner--error" role="alert">{error}</p>
       ) : null}
       {ingestStatus ? (
-        <p className="form-info" role="status">{ingestStatus}</p>
+        <p className="data-studio__banner" role="status">{ingestStatus}</p>
       ) : null}
 
-      <form onSubmit={onCreate} className="data-new-form">
-        <input
-          type="text"
-          placeholder="New database name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={busy}
-          className="input-field"
-        />
-        {showDomainSelect ? (
-          <select
-            value={selectedDomain}
-            onChange={(e) => setSelectedDomain(e.target.value)}
-            className="input-field"
-          >
-            <option value="">Select domain…</option>
-            {liveDomains.map((d) => (
-              <option key={d.slug} value={d.slug}>{d.meta.name}</option>
-            ))}
-          </select>
-        ) : null}
-        <Button type="submit" disabled={busy || !name.trim()}>New database</Button>
-      </form>
+      <div className="data-studio__layout">
+        <section className="data-studio__panel" aria-labelledby="data-databases-heading">
+          <div className="data-studio__panel-head">
+            <h2 id="data-databases-heading">Databases</h2>
+            <span className="data-studio__count">{entries.length}</span>
+          </div>
+          {entries.length === 0 ? (
+            <p className="data-studio__empty">No databases yet.</p>
+          ) : (
+            <ul className="database-list">
+              {entries.map((entry) => {
+                const domainName =
+                  liveDomains.find((d) => d.slug === entry.domainSlug)?.meta.name ??
+                  entry.domainSlug;
+                return (
+                  <li key={`${entry.domainSlug}-${entry.database.id}`} className="database-list__item">
+                    <button
+                      type="button"
+                      className="database-list__open"
+                      onClick={() => navigate(`/data/${entry.domainSlug}/${entry.database.id}`)}
+                    >
+                      <span className="database-list__copy">
+                        <span className="database-list__name">{entry.database.name}</span>
+                        <span className="database-list__sub">
+                          {columnCountLabel(entry.database.columns.length)}
+                          {" · "}
+                          {sourceLabel(entry.database.sotMode)}
+                          {" · "}
+                          {entry.database.updatedAt.slice(0, 10)}
+                        </span>
+                      </span>
+                      {lens.kind !== "domain" ? (
+                        <span className="database-list__domain">{domainName}</span>
+                      ) : null}
+                      <svg className="database-list__chevron" viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                      </svg>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <div className="data-studio__panel-foot">
+            <Button onClick={async () => {
+              const res = await api().dbSync(domainSlug ?? "");
+              if (!res.ok) {
+                setError(res.error);
+              } else {
+                await load();
+              }
+            }}>Refresh linked</Button>
+          </div>
+        </section>
 
-      <section className="ingest-drop-zone">
-        <p className="muted">Drop a .csv or .pdf file here to ingest rows.</p>
-        <select
-          value={selectedDbId}
-          onChange={(e) => setSelectedDbId(e.target.value)}
-          className="input-field"
-        >
-          <option value="">Select target database…</option>
-          {domainEntries.map((entry) => (
-            <option key={entry.database.id} value={entry.database.id}>
-              {entry.database.name}
-            </option>
-          ))}
-        </select>
-        <div
-          className="drop-zone"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={onDrop}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          Drop .csv or .pdf file here
-        </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,.pdf,text/csv,application/pdf"
-          style={{ display: "none" }}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) void onIngestFile(f);
-          }}
-        />
-        {pendingMap ? (
-          <form onSubmit={onProposeMapping} className="ingest-mapping-form">
-            <p className="muted">Map each source column to a database column.</p>
-            {pendingMap.sourceColumns.map((src) => (
-              <label key={src}>
-                {src}
-                <select
+        <div className="data-studio__rail">
+          <section className="data-studio__panel" aria-labelledby="data-create-heading">
+            <div className="data-studio__panel-head">
+              <h2 id="data-create-heading">New database</h2>
+            </div>
+            <form onSubmit={onCreate} className="data-new-form">
+              <label className="data-field">
+                <span className="data-field__label">Name</span>
+                <input
+                  type="text"
+                  placeholder="New database name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={busy}
                   className="input-field"
-                  value={pendingMap.columnIds[src] ?? ""}
-                  onChange={(e) =>
-                    setPendingMap((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            columnIds: { ...prev.columnIds, [src]: e.target.value },
-                          }
-                        : prev,
-                    )
+                />
+              </label>
+              {showDomainSelect ? (
+                <label className="data-field">
+                  <span className="data-field__label">Domain</span>
+                  <select
+                    value={selectedDomain}
+                    onChange={(e) => setSelectedDomain(e.target.value)}
+                    className="input-field"
+                  >
+                    <option value="">Select domain…</option>
+                    {liveDomains.map((d) => (
+                      <option key={d.slug} value={d.slug}>{d.meta.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <Button type="submit" variant="primary" className="data-studio__submit" disabled={busy || !name.trim()}>
+                New database
+              </Button>
+            </form>
+          </section>
+
+          <section className="data-studio__panel ingest-drop-zone" aria-labelledby="data-import-heading">
+            <div className="data-studio__panel-head">
+              <h2 id="data-import-heading">Import</h2>
+            </div>
+            <p className="data-studio__hint">Drop a .csv or .pdf file to ingest rows into one database.</p>
+            <label className="data-field">
+              <span className="data-field__label">Target database</span>
+              <select
+                value={selectedDbId}
+                onChange={(e) => setSelectedDbId(e.target.value)}
+                className="input-field"
+              >
+                <option value="">Select target database…</option>
+                {domainEntries.map((entry) => (
+                  <option key={entry.database.id} value={entry.database.id}>
+                    {entry.database.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className={dragOver ? "drop-zone is-hot" : "drop-zone"}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <span className="drop-zone__title">Drop a .csv or .pdf file</span>
+              <span className="drop-zone__hint">or click to choose one</span>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.pdf,text/csv,application/pdf"
+              className="data-studio__file"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onIngestFile(f);
+                e.target.value = "";
+              }}
+            />
+            {pendingMap ? (
+              <form onSubmit={onProposeMapping} className="ingest-mapping-form">
+                <p className="data-studio__hint">Map each source column to a database column.</p>
+                {pendingMap.sourceColumns.map((src) => (
+                  <label key={src} className="data-field data-field--map">
+                    <span className="data-field__label">{src}</span>
+                    <select
+                      className="input-field"
+                      value={pendingMap.columnIds[src] ?? ""}
+                      onChange={(e) =>
+                        setPendingMap((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                columnIds: { ...prev.columnIds, [src]: e.target.value },
+                              }
+                            : prev,
+                        )
+                      }
+                    >
+                      <option value="">—</option>
+                      {(domainEntries.find((en) => en.database.id === selectedDbId)?.database
+                        .columns ?? []).map((col) => (
+                        <option key={col.id} value={col.id}>
+                          {col.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+                <Button type="submit" variant="primary" className="data-studio__submit">Propose mapping</Button>
+              </form>
+            ) : null}
+          </section>
+
+          {showFinanceInstall ? (
+            <section className="data-studio__panel data-rail__finance-cta">
+              <div className="data-studio__panel-head">
+                <h2>Finance</h2>
+              </div>
+              <p className="data-studio__hint">
+                Install the kit into the Financial domain. It adds the ledger databases and starter pages.
+              </p>
+              <Button
+                variant="primary"
+                className="data-studio__submit"
+                onClick={async () => {
+                  const res = await api().kitInstallFinance();
+                  if (!res.ok) {
+                    setError(res.error);
+                  } else {
+                    setInstalledKits(["finance"]);
+                    await load();
                   }
+                }}
+              >
+                Install Finance kit
+              </Button>
+            </section>
+          ) : null}
+
+          {installedKits?.includes("finance") ? (
+            <section className="data-studio__panel data-rail__capture-account">
+              <div className="data-studio__panel-head">
+                <h2>Capture</h2>
+              </div>
+              <label className="data-field">
+                <span className="data-field__label">Default capture account</span>
+                <select
+                  value={defaultCaptureAccount ?? ""}
+                  onChange={async (e) => {
+                    const value = e.target.value || null;
+                    const res = await api().kitSetCaptureAccount(value);
+                    if (!res.ok) {
+                      setError(res.error);
+                    } else {
+                      setDefaultCaptureAccount(value);
+                    }
+                  }}
+                  className="input-field"
                 >
-                  <option value="">—</option>
-                  {(domainEntries.find((en) => en.database.id === selectedDbId)?.database
-                    .columns ?? []).map((col) => (
-                    <option key={col.id} value={col.id}>
-                      {col.name}
-                    </option>
+                  <option value="">Ask each time</option>
+                  {transactionalAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
                   ))}
                 </select>
               </label>
-            ))}
-            <Button type="submit">Propose mapping</Button>
-          </form>
-        ) : null}
-      </section>
-
-
-      {showFinanceInstall && (
-        <div className="data-rail__finance-cta">
-          <Button onClick={async () => {
-            const res = await api().kitInstallFinance();
-            if (!res.ok) {
-              setError(res.error);
-            } else {
-              setInstalledKits(["finance"]);
-              await load();
-            }
-          }}>Install Finance kit</Button>
+            </section>
+          ) : null}
         </div>
-      )}
-
-      {installedKits?.includes("finance") && (
-        <div className="data-rail__capture-account">
-          <label>
-            Default capture account
-            <select
-              value={defaultCaptureAccount ?? ""}
-              onChange={async (e) => {
-                const value = e.target.value || null;
-                const res = await api().kitSetCaptureAccount(value);
-                if (!res.ok) {
-                  setError(res.error);
-                } else {
-                  setDefaultCaptureAccount(value);
-                }
-              }}
-              className="input-field"
-            >
-              <option value="">Ask each time</option>
-              {transactionalAccounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-      )}
-
-      <div className="data-rail__refresh-linked">
-        <Button onClick={async () => {
-          const res = await api().dbSync(domainSlug ?? "");
-          if (!res.ok) {
-            setError(res.error);
-          } else {
-            await load();
-          }
-        }}>Refresh linked</Button>
       </div>
-
-      {entries.length === 0 ? (
-        <p className="muted">No databases yet.</p>
-      ) : (
-        <ul className="database-list">
-          {entries.map((entry) => {
-            const domainName =
-              liveDomains.find((d) => d.slug === entry.domainSlug)?.meta.name ??
-              entry.domainSlug;
-            return (
-            <li key={`${entry.domainSlug}-${entry.database.id}`} className="database-list__item">
-              <button
-                type="button"
-                className="database-list__open"
-                onClick={() => navigate(`/data/${entry.domainSlug}/${entry.database.id}`)}
-              >
-                <span className="database-list__name">{entry.database.name}</span>
-                {lens.kind !== "domain" ? (
-                  <span className="muted database-list__domain">{domainName}</span>
-                ) : null}
-              </button>
-            </li>
-            );
-          })}
-        </ul>
-      )}
     </div>
   );
+}
+
+function columnCountLabel(count: number): string {
+  return count === 1 ? "1 column" : `${count} columns`;
+}
+
+function sourceLabel(mode: string): string {
+  if (mode === "linked-canonical") return "Linked";
+  if (mode === "local-canonical-mirror") return "Mirror";
+  return "Local";
 }

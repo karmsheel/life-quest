@@ -109,6 +109,53 @@ export function SettingsDomains() {
     }
   }
 
+  async function unarchiveDomain(slug: string) {
+    setBusySlug(slug);
+    setActionError(null);
+    try {
+      const result = await api().domainUnarchive(slug);
+      if (!result.ok) {
+        setActionError(result.error);
+        return;
+      }
+      await refresh();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to unarchive",
+      );
+    } finally {
+      setBusySlug(null);
+    }
+  }
+
+  async function deleteDomain(slug: string, name: string) {
+    if (
+      !window.confirm(
+        `Delete "${name}"? This permanently removes the domain and everything in it, including doctrine, pages, and its database. This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setBusySlug(slug);
+    setActionError(null);
+    try {
+      const result = await api().domainDelete(slug);
+      if (!result.ok) {
+        setActionError(result.error);
+        return;
+      }
+      if (activeSlug === slug) {
+        await setActiveSlug(null);
+      }
+      if (renamingSlug === slug) setRenamingSlug(null);
+      await refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to delete");
+    } finally {
+      setBusySlug(null);
+    }
+  }
+
   async function onActivate(slug: string) {
     setBusySlug(slug);
     setActionError(null);
@@ -293,13 +340,34 @@ export function SettingsDomains() {
         {archived.length > 0 ? (
           <>
             <h3 className="domains-manager__section-title">Archived</h3>
-            <ul className="archived-list muted">
-              {archived.map((d) => (
-                <li key={d.slug}>
-                  {d.meta.name}{" "}
-                  <span className="domain-card__slug">({d.slug})</span>
-                </li>
-              ))}
+            <ul className="archived-list">
+              {archived.map((d) => {
+                const busy = busySlug === d.slug;
+                return (
+                  <li key={d.slug} className="archived-list__item">
+                    <span>
+                      {d.meta.name}{" "}
+                      <span className="domain-card__slug muted">({d.slug})</span>
+                    </span>
+                    <span className="archived-list__actions">
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => void unarchiveDomain(d.slug)}
+                      >
+                        Unarchive
+                      </Button>
+                      <Button
+                        destructive
+                        disabled={busy}
+                        onClick={() => void deleteDomain(d.slug, d.meta.name)}
+                      >
+                        Delete
+                      </Button>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </>
         ) : null}

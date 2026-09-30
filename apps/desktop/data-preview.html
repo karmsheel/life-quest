@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="./src/styles/global.css" />
+    <style>
+      body { margin: 0; background: var(--canvas-base); }
+      .shell { height: 100vh; }
+      .fake-chat { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card-glass); }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <nav class="nav-rail"></nav>
+      <div class="shell__main">
+        <div class="shell__content">
+          <div class="home-dashboard">
+            <header class="home-dashboard__header">
+              <div>
+                <p class="home-dashboard__eyebrow">Dashboard</p>
+                <h1 class="home-dashboard__title">Overview</h1>
+                <p class="home-dashboard__subtitle">Premise → Vision → Purpose → Strategy (How)</p>
+              </div>
+            </header>
+            <div class="deadline-banner" role="status">
+              <div class="deadline-banner__content">
+                <span class="deadline-banner__label muted">Deadline pressure</span>
+                <span class="deadline-banner__text">Ship the ledger and 1 other</span>
+              </div>
+              <button class="deadline-banner__dismiss">Dismiss</button>
+            </div>
+            <div class="home-dashboard__grid">
+              <div class="home-pin">
+                <div class="home-pin__chrome">
+                  <button class="home-pin__btn">✕</button>
+                  <button class="home-pin__btn">↑</button>
+                  <button class="home-pin__btn">↓</button>
+                </div>
+                <section class="home-card home-card--wide">
+                  <h2 class="home-card__title">Goals <span class="home-card__count">2</span></h2>
+                  <ul class="home-mini-list">
+                    <li class="home-mini-list__item"><span class="home-mini-list__link">Run the books</span><span class="muted home-mini-list__meta">4 / 12 weeks</span></li>
+                    <li class="home-mini-list__item"><span class="home-mini-list__link">Write the premise</span><span class="muted home-mini-list__meta">Open</span></li>
+                  </ul>
+                  <a class="home-card__more" href="#">Open Goals →</a>
+                </section>
+              </div>
+              <div class="home-pin">
+                <div class="home-pin__chrome">
+                  <button class="home-pin__btn">✕</button>
+                  <button class="home-pin__btn">↑</button>
+                  <button class="home-pin__btn">↓</button>
+                </div>
+                <section class="home-card">
+                  <h2 class="home-card__title">Pending decisions <span class="home-card__count">1</span></h2>
+                  <ul class="home-mini-list">
+                    <li class="home-mini-list__item"><a class="home-mini-list__link" href="#">Map the import</a><span class="muted home-mini-list__meta">Library</span></li>
+                  </ul>
+                  <a class="home-card__more" href="#">Open inbox →</a>
+                </section>
+              </div>
+              <div class="home-pin">
+                <section class="home-card">
+                  <h2 class="home-card__title">Active agents <span class="home-card__count">1</span></h2>
+                  <ul class="home-mini-list">
+                    <li class="home-mini-list__item"><span class="home-mini-list__link">Hermes</span><span class="muted home-mini-list__meta">Companion</span></li>
+                  </ul>
+                  <a class="home-card__more" href="#">Open Personnel →</a>
+                </section>
+              </div>
+            </div>
+            <section class="home-card home-pin-add">
+              <h2 class="home-card__title">Add pin</h2>
+              <div class="home-pin-add__row">
+                <button class="home-pin-add__btn">deadline</button>
+                <button class="home-pin-add__btn">recent-log</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <aside class="fake-chat"></aside>
+    </div>
+  </body>
+</html>

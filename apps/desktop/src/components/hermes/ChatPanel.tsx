@@ -14,6 +14,10 @@ import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useVault } from "@/state/VaultProvider";
 import type { ChatStreamEvent, HermesSession } from "@/vite-env";
+import {
+  formatSessionWhen,
+  sessionLabel,
+} from "../../../electron/companion-client.ts";
 
 export type ChatMessage = {
   id: string;
@@ -32,6 +36,13 @@ function nextId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function sessionTimeValue(lastActive: number | null): string | undefined {
+  if (lastActive == null || !Number.isFinite(lastActive)) return undefined;
+  const date = new Date(lastActive * 1000);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toISOString();
+}
+
 export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const activeDomain = useActiveDomain();
   const domainName = activeDomain?.meta.name ?? "Overview";
@@ -43,6 +54,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   } = useChatDock();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessions, setSessions] = useState<HermesSession[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -52,7 +64,6 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     requestId: string;
     summary: string;
   } | null>(null);
-  const [fileImplied, setFileImplied] = useState(true);
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const assistantId = useRef<string | null>(null);
@@ -66,16 +77,21 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     }
     setSessionId(id);
     window.localStorage.setItem(LAST_SESSION_KEY, id);
-    // Filing pref is per session id. Missing means on.
-    const filing = await api().companionGetFiling(id);
-    setFileImplied(filing);
     setMessages(
       result.value.map((m) => ({
         id: nextId(),
-        role: m.role === "assistant" ? "assistant" : "user",
+        role: m.role,
         content: m.content,
       })),
     );
+    const firstUser = result.value.find((m) => m.role === "user" && m.content.trim());
+    if (firstUser) {
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === id && !s.preview?.trim() ? { ...s, preview: firstUser.content } : s,
+        ),
+      );
+    }
   }, []);
 
   const ensureSession = useCallback(async () => {
@@ -84,6 +100,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       setError(listed.error);
       return;
     }
+    setSessionsLoaded(true);
     setSessions(listed.value);
     const stored = window.localStorage.getItem(LAST_SESSION_KEY);
     const existing =
@@ -92,17 +109,14 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       await loadSession(existing.id);
       return;
     }
-    const title = snapshot?.lifequest.name
-      ? `LifeQuest · ${snapshot.lifequest.name}`
-      : "LifeQuest";
-    const created = await api().companionSessionCreate(title);
+    const created = await api().companionSessionCreate("");
     if (!created.ok) {
       setError(created.error);
       return;
     }
-    setSessions((prev) => [created.value, ...prev]);
+    setSessions((prev) => [created.value, ...prev.filter((s) => s.id !== created.value.id)]);
     await loadSession(created.value.id);
-  }, [loadSession, snapshot?.lifequest.name]);
+  }, [loadSession]);
 
   useEffect(() => {
     if (!open) return;
@@ -185,6 +199,18 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       ...prev,
       { id: nextId(), role: "user", content },
     ]);
+    setSessions((prev) =>
+      prev
+        .map((s) => {
+          if (s.id !== activeId) return s;
+          return {
+            ...s,
+            preview: s.preview?.trim() ? s.preview : content,
+            lastActive: Date.now() / 1000,
+          };
+        })
+        .sort((a, b) => (b.lastActive ?? 0) - (a.lastActive ?? 0)),
+    );
     setSending(true);
     setError(null);
     assistantId.current = null;
@@ -199,13 +225,14 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
           aboutMe: snapshot?.map?.aboutMe ?? "",
           locked: false,
           vaultOpen: Boolean(snapshot),
-          fileUnsolicited: fileImplied,
         },
       });
       if ("ok" in result && result.ok === false) {
         setError(result.error);
       }
       void refresh();
+      const listed = await api().companionSessionsList();
+      if (listed.ok) setSessions(listed.value);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to reach Hermes");
     } finally {
@@ -222,7 +249,10 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       onOpenChange(true);
       const listed = await api().companionSessionsList();
       if (cancelled) return;
-      if (listed.ok) setSessions(listed.value);
+      if (listed.ok) {
+        setSessionsLoaded(true);
+        setSessions(listed.value);
+      }
       await loadSession(targetId);
       if (cancelled) return;
       clearRequestedSession();
@@ -236,12 +266,6 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     // Kickoff/send intentionally tied to the request id change only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedSessionId]);
-
-  async function onToggleFileImplied(next: boolean) {
-    setFileImplied(next);
-    if (!sessionId) return;
-    await api().companionSetFiling(sessionId, next);
-  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -262,15 +286,12 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   }
 
   async function newSession() {
-    const title = snapshot?.lifequest.name
-      ? `LifeQuest · ${snapshot.lifequest.name}`
-      : "LifeQuest";
-    const created = await api().companionSessionCreate(title);
+    const created = await api().companionSessionCreate("");
     if (!created.ok) {
       setError(created.error);
       return;
     }
-    setSessions((prev) => [created.value, ...prev]);
+    setSessions((prev) => [created.value, ...prev.filter((s) => s.id !== created.value.id)]);
     setMessages([]);
     await loadSession(created.value.id);
   }
@@ -287,42 +308,52 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       {open ? (
         <div className="chat-panel__open">
           <div className="chat-panel__header">
-            <div className="chat-panel__header-actions">
-              <select
-                className="chat-panel__session-select"
-                aria-label="Companion session"
-                value={sessionId ?? ""}
-                disabled={sending}
-                onChange={(e) => void loadSession(e.target.value)}
-              >
-                {sessions.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.title}
-                  </option>
-                ))}
-              </select>
-              {sessionId ? (
-                <label className="chat-panel__filing">
-                  <input
-                    type="checkbox"
-                    aria-label="File implied changes"
-                    checked={fileImplied}
-                    disabled={sending}
-                    onChange={(e) => void onToggleFileImplied(e.target.checked)}
-                  />
-                  File implied changes
-                </label>
-              ) : null}
-              <button
-                type="button"
-                className="chat-panel__text-btn"
-                onClick={() => void newSession()}
-                disabled={sending}
-              >
-                New
-              </button>
-            </div>
+            <p className="chat-panel__heading">Chats</p>
+            <button
+              type="button"
+              className="chat-panel__text-btn"
+              onClick={() => void newSession()}
+              disabled={sending}
+            >
+              New
+            </button>
           </div>
+          {sessionsLoaded && sessions.length === 0 ? (
+            <p className="chat-panel__sessions-empty">No chats yet</p>
+          ) : sessions.length > 0 ? (
+            <ul className="chat-panel__sessions" aria-label="Previous chats">
+              {sessions.map((s) => {
+                const label = sessionLabel(s);
+                const when = formatSessionWhen(s.lastActive);
+                const active = s.id === sessionId;
+                return (
+                  <li key={s.id} className="chat-panel__session-item">
+                    <button
+                      type="button"
+                      className={
+                        active
+                          ? "chat-panel__session chat-panel__session--active"
+                          : "chat-panel__session"
+                      }
+                      aria-current={active ? "true" : undefined}
+                      disabled={sending}
+                      title={label}
+                      onClick={() => {
+                        if (s.id !== sessionId) void loadSession(s.id);
+                      }}
+                    >
+                      <span className="chat-panel__session-label">{label}</span>
+                      {when ? (
+                        <time className="chat-panel__session-when" dateTime={sessionTimeValue(s.lastActive)}>
+                          {when}
+                        </time>
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
 
           <div className="chat-panel__body" ref={listRef}>
             {error ? (

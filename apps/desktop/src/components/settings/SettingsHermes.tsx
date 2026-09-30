@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
 import { api } from "@/lib/ipc";
 import { useCompanion } from "@/state/CompanionProvider";
@@ -29,6 +30,32 @@ export function SettingsHermes() {
   const [mcpErrorText, setMcpErrorText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [fileImplied, setFileImplied] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api()
+      .companionGetFiling()
+      .then((value) => {
+        if (!cancelled) setFileImplied(value);
+      })
+      .catch(() => {
+        if (!cancelled) setFileImplied(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function onToggleFileImplied(next: boolean) {
+    setFileImplied(next);
+    try {
+      await api().companionSetFiling(next);
+    } catch (err) {
+      setFileImplied(!next);
+      setError(err instanceof Error ? err.message : "Could not save filing preference");
+    }
+  }
 
   useEffect(() => {
     if (!snapshot) return;
@@ -118,6 +145,19 @@ export function SettingsHermes() {
             </div>
           </dl>
         ) : null}
+
+        <SettingsRow
+          label="File implied changes"
+          description="When a chat proposes a doctrine, library, goal, or day-template change, file one pending Decision. The vault changes only when you approve it."
+          action={
+            <input
+              type="checkbox"
+              aria-label="File implied changes"
+              checked={fileImplied}
+              onChange={(e) => void onToggleFileImplied(e.target.checked)}
+            />
+          }
+        />
 
         <div className="settings-hermes__actions">
           <Button

@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { readOrCreateDoctrineFile } from "./domain-documents.ts";
 import { serializeFrontmatter } from "./frontmatter.ts";
@@ -178,6 +179,29 @@ export async function updateDomain(
   }
 }
 
+const DOMAIN_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** A domain slug must name one directory directly under domains/. */
+function locateDomainDir(
+  rootPath: string,
+  slug: string,
+): { dir: string; paths: ReturnType<typeof vaultPaths> } | { error: string } {
+  if (typeof slug !== "string" || !DOMAIN_SLUG.test(slug)) {
+    return { error: "Invalid domain slug" };
+  }
+  const paths = vaultPaths(rootPath);
+  let dir: string;
+  try {
+    dir = paths.domainDir(slug);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+  if (path.resolve(path.dirname(dir)) !== path.resolve(paths.domainsDir)) {
+    return { error: "Invalid domain slug" };
+  }
+  return { dir, paths };
+}
+
 export async function archiveDomain(
   rootPath: string,
   slug: string,
@@ -210,6 +234,88 @@ export async function archiveDomain(
 
     const record = await loadDomainRecord(paths.root, slug);
     return { ok: true, value: record };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function unarchiveDomain(
+  rootPath: string,
+  slug: string,
+): Promise<Result<DomainRecord>> {
+  try {
+    const located = locateDomainDir(rootPath, slug);
+    if ("error" in located) return { ok: false, error: located.error };
+    const { paths } = located;
+    const metaPath = paths.domainJson(slug);
+    let meta: DomainMeta;
+    try {
+      meta = JSON.parse(await fs.readFile(metaPath, "utf8")) as DomainMeta;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+        return { ok: false, error: `Domain not found: ${slug}` };
+      }
+      throw e;
+    }
+
+    if (meta.archivedAt != null) {
+      const now = new Date().toISOString();
+      meta.archivedAt = null;
+      meta.updatedAt = now;
+      await atomicWriteFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`);
+
+      const logRes = await appendLog(paths.root, {
+        domainSlug: slug,
+        type: "domain.unarchived",
+        summary: `Unarchived domain ${meta.name}`,
+        payload: { name: meta.name },
+      });
+      if (!logRes.ok) return logRes;
+    }
+
+    const record = await loadDomainRecord(paths.root, slug);
+    return { ok: true, value: record };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function deleteDomain(
+  rootPath: string,
+  slug: string,
+): Promise<Result<{ slug: string }>> {
+  try {
+    const located = locateDomainDir(rootPath, slug);
+    if ("error" in located) return { ok: false, error: located.error };
+    const { dir, paths } = located;
+    let meta: DomainMeta;
+    try {
+      meta = JSON.parse(
+        await fs.readFile(paths.domainJson(slug), "utf8"),
+      ) as DomainMeta;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+        return { ok: false, error: `Domain not found: ${slug}` };
+      }
+      throw e;
+    }
+    if (meta.archivedAt == null) {
+      return { ok: false, error: `Archive this domain before deleting it: ${slug}` };
+    }
+    const name =
+      typeof meta.name === "string" && meta.name.trim() ? meta.name : slug;
+
+    await fs.rm(dir, { recursive: true, force: false });
+
+    const logRes = await appendLog(paths.root, {
+      domainSlug: slug,
+      type: "domain.deleted",
+      summary: `Deleted domain ${name}`,
+      payload: { name },
+    });
+    if (!logRes.ok) return logRes;
+
+    return { ok: true, value: { slug } };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

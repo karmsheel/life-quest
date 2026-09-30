@@ -7,10 +7,13 @@ import { createVault } from "../src/create-vault.ts";
 import {
   archiveDomain,
   createDomain,
+  deleteDomain,
   listDomains,
   slugifyDomainName,
+  unarchiveDomain,
   updateDomain,
 } from "../src/domains.ts";
+import { readLog } from "../src/log.ts";
 import { openVault } from "../src/open-vault.ts";
 
 describe("slugifyDomainName", () => {
@@ -146,5 +149,111 @@ describe("createDomain / archiveDomain / updateDomain", () => {
     const slugs = listed.value.map((d) => d.slug);
     assert.ok(slugs.includes("health"));
     assert.ok(slugs.includes("career"));
+  });
+
+  it("unarchiveDomain clears archivedAt and records a log line", async () => {
+    const created = await createDomain(root, { name: "Bring Back" });
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+
+    const archived = await archiveDomain(root, created.value.slug);
+    assert.equal(archived.ok, true);
+    if (!archived.ok) return;
+    assert.notEqual(archived.value.meta.archivedAt, null);
+
+    const restored = await unarchiveDomain(root, created.value.slug);
+    assert.equal(restored.ok, true);
+    if (!restored.ok) return;
+    assert.equal(restored.value.meta.archivedAt, null);
+    assert.equal(restored.value.slug, created.value.slug);
+
+    const metaRaw = await fs.readFile(
+      path.join(root, "domains", created.value.slug, "domain.json"),
+      "utf8",
+    );
+    const meta = JSON.parse(metaRaw) as { archivedAt: string | null };
+    assert.equal(meta.archivedAt, null);
+
+    const log = await readLog(root);
+    assert.equal(log.ok, true);
+    if (!log.ok) return;
+    assert.ok(
+      log.value.some(
+        (event) =>
+          event.type === "domain.unarchived" &&
+          event.domainSlug === created.value.slug,
+      ),
+    );
+  });
+
+  it("unarchiveDomain reports a missing domain and rejects an escaping slug", async () => {
+    const missing = await unarchiveDomain(root, "does-not-exist");
+    assert.equal(missing.ok, false);
+
+    const escaped = await unarchiveDomain(root, "..");
+    assert.equal(escaped.ok, false);
+    await assert.rejects(fs.access(path.join(root, "domain.json")));
+  });
+
+  it("deleteDomain removes that domain folder and leaves siblings", async () => {
+    const created = await createDomain(root, { name: "Delete Me" });
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const slug = created.value.slug;
+    const domainDir = path.join(root, "domains", slug);
+    await fs.writeFile(
+      path.join(domainDir, "extra.txt"),
+      "nested content that must go with the domain",
+    );
+    const archived = await archiveDomain(root, slug);
+    assert.equal(archived.ok, true);
+
+    const deleted = await deleteDomain(root, slug);
+    assert.equal(deleted.ok, true);
+    if (!deleted.ok) return;
+    assert.equal(deleted.value.slug, slug);
+    await assert.rejects(fs.access(domainDir));
+    await fs.access(path.join(root, "domains", "health", "domain.json"));
+
+    const listed = await listDomains(root);
+    assert.equal(listed.ok, true);
+    if (!listed.ok) return;
+    assert.equal(
+      listed.value.some((domain) => domain.slug === slug),
+      false,
+    );
+
+    const log = await readLog(root);
+    assert.equal(log.ok, true);
+    if (!log.ok) return;
+    assert.ok(
+      log.value.some(
+        (event) => event.type === "domain.deleted" && event.domainSlug === slug,
+      ),
+    );
+  });
+
+  it("deleteDomain refuses a domain that is not archived", async () => {
+    const created = await createDomain(root, { name: "Still Live" });
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+
+    const deleted = await deleteDomain(root, created.value.slug);
+    assert.equal(deleted.ok, false);
+    await fs.access(path.join(root, "domains", created.value.slug, "domain.json"));
+  });
+
+  it("deleteDomain reports a missing domain and refuses to escape domains/", async () => {
+    const missing = await deleteDomain(root, "does-not-exist");
+    assert.equal(missing.ok, false);
+
+    for (const slug of ["..", ".", "", "foo/bar", "health/..", "..\\.."]) {
+      const res = await deleteDomain(root, slug);
+      assert.equal(res.ok, false, slug);
+    }
+
+    await fs.access(path.join(root, "lifequest.json"));
+    await fs.access(path.join(root, "domains", "health", "domain.json"));
+    await fs.access(path.join(root, "domains", "intellectual", "domain.json"));
   });
 });

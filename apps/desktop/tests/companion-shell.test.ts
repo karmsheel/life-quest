@@ -96,4 +96,13 @@ describe("companion shell wiring", () => {
     const chat = read("src/components/hermes/ChatPanel.tsx");
     assert.match(chat, /requestedSessionId/);
   });
+
+  it("ChatPanel lists previous chats instead of a session dropdown", () => {
+    const chat = read("src/components/hermes/ChatPanel.tsx");
+    assert.match(chat, /chat-panel__sessions/);
+    assert.match(chat, /sessionLabel/);
+    assert.match(chat, /formatSessionWhen/);
+    assert.equal(chat.includes("chat-panel__session-select"), false);
+    assert.equal(chat.includes("<select"), false);
+  });
 });

@@ -115,6 +115,12 @@ function registerIpcHandlers() {
   ipcMain.handle("domain:archive", (_e, slug: string) =>
     vault.domainArchive(slug),
   );
+  ipcMain.handle("domain:unarchive", (_e, slug: string) =>
+    vault.domainUnarchive(slug),
+  );
+  ipcMain.handle("domain:delete", (_e, slug: string) =>
+    vault.domainDelete(slug),
+  );
   ipcMain.handle("domain:setActive", (_e, slug: string | null) =>
     vault.domainSetActive(slug),
   );
@@ -333,7 +339,7 @@ function registerIpcHandlers() {
   ipcMain.handle("companion:status", () => companion.companionStatus());
   ipcMain.handle("companion:sessionsList", () => companion.companionSessionsList());
   ipcMain.handle("companion:sessionCreate", (_e, title: string) =>
-    companion.companionSessionCreate(title || "LifeQuest"),
+    companion.companionSessionCreate(typeof title === "string" ? title : ""),
   );
   ipcMain.handle("companion:sessionMessages", (_e, id: string) =>
     companion.companionSessionMessages(id),
@@ -368,11 +374,9 @@ function registerIpcHandlers() {
   ipcMain.handle("companion:openProfileFolder", () =>
     companion.companionOpenProfileFolder(),
   );
-  ipcMain.handle("companion:getFiling", (_e, sessionId: string) =>
-    getFileUnsolicited(sessionId),
-  );
-  ipcMain.handle("companion:setFiling", (_e, sessionId: string, enabled: boolean) =>
-    setFileUnsolicited(sessionId, enabled),
+  ipcMain.handle("companion:getFiling", () => getFileUnsolicited());
+  ipcMain.handle("companion:setFiling", (_e, enabled: boolean) =>
+    setFileUnsolicited(enabled),
   );
 
   ipcMain.handle("map:getState", () => vault.mapGetState());

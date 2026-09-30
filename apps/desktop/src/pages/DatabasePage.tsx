@@ -182,8 +182,8 @@ export default function DatabasePage() {
 
   if (loadError) {
     return (
-      <div className="page-content">
-        <p className="form-error">{loadError}</p>
+      <div className="page-content data-studio">
+        <p className="data-studio__banner data-studio__banner--error">{loadError}</p>
         <Button onClick={() => navigate("/data")}>Back to Data</Button>
       </div>
     );
@@ -196,19 +196,22 @@ export default function DatabasePage() {
   const domainName = snapshot?.domains.find((d) => d.slug === slug)?.meta.name ?? slug;
 
   return (
-    <div className="page-content database-page">
-      <header className="stub-page__header">
-        <Button variant="ghost" onClick={() => navigate("/data")}>← Back to Data</Button>
-        <h1 className="stub-page__title">{meta.name}</h1>
-        <p className="muted">{domainName} · {slug}</p>
+    <div className="page-content data-studio database-page">
+      <header className="data-studio__header">
+        <Button variant="ghost" className="data-studio__back" onClick={() => navigate("/data")}>← Back to Data</Button>
+        <h1 className="data-studio__title">{meta.name}</h1>
+        <p className="data-studio__lead">{domainName} · {slug}</p>
       </header>
 
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
-      {colError ? <p className="form-error" role="alert">{colError}</p> : null}
+      {error ? <p className="data-studio__banner data-studio__banner--error" role="alert">{error}</p> : null}
+      {colError ? <p className="data-studio__banner data-studio__banner--error" role="alert">{colError}</p> : null}
 
+      <div className="database-page__grid">
       {/* KAR-59 Adapter section */}
-      <section className="adapter-section">
-        <h2>Adapter</h2>
+      <section className="data-studio__panel adapter-section">
+        <div className="data-studio__panel-head">
+          <h2>Adapter</h2>
+        </div>
         {meta.adapter ? (
           <div className="adapter-linked">
             <p className="muted">
@@ -242,7 +245,7 @@ export default function DatabasePage() {
             } else {
               setError(res.error);
             }
-          }} className="adapter-form">
+          }} className="adapter-form data-new-form">
             <select value={adapterKind} onChange={(e) => setAdapterKind(e.target.value as "google-sheet" | "notion" | "url")} className="input-field">
               <option value="google-sheet">Google Sheet</option>
               <option value="notion">Notion</option>
@@ -268,7 +271,7 @@ export default function DatabasePage() {
               <option value="linked-canonical">Linked canonical</option>
               <option value="local-canonical-mirror">Local canonical (mirror)</option>
             </select>
-            <Button type="submit">Link</Button>
+            <Button type="submit" variant="primary" className="data-studio__submit">Link</Button>
           </form>
         )}
 
@@ -306,7 +309,11 @@ export default function DatabasePage() {
         ) : null}
       </section>
 
-      <form onSubmit={onAddColumn} className="data-add-column">
+      <section className="data-studio__panel">
+        <div className="data-studio__panel-head">
+          <h2>Columns</h2>
+        </div>
+      <form onSubmit={onAddColumn} className="data-add-column data-new-form">
         <input
           type="text"
           placeholder="New column name"
@@ -340,9 +347,17 @@ export default function DatabasePage() {
             ))}
           </select>
         ) : null}
-        <Button type="submit">Add column</Button>
+        <Button type="submit" variant="primary" className="data-studio__submit">Add column</Button>
       </form>
+      </section>
+      </div>
 
+      <section className="data-studio__panel">
+        <div className="data-studio__panel-head">
+          <h2>Rows</h2>
+          <Button onClick={onAddRow}>Add row</Button>
+        </div>
+      <div className="data-studio__table-scroll">
       <table className="data-table">
         <thead>
           <tr>
@@ -367,8 +382,8 @@ export default function DatabasePage() {
           ))}
         </tbody>
       </table>
-
-      <Button onClick={onAddRow}>Add row</Button>
+      </div>
+      </section>
 
       {/* Ingest section */}
       <IngestSection slug={slug} dbId={dbId} meta={meta} ingestBatches={ingestBatches} onReload={() => { void load(); }} />
@@ -418,16 +433,19 @@ function IngestSection({ slug, dbId, meta, ingestBatches, onReload }: {
   }
 
   if (ingestBatches.length === 0) {
-    return <p className="muted">No ingest rows.</p>;
+    return <p className="data-studio__empty">No ingest rows.</p>;
   }
 
   return (
-    <section className="ingest-section">
-      <h2>Ingest</h2>
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
+    <section className="data-studio__panel ingest-section">
+      <div className="data-studio__panel-head">
+        <h2>Ingest</h2>
+      </div>
+      {error ? <p className="data-studio__banner data-studio__banner--error" role="alert">{error}</p> : null}
       {ingestBatches.map((batch) => (
         <div key={batch.id} className="ingest-batch">
           <p className="muted">{batch.fingerprint.slice(0, 16)}… ({batch.sourceKind})</p>
+          <div className="data-studio__table-scroll">
           <table className="data-table">
             <thead>
               <tr>
@@ -473,6 +491,7 @@ function IngestSection({ slug, dbId, meta, ingestBatches, onReload }: {
               ))}
             </tbody>
           </table>
+          </div>
           <div className="ingest-batch__actions">
             <Button onClick={() => onAccept(batch.id)}>Accept all</Button>
             <Button destructive onClick={() => onReject(batch.id)}>Reject all</Button>

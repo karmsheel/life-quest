@@ -181,14 +181,11 @@ export default function HomePage() {
     <div className="home-dashboard">
       <header className="home-dashboard__header">
         <div>
-          <p className="home-dashboard__eyebrow muted">Dashboard</p>
-          <h1 className="home-dashboard__title">
-            {title}
-            <span className="home-dashboard__subtitle muted">
-              {" "}
-              Premise → Vision → Purpose → Strategy (How)
-            </span>
-          </h1>
+          <p className="home-dashboard__eyebrow">Dashboard</p>
+          <h1 className="home-dashboard__title">{title}</h1>
+          <p className="home-dashboard__subtitle">
+            Premise → Vision → Purpose → Strategy (How)
+          </p>
         </div>
       </header>
 
@@ -231,17 +228,28 @@ export default function HomePage() {
         </div>
 
         {showFinanceInstall ? (
-        <div className="home-rail__finance-cta">
-          <Button onClick={async () => {
-            const res = await api().kitInstallFinance();
-            if (res.ok) await load();
-          }}>Install Finance kit</Button>
-        </div>
+        <section className="home-card home-rail__finance-cta">
+          <h2 className="home-card__title">Finance</h2>
+          <p className="home-card__empty">
+            Install the kit into the Financial domain. It adds the ledger databases and starter pages.
+          </p>
+          <Button
+            variant="primary"
+            className="home-dashboard__submit"
+            onClick={async () => {
+              const res = await api().kitInstallFinance();
+              if (res.ok) await load();
+            }}
+          >
+            Install Finance kit
+          </Button>
+        </section>
         ) : null}
 
       {availableKinds.length > 0 || addablePages.length > 0 ? (
-        <div className="home-pin-add">
-          <span className="muted">Add pin:</span>
+        <section className="home-card home-pin-add">
+          <h2 className="home-card__title">Add pin</h2>
+          <div className="home-pin-add__row">
           {availableKinds.map((kind) => (
             <button
               key={kind}
@@ -262,7 +270,8 @@ export default function HomePage() {
               {entry.page.title}
             </button>
           ))}
-        </div>
+          </div>
+        </section>
       ) : null}
     </div>
   );

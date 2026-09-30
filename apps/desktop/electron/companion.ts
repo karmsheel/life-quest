@@ -12,6 +12,9 @@ import {
 import { hermesSpawnSpec } from "./companion-spawn.ts";
 import {
   buildInstructions,
+  createdSessionFromPayload,
+  messagesFromPayload,
+  sessionsFromPayload,
   splitSse,
   type ChatStreamEvent,
   type CompanionInstructionsInput,
@@ -264,34 +267,32 @@ async function hermesFetch(
   return fetch(`${base}${pathname}`, { ...init, headers });
 }
 
-function asSessions(payload: unknown): HermesSession[] {
-  const rows = Array.isArray(payload)
-    ? payload
-    : payload && typeof payload === "object"
-      ? ((payload as { sessions?: unknown; data?: unknown; items?: unknown })
-          .sessions ??
-        (payload as { data?: unknown }).data ??
-        (payload as { items?: unknown }).items)
-      : [];
-  if (!Array.isArray(rows)) return [];
-  const out: HermesSession[] = [];
-  for (const row of rows) {
-    if (!row || typeof row !== "object") continue;
-    const r = row as { id?: unknown; session_id?: unknown; title?: unknown; name?: unknown };
-    const id = String(r.id ?? r.session_id ?? "");
-    if (!id) continue;
-    out.push({ id, title: String(r.title ?? r.name ?? "Session") });
+async function errorDetail(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: { message?: unknown } | string; message?: unknown };
+    if (typeof body.error === "string" && body.error.trim()) return body.error.trim();
+    if (
+      body.error &&
+      typeof body.error === "object" &&
+      typeof body.error.message === "string" &&
+      body.error.message.trim()
+    ) {
+      return body.error.message.trim();
+    }
+    if (typeof body.message === "string" && body.message.trim()) return body.message.trim();
+  } catch {
+    // The status line is enough when the body is not JSON.
   }
-  return out;
+  return fallback;
 }
 
 export async function companionSessionsList(): Promise<
   { ok: true; value: HermesSession[] } | { ok: false; error: string }
 > {
   try {
-    const res = await hermesFetch("/api/sessions");
+    const res = await hermesFetch("/api/sessions?limit=200");
     if (!res.ok) return { ok: false, error: `Sessions list failed (${res.status})` };
-    return { ok: true, value: asSessions(await res.json()) };
+    return { ok: true, value: sessionsFromPayload(await res.json()) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -301,15 +302,17 @@ export async function companionSessionCreate(
   title: string,
 ): Promise<{ ok: true; value: HermesSession } | { ok: false; error: string }> {
   try {
+    const trimmed = title.trim();
     const res = await hermesFetch("/api/sessions", {
       method: "POST",
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(trimmed ? { title: trimmed } : {}),
     });
-    if (!res.ok) return { ok: false, error: `Create session failed (${res.status})` };
-    const data = (await res.json()) as { id?: string; title?: string };
-    const id = String(data.id ?? "");
-    if (!id) return { ok: false, error: "Create session missing id" };
-    return { ok: true, value: { id, title: String(data.title ?? title) } };
+    if (!res.ok) {
+      return { ok: false, error: await errorDetail(res, `Create session failed (${res.status})`) };
+    }
+    const created = createdSessionFromPayload(await res.json(), trimmed);
+    if (!created) return { ok: false, error: "Create session missing id" };
+    return { ok: true, value: created };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -318,27 +321,13 @@ export async function companionSessionCreate(
 export async function companionSessionMessages(
   id: string,
 ): Promise<
-  | { ok: true; value: { role: string; content: string }[] }
+  | { ok: true; value: { role: "user" | "assistant"; content: string }[] }
   | { ok: false; error: string }
 > {
   try {
     const res = await hermesFetch(`/api/sessions/${encodeURIComponent(id)}/messages`);
     if (!res.ok) return { ok: false, error: `Messages failed (${res.status})` };
-    const payload = (await res.json()) as unknown;
-    const rows = Array.isArray(payload)
-      ? payload
-      : payload && typeof payload === "object" && Array.isArray((payload as { messages?: unknown }).messages)
-        ? (payload as { messages: unknown[] }).messages
-        : [];
-    const value: { role: string; content: string }[] = [];
-    for (const row of rows) {
-      if (!row || typeof row !== "object") continue;
-      const r = row as { role?: unknown; content?: unknown };
-      const role = r.role === "assistant" ? "assistant" : "user";
-      const content = typeof r.content === "string" ? r.content : "";
-      value.push({ role, content });
-    }
-    return { ok: true, value };
+    return { ok: true, value: messagesFromPayload(await res.json()) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
