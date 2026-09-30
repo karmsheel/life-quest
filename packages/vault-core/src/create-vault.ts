@@ -50,6 +50,7 @@ export async function createVault(
       hermesBaseUrl: DEFAULT_HERMES_URL,
       theme: "system",
       weekStartDay: "monday",
+      autoApproveInserts: [],
     };
     await atomicWriteFile(paths.settingsJson, `${JSON.stringify(settings, null, 2)}\n`);
     await atomicWriteFile(paths.agentsJson, `${JSON.stringify({ hires: [] }, null, 2)}\n`);
