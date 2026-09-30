@@ -175,7 +175,7 @@ describe("KAR-63 database read tools", () => {
       }
     });
 
-    it("all nine database tools are registered, and the read half is a prefix of them", () => {
+    it("all ten database tools are registered, and the read half is a prefix of them", () => {
       assert.deepEqual(
         DATABASE_TOOL_DEFS.map((t) => t.name).sort(),
         [
@@ -184,6 +184,7 @@ describe("KAR-63 database read tools", () => {
           "delete_row",
           "get_database",
           "get_row",
+          "insert_rows",
           "list_databases",
           "list_decisions",
           "list_rows",
