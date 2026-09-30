@@ -8,6 +8,7 @@ import type { DecisionRecord } from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
+import { DecisionBody } from "./DecisionBody";
 
 type Tab = "pending" | "history";
 
@@ -27,6 +28,39 @@ function domainLabel(
   domains: { slug: string; meta: { name: string } }[],
 ): string {
   return domains.find((d) => d.slug === domainSlug)?.meta.name ?? domainSlug;
+}
+
+function kindLabel(target: DecisionRecord["target"]): string {
+  switch (target.type) {
+    case "doctrine":
+      return DOCUMENT_KIND_LABELS[target.kind];
+    case "library":
+      return "Library note";
+    case "review":
+      return "Review";
+    case "page":
+      return "Page";
+    case "pins":
+      return "Pins";
+    case "mapping":
+      return "Mapping";
+    case "kit-install":
+      return "Finance kit";
+    case "assumption-set":
+      return "Assumptions";
+    case "goal":
+      return "Goal";
+    case "day-template":
+      return "Day template";
+    case "project":
+      return "Project";
+    case "database-row":
+      return "Database row";
+    case "database":
+      return "Database";
+    case "database-batch":
+      return "Database rows";
+  }
 }
 
 export function DecisionsInbox() {
@@ -179,17 +213,7 @@ export function DecisionsInbox() {
                   <p className="decision-card__meta muted">
                     {actorDisplayName(d.actor)} ·{" "}
                     {d.domainSlugs.map((slug) => domainLabel(slug, domains)).join(", ")}
-                    ·{" "}
-                    {d.target.type === "doctrine"
-                      ? DOCUMENT_KIND_LABELS[d.target.kind]
-                      : d.target.type === "database-row"
-                        ? d.target.rowId
-                          ? `Row in ${d.target.databaseId}`
-                          : `New row in ${d.target.databaseId}`
-                        : d.target.type === "database"
-                          ? `Database in ${d.target.domainSlug}`
-                          : d.proposedTitle ?? d.title}
-                    ·{" "}
+                    · {kindLabel(d.target)} ·{" "}
                     {formatWhen(d.createdAt)}
                     {d.status !== "pending" ? (
                       <>
@@ -230,22 +254,34 @@ export function DecisionsInbox() {
                 </p>
               ) : null}
 
-              <div className="decision-card__bodies">
-                {d.previousBodyMarkdown != null ? (
+              {d.target.type === "database-batch" ? (
+                <DecisionBody
+                  target={d.target}
+                  proposed={d.proposedBodyMarkdown}
+                  previous={d.previousBodyMarkdown}
+                  goalName={(id) =>
+                    snapshot?.goals.find((goal) => goal.id === id)?.name ?? null
+                  }
+                  domainName={(slug) => domainLabel(slug, domains)}
+                />
+              ) : (
+                <div className="decision-card__bodies">
+                  {d.previousBodyMarkdown != null ? (
+                    <label className="decision-card__body-block">
+                      <span className="muted">Current body</span>
+                      <pre className="decision-card__pre">
+                        {d.previousBodyMarkdown || "(empty)"}
+                      </pre>
+                    </label>
+                  ) : null}
                   <label className="decision-card__body-block">
-                    <span className="muted">Current body</span>
+                    <span className="muted">Proposed body</span>
                     <pre className="decision-card__pre">
-                      {d.previousBodyMarkdown || "(empty)"}
+                      {d.proposedBodyMarkdown || "(empty)"}
                     </pre>
                   </label>
-                ) : null}
-                <label className="decision-card__body-block">
-                  <span className="muted">Proposed body</span>
-                  <pre className="decision-card__pre">
-                    {d.proposedBodyMarkdown || "(empty)"}
-                  </pre>
-                </label>
-              </div>
+                </div>
+              )}
 
               {tab === "pending" && d.status === "pending" ? (
                 <div className="decision-card__actions">

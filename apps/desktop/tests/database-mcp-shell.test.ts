@@ -170,4 +170,12 @@ describe("KAR-63 tool list parity at both spread sites", () => {
     assert.match(src, /CAPTURE_TOOL_DEFS\.some\(\(t\) => t\.name === name\)/);
     assert.match(src, /executeCaptureTool\(root, actor, name, rec\)/);
   });
+
+  it("insert_rows is on ALL_TOOL_DEFS and no tool edits the allowlist", () => {
+    assert.equal(ALL_TOOL_DEFS.some((t) => t.name === "insert_rows"), true);
+    for (const def of ALL_TOOL_DEFS) {
+      assert.equal(def.name.includes("autoApproveInserts"), false);
+      assert.equal((def.description ?? "").includes("autoApproveInserts"), false);
+    }
+  });
 });

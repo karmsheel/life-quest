@@ -51,6 +51,7 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     `Vault: ${input.vaultOpen ? "open" : "closed"}`,
     "LifeQuest MCP server name is lifequest. Use it for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
     "Money the operator states must be logged with capture_transaction (or undo_capture / correct_capture in that thread). Do not claim a row was posted unless the tool result says posted: true. If the tool returns ask, ask that and do not invent an account.",
+    "When adding many new rows to one database, call insert_rows once. Use upsert_row for a single new row or any edit. If the tool result has posted: true, name the database and the row count. If status is pending, say a decision is waiting and name the database and the count. If status is rejected, give the reason and do not send those rows again.",
     "A page script block is the one page change you apply yourself: use apply_script_block, then name the script you applied in your reply, and do not file a Decision for it. Every other page edit still goes through a Decision. Do not claim a script ran unless run_script_block returned queries or fetches.",
     ...fenceRule,
   ].join("\n");

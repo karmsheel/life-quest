@@ -111,6 +111,22 @@ describe("buildInstructions", () => {
     assert.equal(omitted, on, "omitted fileUnsolicited keeps the on wording");
   });
 
+  it("tells the companion to batch new rows with insert_rows", () => {
+    const text = buildInstructions({
+      domainName: null,
+      domainSlug: null,
+      aboutMe: "",
+      locked: false,
+      vaultOpen: true,
+    });
+    const captureAt = text.indexOf("capture_transaction");
+    const batchAt = text.indexOf("call insert_rows once");
+    assert.ok(captureAt !== -1);
+    assert.ok(batchAt > captureAt);
+    assert.match(text, /posted: true/);
+    assert.match(text, /do not send those rows again/);
+  });
+
   it("omits reviewContext when empty or unset", () => {
     const plain = buildInstructions({
       domainName: null,

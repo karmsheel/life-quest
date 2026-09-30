@@ -72,4 +72,16 @@ describe("implied filing shell wiring", () => {
     const recent = read("electron/recent-vaults.ts");
     assert.equal(recent.includes("fileUnsolicited"), false);
   });
+
+  it("Settings Hermes lists apply-assistant-inserts checkboxes and the decision card names a batch", () => {
+    const hermes = read("src/components/settings/SettingsHermes.tsx");
+    const inbox = read("src/components/decisions/DecisionsInbox.tsx");
+    const body = read("src/components/decisions/DecisionBody.tsx");
+    assert.match(hermes, /Apply assistant inserts immediately/);
+    assert.match(hermes, /aria-label=\{`Apply assistant inserts immediately: /);
+    assert.match(inbox, /database-batch/);
+    assert.match(inbox, /Database rows/);
+    assert.match(body, /database-batch/);
+    assert.match(body, /insert-rows/);
+  });
 });
