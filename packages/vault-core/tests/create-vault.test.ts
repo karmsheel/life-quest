@@ -84,6 +84,33 @@ describe("openVault", () => {
     assert.match(opened.error, /schemaVersion/i);
     assert.match(opened.error, /2/);
   });
+
+  it("reads a missing autoApproveInserts as [] and drops blank and duplicate pairs", async () => {
+    const root = path.join(dir, "insert-allowlist");
+    const created = await createVault(root, "Allowlist");
+    assert.equal(created.ok, true);
+    const settingsPath = vaultPaths(root).settingsJson;
+    const raw = JSON.parse(await fs.readFile(settingsPath, "utf8")) as Record<string, unknown>;
+    delete raw.autoApproveInserts;
+    await fs.writeFile(settingsPath, `${JSON.stringify(raw, null, 2)}\n`);
+    const missing = await openVault(root);
+    assert.equal(missing.ok, true);
+    if (!missing.ok) return;
+    assert.deepEqual(missing.value.settings.autoApproveInserts, []);
+
+    raw.autoApproveInserts = [
+      { domainSlug: "", databaseId: "db-1" },
+      { domainSlug: "health", databaseId: "db-1" },
+      { domainSlug: "health", databaseId: "db-1" },
+    ];
+    await fs.writeFile(settingsPath, `${JSON.stringify(raw, null, 2)}\n`);
+    const reopened = await openVault(root);
+    assert.equal(reopened.ok, true);
+    if (!reopened.ok) return;
+    assert.deepEqual(reopened.value.settings.autoApproveInserts, [
+      { domainSlug: "health", databaseId: "db-1" },
+    ]);
+  });
 });
 
 describe("safeJoin / assertUnderRoot", () => {

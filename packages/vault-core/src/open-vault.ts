@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { countWeeklyVaultFiles } from "./agents.ts";
+import { autoApproveInsertsFromUnknown, countWeeklyVaultFiles } from "./agents.ts";
 import { readOrCreateDoctrineFile } from "./domain-documents.ts";
 import { loadGoals } from "./goals.ts";
 import { readLog } from "./log.ts";
@@ -61,6 +61,7 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
         parsedSettings.weekStartDay === "monday"
           ? parsedSettings.weekStartDay
           : "monday",
+      autoApproveInserts: autoApproveInsertsFromUnknown(parsedSettings.autoApproveInserts),
     };
 
     const agentsRaw = await fs.readFile(paths.agentsJson, "utf8");
