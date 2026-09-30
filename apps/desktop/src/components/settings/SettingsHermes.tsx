@@ -69,14 +69,14 @@ export function SettingsHermes() {
         const result = await api().dbList(null);
         if (cancelled) return;
         if (!result.ok) {
-          setDatabases([]);
+          setDatabases(null);
           setError(result.error);
           return;
         }
         setDatabases(result.value);
       } catch (err) {
         if (!cancelled) {
-          setDatabases([]);
+          setDatabases(null);
           setError(err instanceof Error ? err.message : "Could not list databases");
         }
       }
@@ -210,7 +210,7 @@ export function SettingsHermes() {
           <p className="settings-card__desc">
             New rows the assistant proposes in a checked database are applied immediately. Updates, deletes, and other databases still wait in Decisions.
           </p>
-          {snapshot && databases == null ? <p className="muted">Loading databases…</p> : null}
+          {snapshot && databases == null && error == null ? <p className="muted">Loading databases…</p> : null}
           {databases != null && groups.length === 0 && stalePairs.length === 0 ? (
             <p className="muted">No databases in live domains.</p>
           ) : null}

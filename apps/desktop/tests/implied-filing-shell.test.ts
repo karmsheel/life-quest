@@ -83,5 +83,20 @@ describe("implied filing shell wiring", () => {
     assert.match(inbox, /Database rows/);
     assert.match(body, /database-batch/);
     assert.match(body, /insert-rows/);
+    assert.equal(
+      hermes.includes("setDatabases([])"),
+      false,
+      "a failed database list must not be stored as an empty catalog",
+    );
+    assert.match(
+      hermes,
+      /databases == null && error == null[\s\S]{0,80}Loading databases…/,
+      "loading sentence is only for an in-flight load with no error",
+    );
+    assert.match(
+      hermes,
+      /\{databases != null && groups\.length === 0 && stalePairs\.length === 0 \? \([\s\S]*?No databases in live domains\./,
+      "empty-catalog sentence requires a loaded list",
+    );
   });
 });
