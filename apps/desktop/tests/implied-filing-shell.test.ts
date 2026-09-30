@@ -88,11 +88,37 @@ describe("implied filing shell wiring", () => {
       false,
       "a failed database list must not be stored as an empty catalog",
     );
-    assert.match(
-      hermes,
-      /databases == null && error == null[\s\S]{0,80}Loading databases…/,
-      "loading sentence is only for an in-flight load with no error",
+    const loadingAt = hermes.indexOf("Loading databases…");
+    assert.ok(loadingAt !== -1);
+    const loadingWindow = hermes.slice(Math.max(0, loadingAt - 180), loadingAt);
+    assert.equal(
+      loadingWindow.includes("error"),
+      false,
+      "loading sentence must not depend on the shared error that Recheck clears",
     );
+    assert.match(loadingWindow, /listStatus === "loading"/);
+    const listLoad = hermes.slice(
+      hermes.indexOf("api().dbList"),
+      hermes.indexOf("function onToggleInsert"),
+    );
+    assert.match(listLoad, /setListStatus\("failed"\)/);
+    assert.match(listLoad, /setListError\(/);
+    assert.equal(
+      /\bsetError\(/.test(listLoad),
+      false,
+      "a failed list must keep its own error so Recheck cannot clear it",
+    );
+    assert.match(listLoad, /setListStatus\("ready"\)/);
+    assert.match(hermes, /listError \? \([\s\S]{0,240}className="form-error"/);
+    const recheck = hermes.slice(hermes.indexOf("function onRecheck"), hermes.indexOf("const ready"));
+    assert.match(recheck, /setError\(null\)/);
+    assert.equal(/setListError|setListStatus|setDatabases/.test(recheck), false);
+    const toggle = hermes.slice(
+      hermes.indexOf("function onToggleInsert"),
+      hermes.indexOf("function onRecheck"),
+    );
+    assert.match(toggle, /setError\(result\.error\)/);
+    assert.equal(/setListStatus|setListError|setDatabases/.test(toggle), false);
     assert.match(
       hermes,
       /\{databases != null && groups\.length === 0 && stalePairs\.length === 0 \? \([\s\S]*?No databases in live domains\./,

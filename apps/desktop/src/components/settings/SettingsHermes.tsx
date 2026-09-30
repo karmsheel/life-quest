@@ -32,6 +32,8 @@ export function SettingsHermes() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [databases, setDatabases] = useState<DatabaseListEntry[] | null>(null);
+  const [listStatus, setListStatus] = useState<"loading" | "ready" | "failed">("loading");
+  const [listError, setListError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!snapshot) return;
@@ -61,23 +63,31 @@ export function SettingsHermes() {
   useEffect(() => {
     if (!vaultPath) {
       setDatabases(null);
+      setListStatus("loading");
+      setListError(null);
       return;
     }
     let cancelled = false;
+    setListStatus("loading");
+    setListError(null);
     void (async () => {
       try {
         const result = await api().dbList(null);
         if (cancelled) return;
         if (!result.ok) {
           setDatabases(null);
-          setError(result.error);
+          setListStatus("failed");
+          setListError(result.error);
           return;
         }
         setDatabases(result.value);
+        setListStatus("ready");
+        setListError(null);
       } catch (err) {
         if (!cancelled) {
           setDatabases(null);
-          setError(err instanceof Error ? err.message : "Could not list databases");
+          setListStatus("failed");
+          setListError(err instanceof Error ? err.message : "Could not list databases");
         }
       }
     })();
@@ -142,11 +152,16 @@ export function SettingsHermes() {
         title="Hermes"
         subtitle="LifeQuest companion on the lifequest Hermes profile"
         banner={
-          error || message ? (
+          error || listError || message ? (
             <>
               {error ? (
                 <p className="form-error" role="alert">
                   {error}
+                </p>
+              ) : null}
+              {listError ? (
+                <p className="form-error" role="alert">
+                  {listError}
                 </p>
               ) : null}
               {message ? (
@@ -210,7 +225,7 @@ export function SettingsHermes() {
           <p className="settings-card__desc">
             New rows the assistant proposes in a checked database are applied immediately. Updates, deletes, and other databases still wait in Decisions.
           </p>
-          {snapshot && databases == null && error == null ? <p className="muted">Loading databases…</p> : null}
+          {snapshot && listStatus === "loading" ? <p className="muted">Loading databases…</p> : null}
           {databases != null && groups.length === 0 && stalePairs.length === 0 ? (
             <p className="muted">No databases in live domains.</p>
           ) : null}
