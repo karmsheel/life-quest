@@ -129,4 +129,35 @@ describe("implied filing shell wiring", () => {
       "empty-catalog sentence requires a loaded list",
     );
   });
+
+  it("overlapping insert toggles compose on the list already being saved", () => {
+    const hermes = read("src/components/settings/SettingsHermes.tsx");
+    const toggle = hermes.slice(
+      hermes.indexOf("function onToggleInsert"),
+      hermes.indexOf("function onRecheck"),
+    );
+    assert.equal(
+      /const current = snapshot\.settings\.autoApproveInserts \?\? \[\]/.test(toggle),
+      false,
+      "onToggleInsert must not read only snapshot.settings.autoApproveInserts as the base list",
+    );
+    const prelude = hermes.slice(
+      hermes.indexOf("export function SettingsHermes"),
+      hermes.indexOf("function onToggleInsert"),
+    );
+    assert.match(prelude, /const insertFlight = useRef/);
+    assert.match(prelude, /const insertPending = useRef\(0\)/);
+    assert.match(prelude, /const insertSave = useRef\(Promise\.resolve\(\)\)/);
+    assert.match(toggle, /insertPending\.current > 0/);
+    assert.match(toggle, /insertSave\.current = insertSave\.current\s*\.then/);
+    assert.match(
+      toggle,
+      /insertFlight\.current\?\.rootPath === rootPath\s*\?\s*insertFlight\.current\.list/,
+    );
+    assert.match(toggle, /snapshot\.settings\.autoApproveInserts \?\? \[\]/);
+    const failed = toggle.slice(toggle.indexOf("if (!result.ok)"), toggle.indexOf("setError(null)"));
+    assert.match(failed, /insertFlight\.current = \{ rootPath, list: current \}/);
+    assert.equal(failed.includes("list: next"), false);
+    assert.match(toggle, /insertFlight\.current = \{ rootPath, list: next \}/);
+  });
 });

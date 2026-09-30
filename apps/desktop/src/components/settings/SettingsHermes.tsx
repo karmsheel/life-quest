@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 import type { DatabaseListEntry } from "@lifequest/vault-core";
 import { Button } from "@/components/ui/Button";
@@ -34,6 +34,12 @@ export function SettingsHermes() {
   const [databases, setDatabases] = useState<DatabaseListEntry[] | null>(null);
   const [listStatus, setListStatus] = useState<"loading" | "ready" | "failed">("loading");
   const [listError, setListError] = useState<string | null>(null);
+  const insertFlight = useRef<{
+    rootPath: string;
+    list: { domainSlug: string; databaseId: string }[];
+  } | null>(null);
+  const insertPending = useRef(0);
+  const insertSave = useRef(Promise.resolve());
 
   useEffect(() => {
     if (!snapshot) return;
@@ -98,17 +104,38 @@ export function SettingsHermes() {
 
   async function onToggleInsert(domainSlug: string, databaseId: string, checked: boolean) {
     if (!snapshot) return;
-    const current = snapshot.settings.autoApproveInserts ?? [];
-    const without = current.filter(
-      (pair) => pair.domainSlug !== domainSlug || pair.databaseId !== databaseId,
-    );
-    const next = checked ? [...without, { domainSlug, databaseId }] : without;
-    const result = await updateSettings({ autoApproveInserts: next });
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    setError(null);
+    const behind = insertPending.current > 0;
+    insertPending.current += 1;
+    const rootPath = snapshot.rootPath;
+    const fromRender = snapshot.settings.autoApproveInserts ?? [];
+    insertSave.current = insertSave.current
+      .then(async () => {
+        try {
+          const current =
+            behind && insertFlight.current?.rootPath === rootPath
+              ? insertFlight.current.list
+              : fromRender;
+          const without = current.filter(
+            (pair) => pair.domainSlug !== domainSlug || pair.databaseId !== databaseId,
+          );
+          const next = checked ? [...without, { domainSlug, databaseId }] : without;
+          insertFlight.current = { rootPath, list: next };
+          const result = await updateSettings({ autoApproveInserts: next });
+          if (!result.ok) {
+            insertFlight.current = { rootPath, list: current };
+            setError(result.error);
+            return;
+          }
+          setError(null);
+        } finally {
+          insertPending.current -= 1;
+        }
+      })
+      .then(
+        () => undefined,
+        () => undefined,
+      );
+    await insertSave.current;
   }
 
   async function onRecheck() {
