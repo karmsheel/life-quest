@@ -81,6 +81,10 @@ describe("implied filing shell wiring", () => {
     assert.match(hermes, /aria-label=\{`Apply assistant inserts immediately: /);
     assert.match(inbox, /database-batch/);
     assert.match(inbox, /Database rows/);
+    assert.match(inbox, /New row in/);
+    assert.match(inbox, /Row in/);
+    assert.match(inbox, /Database in/);
+    assert.match(inbox, /proposedTitle \?\? /);
     assert.match(body, /database-batch/);
     assert.match(body, /insert-rows/);
     assert.equal(

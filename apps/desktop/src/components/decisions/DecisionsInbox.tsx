@@ -30,39 +30,6 @@ function domainLabel(
   return domains.find((d) => d.slug === domainSlug)?.meta.name ?? domainSlug;
 }
 
-function kindLabel(target: DecisionRecord["target"]): string {
-  switch (target.type) {
-    case "doctrine":
-      return DOCUMENT_KIND_LABELS[target.kind];
-    case "library":
-      return "Library note";
-    case "review":
-      return "Review";
-    case "page":
-      return "Page";
-    case "pins":
-      return "Pins";
-    case "mapping":
-      return "Mapping";
-    case "kit-install":
-      return "Finance kit";
-    case "assumption-set":
-      return "Assumptions";
-    case "goal":
-      return "Goal";
-    case "day-template":
-      return "Day template";
-    case "project":
-      return "Project";
-    case "database-row":
-      return "Database row";
-    case "database":
-      return "Database";
-    case "database-batch":
-      return "Database rows";
-  }
-}
-
 export function DecisionsInbox() {
   const { snapshot, refresh } = useVault();
   const lens = useDomainLens();
@@ -213,7 +180,19 @@ export function DecisionsInbox() {
                   <p className="decision-card__meta muted">
                     {actorDisplayName(d.actor)} ·{" "}
                     {d.domainSlugs.map((slug) => domainLabel(slug, domains)).join(", ")}
-                    · {kindLabel(d.target)} ·{" "}
+                    ·{" "}
+                    {d.target.type === "doctrine"
+                      ? DOCUMENT_KIND_LABELS[d.target.kind]
+                      : d.target.type === "database-row"
+                        ? d.target.rowId
+                          ? `Row in ${d.target.databaseId}`
+                          : `New row in ${d.target.databaseId}`
+                        : d.target.type === "database"
+                          ? `Database in ${d.target.domainSlug}`
+                          : d.target.type === "database-batch"
+                            ? "Database rows"
+                            : d.proposedTitle ?? d.title}
+                    ·{" "}
                     {formatWhen(d.createdAt)}
                     {d.status !== "pending" ? (
                       <>
