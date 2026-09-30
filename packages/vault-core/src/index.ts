@@ -1,4 +1,5 @@
 export * from "./types.ts";
+export type { AutoApproveInsert } from "./types.ts";
 export * from "./frontmatter.ts";
 export * from "./documents.ts";
 export * from "./unlock.ts";
@@ -11,6 +12,7 @@ export * from "./domains.ts";
 export * from "./domain-documents.ts";
 export * from "./decisions.ts";
 export * from "./agents.ts";
+export { readAutoApproveInserts } from "./agents.ts";
 export * from "./signal-chain.ts";
 export * from "./domain-lens.ts";
 export * from "./library-documents.ts";

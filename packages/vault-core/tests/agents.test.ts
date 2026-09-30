@@ -8,6 +8,7 @@ import {
   dismissAgent,
   hireAgent,
   listAgents,
+  readAutoApproveInserts,
   updateSettings,
 } from "../src/agents.ts";
 
@@ -165,6 +166,40 @@ describe("agents + settings", () => {
     assert.equal(next.ok, true);
     if (!next.ok) return;
     assert.ok(next.value.weekStartDay === "monday" || next.value.weekStartDay === "sunday");
+  });
+
+  it("updateSettings stores autoApproveInserts and a theme patch keeps it", async () => {
+    const missing = await readAutoApproveInserts(root);
+    assert.deepEqual(missing, []);
+
+    const saved = await updateSettings(root, {
+      autoApproveInserts: [
+        { domainSlug: "health", databaseId: "db-1" },
+        { domainSlug: "health", databaseId: "db-1" },
+        { domainSlug: "financial", databaseId: "finance:transactions" },
+      ],
+    });
+    assert.equal(saved.ok, true);
+    if (!saved.ok) return;
+    assert.deepEqual(saved.value.autoApproveInserts, [
+      { domainSlug: "health", databaseId: "db-1" },
+      { domainSlug: "financial", databaseId: "finance:transactions" },
+    ]);
+
+    const themed = await updateSettings(root, { theme: "light" });
+    assert.equal(themed.ok, true);
+    if (!themed.ok) return;
+    assert.deepEqual(themed.value.autoApproveInserts, saved.value.autoApproveInserts);
+    assert.deepEqual(await readAutoApproveInserts(root), saved.value.autoApproveInserts);
+
+    const before = await fs.readFile(path.join(root, ".lifequest", "settings.json"), "utf8");
+    const rejected = await updateSettings(root, {
+      autoApproveInserts: [{ domainSlug: "", databaseId: "db-1" }],
+    });
+    assert.equal(rejected.ok, false);
+    if (!rejected.ok) assert.match(rejected.error, /autoApproveInserts/);
+    const after = await fs.readFile(path.join(root, ".lifequest", "settings.json"), "utf8");
+    assert.equal(after, before);
   });
 
   it("dismissAgent fails for unknown id", async () => {

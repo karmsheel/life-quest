@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { vaultPaths } from "./paths.ts";
 import { isWeekStartDay } from "./period.ts";
-import type { AgentHire, Result, VaultSettings, WeekStartDay } from "./types.ts";
+import type { AgentHire, AutoApproveInsert, Result, VaultSettings, WeekStartDay } from "./types.ts";
 
 type AgentsFile = { hires: AgentHire[] };
 
@@ -124,6 +124,54 @@ export async function countWeeklyVaultFiles(rootPath: string): Promise<number> {
   return reviews + planning;
 }
 
+export function autoApproveInsertsFromUnknown(value: unknown): AutoApproveInsert[] {
+  if (!Array.isArray(value)) return [];
+  const out: AutoApproveInsert[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const domainSlug = (entry as { domainSlug?: unknown }).domainSlug;
+    const databaseId = (entry as { databaseId?: unknown }).databaseId;
+    if (typeof domainSlug !== "string" || !domainSlug.trim()) continue;
+    if (typeof databaseId !== "string" || !databaseId.trim()) continue;
+    const key = `${domainSlug}\0${databaseId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ domainSlug, databaseId });
+  }
+  return out;
+}
+
+function parseAutoApprovePatch(value: unknown): Result<AutoApproveInsert[]> {
+  if (!Array.isArray(value)) {
+    return { ok: false, error: "autoApproveInserts must be an array" };
+  }
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") {
+      return { ok: false, error: "autoApproveInserts entry must have domainSlug and databaseId" };
+    }
+    const domainSlug = (entry as { domainSlug?: unknown }).domainSlug;
+    const databaseId = (entry as { databaseId?: unknown }).databaseId;
+    if (typeof domainSlug !== "string" || !domainSlug.trim()) {
+      return { ok: false, error: "autoApproveInserts entry must have domainSlug and databaseId" };
+    }
+    if (typeof databaseId !== "string" || !databaseId.trim()) {
+      return { ok: false, error: "autoApproveInserts entry must have domainSlug and databaseId" };
+    }
+  }
+  return { ok: true, value: autoApproveInsertsFromUnknown(value) };
+}
+
+export async function readAutoApproveInserts(rootPath: string): Promise<AutoApproveInsert[]> {
+  try {
+    const raw = await fs.readFile(vaultPaths(rootPath).settingsJson, "utf8");
+    const parsed = JSON.parse(raw) as { autoApproveInserts?: unknown };
+    return autoApproveInsertsFromUnknown(parsed.autoApproveInserts);
+  } catch {
+    return [];
+  }
+}
+
 export async function updateSettings(
   rootPath: string,
   patch: Partial<VaultSettings>,
@@ -145,11 +193,13 @@ export async function updateSettings(
       current.weekStartDay === "sunday" || current.weekStartDay === "monday"
         ? current.weekStartDay
         : "monday";
+    const currentInserts = autoApproveInsertsFromUnknown(current.autoApproveInserts);
     const next: VaultSettings = {
       hermesBaseUrl:
         patch.hermesBaseUrl !== undefined ? patch.hermesBaseUrl : current.hermesBaseUrl,
       theme: patch.theme !== undefined ? patch.theme : current.theme,
       weekStartDay: currentWeekStart,
+      autoApproveInserts: currentInserts,
     };
 
     if (patch.hermesBaseUrl !== undefined) {
@@ -186,6 +236,12 @@ export async function updateSettings(
         }
       }
       next.weekStartDay = patch.weekStartDay;
+    }
+
+    if (patch.autoApproveInserts !== undefined) {
+      const parsedInserts = parseAutoApprovePatch(patch.autoApproveInserts);
+      if (!parsedInserts.ok) return parsedInserts;
+      next.autoApproveInserts = parsedInserts.value;
     }
 
     await atomicWriteFile(paths.settingsJson, `${JSON.stringify(next, null, 2)}\n`);

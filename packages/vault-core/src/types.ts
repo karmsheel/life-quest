@@ -130,10 +130,16 @@ export type DomainRecord = {
 export const WEEK_START_DAYS = ["monday", "sunday"] as const;
 export type WeekStartDay = (typeof WEEK_START_DAYS)[number];
 
+export type AutoApproveInsert = {
+  domainSlug: string;
+  databaseId: string;
+};
+
 export type VaultSettings = {
   hermesBaseUrl: string;
   theme: "system" | "light" | "dark";
   weekStartDay: WeekStartDay;
+  autoApproveInserts: AutoApproveInsert[];
 };
 
 export type ReviewScopeStatus = "missing" | "draft" | "done";
