@@ -54,7 +54,8 @@ export type DocumentTarget =
   // for a create; a `database` target names the database the proposal mutates
   // (for a create_database the id is minted at propose time).
   | { type: "database-row"; domainSlug: string; databaseId: string; rowId: string | null }
-  | { type: "database"; domainSlug: string; databaseId: string };
+  | { type: "database"; domainSlug: string; databaseId: string }
+  | { type: "database-batch"; domainSlug: string; databaseId: string };
 
 /**
  * KAR-64: the payload a database Decision carries in its proposedBodyMarkdown.
@@ -83,6 +84,17 @@ export type DatabaseDecisionBody = {
   options?: string[];
   /** add-column only, required for relation. */
   relationDatabaseId?: string;
+};
+
+/** A batch insert Decision. Cells live in proposedBodyMarkdown, same as a row write. */
+export type DatabaseBatchDecisionBody = {
+  op: "insert-rows";
+  databaseName: string;
+  rows: Array<{
+    id: string;
+    cells: Record<string, unknown>;
+    rowLabel: string | null;
+  }>;
 };
 
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;

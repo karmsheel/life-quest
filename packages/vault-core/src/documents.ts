@@ -50,6 +50,9 @@ export function documentTargetLabel(
   if (target.type === "database") {
     return fallbackTitle || `Database in ${target.domainSlug}`;
   }
+  if (target.type === "database-batch") {
+    return fallbackTitle || `Insert into ${target.databaseId}`;
+  }
   return fallbackTitle;
 }
 

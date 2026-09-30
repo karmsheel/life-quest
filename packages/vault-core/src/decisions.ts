@@ -11,6 +11,7 @@ import {
   DOCUMENT_KIND_LABELS,
   USER_ACTOR,
   type Actor,
+  type DatabaseBatchDecisionBody,
   type DatabaseColumnType,
   type DatabaseDecisionBody,
   type DecisionRecord,
@@ -62,7 +63,8 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       isDayTemplateExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isProjectExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isDatabaseRowExplicitTarget(explicitTarget as Record<string, unknown>) ||
-      isDatabaseExplicitTarget(explicitTarget as Record<string, unknown>))
+      isDatabaseExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isDatabaseBatchExplicitTarget(explicitTarget as Record<string, unknown>))
   ) {
     const t = explicitTarget as Record<string, unknown>;
     if (t.type === "review") {
@@ -115,6 +117,12 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
         domainSlug: String(t.domainSlug),
         databaseId: String(t.databaseId),
       };
+    } else if (t.type === "database-batch") {
+      target = {
+        type: "database-batch",
+        domainSlug: String(t.domainSlug),
+        databaseId: String(t.databaseId),
+      };
     } else {
       target = { type: "library", id: String(t.id) };
     }
@@ -141,7 +149,11 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     domainSlugs = target.domainSlug ? [target.domainSlug] : [];
   } else if (target.type === "mapping") {
     domainSlugs = [target.domainSlug];
-  } else if (target.type === "database-row" || target.type === "database") {
+  } else if (
+    target.type === "database-row" ||
+    target.type === "database" ||
+    target.type === "database-batch"
+  ) {
     domainSlugs = [target.domainSlug];
   } else {
     domainSlugs = [];
@@ -284,6 +296,16 @@ function isDatabaseExplicitTarget(raw: Record<string, unknown>): boolean {
   );
 }
 
+function isDatabaseBatchExplicitTarget(raw: Record<string, unknown>): boolean {
+  return (
+    raw.type === "database-batch" &&
+    typeof raw.domainSlug === "string" &&
+    raw.domainSlug.length > 0 &&
+    typeof raw.databaseId === "string" &&
+    raw.databaseId.length > 0
+  );
+}
+
 async function readDecisionFile(filePath: string): Promise<DecisionRecord> {
   const raw = await fs.readFile(filePath, "utf8");
   const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -386,7 +408,7 @@ export async function createDecision(
       if (input.target.rowId !== null && !input.target.rowId.trim()) {
         return { ok: false, error: "rowId is required" };
       }
-    } else if (input.target.type === "database") {
+    } else if (input.target.type === "database" || input.target.type === "database-batch") {
       if (!input.target.domainSlug.trim() || !input.target.databaseId.trim()) {
         return { ok: false, error: "domainSlug and databaseId are required" };
       }
@@ -500,15 +522,20 @@ export async function createDecision(
       }
       docLocked = false;
       domainSlugForLog = "financial";
-    } else if (input.target.type === "database-row" || input.target.type === "database") {
+    } else if (
+      input.target.type === "database-row" ||
+      input.target.type === "database" ||
+      input.target.type === "database-batch"
+    ) {
       // Databases are not lockable documents. For a row write the database must
       // already exist; for a `database` target it must NOT (a create_database
       // mints its id at propose time and the database appears only on approve).
+      // A batch insert names an existing database, same as a row write.
       const live = await isDomainLive(rootPath, input.target.domainSlug);
       if (!live) {
         return { ok: false, error: `Domain not found or archived: ${input.target.domainSlug}` };
       }
-      if (input.target.type === "database-row") {
+      if (input.target.type === "database-row" || input.target.type === "database-batch") {
         const dbRes = await getDatabase(
           rootPath,
           input.target.domainSlug,
@@ -554,7 +581,9 @@ export async function createDecision(
                 ? ["financial"]
                 : input.target.type === "assumption-set"
                   ? ["financial"]
-                  : input.target.type === "database-row" || input.target.type === "database"
+                  : input.target.type === "database-row" ||
+                      input.target.type === "database" ||
+                      input.target.type === "database-batch"
                     ? [input.target.domainSlug]
                   : input.target.type === "review"
                     ? []
@@ -919,6 +948,44 @@ async function applyApprovedBody(
         // validateCells rejects unknown column ids and bad values; re-approving
         // the same cells re-validates identically. Everything else is I/O.
         return { ok: false, error: written.error, terminal: isTerminalCellError(written.error) };
+      }
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "database-batch") {
+      const { insertRows } = await import("./domain-databases.ts");
+      let body: DatabaseBatchDecisionBody;
+      try {
+        body = JSON.parse(decision.proposedBodyMarkdown) as DatabaseBatchDecisionBody;
+      } catch {
+        return { ok: false, error: "Database batch proposedBody must be valid JSON", terminal: false };
+      }
+      if (!body || body.op !== "insert-rows" || !Array.isArray(body.rows) || body.rows.length < 1) {
+        return { ok: false, error: "Database batch proposedBody must be an insert-rows body", terminal: false };
+      }
+      const { domainSlug, databaseId } = decision.target;
+      if (!(await isDomainLive(rootPath, domainSlug))) {
+        return { ok: false, error: `Domain not found or archived: ${domainSlug}`, terminal: true };
+      }
+      for (const row of body.rows) {
+        if (!row || typeof row.id !== "string" || !row.id.trim()) {
+          return { ok: false, error: "Database batch row is missing an id", terminal: false };
+        }
+        if (!row.cells || typeof row.cells !== "object" || Array.isArray(row.cells)) {
+          return { ok: false, error: "Database batch row needs a cells object", terminal: false };
+        }
+        const referential = await checkDatabaseCells(rootPath, domainSlug, databaseId, row.cells);
+        if (!referential.ok) return { ok: false, error: referential.error, terminal: true };
+      }
+      const written = await insertRows(
+        rootPath,
+        domainSlug,
+        databaseId,
+        body.rows.map((row) => ({ id: row.id, cells: row.cells })),
+      );
+      if (!written.ok) {
+        const terminal =
+          written.error.startsWith("Row id already exists") || isTerminalCellError(written.error);
+        return { ok: false, error: written.error, terminal };
       }
       return { ok: true, value: undefined };
     }
