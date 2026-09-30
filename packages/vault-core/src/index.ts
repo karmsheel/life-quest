@@ -113,6 +113,7 @@ export {
   insertRows,
   deleteRow,
   checkDatabaseCells,
+  validateRowCells,
   saveDatabaseFile,
   ensureVaultDatabaseGitignore,
   invalidateDomainCache,

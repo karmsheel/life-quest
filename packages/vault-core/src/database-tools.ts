@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { MapToolDef } from "./map/tools.ts";
 import type {
   Actor,
+  DatabaseBatchDecisionBody,
   DatabaseColumnType,
   DatabaseDecisionBody,
   DatabaseMeta,
@@ -20,12 +21,16 @@ import {
   isDomainLive,
   listDatabases,
   listRows,
+  validateRowCells,
 } from "./domain-databases.ts";
 import { listSyncConflicts } from "./adapters.ts";
 import { listInstalledKits } from "./finance-kit.ts";
-import { createDecision, listDecisions } from "./decisions.ts";
+import { createDecision, listDecisions, resolveDecision } from "./decisions.ts";
+import { readAutoApproveInserts } from "./agents.ts";
 import { lookupExternalId } from "./ingest.ts";
 import { vaultPaths } from "./paths.ts";
+
+const INSERT_ROWS_MAX = 200;
 
 /**
  * KAR-63: one generic tool set keyed on (domainSlug, databaseId), covering every
@@ -122,7 +127,8 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
       "Propose creating or fully replacing a row in a database. Cells is a map of column id to " +
       "value and MUST contain the complete set of cells for an existing row (read the row with " +
       "get_row first); this is a replace, not a patch. Every call files a Decision; the operator " +
-      "approves it in Decisions. A rejected Decision must not be retried as a silent write.",
+      "approves it in Decisions. A rejected Decision must not be retried as a silent write. " +
+      "A create in a database on the operator's insert allowlist can return posted: true. An update stays pending until the operator approves it.",
     parameters: {
       type: "object",
       properties: {
@@ -139,6 +145,24 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
         },
       },
       required: ["domainSlug", "databaseId", "cells"],
+    },
+  },
+  {
+    name: "insert_rows",
+    description:
+      "Insert many new rows into one database. rows is an array of cell objects, at most 200, and this call does not take row ids. One call files one Decision titled Insert N rows into the database. Use upsert_row for a single new row or any edit. The result includes posted and rowCount. Claim that rows landed only when posted is true. status pending means one Decision is waiting; name the database and the count. status rejected includes reason; do not send those same rows again.",
+    parameters: {
+      type: "object",
+      properties: {
+        domainSlug: { type: "string" },
+        databaseId: { type: "string" },
+        rows: {
+          type: "array",
+          items: { type: "object", additionalProperties: true },
+          description: "Cell objects keyed by column id. At most 200. This call does not take row ids.",
+        },
+      },
+      required: ["domainSlug", "databaseId", "rows"],
     },
   },
   {
@@ -239,6 +263,12 @@ function engineError(error: string): DatabaseToolResult {
     return fail("VALIDATION", error);
   }
   return fail("FAILED", error);
+}
+
+function prefixRowError(rowNumber: number, error: string): DatabaseToolResult {
+  const mapped = engineError(error);
+  if (!("error" in mapped)) return mapped;
+  return fail(mapped.error.code, `Row ${rowNumber}: ${mapped.error.message}`);
 }
 
 function pageInt(
@@ -413,6 +443,39 @@ async function checkConflicts(
   };
 }
 
+/** An allowlisted create resolves in this call. Anything else stays pending and writes nothing. */
+async function finishWrite(
+  root: string,
+  decisionId: string,
+  rowCount: number,
+  allow: boolean,
+): Promise<DatabaseToolResult> {
+  if (!allow) return { decisionId, status: "pending", posted: false, rowCount };
+  const resolved = await resolveDecision(root, decisionId, "approved");
+  if (resolved.ok) return { decisionId, status: "approved", posted: true, rowCount };
+  const listed = await listDecisions(root);
+  const record = listed.ok ? listed.value.find((d) => d.id === decisionId) : undefined;
+  if (record?.status === "rejected") {
+    return {
+      decisionId,
+      status: "rejected",
+      posted: false,
+      rowCount,
+      reason: record.reason ?? resolved.error,
+    };
+  }
+  return { decisionId, status: "pending", posted: false, rowCount, reason: resolved.error };
+}
+
+async function allowInsert(
+  root: string,
+  domainSlug: string,
+  databaseId: string,
+): Promise<boolean> {
+  const list = await readAutoApproveInserts(root);
+  return list.some((entry) => entry.domainSlug === domainSlug && entry.databaseId === databaseId);
+}
+
 /** File the Decision and return the tool's success shape. Nothing is written here. */
 async function fileDecision(
   root: string,
@@ -420,7 +483,8 @@ async function fileDecision(
   input: {
     target:
       | { type: "database-row"; domainSlug: string; databaseId: string; rowId: string | null }
-      | { type: "database"; domainSlug: string; databaseId: string };
+      | { type: "database"; domainSlug: string; databaseId: string }
+      | { type: "database-batch"; domainSlug: string; databaseId: string };
     proposedTitle: string;
     body: DatabaseDecisionBody;
     previousBodyMarkdown: string | null;
@@ -433,6 +497,27 @@ async function fileDecision(
     previousBodyMarkdown: input.previousBodyMarkdown,
     // The actor is the one executeTool received, never one from args: a
     // model-controlled parameter is not an identity source.
+    actor,
+  });
+  if (!created.ok) return engineError(created.error);
+  return { decisionId: created.value.id, status: created.value.status };
+}
+
+async function fileBatchDecision(
+  root: string,
+  actor: Actor,
+  input: {
+    target: { type: "database-batch"; domainSlug: string; databaseId: string };
+    proposedTitle: string;
+    body: DatabaseBatchDecisionBody;
+  },
+): Promise<DatabaseToolResult> {
+  const created = await createDecision(root, {
+    target: input.target,
+    proposedTitle: input.proposedTitle,
+    proposedBodyMarkdown: JSON.stringify(input.body, null, 2),
+    previousBodyMarkdown: null,
+    // The actor is the function argument, never one from args.
     actor,
   });
   if (!created.ok) return engineError(created.error);
@@ -643,12 +728,16 @@ export async function executeDatabaseTool(
         cells: cellMap,
         expectedUpdatedAt,
       };
-      return fileDecision(root, actor, {
+      const filed = await fileDecision(root, actor, {
         target: { type: "database-row", domainSlug, databaseId, rowId },
         proposedTitle: decisionTitle("upsert", dbMeta, domainSlug, label),
         body,
         previousBodyMarkdown: previousCells ? JSON.stringify(previousCells, null, 2) : null,
       });
+      if ("error" in filed) return filed;
+      const decisionId = String((filed as { decisionId: string }).decisionId);
+      const allow = rowId === null && (await allowInsert(root, domainSlug, databaseId));
+      return finishWrite(root, decisionId, 1, allow);
     }
 
     case "delete_row": {
@@ -791,6 +880,84 @@ export async function executeDatabaseTool(
         body,
         previousBodyMarkdown: null,
       });
+    }
+
+    case "insert_rows": {
+      const live = await requireLiveDomain(root, args.domainSlug);
+      if (!live.ok) return live.result;
+      if (!isNonEmptyString(args.databaseId)) {
+        return fail("VALIDATION", "databaseId is required");
+      }
+      const { slug: domainSlug } = live;
+      const databaseId = String(args.databaseId);
+      const db = await getDatabase(root, domainSlug, databaseId);
+      if (!db.ok) return engineError(db.error);
+      const dbMeta = db.value;
+
+      const rowsArg = args.rows;
+      if (!Array.isArray(rowsArg) || rowsArg.length < 1 || rowsArg.length > INSERT_ROWS_MAX) {
+        return fail("VALIDATION", "rows must be an array of 1 to 200 cell objects");
+      }
+
+      const conflict = await checkConflicts(root, domainSlug, dbMeta, null, null);
+      if (conflict) return conflict;
+
+      const externalIdColId = dbMeta.columns.find(
+        (c) => c.name.toLowerCase() === "external_id" || c.id === "external_id",
+      )?.id;
+      const seenExternal = new Set<string>();
+      const batchRows: DatabaseBatchDecisionBody["rows"] = [];
+      for (let i = 0; i < rowsArg.length; i++) {
+        const rowNumber = i + 1;
+        const cells = rowsArg[i];
+        if (cells === null || typeof cells !== "object" || Array.isArray(cells)) {
+          return fail("VALIDATION", `Row ${rowNumber}: cells must be a JSON object keyed by column id`);
+        }
+        const cellMap = cells as Record<string, unknown>;
+        if (Object.keys(cellMap).length === 0) {
+          return fail("VALIDATION", `Row ${rowNumber}: cells must not be empty`);
+        }
+
+        const typed = await validateRowCells(root, domainSlug, databaseId, cellMap);
+        if (!typed.ok) return prefixRowError(rowNumber, typed.error);
+        const referential = await checkDatabaseCells(root, domainSlug, databaseId, cellMap);
+        if (!referential.ok) return prefixRowError(rowNumber, referential.error);
+
+        const externalId = externalIdColId ? cellMap[externalIdColId] : undefined;
+        if (typeof externalId === "string" && externalId) {
+          if (
+            seenExternal.has(externalId) ||
+            (await lookupExternalId(root, domainSlug, databaseId, externalId))
+          ) {
+            return fail(
+              "VALIDATION",
+              `Row ${rowNumber}: An external_id of ${externalId} already exists in this database`,
+            );
+          }
+          seenExternal.add(externalId);
+        }
+
+        batchRows.push({
+          id: randomUUID(),
+          cells: cellMap,
+          rowLabel: rowLabel(dbMeta, cellMap) || null,
+        });
+      }
+
+      const proposedTitle = `Insert ${rowsArg.length} rows into ${dbMeta.name}`;
+      const filed = await fileBatchDecision(root, actor, {
+        target: { type: "database-batch", domainSlug, databaseId },
+        proposedTitle,
+        body: { op: "insert-rows", databaseName: dbMeta.name, rows: batchRows },
+      });
+      if ("error" in filed) return filed;
+      const decisionId = String((filed as { decisionId: string }).decisionId);
+      return finishWrite(
+        root,
+        decisionId,
+        rowsArg.length,
+        await allowInsert(root, domainSlug, databaseId),
+      );
     }
 
     default:

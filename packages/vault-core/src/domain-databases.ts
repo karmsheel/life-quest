@@ -410,6 +410,21 @@ function validateCells(
   return { ok: true, value: true };
 }
 
+/** Type-check one row's cells. checkDatabaseCells does not reject a mistyped value. */
+export async function validateRowCells(
+  root: string,
+  slug: string,
+  dbId: string,
+  cells: Record<string, unknown>,
+): Promise<Result<true>> {
+  try {
+    const registry = await readRegistry(vaultPaths(root).domainRegistry(slug));
+    return validateCells(registry, dbId, slug, cells);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /**
  * KAR-64: the extra checks a proposed or applied database row write needs, beyond
  * what `validateCells` does. validateCells type-checks values and confirms a

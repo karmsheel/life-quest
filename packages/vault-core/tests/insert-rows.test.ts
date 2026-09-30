@@ -8,12 +8,16 @@ import {
   createDatabase,
   createDecision,
   createVault,
+  DATABASE_TOOL_DEFS,
+  executeDatabaseTool,
   getDatabase,
   getRow,
   insertRows,
   listDecisions,
   listRows,
+  readLog,
   resolveDecision,
+  updateSettings,
   type Actor,
 } from "../src/index.ts";
 import { archiveDomain } from "../src/domains.ts";
@@ -174,5 +178,173 @@ describe("database-batch Decisions", () => {
     assert.equal(rows.ok, true);
     if (!rows.ok) return;
     assert.equal(rows.value.length, 0);
+  });
+});
+
+function isOk(r: unknown): r is { decisionId: string; status: string; posted: boolean; rowCount: number; reason?: string } {
+  return !!r && typeof r === "object" && !("error" in r);
+}
+
+describe("insert_rows tool", () => {
+  let dir: string;
+  before(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "lq-insert-tool-"));
+  });
+  after(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  async function water(): Promise<{ root: string; dbId: string; ml: string }> {
+    const root = path.join(dir, `vault-${Math.random().toString(16).slice(2)}`);
+    assert.equal((await createVault(root, "Tool")).ok, true);
+    const db = await createDatabase(root, "health", { name: "Water" });
+    assert.equal(db.ok, true);
+    if (!db.ok) throw new Error(db.error);
+    const col = await addDatabaseColumn(root, "health", db.value.id, { name: "ml", type: "number" });
+    assert.equal(col.ok, true);
+    if (!col.ok) throw new Error(col.error);
+    return { root, dbId: db.value.id, ml: col.value.columns.find((c) => c.name === "ml")!.id };
+  }
+
+  it("is registered and an unlisted batch files one pending Decision", async () => {
+    assert.equal(DATABASE_TOOL_DEFS.some((t) => t.name === "insert_rows"), true);
+    const { root, dbId, ml } = await water();
+    const before = await listRows(root, "health", dbId);
+    const res = await executeDatabaseTool(root, AGENT, "insert_rows", {
+      domainSlug: "health",
+      databaseId: dbId,
+      rows: [{ [ml]: 1 }, { [ml]: 2 }],
+    });
+    assert.equal(isOk(res), true);
+    if (!isOk(res)) return;
+    assert.equal(res.status, "pending");
+    assert.equal(res.posted, false);
+    assert.equal(res.rowCount, 2);
+    const after = await listRows(root, "health", dbId);
+    assert.equal(after.ok && before.ok && after.value.length === before.value.length, true);
+    const listed = await listDecisions(root);
+    assert.equal(listed.ok, true);
+    if (!listed.ok) return;
+    assert.equal(listed.value.filter((d) => d.target.type === "database-batch").length, 1);
+    const record = listed.value.find((d) => d.id === res.decisionId)!;
+    assert.equal(record.proposedTitle, "Insert 2 rows into Water");
+    assert.equal(record.title, "Proposed change to Insert 2 rows into Water");
+    assert.equal(record.actor.type, "agent");
+  });
+
+  it("an allowlisted batch posts and writes one created and one resolved log line", async () => {
+    const { root, dbId, ml } = await water();
+    const saved = await updateSettings(root, {
+      autoApproveInserts: [{ domainSlug: "health", databaseId: dbId }],
+    });
+    assert.equal(saved.ok, true);
+    const res = await executeDatabaseTool(root, AGENT, "insert_rows", {
+      domainSlug: "health",
+      databaseId: dbId,
+      rows: [{ [ml]: 4 }, { [ml]: 5 }],
+    });
+    assert.equal(isOk(res), true);
+    if (!isOk(res)) return;
+    assert.equal(res.status, "approved");
+    assert.equal(res.posted, true);
+    assert.equal(res.rowCount, 2);
+    const rows = await listRows(root, "health", dbId);
+    assert.equal(rows.ok, true);
+    if (!rows.ok) return;
+    assert.equal(rows.value.length, 2);
+    const log = await readLog(root);
+    assert.equal(log.ok, true);
+    if (!log.ok) return;
+    const created = log.value.filter((e) => e.type === "decision.created" && e.payload && (e.payload as { id?: string }).id === res.decisionId);
+    const resolved = log.value.filter((e) => e.type === "decision.resolved" && e.payload && (e.payload as { id?: string }).id === res.decisionId);
+    assert.equal(created.length, 1);
+    assert.equal(resolved.length, 1);
+  });
+
+  it("a bad second row files nothing and names Row 2", async () => {
+    const { root, dbId, ml } = await water();
+    const before = await listDecisions(root);
+    const res = await executeDatabaseTool(root, AGENT, "insert_rows", {
+      domainSlug: "health",
+      databaseId: dbId,
+      rows: [{ [ml]: 1 }, { [ml]: "nope" }],
+    });
+    assert.equal(isOk(res), false);
+    if (isOk(res)) return;
+    assert.match((res as { error: { message: string } }).error.message, /Row 2:/);
+    const after = await listDecisions(root);
+    assert.equal(after.ok && before.ok && after.value.length === before.value.length, true);
+    const rows = await listRows(root, "health", dbId);
+    assert.equal(rows.ok, true);
+    if (!rows.ok) return;
+    assert.equal(rows.value.length, 0);
+  });
+
+  it("a repeated external_id inside the batch files nothing and names Row 2", async () => {
+    const { root, dbId, ml } = await water();
+    const ext = await addDatabaseColumn(root, "health", dbId, { name: "external_id", type: "text" });
+    assert.equal(ext.ok, true);
+    if (!ext.ok) return;
+    const extId = ext.value.columns.find((c) => c.name === "external_id")!.id;
+    const before = await listDecisions(root);
+    const res = await executeDatabaseTool(root, AGENT, "insert_rows", {
+      domainSlug: "health",
+      databaseId: dbId,
+      rows: [
+        { [ml]: 1, [extId]: "same" },
+        { [ml]: 2, [extId]: "same" },
+      ],
+    });
+    assert.equal(isOk(res), false);
+    if (isOk(res)) return;
+    assert.match((res as { error: { message: string } }).error.message, /Row 2:/);
+    const after = await listDecisions(root);
+    assert.equal(after.ok && before.ok && after.value.length === before.value.length, true);
+  });
+
+  it("an allowlisted create posts and an allowlisted update stays pending", async () => {
+    const { root, dbId, ml } = await water();
+    await updateSettings(root, { autoApproveInserts: [{ domainSlug: "health", databaseId: dbId }] });
+    const created = await executeDatabaseTool(root, AGENT, "upsert_row", {
+      domainSlug: "health",
+      databaseId: dbId,
+      cells: { [ml]: 8 },
+    });
+    assert.equal(isOk(created), true);
+    if (!isOk(created)) return;
+    assert.equal(created.posted, true);
+    assert.equal(created.status, "approved");
+    assert.equal(created.rowCount, 1);
+
+    const rows = await listRows(root, "health", dbId);
+    assert.equal(rows.ok, true);
+    if (!rows.ok) return;
+    const id = rows.value[0]!.id;
+    const edited = await executeDatabaseTool(root, AGENT, "upsert_row", {
+      domainSlug: "health",
+      databaseId: dbId,
+      id,
+      cells: { [ml]: 9 },
+    });
+    assert.equal(isOk(edited), true);
+    if (!isOk(edited)) return;
+    assert.equal(edited.status, "pending");
+    assert.equal(edited.posted, false);
+    const still = await getRow(root, "health", dbId, id);
+    assert.equal(still.ok, true);
+    if (!still.ok) return;
+    assert.equal(still.value.cells[ml], 8);
+  });
+
+  it("a theme patch keeps the allowlist that insert_rows consults", async () => {
+    const { root, dbId, ml } = await water();
+    await updateSettings(root, { autoApproveInserts: [{ domainSlug: "health", databaseId: dbId }] });
+    await updateSettings(root, { theme: "dark" });
+    const res = await executeDatabaseTool(root, AGENT, "insert_rows", {
+      domainSlug: "health",
+      databaseId: dbId,
+      rows: [{ [ml]: 3 }],
+    });
+    assert.equal(isOk(res) && res.posted, true);
   });
 });
