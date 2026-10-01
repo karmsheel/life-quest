@@ -623,6 +623,73 @@ export async function getRow(
   }
 }
 
+/**
+ * A short human label for a row: the Decision title the operator reads, and the
+ * value a relation cell resolves to. One rule in one place — a second copy that
+ * drifts from this one is how an inbox starts showing a row id underneath a
+ * title that already names the row.
+ */
+export function rowDisplayLabel(db: DatabaseMeta, cells: Record<string, unknown>): string {
+  const byName = (name: string) => db.columns.find((c) => c.name.toLowerCase() === name)?.id;
+  for (const key of ["payee", "name", "title", "account", "category", "date"]) {
+    const id = byName(key);
+    if (!id) continue;
+    const v = cells[id];
+    if (typeof v === "string" && v.trim()) return v;
+  }
+  return "";
+}
+
+/**
+ * A relation cell holds the target row's id, which is noise to an operator
+ * reviewing a Decision. Resolve every relation column to the target row's label,
+ * keyed by column id.
+ *
+ * `cache` is keyed on (database id, row id) and is per read, so a vault with
+ * dozens of decisions about one account reads that row once instead of once per
+ * Decision.
+ *
+ * A dangling id or a missing target row gets no entry at all: the caller falls
+ * back to its own rendering rather than being handed a label nobody wrote.
+ */
+export async function cellDisplayLabels(
+  root: string,
+  slug: string,
+  db: DatabaseMeta,
+  cells: Record<string, unknown> | null,
+  cache?: Map<string, string | null>,
+): Promise<Record<string, string>> {
+  const labels: Record<string, string> = {};
+  if (!cells) return labels;
+  for (const column of db.columns) {
+    if (column.type !== "relation" || !column.relationDatabaseId) continue;
+    const value = cells[column.id];
+    if (typeof value !== "string" || !value.trim()) continue;
+    const cacheKey = `${column.relationDatabaseId}::${value}`;
+    let label = cache?.get(cacheKey);
+    if (label === undefined) {
+      label = await relationRowLabel(root, slug, column.relationDatabaseId, value);
+      cache?.set(cacheKey, label);
+    }
+    if (label) labels[column.id] = label;
+  }
+  return labels;
+}
+
+/** One relation target row's label, or null when it cannot be resolved. */
+async function relationRowLabel(
+  root: string,
+  slug: string,
+  dbId: string,
+  rowId: string,
+): Promise<string | null> {
+  const target = await getDatabase(root, slug, dbId);
+  if (!target.ok) return null;
+  const row = await getRow(root, slug, dbId, rowId);
+  if (!row.ok) return null;
+  return rowDisplayLabel(target.value, row.value.cells);
+}
+
 export async function upsertRow(
   root: string,
   slug: string,

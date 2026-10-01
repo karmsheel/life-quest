@@ -10,6 +10,7 @@ export * from "./open-vault.ts";
 export * from "./domains.ts";
 export * from "./domain-documents.ts";
 export * from "./decisions.ts";
+export * from "./decision-labels.ts";
 export * from "./agents.ts";
 export * from "./signal-chain.ts";
 export * from "./domain-lens.ts";
@@ -110,6 +111,8 @@ export {
   upsertRow,
   deleteRow,
   checkDatabaseCells,
+  rowDisplayLabel,
+  cellDisplayLabels,
   saveDatabaseFile,
   ensureVaultDatabaseGitignore,
   invalidateDomainCache,

@@ -83,6 +83,12 @@ export type DatabaseDecisionBody = {
   options?: string[];
   /** add-column only, required for relation. */
   relationDatabaseId?: string;
+  /** Read-time relation labels for `cells`, keyed by column id. Not a write payload. */
+  cellLabels?: Record<string, string>;
+  /** Same, for `previousCells`. */
+  previousCellLabels?: Record<string, string>;
+  /** add-column only, resolved on read: the relation target's name. */
+  relationDatabaseName?: string;
 };
 
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;

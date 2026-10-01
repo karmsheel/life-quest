@@ -65,6 +65,7 @@ import {
   vaultPaths,
   writeReview,
   addDatabaseColumn,
+  withDecisionCellLabels,
   exportDomainBooks,
   restoreDomainBooks,
   applyGoalsCommand,
@@ -717,7 +718,15 @@ export async function financeSaveAssumptionSet(input: {
 }
 
 export async function decisionList(): Promise<Result<DecisionRecord[]>> {
-  return withVault((root) => listDecisions(root));
+  return withVault(async (root) => {
+    const listed = await listDecisions(root);
+    if (!listed.ok) return listed;
+    // A person reads this inbox. A database row's relation cells hold row ids,
+    // so they are resolved to row labels here, at the display boundary: the
+    // stored Decision keeps the raw payload the approve path applies, and the
+    // agent's own read path (list_decisions) still sees exactly what was filed.
+    return { ok: true, value: await withDecisionCellLabels(root, listed.value) };
+  });
 }
 
 export async function decisionCreate(input: {

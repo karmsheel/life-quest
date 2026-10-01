@@ -1,0 +1,77 @@
+{
+  "_comment": [
+    "A Transactions row Decision, in the shape the propose path files it (`raw`)",
+    "and in the shape the read path hands the card (`resolved`, which adds the",
+    "relation labels cellLabels / previousCellLabels). `account` and `category`",
+    "are relation columns, so their cell values are row ids: that is the payload",
+    "the apply path reads, and it is what used to reach the operator's screen.",
+    "Values are neutral stand-ins for a real proposal; the shape is not."
+  ],
+  "target": {
+    "type": "database-row",
+    "domainSlug": "financial",
+    "databaseId": "finance:transactions",
+    "rowId": "capture-2d84053b-67b2-4bba-b644-56d58d01cfcc"
+  },
+  "accountId": "f8ad445e-5c6c-4cef-a900-d88eba634324",
+  "uncategorizedId": "category-uncategorized",
+  "groceriesId": "47083ecb-b581-4ba2-8a6a-2db8cf2d5a87",
+  "raw": {
+    "op": "upsert",
+    "databaseName": "Transactions",
+    "rowLabel": "6/15/26 Breakfast Capitec",
+    "previousCells": {
+      "date": "2026-06-15",
+      "amount": -95,
+      "account": "f8ad445e-5c6c-4cef-a900-d88eba634324",
+      "category": "category-uncategorized",
+      "payee": "6/15/26 Breakfast Capitec",
+      "notes": null,
+      "source_file": null,
+      "provenance": "chat:companion",
+      "external_id": null
+    },
+    "cells": {
+      "account": "f8ad445e-5c6c-4cef-a900-d88eba634324",
+      "amount": -95,
+      "category": "47083ecb-b581-4ba2-8a6a-2db8cf2d5a87",
+      "date": "2026-06-15",
+      "payee": "6/15/26 Breakfast Capitec",
+      "provenance": "chat:companion"
+    },
+    "expectedUpdatedAt": "2026-09-29T17:30:57.690Z"
+  },
+  "resolved": {
+    "op": "upsert",
+    "databaseName": "Transactions",
+    "rowLabel": "6/15/26 Breakfast Capitec",
+    "previousCells": {
+      "date": "2026-06-15",
+      "amount": -95,
+      "account": "f8ad445e-5c6c-4cef-a900-d88eba634324",
+      "category": "category-uncategorized",
+      "payee": "6/15/26 Breakfast Capitec",
+      "notes": null,
+      "source_file": null,
+      "provenance": "chat:companion",
+      "external_id": null
+    },
+    "cells": {
+      "account": "f8ad445e-5c6c-4cef-a900-d88eba634324",
+      "amount": -95,
+      "category": "47083ecb-b581-4ba2-8a6a-2db8cf2d5a87",
+      "date": "2026-06-15",
+      "payee": "6/15/26 Breakfast Capitec",
+      "provenance": "chat:companion"
+    },
+    "expectedUpdatedAt": "2026-09-29T17:30:57.690Z",
+    "cellLabels": {
+      "account": "Capitec",
+      "category": "Groceries"
+    },
+    "previousCellLabels": {
+      "account": "Capitec",
+      "category": "Uncategorized"
+    }
+  }
+}

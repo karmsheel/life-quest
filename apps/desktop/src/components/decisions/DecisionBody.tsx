@@ -28,6 +28,7 @@ const FIELD_LABELS: Record<string, string> = {
   sourceKind: "Source",
   columnId: "Column",
   relationDatabaseId: "Relates to",
+  relationDatabaseName: "Relates to",
   pageId: "Page",
 };
 
@@ -41,7 +42,13 @@ type ChangeRow = {
   before: unknown;
   after: unknown;
   changed: boolean;
+  /** A relation cell's readable face; the raw id stays as the tooltip. */
+  beforeLabel?: string | null;
+  afterLabel?: string | null;
 };
+
+/** Column id to display label, as resolved for this Decision when it was read. */
+type CellLabelMap = Record<string, string> | null;
 
 export function DecisionBody({
   target,
@@ -117,6 +124,8 @@ function DatabaseBody({
   lookups: Lookups;
 }) {
   const op = typeof body.op === "string" ? body.op : "";
+  const cellLabels = stringMap(body.cellLabels);
+  const previousCellLabels = stringMap(body.previousCellLabels);
   const databaseName =
     typeof body.databaseName === "string" && body.databaseName
       ? body.databaseName
@@ -130,9 +139,20 @@ function DatabaseBody({
   }
 
   if (op === "add-column") {
-    const rows: ChangeRow[] = ["name", "type", "options", "relationDatabaseId"]
-      .filter((key) => key in body && !isEmpty(body[key]))
-      .map((key) => ({ key, before: undefined, after: body[key], changed: true }));
+    // A relation is proposed by database id. The read path resolves that to the
+    // target's name; the id is only shown when it could not be resolved.
+    const keys = ["name", "type", "options", "relationDatabaseId", "relationDatabaseName"].filter(
+      (key) => key in body && !isEmpty(body[key]),
+    );
+    const collapsed = keys.includes("relationDatabaseName")
+      ? keys.filter((key) => key !== "relationDatabaseId")
+      : keys;
+    const rows: ChangeRow[] = collapsed.map((key) => ({
+      key,
+      before: undefined,
+      after: body[key],
+      changed: true,
+    }));
     return (
       <ChangeTable
         lead={`Add a column to ${databaseName}.`}
@@ -155,7 +175,7 @@ function DatabaseBody({
     (isRecord(previousParsed) && !("op" in previousParsed) ? previousParsed : null);
 
   if (op === "delete") {
-    const rows = rowsFrom(before, null, "before");
+    const rows = rowsFrom(before, null, "before", { before: previousCellLabels });
     return (
       <ChangeTable
         lead={`Delete this row from ${databaseName}.`}
@@ -171,7 +191,7 @@ function DatabaseBody({
     return (
       <ChangeTable
         lead={`Add a row to ${databaseName}.`}
-        rows={rowsFrom(null, after, "after")}
+        rows={rowsFrom(null, after, "after", { after: cellLabels })}
         mode="after"
         lookups={lookups}
       />
@@ -181,7 +201,7 @@ function DatabaseBody({
   return (
     <ChangeTable
       lead={`Update a row in ${databaseName}.`}
-      rows={rowsFrom(before, after, "diff")}
+      rows={rowsFrom(before, after, "diff", { before: previousCellLabels, after: cellLabels })}
       mode="diff"
       lookups={lookups}
     />
@@ -434,7 +454,16 @@ function GenericBody({
 }) {
   const prior = parseJson(previous ?? "");
   const priorRec = isRecord(prior) ? prior : null;
-  const hidden = new Set(["type", "id", "expectedUpdatedAt", "schemaVersion", "previousCells", "cells"]);
+  const hidden = new Set([
+    "type",
+    "id",
+    "expectedUpdatedAt",
+    "schemaVersion",
+    "previousCells",
+    "cells",
+    "previousCellLabels",
+    "cellLabels",
+  ]);
   const rows = rowsFrom(priorRec, body, priorRec ? "diff" : "after").filter(
     (row) => !hidden.has(row.key),
   );
@@ -525,12 +554,22 @@ function ChangeRowView({
       </th>
       {mode !== "after" ? (
         <td className={mode === "diff" && row.changed ? "decision-value--was" : undefined}>
-          <ValueView value={row.before} field={row.key} lookups={lookups} />
+          <ValueView
+            value={row.before}
+            field={row.key}
+            lookups={lookups}
+            label={row.beforeLabel}
+          />
         </td>
       ) : null}
       {mode !== "before" ? (
         <td className={mode === "diff" && row.changed ? "decision-value--now" : undefined}>
-          <ValueView value={row.after} field={row.key} lookups={lookups} />
+          <ValueView
+            value={row.after}
+            field={row.key}
+            lookups={lookups}
+            label={row.afterLabel}
+          />
         </td>
       ) : null}
     </tr>
@@ -541,12 +580,19 @@ function ValueView({
   value,
   field,
   lookups,
+  label,
 }: {
   value: unknown;
   field: string;
   lookups: Lookups;
+  label?: string | null;
 }) {
   if (isEmpty(value)) return <span className="decision-empty">—</span>;
+  // A relation cell holds a row id. The label is its readable face and the id
+  // stays in the tooltip, so the operator reads prose without losing the value
+  // the vault will actually store.
+  const raw = typeof value === "string" ? value : null;
+  if (label && label !== raw) return <span title={raw ?? undefined}>{label}</span>;
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") {
     if (field === "horizonMonths") return `${value.toLocaleString()} months`;
@@ -661,6 +707,7 @@ function rowsFrom(
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null,
   mode: "diff" | "after" | "before",
+  labels?: { before?: CellLabelMap; after?: CellLabelMap },
 ): ChangeRow[] {
   const keys: string[] = [];
   const seen = new Set<string>();
@@ -677,12 +724,22 @@ function rowsFrom(
     const hasAfter = after != null && key in after;
     const beforeValue = hasBefore ? before[key] : undefined;
     const afterValue = hasAfter ? after[key] : undefined;
+    // A cell the proposal drops while it was already empty is not a change. A
+    // row write is a full replace, so empty cells are simply absent from the new
+    // set: without this every null column reads as "- -> -" and the operator has
+    // to hunt through the table for the one field that actually moved.
+    const bothEmpty = isEmpty(beforeValue) && isEmpty(afterValue);
     const changed =
       mode !== "diff" ||
-      !hasBefore ||
-      !hasAfter ||
-      !sameValue(beforeValue, afterValue);
-    return { key, before: beforeValue, after: afterValue, changed };
+      (!bothEmpty && (!hasBefore || !hasAfter || !sameValue(beforeValue, afterValue)));
+    return {
+      key,
+      before: beforeValue,
+      after: afterValue,
+      changed,
+      beforeLabel: labels?.before?.[key] ?? null,
+      afterLabel: labels?.after?.[key] ?? null,
+    };
   });
 }
 
@@ -723,6 +780,15 @@ function parseJson(text: string): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringMap(value: unknown): Record<string, string> | null {
+  if (!isRecord(value)) return null;
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string") out[key] = entry;
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 function isItem(value: unknown): value is { id: string; text: string; priority?: string } {
