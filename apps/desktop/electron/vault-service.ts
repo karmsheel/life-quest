@@ -65,7 +65,7 @@ import {
   vaultPaths,
   writeReview,
   addDatabaseColumn,
-  withDecisionCellLabels,
+  withDecisionDisplayLabels,
   exportDomainBooks,
   restoreDomainBooks,
   applyGoalsCommand,
@@ -725,7 +725,7 @@ export async function decisionList(): Promise<Result<DecisionRecord[]>> {
     // so they are resolved to row labels here, at the display boundary: the
     // stored Decision keeps the raw payload the approve path applies, and the
     // agent's own read path (list_decisions) still sees exactly what was filed.
-    return { ok: true, value: await withDecisionCellLabels(root, listed.value) };
+    return { ok: true, value: await withDecisionDisplayLabels(root, listed.value) };
   });
 }
 

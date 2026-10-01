@@ -13,6 +13,12 @@ const electron = require("electron") as string;
 
 const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/decision-body.json");
+const TARGETS = JSON.parse(
+  fs.readFileSync(path.join(desktopRoot, "e2e/fixtures/decision-page-mapping.json"), "utf8"),
+) as {
+  page: { ids: { databaseId: string; mileageColumnId: string; distanceColumnId: string; assumptionSetId: string } };
+  mapping: { target: { mappingId: string } };
+};
 
 /**
  * The rig renders the real DecisionBody in a real layout engine, so it needs the
@@ -47,13 +53,17 @@ function runDriver(): Promise<number> {
   });
 }
 
+type Cell = { text: string; title: string | null };
+type Block = { kind: string; detail: string; title: string | null };
+type MappingRow = { source: string; column: string; columnTitle: string | null };
+
 type Sample = {
   inboxWidth: number | null;
   changedRows: number;
   lead: string;
   readable: string;
   exactPayload: string | null;
-  rows: { field: string; cells: { text: string; title: string | null }[] }[];
+  rows: { field: string; cells: Cell[] }[];
 };
 
 type Report = {
@@ -61,13 +71,24 @@ type Report = {
   failures: string[];
   checks: {
     rawShowsShortId: boolean;
-    labelledCellTitles: string[];
+    pageRawShowsShortId: boolean;
+    mappingRawShowsShortId: boolean;
     exactPayloadUnchanged: boolean;
+    pageExactPayloadUnchanged: boolean;
+    mappingExactPayloadUnchanged: boolean;
+    labelledCellTitles: string[];
     inboxWidth: number | null;
   };
   raw: Sample;
   resolved: Sample;
+  pageRaw: { blocks: Block[]; readable: string };
+  page: { blocks: Block[]; readable: string };
+  mappingRaw: { lead: string; rows: MappingRow[]; readable: string };
+  mapping: { lead: string; rows: MappingRow[]; readable: string };
 };
+
+/** "47083ecb…" — the shortId the card falls back to for a raw id. */
+const SHORT_ID = /[0-9a-f]{8}…/;
 
 describe("decision body labels", () => {
   it("shows a relation's row label instead of its id, and keeps the id reachable", async (t) => {
@@ -102,7 +123,7 @@ describe("decision body labels", () => {
 
     // No id in the readable area, both ids behind a tooltip, and the exact
     // payload the approve path will use left exactly as it was filed.
-    assert.doesNotMatch(report.resolved.readable, /\b[0-9a-f]{8}…/, "an id is still on screen");
+    assert.doesNotMatch(report.resolved.readable, SHORT_ID, "an id is still on screen");
     assert.equal(report.checks.labelledCellTitles.length >= 2, true, "the ids were dropped, not moved");
     assert.equal(report.checks.exactPayloadUnchanged, true, "the card rewrote the body");
     assert.match(report.resolved.exactPayload ?? "", /47083ecb-b581-4ba2-8a6a-2db8cf2d5a87/);
@@ -113,5 +134,66 @@ describe("decision body labels", () => {
       report.checks.inboxWidth !== null && report.checks.inboxWidth <= 832,
       `inbox rendered ${report.checks.inboxWidth}px wide, wider than the 52rem column`,
     );
+  });
+
+  it("names what a page block is bound to and what a mapping maps onto", async (t) => {
+    if (!(await devServerUp())) {
+      t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
+      return;
+    }
+
+    assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
+    const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
+    const ids = TARGETS.page.ids;
+
+    // As filed, a block shows the database as a slug pair and a column uuid as
+    // "8f3d2b41…"; the assumption set's id reads as prose that is not its name.
+    assert.ok(
+      report.pageRaw.blocks.some((block) => block.detail === "Finance · transactions"),
+      "the page fixture no longer shows the raw database id",
+    );
+    assert.equal(report.checks.pageRawShowsShortId, true, "the filed page shows no column id");
+    assert.ok(
+      report.pageRaw.blocks.some((block) => block.detail === "Finance assumption scenario 1"),
+      "the page fixture no longer shows the raw assumption set id",
+    );
+
+    assert.deepEqual(
+      report.page.blocks.map((block) => `${block.kind} ${block.detail}`),
+      [
+        "Table Transactions",
+        "Metric Sum · Mileage",
+        "Chart Line · Distance",
+        "Scenario Scenario 1",
+        "Note Top spend this month.",
+      ],
+      "a page block is still unreadable",
+    );
+    // Every block that named something keeps the id it named, so the operator
+    // can still check it against the vault; a markdown block names nothing.
+    assert.deepEqual(
+      report.page.blocks.map((block) => block.title),
+      [ids.databaseId, ids.mileageColumnId, ids.distanceColumnId, ids.assumptionSetId, null],
+      "the page block tooltips do not hold the raw ids",
+    );
+    assert.doesNotMatch(report.page.readable, SHORT_ID, "a column id is still on the page");
+    assert.equal(report.checks.pageExactPayloadUnchanged, true, "the page card rewrote the body");
+
+    // The mapping names the database in its lead and each column it maps onto.
+    assert.equal(report.checks.mappingRawShowsShortId, true, "the filed mapping shows no column id");
+    assert.match(report.mapping.lead, /Map incoming columns onto Transactions\.$/);
+    assert.deepEqual(
+      report.mapping.rows.map((row) => row.column),
+      ["Date", "Mileage", "Unmapped"],
+      "a mapped column is still unreadable",
+    );
+    assert.equal(
+      report.mapping.rows[1]?.columnTitle,
+      ids.mileageColumnId,
+      "the mapped column does not keep its raw id",
+    );
+    assert.equal(report.mapping.rows[2]?.columnTitle, null, "an unmapped column claims an id");
+    assert.doesNotMatch(report.mapping.readable, SHORT_ID, "a column id is still on the mapping");
+    assert.equal(report.checks.mappingExactPayloadUnchanged, true, "the mapping card rewrote the body");
   });
 });

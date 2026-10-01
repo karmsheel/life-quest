@@ -27,7 +27,7 @@ import {
   rowDisplayLabel,
   cellDisplayLabels,
   upsertRow,
-  withDecisionCellLabels,
+  withDecisionDisplayLabels,
 } from "../src/index.ts";
 import { installFinanceKit } from "../src/finance-kit.ts";
 import { createDecision } from "../src/decisions.ts";
@@ -174,7 +174,7 @@ describe("Decision cell labels", () => {
 
     const file = vaultPaths(root).decisionJson(decision.id);
     const before = await fs.readFile(file, "utf8");
-    const [enriched] = await withDecisionCellLabels(root, [decision]);
+    const [enriched] = await withDecisionDisplayLabels(root, [decision]);
     assert.ok(enriched);
     const body = JSON.parse(enriched.proposedBodyMarkdown) as Record<string, unknown>;
     assert.deepEqual(body.cellLabels, {
@@ -223,7 +223,7 @@ describe("Decision cell labels", () => {
     if (!listed.ok) return;
     const decision = listed.value.at(-1)!;
 
-    const [same] = await withDecisionCellLabels(root, [decision]);
+    const [same] = await withDecisionDisplayLabels(root, [decision]);
     assert.equal(same, decision);
     assert.equal(same?.proposedBodyMarkdown, decision.proposedBodyMarkdown);
   });
@@ -232,7 +232,7 @@ describe("Decision cell labels", () => {
     const decision = await propose(root, tx, "cat-groceries");
     await fs.rm(vaultPaths(root).domainSqlite("financial"), { force: true });
 
-    const [enriched] = await withDecisionCellLabels(root, [decision]);
+    const [enriched] = await withDecisionDisplayLabels(root, [decision]);
     const body = JSON.parse(enriched!.proposedBodyMarkdown) as Record<string, unknown>;
     assert.equal("cellLabels" in body, false, "no labels without a readable database");
     assert.equal(enriched!.proposedBodyMarkdown, decision.proposedBodyMarkdown);
@@ -246,7 +246,7 @@ describe("Decision cell labels", () => {
     });
     assert.equal(created.ok, true);
     if (!created.ok) return;
-    const [same] = await withDecisionCellLabels(root, [created.value]);
+    const [same] = await withDecisionDisplayLabels(root, [created.value]);
     assert.equal(same, created.value);
   });
 
@@ -267,7 +267,7 @@ describe("Decision cell labels", () => {
     assert.equal(listed.ok, true);
     if (!listed.ok) return;
     const decision = listed.value.at(-1)!;
-    const [enriched] = await withDecisionCellLabels(root, [decision]);
+    const [enriched] = await withDecisionDisplayLabels(root, [decision]);
     const body = JSON.parse(enriched!.proposedBodyMarkdown) as Record<string, unknown>;
     assert.equal(body.relationDatabaseName, "Habits");
   });

@@ -2,8 +2,9 @@
  * E2E harness page for the Decision card body (`components/decisions/DecisionBody`).
  *
  * One page, because the card is one component: `decision-body.electron.mjs`
- * renders the same filed body twice — once as the propose path files it, once as
- * the read path hands it over — and reads the table the operator actually sees.
+ * renders each filed body twice — once as the propose path files it, once as the
+ * read path hands it over — for a row write, a page, and a mapping, and reads
+ * what the operator actually sees on each.
  *
  * The real component and the real CSS, no IPC bridge: DecisionBody is a pure
  * presentational component, so its only inputs are the target body plus the

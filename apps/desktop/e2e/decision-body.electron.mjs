@@ -22,10 +22,19 @@
  *     the collapsed exact payload still holds the id the apply path will use.
  *  5. The renderer does not rewrite the body: the parsed exact payload is
  *     deep-equal to the body the harness was handed.
+ *  6. A page block and a mapping name their data by id too. Rendered as filed, a
+ *     bound-table block reads "Finance · transactions", a metric bound to a
+ *     column uuid reads "Sum · 8f3d2b41…", and a mapping's column cell is a
+ *     truncated uuid.
+ *  7. The read path's names reach those surfaces: "Transactions", "Sum ·
+ *     Mileage", "Line · Distance", "Scenario 1", and the mapping's "Mileage".
+ *  8. The ids are neither hidden nor lost: each block row and mapped-column cell
+ *     keeps its raw id in its tooltip, and the exact payload is unchanged.
  *
- * NOT covered here: that the main process resolves those labels in the first
- * place (that is `packages/vault-core/tests/decision-labels.test.ts` over a real
- * vault with relation columns), and the approve/reject round trip.
+ * NOT covered here: that the main process resolves those names in the first
+ * place (that is `packages/vault-core/tests/decision-labels.test.ts` for row
+ * writes and `decision-labels-page-mapping.test.ts` for pages and mappings, both
+ * over a real vault), and the approve/reject round trip.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -41,17 +50,12 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
 const fixture = JSON.parse(
   fs.readFileSync(path.join(here, "fixtures/decision-row.json"), "utf8"),
 );
+const targets = JSON.parse(
+  fs.readFileSync(path.join(here, "fixtures/decision-page-mapping.json"), "utf8"),
+);
 
 /** Everything an operator can read, minus the collapsed "Exact proposal". */
-const SAMPLE = `(() => {
-  const text = (el) => ((el && el.textContent) || "").trim();
-  const rows = Array.from(document.querySelectorAll(".decision-fields tr")).map((tr) => ({
-    field: text(tr.querySelector("th")),
-    cells: Array.from(tr.querySelectorAll("td")).map((td) => ({
-      text: text(td),
-      title: td.querySelector("[title]") ? td.querySelector("[title]").getAttribute("title") : null
-    }))
-  }));
+const READABLE = `(() => {
   const proposal = document.querySelector(".decision-proposal");
   const source = document.querySelector(".decision-source pre");
   let readable = "";
@@ -61,6 +65,19 @@ const SAMPLE = `(() => {
     if (sourceBlock) sourceBlock.remove();
     readable = (clone.textContent || "").trim();
   }
+  return { readable, exactPayload: source ? source.textContent : null };
+})()`;
+
+const SAMPLE = `(() => {
+  const text = (el) => ((el && el.textContent) || "").trim();
+  const read = ${READABLE};
+  const rows = Array.from(document.querySelectorAll(".decision-fields tr")).map((tr) => ({
+    field: text(tr.querySelector("th")),
+    cells: Array.from(tr.querySelectorAll("td")).map((td) => ({
+      text: text(td),
+      title: td.querySelector("[title]") ? td.querySelector("[title]").getAttribute("title") : null
+    }))
+  }));
   const inbox = document.querySelector(".decisions-inbox");
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -69,8 +86,51 @@ const SAMPLE = `(() => {
     rows,
     changedRows: document.querySelectorAll(".decision-row--changed").length,
     unchangedSummary: text(document.querySelector(".decision-unchanged summary")) || null,
-    readable,
-    exactPayload: source ? source.textContent : null
+    readable: read.readable,
+    exactPayload: read.exactPayload
+  };
+})()`;
+
+/** The page card: one row per block, each row carrying the ids it stands for. */
+const SAMPLE_BLOCKS = `(() => {
+  const text = (el) => ((el && el.textContent) || "").trim();
+  const read = ${READABLE};
+  const blocks = Array.from(document.querySelectorAll(".decision-block")).map((li) => ({
+    kind: text(li.querySelector(".decision-block__kind")),
+    detail: text(li.querySelector(".decision-block__detail")),
+    title: li.getAttribute("title")
+  }));
+  const inbox = document.querySelector(".decisions-inbox");
+  return {
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    inboxWidth: inbox ? Math.round(inbox.getBoundingClientRect().width) : null,
+    lead: text(document.querySelector(".decision-lead")),
+    blocks,
+    readable: read.readable,
+    exactPayload: read.exactPayload
+  };
+})()`;
+
+/** The mapping card: one row per incoming source column. */
+const SAMPLE_MAPPING = `(() => {
+  const text = (el) => ((el && el.textContent) || "").trim();
+  const read = ${READABLE};
+  const rows = Array.from(document.querySelectorAll(".decision-fields tbody tr")).map((tr) => {
+    const cells = Array.from(tr.querySelectorAll("td"));
+    return {
+      source: text(cells[0]),
+      column: text(cells[1]),
+      columnTitle: cells[1] ? cells[1].getAttribute("title") : null
+    };
+  });
+  const inbox = document.querySelector(".decisions-inbox");
+  return {
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    inboxWidth: inbox ? Math.round(inbox.getBoundingClientRect().width) : null,
+    lead: text(document.querySelector(".decision-lead")),
+    rows,
+    readable: read.readable,
+    exactPayload: read.exactPayload
   };
 })()`;
 
@@ -111,22 +171,30 @@ function waitFor(win, expression, label, timeoutMs = 10_000) {
   });
 }
 
-/** Render one body, and return the card as the operator reads it. */
-async function render(win, body) {
+/**
+ * Render one body, and return the card as the operator reads it.
+ *
+ * `previousCells` is the cell map the vault held before the write; the card
+ * takes it as the JSON text it renders, so it is stringified here.
+ */
+async function render(win, target, body, previousCells, sampler = SAMPLE, name = "card") {
   const committed = await win.webContents.executeJavaScript(
     "window.decisionBodyCommits ?? 0",
   );
-  const previous = body.previousCells ? JSON.stringify(body.previousCells, null, 2) : null;
+  const previous = previousCells ? JSON.stringify(previousCells, null, 2) : null;
   await win.webContents.executeJavaScript(
-    `window.renderDecisionBody({ target: ${JSON.stringify(fixture.target)}, ` +
+    `window.renderDecisionBody({ target: ${JSON.stringify(target)}, ` +
       `body: ${JSON.stringify(body)}, previous: ${JSON.stringify(previous)} })`,
   );
-  await waitFor(win, `(window.decisionBodyCommits ?? 0) > ${committed}`, "the card to commit");
-  return win.webContents.executeJavaScript(SAMPLE);
+  await waitFor(win, `(window.decisionBodyCommits ?? 0) > ${committed}`, `${name} to commit`);
+  return win.webContents.executeJavaScript(sampler);
 }
 
-/** "47083ecb…" — the shortId the card falls back to for a raw row id. */
-const SHORT_ID = /\b[0-9a-f]{8}…/;
+/**
+ * "47083ecb…" — the shortId the card falls back to for a raw id. No leading
+ * word boundary: a mapped column's id follows its source name with no space.
+ */
+const SHORT_ID = /[0-9a-f]{8}…/;
 /** "category-uncategorized" — a slug-shaped id, shown as prose when unmapped. */
 const SLUG_ID = /\b[a-z]+-[a-z-]{4,}\b/;
 
@@ -153,7 +221,14 @@ async function main() {
   const checks = {};
 
   // ── as filed: the reported defect, captured on purpose ────────────────────
-  const raw = await render(win, fixture.raw);
+  const raw = await render(
+    win,
+    fixture.target,
+    fixture.raw,
+    fixture.raw.previousCells,
+    SAMPLE,
+    "row (as filed)",
+  );
   const rawCategory = rowFor(raw, "Category");
   checks.rawShowsShortId = Boolean(
     rawCategory && SHORT_ID.test(rawCategory.cells.at(-1)?.text ?? ""),
@@ -166,7 +241,14 @@ async function main() {
   }
 
   // ── as read: the labels the main process resolved ────────────────────────
-  const resolved = await render(win, fixture.resolved);
+  const resolved = await render(
+    win,
+    fixture.target,
+    fixture.resolved,
+    fixture.resolved.previousCells,
+    SAMPLE,
+    "row (as read)",
+  );
 
   const category = rowFor(resolved, "Category");
   checks.categoryNow = category?.cells[0]?.text ?? null;
@@ -216,6 +298,113 @@ async function main() {
   if (!checks.exactPayloadKeptId) failure("the exact proposal dropped the relation id");
   if (!checks.exactPayloadUnchanged) failure("the card rewrote the body it was handed");
 
+  // ── a page: every block names the database and columns it is bound to ─────
+  const pageRaw = await render(
+    win,
+    targets.page.target,
+    targets.page.raw,
+    null,
+    SAMPLE_BLOCKS,
+    "page (as filed)",
+  );
+  checks.pageRaw = pageRaw.blocks.map((block) => block.detail);
+  checks.pageRawShowsShortId = SHORT_ID.test(pageRaw.readable);
+  if (!checks.pageRawShowsShortId) {
+    failure("the page as filed no longer shows a column id — the before state is gone");
+  }
+
+  const page = await render(
+    win,
+    targets.page.target,
+    targets.page.resolved,
+    null,
+    SAMPLE_BLOCKS,
+    "page (as read)",
+  );
+  checks.pageBlocks = page.blocks;
+  const wantPage = [
+    { kind: "Table", detail: "Transactions", title: targets.page.ids.databaseId },
+    { kind: "Metric", detail: "Sum · Mileage", title: targets.page.ids.mileageColumnId },
+    { kind: "Chart", detail: "Line · Distance", title: targets.page.ids.distanceColumnId },
+    { kind: "Scenario", detail: "Scenario 1", title: targets.page.ids.assumptionSetId },
+    { kind: "Note", detail: "Top spend this month.", title: null },
+  ];
+  wantPage.forEach((want, index) => {
+    const got = page.blocks[index];
+    if (!got) {
+      failure(`the page card rendered ${page.blocks.length} blocks, expected one per block`);
+      return;
+    }
+    if (got.kind !== want.kind || got.detail !== want.detail) {
+      failure(
+        `page block ${index} read "${got.kind} ${got.detail}", expected "${want.kind} ${want.detail}"`,
+      );
+    }
+    if (got.title !== want.title) {
+      failure(
+        `page block ${index} tooltip is ${JSON.stringify(got.title)}, expected ${JSON.stringify(want.title)}`,
+      );
+    }
+  });
+  checks.pageReadableHoldsNoShortId = !SHORT_ID.test(page.readable);
+  if (!checks.pageReadableHoldsNoShortId) {
+    failure(`the page card still shows a column id: ${page.readable.slice(0, 240)}`);
+  }
+  checks.pageExactPayloadUnchanged =
+    JSON.stringify(page.exactPayload ? JSON.parse(page.exactPayload) : null) ===
+    JSON.stringify(targets.page.resolved);
+  if (!checks.pageExactPayloadUnchanged) failure("the page card rewrote the body it was handed");
+
+  // ── a mapping: the database and every mapped column by name ──────────────
+  const mappingRaw = await render(
+    win,
+    targets.mapping.target,
+    targets.mapping.raw,
+    null,
+    SAMPLE_MAPPING,
+    "mapping (as filed)",
+  );
+  checks.mappingRawLead = mappingRaw.lead;
+  checks.mappingRawShowsShortId = SHORT_ID.test(mappingRaw.readable);
+  if (!checks.mappingRawShowsShortId) {
+    failure("the mapping as filed no longer shows a column id — the before state is gone");
+  }
+
+  const mapping = await render(
+    win,
+    targets.mapping.target,
+    targets.mapping.resolved,
+    null,
+    SAMPLE_MAPPING,
+    "mapping (as read)",
+  );
+  checks.mappingRows = mapping.rows;
+  checks.mappingLead = mapping.lead;
+  if (!mapping.lead.startsWith("Map incoming columns onto Transactions.")) {
+    failure(`the mapping lead read "${mapping.lead}", expected the database name`);
+  }
+  const wantColumns = ["Date", "Mileage", "Unmapped"];
+  const gotColumns = mapping.rows.map((row) => row.column);
+  if (JSON.stringify(gotColumns) !== JSON.stringify(wantColumns)) {
+    failure(`mapped columns read ${JSON.stringify(gotColumns)}, expected ${JSON.stringify(wantColumns)}`);
+  }
+  const odometer = mapping.rows.find((row) => row.source === "Odometer");
+  if (odometer?.columnTitle !== targets.page.ids.mileageColumnId) {
+    failure(
+      `the mapped column tooltip is ${JSON.stringify(odometer?.columnTitle)}, expected the raw column id`,
+    );
+  }
+  checks.mappingReadableHoldsNoShortId = !SHORT_ID.test(mapping.readable);
+  if (!checks.mappingReadableHoldsNoShortId) {
+    failure(`the mapping card still shows a column id: ${mapping.readable.slice(0, 240)}`);
+  }
+  checks.mappingExactPayloadUnchanged =
+    JSON.stringify(mapping.exactPayload ? JSON.parse(mapping.exactPayload) : null) ===
+    JSON.stringify(targets.mapping.resolved);
+  if (!checks.mappingExactPayloadUnchanged) {
+    failure("the mapping card rewrote the body it was handed");
+  }
+
   checks.inboxWidth = resolved.inboxWidth;
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
@@ -223,11 +412,15 @@ async function main() {
   const report = {
     pass: errors.length === 0,
     failures: errors,
-    fixture: "fixtures/decision-row.json",
+    fixture: ["fixtures/decision-row.json", "fixtures/decision-page-mapping.json"],
     viewport: resolved.viewport,
     checks,
     raw,
     resolved,
+    pageRaw,
+    page,
+    mappingRaw,
+    mapping,
   };
 
   fs.mkdirSync(artifactsDir, { recursive: true });
@@ -242,11 +435,17 @@ async function main() {
   const table = resolved.rows
     .map((row) => `  ${row.field.padEnd(18)} ${row.cells.map((cell) => cell.text).join("  |  ")}`)
     .join("\n");
+  const blockLine = (blocks) =>
+    blocks.map((block) => `${block.kind}: ${block.detail}`).join(" | ");
   console.log(
     `inbox ${resolved.inboxWidth}px  rows ${resolved.rows.length}  changed ${resolved.changedRows}`,
   );
   console.log(`as filed:  ${rawCategoryRow?.cells.map((cell) => cell.text).join("  |  ")}`);
   console.log(`as read:\n${table}`);
+  console.log(`page  as filed:  ${blockLine(pageRaw.blocks)}`);
+  console.log(`page  as read:   ${blockLine(page.blocks)}`);
+  console.log(`map   as filed:  ${mappingRaw.lead}  [${mappingRaw.rows.map((r) => r.column).join(", ")}]`);
+  console.log(`map   as read:   ${mapping.lead}  [${mapping.rows.map((r) => r.column).join(", ")}]`);
   console.log(`failures: ${errors.length === 0 ? "none" : errors.join("; ")}`);
 
   win.destroy();

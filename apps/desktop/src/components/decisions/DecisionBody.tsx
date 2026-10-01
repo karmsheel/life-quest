@@ -354,7 +354,11 @@ function PageBody({ body }: { body: Record<string, unknown> }) {
           {blocks.map((block, index) => {
             const summary = blockSummary(block);
             return (
-              <li key={typeof block.id === "string" ? block.id : index} className="decision-block">
+              <li
+                key={typeof block.id === "string" ? block.id : index}
+                className="decision-block"
+                title={summary.ids || undefined}
+              >
                 <span className="decision-block__kind">{summary.kind}</span>
                 {summary.detail ? <span className="decision-block__detail">{summary.detail}</span> : null}
               </li>
@@ -390,11 +394,24 @@ function PinsBody({ body }: { body: Record<string, unknown> }) {
 function MappingBody({ body }: { body: Record<string, unknown> }) {
   const columns = Array.isArray(body.columns) ? body.columns.filter(isRecord) : [];
   const databaseId = typeof body.databaseId === "string" ? body.databaseId : "";
-  const database = databaseId && !isUuid(databaseId) ? labelize(databaseId) : "";
+  const databaseName = typeof body.databaseName === "string" ? body.databaseName : "";
+  const database = databaseName
+    ? labelize(databaseName)
+    : databaseId && !isUuid(databaseId)
+      ? labelize(databaseId)
+      : "";
   return (
     <section className="decision-section">
       <p className="decision-lead">
-        {database ? `Map incoming columns onto ${database}.` : "Map incoming columns onto a database."}
+        {databaseName || databaseId ? (
+          <span title={databaseId || undefined}>
+            {database
+              ? `Map incoming columns onto ${database}.`
+              : "Map incoming columns onto a database."}
+          </span>
+        ) : (
+          "Map incoming columns onto a database."
+        )}
       </p>
       {columns.length > 0 ? (
         <table className="decision-fields">
@@ -408,10 +425,18 @@ function MappingBody({ body }: { body: Record<string, unknown> }) {
             {columns.map((column, index) => {
               const source = typeof column.source === "string" ? column.source : "—";
               const columnId = typeof column.columnId === "string" ? column.columnId : "";
+              const columnName =
+                typeof column.columnName === "string" ? column.columnName : "";
               return (
                 <tr key={`${source}-${index}`}>
                   <td>{source}</td>
-                  <td>{columnId ? labelize(columnId) : <span className="decision-empty">Unmapped</span>}</td>
+                  <td title={columnName && columnId ? columnId : undefined}>
+                    {columnId || columnName ? (
+                      labelize(columnName || columnId)
+                    ) : (
+                      <span className="decision-empty">Unmapped</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -658,7 +683,11 @@ function ProseCompare({ proposed, previous }: { proposed: string; previous: stri
   );
 }
 
-function blockSummary(block: Record<string, unknown>): { kind: string; detail: string } {
+function blockSummary(block: Record<string, unknown>): {
+  kind: string;
+  detail: string;
+  ids: string;
+} {
   const kind = typeof block.kind === "string" ? block.kind : "block";
   const labels: Record<string, string> = {
     markdown: "Note",
@@ -674,19 +703,37 @@ function blockSummary(block: Record<string, unknown>): { kind: string; detail: s
     script: "Script",
   };
   let detail = "";
+  const raw: string[] = [];
+  // The body carries a name beside each id the vault could resolve; without
+  // one, labelize is the best the renderer can do for the id it holds.
+  const named = (idField: string, nameField: string): { text: string; raw: string } => {
+    const id = typeof block[idField] === "string" ? (block[idField] as string) : "";
+    const name = typeof block[nameField] === "string" ? (block[nameField] as string) : "";
+    if (id && name) return { text: labelize(name), raw: id };
+    return { text: id ? labelize(id) : name, raw: "" };
+  };
   if (kind === "markdown") detail = firstLine(typeof block.markdown === "string" ? block.markdown : "");
-  else if (kind === "bound-table" && typeof block.databaseId === "string") detail = labelize(block.databaseId);
-  else if (kind === "metric") {
-    detail = [block.agg, block.columnId].filter((part) => typeof part === "string").map(String).map(labelize).join(" · ");
+  else if (kind === "bound-table") {
+    const table = named("databaseId", "databaseName");
+    detail = table.text;
+    if (table.raw) raw.push(table.raw);
+  } else if (kind === "metric") {
+    const column = named("columnId", "columnName");
+    detail = [labelize(String(block.agg ?? "")), column.text].filter(Boolean).join(" · ");
+    if (column.raw) raw.push(column.raw);
   } else if (kind === "chart") {
-    detail = [block.chartType, block.yColumnId].filter((part) => typeof part === "string").map(String).map(labelize).join(" · ");
+    const y = named("yColumnId", "yColumnName");
+    detail = [labelize(String(block.chartType ?? "")), y.text].filter(Boolean).join(" · ");
+    if (y.raw) raw.push(y.raw);
   } else if (kind === "date-range") {
     detail = `${plain(block.start) || "open"} – ${plain(block.end) || "open"}`;
   } else if (kind === "script" && typeof block.name === "string") detail = block.name;
-  else if (kind === "scenario-compare" && typeof block.assumptionSetId === "string") {
-    detail = labelize(block.assumptionSetId);
+  else if (kind === "scenario-compare") {
+    const set = named("assumptionSetId", "assumptionSetName");
+    detail = set.text;
+    if (set.raw) raw.push(set.raw);
   }
-  return { kind: labels[kind] ?? labelize(kind), detail };
+  return { kind: labels[kind] ?? labelize(kind), detail, ids: raw.join(" · ") };
 }
 
 function pinLabel(pin: Record<string, unknown>): string {
