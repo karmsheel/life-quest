@@ -1,0 +1,333 @@
+{
+  "note": "Companion chat list as Hermes returns it, seeded from the lifequest profile's state.db (24 rows: 22 live, 1 archived, 1 hidden). Messages are the seeded transcripts; one synthetic role=tool row was added to the newest chat because Hermes stores tool traffic in the same table and the dock must not paint it.",
+  "list": {
+    "object": "list",
+    "data": [
+      {
+        "id": "api_demo_1790785751_00",
+        "title": null,
+        "preview": "remind me what my premise says for Health",
+        "last_active": 1790784023.1291869,
+        "started_at": 1790783303.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_01",
+        "title": "Plan the Lisbon trip",
+        "preview": "I want to plan the Lisbon trip for the last week of November. Two of us, five days.",
+        "last_active": 1790764151.1291869,
+        "started_at": 1790762951.1291869,
+        "message_count": 6,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_02",
+        "title": "Review \u00b7 Weekly \u00b7 Health \u00b7 Sep 28",
+        "preview": "Let's assemble the weekly review for Health, week of Sep 28.",
+        "last_active": 1790733911.1291869,
+        "started_at": 1790733191.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_03",
+        "title": "Money: rebuild the ZAR budget",
+        "preview": "The budget is out of date since the rent went up. Can we rebuild it?",
+        "last_active": 1790686391.1291869,
+        "started_at": 1790685191.1291869,
+        "message_count": 6,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_04",
+        "title": null,
+        "preview": "add a task to call the bank about the debit order that came off twice",
+        "last_active": 1790656151.1291869,
+        "started_at": 1790655911.1291869,
+        "message_count": 2,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_05",
+        "title": "Break the YouTube goal into tasks",
+        "preview": "The YouTube goal has been sitting for a month. Break it down.",
+        "last_active": 1790621591.1291869,
+        "started_at": 1790620391.1291869,
+        "message_count": 6,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_06",
+        "title": "Why is my energy low on Tuesdays?",
+        "preview": "Every Tuesday I am useless by 14:00. Any idea why?",
+        "last_active": 1790578391.1291869,
+        "started_at": 1790577191.1291869,
+        "message_count": 6,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_07",
+        "title": "Plan \u00b7 Weekly \u00b7 Sep 21",
+        "preview": "Let's plan the week of Sep 21.",
+        "last_active": 1790517911.1291869,
+        "started_at": 1790517191.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_08",
+        "title": "Draft the Premise for Health",
+        "preview": "I want to rewrite the Health premise. It sounds like a gym advert.",
+        "last_active": 1790414231.1291869,
+        "started_at": 1790413511.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_09",
+        "title": "Redesign my morning block",
+        "preview": "The morning block keeps collapsing. What is actually in it?",
+        "last_active": 1790301911.1291869,
+        "started_at": 1790301191.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_21",
+        "title": "Debug: tool loop",
+        "preview": "test the map tool",
+        "last_active": 1790267351.1291869,
+        "started_at": 1790267111.1291869,
+        "message_count": 2,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 1
+      },
+      {
+        "id": "api_demo_1790785751_10",
+        "title": "Review \u00b7 Monthly \u00b7 Finance \u00b7 Aug",
+        "preview": "Let's assemble the August review for Finance.",
+        "last_active": 1790077271.1291869,
+        "started_at": 1790076551.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_11",
+        "title": "Sort the car service deadline",
+        "preview": "The car service is due and I have not booked it.",
+        "last_active": 1789973591.1291869,
+        "started_at": 1789972871.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_12",
+        "title": "Reading list and deep-work time",
+        "preview": "I never get deep work in. Where does the time actually go?",
+        "last_active": 1789826711.1291869,
+        "started_at": 1789825991.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_20",
+        "title": "Old scratch pad",
+        "preview": "ignore this one, just a scratch pad",
+        "last_active": 1789748951.1291869,
+        "started_at": 1789748711.1291869,
+        "message_count": 2,
+        "pinned": 0,
+        "archived": 1,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_13",
+        "title": "What should I focus on this quarter?",
+        "preview": "Four things are all urgent. What should I actually focus on this quarter?",
+        "last_active": 1789636631.1291869,
+        "started_at": 1789635911.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_14",
+        "title": "Track: log my training week",
+        "preview": "log this week: ride 90, gym, gym, ride 120, rest",
+        "last_active": 1789515671.1291869,
+        "started_at": 1789514951.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_15",
+        "title": "Plan the December family holiday",
+        "preview": "We need to decide on December. Beach or bush?",
+        "last_active": 1789213271.1291869,
+        "started_at": 1789212551.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_16",
+        "title": "Where did last month's budget go?",
+        "preview": "The month felt expensive but I cannot see where.",
+        "last_active": 1788928151.1291869,
+        "started_at": 1788927431.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_17",
+        "title": "Should I take the contract role?",
+        "preview": "The contract role is back on the table. Help me think.",
+        "last_active": 1788504791.1291869,
+        "started_at": 1788503591.1291869,
+        "message_count": 6,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_18",
+        "title": "Career: skills to build in 2027",
+        "preview": "What skills should I be building next year?",
+        "last_active": 1788167831.1291869,
+        "started_at": 1788167111.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      },
+      {
+        "id": "api_demo_1790785751_19",
+        "title": "Set up my Q4 goals",
+        "preview": "Help me set up Q4. I want three goals, not fifteen.",
+        "last_active": 1787321111.1291869,
+        "started_at": 1787320391.1291869,
+        "message_count": 4,
+        "pinned": 0,
+        "archived": 0,
+        "hidden": 0
+      }
+    ],
+    "limit": 200,
+    "offset": 0,
+    "has_more": false
+  },
+  "messages": {
+    "api_demo_1790785751_00": {
+      "object": "list",
+      "session_id": "api_demo_1790785751_00",
+      "data": [
+        {
+          "role": "user",
+          "content": "remind me what my premise says for Health"
+        },
+        {
+          "role": "tool",
+          "content": "{\"tools\":{\"mcp__lifequest__get_doctrine\":{}}}"
+        },
+        {
+          "role": "assistant",
+          "content": "Your Health premise reads: \"My body is the instrument every other domain runs on.\" The Vision adds that you want to be training five days a week by December. Neither has changed since you forged them."
+        },
+        {
+          "role": "user",
+          "content": "ok, so is the morning block still the right How?"
+        },
+        {
+          "role": "assistant",
+          "content": "It is, but it is only half-built. Strategy says train before work and you currently have no anchor task before 09:00. Want me to propose the anchor as a Decision?"
+        }
+      ]
+    },
+    "api_demo_1790785751_01": {
+      "object": "list",
+      "session_id": "api_demo_1790785751_01",
+      "data": [
+        {
+          "role": "user",
+          "content": "I want to plan the Lisbon trip for the last week of November. Two of us, five days."
+        },
+        {
+          "role": "assistant",
+          "content": "I have a draft shape: fly out Sat 22, back Thu 27. Three anchor days (Alfama, Sintra, Bel\u00e9m) and two open days. What is the budget ceiling for flights?"
+        },
+        {
+          "role": "user",
+          "content": "around R14k for flights, flexible"
+        },
+        {
+          "role": "assistant",
+          "content": "Noted. I will hold the ceiling at R14k. Two things I need before I write the plan: is the passport valid past May, and do you want the hotel booked as a Goal with a deadline?"
+        },
+        {
+          "role": "user",
+          "content": "passport is fine. yes, make it a goal with a deadline"
+        },
+        {
+          "role": "assistant",
+          "content": "Created the goal \"Book Lisbon flights\" with a deadline of 15 October and filed it as a pending Decision for you to approve. The itinerary itself is still a draft."
+        }
+      ]
+    },
+    "api_demo_1790785751_02": {
+      "object": "list",
+      "session_id": "api_demo_1790785751_02",
+      "data": [
+        {
+          "role": "user",
+          "content": "Let's assemble the weekly review for Health, week of Sep 28."
+        },
+        {
+          "role": "assistant",
+          "content": "Here is what I have. Look-back: four of five training days completed, sleep averaged 6h50. Keep: the 06:30 start. Change: the late-evening screen time that is eating the last hour. Next-period intent: protect two evenings."
+        },
+        {
+          "role": "user",
+          "content": "the screen time is the real problem, yes"
+        },
+        {
+          "role": "assistant",
+          "content": "Then I will write the Change line around the 21:30 cutoff rather than the 06:30 start, since that is the upstream cause. Shall I propose marking this review complete?"
+        }
+      ]
+    }
+  }
+}

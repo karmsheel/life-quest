@@ -14,6 +14,7 @@ import {
   buildInstructions,
   createdSessionFromPayload,
   messagesFromPayload,
+  sessionFromPayload,
   sessionsFromPayload,
   splitSse,
   type ChatStreamEvent,
@@ -333,6 +334,46 @@ export async function companionSessionMessages(
   }
 }
 
+/** The client-safe session fields the gateway's PATCH accepts. */
+export type CompanionSessionPatch = {
+  title?: string;
+  pinned?: boolean;
+  archived?: boolean;
+};
+
+/**
+ * PATCH /api/sessions/{id} — rename, pin or archive one chat.
+ *
+ * All three are durable Hermes-side flags, so Hermes Desktop (and every other
+ * channel on this profile) sees the same state; LifeQuest keeps no copy.
+ */
+export async function companionSessionPatch(
+  id: string,
+  patch: CompanionSessionPatch,
+): Promise<{ ok: true; value: HermesSession } | { ok: false; error: string }> {
+  try {
+    const body: Record<string, unknown> = {};
+    if (typeof patch.title === "string") body.title = patch.title;
+    if (typeof patch.pinned === "boolean") body.pinned = patch.pinned;
+    if (typeof patch.archived === "boolean") body.archived = patch.archived;
+    if (Object.keys(body).length === 0) {
+      return { ok: false, error: "Session update had nothing to change" };
+    }
+    const res = await hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      return { ok: false, error: await errorDetail(res, `Session update failed (${res.status})`) };
+    }
+    const updated = sessionFromPayload(await res.json());
+    if (!updated) return { ok: false, error: "Session update returned no session" };
+    return { ok: true, value: updated };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function companionChatStream(
   sessionId: string,
   input: string,
@@ -381,6 +422,25 @@ export async function companionApproval(
       body: JSON.stringify({ request_id: requestId, allow }),
     });
     if (!res.ok) return { ok: false, error: `Approval failed (${res.status})` };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Interrupt a live run. The gateway stops it cooperatively (the run ends as
+ * `cancelled` and the SSE stream closes on its own), so the caller learns the
+ * turn is over from the stream, never from this response.
+ */
+export async function companionRunStop(
+  runId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await hermesFetch(`/v1/runs/${encodeURIComponent(runId)}/stop`, {
+      method: "POST",
+    });
+    if (!res.ok) return { ok: false, error: `Stop failed (${res.status})` };
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

@@ -345,6 +345,18 @@ function registerIpcHandlers() {
     companion.companionSessionMessages(id),
   );
   ipcMain.handle(
+    "companion:sessionPatch",
+    (
+      _e,
+      id: string,
+      patch: { title?: string; pinned?: boolean; archived?: boolean },
+    ) =>
+      companion.companionSessionPatch(
+        typeof id === "string" ? id : "",
+        patch && typeof patch === "object" ? patch : {},
+      ),
+  );
+  ipcMain.handle(
     "companion:chatStream",
     async (
       event,
@@ -370,6 +382,9 @@ function registerIpcHandlers() {
     "companion:approval",
     (_e, payload: { runId: string; requestId: string; allow: boolean }) =>
       companion.companionApproval(payload.runId, payload.requestId, payload.allow),
+  );
+  ipcMain.handle("companion:runStop", (_e, runId: string) =>
+    companion.companionRunStop(runId),
   );
   ipcMain.handle("companion:openProfileFolder", () =>
     companion.companionOpenProfileFolder(),

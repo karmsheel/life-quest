@@ -82,10 +82,13 @@ type CompanionInstructionsContext = {
 };
 
 type ChatStreamEvent =
+  | { type: "run.started"; runId: string }
   | { type: "assistant.delta"; text: string }
-  | { type: "tool.started"; name: string }
-  | { type: "tool.completed"; name: string; ok: boolean }
+  | { type: "tool.started"; name: string; target: string }
+  | { type: "tool.completed"; name: string }
   | { type: "approval.request"; runId: string; requestId: string; summary: string }
+  | { type: "run.stopped" }
+  | { type: "run.incomplete"; reason: string }
   | { type: "run.completed" }
   | { type: "error"; message: string };
 
@@ -94,6 +97,8 @@ type HermesSession = {
   title: string;
   preview: string | null;
   lastActive: number | null;
+  /** Durable Hermes-side flag: pinned chats sort into their own section. */
+  pinned: boolean;
 };
 
 /** Frozen IPC API exposed on window.lifequest via preload. */
@@ -211,6 +216,10 @@ type LifequestApi = {
   companionSessionMessages: (
     id: string,
   ) => Promise<Result<{ role: "user" | "assistant"; content: string }[]>>;
+  companionSessionPatch: (
+    id: string,
+    patch: { title?: string; pinned?: boolean; archived?: boolean },
+  ) => Promise<Result<HermesSession>>;
   companionChatStream: (payload: {
     sessionId: string;
     input: string;
@@ -221,6 +230,9 @@ type LifequestApi = {
     requestId: string;
     allow: boolean;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  companionRunStop: (
+    runId: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   companionOpenProfileFolder: () => Promise<void>;
   companionGetFiling: () => Promise<boolean>;
   companionSetFiling: (enabled: boolean) => Promise<void>;

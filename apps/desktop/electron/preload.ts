@@ -252,6 +252,10 @@ const lifequest = {
     ipcRenderer.invoke("companion:sessionCreate", title),
   companionSessionMessages: (id: string) =>
     ipcRenderer.invoke("companion:sessionMessages", id),
+  companionSessionPatch: (
+    id: string,
+    patch: { title?: string; pinned?: boolean; archived?: boolean },
+  ) => ipcRenderer.invoke("companion:sessionPatch", id, patch),
   companionChatStream: (payload: {
     sessionId: string;
     input: string;
@@ -268,6 +272,10 @@ const lifequest = {
     requestId: string;
     allow: boolean;
   }) => ipcRenderer.invoke("companion:approval", payload),
+  companionRunStop: (runId: string) =>
+    ipcRenderer.invoke("companion:runStop", runId) as Promise<
+      { ok: true } | { ok: false; error: string }
+    >,
   companionOpenProfileFolder: () =>
     ipcRenderer.invoke("companion:openProfileFolder"),
   companionGetFiling: () =>

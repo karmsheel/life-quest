@@ -10,10 +10,13 @@ export type CompanionInstructionsInput = {
 };
 
 export type ChatStreamEvent =
+  | { type: "run.started"; runId: string }
   | { type: "assistant.delta"; text: string }
-  | { type: "tool.started"; name: string }
-  | { type: "tool.completed"; name: string; ok: boolean }
+  | { type: "tool.started"; name: string; target: string }
+  | { type: "tool.completed"; name: string }
   | { type: "approval.request"; runId: string; requestId: string; summary: string }
+  | { type: "run.stopped" }
+  | { type: "run.incomplete"; reason: string }
   | { type: "run.completed" }
   | { type: "error"; message: string };
 
@@ -24,6 +27,23 @@ export type HermesSession = {
   preview: string | null;
   /** Unix seconds of last activity, or started_at when the chat has not been active yet. */
   lastActive: number | null;
+  /** Durable sidebar flag: a pinned chat is never archived and never sinks out of the list. */
+  pinned: boolean;
+};
+
+/** One session row as Hermes sends it (list rows and single-session replies). */
+type SessionRow = {
+  id?: unknown;
+  session_id?: unknown;
+  title?: unknown;
+  name?: unknown;
+  preview?: unknown;
+  last_active?: unknown;
+  last_activity_at?: unknown;
+  started_at?: unknown;
+  hidden?: unknown;
+  archived?: unknown;
+  pinned?: unknown;
 };
 
 const PLACEHOLDER_TITLE = /^LifeQuest(?: · .+)?$/;
@@ -66,45 +86,52 @@ function messageText(content: unknown): string {
   return parts.join("");
 }
 
+/** One row mapped to the dock's shape, or null when it carries no id. */
+function sessionFromRow(r: SessionRow): HermesSession | null {
+  const id = String(r.id ?? r.session_id ?? "").trim();
+  if (!id) return null;
+  const title = oneLine(r.title ?? r.name);
+  const preview = oneLine(r.preview);
+  return {
+    id,
+    title,
+    preview: preview || null,
+    lastActive: unixSeconds(r.last_active ?? r.last_activity_at ?? r.started_at),
+    pinned: flag(r.pinned),
+  };
+}
+
 export function sessionsFromPayload(payload: unknown): HermesSession[] {
   const out: HermesSession[] = [];
   for (const row of rowsOf(payload, ["sessions", "data", "items"])) {
     if (!row || typeof row !== "object") continue;
-    const r = row as {
-      id?: unknown;
-      session_id?: unknown;
-      title?: unknown;
-      name?: unknown;
-      preview?: unknown;
-      last_active?: unknown;
-      last_activity_at?: unknown;
-      started_at?: unknown;
-      hidden?: unknown;
-      archived?: unknown;
-    };
+    const r = row as SessionRow;
+    // Archived and hidden rows belong to Hermes Desktop's recovery surface; the
+    // dock lists live chats only.
     if (flag(r.hidden) || flag(r.archived)) continue;
-    const id = String(r.id ?? r.session_id ?? "").trim();
-    if (!id) continue;
-    const title = oneLine(r.title ?? r.name);
-    const preview = oneLine(r.preview);
-    out.push({
-      id,
-      title,
-      preview: preview || null,
-      lastActive: unixSeconds(r.last_active ?? r.last_activity_at ?? r.started_at),
-    });
+    const session = sessionFromRow(r);
+    if (session) out.push(session);
   }
   return out;
+}
+
+/**
+ * One session from a create/update reply, which nests the row under `session`.
+ * Never filtered: the reply to archiving a chat IS the archived row, and
+ * dropping it would read as a failed archive.
+ */
+export function sessionFromPayload(payload: unknown): HermesSession | null {
+  if (!payload || typeof payload !== "object") return null;
+  const nested = (payload as { session?: unknown }).session;
+  const source = nested && typeof nested === "object" ? nested : payload;
+  return sessionFromRow(source as SessionRow);
 }
 
 export function createdSessionFromPayload(
   payload: unknown,
   fallbackTitle = "",
 ): HermesSession | null {
-  if (!payload || typeof payload !== "object") return null;
-  const nested = (payload as { session?: unknown }).session;
-  const source = nested && typeof nested === "object" ? nested : payload;
-  const [row] = sessionsFromPayload([source]);
+  const row = sessionFromPayload(payload);
   if (!row) return null;
   const fallback = oneLine(fallbackTitle);
   if (!row.title && fallback) return { ...row, title: fallback };
@@ -188,6 +215,76 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
   return `${base}\n\n${reviewContext}`;
 }
 
+/**
+ * What a tool frame actually says. `api_server._tool_progress` enqueues
+ * `{message_id, tool_name, preview, args}` — `tool_name`, not `name`, and
+ * there is no result or status field at all. Reading `name` is why every tool
+ * row used to render as the literal word "tool"; reading `ok` is why a row
+ * used to claim success for a key the wire never sends.
+ */
+function toolName(data: Record<string, unknown>): string {
+  const name = data.tool_name ?? data.name;
+  return typeof name === "string" && name.trim() ? name.trim() : "tool";
+}
+
+const TARGET_PATH_KEYS = new Set(["path", "file", "filepath", "file_path"]);
+const TARGET_KEYS = [
+  "path",
+  "file",
+  "filepath",
+  "file_path",
+  "query",
+  "url",
+  "command",
+  "code",
+  "goal",
+  "skill",
+  "name",
+];
+const TARGET_MAX_CHARS = 48;
+
+function parseArgs(args: unknown): Record<string, unknown> | null {
+  if (args && typeof args === "object" && !Array.isArray(args)) {
+    return args as Record<string, unknown>;
+  }
+  if (typeof args === "string" && args.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(args) as unknown;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * One line naming what a call acted on, for the activity line and its rows.
+ *
+ * Derived here rather than in the renderer because `args` is as large as the
+ * biggest tool argument — a whole file body, in the case of `write_file` —
+ * and a bounded string is the only shape the display should ever receive.
+ */
+function toolTargetLine(args: unknown): string {
+  const bag = parseArgs(args);
+  if (!bag) return "";
+  for (const key of TARGET_KEYS) {
+    const value = bag[key];
+    if (typeof value !== "string") continue;
+    const line = value.split("\n")[0]!.replace(/\s+/g, " ").trim();
+    if (!line) continue;
+    const named = TARGET_PATH_KEYS.has(key)
+      ? (line.replace(/[\/]+$/, "").split(/[\/]/).pop() ?? line)
+      : line;
+    return named.length > TARGET_MAX_CHARS
+      ? `${named.slice(0, TARGET_MAX_CHARS - 1)}…`
+      : named;
+  }
+  return "";
+}
+
 export function parseSseBlock(raw: string): ChatStreamEvent | null {
   const lines = raw.replace(/\r\n/g, "\n").trim().split("\n");
   let eventName = "";
@@ -218,6 +315,26 @@ export function mapStreamEvent(
   data: Record<string, unknown>,
 ): ChatStreamEvent | null {
   switch (type) {
+    case "run.started": {
+      // Every frame of a session stream carries run_id (stamped by the
+      // gateway's event queue); this is the one the stop control names.
+      return {
+        type: "run.started",
+        runId: String(data.run_id ?? data.runId ?? ""),
+      };
+    }
+    case "run.cancelled":
+      // The turn was interrupted: the deltas already delivered are a PARTIAL
+      // reply, and nothing else on the wire says so. The panel needs this to
+      // keep a stopped turn from reading like a finished one.
+      return { type: "run.stopped" };
+    case "run.failed":
+      // Same family, no interrupt: the turn ended without finishing (failure,
+      // iteration budget, partial). ``turn_exit_reason`` names it when present.
+      return {
+        type: "run.incomplete",
+        reason: typeof data.turn_exit_reason === "string" ? data.turn_exit_reason : "",
+      };
     case "assistant.delta": {
       const text =
         typeof data.text === "string"
@@ -227,15 +344,16 @@ export function mapStreamEvent(
             : "";
       return { type: "assistant.delta", text };
     }
-    case "tool.started": {
-      const name = typeof data.name === "string" ? data.name : "tool";
-      return { type: "tool.started", name };
-    }
-    case "tool.completed": {
-      const name = typeof data.name === "string" ? data.name : "tool";
-      const ok = data.ok !== false;
-      return { type: "tool.completed", name, ok };
-    }
+    case "tool.started":
+      return {
+        type: "tool.started",
+        name: toolName(data),
+        target: toolTargetLine(data.args),
+      };
+    case "tool.completed":
+      // Nothing to add to the row: the frame carries no outcome, so this is
+      // only the panel's signal that the call named here is no longer running.
+      return { type: "tool.completed", name: toolName(data) };
     case "approval.request": {
       return {
         type: "approval.request",

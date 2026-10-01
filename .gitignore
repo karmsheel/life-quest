@@ -8,3 +8,6 @@ dist
 dist-electron
 release
 .superpowers/
+
+# E2E artifacts (reproduce with `node e2e/composer-autogrow.electron.mjs`)
+apps/desktop/e2e/artifacts/

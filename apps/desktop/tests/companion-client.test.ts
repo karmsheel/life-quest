@@ -155,6 +155,7 @@ describe("session history payloads", () => {
           preview: "What should I focus on today?",
           last_active: 1_758_000_000,
           message_count: 4,
+          pinned: true,
         },
         {
           id: "api_hidden",
@@ -178,6 +179,7 @@ describe("session history payloads", () => {
         title: "LifeQuest · Personal",
         preview: "What should I focus on today?",
         lastActive: 1_758_000_000,
+        pinned: true,
       },
     ]);
   });
@@ -195,7 +197,7 @@ describe("session history payloads", () => {
       sessions: [{ id: "s2", title: null, preview: "  hello\nthere  ", last_activity_at: 1_700_000_100 }],
     });
     assert.deepEqual(wrapped, [
-      { id: "s2", title: "", preview: "hello there", lastActive: 1_700_000_100 },
+      { id: "s2", title: "", preview: "hello there", lastActive: 1_700_000_100, pinned: false },
     ]);
   });
 
@@ -250,6 +252,7 @@ describe("session history payloads", () => {
       title: "",
       preview: null,
       lastActive: 1_700_000_000,
+      pinned: false,
     });
   });
 
@@ -297,14 +300,27 @@ describe("parseSseBlock", () => {
   });
 
   it("maps tool start and complete", () => {
+    // `api_server._tool_progress` enqueues tool_name + args (with message_id and
+    // preview); there is no `name` and no `ok` on the wire, so neither is
+    // invented here. The target is the one line derived from the args.
     assert.deepEqual(
-      parseSseBlock('event: tool.started\ndata: {"name":"get_state"}'),
-      { type: "tool.started", name: "get_state" },
+      parseSseBlock(
+        'event: tool.started\ndata: {"message_id":"m1","tool_name":"read_file","preview":"","args":{"path":"a/b/AGENTS.md"}}',
+      ),
+      { type: "tool.started", name: "read_file", target: "AGENTS.md" },
     );
     assert.deepEqual(
-      parseSseBlock('event: tool.completed\ndata: {"name":"get_state","ok":true}'),
-      { type: "tool.completed", name: "get_state", ok: true },
+      parseSseBlock(
+        'event: tool.completed\ndata: {"message_id":"m1","tool_name":"read_file","args":{"path":"a/b/AGENTS.md"}}',
+      ),
+      { type: "tool.completed", name: "read_file" },
     );
+    // No args: the name survives and the target is empty rather than guessed.
+    assert.deepEqual(parseSseBlock('event: tool.started\ndata: {"name":"get_state"}'), {
+      type: "tool.started",
+      name: "get_state",
+      target: "",
+    });
   });
 
   it("maps errors and ignores unknown events", () => {

@@ -3026,6 +3026,93 @@ a.home-mini-list__link:hover {
   font-size: 0.72rem;
 }
 
+.chat-panel__session-pin {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+/* The list is a page of its own, not the thread's strip: it owns the panel's
+   height, so twenty chats are reachable by scrolling instead of piling up
+   inside an 11rem box. */
+.chat-panel__list {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.35rem;
+  overflow-y: auto;
+}
+
+.chat-panel__sessions--full {
+  max-height: none;
+  overflow: visible;
+  border-bottom: none;
+  flex: 1 1 auto;
+}
+
+.chat-panel__sessions-group {
+  margin: 0.4rem 0 0.15rem;
+  padding: 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chat-panel__sessions-group:first-child {
+  margin-top: 0;
+}
+
+/* Body and composer belong to the thread view. `hidden` needs the explicit
+   override below because both elements set `display: flex`. */
+.chat-panel__body[hidden],
+.chat-panel__footer[hidden] {
+  display: none;
+}
+
+.chat-panel__header--thread {
+  gap: 0.35rem;
+  justify-content: flex-start;
+}
+
+.chat-panel__heading--thread {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.chat-panel__rename {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chat-panel__rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--input);
+  border-radius: 2px;
+  background: var(--background);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.chat-panel__rename-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
 .chat-panel__header-actions {
   display: flex;
   align-items: center;
@@ -3198,11 +3285,114 @@ a.home-mini-list__link:hover {
   font-style: italic;
 }
 
+/* A turn's tool calls, standing in as one grey line (see `lib/tool-run.ts`).
+   Opening it shows the calls it summarizes; it is closed by default, so a
+   tool-heavy turn costs the transcript one line instead of one bubble per
+   event. It is in-flight evidence: a reloaded transcript has no tool rows. */
+.chat-panel__activity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.chat-panel__activity-line {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.6875rem;
+  font-style: italic;
+  color: var(--muted);
+  text-align: left;
+}
+
+button.chat-panel__activity-line {
+  cursor: pointer;
+}
+
+button.chat-panel__activity-line:hover {
+  color: var(--fg);
+}
+
+.chat-panel__activity-line > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel__activity-caret {
+  flex-shrink: 0;
+  transition: transform 120ms ease;
+}
+
+.chat-panel__activity-caret--open {
+  transform: rotate(90deg);
+}
+
+.chat-panel__activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0 0 0 1.05rem;
+  max-height: 10rem;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.chat-panel__activity-row {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.6875rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* How a turn ended, when it did not end cleanly. Live-only, like `Thinking…`:
+   the transcript is Hermes's, and the deltas already shown above it are what
+   the reply actually contains. */
+.chat-panel__turn-note {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-style: italic;
+  color: var(--muted);
+}
+
 .chat-panel__footer {
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   padding: 0.75rem;
   background: color-mix(in srgb, var(--selected) 30%, var(--bg));
+}
+
+/* Bottom chrome of the bar: the dock's own actions, shared by both views. It is
+   a sibling band of the composer footer (its own hairline, its own fill), so the
+   two read as stacked rows of one column rather than a single mixed strip. */
+.chat-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  padding: 0.35rem 0.5rem;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--selected) 30%, var(--bg));
+}
+
+.chat-panel__action[aria-pressed="true"] {
+  background: var(--selected);
+  color: var(--fg);
+}
+
+.chat-panel__action:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .chat-panel__composer {
@@ -3211,23 +3401,28 @@ a.home-mini-list__link:hover {
   gap: 0.35rem;
 }
 
-.chat-panel__composer-label {
-  font-size: 0.625rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
+/* The composer row is the input's own surface: the control (send arrow, or the
+   stop square while a run is live) is positioned inside it rather than sitting
+   beside it, so the field keeps the full width of the panel. Only the right
+   gutter is paid for, and only while the control is on screen. */
 .chat-panel__composer-row {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 0.4rem;
 }
 
+.chat-panel__composer-row--control .chat-panel__composer-input {
+  padding-right: 2.5rem;
+}
+
+/* Height is JS-driven (ChatPanel `syncComposerHeight`): the field grows with its
+   text up to half the panel, then scrolls in place. `overflow-y` here is only
+   the pre-script state — an empty draft keeps the `rows` attribute shape. */
 .chat-panel__composer-input {
   width: 100%;
   resize: none;
+  overflow-y: hidden;
   border-radius: 0.4rem;
   border: 1px solid var(--border);
   background: var(--bg);
@@ -3250,19 +3445,23 @@ a.home-mini-list__link:hover {
   cursor: not-allowed;
 }
 
+/* Icon-only, anchored inside the field's bottom-right corner (26px, matching
+   the Hermes Desktop composer's primary control) so it costs the textarea one
+   narrow gutter instead of a whole column. */
 .chat-panel__send {
+  position: absolute;
+  right: 0.375rem;
+  bottom: 0.375rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 3.25rem;
-  height: 2.25rem;
-  flex-shrink: 0;
-  border-radius: 0.4rem;
+  width: 1.625rem;
+  height: 1.625rem;
+  padding: 0;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
   background: var(--accent);
   color: var(--accent-fg);
-  font-weight: 600;
-  font-size: 0.8125rem;
   cursor: pointer;
 }
 
@@ -3275,20 +3474,14 @@ a.home-mini-list__link:hover {
   filter: brightness(1.05);
 }
 
-.chat-panel__composer-help {
-  margin: 0;
-  font-size: 0.6875rem;
-  color: var(--muted);
-}
-
-.chat-panel__composer-help kbd {
-  display: inline-block;
-  padding: 0.05rem 0.3rem;
-  border: 1px solid var(--border);
-  border-radius: 0.25rem;
-  background: color-mix(in srgb, var(--selected) 55%, transparent);
-  font-size: 0.625rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+/* Stop state of the same control: Hermes Desktop swaps the arrow for a square
+   while a run is live, so the one button reads as "send" or "interrupt". */
+.chat-panel__send-stop {
+  display: block;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 0.1875rem;
+  background: currentColor;
 }
 
 /* —— Life Signal Chain —— */
