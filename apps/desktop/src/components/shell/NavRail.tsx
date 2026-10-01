@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { recordVisibleMulti } from "@lifequest/vault-core/pure";
 import { version } from "../../../package.json";
 import { useVault } from "@/state/VaultProvider";
+import { NavCollapseButton } from "./NavCollapseButton";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
 import { useDomainLens } from "./useActiveDomain";
 import { useWing } from "./WingProvider";
@@ -56,7 +57,10 @@ export function NavRail() {
   }
 
   return (
-    <nav className="nav-rail" aria-label="Main">
+    <nav className="nav-rail" id="nav-rail" aria-label="Main">
+      <div className="nav-rail__header">
+        <NavCollapseButton />
+      </div>
       <div className="nav-rail__section">{topPinned.map(renderItem)}</div>
       <div className="nav-rail__divider" role="separator" />
       <div className="nav-rail__section">{wingItems.map(renderItem)}</div>

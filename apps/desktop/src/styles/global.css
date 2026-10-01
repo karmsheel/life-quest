@@ -258,7 +258,12 @@ a {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  /* The frame on three sides only: the rail owns the left edge flush, so the
+     rail's trailing gap comes from the shell's own column gap rather than from
+     a second frame stacked on top of it. That is what keeps the rail→sheet gap
+     equal to the sheet→chat gap. */
   padding: var(--shell-frame);
+  padding-left: 0;
 }
 
 .app-root__body > * {
@@ -282,6 +287,7 @@ a {
   box-sizing: border-box;
   display: flex;
   align-items: center;
+  position: relative; /* anchor for the toggle floating in the rail's column */
   min-width: 0;
   height: 100%;
   margin-left: env(titlebar-area-x, 0px);
@@ -295,47 +301,55 @@ a {
   flex: 1 1 auto;
 }
 
-.window-titlebar__brand {
+.window-titlebar__vault {
+  /* no-drag: the strip it sits in is a window drag handle. */
   -webkit-app-region: no-drag;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   display: flex;
   align-items: center;
-  justify-content: center;
-  height: 100%;
-  padding: 0 0.45rem;
-  text-decoration: none;
-  color: inherit;
-}
-
-.window-titlebar__logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: var(--radius-xs);
-  background: var(--accent);
-  color: var(--accent-fg);
-  font-size: 0.5rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.window-titlebar__brand:hover .window-titlebar__logo {
-  background: var(--accent-hover);
-}
-
-.window-titlebar__label {
-  box-sizing: border-box;
   min-width: 0;
-  flex: 1 1 auto;
-  padding: 0 0.5rem 0 0.15rem;
-  font-size: 0.8rem;
+  max-width: 100%;
+  /* Full strip height: the chip hangs off the window's top edge with no margin
+     at either end, and only its own padding keeps the text off the chrome. */
+  align-self: stretch;
+  /* Lines the chip's leading border up with the sheet's: the strip indents by
+     the rail's column, then by the same pane gap the sheet sits behind. */
+  margin-left: var(--shell-frame);
+  padding: 0 0.6rem;
+  border-radius: 0;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: -0.01em;
+  text-decoration: none;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.window-titlebar__vault:hover {
+  background: var(--accent-hover);
+  color: var(--accent-hover-fg);
+}
+
+/* The whole shell — rail open or closed — reserves the rail's column, so the
+   toggle and the chip hold their places instead of sliding when it toggles. */
+.window-titlebar--nav-column .window-titlebar__leading {
+  padding-left: var(--shell-nav-width);
+}
+
+/* The toggle is out of flow inside that reserved column: it floats there whether
+   it is standing in for the rail or sitting in the rail itself, and nothing
+   downstream is laid out after it — which is what makes the chip's x a constant.
+   Two classes on purpose — `.nav-toggle`'s own `margin: 0` is later in the sheet
+   and would win at equal specificity. */
+.window-titlebar__leading .window-titlebar__nav-toggle {
+  position: absolute;
+  left: calc((var(--shell-nav-width) - var(--nav-toggle-size)) / 2);
+  top: 50%;
+  margin: 0;
+  transform: translateY(-50%);
 }
 
 .window-titlebar__trailing {
@@ -424,15 +438,46 @@ a {
 }
 
 .shell {
+  /* Track widths as vars so the two collapse variants compose instead of each
+     overwriting the other's grid-template-columns. */
+  --nav-column: var(--shell-nav-width);
+  --chat-column: var(--chatbar-width);
   display: grid;
-  grid-template-columns: var(--shell-nav-width) 1fr var(--chatbar-width);
+  grid-template-columns: var(--nav-column) 1fr var(--chat-column);
   height: 100%;
   color: var(--fg);
   gap: var(--shell-frame);
 }
 
 .shell--chat-collapsed {
-  grid-template-columns: var(--shell-nav-width) 1fr 2.75rem;
+  --chat-column: 2.75rem;
+}
+
+/* Collapsed rail: its column goes back to the workspace sheet and the re-open
+   toggle moves to the titlebar's leading edge. The column gap stays — the sheet
+   has to keep the same inset from the window edge that it keeps from the chat
+   panel, and the zero-width track still contributes one gap. */
+.shell--nav-collapsed {
+  --nav-column: 0px;
+}
+
+.shell--nav-collapsed > .nav-rail {
+  display: none;
+}
+
+/* Explicit tracks: the rail leaves the grid entirely when collapsed, and
+   auto-placed items would otherwise slide one track left — handing the sidebar's
+   column to the chat panel. */
+.shell > .nav-rail {
+  grid-column: 1;
+}
+
+.shell > .shell__main {
+  grid-column: 2;
+}
+
+.shell > .chat-panel {
+  grid-column: 3;
 }
 
 .shell__main {
@@ -460,25 +505,49 @@ a {
 }
 
 /* —— Nav rail —— */
+/* Flush to the window's top, left and bottom edges the way the desktop shell's
+   own sidebar is. The tray keeps its frame for the workspace sheet on the top,
+   right and bottom, and the rail escapes those three sides with negative margins
+   and reaches over the titlebar row by its height. The left edge has no frame to
+   escape — the strip's own column gap supplies the rail's inset on that side —
+   so the rail's box starts at zero. Only the trailing edge keeps a gap and a
+   hairline; no radius or shadow survives a flush panel. */
 .nav-rail {
   background: var(--card-glass);
   backdrop-filter: var(--backdrop-panel);
   -webkit-backdrop-filter: var(--backdrop-panel);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  box-shadow:
-    var(--shadow-sm),
-    inset 0 1px 0 color-mix(in srgb, white 62%, transparent);
+  border: 0;
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 0.5rem 0.35rem;
+  padding: 0 0.35rem 0.5rem;
   gap: 0.25rem;
   overflow-y: auto;
   overflow-x: hidden;
-  height: 100%;
-  position: sticky;
-  top: 0;
+  margin-top: calc(-1 * (var(--shell-frame) + var(--window-titlebar-height)));
+  margin-right: 0;
+  margin-bottom: calc(-1 * var(--shell-frame));
+  margin-left: 0;
+  /* Explicit: a stretched grid item would grow to the track PLUS the escaped
+     frame, landing the rail's trailing edge 12px inside the workspace gap. */
+  width: var(--shell-nav-width);
+  height: calc(100% + var(--window-titlebar-height) + 2 * var(--shell-frame));
+  /* Positioned so the rail's topband paints over the titlebar it overlaps. */
+  position: relative;
+  z-index: 20;
+}
+
+/* The band the rail shares with the titlebar: exactly one control, centred on
+   the column, and the rest of the strip stays a window drag handle. */
+.nav-rail__header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: var(--window-titlebar-height);
+  margin: 0 -0.35rem 0.1rem;
+  -webkit-app-region: drag;
 }
 
 .nav-rail__section {
@@ -559,6 +628,39 @@ a {
   font-size: 0.6rem;
   line-height: 1.1;
   text-align: center;
+  flex-shrink: 0;
+}
+
+/* The sidebar toggle, wherever it is docked (rail header, or the titlebar once
+   the rail is gone). `no-drag` is load-bearing: both placements sit inside the
+   window's drag band, and a drag region wins hit-testing over the DOM, so
+   without the carve-out the click never reaches the button. */
+.nav-toggle {
+  --nav-toggle-size: 1.75rem;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--nav-toggle-size);
+  height: var(--nav-toggle-size);
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.nav-toggle:hover {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.nav-toggle svg {
+  display: block;
   flex-shrink: 0;
 }
 

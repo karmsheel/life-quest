@@ -26,8 +26,31 @@ describe("shell visuals", () => {
     assert.match(css, /\.nav-rail\s*\{[\s\S]*?background:\s*var\(--card-glass\)/);
     assert.match(css, /\.nav-rail\s*\{[\s\S]*?backdrop-filter:\s*var\(--backdrop-panel\)/);
     assert.match(css, /\.nav-rail\s*\{[\s\S]*?-webkit-backdrop-filter:\s*var\(--backdrop-panel\)/);
-    assert.match(css, /\.nav-rail\s*\{[\s\S]*?box-shadow:[\s\S]*?inset 0 1px 0/);
-    assert.match(css, /\.nav-rail\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+    // The rail is flush now: it pays the tray's frame back on three sides and
+    // reaches over the titlebar row. The measured box — insets, height, and the
+    // one control in its topband — is asserted by the shell-sidebar e2e rig;
+    // what only source can cover is the app-region carve-out, because a drag
+    // region wins OS hit-testing over the DOM and no synthetic click sees it.
+    assert.match(
+      css,
+      /\.nav-rail\s*\{[\s\S]*?margin-top:\s*calc\(-1 \* \(var\(--shell-frame\) \+ var\(--window-titlebar-height\)\)\)/,
+    );
+    assert.match(css, /\.nav-rail\s*\{[\s\S]*?border-right:\s*1px solid var\(--border\)/);
+    assert.equal(/\.nav-rail\s*\{[^}]*border-radius/.test(css), false);
+    assert.equal(/\.nav-rail\s*\{[^}]*box-shadow/.test(css), false);
+    assert.match(css, /\.nav-rail__header\s*\{[\s\S]*?-webkit-app-region:\s*drag/);
+    assert.match(css, /\.nav-toggle\s*\{[\s\S]*?-webkit-app-region:\s*no-drag/);
+    // The shell reserves the rail's column in the strip in both states, and the
+    // toggle floats in it rather than taking flow space — so neither it nor the
+    // chip moves when the rail opens or closes.
+    assert.match(
+      css,
+      /\.window-titlebar--nav-column\s+\.window-titlebar__leading\s*\{[\s\S]*?padding-left:\s*var\(--shell-nav-width\)/,
+    );
+    assert.match(
+      css,
+      /\.window-titlebar__leading\s+\.window-titlebar__nav-toggle\s*\{[\s\S]*?position:\s*absolute[\s\S]*?left:\s*calc\(\(var\(--shell-nav-width\) - var\(--nav-toggle-size\)\) \/ 2\)/,
+    );
     assert.match(css, /\.shell__main\s*\{[\s\S]*?background:\s*var\(--card\)/);
     assert.match(css, /\.shell__main\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
     assert.equal(/\.shell__main\s*\{[^}]*background:\s*var\(--card-glass\)/.test(css), false);

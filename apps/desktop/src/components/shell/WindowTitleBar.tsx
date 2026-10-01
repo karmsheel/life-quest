@@ -3,17 +3,27 @@ import { NavLink } from "react-router-dom";
 import { Copy, Minus, PanelRightClose, PanelRightOpen, Square, X } from "lucide-react";
 import { SettingsMenu } from "@/components/settings/SettingsMenu";
 import { useChatDock } from "@/state/ChatDockProvider";
+import { useNavDock } from "@/state/NavDockProvider";
 import { useVault } from "@/state/VaultProvider";
+import { NavCollapseButton } from "./NavCollapseButton";
 import { NavThemeModeToggle } from "./NavThemeModeToggle";
-import { windowTitleLabel } from "./window-title";
+import { vaultTitleName, windowTitleLabel } from "./window-title";
 
 export function WindowTitleBar() {
   const { snapshot } = useVault();
   const { open: chatOpen, setOpen: setChatOpen, present: chatPresent } =
     useChatDock();
+  const { collapsed: navCollapsed, present: navPresent } = useNavDock();
   const label = windowTitleLabel(snapshot?.lifequest.name);
+  const vaultName = vaultTitleName(snapshot?.lifequest.name);
   const [fallbackControls, setFallbackControls] = useState(false);
   const [maximized, setMaximized] = useState(false);
+
+  // The rail's column is reserved for the whole shell, collapsed or not: that is
+  // what keeps the toggle and the vault chip from sliding when it opens and
+  // closes. The welcome flow has no rail, so nothing is reserved there.
+  const navColumn = navPresent;
+  const navToggle = navPresent && navCollapsed;
 
   useEffect(() => {
     document.title = label;
@@ -44,19 +54,26 @@ export function WindowTitleBar() {
   const showTrailing = chatPresent || (fallbackControls && Boolean(chrome));
 
   return (
-    <header className="window-titlebar">
+    <header
+      className={[
+        "window-titlebar",
+        navColumn ? "window-titlebar--nav-column" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <div className="window-titlebar__leading">
+        {navToggle ? (
+          <NavCollapseButton className="window-titlebar__nav-toggle" />
+        ) : null}
         <NavLink
           to="/home"
-          className="window-titlebar__brand"
-          title="Home"
-          aria-label="Home"
+          className="window-titlebar__vault"
+          title={label}
+          aria-label={label}
         >
-          <span className="window-titlebar__logo" aria-hidden>
-            LQ
-          </span>
+          {vaultName}
         </NavLink>
-        <span className="window-titlebar__label">{label}</span>
       </div>
       {showTrailing ? (
         <div className="window-titlebar__trailing">

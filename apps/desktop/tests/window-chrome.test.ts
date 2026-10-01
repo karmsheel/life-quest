@@ -149,23 +149,32 @@ describe("window chrome (renderer)", () => {
     assert.equal(nav.includes("nav-rail__settings"), false);
   });
 
-  it("puts the LQ badge in the titlebar, not the nav rail", () => {
+  it("names the vault in the titlebar, not the nav rail", () => {
     const titlebar = read("src/components/shell/WindowTitleBar.tsx");
     const nav = read("src/components/shell/NavRail.tsx");
     const css = read("src/styles/global.css");
 
     assert.match(titlebar, /window-titlebar__leading/);
-    assert.match(titlebar, /window-titlebar__brand/);
+    assert.match(titlebar, /window-titlebar__vault/);
     assert.match(titlebar, /to=["']\/home["']/);
-    assert.match(titlebar, /window-titlebar__logo[\s\S]*?LQ/);
-    assert.equal(titlebar.includes("LifeQuest</span>"), false);
+    assert.match(titlebar, /vaultTitleName\(/);
+    // The app's mark and wordmark are gone from the strip: it wears the
+    // workspace's own name, on a highlighted chip.
+    assert.equal(titlebar.includes("LQ"), false);
+    assert.equal(titlebar.includes("window-titlebar__logo"), false);
+    assert.equal(titlebar.includes("window-titlebar__label"), false);
+    assert.equal(css.includes(".window-titlebar__logo"), false);
+    assert.equal(css.includes(".window-titlebar__brand"), false);
+    assert.equal(css.includes(".window-titlebar__label"), false);
     assert.equal(nav.includes("nav-rail__brand"), false);
     assert.equal(nav.includes("nav-rail__logo"), false);
     assert.match(
       css,
-      /\.window-titlebar__brand\s*\{[\s\S]*?-webkit-app-region:\s*no-drag/,
+      /\.window-titlebar__vault\s*\{[\s\S]*?background:\s*var\(--accent-tint\)/,
     );
-    assert.equal(css.includes(".nav-rail__brand"), false);
-    assert.equal(css.includes(".nav-rail__logo"), false);
+    assert.match(
+      css,
+      /\.window-titlebar__vault\s*\{[\s\S]*?-webkit-app-region:\s*no-drag/,
+    );
   });
 });
