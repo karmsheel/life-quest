@@ -296,6 +296,27 @@ describe("chat sessions (dock list, pin, rename, archive)", () => {
       "creating a chat wrote session flags",
     );
 
+    // An empty chat is where the New chat slot goes, not what it makes: clicking
+    // the slot with a blank chat already listed must reopen that chat, not mint
+    // a second "New chat" row.
+    const reused = report.states.reused;
+    assert.equal(
+      reused.createCalls.length,
+      created.createCalls.length,
+      "the New chat slot minted a second empty chat",
+    );
+    assert.equal(
+      reused.threadHeader?.label,
+      "New chat",
+      "the reused empty chat did not reopen as a thread",
+    );
+    assert.deepEqual(reused.messages, [], "the reused chat opened with a transcript");
+    assert.equal(
+      report.states.reusedList.rowCount,
+      report.fixture.rows,
+      "reusing an empty chat added a row to the list",
+    );
+
     for (const file of report.screenshots) {
       assert.equal(fs.existsSync(file), true, `driver wrote no screenshot ${file}`);
     }

@@ -30,6 +30,9 @@
  *     message table, and only user/assistant rows are chat.
  * 13. Bridge stubs masking real calls — anything ChatPanel reaches for that is
  *     not named here must not throw.
+ * 14. The New chat slot mints a second empty chat — with an empty chat already
+ *     in the list, clicking it stacks another "New chat" row instead of
+ *     returning to the blank one.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page) and answers from `fixtures/companion-sessions.json`, which was seeded

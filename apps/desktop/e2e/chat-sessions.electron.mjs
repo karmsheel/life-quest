@@ -583,6 +583,42 @@ async function main() {
       `header "${created.threadHeader?.label}"`,
     );
 
+    // 9 — an empty chat is the New chat slot's destination, not its raw
+    // material: leaving it for another chat and clicking the slot again returns
+    // to that blank chat rather than stacking a second one.
+    const blankId = last(created.messageCalls);
+    await clickAria("All chats");
+    await settle();
+    const rowMoved = await clickRow(2);
+    await settle();
+    check("moved off the empty chat", rowMoved, "no chat row at index 2");
+    const reusedClicked = await clickAria("New chat");
+    const reused = await settle();
+    check("clicked New chat again", reusedClicked, "no New chat slot in the action bar");
+    check(
+      "the New chat slot reused the empty chat instead of minting another",
+      reused.createCalls.length === created.createCalls.length,
+      `bridge saw ${JSON.stringify(reused.createCalls)}`,
+    );
+    check(
+      "the reused chat is the blank one that was open",
+      blankId !== null && last(reused.messageCalls) === blankId,
+      `loaded ${last(reused.messageCalls)} for the blank chat ${blankId}`,
+    );
+    check(
+      "the reused chat is still named New chat and still empty",
+      reused.threadHeader?.label === "New chat" && reused.messages.length === 0,
+      `header "${reused.threadHeader?.label}", ${reused.messages.length} bubbles`,
+    );
+    await clickAria("All chats");
+    const reusedList = await settle();
+    check(
+      "reusing a chat added no row to the list",
+      reusedList.rowCount === expected.rows,
+      `${reusedList.rowCount} rows vs ${expected.rows} (one archived, one created blank)`,
+    );
+
+
     report = {
       url,
       ranAt: new Date().toISOString(),
@@ -602,6 +638,8 @@ async function main() {
         archived,
         reserved,
         created,
+        reused,
+        reusedList,
       },
       screenshots,
       failures,
@@ -638,6 +676,8 @@ async function main() {
       ["renamed list", states.renamedList],
       ["archived", states.archived],
       ["new chat", states.created],
+      ["new chat reuse", states.reused],
+      ["reuse list", states.reusedList],
     ];
     for (const [name, state] of rows) {
       table.push([

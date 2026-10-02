@@ -519,6 +519,17 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   }
 
   async function newSession() {
+    // A chat that was created and never written in is already a "New chat"
+    // row: an empty transcript, no preview. Clicking the slot again is
+    // navigation to it, not a second empty chat — that is what kept the
+    // list filling with identical "New chat" rows.
+    const listed = await loadSessions();
+    const blank = listed?.find((s) => !s.preview?.trim());
+    if (blank) {
+      await openSession(blank.id);
+      return;
+    }
+
     const created = await api().companionSessionCreate("");
     if (!created.ok) {
       setError(created.error);
