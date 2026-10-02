@@ -160,6 +160,9 @@ export default function HomePage() {
           return null;
       }
     }
+    // A view pin renders in slice 2 (ViewCard); until then it stays off the
+    // home board rather than claiming a page card it is not.
+    if (pin.kind === "view") return null;
     const domainName =
       snapshot?.domains.find((d) => d.slug === pin.domainSlug)?.meta.name ??
       pin.domainSlug;

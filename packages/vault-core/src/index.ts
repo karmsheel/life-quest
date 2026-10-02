@@ -184,6 +184,26 @@ export {
   parseScriptSource,
 } from "./script-block.ts";
 export {
+  validateViewSpec,
+  applyViewDefaults,
+  runView,
+  runSavedView,
+  saveView,
+  listViews,
+  getView,
+  deleteView,
+  buildReadSql,
+  windowBounds,
+  isoWeekLabel,
+  PRESENTATIONS,
+  TIME_WINDOWS,
+  TIME_BUCKETS,
+  FILTER_OPS,
+  MEASURES,
+  VIEW_ID_PATTERN,
+  type SavedView,
+} from "./views.ts";
+export {
   SCRIPT_TOOL_DEFS,
   executeScriptTool,
 } from "./script-tools.ts";

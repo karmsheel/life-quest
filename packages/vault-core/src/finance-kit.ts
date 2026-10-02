@@ -346,7 +346,11 @@ async function mergeOverviewPins(root: string): Promise<void> {
     { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.scenario1}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.scenario1 },
     { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.scenario2}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.scenario2 },
   ];
-  const presentPageIds = new Set(pins.filter((p) => p.kind === "page").map((p) => `${p.domainSlug}:${p.pageId}`));
+  const presentPageIds = new Set(
+    pins
+      .filter((p) => p.kind === "page")
+      .map((p) => `${p.domainSlug}:${p.pageId}`),
+  );
   for (const pp of pagePins) {
     const key = `${pp.domainSlug}:${pp.pageId}`;
     if (!presentPageIds.has(key)) {

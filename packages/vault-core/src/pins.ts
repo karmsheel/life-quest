@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { vaultPaths } from "./paths.ts";
+import { VIEW_ID_PATTERN } from "./views.ts";
 import {
   SYSTEM_PIN_KINDS,
   type Actor,
@@ -57,6 +58,18 @@ function validatePins(
       }
       // Overview may pin a page from any live domain; domain board must belong to that domain
       // We'll validate page existence separately in setPins/listPins where we know the context
+    } else if (p.kind === "view") {
+      // Agent-built view pin (plan.md design): the shape guard here, existence
+      // validated in listPins where the live domain and view file are known.
+      if (typeof p.domainSlug !== "string" || !p.domainSlug) {
+        return { ok: false, error: "view pin requires domainSlug" };
+      }
+      if (typeof p.viewId !== "string" || !p.viewId) {
+        return { ok: false, error: "view pin requires viewId" };
+      }
+      if (p.span !== 1 && p.span !== 2) {
+        return { ok: false, error: "view pin span must be 1 or 2" };
+      }
     } else {
       return { ok: false, error: `Invalid pin kind: ${String(p.kind)}` };
     }
@@ -86,6 +99,16 @@ async function pageExists(root: string, slug: string, pageId: string): Promise<b
   try {
     const pagePath = vaultPaths(root).domainPage(slug, pageId);
     await fs.access(pagePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function viewExists(root: string, slug: string, viewId: string): Promise<boolean> {
+  if (!VIEW_ID_PATTERN.test(viewId)) return false;
+  try {
+    await fs.access(vaultPaths(root).domainView(slug, viewId));
     return true;
   } catch {
     return false;
@@ -124,6 +147,13 @@ export async function listPins(
     const validPins: Pin[] = [];
     for (const pin of board.pins) {
       if (pin.kind === "system") {
+        validPins.push(pin);
+      } else if (pin.kind === "view") {
+        // A view pin needs a live domain and an existing view file; a deleted
+        // view drops off the board instead of crashing the dashboard.
+        if (!liveSlugs.has(pin.domainSlug)) continue;
+        if (domainSlug !== null && pin.domainSlug !== domainSlug) continue;
+        if (!(await viewExists(root, pin.domainSlug, pin.viewId))) continue;
         validPins.push(pin);
       } else {
         // Page pin: domain must be live and page must exist
