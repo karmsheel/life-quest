@@ -27,12 +27,18 @@ import {
   libraryGet,
   connectedDecisionVisible,
   connectedGoalVisible,
+  connectedReviewVisible,
   connectedLibraryVisible,
   projectConnectedPack,
+  projectConnectedReview,
   projectConnectedState,
+  reviewHeadingSlugs,
   toolAllowed,
   type ConnectedGrant,
   type PeriodPack,
+  type ReviewIndexEntry,
+  type ReviewRecord,
+  type ReviewScopeState,
   type ProjectCommand,
   type GoalsCommand,
   type MapCommand,
@@ -295,7 +301,19 @@ async function executeConnectedTool(
     return { domains: live.filter((d) => granted(d.slug)).map(pick) };
   }
 
-  if (name === "get_database" || name === "list_rows" || name === "get_row") {
+  if (
+    name === "get_database" ||
+    name === "list_rows" ||
+    name === "get_row" ||
+    name === "run_script_block"
+  ) {
+    if (!granted(rec.domainSlug)) return grantRefusal("NOT_FOUND");
+  }
+
+  // A list scoped to one domain is still a read of that domain: an ungranted
+  // domain answers as missing rather than as a successful empty list, which
+  // would confirm the domain exists.
+  if (name === "list_databases" && rec.domainSlug !== undefined && rec.domainSlug !== null) {
     if (!granted(rec.domainSlug)) return grantRefusal("NOT_FOUND");
   }
 
@@ -303,13 +321,35 @@ async function executeConnectedTool(
     const id = rec.id;
     if (typeof id === "string" && id.length > 0) {
       const lib = await libraryGet(root, id);
-      if (!lib.ok) return { error: { code: "NOT_FOUND", message: lib.error } };
+      // A miss and an ungranted note are the same answer. Passing the engine's
+      // "Document not found" through would tell the agent which of the two it
+      // hit, and that difference is the whole point of the shape.
+      if (!lib.ok) return grantRefusal("NOT_FOUND");
       if (!connectedLibraryVisible(lib.value.domainSlugs, grant)) {
         return grantRefusal("NOT_FOUND");
       }
     } else if (rec.domainSlug !== undefined && rec.domainSlug !== null) {
       if (!granted(rec.domainSlug)) return grantRefusal("NOT_FOUND");
     }
+  }
+
+  if (name === "get_review" || name === "list_reviews") {
+    const result = await executeReviewTool(root, actor, name, rec);
+    if (isGrantError(result)) return result;
+    const headings = await reviewHeadingMap(root);
+    if (name === "get_review") {
+      const review = (result as { review: ReviewRecord }).review;
+      if (!connectedReviewVisible(review.scopes, grant)) return grantRefusal("NOT_FOUND");
+      return { review: projectConnectedReview(review, grant, headings) };
+    }
+    const { reviews } = result as { reviews: ReviewIndexEntry[] };
+    return {
+      // An entry with no granted scope is dropped rather than returned empty:
+      // an entry is the fact that a period was reviewed at all.
+      reviews: reviews
+        .filter((entry) => connectedReviewVisible(entry.scopes, grant))
+        .map((entry) => ({ ...entry, scopes: pickGrantedScopes(entry.scopes, grant) })),
+    };
   }
 
   // A period pack is the domain slice or nothing. `overall` spans every domain
@@ -395,9 +435,8 @@ async function executeConnectedTool(
     };
   }
 
-  // Everything the grant allows but this task does not project: reviews, the
-  // script-block read, and the database and document tools whose records are
-  // already inside the grant.
+  // Everything the grant allows but this task does not project: the database and
+  // document tools whose records are already inside the grant.
   if (DATABASE_TOOL_DEFS.some((t) => t.name === name)) {
     return executeDatabaseTool(root, actor, name, rec);
   }
@@ -411,6 +450,24 @@ async function executeConnectedTool(
     return executeScriptTool(root, actor, name, rec);
   }
   return { error: { code: "MALFORMED", message: `Unknown tool ${name}` } };
+}
+
+/** The review body headings are domain names, so the name to slug map is needed. */
+async function reviewHeadingMap(root: string): Promise<Map<string, string>> {
+  const listed = await listDomains(root);
+  return reviewHeadingSlugs(listed.ok ? listed.value : []);
+}
+
+/** Keep only the scope keys the grant covers, with their states. */
+function pickGrantedScopes(
+  scopes: Record<string, ReviewScopeState>,
+  grant: ConnectedGrant,
+): Record<string, ReviewScopeState> {
+  const out: Record<string, ReviewScopeState> = {};
+  for (const [slug, state] of Object.entries(scopes)) {
+    if (grant.domainSlugs.includes(slug)) out[slug] = state;
+  }
+  return out;
 }
 
 /** True for the `{ error: { code } }` shape every tool refusal shares. */

@@ -15,7 +15,16 @@
 //     is the operator's window, not a permission, and never narrows or widens
 //     what the agent may read.
 import { listDomains } from "./domains.ts";
-import type { DecisionRecord, DocumentTarget, Goal, MapEvent, PeriodPack, Task } from "./types.ts";
+import type {
+  DecisionRecord,
+  DocumentTarget,
+  Goal,
+  MapEvent,
+  PeriodPack,
+  ReviewRecord,
+  ReviewScopeState,
+  Task,
+} from "./types.ts";
 import type { MapStoreState } from "./map/public.ts";
 import type { ConnectedAgent } from "./connected-agents.ts";
 
@@ -223,4 +232,82 @@ export function projectConnectedPack(pack: PeriodPack, grant: ConnectedGrant): P
     previousReview: null,
     domainSections: [],
   };
+}
+
+/** Lower-cased domain name to slug, the key the review body headings use. */
+export function reviewHeadingSlugs(
+  domains: readonly { slug: string; meta: { name: string } }[],
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const d of domains) map.set(d.meta.name.toLowerCase(), d.slug);
+  return map;
+}
+
+/**
+ * KAR-70: a review body is one H1, then the `overall` preamble and its required
+ * headings, then one H2 per domain. A connected agent gets the H1 and the H2
+ * sections of its assigned domains, and nothing else — dropping the preamble as
+ * well as the other domains' sections, because the preamble is the operator's
+ * own cross-domain view.
+ *
+ * Only whole sections are kept or dropped. A section is never partially redacted:
+ * a half-removed `### Keep` list would leave the agent reading a conclusion with
+ * the evidence removed.
+ */
+export function projectConnectedReviewBody(
+  body: string,
+  grant: ConnectedGrant,
+  headingSlugs: Map<string, string>,
+): string {
+  const out: string[] = [];
+  let keep = false;
+  for (const line of body.split("\n")) {
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (heading) {
+      const level = heading[1]!.length;
+      const text = heading[2]!.trim();
+      if (level === 1) {
+        // The title names the period, not a domain, so it is not a leak.
+        out.push(line);
+        continue;
+      }
+      if (level === 2) {
+        const slug = headingSlugs.get(text.toLowerCase());
+        keep = slug !== undefined && grant.domainSlugs.includes(slug);
+      }
+      if (keep) out.push(line);
+      continue;
+    }
+    if (keep) out.push(line);
+  }
+  return out.join("\n");
+}
+
+/**
+ * KAR-70: a review record reduced to the assigned domains. `scopes` keeps only
+ * granted slugs — the `overall` scope belongs to the companion — so the agent
+ * cannot learn that another domain's review exists.
+ */
+export function projectConnectedReview(
+  review: ReviewRecord,
+  grant: ConnectedGrant,
+  headingSlugs: Map<string, string>,
+): ReviewRecord {
+  const scopes: Record<string, ReviewScopeState> = {};
+  for (const [slug, state] of Object.entries(review.scopes)) {
+    if (grant.domainSlugs.includes(slug)) scopes[slug] = state;
+  }
+  return {
+    ...review,
+    scopes,
+    bodyMarkdown: projectConnectedReviewBody(review.bodyMarkdown, grant, headingSlugs),
+  };
+}
+
+/** True when a review still has at least one scope the agent may read. */
+export function connectedReviewVisible(
+  scopes: Record<string, { status: string; sessionId: string | null }>,
+  grant: ConnectedGrant,
+): boolean {
+  return Object.keys(scopes).some((slug) => grant.domainSlugs.includes(slug));
 }

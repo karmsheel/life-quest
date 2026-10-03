@@ -18,6 +18,7 @@ import {
   createDatabase,
   createDecision,
   createVault,
+  ensureReview,
   fingerprintOf,
   libraryCreate,
   listConnectedAgents,
@@ -26,6 +27,8 @@ import {
   todayLocalIso,
   updateConnectedAgent,
   upsertRow,
+  writeReview,
+  effectiveGrant,
   USER_ACTOR,
   PENDING_PAIRING_CAP,
   type ConnectedGrant,
@@ -935,6 +938,9 @@ describe("KAR-70 pairing: the domain read grant", () => {
     bothDomainsNote: string;
     healthGoal: string;
     nullGoal: string;
+    /** A daily review whose body carries an overall preamble and a Health section. */
+    reviewCadence: string;
+    reviewPeriod: string;
   };
 
   /**
@@ -1069,6 +1075,94 @@ describe("KAR-70 pairing: the domain read grant", () => {
       );
     }
 
+    // One review whose body has the overall preamble plus a Financial and a
+    // Health section, so the projection has something to keep and something to
+    // drop. The Health section carries a marker string so its absence is an
+    // assertion rather than an inference from the section list.
+    const reviewPeriod = todayLocalIso();
+    const reviewBody = [
+      `# Daily review`,
+      ``,
+      `PREAMBLE_MARKER spans every domain and belongs to nobody here.`,
+      ``,
+      `## Look-back`,
+      ``,
+      `The month in general.`,
+      ``,
+      `## Keep`,
+      ``,
+      `Nothing in particular.`,
+      ``,
+      `## Change`,
+      ``,
+      `Nothing in particular.`,
+      ``,
+      `## Next-period intent`,
+      ``,
+      `Stay steady.`,
+      ``,
+      `## Financial`,
+      ``,
+      `### Look-back`,
+      ``,
+      `FINANCIAL_MARKER money went somewhere.`,
+      ``,
+      `### Keep`,
+      ``,
+      `Saving every month.`,
+      ``,
+      `### Change`,
+      ``,
+      `Nothing.`,
+      ``,
+      `### Next-period intent`,
+      ``,
+      `Save more.`,
+      ``,
+      `## Health`,
+      ``,
+      `### Look-back`,
+      ``,
+      `HEALTH_MARKER ran a lot.`,
+      ``,
+      `### Keep`,
+      ``,
+      `Stretching.`,
+      ``,
+      `### Change`,
+      ``,
+      `Nothing.`,
+      ``,
+      `### Next-period intent`,
+      ``,
+      `Run further.`,
+      ``,
+    ].join("\n");
+    // writeReview edits an existing review, and a domain section is only
+    // canonicalized for a slug the frontmatter already carries. So the review is
+    // ensured once per scope before it is written, or both domain sections come
+    // back empty and there is nothing to project.
+    for (const scope of ["overall", "financial", "health"]) {
+      assert.equal(
+        (
+          await ensureReview(root, {
+            cadence: "daily",
+            period: reviewPeriod,
+            scope,
+          })
+        ).ok,
+        true,
+        `ensureReview ${scope}`,
+      );
+    }
+    const wrote = await writeReview(root, {
+      cadence: "daily",
+      period: reviewPeriod,
+      bodyMarkdown: reviewBody,
+      actor: USER_ACTOR,
+    });
+    assert.equal(wrote.ok, true, `the fixture review must be written: ${JSON.stringify(wrote)}`);
+
     // Approve one agent, then assign it financial read with Schedule off.
     const bearer = "grant-door-bearer-00000000001";
     const headers = { ...auth(bearer), "x-lifequest-name": "Grant bot" };
@@ -1115,6 +1209,8 @@ describe("KAR-70 pairing: the domain read grant", () => {
       bothDomainsNote: both.value.id,
       healthGoal: healthGoal.value[0]!.id,
       nullGoal: nullGoal.value[0]!.id,
+      reviewCadence: "daily",
+      reviewPeriod,
     };
   }
 
@@ -1139,6 +1235,12 @@ describe("KAR-70 pairing: the domain read grant", () => {
 
   const NOT_FOUND = { error: { code: "NOT_FOUND", message: "Not found" } };
   const FORBIDDEN = { error: { code: "FORBIDDEN", message: "Outside this agent's grant" } };
+
+  // Each marker stands for a sentence only one part of the review can contain.
+  const PREAMBLE_MARKER = "PREAMBLE_MARKER";
+  const FINANCIAL_MARKER = "FINANCIAL_MARKER";
+  const HEALTH_MARKER = "HEALTH_MARKER";
+
 
   let f: Fixture;
 
@@ -1282,6 +1384,144 @@ describe("KAR-70 pairing: the domain read grant", () => {
     record("grant-list-decisions", "FILTERED");
   });
 
+  it("run_script_block follows the same grant as the other single-record reads", async () => {
+    const ungranted = await call(f, "run_script_block", {
+      domainSlug: "health",
+      source: "SELECT 1",
+    });
+    record("grant-run-script-health", codeOf(ungranted));
+    assert.deepEqual(
+      ungranted,
+      NOT_FOUND,
+      "a script block against an ungranted domain must not reach the tool",
+    );
+    // NOT_FOUND rather than FAILED is the proof the engine never ran: a query
+    // against a missing domain answers the engine's own error instead.
+    assert.equal(
+      (ungranted as { error: { message: string } }).error.message,
+      "Not found",
+    );
+
+    const granted = await call(f, "run_script_block", {
+      domainSlug: "financial",
+      source: "SELECT 1",
+    });
+    record("grant-run-script-financial", codeOf(granted) || "REACHED");
+    assert.notDeepEqual(
+      granted,
+      NOT_FOUND,
+      "an assigned domain must still reach executeScriptTool",
+    );
+    assert.equal(
+      (granted as { error?: { code?: string } }).error?.code ?? "",
+      "",
+      "the tool answers for itself; the gate must not have refused it",
+    );
+  });
+
+  it("a review keeps only its assigned sections and drops the overall preamble", async () => {
+    const args = { cadence: f.reviewCadence, period: f.reviewPeriod };
+
+    const review = (await call(f, "get_review", args)) as {
+      review: { scopes: Record<string, unknown>; bodyMarkdown: string };
+    };
+    record("grant-get-review", "READ");
+    assert.deepEqual(Object.keys(review.review.scopes), ["financial"]);
+    assert.equal(
+      review.review.bodyMarkdown.includes(HEALTH_MARKER),
+      false,
+      "the Health section must be absent from the body",
+    );
+    assert.equal(review.review.bodyMarkdown.includes("## Health"), false);
+    assert.equal(
+      review.review.bodyMarkdown.includes(PREAMBLE_MARKER),
+      false,
+      "the overall preamble must be absent",
+    );
+    assert.ok(
+      review.review.bodyMarkdown.includes(FINANCIAL_MARKER),
+      "the assigned section must survive in full",
+    );
+
+    const listed = (await call(f, "list_reviews", { cadence: f.reviewCadence })) as {
+      reviews: { scopes: Record<string, unknown> }[];
+    };
+    const entry = listed.reviews.find((r) => Object.keys(r.scopes).length > 0);
+    assert.ok(entry, "the review must still be listed for an assigned domain");
+    assert.deepEqual(Object.keys(entry.scopes), ["financial"]);
+    assert.equal(
+      Object.keys(entry.scopes).includes("overall"),
+      false,
+      "the overall scope stays with the companion",
+    );
+    record("grant-list-reviews", "FILTERED");
+
+    // A grant with no scope in this review reads as missing rather than as an
+    // empty success. `emotional` is a live seeded domain the fixture review has
+    // no section for, so nothing granted remains.
+    const noOverlap: ConnectedGrant = { ...f.grant, domainSlugs: ["emotional"] };
+    const empty = await executeTool(f.ctx.root, null, "get_review", args, undefined, noOverlap);
+    record("grant-get-review-missing", codeOf(empty));
+    assert.deepEqual(
+      empty,
+      NOT_FOUND,
+      "a review with no granted scope is missing, not an empty success",
+    );
+
+    // The same grant sees nothing in the index either.
+    const emptyList = (await executeTool(
+      f.ctx.root,
+      null,
+      "list_reviews",
+      { cadence: f.reviewCadence },
+      undefined,
+      noOverlap,
+    )) as { reviews: unknown[] };
+    assert.deepEqual(
+      emptyList.reviews,
+      [],
+      "an index entry with no granted scope is dropped, not returned",
+    );
+  });
+
+  it("a review write stays FORBIDDEN while access is read", async () => {
+    const before = await walkText(f.ctx.root);
+    for (const [name, args] of [
+      ["write_review", { cadence: f.reviewCadence, period: f.reviewPeriod, body: "## Look-back" }],
+      ["mark_review_done", { cadence: f.reviewCadence, period: f.reviewPeriod, scope: "financial" }],
+      ["unlock_review", { cadence: f.reviewCadence, period: f.reviewPeriod }],
+    ] as [string, Record<string, unknown>][]) {
+      const result = await call(f, name, args);
+      record(`grant-review-refused-${name}`, codeOf(result));
+      assert.deepEqual(result, FORBIDDEN, `${name} must be FORBIDDEN while access is read`);
+    }
+    assert.equal(await walkText(f.ctx.root), before, "a refused review write must not write");
+  });
+
+  it("an ungranted domain is missing, not an empty list", async () => {
+    const databases = await call(f, "list_databases", { domainSlug: "health" });
+    record("grant-list-databases-health", codeOf(databases));
+    assert.deepEqual(
+      databases,
+      NOT_FOUND,
+      "list_databases on an ungranted domain must not answer a successful empty list",
+    );
+
+    // The granted form still works, so the refusal above is about the domain
+    // rather than about the argument.
+    const granted = await call(f, "list_databases", { domainSlug: "financial" });
+    assert.notDeepEqual(granted, NOT_FOUND);
+    record("grant-list-databases-financial", "READ");
+
+    const missing = await call(f, "get_document", { id: "no-such-library-note" });
+    record("grant-get-document-missing", codeOf(missing));
+    assert.deepEqual(
+      missing,
+      NOT_FOUND,
+      "a library miss uses the grant's NOT_FOUND shape, not the engine's message",
+    );
+  });
+
   it("a write and a companion-only tool are both refused, and the vault does not move", async () => {
     const before = await walkText(f.ctx.root);
     const decisionsBefore = await decisionFiles(f.ctx.root);
@@ -1332,29 +1572,53 @@ describe("KAR-70 pairing: the domain read grant", () => {
   it("archiving an assigned domain closes the grant but keeps the roster row", async () => {
     assert.equal((await archiveDomain(f.ctx.root, "financial")).ok, true);
 
-    const after = await call(f, "get_doctrine", { domainSlug: "financial" });
-    record("grant-after-archive", codeOf(after));
-    assert.deepEqual(after, NOT_FOUND);
-
-    const rows = (await listConnectedAgents(f.ctx.root)) as { value: Record<string, unknown>[] };
+    // What the door computes for the next call: the row with the archived
+    // domain dropped out of it.
+    const row = (await listConnectedAgents(f.ctx.root)) as {
+      value: Record<string, unknown>[];
+    };
+    const stored = row.value.find((r) => r.id === f.grant.agentId)!;
+    const effective = await effectiveGrant(f.ctx.root, {
+      id: String(stored.id),
+      name: String(stored.name),
+      fingerprint: String(stored.fingerprint),
+      status: stored.status as "active",
+      access: stored.access as "read" | "write",
+      domainSlugs: [...(stored.domainSlugs as string[])],
+      schedule: stored.schedule === true,
+      door: "local",
+      createdAt: String(stored.createdAt),
+      decidedAt: stored.decidedAt === null ? null : String(stored.decidedAt),
+    });
+    record("grant-after-archive-effective", effective.domainSlugs.join(",") || "EMPTY");
     assert.deepEqual(
-      rows.value[0]!.domainSlugs,
-      ["financial"],
-      "the roster keeps the operator's assignment; only the effective grant drops it",
+      effective.domainSlugs,
+      [],
+      "an archived domain must drop out of the effective grant",
     );
 
-    // And the grant as the door would compute it now reaches nothing.
-    const doorGrant = { ...f.grant, domainSlugs: [] as string[] };
-    const empty = await executeTool(
+    // The roster is unchanged: the operator's assignment is still on file, and
+    // unarchiving is what brings it back.
+    assert.deepEqual(
+      stored.domainSlugs,
+      ["financial"],
+      "the roster keeps the assignment; only the effective grant drops it",
+    );
+
+    const after = await executeTool(
       f.ctx.root,
       null,
       "get_doctrine",
       { domainSlug: "financial" },
       undefined,
-      doorGrant,
+      effective,
     );
-    record("grant-after-archive-empty", codeOf(empty));
-    assert.equal(codeOf(empty), "NO_GRANT");
+    record("grant-after-archive", codeOf(after));
+    assert.equal(
+      codeOf(after),
+      "NO_GRANT",
+      "a grant whose only domain has been archived reaches nothing",
+    );
   });
 });
 
@@ -1438,7 +1702,18 @@ describe("KAR-70 pairing: the run artifact", () => {
         "grant-lens-no-grant",
         "grant-lens-with-grant",
         "grant-after-archive",
-        "grant-after-archive-empty",
+        "grant-after-archive-effective",
+        "grant-run-script-health",
+        "grant-run-script-financial",
+        "grant-get-review",
+        "grant-list-reviews",
+        "grant-get-review-missing",
+        "grant-review-refused-write_review",
+        "grant-review-refused-mark_review_done",
+        "grant-review-refused-unlock_review",
+        "grant-list-databases-health",
+        "grant-list-databases-financial",
+        "grant-get-document-missing",
       ]) {
         assert.ok(names.includes(expected), `pairing-e2e.json is missing scenario ${expected}`);
       }
