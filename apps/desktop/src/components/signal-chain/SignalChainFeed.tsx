@@ -13,6 +13,7 @@ import type {
 } from "@lifequest/vault-core/pure";
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useConfirm } from "@/components/ui/useConfirm";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { api } from "@/lib/ipc";
 import {
@@ -23,7 +24,12 @@ import {
 } from "@/lib/signal-chain";
 import { useVault } from "@/state/VaultProvider";
 
-function onComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+/**
+ * Quick-fire capture, shared with the dock's chain composer: Enter logs,
+ * Shift+Enter breaks the line, and a composing keystroke (IME) or a held-down
+ * repeat never submits on its own.
+ */
+export function onComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
   if (e.key !== "Enter" || e.shiftKey) return;
   if (e.repeat) return;
   if (e.nativeEvent.isComposing || e.keyCode === 229) return;
@@ -46,6 +52,8 @@ export function SignalChainFeed() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  /** The row's delete asks in the app's own dialog, not the platform's. */
+  const { ask, dialog } = useConfirm();
 
   const [domainSlug, setDomainSlug] = useState("");
   const [body, setBody] = useState("");
@@ -155,12 +163,22 @@ export function SignalChainFeed() {
     }
   }
 
-  async function onDelete(id: string) {
-    if (
-      !window.confirm("Delete this signal? It will be hidden from the chain.")
-    ) {
-      return;
-    }
+  /**
+   * Delete asks first. The write is a soft one — the record keeps its `deletedAt`
+   * stamp and stays in the vault — so the question says that rather than claiming
+   * the write is final.
+   */
+  function onDelete(id: string) {
+    ask({
+      title: "Delete signal",
+      message: "The signal is hidden from the chain. Its record and messages stay in the vault.",
+      confirmLabel: "Delete signal",
+      destructive: true,
+      run: () => void runDelete(id),
+    });
+  }
+
+  async function runDelete(id: string) {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
@@ -306,6 +324,7 @@ export function SignalChainFeed() {
           ))}
         </ul>
       )}
+      {dialog}
     </div>
   );
 }

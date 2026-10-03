@@ -61,6 +61,17 @@ type State = {
   leadingText: string;
   titlebarBackground: string | null;
   main: Box | null;
+  mainBackground: string | null;
+  sheet: {
+    box: Box;
+    borderRadius: string;
+    borderTopWidth: string;
+    borderRightWidth: string;
+    borderBottomWidth: string;
+    borderLeftWidth: string;
+    background: string;
+    boxShadow: string;
+  } | null;
   corner: { insideRail: boolean; insideTitlebar: boolean } | null;
   overflow: { scrollWidth: number; clientWidth: number };
 };
@@ -254,10 +265,10 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.equal(
       expanded.rail?.box.right !== undefined &&
-        expanded.chat?.left !== undefined &&
+        expanded.chat?.box.left !== undefined &&
         expanded.main?.right !== undefined
         ? expanded.main.left - expanded.rail.box.right ===
-            expanded.chat.left - expanded.main.right
+            expanded.chat.box.left - expanded.main.right
         : false,
       true,
       "the rail→sheet and sheet→chat gaps disagree",
@@ -266,6 +277,41 @@ describe("shell sidebar (docked rail)", () => {
       expanded.vault?.box.left,
       expanded.main?.left,
       "the chip's leading border does not line up with the sheet's",
+    );
+
+    // The sheet's own chrome: square, a single hairline on the top edge — the
+    // line the titlebar reads as its own — and nothing on the other three sides,
+    // since the rail and the dock already paint those.
+    assert.ok(expanded.sheet, "the shell rendered no workspace sheet");
+    assert.equal(
+      expanded.sheet.borderRadius,
+      "0px",
+      `the sheet kept a rounded corner (${expanded.sheet.borderRadius})`,
+    );
+    assert.equal(
+      expanded.sheet.borderLeftWidth,
+      "0px",
+      "the sheet grew a leading border",
+    );
+    assert.equal(
+      expanded.sheet.borderRightWidth,
+      "0px",
+      "the sheet grew a trailing border",
+    );
+    assert.equal(
+      expanded.sheet.borderBottomWidth,
+      "0px",
+      "the sheet grew a bottom border",
+    );
+    assert.ok(
+      parseFloat(expanded.sheet.borderTopWidth) > 0 &&
+        parseFloat(expanded.sheet.borderTopWidth) <= 1,
+      `the sheet lost the hairline under the titlebar (${expanded.sheet.borderTopWidth})`,
+    );
+    assert.equal(
+      expanded.sheet.box.top,
+      titlebarHeight + frame,
+      `the titlebar's hairline is not one pane gap under the strip (${expanded.sheet.box.top}px vs ${titlebarHeight + frame}px)`,
     );
 
     // Collapsed: rail gone, its width back to the sheet, a toggle left behind.
@@ -322,10 +368,48 @@ describe("shell sidebar (docked rail)", () => {
     );
 
     assert.equal(
-      collapsed.chat.left - (collapsed.main?.right ?? 0),
+      collapsed.chat.box.left - (collapsed.main?.right ?? 0),
       frame,
       "collapsing the rail ate the sheet's gap to the chat panel",
     );
+
+    // The dock's own contract: square, flush right and bottom, on the sheet's
+    // surface rather than a frosted one, with only its leading hairline left.
+    const { height: viewportHeight, width: viewportWidth } = expanded.viewport;
+    assert.equal(
+      viewportWidth - expanded.chat.box.right,
+      0,
+      "the chat panel kept a right inset",
+    );
+    assert.equal(
+      expanded.chat.box.bottom,
+      viewportHeight,
+      "the chat panel stopped short of the window bottom",
+    );
+    assert.equal(expanded.chat.borderRadius, "0px", "the chat panel kept its radius");
+    assert.equal(expanded.chat.borderTopWidth, "0px", "the chat panel kept its top border");
+    assert.equal(expanded.chat.borderRightWidth, "0px", "the chat panel kept its right border");
+    assert.equal(
+      expanded.chat.borderBottomWidth,
+      "0px",
+      "the chat panel kept its bottom border",
+    );
+    assert.ok(
+      parseFloat(expanded.chat.borderLeftWidth) > 0 &&
+        parseFloat(expanded.chat.borderLeftWidth) <= 1,
+      `the chat panel lost its leading hairline (${expanded.chat.borderLeftWidth})`,
+    );
+    assert.equal(
+      expanded.chat.backdropFilter,
+      "none",
+      "the chat panel is still frosted",
+    );
+    assert.equal(
+      expanded.chat.background,
+      expanded.mainBackground,
+      "the chat panel is not on the sheet's surface",
+    );
+    assert.equal(expanded.chat.boxShadow, "none", "the chat panel still floats on a shadow");
 
     for (const file of report.screenshots) {
       assert.equal(fs.existsSync(file), true, `driver wrote no screenshot ${file}`);

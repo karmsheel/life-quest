@@ -141,7 +141,34 @@ const SAMPLE = `(() => {
       ? getComputedStyle(titlebar).backgroundColor
       : null,
     main: box(main),
-    chat: box(chat),
+    mainBackground: main ? getComputedStyle(main).backgroundColor : null,
+    sheet: main
+      ? {
+          box: box(main),
+          borderRadius: getComputedStyle(main).borderRadius,
+          borderTopWidth: getComputedStyle(main).borderTopWidth,
+          borderRightWidth: getComputedStyle(main).borderRightWidth,
+          borderBottomWidth: getComputedStyle(main).borderBottomWidth,
+          borderLeftWidth: getComputedStyle(main).borderLeftWidth,
+          background: getComputedStyle(main).backgroundColor,
+          boxShadow: getComputedStyle(main).boxShadow
+        }
+      : null,
+    chat: chat
+      ? {
+          box: box(chat),
+          borderRadius: getComputedStyle(chat).borderRadius,
+          borderTopWidth: getComputedStyle(chat).borderTopWidth,
+          borderRightWidth: getComputedStyle(chat).borderRightWidth,
+          borderBottomWidth: getComputedStyle(chat).borderBottomWidth,
+          borderLeftWidth: getComputedStyle(chat).borderLeftWidth,
+          background: getComputedStyle(chat).backgroundColor,
+          backdropFilter: getComputedStyle(chat).backdropFilter,
+          boxShadow: getComputedStyle(chat).boxShadow,
+          marginRight: getComputedStyle(chat).marginRight,
+          marginBottom: getComputedStyle(chat).marginBottom
+        }
+      : null,
     shell: shell
       ? {
           className: shell.className,
@@ -393,19 +420,73 @@ async function main() {
         expanded.rail &&
         expanded.chat &&
         expanded.main.left - expanded.rail.box.right ===
-          expanded.chat.left - expanded.main.right,
-      `rail→sheet ${(expanded.main?.left ?? 0) - (expanded.rail?.box.right ?? 0)}px vs sheet→chat ${(expanded.chat?.left ?? 0) - (expanded.main?.right ?? 0)}px`,
+          expanded.chat.box.left - expanded.main.right,
+      `rail→sheet ${(expanded.main?.left ?? 0) - (expanded.rail?.box.right ?? 0)}px vs sheet→chat ${(expanded.chat?.box.left ?? 0) - (expanded.main?.right ?? 0)}px`,
     );
     check(
       "the leading gap is one pane gap",
       expanded.main?.left === track + frame,
       `sheet left ${expanded.main?.left}px vs rail ${track}px + gap ${frame}px`,
     );
+    // The panel is the rightmost pane now, and it is flush rather than inset.
     check(
-      "the top, right and bottom insets stay one frame",
+      "the chat panel is flush to the window's right and bottom",
+      viewportWidth - (expanded.chat?.box.right ?? 0) === 0 &&
+        (expanded.chat?.box.bottom ?? 0) === viewportHeight,
+      `right inset ${viewportWidth - (expanded.chat?.box.right ?? 0)}px, panel bottom ${expanded.chat?.box.bottom}px of ${viewportHeight}px`,
+    );
+    check(
+      "the chat panel has square corners",
+      expanded.chat?.borderRadius === "0px",
+      `radius ${expanded.chat?.borderRadius}`,
+    );
+    check(
+      "the chat panel keeps one leading hairline and drops the rest",
+      expanded.chat?.borderRightWidth === "0px" &&
+        expanded.chat?.borderBottomWidth === "0px" &&
+        expanded.chat?.borderTopWidth === "0px" &&
+        parseFloat(expanded.chat?.borderLeftWidth ?? "0") > 0 &&
+        parseFloat(expanded.chat?.borderLeftWidth ?? "0") <= 1,
+      `borders t/r/b/l ${expanded.chat?.borderTopWidth}/${expanded.chat?.borderRightWidth}/${expanded.chat?.borderBottomWidth}/${expanded.chat?.borderLeftWidth}`,
+    );
+    check(
+      "the chat panel wears the sheet's own surface, unfrosted",
+      expanded.chat?.backdropFilter === "none" &&
+        expanded.chat?.background === expanded.mainBackground,
+      `panel ${expanded.chat?.background} backdrop ${expanded.chat?.backdropFilter} vs sheet ${expanded.mainBackground}`,
+    );
+    check(
+      "no shadow survives the flush panel",
+      expanded.chat?.boxShadow === "none",
+      `shadow ${expanded.chat?.boxShadow}`,
+    );
+    check(
+      "the sheet keeps its frame on the top and bottom",
       expanded.main?.top === titlebarHeight + frame &&
-        viewportWidth - (expanded.chat?.right ?? 0) === frame,
-      `sheet top ${expanded.main?.top}px, right inset ${viewportWidth - (expanded.chat?.right ?? 0)}px`,
+        viewportHeight - (expanded.main?.bottom ?? 0) === frame,
+      `sheet top ${expanded.main?.top}px (want ${titlebarHeight + frame}px), bottom inset ${viewportHeight - (expanded.main?.bottom ?? 0)}px`,
+    );
+    // The sheet's own chrome: square, one hairline on the top edge — the line
+    // under the titlebar — and none on the other three sides, because the rail
+    // and the dock already paint those.
+    check(
+      "the sheet has square corners",
+      expanded.sheet?.borderRadius === "0px",
+      `radius ${expanded.sheet?.borderRadius}`,
+    );
+    check(
+      "the sheet keeps one top hairline and drops the rest",
+      expanded.sheet?.borderLeftWidth === "0px" &&
+        expanded.sheet?.borderRightWidth === "0px" &&
+        expanded.sheet?.borderBottomWidth === "0px" &&
+        parseFloat(expanded.sheet?.borderTopWidth ?? "0") > 0 &&
+        parseFloat(expanded.sheet?.borderTopWidth ?? "0") <= 1,
+      `borders t/r/b/l ${expanded.sheet?.borderTopWidth}/${expanded.sheet?.borderRightWidth}/${expanded.sheet?.borderBottomWidth}/${expanded.sheet?.borderLeftWidth}`,
+    );
+    check(
+      "that hairline sits on the sheet's top edge, one pane gap under the strip",
+      expanded.sheet?.box.top === titlebarHeight + frame,
+      `hairline at y=${expanded.sheet?.box.top}px, strip ends at ${titlebarHeight}px, pane gap ${frame}px`,
     );
     check(
       "the chip lines up with the sheet's leading border",
@@ -456,9 +537,9 @@ async function main() {
       Boolean(
         collapsed.main &&
           collapsed.chat &&
-          collapsed.chat.left - collapsed.main.right === frame,
+          collapsed.chat.box.left - collapsed.main.right === frame,
       ),
-      `sheet→chat ${(collapsed.chat?.left ?? 0) - (collapsed.main?.right ?? 0)}px vs frame ${frame}px`,
+      `sheet→chat ${(collapsed.chat?.box.left ?? 0) - (collapsed.main?.right ?? 0)}px vs frame ${frame}px`,
     );
     check(
       "reopen toggle lands on the titlebar",
@@ -505,9 +586,9 @@ async function main() {
     );
     check(
       "collapse spares the chat column",
-      collapsed.chat?.left === expanded.chat?.left &&
-        collapsed.chat?.width === expanded.chat?.width,
-      `chat ${JSON.stringify(collapsed.chat)} vs ${JSON.stringify(expanded.chat)}`,
+      collapsed.chat?.box.left === expanded.chat?.box.left &&
+        collapsed.chat?.box.width === expanded.chat?.box.width,
+      `chat ${JSON.stringify(collapsed.chat?.box)} vs ${JSON.stringify(expanded.chat?.box)}`,
     );
 
     const collapsedShot = await win.webContents.capturePage();

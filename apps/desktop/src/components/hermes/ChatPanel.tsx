@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -15,18 +16,23 @@ import {
   Check,
   ChevronRight,
   History,
-  MoreHorizontal,
+  MoreVertical,
   PanelRightOpen,
   Pencil,
   Pin,
   PinOff,
+  Radio,
   Search,
   SquarePen,
   X,
 } from "lucide-react";
+import type { SignalRecord } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
+import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
 import { summarizeToolRun, toolRowLabel, type ToolCall } from "@/lib/tool-run";
+import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
+import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useVault } from "@/state/VaultProvider";
 import type { ChatStreamEvent, HermesSession } from "@/vite-env";
@@ -67,7 +73,7 @@ function sessionTimeValue(lastActive: number | null): string | undefined {
 export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const activeDomain = useActiveDomain();
   const domainName = activeDomain?.meta.name ?? "Overview";
-  const { snapshot, refresh } = useVault();
+  const { snapshot, refresh, reloadGeneration, lens } = useVault();
   const {
     requestedSessionId,
     requestedKickoff,
@@ -81,13 +87,29 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
-   * Which of the dock's two surfaces is up. The list is a real page now — with
+   * Which of the dock's three surfaces is up. The list is a real page now — with
    * twenty chats an 11rem strip was not navigable — and a thread replaces it
-   * once a chat is opened.
+   * once a chat is opened. The chain is the third, swapped in from the bottom
+   * bar: the same vault records the Life-Chain page reads, so the two surfaces
+   * are one chain seen twice, not two chains.
    */
-  const [view, setView] = useState<"list" | "thread">("thread");
+  const [view, setView] = useState<"list" | "thread" | "chain">("thread");
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
+  /**
+   * The list's own row UI: the row the 3-dot menu is open on, and the row being
+   * renamed in place. One row at a time, the same rule the chain's rows follow.
+   * `renameDraft` is shared with the thread header's rename because the two
+   * fields never coexist — one lives in the list, the other in the thread.
+   */
+  const [sessionMenuId, setSessionMenuId] = useState<string | null>(null);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  /**
+   * The dock's questions — a chat delete, a signal delete — are asked in the
+   * app's own dialog, and gated on the dock being open: a question asked from
+   * the list cannot float over the window once the panel is collapsed.
+   */
+  const { ask, dialog } = useConfirm(open);
   /** Drives the inline control: the arrow needs text, the stop square needs a run. */
   const sendable = draft.trim().length > 0;
   const controlVisible = sending || sendable;
@@ -117,7 +139,27 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const [tools, setTools] = useState<ToolCall[]>([]);
   /** Whether that line is opened to show the calls it stands for. */
   const [toolsOpen, setToolsOpen] = useState(false);
+  /** The chain's records, as the vault returned them: newest first. */
+  const [signals, setSignals] = useState<SignalRecord[]>([]);
+  const [signalsLoaded, setSignalsLoaded] = useState(false);
+  const [chainDraft, setChainDraft] = useState("");
+  const [chainBusy, setChainBusy] = useState(false);
+  const chainBusyRef = useRef(false);
+  /**
+   * The row the 3-dot menu is open on, the row being edited, and the signal
+   * being written to. One row at a time, for all three: two editors open in a
+   * 20rem column is not a state worth supporting.
+   */
+  const [signalMenuId, setSignalMenuId] = useState<string | null>(null);
+  const [editingSignalId, setEditingSignalId] = useState<string | null>(null);
+  const [signalDraft, setSignalDraft] = useState("");
+  const [signalBusyId, setSignalBusyId] = useState<string | null>(null);
+  /** The same two-state rule as the chat field: the arrow needs some text. */
+  const chainSendable = chainDraft.trim().length > 0;
+  const chainControlVisible = chainBusy || chainSendable;
   const listRef = useRef<HTMLDivElement | null>(null);
+  /** The chain's own scroller: the view follows the newest signal. */
+  const chainRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const assistantId = useRef<string | null>(null);
@@ -129,6 +171,30 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const activeLabel = activeSession ? sessionLabel(activeSession) : "Chat";
   const pinnedSessions = sessions.filter((s) => s.pinned);
   const recentSessions = sessions.filter((s) => !s.pinned);
+
+  /**
+   * The chain, lensed the way the Life-Chain page lenses it: everything in
+   * Overview, and unassigned plus the open domain in a domain tab. Logging here
+   * files a signal unassigned, so what the panel writes is never hidden from it.
+   */
+  const visibleSignals = useMemo(
+    () => signals.filter((s) => signalVisible(lens, s.domainSlug)),
+    [signals, lens],
+  );
+  /**
+   * Rendered oldest first, which is the order the list paints in: the chain
+   * reads like a chat — oldest at the top, the newest just above the composer —
+   * and the stack still rests there, growing upward, while it fits. The vault
+   * hands records back newest first, hence the flip.
+   */
+  const chainItems = useMemo(() => visibleSignals.slice().reverse(), [visibleSignals]);
+  /** What a signal can be assigned to: live domains, as the picker offers them. */
+  const domainNames = (snapshot?.domains ?? [])
+    .filter((d) => !d.meta.archivedAt)
+    .map((d) => ({
+      slug: d.slug,
+      name: d.meta.name,
+    }));
 
   /**
    * Grow the composer with its text, then scroll inside it once it reaches half
@@ -166,7 +232,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
 
   useLayoutEffect(() => {
     syncComposerHeight();
-  }, [draft, open, view, syncComposerHeight]);
+  }, [draft, chainDraft, open, view, syncComposerHeight]);
 
   useEffect(() => {
     const panel = panelRef.current;
@@ -231,6 +297,40 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     [loadSession],
   );
 
+  /** Read the chain — the same call the Life-Chain page makes. */
+  const loadChain = useCallback(async () => {
+    try {
+      const result = await api().signalChainList();
+      if (!result.ok) {
+        setError(result.error);
+        setSignals([]);
+        return;
+      }
+      setSignals(result.value.records);
+      setSignalsLoaded(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reach the chain");
+      setSignals([]);
+    }
+  }, []);
+
+  /**
+   * Read it on landing on the chain, and again whenever the vault reloads: a
+   * signal filed on the Life-Chain page, or written by Hermes, shows up here
+   * without reopening the panel. Nothing else clears the error banner, so a
+   * failed read keeps its message until the next successful one.
+   *
+   * Landing also drops any row UI: a menu or an editor left open on a row that
+   * has since moved is worse than making the user open it again.
+   */
+  useEffect(() => {
+    if (!open || view !== "chain") return;
+    setSignalMenuId(null);
+    setEditingSignalId(null);
+    setSignalDraft("");
+    void loadChain();
+  }, [open, view, loadChain, reloadGeneration]);
+
   /**
    * Landing behaviour: resume the chat this dock opened last, else the most
    * recent one, else show the list. Never mints a session — an empty chat made
@@ -256,13 +356,37 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     };
   }, [open, loadSessions, openSession, requestedSessionId]);
 
+  /**
+   * Leaving the list drops its row UI: a menu, or a rename field, left open on a
+   * row that has since moved is worse than making the user open it again — the
+   * same rule the chain's landing reset follows.
+   */
+  useEffect(() => {
+    if (view === "list") return;
+    setSessionMenuId(null);
+    setRenamingSessionId(null);
+    setRenameDraft("");
+  }, [view]);
+
   useEffect(() => {
     if (!open || view !== "thread" || !listRef.current) return;
     listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [open, view, messages, sending, error, turnNote, tools]);
 
+  /**
+   * The chain's own stick-to-the-bottom pass, in a layout effect so a freshly
+   * swapped-in chain never paints its oldest entries first. The newest signal is
+   * the last row and the composer is right below it: without this, a chain
+   * longer than the panel would open on the oldest, and a signal you just logged
+   * would land below the fold.
+   */
+  useLayoutEffect(() => {
+    if (!open || view !== "chain" || !chainRef.current) return;
+    chainRef.current.scrollTop = chainRef.current.scrollHeight;
+  }, [open, view, chainItems, chainBusy]);
+
   useEffect(() => {
-    if (open && view === "thread") inputRef.current?.focus();
+    if (open && view !== "list") inputRef.current?.focus();
   }, [open, view]);
 
   useEffect(() => {
@@ -420,6 +544,154 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedSessionId]);
 
+  /**
+   * Log one signal through the same call the page makes. It files `thought` with
+   * no title and no domain — the chain is for capture, and the type/title/domain
+   * calls belong on the page, where there is room to make them. Unassigned also
+   * means the record stays visible in every lens, including this one.
+   */
+  async function onChainSubmit(e: FormEvent) {
+    e.preventDefault();
+    const body = chainDraft.trim();
+    if (!body || chainBusyRef.current) return;
+    chainBusyRef.current = true;
+    setChainBusy(true);
+    setError(null);
+    try {
+      const result = await api().signalChainCreate({
+        type: "thought",
+        title: null,
+        body,
+        domainSlug: null,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setChainDraft("");
+      await loadChain();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to log the signal");
+    } finally {
+      chainBusyRef.current = false;
+      setChainBusy(false);
+    }
+  }
+
+  /** Open the 3-dot menu on a row, or close the one already open. */
+  function toggleSignalMenu(id: string) {
+    setSignalMenuId((current) => (current === id ? null : id));
+  }
+
+  /** Edit starts from what the signal says now, so a no-op save is a no-op. */
+  function startEditSignal(s: SignalRecord) {
+    setSignalMenuId(null);
+    setEditingSignalId(s.id);
+    setSignalDraft(s.body);
+  }
+
+  function cancelEditSignal() {
+    setEditingSignalId(null);
+    setSignalDraft("");
+  }
+
+  /**
+   * The row's own writes: assign, edit, delete. They go through the same vault
+   * calls the Life-Chain page makes, so both surfaces write one chain, and they
+   * take the composer's write lock — one chain write at a time, whichever
+   * control asked for it.
+   */
+  async function onAssignSignal(id: string, nextDomain: string | null) {
+    const current = signals.find((s) => s.id === id)?.domainSlug ?? null;
+    if (current === nextDomain || chainBusyRef.current) return;
+    chainBusyRef.current = true;
+    setSignalBusyId(id);
+    setError(null);
+    try {
+      const result = await api().signalChainUpdate(id, { domainSlug: nextDomain });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      await loadChain();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to assign the signal");
+    } finally {
+      chainBusyRef.current = false;
+      setSignalBusyId(null);
+    }
+  }
+
+  async function onSaveSignal(id: string) {
+    const body = signalDraft.trim();
+    if (!body || chainBusyRef.current) return;
+    chainBusyRef.current = true;
+    setSignalBusyId(id);
+    setError(null);
+    try {
+      const result = await api().signalChainUpdate(id, { body });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      cancelEditSignal();
+      await loadChain();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save the signal");
+    } finally {
+      chainBusyRef.current = false;
+      setSignalBusyId(null);
+    }
+  }
+
+  /** Ask first: the signal leaves the chain, the row goes, and the record stays. */
+  function onDeleteSignal(id: string) {
+    setSignalMenuId(null);
+    ask({
+      title: "Delete signal",
+      message: "The signal is hidden from the chain. Its record and messages stay in the vault.",
+      confirmLabel: "Delete signal",
+      destructive: true,
+      run: () => void runDeleteSignal(id),
+    });
+  }
+
+  async function runDeleteSignal(id: string) {
+    if (chainBusyRef.current) return;
+    chainBusyRef.current = true;
+    setSignalBusyId(id);
+    setError(null);
+    try {
+      const result = await api().signalChainDelete(id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      if (editingSignalId === id) cancelEditSignal();
+      setSignalMenuId(null);
+      await loadChain();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete the signal");
+    } finally {
+      chainBusyRef.current = false;
+      setSignalBusyId(null);
+    }
+  }
+
+  /**
+   * The domains a signal can be assigned to: the live ones, plus the one it
+   * already names when that domain has since been archived — the page makes the
+   * same exception, so an archived assignment is shown rather than silently
+   * dropped the moment this panel renders it.
+   */
+  function assignOptions(s: SignalRecord) {
+    const options = domainNames.slice();
+    if (s.domainSlug && !options.some((d) => d.slug === s.domainSlug)) {
+      options.push({ slug: s.domainSlug, name: s.domainSlug });
+    }
+    return options;
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (sending || !draft.trim()) return;
@@ -518,6 +790,69 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     await patchSession(id, { title });
   }
 
+  /** Open the 3-dot menu on a chat row, or close the one already open. */
+  function toggleSessionMenu(id: string) {
+    setSessionMenuId((current) => (current === id ? null : id));
+  }
+
+  /**
+   * Rename starts on the row, not in the thread header: the list is where chats
+   * are managed, and the name it edits is the name the row shows.
+   */
+  function startSessionRename(s: HermesSession) {
+    setSessionMenuId(null);
+    setRenamingSessionId(s.id);
+    setRenameDraft(sessionLabel(s));
+  }
+
+  function cancelSessionRename() {
+    setRenamingSessionId(null);
+    setRenameDraft("");
+  }
+
+  async function commitSessionRename(e: FormEvent, id: string) {
+    e.preventDefault();
+    const title = renameDraft.trim();
+    cancelSessionRename();
+    await patchSession(id, { title });
+  }
+
+  /**
+   * Delete one chat outright. Unlike archive — a flag Hermes Desktop can bring
+   * the chat back from — this drops the row and every message under it, so it
+   * asks first, through the dock's own dialog. The row menu closes on the way in:
+   * the question is the surface now, and it names the chat it will take.
+   */
+  function deleteSession(id: string) {
+    const row = sessions.find((s) => s.id === id);
+    const label = row ? sessionLabel(row) : "this chat";
+    setSessionMenuId(null);
+    ask({
+      title: "Delete chat",
+      message: `Delete "${label}"? Its messages leave Hermes everywhere, and this cannot be undone.`,
+      confirmLabel: "Delete chat",
+      destructive: true,
+      run: () => void runDeleteSession(id),
+    });
+  }
+
+  async function runDeleteSession(id: string) {
+    const result = await api().companionSessionDelete(id);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setSessions((prev) => prev.filter((s) => s.id !== id));
+    // The open chat cannot outlive its own row: fall back to the list rather
+    // than showing a thread for a chat that no longer exists.
+    if (id === sessionId) {
+      setSessionId(null);
+      setMessages([]);
+      window.localStorage.removeItem(LAST_SESSION_KEY);
+      setView("list");
+    }
+  }
+
   async function newSession() {
     // A chat that was created and never written in is already a "New chat"
     // row: an empty transcript, no preview. Clicking the slot again is
@@ -539,40 +874,249 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     await openSession(created.value.id);
   }
 
-  /** One chat row. Clicking the open chat comes back to its thread. */
+  /**
+   * One signal: its stamp on the rail, the message beside it, and the
+   * assignment picker under the message. Two blocks and a picker — the date
+   * box is the only thing that repeats down the column, so it is what the
+   * dashed thread runs through.
+   */
+  function signalRow(s: SignalRecord) {
+    const when = signalStampWhen(s.createdAt);
+    const editing = editingSignalId === s.id;
+    const menuOpen = signalMenuId === s.id;
+    const busy = signalBusyId === s.id;
+    return (
+      <li key={s.id} className="chat-panel__chain-item">
+        <div className="chat-panel__chain-rail">
+          <time className="chat-panel__chain-stamp" dateTime={s.createdAt}>
+            <span className="chat-panel__chain-stamp-day">{when.day}</span>
+            <span className="chat-panel__chain-stamp-time">{when.time}</span>
+          </time>
+        </div>
+        <div className="chat-panel__chain-message">
+          {s.title ? (
+            <h3 className="chat-panel__chain-title">{s.title}</h3>
+          ) : null}
+          {editing ? (
+            <form
+              className="chat-panel__chain-edit"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void onSaveSignal(s.id);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== "Escape" || e.nativeEvent.isComposing) return;
+                e.preventDefault();
+                cancelEditSignal();
+              }}
+            >
+              <textarea
+                className="chat-panel__chain-edit-input"
+                aria-label="Edit signal"
+                value={signalDraft}
+                rows={3}
+                autoFocus
+                onChange={(e) => setSignalDraft(e.target.value)}
+                onKeyDown={onComposerKeyDown}
+              />
+              <div className="chat-panel__chain-edit-actions">
+                <button
+                  type="submit"
+                  className="chat-panel__text-btn"
+                  disabled={busy || signalDraft.trim().length === 0}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="chat-panel__text-btn"
+                  disabled={busy}
+                  onClick={cancelEditSignal}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <p className="chat-panel__chain-body">{s.body}</p>
+              <button
+                type="button"
+                className="chat-panel__chain-menu-btn"
+                aria-label="Signal actions"
+                title="Signal actions"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                onClick={() => toggleSignalMenu(s.id)}
+              >
+                <MoreVertical size={14} aria-hidden />
+              </button>
+              {menuOpen ? (
+                <div className="chat-panel__chain-menu" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-label="Edit signal"
+                    disabled={busy}
+                    onClick={() => startEditSignal(s)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-label="Delete signal"
+                    disabled={busy}
+                    onClick={() => void onDeleteSignal(s.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+        <select
+          className="chat-panel__chain-assign"
+          aria-label="Assign to domain"
+          value={s.domainSlug ?? ""}
+          disabled={busy || editing}
+          onChange={(e) => void onAssignSignal(s.id, e.target.value.trim() || null)}
+        >
+          <option value="">- unassigned -</option>
+          {assignOptions(s).map((d) => (
+            <option key={d.slug} value={d.slug}>
+              {d.name}
+            </option>
+          ))}
+        </select>
+      </li>
+    );
+  }
+
+  /**
+   * One chat row: the chat itself, its 3-dot menu, and — while the menu's Edit
+   * is up — the field the name is edited in. Clicking the open chat comes back
+   * to its thread; the row's own management lives behind the 3-dot control,
+   * because the list is the surface that can see every chat at once.
+   */
   function sessionRow(s: HermesSession) {
     const label = sessionLabel(s);
     const when = formatSessionWhen(s.lastActive);
     const active = s.id === sessionId;
+    const menuOpen = sessionMenuId === s.id;
+    const renamingRow = renamingSessionId === s.id;
     return (
       <li key={s.id} className="chat-panel__session-item">
-        <button
-          type="button"
-          className={
-            active
-              ? "chat-panel__session chat-panel__session--active"
-              : "chat-panel__session"
-          }
-          aria-current={active ? "true" : undefined}
-          disabled={sending}
-          title={label}
-          onClick={() => {
-            if (s.id === sessionId) setView("thread");
-            else void openSession(s.id);
-          }}
-        >
-          {s.pinned ? (
-            <span className="chat-panel__session-pin" title="Pinned">
-              <Pin size={12} aria-hidden />
-            </span>
-          ) : null}
-          <span className="chat-panel__session-label">{label}</span>
-          {when ? (
-            <time className="chat-panel__session-when" dateTime={sessionTimeValue(s.lastActive)}>
-              {when}
-            </time>
-          ) : null}
-        </button>
+        {renamingRow ? (
+          <form
+            className="chat-panel__session-rename"
+            onSubmit={(e) => void commitSessionRename(e, s.id)}
+          >
+            <input
+              className="chat-panel__rename-input"
+              value={renameDraft}
+              onChange={(e) => setRenameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelSessionRename();
+                }
+              }}
+              aria-label="Chat name"
+              autoFocus
+            />
+            <button
+              type="submit"
+              className="chat-panel__text-btn"
+              aria-label="Save chat name"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              className="chat-panel__text-btn"
+              aria-label="Cancel rename"
+              onClick={cancelSessionRename}
+            >
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <>
+            <button
+              type="button"
+              className={
+                active
+                  ? "chat-panel__session chat-panel__session--active"
+                  : "chat-panel__session"
+              }
+              aria-current={active ? "true" : undefined}
+              disabled={sending}
+              title={label}
+              onClick={() => {
+                if (s.id === sessionId) setView("thread");
+                else void openSession(s.id);
+              }}
+            >
+              {s.pinned ? (
+                <span className="chat-panel__session-pin" title="Pinned">
+                  <Pin size={12} aria-hidden />
+                </span>
+              ) : null}
+              <span className="chat-panel__session-label">{label}</span>
+              {when ? (
+                <time className="chat-panel__session-when" dateTime={sessionTimeValue(s.lastActive)}>
+                  {when}
+                </time>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              className="chat-panel__session-menu-btn"
+              aria-label="Chat actions"
+              title="Chat actions"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              disabled={sending}
+              onClick={() => toggleSessionMenu(s.id)}
+            >
+              <MoreVertical size={14} aria-hidden />
+            </button>
+            {menuOpen ? (
+              <div className="chat-panel__session-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  aria-label="Edit chat"
+                  onClick={() => startSessionRename(s)}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  aria-label="Archive chat"
+                  onClick={() => {
+                    setSessionMenuId(null);
+                    void patchSession(s.id, { archived: true });
+                  }}
+                >
+                  Archive
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  aria-label="Delete chat"
+                  className="chat-panel__session-menu-danger"
+                  onClick={() => void deleteSession(s.id)}
+                >
+                  Delete
+                </button>
+              </div>
+            ) : null}
+          </>
+        )}
       </li>
     );
   }
@@ -639,6 +1183,10 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                 )}
               </div>
             </>
+          ) : view === "chain" ? (
+            <div className="chat-panel__header">
+              <p className="chat-panel__heading">Life-Chain</p>
+            </div>
           ) : (
             <div className="chat-panel__header chat-panel__header--thread">
               <button
@@ -847,56 +1395,131 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
             )}
           </div>
 
-          <div className="chat-panel__footer" hidden={view !== "thread"}>
-            <form className="chat-panel__composer" onSubmit={(e) => void onSubmit(e)}>
-              <div
-                className={
-                  controlVisible
-                    ? "chat-panel__composer-row chat-panel__composer-row--control"
-                    : "chat-panel__composer-row"
-                }
+          {/*
+            The chain, as the dock's third surface: its own composer below, and
+            the same records the Life-Chain page shows. Rows carry their own
+            controls — edit, delete, assign — because at two blocks per row they
+            fit; the page still owns everything else a signal can become.
+          */}
+          <div
+            className="chat-panel__body chat-panel__body--chain"
+            ref={chainRef}
+            hidden={view !== "chain"}
+          >
+            {errorBanner}
+            {signalsLoaded && chainItems.length === 0 ? (
+              <p className="chat-panel__chain-empty muted">
+                {signals.length === 0
+                  ? "Nothing on the chain yet. Write something below."
+                  : "No unassigned or matching signals in this domain."}
+              </p>
+            ) : (
+              <ul
+                className="chat-panel__chain-list"
+                aria-label="Life-Chain signals"
               >
-                <textarea
-                  ref={inputRef}
-                  className="chat-panel__composer-input"
-                  placeholder="Message Hermes…"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={onKeyDown}
-                  disabled={sending || !sessionId}
-                  rows={2}
-                  aria-label="Message Hermes"
-                  autoComplete="off"
-                />
-                {controlVisible ? (
-                  <button
-                    type={sending ? "button" : "submit"}
-                    className="chat-panel__send"
-                    data-state={sending ? "stop" : "send"}
-                    disabled={sending ? !runId : !sessionId}
-                    aria-label={sending ? "Stop this run" : "Send message"}
-                    title={sending ? "Stop this run" : "Send message"}
-                    onClick={sending ? () => void stopRun() : undefined}
-                  >
-                    {sending ? (
-                      <span className="chat-panel__send-stop" aria-hidden />
-                    ) : (
+                {chainItems.map(signalRow)}
+              </ul>
+            )}
+          </div>
+
+          <div className="chat-panel__footer" hidden={view === "list"}>
+            {view === "chain" ? (
+              /*
+                The chain's composer: the same field, the same inline arrow, the
+                same auto-grow cap — one composer idiom in the dock, two
+                subjects. Only one of the two fields is ever mounted, so both
+                can share `inputRef` and one height pass.
+              */
+              <form
+                className="chat-panel__composer"
+                onSubmit={(e) => void onChainSubmit(e)}
+              >
+                <div
+                  className={
+                    chainControlVisible
+                      ? "chat-panel__composer-row chat-panel__composer-row--control"
+                      : "chat-panel__composer-row"
+                  }
+                >
+                  <textarea
+                    ref={inputRef}
+                    className="chat-panel__composer-input"
+                    placeholder="Log a signal…"
+                    value={chainDraft}
+                    onChange={(e) => setChainDraft(e.target.value)}
+                    onKeyDown={onComposerKeyDown}
+                    disabled={chainBusy}
+                    rows={2}
+                    aria-label="Log a signal"
+                    autoComplete="off"
+                  />
+                  {chainControlVisible ? (
+                    <button
+                      type="submit"
+                      className="chat-panel__send"
+                      data-state="send"
+                      disabled={chainBusy || !chainSendable}
+                      aria-label="Log signal"
+                      title="Log signal"
+                    >
                       <ArrowUp size={15} aria-hidden />
-                    )}
-                  </button>
-                ) : null}
-              </div>
-            </form>
+                    </button>
+                  ) : null}
+                </div>
+              </form>
+            ) : (
+              <form className="chat-panel__composer" onSubmit={(e) => void onSubmit(e)}>
+                <div
+                  className={
+                    controlVisible
+                      ? "chat-panel__composer-row chat-panel__composer-row--control"
+                      : "chat-panel__composer-row"
+                  }
+                >
+                  <textarea
+                    ref={inputRef}
+                    className="chat-panel__composer-input"
+                    placeholder="Message Hermes…"
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={onKeyDown}
+                    disabled={sending || !sessionId}
+                    rows={2}
+                    aria-label="Message Hermes"
+                    autoComplete="off"
+                  />
+                  {controlVisible ? (
+                    <button
+                      type={sending ? "button" : "submit"}
+                      className="chat-panel__send"
+                      data-state={sending ? "stop" : "send"}
+                      disabled={sending ? !runId : !sessionId}
+                      aria-label={sending ? "Stop this run" : "Send message"}
+                      title={sending ? "Stop this run" : "Send message"}
+                      onClick={sending ? () => void stopRun() : undefined}
+                    >
+                      {sending ? (
+                        <span className="chat-panel__send-stop" aria-hidden />
+                      ) : (
+                        <ArrowUp size={15} aria-hidden />
+                      )}
+                    </button>
+                  ) : null}
+                </div>
+              </form>
+            )}
           </div>
 
           {/*
             The dock's own actions, pinned to the bottom of the bar and shared by
-            both views: the list is where most navigation happens, so its entry
-            point cannot live inside the thread it replaces. The last two are
-            reserved — disabled rather than absent, so the row is the shape it
-            will end up as.
+            all three surfaces: the list is where most navigation happens, so its
+            entry point cannot live inside the thread it replaces. Slot three is
+            still reserved — disabled rather than absent, so the row keeps the
+            shape it will end up as — and slot four is the chain: the dock's
+            second way into the Life-Chain, alongside the rail's.
           */}
-          <nav className="chat-panel__actions" aria-label="Chat actions">
+          <nav className="chat-panel__actions" aria-label="Chat and chain actions">
             <button
               type="button"
               className="chat-panel__icon-btn chat-panel__action"
@@ -905,7 +1528,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               aria-pressed={view === "list"}
               onClick={() => setView(view === "list" ? "thread" : "list")}
             >
-              <History size={16} aria-hidden />
+              <History size={20} aria-hidden />
             </button>
             <button
               type="button"
@@ -915,7 +1538,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               disabled={sending}
               onClick={() => void newSession()}
             >
-              <SquarePen size={16} aria-hidden />
+              <SquarePen size={20} aria-hidden />
             </button>
             <button
               type="button"
@@ -924,16 +1547,17 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               title="Search chats — coming soon"
               disabled
             >
-              <Search size={16} aria-hidden />
+              <Search size={20} aria-hidden />
             </button>
             <button
               type="button"
               className="chat-panel__icon-btn chat-panel__action"
-              aria-label="More chat actions (coming soon)"
-              title="More chat actions — coming soon"
-              disabled
+              aria-label="Life-Chain"
+              title="Life-Chain"
+              aria-pressed={view === "chain"}
+              onClick={() => setView(view === "chain" ? "thread" : "chain")}
             >
-              <MoreHorizontal size={16} aria-hidden />
+              <Radio size={20} aria-hidden />
             </button>
           </nav>
         </div>
@@ -949,6 +1573,11 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
           <span>Chat</span>
         </button>
       )}
+
+      {/* The dock's own confirmation. It is drawn over the window, not the panel:
+          the question is about a chat, and a platform dialog would put it on the
+          display instead of in the window the application is running in. */}
+      {dialog}
     </aside>
   );
 }

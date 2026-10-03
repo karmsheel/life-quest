@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <title>LifeQuest pages studio harness</title>
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      /* Both samples must see the same content width: a per-sample scrollbar
+         would shrink one of them and make the parity comparison meaningless. */
+      .shell__content {
+        overflow: visible;
+        flex: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./pages-studio.tsx"></script>
+  </body>
+</html>

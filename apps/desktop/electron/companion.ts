@@ -374,6 +374,35 @@ export async function companionSessionPatch(
   }
 }
 
+/**
+ * DELETE /api/sessions/{id} — remove one chat and every message under it.
+ *
+ * This is not `archived` in a stronger key: the store's own delete, so the row
+ * is gone from Hermes everywhere and nothing brings it back. LifeQuest keeps no
+ * copy of a chat, so there is nothing to reconcile here afterwards.
+ */
+export async function companionSessionDelete(
+  id: string,
+): Promise<
+  { ok: true; value: { id: string; deleted: boolean } } | { ok: false; error: string }
+> {
+  try {
+    const res = await hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      return { ok: false, error: await errorDetail(res, `Delete session failed (${res.status})`) };
+    }
+    const body = (await res.json()) as { id?: unknown; deleted?: unknown };
+    // The gateway answers `{object, id, deleted}`; `deleted: false` means the row
+    // was already gone, which is the outcome the caller wanted either way.
+    if (typeof body?.id !== "string") return { ok: false, error: "Delete session returned no id" };
+    return { ok: true, value: { id: body.id, deleted: body.deleted !== false } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function companionChatStream(
   sessionId: string,
   input: string,

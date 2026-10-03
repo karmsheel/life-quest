@@ -3,6 +3,7 @@
 @import "./goals.css";
 @import "./schedule.css";
 @import "./data.css";
+@import "./pages.css";
 
 * {
   box-sizing: border-box;
@@ -480,6 +481,11 @@ a {
   grid-column: 3;
 }
 
+/* Square, on the window's own mat, with one hairline: the top edge, which is
+   the line under the titlebar. The rail already paints the leading hairline and
+   the dock the trailing one, so the sheet must not double them, and its bottom
+   edge meets the window with nothing between. The resting frame stays on the
+   top, right and bottom — the mat is what separates the sheet from the chrome. */
 .shell__main {
   min-width: 0;
   display: flex;
@@ -487,8 +493,8 @@ a {
   overflow: hidden;
   min-height: 0;
   background: var(--card);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+  border: 0;
+  border-top: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
 }
 
@@ -1408,6 +1414,48 @@ a {
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 0.25rem;
+}
+
+/* —— Confirm dialog —— */
+/* The app's own confirmation, centred in the application window. A
+   `window.confirm` is owned by the platform and centres on the display instead,
+   which a half-width window shows as a dialog floating over the desktop. */
+.confirm-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+
+.confirm-dialog {
+  width: min(24rem, 100%);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--bg);
+  padding: 1rem 1.1rem 1.1rem;
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--fg) 18%, transparent);
+}
+
+.confirm-dialog__title {
+  margin: 0 0 0.3rem;
+  font-size: 1rem;
+}
+
+.confirm-dialog__message {
+  margin: 0 0 0.9rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
 }
 
 /* —— Documents page cards —— */
@@ -2974,23 +3022,29 @@ a.home-mini-list__link:hover {
 }
 
 /* —— Hermes chat dock —— */
+/* Flush to the window's right and bottom edges the way the rail is to the left:
+   the tray keeps the frame for the sheet on the top, right and bottom, and this
+   panel's box carries the right and bottom halves of that frame. On the sheet's
+   own surface rather than a frosted one — a translucent panel reads as a card
+   floating over the page, and there is no page behind it to blur. The leading
+   edge keeps the pane gap and one hairline; no radius or shadow survives a flush
+   panel. */
 .chat-panel {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 100%;
   position: sticky;
   top: 0;
   align-self: stretch;
-  background: var(--card-glass);
-  backdrop-filter: var(--backdrop-panel);
-  -webkit-backdrop-filter: var(--backdrop-panel);
+  background: var(--card);
   color: var(--fg);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  box-shadow:
-    var(--shadow-sm),
-    inset 0 1px 0 color-mix(in srgb, white 62%, transparent);
+  border: 0;
+  border-left: 1px solid var(--border);
+  /* The escape lives in the box, not in a negative margin: a stretched grid item
+     is exactly the track, so the frame goes into the width and height. Measured
+     — the box lands on the window's right edge and bottom. */
+  width: calc(var(--chat-column) + var(--shell-frame));
+  height: calc(100% + var(--shell-frame));
   z-index: 20;
   overflow: hidden;
 }
@@ -3001,8 +3055,7 @@ a.home-mini-list__link:hover {
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .nav-rail,
-  .chat-panel {
+  .nav-rail {
     background: var(--card);
   }
 }
@@ -3080,7 +3133,14 @@ a.home-mini-list__link:hover {
   border-bottom: 1px solid var(--border);
 }
 
+/* The row is the chat and its 3-dot control side by side: a button nested in the
+   row's own button is not a thing, so the control is a sibling and the chat keeps
+   the rest of the width. */
 .chat-panel__session-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
   margin: 0;
   min-width: 0;
 }
@@ -3090,7 +3150,8 @@ a.home-mini-list__link:hover {
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 0.4rem 0.5rem;
   border: none;
   border-radius: 0.4rem;
@@ -3134,6 +3195,82 @@ a.home-mini-list__link:hover {
   align-self: center;
   flex-shrink: 0;
   color: var(--muted);
+}
+
+/* The 3-dot control: the only thing that opens a row's menu, and the only way to
+   rename, archive or delete a chat without opening it first. */
+.chat-panel__session-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chat-panel__session-menu-btn:hover:not(:disabled),
+.chat-panel__session-menu-btn[aria-expanded="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.chat-panel__session-menu-btn:disabled {
+  cursor: default;
+}
+
+/* Hangs under the control that opened it, over the rows below: the list scrolls,
+   so an inline menu would push the rows under it around instead. */
+.chat-panel__session-menu {
+  position: absolute;
+  top: 100%;
+  right: 0.25rem;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 6.5rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-panel__session-menu button {
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-panel__session-menu button:hover:not(:disabled) {
+  background: var(--selected-soft);
+}
+
+/* Delete is the one item Hermes cannot undo — the row and its messages are gone
+   — so it wears the app's destructive token while Edit and Archive stay plain. */
+.chat-panel__session-menu button.chat-panel__session-menu-danger {
+  color: var(--danger);
+}
+
+/* Renaming takes the row's own place: the field replaces the chat it names, so
+   the row keeps its position while the name is edited in the list. */
+.chat-panel__session-rename {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* The list is a page of its own, not the thread's strip: it owns the panel's
@@ -3467,16 +3604,18 @@ button.chat-panel__activity-line:hover {
   color: var(--muted);
 }
 
+/* The composer's band is a plain gutter — no fill of its own, no hairline. The
+   accent it used to wear as a tinted frame around the field lives on the field's
+   own border instead: one crisp box that is the composer, not a box inside a box. */
 .chat-panel__footer {
   flex-shrink: 0;
-  border-top: 1px solid var(--border);
   padding: 0.75rem;
-  background: color-mix(in srgb, var(--selected) 30%, var(--bg));
 }
 
-/* Bottom chrome of the bar: the dock's own actions, shared by both views. It is
-   a sibling band of the composer footer (its own hairline, its own fill), so the
-   two read as stacked rows of one column rather than a single mixed strip. */
+/* Bottom chrome of the bar: the dock's own actions, shared by both views. A
+   sibling band of the composer footer, with the hairline and the fill that
+   separate them, so the two read as stacked rows of one column rather than a
+   single mixed strip. */
 .chat-panel__actions {
   display: flex;
   align-items: center;
@@ -3484,11 +3623,21 @@ button.chat-panel__activity-line:hover {
   flex-shrink: 0;
   padding: 0.35rem 0.5rem;
   border-top: 1px solid var(--border);
-  background: color-mix(in srgb, var(--selected) 30%, var(--bg));
+  /* Deliberately NOT the composer's accent. The composer's accent is its own
+     field's border, two elements up; this is neutral chrome below it. */
+  background: var(--muted-surface);
+}
+
+/* Larger than the thread header's utilities (1.75rem/16px): the bar is primary
+   navigation and carries one action per slot, the header holds per-chat trivia. */
+.chat-panel__action {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.45rem;
 }
 
 .chat-panel__action[aria-pressed="true"] {
-  background: var(--selected);
+  background: var(--selected-soft);
   color: var(--fg);
 }
 
@@ -3520,13 +3669,17 @@ button.chat-panel__activity-line:hover {
 
 /* Height is JS-driven (ChatPanel `syncComposerHeight`): the field grows with its
    text up to half the panel, then scrolls in place. `overflow-y` here is only
-   the pre-script state — an empty draft keeps the `rows` attribute shape. */
+   the pre-script state — an empty draft keeps the `rows` attribute shape.
+   The field carries the composer's accent itself — a 2px ring of the skin's
+   accent — rather than wearing a frame painted around it. Height folds the
+   border in (`offsetHeight - clientHeight`), so the thicker ring cannot clip
+   the last line. */
 .chat-panel__composer-input {
   width: 100%;
   resize: none;
   overflow-y: hidden;
   border-radius: 0.4rem;
-  border: 1px solid var(--border);
+  border: 2px solid var(--accent);
   background: var(--bg);
   color: var(--fg);
   padding: 0.625rem 0.75rem;
@@ -3535,11 +3688,17 @@ button.chat-panel__activity-line:hover {
   line-height: 1.4;
   flex: 1;
   min-width: 0;
+  transition: box-shadow var(--dur-quick) var(--ease-out);
 }
 
+/* Selected: the accent emits. The border stays the same 2px ring, so focus reads
+   as the field lighting up rather than changing colour — a tight ring plus a
+   soft halo, which is the glow the outline alone cannot give. */
 .chat-panel__composer-input:focus {
   outline: none;
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent),
+    0 0 14px 2px color-mix(in srgb, var(--accent) 38%, transparent);
 }
 
 .chat-panel__composer-input:disabled {
@@ -3584,6 +3743,222 @@ button.chat-panel__activity-line:hover {
   height: 0.625rem;
   border-radius: 0.1875rem;
   background: currentColor;
+}
+
+/* The chain, as the dock's third surface: the same records the Life-Chain page
+   shows, read like a chat — oldest at the top, newest last, just above the
+   composer. The list is a plain column (the panel renders it oldest first), so
+   the DOM order is the reading order. `margin-top: auto` is what rests a short
+   stack on the composer; a flex item's auto margin resolves to 0 once the
+   content overflows, so the overflow stays reachable by scrolling rather than
+   being clipped (`justify-content: flex-end` would clip the start edge, leaving
+   the oldest entries unreachable). Overflow is scrolled to the bottom in the
+   panel's own layout effect, which is what keeps the newest entry in view. */
+.chat-panel__body--chain {
+  gap: 0.5rem;
+}
+
+.chat-panel__chain-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: auto 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The thread the stamps hang on: one dashed line down the rail column, drawn on
+   the list rather than per row so it runs unbroken across the gaps between
+   rows. The stamps are opaque and sit over it, which is what makes them read as
+   beads on the string instead of boxes beside a line. Two pixels and a heavier
+   mix: at one pixel the dots read as a smudge against the panel. */
+.chat-panel__chain-list::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 1.625rem;
+  border-left: 2px dashed color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+/* One signal: the rail, the message beside it, and the assignment picker under
+   the message. `when` spans both rows — that is what gives the rail the full
+   height of the row for the thread to run down. */
+.chat-panel__chain-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "when message"
+    "when assign";
+  column-gap: 0.5rem;
+  row-gap: 0.3rem;
+  align-items: start;
+}
+
+.chat-panel__chain-rail {
+  grid-area: when;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  width: 3.25rem;
+  align-self: stretch;
+}
+
+/* The square, and the grey one of the two blocks: the message carries the
+   content, this carries the moment. */
+.chat-panel__chain-stamp {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.05rem;
+  width: 3.25rem;
+  height: 3.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: var(--muted-surface);
+  color: var(--muted);
+  font-size: 0.625rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.chat-panel__chain-stamp-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.chat-panel__chain-message {
+  grid-area: message;
+  position: relative;
+  padding: 0.5rem 1.5rem 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--selected) 55%, transparent);
+}
+
+.chat-panel__chain-body {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* A titled signal keeps its title: the panel's composer never writes one, so a
+   row that has one came from somewhere else — an import, or Hermes itself — and
+   dropping it would hide data the record carries. */
+.chat-panel__chain-title {
+  margin: 0 0 0.2rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* The 3-dot control sits in the message box's top-right corner, paid for out of
+   the body's padding rather than a flex sibling, so the text keeps the box's
+   whole width until it wraps. */
+.chat-panel__chain-menu-btn {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chat-panel__chain-menu-btn:hover,
+.chat-panel__chain-menu-btn[aria-expanded="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.chat-panel__chain-menu {
+  position: absolute;
+  top: 1.5rem;
+  right: 0.25rem;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 6.5rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-panel__chain-menu button {
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-panel__chain-menu button:hover:not(:disabled) {
+  background: var(--selected-soft);
+}
+
+/* Editing keeps the message's own box: the field is what the body was. */
+.chat-panel__chain-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.chat-panel__chain-edit-input {
+  width: 100%;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.chat-panel__chain-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+/* The assignment picker, under the message box: it lines up with the box and
+   not with the rail, so what the row says and where it is filed read as one
+   column. */
+.chat-panel__chain-assign {
+  grid-area: assign;
+  width: 100%;
+  padding: 0.2rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+
+.chat-panel__chain-empty {
+  margin: auto 0 0;
+  font-size: 0.8125rem;
 }
 
 /* —— Life Signal Chain —— */

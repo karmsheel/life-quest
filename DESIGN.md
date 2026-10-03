@@ -8,7 +8,7 @@ This file is the contract for tokens and primitives. It is not a license to rest
 
 Primitives (hex in `tokens.css` and skin palettes) → semantic CSS variables → Life Quest extensions. Legacy `--bg`, `--text`, `--accent`, `--muted` are aliases only.
 
-`--canvas-base` is the window mat. `--card` is paper for main and Welcome. `--card-glass` is quiet frost for the nav rail and chat panel (`--backdrop-panel` blur). `--background` is paper on the sheet (aliases `--bg`) so outline controls blend. Skins write `--canvas-base` from the palette background, or mix toward ink when background equals card. Skins write `--card-glass` from `--card`. They do not write `--backdrop-panel`.
+`--canvas-base` is the window mat. `--card` is paper for main and Welcome. `--card-glass` is quiet frost for the nav rail (`--backdrop-panel` blur). `--background` is paper on the sheet (aliases `--bg`) so outline controls blend. Skins write `--canvas-base` from the palette background, or mix toward ink when background equals card. Skins write `--card-glass` from `--card`. They do not write `--backdrop-panel`.
 
 `--accent` is brand (`var(--primary)`). Hover fill is `--accent-fill`. `--muted` is text (`var(--muted-foreground)`). Quiet fill is `--muted-surface`.
 
@@ -32,7 +32,7 @@ ThemeProvider may apply a named skin and light/dark/system. It must not generate
 
 `SettingsSection` / `SettingsRow` own settings heading and row chrome. Settings cards use `--radius-sm`.
 
-The studio is three panes (`.nav-rail`, `.shell__main`, `.chat-panel`) at `--radius-sm` on a `--shell-frame` (12px) canvas mat. Rail and chat use `--card-glass`. Main and Welcome stay `--card`. `.shell` is the grid tray, not a sheet. Feature files must not add a second frame or extra glass.
+The studio is three square panes (`.nav-rail`, `.shell__main`, `.chat-panel`) on a `--shell-frame` (12px) canvas mat. The rail is quiet frost (`--card-glass`); the sheet and Welcome are `--card`. Each pane carries exactly one hairline, at the edge it shares with a neighbour: the rail's trailing edge, the sheet's top edge — the line the titlebar reads as its own — and the dock's leading edge. None is rounded, and only the sheet keeps `--shadow-sm` (Flat First). `.shell` is the grid tray, not a sheet. Feature files must not add a second frame or extra glass.
 
 ## Remaining visual do-not-do
 

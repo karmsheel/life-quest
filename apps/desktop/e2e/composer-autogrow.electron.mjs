@@ -124,10 +124,22 @@ const SAMPLE = `(() => {
     panelBodyHeight: body ? body.clientHeight : 0,
     panelFooterHeight: footer ? footer.offsetHeight : 0,
     panelHeaderHeight: header ? header.offsetHeight : 0,
+    fieldBorderWidth: styles.borderTopWidth,
+    fieldBorderColor: styles.borderTopColor,
+    fieldBoxShadow: styles.boxShadow,
+    footerBackground: footer ? getComputedStyle(footer).backgroundColor : null,
+    footerBorderTopWidth: footer ? getComputedStyle(footer).borderTopWidth : null,
+    footerPaddingTop: footer ? Math.round(parseFloat(getComputedStyle(footer).paddingTop) || 0) : null,
     scrolls: el.scrollHeight > el.clientHeight + 1,
     viewportHeight: window.innerHeight
   };
 })()`;
+
+/** Alpha channel of a computed colour; 1 when the string carries none. */
+const alphaOfPx = (color) => {
+  const numbers = ((color ?? "").match(/[\d.]+/g) ?? []).map(Number);
+  return numbers.length >= 4 ? numbers[3] : 1;
+};
 
 const failures = [];
 const check = (label, condition, detail) => {
@@ -528,6 +540,133 @@ async function main() {
       `stale note survived into the next turn: ${JSON.stringify(nextTurn.note)}`,
     );
 
+    // 9 — the composer's own chrome. The field wears the skin's accent as a 2px
+    // ring of its own, the band around it paints nothing (no fill, no hairline),
+    // and selecting the field adds the glow rather than changing the ring, so
+    // "selected" reads as extra light and not as a second colour.
+    //
+    // `:focus` does not match while the window itself is unfocused, even though
+    // `document.activeElement` is set — the driver showed `showInactive()` alone
+    // leaves `:focus=false` and the glow invisible. Give the window real focus
+    // first, or this measures a state the app never renders.
+    win.show();
+    win.focus();
+    win.webContents.focus();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    const chrome = await run(`(async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const el = document.querySelector(".chat-panel__composer-input");
+      const footer = document.querySelector(".chat-panel__footer");
+      if (!el || !footer) return null;
+      const read = () => {
+        const styles = getComputedStyle(el);
+        return {
+          borderWidth: styles.borderTopWidth,
+          borderStyle: styles.borderTopStyle,
+          borderColor: styles.borderTopColor,
+          boxShadow: styles.boxShadow,
+          outlineStyle: styles.outlineStyle,
+          focused: document.activeElement === el,
+          matchesFocus: el.matches(":focus"),
+          matchesFocusVisible: el.matches(":focus-visible"),
+          documentFocused: document.hasFocus(),
+        };
+      };
+      // Resolve the tokens the way the browser does: computed custom properties
+      // return their literal text (--accent is literally "var(--primary)"), so
+      // each one is painted onto a probe and read back as a colour.
+      const probe = document.createElement("div");
+      document.body.appendChild(probe);
+      const resolve = (token) => {
+        probe.style.background = "none";
+        probe.style.background = token;
+        return getComputedStyle(probe).backgroundColor;
+      };
+      const accent = resolve("var(--accent)");
+      const border = resolve("var(--border)");
+      probe.remove();
+      // Chromium snaps a used border width down to whole device pixels, so the
+      // computed width of a 2px border is not "2px" on a scaled display (125%
+      // scale floors 2.5 device px to 2, i.e. 1.6 CSS px). Measure the same
+      // snapping on reference elements instead of hard-coding the number, which
+      // is what makes "thicker than the hairline it replaced" a portable claim.
+      const reference = (width) => {
+        const ref = document.createElement("div");
+        ref.style.cssText =
+          "position:absolute;width:10px;height:10px;border-style:solid;border-width:" + width;
+        document.body.appendChild(ref);
+        const used = getComputedStyle(ref).borderTopWidth;
+        ref.remove();
+        return used;
+      };
+      const ring = { reference1px: reference("1px"), reference2px: reference("2px") };
+      const devicePixelRatio = window.devicePixelRatio;
+      el.blur();
+      await wait(60);
+      const blurred = read();
+      el.focus();
+      // Past the 120ms box-shadow transition, or the read catches it mid-flight.
+      await wait(260);
+      const focused = read();
+      const footerStyles = getComputedStyle(footer);
+      return {
+        blurred,
+        focused,
+        accent,
+        border,
+        ring,
+        devicePixelRatio,
+        borderWidthDevicePx: Math.round(parseFloat(blurred.borderWidth) * devicePixelRatio),
+        footerBackground: footerStyles.backgroundColor,
+        footerBorderTopWidth: footerStyles.borderTopWidth,
+        footerPaddingTop: Math.round(parseFloat(footerStyles.paddingTop) || 0),
+      };
+    })()`);
+    if (!chrome) throw new Error("composer chrome disappeared mid-run");
+
+    // The old look: the accent was painted AROUND the field as the footer's tinted
+    // band, and the field itself wore the neutral hairline. Both halves are gone.
+    check(
+      "the band paints nothing of its own",
+      alphaOfPx(chrome.footerBackground) === 0 && chrome.footerBorderTopWidth === "0px",
+      `footer background ${chrome.footerBackground} / top border ${chrome.footerBorderTopWidth}`,
+    );
+    check(
+      "the band keeps only the gutter",
+      chrome.footerPaddingTop > 0,
+      `footer top padding ${chrome.footerPaddingTop}px`,
+    );
+    check(
+      "the field wears the accent as a ring thicker than the hairline it replaced",
+      chrome.blurred.borderStyle === "solid" &&
+        chrome.blurred.borderWidth === chrome.ring.reference2px &&
+        parseFloat(chrome.ring.reference2px) > parseFloat(chrome.ring.reference1px) &&
+        chrome.blurred.borderColor === chrome.accent &&
+        chrome.blurred.borderColor !== chrome.border,
+      `resting ring ${chrome.blurred.borderWidth} ${chrome.blurred.borderStyle} ${chrome.blurred.borderColor}` +
+        ` (references 1px→${chrome.ring.reference1px}, 2px→${chrome.ring.reference2px} at dpr ${chrome.devicePixelRatio};` +
+        ` accent ${chrome.accent}, neutral border ${chrome.border})`,
+    );
+    check(
+      "selecting the field adds a glow",
+      chrome.focused.focused === true &&
+        chrome.focused.matchesFocus === true &&
+        chrome.blurred.boxShadow === "none" &&
+        /0px 0px 0px 3px/.test(chrome.focused.boxShadow) &&
+        /0px 0px 14px 2px/.test(chrome.focused.boxShadow),
+      `blurred ${chrome.blurred.boxShadow} → focused ${chrome.focused.boxShadow}` +
+        ` (focused=${chrome.focused.focused}, :focus=${chrome.focused.matchesFocus},` +
+        ` document focused=${chrome.focused.documentFocused})`,
+    );
+    check(
+      "the glow is the only thing selection changes",
+      chrome.focused.borderColor === chrome.blurred.borderColor &&
+        chrome.focused.borderWidth === chrome.blurred.borderWidth &&
+        chrome.focused.outlineStyle === "none",
+      `ring ${chrome.blurred.borderColor} → ${chrome.focused.borderColor}, outline ${chrome.focused.outlineStyle}`,
+    );
+
     const shot = async (name, text) => {
       const sample = await sampleAfter(text);
       const image = await win.webContents.capturePage();
@@ -571,6 +710,22 @@ async function main() {
       await shot("mid", lines(4)),
       await shot("capped", lines(60)),
     ];
+
+    // The selected state, as a picture: the accent ring stays where it was and the
+    // glow is the extra. The ring is asserted above; this is for the operator.
+    await run(`(async () => {
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const el = document.querySelector(".chat-panel__composer-input");
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+      setter.call(el, "Selected composer");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      await wait(80);
+      el.focus();
+      await wait(180);
+      return document.activeElement === el;
+    })()`);
+    const focusedShot = path.join(artifactsDir, "composer-autogrow-focused.png");
+    fs.writeFileSync(focusedShot, (await win.webContents.capturePage()).toPNG());
 
     // 5 — a panel resize re-clamps: the cap follows the panel, not the draft.
     const resizeChecks = [];
@@ -618,9 +773,26 @@ async function main() {
         click: sendClick,
         stream,
       },
+      composer: {
+        restingRing: chrome.blurred,
+        focused: chrome.focused,
+        accent: chrome.accent,
+        border: chrome.border,
+        ring: chrome.ring,
+        devicePixelRatio: chrome.devicePixelRatio,
+        borderWidthDevicePx: chrome.borderWidthDevicePx,
+        footerBackground: chrome.footerBackground,
+        footerBorderTopWidth: chrome.footerBorderTopWidth,
+        footerPaddingTop: chrome.footerPaddingTop,
+      },
       samples,
       resizeChecks,
-      screenshots: [...shots.map((entry) => entry.file), streamingShot, stoppedShot],
+      screenshots: [
+        ...shots.map((entry) => entry.file),
+        focusedShot,
+        streamingShot,
+        stoppedShot,
+      ],
       failures,
       pass: failures.length === 0,
     };
@@ -682,6 +854,18 @@ async function main() {
       `stream: frame → ${JSON.stringify(report.send.stream.decoded)}; live control ` +
         `${JSON.stringify(report.send.stream.live)}; armed ${JSON.stringify(report.send.stream.afterRunStarted)}; ` +
         `stop calls ${JSON.stringify(report.send.stream.afterStopClick.stops)}; settled ${JSON.stringify(report.send.stream.settled)}`,
+    );
+    console.log("");
+  }
+  if (report.composer) {
+    console.log(
+      `composer chrome: ring ${report.composer.restingRing.borderWidth} ${report.composer.restingRing.borderStyle} ` +
+        `${report.composer.restingRing.borderColor} (accent ${report.composer.accent}, neutral border ${report.composer.border}); ` +
+        `band ${report.composer.footerBackground} / top border ${report.composer.footerBorderTopWidth} / pad ${report.composer.footerPaddingTop}px`,
+    );
+    console.log(
+      `composer selected: outline ${report.composer.focused.outlineStyle}, ring ${report.composer.focused.borderColor} ` +
+        `(unchanged), glow ${report.composer.focused.boxShadow}`,
     );
     console.log("");
   }

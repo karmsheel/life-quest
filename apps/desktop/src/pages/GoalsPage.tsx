@@ -16,6 +16,7 @@ import {
 } from "@lifequest/vault-core/pure";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { Button } from "@/components/ui/Button";
+import { useConfirm } from "@/components/ui/useConfirm";
 import { api } from "@/lib/ipc";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useVault } from "@/state/VaultProvider";
@@ -63,6 +64,8 @@ export default function GoalsPage() {
   const [error, setError] = useState<string | null>(null);
   const [cadence, setCadence] = useState<ReviewCadence>("weekly");
   const chatDock = useChatDock();
+  /** The goal's delete asks first, in the app's own dialog rather than the platform's. */
+  const { ask, dialog } = useConfirm();
   const weekStartDay = snapshot?.settings.weekStartDay ?? "monday";
 
   const liveDomains = useMemo(
@@ -231,10 +234,21 @@ export default function GoalsPage() {
     if (ok) resetComposer();
   }
 
-  async function onDelete() {
+  /** Delete asks first: the goal leaves the vault, and nothing restores it. */
+  function onDelete() {
     if (!editingId || busy) return;
-    if (!window.confirm("Delete this goal?")) return;
-    const ok = await apply({ type: "deleteGoal", id: editingId });
+    const id = editingId;
+    ask({
+      title: "Delete goal",
+      message: "The goal leaves the vault, and so does everything it measures.",
+      confirmLabel: "Delete goal",
+      destructive: true,
+      run: () => void runDelete(id),
+    });
+  }
+
+  async function runDelete(id: string) {
+    const ok = await apply({ type: "deleteGoal", id });
     if (ok) resetComposer();
   }
 
@@ -540,6 +554,7 @@ export default function GoalsPage() {
           })}
         </ul>
       )}
+      {dialog}
     </div>
   );
 }

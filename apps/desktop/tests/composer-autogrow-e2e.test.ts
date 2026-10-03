@@ -34,6 +34,12 @@ function devServerUp(): Promise<boolean> {
   });
 }
 
+/** Alpha channel of a computed colour; 1 when the string carries none. */
+function alphaOf(color: string | null): number {
+  const numbers = ((color ?? "").match(/[\d.]+/g) ?? []).map(Number);
+  return numbers.length >= 4 ? numbers[3] : 1;
+}
+
 function runDriver(): Promise<number> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -88,6 +94,38 @@ describe("composer autogrow", () => {
           settled: { present: boolean; fieldDisabled: boolean; note: string | null };
           submits: number;
         };
+      };
+      composer: {
+        restingRing: {
+          borderWidth: string;
+          borderStyle: string;
+          borderColor: string;
+          boxShadow: string;
+          outlineStyle: string;
+          focused: boolean;
+          matchesFocus: boolean;
+          matchesFocusVisible: boolean;
+          documentFocused: boolean;
+        };
+        focused: {
+          borderWidth: string;
+          borderStyle: string;
+          borderColor: string;
+          boxShadow: string;
+          outlineStyle: string;
+          focused: boolean;
+          matchesFocus: boolean;
+          matchesFocusVisible: boolean;
+          documentFocused: boolean;
+        };
+        accent: string;
+        border: string;
+        ring: { reference1px: string; reference2px: string };
+        devicePixelRatio: number;
+        borderWidthDevicePx: number;
+        footerBackground: string;
+        footerBorderTopWidth: string;
+        footerPaddingTop: number;
       };
     };
 
@@ -162,5 +200,63 @@ describe("composer autogrow", () => {
       report.send.stream.afterCancelled.note,
       "the marker vanished when the stream closed",
     );
+
+    // The composer's own chrome: the accent ring lives on the field, the band
+    // around it paints nothing of its own, and selecting the field adds light
+    // rather than a second colour.
+    assert.equal(
+      alphaOf(report.composer.footerBackground),
+      0,
+      `the composer band paints its own fill: ${report.composer.footerBackground}`,
+    );
+    assert.equal(report.composer.footerBorderTopWidth, "0px", "the composer band kept its hairline");
+    assert.ok(report.composer.footerPaddingTop > 0, "the composer band lost its gutter");
+    assert.equal(report.composer.restingRing.borderStyle, "solid", "the field's ring is not solid");
+    // Thickness is checked against a reference element measured in the same
+    // renderer, never a hard-coded string: Chromium snaps a used border width
+    // down to whole device pixels, so 2px renders as 1.6px on a 125% display.
+    assert.equal(
+      report.composer.restingRing.borderWidth,
+      report.composer.ring.reference2px,
+      `the field's ring is not the 2px reference: ${report.composer.restingRing.borderWidth} vs ${report.composer.ring.reference2px}`,
+    );
+    assert.ok(
+      parseFloat(report.composer.ring.reference2px) >
+        parseFloat(report.composer.ring.reference1px),
+      `a 2px ring did not measure thicker than a 1px one: ${JSON.stringify(report.composer.ring)}`,
+    );
+    assert.ok(
+      report.composer.borderWidthDevicePx >= 2,
+      `the field's ring is under 2 device px: ${report.composer.borderWidthDevicePx} at dpr ${report.composer.devicePixelRatio}`,
+    );
+    assert.equal(
+      report.composer.restingRing.borderColor,
+      report.composer.accent,
+      `the field's ring is not the accent: ${report.composer.restingRing.borderColor} vs ${report.composer.accent}`,
+    );
+    assert.notEqual(
+      report.composer.restingRing.borderColor,
+      report.composer.border,
+      "the field still wears the neutral hairline",
+    );
+    assert.equal(report.composer.restingRing.boxShadow, "none", "an unselected field already glows");
+    assert.equal(
+      report.composer.focused.focused,
+      true,
+      "the field never took focus, so the glow could not be measured",
+    );
+    assert.equal(
+      report.composer.focused.matchesFocus,
+      true,
+      "the field held activeElement without matching :focus, so a glow would measure nothing",
+    );
+    assert.match(report.composer.focused.boxShadow, /0px 0px 0px 3px/, "no focus ring in the glow");
+    assert.match(report.composer.focused.boxShadow, /0px 0px 14px 2px/, "no soft halo in the glow");
+    assert.equal(
+      report.composer.focused.borderColor,
+      report.composer.restingRing.borderColor,
+      "selection changed the ring's colour instead of adding light",
+    );
+    assert.equal(report.composer.focused.outlineStyle, "none", "the focus outline was not suppressed");
   });
 });

@@ -52,13 +52,34 @@ describe("shell visuals", () => {
       /\.window-titlebar__leading\s+\.window-titlebar__nav-toggle\s*\{[\s\S]*?position:\s*absolute[\s\S]*?left:\s*calc\(\(var\(--shell-nav-width\) - var\(--nav-toggle-size\)\) \/ 2\)/,
     );
     assert.match(css, /\.shell__main\s*\{[\s\S]*?background:\s*var\(--card\)/);
-    assert.match(css, /\.shell__main\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+    // The sheet is square, and keeps exactly one hairline: its top edge, the
+    // line under the titlebar. The leading and trailing hairlines belong to the
+    // rail and the dock, so the sheet must not double them, and its bottom edge
+    // is left to the mat. Radius and the three side borders are gone for good.
+    assert.equal(/\.shell__main\s*\{[^}]*border-radius/.test(css), false);
+    assert.match(css, /\.shell__main\s*\{[^}]*border:\s*0/);
+    assert.match(css, /\.shell__main\s*\{[^}]*border-top:\s*1px solid var\(--border\)/);
+    assert.equal(/\.shell__main\s*\{[^}]*border-left:/.test(css), false);
+    assert.equal(/\.shell__main\s*\{[^}]*border-right:/.test(css), false);
+    assert.equal(/\.shell__main\s*\{[^}]*border-bottom:/.test(css), false);
     assert.equal(/\.shell__main\s*\{[^}]*background:\s*var\(--card-glass\)/.test(css), false);
-    assert.match(css, /\.chat-panel\s*\{[\s\S]*?background:\s*var\(--card-glass\)/);
-    assert.match(css, /\.chat-panel\s*\{[\s\S]*?backdrop-filter:\s*var\(--backdrop-panel\)/);
-    assert.match(css, /\.chat-panel\s*\{[\s\S]*?-webkit-backdrop-filter:\s*var\(--backdrop-panel\)/);
-    assert.match(css, /\.chat-panel\s*\{[\s\S]*?box-shadow:[\s\S]*?inset 0 1px 0/);
-    assert.match(css, /\.chat-panel\s*\{[\s\S]*?border-radius:\s*var\(--radius-sm\)/);
+    // The dock is a pane on the sheet's own surface, and the only flush one:
+    // square, unfrosted, no shadow, one leading hairline, escaping the tray's
+    // frame on the right and bottom the way the rail escapes it on the left.
+    assert.match(css, /\.chat-panel\s*\{[\s\S]*?background:\s*var\(--card\)/);
+    assert.match(css, /\.chat-panel\s*\{[\s\S]*?border-left:\s*1px solid var\(--border\)/);
+    assert.match(
+      css,
+      /\.chat-panel\s*\{[\s\S]*?width:\s*calc\(var\(--chat-column\) \+ var\(--shell-frame\)\)/,
+    );
+    assert.match(
+      css,
+      /\.chat-panel\s*\{[\s\S]*?height:\s*calc\(100% \+ var\(--shell-frame\)\)/,
+    );
+    assert.equal(/\.chat-panel\s*\{[^}]*var\(--card-glass\)/.test(css), false);
+    assert.equal(/\.chat-panel\s*\{[^}]*backdrop-filter/.test(css), false);
+    assert.equal(/\.chat-panel\s*\{[^}]*box-shadow/.test(css), false);
+    assert.equal(/\.chat-panel\s*\{[^}]*border-radius/.test(css), false);
     assert.match(
       css,
       /@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)[\s\S]*?\.nav-rail[\s\S]*?background:\s*var\(--card\)/,

@@ -25,12 +25,12 @@ const url =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/chat-sessions.html";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
-/** The bottom action bar's slots, in order: two live, two reserved. */
+/** The bottom action bar's slots, in order: three live, one still reserved. */
 const ACTION_SLOTS = [
   "Chat history",
   "New chat",
   "Search chats (coming soon)",
-  "More chat actions (coming soon)",
+  "Life-Chain",
 ];
 
 const SAMPLE = `(() => {
@@ -102,10 +102,55 @@ const SAMPLE = `(() => {
       : null,
     renaming: Boolean(renameInput),
     renameValue: renameInput ? renameInput.value : null,
+    rowMenu: (() => {
+      const menu = document.querySelector(".chat-panel__session-menu");
+      if (!menu) return null;
+      return Array.from(menu.querySelectorAll("[role='menuitem']")).map((b) =>
+        b.getAttribute("aria-label")
+      );
+    })(),
+    rowMenuRowIndex: (() => {
+      const menu = document.querySelector(".chat-panel__session-menu");
+      if (!menu) return null;
+      const item = menu.closest(".chat-panel__session-item");
+      return item ? items.indexOf(item) : null;
+    })(),
+    rowMenuBtnCount: document.querySelectorAll(".chat-panel__session-menu-btn").length,
+    rowMenuBox: box(document.querySelector(".chat-panel__session-menu")),
+    rowMenuItems: Array.from(
+      document.querySelectorAll(".chat-panel__session-menu [role='menuitem']")
+    ).map((b) => ({
+      label: b.getAttribute("aria-label"),
+      color: getComputedStyle(b).color
+    })),
+    rowMenuBackground: (() => {
+      const menu = document.querySelector(".chat-panel__session-menu");
+      return menu ? getComputedStyle(menu).backgroundColor : null;
+    })(),
+    rowRename: Boolean(document.querySelector(".chat-panel__session-rename")),
+    rowRenameValue: (() => {
+      const field = document.querySelector(
+        ".chat-panel__session-rename .chat-panel__rename-input"
+      );
+      return field ? field.value : null;
+    })(),
+    lastChatStored: window.localStorage.getItem("lifequest.companion.lastSessionId"),
     messages: Array.from(document.querySelectorAll(".chat-panel__message-content")).map((el) =>
       text(el).slice(0, 80)
     ),
     actionsBar: box(document.querySelector(".chat-panel__actions")),
+    actionsBarBackground: (() => {
+      const el = document.querySelector(".chat-panel__actions");
+      return el ? getComputedStyle(el).backgroundColor : null;
+    })(),
+    footerBackground: (() => {
+      const el = document.querySelector(".chat-panel__footer");
+      return el ? getComputedStyle(el).backgroundColor : null;
+    })(),
+    headerIconSize: (() => {
+      const svg = document.querySelector(".chat-panel__header--thread button svg");
+      return svg ? Math.round(svg.getBoundingClientRect().width) : null;
+    })(),
     actions: Array.from(document.querySelectorAll(".chat-panel__action")).map((b) => {
       const svg = b.querySelector("svg");
       return {
@@ -113,6 +158,8 @@ const SAMPLE = `(() => {
         pressed: b.getAttribute("aria-pressed") === "true",
         disabled: b.disabled === true,
         opacity: Number(getComputedStyle(b).opacity),
+        background: getComputedStyle(b).backgroundColor,
+        iconSize: svg ? Math.round(svg.getBoundingClientRect().width) : 0,
         icon: svg
           ? Array.from(svg.classList)
               .filter((c) => c.indexOf("lucide-") === 0)
@@ -122,6 +169,38 @@ const SAMPLE = `(() => {
     }),
     patchCalls: window.__lqPatchCalls ?? [],
     createCalls: window.__lqCreateCalls ?? [],
+    deleteCalls: window.__lqDeleteCalls ?? [],
+    confirmDialog: (() => {
+      const dialog = document.querySelector(".confirm-dialog");
+      const backdrop = document.querySelector(".confirm-dialog-backdrop");
+      if (!dialog || !backdrop) return null;
+      const dialogBox = box(dialog);
+      const confirmBtn = dialog.querySelector(".confirm-dialog__confirm");
+      const cancelBtn = dialog.querySelector(".confirm-dialog__cancel");
+      const panelBox = document.querySelector(".chat-panel");
+      const panel = panelBox ? panelBox.getBoundingClientRect() : null;
+      const centreX = dialogBox ? dialogBox.left + dialogBox.width / 2 : 0;
+      const centreY = dialogBox ? dialogBox.top + dialogBox.height / 2 : 0;
+      return {
+        title: text(dialog.querySelector(".confirm-dialog__title")),
+        message: text(dialog.querySelector(".confirm-dialog__message")),
+        confirmLabel: confirmBtn ? confirmBtn.getAttribute("aria-label") : null,
+        cancelLabel: cancelBtn ? cancelBtn.getAttribute("aria-label") : null,
+        box: dialogBox,
+        backdrop: box(backdrop),
+        // A scrim that does not paint is not a scrim: the card would float with
+        // nothing de-emphasised behind it.
+        backdropBackground: getComputedStyle(backdrop).backgroundColor,
+        // How far the card's centre sits from the window's centre, and from the
+        // dock's: the first is the contract, the second is what the operator
+        // complained about (a native dialog put it on the display's centre).
+        offsetFromWindowX: Math.round(centreX - window.innerWidth / 2),
+        offsetFromWindowY: Math.round(centreY - window.innerHeight / 2),
+        offsetFromPanelX: panel
+          ? Math.round(centreX - (panel.left + panel.width / 2))
+          : null
+      };
+    })(),
     messageCalls: window.__lqMessageCalls ?? [],
     listCalls: window.__lqListCalls ?? 0,
     overflow: {
@@ -135,6 +214,31 @@ const failures = [];
 const check = (label, condition, detail) => {
   if (!condition) failures.push(`${label}: ${detail}`);
   return Boolean(condition);
+};
+
+/** RGB channels of a computed colour in 0–255, whatever syntax it resolved to. */
+const channels = (color) => {
+  const raw = ((color ?? "").match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+  // `color(srgb …)` reports 0–1 floats while `rgb()`/`rgba()` report 0–255.
+  // Without normalising, cross-syntax comparisons pass for free (238 against
+  // 0.74 "gaps" 237 and no colour change is ever detected).
+  return raw.length === 3 && raw.every((value) => value <= 1.0001)
+    ? raw.map((value) => value * 255)
+    : raw;
+};
+
+/** Alpha of a computed colour: 1 when it carries none. */
+const alphaOf = (color) => {
+  const raw = ((color ?? "").match(/[\d.]+/g) ?? []).map(Number);
+  return raw.length >= 4 ? raw[3] : 1;
+};
+
+/** Largest per-channel gap between two computed colours; NaN when unparseable. */
+const channelDelta = (a, b) => {
+  const x = channels(a);
+  const y = channels(b);
+  if (x.length < 3 || y.length < 3) return NaN;
+  return Math.max(...x.map((value, index) => Math.abs(value - y[index])));
 };
 
 const last = (list) => (list.length ? list[list.length - 1] : null);
@@ -191,6 +295,52 @@ async function main() {
       const save = document.querySelector('[aria-label="Save name"]');
       if (!save) return false;
       save.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** The 3-dot control on one chat row, or on the row the open menu belongs to. */
+  const openRowMenu = (index) =>
+    run(`(async () => {
+      const el = document.querySelectorAll(".chat-panel__session-menu-btn")[${index}];
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** One item of the open row menu, by the aria-label the menu wears. */
+  const clickMenuItem = (label) =>
+    run(`(async () => {
+      const el = document.querySelector('.chat-panel__session-menu [aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']');
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** Renaming from the list: the field replaces the row, Save commits it. */
+  const typeRowRename = (value) =>
+    run(`(async () => {
+      const el = document.querySelector(".chat-panel__session-rename .chat-panel__rename-input");
+      if (!el) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      setter.call(el, ${JSON.stringify(value)});
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const save = document.querySelector('[aria-label="Save chat name"]');
+      if (!save) return false;
+      save.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** One of the dock's own confirm dialog's answers. */
+  const clickDialog = (which) =>
+    run(`(async () => {
+      const el = document.querySelector(".confirm-dialog__${which}");
+      if (!el) return false;
+      el.click();
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
       return true;
     })()`);
@@ -262,9 +412,9 @@ async function main() {
       `bar starts at ${landing.actionsBar?.top}px, composer ends at ${landing.footer?.box.bottom}px`,
     );
     check(
-      "the first two slots are live and the last two are reserved",
+      "the last two slots are live and the search slot is still reserved",
       JSON.stringify(landing.actions.map((slot) => slot.disabled)) ===
-        JSON.stringify([false, false, true, true]),
+        JSON.stringify([false, false, true, false]),
       `disabled flags ${JSON.stringify(landing.actions.map((slot) => slot.disabled))}`,
     );
     check(
@@ -273,12 +423,28 @@ async function main() {
       `icons ${JSON.stringify(landing.actions.map((slot) => slot.icon))}`,
     );
     check(
-      "the reserved slots are dimmed, not just inert",
+      "the reserved slot is dimmed, not just inert",
       landing.actions[0]?.opacity === 1 &&
         landing.actions[1]?.opacity === 1 &&
         (landing.actions[2]?.opacity ?? 1) < 1 &&
-        (landing.actions[3]?.opacity ?? 1) < 1,
+        landing.actions[3]?.opacity === 1,
       `opacities ${JSON.stringify(landing.actions.map((slot) => slot.opacity))}`,
+    );
+    check(
+      "the action icons are all one size, and bigger",
+      new Set(landing.actions.map((slot) => slot.iconSize)).size === 1 &&
+        (landing.actions[0]?.iconSize ?? 0) >= 18,
+      `sizes ${JSON.stringify(landing.actions.map((slot) => slot.iconSize))}`,
+    );
+    check(
+      "the action icons are larger than the thread header's",
+      (landing.actions[0]?.iconSize ?? 0) > (landing.headerIconSize ?? 99),
+      `${landing.actions[0]?.iconSize}px in the bar vs ${landing.headerIconSize}px in the header`,
+    );
+    check(
+      "the action bar is a different surface from the composer",
+      channelDelta(landing.actionsBarBackground, landing.footerBackground) >= 8,
+      `bar ${landing.actionsBarBackground} vs composer ${landing.footerBackground} (max channel gap ${channelDelta(landing.actionsBarBackground, landing.footerBackground)})`,
     );
     check(
       "history is not marked active on a thread",
@@ -357,6 +523,17 @@ async function main() {
       "history is marked active in the list",
       list.actions[0]?.pressed === true,
       `pressed ${list.actions[0]?.pressed}`,
+    );
+    check(
+      "the active slot paints a tint, not a slab",
+      alphaOf(list.actions[0]?.background) > 0.05 &&
+        alphaOf(list.actions[0]?.background) <= 0.5,
+      `active fill ${list.actions[0]?.background} (alpha ${alphaOf(list.actions[0]?.background)}; a --selected slab would be opaque)`,
+    );
+    check(
+      "the idle slots paint no fill",
+      alphaOf(list.actions[1]?.background) === 0,
+      `idle fill ${list.actions[1]?.background}`,
     );
     check(
       "the list stops above the action bar",
@@ -543,17 +720,17 @@ async function main() {
     );
     screenshots.push(await shot("archived"));
 
-    // 8 — the reserved slots hold their place and do nothing; the new-chat slot
-    // creates one chat through the bridge and opens its (empty) thread.
+    // 8 — the reserved slot holds its place and does nothing; the new-chat slot
+    // creates one chat through the bridge and opens its (empty) thread. The
+    // chain slot is live now and swaps the panel, so it is not clicked here —
+    // `chat-chain.electron.mjs` owns that.
     const beforeReserved = archived.patchCalls.length + archived.createCalls.length;
     await run(
-      `(document.querySelector('[aria-label="Search chats (coming soon)"]').click(),
-        document.querySelector('[aria-label="More chat actions (coming soon)"]').click(),
-        true)`,
+      `(document.querySelector('[aria-label="Search chats (coming soon)"]').click(), true)`,
     );
     const reserved = await settle();
     check(
-      "the reserved slots do nothing",
+      "the reserved slot does nothing",
       reserved.patchCalls.length + reserved.createCalls.length === beforeReserved &&
         reserved.list !== null,
       `calls ${reserved.patchCalls.length + reserved.createCalls.length} vs ${beforeReserved}, view ${reserved.list ? "list" : "thread"}`,
@@ -618,6 +795,263 @@ async function main() {
       `${reusedList.rowCount} rows vs ${expected.rows} (one archived, one created blank)`,
     );
 
+    // 10 — the row's own 3-dot menu: every listed chat is manageable in place,
+    // and the control that opened a menu closes it again.
+    const menuBase = reusedList;
+    const menuRowLabel = menuBase.rows[1]?.label ?? "";
+    const menuRowId = ids[labels.indexOf(menuRowLabel)];
+    check(
+      "every listed chat carries its own 3-dot control",
+      menuBase.rowMenuBtnCount === menuBase.rowCount && menuBase.rowMenuBtnCount > 0,
+      `${menuBase.rowMenuBtnCount} controls for ${menuBase.rowCount} rows`,
+    );
+    check(
+      "no menu is open before it is asked for",
+      menuBase.rowMenu === null,
+      `menu ${JSON.stringify(menuBase.rowMenu)}`,
+    );
+    const menuOpened = await openRowMenu(1);
+    const menuState = await settle();
+    check("clicked a row's 3-dot control", menuOpened, "no 3-dot control at index 1");
+    check(
+      "the row menu offers Edit, Archive and Delete",
+      JSON.stringify(menuState.rowMenu) ===
+        JSON.stringify(["Edit chat", "Archive chat", "Delete chat"]),
+      `items ${JSON.stringify(menuState.rowMenu)}`,
+    );
+    check(
+      "the menu opens on the row whose control was clicked",
+      menuState.rowMenuRowIndex === 1,
+      `menu on row ${menuState.rowMenuRowIndex}, control on row 1 ("${menuRowLabel}")`,
+    );
+    check(
+      "the menu paints an opaque surface inside the list",
+      (menuState.rowMenuBox?.height ?? 0) > 0 &&
+        alphaOf(menuState.rowMenuBackground) > 0.9 &&
+        (menuState.rowMenuBox?.right ?? 0) <= (menuState.list?.box.right ?? -1) + 1,
+      `box ${JSON.stringify(menuState.rowMenuBox)}, background ${menuState.rowMenuBackground}`,
+    );
+    check(
+      "only Delete wears the destructive colour",
+      menuState.rowMenuItems.length === 3 &&
+        channelDelta(menuState.rowMenuItems[1]?.color, menuState.rowMenuItems[0]?.color) <= 2 &&
+        channelDelta(menuState.rowMenuItems[2]?.color, menuState.rowMenuItems[0]?.color) >= 8,
+      `item colours ${JSON.stringify(menuState.rowMenuItems.map((item) => item.color))}`,
+    );
+    check(
+      "opening the menu wrote nothing",
+      menuState.patchCalls.length === menuBase.patchCalls.length &&
+        menuState.deleteCalls.length === menuBase.deleteCalls.length,
+      `patches ${menuState.patchCalls.length}, deletes ${menuState.deleteCalls.length}`,
+    );
+    screenshots.push(await shot("row-menu"));
+    await openRowMenu(1);
+    const menuShut = await settle();
+    check(
+      "the control closes its own menu",
+      menuShut.rowMenu === null && menuShut.rowMenuBtnCount === menuShut.rowCount,
+      `menu ${JSON.stringify(menuShut.rowMenu)}`,
+    );
+    screenshots.push(await shot("row-menu-closed"));
+
+    // 11 — Edit renames the row in place: the list manages a chat without
+    // opening it, and the write reaches the bridge.
+    await openRowMenu(1);
+    const editClicked = await clickMenuItem("Edit chat");
+    const rowRenameStarted = await settle();
+    check("clicked Edit chat", editClicked, "no Edit chat item in the row menu");
+    check(
+      "the row becomes the field, starting from its own name",
+      rowRenameStarted.rowRename && rowRenameStarted.rowRenameValue === menuRowLabel,
+      `field ${JSON.stringify(rowRenameStarted.rowRenameValue)} vs "${menuRowLabel}"`,
+    );
+    check(
+      "the field takes the row's 3-dot control with it",
+      rowRenameStarted.rowMenuBtnCount === rowRenameStarted.rowCount - 1,
+      `${rowRenameStarted.rowMenuBtnCount} controls for ${rowRenameStarted.rowCount} rows`,
+    );
+    check(
+      "the edit did not open the chat it renamed",
+      rowRenameStarted.threadHeader === null &&
+        last(rowRenameStarted.messageCalls) === last(menuBase.messageCalls),
+      `thread ${Boolean(rowRenameStarted.threadHeader)}, loaded ${last(rowRenameStarted.messageCalls)}`,
+    );
+    const rowTyped = await typeRowRename("Kitchen reno quotes");
+    const rowRenamed = await settle();
+    check("typed a new row name and submitted", rowTyped, "no row rename field to fill");
+    check(
+      "the row's rename wrote the title to the bridge",
+      last(rowRenamed.patchCalls)?.patch?.title === "Kitchen reno quotes" &&
+        last(rowRenamed.patchCalls)?.id === menuRowId,
+      `bridge saw ${JSON.stringify(last(rowRenamed.patchCalls))} for ${menuRowId}`,
+    );
+    check(
+      "the renamed row wears the new name, in the list, with no thread opened",
+      rowRenamed.rows[1]?.label === "Kitchen reno quotes" &&
+        rowRenamed.threadHeader === null &&
+        rowRenamed.list !== null,
+      `row 1 "${rowRenamed.rows[1]?.label}", thread ${Boolean(rowRenamed.threadHeader)}`,
+    );
+    check(
+      "the field closed and the control came back",
+      rowRenamed.rowRename === false && rowRenamed.rowMenuBtnCount === rowRenamed.rowCount,
+      `rename ${rowRenamed.rowRename}, controls ${rowRenamed.rowMenuBtnCount}/${rowRenamed.rowCount}`,
+    );
+    screenshots.push(await shot("row-renamed"));
+
+    // 12 — Archive from the row: the same write the thread header's control
+    // makes, and the chat leaves the list without opening its thread.
+    await openRowMenu(1);
+    const archiveRowClicked = await clickMenuItem("Archive chat");
+    const rowArchived = await settle();
+    check("clicked Archive chat", archiveRowClicked, "no Archive chat item in the row menu");
+    check(
+      "the row's archive wrote the flag to the bridge",
+      last(rowArchived.patchCalls)?.patch?.archived === true &&
+        last(rowArchived.patchCalls)?.id === menuRowId,
+      `bridge saw ${JSON.stringify(last(rowArchived.patchCalls))} for ${menuRowId}`,
+    );
+    check(
+      "the archived row left the list and the list stayed up",
+      rowArchived.rowCount === rowRenamed.rowCount - 1 &&
+        !rowArchived.rows.some((row) => row.label === "Kitchen reno quotes") &&
+        rowArchived.list !== null &&
+        rowArchived.threadHeader === null,
+      `${rowArchived.rowCount} rows vs ${rowRenamed.rowCount}, thread ${Boolean(rowArchived.threadHeader)}`,
+    );
+
+    // 13 — Delete asks first, in the dock's own dialog: centred in the window the
+    // application is running in (a platform dialog centres on the display),
+    // naming the chat it will take. Cancelling writes nothing; answering removes
+    // the chat.
+    const deleteRowLabel = rowArchived.rows[1]?.label ?? "";
+    const deleteRowId = ids[labels.indexOf(deleteRowLabel)];
+    await openRowMenu(1);
+    const deleteClicked = await clickMenuItem("Delete chat");
+    const deleteAsked = await settle();
+    check("clicked Delete chat", deleteClicked, "no Delete chat item in the row menu");
+    check(
+      "the delete asked before it wrote",
+      deleteAsked.confirmDialog !== null && deleteAsked.deleteCalls.length === 0,
+      `dialog ${JSON.stringify(deleteAsked.confirmDialog)}, deletes ${JSON.stringify(deleteAsked.deleteCalls)}`,
+    );
+    check(
+      "the question names the chat it will take",
+      deleteAsked.confirmDialog?.title === "Delete chat" &&
+        (deleteAsked.confirmDialog?.message ?? "").includes(deleteRowLabel),
+      `title "${deleteAsked.confirmDialog?.title}", message "${deleteAsked.confirmDialog?.message}"`,
+    );
+    check(
+      "the dialog is centred in the application window",
+      Math.abs(deleteAsked.confirmDialog?.offsetFromWindowX ?? 999) <= 2 &&
+        Math.abs(deleteAsked.confirmDialog?.offsetFromWindowY ?? 999) <= 2,
+      `card centre is ${deleteAsked.confirmDialog?.offsetFromWindowX}px across and ${deleteAsked.confirmDialog?.offsetFromWindowY}px down from the window's centre`,
+    );
+    check(
+      "and it is not centred on the dock it was asked from",
+      Math.abs(deleteAsked.confirmDialog?.offsetFromPanelX ?? 0) > 40,
+      `card centre is ${deleteAsked.confirmDialog?.offsetFromPanelX}px from the dock's centre (a native dialog put it on the display's)`,
+    );
+    check(
+      "the scrim covers the window",
+      (deleteAsked.confirmDialog?.backdrop?.width ?? 0) >= deleteAsked.viewport.width - 1 &&
+        (deleteAsked.confirmDialog?.backdrop?.height ?? 0) >= deleteAsked.viewport.height - 1,
+      `backdrop ${JSON.stringify(deleteAsked.confirmDialog?.backdrop)} in a ${deleteAsked.viewport.width}x${deleteAsked.viewport.height} window`,
+    );
+    check(
+      "the scrim actually paints",
+      alphaOf(deleteAsked.confirmDialog?.backdropBackground) > 0.1,
+      `scrim fill ${deleteAsked.confirmDialog?.backdropBackground}`,
+    );
+    check(
+      "the dialog closes the row menu it was asked from",
+      deleteAsked.rowMenu === null,
+      `menu ${JSON.stringify(deleteAsked.rowMenu)}`,
+    );
+    screenshots.push(await shot("delete-confirm"));
+
+    const cancelled = await clickDialog("cancel");
+    const deleteDeclined = await settle();
+    check("clicked Cancel in the confirm dialog", cancelled, "no Cancel control in the dialog");
+    check(
+      "a cancelled delete wrote nothing and kept the row",
+      deleteDeclined.confirmDialog === null &&
+        deleteDeclined.deleteCalls.length === 0 &&
+        deleteDeclined.rowCount === rowArchived.rowCount,
+      `dialog ${JSON.stringify(deleteDeclined.confirmDialog)}, deletes ${JSON.stringify(deleteDeclined.deleteCalls)}, rows ${deleteDeclined.rowCount}`,
+    );
+
+    // Retrying is the row's menu again, then the other answer.
+    await openRowMenu(1);
+    await clickMenuItem("Delete chat");
+    const askedAgain = await settle();
+    check(
+      "the row asks again after a cancelled delete",
+      askedAgain.confirmDialog !== null,
+      `dialog ${JSON.stringify(askedAgain.confirmDialog)}`,
+    );
+    const deleteAgain = await clickDialog("confirm");
+    const deleted = await settle();
+    check("clicked Delete chat in the confirm dialog", deleteAgain, "no Delete control in the dialog");
+    check(
+      "an accepted delete reached the bridge",
+      last(deleted.deleteCalls) === deleteRowId,
+      `bridge saw ${JSON.stringify(deleted.deleteCalls)} for ${deleteRowId}`,
+    );
+    check(
+      "the deleted row is gone from the list",
+      deleted.rowCount === deleteDeclined.rowCount - 1 &&
+        !deleted.rows.some((row) => row.label === deleteRowLabel),
+      `${deleted.rowCount} rows vs ${deleteDeclined.rowCount}, ${JSON.stringify(deleted.rows.map((row) => row.label))}`,
+    );
+    check(
+      "answering closed the dialog and wrote no session flags",
+      deleted.confirmDialog === null && deleted.patchCalls.length === deleteDeclined.patchCalls.length,
+      `dialog ${JSON.stringify(deleted.confirmDialog)}, patches ${deleted.patchCalls.length}`,
+    );
+    screenshots.push(await shot("row-deleted"));
+
+    // 14 — deleting the chat that is open leaves no active row and clears the
+    // stored last-chat pointer, so the next launch does not resume a chat that
+    // no longer exists.
+    await clickRow(0);
+    const reopened = await settle();
+    const openChatId = last(reopened.messageCalls);
+    await clickAria("All chats");
+    const activeList = await settle();
+    const activeIndex = activeList.rows.findIndex((row) => row.active);
+    check(
+      "the chat that was opened is the active row in the list",
+      activeIndex >= 0 && last(activeList.messageCalls) === openChatId,
+      `active index ${activeIndex} of ${activeList.rowCount}, loaded ${last(activeList.messageCalls)}`,
+    );
+    const openChatLabel = activeList.rows[activeIndex]?.label ?? "";
+    await openRowMenu(activeIndex);
+    const openDeleteClicked = await clickMenuItem("Delete chat");
+    const openAsked = await settle();
+    const openDeleteConfirmed = await clickDialog("confirm");
+    const openDeleted = await settle();
+    check(
+      "deleted the open chat",
+      openDeleteClicked && openDeleteConfirmed && openAsked.confirmDialog !== null,
+      "no menu on the active row, or no dialog to answer",
+    );
+    check(
+      "the open chat's delete reached the bridge",
+      last(openDeleted.deleteCalls) === openChatId,
+      `bridge saw ${JSON.stringify(openDeleted.deleteCalls)} for ${openChatId}`,
+    );
+    check(
+      "the deleted chat left the list and no row is active",
+      !openDeleted.rows.some((row) => row.label === openChatLabel) &&
+        openDeleted.rows.every((row) => !row.active),
+      `active rows ${JSON.stringify(openDeleted.rows.filter((row) => row.active).map((row) => row.label))}`,
+    );
+    check(
+      "the stored last-chat pointer is cleared",
+      openDeleted.lastChatStored === null,
+      `localStorage holds ${JSON.stringify(openDeleted.lastChatStored)}`,
+    );
 
     report = {
       url,
@@ -640,6 +1074,16 @@ async function main() {
         created,
         reused,
         reusedList,
+        menuState,
+        menuShut,
+        rowRenameStarted,
+        rowRenamed,
+        rowArchived,
+        deleteAsked,
+        deleteDeclined,
+        deleted,
+        activeList,
+        openDeleted,
       },
       screenshots,
       failures,
@@ -678,6 +1122,14 @@ async function main() {
       ["new chat", states.created],
       ["new chat reuse", states.reused],
       ["reuse list", states.reusedList],
+      ["row menu", states.menuState],
+      ["row edit", states.rowRenameStarted],
+      ["row renamed", states.rowRenamed],
+      ["row archived", states.rowArchived],
+      ["delete asked", states.deleteAsked],
+      ["delete cancelled", states.deleteDeclined],
+      ["row deleted", states.deleted],
+      ["open chat deleted", states.openDeleted],
     ];
     for (const [name, state] of rows) {
       table.push([

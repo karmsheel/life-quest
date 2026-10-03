@@ -54,17 +54,47 @@ type State = {
   threadHeader: { box: Box; label: string; actions: string[] } | null;
   renaming: boolean;
   renameValue: string | null;
+  rowMenu: string[] | null;
+  rowMenuRowIndex: number | null;
+  rowMenuBtnCount: number;
+  rowMenuBox: Box | null;
+  rowMenuItems: { label: string | null; color: string }[];
+  rowMenuBackground: string | null;
+  rowRename: boolean;
+  rowRenameValue: string | null;
+  lastChatStored: string | null;
   messages: string[];
   actionsBar: Box | null;
+  actionsBarBackground: string | null;
+  footerBackground: string | null;
+  headerIconSize: number | null;
   actions: {
     label: string | null;
     pressed: boolean;
     disabled: boolean;
     opacity: number;
+    background: string;
+    iconSize: number;
     icon: string | null;
   }[];
   patchCalls: { id: string; patch: Record<string, unknown> }[];
   createCalls: string[];
+  deleteCalls: string[];
+  confirmDialog: {
+    title: string;
+    message: string;
+    confirmLabel: string | null;
+    cancelLabel: string | null;
+    box: Box | null;
+    backdrop: Box | null;
+    /** The scrim's computed fill: a scrim that paints nothing is not a scrim. */
+    backdropBackground: string;
+    /** Card centre minus the window's centre: the contract is that it is ~0. */
+    offsetFromWindowX: number;
+    offsetFromWindowY: number;
+    /** Card centre minus the dock's centre: what it must NOT be. */
+    offsetFromPanelX: number | null;
+  } | null;
   messageCalls: string[];
   listCalls: number;
   overflow: { scrollWidth: number; clientWidth: number };
@@ -83,6 +113,30 @@ type Report = {
  * dev server. With the server down the test skips; `npm run dev` in another
  * shell turns it on.
  */
+/** RGB channels of a computed colour in 0–255, whatever syntax it resolved to. */
+function channels(color: string | null): number[] {
+  const raw = ((color ?? "").match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+  // `color(srgb …)` reports 0–1 floats while `rgb()`/`rgba()` report 0–255, so a
+  // cross-syntax comparison would gap ~237 on two identical colours.
+  return raw.length === 3 && raw.every((value) => value <= 1.0001)
+    ? raw.map((value) => value * 255)
+    : raw;
+}
+
+/** Alpha of a computed colour: 1 when it carries none. */
+function alphaOf(color: string | null): number {
+  const raw = ((color ?? "").match(/[\d.]+/g) ?? []).map(Number);
+  return raw.length >= 4 ? raw[3] : 1;
+}
+
+/** Largest per-channel gap between two computed colours; NaN when unparseable. */
+function channelDelta(a: string | null, b: string | null): number {
+  const x = channels(a);
+  const y = channels(b);
+  if (x.length < 3 || y.length < 3) return Number.NaN;
+  return Math.max(...x.map((value, index) => Math.abs(value - y[index])));
+}
+
 function devServerUp(): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = net.createConnection({ port: DEV_PORT, host: "127.0.0.1" });
@@ -112,7 +166,7 @@ function runDriver(): Promise<number> {
   });
 }
 
-describe("chat sessions (dock list, pin, rename, archive)", () => {
+describe("chat sessions (dock list, row menu, pin, rename, archive, delete)", () => {
   it("lists every live chat, and carries pin/rename/archive through the bridge", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
@@ -137,9 +191,9 @@ describe("chat sessions (dock list, pin, rename, archive)", () => {
     const created = report.states.created;
     const live = report.fixture.rows;
 
-    // The bottom action bar: two live slots, two reserved, and it rides the
-    // bottom edge in both views.
-    const slots = ["Chat history", "New chat", "Search chats (coming soon)", "More chat actions (coming soon)"];
+    // The bottom action bar: three live slots, one still reserved, and it rides
+    // the bottom edge in both views.
+    const slots = ["Chat history", "New chat", "Search chats (coming soon)", "Life-Chain"];
     assert.deepEqual(
       landing.actions.map((slot) => slot.label),
       slots,
@@ -147,8 +201,8 @@ describe("chat sessions (dock list, pin, rename, archive)", () => {
     );
     assert.deepEqual(
       landing.actions.map((slot) => slot.disabled),
-      [false, false, true, true],
-      "the reserved slots are not reserved",
+      [false, false, true, false],
+      "the reserved slot is not reserved, or the chain slot is inert",
     );
     assert.equal(
       new Set(landing.actions.map((slot) => slot.icon)).size,
@@ -172,9 +226,32 @@ describe("chat sessions (dock list, pin, rename, archive)", () => {
     assert.equal(landing.actions[0]?.pressed, false, "history is marked active on a thread");
     assert.deepEqual(
       landing.actions.map((slot) => slot.opacity < 1),
-      [false, false, true, true],
-      "the reserved slots are not dimmed",
+      [false, false, true, false],
+      "the reserved slot is not dimmed, or the chain slot is dimmed",
     );
+    assert.equal(
+      new Set(landing.actions.map((slot) => slot.iconSize)).size,
+      1,
+      "the action icons are not all one size",
+    );
+    assert.ok(
+      landing.actions[0].iconSize >= 18,
+      `the action icons did not grow: ${landing.actions[0].iconSize}px`,
+    );
+    assert.ok(
+      landing.actions[0].iconSize > (landing.headerIconSize ?? 0),
+      `the bar's icons (${landing.actions[0].iconSize}px) are not larger than the header's (${landing.headerIconSize}px)`,
+    );
+    assert.ok(
+      channelDelta(landing.actionsBarBackground, landing.footerBackground) >= 8,
+      `the action bar shares the composer's surface: ${landing.actionsBarBackground} vs ${landing.footerBackground}`,
+    );
+    assert.ok(
+      alphaOf(list.actions[0].background) > 0.05 &&
+        alphaOf(list.actions[0].background) <= 0.5,
+      `the active slot is not a tint: ${list.actions[0].background}`,
+    );
+    assert.equal(alphaOf(list.actions[1].background), 0, "an idle slot paints a fill");
     assert.ok(
       (list.list?.box.bottom ?? 0) <= (list.actionsBar?.top ?? 0) + 1,
       "the list runs under the action bar",
@@ -315,6 +392,154 @@ describe("chat sessions (dock list, pin, rename, archive)", () => {
       report.states.reusedList.rowCount,
       report.fixture.rows,
       "reusing an empty chat added a row to the list",
+    );
+
+    // The list's own row management: a 3-dot menu per row and the three writes
+    // behind it — Edit and Archive through PATCH, Delete through the gateway's
+    // DELETE. The HTTP hop itself is not exercised here (no bearer key), so what
+    // is pinned is that each choice reaches the bridge, and with what.
+    const {
+      menuState,
+      rowRenameStarted,
+      rowRenamed,
+      rowArchived,
+      deleteAsked,
+      deleteDeclined,
+      deleted,
+      openDeleted,
+    } = report.states;
+
+    assert.equal(
+      menuState.rowMenuBtnCount,
+      menuState.rowCount,
+      "a listed chat has no 3-dot control",
+    );
+    assert.deepEqual(
+      menuState.rowMenu,
+      ["Edit chat", "Archive chat", "Delete chat"],
+      "the row menu does not offer Edit / Archive / Delete",
+    );
+    assert.equal(
+      menuState.rowMenuRowIndex,
+      1,
+      "the menu opened on a different row than the control that was clicked",
+    );
+    assert.ok(
+      (menuState.rowMenuBox?.height ?? 0) > 0 && alphaOf(menuState.rowMenuBackground) > 0.9,
+      `the row menu paints no surface: ${menuState.rowMenuBackground}`,
+    );
+    assert.ok(
+      channelDelta(menuState.rowMenuItems[2]?.color, menuState.rowMenuItems[0]?.color) >= 8 &&
+        channelDelta(menuState.rowMenuItems[1]?.color, menuState.rowMenuItems[0]?.color) <= 2,
+      `only Delete is destructive: ${JSON.stringify(menuState.rowMenuItems.map((item) => item.color))}`,
+    );
+    assert.equal(
+      menuState.patchCalls.length,
+      report.states.reusedList.patchCalls.length,
+      "opening the row menu wrote a session flag",
+    );
+
+    assert.equal(rowRenameStarted.rowRename, true, "Edit did not put the row into rename");
+    assert.equal(
+      rowRenameStarted.threadHeader,
+      null,
+      "Edit opened the chat it was supposed to rename in place",
+    );
+    const rowRename = rowRenamed.patchCalls.at(-1);
+    assert.equal(
+      rowRename?.patch.title,
+      "Kitchen reno quotes",
+      "the row's rename never reached the bridge",
+    );
+    assert.ok(
+      rowRenamed.rows.some((row) => row.label === "Kitchen reno quotes"),
+      "the list kept the old name for the renamed row",
+    );
+    assert.equal(rowRenamed.rowRename, false, "the row's rename field stayed open");
+
+    const rowArchive = rowArchived.patchCalls.at(-1);
+    assert.equal(rowArchive?.patch.archived, true, "the row's archive never reached the bridge");
+    assert.equal(
+      rowArchive?.id,
+      rowRename?.id,
+      "the row's archive hit a different chat than its rename did",
+    );
+    assert.equal(
+      rowArchived.rowCount,
+      rowRenamed.rowCount - 1,
+      "the row's archive left the chat listed",
+    );
+    assert.equal(rowArchived.threadHeader, null, "the row's archive opened a thread");
+
+    // The ask is the dock's own dialog, measured rather than assumed: it has to
+    // sit on the window's centre (a platform `window.confirm` put it on the
+    // display's) and it must not be the dock's centre either.
+    assert.ok(deleteAsked.confirmDialog, "delete never asked before it wrote");
+    assert.equal(
+      deleteAsked.confirmDialog.title,
+      "Delete chat",
+      "the question is not named for the delete it guards",
+    );
+    assert.match(
+      deleteAsked.confirmDialog.message,
+      /Delete/,
+      "the question does not name the delete",
+    );
+    assert.deepEqual(deleteAsked.deleteCalls, [], "the delete wrote before it was answered");
+    assert.ok(
+      Math.abs(deleteAsked.confirmDialog.offsetFromWindowX) <= 2 &&
+        Math.abs(deleteAsked.confirmDialog.offsetFromWindowY) <= 2,
+      `the dialog is not centred in the window: ${deleteAsked.confirmDialog.offsetFromWindowX}px across, ${deleteAsked.confirmDialog.offsetFromWindowY}px down`,
+    );
+    assert.ok(
+      Math.abs(deleteAsked.confirmDialog.offsetFromPanelX ?? 0) > 40,
+      `the dialog is centred on the dock rather than the window: ${deleteAsked.confirmDialog.offsetFromPanelX}px`,
+    );
+    assert.equal(
+      deleteAsked.confirmDialog.backdrop?.width,
+      deleteAsked.viewport.width,
+      "the scrim does not cover the window",
+    );
+    assert.ok(
+      deleteAsked.confirmDialog.backdropBackground !== "transparent" &&
+        !/\/\s*0(?:\.0+)?\)/.test(deleteAsked.confirmDialog.backdropBackground),
+      `the scrim does not paint: ${deleteAsked.confirmDialog.backdropBackground}`,
+    );
+    assert.deepEqual(deleteDeclined.deleteCalls, [], "a cancelled delete wrote anyway");
+    assert.equal(
+      deleteDeclined.rowCount,
+      rowArchived.rowCount,
+      "a declined delete lost the row",
+    );
+
+    assert.equal(deleted.deleteCalls.length, 1, "an accepted delete never reached the bridge");
+    // The row below the archived one shifts up: the delete has to hit the chat
+    // whose menu was used, not the one archived just before it.
+    assert.notEqual(
+      deleted.deleteCalls[0],
+      rowArchive?.id,
+      "the delete re-hit the archived chat instead of the row it was asked from",
+    );
+    assert.equal(
+      deleted.rowCount,
+      deleteDeclined.rowCount - 1,
+      "the deleted chat is still listed",
+    );
+    assert.equal(
+      deleted.patchCalls.length,
+      deleteDeclined.patchCalls.length,
+      "the delete wrote session flags too",
+    );
+
+    assert.equal(
+      openDeleted.lastChatStored,
+      null,
+      "the deleted chat is still the stored last chat",
+    );
+    assert.equal(
+      openDeleted.rows.some((row) => row.active),
+      false,
+      "a chat is still marked open after its row was deleted",
     );
 
     for (const file of report.screenshots) {
