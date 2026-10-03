@@ -201,27 +201,35 @@ export async function peekSecrets(
 
 // ── companion token ──────────────────────────────────────────────────────────
 
-/** The companion token, minted once per vault. base64url of 32 random bytes. */
+/**
+ * KAR-70: the companion token, minted once per vault — base64url of 32 random
+ * bytes — and stored in app userData, never in the vault. The generation is
+ * inside the secrets lock and guarded on the stored value, so two callers that
+ * race on a fresh vault still end up with the same token: a rotated token would
+ * lock the running companion out of both doors.
+ *
+ * Throws when the secrets file cannot be read or written. There is no safe
+ * fallback: a door that cannot recognise the companion would file a pairing
+ * Decision for Hermes on its next call, which is worse than failing loudly.
+ */
 export async function ensureCompanionToken(
   secretsDir: string,
   vaultId: string,
-): Promise<Result<string>> {
-  try {
-    return {
-      ok: true,
-      value: await withSecretsLock(secretsDir, vaultId, async (s) => {
-        if (!s.vault.companionToken) {
-          s.vault.companionToken = randomBytes(32).toString("base64url");
-        }
-        return s.vault.companionToken;
-      }),
-    };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
+): Promise<string> {
+  return withSecretsLock(secretsDir, vaultId, async (s) => {
+    if (!s.vault.companionToken) {
+      s.vault.companionToken = randomBytes(32).toString("base64url");
+    }
+    return s.vault.companionToken;
+  });
 }
 
-export async function companionTokenOf(
+/**
+ * The stored companion token for this vault, or null when none was minted yet.
+ * A read that needs no lock, so it never races a mint. The door calls this on
+ * every request; the token is compared in memory and is never logged.
+ */
+export async function companionBearer(
   secretsDir: string,
   vaultId: string,
 ): Promise<string | null> {

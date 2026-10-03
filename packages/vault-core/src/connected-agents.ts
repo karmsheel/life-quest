@@ -184,9 +184,21 @@ export async function removeDecision(
 }
 
 /**
- * The operator decided this caller: active, rejected, or revoked. `active` is
- * idempotent — a second approve changes nothing, and in particular never
- * touches `access`, `domainSlugs`, or `schedule`.
+ * KAR-70: the operator decided this caller — active on approve, rejected on
+ * reject, revoked from Personnel. `decidedAt` is stamped on every real
+ * transition, including the terminal ones, so the roster answers "when did
+ * this stop being usable" for a rejected or revoked row.
+ *
+ * Idempotent per target status: an `active` row moved to `active` changes
+ * nothing and returns the row as it stands, so a second approve never touches
+ * `access`, `domainSlugs`, or `schedule` — those are operator grants, never
+ * something a Decision or a retry can set. A missing id is refused rather than
+ * created: an unknown id means the row was removed, and silently minting one
+ * would pair a bearer nobody approved.
+ *
+ * Revoke keeps `fingerprint`, and the bearer hash in the secrets file is kept
+ * too, so a revoked bearer reconnects as this same row instead of introducing
+ * itself a second time.
  */
 export async function markConnectedAgent(
   rootPath: string,

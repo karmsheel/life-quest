@@ -1,4 +1,5 @@
-// KAR-70 Task 1 — the two loopback pairing doors.
+// KAR-70 Tasks 1 and 2 — the two loopback pairing doors, and approval,
+// rejection, revoke, and the companion bearer.
 //
 // Drives 8643 (local) and 8646 (invite) over real HTTP against a temporary
 // vault, then reads the vault as text. The proof artifact is pairing-e2e.json
@@ -14,6 +15,7 @@ import {
   fingerprintOf,
   listConnectedAgents,
   markConnectedAgent,
+  resolveDecision,
   PENDING_PAIRING_CAP,
 } from "@lifequest/vault-core";
 import {
@@ -21,7 +23,10 @@ import {
   LOCAL_MCP_PORT,
   INVITE_MCP_PORT,
 } from "../electron/pairing-door.ts";
-import { mintInvite } from "../electron/pairing-secrets.ts";
+import {
+  ensureCompanionToken,
+  mintInvite,
+} from "../electron/pairing-secrets.ts";
 
 const scenarios: { name: string; code: string }[] = [];
 
@@ -683,6 +688,226 @@ describe("KAR-70 pairing: overlapping first contacts", () => {
   });
 });
 
+// ── approval, rejection, revoke ──────────────────────────────────────────────
+
+describe("KAR-70 pairing: approval", () => {
+  it("an approved agent with no grant is NO_GRANT and an empty tool list", async () => {
+    const ctx = await openDoors("kar70-approve");
+    try {
+      const bearer = "approve-door-bearer-000000001";
+      const headers = { ...auth(bearer), "x-lifequest-name": "Approve bot" };
+      assert.equal((await rpc(ctx.localPort, headers, "initialize", INIT_PARAMS)).status, 200);
+
+      const files = await decisionFiles(ctx.root);
+      assert.equal(files.length, 1);
+      const decision = await readJson(
+        path.join(ctx.root, ".lifequest", "decisions", files[0]!),
+      );
+      const agentId = (decision.target as { agentId: string }).agentId;
+
+      const resolved = await resolveDecision(ctx.root, decision.id as string, "approved");
+      record("approve-resolve", resolved.ok ? "APPROVED" : "FAILED");
+      assert.equal(resolved.ok, true, `approve failed: ${JSON.stringify(resolved)}`);
+
+      const rows = (await listConnectedAgents(ctx.root)) as {
+        value: Record<string, unknown>[];
+      };
+      assert.equal(rows.value.length, 1);
+      const row = rows.value[0]!;
+      assert.equal(row.id, agentId);
+      assert.equal(row.status, "active");
+      // Approval never grants anything by itself: those are operator grants.
+      assert.equal(row.access, "read");
+      assert.deepEqual(row.domainSlugs, []);
+      assert.equal(row.schedule, false);
+      assert.equal(typeof row.decidedAt, "string");
+
+      const list = await rpc(ctx.localPort, headers, "tools/list");
+      record("approve-empty-tools", "EMPTY");
+      assert.deepEqual((list.body as { result?: { tools?: unknown[] } }).result?.tools, []);
+
+      const call = await rpc(ctx.localPort, headers, "tools/call", { name: "get_state" });
+      record("approve-no-grant", toolError(call.body).code);
+      assert.equal(call.status, 200);
+      assert.deepEqual(toolError(call.body), {
+        code: "NO_GRANT",
+        message: "No domain or schedule is assigned",
+      });
+
+      // The same Decision cannot be resolved twice, and the refused second
+      // resolution leaves the grant exactly where the first one put it.
+      const again = await resolveDecision(ctx.root, decision.id as string, "approved");
+      record("approve-twice", again.ok ? "ACCEPTED" : "REFUSED");
+      assert.equal(again.ok, false);
+      const after = (await listConnectedAgents(ctx.root)) as { value: Record<string, unknown>[] };
+      assert.equal(after.value.length, 1);
+      assert.equal(after.value[0]!.access, "read");
+      assert.deepEqual(after.value[0]!.domainSlugs, []);
+      assert.equal(after.value[0]!.schedule, false);
+    } finally {
+      await ctx.doors.close();
+    }
+  });
+});
+
+describe("KAR-70 pairing: rejection", () => {
+  it("a rejected agent is PAIRING_REJECTED and cannot introduce itself again", async () => {
+    const ctx = await openDoors("kar70-reject");
+    try {
+      const bearer = "reject-door-bearer-0000000001";
+      const headers = { ...auth(bearer), "x-lifequest-name": "Reject bot" };
+      assert.equal((await rpc(ctx.localPort, headers, "initialize", INIT_PARAMS)).status, 200);
+
+      const files = await decisionFiles(ctx.root);
+      assert.equal(files.length, 1);
+      const decision = await readJson(
+        path.join(ctx.root, ".lifequest", "decisions", files[0]!),
+      );
+      const resolved = await resolveDecision(ctx.root, decision.id as string, "rejected");
+      record("reject-resolve", resolved.ok ? "REJECTED" : "FAILED");
+      assert.equal(resolved.ok, true, `reject failed: ${JSON.stringify(resolved)}`);
+
+      const rows = (await listConnectedAgents(ctx.root)) as { value: Record<string, unknown>[] };
+      assert.equal(rows.value.length, 1);
+      assert.equal(rows.value[0]!.status, "rejected");
+      assert.equal(typeof rows.value[0]!.decidedAt, "string");
+
+      const list = await rpc(ctx.localPort, headers, "tools/list");
+      assert.deepEqual((list.body as { result?: { tools?: unknown[] } }).result?.tools, []);
+      const call = await rpc(ctx.localPort, headers, "tools/call", { name: "get_state" });
+      record("reject-tool", toolError(call.body).code);
+      assert.equal(call.status, 200);
+      assert.deepEqual(toolError(call.body), {
+        code: "PAIRING_REJECTED",
+        message: "This agent was rejected",
+      });
+
+      // The bearer hash stays, so a reconnect is the same known agent: no new
+      // row and no new Decision.
+      const again = await rpc(ctx.localPort, headers, "initialize", INIT_PARAMS);
+      assert.equal(again.status, 200);
+      const after = (await listConnectedAgents(ctx.root)) as { value: Record<string, unknown>[] };
+      assert.equal(after.value.length, 1);
+      assert.equal(after.value[0]!.status, "rejected");
+      assert.deepEqual(await decisionFiles(ctx.root), files);
+    } finally {
+      await ctx.doors.close();
+    }
+  });
+});
+
+describe("KAR-70 pairing: revoke", () => {
+  it("a revoked bearer is PAIRING_REVOKED and files nothing on reconnect", async () => {
+    const ctx = await openDoors("kar70-revoke");
+    try {
+      const bearer = "revoke-door-bearer-0000000001";
+      const headers = { ...auth(bearer), "x-lifequest-name": "Revoke bot" };
+      assert.equal((await rpc(ctx.localPort, headers, "initialize", INIT_PARAMS)).status, 200);
+
+      const files = await decisionFiles(ctx.root);
+      const decision = await readJson(
+        path.join(ctx.root, ".lifequest", "decisions", files[0]!),
+      );
+      const agentId = (decision.target as { agentId: string }).agentId;
+      assert.equal((await resolveDecision(ctx.root, decision.id as string, "approved")).ok, true);
+
+      const revoked = await markConnectedAgent(ctx.root, agentId, "revoked");
+      record("revoke-mark", revoked.ok ? "REVOKED" : "FAILED");
+      assert.equal(revoked.ok, true);
+      assert.equal(revoked.value.status, "revoked");
+      assert.equal(typeof revoked.value.decidedAt, "string");
+      // The bearer hash is kept, so the row is still found by fingerprint.
+      assert.equal(revoked.value.fingerprint.length, 12);
+
+      const list = await rpc(ctx.localPort, headers, "tools/list");
+      assert.deepEqual((list.body as { result?: { tools?: unknown[] } }).result?.tools, []);
+      const call = await rpc(ctx.localPort, headers, "tools/call", { name: "get_state" });
+      record("revoke-tool", toolError(call.body).code);
+      assert.equal(call.status, 200);
+      assert.deepEqual(toolError(call.body), {
+        code: "PAIRING_REVOKED",
+        message: "This agent was revoked",
+      });
+
+      const again = await rpc(ctx.localPort, headers, "initialize", INIT_PARAMS);
+      assert.equal(again.status, 200);
+      const rows = (await listConnectedAgents(ctx.root)) as { value: Record<string, unknown>[] };
+      assert.equal(rows.value.length, 1, "a revoked bearer must not file a second row");
+      assert.deepEqual(await decisionFiles(ctx.root), files);
+    } finally {
+      await ctx.doors.close();
+    }
+  });
+});
+
+// ── the companion bearer ─────────────────────────────────────────────────────
+
+describe("KAR-70 pairing: the companion bearer", () => {
+  it("is minted once, answers on both doors, and never files a row", async () => {
+    const ctx = await openDoors("kar70-companion");
+    try {
+      const token = await ensureCompanionToken(ctx.secretsDir, ctx.vaultId);
+      assert.equal(typeof token, "string");
+      assert.ok(token.length >= 22, "the companion token must clear the bearer length floor");
+      const again = await ensureCompanionToken(ctx.secretsDir, ctx.vaultId);
+      assert.equal(again, token, "the companion token is minted once per vault");
+      record("companion-token-stable", "VERIFIED");
+
+      const headers = auth(token);
+      for (const [port, label] of [
+        [ctx.localPort, "local"],
+        [ctx.invitePort, "invite"],
+      ] as [number, string][]) {
+        const init = await rpc(port, headers, "initialize", INIT_PARAMS);
+        assert.equal(init.status, 200, `${label} door must answer the companion`);
+
+        const list = await rpc(port, headers, "tools/list");
+        const tools = ((list.body as { result?: { tools?: { name: string }[] } }).result
+          ?.tools ?? []) as { name: string }[];
+        record(`companion-tools-${label}`, tools.length > 0 ? "REGISTERED" : "EMPTY");
+        assert.ok(
+          tools.some((t) => t.name === "get_state"),
+          `${label} companion tools/list must include get_state`,
+        );
+
+        // The companion is never gated. The test process cannot load
+        // map-tools (it reaches Electron's safeStorage), so this asserts the
+        // refusal codes are absent rather than the shape of the read.
+        const call = await rpc(port, headers, "tools/call", { name: "get_state" });
+        assert.equal(call.status, 200);
+        const text = (call.body as { result?: { content?: { text?: string }[] } }).result
+          ?.content?.[0]?.text ?? "";
+        for (const code of ["PAIRING_PENDING", "NO_GRANT", "AUTH_REQUIRED"]) {
+          assert.equal(
+            text.includes(code),
+            false,
+            `${label} companion get_state must not be gated with ${code}`,
+          );
+        }
+        record(`companion-call-${label}`, "NOT_GATED");
+      }
+
+      // The companion is pre-paired: neither door filed anything for it.
+      assert.equal(
+        await exists(path.join(ctx.root, ".lifequest", "connected-agents.json")),
+        false,
+      );
+      assert.deepEqual(await decisionFiles(ctx.root), []);
+
+      // A missing bearer is still AUTH_REQUIRED now that a token exists.
+      const noBearer = await rpc(ctx.localPort, {}, "initialize", INIT_PARAMS);
+      record("companion-no-bearer", errorOf(noBearer.body).code);
+      assert.equal(noBearer.status, 401);
+      assert.deepEqual(errorOf(noBearer.body), {
+        code: "AUTH_REQUIRED",
+        message: "Authorization bearer is required",
+      });
+    } finally {
+      await ctx.doors.close();
+    }
+  });
+});
+
 // ── the artifact ─────────────────────────────────────────────────────────────
 
 describe("KAR-70 pairing: the run artifact", () => {
@@ -692,7 +917,7 @@ describe("KAR-70 pairing: the run artifact", () => {
     "pairing-e2e.json",
   );
 
-  it("pairing-e2e.json exists in the vault and names every scenario of this task", async () => {
+  it("pairing-e2e.json exists in the vault and names every scenario of tasks 1 and 2", async () => {
     const ctx = await openDoors("kar70-artifact");
     try {
       await fs.writeFile(
@@ -726,6 +951,20 @@ describe("KAR-70 pairing: the run artifact", () => {
         "race-two-bearers-one-code",
         "race-same-bearer",
         "race-code-spent-once",
+        "approve-resolve",
+        "approve-empty-tools",
+        "approve-no-grant",
+        "approve-twice",
+        "reject-resolve",
+        "reject-tool",
+        "revoke-mark",
+        "revoke-tool",
+        "companion-token-stable",
+        "companion-tools-local",
+        "companion-call-local",
+        "companion-tools-invite",
+        "companion-call-invite",
+        "companion-no-bearer",
       ]) {
         assert.ok(names.includes(expected), `pairing-e2e.json is missing scenario ${expected}`);
       }

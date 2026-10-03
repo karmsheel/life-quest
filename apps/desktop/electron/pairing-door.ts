@@ -24,6 +24,7 @@ import {
   fingerprintOf,
   getConnectedAgentByFingerprint,
   introduceConnectedAgent,
+    listDomains,
   removeConnectedAgent,
   removeDecision,
   PENDING_PAIRING_CAP,
@@ -32,7 +33,7 @@ import {
 } from "@lifequest/vault-core";
 import {
   checkInvite,
-  companionTokenOf,
+  companionBearer,
   resolveBearer,
   withSecretsLock,
 } from "./pairing-secrets.ts";
@@ -172,7 +173,7 @@ async function authorize(
 
   // The companion token takes the companion path on either door. A bearer that
   // is merely long enough is never treated as the companion.
-  const companion = await companionTokenOf(ctx.secretsDir, ctx.vaultId);
+  const companion = await companionBearer(ctx.secretsDir, ctx.vaultId);
   if (companion && bearer === companion) {
     return { ok: true, kind: "companion" };
   }
@@ -362,7 +363,7 @@ export async function startPairingDoors(opts: {
       return;
     }
 
-    const mcp = buildServer(ctx, auth);
+    const mcp = await buildServer(ctx, auth);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     void mcp.connect(transport);
     void transport.handleRequest(req, res);
@@ -412,23 +413,53 @@ function portInUseMessage(kind: DoorKind, port: number): string {
 
 // ── the MCP server for an accepted caller ────────────────────────────────────
 
-function buildServer(ctx: DoorContext, auth: Authorized): McpServer {
+async function buildServer(ctx: DoorContext, auth: Authorized): Promise<McpServer> {
   if (auth.kind === "companion") {
     // The same actor executeTool already defaults to. A user actor would drop
     // the companion's document-lock exemption and stop naming Hermes in the
-    // life log — a change to today's write rules, which the spec keeps.
+    // life log — a change to today's write rules, which the spec keeps. The
+    // companion is pre-paired, so it is never gated and never files a Decision.
     return fullServer(ctx, COMPANION_ACTOR);
   }
   const gated = statusToolCode(auth.agent.status);
   if (gated) return gatedServer(gated);
-  // The connected-agent grant check in front of executeTool lands with the
-  // domain-grant task. Until then an active caller gets the vault tool set,
-  // acting as its own roster row so the life log names it correctly.
+  // KAR-70: approval grants nothing by itself. An active agent whose grant is
+  // still empty — no assigned domain that is live, and Schedule off — sees an
+  // empty tool list and NO_GRANT on every call. It is active, not broken: the
+  // operator assigns a domain in Personnel and the next call goes through.
+  // Which tools an assigned domain unlocks is the domain-grant task.
+  if (!(await hasLiveGrant(ctx.root, auth.agent))) return gatedServer("NO_GRANT");
   return fullServer(ctx, {
     type: "agent",
     id: auth.agent.id,
     name: auth.agent.name,
   });
+}
+
+/**
+ * KAR-70: whether this roster row's grant reaches anything today. Schedule
+ * counts on its own; a domain counts only while it is live, so archiving a
+ * domain closes the grant again rather than leaving a dangling assignment.
+ *
+ * Read per request, never cached: an empty grant is the state this task must
+ * recognise, and a cached registry would let a domain that has since been
+ * archived keep a grant open. A failed read answers false, because the refusal
+ * that cannot over-grant is NO_GRANT.
+ */
+async function hasLiveGrant(root: string, agent: ConnectedAgent): Promise<boolean> {
+  if (agent.schedule) return true;
+  if (agent.domainSlugs.length === 0) return false;
+  try {
+    const domains = await listDomains(root);
+    if (!domains.ok) return false;
+    return agent.domainSlugs.some((slug) =>
+      domains.value.some((d) => d.slug === slug && !d.meta.archivedAt),
+    );
+  } catch {
+    // A throw here must not take the door down: the gate answers, and the
+    // answer it can give without over-granting is NO_GRANT.
+    return false;
+  }
 }
 
 function fullServer(ctx: DoorContext, actor: VaultActor): McpServer {

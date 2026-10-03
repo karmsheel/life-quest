@@ -1132,6 +1132,29 @@ export async function resolveDecision(
 
     const now = new Date().toISOString();
 
+    // KAR-70: rejecting a pairing Decision is a roster transition, not just a
+    // file edit. It runs before the Decision file is written, so a rejection
+    // that cannot land never leaves a resolved Decision pointing at a row that
+    // still says pending — which would answer PAIRING_PENDING forever to a
+    // bearer the operator has already turned away.
+    if (resolution === "rejected" && decision.target.type === "agent-pairing") {
+      const { markConnectedAgent } = await import("./connected-agents.ts");
+      const res = await markConnectedAgent(
+        rootPath,
+        decision.target.agentId,
+        "rejected",
+      );
+      if (!res.ok) {
+        // A row that is genuinely gone is terminal: recording the rejection is
+        // still the right record, since the operator did decide. Anything else
+        // is a transient write failure, so the Decision stays pending and the
+        // operator can reject again.
+        if (!/^Agent not found/.test(res.error)) {
+          return { ok: false, error: res.error };
+        }
+      }
+    }
+
     if (resolution === "approved") {
       const applyRes = await applyApprovedBody(rootPath, decision);
       if (!applyRes.ok) {
