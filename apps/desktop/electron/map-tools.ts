@@ -29,6 +29,8 @@ import {
   connectedGoalVisible,
   connectedReviewVisible,
   connectedLibraryVisible,
+  connectedWriteDomainsAllowed,
+  connectedWriteKind,
   projectConnectedPack,
   projectConnectedReview,
   projectConnectedState,
@@ -136,6 +138,13 @@ export async function executeTool(
     // that could write or file a Decision.
     const verdict = toolAllowed(name, grant);
     if (verdict !== "allow") return grantRefusal(verdict);
+    // A write is checked against the domains its arguments name, and that check
+    // also runs before the tool body: a refused write files no Decision and
+    // applies no command.
+    if (connectedWriteKind(name) !== null) {
+      const refused = await connectedWriteRefusal(root, name, rec, grant);
+      if (refused) return refused;
+    }
     // A connected agent acts as itself. `activeSlug` is the operator's open
     // window, not a permission, and is ignored for every decision below.
     return executeConnectedTool(root, name, rec, {
@@ -457,6 +466,42 @@ async function executeConnectedTool(
   if (SCRIPT_TOOL_DEFS.some((t) => t.name === name)) {
     return executeScriptTool(root, actor, name, rec);
   }
+
+  // ── writes, already past the grant's domain check ─────────────────────────
+  //
+  // From here the call behaves exactly as the companion's would, with the
+  // roster agent as the actor. The only difference is where it got here: a
+  // write whose domain is outside the assignment never arrives.
+
+  // Capture, undo, and correct apply at once, as they do for the companion.
+  if (CAPTURE_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeCaptureTool(root, actor, name, rec);
+  }
+
+  // A goal or project write files a Decision and does not touch goals.json or
+  // the project file, exactly as the companion's does.
+  const connectedProjectCmd = commandForProjectTool(name, rec);
+  if (connectedProjectCmd) {
+    return proposeProjectDecision(root, connectedProjectCmd, actor);
+  }
+  const connectedGoalCmd = commandForGoalTool(name, rec);
+  if (connectedGoalCmd) {
+    return proposeGoalDecision(root, connectedGoalCmd, actor);
+  }
+
+  // An event write applies now, matching the companion. create_task and the
+  // live-week tools are not here: Schedule is off, so the gate refused them
+  // before this point.
+  const connectedCommand = commandForTool(name, rec) as MapCommand | null;
+  if (connectedCommand) {
+    const applied = await applyMapCommand(root, connectedCommand, "agent", undefined, actor);
+    if (!applied.ok) {
+      const [code, ...rest] = applied.error.split(": ");
+      return { error: { code, message: rest.join(": ") } };
+    }
+    return { state: applied.value };
+  }
+
   return { error: { code: "MALFORMED", message: `Unknown tool ${name}` } };
 }
 
@@ -464,6 +509,168 @@ async function executeConnectedTool(
 async function reviewHeadingMap(root: string): Promise<Map<string, string>> {
   const listed = await listDomains(root);
   return reviewHeadingSlugs(listed.ok ? listed.value : []);
+}
+
+/**
+ * KAR-70: the domain half of the write gate.
+ *
+ * Write uses the companion's rules inside the assigned domains, so this is
+ * where a connected agent's write stops being the companion's write: every
+ * domain the arguments name has to be inside the assignment, and a record with
+ * no domain has none to check — so it is refused rather than waved through.
+ *
+ * It runs before the tool body, so a refusal never reaches `createDecision` or
+ * `applyMapCommand`. The answer is `FORBIDDEN` in every case: unlike a read,
+ * a refused write cannot be hidden as `NOT_FOUND`, because the agent already
+ * knows which domain it asked about and a missing domain would tell it whether
+ * that domain exists.
+ *
+ * `null` means the write is inside the grant and the tool body may run.
+ */
+async function connectedWriteRefusal(
+  root: string,
+  name: string,
+  rec: Record<string, unknown>,
+  grant: ConnectedGrant,
+): Promise<unknown | null> {
+  const allow = (slugs: ReadonlyArray<string | null | undefined>): unknown | null =>
+    connectedWriteDomainsAllowed(slugs, grant) ? null : grantRefusal("FORBIDDEN");
+
+  // ── documents ────────────────────────────────────────────────────────────
+  if (name === "update_document") {
+    const id = rec.id;
+    if (typeof id === "string" && id.length > 0) {
+      const lib = await libraryGet(root, id);
+      // A miss is left to the tool, which answers in its own words: the gate has
+      // no domain to judge and must not turn a miss into a grant-shaped answer.
+      if (!lib.ok) return null;
+      return connectedLibraryVisible(lib.value.domainSlugs, grant)
+        ? null
+        : grantRefusal("FORBIDDEN");
+    }
+    return allow([rec.domainSlug as string | null | undefined]);
+  }
+
+  if (name === "create_library_document") {
+    const slugs = Array.isArray(rec.domainSlugs) ? (rec.domainSlugs as string[]) : [];
+    return allow(slugs);
+  }
+
+  // ── goals ────────────────────────────────────────────────────────────────
+  if (name === "create_goal") {
+    return allow([rec.domainSlug as string | null | undefined]);
+  }
+
+  if (name === "update_goal" || name === "delete_goal") {
+    // The goal being changed has to be visible too: renaming a health goal is a
+    // write to health even when the arguments name no domain at all.
+    const existing = await goalDomain(root, rec.id, grant);
+    if (existing === undefined) return null; // no goal to attribute it to
+    if (name === "delete_goal") {
+      return existing.domainSlug === null
+        ? grantRefusal("FORBIDDEN")
+        : allow([existing.domainSlug]);
+    }
+    return allow([existing.domainSlug, rec.domainSlug as string | null | undefined]);
+  }
+
+  // ── projects ─────────────────────────────────────────────────────────────
+  if (name === "create_project") {
+    return allow([rec.domainSlug as string | null | undefined]);
+  }
+
+  if (name === "close_project") {
+    const id = typeof rec.id === "string" ? rec.id : "";
+    const loaded = id ? await projectGet(root, id) : null;
+    if (!loaded || !loaded.ok) return null;
+    return loaded.value.domainSlug ? allow([loaded.value.domainSlug]) : grantRefusal("FORBIDDEN");
+  }
+
+  // ── databases ────────────────────────────────────────────────────────────
+  if (
+    name === "upsert_row" ||
+    name === "delete_row" ||
+    name === "create_database" ||
+    name === "add_column"
+  ) {
+    return allow([rec.domainSlug as string | null | undefined]);
+  }
+
+  // ── reviews ──────────────────────────────────────────────────────────────
+  if (name === "mark_review_done") {
+    // `scope: "overall"` is the companion's, not the agent's.
+    return allow([rec.scope as string | null | undefined]);
+  }
+  if (name === "write_review" || name === "unlock_review") {
+    // Both act on the whole review file, whose body carries the `overall`
+    // preamble and every domain's sections. There is no domain slice of that
+    // write to give an agent, so it stays with the companion.
+    return grantRefusal("FORBIDDEN");
+  }
+
+  // ── events ───────────────────────────────────────────────────────────────
+  if (name === "create_event") {
+    return allow([rec.domainSlug as string | null | undefined]);
+  }
+
+  if (name === "update_event" || name === "delete_event") {
+    const existing = await eventDomain(root, rec.year, rec.id);
+    if (existing === undefined) return null; // let the tool report the miss
+    // Moving a record out of the assignment is the case the spec names: the
+    // write touches the domain it leaves as well as the one it enters. So a
+    // delete is judged on the event's own domain, and an update on both.
+    if (name === "delete_event") return allow([existing.domainSlug]);
+    return allow([existing.domainSlug, rec.domainSlug as string | null | undefined]);
+  }
+
+  // ── pages ────────────────────────────────────────────────────────────────
+  if (name === "apply_script_block") {
+    return allow([rec.domainSlug as string | null | undefined]);
+  }
+
+  // The capture tools name no domain argument; `toolAllowed` has already
+  // required `financial` in the assignment for them.
+  return null;
+}
+
+/**
+ * KAR-70: the domain of the goal a write names. `undefined` means there is no
+ * such goal, which is the tool's answer to give rather than the gate's.
+ */
+async function goalDomain(
+  root: string,
+  rawId: unknown,
+  grant: ConnectedGrant,
+): Promise<{ domainSlug: string | null } | undefined> {
+  if (typeof rawId !== "string" || !rawId) return undefined;
+  const loaded = await loadGoals(root);
+  if (!loaded.ok) return undefined;
+  const goal = loaded.value.find((g) => g.id === rawId);
+  if (!goal) return undefined;
+  return { domainSlug: goal.domainSlug };
+}
+
+/**
+ * KAR-70: the same lookup for a map event, read through the map store rather
+ * than the agent's projection: the gate has to judge the real record, not the
+ * slice the agent is allowed to see.
+ */
+async function eventDomain(
+  root: string,
+  rawYear: unknown,
+  rawId: unknown,
+): Promise<{ domainSlug: string | null } | undefined> {
+  if (typeof rawId !== "string" || !rawId) return undefined;
+  const snap = await openVault(root);
+  if (!snap.ok || !snap.value.map) return undefined;
+  const year = typeof rawYear === "number" ? rawYear : Number(rawYear);
+  for (const record of snap.value.map.years) {
+    if (record.year !== year) continue;
+    const event = record.events.find((e) => e.id === rawId);
+    if (!event) return undefined;
+    return { domainSlug: event.domainSlug };
+  }
+  return undefined;
 }
 
 /** Keep only the scope keys the grant covers, with their states. */

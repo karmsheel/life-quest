@@ -17,18 +17,27 @@ import {
   archiveDomain,
   createDatabase,
   createDecision,
+  createPage,
   createVault,
   ensureReview,
   fingerprintOf,
+  getDatabase,
+  getPage,
+  installFinanceKit,
   libraryCreate,
   listConnectedAgents,
+  listDatabases,
+  listRows,
   markConnectedAgent,
+  readLog,
   resolveDecision,
+  setFinanceCaptureAccount,
   todayLocalIso,
   updateConnectedAgent,
   upsertRow,
   writeReview,
   effectiveGrant,
+  FINANCE_DB_IDS,
   USER_ACTOR,
   PENDING_PAIRING_CAP,
   type ConnectedGrant,
@@ -1651,6 +1660,442 @@ describe("KAR-70 pairing: the domain read grant", () => {
   });
 });
 
+// ── the domain write grant ───────────────────────────────────────────────────
+
+describe("KAR-70 pairing: the domain write grant", () => {
+  type Fixture = {
+    ctx: Awaited<ReturnType<typeof openDoors>>;
+    /** Roster id and name, which the life log must record for a write. */
+    agentId: string;
+    agentName: string;
+    readGrant: ConnectedGrant;
+    writeGrant: ConnectedGrant;
+    /** A hand-made financial database with one text column and one row. */
+    writeDatabase: string;
+    writeColumn: string;
+    writeRow: string;
+    financialPage: string;
+    healthPage: string;
+    financialGoal: string;
+    /** Transaction rows before any capture, so a posted row is visible. */
+    transactionsBefore: number;
+  };
+
+  let doorsHandle: Doors | null = null;
+
+  async function buildFixture(): Promise<Fixture> {
+    const ctx = await openDoors("kar70-write");
+    doorsHandle = ctx.doors;
+    const { root } = ctx;
+
+    // The finance kit, one transactional account, and nothing on an insert
+    // allowlist: the allowlist is empty by construction, so a database write
+    // files a Decision exactly as the companion's does.
+    assert.equal((await installFinanceKit(root, USER_ACTOR)).ok, true, "finance kit install");
+    const account = await upsertRow(root, "financial", FINANCE_DB_IDS.accounts, {
+      cells: {
+        name: "Cheque",
+        type: "checking",
+        currency: "ZAR",
+        opening_balance: 0,
+        opening_as_of: null,
+        apr: null,
+      },
+    });
+    assert.equal(account.ok, true, `account: ${JSON.stringify(account)}`);
+    assert.equal((await setFinanceCaptureAccount(root, account.value.id)).ok, true);
+
+    const db = await createDatabase(root, "financial", { name: "Write ledger" });
+    assert.equal(db.ok, true, `createDatabase: ${JSON.stringify(db)}`);
+    const withColumn = await addDatabaseColumn(root, "financial", db.value.id, {
+      name: "Label",
+      type: "text",
+    });
+    assert.equal(withColumn.ok, true, `addDatabaseColumn: ${JSON.stringify(withColumn)}`);
+    const writeColumn = withColumn.value.columns[withColumn.value.columns.length - 1]!.id;
+    const row = await upsertRow(root, "financial", db.value.id, {
+      cells: { [writeColumn]: "seed row" },
+    });
+    assert.equal(row.ok, true, `seed row: ${JSON.stringify(row)}`);
+
+    const financialPage = await createPage(root, "financial", { title: "Financial board" });
+    const healthPage = await createPage(root, "health", { title: "Health board" });
+    assert.equal(financialPage.ok, true, `financial page: ${JSON.stringify(financialPage)}`);
+    assert.equal(healthPage.ok, true, `health page: ${JSON.stringify(healthPage)}`);
+
+    // create_project validates that the goal exists, so the fixture needs one
+    // inside the assignment.
+    const goal = await applyGoalsCommand(root, {
+      type: "createGoal",
+      name: "Save more",
+      domainSlug: "financial",
+    });
+    assert.equal(goal.ok, true, `createGoal fixture: ${JSON.stringify(goal)}`);
+
+    const before = await listRows(root, "financial", FINANCE_DB_IDS.transactions);
+    assert.equal(before.ok, true);
+
+    // Introduce, approve, and assign financial read. Write is turned on later,
+    // by the test that needs it, so the read-only proof runs first.
+    const bearer = "write-door-bearer-0000000001";
+    const headers = { ...auth(bearer), "x-lifequest-name": "Write bot" };
+    assert.equal((await rpc(ctx.localPort, headers, "initialize", INIT_PARAMS)).status, 200);
+    let pairing: Record<string, unknown> | null = null;
+    for (const file of await decisionFiles(root)) {
+      const candidate = await readJson(path.join(root, ".lifequest", "decisions", file));
+      if ((candidate.target as { type?: string }).type === "agent-pairing") {
+        pairing = candidate;
+        break;
+      }
+    }
+    assert.ok(pairing, "the introduction must have filed a pairing Decision");
+    const agentId = (pairing.target as { agentId: string }).agentId;
+    assert.equal((await resolveDecision(root, pairing.id as string, "approved")).ok, true);
+
+    const assigned = await updateConnectedAgent(root, agentId, {
+      access: "read",
+      domainSlugs: ["financial"],
+      schedule: false,
+    });
+    assert.equal(assigned.ok, true, `updateConnectedAgent: ${JSON.stringify(assigned)}`);
+
+    const rows = (await listConnectedAgents(root)) as { value: Record<string, unknown>[] };
+    const stored = rows.value.find((r) => r.id === agentId)!;
+    const base = {
+      agentId: String(stored.id),
+      name: String(stored.name),
+      domainSlugs: [...(stored.domainSlugs as string[])],
+      schedule: false,
+    };
+    return {
+      ctx,
+      agentId: base.agentId,
+      agentName: base.name,
+      readGrant: { ...base, access: "read" },
+      writeGrant: { ...base, access: "write" },
+      writeDatabase: db.value.id,
+      writeColumn,
+      writeRow: row.value.id,
+      financialPage: financialPage.value.id,
+      healthPage: healthPage.value.id,
+      financialGoal: goal.value[0]!.id,
+      transactionsBefore: before.ok ? before.value.length : 0,
+    };
+  }
+
+  function codeOf(result: unknown): string {
+    const err = (result as { error?: { code?: string } }).error;
+    return err?.code ?? "";
+  }
+
+  async function call(
+    name: string,
+    args: Record<string, unknown> = {},
+    grant: ConnectedGrant = f.writeGrant,
+  ): Promise<unknown> {
+    return executeTool(f.ctx.root, null, name, args, undefined, grant);
+  }
+
+  const FORBIDDEN = { error: { code: "FORBIDDEN", message: "Outside this agent's grant" } };
+  const NOT_FOUND = { error: { code: "NOT_FOUND", message: "Not found" } };
+
+  /** Transaction row count, the proof that a capture posted or did not. */
+  async function transactionCount(root: string): Promise<number> {
+    const listed = await listRows(root, "financial", FINANCE_DB_IDS.transactions);
+    assert.equal(listed.ok, true, `listRows transactions: ${JSON.stringify(listed)}`);
+    return listed.ok ? listed.value.length : -1;
+  }
+
+  let f: Fixture;
+
+  before(async () => {
+    f = await buildFixture();
+  });
+  after(async () => {
+    await doorsHandle?.close();
+  });
+
+  it("every write is FORBIDDEN while access is read, and the vault does not move", async () => {
+    const before = await walkText(f.ctx.root);
+    const decisionsBefore = await decisionFiles(f.ctx.root);
+    const year = Number(todayLocalIso().slice(0, 4));
+
+    for (const [name, args] of [
+      ["upsert_row", { domainSlug: "financial", databaseId: f.writeDatabase, cells: { [f.writeColumn]: "no" } }],
+      ["create_library_document", { title: "No", body: "no", domainSlugs: ["financial"] }],
+      ["create_goal", { name: "No", domainSlug: "financial" }],
+      ["create_event", { year, title: "No", date: todayLocalIso(), domainSlug: "financial" }],
+      ["create_project", { title: "No", goalId: f.financialGoal, domainSlug: "financial" }],
+      ["capture_transaction", { text: "Bought food for R85 today" }],
+      ["apply_script_block", { domainSlug: "financial", pageId: f.financialPage, name: "No", source: "SELECT 1" }],
+    ] as [string, Record<string, unknown>][]) {
+      const result = await call(name, args, f.readGrant);
+      record(`write-read-refused-${name}`, codeOf(result));
+      assert.deepEqual(result, FORBIDDEN, `${name} must be FORBIDDEN while access is read`);
+    }
+
+    assert.equal(await walkText(f.ctx.root), before, "a refused write must not write");
+    assert.deepEqual(await decisionFiles(f.ctx.root), decisionsBefore, "and file no Decision");
+    record("write-read-refused-unchanged", "UNCHANGED");
+  });
+
+  it("a clear capture posts a row, and undo and correct follow it", async () => {
+    const posted = (await call("capture_transaction", {
+      text: "Bought food for R85 today",
+      threadId: "kar70",
+    })) as { posted: boolean; rowId: string | null; amount?: number };
+    record("write-capture", posted.posted ? "POSTED" : codeOf(posted));
+    assert.equal(posted.posted, true, `capture must post: ${JSON.stringify(posted)}`);
+    assert.equal(posted.amount, -85);
+    assert.equal(
+      await transactionCount(f.ctx.root),
+      f.transactionsBefore + 1,
+      "a posted capture is a row in the transactions database",
+    );
+
+    const corrected = (await call("correct_capture", {
+      text: "Bought food for R95 today",
+      threadId: "kar70",
+    })) as { posted: boolean; amount?: number };
+    record("write-correct-capture", corrected.posted ? "POSTED" : codeOf(corrected));
+    assert.equal(corrected.posted, true, `correct_capture: ${JSON.stringify(corrected)}`);
+    assert.equal(corrected.amount, -95);
+
+    const undone = (await call("undo_capture", { threadId: "kar70" })) as { posted: boolean };
+    record("write-undo-capture", undone.posted ? "POSTED" : "UNDONE");
+    assert.equal(undone.posted, false, `undo_capture: ${JSON.stringify(undone)}`);
+    assert.equal(
+      await transactionCount(f.ctx.root),
+      f.transactionsBefore,
+      "an undone capture leaves no row",
+    );
+  });
+
+  it("capture needs financial in the grant", async () => {
+    // Write on, but the assignment no longer covers financial. The gate is the
+    // domain, not the Write switch.
+    const noFinancial: ConnectedGrant = { ...f.writeGrant, domainSlugs: ["health"] };
+    for (const [name, args] of [
+      ["capture_transaction", { text: "Bought food for R85 today" }],
+      ["undo_capture", { threadId: "kar70" }],
+      ["correct_capture", { text: "Bought food for R85 today" }],
+    ] as [string, Record<string, unknown>][]) {
+      const result = await call(name, args, noFinancial);
+      record(`write-capture-no-financial-${name}`, codeOf(result));
+      assert.deepEqual(result, FORBIDDEN, `${name} needs financial in the grant`);
+    }
+  });
+
+  it("the capture life-log line names the roster agent", async () => {
+    const posted = (await call("capture_transaction", {
+      text: "Bought food for R120 today",
+      threadId: "kar70-log",
+    })) as { posted: boolean; rowId: string | null };
+    assert.equal(posted.posted, true, `capture for the log: ${JSON.stringify(posted)}`);
+
+    const logged = await readLog(f.ctx.root);
+    assert.equal(logged.ok, true);
+    const line = logged.ok
+      ? logged.value.find((e) => e.type === "capture.posted" && (e.payload as { rowId?: string })?.rowId === posted.rowId)
+      : undefined;
+    assert.ok(line, "the posted capture must have a life-log line");
+    assert.deepEqual(line.actor, { type: "agent", id: f.agentId, name: f.agentName });
+    record("write-capture-actor", "ROSTER_AGENT");
+  });
+
+  it("a database write files a Decision and lands only on approval", async () => {
+    const proposal = (await call("upsert_row", {
+      domainSlug: "financial",
+      databaseId: f.writeDatabase,
+      cells: { [f.writeColumn]: "proposed row" },
+    })) as { decisionId?: string; status?: string };
+    record("write-upsert-row", proposal.decisionId ? "DECISION" : codeOf(proposal));
+    assert.ok(proposal.decisionId, `upsert_row must file a Decision: ${JSON.stringify(proposal)}`);
+
+    let rows = await listRows(f.ctx.root, "financial", f.writeDatabase);
+    assert.equal(rows.ok, true);
+    assert.equal(
+      rows.ok ? rows.value.length : -1,
+      1,
+      "the row must be absent until the operator approves",
+    );
+
+    assert.equal((await resolveDecision(f.ctx.root, proposal.decisionId!, "approved")).ok, true);
+    rows = await listRows(f.ctx.root, "financial", f.writeDatabase);
+    assert.equal(rows.ok ? rows.value.length : -1, 2, "approval is what writes the row");
+    record("write-upsert-row-approved", "APPLIED");
+  });
+
+  it("delete_row, create_database, and add_column file Decisions and apply nothing", async () => {
+    const deleted = (await call("delete_row", {
+      domainSlug: "financial",
+      databaseId: f.writeDatabase,
+      id: f.writeRow,
+    })) as { decisionId?: string };
+    record("write-delete-row", deleted.decisionId ? "DECISION" : codeOf(deleted));
+    assert.ok(deleted.decisionId, `delete_row: ${JSON.stringify(deleted)}`);
+
+    const created = (await call("create_database", {
+      domainSlug: "financial",
+      name: "Proposed ledger",
+    })) as { decisionId?: string };
+    record("write-create-database", created.decisionId ? "DECISION" : codeOf(created));
+    assert.ok(created.decisionId, `create_database: ${JSON.stringify(created)}`);
+
+    const column = (await call("add_column", {
+      domainSlug: "financial",
+      databaseId: f.writeDatabase,
+      name: "Extra",
+      type: "text",
+    })) as { decisionId?: string };
+    record("write-add-column", column.decisionId ? "DECISION" : codeOf(column));
+    assert.ok(column.decisionId, `add_column: ${JSON.stringify(column)}`);
+
+    // Nothing landed: the row is still there, the proposed database does not
+    // exist, and the column is not on the schema.
+    const rows = await listRows(f.ctx.root, "financial", f.writeDatabase);
+    assert.ok(
+      rows.ok && rows.value.some((r) => r.id === f.writeRow),
+      "a pending delete must leave the row",
+    );
+    const dbs = await listDatabases(f.ctx.root, "financial");
+    assert.ok(dbs.ok);
+    assert.equal(
+      dbs.ok ? dbs.value.some((d) => d.name === "Proposed ledger") : true,
+      false,
+      "a pending create_database must not create the database",
+    );
+    const schema = await getDatabase(f.ctx.root, "financial", f.writeDatabase);
+    assert.ok(schema.ok);
+    assert.equal(
+      schema.ok ? schema.value.columns.some((c) => c.name === "Extra") : true,
+      false,
+      "a pending add_column must not add the column",
+    );
+    record("write-database-decisions-unapplied", "PENDING");
+  });
+
+  it("a goal or project for financial files a Decision, and another domain files nothing", async () => {
+    const goal = (await call("create_goal", {
+      name: "Agent goal",
+      domainSlug: "financial",
+    })) as { decisionId?: string };
+    record("write-create-goal", goal.decisionId ? "DECISION" : codeOf(goal));
+    assert.ok(goal.decisionId, `create_goal financial: ${JSON.stringify(goal)}`);
+
+    const project = (await call("create_project", {
+      title: "Agent project",
+      goalId: f.financialGoal,
+      domainSlug: "financial",
+    })) as { decisionId?: string };
+    record("write-create-project", project.decisionId ? "DECISION" : codeOf(project));
+    assert.ok(project.decisionId, `create_project financial: ${JSON.stringify(project)}`);
+
+    const before = await decisionFiles(f.ctx.root);
+    for (const [name, args] of [
+      ["create_goal", { name: "Unscoped", domainSlug: null }],
+      ["create_goal", { name: "Health goal", domainSlug: "health" }],
+    ] as [string, Record<string, unknown>][]) {
+      const result = await call(name, args);
+      record(`write-forbidden-${name}-${String(args.domainSlug)}`, codeOf(result));
+      assert.deepEqual(result, FORBIDDEN, `${name} on ${String(args.domainSlug)} must be FORBIDDEN`);
+    }
+    assert.deepEqual(await decisionFiles(f.ctx.root), before, "a forbidden goal files nothing");
+    record("write-forbidden-goal-unfiled", "UNFILED");
+  });
+
+  it("an event applies inside the grant and is refused outside or without one", async () => {
+    const today = todayLocalIso();
+    const year = Number(today.slice(0, 4));
+
+    const created = await call("create_event", {
+      year,
+      title: "Financial event",
+      date: today,
+      domainSlug: "financial",
+    });
+    record("write-create-event", codeOf(created) || "APPLIED");
+    assert.equal(codeOf(created), "", `create_event financial: ${JSON.stringify(created)}`);
+
+    const state = (await call("get_state")) as { state: { events: { id: string; title: string; domainSlug: string | null }[] } };
+    const event = state.state.events.find((e) => e.title === "Financial event");
+    assert.ok(event, "the event must be in the granted domain's state");
+
+    const unscoped = await call("create_event", {
+      year,
+      title: "Unscoped agent event",
+      date: today,
+      domainSlug: null,
+    });
+    record("write-create-event-unscoped", codeOf(unscoped));
+    assert.deepEqual(unscoped, FORBIDDEN, "an event with no domain is FORBIDDEN");
+
+    const moved = await call("update_event", {
+      year,
+      id: event.id,
+      domainSlug: "health",
+    });
+    record("write-update-event-move-out", codeOf(moved));
+    assert.deepEqual(moved, FORBIDDEN, "moving an event out of the grant is FORBIDDEN");
+
+    const after = (await call("get_state")) as { state: { events: { id: string; domainSlug: string | null }[] } };
+    assert.equal(
+      after.state.events.find((e) => e.id === event.id)?.domainSlug,
+      "financial",
+      "a refused move leaves the event where it was",
+    );
+    record("write-update-event-unchanged", "FINANCIAL");
+  });
+
+  it("a script block writes an assigned page and is refused on another domain", async () => {
+    const applied = await call("apply_script_block", {
+      domainSlug: "financial",
+      pageId: f.financialPage,
+      name: "Spend count",
+      source: "SELECT 1",
+    });
+    record("write-apply-script-financial", codeOf(applied) || "APPLIED");
+    assert.equal(codeOf(applied), "", `apply_script_block financial: ${JSON.stringify(applied)}`);
+    const page = await getPage(f.ctx.root, "financial", f.financialPage);
+    assert.ok(page.ok);
+    assert.equal(
+      page.ok ? page.value.blocks.some((b) => b.kind === "script") : false,
+      true,
+      "an applied script block is on the page",
+    );
+
+    const other = await call("apply_script_block", {
+      domainSlug: "health",
+      pageId: f.healthPage,
+      name: "Spend count",
+      source: "SELECT 1",
+    });
+    record("write-apply-script-health", codeOf(other));
+    assert.deepEqual(other, FORBIDDEN, "an unassigned page's domain is FORBIDDEN");
+    const untouched = await getPage(f.ctx.root, "health", f.healthPage);
+    assert.ok(untouched.ok);
+    assert.equal(untouched.ok ? untouched.value.blocks.length : -1, 0, "and writes no block");
+
+    const ran = await call("run_script_block", { domainSlug: "health", source: "SELECT 1" });
+    record("write-run-script-health", codeOf(ran));
+    assert.deepEqual(ran, NOT_FOUND, "the same domain is missing to a script read");
+  });
+
+  it("the companion with no grant still files a doctrine Decision", async () => {
+    const result = (await executeTool(
+      f.ctx.root,
+      null,
+      "update_document",
+      { domainSlug: "financial", kind: "why", body: "Because the agent asked." },
+      undefined,
+      undefined,
+    )) as { decisionId?: string };
+    record("write-companion-update-document", result.decisionId ? "DECISION" : codeOf(result));
+    assert.ok(result.decisionId, `the companion must still file: ${JSON.stringify(result)}`);
+    assert.notEqual(codeOf(result), "FORBIDDEN");
+  });
+});
+
 // ── the artifact ─────────────────────────────────────────────────────────────
 
 describe("KAR-70 pairing: the run artifact", () => {
@@ -1744,6 +2189,40 @@ describe("KAR-70 pairing: the run artifact", () => {
         "grant-list-databases-health",
         "grant-list-databases-financial",
         "grant-get-document-missing",
+        "write-read-refused-upsert_row",
+        "write-read-refused-create_library_document",
+        "write-read-refused-create_goal",
+        "write-read-refused-create_event",
+        "write-read-refused-create_project",
+        "write-read-refused-capture_transaction",
+        "write-read-refused-apply_script_block",
+        "write-read-refused-unchanged",
+        "write-capture",
+        "write-correct-capture",
+        "write-undo-capture",
+        "write-capture-no-financial-capture_transaction",
+        "write-capture-no-financial-undo_capture",
+        "write-capture-no-financial-correct_capture",
+        "write-capture-actor",
+        "write-upsert-row",
+        "write-upsert-row-approved",
+        "write-delete-row",
+        "write-create-database",
+        "write-add-column",
+        "write-database-decisions-unapplied",
+        "write-create-goal",
+        "write-create-project",
+        "write-forbidden-create_goal-null",
+        "write-forbidden-create_goal-health",
+        "write-forbidden-goal-unfiled",
+        "write-create-event",
+        "write-create-event-unscoped",
+        "write-update-event-move-out",
+        "write-update-event-unchanged",
+        "write-apply-script-financial",
+        "write-apply-script-health",
+        "write-run-script-health",
+        "write-companion-update-document",
       ]) {
         assert.ok(names.includes(expected), `pairing-e2e.json is missing scenario ${expected}`);
       }

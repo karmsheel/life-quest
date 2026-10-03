@@ -99,14 +99,93 @@ export const CONNECTED_DAY_TEMPLATE_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * KAR-70: the writes that file a Decision. They follow the companion's rule
+ * exactly — doctrine, library notes, goals, projects, database changes, and
+ * review changes never land on their own — so the only thing this task adds is
+ * the domain they are allowed to touch.
+ */
+export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
+  "update_document",
+  "create_library_document",
+  "create_goal",
+  "update_goal",
+  "delete_goal",
+  "create_project",
+  "close_project",
+  "upsert_row",
+  "delete_row",
+  "create_database",
+  "add_column",
+  "write_review",
+  "mark_review_done",
+  "unlock_review",
+]);
+
+/**
+ * KAR-70: the writes that apply immediately, as they do for the companion:
+ * events, script blocks on a page, and the capture thread. Each still needs its
+ * domain inside the assignment.
+ */
+export const CONNECTED_IMMEDIATE_WRITE_TOOLS: ReadonlySet<string> = new Set([
+  "create_event",
+  "update_event",
+  "delete_event",
+  "apply_script_block",
+  "capture_transaction",
+  "undo_capture",
+  "correct_capture",
+]);
+
+/**
+ * KAR-70: the capture tools name no domain argument — the finance ledger is
+ * theirs by definition — so `financial` is the domain the grant has to cover.
+ */
+export const CAPTURE_WRITE_TOOLS: ReadonlySet<string> = new Set([
+  "capture_transaction",
+  "undo_capture",
+  "correct_capture",
+]);
+
+/** How a write reaches the vault: a pending Decision, or applied at once. */
+export type ConnectedWriteKind = "decision" | "immediate";
+
+/**
+ * KAR-70: which of the two write shapes a tool has, or `null` when the tool is
+ * not a write. Split out from `toolAllowed` because the per-call answer also
+ * depends on the domains the arguments name, which the gate does not see.
+ */
+export function connectedWriteKind(name: string): ConnectedWriteKind | null {
+  if (CONNECTED_DECISION_WRITE_TOOLS.has(name)) return "decision";
+  if (CONNECTED_IMMEDIATE_WRITE_TOOLS.has(name)) return "immediate";
+  return null;
+}
+
+/**
+ * KAR-70: a write names one or more domains, and every one of them must be
+ * inside the assignment. A record with no domain stays with the companion, so
+ * an empty list is refused rather than waved through: a write with no domain is
+ * a write to everything.
+ */
+export function connectedWriteDomainsAllowed(
+  slugs: ReadonlyArray<string | null | undefined>,
+  grant: ConnectedGrant,
+): boolean {
+  if (slugs.length === 0) return false;
+  return slugs.every(
+    (slug) => typeof slug === "string" && grant.domainSlugs.includes(slug),
+  );
+}
+
+/**
  * KAR-70: the first gate. `NO_GRANT` means the row itself reaches nothing —
  * approval alone is not a grant. `FORBIDDEN` means the row has a grant and this
  * tool is outside it.
  *
  * A read is allowed as soon as one assigned domain remains; which records it
- * may actually see is settled per call by the projection, not here. The write
- * lists are the write task's to fix: this returns the refusal, and the write
- * task decides which writes an assigned domain opens.
+ * may actually see is settled per call by the projection. A write needs the
+ * Write switch, and a capture additionally needs `financial` in the assignment,
+ * because that is the domain the capture thread writes. The domains a write
+ * *names* are checked per call, before the tool body runs.
  */
 export function toolAllowed(
   name: string,
@@ -122,6 +201,11 @@ export function toolAllowed(
   if (isSchedule && !grant.schedule) return "FORBIDDEN";
   // Everything else is a write, and a write needs the Write switch.
   if (grant.access !== "write") return "FORBIDDEN";
+  // Capture names no domain argument, so the gate settles it here rather than
+  // per call: no financial in the assignment means no capture tool at all.
+  if (CAPTURE_WRITE_TOOLS.has(name) && !grant.domainSlugs.includes("financial")) {
+    return "FORBIDDEN";
+  }
   if (isSchedule && !grant.schedule) return "FORBIDDEN";
   return "allow";
 }
