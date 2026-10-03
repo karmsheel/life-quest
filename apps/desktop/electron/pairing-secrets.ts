@@ -2,6 +2,13 @@
 // in the vault. It holds the companion token, the SHA-256 hex of each
 // connected-agent bearer (never the raw bearer), and the invite-code hashes
 // with their expiry and used-at stamps.
+//
+// Every read-modify-write goes through withSecretsLock. The file is read,
+// mutated, and renamed as one unit, so an unlocked update lets two callers
+// write stale snapshots over each other — which could make a spent invite code
+// valid again, or forget a rejected bearer's hash so that key can introduce
+// itself twice. withSecretsLock hands the caller a session bound to one
+// already-read file, so a whole read-modify-write happens inside one chain.
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -29,6 +36,25 @@ export type PairingSecretsFile = {
   vaults: Record<string, PairingVaultSecrets>;
 };
 
+/**
+ * A held view of one secrets file. Each method mutates the snapshot the lock
+ * already read; the lock writes it back once when the work finishes. Obtain
+ * one only from withSecretsLock.
+ */
+export type SecretsSession = {
+  secretsDir: string;
+  vaultId: string;
+  vault: PairingVaultSecrets;
+  companionToken: () => string | null;
+  /** The 12-hex fingerprint for a bearer this vault knows, else null. */
+  resolveBearer: (bearer: string) => string | null;
+  /** Whether a code is currently spendable. Does not consume it. */
+  hasInvite: (code: string, at: number) => boolean;
+  rememberBearer: (fingerprint: string, bearer: string) => void;
+  /** Consumes the code. False when it is used, expired, or unknown. */
+  takeInvite: (code: string, at: number) => boolean;
+};
+
 function secretsPath(secretsDir: string): string {
   return path.join(secretsDir, "connected-agent-secrets.json");
 }
@@ -51,7 +77,10 @@ function normalizeVault(raw: unknown): PairingVaultSecrets {
   }
   const invites: InviteRecord[] = Array.isArray(v.invites)
     ? v.invites
-        .filter((i): i is InviteRecord => !!i && typeof i === "object" && typeof i.codeHash === "string")
+        .filter(
+          (i): i is InviteRecord =>
+            !!i && typeof i === "object" && typeof (i as InviteRecord).codeHash === "string",
+        )
         .map((i) => ({
           id: String(i.id ?? randomUUID()),
           codeHash: i.codeHash,
@@ -94,14 +123,80 @@ async function writeSecretsFile(
   await fs.rename(tmp, file);
 }
 
-async function loadVaultSecrets(
+function fingerprintForHash(vault: PairingVaultSecrets, hash: string): string | null {
+  for (const [fingerprint, stored] of Object.entries(vault.bearers)) {
+    if (stored === hash) return fingerprint;
+  }
+  return null;
+}
+
+/**
+ * KAR-70: one chain per secrets file. The invite door holds this lock across
+ * its whole introduction, so a code cannot be checked by two callers and spent
+ * by both.
+ */
+const locks = new Map<string, Promise<unknown>>();
+
+export function withSecretsLock<T>(
   secretsDir: string,
   vaultId: string,
-): Promise<{ file: PairingSecretsFile; vault: PairingVaultSecrets }> {
+  work: (session: SecretsSession) => Promise<T>,
+): Promise<T> {
+  const run = async (): Promise<T> => {
+    const file = await readSecretsFile(secretsDir);
+    const vault = file.vaults[vaultId] ?? emptyVaultSecrets();
+    file.vaults[vaultId] = vault;
+    const session: SecretsSession = {
+      secretsDir,
+      vaultId,
+      vault,
+      companionToken: () => vault.companionToken,
+      resolveBearer: (bearer: string) => fingerprintForHash(vault, sha256Hex(bearer)),
+      hasInvite: (code: string, at: number) => {
+        const hash = sha256Hex(code);
+        return vault.invites.some(
+          (i) => i.codeHash === hash && i.usedAt === null && Date.parse(i.expiresAt) > at,
+        );
+      },
+      rememberBearer: (fingerprint: string, bearer: string) => {
+        vault.bearers[fingerprint] = sha256Hex(bearer);
+      },
+      takeInvite: (code: string, at: number) => {
+        const hash = sha256Hex(code);
+        const match = vault.invites.find((i) => i.codeHash === hash);
+        if (!match || match.usedAt !== null || Date.parse(match.expiresAt) <= at) return false;
+        match.usedAt = new Date(at).toISOString();
+        return true;
+      },
+    };
+    try {
+      return await work(session);
+    } finally {
+      // Written even when the work threw: a partial mutation must not be
+      // silently dropped, and rewriting an unchanged snapshot is harmless.
+      await writeSecretsFile(secretsDir, file);
+    }
+  };
+
+  const prior = locks.get(secretsPath(secretsDir)) ?? Promise.resolve();
+  const next = prior.then(run, run);
+  locks.set(
+    secretsPath(secretsDir),
+    next.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return next;
+}
+
+/** A read that needs no lock: it takes no write, so it cannot race a mutation. */
+export async function peekSecrets(
+  secretsDir: string,
+  vaultId: string,
+): Promise<PairingVaultSecrets> {
   const file = await readSecretsFile(secretsDir);
-  const vault = file.vaults[vaultId] ?? emptyVaultSecrets();
-  file.vaults[vaultId] = vault;
-  return { file, vault };
+  return file.vaults[vaultId] ?? emptyVaultSecrets();
 }
 
 // ── companion token ──────────────────────────────────────────────────────────
@@ -112,11 +207,15 @@ export async function ensureCompanionToken(
   vaultId: string,
 ): Promise<Result<string>> {
   try {
-    const { file, vault } = await loadVaultSecrets(secretsDir, vaultId);
-    if (vault.companionToken) return { ok: true, value: vault.companionToken };
-    vault.companionToken = randomBytes(32).toString("base64url");
-    await writeSecretsFile(secretsDir, file);
-    return { ok: true, value: vault.companionToken };
+    return {
+      ok: true,
+      value: await withSecretsLock(secretsDir, vaultId, async (s) => {
+        if (!s.vault.companionToken) {
+          s.vault.companionToken = randomBytes(32).toString("base64url");
+        }
+        return s.vault.companionToken;
+      }),
+    };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -127,8 +226,7 @@ export async function companionTokenOf(
   vaultId: string,
 ): Promise<string | null> {
   try {
-    const { vault } = await loadVaultSecrets(secretsDir, vaultId);
-    return vault.companionToken;
+    return (await peekSecrets(secretsDir, vaultId)).companionToken;
   } catch {
     return null;
   }
@@ -144,9 +242,10 @@ export async function rememberBearer(
   bearer: string,
 ): Promise<Result<true>> {
   try {
-    const { file, vault } = await loadVaultSecrets(secretsDir, vaultId);
-    vault.bearers[fingerprint] = sha256Hex(bearer);
-    await writeSecretsFile(secretsDir, file);
+    await withSecretsLock(secretsDir, vaultId, async (s) => {
+      s.rememberBearer(fingerprint, bearer);
+      return true;
+    });
     return { ok: true, value: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -164,12 +263,7 @@ export async function resolveBearer(
   bearer: string,
 ): Promise<string | null> {
   try {
-    const { vault } = await loadVaultSecrets(secretsDir, vaultId);
-    const hash = sha256Hex(bearer);
-    for (const [fingerprint, stored] of Object.entries(vault.bearers)) {
-      if (stored === hash) return fingerprint;
-    }
-    return null;
+    return fingerprintForHash(await peekSecrets(secretsDir, vaultId), sha256Hex(bearer));
   } catch {
     return null;
   }
@@ -187,17 +281,18 @@ export async function mintInvite(
   now: () => Date = () => new Date(),
 ): Promise<Result<{ code: string; id: string; expiresAt: string }>> {
   try {
-    const { file, vault } = await loadVaultSecrets(secretsDir, vaultId);
-    const code = randomBytes(INVITE_BYTES).toString("base64url");
-    const record: InviteRecord = {
-      id: randomUUID(),
-      codeHash: sha256Hex(code),
-      expiresAt: new Date(now().getTime() + INVITE_TTL_MS).toISOString(),
-      usedAt: null,
-    };
-    vault.invites.push(record);
-    await writeSecretsFile(secretsDir, file);
-    return { ok: true, value: { code, id: record.id, expiresAt: record.expiresAt } };
+    const value = await withSecretsLock(secretsDir, vaultId, async (s) => {
+      const code = randomBytes(INVITE_BYTES).toString("base64url");
+      const record: InviteRecord = {
+        id: randomUUID(),
+        codeHash: sha256Hex(code),
+        expiresAt: new Date(now().getTime() + INVITE_TTL_MS).toISOString(),
+        usedAt: null,
+      };
+      s.vault.invites.push(record);
+      return { code, id: record.id, expiresAt: record.expiresAt };
+    });
+    return { ok: true, value };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -210,14 +305,13 @@ export async function dropInvite(
   id: string,
 ): Promise<Result<boolean>> {
   try {
-    const { file, vault } = await loadVaultSecrets(secretsDir, vaultId);
-    const idx = vault.invites.findIndex((i) => i.id === id);
-    if (idx === -1 || vault.invites[idx]!.usedAt !== null) {
-      return { ok: true, value: false };
-    }
-    vault.invites.splice(idx, 1);
-    await writeSecretsFile(secretsDir, file);
-    return { ok: true, value: true };
+    const value = await withSecretsLock(secretsDir, vaultId, async (s) => {
+      const idx = s.vault.invites.findIndex((i) => i.id === id);
+      if (idx === -1 || s.vault.invites[idx]!.usedAt !== null) return false;
+      s.vault.invites.splice(idx, 1);
+      return true;
+    });
+    return { ok: true, value };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -234,7 +328,7 @@ export async function checkInvite(
   now: () => Date = () => new Date(),
 ): Promise<boolean> {
   try {
-    const { vault } = await loadVaultSecrets(secretsDir, vaultId);
+    const vault = await peekSecrets(secretsDir, vaultId);
     const hash = sha256Hex(code);
     const at = now().getTime();
     return vault.invites.some(
@@ -247,7 +341,7 @@ export async function checkInvite(
 
 /**
  * Consume a code. Returns true only when the hash matches, the code is unused,
- * and it has not expired; a failed take writes nothing.
+ * and it has not expired; a failed take leaves the code unchanged.
  */
 export async function takeInvite(
   secretsDir: string,
@@ -256,16 +350,9 @@ export async function takeInvite(
   now: () => Date = () => new Date(),
 ): Promise<boolean> {
   try {
-    const { file, vault } = await loadVaultSecrets(secretsDir, vaultId);
-    const hash = sha256Hex(code);
-    const at = now().getTime();
-    const match = vault.invites.find((i) => i.codeHash === hash);
-    if (!match || match.usedAt !== null || Date.parse(match.expiresAt) <= at) {
-      return false;
-    }
-    match.usedAt = new Date(at).toISOString();
-    await writeSecretsFile(secretsDir, file);
-    return true;
+    return await withSecretsLock(secretsDir, vaultId, async (s) =>
+      s.takeInvite(code, now().getTime()),
+    );
   } catch {
     return false;
   }

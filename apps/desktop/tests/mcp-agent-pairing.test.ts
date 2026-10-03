@@ -579,6 +579,110 @@ describe("KAR-70 pairing: the pending cap", () => {
   });
 });
 
+// ── overlapping introductions ────────────────────────────────────────────────
+
+describe("KAR-70 pairing: overlapping first contacts", () => {
+  it("one code and two bearers in flight: one row, one Decision, the loser refused", async () => {
+    const ctx = await openDoors("kar70-race-different");
+    try {
+      const minted = await mintInvite(ctx.secretsDir, ctx.vaultId);
+      assert.equal(minted.ok, true);
+      const code = (minted as { value: { code: string } }).value.code;
+
+      // Both requests are sent without awaiting, so both reach the door before
+      // either has been introduced. The code is valid for both at send time.
+      const [a, b] = await Promise.all([
+        rpc(
+          ctx.invitePort,
+          {
+            ...auth("race-bearer-a-000000000000000001"),
+            "x-lifequest-name": "Racer A",
+            "x-lifequest-invite": code,
+          },
+          "initialize",
+          INIT_PARAMS,
+        ),
+        rpc(
+          ctx.invitePort,
+          {
+            ...auth("race-bearer-b-000000000000000002"),
+            "x-lifequest-name": "Racer B",
+            "x-lifequest-invite": code,
+          },
+          "initialize",
+          INIT_PARAMS,
+        ),
+      ]);
+
+      const statuses = [a.status, b.status].sort();
+      // Exactly one introduction is filed; the other is told the code is dead.
+      assert.deepEqual(statuses, [200, 401]);
+      const loser = a.status === 401 ? a : b;
+      assert.deepEqual(errorOf(loser.body), {
+        code: "INVITE_INVALID",
+        message: "Invite code is no longer valid",
+      });
+      record("race-two-bearers-one-code", errorOf(loser.body).code);
+
+      const agents = await listConnectedAgents(ctx.root);
+      const rows = (agents as { value: Record<string, unknown>[] }).value;
+      assert.equal(rows.length, 1, "one code must not introduce two agents");
+      const files = await decisionFiles(ctx.root);
+      assert.equal(files.length, 1, "one row must mean exactly one Decision");
+    } finally {
+      await ctx.doors.close();
+    }
+  });
+
+  it("the same bearer twice in flight still creates one row and one Decision", async () => {
+    const ctx = await openDoors("kar70-race-same");
+    try {
+      const minted = await mintInvite(ctx.secretsDir, ctx.vaultId);
+      assert.equal(minted.ok, true);
+      const code = (minted as { value: { code: string } }).value.code;
+      const headers = {
+        ...auth("race-same-bearer-00000000000001"),
+        "x-lifequest-name": "Twin",
+        "x-lifequest-invite": code,
+      };
+
+      const [a, b] = await Promise.all([
+        rpc(ctx.invitePort, headers, "initialize", INIT_PARAMS),
+        rpc(ctx.invitePort, headers, "initialize", INIT_PARAMS),
+      ]);
+
+      // Both are the same agent, so both succeed against the one row.
+      assert.equal(a.status, 200);
+      assert.equal(b.status, 200);
+      record("race-same-bearer", "ACCEPTED");
+
+      const agents = await listConnectedAgents(ctx.root);
+      const rows = (agents as { value: Record<string, unknown>[] }).value;
+      assert.equal(rows.length, 1, "one bearer must create one row");
+      const files = await decisionFiles(ctx.root);
+      assert.equal(files.length, 1, "one bearer must file one Decision");
+
+      // The loser of the pair did not spend a second code: the same code is
+      // now dead, not resurrected.
+      const reused = await rpc(
+        ctx.invitePort,
+        {
+          ...auth("race-third-bearer-00000000000003"),
+          "x-lifequest-name": "Third",
+          "x-lifequest-invite": code,
+        },
+        "initialize",
+        INIT_PARAMS,
+      );
+      record("race-code-spent-once", errorOf(reused.body).code);
+      assert.equal(reused.status, 401);
+      assert.equal(errorOf(reused.body).code, "INVITE_INVALID");
+    } finally {
+      await ctx.doors.close();
+    }
+  });
+});
+
 // ── the artifact ─────────────────────────────────────────────────────────────
 
 describe("KAR-70 pairing: the run artifact", () => {
@@ -619,6 +723,9 @@ describe("KAR-70 pairing: the run artifact", () => {
         "cap-local-21st",
         "cap-invite-21st",
         "cap-invite-code-survives",
+        "race-two-bearers-one-code",
+        "race-same-bearer",
+        "race-code-spent-once",
       ]) {
         assert.ok(names.includes(expected), `pairing-e2e.json is missing scenario ${expected}`);
       }

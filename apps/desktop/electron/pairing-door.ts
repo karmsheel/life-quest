@@ -24,6 +24,8 @@ import {
   fingerprintOf,
   getConnectedAgentByFingerprint,
   introduceConnectedAgent,
+  removeConnectedAgent,
+  removeDecision,
   PENDING_PAIRING_CAP,
   type Actor as VaultActor,
   type ConnectedAgent,
@@ -31,9 +33,8 @@ import {
 import {
   checkInvite,
   companionTokenOf,
-  rememberBearer,
   resolveBearer,
-  takeInvite,
+  withSecretsLock,
 } from "./pairing-secrets.ts";
 
 export const LOCAL_MCP_PORT = 8643;
@@ -45,6 +46,9 @@ const MIN_BEARER_LENGTH = 22;
 const MAX_NAME_LENGTH = 80;
 
 type DoorKind = "local" | "invite";
+
+/** KAR-70: the actor the live MCP door already acts as. Not a new one. */
+const COMPANION_ACTOR: VaultActor = { type: "agent", id: "companion", name: "Hermes" };
 
 type AuthCode =
   | "AUTH_REQUIRED"
@@ -87,8 +91,10 @@ function errorBody(code: string, message: string): string {
   return JSON.stringify({ error: { code, message } });
 }
 
-function writeAuthFailure(res: ServerResponse, code: AuthCode): void {
-  const body = errorBody(code, AUTH_MESSAGES[code]);
+function writeAuthFailure(res: ServerResponse, code: AuthCode, message?: string): void {
+  // The fixed strings are the contract. `message` only carries the underlying
+  // reason for a failure that has no specified message of its own.
+  const body = errorBody(code, message ?? AUTH_MESSAGES[code]);
   res.writeHead(AUTH_STATUS[code], {
     "content-type": "application/json",
     "content-length": Buffer.byteLength(body),
@@ -158,7 +164,7 @@ type Authorized =
 async function authorize(
   ctx: DoorContext,
   req: IncomingMessage,
-): Promise<Authorized | { ok: false; code: AuthCode }> {
+): Promise<Authorized | { ok: false; code: AuthCode; message?: string }> {
   const bearer = bearerOf(req);
   if (bearer.length < MIN_BEARER_LENGTH) {
     return { ok: false, code: "AUTH_REQUIRED" };
@@ -183,6 +189,8 @@ async function authorize(
 
   // A new introduction. On the invite door the code is checked before the
   // name, so an unknown code is reported even when the name is also missing.
+  // This check is only a cheap pre-filter; the decision is made again under
+  // the secrets lock, which is the one that has to hold.
   let inviteCode: string | null = null;
   if (ctx.door === "invite") {
     const code = header(req, "x-lifequest-invite").trim();
@@ -200,43 +208,78 @@ async function authorize(
     return { ok: false, code: "NAME_REQUIRED" };
   }
 
-  // KAR-70: introductions serialize per secretsDir so two simultaneous first
-  // contacts with one bearer create one row and one Decision.
-  return serialize(`${ctx.secretsDir}:${ctx.vaultId}`, async () => {
-    const fingerprint = fingerprintOf(bearer).slice(0, 12);
+  const fingerprint = fingerprintOf(bearer).slice(0, 12);
+
+  // KAR-70: the whole introduction runs inside one secrets lock. Inside it the
+  // bearer is re-resolved and the code re-checked, because an overlapping first
+  // contact may have introduced this bearer or spent this code while this
+  // request was queued. Deciding either outside the lock is what let one code
+  // file two agents.
+  return withSecretsLock(ctx.secretsDir, ctx.vaultId, async (s) => {
+    const at = ctx.now().getTime();
+
+    // Someone else may have introduced this same bearer while we waited. Then it
+    // is not a pairing attempt, and the code it presented stays unspent.
+    const nowKnown = s.resolveBearer(bearer);
+    if (nowKnown) {
+      const row = await getConnectedAgentByFingerprint(ctx.root, nowKnown);
+      if (row.ok && row.value) {
+        return { ok: true, kind: "agent" as const, agent: row.value };
+      }
+    }
+
+    // The code may have been spent by the other first contact. Nothing is
+    // filed, and this caller is told the code is dead rather than that it
+    // succeeded.
+    if (ctx.door === "invite" && inviteCode && !s.hasInvite(inviteCode, at)) {
+      return { ok: false, code: "INVITE_INVALID" as const };
+    }
+
     const res = await introduceConnectedAgent(ctx.root, {
       name,
       fingerprint,
       door: ctx.door,
     });
     if (!res.ok) {
+      // Only a blank name is the caller's to fix. Every other failure is ours,
+      // so it is not reported as a name problem — that would send the client
+      // away to "fix" a name that was fine.
       return res.error === "PAIRING_LIMIT"
-        ? ({ ok: false, code: "PAIRING_LIMIT" } as const)
-        : ({ ok: false, code: "NAME_REQUIRED" } as const);
+        ? ({ ok: false, code: "PAIRING_LIMIT" as const })
+        : res.error === "name is required"
+          ? ({ ok: false, code: "NAME_REQUIRED" as const })
+          : ({ ok: false, code: "AUTH_REQUIRED" as const, message: res.error });
     }
+
     const agent = res.value.agent;
-    await rememberBearer(ctx.secretsDir, ctx.vaultId, agent.fingerprint, bearer);
-    if (inviteCode) {
-      await takeInvite(ctx.secretsDir, ctx.vaultId, inviteCode, ctx.now);
+
+    // From here the introduction exists, so it has to be finished. A failure
+    // takes the row and its Decision back out rather than leaving the caller
+    // with a 200 over a half-written introduction.
+    s.rememberBearer(agent.fingerprint, bearer);
+    if (inviteCode && !s.takeInvite(inviteCode, at)) {
+      // The code was spendable a moment ago and this lock is the only writer,
+      // so a refusal here means the file changed underneath us.
+      await rollbackIntroduction(ctx.root, agent.id, res.value.decisionId);
+      return {
+        ok: false,
+        code: "INVITE_INVALID" as const,
+        message: "Invite code could not be consumed",
+      };
     }
-    return { ok: true, kind: "agent", agent } as const;
+
+    return { ok: true, kind: "agent" as const, agent };
   });
 }
 
-/** A promise chain per secretsDir; one introduction at a time. */
-const introductionQueues = new Map<string, Promise<unknown>>();
-
-function serialize<T>(key: string, work: () => Promise<T>): Promise<T> {
-  const prior = introductionQueues.get(key) ?? Promise.resolve();
-  const next = prior.then(work, work);
-  introductionQueues.set(
-    key,
-    next.then(
-      () => undefined,
-      () => undefined,
-    ),
-  );
-  return next;
+/** Undo a partially completed introduction. */
+async function rollbackIntroduction(
+  root: string,
+  agentId: string,
+  decisionId: string,
+): Promise<void> {
+  await removeConnectedAgent(root, agentId);
+  await removeDecision(root, decisionId);
 }
 
 // ── the door ─────────────────────────────────────────────────────────────────
@@ -300,9 +343,22 @@ export async function startPairingDoors(opts: {
     }
 
     const ctx: DoorContext = { root, vaultId, secretsDir, door: kind, now };
-    const auth = await authorize(ctx, req);
+    let auth: Awaited<ReturnType<typeof authorize>>;
+    try {
+      auth = await authorize(ctx, req);
+    } catch (e) {
+      // The secrets write at the end of the lock can fail. Answer rather than
+      // leave the socket open, and do not claim the introduction succeeded.
+      sendJson(res, 500, {
+        error: {
+          code: "INTERNAL",
+          message: `Pairing failed: ${e instanceof Error ? e.message : String(e)}`,
+        },
+      });
+      return;
+    }
     if (!auth.ok) {
-      writeAuthFailure(res, auth.code);
+      writeAuthFailure(res, auth.code, auth.message);
       return;
     }
 
@@ -358,7 +414,10 @@ function portInUseMessage(kind: DoorKind, port: number): string {
 
 function buildServer(ctx: DoorContext, auth: Authorized): McpServer {
   if (auth.kind === "companion") {
-    return fullServer(ctx, { type: "user" });
+    // The same actor executeTool already defaults to. A user actor would drop
+    // the companion's document-lock exemption and stop naming Hermes in the
+    // life log — a change to today's write rules, which the spec keeps.
+    return fullServer(ctx, COMPANION_ACTOR);
   }
   const gated = statusToolCode(auth.agent.status);
   if (gated) return gatedServer(gated);

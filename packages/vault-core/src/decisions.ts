@@ -672,8 +672,14 @@ async function applyApprovedBody(
       const { markConnectedAgent } = await import("./connected-agents.ts");
       const res = await markConnectedAgent(rootPath, decision.target.agentId, "active");
       if (!res.ok) {
-        // The row is gone, so no retry can ever resolve this Decision.
-        return { ok: false, error: "Agent not found", terminal: true };
+        // Only a row that is actually gone is terminal. A transient write
+        // failure must leave the Decision pending: resolveDecision records a
+        // terminal failure as a rejection, which would strand the roster row
+        // at `pending` with no Decision left to activate it.
+        if (/^Agent not found/.test(res.error)) {
+          return { ok: false, error: "Agent not found", terminal: true };
+        }
+        return { ok: false, error: res.error, terminal: false };
       }
       return { ok: true, value: undefined };
     }

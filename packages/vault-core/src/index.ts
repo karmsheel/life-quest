@@ -19,6 +19,8 @@ export {
   introduceConnectedAgent,
   listConnectedAgents,
   markConnectedAgent,
+  removeConnectedAgent,
+  removeDecision,
   updateConnectedAgentGrant,
 } from "./connected-agents.ts";
 export type { ConnectedAgent, ConnectedAgentStatus } from "./connected-agents.ts";

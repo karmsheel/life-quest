@@ -134,8 +134,50 @@ export async function introduceConnectedAgent(
     if (!decisionId.ok) return decisionId;
 
     data.agents.push(agent);
-    await writeConnectedAgents(rootPath, data);
+    try {
+      await writeConnectedAgents(rootPath, data);
+    } catch (e) {
+      // The Decision is filed but nothing points at it: approving it later
+      // would land on the terminal "Agent not found" path. Take it back out
+      // rather than leave an orphan the operator can resolve into a rejection.
+      await deletePairingDecision(rootPath, decisionId.value);
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
     return { ok: true, value: { agent, decisionId: decisionId.value } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * KAR-70: undo an introduction. The invite door calls this when it cannot
+ * complete its own half of the introduction (the bearer hash, or the code
+ * consume), so a partial write never survives as a pending Decision.
+ */
+export async function removeConnectedAgent(
+  rootPath: string,
+  id: string,
+): Promise<Result<true>> {
+  try {
+    const data = await readConnectedAgents(rootPath);
+    const idx = data.agents.findIndex((a) => a.id === id);
+    if (idx === -1) return { ok: true, value: true };
+    data.agents.splice(idx, 1);
+    await writeConnectedAgents(rootPath, data);
+    return { ok: true, value: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Remove one Decision file. Used only to roll back a failed introduction. */
+export async function removeDecision(
+  rootPath: string,
+  decisionId: string,
+): Promise<Result<true>> {
+  try {
+    await deletePairingDecision(rootPath, decisionId);
+    return { ok: true, value: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -250,4 +292,13 @@ async function filePairingDecision(
   });
   if (!res.ok) return { ok: false, error: res.error };
   return { ok: true, value: res.value.id };
+}
+
+async function deletePairingDecision(rootPath: string, decisionId: string): Promise<void> {
+  const paths = vaultPaths(rootPath);
+  try {
+    await fs.unlink(paths.decisionJson(decisionId));
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
 }
