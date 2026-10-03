@@ -62,7 +62,8 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       isDayTemplateExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isProjectExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isDatabaseRowExplicitTarget(explicitTarget as Record<string, unknown>) ||
-      isDatabaseExplicitTarget(explicitTarget as Record<string, unknown>))
+      isDatabaseExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isAgentPairingExplicitTarget(explicitTarget as Record<string, unknown>))
   ) {
     const t = explicitTarget as Record<string, unknown>;
     if (t.type === "review") {
@@ -115,8 +116,17 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
         domainSlug: String(t.domainSlug),
         databaseId: String(t.databaseId),
       };
-    } else {
+    } else if (t.type === "library") {
+      // The library branch used to be the fallthrough. KAR-70 replaces that
+      // fallthrough with a throw, so library now needs a branch of its own.
       target = { type: "library", id: String(t.id) };
+    } else if (t.type === "agent-pairing") {
+      target = { type: "agent-pairing", agentId: String(t.agentId) };
+    } else {
+      // KAR-70: an explicit target that got past the guard but has no branch
+      // here is a target type this build does not know. Mapping it to a library
+      // note would file it against a document the operator never named.
+      throw new Error(`Unknown decision target type: ${String(t.type)}`);
     }
   } else if (
     typeof raw.documentKind === "string" &&
@@ -274,6 +284,10 @@ function isDatabaseRowExplicitTarget(raw: Record<string, unknown>): boolean {
   );
 }
 
+function isAgentPairingExplicitTarget(raw: Record<string, unknown>): boolean {
+  return raw.type === "agent-pairing" && typeof raw.agentId === "string" && raw.agentId.length > 0;
+}
+
 function isDatabaseExplicitTarget(raw: Record<string, unknown>): boolean {
   return (
     raw.type === "database" &&
@@ -390,6 +404,10 @@ export async function createDecision(
       if (!input.target.domainSlug.trim() || !input.target.databaseId.trim()) {
         return { ok: false, error: "domainSlug and databaseId are required" };
       }
+    } else if (input.target.type === "agent-pairing") {
+      if (!input.target.agentId.trim()) {
+        return { ok: false, error: "agentId is required" };
+      }
     } else if (
       input.target.type === "goal" ||
       input.target.type === "day-template" ||
@@ -438,6 +456,10 @@ export async function createDecision(
     ) {
       // Neither goals, day templates, nor projects are lockable or pre-existing files.
       // A project create is allowed to name a file that does not exist yet: approve creates it.
+      docLocked = false;
+      domainSlugForLog = null;
+    } else if (input.target.type === "agent-pairing") {
+      // A roster row is not a document: nothing to lock, no domain for the log.
       docLocked = false;
       domainSlugForLog = null;
     } else if (input.target.type === "review") {
@@ -568,10 +590,13 @@ export async function createDecision(
                             ? libraryNote.value.domainSlugs
                             : (input.domainSlugs ?? []);
 
-    const title = `Proposed change to ${documentTargetLabel(
-      input.target,
-      input.proposedTitle ?? "",
-    )}`;
+    // KAR-70: the pairing Decision title is already a sentence. Wrapping it in
+    // "Proposed change to" would make the inbox read "Proposed change to
+    // Finance bot".
+    const title =
+      input.target.type === "agent-pairing" && input.proposedTitle
+        ? input.proposedTitle
+        : `Proposed change to ${documentTargetLabel(input.target, input.proposedTitle ?? "")}`;
 
     const paths = vaultPaths(rootPath);
     const id = randomUUID();
@@ -641,6 +666,17 @@ async function applyApprovedBody(
   decision: DecisionRecord,
 ): Promise<ApplyOutcome> {
   try {
+    if (decision.target.type === "agent-pairing") {
+      // Approval only flips the row to active. It must not touch access,
+      // domainSlugs, or schedule: those are operator grants, set in Personnel.
+      const { markConnectedAgent } = await import("./connected-agents.ts");
+      const res = await markConnectedAgent(rootPath, decision.target.agentId, "active");
+      if (!res.ok) {
+        // The row is gone, so no retry can ever resolve this Decision.
+        return { ok: false, error: "Agent not found", terminal: true };
+      }
+      return { ok: true, value: undefined };
+    }
     if (decision.target.type === "review") {
       const res = await applyLockedReviewBody(
         rootPath,

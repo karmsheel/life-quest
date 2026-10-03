@@ -9,6 +9,8 @@ export function vaultPaths(root: string) {
     lifequestDir: path.join(rootPath, ".lifequest"),
     settingsJson: path.join(rootPath, ".lifequest", "settings.json"),
     agentsJson: path.join(rootPath, ".lifequest", "agents.json"),
+    // KAR-70: the connected-agent roster. No secrets live here.
+    connectedAgentsJson: path.join(rootPath, ".lifequest", "connected-agents.json"),
     logJsonl: path.join(rootPath, ".lifequest", "log.jsonl"),
     decisionsDir: path.join(rootPath, ".lifequest", "decisions"),
     signalChainDir: path.join(rootPath, ".lifequest", "signal-chain"),

@@ -50,6 +50,12 @@ export function documentTargetLabel(
   if (target.type === "database") {
     return fallbackTitle || `Database in ${target.domainSlug}`;
   }
+  // KAR-70: a pairing Decision is named by the caller it introduces, which the
+  // proposer supplies as `Connect <name>`. The fallback only shows for a
+  // record that somehow lost its title.
+  if (target.type === "agent-pairing") {
+    return fallbackTitle || "Agent pairing";
+  }
   return fallbackTitle;
 }
 

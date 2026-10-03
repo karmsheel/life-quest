@@ -12,6 +12,16 @@ export * from "./domain-documents.ts";
 export * from "./decisions.ts";
 export * from "./decision-labels.ts";
 export * from "./agents.ts";
+export {
+  PENDING_PAIRING_CAP,
+  fingerprintOf,
+  getConnectedAgentByFingerprint,
+  introduceConnectedAgent,
+  listConnectedAgents,
+  markConnectedAgent,
+  updateConnectedAgentGrant,
+} from "./connected-agents.ts";
+export type { ConnectedAgent, ConnectedAgentStatus } from "./connected-agents.ts";
 export * from "./signal-chain.ts";
 export * from "./domain-lens.ts";
 export * from "./library-documents.ts";
