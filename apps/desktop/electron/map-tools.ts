@@ -335,6 +335,14 @@ async function executeConnectedTool(
 
   if (name === "get_review" || name === "list_reviews") {
     const result = await executeReviewTool(root, actor, name, rec);
+    // Before the generic grant-error check, because the engine's own NOT_FOUND
+    // is error-shaped too and would pass straight through. The engine says
+    // "Review file not found" for a period with no review and succeeds for a
+    // period whose scopes are all outside the grant; passing that payload
+    // through would tell the agent which of the two it hit, so a missing file is
+    // answered in the grant's own words instead.
+    const missed = (result as { error?: { code?: string } }).error;
+    if (missed?.code === "NOT_FOUND") return grantRefusal("NOT_FOUND");
     if (isGrantError(result)) return result;
     const headings = await reviewHeadingMap(root);
     if (name === "get_review") {

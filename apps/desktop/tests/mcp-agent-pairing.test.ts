@@ -1468,6 +1468,35 @@ describe("KAR-70 pairing: the domain read grant", () => {
       "a review with no granted scope is missing, not an empty success",
     );
 
+    // A period with no review file at all must be indistinguishable from a
+    // review that exists but shares no scope with the grant. The engine answers
+    // the first with its own "Review file not found"; the difference between the
+    // two payloads is what tells an agent the period was reviewed.
+    const noFile = await executeTool(
+      f.ctx.root,
+      null,
+      "get_review",
+      { cadence: "daily", period: "1999-01-01" },
+      undefined,
+      f.grant,
+    );
+    record("grant-get-review-no-file", codeOf(noFile));
+    assert.deepEqual(
+      noFile,
+      NOT_FOUND,
+      "a missing review file uses the grant's NOT_FOUND shape",
+    );
+    assert.notEqual(
+      (noFile as { error: { message: string } }).error.message,
+      "Review file not found",
+      "the engine's message would tell the agent the file is missing rather than ungranted",
+    );
+    assert.deepEqual(
+      noFile,
+      empty,
+      "a missing file and an ungranted review must be the same answer",
+    );
+
     // The same grant sees nothing in the index either.
     const emptyList = (await executeTool(
       f.ctx.root,
@@ -1708,6 +1737,7 @@ describe("KAR-70 pairing: the run artifact", () => {
         "grant-get-review",
         "grant-list-reviews",
         "grant-get-review-missing",
+        "grant-get-review-no-file",
         "grant-review-refused-write_review",
         "grant-review-refused-mark_review_done",
         "grant-review-refused-unlock_review",
