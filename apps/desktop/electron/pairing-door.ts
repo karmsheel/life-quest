@@ -19,6 +19,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod";
 import {
   ALL_TOOL_DEFS,
   effectiveGrant,
@@ -453,6 +454,13 @@ function hasLiveGrant(grant: ConnectedGrant): boolean {
  * KAR-70: `tools/list` for a connected agent carries only the tools its grant
  * allows, so an agent is never told a tool exists that it may not call. A
  * companion gets the whole list, unchanged.
+ *
+ * Every tool stays registered, and the list handler filters. That matters: a
+ * call to a hidden tool still reaches `executeTool`, which answers it with the
+ * grant's own `FORBIDDEN` and writes nothing. Unregistering it instead would
+ * hand back a protocol-level "tool not found", which tells the agent the tool
+ * does not exist rather than that it may not call it, and is not a code in the
+ * grant's vocabulary.
  */
 function fullServer(
   ctx: DoorContext,
@@ -460,13 +468,17 @@ function fullServer(
   grant?: ConnectedGrant,
 ): McpServer {
   const mcp = new McpServer({ name: "lifequest-map", version: "0.1.0" });
-  const defs = grant
-    ? ALL_TOOL_DEFS.filter((def) => toolAllowed(def.name, grant) === "allow")
-    : ALL_TOOL_DEFS;
-  for (const def of defs) {
+  for (const def of ALL_TOOL_DEFS) {
     mcp.registerTool(
       def.name,
-      { description: def.description, inputSchema: {} },
+      // A loose object, not `{}`. The SDK validates arguments against this
+      // schema before the handler sees them, and a plain empty object compiles
+      // to a Zod object that strips every key — so a call carrying `year` or
+      // `title` would reach executeTool with nothing at all. Looseness keeps
+      // the arguments whole; executeTool still validates their shapes and
+      // answers MALFORMED itself, which is the vocabulary this door already
+      // speaks.
+      { description: def.description, inputSchema: z.looseObject({}) },
       async (args) => {
         // Imported here, not at module scope: map-tools reaches Electron's
         // safeStorage through secrets, so a static import would make this file
@@ -483,6 +495,16 @@ function fullServer(
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       },
     );
+  }
+  if (grant) {
+    const allowed = new Set(
+      ALL_TOOL_DEFS.filter((def) => toolAllowed(def.name, grant) === "allow").map(
+        (def) => def.name,
+      ),
+    );
+    mcp.server.setRequestHandler(ListToolsRequestSchema, () => ({
+      tools: ALL_TOOL_DEFS.filter((def) => allowed.has(def.name)),
+    }));
   }
   return mcp;
 }

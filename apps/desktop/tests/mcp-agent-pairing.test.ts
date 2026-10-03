@@ -29,7 +29,9 @@ import {
   listDatabases,
   listRows,
   loadGoals,
+  loadMapState,
   markConnectedAgent,
+  mondayOnOrBefore,
   readLog,
   resolveDecision,
   setFinanceCaptureAccount,
@@ -2180,6 +2182,397 @@ describe("KAR-70 pairing: the domain write grant", () => {
   });
 });
 
+// ── the schedule grant ───────────────────────────────────────────────────────
+
+describe("KAR-70 pairing: the schedule grant", () => {
+  type Fixture = {
+    ctx: Awaited<ReturnType<typeof openDoors>>;
+    /** The bearer and headers the fixture introduced the agent with. */
+    bearer: string;
+    headers: Record<string, string>;
+    agentId: string;
+    agentName: string;
+    /** The roster id as `updateConnectedAgent` and `effectiveGrant` see it. */
+    grantFor: (patch: Partial<ConnectedGrant>) => Promise<ConnectedGrant>;
+    financialGoal: string;
+    seedTask: string;
+    /** Monday of the week `get_week` and `get_state` resolve by default. */
+    monday: string;
+  };
+
+  let doorsHandle: Doors | null = null;
+
+  /**
+   * A vault with one financial goal, a task on it dated today, and a live day
+   * for today, so "Schedule off empties the pack" is a statement about the
+   * projection rather than about an empty vault.
+   */
+  async function buildFixture(): Promise<Fixture> {
+    const ctx = await openDoors("kar70-schedule");
+    doorsHandle = ctx.doors;
+    const { root } = ctx;
+
+    const goal = await applyGoalsCommand(root, {
+      type: "createGoal",
+      name: "Save more",
+      domainSlug: "financial",
+    });
+    assert.equal(goal.ok, true, `createGoal: ${JSON.stringify(goal)}`);
+
+    const today = todayLocalIso();
+    const created = await applyMapCommand(
+      root,
+      {
+        type: "createTask",
+        title: "Seed task",
+        links: { goalId: goal.value[0]!.id, date: today },
+      },
+      "user",
+      today,
+      USER_ACTOR,
+    );
+    assert.equal(created.ok, true, `seed task: ${JSON.stringify(created)}`);
+    const liveDay = await applyMapCommand(
+      root,
+      { type: "ensureLiveDay", date: today },
+      "user",
+      today,
+      USER_ACTOR,
+    );
+    assert.equal(liveDay.ok, true, `seed live day: ${JSON.stringify(liveDay)}`);
+
+    const bearer = "schedule-door-bearer-000000001";
+    const headers = { ...auth(bearer), "x-lifequest-name": "Schedule bot" };
+    assert.equal((await rpc(ctx.localPort, headers, "initialize", INIT_PARAMS)).status, 200);
+    let pairing: Record<string, unknown> | null = null;
+    for (const file of await decisionFiles(root)) {
+      const candidate = await readJson(path.join(root, ".lifequest", "decisions", file));
+      if ((candidate.target as { type?: string }).type === "agent-pairing") {
+        pairing = candidate;
+        break;
+      }
+    }
+    assert.ok(pairing, "the introduction must have filed a pairing Decision");
+    const agentId = (pairing.target as { agentId: string }).agentId;
+    assert.equal((await resolveDecision(root, pairing.id as string, "approved")).ok, true);
+
+    const assigned = await updateConnectedAgent(root, agentId, {
+      access: "read",
+      domainSlugs: ["financial"],
+      schedule: false,
+    });
+    assert.equal(assigned.ok, true, `updateConnectedAgent: ${JSON.stringify(assigned)}`);
+    assert.equal(assigned.value.schedule, false);
+
+    /**
+     * The roster as the door computes it for the next call. Reading the row
+     * back rather than reusing a local copy is the point: the switch under test
+     * is the one the operator set, through the same path the door uses.
+     */
+    const grantFor = async (patch: Partial<ConnectedGrant>): Promise<ConnectedGrant> => {
+      if (Object.keys(patch).length > 0) {
+        const updated = await updateConnectedAgent(root, agentId, patch);
+        assert.equal(updated.ok, true, `updateConnectedAgent: ${JSON.stringify(updated)}`);
+      }
+      const listed = (await listConnectedAgents(root)) as {
+        value: Record<string, unknown>[];
+      };
+      const row = listed.value.find((r) => r.id === agentId)!;
+      return {
+        agentId: String(row.id),
+        name: String(row.name),
+        access: row.access as "read" | "write",
+        domainSlugs: [...(row.domainSlugs as string[])],
+        schedule: row.schedule === true,
+      };
+    };
+
+    return {
+      ctx,
+      bearer,
+      headers,
+      agentId,
+      agentName: "Schedule bot",
+      grantFor,
+      financialGoal: goal.value[0]!.id,
+      seedTask: "Seed task",
+      monday: mondayOnOrBefore(today),
+    };
+  }
+
+  function codeOf(result: unknown): string {
+    const err = (result as { error?: { code?: string } }).error;
+    return err?.code ?? "";
+  }
+
+  async function call(
+    name: string,
+    args: Record<string, unknown> = {},
+    grant: ConnectedGrant,
+  ): Promise<unknown> {
+    return executeTool(f.ctx.root, null, name, args, undefined, grant);
+  }
+
+  const FORBIDDEN = { error: { code: "FORBIDDEN", message: "Outside this agent's grant" } };
+
+  let f: Fixture;
+
+  before(async () => {
+    f = await buildFixture();
+  });
+  after(async () => {
+    await doorsHandle?.close();
+  });
+
+  it("Schedule off keeps tasks, the live week, and the day templates away", async () => {
+    const grant = await f.grantFor({ access: "read", domainSlugs: ["financial"], schedule: false });
+    const year = Number(todayLocalIso().slice(0, 4));
+    const before = await walkText(f.ctx.root);
+
+    for (const [name, args] of [
+      ["get_week", { year, monday: f.monday }],
+      ["create_task", { title: "not yours" }],
+      ["create_day_type", { name: "Not yours", color: "teal" }],
+      ["set_week_day_items", { year, monday: f.monday, weekday: 0, items: [] }],
+    ] as [string, Record<string, unknown>][]) {
+      const result = await call(name, args, grant);
+      record(`schedule-off-${name}`, codeOf(result));
+      assert.deepEqual(result, FORBIDDEN, `${name} must be FORBIDDEN while Schedule is off`);
+    }
+
+    const state = (await call("get_state", {}, grant)) as { state: Record<string, unknown> };
+    assert.equal("tasks" in state.state, false, "get_state must have no tasks key");
+    assert.equal("week" in state.state, false, "get_state must have no week key");
+
+    const pack = (await call(
+      "get_period_pack",
+      { cadence: "daily", period: todayLocalIso(), scope: "financial" },
+      grant,
+    )) as { pack: { tasks: unknown[]; liveDays: unknown[] } };
+    assert.deepEqual(pack.pack.tasks, [], "Schedule off empties the pack's tasks");
+    assert.deepEqual(pack.pack.liveDays, [], "Schedule off empties the pack's live days");
+
+    assert.equal(await walkText(f.ctx.root), before, "a refused call must not write");
+    record("schedule-off-vault-unchanged", "UNCHANGED");
+  });
+
+  it("Schedule on and read-only reads the week and posts nothing", async () => {
+    const grant = await f.grantFor({ access: "read", domainSlugs: ["financial"], schedule: true });
+    const year = Number(todayLocalIso().slice(0, 4));
+
+    const week = (await call("get_week", { year, monday: f.monday }, grant)) as {
+      week: { monday: string };
+    };
+    record("schedule-on-get-week", codeOf(week) || "READ");
+    assert.equal(codeOf(week), "", `get_week must read: ${JSON.stringify(week)}`);
+    assert.equal(week.week.monday, f.monday);
+
+    const state = (await call("get_state", {}, grant)) as {
+      state: { tasks?: { title: string }[]; week?: { monday: string } };
+    };
+    record("schedule-on-get-state", codeOf(state) || "READ");
+    assert.ok(Array.isArray(state.state.tasks), "get_state must carry tasks");
+    assert.ok(
+      state.state.tasks!.some((t) => t.title === f.seedTask),
+      "the seeded task must be in the state",
+    );
+    assert.ok(state.state.week, "get_state must carry the week");
+    assert.equal(state.state.week!.monday, f.monday);
+
+    const pack = (await call(
+      "get_period_pack",
+      { cadence: "daily", period: todayLocalIso(), scope: "financial" },
+      grant,
+    )) as { pack: { tasks: { title: string }[]; liveDays: { date: string }[] } };
+    record("schedule-on-pack", codeOf(pack) || "READ");
+    assert.ok(
+      pack.pack.tasks.some((t) => t.title === f.seedTask),
+      "Schedule on leaves the pack's tasks in place",
+    );
+    assert.ok(pack.pack.liveDays.length > 0, "and its live days");
+    // The overall-only fields stay gone whatever Schedule says.
+    assert.equal(pack.pack.previousReview, null);
+    assert.deepEqual(pack.pack.domainSections, []);
+
+    const decisionsBefore = await decisionFiles(f.ctx.root);
+    for (const [name, args] of [
+      ["create_task", { title: "read-only agent task" }],
+      ["create_day_type", { name: "Read only day", color: "teal" }],
+    ] as [string, Record<string, unknown>][]) {
+      const result = await call(name, args, grant);
+      record(`schedule-read-refused-${name}`, codeOf(result));
+      assert.deepEqual(
+        result,
+        FORBIDDEN,
+        `${name} needs Write as well as Schedule`,
+      );
+    }
+    assert.deepEqual(
+      await decisionFiles(f.ctx.root),
+      decisionsBefore,
+      "a refused write files nothing",
+    );
+    record("schedule-read-refused-unfiled", "UNFILED");
+  });
+
+  it("Write plus Schedule posts a task at once and still files a day template", async () => {
+    const grant = await f.grantFor({ access: "write", domainSlugs: ["financial"], schedule: true });
+    const year = Number(todayLocalIso().slice(0, 4));
+    const monday = f.monday;
+
+    const posted = await call(
+      "create_task",
+      { title: "Agent task", links: { goalId: f.financialGoal, date: todayLocalIso() } },
+      grant,
+    );
+    record("schedule-write-create-task", codeOf(posted) || "APPLIED");
+    assert.equal(codeOf(posted), "", `create_task must apply: ${JSON.stringify(posted)}`);
+
+    const logged = await readLog(f.ctx.root);
+    assert.equal(logged.ok, true);
+    const line = logged.ok
+      ? logged.value.find(
+          (e) => e.type === "map.task.created" && (e.payload as { title?: string })?.title === "Agent task",
+        )
+      : undefined;
+    assert.ok(line, "the posted task must have a life-log line");
+    assert.deepEqual(line.actor, { type: "agent", id: f.agentId, name: f.agentName });
+    record("schedule-write-create-task-actor", "ROSTER_AGENT");
+
+    // A live-week edit applies at once too, and leaves the week detached so
+    // the change survives the next read.
+    const dayItems = await call(
+      "set_week_day_items",
+      { year, monday, weekday: 0, items: [{ id: "i1", text: "Walk" }] },
+      grant,
+    );
+    record("schedule-write-set-week-day-items", codeOf(dayItems) || "APPLIED");
+    assert.equal(codeOf(dayItems), "", `set_week_day_items: ${JSON.stringify(dayItems)}`);
+    const week = (await call("get_week", { year, monday }, grant)) as {
+      week: { days: { text: string }[][] };
+    };
+    assert.ok(
+      week.week.days[0]!.some((i) => i.text === "Walk"),
+      "the live-week edit must be in the resolved week",
+    );
+    record("schedule-write-week-applied", "APPLIED");
+
+    // The day-template tools are on the same switch, and still wait.
+    const decisionsBefore = await decisionFiles(f.ctx.root);
+    const dayTypesBefore = (await loadMapState(f.ctx.root)).value.dayTypes.map((d) => d.name);
+    const proposal = (await call(
+      "create_day_type",
+      { name: "Agent day type", color: "teal" },
+      grant,
+    )) as { decisionId?: string; status?: string };
+    record("schedule-write-create-day-type", proposal.decisionId ? "DECISION" : codeOf(proposal));
+    assert.ok(
+      proposal.decisionId,
+      `create_day_type must still file a Decision: ${JSON.stringify(proposal)}`,
+    );
+
+    const dayTypesAfter = (await loadMapState(f.ctx.root)).value.dayTypes.map((d) => d.name);
+    assert.deepEqual(
+      dayTypesAfter,
+      dayTypesBefore,
+      "the day type must not exist until the operator approves",
+    );
+    assert.equal(
+      (await decisionFiles(f.ctx.root)).length,
+      decisionsBefore.length + 1,
+      "and exactly one Decision was filed",
+    );
+
+    assert.equal(
+      (await resolveDecision(f.ctx.root, proposal.decisionId!, "approved")).ok,
+      true,
+    );
+    const approved = (await loadMapState(f.ctx.root)).value.dayTypes.map((d) => d.name);
+    assert.ok(
+      approved.includes("Agent day type"),
+      `approval is what creates the day type: ${JSON.stringify(approved)}`,
+    );
+    record("schedule-write-create-day-type-approved", "APPLIED");
+  });
+
+  it("Schedule on with no domains gets the schedule tools and no documents", async () => {
+    await f.grantFor({ access: "write", domainSlugs: [], schedule: true });
+    const year = Number(todayLocalIso().slice(0, 4));
+
+    const list = await rpc(f.ctx.localPort, f.headers, "tools/list");
+    const tools = ((list.body as { result?: { tools?: { name: string }[] } }).result?.tools ?? []).map(
+      (t) => t.name,
+    );
+    record("schedule-only-tools", tools.includes("get_week") ? "PRESENT" : "ABSENT");
+    assert.ok(tools.includes("get_week"), "Schedule alone must hand over get_week");
+    assert.ok(tools.includes("create_task"), "and create_task once Write is on");
+    assert.ok(tools.includes("create_day_type"), "and the day-template tools");
+    for (const absent of [
+      "get_doctrine",
+      "list_documents",
+      "get_document",
+      "list_databases",
+      "get_period_pack",
+      "create_year",
+      "set_about_me",
+    ]) {
+      assert.equal(tools.includes(absent), false, `${absent} must not be offered with no domain`);
+    }
+
+    // The door hides those tools, so a call for one is refused rather than
+    // answered. Either grant code is right; what must not happen is a document.
+    const doctrine = await rpc(f.ctx.localPort, f.headers, "tools/call", {
+      name: "get_doctrine",
+      arguments: {},
+    });
+    const code = toolError(doctrine.body).code;
+    record("schedule-only-get-doctrine", code);
+    assert.ok(
+      code === "FORBIDDEN" || code === "NO_GRANT",
+      `get_doctrine must be refused, not answered: ${code}`,
+    );
+    const text = (doctrine.body as { result?: { content?: { text?: string }[] } }).result?.content?.[0]
+      ?.text ?? "";
+    assert.equal(text.includes("why"), false, "no doctrine document may come back");
+
+    // The schedule read itself still works over the door.
+    const week = await rpc(f.ctx.localPort, f.headers, "tools/call", {
+      name: "get_week",
+      arguments: { year, monday: f.monday },
+    });
+    const weekText =
+      (week.body as { result?: { content?: { text?: string }[] } }).result?.content?.[0]?.text ?? "{}";
+    const weekPayload = JSON.parse(weekText) as {
+      week?: { monday: string };
+      error?: { code: string };
+    };
+    record("schedule-only-get-week", weekPayload.error?.code ?? "READ");
+    assert.equal(
+      weekPayload.error,
+      undefined,
+      `get_week over the door: ${weekText}`,
+    );
+    assert.equal(weekPayload.week?.monday, f.monday);
+
+    // NO_GRANT is for the row that reaches nothing at all: no domain, and
+    // Schedule off. Both switches off, and the row is inert.
+    await f.grantFor({ access: "read", domainSlugs: [], schedule: false });
+    const inert = await rpc(f.ctx.localPort, f.headers, "tools/call", {
+      name: "get_week",
+      arguments: {},
+    });
+    record("schedule-none-get-week", toolError(inert.body).code);
+    assert.equal(toolError(inert.body).code, "NO_GRANT");
+    const inertList = await rpc(f.ctx.localPort, f.headers, "tools/list");
+    assert.deepEqual(
+      (inertList.body as { result?: { tools?: unknown[] } }).result?.tools,
+      [],
+      "a row with no grant has an empty tool list",
+    );
+    record("schedule-none-tools", "EMPTY");
+  });
+});
+
 // ── the artifact ─────────────────────────────────────────────────────────────
 
 describe("KAR-70 pairing: the run artifact", () => {
@@ -2312,6 +2705,28 @@ describe("KAR-70 pairing: the run artifact", () => {
         "write-update-event-explicit-null",
         "write-update-goal-no-domain",
         "write-update-goal-no-domain-approved",
+        "schedule-off-get_week",
+        "schedule-off-create_task",
+        "schedule-off-create_day_type",
+        "schedule-off-set_week_day_items",
+        "schedule-off-vault-unchanged",
+        "schedule-on-get-week",
+        "schedule-on-get-state",
+        "schedule-on-pack",
+        "schedule-read-refused-create_task",
+        "schedule-read-refused-create_day_type",
+        "schedule-read-refused-unfiled",
+        "schedule-write-create-task",
+        "schedule-write-create-task-actor",
+        "schedule-write-set-week-day-items",
+        "schedule-write-week-applied",
+        "schedule-write-create-day-type",
+        "schedule-write-create-day-type-approved",
+        "schedule-only-tools",
+        "schedule-only-get-doctrine",
+        "schedule-only-get-week",
+        "schedule-none-get-week",
+        "schedule-none-tools",
       ]) {
         assert.ok(names.includes(expected), `pairing-e2e.json is missing scenario ${expected}`);
       }

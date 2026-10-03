@@ -420,6 +420,20 @@ async function executeConnectedTool(
     };
   }
 
+  // The live week belongs to no domain, so the Schedule gate has already
+  // settled it and there is nothing further to check per call. Same payload as
+  // the companion's, resolved from the same store.
+  if (name === "get_week") {
+    const snap = await openVault(root);
+    if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
+    if (!snap.value.map) {
+      return { error: { code: "NOT_FOUND", message: snap.value.mapError } };
+    }
+    return {
+      week: resolveWeek(snap.value.map, rec.year as number, rec.monday as string),
+    };
+  }
+
   if (name === "get_state") {
     const snap = await openVault(root);
     if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
@@ -489,9 +503,17 @@ async function executeConnectedTool(
     return proposeGoalDecision(root, connectedGoalCmd, actor);
   }
 
-  // An event write applies now, matching the companion. create_task and the
-  // live-week tools are not here: Schedule is off, so the gate refused them
-  // before this point.
+  // The day-template writes shape the Architecture rather than posting to the
+  // week, so they wait for approval exactly as the companion's do. The gate has
+  // already required both Schedule and Write for them.
+  if (DAY_TEMPLATE_TOOLS.has(name)) {
+    const templateCommand = commandForTool(name, rec) as MapCommand | null;
+    if (templateCommand) return proposeDayTemplateDecision(root, templateCommand, actor);
+  }
+
+  // Everything else the grant allows applies now, matching the companion: task
+  // writes, live-week edits, and events. From here the roster agent is the actor
+  // and the only thing that got the call this far was the grant above.
   const connectedCommand = commandForTool(name, rec) as MapCommand | null;
   if (connectedCommand) {
     const applied = await applyMapCommand(root, connectedCommand, "agent", undefined, actor);

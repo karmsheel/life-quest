@@ -15,6 +15,12 @@
 //     is the operator's window, not a permission, and never narrows or widens
 //     what the agent may read.
 import { listDomains } from "./domains.ts";
+import {
+  mondayOnOrBefore,
+  todayLocalIso,
+  yearOf,
+} from "./map/dates.ts";
+import { resolveWeek } from "./map/weeks.ts";
 import type {
   DecisionRecord,
   DocumentTarget,
@@ -25,7 +31,7 @@ import type {
   ReviewScopeState,
   Task,
 } from "./types.ts";
-import type { MapStoreState } from "./map/public.ts";
+import type { MapStoreState, ResolvedWeek } from "./map/public.ts";
 import type { ConnectedAgent } from "./connected-agents.ts";
 
 export type ConnectedGrant = {
@@ -72,13 +78,16 @@ export const COMPANION_ONLY_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * KAR-70: the Schedule surface. Task and live-week tools, plus the day-template
- * tools that shape them. They need Schedule on, and the day templates also need
- * Write. The exact lists are fixed by the Schedule task; until then this is the
- * refusal half only.
+ * KAR-70: the Schedule surface, split by what each tool needs.
+ *
+ * `get_week` is a read of the live week, so Schedule alone is enough. The task
+ * and live-week writes need Schedule and Write, and the day templates need the
+ * same two switches — they shape the week rather than posting to it, so they
+ * still file a Decision when the gate lets them through.
  */
+const CONNECTED_SCHEDULE_READ_TOOLS: ReadonlySet<string> = new Set(["get_week"]);
+
 export const CONNECTED_SCHEDULE_TOOLS: ReadonlySet<string> = new Set([
-  "get_week",
   "set_week_day_type",
   "set_week_day_items",
   "set_week_weekly_items",
@@ -196,9 +205,14 @@ export function toolAllowed(
   if (CONNECTED_READ_TOOLS.has(name)) {
     return grant.domainSlugs.length > 0 ? "allow" : "FORBIDDEN";
   }
-  const isSchedule =
+  // Reading the live week is a Schedule read, not a domain read: an agent with
+  // no domains still gets it, because tasks and the week belong to no domain.
+  if (CONNECTED_SCHEDULE_READ_TOOLS.has(name)) {
+    return grant.schedule ? "allow" : "FORBIDDEN";
+  }
+  const isScheduleWrite =
     CONNECTED_SCHEDULE_TOOLS.has(name) || CONNECTED_DAY_TEMPLATE_TOOLS.has(name);
-  if (isSchedule && !grant.schedule) return "FORBIDDEN";
+  if (isScheduleWrite && !grant.schedule) return "FORBIDDEN";
   // Everything else is a write, and a write needs the Write switch.
   if (grant.access !== "write") return "FORBIDDEN";
   // Capture names no domain argument, so the gate settles it here rather than
@@ -280,38 +294,62 @@ export function connectedDecisionVisible(
 
 /**
  * KAR-70: `get_state` for a connected agent is events only, inside the assigned
- * domains. Everything else in the map store — About me, the years, the month
- * cells, the day-type catalogue, tasks, the live week — is either the operator's
- * own configuration or the Schedule surface, and neither is this grant's.
+ * domains, plus the Schedule surface when Schedule is on. Everything else in the
+ * map store — About me, the years, the month cells, the day-type catalogue — is
+ * the operator's own configuration and is never returned.
  *
- * `tasks` and `week` are added only when Schedule is on, and the Schedule task
- * fills their contents. Until then they are absent even for a Schedule grant,
- * so the shape cannot be mistaken for "the week was empty".
+ * `tasks` and `week` appear only when Schedule is on. Schedule off omits the keys
+ * entirely rather than emptying them, because an empty array would read as "the
+ * week was empty" when the truth is that the agent may not see it.
+ *
+ * The week is the one `get_week` would return for the current week, resolved
+ * here rather than left to the caller, so the two reads cannot disagree.
  */
 export function projectConnectedState(
   state: MapStoreState,
   grant: ConnectedGrant,
-): { events: MapEvent[]; tasks?: Task[]; week?: unknown } {
+): { events: MapEvent[]; tasks?: Task[]; week?: ResolvedWeek | null } {
   const events: MapEvent[] = [];
   for (const year of state.years) {
     for (const event of year.events) {
       if (connectedEventVisible(event, grant)) events.push(event);
     }
   }
-  return { events };
+  if (!grant.schedule) return { events };
+  return {
+    events,
+    tasks: state.tasks,
+    week: currentWeek(state),
+  };
+}
+
+/**
+ * The live week as the store stands today, or `null` when the store carries no
+ * year for it — `resolveWeek` throws on a year it does not have, and a missing
+ * week is a fact worth reporting rather than a crash to propagate.
+ */
+function currentWeek(state: MapStoreState): ResolvedWeek | null {
+  const today = todayLocalIso();
+  const year = yearOf(today);
+  if (!state.years.some((y) => y.year === year)) return null;
+  try {
+    return resolveWeek(state, year, mondayOnOrBefore(today));
+  } catch {
+    return null;
+  }
 }
 
 /**
  * KAR-70: the domain slice of a period pack. Tasks and live days are the
  * Schedule surface and go empty unless Schedule is on; the previous review and
  * the overall section list belong to the `overall` scope, which a connected
- * agent never has.
+ * agent never has, so they go whatever Schedule says.
  */
 export function projectConnectedPack(pack: PeriodPack, grant: ConnectedGrant): PeriodPack {
   return {
     ...pack,
-    tasks: [],
-    liveDays: [],
+    tasks: grant.schedule ? pack.tasks : [],
+    liveDays: grant.schedule ? pack.liveDays : [],
     previousReview: null,
     domainSections: [],
   };
