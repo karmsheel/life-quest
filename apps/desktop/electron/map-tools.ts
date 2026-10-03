@@ -23,6 +23,16 @@ import {
   executeDatabaseTool,
   commandForProjectTool,
   projectGet,
+  listDecisions,
+  libraryGet,
+  connectedDecisionVisible,
+  connectedGoalVisible,
+  connectedLibraryVisible,
+  projectConnectedPack,
+  projectConnectedState,
+  toolAllowed,
+  type ConnectedGrant,
+  type PeriodPack,
   type ProjectCommand,
   type GoalsCommand,
   type MapCommand,
@@ -30,8 +40,7 @@ import {
   type Result,
   type Actor as VaultActor,
 } from "@lifequest/vault-core";
-import { hermesChatWithTools } from "./hermes-proxy.js";
-import { getHermesKey } from "./secrets.js";
+import { hermesChatWithTools } from "./hermes-proxy.ts";
 
 const AGENT_ACTOR = { type: "agent", id: "companion", name: "Hermes" } as const;
 
@@ -86,6 +95,20 @@ export async function runPlannerLoop(opts: {
   return { ok: true, value: { content: "Stopped after too many tool calls." } };
 }
 
+/**
+ * KAR-70: the exact tool messages a grant refusal uses. Same shape as the HTTP
+ * auth failures, so a client reads one refusal vocabulary.
+ */
+const GRANT_MESSAGES = {
+  NO_GRANT: "No domain or schedule is assigned",
+  FORBIDDEN: "Outside this agent's grant",
+  NOT_FOUND: "Not found",
+} as const;
+
+function grantRefusal(code: keyof typeof GRANT_MESSAGES): unknown {
+  return { error: { code, message: GRANT_MESSAGES[code] } };
+}
+
 export async function executeTool(
   root: string,
   activeSlug: string | null,
@@ -93,9 +116,27 @@ export async function executeTool(
   args: unknown,
   /** KAR-9: the acting vault actor. Defaults to the companion. */
   actor: VaultActor = AGENT_ACTOR,
+  /**
+   * KAR-70: the connected agent's grant. Present only for a paired agent: it
+   * decides what the call may read, and it names the actor. Absent for the
+   * companion, which keeps the desktop lens.
+   */
+  grant?: ConnectedGrant,
 ): Promise<unknown> {
   const rec =
     args !== null && typeof args === "object" ? (args as Record<string, unknown>) : {};
+  if (grant) {
+    // The gate runs before anything else, so a refused call never reaches a tool
+    // that could write or file a Decision.
+    const verdict = toolAllowed(name, grant);
+    if (verdict !== "allow") return grantRefusal(verdict);
+    // A connected agent acts as itself. `activeSlug` is the operator's open
+    // window, not a permission, and is ignored for every decision below.
+    return executeConnectedTool(root, name, rec, {
+      grant,
+      actor: { type: "agent", id: grant.agentId, name: grant.name },
+    });
+  }
   const snap = await openVault(root);
   if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
 
@@ -200,6 +241,183 @@ export async function executeTool(
     return { error: { code, message: rest.join(": ") } };
   }
   return { state: applied.value };
+}
+
+/**
+ * KAR-70: one call from a connected agent.
+ *
+ * Two shapes of rule, applied in this order:
+ *
+ *  - A single-record read whose `domainSlug` argument is outside the grant
+ *    answers NOT_FOUND without the tool running. This is what makes an
+ *    unassigned domain indistinguishable from one that does not exist.
+ *  - A list tool runs and then has rows outside the grant dropped, because a
+ *    list is defined by its scope rather than by one record.
+ *
+ * `activeSlug` is deliberately absent: the desktop lens is the operator's open
+ * window, and a connected agent's window is its own grant. Passing it here
+ * would let whatever domain the operator happens to be looking at decide what a
+ * remote agent can read.
+ */
+async function executeConnectedTool(
+  root: string,
+  name: string,
+  rec: Record<string, unknown>,
+  ctx: { grant: ConnectedGrant; actor: VaultActor },
+): Promise<unknown> {
+  const { grant, actor } = ctx;
+  const granted = (slug: unknown): boolean =>
+    typeof slug === "string" && grant.domainSlugs.includes(slug);
+
+  // ── single-record reads: refuse before the tool runs ──────────────────────
+  if (name === "get_doctrine") {
+    const requested = rec.domainSlug;
+    if (requested !== undefined && requested !== null && !granted(requested)) {
+      return grantRefusal("NOT_FOUND");
+    }
+    const snap = await openVault(root);
+    if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
+    const live = snap.value.domains.filter((d) => !d.meta.archivedAt);
+    const pick = (d: (typeof live)[number]) => ({
+      slug: d.slug,
+      name: d.meta.name,
+      why: d.documents.why,
+      what: d.documents.what,
+      how: d.documents.how,
+      premise: d.documents.premise,
+    });
+    if (requested !== undefined && requested !== null) {
+      const domain = live.find((d) => d.slug === requested);
+      if (!domain) return grantRefusal("NOT_FOUND");
+      return pick(domain);
+    }
+    // No domain named: the granted domains are the whole answer.
+    return { domains: live.filter((d) => granted(d.slug)).map(pick) };
+  }
+
+  if (name === "get_database" || name === "list_rows" || name === "get_row") {
+    if (!granted(rec.domainSlug)) return grantRefusal("NOT_FOUND");
+  }
+
+  if (name === "get_document") {
+    const id = rec.id;
+    if (typeof id === "string" && id.length > 0) {
+      const lib = await libraryGet(root, id);
+      if (!lib.ok) return { error: { code: "NOT_FOUND", message: lib.error } };
+      if (!connectedLibraryVisible(lib.value.domainSlugs, grant)) {
+        return grantRefusal("NOT_FOUND");
+      }
+    } else if (rec.domainSlug !== undefined && rec.domainSlug !== null) {
+      if (!granted(rec.domainSlug)) return grantRefusal("NOT_FOUND");
+    }
+  }
+
+  // A period pack is the domain slice or nothing. `overall` spans every domain
+  // and so has no slice a connected agent could be given.
+  if (name === "get_period_pack") {
+    const scope = typeof rec.scope === "string" ? rec.scope : "overall";
+    if (!granted(scope)) return grantRefusal("FORBIDDEN");
+    const result = await executeReviewTool(root, actor, name, rec);
+    if (!isGrantError(result)) {
+      const pack = (result as { pack: PeriodPack }).pack;
+      return { pack: projectConnectedPack(pack, grant) };
+    }
+    return result;
+  }
+
+  // ── list reads: run, then drop what the grant does not cover ─────────────
+  if (name === "list_databases") {
+    const result = await executeDatabaseTool(root, actor, name, rec);
+    if (isGrantError(result)) return result;
+    const { kits, databases } = result as {
+      kits: Array<{ domainSlug: string }>;
+      databases: Array<{ domainSlug: string }>;
+    };
+    return {
+      kits: kits.filter((k) => granted(k.domainSlug)),
+      databases: databases.filter((d) => granted(d.domainSlug)),
+    };
+  }
+
+  if (name === "list_documents") {
+    const result = await executeDocumentTool(root, actor, name, rec);
+    if (isGrantError(result)) return result;
+    const { records } = result as {
+      records: Array<Record<string, unknown>>;
+    };
+    return {
+      records: records.filter((record) =>
+        record.type === "doctrine"
+          ? granted(record.domainSlug)
+          : connectedLibraryVisible((record.domainSlugs as string[]) ?? [], grant),
+      ),
+    };
+  }
+
+  if (name === "list_goals") {
+    const snap = await openVault(root);
+    if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
+    return {
+      goals: snap.value.goals.filter((g) => connectedGoalVisible(g, grant)),
+      goalsError: snap.value.goalsError,
+    };
+  }
+
+  if (name === "get_state") {
+    const snap = await openVault(root);
+    if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
+    if (!snap.value.map) {
+      return { error: { code: "NOT_FOUND", message: snap.value.mapError } };
+    }
+    return { state: projectConnectedState(snap.value.map, grant) };
+  }
+
+  if (name === "list_decisions") {
+    // listDecisions is read here rather than through executeDatabaseTool because
+    // the tool's own result carries no domainSlugs, and a Decision is filtered by
+    // its domain list.
+    const listed = await listDecisions(root);
+    if (!listed.ok) return { error: { code: "FAILED", message: listed.error } };
+    let items = listed.value.filter((d) => connectedDecisionVisible(d, grant));
+    if (typeof rec.status === "string") {
+      items = items.filter((d) => d.status === rec.status);
+    }
+    const limit = typeof rec.limit === "number" && rec.limit >= 1 && rec.limit <= 100 ? rec.limit : 20;
+    const ordered = [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return {
+      decisions: ordered.slice(0, limit).map((d) => ({
+        id: d.id,
+        status: d.status,
+        proposedTitle: d.proposedTitle,
+        createdAt: d.createdAt,
+        reason: d.reason,
+      })),
+    };
+  }
+
+  // Everything the grant allows but this task does not project: reviews, the
+  // script-block read, and the database and document tools whose records are
+  // already inside the grant.
+  if (DATABASE_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeDatabaseTool(root, actor, name, rec);
+  }
+  if (DOCUMENT_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeDocumentTool(root, actor, name, rec);
+  }
+  if (REVIEW_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeReviewTool(root, actor, name, rec);
+  }
+  if (SCRIPT_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeScriptTool(root, actor, name, rec);
+  }
+  return { error: { code: "MALFORMED", message: `Unknown tool ${name}` } };
+}
+
+/** True for the `{ error: { code } }` shape every tool refusal shares. */
+function isGrantError(value: unknown): boolean {
+  if (value === null || typeof value !== "object") return false;
+  const err = (value as { error?: unknown }).error;
+  return err !== null && typeof err === "object";
 }
 
 /** Agent map tools that write the Architecture day templates and therefore need approval. */

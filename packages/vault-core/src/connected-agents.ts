@@ -7,6 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { vaultPaths } from "./paths.ts";
 import { createDecision } from "./decisions.ts";
+import { listDomains } from "./domains.ts";
 import type { Result } from "./types.ts";
 
 export type ConnectedAgentStatus = "pending" | "active" | "rejected" | "revoked";
@@ -228,8 +229,24 @@ export async function markConnectedAgent(
   }
 }
 
-/** Operator grant edit (KAR-70 domain grants; the write/schedule switches). */
-export async function updateConnectedAgentGrant(
+/**
+ * KAR-70: the operator's grant edit — the domain multi-select, the Write switch,
+ * and the Schedule switch, all three from the Personnel row.
+ *
+ * `active` rows only. A pending, rejected, or revoked row has nothing to grant:
+ * approving is the Decision's job and is what sets the row active, so writing a
+ * grant onto a pending row would hand over access the operator never approved.
+ *
+ * `domainSlugs` is validated against the live domains before anything is
+ * written, and the whole patch lands or none of it does. A duplicate, or an
+ * unknown or archived slug, is refused with the file untouched: a grant that
+ * quietly dropped a slug would read to the agent as an empty domain rather than
+ * as the operator's mistake.
+ *
+ * An archived slug already in the row is left alone — unarchiving is how the
+ * operator gets it back — and drops out of the effective grant at call time.
+ */
+export async function updateConnectedAgent(
   rootPath: string,
   id: string,
   patch: { access?: "read" | "write"; domainSlugs?: string[]; schedule?: boolean },
@@ -241,10 +258,53 @@ export async function updateConnectedAgentGrant(
       return { ok: false, error: `Agent not found: ${id}` };
     }
     const existing = data.agents[idx]!;
+    if (existing.status !== "active") {
+      return { ok: false, error: `Only an active agent has a grant: ${existing.status}` };
+    }
+
+    let domainSlugs = existing.domainSlugs;
+    if (patch.domainSlugs !== undefined) {
+      if (!Array.isArray(patch.domainSlugs)) {
+        return { ok: false, error: "domainSlugs must be a list of domain slugs" };
+      }
+      const seen = new Set<string>();
+      const unique: string[] = [];
+      for (const raw of patch.domainSlugs) {
+        if (typeof raw !== "string" || !raw.trim()) {
+          return { ok: false, error: "domainSlugs must be a list of domain slugs" };
+        }
+        const slug = raw.trim();
+        if (seen.has(slug)) {
+          return { ok: false, error: `Duplicate domain in grant: ${slug}` };
+        }
+        seen.add(slug);
+        unique.push(slug);
+      }
+      if (unique.length > 0) {
+        const domains = await listDomains(rootPath);
+        if (!domains.ok) return { ok: false, error: domains.error };
+        for (const slug of unique) {
+          const live = domains.value.some((d) => d.slug === slug && !d.meta.archivedAt);
+          if (!live) {
+            return {
+              ok: false,
+              error: `Domain not found or archived: ${slug}. It may not exist, or it may be archived.`,
+            };
+          }
+        }
+      }
+      domainSlugs = unique;
+    }
+
+    const access = patch.access ?? existing.access;
+    if (access !== "read" && access !== "write") {
+      return { ok: false, error: "access must be read or write" };
+    }
+
     const updated: ConnectedAgent = {
       ...existing,
-      access: patch.access ?? existing.access,
-      domainSlugs: Array.isArray(patch.domainSlugs) ? [...patch.domainSlugs] : existing.domainSlugs,
+      access,
+      domainSlugs,
       schedule: patch.schedule ?? existing.schedule,
     };
     data.agents[idx] = updated;

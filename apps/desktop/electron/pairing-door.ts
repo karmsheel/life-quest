@@ -21,6 +21,7 @@ import {
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   ALL_TOOL_DEFS,
+  effectiveGrant,
   fingerprintOf,
   getConnectedAgentByFingerprint,
   introduceConnectedAgent,
@@ -28,8 +29,10 @@ import {
   removeConnectedAgent,
   removeDecision,
   PENDING_PAIRING_CAP,
+  toolAllowed,
   type Actor as VaultActor,
   type ConnectedAgent,
+  type ConnectedGrant,
 } from "@lifequest/vault-core";
 import {
   checkInvite,
@@ -423,48 +426,44 @@ async function buildServer(ctx: DoorContext, auth: Authorized): Promise<McpServe
   }
   const gated = statusToolCode(auth.agent.status);
   if (gated) return gatedServer(gated);
-  // KAR-70: approval grants nothing by itself. An active agent whose grant is
-  // still empty — no assigned domain that is live, and Schedule off — sees an
-  // empty tool list and NO_GRANT on every call. It is active, not broken: the
-  // operator assigns a domain in Personnel and the next call goes through.
-  // Which tools an assigned domain unlocks is the domain-grant task.
-  if (!(await hasLiveGrant(ctx.root, auth.agent))) return gatedServer("NO_GRANT");
-  return fullServer(ctx, {
-    type: "agent",
-    id: auth.agent.id,
-    name: auth.agent.name,
-  });
+  // KAR-70: approval grants nothing by itself. The effective grant is the row
+  // with any archived domain dropped, read per request so a Personnel edit lands
+  // on the next call and an archive closes the grant rather than leaving a
+  // dangling assignment. An active agent whose grant is still empty — no
+  // assigned domain that is live, and Schedule off — sees an empty tool list and
+  // NO_GRANT on every call. It is active, not broken: the operator assigns a
+  // domain in Personnel and the next call goes through.
+  const grant = await effectiveGrant(ctx.root, auth.agent);
+  if (!(await hasLiveGrant(grant))) return gatedServer("NO_GRANT");
+  return fullServer(ctx, { type: "agent", id: grant.agentId, name: grant.name }, grant);
 }
 
 /**
- * KAR-70: whether this roster row's grant reaches anything today. Schedule
- * counts on its own; a domain counts only while it is live, so archiving a
- * domain closes the grant again rather than leaving a dangling assignment.
- *
- * Read per request, never cached: an empty grant is the state this task must
- * recognise, and a cached registry would let a domain that has since been
- * archived keep a grant open. A failed read answers false, because the refusal
- * that cannot over-grant is NO_GRANT.
+ * KAR-70: whether this effective grant reaches anything today. Schedule counts
+ * on its own. The grant has already had archived domains dropped by
+ * effectiveGrant, so this needs no domain read and cannot be answered from a
+ * stale registry.
  */
-async function hasLiveGrant(root: string, agent: ConnectedAgent): Promise<boolean> {
-  if (agent.schedule) return true;
-  if (agent.domainSlugs.length === 0) return false;
-  try {
-    const domains = await listDomains(root);
-    if (!domains.ok) return false;
-    return agent.domainSlugs.some((slug) =>
-      domains.value.some((d) => d.slug === slug && !d.meta.archivedAt),
-    );
-  } catch {
-    // A throw here must not take the door down: the gate answers, and the
-    // answer it can give without over-granting is NO_GRANT.
-    return false;
-  }
+function hasLiveGrant(grant: ConnectedGrant): boolean {
+  if (grant.schedule) return true;
+  return grant.domainSlugs.length > 0;
 }
 
-function fullServer(ctx: DoorContext, actor: VaultActor): McpServer {
+/**
+ * KAR-70: `tools/list` for a connected agent carries only the tools its grant
+ * allows, so an agent is never told a tool exists that it may not call. A
+ * companion gets the whole list, unchanged.
+ */
+function fullServer(
+  ctx: DoorContext,
+  actor: VaultActor,
+  grant?: ConnectedGrant,
+): McpServer {
   const mcp = new McpServer({ name: "lifequest-map", version: "0.1.0" });
-  for (const def of ALL_TOOL_DEFS) {
+  const defs = grant
+    ? ALL_TOOL_DEFS.filter((def) => toolAllowed(def.name, grant) === "allow")
+    : ALL_TOOL_DEFS;
+  for (const def of defs) {
     mcp.registerTool(
       def.name,
       { description: def.description, inputSchema: {} },
@@ -479,6 +478,7 @@ function fullServer(ctx: DoorContext, actor: VaultActor): McpServer {
           def.name,
           (args ?? {}) as Record<string, unknown>,
           actor,
+          grant,
         );
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
       },

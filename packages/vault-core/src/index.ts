@@ -21,9 +21,10 @@ export {
   markConnectedAgent,
   removeConnectedAgent,
   removeDecision,
-  updateConnectedAgentGrant,
-} from "./connected-agents.ts";
-export type { ConnectedAgent, ConnectedAgentStatus } from "./connected-agents.ts";
+    updateConnectedAgent,
+  } from "./connected-agents.ts";
+  export type { ConnectedAgent, ConnectedAgentStatus } from "./connected-agents.ts";
+  export * from "./pairing-grant.ts";
 export * from "./signal-chain.ts";
 export * from "./domain-lens.ts";
 export * from "./library-documents.ts";

@@ -11,12 +11,24 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it, before, after } from "node:test";
 import {
+  addDatabaseColumn,
+  applyGoalsCommand,
+  applyMapCommand,
+  archiveDomain,
+  createDatabase,
+  createDecision,
   createVault,
   fingerprintOf,
+  libraryCreate,
   listConnectedAgents,
   markConnectedAgent,
   resolveDecision,
+  todayLocalIso,
+  updateConnectedAgent,
+  upsertRow,
+  USER_ACTOR,
   PENDING_PAIRING_CAP,
+  type ConnectedGrant,
 } from "@lifequest/vault-core";
 import {
   startPairingDoors,
@@ -27,6 +39,7 @@ import {
   ensureCompanionToken,
   mintInvite,
 } from "../electron/pairing-secrets.ts";
+import { executeTool } from "../electron/map-tools.ts";
 
 const scenarios: { name: string; code: string }[] = [];
 
@@ -908,6 +921,443 @@ describe("KAR-70 pairing: the companion bearer", () => {
   });
 });
 
+// ── the domain read grant ────────────────────────────────────────────────────
+
+describe("KAR-70 pairing: the domain read grant", () => {
+  type Fixture = {
+    ctx: Awaited<ReturnType<typeof openDoors>>;
+    grant: ConnectedGrant;
+    /** The database id in financial, used wherever a database argument is needed. */
+    financialDatabase: string;
+    financialRow: string;
+    healthRow: string;
+    financialOnlyNote: string;
+    bothDomainsNote: string;
+    healthGoal: string;
+    nullGoal: string;
+  };
+
+  /**
+   * Held the moment the doors exist, so a fixture that fails later still has
+   * them closed: a leaked listener turns one failure into a suite that never
+   * exits.
+   */
+  let doorsHandle: Doors | null = null;
+
+  /**
+   * A vault with two live domains, one database row in each, library notes with
+   * one and with two tags, and goals and events with and without a domain — so
+   * a projection that filtered nothing, or filtered the wrong way, shows up.
+   */
+  async function buildFixture(): Promise<Fixture> {
+    const ctx = await openDoors("kar70-grant");
+    doorsHandle = ctx.doors;
+    const { root } = ctx;
+
+    const ids: Record<string, { databaseId: string; rowId: string }> = {};
+    for (const slug of ["financial", "health"]) {
+      const db = await createDatabase(root, slug, { name: `Ledger ${slug}` });
+      assert.equal(db.ok, true, `createDatabase ${slug}: ${JSON.stringify(db)}`);
+      const withColumn = await addDatabaseColumn(root, slug, db.value.id, {
+        name: "Label",
+        type: "text",
+      });
+      assert.equal(withColumn.ok, true, `addDatabaseColumn ${slug}`);
+      const columnId = withColumn.value.columns[withColumn.value.columns.length - 1]!.id;
+      const row = await upsertRow(root, slug, db.value.id, {
+        cells: { [columnId]: `${slug} row` },
+      });
+      assert.equal(row.ok, true, `upsertRow ${slug}: ${JSON.stringify(row)}`);
+      ids[slug] = { databaseId: db.value.id, rowId: row.value.id };
+    }
+
+    const financialOnly = await libraryCreate(
+      root,
+      { title: "Financial note", bodyMarkdown: "Money only.", domainSlugs: ["financial"] },
+      USER_ACTOR,
+    );
+    assert.equal(financialOnly.ok, true);
+    const both = await libraryCreate(
+      root,
+      {
+        title: "Both domains note",
+        bodyMarkdown: "Spans two.",
+        domainSlugs: ["financial", "health"],
+      },
+      USER_ACTOR,
+    );
+    assert.equal(both.ok, true);
+
+    const healthGoal = await applyGoalsCommand(root, {
+      type: "createGoal",
+      name: "Run a lot",
+      domainSlug: "health",
+    });
+    assert.equal(healthGoal.ok, true, `createGoal health: ${JSON.stringify(healthGoal)}`);
+    const nullGoal = await applyGoalsCommand(root, {
+      type: "createGoal",
+      name: "Life admin",
+      domainSlug: null,
+    });
+    assert.equal(nullGoal.ok, true);
+
+    const today = todayLocalIso();
+    // The vault already carries the current year, so the events go into it.
+    const year = Number(today.slice(0, 4));
+    assert.equal(
+      (
+        await applyMapCommand(
+          root,
+          { type: "createEvent", year, title: "Health event", date: today, domainSlug: "health" },
+          "user",
+          today,
+          USER_ACTOR,
+        )
+      ).ok,
+      true,
+    );
+    assert.equal(
+      (
+        await applyMapCommand(
+          root,
+          { type: "createEvent", year, title: "Unscoped event", date: today, domainSlug: null },
+          "user",
+          today,
+          USER_ACTOR,
+        )
+      ).ok,
+      true,
+    );
+
+    // A task a health-scoped pack would otherwise include, so clearing tasks is
+    // visible as an emptied field rather than an empty vault.
+    assert.equal(
+      (
+        await applyMapCommand(
+          root,
+          {
+            type: "createTask",
+            title: "Stretch",
+            links: { goalId: healthGoal.value[0]!.id, date: today },
+          },
+          "user",
+          today,
+          USER_ACTOR,
+        )
+      ).ok,
+      true,
+    );
+
+    // One Decision per domain shape, so list_decisions has both an in-grant and
+    // an out-of-grant record to separate.
+    for (const [slug, title] of [
+      ["health", "Health goal change"],
+      ["financial", "Financial goal change"],
+    ] as [string, string][]) {
+      assert.equal(
+        (
+          await createDecision(root, {
+            target: { type: "goal" },
+            proposedTitle: title,
+            proposedBodyMarkdown: JSON.stringify({ title }),
+            domainSlugs: [slug],
+            actor: USER_ACTOR,
+          })
+        ).ok,
+        true,
+        `createDecision ${slug}`,
+      );
+    }
+
+    // Approve one agent, then assign it financial read with Schedule off.
+    const bearer = "grant-door-bearer-00000000001";
+    const headers = { ...auth(bearer), "x-lifequest-name": "Grant bot" };
+    assert.equal((await rpc(ctx.localPort, headers, "initialize", INIT_PARAMS)).status, 200);
+    // The fixture also files ordinary Decisions, so the pairing one is found by
+    // its target rather than by being the only file there.
+    let pairing: Record<string, unknown> | null = null;
+    for (const file of await decisionFiles(root)) {
+      const candidate = await readJson(path.join(root, ".lifequest", "decisions", file));
+      if ((candidate.target as { type?: string }).type === "agent-pairing") {
+        pairing = candidate;
+        break;
+      }
+    }
+    assert.ok(pairing, "the introduction must have filed a pairing Decision");
+    const agentId = (pairing.target as { agentId: string }).agentId;
+    assert.equal((await resolveDecision(root, pairing.id as string, "approved")).ok, true);
+
+    const assigned = await updateConnectedAgent(root, agentId, {
+      access: "read",
+      domainSlugs: ["financial"],
+      schedule: false,
+    });
+    assert.equal(assigned.ok, true, `updateConnectedAgent: ${JSON.stringify(assigned)}`);
+    assert.deepEqual(assigned.value.domainSlugs, ["financial"]);
+    assert.equal(assigned.value.access, "read");
+    assert.equal(assigned.value.schedule, false);
+
+    const rows = (await listConnectedAgents(root)) as { value: Record<string, unknown>[] };
+    const row = rows.value.find((r) => r.id === agentId)!;
+    return {
+      ctx,
+      grant: {
+        agentId: String(row.id),
+        name: String(row.name),
+        access: "read",
+        domainSlugs: [...(row.domainSlugs as string[])],
+        schedule: false,
+      },
+      financialDatabase: ids.financial!.databaseId,
+      financialRow: ids.financial!.rowId,
+      healthRow: ids.health!.rowId,
+      financialOnlyNote: financialOnly.value.id,
+      bothDomainsNote: both.value.id,
+      healthGoal: healthGoal.value[0]!.id,
+      nullGoal: nullGoal.value[0]!.id,
+    };
+  }
+
+  function codeOf(result: unknown): string {
+    const err = (result as { error?: { code?: string } }).error;
+    return err?.code ?? "";
+  }
+
+  /**
+   * One connected-agent call. `activeSlug` is passed only where the test is
+   * checking that the desktop lens does not decide anything.
+   */
+  async function call(
+    f: Fixture,
+    name: string,
+    args: Record<string, unknown> = {},
+    activeSlug: string | null = null,
+    grant: ConnectedGrant = f.grant,
+  ): Promise<unknown> {
+    return executeTool(f.ctx.root, activeSlug, name, args, undefined, grant);
+  }
+
+  const NOT_FOUND = { error: { code: "NOT_FOUND", message: "Not found" } };
+  const FORBIDDEN = { error: { code: "FORBIDDEN", message: "Outside this agent's grant" } };
+
+  let f: Fixture;
+
+  before(async () => {
+    f = await buildFixture();
+  });
+  after(async () => {
+    await doorsHandle?.close();
+  });
+
+  it("get_doctrine reads the assigned domain and NOT_FOUNDs the other", async () => {
+    const doctrine = await call(f, "get_doctrine", { domainSlug: "financial" });
+    assert.equal(codeOf(doctrine), "", `financial doctrine must read: ${JSON.stringify(doctrine)}`);
+    assert.equal((doctrine as { slug: string }).slug, "financial");
+    record("grant-doctrine-financial", "READ");
+
+    const health = await call(f, "get_doctrine", { domainSlug: "health" });
+    record("grant-doctrine-health", codeOf(health));
+    assert.deepEqual(health, NOT_FOUND);
+  });
+
+  it("list_databases drops the other domain and list_rows reads only its own", async () => {
+    const listed = (await call(f, "list_databases")) as {
+      kits: { domainSlug: string }[];
+      databases: { domainSlug: string; id: string }[];
+    };
+    const domains = listed.databases.map((d) => d.domainSlug);
+    assert.equal(domains.includes("health"), false, "list_databases must omit the health database");
+    assert.ok(domains.includes("financial"));
+    assert.equal(listed.kits.some((k) => k.domainSlug === "health"), false);
+    record("grant-list-databases", "FILTERED");
+
+    const rows = (await call(f, "list_rows", {
+      domainSlug: "financial",
+      databaseId: f.financialDatabase,
+    })) as { rows: { id: string }[] };
+    assert.deepEqual(rows.rows.map((r) => r.id), [f.financialRow]);
+    record("grant-list-rows", "READ");
+
+    const healthRow = await call(f, "get_row", {
+      domainSlug: "health",
+      databaseId: f.financialDatabase,
+      id: f.healthRow,
+    });
+    record("grant-get-row-health", codeOf(healthRow));
+    assert.deepEqual(healthRow, NOT_FOUND);
+  });
+
+  it("a library note needs every one of its domains assigned", async () => {
+    const listed = (await call(f, "list_documents")) as { records: { id: string }[] };
+    const ids = listed.records.map((r) => r.id);
+    assert.ok(ids.includes(f.financialOnlyNote), "the financial-only note must be listed");
+    assert.equal(
+      ids.includes(f.bothDomainsNote),
+      false,
+      "a note tagged with an unassigned domain must not be listed",
+    );
+    record("grant-list-documents", "FILTERED");
+
+    const one = await call(f, "get_document", { id: f.financialOnlyNote });
+    assert.equal(codeOf(one), "", "the financial-only note must be readable");
+
+    const both = await call(f, "get_document", { id: f.bothDomainsNote });
+    record("grant-get-document-both", codeOf(both));
+    assert.deepEqual(both, NOT_FOUND);
+
+    const healthDoctrine = await call(f, "get_document", { domainSlug: "health", kind: "why" });
+    record("grant-get-document-health", codeOf(healthDoctrine));
+    assert.deepEqual(healthDoctrine, NOT_FOUND);
+  });
+
+  it("list_goals and get_state drop the unscoped and unassigned records", async () => {
+    const goals = (await call(f, "list_goals")) as { goals: { id: string }[] };
+    const goalIds = goals.goals.map((g) => g.id);
+    assert.equal(goalIds.includes(f.healthGoal), false, "a health goal must not be listed");
+    assert.equal(goalIds.includes(f.nullGoal), false, "an unscoped goal must not be listed");
+    record("grant-list-goals", "FILTERED");
+
+    const state = (await call(f, "get_state")) as { state: Record<string, unknown> };
+    const events = (state.state.events ?? []) as { title: string }[];
+    const titles = events.map((e) => e.title);
+    assert.equal(titles.includes("Health event"), false, "a health event must not be in the state");
+    assert.equal(
+      titles.includes("Unscoped event"),
+      false,
+      "an unscoped event stays with the companion",
+    );
+    // Schedule is off, so neither key is present at all — an empty array would
+    // read as "the week was empty".
+    assert.equal("tasks" in state.state, false, "get_state must have no tasks key");
+    assert.equal("week" in state.state, false, "get_state must have no week key");
+    record("grant-get-state", "FILTERED");
+  });
+
+  it("get_period_pack takes an assigned scope and clears the Schedule and overall fields", async () => {
+    const args = { cadence: "daily", period: todayLocalIso() };
+
+    const overall = await call(f, "get_period_pack", { ...args, scope: "overall" });
+    record("grant-pack-overall", codeOf(overall));
+    assert.deepEqual(overall, FORBIDDEN);
+
+    const health = await call(f, "get_period_pack", { ...args, scope: "health" });
+    record("grant-pack-health", codeOf(health));
+    assert.deepEqual(health, FORBIDDEN);
+
+    const pack = (await call(f, "get_period_pack", { ...args, scope: "financial" })) as {
+      pack: {
+        tasks: unknown[];
+        liveDays: unknown[];
+        previousReview: unknown;
+        domainSections: unknown[];
+      };
+    };
+    assert.deepEqual(pack.pack.tasks, []);
+    assert.deepEqual(pack.pack.liveDays, []);
+    assert.equal(pack.pack.previousReview, null);
+    assert.deepEqual(pack.pack.domainSections, []);
+    record("grant-pack-financial", "PROJECTED");
+  });
+
+  it("list_decisions drops the pairing Decision and every decision outside the grant", async () => {
+    const listed = (await call(f, "list_decisions")) as { decisions: Record<string, unknown>[] };
+    const titles = listed.decisions.map((d) => String(d.proposedTitle));
+    assert.equal(
+      titles.some((t) => t.startsWith("Connect ")),
+      false,
+      "a pairing Decision is not the agent's business",
+    );
+    assert.equal(
+      titles.includes("Health goal change"),
+      false,
+      "a decision on an unassigned domain must not be listed",
+    );
+    assert.ok(
+      titles.includes("Financial goal change"),
+      "a decision inside the assignment must be listed",
+    );
+    // The pairing Decision exists and is approved: it was dropped, not absent.
+    const files = await decisionFiles(f.ctx.root);
+    assert.equal(files.length, 3, "pairing, health, and financial Decisions all exist");
+    record("grant-list-decisions", "FILTERED");
+  });
+
+  it("a write and a companion-only tool are both refused, and the vault does not move", async () => {
+    const before = await walkText(f.ctx.root);
+    const decisionsBefore = await decisionFiles(f.ctx.root);
+
+    for (const [name, args] of [
+      ["create_year", { year: 2031 }],
+      ["set_about_me", { text: "not yours" }],
+      ["set_month_notes", { year: 2026, month: 1, text: "not yours" }],
+      ["capture_transaction", { text: "coffee 40" }],
+      ["create_task", { title: "not yours" }],
+    ] as [string, Record<string, unknown>][]) {
+      const result = await call(f, name, args);
+      record(`grant-refused-${name}`, codeOf(result));
+      assert.deepEqual(
+        result,
+        FORBIDDEN,
+        `${name} must be FORBIDDEN while access is read`,
+      );
+    }
+
+    assert.equal(await walkText(f.ctx.root), before, "a refused call must not write");
+    assert.deepEqual(await decisionFiles(f.ctx.root), decisionsBefore, "and file no Decision");
+    record("grant-refused-vault-unchanged", "UNCHANGED");
+  });
+
+  it("with no grant the desktop lens applies, and with a grant it does not", async () => {
+    const noGrant = await executeTool(
+      f.ctx.root,
+      "health",
+      "get_doctrine",
+      {},
+      undefined,
+      undefined,
+    );
+    assert.equal(
+      (noGrant as { slug?: string }).slug,
+      "health",
+      "a call with no grant still resolves through activeSlug",
+    );
+    record("grant-lens-no-grant", "ACTIVE_SLUG");
+
+    const withGrant = await call(f, "get_doctrine", {}, "health");
+    const slugs = ((withGrant as { domains?: { slug: string }[] }).domains ?? []).map((d) => d.slug);
+    assert.deepEqual(slugs, ["financial"], "the desktop lens must not decide a granted read");
+    record("grant-lens-with-grant", "IGNORED");
+  });
+
+  it("archiving an assigned domain closes the grant but keeps the roster row", async () => {
+    assert.equal((await archiveDomain(f.ctx.root, "financial")).ok, true);
+
+    const after = await call(f, "get_doctrine", { domainSlug: "financial" });
+    record("grant-after-archive", codeOf(after));
+    assert.deepEqual(after, NOT_FOUND);
+
+    const rows = (await listConnectedAgents(f.ctx.root)) as { value: Record<string, unknown>[] };
+    assert.deepEqual(
+      rows.value[0]!.domainSlugs,
+      ["financial"],
+      "the roster keeps the operator's assignment; only the effective grant drops it",
+    );
+
+    // And the grant as the door would compute it now reaches nothing.
+    const doorGrant = { ...f.grant, domainSlugs: [] as string[] };
+    const empty = await executeTool(
+      f.ctx.root,
+      null,
+      "get_doctrine",
+      { domainSlug: "financial" },
+      undefined,
+      doorGrant,
+    );
+    record("grant-after-archive-empty", codeOf(empty));
+    assert.equal(codeOf(empty), "NO_GRANT");
+  });
+});
+
 // ── the artifact ─────────────────────────────────────────────────────────────
 
 describe("KAR-70 pairing: the run artifact", () => {
@@ -917,7 +1367,7 @@ describe("KAR-70 pairing: the run artifact", () => {
     "pairing-e2e.json",
   );
 
-  it("pairing-e2e.json exists in the vault and names every scenario of tasks 1 and 2", async () => {
+  it("pairing-e2e.json exists in the vault and names every scenario of tasks 1 to 3", async () => {
     const ctx = await openDoors("kar70-artifact");
     try {
       await fs.writeFile(
@@ -965,6 +1415,30 @@ describe("KAR-70 pairing: the run artifact", () => {
         "companion-tools-invite",
         "companion-call-invite",
         "companion-no-bearer",
+        "grant-doctrine-financial",
+        "grant-doctrine-health",
+        "grant-list-databases",
+        "grant-list-rows",
+        "grant-get-row-health",
+        "grant-list-documents",
+        "grant-get-document-both",
+        "grant-get-document-health",
+        "grant-list-goals",
+        "grant-get-state",
+        "grant-pack-overall",
+        "grant-pack-health",
+        "grant-pack-financial",
+        "grant-list-decisions",
+        "grant-refused-create_year",
+        "grant-refused-set_about_me",
+        "grant-refused-set_month_notes",
+        "grant-refused-capture_transaction",
+        "grant-refused-create_task",
+        "grant-refused-vault-unchanged",
+        "grant-lens-no-grant",
+        "grant-lens-with-grant",
+        "grant-after-archive",
+        "grant-after-archive-empty",
       ]) {
         assert.ok(names.includes(expected), `pairing-e2e.json is missing scenario ${expected}`);
       }
