@@ -28,6 +28,7 @@ import {
   listConnectedAgents,
   listDatabases,
   listRows,
+  loadGoals,
   markConnectedAgent,
   readLog,
   resolveDecision,
@@ -2047,6 +2048,89 @@ describe("KAR-70 pairing: the domain write grant", () => {
     record("write-update-event-unchanged", "FINANCIAL");
   });
 
+  it("an update that names no domain keeps the record where it is", async () => {
+    const today = todayLocalIso();
+    const year = Number(today.slice(0, 4));
+
+    // A title-only event edit: no domainSlug argument at all. The event is
+    // financial and financial is assigned, so this must apply — an omitted
+    // domain means "leave it alone", not "no domain".
+    const created = await call("create_event", {
+      year,
+      title: "Retitled event",
+      date: today,
+      domainSlug: "financial",
+    });
+    assert.equal(codeOf(created), "", `create_event: ${JSON.stringify(created)}`);
+    const before = (await call("get_state")) as {
+      state: { events: { id: string; title: string; domainSlug: string | null }[] };
+    };
+    const event = before.state.events.find((e) => e.title === "Retitled event");
+    assert.ok(event, "the event must exist in the granted domain");
+
+    const renamed = await call("update_event", { year, id: event.id, title: "Renamed in place" });
+    record("write-update-event-no-domain", codeOf(renamed) || "APPLIED");
+    assert.equal(
+      codeOf(renamed),
+      "",
+      `a title-only update_event must apply: ${JSON.stringify(renamed)}`,
+    );
+    const after = (await call("get_state")) as {
+      state: { events: { id: string; title: string; domainSlug: string | null }[] };
+    };
+    const moved = after.state.events.find((e) => e.id === event.id);
+    assert.equal(moved?.title, "Renamed in place", "the title must have changed");
+    assert.equal(
+      moved?.domainSlug,
+      "financial",
+      "an update that names no domain leaves the record on its own domain",
+    );
+    record("write-update-event-no-domain-kept", "FINANCIAL");
+
+    // An explicit null is the other case: a move onto no domain, still refused.
+    const unscoped = await call("update_event", { year, id: event.id, domainSlug: null });
+    record("write-update-event-explicit-null", codeOf(unscoped));
+    assert.deepEqual(unscoped, FORBIDDEN, "an explicit null domain is still a move");
+
+    // The same for a goal: an id-and-name update files a Decision, and the
+    // goal is untouched until the operator approves it.
+    const proposal = (await call("update_goal", {
+      id: f.financialGoal,
+      name: "Save much more",
+    })) as { decisionId?: string; status?: string };
+    record("write-update-goal-no-domain", proposal.decisionId ? "DECISION" : codeOf(proposal));
+    assert.ok(
+      proposal.decisionId,
+      `a name-only update_goal must file a Decision: ${JSON.stringify(proposal)}`,
+    );
+    const goalsBefore = await loadGoals(f.ctx.root);
+    assert.ok(goalsBefore.ok);
+    assert.equal(
+      goalsBefore.ok
+        ? goalsBefore.value.find((g) => g.id === f.financialGoal)?.name
+        : null,
+      "Save more",
+      "the goal must not change until the Decision is approved",
+    );
+
+    assert.equal(
+      (await resolveDecision(f.ctx.root, proposal.decisionId!, "approved")).ok,
+      true,
+    );
+    const goalsAfter = await loadGoals(f.ctx.root);
+    assert.equal(
+      goalsAfter.ok ? goalsAfter.value.find((g) => g.id === f.financialGoal)?.name : null,
+      "Save much more",
+      "approval is what renames the goal",
+    );
+    assert.equal(
+      goalsAfter.ok ? goalsAfter.value.find((g) => g.id === f.financialGoal)?.domainSlug : null,
+      "financial",
+      "and the domain is unchanged",
+    );
+    record("write-update-goal-no-domain-approved", "APPROVED");
+  });
+
   it("a script block writes an assigned page and is refused on another domain", async () => {
     const applied = await call("apply_script_block", {
       domainSlug: "financial",
@@ -2223,6 +2307,11 @@ describe("KAR-70 pairing: the run artifact", () => {
         "write-apply-script-health",
         "write-run-script-health",
         "write-companion-update-document",
+        "write-update-event-no-domain",
+        "write-update-event-no-domain-kept",
+        "write-update-event-explicit-null",
+        "write-update-goal-no-domain",
+        "write-update-goal-no-domain-approved",
       ]) {
         assert.ok(names.includes(expected), `pairing-e2e.json is missing scenario ${expected}`);
       }

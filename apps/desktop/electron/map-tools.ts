@@ -536,6 +536,20 @@ async function connectedWriteRefusal(
   const allow = (slugs: ReadonlyArray<string | null | undefined>): unknown | null =>
     connectedWriteDomainsAllowed(slugs, grant) ? null : grantRefusal("FORBIDDEN");
 
+  /**
+   * The domain an update names, when it names one at all.
+   *
+   * An update that omits `domainSlug` is not asking to move the record: the
+   * record keeps the domain it already has, which is judged separately above.
+   * Passing that `undefined` into `allow` would read as a domain nobody is
+   * assigned to and refuse a perfectly in-domain title edit.
+   *
+   * An explicit `null` is different in kind and is kept: that is a move onto no
+   * domain, and it stays FORBIDDEN.
+   */
+  const namedDomain = (): (string | null)[] =>
+    rec.domainSlug === undefined ? [] : [rec.domainSlug as string | null];
+
   // ── documents ────────────────────────────────────────────────────────────
   if (name === "update_document") {
     const id = rec.id;
@@ -571,7 +585,7 @@ async function connectedWriteRefusal(
         ? grantRefusal("FORBIDDEN")
         : allow([existing.domainSlug]);
     }
-    return allow([existing.domainSlug, rec.domainSlug as string | null | undefined]);
+    return allow([existing.domainSlug, ...namedDomain()]);
   }
 
   // ── projects ─────────────────────────────────────────────────────────────
@@ -618,9 +632,12 @@ async function connectedWriteRefusal(
     if (existing === undefined) return null; // let the tool report the miss
     // Moving a record out of the assignment is the case the spec names: the
     // write touches the domain it leaves as well as the one it enters. So a
-    // delete is judged on the event's own domain, and an update on both.
+    // delete is judged on the event's own domain, and an update on its own
+    // domain plus any domain it names. An update that names none keeps the
+    // record where it is, which is why `namedDomain` is empty rather than
+    // `[undefined]` in that case.
     if (name === "delete_event") return allow([existing.domainSlug]);
-    return allow([existing.domainSlug, rec.domainSlug as string | null | undefined]);
+    return allow([existing.domainSlug, ...namedDomain()]);
   }
 
   // ── pages ────────────────────────────────────────────────────────────────

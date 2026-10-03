@@ -147,7 +147,7 @@ export const CAPTURE_WRITE_TOOLS: ReadonlySet<string> = new Set([
 ]);
 
 /** How a write reaches the vault: a pending Decision, or applied at once. */
-export type ConnectedWriteKind = "decision" | "immediate";
+type ConnectedWriteKind = "decision" | "immediate";
 
 /**
  * KAR-70: which of the two write shapes a tool has, or `null` when the tool is
@@ -206,7 +206,6 @@ export function toolAllowed(
   if (CAPTURE_WRITE_TOOLS.has(name) && !grant.domainSlugs.includes("financial")) {
     return "FORBIDDEN";
   }
-  if (isSchedule && !grant.schedule) return "FORBIDDEN";
   return "allow";
 }
 
