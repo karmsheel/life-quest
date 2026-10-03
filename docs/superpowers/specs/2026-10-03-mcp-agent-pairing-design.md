@@ -1,7 +1,7 @@
 # Design: MCP agent pairing
 
 **Date**: 2026-10-03
-**Status**: Draft for review. Architecture, call flow, error handling, and the end-to-end test were approved in conversation on 2026-10-03.
+**Status**: Approved 2026-10-03. Implementation plan: `docs/superpowers/plans/2026-10-03-mcp-agent-pairing.md`.
 
 ## Problem
 
