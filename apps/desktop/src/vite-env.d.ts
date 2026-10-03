@@ -38,6 +38,8 @@ import type {
   ReviewRecord,
   ScriptApplyResult,
   ScriptRunResult,
+  SavedView,
+  ViewRunResult,
   SignalChainListResult,
   SignalCreateInput,
   SignalRecord,
@@ -220,6 +222,9 @@ type LifequestApi = {
     id: string,
     patch: { title?: string; pinned?: boolean; archived?: boolean },
   ) => Promise<Result<HermesSession>>;
+  companionSessionDelete: (
+    id: string,
+  ) => Promise<Result<{ id: string; deleted: boolean }>>;
   companionChatStream: (payload: {
     sessionId: string;
     input: string;
@@ -356,6 +361,13 @@ type LifequestApi = {
   scriptRun: (input: { domainSlug: string; source: string }) => Promise<Result<ScriptRunResult>>;
   pinsList: (domainSlug: string | null) => Promise<Result<Pin[]>>;
   pinsSet: (domainSlug: string | null, pins: Pin[]) => Promise<Result<PinWriteResult>>;
+  // Agent-built dashboard views (plan.md design, slices 2/3)
+  viewList: (slug: string) => Promise<Result<SavedView[]>>;
+  viewGet: (slug: string, viewId: string) => Promise<Result<SavedView>>;
+  viewSave: (slug: string, spec: Record<string, unknown>, viewId?: string) => Promise<Result<SavedView>>;
+  viewDelete: (slug: string, viewId: string) => Promise<Result<{ id: string }>>;
+  viewRun: (slug: string, spec: Record<string, unknown>) => Promise<Result<ViewRunResult>>;
+  viewRunSaved: (slug: string, viewId: string) => Promise<Result<ViewRunResult>>;
   // KAR-61 finance kit
   kitInstallFinance: () => Promise<Result<unknown>>;
   kitList: (slug: string) => Promise<Result<unknown>>;

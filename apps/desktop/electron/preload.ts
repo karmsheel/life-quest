@@ -96,6 +96,19 @@ const lifequest = {
     ipcRenderer.invoke("pins:list", domainSlug) as Promise<Result<unknown>>,
   pinsSet: (domainSlug: string | null, pins: unknown[]) =>
     ipcRenderer.invoke("pins:set", domainSlug, pins) as Promise<Result<unknown>>,
+  // Agent-built dashboard views (plan.md design)
+  viewList: (slug: string) =>
+    ipcRenderer.invoke("view:list", slug) as Promise<Result<unknown>>,
+  viewGet: (slug: string, viewId: string) =>
+    ipcRenderer.invoke("view:get", slug, viewId) as Promise<Result<unknown>>,
+  viewSave: (slug: string, spec: Record<string, unknown>, viewId?: string) =>
+    ipcRenderer.invoke("view:save", slug, spec, viewId) as Promise<Result<unknown>>,
+  viewDelete: (slug: string, viewId: string) =>
+    ipcRenderer.invoke("view:delete", slug, viewId) as Promise<Result<unknown>>,
+  viewRun: (slug: string, spec: Record<string, unknown>) =>
+    ipcRenderer.invoke("view:run", slug, spec) as Promise<Result<unknown>>,
+  viewRunSaved: (slug: string, viewId: string) =>
+    ipcRenderer.invoke("view:runSaved", slug, viewId) as Promise<Result<unknown>>,
   // KAR-53 ingest
   // KAR-61 finance kit
   kitInstallFinance: () =>
@@ -256,6 +269,8 @@ const lifequest = {
     id: string,
     patch: { title?: string; pinned?: boolean; archived?: boolean },
   ) => ipcRenderer.invoke("companion:sessionPatch", id, patch),
+  companionSessionDelete: (id: string) =>
+    ipcRenderer.invoke("companion:sessionDelete", id),
   companionChatStream: (payload: {
     sessionId: string;
     input: string;

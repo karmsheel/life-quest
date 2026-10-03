@@ -13,6 +13,8 @@ import { PendingDecisionsCard } from "@/pages/home-pins/PendingDecisionsCard";
 import { TodayWeekCard } from "@/pages/home-pins/TodayWeekCard";
 import { RecentLogCard } from "@/pages/home-pins/RecentLogCard";
 import { ActiveAgentsCard } from "@/pages/home-pins/ActiveAgentsCard";
+import { ViewCard } from "@/components/ui/ViewCard";
+import type { SavedView } from "@lifequest/vault-core";
 
 export default function HomePage() {
   const { snapshot, reloadGeneration } = useVault();
@@ -27,17 +29,33 @@ export default function HomePage() {
   const [events, setEvents] = useState<LifeEvent[]>([]);
   const [pins, setPins] = useState<Pin[]>([]);
   const [pages, setPages] = useState<PageListEntry[]>([]);
+  const [views, setViews] = useState<SavedView[]>([]);
   const [moveBusy, setMoveBusy] = useState(false);
   const [installedKits, setInstalledKits] = useState<string[] | null>(null);
 
   const load = useCallback(async () => {
     const boardSlug = lens.kind === "domain" ? lens.slug : null;
     try {
-      const [decResult, logResult, pinsRes, pagesRes] = await Promise.all([
+      const [decResult, logResult, pinsRes, pagesRes, viewsRes] = await Promise.all([
         api().decisionList(),
         api().logList(),
         api().pinsList(boardSlug),
         api().pageList(boardSlug),
+        // Views exist per domain; Overview lists all domains' views so a card
+        // can be pinned there from any lens.
+        lens.kind === "domain"
+          ? api().viewList(lens.slug).then((r) => (r.ok ? (r.value as SavedView[]) : []))
+          : (async () => {
+              const slugs = (snapshot?.domains ?? [])
+                .filter((d) => !d.meta.archivedAt)
+                .map((d) => d.slug);
+              const all: SavedView[] = [];
+              for (const s of slugs) {
+                const res = await api().viewList(s);
+                if (res.ok) all.push(...(res.value as SavedView[]));
+              }
+              return all;
+            })(),
       ]);
       const allDecisions = decResult.ok ? decResult.value : [];
       const allEvents = logResult.ok ? logResult.value : [];
@@ -50,6 +68,7 @@ export default function HomePage() {
       setEvents(allEvents);
       setPins(pinsRes.ok ? (pinsRes.value as Pin[]) : []);
       setPages(pagesRes.ok ? (pagesRes.value as PageListEntry[]) : []);
+      setViews(viewsRes);
       const kitRes = await api().kitList("financial");
       setInstalledKits(kitRes.ok ? (kitRes.value as string[]) : []);
     } catch {
@@ -57,6 +76,7 @@ export default function HomePage() {
       setEvents([]);
       setPins([]);
       setPages([]);
+      setViews([]);
       setInstalledKits([]);
     }
   }, [lens]);
@@ -89,6 +109,38 @@ export default function HomePage() {
         .map((p) => `${p.domainSlug}:${p.pageId}`),
     );
     return pages.filter((e) => !onBoard.has(`${e.domainSlug}:${e.page.id}`));
+  }
+
+  function availableViewPins(): SavedView[] {
+    const onBoard = new Set(
+      pins
+        .filter((p) => p.kind === "view" && p.domainSlug === boardSlug)
+        .map((p) => (p.kind === "view" ? p.viewId : "")),
+    );
+    return views.filter((v) => !onBoard.has(v.id));
+  }
+
+  async function onAddViewPin(view: SavedView) {
+    if (!boardSlug) return;
+    const newPin: Pin = {
+      id: `view:${boardSlug}:${view.id}`,
+      kind: "view",
+      domainSlug: boardSlug,
+      viewId: view.id,
+      span: 1,
+    };
+    await persistPins([...pins, newPin]);
+  }
+
+  async function onCycleSpan(pinId: string) {
+    const target = pins.find((p) => p.id === pinId);
+    if (!target || target.kind !== "view" || moveBusy) return;
+    const next = pins.map((p) =>
+      p.id === pinId && p.kind === "view"
+        ? ({ ...p, span: p.span === 2 ? 1 : 2 } as Pin)
+        : p,
+    );
+    await persistPins(next);
   }
 
   async function persistPins(next: Pin[]) {
@@ -160,9 +212,15 @@ export default function HomePage() {
           return null;
       }
     }
-    // A view pin renders in slice 2 (ViewCard); until then it stays off the
-    // home board rather than claiming a page card it is not.
-    if (pin.kind === "view") return null;
+    // A view pin renders ViewCard, the design's single drawing path. Span 2
+    // marks the wrapper so the grid gives the card the full row.
+    if (pin.kind === "view") {
+      return (
+        <div className={pin.span === 2 ? "view-card view-card--span2" : "view-card"}>
+          <ViewCard domainSlug={pin.domainSlug} viewId={pin.viewId} />
+        </div>
+      );
+    }
     const domainName =
       snapshot?.domains.find((d) => d.slug === pin.domainSlug)?.meta.name ??
       pin.domainSlug;
@@ -179,6 +237,7 @@ export default function HomePage() {
 
   const availableKinds = availableSystemKinds();
   const addablePages = availablePagePins();
+  const addableViews = availableViewPins();
 
   return (
     <div className="home-dashboard">
@@ -194,7 +253,12 @@ export default function HomePage() {
 
       <div className="home-dashboard__grid">
         {pins.map((pin, index) => (
-          <div key={pin.id} className="home-pin">
+          <div
+            key={pin.id}
+            className={
+              pin.kind === "view" && pin.span === 2 ? "home-pin home-pin--span2" : "home-pin"
+            }
+          >
             <div className="home-pin__chrome">
               <button
                 className="home-pin__btn"
@@ -220,6 +284,16 @@ export default function HomePage() {
               >
                 ↓
               </button>
+              {pin.kind === "view" ? (
+                <button
+                  className="home-pin__btn"
+                  onClick={() => onCycleSpan(pin.id)}
+                  disabled={moveBusy}
+                  title={pin.span === 2 ? "Shrink to one cell" : "Widen to full row"}
+                >
+                  {pin.span === 2 ? "◧" : "♭"}
+                </button>
+              ) : null}
             </div>
             {renderPin(pin)}
           </div>
@@ -249,7 +323,7 @@ export default function HomePage() {
         </section>
         ) : null}
 
-      {availableKinds.length > 0 || addablePages.length > 0 ? (
+      {availableKinds.length > 0 || addablePages.length > 0 || addableViews.length > 0 ? (
         <section className="home-card home-pin-add">
           <h2 className="home-card__title">Add pin</h2>
           <div className="home-pin-add__row">
@@ -271,6 +345,17 @@ export default function HomePage() {
               disabled={moveBusy}
             >
               {entry.page.title}
+            </button>
+          ))}
+          {addableViews.map((view) => (
+            <button
+              key={`view:${boardSlug}:${view.id}`}
+              className="home-pin-add__btn home-pin-add__btn--view"
+              onClick={() => onAddViewPin(view)}
+              disabled={moveBusy}
+              title="Pin this saved view to the dashboard"
+            >
+              {view.title}
             </button>
           ))}
           </div>

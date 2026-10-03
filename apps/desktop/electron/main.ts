@@ -159,6 +159,13 @@ function registerIpcHandlers() {
   ipcMain.handle("script:run", (_e, input: { domainSlug: string; source: string }) => vault.scriptRun(input));
   ipcMain.handle("pins:list", (_e, domainSlug: string | null) => vault.pinsList(domainSlug));
   ipcMain.handle("pins:set", (_e, domainSlug: string | null, pins: Parameters<typeof vault.pinsSet>[1]) => vault.pinsSet(domainSlug, pins));
+  // KAR-V: agent-built dashboard views
+  ipcMain.handle("view:list", (_e, slug: string) => vault.viewList(slug));
+  ipcMain.handle("view:get", (_e, slug: string, viewId: string) => vault.viewGet(slug, viewId));
+  ipcMain.handle("view:save", (_e, slug: string, spec: Parameters<typeof vault.viewSave>[1], viewId?: string) => vault.viewSave(slug, spec, viewId));
+  ipcMain.handle("view:delete", (_e, slug: string, viewId: string) => vault.viewDelete(slug, viewId));
+  ipcMain.handle("view:run", (_e, slug: string, spec: Parameters<typeof vault.viewRun>[1]) => vault.viewRun(slug, spec));
+  ipcMain.handle("view:runSaved", (_e, slug: string, viewId: string) => vault.viewRunSaved(slug, viewId));
 
   // KAR-53 ingest
   ipcMain.handle("ingest:file", (_e, slug: string, input: { databaseId: string; bytes: Uint8Array; mime: string; name: string; extractedRows?: Record<string, string>[] }) => vault.ingestFile(slug, input));
@@ -355,6 +362,9 @@ function registerIpcHandlers() {
         typeof id === "string" ? id : "",
         patch && typeof patch === "object" ? patch : {},
       ),
+  );
+  ipcMain.handle("companion:sessionDelete", (_e, id: string) =>
+    companion.companionSessionDelete(typeof id === "string" ? id : ""),
   );
   ipcMain.handle(
     "companion:chatStream",

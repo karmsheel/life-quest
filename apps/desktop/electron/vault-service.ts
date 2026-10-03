@@ -58,6 +58,13 @@ import {
   unlockReview,
   updateDomain,
   updatePage,
+  // Agent-built dashboard views (plan.md design)
+  saveView,
+  listViews,
+  getView,
+  deleteView,
+  runView,
+  runSavedView,
   updateSettings,
   updateSignal,
   upsertRow,
@@ -613,6 +620,38 @@ export async function pinsSet(
   pins: import("@lifequest/vault-core").Pin[],
 ): Promise<Result<import("@lifequest/vault-core").PinWriteResult>> {
   return withVault((root) => setPins(root, domainSlug, pins, USER_ACTOR));
+}
+
+// Agent-built dashboard views (plan.md design)
+export async function viewList(slug: string) {
+  return withVault((root) => listViews(root, slug));
+}
+
+export async function viewGet(slug: string, viewId: string) {
+  return withVault((root) => getView(root, slug, viewId));
+}
+
+export async function viewSave(
+  slug: string,
+  spec: Omit<import("@lifequest/vault-core").ViewSpec, "schemaVersion">,
+  viewId?: string,
+) {
+  return withVault((root) => saveView(root, slug, spec, { id: viewId }));
+}
+
+export async function viewDelete(slug: string, viewId: string) {
+  return withVault((root) => deleteView(root, slug, viewId));
+}
+
+export async function viewRun(
+  slug: string,
+  spec: import("@lifequest/vault-core").ViewSpec,
+) {
+  return withVault((root) => runView(root, slug, spec));
+}
+
+export async function viewRunSaved(slug: string, viewId: string) {
+  return withVault((root) => runSavedView(root, slug, viewId));
 }
 
 export async function documentGet(
