@@ -20,6 +20,7 @@ import {
   updateSettings,
   type Actor,
 } from "../src/index.ts";
+import { postedAllowlistResult } from "../src/database-tools.ts";
 import { archiveDomain } from "../src/domains.ts";
 
 describe("insertRows", () => {
@@ -346,5 +347,50 @@ describe("insert_rows tool", () => {
       rows: [{ [ml]: 3 }],
     });
     assert.equal(isOk(res) && res.posted, true);
+  });
+});
+
+describe("postedAllowlistResult", () => {
+  const id = "dec-1";
+
+  it("reports an approved record as posted even when resolve failed", () => {
+    const res = postedAllowlistResult(id, 2, "log append failed", { status: "approved" });
+    assert.deepEqual(res, { decisionId: id, status: "approved", posted: true, rowCount: 2 });
+  });
+
+  it("reports a rejected record with its reason and posted false", () => {
+    const res = postedAllowlistResult(id, 2, "resolve failed", {
+      status: "rejected",
+      reason: "Row id already exists: row-1",
+    });
+    assert.deepEqual(res, {
+      decisionId: id,
+      status: "rejected",
+      posted: false,
+      rowCount: 2,
+      reason: "Row id already exists: row-1",
+    });
+  });
+
+  it("uses the resolve error when a rejected record has no reason", () => {
+    const res = postedAllowlistResult(id, 1, "resolve failed", { status: "rejected", reason: null });
+    assert.equal(isOk(res), true);
+    if (!isOk(res)) return;
+    assert.equal(res.status, "rejected");
+    assert.equal(res.posted, false);
+    assert.equal(res.reason, "resolve failed");
+  });
+
+  it("leaves a pending or missing record pending", () => {
+    const pending = postedAllowlistResult(id, 2, "disk busy", { status: "pending" });
+    const missing = postedAllowlistResult(id, 2, "disk busy", undefined);
+    assert.deepEqual(pending, {
+      decisionId: id,
+      status: "pending",
+      posted: false,
+      rowCount: 2,
+      reason: "disk busy",
+    });
+    assert.deepEqual(missing, pending);
   });
 });

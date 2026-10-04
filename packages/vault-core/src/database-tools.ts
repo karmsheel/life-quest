@@ -443,6 +443,32 @@ async function checkConflicts(
   };
 }
 
+/**
+ * Map a finished allowlist resolve onto the tool result.
+ * Rows are already in the database when the re-read record is approved, including
+ * when the decision.resolved log line failed after that write.
+ */
+export function postedAllowlistResult(
+  decisionId: string,
+  rowCount: number,
+  reason: string,
+  record: { status: string; reason?: string | null } | undefined,
+): DatabaseToolResult {
+  if (record?.status === "approved") {
+    return { decisionId, status: "approved", posted: true, rowCount };
+  }
+  if (record?.status === "rejected") {
+    return {
+      decisionId,
+      status: "rejected",
+      posted: false,
+      rowCount,
+      reason: record.reason ?? reason,
+    };
+  }
+  return { decisionId, status: "pending", posted: false, rowCount, reason };
+}
+
 /** An allowlisted create resolves in this call. Anything else stays pending and writes nothing. */
 async function finishWrite(
   root: string,
@@ -452,19 +478,10 @@ async function finishWrite(
 ): Promise<DatabaseToolResult> {
   if (!allow) return { decisionId, status: "pending", posted: false, rowCount };
   const resolved = await resolveDecision(root, decisionId, "approved");
-  if (resolved.ok) return { decisionId, status: "approved", posted: true, rowCount };
+  if (resolved.ok) return postedAllowlistResult(decisionId, rowCount, "", { status: "approved" });
   const listed = await listDecisions(root);
   const record = listed.ok ? listed.value.find((d) => d.id === decisionId) : undefined;
-  if (record?.status === "rejected") {
-    return {
-      decisionId,
-      status: "rejected",
-      posted: false,
-      rowCount,
-      reason: record.reason ?? resolved.error,
-    };
-  }
-  return { decisionId, status: "pending", posted: false, rowCount, reason: resolved.error };
+  return postedAllowlistResult(decisionId, rowCount, resolved.error, record);
 }
 
 async function allowInsert(
