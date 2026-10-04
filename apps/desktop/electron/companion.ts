@@ -7,6 +7,8 @@ import { shell } from "electron";
 import {
   DEFAULT_API_PORT,
   PROFILE_NAME,
+  hermesRoot,
+  profileDir,
   readEnv,
 } from "./companion-profile.ts";
 import { hermesSpawnSpec } from "./companion-spawn.ts";
@@ -24,6 +26,7 @@ import {
 import {
   ensureCompanion,
   shutdownCompanion,
+  writeCompanionMcpProfile,
   type CompanionIo,
   type CompanionStatus,
 } from "./companion-lifecycle.ts";
@@ -241,6 +244,31 @@ export function companionStatus(): PublicCompanionStatus {
 export async function companionEnsure(): Promise<PublicCompanionStatus> {
   current = await ensureCompanion(realIo());
   return publicStatus(current);
+}
+
+/**
+ * KAR-70: write the open vault's companion token into the Hermes profile.
+ *
+ * Called after a vault opens or is switched, because that is the moment
+ * there is a token to write and the doors have been rebound to the vault
+ * whose credential they now accept. A no-op when no vault is open or
+ * the profile is unreachable — the header that is already there stays.
+ */
+export async function companionWriteMcpProfile(): Promise<boolean> {
+  try {
+    const vault = await import("./vault-service.ts");
+    const token = await vault.ensureCurrentCompanionToken();
+    if (!token.ok) return false;
+    const root = hermesRoot(process.env, os.homedir());
+    await writeCompanionMcpProfile(
+      realIo(),
+      path.join(profileDir(root), "config.yaml"),
+      token.value,
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function companionShutdown(): Promise<void> {

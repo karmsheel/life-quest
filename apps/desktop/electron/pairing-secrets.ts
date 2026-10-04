@@ -306,6 +306,29 @@ export async function mintInvite(
   }
 }
 
+/**
+ * KAR-70: the invites that are still unused, as `{ id, expiresAt }`.
+ *
+ * Never the code. The panel can drop one of these and show when it expires,
+ * but it cannot recover a code to send — only the hash is stored, and the
+ * raw code is returned once, at mint.
+ *
+ * A read that needs no lock, so it never races a mint or a drop.
+ */
+export async function listUnusedInvites(
+  secretsDir: string,
+  vaultId: string,
+): Promise<{ id: string; expiresAt: string }[]> {
+  try {
+    const vault = await peekSecrets(secretsDir, vaultId);
+    return vault.invites
+      .filter((i) => i.usedAt === null)
+      .map((i) => ({ id: i.id, expiresAt: i.expiresAt }));
+  } catch {
+    return [];
+  }
+}
+
 /** Drop an unused code. Returns false when it is unknown or already used. */
 export async function dropInvite(
   secretsDir: string,

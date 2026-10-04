@@ -22,6 +22,12 @@ type Doors = Awaited<ReturnType<typeof startPairingDoors>>;
 
 let doors: Doors | null = null;
 let openVaultId: string | null = null;
+/**
+ * KAR-70: the desktop's in-memory lens, handed to the doors. Held here
+ * rather than read per request from userData, so a lens change lands
+ * on the next call with no vault write.
+ */
+let currentLens: () => string | null = () => null;
 
 /** The two urls and their per-door errors, as Settings reads them. */
 export type McpDoors = {
@@ -87,7 +93,9 @@ export function getMcpUrl(): string {
 export async function startMcp(
   rootPath: string,
   vaultId: string,
+  getLens: () => string | null = () => null,
 ): Promise<Result<McpDoors>> {
+  currentLens = getLens;
   if (doors) {
     // Already listening. Rebind to the newly opened vault's root, roster, and
     // companion credential rather than serving the previous vault.
@@ -99,6 +107,7 @@ export async function startMcp(
     root: rootPath,
     vaultId,
     secretsDir: secretsDir(),
+    lens: () => currentLens(),
   });
   openVaultId = vaultId;
   const value = getMcpDoors();

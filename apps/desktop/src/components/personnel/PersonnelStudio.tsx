@@ -12,10 +12,14 @@ type ScannedAgent = {
 };
 
 /**
- * KAR-70: an invite code, shown once at mint time. The id is kept so a
- * Drop can name the record; only the vault's hash identifies it later.
+ * KAR-70: an invite code, shown once at the mint that produced it. Only the
+ * id and the expiry survive that panel — the vault keeps a hash, so the
+ * code cannot be recovered afterwards.
  */
 type MintedInvite = { id: string; code: string; expiresAt: string };
+
+/** An invite still waiting to be used. Never carries its code. */
+type UnusedInvite = { id: string; expiresAt: string };
 
 export function PersonnelStudio() {
   const { snapshot, refresh } = useVault();
@@ -38,6 +42,7 @@ export function PersonnelStudio() {
   const [agents, setAgents] = useState<ConnectedAgent[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(true);
   const [invite, setInvite] = useState<MintedInvite | null>(null);
+  const [unusedInvites, setUnusedInvites] = useState<UnusedInvite[]>([]);
 
   const domainName = useCallback(
     (slug: string | null) => {
@@ -74,6 +79,13 @@ export function PersonnelStudio() {
       setAgents(result.ok ? result.value : []);
     } catch {
       setAgents([]);
+    }
+    // The unused-invite list is separate: it lives in userData, not the vault.
+    try {
+      const invites = await api().connectedAgentsListInvites();
+      setUnusedInvites(invites.ok ? invites.value : []);
+    } catch {
+      setUnusedInvites([]);
     } finally {
       setAgentsLoading(false);
     }
@@ -157,6 +169,7 @@ export function PersonnelStudio() {
         code: result.value.code,
         expiresAt: result.value.expiresAt,
       });
+      await loadAgents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to mint an invite");
     } finally {
@@ -164,20 +177,21 @@ export function PersonnelStudio() {
     }
   }
 
-  async function dropInvite(record: MintedInvite) {
-    // An unused invite is dropped by its id. The panel never re-shows a code
-    // it did not just mint, and the vault holds only the hash.
-    setBusyId("invite");
+  async function dropInvite(id: string) {
+    // Named by id. An invite that is already used, or unknown, comes back as
+    // a failure rather than a silent success — the code is still there.
+    setBusyId(`invite:${id}`);
     setError(null);
     setMessage(null);
     try {
-      const result = await api().connectedAgentsDropInvite(record.id);
+      const result = await api().connectedAgentsDropInvite(id);
       if (!result.ok) {
         setError(result.error);
         return;
       }
-      setInvite(null);
+      setInvite((prev) => (prev && prev.id === id ? null : prev));
       setMessage("Dropped the unused invite.");
+      await loadAgents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to drop the invite");
     } finally {
@@ -361,11 +375,38 @@ export function PersonnelStudio() {
             <button
               type="button"
               className="btn btn-danger"
-              onClick={() => void dropInvite(invite)}
-              disabled={busyId === "invite"}
+              onClick={() => void dropInvite(invite.id)}
+              disabled={busyId === `invite:${invite.id}`}
             >
               Drop
             </button>
+          </div>
+        ) : null}
+
+{unusedInvites.length > 0 ? (
+          <div className="personnel-studio__invites">
+            <h3 className="personnel-studio__section-subtitle muted">
+              Unused invites
+            </h3>
+            <ul className="personnel-studio__list">
+              {unusedInvites.map((row) => (
+                <li key={row.id} className="personnel-card">
+                  <div className="personnel-card__body">
+                    <p className="personnel-card__meta muted">
+                      expires {new Date(row.expiresAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    disabled={busyId === `invite:${row.id}`}
+                    onClick={() => void dropInvite(row.id)}
+                  >
+                    {busyId === `invite:${row.id}` ? "…" : "Drop"}
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
 

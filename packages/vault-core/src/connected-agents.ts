@@ -285,7 +285,12 @@ export async function updateConnectedAgent(
         if (!domains.ok) return { ok: false, error: domains.error };
         for (const slug of unique) {
           const live = domains.value.some((d) => d.slug === slug && !d.meta.archivedAt);
-          if (!live) {
+          // A slug the row already carries is exempt, archived or not.
+          // Archiving a domain must not make the row uneditable: the
+          // operator still has to be able to narrow the grant, and the
+          // archived domain already drops out of the effective grant on
+          // its own. Only a newly added archived or unknown slug is refused.
+          if (!live && !existing.domainSlugs.includes(slug)) {
             return {
               ok: false,
               error: `Domain not found or archived: ${slug}. It may not exist, or it may be archived.`,

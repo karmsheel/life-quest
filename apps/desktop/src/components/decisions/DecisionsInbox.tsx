@@ -93,7 +93,14 @@ export function DecisionsInbox() {
       } else {
         list = list.filter((d) => d.status !== "pending");
       }
-      list = list.filter((d) => recordVisibleMulti(lens, d.domainSlugs));
+      // KAR-70: a pairing Decision belongs to no domain, so the lens
+      // filter would hide the very card the operator has to act on. Every
+      // pairing Decision stays visible under every lens.
+      list = list.filter(
+        (d) =>
+          d.target.type === "agent-pairing" ||
+          recordVisibleMulti(lens, d.domainSlugs),
+      );
       // Newest first
       list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       setItems(list);

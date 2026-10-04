@@ -361,6 +361,9 @@ function registerIpcHandlers() {
   ipcMain.handle("connectedAgents:invite", () =>
     vault.connectedAgentsInvite(),
   );
+  ipcMain.handle("connectedAgents:listInvites", () =>
+    vault.connectedAgentsListInvites(),
+  );
   ipcMain.handle("connectedAgents:dropInvite", (_e, id: string) =>
     vault.connectedAgentsDropInvite(typeof id === "string" ? id : ""),
   );

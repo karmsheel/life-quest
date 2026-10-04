@@ -110,10 +110,19 @@ export function upsertEnv(
  *
  * `headers` carries the companion's `Authorization`, so a profile written before
  * the door asked for a bearer stops being refused with AUTH_REQUIRED the moment
- * `ensure` runs again. When the entry already exists its `url` is updated and
- * `headers` are merged key by key — the other keys on that entry, and every
- * other `mcp_servers` entry, stay exactly as they were. Only its own
- * `Authorization` is ever replaced.
+ * `ensure` runs again.
+ *
+ * Merging is per key, and it is asymmetric on purpose:
+ *
+ * - A header key is replaced only when a new value was passed for it. An empty
+ *   `headers` argument therefore leaves the existing block alone. That matters
+ *   because `ensure` runs before a vault is open, when there is no token to
+ *   write: rewriting the block to nothing would strip a header that is the only
+ *   thing making the companion work.
+ * - The `url` is always rewritten and the old line is dropped, never appended
+ *   to, so repeated calls cannot accumulate duplicates.
+ * - Every other key on the entry, and every other `mcp_servers` entry, is left
+ *   exactly as it was.
  *
  * A header value is written unquoted only when it is a plain YAML scalar: a
  * token or key that starts with a YAML indicator (`{`, `[`, `*`, `&`, `!`, `%`,
@@ -138,12 +147,12 @@ export function ensureMcpServer(
   }
 
   const lines = [`  ${name}:`, `    url: ${url}`];
-    if (headerEntries.length > 0) {
-      lines.push("    headers:");
-      for (const [key, value] of headerEntries) {
-        lines.push(`      ${key}: ${yamlScalar(value)}`);
-      }
+  if (headerEntries.length > 0) {
+    lines.push("    headers:");
+    for (const [key, value] of headerEntries) {
+      lines.push(`      ${key}: ${yamlScalar(value)}`);
     }
+  }
   const block = `${lines.join("\n")}\n`;
   if (/^mcp_servers:[ \t]*$/m.test(yaml) || /^mcp_servers:[ \t]*\n/m.test(yaml)) {
     return yaml.replace(/^(mcp_servers:[ \t]*)\n/m, `$1\n${block}`);
@@ -152,15 +161,14 @@ export function ensureMcpServer(
   return `${prefix}mcp_servers:\n${block}`;
 }
 
-/** A single header line under an entry, at the entry's own indent. */
-function headerLine(indent: string, key: string, value: string): string {
-  return `${indent}  headers:\n${indent}    ${key}: ${yamlScalar(value)}`;
-}
-
 /**
  * Rewrite one existing entry in place. Its block runs from the entry key to the
  * next line at that key's indent or shallower, which is where the next sibling
  * `mcp_servers` entry — or the next top-level key — starts.
+ *
+ * The walk keeps three things apart: the entry's own `url` (dropped, because
+ * ours is written back), its `headers:` block (its keys are merged, not
+ * replaced), and everything else (kept, in order).
  */
 function mergeIntoEntry(
   yaml: string,
@@ -172,6 +180,9 @@ function mergeIntoEntry(
   const lines = yaml.split("\n");
   const startLine = yaml.slice(0, start).split("\n").length - 1;
   const indent = /^([ \t]*)/.exec(lines[startLine] ?? "")?.[1] ?? "  ";
+  const fieldIndent = `${indent}  `;
+  const headerIndent = `${fieldIndent}  `;
+
   let end = startLine + 1;
   while (end < lines.length) {
     const line = lines[end] ?? "";
@@ -182,42 +193,58 @@ function mergeIntoEntry(
     end += 1;
   }
 
-  const body = lines.slice(startLine + 1, end);
-  const rest: string[] = [];
-  const headerIndent = `${indent}  `;
-  let i = 0;
-  while (i < body.length) {
-    const line = body[i] ?? "";
+  // Headers already on the entry, and the lines of that block, kept unless a new
+  // value replaces the key.
+  const keptHeaders: [string, string][] = [];
+  const other: string[] = [];
+
+  let i = startLine + 1;
+  while (i < end) {
+    const line = lines[i] ?? "";
     const own = /^([ \t]*)/.exec(line)?.[1] ?? "";
-    if (/^url:/.test(line.trim()) && own.length === headerIndent.length) {
-      rest.push(`${headerIndent}url: ${url}`);
-      i += 1;
+    if (own.length === fieldIndent.length && /^url:/.test(line.trim())) {
+      i += 1; // dropped: ours is written back below
       continue;
     }
-    if (/^headers:/.test(line.trim()) && own.length === headerIndent.length) {
-      // Drop the old header block; the merge below rewrites it whole.
+    if (own.length === fieldIndent.length && /^headers:/.test(line.trim())) {
       i += 1;
-      while (i < body.length) {
-        const next = body[i] ?? "";
+      while (i < end) {
+        const next = lines[i] ?? "";
         const nextIndent = /^([ \t]*)/.exec(next)?.[1] ?? "";
-        if (next.trim() !== "" && nextIndent.length <= headerIndent.length) break;
+        if (next.trim() !== "" && nextIndent.length <= fieldIndent.length) break;
+        const colon = next.indexOf(":");
+        if (next.trim() !== "" && nextIndent.length === headerIndent.length && colon > 0) {
+          const key = next.slice(nextIndent.length, colon).trim();
+          keptHeaders.push([key, next.slice(colon + 1).trim()]);
+        }
         i += 1;
       }
       continue;
     }
-    rest.push(line);
+    other.push(line);
     i += 1;
   }
 
-  const rebuilt = [`${indent}${name}:`, `${headerIndent}url: ${url}`];
-  for (const [key, value] of headerEntries) rebuilt.push(headerLine(indent, key, value));
-  // Keep the entry's other keys after ours; a `headers:` block above them would
-  // swallow them, so ours goes last.
-  return [...lines.slice(0, startLine), ...rebuilt, ...rest, ...lines.slice(end)].join("\n");
+  const merged = new Map<string, string>(keptHeaders);
+  for (const [key, value] of headerEntries) merged.set(key, value);
+  const headers = [...merged.entries()];
+
+  const rebuilt = [`${indent}${name}:`, `${fieldIndent}url: ${url}`];
+  if (headers.length > 0) {
+    rebuilt.push(`${fieldIndent}headers:`);
+    for (const [key, value] of headers) {
+      rebuilt.push(`${headerIndent}${key}: ${yamlScalar(value)}`);
+    }
+  }
+  // The entry's other keys go after ours: a `headers:` block written above them
+  // would swallow them as its children.
+  return [...lines.slice(0, startLine), ...rebuilt, ...other, ...lines.slice(end)].join("\n");
 }
 
 /** Render a header value as a YAML scalar, quoted only when it has to be. */
 function yamlScalar(value: string): string {
+  // A value that was already quoted stays as it is rather than being requoted.
+  if (/^'.*'$/.test(value)) return value;
   if (/^[A-Za-z0-9][A-Za-z0-9 ._/@=+-]*$/.test(value)) return value;
   return `'${value.replace(/'/g, "''")}'`;
 }

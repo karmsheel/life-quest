@@ -165,6 +165,7 @@ import {
 import {
   dropInvite,
   ensureCompanionToken,
+  listUnusedInvites,
   mintInvite,
 } from "./pairing-secrets.js";
 import { adapterTransport } from "./adapter-transport.js";
@@ -311,10 +312,19 @@ async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
   // startMcp rebinds when a listener already exists, so switching vaults
   // moves both doors rather than leaving them on the first vault.
   mcpError = null;
-  const mcpResult = await startMcp(snapshot.rootPath, snapshot.lifequest.id);
+  const mcpResult = await startMcp(
+    snapshot.rootPath,
+    snapshot.lifequest.id,
+    () => currentLens,
+  );
   if (!mcpResult.ok) {
     mcpError = mcpResult.error;
   }
+  // KAR-70: the doors are now bound to this vault, so the profile must carry
+  // this vault companion token. Switching vaults has to refresh the header,
+  // or the profile keeps a bearer the rebound doors no longer accept. Best
+  // effort: a profile that cannot be written must not fail the open.
+  await companion.companionWriteMcpProfile();
 }
 
 export function getMcpError(): string | null {
@@ -411,6 +421,24 @@ export async function connectedAgentsInvite(): Promise<
   });
 }
 
+/**
+ * KAR-70: the invites still waiting to be used, as . Never
+ * the code — only its hash is stored.
+ */
+export async function connectedAgentsListInvites(): Promise<
+  Result<{ id: string; expiresAt: string }[]>
+> {
+  return enqueue(async () => {
+    if (!currentVaultId) {
+      return noVaultError<{ id: string; expiresAt: string }[]>();
+    }
+    return {
+      ok: true,
+      value: await listUnusedInvites(pairingSecretsDir(), currentVaultId),
+    };
+  });
+}
+
 /** Drop an unused invite code. A used code is already spent and stays put. */
 export async function connectedAgentsDropInvite(
   id: string,
@@ -422,6 +450,14 @@ export async function connectedAgentsDropInvite(
     }
     const res = await dropInvite(pairingSecretsDir(), currentVaultId, id);
     if (!res.ok) return res;
+    // A refusal is not a success: the code is still there, and telling the
+    // panel it is gone would leave an invite it can no longer name.
+    if (!res.value) {
+      return {
+        ok: false,
+        error: "That invite is unknown or already used, so it was not dropped.",
+      };
+    }
     return { ok: true, value: { dropped: true } };
   });
 }

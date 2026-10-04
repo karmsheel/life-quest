@@ -28,11 +28,19 @@ describe("main-process domain lens", () => {
   });
 
   it("MCP and get_doctrine use the in-memory lens", () => {
-    const mcp = read("electron/pairing-door.ts");
-    // The door passes the live lens per request and never reads a persisted
-    // one, so a lens change does not need a vault write to take effect.
-    assert.match(mcp, /activeSlug|executeTool/);
-    assert.equal(mcp.includes("getActiveDomain"), false);
+    const door = read("electron/pairing-door.ts");
+    // The companion's call site must pass the live lens. A bare `null`
+    // here would make get_doctrine with no domain return every live
+    // domain, which is not the companion's view.
+    assert.match(door, /grant \? null : ctx\.lens\(\)/);
+    assert.match(door, /lens: \(\) => string \| null/);
+    // ...and it must not fall back to the persisted lens per request.
+    assert.equal(door.includes("getActiveDomain"), false);
+
+    const server = read("electron/mcp-server.ts");
+    // mcp-server hands the doors an in-memory lens, not a stored one.
+    assert.match(server, /lens: \(\) => currentLens\(\)/);
+    assert.equal(server.includes("getActiveDomain"), false);
 
     const tools = read("electron/map-tools.ts");
     assert.match(tools, /domains:/);

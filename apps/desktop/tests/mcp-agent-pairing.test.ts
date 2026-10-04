@@ -53,8 +53,11 @@ import {
   INVITE_MCP_PORT,
 } from "../electron/pairing-door.ts";
 import {
+  dropInvite,
   ensureCompanionToken,
+  listUnusedInvites,
   mintInvite,
+  takeInvite,
 } from "../electron/pairing-secrets.ts";
 import { executeTool } from "../electron/map-tools.ts";
 import { ensureMcpServer, MCP_URL } from "../electron/companion-profile.ts";
@@ -2917,6 +2920,328 @@ describe("KAR-70 pairing: the wiring surfaces", () => {
 });
 
 
+// ── Fix pass: the companion header survives a cold start and follows the vault
+
+describe("KAR-70 pairing: the companion header across a vault switch", () => {
+  it("an ensure with no token leaves an existing header alone, and a token replaces it", () => {
+    const first = ensureMcpServer(
+      ["mcp_servers:", "  lifequest:", "    url: http://127.0.0.1:1/mcp", ""].join("\n"),
+      "lifequest",
+      MCP_URL,
+      { Authorization: "Bearer vault-one-token-0123456789" },
+    );
+    assert.ok(first.includes("Authorization: Bearer vault-one-token-0123456789"));
+
+    // The cold-start path: CompanionProvider calls companionEnsure before any
+    // vault is open, so there is no token to write. That must not strip the
+    // header the companion depends on.
+    const cold = ensureMcpServer(first, "lifequest", MCP_URL);
+    record("header-cold-start-preserved", cold.includes("vault-one-token-0123456789") ? "KEPT" : "STRIPPED");
+    assert.ok(
+      cold.includes("Authorization: Bearer vault-one-token-0123456789"),
+      `a cold ensure must not strip the companion header: ${cold}`,
+    );
+    assert.equal(
+      (cold.match(/url: http:\/\/127\.0\.0\.1:8643\/mcp/g) ?? []).length,
+      1,
+      `a cold ensure must not duplicate the url: ${cold}`,
+    );
+
+    // Switching vaults refreshes the header to the credential the rebound doors
+    // accept, and drops the old token.
+    const switched = ensureMcpServer(cold, "lifequest", MCP_URL, {
+      Authorization: "Bearer vault-two-token-9876543210",
+    });
+    record("header-vault-switch", "REFRESHED");
+    assert.ok(switched.includes("Authorization: Bearer vault-two-token-9876543210"));
+    assert.equal(switched.includes("vault-one-token-0123456789"), false, switched);
+    assert.equal((switched.match(/url: http:\/\/127\.0\.0\.1:8643/g) ?? []).length, 1);
+  });
+
+  it("merges one header key without touching the others on the entry", () => {
+    const yaml = [
+      "mcp_servers:",
+      "  lifequest:",
+      "    url: http://127.0.0.1:1/mcp",
+      "    timeout: 30",
+      "    headers:",
+      "      Authorization: Bearer old-token",
+      "      X-Trace: keep-me",
+      "",
+    ].join("\n");
+    const next = ensureMcpServer(yaml, "lifequest", MCP_URL, {
+      Authorization: "Bearer new-token",
+    });
+    record("header-other-keys-kept", next.includes("keep-me") ? "KEPT" : "LOST");
+    assert.ok(next.includes("Authorization: Bearer new-token"), next);
+    assert.ok(next.includes("X-Trace: keep-me"), `a sibling header must survive: ${next}`);
+    assert.ok(next.includes("timeout: 30"), `another key on the entry must survive: ${next}`);
+  });
+});
+
+// ── Fix pass: unused invites are a list, and a refusal is a refusal
+
+describe("KAR-70 pairing: unused invites", () => {
+  it("lists { id, expiresAt } with no code, drops by id, and refuses a spent code", async () => {
+    const root = await tempDir("kar70-invites-vault-");
+    assert.equal((await createVault(root, "Invites")).ok, true);
+    const secretsDir = await tempDir("kar70-invites-secrets-");
+    const vaultId = "invites-e2e";
+
+    const one = await mintInvite(secretsDir, vaultId);
+    assert.equal(one.ok, true, `mint one: ${JSON.stringify(one)}`);
+    const two = await mintInvite(secretsDir, vaultId);
+    assert.equal(two.ok, true, `mint two: ${JSON.stringify(two)}`);
+
+    const listed = await listUnusedInvites(secretsDir, vaultId);
+    record("invite-list", `${listed.length}`);
+    assert.equal(listed.length, 2, `both mints are unused: ${JSON.stringify(listed)}`);
+    for (const row of listed) {
+      assert.deepEqual(Object.keys(row).sort(), ["expiresAt", "id"], "no code in the list");
+      assert.equal(Date.parse(row.expiresAt) > Date.now(), true, "an unused invite has not expired");
+    }
+
+    // Spending one code must remove it from the list, and only that one.
+    const spent = await takeInvite(secretsDir, vaultId, one.ok ? one.value.code : "");
+    record("invite-take-once", spent ? "SPENT" : "REFUSED");
+    assert.equal(spent, true, "an unused code is spendable once");
+    assert.equal(
+      await takeInvite(secretsDir, vaultId, one.ok ? one.value.code : ""),
+      false,
+      "a spent code cannot be taken again",
+    );
+    const afterSpend = await listUnusedInvites(secretsDir, vaultId);
+    record("invite-list-after-spend", `${afterSpend.length}`);
+    assert.equal(afterSpend.length, 1, `the spent code leaves the list: ${JSON.stringify(afterSpend)}`);
+
+    // Dropping the remaining one works; dropping it again is refused.
+    const id = afterSpend[0]!.id;
+    const firstDrop = await dropInvite(secretsDir, vaultId, id);
+    assert.equal(firstDrop.ok && firstDrop.value, true, `first drop: ${JSON.stringify(firstDrop)}`);
+    const dropped = await dropInvite(secretsDir, vaultId, id);
+    record("invite-drop-twice", dropped.ok && dropped.value ? "OK" : "REFUSED");
+    assert.equal(
+      dropped.ok && dropped.value,
+      false,
+      `a second drop must be refused: ${JSON.stringify(dropped)}`,
+    );
+    assert.deepEqual(await listUnusedInvites(secretsDir, vaultId), []);
+
+    // ...and the IPC layer turns that refusal into an error rather than
+    // reporting a drop that did not happen.
+    const service = readSource("electron/vault-service.ts");
+    assert.match(
+      service,
+      /if \(!res\.value\)[\s\S]{0,200}ok: false/,
+      "connectedAgentsDropInvite must refuse when dropInvite returns false",
+    );
+  });
+});
+
+// ── Fix pass: a pairing Decision is not hidden by a domain lens
+
+describe("KAR-70 pairing: the pairing Decision under a lens", () => {
+  it("keeps an agent-pairing Decision visible whatever the lens filter says", () => {
+    const source = readSource("src/components/decisions/DecisionsInbox.tsx");
+    record("inbox-pairing-lens-exempt", "KEEP");
+    assert.match(
+      source,
+      /d\.target\.type === ["']agent-pairing["']\s*\|\|/,
+      "the inbox filter must exempt a pairing Decision from the lens",
+    );
+    // It must still be a real filter for everything else.
+    assert.match(source, /recordVisibleMulti\(lens, d\.domainSlugs\)/);
+  });
+});
+
+// ── Fix pass: the companion's lens at the production call site
+
+describe("KAR-70 pairing: the companion's lens", () => {
+  it("passes the live lens for a companion call and null for a granted agent", () => {
+    const door = readSource("electron/pairing-door.ts");
+    record("door-companion-lens", "IN_MEMORY");
+    assert.match(
+      door,
+      /grant \? null : ctx\.lens\(\)/,
+      "a companion call must carry the desktop lens; only a granted agent gets null",
+    );
+    assert.equal(door.includes("getActiveDomain"), false, "the door must not read the persisted lens");
+
+    const service = readSource("electron/vault-service.ts");
+    assert.match(
+      service,
+      /\(\) => currentLens/,
+      "vault-service must hand the doors the in-memory lens",
+    );
+
+    const server = readSource("electron/mcp-server.ts");
+    assert.match(server, /lens: \(\) => currentLens\(\)/);
+  });
+
+  it("a granted agent's lens is its grant, and a companion read follows the desktop lens", async () => {
+    const ctx = await openDoors("kar70-companion-lens");
+    try {
+      const token = await ensureCompanionToken(ctx.secretsDir, ctx.vaultId);
+      // The companion, with the overview lens, falls through to the first live
+      // domain rather than resolving the one the desktop is looking at.
+      const overview = (await executeTool(ctx.root, null, "get_doctrine", {})) as {
+        slug?: string;
+        domains?: { slug: string }[];
+      };
+      record("lens-null-is-not-a-lens", overview.slug ?? "DOMAINS");
+      assert.equal(
+        overview.slug !== "health",
+        true,
+        `a null lens does not resolve the desktop domain: ${JSON.stringify(overview)}`,
+      );
+
+      // An active agent assigned to one domain sees only that one, whatever the
+      // lens is: the grant is the lens.
+      const bearer = "companion-lens-agent-bearer-01";
+      const intro = await rpc(
+        ctx.localPort,
+        { ...auth(bearer), "x-lifequest-name": "Lens Agent" },
+        "initialize",
+        INIT_PARAMS,
+      );
+      assert.equal(intro.status, 200, JSON.stringify(intro.body));
+      const roster = await listConnectedAgents(ctx.root);
+      assert.equal(roster.ok, true);
+      const row = (roster.ok ? roster.value : []).find((a) => a.name === "Lens Agent");
+      assert.ok(row, "the introduction filed a roster row");
+      assert.equal((await markConnectedAgent(ctx.root, row.id, "active")).ok, true);
+      await updateConnectedAgent(ctx.root, row.id, {
+        access: "read",
+        domainSlugs: ["financial"],
+        schedule: false,
+      });
+      const scoped = (await executeTool(
+        ctx.root,
+        null,
+        "get_doctrine",
+        {},
+        undefined,
+        {
+          agentId: row.id,
+          name: row.name,
+          access: "read",
+          domainSlugs: ["financial"],
+          schedule: false,
+        },
+      )) as { domains?: { slug: string }[] };
+      const slugs = (scoped.domains ?? []).map((d) => d.slug);
+      record("grant-lens-overrides-desktop", "GRANT");
+      assert.deepEqual(slugs, ["financial"], "a granted agent reads only its own domains");
+    } finally {
+      await ctx.doors.close();
+    }
+  });
+});
+
+// ── Fix pass: an archived domain already on the row can stay there
+
+describe("KAR-70 pairing: a grant edit after an archive", () => {
+  it("keeps an archived assigned slug but still refuses a newly added archived one", async () => {
+    const ctx = await openDoors("kar70-archive-grant");
+    try {
+      const bearer = "archive-grant-agent-bearer-01";
+      const intro = await rpc(
+        ctx.localPort,
+        { ...auth(bearer), "x-lifequest-name": "Archive Agent" },
+        "initialize",
+        INIT_PARAMS,
+      );
+      assert.equal(intro.status, 200, JSON.stringify(intro.body));
+      const roster = await listConnectedAgents(ctx.root);
+      const row = (roster.ok ? roster.value : []).find((a) => a.name === "Archive Agent");
+      assert.ok(row, "the introduction filed a roster row");
+
+      // Approval is the pairing Decision's job, and only an active row has a
+      // grant to edit.
+      let pairing: Record<string, unknown> | null = null;
+      for (const file of await decisionFiles(ctx.root)) {
+        const candidate = await readJson(path.join(ctx.root, ".lifequest", "decisions", file));
+        if ((candidate.target as { type?: string }).type === "agent-pairing") {
+          pairing = candidate;
+          break;
+        }
+      }
+      assert.ok(pairing, "the introduction filed a pairing Decision");
+      assert.equal(
+        (await resolveDecision(ctx.root, pairing.id as string, "approved")).ok,
+        true,
+      );
+      const assigned = await updateConnectedAgent(ctx.root, row.id, {
+        access: "read",
+        domainSlugs: ["financial", "health"],
+        schedule: false,
+      });
+      assert.equal(assigned.ok, true, JSON.stringify(assigned));
+
+      assert.equal((await archiveDomain(ctx.root, "health")).ok, true, "archive health");
+
+      // A grant edit resubmits the whole array, archived slug included. Keeping
+      // it must work, or the row becomes uneditable exactly when the operator
+      // most needs to change it.
+      const kept = await updateConnectedAgent(ctx.root, row.id, {
+        domainSlugs: ["financial", "health"],
+      });
+      record("grant-keep-archived", kept.ok ? "ACCEPTED" : "REFUSED");
+      assert.equal(
+        kept.ok,
+        true,
+        `keeping an archived slug already on the row must work: ${JSON.stringify(kept)}`,
+      );
+
+      // Narrowing it away is the common edit, and it must not be refused for
+      // the archived slug it no longer lists.
+      const narrowed = await updateConnectedAgent(ctx.root, row.id, {
+        domainSlugs: ["financial"],
+      });
+      record("grant-narrow-after-archive", narrowed.ok ? "ACCEPTED" : "REFUSED");
+      assert.equal(
+        narrowed.ok,
+        true,
+        `narrowing a grant that carried an archived slug must work: ${JSON.stringify(narrowed)}`,
+      );
+      assert.deepEqual(narrowed.ok ? narrowed.value.domainSlugs : null, ["financial"]);
+
+      // A newly added archived or unknown slug is still refused: health is off
+      // the row now, so adding it back is a new assignment.
+      const readded = await updateConnectedAgent(ctx.root, row.id, {
+        domainSlugs: ["financial", "health"],
+      });
+      record("grant-add-archived", readded.ok ? "ACCEPTED" : "REFUSED");
+      assert.equal(
+        readded.ok,
+        false,
+        "adding an archived slug that is not on the row must be refused",
+      );
+
+      const unknown = await updateConnectedAgent(ctx.root, row.id, {
+        domainSlugs: ["financial", "does-not-exist"],
+      });
+      record("grant-add-unknown", unknown.ok ? "ACCEPTED" : "REFUSED");
+      assert.equal(unknown.ok, false, "an unknown slug must still be refused");
+
+      const effective = await effectiveGrant(ctx.root, {
+        ...row,
+        status: "active",
+        domainSlugs: ["financial", "health"],
+      });
+      record("grant-effective-drops-archived", effective.domainSlugs.join(","));
+      assert.deepEqual(
+        effective.domainSlugs,
+        ["financial"],
+        "the archived domain drops out of the effective grant",
+      );
+    } finally {
+      await ctx.doors.close();
+    }
+  });
+});
+
+
 // ── the artifact ─────────────────────────────────────────────────────────────
 
 describe("KAR-70 pairing: the run artifact", () => {
@@ -3087,6 +3412,19 @@ describe("KAR-70 pairing: the run artifact", () => {
         "personnel-no-approve-control",
         "settings-both-doors",
         "decision-agent-pairing-label",
+        "header-cold-start-preserved",
+        "header-vault-switch",
+        "header-other-keys-kept",
+        "invite-list",
+        "invite-list-after-spend",
+        "invite-drop-twice",
+        "inbox-pairing-lens-exempt",
+        "door-companion-lens",
+        "grant-lens-overrides-desktop",
+        "grant-narrow-after-archive",
+        "grant-keep-archived",
+        "grant-add-unknown",
+        "grant-effective-drops-archived",
       ]) {
         assert.ok(names.includes(expected), `pairing-e2e.json is missing scenario ${expected}`);
       }

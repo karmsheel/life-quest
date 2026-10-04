@@ -160,6 +160,13 @@ type DoorContext = {
   secretsDir: string;
   door: DoorKind;
   now: () => Date;
+  /**
+   * KAR-70: the desktop's current lens, read per call. Only the
+   * companion follows it — a connected agent's view is its grant.
+   * The host supplies this in memory; the persisted lens is read on
+   * vault open, not per request.
+   */
+  lens: () => string | null;
 };
 
 type Authorized =
@@ -298,6 +305,8 @@ export async function startPairingDoors(opts: {
   localPort?: number;
   invitePort?: number;
   now?: () => Date;
+  /** The desktop's current lens, in memory. Optional: null means overview. */
+  lens?: () => string | null;
 }): Promise<{
   localPort: number;
   invitePort: number;
@@ -347,7 +356,14 @@ export async function startPairingDoors(opts: {
       return;
     }
 
-    const ctx: DoorContext = { root, vaultId, secretsDir, door: kind, now };
+    const ctx: DoorContext = {
+      root,
+      vaultId,
+      secretsDir,
+      door: kind,
+      now,
+      lens: opts.lens ?? (() => null),
+    };
     let auth: Awaited<ReturnType<typeof authorize>>;
     try {
       auth = await authorize(ctx, req);
@@ -486,7 +502,11 @@ function fullServer(
         const { executeTool } = await import("./map-tools.ts");
         const result = await executeTool(
           ctx.root,
-          null,
+          // The companion keeps the desktop's lens, as it always has.
+          // Passing null here would make `get_doctrine` with no domain
+          // return every live domain, which is not the companion's view.
+          // A connected agent's lens is its grant, so it stays null.
+          grant ? null : ctx.lens(),
           def.name,
           (args ?? {}) as Record<string, unknown>,
           actor,

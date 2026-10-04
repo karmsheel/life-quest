@@ -71,6 +71,33 @@ export type CompanionIo = {
  * AUTH_REQUIRED — a loud failure, not a silent one, and never a Decision
  * filed for Hermes.
  */
+/**
+ * KAR-70: write (or refresh) the profile's `mcp_servers.lifequest` entry.
+ *
+ * With no token the file is left untouched. `ensure` runs on app start,
+ * before any vault is open, so there is nothing to write then — and
+ * rewriting the entry with an empty header list would strip the header
+ * the companion needs. Opening a vault calls this again with that
+ * vault's token, which is the credential the rebound door accepts.
+ */
+export async function writeCompanionMcpProfile(
+  io: Pick<CompanionIo, "readFile" | "writeFile">,
+  configPath: string,
+  companionToken: string | null,
+): Promise<void> {
+  const yaml = (await io.readFile(configPath)) ?? "";
+  const next = ensureMcpServer(
+    yaml,
+    PROFILE_NAME,
+    MCP_URL,
+    companionToken
+      ? { Authorization: `Bearer ${companionToken}` }
+      : undefined,
+  );
+  if (next === yaml) return;
+  await io.writeFile(configPath, next);
+}
+
 async function openVaultCompanionToken(): Promise<string | null> {
   try {
     const vault = await import("./vault-service.ts");
@@ -161,23 +188,8 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
   try {
     envText = upsertEnv(envText, { API_SERVER_KEY: apiKey });
     await io.writeFile(envPath, envText);
-    const yaml = (await io.readFile(configPath)) ?? "";
-    // KAR-70: the door now needs a bearer, so the profile carries the
-    // companion's own Authorization header. Without it every companion call
-    // is refused AUTH_REQUIRED, and — worse — a long-enough but wrong
-    // bearer would file a pairing Decision for Hermes.
     const companionToken = await (io.companionToken ?? openVaultCompanionToken)();
-    await io.writeFile(
-      configPath,
-      ensureMcpServer(
-        yaml,
-        PROFILE_NAME,
-        MCP_URL,
-        companionToken
-          ? { Authorization: `Bearer ${companionToken}` }
-          : undefined,
-      ),
-    );
+    await writeCompanionMcpProfile(io, configPath, companionToken);
     const soul = await io.readFile(soulPath);
     if (shouldSeedSoul(soul)) {
       await io.writeFile(soulPath, COMPANION_SOUL);

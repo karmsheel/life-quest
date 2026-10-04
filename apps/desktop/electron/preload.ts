@@ -295,6 +295,10 @@ const lifequest = {
     ipcRenderer.invoke("connectedAgents:invite") as Promise<
     Result<{ id: string; code: string; expiresAt: string }>
   >,
+  connectedAgentsListInvites: () =>
+    ipcRenderer.invoke("connectedAgents:listInvites") as Promise<
+    Result<{ id: string; expiresAt: string }[]>
+  >,
   connectedAgentsDropInvite: (id: string) =>
     ipcRenderer.invoke("connectedAgents:dropInvite", id) as Promise<Result<{ dropped: true }>>,
 

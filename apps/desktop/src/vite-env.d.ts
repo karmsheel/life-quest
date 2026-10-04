@@ -232,6 +232,8 @@ type LifequestApi = {
   connectedAgentsRevoke: (id: string) => Promise<Result<ConnectedAgent>>;
   connectedAgentsInvite: () =>
     Promise<Result<{ id: string; code: string; expiresAt: string }>>;
+  connectedAgentsListInvites: () =>
+    Promise<Result<{ id: string; expiresAt: string }[]>>;
   connectedAgentsDropInvite: (id: string) =>
     Promise<Result<{ dropped: true }>>;
   companionEnsure: () => Promise<CompanionStatus>;
