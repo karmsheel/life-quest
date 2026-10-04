@@ -521,7 +521,11 @@ async function executeConnectedTool(
       const [code, ...rest] = applied.error.split(": ");
       return { error: { code, message: rest.join(": ") } };
     }
-    return { state: applied.value };
+    // The applied store is the whole map — About me, the day-type catalogue,
+    // every domain's events. Returning it would undo every read projection on
+    // the way out of a write, so a connected agent's write answers with the same
+    // filtered shape its `get_state` gives.
+    return { state: projectConnectedState(applied.value, grant) };
   }
 
   return { error: { code: "MALFORMED", message: `Unknown tool ${name}` } };

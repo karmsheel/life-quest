@@ -212,7 +212,15 @@ export function toolAllowed(
   }
   const isScheduleWrite =
     CONNECTED_SCHEDULE_TOOLS.has(name) || CONNECTED_DAY_TEMPLATE_TOOLS.has(name);
-  if (isScheduleWrite && !grant.schedule) return "FORBIDDEN";
+  if (isScheduleWrite) {
+    if (!grant.schedule) return "FORBIDDEN";
+  } else if (grant.domainSlugs.length === 0) {
+    // Everything left is a domain tool: a doctrine read, a database write, a
+    // capture. None of them names a domain this grant covers, so there is
+    // nothing for the call to be inside. `NO_GRANT` is not the answer — the row
+    // does reach the week — so this is `FORBIDDEN`.
+    return "FORBIDDEN";
+  }
   // Everything else is a write, and a write needs the Write switch.
   if (grant.access !== "write") return "FORBIDDEN";
   // Capture names no domain argument, so the gate settles it here rather than

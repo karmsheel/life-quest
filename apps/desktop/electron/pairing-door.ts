@@ -502,8 +502,17 @@ function fullServer(
         (def) => def.name,
       ),
     );
+    // `parameters` is the vault's own name for the schema; an MCP tool list
+    // needs it as `inputSchema`, or a client rejects the whole list. Rebuilding
+    // the entry here rather than filtering the registered definitions keeps the
+    // two shapes from being confused: the registration stays loose on purpose
+    // (see above), and only the advertised schema is strict.
     mcp.server.setRequestHandler(ListToolsRequestSchema, () => ({
-      tools: ALL_TOOL_DEFS.filter((def) => allowed.has(def.name)),
+      tools: ALL_TOOL_DEFS.filter((def) => allowed.has(def.name)).map((def) => ({
+        name: def.name,
+        description: def.description,
+        inputSchema: def.parameters,
+      })),
     }));
   }
   return mcp;

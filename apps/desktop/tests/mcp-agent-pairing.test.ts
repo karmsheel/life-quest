@@ -2241,6 +2241,24 @@ describe("KAR-70 pairing: the schedule grant", () => {
     );
     assert.equal(liveDay.ok, true, `seed live day: ${JSON.stringify(liveDay)}`);
 
+    // An event in a domain the agent is never granted. Every connected write
+    // returns a filtered map, so this is what proves the filter ran rather than
+    // the map simply having no events in it.
+    const healthEvent = await applyMapCommand(
+      root,
+      {
+        type: "createEvent",
+        year: Number(today.slice(0, 4)),
+        title: "Health event",
+        date: today,
+        domainSlug: "health",
+      },
+      "user",
+      today,
+      USER_ACTOR,
+    );
+    assert.equal(healthEvent.ok, true, `seed health event: ${JSON.stringify(healthEvent)}`);
+
     const bearer = "schedule-door-bearer-000000001";
     const headers = { ...auth(bearer), "x-lifequest-name": "Schedule bot" };
     assert.equal((await rpc(ctx.localPort, headers, "initialize", INIT_PARAMS)).status, 200);
@@ -2428,6 +2446,24 @@ describe("KAR-70 pairing: the schedule grant", () => {
     record("schedule-write-create-task", codeOf(posted) || "APPLIED");
     assert.equal(codeOf(posted), "", `create_task must apply: ${JSON.stringify(posted)}`);
 
+    // A connected write returns the agent's map, not the vault's. Returning the
+    // applied store whole would hand over About me, the day-type catalogue, and
+    // every domain's events through the back of a tool whose reads are filtered.
+    const postedState = (posted as { state: Record<string, unknown> }).state;
+    record("schedule-write-create-task-filtered", "PROJECTED");
+    for (const leaked of ["aboutMe", "years", "dayTypes", "defaultWeek", "liveDays"]) {
+      assert.equal(
+        leaked in postedState,
+        false,
+        `create_task must not return ${leaked}: ${Object.keys(postedState).join(",")}`,
+      );
+    }
+    assert.deepEqual(
+      (postedState.events as { title: string }[]).map((e) => e.title),
+      [],
+      "an ungranted domain's event must not be in a connected write's state",
+    );
+
     const logged = await readLog(f.ctx.root);
     assert.equal(logged.ok, true);
     const line = logged.ok
@@ -2500,13 +2536,20 @@ describe("KAR-70 pairing: the schedule grant", () => {
     const year = Number(todayLocalIso().slice(0, 4));
 
     const list = await rpc(f.ctx.localPort, f.headers, "tools/list");
-    const tools = ((list.body as { result?: { tools?: { name: string }[] } }).result?.tools ?? []).map(
-      (t) => t.name,
-    );
+    const listed = ((list.body as { result?: { tools?: Record<string, unknown>[] } }).result
+      ?.tools ?? []) as Record<string, unknown>[];
+    const tools = listed.map((t) => t.name);
     record("schedule-only-tools", tools.includes("get_week") ? "PRESENT" : "ABSENT");
     assert.ok(tools.includes("get_week"), "Schedule alone must hand over get_week");
     assert.ok(tools.includes("create_task"), "and create_task once Write is on");
     assert.ok(tools.includes("create_day_type"), "and the day-template tools");
+    // The list has to be something an MCP client can act on: a def carrying
+    // `parameters` instead of `inputSchema` is not a tool definition, and the
+    // client rejects the whole list rather than the one bad entry.
+    assert.ok(
+      listed.every((t) => t.inputSchema !== undefined && t.description !== undefined),
+      `every listed tool needs inputSchema and description: ${JSON.stringify(listed[0])}`,
+    );
     for (const absent of [
       "get_doctrine",
       "list_documents",
@@ -2515,9 +2558,36 @@ describe("KAR-70 pairing: the schedule grant", () => {
       "get_period_pack",
       "create_year",
       "set_about_me",
+      // A domain write is not a schedule write. With no domain there is nothing
+      // for it to write into, so it is not offered even though Write is on.
+      "create_goal",
+      "create_event",
+      "upsert_row",
+      "create_library_document",
+      "update_document",
     ]) {
       assert.equal(tools.includes(absent), false, `${absent} must not be offered with no domain`);
     }
+
+    // And a call for one is refused, not merely hidden.
+    const decisionsBefore = await decisionFiles(f.ctx.root);
+    const vaultBefore = await walkText(f.ctx.root);
+    for (const name of ["create_goal", "create_event"]) {
+      const result = await rpc(f.ctx.localPort, f.headers, "tools/call", {
+        name,
+        arguments: { name: "No", title: "No", domainSlug: "financial", year, date: todayLocalIso() },
+      });
+      const code = toolError(result.body).code;
+      record(`schedule-only-refused-${name}`, code);
+      assert.equal(code, "FORBIDDEN", `${name} with no domain must be FORBIDDEN`);
+    }
+    assert.deepEqual(
+      await decisionFiles(f.ctx.root),
+      decisionsBefore,
+      "a refused domain write files nothing",
+    );
+    assert.equal(await walkText(f.ctx.root), vaultBefore, "and writes nothing");
+    record("schedule-only-refused-unfiled", "UNFILED");
 
     // The door hides those tools, so a call for one is refused rather than
     // answered. Either grant code is right; what must not happen is a document.
@@ -2725,8 +2795,12 @@ describe("KAR-70 pairing: the run artifact", () => {
         "schedule-only-tools",
         "schedule-only-get-doctrine",
         "schedule-only-get-week",
+        "schedule-only-refused-create_goal",
+        "schedule-only-refused-create_event",
+        "schedule-only-refused-unfiled",
         "schedule-none-get-week",
         "schedule-none-tools",
+        "schedule-write-create-task-filtered",
       ]) {
         assert.ok(names.includes(expected), `pairing-e2e.json is missing scenario ${expected}`);
       }
