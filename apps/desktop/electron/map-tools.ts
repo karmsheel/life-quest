@@ -17,6 +17,8 @@ import {
   executeCaptureTool,
   SCRIPT_TOOL_DEFS,
   executeScriptTool,
+  VIEW_TOOL_DEFS,
+  executeViewTool,
   PROJECT_TOOL_DEFS,
   ALL_TOOL_DEFS,
   DATABASE_TOOL_DEFS,
@@ -172,6 +174,11 @@ export async function executeTool(
   // apply_script_block, run_script_block
   if (SCRIPT_TOOL_DEFS.some((t) => t.name === name)) {
     return executeScriptTool(root, actor, name, rec);
+  }
+
+  // list_views, preview_view, propose_view, propose_pins
+  if (VIEW_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeViewTool(root, actor, name, rec);
   }
 
   // list_databases, get_database, list_rows, get_row, and the Decision-gated
@@ -493,6 +500,9 @@ async function executeConnectedTool(
   if (SCRIPT_TOOL_DEFS.some((t) => t.name === name)) {
     return executeScriptTool(root, actor, name, rec);
   }
+  if (VIEW_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeViewTool(root, actor, name, rec);
+  }
 
   // ── writes, already past the grant's domain check ─────────────────────────
   //
@@ -682,6 +692,18 @@ async function connectedWriteRefusal(
   // ── pages ────────────────────────────────────────────────────────────────
   if (name === "apply_script_block") {
     return allow([rec.domainSlug as string | null | undefined]);
+  }
+
+  // ── agent-built dashboard views ──────────────────────────────────────────
+  if (name === "propose_view") {
+    // One view in one domain: the spec's target is the proposal's domain.
+    return allow([rec.domainSlug as string | null | undefined]);
+  }
+  if (name === "propose_pins") {
+    // A board rewrite touches the board's domain; null (the Overview board) is
+    // a real board, so it is judged as a domain name — and a grant that does
+    // not cover it refuses, which is the right call: Overview is everything.
+    return allow([rec.domainSlug === undefined ? undefined : (rec.domainSlug as string | null)]);
   }
 
   // The capture tools name no domain argument; `toolAllowed` has already

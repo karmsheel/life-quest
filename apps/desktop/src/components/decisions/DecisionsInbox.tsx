@@ -62,6 +62,8 @@ function kindLabel(target: DecisionRecord["target"]): string {
     // the card with no kind label at all.
     case "agent-pairing":
       return "Agent pairing";
+    case "view":
+      return "Dashboard view";
   }
 }
 

@@ -211,6 +211,20 @@ export async function setPins(
         if (domainSlug !== null && pin.domainSlug !== domainSlug) {
           return { ok: false, error: `Page pin belongs to different domain: ${pin.domainSlug}` };
         }
+      } else if (pin.kind === "view") {
+        // Agent-built view pin (plan.md design): the shape guard ran in
+        // validatePins; existence is checked like a page pin — a view pointed
+        // at a dead domain, a foreign board, or a missing file is a hard
+        // error here, while listPins (the read path) drops it silently.
+        if (!liveSlugs.has(pin.domainSlug)) {
+          return { ok: false, error: `Domain not live: ${pin.domainSlug}` };
+        }
+        if (!(await viewExists(root, pin.domainSlug, pin.viewId))) {
+          return { ok: false, error: `View not found: ${pin.viewId}` };
+        }
+        if (domainSlug !== null && pin.domainSlug !== domainSlug) {
+          return { ok: false, error: `View pin belongs to different domain: ${pin.domainSlug}` };
+        }
       } else {
         return { ok: false, error: `Invalid pin kind: ${String((pin as { kind?: unknown }).kind)}` };
       }

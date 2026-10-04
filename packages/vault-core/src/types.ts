@@ -54,10 +54,14 @@ export type DocumentTarget =
   // for a create; a `database` target names the database the proposal mutates
   // (for a create_database the id is minted at propose time).
   | { type: "database-row"; domainSlug: string; databaseId: string; rowId: string | null }
-    | { type: "database"; domainSlug: string; databaseId: string }
-    // KAR-70: the pairing Decision a new MCP caller files on first contact. It
-    // resolves the connected-agent roster row, not a document.
-    | { type: "agent-pairing"; agentId: string };
+  | { type: "database"; domainSlug: string; databaseId: string }
+  // Agent-built dashboard views (plan.md design): one Decision proposes one
+  // saved view in one live domain. viewId is EMPTY at propose time — the id is
+  // minted when the operator approves and the spec is saved.
+  | { type: "view"; domainSlug: string; viewId: string }
+  // KAR-70: the pairing Decision a new MCP caller files on first contact. It
+  // resolves the connected-agent roster row, not a document.
+  | { type: "agent-pairing"; agentId: string };
 
 /**
  * KAR-64: the payload a database Decision carries in its proposedBodyMarkdown.

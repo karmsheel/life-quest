@@ -63,6 +63,7 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       isProjectExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isDatabaseRowExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isDatabaseExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isViewExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isAgentPairingExplicitTarget(explicitTarget as Record<string, unknown>))
   ) {
     const t = explicitTarget as Record<string, unknown>;
@@ -115,6 +116,14 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
         type: "database",
         domainSlug: String(t.domainSlug),
         databaseId: String(t.databaseId),
+      };
+    } else if (t.type === "view") {
+      // Agent-built dashboard views: viewId is empty at propose time, so the
+      // guard accepts "" and this branch keeps it empty on the way through.
+      target = {
+        type: "view",
+        domainSlug: String(t.domainSlug),
+        viewId: typeof t.viewId === "string" ? t.viewId : "",
       };
     } else if (t.type === "library") {
       // The library branch used to be the fallthrough. KAR-70 replaces that
@@ -288,6 +297,12 @@ function isAgentPairingExplicitTarget(raw: Record<string, unknown>): boolean {
   return raw.type === "agent-pairing" && typeof raw.agentId === "string" && raw.agentId.length > 0;
 }
 
+function isViewExplicitTarget(raw: Record<string, unknown>): boolean {
+  // viewId is "" at propose time (the id is minted at approval), so length is
+  // not required here — only the domain must be named.
+  return raw.type === "view" && typeof raw.domainSlug === "string" && raw.domainSlug.length > 0;
+}
+
 function isDatabaseExplicitTarget(raw: Record<string, unknown>): boolean {
   return (
     raw.type === "database" &&
@@ -407,6 +422,12 @@ export async function createDecision(
     } else if (input.target.type === "agent-pairing") {
       if (!input.target.agentId.trim()) {
         return { ok: false, error: "agentId is required" };
+      }
+    } else if (input.target.type === "view") {
+      // Agent-built dashboard views: the domain must be named; viewId is
+      // minted at approval, so an empty one is the normal propose shape.
+      if (!input.target.domainSlug.trim()) {
+        return { ok: false, error: "domainSlug is required" };
       }
     } else if (
       input.target.type === "goal" ||
@@ -540,6 +561,12 @@ export async function createDecision(
       }
       docLocked = false;
       domainSlugForLog = input.target.domainSlug;
+    } else if (input.target.type === "view") {
+      // Agent-built dashboard views: not a lockable document. The live-domain
+      // check happens in the view runner at apply time; the propose path only
+      // needs the domain named, which the shape validation already confirmed.
+      docLocked = false;
+      domainSlugForLog = input.target.domainSlug;
     } else {
       const noteRes = await libraryGet(rootPath, input.target.id);
       if (!noteRes.ok) {
@@ -661,6 +688,46 @@ type ApplyOutcome =
   | { ok: true; value?: undefined }
   | { ok: false; error: string; terminal: boolean };
 
+/**
+ * Agent-built dashboard views: the one applied outcome that carries a value —
+ * the freshly minted view id, which the proposer must learn to name. All other
+ * applications update state the caller already knows how to re-read.
+ */
+type ViewApplyOutcome = { ok: true; value: { viewId: string } } | { ok: false; error: string; terminal: boolean };
+
+async function applyViewDecision(
+  rootPath: string,
+  decision: DecisionRecord & { target: { type: "view"; domainSlug: string; viewId: string } },
+): Promise<ViewApplyOutcome> {
+  // Parse and validate here, then delegate the file write to saveView. The
+  // schemaVersion the propose-time copy carried is stripped: the file-level
+  // invariant belongs to the runner, not to a decision body frozen earlier.
+  let body: { op?: unknown; spec?: unknown };
+  try {
+    body = JSON.parse(decision.proposedBodyMarkdown) as { op?: unknown; spec?: unknown };
+  } catch {
+    return { ok: false, error: "View proposedBody must be valid JSON", terminal: false };
+  }
+  if (!body || typeof body !== "object" || body.op !== "save-view" || !body.spec) {
+    return {
+      ok: false,
+      error: "View proposedBody must carry { op: 'save-view', spec }",
+      terminal: false,
+    };
+  }
+  const spec = body.spec as Record<string, unknown>;
+  delete spec.schemaVersion;
+  const { saveView } = await import("./views.ts");
+  const save = await saveView(
+    rootPath,
+    decision.target.domainSlug,
+    spec as Parameters<typeof saveView>[2],
+    { id: decision.target.viewId || undefined },
+  );
+  if (!save.ok) return { ok: false, error: save.error, terminal: false };
+  return { ok: true, value: { viewId: save.value.id } };
+}
+
 async function applyApprovedBody(
   rootPath: string,
   decision: DecisionRecord,
@@ -681,6 +748,13 @@ async function applyApprovedBody(
         }
         return { ok: false, error: res.error, terminal: false };
       }
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "view") {
+      const applied = await applyViewDecision(rootPath, decision as DecisionRecord & {
+        target: { type: "view"; domainSlug: string; viewId: string };
+      });
+      if (!applied.ok) return applied;
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "review") {

@@ -112,6 +112,8 @@ function renderStructured(
       return <p className="decision-lead">Install the Finance kit.</p>;
     case "assumption-set":
       return <AssumptionBody body={body} lookups={lookups} />;
+    case "view":
+      return <ViewBody body={body} />;
     default:
       return <GenericBody body={body} previous={previous} lookups={lookups} />;
   }
@@ -142,6 +144,63 @@ function PairingBody({ body }: { body: Record<string, unknown> }) {
           <span>Door</span>
           <p className="muted">{door}</p>
         </div>
+      </dl>
+    </div>
+  );
+}
+
+/**
+ * Agent-built dashboard views: what the operator approves is a chart or table
+ * on their dashboard. The lead names what will appear and where; the preview
+ * rows are the same data the card would show on the day of the proposal.
+ */
+function ViewBody({ body }: { body: Record<string, unknown> }) {
+  const spec = body.spec as Record<string, unknown> | undefined;
+  const preview = body.preview as { rows?: unknown[]; currency?: string; warnings?: string[] } | undefined;
+  if (!spec || typeof spec !== "object") {
+    return <p className="decision-lead">Save a dashboard view. (Spec missing from this proposal.)</p>;
+  }
+  const title = typeof spec.title === "string" ? spec.title : "Saved view";
+  const presentation = typeof spec.presentation === "string" ? spec.presentation : "table";
+  return (
+    <div className="decision-proposal">
+      <p className="decision-lead">
+        Save a dashboard view: {title} ({presentation}
+        {preview?.rows?.length != null ? ` — showing ${preview.rows.length} row${preview.rows.length === 1 ? "" : "s"} today` : ""}).
+        Approve to pin it from the dashboard's Add-pin row.
+      </p>
+      <dl className="settings-hermes">
+        <div className="settings-field">
+          <span>Measure</span>
+          <p className="muted">
+            {typeof spec.measure === "string" ? spec.measure : "?"}
+            {typeof spec.measureColumnId === "string" && spec.measureColumnId
+              ? ` of ${spec.measureColumnId}`
+              : ""}
+          </p>
+        </div>
+        <div className="settings-field">
+          <span>Group by</span>
+          <p className="muted">
+            {typeof spec.groupBy === "string" && spec.groupBy
+              ? spec.groupBy
+              : typeof spec.timeBucket === "string" && spec.timeBucket
+                ? `time (${spec.timeBucket})`
+                : "everything in the window"}
+          </p>
+        </div>
+        {preview?.currency ? (
+          <div className="settings-field">
+            <span>Currency</span>
+            <p className="muted">{preview.currency}</p>
+          </div>
+        ) : null}
+        {preview?.warnings && preview.warnings.length > 0 ? (
+          <div className="settings-field">
+            <span>Warnings</span>
+            <p className="muted">{preview.warnings.join("; ")}</p>
+          </div>
+        ) : null}
       </dl>
     </div>
   );

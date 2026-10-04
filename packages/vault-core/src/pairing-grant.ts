@@ -61,6 +61,10 @@ export const CONNECTED_READ_TOOLS: ReadonlySet<string> = new Set([
   "list_reviews",
   "get_period_pack",
   "run_script_block",
+  // Agent-built dashboard views (plan.md design): a preview is a plain read of
+  // what a card would show; discovering saved views is also a read.
+  "preview_view",
+  "list_views",
 ]);
 
 /**
@@ -128,6 +132,11 @@ export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "write_review",
   "mark_review_done",
   "unlock_review",
+  // Agent-built dashboard views (plan.md design): proposing a view or a pin
+  // change files a Decision, exactly like a database write — approval stays
+  // with the operator in the Decisions card.
+  "propose_view",
+  "propose_pins",
 ]);
 
 /**

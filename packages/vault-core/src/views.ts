@@ -7,6 +7,7 @@ import { vaultPaths } from "./paths.ts";
 import { isDomainLive, getDatabase, rowDisplayLabel, readRegistry } from "./domain-databases.ts";
 import {
   FINANCE_DB_IDS,
+  type Actor,
   type DatabaseMeta,
   type DatabaseColumn,
   type DomainDatabaseRegistry,
@@ -761,4 +762,35 @@ export async function deleteView(
     payload: { viewId: id },
   });
   return { ok: true, value: { id } };
+}
+
+/**
+ * Slice 3: propose_view files exactly one Decision carrying the full spec plus
+ * the preview rows, so the operator approves what they can see. Nothing is
+ * saved at propose time; Approval applies the spec through saveView as the
+ * user actor (decisions.ts applyViewDecision).
+ */
+export async function fileViewDecision(
+  root: string,
+  actor: Actor,
+  slug: string,
+  spec: ViewSpec,
+  preview: unknown,
+): Promise<Result<{ viewId: string; decisionId: string }>> {
+  const { createDecision } = await import("./decisions.ts");
+  const title = typeof spec.title === "string" && spec.title.trim() ? spec.title : "Saved view";
+  const body = {
+    op: "save-view" as const,
+    domainSlug: slug,
+    spec,
+    preview,
+  };
+  const created = await createDecision(root, {
+    target: { type: "view", domainSlug: slug, viewId: "" },
+    proposedTitle: title,
+    proposedBodyMarkdown: JSON.stringify(body, null, 2),
+    actor,
+  });
+  if (!created.ok) return created;
+  return { ok: true, value: { viewId: spec.databaseId, decisionId: created.value.id } };
 }
