@@ -65,7 +65,7 @@ describe("KAR-7: agent project tools file Decisions", () => {
     );
     assert.match(openaiList, /ALL_TOOL_DEFS/);
 
-    const mcp = read("electron/mcp-server.ts");
+    const mcp = read("electron/pairing-door.ts");
     assert.match(mcp, /ALL_TOOL_DEFS/);
   });
 

@@ -124,9 +124,9 @@ describe("document tools wiring", () => {
     assert.match(mapTools, /DOCUMENT_TOOL_DEFS/);
     assert.match(mapTools, /executeDocumentTool/);
     assert.match(mapTools, /update_document/);
-    // mcp-server registers the composed constant; membership is asserted against
-    // the array rather than by grepping the source for the name.
-    const mcp = read("electron/mcp-server.ts");
+    // The pairing door registers the composed constant; membership is asserted
+    // against the array rather than by grepping the source for the name.
+    const mcp = read("electron/pairing-door.ts");
     assert.match(mcp, /ALL_TOOL_DEFS/);
     for (const def of DOCUMENT_TOOL_DEFS) {
       assert.ok(

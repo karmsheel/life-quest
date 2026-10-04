@@ -103,6 +103,11 @@ function renderStructured(
       return <PinsBody body={body} />;
     case "mapping":
       return <MappingBody body={body} />;
+    // KAR-70: the pairing Decision carries no document body. Its proposed
+    // body is the fingerprint and the door the caller arrived on, and the
+    // generic body would render those as if they were field edits.
+    case "agent-pairing":
+      return <PairingBody body={body} />;
     case "kit-install":
       return <p className="decision-lead">Install the Finance kit.</p>;
     case "assumption-set":
@@ -110,6 +115,36 @@ function renderStructured(
     default:
       return <GenericBody body={body} previous={previous} lookups={lookups} />;
   }
+}
+
+/**
+ * KAR-70: what the operator approves when they approve a pairing.
+ *
+ * The fingerprint is the 12-hex hash of the bearer — the only handle on
+ * the caller that is safe to show and to store. The raw bearer is not here
+ * and never was.
+ */
+function PairingBody({ body }: { body: Record<string, unknown> }) {
+  const fingerprint = typeof body.fingerprint === "string" ? body.fingerprint : "—";
+  const door = typeof body.door === "string" ? body.door : "—";
+  return (
+    <div className="decision-proposal">
+      <p className="decision-lead">
+        Connect this agent. It starts read-only, with no domain assigned and
+        Schedule off — you grant what it may reach from Personnel.
+      </p>
+      <dl className="settings-hermes">
+        <div className="settings-field">
+          <span>Fingerprint</span>
+          <p className="muted">{fingerprint}</p>
+        </div>
+        <div className="settings-field">
+          <span>Door</span>
+          <p className="muted">{door}</p>
+        </div>
+      </dl>
+    </div>
+  );
 }
 
 function DatabaseBody({

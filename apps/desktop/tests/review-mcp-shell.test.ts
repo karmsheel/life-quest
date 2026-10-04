@@ -17,8 +17,8 @@ function readRepo(rel: string): string {
 }
 
 describe("review MCP tools wiring", () => {
-  it("mcp-server registers the composed constant, which includes REVIEW_TOOL_DEFS", () => {
-    const mcp = readDesktop("electron/mcp-server.ts");
+  it("the pairing door registers the composed constant, which includes REVIEW_TOOL_DEFS", () => {
+    const mcp = readDesktop("electron/pairing-door.ts");
     assert.match(mcp, /ALL_TOOL_DEFS/);
     for (const def of REVIEW_TOOL_DEFS) {
       assert.ok(

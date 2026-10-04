@@ -2,6 +2,7 @@
 
 import type {
   AgentHire,
+  ConnectedAgent,
   DatabaseListEntry,
   DatabaseMeta,
   DatabaseRow,
@@ -101,6 +102,17 @@ type HermesSession = {
   lastActive: number | null;
   /** Durable Hermes-side flag: pinned chats sort into their own section. */
   pinned: boolean;
+};
+
+/**
+ * KAR-70: the two loopback doors and their own bind errors. A door that
+ * failed to bind has an empty url and a non-null error of its own.
+ */
+export type McpDoors = {
+  localUrl: string;
+  inviteUrl: string;
+  localError: string | null;
+  inviteError: string | null;
 };
 
 /** Frozen IPC API exposed on window.lifequest via preload. */
@@ -211,6 +223,17 @@ type LifequestApi = {
   hermesScanAgents: () => Promise<Result<{ id: string; name: string }[]>>;
   mcpGetUrl: () => Promise<string>;
   mcpGetError: () => Promise<string | null>;
+  mcpGetDoors: () => Promise<McpDoors>;
+  connectedAgentsList: () => Promise<Result<ConnectedAgent[]>>;
+  connectedAgentsUpdate: (
+    id: string,
+    patch: { access?: "read" | "write"; domainSlugs?: string[]; schedule?: boolean },
+  ) => Promise<Result<ConnectedAgent>>;
+  connectedAgentsRevoke: (id: string) => Promise<Result<ConnectedAgent>>;
+  connectedAgentsInvite: () =>
+    Promise<Result<{ id: string; code: string; expiresAt: string }>>;
+  connectedAgentsDropInvite: (id: string) =>
+    Promise<Result<{ dropped: true }>>;
   companionEnsure: () => Promise<CompanionStatus>;
   companionStatus: () => Promise<CompanionStatus>;
   companionSessionsList: () => Promise<Result<HermesSession[]>>;

@@ -28,9 +28,11 @@ describe("main-process domain lens", () => {
   });
 
   it("MCP and get_doctrine use the in-memory lens", () => {
-    const mcp = read("electron/mcp-server.ts");
-    assert.match(mcp, /getActiveSlug/);
-    assert.equal(mcp.includes("getActiveDomain(mcpVaultId)"), false);
+    const mcp = read("electron/pairing-door.ts");
+    // The door passes the live lens per request and never reads a persisted
+    // one, so a lens change does not need a vault write to take effect.
+    assert.match(mcp, /activeSlug|executeTool/);
+    assert.equal(mcp.includes("getActiveDomain"), false);
 
     const tools = read("electron/map-tools.ts");
     assert.match(tools, /domains:/);

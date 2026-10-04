@@ -9,7 +9,9 @@ import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { describe, it, before, after } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   addDatabaseColumn,
   applyGoalsCommand,
@@ -55,6 +57,15 @@ import {
   mintInvite,
 } from "../electron/pairing-secrets.ts";
 import { executeTool } from "../electron/map-tools.ts";
+import { ensureMcpServer, MCP_URL } from "../electron/companion-profile.ts";
+
+
+/** KAR-70 Task 6: the desktop package root, for reading a component's source. */
+const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+function readSource(relFromDesktop: string): string {
+  return readFileSync(path.join(desktopRoot, relFromDesktop), "utf8");
+}
 
 const scenarios: { name: string; code: string }[] = [];
 
@@ -2643,6 +2654,269 @@ describe("KAR-70 pairing: the schedule grant", () => {
   });
 });
 
+// ── Task 6: an occupied invite port ───────────────────────────────────────────
+
+describe("KAR-70 pairing: an occupied invite port", () => {
+  it("keeps the invite door down and still serves the companion on the local door", async () => {
+    const root = await tempDir("kar70-occupied-vault-");
+    const created = await createVault(root, "Occupied Invite");
+    assert.equal(created.ok, true, `createVault failed: ${JSON.stringify(created)}`);
+    const secretsDir = await tempDir("kar70-occupied-secrets-");
+    const [localPort, invitePort] = await freePorts(2);
+
+    // Something else already owns the invite port.
+    const blocker = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+      blocker.once("error", reject);
+      blocker.listen(invitePort, "127.0.0.1", () => resolve());
+    });
+
+    const doors = await startPairingDoors({
+      root,
+      vaultId: "occupied-invite",
+      secretsDir,
+      localPort,
+      invitePort,
+    });
+    try {
+      assert.notEqual(doors.inviteError, null, "the invite door must report its bind failure");
+      assert.equal(doors.localError, null, "the local door must still bind");
+      record("invite-port-taken-invite-error", doors.inviteError as string);
+
+      // The vault still opened, and the companion still has its door.
+      const token = await ensureCompanionToken(secretsDir, "occupied-invite");
+      const call = await rpc(localPort, auth(token), "tools/call", { name: "get_state", arguments: {} });
+      assert.equal(call.status, 200, "the local door must answer the companion");
+      const payload = JSON.parse(
+        (call.body as { result?: { content?: { text?: string }[] } }).result?.content?.[0]?.text ?? "{}",
+      ) as { error?: { code?: string } };
+      assert.equal(payload.error, undefined, `companion get_state: ${JSON.stringify(payload)}`);
+      record("invite-port-taken-local-call", "SERVES_COMPANION");
+    } finally {
+      await doors.close();
+      await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    }
+  });
+});
+
+/** The raw text of a companion get_state over a door. */
+async function companionText(port: number, token: string): Promise<string> {
+  const res = await rpc(port, auth(token), "tools/call", { name: "get_state", arguments: {} });
+  assert.equal(res.status, 200, `companion get_state: ${JSON.stringify(res.body)}`);
+  const text =
+    (res.body as { result?: { content?: { text?: string }[] } }).result?.content?.[0]?.text ?? "";
+  const parsed = JSON.parse(text) as { error?: { code?: string } };
+  assert.equal(parsed.error, undefined, `companion get_state must not be gated: ${text.slice(0, 400)}`);
+  return text;
+}
+
+// ── Task 6: switching vaults ──────────────────────────────────────────────────
+
+describe("KAR-70 pairing: switching vaults", () => {
+  it("rebind moves both doors to the new root, roster, and companion credential", async () => {
+    const firstRoot = await tempDir("kar70-rebind-first-");
+    assert.equal((await createVault(firstRoot, "First Vault")).ok, true);
+    const secondRoot = await tempDir("kar70-rebind-second-");
+    assert.equal((await createVault(secondRoot, "Second Vault")).ok, true);
+    const secretsDir = await tempDir("kar70-rebind-secrets-");
+    const [localPort, invitePort] = await freePorts(2);
+
+    const today = todayLocalIso();
+    const year = Number(today.slice(0, 4));
+    async function seedEvent(root: string, title: string): Promise<void> {
+      const res = await applyMapCommand(
+        root,
+        { type: "createEvent", year, title, date: today, domainSlug: null },
+        "user",
+        today,
+        USER_ACTOR,
+      );
+      assert.equal(res.ok, true, `seed ${title}: ${JSON.stringify(res)}`);
+    }
+    await seedEvent(firstRoot, "First vault marker");
+    await seedEvent(secondRoot, "Second vault marker");
+
+    const doors = await startPairingDoors({
+      root: firstRoot,
+      vaultId: "first-vault",
+      secretsDir,
+      localPort,
+      invitePort,
+    });
+    try {
+      assert.equal(doors.localError, null);
+      assert.equal(doors.inviteError, null);
+
+      // A bearer introduced against the first vault, and the first vault's
+      // companion token.
+      const firstBearer = "rebind-agent-bearer-0123456789";
+      const introduced = await rpc(
+        localPort,
+        { ...auth(firstBearer), "x-lifequest-name": "Rebind Agent" },
+        "initialize",
+        INIT_PARAMS,
+      );
+      assert.equal(introduced.status, 200, `first introduction: ${JSON.stringify(introduced.body)}`);
+      const firstToken = await ensureCompanionToken(secretsDir, "first-vault");
+
+      const firstText = await companionText(localPort, firstToken);
+      assert.ok(
+        firstText.includes("First vault marker"),
+        `the first vault must serve its own marker: ${firstText.slice(0, 400)}`,
+      );
+      assert.equal(firstText.includes("Second vault marker"), false);
+
+      // Switch vaults: the open vault is the second one from here on.
+      const secondToken = await ensureCompanionToken(secretsDir, "second-vault");
+      doors.rebind(secondRoot, "second-vault");
+
+      // The first vault's bearer is a stranger to the second roster.
+      const after = await rpc(
+        localPort,
+        { ...auth(firstBearer), "x-lifequest-name": "Rebind Agent" },
+        "tools/call",
+        { name: "get_state", arguments: {} },
+      );
+      const afterCode = toolError(after.body).code;
+      record("rebind-first-bearer", afterCode);
+      assert.ok(
+        afterCode === "AUTH_REQUIRED" || afterCode === "PAIRING_PENDING",
+        `the first vault's bearer must not be served by the second: ${afterCode}`,
+      );
+
+      // And the second vault's roster is the one that grew.
+      const secondRoster = await listConnectedAgents(secondRoot);
+      assert.equal(secondRoster.ok, true);
+      assert.equal(
+        (secondRoster.ok ? secondRoster.value : []).some((a) => a.name === "Rebind Agent"),
+        true,
+        "the introduction after the rebind belongs to the second vault's roster",
+      );
+      const firstRoster = await listConnectedAgents(firstRoot);
+      assert.equal(
+        (firstRoster.ok ? firstRoster.value : []).length,
+        1,
+        "the first vault's own roster is untouched",
+      );
+
+      // The second vault's companion credential works, and reads the second
+      // vault.
+      const secondText = await companionText(localPort, secondToken);
+      record("rebind-second-companion-read", "READ");
+      assert.ok(
+        secondText.includes("Second vault marker"),
+        `get_state must read the second vault: ${secondText.slice(0, 400)}`,
+      );
+      assert.equal(
+        secondText.includes("First vault marker"),
+        false,
+        "the first vault's records must be gone from the state",
+      );
+
+      // The first vault's companion token is no longer the companion.
+      const stale = await rpc(localPort, auth(firstToken), "tools/call", { name: "get_state", arguments: {} });
+      assert.equal(stale.status, 401, `a stale companion token must not be served: ${JSON.stringify(stale.body)}`);
+      record("rebind-stale-companion", errorOf(stale.body).code);
+    } finally {
+      await doors.close();
+    }
+  });
+});
+
+// ── Task 6: the companion profile header ─────────────────────────────────────
+
+describe("KAR-70 pairing: the lifequest profile header", () => {
+  it("ensureMcpServer sets the companion Authorization and keeps every other MCP server", () => {
+    const existing = [
+      "mcp_servers:",
+      "  other:",
+      "    url: http://127.0.0.1:9999/mcp",
+      "",
+    ].join("\n");
+    const token = "companion-token-value-0123456789";
+    const next = ensureMcpServer(existing, "lifequest", MCP_URL, {
+      Authorization: `Bearer ${token}`,
+    });
+    record("profile-other-server-kept", "KEPT");
+    assert.match(next, /other:/);
+    assert.match(next, /127\.0\.0\.1:9999\/mcp/, "another MCP server must survive");
+
+    record("profile-companion-header", "WRITTEN");
+    assert.match(next, /lifequest:/);
+    assert.match(next, /url: http:\/\/127\.0\.0\.1:8643\/mcp/);
+    assert.ok(
+      next.includes(`Authorization: Bearer ${token}`),
+      `the companion Authorization header must be written: ${next}`,
+    );
+
+    // A later ensure refreshes the header and does not duplicate the entry.
+    const refreshed = ensureMcpServer(next, "lifequest", MCP_URL, {
+      Authorization: "Bearer second-token-9876543210",
+    });
+    assert.equal((refreshed.match(/lifequest:/g) ?? []).length, 1);
+    assert.ok(refreshed.includes("Authorization: Bearer second-token-9876543210"));
+    assert.match(refreshed, /other:/);
+    assert.equal(
+      refreshed.includes(token),
+      false,
+      "the old companion token must not linger in the profile",
+    );
+  });
+});
+
+// ── Task 6: the UI ────────────────────────────────────────────────────────────
+
+describe("KAR-70 pairing: the wiring surfaces", () => {
+  it("Personnel lists the companion, then the connected agents, with no approve control", () => {
+    const source = readSource("src/components/personnel/PersonnelStudio.tsx");
+    record("personnel-companion-section", "COMPANION");
+    assert.match(source, />\s*Companion\s*</, "Personnel needs a Companion heading");
+    assert.ok(source.includes("Full access"), "the Companion card reads Full access");
+    assert.ok(source.includes("Hermes"), "the Companion card names Hermes");
+
+    record("personnel-connected-section", "CONNECTED");
+    assert.match(source, />\s*Connected agents\s*</, "Personnel needs a Connected agents heading");
+    assert.ok(
+      source.includes("Waiting for approval"),
+      "a pending connected agent reads Waiting for approval",
+    );
+    assert.ok(source.includes("Revoke"), "an active row needs a Revoke button");
+    assert.ok(source.includes("Schedule"), "an active row needs a Schedule switch");
+    assert.ok(source.includes("Write"), "an active row needs a Write switch");
+
+    record("personnel-no-approve-control", "NO_APPROVE");
+    assert.doesNotMatch(
+      source,
+      /\bApprove\b/,
+      "the pairing Decision is approved in Decisions, not on the Personnel row",
+    );
+    assert.match(source, />\s*Scan\s*</, "the hire scan heading stays");
+  });
+
+  it("Settings shows the local door and the invite door", () => {
+    const source = readSource("src/components/settings/SettingsHermes.tsx");
+    record("settings-both-doors", "BOTH");
+    assert.ok(source.includes("8643/mcp"), "Settings must name the local door");
+    assert.ok(source.includes("8646/mcp"), "Settings must name the invite door");
+    assert.match(source, /mcpGetDoors|mcp:getDoors/);
+  });
+
+  it("Decisions label a pairing Decision as Agent pairing", () => {
+    const source = readSource("src/components/decisions/DecisionsInbox.tsx");
+    record("decision-agent-pairing-label", "Agent pairing");
+    assert.match(
+      source,
+      /case\s+["']agent-pairing["']:\s*return\s+["']Agent pairing["']/,
+      "kindLabel must handle agent-pairing",
+    );
+
+    const body = readSource("src/components/decisions/DecisionBody.tsx");
+    assert.match(body, /agent-pairing/, "DecisionBody must render the pairing body");
+    assert.match(body, /proposedBodyMarkdown|fingerprint/, "DecisionBody shows the fingerprint and door");
+  });
+});
+
+
 // ── the artifact ─────────────────────────────────────────────────────────────
 
 describe("KAR-70 pairing: the run artifact", () => {
@@ -2652,7 +2926,7 @@ describe("KAR-70 pairing: the run artifact", () => {
     "pairing-e2e.json",
   );
 
-  it("pairing-e2e.json exists in the vault and names every scenario of tasks 1 to 3", async () => {
+  it("pairing-e2e.json exists in the vault and names every scenario of the spec", async () => {
     const ctx = await openDoors("kar70-artifact");
     try {
       await fs.writeFile(
@@ -2801,6 +3075,18 @@ describe("KAR-70 pairing: the run artifact", () => {
         "schedule-none-get-week",
         "schedule-none-tools",
         "schedule-write-create-task-filtered",
+        "invite-port-taken-invite-error",
+        "invite-port-taken-local-call",
+        "rebind-first-bearer",
+        "rebind-second-companion-read",
+        "rebind-stale-companion",
+        "profile-other-server-kept",
+        "profile-companion-header",
+        "personnel-companion-section",
+        "personnel-connected-section",
+        "personnel-no-approve-control",
+        "settings-both-doors",
+        "decision-agent-pairing-label",
       ]) {
         assert.ok(names.includes(expected), `pairing-e2e.json is missing scenario ${expected}`);
       }

@@ -31,12 +31,14 @@ import {
   libraryList,
   libraryUpdate,
   listAgents,
+  listConnectedAgents,
   listDatabases,
   listDecisions,
   listPages,
   listPins,
   listRows,
   listSignals,
+  markConnectedAgent,
   markReviewDone,
   openVault,
   projectCreate,
@@ -56,6 +58,7 @@ import {
   setPins,
   unarchiveDomain,
   unlockReview,
+  updateConnectedAgent,
   updateDomain,
   updatePage,
   // Agent-built dashboard views (plan.md design)
@@ -100,6 +103,7 @@ import {
   listSyncConflicts,
   resolveSyncConflict,
   type AgentHire,
+  type ConnectedAgent,
   type DatabaseColumnType,
   type GoalsCommand,
   type IngestBatch,
@@ -158,6 +162,11 @@ import {
   setAdapterSecret,
   clearAdapterSecret,
 } from "./secrets.js";
+import {
+  dropInvite,
+  ensureCompanionToken,
+  mintInvite,
+} from "./pairing-secrets.js";
 import { adapterTransport } from "./adapter-transport.js";
 import {
   hermesChat,
@@ -165,7 +174,13 @@ import {
   hermesTest,
 } from "./hermes-proxy.js";
 import { runPlannerLoop } from "./map-tools.js";
-import { startMcp, stopMcp } from "./mcp-server.js";
+import {
+  startMcp,
+  stopMcp,
+  getMcpDoors,
+  getPairingSecretsDir,
+  type McpDoors,
+} from "./mcp-server.js";
 import * as companion from "./companion.js";
 import type {
   ChatStreamEvent,
@@ -189,6 +204,16 @@ let mcpError: string | null = null;
 
 function noVaultError<T>(): Result<T> {
   return { ok: false, error: "No vault is open" };
+}
+
+/**
+ * KAR-70: the pairing secrets dir, from mcp-server. userData, never inside
+ * a vault — a vault can be copied or synced, and a copy must not carry
+ * the companion's credential with it. Electron's `app` is reached there
+ * rather than here, so this module stays loadable outside a running app.
+ */
+function pairingSecretsDir(): string {
+  return getPairingSecretsDir();
 }
 
 function enqueue<T>(fn: () => Promise<T>): Promise<T> {
@@ -281,25 +306,138 @@ async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
     name: snapshot.lifequest.name,
     path: snapshot.rootPath,
   });
-  // Open the loopback MCP door for this vault. A failed start keeps the vault
-  // open; we record the error for Settings instead of throwing.
+  // Open the loopback MCP doors for this vault. A failed start keeps the
+  // vault open; we record the error for Settings instead of throwing.
+  // startMcp rebinds when a listener already exists, so switching vaults
+  // moves both doors rather than leaving them on the first vault.
   mcpError = null;
-  const mcpResult = await startMcp(
-    snapshot.rootPath,
-    snapshot.lifequest.id,
-    () => currentLens,
-  );
+  const mcpResult = await startMcp(snapshot.rootPath, snapshot.lifequest.id);
   if (!mcpResult.ok) {
     mcpError = mcpResult.error;
   }
 }
 
 export function getMcpError(): string | null {
-  return mcpError;
+  return mcpError ?? getMcpDoors().localError;
+}
+
+/**
+ * KAR-70: both doors and their own errors. Settings reads this, so a door
+ * that failed to bind shows its error while the other door's url stays.
+ */
+export function getMcpDoorState(): McpDoors {
+  return getMcpDoors();
 }
 
 export function getMcpUrl(): string {
-  return mcpError ? "" : `http://127.0.0.1:8643/mcp`;
+  return getMcpDoors().localUrl;
+}
+
+// ── KAR-70: the connected-agent roster ────────────────────────────────
+
+/**
+ * The open vault's roster. Rejected and revoked rows stay in the file but
+ * are omitted from the list the UI renders: there is nothing left to act
+ * on for either of them.
+ */
+export async function connectedAgentsList(): Promise<Result<ConnectedAgent[]>> {
+  return enqueue(async () => {
+    if (!currentRoot) return noVaultError<ConnectedAgent[]>();
+    const res = await listConnectedAgents(currentRoot);
+    if (!res.ok) return res;
+    return {
+      ok: true,
+      value: res.value.filter((a) => a.status === "pending" || a.status === "active"),
+    };
+  });
+}
+
+/** The operator's grant edit: the domain list, Write, and Schedule. */
+export async function connectedAgentsUpdate(
+  id: string,
+  patch: { access?: "read" | "write"; domainSlugs?: string[]; schedule?: boolean },
+): Promise<Result<ConnectedAgent>> {
+  return enqueue(async () => {
+    if (!currentRoot) return noVaultError<ConnectedAgent>();
+    if (typeof id !== "string" || !id) {
+      return { ok: false, error: "Agent id is required" };
+    }
+    if (!patch || typeof patch !== "object") {
+      return { ok: false, error: "A grant patch is required" };
+    }
+    return updateConnectedAgent(currentRoot, id, patch);
+  });
+}
+
+/**
+ * Revoke. The bearer hash stays in the secrets file, so that key reconnects
+ * as this same revoked row instead of introducing itself a second time.
+ */
+export async function connectedAgentsRevoke(
+  id: string,
+): Promise<Result<ConnectedAgent>> {
+  return enqueue(async () => {
+    if (!currentRoot) return noVaultError<ConnectedAgent>();
+    if (typeof id !== "string" || !id) {
+      return { ok: false, error: "Agent id is required" };
+    }
+    return markConnectedAgent(currentRoot, id, "revoked");
+  });
+}
+
+/**
+ * Mint an invite code. The raw code is returned once and only its hash is
+ * stored, so this is the only moment the operator ever sees it.
+ */
+export async function connectedAgentsInvite(): Promise<
+  Result<{ id: string; code: string; expiresAt: string }>
+> {
+  return enqueue(async () => {
+    if (!currentVaultId) {
+      return noVaultError<{ id: string; code: string; expiresAt: string }>();
+    }
+    const res = await mintInvite(pairingSecretsDir(), currentVaultId);
+    if (!res.ok) return res;
+    // The id travels with the code so a Drop can name the record. Only
+    // the hash is stored, and the code itself is returned exactly once.
+    return {
+      ok: true,
+      value: {
+        id: res.value.id,
+        code: res.value.code,
+        expiresAt: res.value.expiresAt,
+      },
+    };
+  });
+}
+
+/** Drop an unused invite code. A used code is already spent and stays put. */
+export async function connectedAgentsDropInvite(
+  id: string,
+): Promise<Result<{ dropped: true }>> {
+  return enqueue(async () => {
+    if (!currentVaultId) return noVaultError<{ dropped: true }>();
+    if (typeof id !== "string" || !id) {
+      return { ok: false, error: "Invite id is required" };
+    }
+    const res = await dropInvite(pairingSecretsDir(), currentVaultId, id);
+    if (!res.ok) return res;
+    return { ok: true, value: { dropped: true } };
+  });
+}
+
+/**
+ * The companion token for the open vault, minted on first use. This is
+ * what the profile writer puts behind the door's Authorization header.
+ */
+export async function ensureCurrentCompanionToken(): Promise<Result<string>> {
+  return enqueue(async () => {
+    if (!currentVaultId) return noVaultError<string>();
+    return {
+      ok: true,
+      value: await ensureCompanionToken(pairingSecretsDir(), currentVaultId),
+    };
+  });
 }
 
 export function getCurrentRoot(): string | null {

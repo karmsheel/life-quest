@@ -130,19 +130,18 @@ describe("KAR-63 MCP boundary", () => {
     }
   });
 
-  it("mcp-server's toZod has the additionalProperties branch and the widened cast", () => {
-    const src = read("electron/mcp-server.ts");
-    // The cast at the top of toZod must declare the field, or the branch will
-    // not typecheck.
-    assert.match(src, /additionalProperties\?: boolean/);
-    assert.match(src, /z\.record\(z\.string\(\), z\.unknown\(\)\)/);
-    assert.match(src, /if \(!p\.properties && p\.additionalProperties\)/);
+  it("the pairing door registers a loose object schema, so arguments reach executeTool whole", () => {
+    const src = read("electron/pairing-door.ts");
+    // A strict object compiles to a Zod object that strips every key before
+    // the handler sees it, which would strip a goal's `year` or a page's
+    // `title`. The loose schema is what keeps them.
+    assert.match(src, /z\.looseObject\(\{\}\)/);
   });
 });
 
 describe("KAR-63 tool list parity at both spread sites", () => {
-  it("mcp-server registers the composed constant, not a literal array", () => {
-    const src = read("electron/mcp-server.ts");
+  it("the pairing door registers the composed constant, not a literal array", () => {
+    const src = read("electron/pairing-door.ts");
     assert.match(src, /for \(const def of ALL_TOOL_DEFS\)/);
     // The old literal seven-array spread must be gone: it is two edits that drift.
     assert.doesNotMatch(src, /MAP_TOOL_DEFS,\s*\.\.\.GOALS_TOOL_DEFS/);

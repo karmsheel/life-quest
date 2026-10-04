@@ -43,10 +43,10 @@ describe("script block shell wiring (KAR-56)", () => {
     }
   });
 
-  it("map-tools registers and dispatches the script tools; mcp-server exposes them", () => {
-    const mcp = read("electron/mcp-server.ts");
+  it("map-tools registers and dispatches the script tools; the pairing door exposes them", () => {
+    const mcp = read("electron/pairing-door.ts");
     const mapTools = read("electron/map-tools.ts");
-    // mcp-server registers the composed constant; membership is asserted against
+    // The door registers the composed constant; membership is asserted against
     // the array rather than by grepping the source for the name.
     assert.match(mcp, /ALL_TOOL_DEFS/);
     for (const def of SCRIPT_TOOL_DEFS) {

@@ -2,6 +2,28 @@ import { contextBridge, ipcRenderer } from "electron";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
+/** KAR-70: the two loopback doors, as main reports them. */
+type McpDoors = {
+  localUrl: string;
+  inviteUrl: string;
+  localError: string | null;
+  inviteError: string | null;
+};
+
+/** KAR-70: one roster row. Mirrors vault-core ConnectedAgent. */
+type ConnectedAgent = {
+  id: string;
+  name: string;
+  fingerprint: string;
+  status: "pending" | "active" | "rejected" | "revoked";
+  access: "read" | "write";
+  domainSlugs: string[];
+  schedule: boolean;
+  door: "local" | "invite";
+  createdAt: string;
+  decidedAt: string | null;
+};
+
 const lifequest = {
   vaultCreate: (path: string, name?: string) =>
     ipcRenderer.invoke("vault:create", path, name) as Promise<Result<unknown>>,
@@ -257,6 +279,24 @@ const lifequest = {
     ipcRenderer.invoke("mcp:getUrl") as Promise<string>,
   mcpGetError: () =>
     ipcRenderer.invoke("mcp:getError") as Promise<string | null>,
+  // KAR-70: both doors and their own errors.
+  mcpGetDoors: () => ipcRenderer.invoke("mcp:getDoors") as Promise<McpDoors>,
+
+  connectedAgentsList: () =>
+    ipcRenderer.invoke("connectedAgents:list") as Promise<Result<ConnectedAgent[]>>,
+  connectedAgentsUpdate: (
+    id: string,
+    patch: { access?: "read" | "write"; domainSlugs?: string[]; schedule?: boolean },
+  ) =>
+    ipcRenderer.invoke("connectedAgents:update", id, patch) as Promise<Result<ConnectedAgent>>,
+  connectedAgentsRevoke: (id: string) =>
+    ipcRenderer.invoke("connectedAgents:revoke", id) as Promise<Result<ConnectedAgent>>,
+  connectedAgentsInvite: () =>
+    ipcRenderer.invoke("connectedAgents:invite") as Promise<
+    Result<{ id: string; code: string; expiresAt: string }>
+  >,
+  connectedAgentsDropInvite: (id: string) =>
+    ipcRenderer.invoke("connectedAgents:dropInvite", id) as Promise<Result<{ dropped: true }>>,
 
   companionEnsure: () => ipcRenderer.invoke("companion:ensure"),
   companionStatus: () => ipcRenderer.invoke("companion:status"),

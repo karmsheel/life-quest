@@ -58,6 +58,10 @@ function kindLabel(target: DecisionRecord["target"]): string {
       return "Database row";
     case "database":
       return "Database";
+    // KAR-70: a pairing Decision, not a document. Falling through would leave
+    // the card with no kind label at all.
+    case "agent-pairing":
+      return "Agent pairing";
   }
 }
 

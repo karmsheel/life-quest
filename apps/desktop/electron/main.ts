@@ -341,6 +341,29 @@ function registerIpcHandlers() {
 
   ipcMain.handle("mcp:getUrl", () => vault.getMcpUrl());
   ipcMain.handle("mcp:getError", () => vault.getMcpError());
+  // KAR-70: both doors, each with its own bind error.
+  ipcMain.handle("mcp:getDoors", () => vault.getMcpDoorState());
+
+  ipcMain.handle("connectedAgents:list", () =>
+    vault.connectedAgentsList(),
+  );
+  ipcMain.handle(
+    "connectedAgents:update",
+    (
+    _e,
+    id: string,
+    patch: { access?: "read" | "write"; domainSlugs?: string[]; schedule?: boolean },
+  ) => vault.connectedAgentsUpdate(typeof id === "string" ? id : "", patch),
+  );
+  ipcMain.handle("connectedAgents:revoke", (_e, id: string) =>
+    vault.connectedAgentsRevoke(typeof id === "string" ? id : ""),
+  );
+  ipcMain.handle("connectedAgents:invite", () =>
+    vault.connectedAgentsInvite(),
+  );
+  ipcMain.handle("connectedAgents:dropInvite", (_e, id: string) =>
+    vault.connectedAgentsDropInvite(typeof id === "string" ? id : ""),
+  );
 
   ipcMain.handle("companion:ensure", () => companion.companionEnsure());
   ipcMain.handle("companion:status", () => companion.companionStatus());

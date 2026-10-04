@@ -6,7 +6,7 @@ import { SettingsSection } from "@/components/ui/SettingsSection";
 import { api } from "@/lib/ipc";
 import { useCompanion } from "@/state/CompanionProvider";
 import { useVault } from "@/state/VaultProvider";
-import type { CompanionStatus } from "@/vite-env";
+import type { CompanionStatus, McpDoors } from "@/vite-env";
 
 function statusSummary(status: CompanionStatus | null, ensuring: boolean): string {
   if (ensuring || !status) return "Connecting…";
@@ -23,11 +23,18 @@ function statusSummary(status: CompanionStatus | null, ensuring: boolean): strin
   return "Companion disconnected.";
 }
 
+/** KAR-70: no vault open means no door, and no error to report. */
+const NO_VAULT: McpDoors = {
+  localUrl: "",
+  inviteUrl: "",
+  localError: null,
+  inviteError: null,
+};
+
 export function SettingsHermes() {
   const { snapshot } = useVault();
   const { status, ensuring, retry } = useCompanion();
-  const [mcpUrl, setMcpUrl] = useState("");
-  const [mcpErrorText, setMcpErrorText] = useState<string | null>(null);
+  const [doors, setDoors] = useState<McpDoors>(NO_VAULT);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [fileImplied, setFileImplied] = useState(true);
@@ -57,23 +64,20 @@ export function SettingsHermes() {
     }
   }
 
+  // KAR-70: both doors, each with its own bind error. A vault switch
+  // rebinds them, so this is re-read whenever the open vault changes.
   useEffect(() => {
-    if (!snapshot) return;
+    if (!snapshot) {
+      setDoors(NO_VAULT);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
-        const [url, err] = await Promise.all([
-          api().mcpGetUrl(),
-          api().mcpGetError(),
-        ]);
-        if (cancelled) return;
-        setMcpUrl(url);
-        setMcpErrorText(err);
+        const value = await api().mcpGetDoors();
+        if (!cancelled) setDoors(value);
       } catch {
-        if (!cancelled) {
-          setMcpUrl("");
-          setMcpErrorText(null);
-        }
+        if (!cancelled) setDoors(NO_VAULT);
       }
     })();
     return () => {
@@ -179,21 +183,39 @@ export function SettingsHermes() {
           </Button>
         </div>
       </SettingsSection>
+      {/* KAR-70: the two loopback doors. Each keeps its own bind error, so a
+          taken port takes down one row and not the other url. */}
       <div className="settings-card">
-        <h3 className="settings-panel__section-title">MCP door</h3>
-        {mcpErrorText ? (
-          <p className="form-error" role="alert">
-            {mcpErrorText}
-          </p>
-        ) : mcpUrl ? (
+        <h3 className="settings-panel__section-title">MCP doors</h3>
+        <dl className="settings-hermes">
+          <div className="settings-field">
+            <span>Local</span>
+            <p className="muted" role="status">
+              {doors.localUrl || "http://127.0.0.1:8643/mcp"}
+            </p>
+            {doors.localError ? (
+              <p className="form-error" role="alert">
+                {doors.localError}
+              </p>
+            ) : null}
+          </div>
+          <div className="settings-field">
+            <span>Invite</span>
+            <p className="muted" role="status">
+              {doors.inviteUrl || "http://127.0.0.1:8646/mcp"}
+            </p>
+            {doors.inviteError ? (
+              <p className="form-error" role="alert">
+                {doors.inviteError}
+              </p>
+            ) : null}
+          </div>
+        </dl>
+        {!snapshot ? (
           <p className="settings-hermes__probe muted" role="status">
-            MCP (while a vault is open): {mcpUrl}
+            MCP doors are closed — open a vault to expose the Life Map store.
           </p>
-        ) : (
-          <p className="settings-hermes__probe muted" role="status">
-            MCP door is closed — open a vault to expose the Life Map store.
-          </p>
-        )}
+        ) : null}
       </div>
     </>
   );

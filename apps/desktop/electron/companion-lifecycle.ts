@@ -52,7 +52,34 @@ export type CompanionIo = {
   ensureHostGateway: (cli: string, hermesHome: string) => Promise<void>;
   stopPid: (pid: number) => Promise<void>;
   listeningPid: (port: number) => Promise<number | null>;
+  /**
+   * KAR-70: the open vault's companion token, or null when no vault is
+   * open or the token cannot be minted. Defaults to the open vault's own
+   * token; a test may pass its own.
+   */
+  companionToken?: () => Promise<string | null>;
 };
+
+/**
+ * KAR-70: the token for the vault that is open right now, for the profile
+ * writer's Authorization header.
+ *
+ * Imported lazily: vault-service imports this module for the companion's
+ * chat stream, so a static import here would close a cycle. A failure to
+ * reach it (no vault open, the secrets file unwritable) yields null and
+ * the profile is written without the header, which the door answers
+ * AUTH_REQUIRED — a loud failure, not a silent one, and never a Decision
+ * filed for Hermes.
+ */
+async function openVaultCompanionToken(): Promise<string | null> {
+  try {
+    const vault = await import("./vault-service.ts");
+    const res = await vault.ensureCurrentCompanionToken();
+    return res.ok ? res.value : null;
+  } catch {
+    return null;
+  }
+}
 
 export function capabilitiesSupportSessions(payload: unknown): boolean {
   if (!payload || typeof payload !== "object") return false;
@@ -135,7 +162,22 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
     envText = upsertEnv(envText, { API_SERVER_KEY: apiKey });
     await io.writeFile(envPath, envText);
     const yaml = (await io.readFile(configPath)) ?? "";
-    await io.writeFile(configPath, ensureMcpServer(yaml, PROFILE_NAME, MCP_URL));
+    // KAR-70: the door now needs a bearer, so the profile carries the
+    // companion's own Authorization header. Without it every companion call
+    // is refused AUTH_REQUIRED, and — worse — a long-enough but wrong
+    // bearer would file a pairing Decision for Hermes.
+    const companionToken = await (io.companionToken ?? openVaultCompanionToken)();
+    await io.writeFile(
+      configPath,
+      ensureMcpServer(
+        yaml,
+        PROFILE_NAME,
+        MCP_URL,
+        companionToken
+          ? { Authorization: `Bearer ${companionToken}` }
+          : undefined,
+      ),
+    );
     const soul = await io.readFile(soulPath);
     if (shouldSeedSoul(soul)) {
       await io.writeFile(soulPath, COMPANION_SOUL);

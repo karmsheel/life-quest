@@ -15,11 +15,11 @@ function read(relFromDesktop: string): string {
 }
 
 describe("conversational capture shell wiring (KAR-62)", () => {
-  it("mcp-server.ts and map-tools.ts mention CAPTURE_TOOL_DEFS and executeCaptureTool", () => {
-    const mcp = read("electron/mcp-server.ts");
+  it("the pairing door and map-tools mention CAPTURE_TOOL_DEFS and executeCaptureTool", () => {
+    const mcp = read("electron/pairing-door.ts");
     const mapTools = read("electron/map-tools.ts");
-    // mcp-server registers the one composed constant, so membership is asserted
-    // against the array itself rather than by grepping mcp-server for the name.
+    // The door registers the one composed constant, so membership is asserted
+    // against the array itself rather than by grepping the door for the name.
     assert.match(mcp, /ALL_TOOL_DEFS/);
     for (const def of CAPTURE_TOOL_DEFS) {
       assert.ok(
