@@ -146,13 +146,21 @@ describe("implied filing shell wiring", () => {
       hermes.indexOf("function onToggleInsert"),
     );
     assert.match(prelude, /const insertFlight = useRef/);
-    assert.match(prelude, /const insertPending = useRef\(0\)/);
+    assert.equal(
+      prelude.includes("insertPending"),
+      false,
+      "the saved list for this vault outlives the in-flight count",
+    );
     assert.match(prelude, /const insertSave = useRef\(Promise\.resolve\(\)\)/);
-    assert.match(toggle, /insertPending\.current > 0/);
+    assert.equal(
+      /insertPending/.test(toggle),
+      false,
+      "a click after the save queue drains must still use the list last saved for this vault",
+    );
     assert.match(toggle, /insertSave\.current = insertSave\.current\s*\.then/);
     assert.match(
       toggle,
-      /insertFlight\.current\?\.rootPath === rootPath\s*\?\s*insertFlight\.current\.list/,
+      /insertFlight\.current\?\.rootPath === rootPath\s*\?\s*insertFlight\.current\.list\s*:\s*fromRender/,
     );
     assert.match(toggle, /snapshot\.settings\.autoApproveInserts \?\? \[\]/);
     const failed = toggle.slice(toggle.indexOf("if (!result.ok)"), toggle.indexOf("setError(null)"));

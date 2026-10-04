@@ -38,7 +38,6 @@ export function SettingsHermes() {
     rootPath: string;
     list: { domainSlug: string; databaseId: string }[];
   } | null>(null);
-  const insertPending = useRef(0);
   const insertSave = useRef(Promise.resolve());
 
   useEffect(() => {
@@ -104,32 +103,24 @@ export function SettingsHermes() {
 
   async function onToggleInsert(domainSlug: string, databaseId: string, checked: boolean) {
     if (!snapshot) return;
-    const behind = insertPending.current > 0;
-    insertPending.current += 1;
     const rootPath = snapshot.rootPath;
     const fromRender = snapshot.settings.autoApproveInserts ?? [];
     insertSave.current = insertSave.current
       .then(async () => {
-        try {
-          const current =
-            behind && insertFlight.current?.rootPath === rootPath
-              ? insertFlight.current.list
-              : fromRender;
-          const without = current.filter(
-            (pair) => pair.domainSlug !== domainSlug || pair.databaseId !== databaseId,
-          );
-          const next = checked ? [...without, { domainSlug, databaseId }] : without;
-          insertFlight.current = { rootPath, list: next };
-          const result = await updateSettings({ autoApproveInserts: next });
-          if (!result.ok) {
-            insertFlight.current = { rootPath, list: current };
-            setError(result.error);
-            return;
-          }
-          setError(null);
-        } finally {
-          insertPending.current -= 1;
+        const current =
+          insertFlight.current?.rootPath === rootPath ? insertFlight.current.list : fromRender;
+        const without = current.filter(
+          (pair) => pair.domainSlug !== domainSlug || pair.databaseId !== databaseId,
+        );
+        const next = checked ? [...without, { domainSlug, databaseId }] : without;
+        insertFlight.current = { rootPath, list: next };
+        const result = await updateSettings({ autoApproveInserts: next });
+        if (!result.ok) {
+          insertFlight.current = { rootPath, list: current };
+          setError(result.error);
+          return;
         }
+        setError(null);
       })
       .then(
         () => undefined,
