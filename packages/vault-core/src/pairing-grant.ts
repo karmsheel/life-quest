@@ -212,6 +212,15 @@ export function toolAllowed(
   }
   const isScheduleWrite =
     CONNECTED_SCHEDULE_TOOLS.has(name) || CONNECTED_DAY_TEMPLATE_TOOLS.has(name);
+  if (
+    !isScheduleWrite &&
+    !CONNECTED_DECISION_WRITE_TOOLS.has(name) &&
+    !CONNECTED_IMMEDIATE_WRITE_TOOLS.has(name)
+  ) {
+    // Unclassified by name, not merely unlisted: a tool added later without a
+    // gate entry must not become writable by falling through here.
+    return "FORBIDDEN";
+  }
   if (isScheduleWrite) {
     if (!grant.schedule) return "FORBIDDEN";
   } else if (grant.domainSlugs.length === 0) {
@@ -221,7 +230,6 @@ export function toolAllowed(
     // does reach the week — so this is `FORBIDDEN`.
     return "FORBIDDEN";
   }
-  // Everything else is a write, and a write needs the Write switch.
   if (grant.access !== "write") return "FORBIDDEN";
   // Capture names no domain argument, so the gate settles it here rather than
   // per call: no financial in the assignment means no capture tool at all.

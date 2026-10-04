@@ -1539,6 +1539,89 @@ describe("KAR-70 pairing: the domain read grant", () => {
     );
   });
 
+  it("mark_review_done returns only the assigned domain's slice", async () => {
+    // The leak needed Write to get past the gate at all, so the row is flipped
+    // to write first — and flipped back, so the read assertions that follow in
+    // this describe still run against a read grant.
+    const promoted = await updateConnectedAgent(f.ctx.root, f.grant.agentId, {
+      access: "write",
+    });
+    assert.equal(promoted.ok, true, `promote to write: ${JSON.stringify(promoted)}`);
+    const writeGrant: ConnectedGrant = { ...f.grant, access: "write" };
+
+    const write = await call(
+      f,
+      "mark_review_done",
+      {
+        cadence: f.reviewCadence,
+        period: f.reviewPeriod,
+        scope: "financial",
+      },
+      null,
+      writeGrant,
+    );
+    record("grant-mark-review-done", "MARKED");
+
+    // The engine answers with the whole review file it just marked: the overall
+    // preamble and every domain's section. The write is checked against the
+    // assigned scope, but the response has to be cut to the same slice
+    // get_review returns.
+    const done = write as {
+      review?: { scopes: Record<string, unknown>; bodyMarkdown: string };
+      error?: { code?: string };
+    };
+    assert.equal(
+      done.error?.code ?? "",
+      "",
+      `mark_review_done must succeed for an assigned scope: ${JSON.stringify(done)}`,
+    );
+    assert.ok(done.review, "the tool answers with the review it marked");
+    record("grant-mark-review-done-scopes", Object.keys(done.review.scopes).join(","));
+    assert.deepEqual(
+      Object.keys(done.review.scopes),
+      ["financial"],
+      "no scope but the assigned one may appear",
+    );
+
+    const body = done.review.bodyMarkdown;
+    assert.ok(
+      body.includes(FINANCIAL_MARKER),
+      `the assigned section must survive: ${body}`,
+    );
+    assert.equal(
+      body.includes(HEALTH_MARKER),
+      false,
+      `the Health section must be absent: ${body}`,
+    );
+    assert.equal(
+      body.includes("## Health"),
+      false,
+      "no Health heading may survive either",
+    );
+    assert.equal(
+      body.includes(PREAMBLE_MARKER),
+      false,
+      `the overall preamble must be absent: ${body}`,
+    );
+
+    // get_review, after the same marking, agrees with what mark_review_done
+    // returned, so the two paths cannot drift apart.
+    const reread = (await call(
+      f,
+      "get_review",
+      { cadence: f.reviewCadence, period: f.reviewPeriod },
+      null,
+      writeGrant,
+    )) as { review: { scopes: Record<string, unknown>; bodyMarkdown: string } };
+    record("grant-mark-review-done-matches-read", "SAME");
+    assert.equal(reread.review.bodyMarkdown, body);
+
+    const demoted = await updateConnectedAgent(f.ctx.root, f.grant.agentId, {
+      access: "read",
+    });
+    assert.equal(demoted.ok, true, `restore read access: ${JSON.stringify(demoted)}`);
+  });
+
   it("a review write stays FORBIDDEN while access is read", async () => {
     const before = await walkText(f.ctx.root);
     for (const [name, args] of [
@@ -3331,6 +3414,9 @@ describe("KAR-70 pairing: the run artifact", () => {
         "grant-get-review-no-file",
         "grant-review-refused-write_review",
         "grant-review-refused-mark_review_done",
+        "grant-mark-review-done",
+        "grant-mark-review-done-scopes",
+        "grant-mark-review-done-matches-read",
         "grant-review-refused-unlock_review",
         "grant-list-databases-health",
         "grant-list-databases-financial",

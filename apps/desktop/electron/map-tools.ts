@@ -369,6 +369,19 @@ async function executeConnectedTool(
     };
   }
 
+  // mark_review_done returns the whole review it just marked, and that file
+  // carries the `overall` preamble and every domain's section. The write was
+  // already checked against the assigned scope; the response still has to be
+  // cut down to the same slice get_review would have returned.
+  if (name === "mark_review_done") {
+    const marked = await executeReviewTool(root, actor, name, rec);
+    const review = (marked as { review?: ReviewRecord }).review;
+    if (!review) return grantRefusal("NOT_FOUND");
+    if (!connectedReviewVisible(review.scopes, grant)) return grantRefusal("NOT_FOUND");
+    const headings = await reviewHeadingMap(root);
+    return { review: projectConnectedReview(review, grant, headings) };
+  }
+
   // A period pack is the domain slice or nothing. `overall` spans every domain
   // and so has no slice a connected agent could be given.
   if (name === "get_period_pack") {
