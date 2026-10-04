@@ -247,23 +247,28 @@ export async function companionEnsure(): Promise<PublicCompanionStatus> {
 }
 
 /**
- * KAR-70: write the open vault's companion token into the Hermes profile.
+ * KAR-70: write a vault's companion token into the Hermes profile.
  *
  * Called after a vault opens or is switched, because that is the moment
- * there is a token to write and the doors have been rebound to the vault
- * whose credential they now accept. A no-op when no vault is open or
- * the profile is unreachable — the header that is already there stays.
+ * the doors have been rebound to the vault whose credential they now
+ * accept.
+ *
+ * `companionToken` is passed in rather than looked up here. The caller is
+ * `rememberOpen`, which runs on the vault queue; minting a token through
+ * `vault-service` would re-enter that same queue and deadlock — the outer
+ * task would be waiting on the inner one it just enqueued. Null means no
+ * token, and the profile is left exactly as it is.
  */
-export async function companionWriteMcpProfile(): Promise<boolean> {
+export async function companionWriteMcpProfile(
+  companionToken: string | null,
+): Promise<boolean> {
+  if (!companionToken) return false;
   try {
-    const vault = await import("./vault-service.ts");
-    const token = await vault.ensureCurrentCompanionToken();
-    if (!token.ok) return false;
     const root = hermesRoot(process.env, os.homedir());
     await writeCompanionMcpProfile(
       realIo(),
       path.join(profileDir(root), "config.yaml"),
-      token.value,
+      companionToken,
     );
     return true;
   } catch {

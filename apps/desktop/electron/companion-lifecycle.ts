@@ -74,26 +74,24 @@ export type CompanionIo = {
 /**
  * KAR-70: write (or refresh) the profile's `mcp_servers.lifequest` entry.
  *
- * With no token the file is left untouched. `ensure` runs on app start,
- * before any vault is open, so there is nothing to write then — and
- * rewriting the entry with an empty header list would strip the header
- * the companion needs. Opening a vault calls this again with that
- * vault's token, which is the credential the rebound door accepts.
+ * With no token the file is left untouched — it is not even read. `ensure`
+ * runs on app start, before any vault is open, so there is nothing to write
+ * then, and rewriting the entry with an empty header list would strip the
+ * header the companion needs. Opening a vault calls this again with that
+ * vault's token, which is the credential the rebound doors accept.
  */
 export async function writeCompanionMcpProfile(
   io: Pick<CompanionIo, "readFile" | "writeFile">,
   configPath: string,
   companionToken: string | null,
 ): Promise<void> {
+  // Before ensureMcpServer, and before the read: a missing token must not
+  // rewrite config.yaml at all.
+  if (!companionToken) return;
   const yaml = (await io.readFile(configPath)) ?? "";
-  const next = ensureMcpServer(
-    yaml,
-    PROFILE_NAME,
-    MCP_URL,
-    companionToken
-      ? { Authorization: `Bearer ${companionToken}` }
-      : undefined,
-  );
+  const next = ensureMcpServer(yaml, PROFILE_NAME, MCP_URL, {
+    Authorization: `Bearer ${companionToken}`,
+  });
   if (next === yaml) return;
   await io.writeFile(configPath, next);
 }

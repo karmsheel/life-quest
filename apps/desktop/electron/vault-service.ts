@@ -322,9 +322,20 @@ async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
   }
   // KAR-70: the doors are now bound to this vault, so the profile must carry
   // this vault companion token. Switching vaults has to refresh the header,
-  // or the profile keeps a bearer the rebound doors no longer accept. Best
-  // effort: a profile that cannot be written must not fail the open.
-  await companion.companionWriteMcpProfile();
+  // or the profile keeps a bearer the rebound doors no longer accept.
+  //
+  // ensureCompanionToken is called directly, not through
+  // ensureCurrentCompanionToken: that helper enqueues, and rememberOpen is
+  // already holding the vault queue, so the inner task would wait on the
+  // outer one and the open would never finish. Best effort either way — a
+  // profile that cannot be written must not fail the open.
+  let token: string | null = null;
+  try {
+    token = await ensureCompanionToken(pairingSecretsDir(), snapshot.lifequest.id);
+  } catch {
+    token = null;
+  }
+  await companion.companionWriteMcpProfile(token);
 }
 
 export function getMcpError(): string | null {
