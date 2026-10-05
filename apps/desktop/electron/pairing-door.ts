@@ -533,6 +533,12 @@ function fullServer(
         description: def.description,
         inputSchema: def.parameters,
       })),
+      // SEP-2549: tell caching clients this manifest expires, so a tool set
+      // that grew after their first connect is re-probed instead of frozen.
+      // The pin/view tools shipped days after local clients cached the list
+      // and the companion then swore the tools did not exist. One hour is
+      // cheap — listing costs the door nothing — and bounds any future gap.
+      ttlMs: 3_600_000,
     }));
   }
   return mcp;
