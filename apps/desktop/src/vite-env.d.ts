@@ -77,6 +77,8 @@ type CompanionStatus =
 type CompanionInstructionsContext = {
   domainName: string | null;
   domainSlug: string | null;
+  /** Which home Dashboard board the operator is looking at: null = Overview. */
+  viewingBoard?: string | null;
   aboutMe: string;
   locked: boolean;
   vaultOpen: boolean;

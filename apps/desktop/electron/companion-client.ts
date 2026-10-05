@@ -4,6 +4,8 @@ export type CompanionInstructionsInput = {
   aboutMe: string;
   locked: boolean;
   vaultOpen: boolean;
+  /** Which home Dashboard board the operator is looking at: null = Overview. */
+  viewingBoard?: string | null;
   reviewContext?: string;
   /** Session pref: may this turn file an implied Decision? Omitted means on. */
   fileUnsolicited?: boolean;
@@ -184,6 +186,17 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
       ? `${input.domainName ?? "unnamed"}${input.domainSlug ? ` (${input.domainSlug})` : ""}`
       : "none";
   const about = input.aboutMe.trim() ? input.aboutMe.trim() : "(empty)";
+  // The lens the operator is actually looking at: an explicit board line beats
+  // guessing "the Dashboard" from the active domain, which is null on Overview.
+  const board =
+    input.viewingBoard === undefined
+      ? null // caller did not say; fall back to the domain line only
+      : input.viewingBoard === null
+        ? "the Overview dashboard (domainSlug: null)"
+        : `the ${input.viewingBoard} dashboard (domainSlug: "${input.viewingBoard}")`;
+  const boardLine = board
+    ? `The operator is looking at ${board} right now — when they say "the Dashboard", they mean that board, and arrange_dashboard targets that domainSlug.`
+    : "";
   // A missing pref means filing is on, so omit the field and get the on wording.
   const fileUnsolicited = input.fileUnsolicited ?? true;
   const fenceRule = fileUnsolicited
@@ -208,9 +221,10 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     "LifeQuest MCP server name is lifequest. Use it for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
     "Money the operator states must be logged with capture_transaction (or undo_capture / correct_capture in that thread). Do not claim a row was posted unless the tool result says posted: true. If the tool returns ask, ask that and do not invent an account.",
     "A page script block is the one page change you apply yourself: use apply_script_block, then name the script you applied in your reply, and do not file a Decision for it. Every other page edit still goes through a Decision. Do not claim a script ran unless run_script_block returned queries or fetches.",
-    "The Dashboard is the app's home screen — the pin board the operator sees first, one per domain plus one Overview. It is NOT a page; never create a 'Dashboard page'. To put a table, chart, or metric there: preview_view to check the numbers (at most three previews, then prose), propose_view to file the one Decision that saves it, and arrange_dashboard (with the full pin list from get_dashboard) to pin it. For the active domain pass its slug; pass null for the Overview dashboard. Your arrange_dashboard applies at once — no Decision, no fence.",
+    "The Dashboard is the app's home screen — the pin board the operator sees first, one per domain plus one Overview. It is NOT a page; never ask for a page id for it and never create a 'Dashboard page'. To put a table, chart, or metric there: preview_view to check the numbers (at most three previews, then prose), propose_view to file the one Decision that saves it, and arrange_dashboard (with the full pin list from get_dashboard) to pin it.",
+    boardLine,
     ...fenceRule,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
   const reviewContext = input.reviewContext?.trim();
   if (!reviewContext) return base;
   return `${base}\n\n${reviewContext}`;

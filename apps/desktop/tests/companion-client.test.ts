@@ -73,6 +73,38 @@ describe("buildInstructions", () => {
     assert.match(text, /home screen/i);
   });
 
+  it("says which board the operator is looking at when viewingBoard is sent", () => {
+    const domain = buildInstructions({
+      domainName: "Financial",
+      domainSlug: "financial",
+      aboutMe: "",
+      locked: false,
+      vaultOpen: true,
+      viewingBoard: "financial",
+    });
+    assert.match(domain, /looking at the financial dashboard/);
+    assert.match(domain, /they mean that board/);
+    // Overview: the board is null — the line must still say so explicitly.
+    const overview = buildInstructions({
+      domainName: null,
+      domainSlug: null,
+      aboutMe: "",
+      locked: false,
+      vaultOpen: true,
+      viewingBoard: null,
+    });
+    assert.match(overview, /looking at the Overview dashboard/);
+    // Absent field: no board line at all (callers that predate it keep working).
+    const legacy = buildInstructions({
+      domainName: "Financial",
+      domainSlug: "financial",
+      aboutMe: "",
+      locked: false,
+      vaultOpen: true,
+    });
+    assert.equal(/looking at the/.test(legacy.replace(/home screen[^\n]*/, "")), false);
+  });
+
   it("keeps reviewContext as the final paragraph when the fence rule is added", () => {
     const text = buildInstructions({
       domainName: null,

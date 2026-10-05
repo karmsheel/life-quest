@@ -502,10 +502,16 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
         instructionsContext: {
           domainName: activeDomain?.meta.name ?? null,
           domainSlug: activeDomain?.slug ?? null,
+          // What the operator is looking at: the home board's domain, null on
+          // Overview. This anchors "the Dashboard" in the agent's instructions.
+          viewingBoard: lens.kind === "domain" ? lens.slug : null,
           aboutMe: snapshot?.map?.aboutMe ?? "",
           locked: false,
           vaultOpen: Boolean(snapshot),
         },
+        // The composer's pills, if the operator has picked anything: absent
+        // fields leave the turn on the gateway's own defaults.
+        runtime: runtimePick,
       });
       if ("ok" in result && result.ok === false) {
         setError(result.error);
