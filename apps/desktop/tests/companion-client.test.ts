@@ -54,6 +54,25 @@ describe("buildInstructions", () => {
     assert.match(text, /\n\nBOUND_REVIEW_PACK_JSON$/);
   });
 
+  it("teaches the dashboard workflow: the board on home, never a Dashboard page", () => {
+    // This is why "add a summary table to the Dashboard" used to produce a
+    // page-creation Decision for a page that does not exist: the instructions
+    // named script blocks and Decisions but never the board tools.
+    const text = buildInstructions({
+      domainName: "Financial",
+      domainSlug: "financial",
+      aboutMe: "",
+      locked: false,
+      vaultOpen: true,
+    });
+    assert.match(text, /get_dashboard/);
+    assert.match(text, /arrange_dashboard/);
+    assert.match(text, /propose_view/);
+    assert.match(text, /preview_view/);
+    assert.match(text, /NOT a page/i);
+    assert.match(text, /home screen/i);
+  });
+
   it("keeps reviewContext as the final paragraph when the fence rule is added", () => {
     const text = buildInstructions({
       domainName: null,

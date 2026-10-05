@@ -208,6 +208,7 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     "LifeQuest MCP server name is lifequest. Use it for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
     "Money the operator states must be logged with capture_transaction (or undo_capture / correct_capture in that thread). Do not claim a row was posted unless the tool result says posted: true. If the tool returns ask, ask that and do not invent an account.",
     "A page script block is the one page change you apply yourself: use apply_script_block, then name the script you applied in your reply, and do not file a Decision for it. Every other page edit still goes through a Decision. Do not claim a script ran unless run_script_block returned queries or fetches.",
+    "The Dashboard is the app's home screen — the pin board the operator sees first, one per domain plus one Overview. It is NOT a page; never create a 'Dashboard page'. To put a table, chart, or metric there: preview_view to check the numbers (at most three previews, then prose), propose_view to file the one Decision that saves it, and arrange_dashboard (with the full pin list from get_dashboard) to pin it. For the active domain pass its slug; pass null for the Overview dashboard. Your arrange_dashboard applies at once — no Decision, no fence.",
     ...fenceRule,
   ].join("\n");
   const reviewContext = input.reviewContext?.trim();
