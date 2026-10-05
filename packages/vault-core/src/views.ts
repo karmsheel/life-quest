@@ -12,6 +12,7 @@ import {
   type DatabaseColumn,
   type DomainDatabaseRegistry,
   type Result,
+  type ViewMeasure,
   type ViewPresentation,
   type ViewSpec,
   type ViewRunResult,
@@ -31,7 +32,7 @@ export const PRESENTATIONS: readonly ViewPresentation[] = ["table", "bar", "line
 export const TIME_WINDOWS = ["all", "this-month", "last-30-days", "this-year"] as const;
 export const TIME_BUCKETS = ["day", "week", "month"] as const;
 export const FILTER_OPS = ["eq", "neq", "gt", "gte", "lt", "lte", "in"] as const;
-export const MEASURES = ["sum", "count", "last"] as const;
+export const MEASURES: readonly ViewMeasure[] = ["sum", "count", "last", "avg"];
 
 const DEFAULT_VIEW_LIMIT = 12;
 const MAX_VIEW_LIMIT = 50;
@@ -59,7 +60,10 @@ function validWindow(w: unknown): boolean {
   if (w == null) return true;
   if (typeof w === "string") return (TIME_WINDOWS as readonly string[]).includes(w);
   if (typeof w !== "object") return false;
-  const o = w as { kind?: unknown; start?: unknown; end?: unknown };
+  const o = w as { kind?: unknown; start?: unknown; end?: unknown; weeks?: unknown };
+  if (o.kind === "last-weeks") {
+    return typeof o.weeks === "number" && Number.isFinite(o.weeks) && o.weeks >= 1 && o.weeks <= 260;
+  }
   return o.kind === "custom" && isDateString(o.start) && isDateString(o.end);
 }
 
@@ -194,6 +198,23 @@ export function validateViewSpec(spec: unknown, db: DatabaseMeta): Result<true> 
   return { ok: true, value: true };
 }
 
+/**
+ * Monday-start weeks, anchored on today, bounded for sanity. Week one INCLUDES
+ * today, so `{ weeks: 4 }` covers today's Monday back through the Monday four
+ * weeks earlier minus a day — exactly the trailing window a weekly table asks
+ * for, and it stays correct as today moves.
+ */
+function lastWeeksBounds(
+  w: { weeks: number },
+  today: string,
+): { start: string; end: string } {
+  const weeks = Math.min(260, Math.max(1, Math.floor(w.weeks)));
+  const d = new Date(today + "T00:00:00Z");
+  const dayNum = d.getUTCDay() || 7; // 1..7, Monday first
+  d.setUTCDate(d.getUTCDate() - (dayNum - 1) - (weeks - 1) * 7);
+  return { start: d.toISOString().slice(0, 10), end: today };
+}
+
 /** Fill the fields a proposal may omit, so a stored file is always complete. */
 export function applyViewDefaults(
   spec: Omit<ViewSpec, "schemaVersion">,
@@ -219,7 +240,8 @@ export function windowBounds(
   w: ViewSpec["timeWindow"],
   today: string,
 ): { start: string | null; end: string | null } {
-  if (typeof w === "object") return { start: w.start, end: w.end };
+  if (typeof w === "object" && w.kind === "custom") return { start: w.start, end: w.end };
+  if (typeof w === "object" && w.kind === "last-weeks") return lastWeeksBounds(w, today);
   switch (w) {
     case "this-month":
       return { start: today.slice(0, 8) + "01", end: today };
@@ -561,10 +583,26 @@ export async function runView(
       if (spec.measure === "last") {
         // rows arrive oldest-first, so plain assignment leaves the newest row.
         groups.set(label, { label, value });
+      } else if (spec.measure === "avg") {
+        if (existing) {
+          existing.value += value;
+          (existing as { count?: number }).count = ((existing as { count?: number }).count ?? 1) + 1;
+        } else {
+          groups.set(label, { label, value, count: 1 } as { label: string; value: number; count: number });
+        }
       } else if (existing) {
         existing.value += value;
       } else {
         groups.set(label, { label, value });
+      }
+    }
+
+    // avg divides after the fold: sum/count per label. An empty group cannot
+    // happen (count starts at 1), so no zero-division guard is needed here.
+    if (spec.measure === "avg") {
+      for (const g of groups.values()) {
+        const count = (g as { count?: number }).count ?? 1;
+        g.value = g.value / count;
       }
     }
 

@@ -897,7 +897,12 @@ export type ViewTimeWindow =
   | "this-month"
   | "last-30-days"
   | "this-year"
+  // The trailing window the weekly tables ask for: count back from today's
+  // week (Monday start), inclusive. weeks: 1..260.
+  | { kind: "last-weeks"; weeks: number }
   | { kind: "custom"; start: string; end: string };
+
+export type ViewMeasure = "sum" | "count" | "last" | "avg";
 
 export type ViewSort = { by: "label" | "value"; dir: "asc" | "desc" };
 
@@ -914,7 +919,7 @@ export type ViewSpec = {
   timeColumnId: string | null;
   timeWindow: ViewTimeWindow;
   filters: ViewFilter[];
-  measure: "sum" | "count" | "last";
+  measure: ViewMeasure;
   /** null for a count measure. */
   measureColumnId: string | null;
   sort: ViewSort;

@@ -4,27 +4,71 @@ import {
   listViews,
   runView,
   validateViewSpec,
+  getView,
 } from "./views.ts";
 import { getDatabase } from "./domain-databases.ts";
-import { setPins } from "./pins.ts";
+import { listPins, setPins } from "./pins.ts";
+import { getPage } from "./pages.ts";
+import { SYSTEM_PIN_KINDS } from "./types.ts";
 import type { Pin, Result, ViewSpec, ViewRunResult } from "./types.ts";
 
 /**
- * Agent-built dashboard views (plan.md design, slice 3): the companion's tool
- * surface for views. The companion never emits SQL and never writes a view
- * file directly — preview_view runs the exact same parameterized read the
- * dashboard card will, propose_view files one Decision per view, and
- * propose_pins only ever reorders, re-spans, or unpins an existing pinned
- * board's view pins. Approval still lives with the operator in the Decisions
- * card.
+ * Agent-built dashboard views (plan.md design). The Dashboard is the home pin
+ * board — one per lens: the Overview board and one board per domain. The
+ * companion reads it with get_dashboard and rearranges it with
+ * arrange_dashboard, which applies at once for the companion (this is the
+ * agent-arranged interface the design promises) and files one Decision for a
+ * connected agent. Saving a NEW view still goes through a Decision in both
+ * cases: propose_view files it, approval saves it, THEN it can be pinned.
+ *
+ * The companion never emits SQL: preview_view runs the same parameterized read
+ * the dashboard card will. At most three previews per data question, then
+ * write the comparison in prose instead of another chart.
  */
 
 export const VIEW_TOOL_DEFS: MapToolDef[] = [
   {
+    name: "get_dashboard",
+    description:
+      "Read one dashboard (pin board) as it currently stands: every pin in order with its human " +
+      "label, kind, and span. domainSlug names a domain's dashboard; null names the Overview " +
+      "dashboard. Call this before arranging so you change the real board, not an imagined one.",
+    parameters: {
+      type: "object",
+      properties: {
+        domainSlug: {
+          type: ["string", "null"],
+          description: "The dashboard: a domain slug like 'financial', or null for the Overview dashboard.",
+        },
+      },
+      required: ["domainSlug"],
+    },
+  },
+  {
+    name: "arrange_dashboard",
+    description:
+      "Set one dashboard's pins: reorder, add a saved view pin (span 1 = one cell, 2 = full row), " +
+      "or unpin by leaving a pin out. The array is the COMPLETE board, so keep every pin you do " +
+      "not change and keep their order meaningful. You can only pin views that are already saved " +
+      "(see list_views); a view you proposed but the operator has not approved yet cannot be " +
+      "pinned. Read get_dashboard first and send back the full board with your changes.",
+    parameters: {
+      type: "object",
+      properties: {
+        domainSlug: {
+          type: ["string", "null"],
+          description: "The dashboard: a domain slug like 'financial', or null for the Overview dashboard.",
+        },
+        pins: { type: "array", description: "The complete new pin list for that board." },
+      },
+      required: ["domainSlug", "pins"],
+    },
+  },
+  {
     name: "list_views",
     description:
       "List the saved views in a domain: id, title, presentation, and the database each reads. " +
-      "Use this to see what is already on or available to the dashboard before proposing a new view.",
+      "Use this to see what is already available to pin before proposing a new view.",
     parameters: {
       type: "object",
       properties: {
@@ -52,10 +96,11 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
   {
     name: "propose_view",
     description:
-      "Propose a saved view so the operator can pin it on their dashboard. Files one Decision " +
-      "with the full spec and a preview of the rows it produces today; nothing is saved until the " +
-      "operator approves. Name the view in your reply and reference the decision id. The spec must " +
-      "come from a successful preview_view in the same conversation.",
+      "Propose a saved view so it can be pinned on a dashboard. Files one Decision with the full " +
+      "spec and a preview of the rows it produces today; nothing is saved until the operator " +
+      "approves. After approval the view is pinnable via arrange_dashboard. Name the view in " +
+      "your reply and reference the decision id. The spec must come from a successful " +
+      "preview_view in the same conversation.",
     parameters: {
       type: "object",
       properties: {
@@ -63,26 +108,6 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
         spec: { type: "object", description: "The view spec to propose." },
       },
       required: ["domainSlug", "spec"],
-    },
-  },
-  {
-    name: "propose_pins",
-    description:
-      "Propose changes to one board's pins: reorder pins, move a view pin between one cell and a " +
-      "full row (span), or unpin a view by leaving it out. The array is the complete board, so " +
-      "keep every pin you do not change and keep their order meaningful. Files one Decision; " +
-      "nothing is written until the operator approves. Do not use this to add a view pin — say " +
-      "which proposed view to pin in your reply and let the operator pin it.",
-    parameters: {
-      type: "object",
-      properties: {
-        domainSlug: {
-          type: ["string", "null"],
-          description: "The board: a domain slug like 'financial', or null for the Overview board.",
-        },
-        pins: { type: "array", description: "The complete new pin list for that board." },
-      },
-      required: ["domainSlug", "pins"],
     },
   },
 ];
@@ -94,6 +119,43 @@ export async function executeViewTool(
   args: Record<string, unknown>,
 ): Promise<unknown> {
   switch (name) {
+    case "get_dashboard": {
+      const domainSlug =
+        args.domainSlug === null || args.domainSlug === undefined
+          ? null
+          : typeof args.domainSlug === "string" && args.domainSlug.trim()
+            ? args.domainSlug
+            : null;
+      if (args.domainSlug != null && domainSlug === null) return toolError("domainSlug must be a slug or null");
+      const res = await listPins(root, domainSlug);
+      if (!res.ok) return toolError(res.error);
+      return { domainSlug, pins: await Promise.all(res.value.map((p) => describePin(root, p))) };
+    }
+
+    case "arrange_dashboard": {
+      const domainSlug =
+        args.domainSlug === null || args.domainSlug === undefined
+          ? null
+          : typeof args.domainSlug === "string" && args.domainSlug.trim()
+            ? args.domainSlug
+            : null;
+      if (args.domainSlug != null && domainSlug === null) return toolError("domainSlug must be a slug or null");
+      const pinsRes = parsePins(args.pins);
+      if (!pinsRes.ok) return toolError(pinsRes.error);
+      const res = await setPins(root, domainSlug, pinsRes.value, actor);
+      if (!res.ok) return toolError(res.error);
+      if (res.value.applied) {
+        // The companion's path: the board moved at once, no Decision exists.
+        return { applied: true, pins: res.value.pins.map((p) => p.id) };
+      }
+      // A connected agent's path: setPins filed the Decision untouched.
+      return {
+        proposed: true,
+        decisionId: res.value.decision.id,
+        status: res.value.decision.status,
+      };
+    }
+
     case "list_views": {
       const slug = typeof args.domainSlug === "string" ? args.domainSlug : "";
       const res = await listViews(root, slug);
@@ -137,30 +199,7 @@ export async function executeViewTool(
       const { fileViewDecision } = await import("./views.ts");
       const filed = await fileViewDecision(root, actor, slug, spec, preview);
       if (!filed.ok) return toolError(filed.error);
-      return { proposed: true, viewId: filed.value.viewId, decisionId: filed.value.decisionId };
-    }
-
-    case "propose_pins": {
-      const domainSlug =
-        args.domainSlug === null || args.domainSlug === undefined
-          ? null
-          : typeof args.domainSlug === "string" && args.domainSlug.trim()
-            ? args.domainSlug
-            : null;
-      if (args.domainSlug != null && domainSlug === null) return toolError("domainSlug must be a slug or null");
-      const pinsRes = parsePins(args.pins);
-      if (!pinsRes.ok) return toolError(pinsRes.error);
-      const res = await setPins(root, domainSlug, pinsRes.value, actor);
-      if (!res.ok) return toolError(res.error);
-      // setPins files a Decision for an agent actor and leaves the board file
-      // untouched; a user actor here would write directly, so only agents get
-      // this tool (dispatch is companion-only).
-      if (res.value.applied) return { applied: true, pins: res.value.pins };
-      return {
-        proposed: true,
-        decisionId: res.value.decision.id,
-        status: res.value.decision.status,
-      };
+      return { proposed: true, decisionId: filed.value.decisionId };
     }
 
     default:
@@ -170,6 +209,34 @@ export async function executeViewTool(
 
 function toolError(message: string): { error: { code: string; message: string } } {
   return { error: { code: "FAILED", message } };
+}
+
+/** One board entry as the agent sees it: kind + a human label. */
+async function describePin(root: string, pin: Pin): Promise<Record<string, unknown>> {
+  if (pin.kind === "system") {
+    return { kind: "system", system: pin.system, label: pin.system, id: pin.id };
+  }
+  if (pin.kind === "page") {
+    const page = await getPage(root, pin.domainSlug, pin.pageId);
+    return {
+      kind: "page",
+      id: pin.id,
+      domainSlug: pin.domainSlug,
+      pageId: pin.pageId,
+      label: page.ok ? page.value.title : pin.pageId,
+      span: 1,
+    };
+  }
+  const view = await getView(root, pin.domainSlug, pin.viewId);
+  return {
+    kind: "view",
+    id: pin.id,
+    domainSlug: pin.domainSlug,
+    viewId: pin.viewId,
+    label: view.ok ? view.value.title : pin.viewId,
+    presentation: view.ok ? view.value.presentation : null,
+    span: pin.span,
+  };
 }
 
 /** Accept a full spec (schemaVersion 1) or a shape missing it. */
@@ -190,6 +257,7 @@ function parseSpec(raw: unknown): Result<ViewSpec> {
 function parsePins(raw: unknown): Result<Pin[]> {
   if (!Array.isArray(raw)) return { ok: false, error: "pins must be an array" };
   const out: Pin[] = [];
+  const knownSystems = SYSTEM_PIN_KINDS as readonly string[];
   for (const p of raw) {
     if (!p || typeof p !== "object" || Array.isArray(p)) {
       return { ok: false, error: "every pin must be an object" };
@@ -218,6 +286,9 @@ function parsePins(raw: unknown): Result<Pin[]> {
       }
       out.push({ id: String(pin.id), kind: "page", domainSlug: pin.domainSlug, pageId: pin.pageId });
     } else if (pin.kind === "system") {
+      if (typeof pin.system !== "string" || !knownSystems.includes(pin.system)) {
+        return { ok: false, error: `pin ${out.length}: unknown system pin kind ${String(pin.system)}` };
+      }
       out.push({ id: String(pin.id), kind: "system", system: pin.system as never });
     } else {
       return { ok: false, error: `pin ${out.length}: unknown pin kind ${String(pin.kind)}` };

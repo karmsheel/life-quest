@@ -63,7 +63,7 @@ describe("views-tools (agent-built dashboard views, slice 3)", () => {
     });
     const rows: Array<[string, string, number, string]> = [
       ["tx1", "2026-09-03", -40, "cat:coffee"],
-      ["tx2", "2026-09-11", -25, "cat:coffee"],
+      ["tx2", "2026-10-01", -25, "cat:coffee"],
     ];
     for (const [id, date, amount, cat] of rows) {
       const res = await upsertRow(root, "financial", txDb, {
@@ -76,6 +76,66 @@ describe("views-tools (agent-built dashboard views, slice 3)", () => {
 
   after(async () => {
     await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it("last-weeks window covers the current week plus the weeks before it", async () => {
+    // tx1 2026-09-03 (Thu) and tx2 2026-10-01 (Thu); with today around
+    // 2026-10-05 (Mon) a 1-week window starts Mon 2026-10-05 and covers NEITHER
+    // row; four weeks start Mon 2026-09-14 and cover tx2 only. Dates picked to
+    // be stable around the actual run day, not a fixture-only "today".
+    const one = await executeViewTool(root, AGENT, "preview_view", {
+      domainSlug: "financial",
+      spec: spec({
+        title: "This week",
+        timeWindow: { kind: "last-weeks", weeks: 1 },
+        filters: [{ columnId: amountColId, op: "lt", value: 0 }],
+      }),
+    });
+    assert.ok(!(one as { error?: unknown }).error, JSON.stringify(one));
+    assert.equal((one as { rowCount: number }).rowCount, 0);
+    const four = await executeViewTool(root, AGENT, "preview_view", {
+      domainSlug: "financial",
+      spec: spec({
+        title: "Four weeks",
+        timeWindow: { kind: "last-weeks", weeks: 4 },
+        filters: [{ columnId: amountColId, op: "lt", value: 0 }],
+      }),
+    });
+    assert.ok(!(four as { error?: unknown }).error, JSON.stringify(four));
+    assert.equal((four as { rowCount: number }).rowCount, 1);
+  });
+
+  it("avg measure divides after the fold", async () => {
+    // tx1 -40, tx2 -25 both Coffee: avg = -32.5, sum = -65.
+    const res = await executeViewTool(root, AGENT, "preview_view", {
+      domainSlug: "financial",
+      spec: spec({ measure: "avg", title: "Avg spend" }),
+    });
+    assert.ok(!(res as { error?: unknown }).error, JSON.stringify(res));
+    const out = res as { rows: Array<[string, number]> };
+    assert.equal(out.rows[0][1], -32.5);
+  });
+
+  it("windowBounds anchors last-weeks on Monday and counts back inclusively", async () => {
+    const { windowBounds } = await import("../src/views.ts");
+    // 2026-10-07 is a Wednesday; 3 weeks = Mon 09-21 .. Wed 10-07.
+    assert.deepEqual(
+      windowBounds({ kind: "last-weeks", weeks: 3 } as ViewSpec["timeWindow"], "2026-10-07"),
+      { start: "2026-09-21", end: "2026-10-07" },
+    );
+    // One week: today's Monday .. today.
+    assert.deepEqual(
+      windowBounds({ kind: "last-weeks", weeks: 1 } as ViewSpec["timeWindow"], "2026-10-07"),
+      { start: "2026-10-05", end: "2026-10-07" },
+    );
+  });
+
+  it("a last-weeks window with a bogus weeks value is refused", async () => {
+    const res = await executeViewTool(root, AGENT, "preview_view", {
+      domainSlug: "financial",
+      spec: spec({ timeWindow: { kind: "last-weeks", weeks: 0 } as ViewSpec["timeWindow"] }),
+    });
+    assert.ok((res as { error?: unknown }).error);
   });
 
   it("list_views names what is already saved", async () => {
@@ -170,7 +230,7 @@ describe("views-tools (agent-built dashboard views, slice 3)", () => {
     assert.equal(run.value.rows[0][1], -65);
   });
 
-  it("propose_pins files a Decision and leaves the board file untouched", async () => {
+  it("arrange_dashboard applies at once for the companion (agent-arranged board)", async () => {
     // The board piece needs one saved view to exist; the propose/order tests
     // above it are the only source of state, so make an isolated run work by
     // saving through the approved-Decision path this suite already proves.
@@ -194,9 +254,9 @@ describe("views-tools (agent-built dashboard views, slice 3)", () => {
     }
     const viewId = savedViewId as string;
 
+    const before = await listDecisions(root);
     const boardPath = path.join(root, "domains", "financial", "pins.json");
-    const beforeFile = await fs.readFile(boardPath, "utf8").catch(() => null);
-    const res = await executeViewTool(root, AGENT, "propose_pins", {
+    const res = await executeViewTool(root, AGENT, "arrange_dashboard", {
       domainSlug: "financial",
       pins: [
         { id: "pin:deadline", kind: "system", system: "deadline" },
@@ -210,51 +270,49 @@ describe("views-tools (agent-built dashboard views, slice 3)", () => {
       ],
     });
     assert.ok(!(res as { error?: unknown }).error, JSON.stringify(res));
-    const out = res as { proposed: boolean; decisionId: string };
-    assert.equal(out.proposed, true);
-    const afterFile = await fs.readFile(boardPath, "utf8").catch(() => null);
-    assert.equal(afterFile, beforeFile, "board file must not move before approval");
-    // Approving writes the view pin onto the board.
-    const approve = await resolveDecision(root, out.decisionId, "approved");
-    assert.ok(approve.ok, JSON.stringify(approve));
-    const pins = JSON.parse(await fs.readFile(boardPath, "utf8")) as {
+    const out = res as { applied: boolean; pins: string[] };
+    assert.equal(out.applied, true, "companion board change must apply instantly");
+    // The board file moved immediately.
+    const boardNow = JSON.parse(await fs.readFile(boardPath, "utf8")) as {
       pins: Array<{ kind: string; viewId?: string; span?: number }>;
     };
-    const pin = pins.pins.find((p) => p.kind === "view");
-    assert.ok(pin, "approved board lost the view pin");
+    const pin = boardNow.pins.find((p) => p.kind === "view");
+    assert.ok(pin, "instant apply lost the view pin");
     assert.equal(pin.span, 2);
     assert.equal(pin.viewId, viewId);
+    // And no Decision was filed for it.
+    const after = await listDecisions(root);
+    assert.ok(after.ok && before.ok);
+    if (!after.ok || !before.ok) return;
+    assert.equal(after.value.length, before.value.length);
   });
 
-  it("propose_pins rejects a view pin pointing at a missing view, before filing", async () => {
-    const res = await executeViewTool(root, AGENT, "propose_pins", {
+  it("get_dashboard resolves pins to labels the agent can act on", async () => {
+    const res = await executeViewTool(root, AGENT, "get_dashboard", { domainSlug: "financial" });
+    assert.ok(!(res as { error?: unknown }).error, JSON.stringify(res));
+    const out = res as { domainSlug: string | null; pins: Array<{ kind: string; label?: string; span?: number }> };
+    assert.equal(out.domainSlug, "financial");
+    const viewPin = out.pins.find((p) => p.kind === "view");
+    assert.ok(viewPin, "board read lost the view pin");
+    // The label is the view's title, not its id — the agent names things.
+    assert.notEqual(viewPin.label, viewPin.label && viewPin.label.includes(":") ? viewPin.label : null);
+    assert.equal(viewPin.span, 2);
+  });
+
+  it("arrange_dashboard rejects a view pin pointing at a missing view", async () => {
+    const res = await executeViewTool(root, AGENT, "arrange_dashboard", {
       domainSlug: "financial",
       pins: [{ id: "v-x", kind: "view", domainSlug: "financial", viewId: "v-nope", span: 1 }],
     });
     assert.ok((res as { error?: unknown }).error);
-    // Nothing was filed on top of whatever earlier tests left: the call itself
-    // must not add a pending pins-target Decision. Count is exact in full-suite
-    // runs (all prior pins decisions are resolved) and in isolated runs (this
-    // fixture files none).
-    const pending = await listDecisions(root);
-    assert.ok(pending.ok);
-    if (!pending.ok) return;
-    assert.equal(
-      pending.value.filter((d) => d.status === "pending" && d.target.type === "pins").length,
-      0,
-    );
   });
 
-  it("the saved view ids are view-ish and stable; a second propose pins fine", async () => {
-    // The companion can pin a second view on the overview board via null slug.
-    const res = await executeViewTool(root, AGENT, "propose_pins", {
-      domainSlug: null,
-      pins: [{ id: "pin:today", kind: "system", system: "today-week" }],
+  it("an unknown system pin kind is refused, not passed through", async () => {
+    const res = await executeViewTool(root, AGENT, "arrange_dashboard", {
+      domainSlug: "financial",
+      pins: [{ id: "s-x", kind: "system", system: "not-a-system-pin" }],
     });
-    assert.ok(!(res as { error?: unknown }).error, JSON.stringify(res));
-    const out = res as { proposed: boolean; decisionId: string };
-    const reject = await resolveDecision(root, out.decisionId, "rejected");
-    assert.ok(reject.ok, JSON.stringify(reject));
+    assert.ok((res as { error?: unknown }).error);
   });
 
   it("a deleted view drops off the board instead of crashing the dashboard", async () => {

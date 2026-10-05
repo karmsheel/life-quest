@@ -176,7 +176,7 @@ export async function executeTool(
     return executeScriptTool(root, actor, name, rec);
   }
 
-  // list_views, preview_view, propose_view, propose_pins
+  // list_views, get_dashboard, preview_view, propose_view, arrange_dashboard
   if (VIEW_TOOL_DEFS.some((t) => t.name === name)) {
     return executeViewTool(root, actor, name, rec);
   }
@@ -699,7 +699,7 @@ async function connectedWriteRefusal(
     // One view in one domain: the spec's target is the proposal's domain.
     return allow([rec.domainSlug as string | null | undefined]);
   }
-  if (name === "propose_pins") {
+  if (name === "arrange_dashboard") {
     // A board rewrite touches the board's domain; null (the Overview board) is
     // a real board, so it is judged as a domain name — and a grant that does
     // not cover it refuses, which is the right call: Overview is everything.

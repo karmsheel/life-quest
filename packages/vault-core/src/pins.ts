@@ -239,8 +239,11 @@ export async function setPins(
       seenIds.add(pin.id);
     }
 
-    // Agent actor → create Decision, do NOT write
-    if (actor.type === "agent") {
+    // The companion is the operator's own hands: its board change applies at
+    // once, like the user's, and the log line names it. Any OTHER agent (a
+    // connected hire) still files a Decision — a hire editing a board the
+    // operator is not looking at is exactly what approvals are for.
+    if (actor.type === "agent" && actor.id !== "companion") {
       const { createDecision } = await import("./decisions.ts");
       const label = domainSlug == null ? "Overview pins" : `${domainSlug} pins`;
       const decisionRes = await createDecision(root, {
@@ -253,7 +256,7 @@ export async function setPins(
       return { ok: true, value: { applied: false, decision: decisionRes.value } };
     }
 
-    // User actor → write file
+    // Companion or user → write file
     const board: PinBoard = { schemaVersion: 1, pins };
     await atomicWriteFile(filePath, `${JSON.stringify(board, null, 2)}\n`);
     return { ok: true, value: { applied: true, pins } };
