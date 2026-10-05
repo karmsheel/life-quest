@@ -166,16 +166,21 @@ describe("shell sidebar (docked rail)", () => {
     assert.equal(expanded.rail.borderRadius, "0px", "rail kept a rounded corner");
     // Border widths are read back in CSS px, which Chromium snaps to whole
     // device px — on a 125%-scaled display a 1px hairline computes as 0.8px.
-    assert.equal(
-      expanded.rail.borderLeftWidth,
-      "0px",
-      "rail grew a leading border",
-    );
-    assert.ok(
-      parseFloat(expanded.rail.borderRightWidth) > 0 &&
-        parseFloat(expanded.rail.borderRightWidth) <= 1,
-      `rail lost its trailing hairline (${expanded.rail.borderRightWidth})`,
-    );
+    // The rail is a flush, square pane that paints no line of its own: the
+    // sheet's frame is the seam's single divider, so a trailing hairline here
+    // would double it.
+    for (const [side, width] of [
+      ["top", expanded.rail.borderTopWidth],
+      ["right", expanded.rail.borderRightWidth],
+      ["bottom", expanded.rail.borderBottomWidth],
+      ["left", expanded.rail.borderLeftWidth],
+    ] as const) {
+      assert.equal(
+        width,
+        "0px",
+        `rail grew a ${side} border (${width}) — the sheet draws that seam`,
+      );
+    }
 
     assert.ok(expanded.header, "rail rendered no topband");
     assert.equal(expanded.header.box.top, 0, "topband left the window edge");
@@ -279,39 +284,39 @@ describe("shell sidebar (docked rail)", () => {
       "the chip's leading border does not line up with the sheet's",
     );
 
-    // The sheet's own chrome: square, a single hairline on the top edge — the
-    // line the titlebar reads as its own — and nothing on the other three sides,
-    // since the rail and the dock already paint those.
+    // The sheet's own chrome: square, a hairline on all four sides — the page's
+    // box, drawn one pane gap in from the rail and the dock.
     assert.ok(expanded.sheet, "the shell rendered no workspace sheet");
     assert.equal(
       expanded.sheet.borderRadius,
       "0px",
       `the sheet kept a rounded corner (${expanded.sheet.borderRadius})`,
     );
-    assert.equal(
-      expanded.sheet.borderLeftWidth,
-      "0px",
-      "the sheet grew a leading border",
-    );
-    assert.equal(
-      expanded.sheet.borderRightWidth,
-      "0px",
-      "the sheet grew a trailing border",
-    );
-    assert.equal(
-      expanded.sheet.borderBottomWidth,
-      "0px",
-      "the sheet grew a bottom border",
-    );
-    assert.ok(
-      parseFloat(expanded.sheet.borderTopWidth) > 0 &&
-        parseFloat(expanded.sheet.borderTopWidth) <= 1,
-      `the sheet lost the hairline under the titlebar (${expanded.sheet.borderTopWidth})`,
-    );
+    for (const [side, width] of [
+      ["top", expanded.sheet.borderTopWidth],
+      ["right", expanded.sheet.borderRightWidth],
+      ["bottom", expanded.sheet.borderBottomWidth],
+      ["left", expanded.sheet.borderLeftWidth],
+    ] as const) {
+      assert.ok(
+        parseFloat(width) > 0 && parseFloat(width) <= 1,
+        `the sheet has no hairline on its ${side} edge (${width})`,
+      );
+    }
     assert.equal(
       expanded.sheet.box.top,
       titlebarHeight + frame,
       `the titlebar's hairline is not one pane gap under the strip (${expanded.sheet.box.top}px vs ${titlebarHeight + frame}px)`,
+    );
+    // One line per seam: the sheet's frame, with neither neighbour painting an
+    // edge of its own into the same pane gap.
+    assert.equal(
+      expanded.rail.borderRightWidth === "0px" &&
+        expanded.chat.borderLeftWidth === "0px" &&
+        expanded.sheet.borderLeftWidth !== "0px" &&
+        expanded.sheet.borderRightWidth !== "0px",
+      true,
+      `rail right ${expanded.rail.borderRightWidth}, dock left ${expanded.chat.borderLeftWidth}, sheet left/right ${expanded.sheet.borderLeftWidth}/${expanded.sheet.borderRightWidth}`,
     );
 
     // Collapsed: rail gone, its width back to the sheet, a toggle left behind.
@@ -374,7 +379,9 @@ describe("shell sidebar (docked rail)", () => {
     );
 
     // The dock's own contract: square, flush right and bottom, on the sheet's
-    // surface rather than a frosted one, with only its leading hairline left.
+    // surface rather than a frosted one, with one hairline on its top edge —
+    // on the sheet's own top line — and no leading line, since the sheet's
+    // frame draws that seam.
     const { height: viewportHeight, width: viewportWidth } = expanded.viewport;
     assert.equal(
       viewportWidth - expanded.chat.box.right,
@@ -387,7 +394,11 @@ describe("shell sidebar (docked rail)", () => {
       "the chat panel stopped short of the window bottom",
     );
     assert.equal(expanded.chat.borderRadius, "0px", "the chat panel kept its radius");
-    assert.equal(expanded.chat.borderTopWidth, "0px", "the chat panel kept its top border");
+    assert.equal(
+      expanded.chat.borderLeftWidth,
+      "0px",
+      "the chat panel grew a leading border — the sheet draws that seam",
+    );
     assert.equal(expanded.chat.borderRightWidth, "0px", "the chat panel kept its right border");
     assert.equal(
       expanded.chat.borderBottomWidth,
@@ -395,9 +406,14 @@ describe("shell sidebar (docked rail)", () => {
       "the chat panel kept its bottom border",
     );
     assert.ok(
-      parseFloat(expanded.chat.borderLeftWidth) > 0 &&
-        parseFloat(expanded.chat.borderLeftWidth) <= 1,
-      `the chat panel lost its leading hairline (${expanded.chat.borderLeftWidth})`,
+      parseFloat(expanded.chat.borderTopWidth) > 0 &&
+        parseFloat(expanded.chat.borderTopWidth) <= 1,
+      `the chat panel lost its top hairline (${expanded.chat.borderTopWidth})`,
+    );
+    assert.equal(
+      expanded.chat.box.top,
+      titlebarHeight + frame,
+      `the panel's top edge is not level with the sheet's (${expanded.chat.box.top}px vs ${titlebarHeight + frame}px)`,
     );
     assert.equal(
       expanded.chat.backdropFilter,

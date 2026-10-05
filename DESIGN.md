@@ -32,7 +32,7 @@ ThemeProvider may apply a named skin and light/dark/system. It must not generate
 
 `SettingsSection` / `SettingsRow` own settings heading and row chrome. Settings cards use `--radius-sm`.
 
-The studio is three square panes (`.nav-rail`, `.shell__main`, `.chat-panel`) on a `--shell-frame` (12px) canvas mat. The rail is quiet frost (`--card-glass`); the sheet and Welcome are `--card`. Each pane carries exactly one hairline, at the edge it shares with a neighbour: the rail's trailing edge, the sheet's top edge — the line the titlebar reads as its own — and the dock's leading edge. None is rounded, and only the sheet keeps `--shadow-sm` (Flat First). `.shell` is the grid tray, not a sheet. Feature files must not add a second frame or extra glass.
+The studio is three square panes (`.nav-rail`, `.shell__main`, `.chat-panel`) on a `--shell-frame` (12px) canvas mat. The rail is quiet frost (`--card-glass`); the sheet and Welcome are `--card`. The sheet is the one pane boxed on all four sides, and its frame is the only line at each seam: the rail and the dock keep the pane gap and paint no edge of their own, so no divider is ever doubled. The sheet's top hairline is the line the titlebar reads as its own, and the dock carries the same hairline on its top edge so that line runs across the right-hand pane too. None is rounded, and only the sheet keeps `--shadow-sm` (Flat First). `.shell` is the grid tray, not a sheet. Feature files must not add a second frame or extra glass.
 
 ## Remaining visual do-not-do
 

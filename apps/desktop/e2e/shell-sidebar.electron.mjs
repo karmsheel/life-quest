@@ -320,13 +320,12 @@ async function main() {
       `rail ${expanded.rail?.box.width}px vs --shell-nav-width ${track}px`,
     );
     check(
-      "rail edges stay square and hairline",
+      "rail stays square and paints no line of its own",
       expanded.rail?.borderRadius === "0px" &&
         expanded.rail?.borderLeftWidth === "0px" &&
         expanded.rail?.borderTopWidth === "0px" &&
         expanded.rail?.borderBottomWidth === "0px" &&
-        parseFloat(expanded.rail?.borderRightWidth ?? "0") > 0 &&
-        parseFloat(expanded.rail?.borderRightWidth ?? "0") <= 1,
+        expanded.rail?.borderRightWidth === "0px",
       `radius ${expanded.rail?.borderRadius}, borders ${expanded.rail?.borderTopWidth}/${expanded.rail?.borderRightWidth}/${expanded.rail?.borderBottomWidth}/${expanded.rail?.borderLeftWidth}`,
     );
 
@@ -441,13 +440,20 @@ async function main() {
       `radius ${expanded.chat?.borderRadius}`,
     );
     check(
-      "the chat panel keeps one leading hairline and drops the rest",
+      "the chat panel wears only its top hairline",
       expanded.chat?.borderRightWidth === "0px" &&
         expanded.chat?.borderBottomWidth === "0px" &&
-        expanded.chat?.borderTopWidth === "0px" &&
-        parseFloat(expanded.chat?.borderLeftWidth ?? "0") > 0 &&
-        parseFloat(expanded.chat?.borderLeftWidth ?? "0") <= 1,
+        expanded.chat?.borderLeftWidth === "0px" &&
+        parseFloat(expanded.chat?.borderTopWidth ?? "0") > 0 &&
+        parseFloat(expanded.chat?.borderTopWidth ?? "0") <= 1,
       `borders t/r/b/l ${expanded.chat?.borderTopWidth}/${expanded.chat?.borderRightWidth}/${expanded.chat?.borderBottomWidth}/${expanded.chat?.borderLeftWidth}`,
+    );
+    // The top hairline has to be the same line the sheet's top edge carries:
+    // one level, under the strip, spanning the dock as well as the sheet.
+    check(
+      "the panel's top edge is level with the sheet's",
+      expanded.chat?.box.top === titlebarHeight + frame,
+      `panel top ${expanded.chat?.box.top}px vs sheet top ${titlebarHeight + frame}px`,
     );
     check(
       "the chat panel wears the sheet's own surface, unfrosted",
@@ -466,22 +472,34 @@ async function main() {
         viewportHeight - (expanded.main?.bottom ?? 0) === frame,
       `sheet top ${expanded.main?.top}px (want ${titlebarHeight + frame}px), bottom inset ${viewportHeight - (expanded.main?.bottom ?? 0)}px`,
     );
-    // The sheet's own chrome: square, one hairline on the top edge — the line
-    // under the titlebar — and none on the other three sides, because the rail
-    // and the dock already paint those.
+    // The sheet's own chrome: square, wearing a hairline on all four sides —
+    // the page's box, drawn one pane gap in from the rail and the dock.
     check(
       "the sheet has square corners",
       expanded.sheet?.borderRadius === "0px",
       `radius ${expanded.sheet?.borderRadius}`,
     );
     check(
-      "the sheet keeps one top hairline and drops the rest",
-      expanded.sheet?.borderLeftWidth === "0px" &&
-        expanded.sheet?.borderRightWidth === "0px" &&
-        expanded.sheet?.borderBottomWidth === "0px" &&
-        parseFloat(expanded.sheet?.borderTopWidth ?? "0") > 0 &&
-        parseFloat(expanded.sheet?.borderTopWidth ?? "0") <= 1,
+      "the sheet wears a hairline on all four sides",
+      [
+        expanded.sheet?.borderTopWidth,
+        expanded.sheet?.borderRightWidth,
+        expanded.sheet?.borderBottomWidth,
+        expanded.sheet?.borderLeftWidth,
+      ].every(
+        (width) => parseFloat(width ?? "0") > 0 && parseFloat(width ?? "0") <= 1,
+      ),
       `borders t/r/b/l ${expanded.sheet?.borderTopWidth}/${expanded.sheet?.borderRightWidth}/${expanded.sheet?.borderBottomWidth}/${expanded.sheet?.borderLeftWidth}`,
+    );
+    // One line per seam: the sheet's frame, with neither neighbour painting an
+    // edge of its own into the same pane gap.
+    check(
+      "each seam carries the sheet's frame alone",
+      expanded.sheet?.borderLeftWidth !== "0px" &&
+        expanded.sheet?.borderRightWidth !== "0px" &&
+        expanded.rail?.borderRightWidth === "0px" &&
+        expanded.chat?.borderLeftWidth === "0px",
+      `rail right ${expanded.rail?.borderRightWidth}, sheet left ${expanded.sheet?.borderLeftWidth}, sheet right ${expanded.sheet?.borderRightWidth}, dock left ${expanded.chat?.borderLeftWidth}`,
     );
     check(
       "that hairline sits on the sheet's top edge, one pane gap under the strip",

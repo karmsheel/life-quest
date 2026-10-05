@@ -481,11 +481,8 @@ a {
   grid-column: 3;
 }
 
-/* Square, on the window's own mat, with one hairline: the top edge, which is
-   the line under the titlebar. The rail already paints the leading hairline and
-   the dock the trailing one, so the sheet must not double them, and its bottom
-   edge meets the window with nothing between. The resting frame stays on the
-   top, right and bottom — the mat is what separates the sheet from the chrome. */
+/* Square, on the window's own mat, wearing a full hairline frame: the sheet is
+   the one pane boxed on all four sides. */
 .shell__main {
   min-width: 0;
   display: flex;
@@ -493,8 +490,7 @@ a {
   overflow: hidden;
   min-height: 0;
   background: var(--card);
-  border: 0;
-  border-top: 1px solid var(--border);
+  border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
 }
 
@@ -516,14 +512,14 @@ a {
    right and bottom, and the rail escapes those three sides with negative margins
    and reaches over the titlebar row by its height. The left edge has no frame to
    escape — the strip's own column gap supplies the rail's inset on that side —
-   so the rail's box starts at zero. Only the trailing edge keeps a gap and a
-   hairline; no radius or shadow survives a flush panel. */
+   so the rail's box starts at zero. Its trailing edge keeps the pane gap and no
+   line of its own — the sheet's frame is the seam's single divider — and no
+   radius or shadow survives a flush panel. */
 .nav-rail {
   background: var(--card-glass);
   backdrop-filter: var(--backdrop-panel);
   -webkit-backdrop-filter: var(--backdrop-panel);
   border: 0;
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -3026,9 +3022,11 @@ a.home-mini-list__link:hover {
    the tray keeps the frame for the sheet on the top, right and bottom, and this
    panel's box carries the right and bottom halves of that frame. On the sheet's
    own surface rather than a frosted one — a translucent panel reads as a card
-   floating over the page, and there is no page behind it to blur. The leading
-   edge keeps the pane gap and one hairline; no radius or shadow survives a flush
-   panel. */
+   floating over the page, and there is no page behind it to blur. Its top edge
+   wears the same hairline as the sheet's, so the line under the titlebar runs
+   across both panes, and its leading edge keeps the pane gap with no line of its
+   own — the sheet's frame is the seam's divider; no radius or shadow survives a
+   flush panel. */
 .chat-panel {
   display: flex;
   flex-direction: column;
@@ -3039,7 +3037,7 @@ a.home-mini-list__link:hover {
   background: var(--card);
   color: var(--fg);
   border: 0;
-  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
   /* The escape lives in the box, not in a negative margin: a stretched grid item
      is exactly the track, so the frame goes into the width and height. Measured
      — the box lands on the window's right edge and bottom. */

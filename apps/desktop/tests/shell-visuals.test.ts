@@ -35,7 +35,13 @@ describe("shell visuals", () => {
       css,
       /\.nav-rail\s*\{[\s\S]*?margin-top:\s*calc\(-1 \* \(var\(--shell-frame\) \+ var\(--window-titlebar-height\)\)\)/,
     );
-    assert.match(css, /\.nav-rail\s*\{[\s\S]*?border-right:\s*1px solid var\(--border\)/);
+    // No line of its own: the rail keeps the pane gap and the sheet's frame is
+    // the seam's single divider, so a trailing hairline here would double it.
+    assert.match(css, /\.nav-rail\s*\{[^}]*border:\s*0/);
+    assert.equal(
+      /\.nav-rail\s*\{[^}]*border-(top|right|bottom|left):/.test(css),
+      false,
+    );
     assert.equal(/\.nav-rail\s*\{[^}]*border-radius/.test(css), false);
     assert.equal(/\.nav-rail\s*\{[^}]*box-shadow/.test(css), false);
     assert.match(css, /\.nav-rail__header\s*\{[\s\S]*?-webkit-app-region:\s*drag/);
@@ -52,22 +58,29 @@ describe("shell visuals", () => {
       /\.window-titlebar__leading\s+\.window-titlebar__nav-toggle\s*\{[\s\S]*?position:\s*absolute[\s\S]*?left:\s*calc\(\(var\(--shell-nav-width\) - var\(--nav-toggle-size\)\) \/ 2\)/,
     );
     assert.match(css, /\.shell__main\s*\{[\s\S]*?background:\s*var\(--card\)/);
-    // The sheet is square, and keeps exactly one hairline: its top edge, the
-    // line under the titlebar. The leading and trailing hairlines belong to the
-    // rail and the dock, so the sheet must not double them, and its bottom edge
-    // is left to the mat. Radius and the three side borders are gone for good.
+    // The sheet is square and the one pane boxed on all four sides: a full
+    // hairline frame on the window's own mat, which is what the user reads as
+    // the page's edge. Its frame is the only line at each seam — the rail and
+    // the dock keep their pane gap and paint no edge of their own.
     assert.equal(/\.shell__main\s*\{[^}]*border-radius/.test(css), false);
-    assert.match(css, /\.shell__main\s*\{[^}]*border:\s*0/);
-    assert.match(css, /\.shell__main\s*\{[^}]*border-top:\s*1px solid var\(--border\)/);
-    assert.equal(/\.shell__main\s*\{[^}]*border-left:/.test(css), false);
-    assert.equal(/\.shell__main\s*\{[^}]*border-right:/.test(css), false);
-    assert.equal(/\.shell__main\s*\{[^}]*border-bottom:/.test(css), false);
+    assert.match(css, /\.shell__main\s*\{[^}]*border:\s*1px solid var\(--border\)/);
+    // The shorthand paints all four sides, so no per-side rule may narrow it
+    // back to the old single top hairline.
+    assert.equal(
+      /\.shell__main\s*\{[^}]*border-(top|right|bottom|left):/.test(css),
+      false,
+    );
     assert.equal(/\.shell__main\s*\{[^}]*background:\s*var\(--card-glass\)/.test(css), false);
     // The dock is a pane on the sheet's own surface, and the only flush one:
-    // square, unfrosted, no shadow, one leading hairline, escaping the tray's
-    // frame on the right and bottom the way the rail escapes it on the left.
+    // square, unfrosted, no shadow, one hairline on its top edge — meeting the
+    // sheet's so the line under the titlebar runs across both panes — and no
+    // leading line of its own, escaping the tray's frame on the right and
+    // bottom the way the rail escapes it on the left.
     assert.match(css, /\.chat-panel\s*\{[\s\S]*?background:\s*var\(--card\)/);
-    assert.match(css, /\.chat-panel\s*\{[\s\S]*?border-left:\s*1px solid var\(--border\)/);
+    assert.match(css, /\.chat-panel\s*\{[\s\S]*?border-top:\s*1px solid var\(--border\)/);
+    assert.equal(/\.chat-panel\s*\{[^}]*border-left:/.test(css), false);
+    assert.equal(/\.chat-panel\s*\{[^}]*border-right:/.test(css), false);
+    assert.equal(/\.chat-panel\s*\{[^}]*border-bottom:/.test(css), false);
     assert.match(
       css,
       /\.chat-panel\s*\{[\s\S]*?width:\s*calc\(var\(--chat-column\) \+ var\(--shell-frame\)\)/,
