@@ -12,7 +12,8 @@
  * NOT covered here: whether Windows lets the click through the titlebar's drag
  * band. Synthetic DOM clicks bypass the OS hit test, so the `-webkit-app-region:
  * no-drag` carve-out on the toggle can only be confirmed by clicking it in the
- * real window. That carve-out is asserted in `tests/shell-visuals.test.ts`.
+ * real window. Nothing asserts that carve-out any more — the source-text
+ * contract that read it out of the CSS went with the unit tests.
  */
 import fs from "node:fs";
 import path from "node:path";

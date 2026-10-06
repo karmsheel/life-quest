@@ -32,9 +32,9 @@
  *     keeps its raw id in its tooltip, and the exact payload is unchanged.
  *
  * NOT covered here: that the main process resolves those names in the first
- * place (that is `packages/vault-core/tests/decision-labels.test.ts` for row
- * writes and `decision-labels-page-mapping.test.ts` for pages and mappings, both
- * over a real vault), and the approve/reject round trip.
+ * place (the vault-core suites that did that over a real vault went with the
+ * unit tests, and nothing here replaces them), and the approve/reject round
+ * trip.
  */
 import fs from "node:fs";
 import path from "node:path";

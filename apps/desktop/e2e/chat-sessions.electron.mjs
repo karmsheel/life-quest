@@ -12,7 +12,7 @@
  * NOT covered here: the HTTP hop. The rig answers from a fixture (seeded out of
  * the profile's state.db), so that `PATCH /api/sessions/{id}` really carries
  * `{pinned}`/`{title}`/`{archived}` to the gateway is asserted at the bridge
- * boundary only — see the wiring assertions in `tests/companion-shell.test.ts`.
+ * boundary only — no test in this repo opens that hop.
  */
 import fs from "node:fs";
 import path from "node:path";

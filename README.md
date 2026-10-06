@@ -65,7 +65,7 @@ Windows SmartScreen may warn on first launch (unsigned private build). Choose **
 |--------|---------|
 | `npm run dev` / `npm run dev:desktop` | Electron + Vite desktop app (develop) |
 | `npm run package` | Windows portable folder at `apps/desktop/release/win-unpacked/LifeQuest.exe` (use) |
-| `npm test` | `@lifequest/vault-core` unit tests + desktop packaging tests |
+| `npm test` | The desktop E2E rigs — each skips unless `npm run dev` is listening on 5173 |
 | `npm run build` | Production Vite build + Electron main bundle (does not produce an `.exe`) |
 | `npm run typecheck` | Typecheck desktop renderer + main |
 

@@ -28,10 +28,10 @@
  * a `/src/` edit does not until the server restarts) — do not trust a
  * green source-mutation run here without confirming the served bytes first.
  *
- * NOT covered here: that vault-core computes the aggregation correctly (that is
- * `packages/vault-core/tests/views.test.ts` over a real vault) and the
- * HomePage pin spread itself (a page-level concern, covered by the source-text
- * contract test for the add-row).
+ * NOT covered here: that vault-core computes the aggregation correctly (the
+ * vault-core suite that ran it over a real vault went with the unit tests, and
+ * nothing here replaces it) and the HomePage pin spread itself (a page-level
+ * concern whose source-text contract test went the same way).
  */
 import fs from "node:fs";
 import path from "node:path";

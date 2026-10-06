@@ -18,8 +18,9 @@
  *
  * NOT covered here: the vault itself. The rig answers from
  * `fixtures/signal-chain.json` through the same bridge calls the main process
- * exposes, so "the write reached disk" is asserted at the bridge boundary only
- * — `tests/chain-shell.test.ts` and the vault-core suite own the file layer.
+ * exposes, so "the write reached disk" is asserted at the bridge boundary only.
+ * The file layer below it is not asserted anywhere: this repo's suite is
+ * E2E-only, and no rig opens a real vault.
  */
 import fs from "node:fs";
 import path from "node:path";

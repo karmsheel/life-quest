@@ -9,9 +9,6 @@
     "./pure": "./src/pure.ts",
     "./map": "./src/map/public.ts"
   },
-  "scripts": {
-    "test": "node --experimental-strip-types --test \"tests/**/*.test.ts\""
-  },
   "devDependencies": {
     "@types/node": "^20.19.0",
     "typescript": "^5.8.0"
