@@ -3743,6 +3743,163 @@ button.chat-panel__activity-line:hover {
   background: currentColor;
 }
 
+/* The composer's runtime row: the model and thinking pills, one gap under the
+   field. This is the dock's own take on the two pills in the Hermes Desktop
+   composer — small chips that open upward into the transcript, because the
+   composer is the bottom of the panel and there is no room below it. The row
+   paints nothing of its own; it is the field's column, one gap down. */
+.chat-panel__composer-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.chat-panel__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 12rem;
+  min-width: 0;
+  height: 1.5rem;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+
+.chat-panel__pill:not(:disabled):hover {
+  color: var(--fg);
+  background: var(--muted-surface);
+}
+
+.chat-panel__pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* A pick of the operator's own reads brighter than the profile default it is
+   overriding, and carries the small dot the Desktop pill uses for a pin — the
+   one sign that a turn is not running on the gateway's default any more. */
+.chat-panel__pill[data-override="true"] {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.chat-panel__pill-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel__pill-dot {
+  flex-shrink: 0;
+  width: 0.25rem;
+  height: 0.25rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.chat-panel__composer-menu {
+  position: absolute;
+  bottom: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: min(18rem, 100%);
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-panel__composer-menu--reasoning {
+  width: 10rem;
+}
+
+/* The provider strip is one row of chips that scrolls sideways: the gateway
+   knows fifty-odd providers here, and a column of them would bury the models
+   the menu exists to offer. */
+.chat-panel__menu-providers {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.25rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-panel__menu-provider {
+  flex-shrink: 0;
+  height: 1.35rem;
+  padding: 0 0.45rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.6875rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chat-panel__menu-provider[aria-checked="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.chat-panel__menu-provider[data-authenticated="false"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chat-panel__menu-models {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 11rem;
+  overflow-y: auto;
+}
+
+.chat-panel__menu-models button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-panel__menu-models button:hover {
+  background: var(--muted-surface);
+}
+
+.chat-panel__menu-models button[aria-checked="true"] {
+  background: var(--selected-soft);
+}
+
+.chat-panel__menu-meta {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.625rem;
+}
+
 /* The chain, as the dock's third surface: the same records the Life-Chain page
    shows, read like a chat — oldest at the top, newest last, just above the
    composer. The list is a plain column (the panel renders it oldest first), so

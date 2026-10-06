@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 import { stopMcp } from "./mcp-server.js";
 import * as companion from "./companion.js";
 import { getFileUnsolicited, setFileUnsolicited } from "./companion-filing.js";
-import type { CompanionInstructionsInput } from "./companion-client.js";
+import type {
+  CompanionInstructionsInput,
+  CompanionRuntimeOverride,
+} from "./companion-client.js";
 import * as vault from "./vault-service.js";
 import {
   setDeadlineDismissedOn,
@@ -392,6 +395,9 @@ function registerIpcHandlers() {
   ipcMain.handle("companion:sessionDelete", (_e, id: string) =>
     companion.companionSessionDelete(typeof id === "string" ? id : ""),
   );
+  ipcMain.handle("companion:modelOptions", () =>
+    companion.companionModelOptions(),
+  );
   ipcMain.handle(
     "companion:chatStream",
     async (
@@ -400,6 +406,8 @@ function registerIpcHandlers() {
         sessionId: string;
         input: string;
         instructionsContext: CompanionInstructionsInput;
+        /** The composer's model / thinking-level pick for this turn. */
+        runtime?: CompanionRuntimeOverride | null;
       },
     ) => {
       return vault.companionChatStreamWithPack(
@@ -411,6 +419,7 @@ function registerIpcHandlers() {
             event.sender.send("companion:stream", evt);
           }
         },
+        payload.runtime ?? null,
       );
     },
   );

@@ -249,6 +249,92 @@ function yamlScalar(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+function lineBreak(yaml: string): "\r\n" | "\n" {
+  return yaml.includes("\r\n") ? "\r\n" : "\n";
+}
+
+function hasTopLevelKey(yaml: string, key: string): boolean {
+  return new RegExp(`(?:^|\\n)${key}:[ \\t]*\\r?(?:\\n|$)`).test(yaml);
+}
+
+/**
+ * Copy the root Hermes `model:` block onto a profile that has none.
+ * A profile that already chose a model keeps it. The copy stops at the next
+ * top-level key, so the rest of the root config stays where it is.
+ */
+export function seedModelFromRoot(profileYaml: string, rootYaml: string): string {
+  if (hasTopLevelKey(profileYaml, "model")) return profileYaml;
+  const lines = rootYaml.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^model:[ \t]*$/.test(line));
+  if (start < 0) return profileYaml;
+  let end = start + 1;
+  while (end < lines.length) {
+    const line = lines[end] ?? "";
+    if (line.trim() !== "" && !/^[ \t]/.test(line)) break;
+    end += 1;
+  }
+  const nl = lineBreak(profileYaml.length > 0 ? profileYaml : rootYaml);
+  const block = lines.slice(start, end).join(nl).replace(/\s+$/, "");
+  const base =
+    profileYaml.length === 0 || profileYaml.endsWith("\n")
+      ? profileYaml
+      : `${profileYaml}${nl}`;
+  return `${base}${block}${nl}`;
+}
+
+/**
+ * Write the companion Authorization onto a root config that already lists
+ * `mcp_servers.lifequest`. A root config with no such server is left untouched,
+ * and an entry that already has Authorization is left untouched.
+ *
+ * The root file is often CRLF. This inserts lines with that same break and
+ * does not rewrite the rest of the file.
+ */
+export function ensureRootCompanionHeader(
+  rootYaml: string,
+  authorization: string,
+): string {
+  const lines = rootYaml.split(/\r?\n/);
+  const start = lines.findIndex((line, index) => {
+    if (!/^ {2}lifequest:[ \t]*$/.test(line)) return false;
+    for (let earlier = index - 1; earlier >= 0; earlier -= 1) {
+      if ((lines[earlier] ?? "").trim() === "") continue;
+      return /^mcp_servers:[ \t]*$/.test(lines[earlier] ?? "");
+    }
+    return false;
+  });
+  if (start < 0) return rootYaml;
+  let end = start + 1;
+  while (end < lines.length) {
+    const line = lines[end] ?? "";
+    if (line.trim() !== "" && !/^[ \t]/.test(line)) break;
+    if (/^ {2}\S/.test(line)) break;
+    end += 1;
+  }
+  const block = lines.slice(start, end);
+  if (block.some((line) => /^\s*Authorization:/.test(line))) return rootYaml;
+  let insertAt = end;
+  while (insertAt > start + 1 && (lines[insertAt - 1] ?? "").trim() === "") {
+    insertAt -= 1;
+  }
+  const nl = lineBreak(rootYaml);
+  const next = [
+    ...lines.slice(0, insertAt),
+    "    headers:",
+    `      Authorization: ${yamlScalar(authorization)}`,
+    ...lines.slice(insertAt),
+  ];
+  const joined = next.join(nl);
+  if (rootYaml.endsWith("\n") && !joined.endsWith("\n")) return joined + nl;
+  return joined;
+}
+
+/**
+ * Seed only a missing or empty soul: an operator may have edited theirs, and
+ * overwriting it would discard their words. New capability (like the 2026-10
+ * dashboard tools) reaches existing profiles through buildInstructions instead,
+ * which is rebuilt per session and carries the operational teaching.
+ */
 export function shouldSeedSoul(existing: string | null): boolean {
   return existing === null || existing.trim() === "";
 }

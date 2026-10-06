@@ -186,6 +186,7 @@ import * as companion from "./companion.js";
 import type {
   ChatStreamEvent,
   CompanionInstructionsInput,
+  CompanionRuntimeOverride,
 } from "./companion-client.js";
 import {
   buildBoundReviewContext,
@@ -1350,6 +1351,7 @@ export async function companionChatStreamWithPack(
   input: string,
   instructionsContext: CompanionInstructionsInput,
   onEvent: (evt: ChatStreamEvent) => void,
+  runtime?: CompanionRuntimeOverride | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const fileUnsolicited = await getFileUnsolicited().catch(() => true);
   const ctx: CompanionInstructionsInput = { ...instructionsContext, fileUnsolicited };
@@ -1375,7 +1377,13 @@ export async function companionChatStreamWithPack(
     onEvent(evt);
   };
 
-  const result = await companion.companionChatStream(sessionId, input, ctx, forward);
+  const result = await companion.companionChatStream(
+    sessionId,
+    input,
+    ctx,
+    forward,
+    runtime,
+  );
   if (result.ok && currentRoot) {
     try {
       const verdict = shouldFileImpliedTurn({

@@ -8,7 +8,9 @@ import {
   RESERVED_PORTS,
   attachCandidateBaseUrls,
   ensureMcpServer,
+  ensureRootCompanionHeader,
   hermesRoot,
+  seedModelFromRoot,
   nextFreePort,
   portFromBaseUrl,
   profileDir,
@@ -81,6 +83,57 @@ describe("companion-profile", () => {
     assert.match(next, /127\.0\.0\.1:8643\/mcp/);
     const again = ensureMcpServer(next, "lifequest", MCP_URL);
     assert.equal((again.match(/lifequest:/g) ?? []).length, 1);
+  });
+
+  it("copies the root model into a profile that has none and leaves a chosen model alone", () => {
+    const root = [
+      "model:",
+      "  default: stealth/space-bunny-alpha",
+      "  provider: nous",
+      "fallback_providers: []",
+      "",
+    ].join("\r\n");
+    const profile = "mcp_servers:\n  lifequest:\n    url: http://127.0.0.1:8643/mcp\n";
+    const next = seedModelFromRoot(profile, root);
+    assert.match(next, /^mcp_servers:\n/);
+    assert.match(
+      next,
+      /model:\n  default: stealth\/space-bunny-alpha\n  provider: nous\n$/,
+    );
+    assert.equal(next.includes("fallback_providers"), false);
+    const chosen = seedModelFromRoot(
+      "model:\n  default: other\n  provider: x\n",
+      root,
+    );
+    assert.match(chosen, /default: other/);
+    assert.equal(chosen.includes("space-bunny"), false);
+  });
+
+  it("adds the companion bearer to an existing root lifequest server without creating one", () => {
+    const root = [
+      "model:",
+      "  default: a",
+      "  provider: nous",
+      "mcp_servers:",
+      "  lifequest:",
+      "    url: http://127.0.0.1:8643/mcp",
+      "    connect_timeout: 20.0",
+      "    enabled: true",
+      "",
+    ].join("\r\n");
+    const next = ensureRootCompanionHeader(root, "Bearer abc_def");
+    assert.match(next, /model:\r\n  default: a\r\n/);
+    assert.match(next, /connect_timeout: 20\.0\r\n/);
+    assert.match(next, /enabled: true\r\n/);
+    assert.match(next, /Authorization: Bearer abc_def\r\n/);
+    assert.equal((next.match(/lifequest:/g) ?? []).length, 1);
+    assert.equal((next.match(/mcp_servers:/g) ?? []).length, 1);
+    const again = ensureRootCompanionHeader(next, "Bearer abc_def");
+    assert.equal(again, next);
+    assert.equal(
+      ensureRootCompanionHeader("model:\n  default: a\n", "Bearer abc"),
+      "model:\n  default: a\n",
+    );
   });
 
   it("seeds soul only when missing or empty", () => {

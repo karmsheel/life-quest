@@ -31,11 +31,17 @@ import { api } from "@/lib/ipc";
 import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
 import { summarizeToolRun, toolRowLabel, type ToolCall } from "@/lib/tool-run";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
+import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useVault } from "@/state/VaultProvider";
-import type { ChatStreamEvent, HermesSession } from "@/vite-env";
+import type {
+  ChatStreamEvent,
+  CompanionModelCatalog,
+  CompanionRuntimeOverride,
+  HermesSession,
+} from "@/vite-env";
 import {
   formatSessionWhen,
   sessionLabel,
@@ -53,6 +59,58 @@ type ChatPanelProps = {
 };
 
 const LAST_SESSION_KEY = "lifequest.companion.lastSessionId";
+/**
+ * The composer's model / thinking pick, **per chat**. Hermes Desktop keeps the
+ * choice on the chat's own view state (`view.$model`, `view.$reasoningEffort`)
+ * rather than on the client, so the pins are keyed by session id here too: a
+ * chat comes back on the model it was left on, and a new chat opens unpinned.
+ *
+ * The turn still carries the pin — that is the transport's only path. The
+ * gateway's own `POST /api/sessions/{id}/model` lock is write-only (no unpin
+ * route, and `model_config` never crosses the client API), and Desktop does not
+ * call it either.
+ */
+const RUNTIME_PINS_KEY = "lifequest.companion.runtimePins";
+
+/** A pin with anything that is not a usable string dropped. */
+function cleanRuntimePick(value: unknown): CompanionRuntimeOverride {
+  const source = (value ?? {}) as Record<string, unknown>;
+  const pick: CompanionRuntimeOverride = {};
+  for (const key of ["model", "provider", "reasoningEffort"] as const) {
+    const entry = source[key];
+    if (typeof entry === "string" && entry.trim()) pick[key] = entry.trim();
+  }
+  return pick;
+}
+
+/** Every chat's pin, keyed by session id; an empty pin is not remembered. */
+function readStoredRuntimePins(): Record<string, CompanionRuntimeOverride> {
+  try {
+    const raw = window.localStorage.getItem(RUNTIME_PINS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const pins: Record<string, CompanionRuntimeOverride> = {};
+    for (const [sessionId, value] of Object.entries(parsed ?? {})) {
+      if (!sessionId) continue;
+      const pick = cleanRuntimePick(value);
+      if (Object.keys(pick).length > 0) pins[sessionId] = pick;
+    }
+    return pins;
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredRuntimePins(pins: Record<string, CompanionRuntimeOverride>): void {
+  try {
+    window.localStorage.setItem(RUNTIME_PINS_KEY, JSON.stringify(pins));
+  } catch {
+    // A storage refusal costs the pins their memory, not the current chat.
+  }
+}
+
+/** One shared empty pin, so an unpinned chat keeps a stable identity. */
+const NO_RUNTIME_PICK: CompanionRuntimeOverride = {};
 
 /** The composer may eat at most half the panel before it scrolls in place. */
 const COMPOSER_MAX_PANEL_RATIO = 0.5;
@@ -86,6 +144,17 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The composer's model and thinking pills. The catalog is the gateway's own
+   * inventory for this profile, so the menu cannot offer a model the gateway
+   * cannot route; the pick is the *chat's*, remembered across launches so a
+   * thread comes back on the model it was left on.
+   */
+  const [modelCatalog, setModelCatalog] = useState<CompanionModelCatalog | null>(null);
+  const [runtimePins, setRuntimePins] = useState<Record<string, CompanionRuntimeOverride>>(() =>
+    readStoredRuntimePins(),
+  );
+  const runtimePick = (sessionId && runtimePins[sessionId]) || NO_RUNTIME_PICK;
   /**
    * Which of the dock's three surfaces is up. The list is a real page now — with
    * twenty chats an 11rem strip was not navigable — and a thread replaces it
@@ -463,6 +532,45 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       }
     });
   }, [refresh]);
+
+  /**
+   * Read the model inventory once, when the dock is first opened.
+   *
+   * Failure is silent and deliberate: a companion that is not up yet, or a
+   * profile with no providers configured, leaves the catalog null — and a null
+   * catalog means the control row is simply absent, so the composer is exactly
+   * what it was before the pills existed.
+   */
+  useEffect(() => {
+    if (!open || modelCatalog) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await api().companionModelOptions();
+        if (cancelled || !result.ok) return;
+        setModelCatalog(result.value);
+      } catch {
+        // No catalog, no row.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, modelCatalog]);
+
+  /** Pin this chat — or, with every field cleared, un-pin it back to the default. */
+  function updateRuntimePick(next: CompanionRuntimeOverride) {
+    const activeId = sessionId;
+    if (!activeId) return;
+    const pick = cleanRuntimePick(next);
+    setRuntimePins((prev) => {
+      const pins = { ...prev };
+      if (Object.keys(pick).length > 0) pins[activeId] = pick;
+      else delete pins[activeId];
+      writeStoredRuntimePins(pins);
+      return pins;
+    });
+  }
 
   async function sendMessage(text: string, overrideSessionId?: string) {
     const content = text.trim();
@@ -849,6 +957,14 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       return;
     }
     setSessions((prev) => prev.filter((s) => s.id !== id));
+    // The pin belonged to the chat: a deleted chat takes its pin with it.
+    setRuntimePins((prev) => {
+      if (!(id in prev)) return prev;
+      const pins = { ...prev };
+      delete pins[id];
+      writeStoredRuntimePins(pins);
+      return pins;
+    });
     // The open chat cannot outlive its own row: fall back to the list rather
     // than showing a thread for a chat that no longer exists.
     if (id === sessionId) {
@@ -1513,6 +1629,20 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                     </button>
                   ) : null}
                 </div>
+                {/*
+                  The turn's runtime pick, under the field: the dock's version of
+                  the Hermes Desktop composer's model and reasoning pills. It is
+                  inside the form so it rides the composer's own column gap, and
+                  every control in it is `type="button"` — nothing here can
+                  submit the field above it. Absent entirely when the gateway
+                  served no catalog.
+                */}
+                <ComposerModelControls
+                  catalog={modelCatalog}
+                  disabled={sending || !sessionId}
+                  pick={runtimePick}
+                  onChange={updateRuntimePick}
+                />
               </form>
             )}
           </div>

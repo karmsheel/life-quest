@@ -315,6 +315,7 @@ const lifequest = {
   ) => ipcRenderer.invoke("companion:sessionPatch", id, patch),
   companionSessionDelete: (id: string) =>
     ipcRenderer.invoke("companion:sessionDelete", id),
+  companionModelOptions: () => ipcRenderer.invoke("companion:modelOptions"),
   companionChatStream: (payload: {
     sessionId: string;
     input: string;
@@ -325,6 +326,11 @@ const lifequest = {
       locked: boolean;
       vaultOpen: boolean;
     };
+    runtime?: {
+      model?: string;
+      provider?: string;
+      reasoningEffort?: string;
+    } | null;
   }) => ipcRenderer.invoke("companion:chatStream", payload),
   companionApproval: (payload: {
     runId: string;

@@ -50,7 +50,54 @@ const OTHER_SESSION = {
 
 const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value });
 
-type ChatCall = { sessionId: string; input: string };
+type ChatCall = { sessionId: string; input: string; runtime?: unknown };
+
+/**
+ * The composer control row's fixture: the shape `GET /api/model/options` answers
+ * with (providers → models, plus each model's own capability flags), trimmed to
+ * the cases the pills branch on —
+ *
+ *   - `space-bunny-alpha` (the profile default): thinking, but it cannot be
+ *     switched off, so the pill shows and "Off" does not.
+ *   - `gpt-6-sol`: thinking that may be switched off.
+ *   - `kimi-linear`: no reasoning control at all, so the thinking pill is gone.
+ *   - `fireworks`: a provider with no credential — offered, inert.
+ *
+ * Loaded from the page's query string so a driver can also prove the *absence*
+ * state: `?nocatalog=1` answers with a failure, which is what a companion that
+ * is not up yet looks like to the panel.
+ */
+const MODEL_CATALOG = {
+  providers: [
+    {
+      slug: "nous",
+      name: "Nous Portal",
+      authenticated: true,
+      models: [
+        { id: "stealth/space-bunny-alpha", reasoning: true, canDisableReasoning: false, fast: false },
+        { id: "openai/gpt-6-sol", reasoning: true, canDisableReasoning: true, fast: true },
+        { id: "moonshotai/kimi-linear", reasoning: false, canDisableReasoning: false, fast: false },
+      ],
+    },
+    {
+      slug: "anthropic",
+      name: "Anthropic",
+      authenticated: true,
+      models: [
+        { id: "anthropic/claude-opus-5", reasoning: true, canDisableReasoning: true, fast: true },
+      ],
+    },
+    {
+      slug: "fireworks",
+      name: "Fireworks",
+      authenticated: false,
+      models: [{ id: "fireworks/llama-4", reasoning: false, canDisableReasoning: false, fast: false }],
+    },
+  ],
+  current: { model: "stealth/space-bunny-alpha", provider: "nous" },
+};
+
+const NO_CATALOG = new URLSearchParams(window.location.search).has("nocatalog");
 
 /** The rig's handles on the stubbed main process, driven from a driver script. */
 type HarnessWindow = {
@@ -74,6 +121,12 @@ const bridge: Record<string, unknown> = {
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
   companionSessionsList: () => ok([SESSION, OTHER_SESSION]),
+  // The composer's pills read this. `?nocatalog=1` is the companion-not-up
+  // state: the panel must then render no row at all.
+  companionModelOptions: () =>
+    NO_CATALOG
+      ? Promise.resolve({ ok: false as const, error: "no catalog" })
+      : ok(MODEL_CATALOG),
   companionSessionCreate: () => ok(SESSION),
   companionSessionMessages: (id: string) =>
     ok(

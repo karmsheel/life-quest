@@ -33,6 +33,142 @@ export type HermesSession = {
   pinned: boolean;
 };
 
+/**
+ * The composer's per-turn runtime pick: which model to run, and how hard it
+ * should think. Both are optional — an absent field means "leave it to the
+ * gateway", which is what the composer did before the pills existed.
+ */
+export type CompanionRuntimeOverride = {
+  model?: string;
+  provider?: string;
+  /** Ladder value the gateway accepts, or "off" to disable thinking. */
+  reasoningEffort?: string;
+};
+
+/** One model as the catalog describes it, plus the gateway's own capability
+ *  flags for it (`/api/model/options` → `capabilities[id]`). */
+export type CompanionModelChoice = {
+  id: string;
+  /** False when the catalog says the model has no reasoning control at all. */
+  reasoning: boolean;
+  /** Whether thinking may be turned off for this model. */
+  canDisableReasoning: boolean;
+  fast: boolean;
+};
+
+export type CompanionModelProvider = {
+  slug: string;
+  name: string;
+  /** False for a provider with no credential configured — picking it would
+   *  only produce an auth error, so the menu offers it dimmed and inert. */
+  authenticated: boolean;
+  models: CompanionModelChoice[];
+};
+
+/** `GET /api/model/options`, reduced to what a picker needs. */
+export type CompanionModelCatalog = {
+  providers: CompanionModelProvider[];
+  /** The profile's own default, so a cleared pick can name what it falls back to. */
+  current: { model: string; provider: string };
+};
+
+/**
+ * The effort ladder this composer offers. `ultra` is deliberately absent: it is
+ * a Hermes step the route clamps to `max`, and this transport carries no
+ * `reasoning_effort_wire` to say which level would actually be sent, so
+ * offering it would promise a level the wire does not have. `off` is not a wire
+ * value either — it maps to `{enabled: false}`.
+ */
+export const COMPOSER_REASONING_EFFORTS = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+
+export type CompanionReasoningEffort = (typeof COMPOSER_REASONING_EFFORTS)[number];
+
+const REASONING_EFFORT_SET = new Set<string>(COMPOSER_REASONING_EFFORTS);
+
+/**
+ * The fields a turn's runtime pick contributes to the chat body.
+ *
+ * `api_server._prepare_session_chat` reads them itself: an explicit `model` +
+ * `provider` route the turn, and `model_options.reasoning` becomes the agent's
+ * `reasoning_config`. Nothing is sent when nothing was picked, so an untouched
+ * composer still sends exactly the body it sent before.
+ */
+export function runtimeRequestBody(
+  runtime?: CompanionRuntimeOverride | null,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  const model = runtime?.model?.trim();
+  const provider = runtime?.provider?.trim();
+  if (model) body.model = model;
+  if (provider) body.provider = provider;
+  const effort = runtime?.reasoningEffort?.trim().toLowerCase() ?? "";
+  if (effort === "off") {
+    body.model_options = { reasoning: { enabled: false } };
+  } else if (effort && REASONING_EFFORT_SET.has(effort) && effort !== "off") {
+    body.model_options = { reasoning: { enabled: true, effort } };
+  }
+  return body;
+}
+
+/** Read one provider's `capabilities` map; absent flags read as "no control". */
+function modelChoiceFrom(id: string, capabilities: unknown): CompanionModelChoice {
+  const caps =
+    capabilities && typeof capabilities === "object"
+      ? (capabilities as Record<string, unknown>)[id]
+      : undefined;
+  const entry = caps && typeof caps === "object" ? (caps as Record<string, unknown>) : {};
+  return {
+    id,
+    reasoning: entry.reasoning === true,
+    canDisableReasoning: entry.can_disable_reasoning === true,
+    fast: entry.fast === true,
+  };
+}
+
+/**
+ * Reduce `GET /api/model/options` to the catalog a picker needs: every provider
+ * the gateway knows (with its auth state), each one's models, and the profile
+ * default. Null when the payload carries no usable provider, so the caller can
+ * tell "no catalog" from "an empty catalog" and hide the controls either way.
+ */
+export function modelCatalogFromPayload(payload: unknown): CompanionModelCatalog | null {
+  const raw = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const rows = Array.isArray(raw.providers) ? raw.providers : [];
+  const providers: CompanionModelProvider[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const entry = row as Record<string, unknown>;
+    const slug = typeof entry.slug === "string" ? entry.slug.trim() : "";
+    if (!slug) continue;
+    const ids = Array.isArray(entry.models)
+      ? entry.models.filter((id): id is string => typeof id === "string" && id.trim() !== "")
+      : [];
+    if (ids.length === 0) continue;
+    providers.push({
+      slug,
+      name: typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : slug,
+      authenticated: entry.authenticated === true,
+      models: ids.map((id) => modelChoiceFrom(id, entry.capabilities)),
+    });
+  }
+  if (providers.length === 0) return null;
+  return {
+    providers,
+    current: {
+      model: typeof raw.model === "string" ? raw.model.trim() : "",
+      provider: typeof raw.provider === "string" ? raw.provider.trim() : "",
+    },
+  };
+}
+
 /** One session row as Hermes sends it (list rows and single-session replies). */
 type SessionRow = {
   id?: unknown;

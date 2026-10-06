@@ -48,6 +48,15 @@ import type {
   VaultSettings,
   VaultSnapshot,
 } from "@lifequest/vault-core";
+// The composer's model/thinking pick, declared once in the main-side module the
+// renderer already imports its session helpers from — so the shape the pill
+// sends and the shape main hands the gateway cannot drift apart.
+import type {
+  CompanionModelCatalog,
+  CompanionModelChoice,
+  CompanionModelProvider,
+  CompanionRuntimeOverride,
+} from "../electron/companion-client";
 
 type RecentVaultEntry = {
   id: string;
@@ -252,10 +261,16 @@ type LifequestApi = {
   companionSessionDelete: (
     id: string,
   ) => Promise<Result<{ id: string; deleted: boolean }>>;
+  /** The gateway's model inventory for this profile, for the composer's pills. */
+  companionModelOptions: () => Promise<
+    { ok: true; value: CompanionModelCatalog } | { ok: false; error: string }
+  >;
   companionChatStream: (payload: {
     sessionId: string;
     input: string;
     instructionsContext: CompanionInstructionsContext;
+    /** The composer's model / thinking-level pick for this turn. */
+    runtime?: CompanionRuntimeOverride | null;
   }) => Promise<Result<true> | { ok: true } | { ok: false; error: string }>;
   companionApproval: (payload: {
     runId: string;
@@ -460,6 +475,10 @@ declare global {
 export type {
   ChatStreamEvent,
   CompanionInstructionsContext,
+  CompanionModelCatalog,
+  CompanionModelChoice,
+  CompanionModelProvider,
+  CompanionRuntimeOverride,
   CompanionStatus,
   HermesSession,
   LifequestApi,

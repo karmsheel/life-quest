@@ -8,6 +8,8 @@ import {
   RESERVED_PORTS,
   attachCandidateBaseUrls,
   ensureMcpServer,
+  ensureRootCompanionHeader,
+  seedModelFromRoot,
   hermesRoot,
   portFromBaseUrl,
   profileDir,
@@ -84,16 +86,23 @@ export async function writeCompanionMcpProfile(
   io: Pick<CompanionIo, "readFile" | "writeFile">,
   configPath: string,
   companionToken: string | null,
+  rootConfigPath?: string | null,
 ): Promise<void> {
   // Before ensureMcpServer, and before the read: a missing token must not
   // rewrite config.yaml at all.
   if (!companionToken) return;
+  const authorization = `Bearer ${companionToken}`;
   const yaml = (await io.readFile(configPath)) ?? "";
-  const next = ensureMcpServer(yaml, PROFILE_NAME, MCP_URL, {
-    Authorization: `Bearer ${companionToken}`,
+  const rootYaml = rootConfigPath ? await io.readFile(rootConfigPath) : null;
+  let next = ensureMcpServer(yaml, PROFILE_NAME, MCP_URL, {
+    Authorization: authorization,
   });
-  if (next === yaml) return;
-  await io.writeFile(configPath, next);
+  if (rootYaml) next = seedModelFromRoot(next, rootYaml);
+  if (next !== yaml) await io.writeFile(configPath, next);
+  if (rootConfigPath && rootYaml) {
+    const rootNext = ensureRootCompanionHeader(rootYaml, authorization);
+    if (rootNext !== rootYaml) await io.writeFile(rootConfigPath, rootNext);
+  }
 }
 
 async function openVaultCompanionToken(): Promise<string | null> {
@@ -187,7 +196,12 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
     envText = upsertEnv(envText, { API_SERVER_KEY: apiKey });
     await io.writeFile(envPath, envText);
     const companionToken = await (io.companionToken ?? openVaultCompanionToken)();
-    await writeCompanionMcpProfile(io, configPath, companionToken);
+    await writeCompanionMcpProfile(
+      io,
+      configPath,
+      companionToken,
+      path.join(root, "config.yaml"),
+    );
     const soul = await io.readFile(soulPath);
     if (shouldSeedSoul(soul)) {
       await io.writeFile(soulPath, COMPANION_SOUL);

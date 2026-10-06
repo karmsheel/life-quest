@@ -16,11 +16,15 @@ import {
   buildInstructions,
   createdSessionFromPayload,
   messagesFromPayload,
+  modelCatalogFromPayload,
+  runtimeRequestBody,
   sessionFromPayload,
   sessionsFromPayload,
   splitSse,
   type ChatStreamEvent,
   type CompanionInstructionsInput,
+  type CompanionModelCatalog,
+  type CompanionRuntimeOverride,
   type HermesSession,
 } from "./companion-client.ts";
 import {
@@ -269,6 +273,7 @@ export async function companionWriteMcpProfile(
       realIo(),
       path.join(profileDir(root), "config.yaml"),
       companionToken,
+      path.join(root, "config.yaml"),
     );
     return true;
   } catch {
@@ -436,18 +441,30 @@ export async function companionSessionDelete(
   }
 }
 
+/**
+ * One turn: the operator's text, the vault context, and — when the composer's
+ * pills carry a pick — the model/provider and thinking level that turn should
+ * run under. The pick is per turn, never persisted app-side beyond the
+ * composer's own stored preference, so a chat that is opened in Hermes Desktop
+ * keeps running whatever that client asks for.
+ */
 export async function companionChatStream(
   sessionId: string,
   input: string,
   ctx: CompanionInstructionsInput,
   onEvent: (evt: ChatStreamEvent) => void,
+  runtime?: CompanionRuntimeOverride | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const res = await hermesFetch(
       `/api/sessions/${encodeURIComponent(sessionId)}/chat/stream`,
       {
         method: "POST",
-        body: JSON.stringify({ input, instructions: buildInstructions(ctx) }),
+        body: JSON.stringify({
+          input,
+          instructions: buildInstructions(ctx),
+          ...runtimeRequestBody(runtime),
+        }),
       },
     );
     if (!res.ok || !res.body) {
@@ -468,6 +485,30 @@ export async function companionChatStream(
     for (const evt of tail.events) onEvent(evt);
     onEvent({ type: "run.completed" });
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * GET /api/model/options — the gateway's own model inventory for this profile.
+ *
+ * This is the same payload the Hermes dashboard's picker is built from, so the
+ * composer's menu cannot drift from what the gateway can actually route. It is
+ * read once when the dock needs it and never polled: the catalog changes when
+ * the operator changes providers in Hermes, which is a restart-shaped event.
+ */
+export async function companionModelOptions(): Promise<
+  { ok: true; value: CompanionModelCatalog } | { ok: false; error: string }
+> {
+  try {
+    const res = await hermesFetch("/api/model/options");
+    if (!res.ok) {
+      return { ok: false, error: `Model catalog failed (${res.status})` };
+    }
+    const catalog = modelCatalogFromPayload(await res.json());
+    if (!catalog) return { ok: false, error: "Model catalog listed no models" };
+    return { ok: true, value: catalog };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
