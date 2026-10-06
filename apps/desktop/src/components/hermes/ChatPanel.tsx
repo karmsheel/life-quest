@@ -227,6 +227,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const chainSendable = chainDraft.trim().length > 0;
   const chainControlVisible = chainBusy || chainSendable;
   const listRef = useRef<HTMLDivElement | null>(null);
+  const activityRef = useRef<HTMLUListElement | null>(null);
   /** The chain's own scroller: the view follows the newest signal. */
   const chainRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
@@ -440,7 +441,12 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   useEffect(() => {
     if (!open || view !== "thread" || !listRef.current) return;
     listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [open, view, messages, sending, error, turnNote, tools]);
+    // The disclosure scrolls inside the transcript, so it takes the same pass:
+    // the block is capped, and a capped block left at its first row would hide
+    // the calls the operator opened it to watch arrive. `toolsOpen` is in the
+    // deps because opening it mounts a fresh list at scrollTop 0.
+    if (activityRef.current) activityRef.current.scrollTop = activityRef.current.scrollHeight;
+  }, [open, view, messages, sending, error, turnNote, tools, toolsOpen]);
 
   /**
    * The chain's own stick-to-the-bottom pass, in a layout effect so a freshly
@@ -1498,7 +1504,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                       </p>
                     )}
                     {tools.length > 1 && toolsOpen ? (
-                      <ul className="chat-panel__activity-list">
+                      <ul className="chat-panel__activity-list" ref={activityRef}>
                         {tools.map((call) => (
                           <li key={call.id} className="chat-panel__activity-row">
                             {toolRowLabel(call)}

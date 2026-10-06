@@ -51,6 +51,41 @@ function runDriver(): Promise<number> {
   });
 }
 
+/** The open disclosure's geometry, as the run grew under it. */
+type GrowthSample = {
+  missing: boolean;
+  rows: number;
+  rowLineHeight?: number | null;
+  rowHeightMin?: number | null;
+  rowHeightMax?: number | null;
+  blockHeight?: number;
+  blockClientHeight?: number;
+  blockScrollHeight?: number;
+  blockMaxHeight?: string | null;
+  blockScrollTop?: number;
+  boxTop?: number;
+  boxBottom?: number;
+  scrollbarWidth?: number;
+  blockOverflowY?: string;
+  body?: { clientHeight: number; scrollHeight: number; top: number; bottom: number } | null;
+  lastRowTop?: number | null;
+  lastRowBottom?: number | null;
+  innerHeight?: number;
+};
+
+/** What scrolling the capped block to its own bottom did. */
+type ScrolledSample = {
+  missing: boolean;
+  scrollTop?: number;
+  maxScrollTop?: number;
+  lastRowTop?: number;
+  lastRowBottom?: number;
+  boxTop?: number;
+  boxBottom?: number;
+  inside?: boolean;
+  insideTranscript?: boolean;
+};
+
 type ToolRunReport = {
   pass: boolean;
   failures: string[];
@@ -80,12 +115,37 @@ type ToolRunReport = {
     opened: { expanded: string; rows: string[]; caretOpen: boolean };
   };
   thinking: { beforeTools: boolean; withActivity: boolean; nextTurn: boolean };
+  /** What the one row carrying underscores + descenders actually painted. */
+  rowInk: {
+    missing?: boolean;
+    rows?: string[];
+    text?: string;
+    boxHeight?: number;
+    rowHeight?: number;
+    lineHeight?: string;
+    font?: string;
+    glyphBox?: number;
+    inkBox?: number;
+    descender?: number;
+    truncated?: boolean;
+    inkTop?: number | null;
+    inkBottom?: number | null;
+    painted?: number;
+    boxBottom?: number;
+  };
   reset: {
     newTurnBlocks: number;
     switchedActivity: boolean;
     switchedTranscript: string[];
   };
   screenshots: string[];
+  /** What the open disclosure did as the run grew past the cap, and what scrolling it did. */
+  growth: {
+    added: number;
+    opened: GrowthSample;
+    grown: GrowthSample;
+    scrolled: ScrolledSample;
+  };
 };
 
 describe("tool run display", () => {
@@ -105,10 +165,10 @@ describe("tool run display", () => {
     assert.equal(report.pass, true);
     assert.equal(exitCode, 0, "driver exited non-zero");
 
-    // Restated here so the suite asserts the numbers, not only the driver: seven
+    // Restated here so the suite asserts the numbers, not only the driver: eight
     // calls must leave the transcript exactly as the send left it, and add no
     // tool pseudo-messages.
-    assert.equal(report.calls, 7);
+    assert.equal(report.calls, 8);
     assert.deepEqual(
       report.transcript.afterCalls,
       report.transcript.afterSend,
@@ -121,7 +181,7 @@ describe("tool run display", () => {
     assert.equal(report.line.settled, "Explored 2 files, ran 1 command");
     assert.equal(
       report.line.wholeRun,
-      "Edited 2 files, explored 2 files, ran 1 command, delegated Review the composer diff, used 1 tool",
+      "Edited 2 files, explored 2 files, ran 1 command, delegated Review the composer diff, used 2 tools",
     );
     assert.equal(report.line.sameName, "Exploring AGENTS.md, ran 2 commands");
 
@@ -133,7 +193,83 @@ describe("tool run display", () => {
     assert.equal(report.disclosure.opened.expanded, "true");
     assert.equal(report.disclosure.opened.rows.length, report.calls);
     assert.equal(report.disclosure.opened.rows[0], "read_file · AGENTS.md");
+    assert.equal(
+      report.disclosure.opened.rows[3],
+      "mcp__lq__get_pq · gap_pqy.ts",
+      "a bridged MCP name lost its underscores in the row",
+    );
 
+    // Every row is `overflow: hidden` so it can ellipsize — which also clips it
+    // vertically: a line box shorter than the font's glyph box cuts the bottoms
+    // off letters, so `p` reads as `n` and `_` disappears. The window's own
+    // pixels are the only honest witness, so the row that carries both is
+    // measured: how tall its box is against the font it is set in, and how much
+    // of its ink box (descender and underscore included) it actually paints.
+    assert.equal(
+      report.rowInk.truncated,
+      false,
+      "the probe row was ellipsized, so its ink is not the whole story",
+    );
+    assert.ok(
+      (report.rowInk.rowHeight ?? 0) >= (report.rowInk.glyphBox ?? 0) + 1,
+      `the row box is ${report.rowInk.rowHeight}px for a ${report.rowInk.glyphBox}px glyph box ` +
+        `(font ${report.rowInk.font}, line-height ${report.rowInk.lineHeight})`,
+    );
+    assert.ok(
+      (report.rowInk.boxBottom ?? 0) - (report.rowInk.inkBottom ?? 0) >= 1,
+      `the row's ink ends ${((report.rowInk.boxBottom ?? 0) - (report.rowInk.inkBottom ?? 0)).toFixed(2)}px ` +
+        `from the clip edge — a descender at the edge is a descender lost`,
+    );
+    assert.ok(
+      (report.rowInk.painted ?? 0) >= (report.rowInk.inkBox ?? 0) * 0.85,
+      `the row painted ${report.rowInk.painted}px of its ${report.rowInk.inkBox}px ink box ` +
+        `(font ${report.rowInk.font}, line-height ${report.rowInk.lineHeight})`,
+    );
+
+    // The block is bounded and scrolls, and no row gives up its line box to fit
+    // inside it. Both halves are asserted because either can come undone alone:
+    // drop the cap and the block (and so the transcript) grows without bound,
+    // drop the row's `flex-shrink: 0` and the cap presses 16.5px rows into 3.6px
+    // instead of scrolling them out of sight -- the defect as it was reported.
+    assert.equal(
+      report.growth.grown.rows,
+      report.growth.opened.rows + report.growth.added,
+      "the block did not gain a row per call",
+    );
+    assert.equal(
+      report.growth.grown.blockOverflowY,
+      "auto",
+      "the block has a cap but does not scroll its own overflow",
+    );
+    assert.ok(
+      (report.growth.grown.blockClientHeight ?? 0) <= parseFloat(report.growth.grown.blockMaxHeight ?? "") + 1,
+      `the block grew to ${report.growth.grown.blockClientHeight}px against a ${report.growth.grown.blockMaxHeight} cap`,
+    );
+    assert.ok(
+      (report.growth.grown.blockClientHeight ?? 0) <= 12 * (report.growth.grown.rowLineHeight ?? 0),
+      `the cap is not a cap: ${report.growth.grown.blockClientHeight}px is more than a dozen ` +
+        `${report.growth.grown.rowLineHeight}px lines`,
+    );
+    assert.ok(
+      (report.growth.grown.blockScrollHeight ?? 0) > (report.growth.grown.blockClientHeight ?? 0) + 1,
+      `the cap hid nothing to scroll: ${report.growth.grown.blockScrollHeight}px of rows in ${report.growth.grown.blockClientHeight}px`,
+    );
+    assert.ok(
+      (report.growth.grown.rowHeightMin ?? 0) >= (report.growth.grown.rowLineHeight ?? 0) - 0.5,
+      `a row squeezed to ${report.growth.grown.rowHeightMin}px in a ${report.growth.grown.rowLineHeight}px line box`,
+    );
+    assert.ok(
+      (report.growth.grown.blockScrollTop ?? 0) > 0 &&
+        (report.growth.grown.lastRowBottom ?? 0) <= (report.growth.grown.boxBottom ?? 0) + 1,
+      `the block is capped but sits at ${report.growth.grown.blockScrollTop}px, so the newest row ` +
+        `(${report.growth.grown.lastRowBottom}px) is below the block's ${report.growth.grown.boxBottom}px edge`,
+    );
+    assert.ok(
+      report.growth.scrolled.inside === true && report.growth.scrolled.insideTranscript === true,
+      `scrolling the block to ${report.growth.scrolled.scrollTop}px of ${report.growth.scrolled.maxScrollTop}px ` +
+        `left the newest row at ${report.growth.scrolled.lastRowTop}-${report.growth.scrolled.lastRowBottom}, ` +
+        `outside the block ${report.growth.scrolled.boxTop}-${report.growth.scrolled.boxBottom}`,
+    );
     // The wire keys, asserted through the app's own decoder.
     assert.equal(report.decode.path.name, "read_file");
     assert.equal(report.decode.path.target, "AGENTS.md");

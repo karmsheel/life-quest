@@ -3572,6 +3572,13 @@ button.chat-panel__activity-line:hover {
   transform: rotate(90deg);
 }
 
+/* A bounded block that scrolls its own overflow, with the rows kept whole.
+   The two halves are one decision and neither works alone: the cap bounds
+   what a tool-heavy turn costs the transcript, and the row's `flex-shrink:
+   0` (below) is what stops the capped column squeezing the line boxes --
+   the row clips itself to ellipsize, which drops its automatic minimum
+   height to 0, and the cap then read 16.5px rows as 3.6px with every
+   line's text cut off instead of overflowing. */
 .chat-panel__activity-list {
   display: flex;
   flex-direction: column;
@@ -3586,6 +3593,14 @@ button.chat-panel__activity-line:hover {
 .chat-panel__activity-row {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.6875rem;
+  /* The row clips itself to ellipsize, so its line box has to hold the font's
+     whole glyph box: monospace's `normal` sits a hair under it, and what falls
+     off the edge is the descent — `p` and `q` lose their tails, `_` vanishes. */
+  line-height: 1.5;
+  /* The other half of the capped block below: `overflow: hidden` drops the
+     row's automatic minimum height to 0, so without this the cap squeezes
+     the line boxes instead of scrolling them out of sight. */
+  flex-shrink: 0;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
