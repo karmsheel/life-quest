@@ -36,7 +36,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, nativeTheme } from "electron";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
@@ -160,10 +160,16 @@ async function main() {
   // page URL is cache-busted, the module URL is not), and a rig mutation
   // passes silently. This is the measured failure; the partition is the fix.
   const sessionPartition = `view-card-${Date.now()}`;
+  // The rig opens a real window on the operator's desktop: paint it in the
+  // theme the app itself defaults to (tokens.css, [data-theme="dark"]) so a
+  // test run is not a white sheet flashing across the screen.
+  nativeTheme.themeSource = "dark";
+
   const win = new BrowserWindow({
     width: DEFAULT_SIZE.width,
     height: DEFAULT_SIZE.height,
     show: false,
+    backgroundColor: "#1a1917",
     webPreferences: { contextIsolation: true, nodeIntegration: false, partition: sessionPartition },
   });
   win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);

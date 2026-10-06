@@ -24,7 +24,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, nativeTheme } from "electron";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
@@ -198,10 +198,15 @@ const check = (label, condition, detail) => {
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
 
+  // The rig opens a real window on the operator's desktop: paint it in the
+  // theme the app itself defaults to (tokens.css, [data-theme="dark"]) so a
+  // test run is not a white sheet flashing across the screen.
+  nativeTheme.themeSource = "dark";
+
   const win = new BrowserWindow({
     ...DEFAULT_SIZE,
     show: false,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#1a1917",
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
 

@@ -54,7 +54,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, nativeTheme } from "electron";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
@@ -302,10 +302,15 @@ const SEND = (text, delayMs) => `(async () => {
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
 
+  // The rig opens a real window on the operator's desktop: paint it in the
+  // theme the app itself defaults to (tokens.css, [data-theme="dark"]) so a
+  // test run is not a white sheet flashing across the screen.
+  nativeTheme.themeSource = "dark";
+
   const win = new BrowserWindow({
     ...DEFAULT_SIZE,
     show: false,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#1a1917",
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
 
@@ -395,7 +400,19 @@ async function main() {
     };
   }`;
 
-  /** Scan a capture for the top and bottom row of ink inside a rect (CSS px). */
+  /**
+   * Scan a capture for the top and bottom row of ink inside a rect (CSS px).
+   *
+   * Ink means "painted on the surface", not "dark". The row has no background
+   * of its own, so the rect's modal colour *is* the surface it sits on, and a
+   * pixel's distance from that is what marks a glyph. A fixed dark-glyph
+   * threshold only holds in one theme: in the app's dark theme the panel is
+   * itself under it, every pixel of the strip reads as ink, and the row is
+   * reported as clipped when it is not (measured: 17.60px of "ink" for a
+   * 10.10px ink box, -1.05px of clearance). 85 is the separation the old
+   * `mean < 170` test drew against a white panel, so light-mode numbers are
+   * unchanged by this.
+   */
   const scanInk = (image, info) => {
     const size = image.getSize();
     const bitmap = image.getBitmap();
@@ -405,23 +422,52 @@ async function main() {
     const x1 = Math.min(size.width - 1, Math.ceil(info.rect.right * scale));
     const y0 = Math.max(0, Math.floor(info.rect.top * scale));
     const y1 = Math.min(size.height - 1, Math.ceil(info.rect.bottom * scale));
+    // The surface: the colour most of the rect is painted in. BGRA on Windows,
+    // packed whole so the tally counts pixels rather than channels.
+    const tally = new Map();
+    for (let y = y0; y <= y1; y += 1) {
+      for (let x = x0; x <= x1; x += 1) {
+        const i = y * stride + x * 4;
+        const key = (bitmap[i] << 16) | (bitmap[i + 1] << 8) | bitmap[i + 2];
+        tally.set(key, (tally.get(key) ?? 0) + 1);
+      }
+    }
+    let surface = 0;
+    let seen = 0;
+    for (const [key, count] of tally) {
+      if (count > seen) {
+        seen = count;
+        surface = key;
+      }
+    }
+    const red = (surface >> 16) & 255;
+    const green = (surface >> 8) & 255;
+    const blue = surface & 255;
+    /** How far a pixel has to sit from the surface to count as painted. */
+    const INK_DISTANCE = 85;
+
     let top = null;
     let bottom = null;
     for (let y = y0; y <= y1; y += 1) {
-      let dark = 0;
+      let painted = 0;
       for (let x = x0; x <= x1; x += 1) {
         const i = y * stride + x * 4;
-        // Channel order is the platform's (BGRA on Windows); luma of a dark
-        // glyph on a light panel is dark in all three either way.
-        if ((bitmap[i] + bitmap[i + 1] + bitmap[i + 2]) / 3 < 170) dark += 1;
+        const distance =
+          (Math.abs(bitmap[i] - blue) +
+            Math.abs(bitmap[i + 1] - green) +
+            Math.abs(bitmap[i + 2] - red)) /
+          3;
+        if (distance > INK_DISTANCE) painted += 1;
       }
-      if (dark > 0) {
+      if (painted > 0) {
         if (top === null) top = y;
         bottom = y;
       }
     }
     return {
       scale,
+      surface: `rgb(${red}, ${green}, ${blue})`,
+      inkDistance: INK_DISTANCE,
       inkTop: top === null ? null : top / scale,
       inkBottom: bottom === null ? null : (bottom + 1) / scale,
     };
@@ -543,7 +589,7 @@ async function main() {
     // The scan and the crop come from the same capture — the panel scrolls as
     // the list settles, and a later capture is a different frame.
     const rowInk = await run(`(${ROW_INK})(${JSON.stringify(PROBE_NEEDLE)})`);
-    let ink = { inkTop: null, inkBottom: null, scale: 1 };
+    let ink = { inkTop: null, inkBottom: null, scale: 1, surface: null, inkDistance: null };
     const rowInkShot = path.join(artifactsDir, "tool-run-row-ink.png");
     if (!rowInk.missing) {
       const shot = await win.webContents.capturePage();
@@ -874,6 +920,8 @@ async function main() {
             descender: rowInk.descender,
             truncated: rowInk.truncated,
             scale: ink.scale,
+            surface: ink.surface,
+            inkDistance: ink.inkDistance,
             inkTop: ink.inkTop,
             inkBottom: ink.inkBottom,
             painted: ink.inkTop === null || ink.inkBottom === null ? 0 : ink.inkBottom - ink.inkTop,

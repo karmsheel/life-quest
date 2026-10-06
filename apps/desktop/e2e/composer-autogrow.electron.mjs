@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, nativeTheme } from "electron";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
@@ -150,10 +150,15 @@ const check = (label, condition, detail) => {
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
 
+  // The rig opens a real window on the operator's desktop: paint it in the
+  // theme the app itself defaults to (tokens.css, [data-theme="dark"]) so a
+  // test run is not a white sheet flashing across the screen.
+  nativeTheme.themeSource = "dark";
+
   const win = new BrowserWindow({
     ...DEFAULT_SIZE,
     show: false,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#1a1917",
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
 
@@ -677,31 +682,93 @@ async function main() {
 
     // Capture the lifecycle: the stop square while a run is live, then the same
     // turn once the gateway has closed it as cancelled.
-    await run(`(async () => {
+    //
+    // Both waits here poll for the state they need instead of sleeping for it.
+    // The send click and the stop click sit in two `run()` calls with the
+    // screenshot -- a `capturePage()`, arbitrarily slow on a loaded machine --
+    // between them, so the gap between them is driver time, not page time, while
+    // the stub holds the run open on a page-time timer. A fixed 2000ms window
+    // therefore closed while the driver was still outside the page, taking the
+    // stop square with it, and the next click threw on a null selector. The
+    // window is now 3x what any capture needs and the polls carry the slack; if
+    // it ever overruns, the check below fails by name.
+    const held = await run(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      window.__lqChatDelay = 2000;
+      const control = () => document.querySelector(".chat-panel__send");
+      const armed = () => {
+        const button = control();
+        return button &&
+          button.getAttribute("data-state") === "stop" &&
+          button.disabled === false
+          ? button
+          : null;
+      };
+      const until = async (read, budget) => {
+        const deadline = Date.now() + budget;
+        for (;;) {
+          const value = read();
+          if (value) return value;
+          if (Date.now() >= deadline) return null;
+          await wait(25);
+        }
+      };
+      window.__lqChatDelay = 6000;
       const field = document.querySelector(".chat-panel__composer-input");
       const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
       setter.call(field, "Hold this run open so the stop square is on screen");
       field.dispatchEvent(new Event("input", { bubbles: true }));
-      await wait(60);
-      document.querySelector(".chat-panel__send").click();
+      const send = await until(() => control(), 2000);
+      if (!send) return { armed: false, polledMs: 0, reason: "the send control never rendered" };
+      send.click();
       await wait(140);
-      window.__lqEmit({ type: "run.started", runId: "run_screenshot" });
-      await wait(90);
-      return true;
+      if (typeof window.__lqEmit === "function") {
+        window.__lqEmit({ type: "run.started", runId: "run_screenshot" });
+      }
+      const started = Date.now();
+      const button = await until(armed, 4000);
+      return { armed: Boolean(button), polledMs: Date.now() - started };
     })()`);
+    check(
+      "the streaming screenshot is of an armed stop square",
+      held.armed === true,
+      `the stop square never armed for the screenshot: ${JSON.stringify(held)}`,
+    );
     const streamingShot = path.join(artifactsDir, "composer-autogrow-streaming.png");
     fs.writeFileSync(streamingShot, (await win.webContents.capturePage()).toPNG());
 
-    await run(`(async () => {
+    const stopped = await run(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      document.querySelector(".chat-panel__send").click();
-      await wait(120);
-      window.__lqEmit({ type: "run.stopped" });
-      return true;
+      const control = () => document.querySelector(".chat-panel__send");
+      const until = async (read, budget) => {
+        const deadline = Date.now() + budget;
+        for (;;) {
+          const value = read();
+          if (value) return value;
+          if (Date.now() >= deadline) return null;
+          await wait(25);
+        }
+      };
+      const square = await until(() => {
+        const button = control();
+        return button &&
+          button.getAttribute("data-state") === "stop" &&
+          button.disabled === false
+          ? button
+          : null;
+      }, 4000);
+      if (square) square.click();
+      if (typeof window.__lqEmit === "function") window.__lqEmit({ type: "run.stopped" });
+      // The control clears when the stream itself closes, not when the stop frame
+      // lands, so this waits on the stub's own window rather than guessing at it.
+      const started = Date.now();
+      const cleared = await until(() => (control() ? null : true), 12000);
+      return { clicked: Boolean(square), cleared: cleared === true, waitedMs: Date.now() - started };
     })()`);
-    await new Promise((resolve) => setTimeout(resolve, 2200));
+    check(
+      "the stopped screenshot is of a settled composer",
+      stopped.clicked === true && stopped.cleared === true,
+      `stop square clicked=${stopped.clicked}, control cleared=${stopped.cleared} after ${stopped.waitedMs}ms`,
+    );
     const stoppedShot = path.join(artifactsDir, "composer-autogrow-stopped.png");
     fs.writeFileSync(stoppedShot, (await win.webContents.capturePage()).toPNG());
 
@@ -771,6 +838,7 @@ async function main() {
         fieldUsableWidthPx: withText.fieldUsableWidth,
         insideField: withText.sendInsideField,
         click: sendClick,
+        shots: { held, stopped },
         stream,
       },
       composer: {

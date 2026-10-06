@@ -55,7 +55,7 @@ const SNAPSHOT = {
   },
   settings: {
     hermesBaseUrl: "http://127.0.0.1:1",
-    theme: "light" as const,
+    theme: "dark" as const,
     weekStartDay: "monday" as const,
   },
   domains: [],
