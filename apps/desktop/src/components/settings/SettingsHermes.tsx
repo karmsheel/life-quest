@@ -133,6 +133,12 @@ export function SettingsHermes() {
           {statusSummary(status, ensuring)}
         </p>
 
+        {status?.kind === "ready" && status.modelWarning ? (
+          <p className="settings-hermes__probe settings-hermes__probe--fail" role="alert">
+            {status.modelWarning}
+          </p>
+        ) : null}
+
         {ready ? (
           <dl className="settings-hermes">
             <div className="settings-field">

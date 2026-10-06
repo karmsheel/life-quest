@@ -74,6 +74,8 @@ type CompanionStatus =
       profilePath: string;
       cliPath: string;
       childPid: number | null;
+      /** Set when the startup probe found the pinned model retired. */
+      modelWarning?: string;
     }
   | { kind: "needs_install" }
   | { kind: "profile_error"; message: string; path?: string }

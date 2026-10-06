@@ -10,6 +10,7 @@ import {
   hermesRoot,
   profileDir,
   readEnv,
+  checkPinnedModel,
 } from "./companion-profile.ts";
 import { hermesSpawnSpec } from "./companion-spawn.ts";
 import {
@@ -43,6 +44,7 @@ export type PublicCompanionStatus = Exclude<CompanionStatus, { kind: "ready" }> 
   profilePath: string;
   cliPath: string;
   childPid: number | null;
+  modelWarning?: string;
 };
 
 export function publicStatus(status: CompanionStatus): PublicCompanionStatus {
@@ -238,6 +240,7 @@ function realIo(): CompanionIo {
       /* Host multiplexer is not LifeQuest-owned. */
     },
     listeningPid: async () => null,
+    checkModel: checkPinnedModel,
   };
 }
 

@@ -339,6 +339,75 @@ export function shouldSeedSoul(existing: string | null): boolean {
   return existing === null || existing.trim() === "";
 }
 
+/**
+ * The model a profile's config pins, if it names one. Only `model.default`
+ * matters here — provider and base_url stay whatever the operator set.
+ */
+export function pinnedModel(configYaml: string): string | null {
+  const match = /^  default: (.+)$/m.exec(configYaml.split(/^model:/m)[1] ?? "");
+  const value = match?.[1]?.trim().replace(/^["']|["']$/g, "");
+  return value ? value : null;
+}
+
+/**
+ * The models catalog URL for the profile's pinned provider. Only chat_completions
+ * providers with a known shape are probed; anything else returns null and the
+ * check is skipped rather than guessed.
+ */
+export function modelsUrlFromConfig(configYaml: string): string | null {
+  const base = /base_url:\s*(.+)$/m.exec(configYaml)?.[1]?.trim().replace(/^["']|["']$/g, "");
+  if (!base) return null;
+  return `${base.replace(/\/$/, "")}/models`;
+}
+
+export type ModelCheck =
+  | { kind: "ok" }
+  | { kind: "no-model" }
+  | { kind: "unreachable" }
+  | { kind: "retired"; model: string };
+
+/**
+ * Startup probe: is the profile's pinned model still live? A retired model id
+ * made every companion chat end before finishing — a 404 on the first call,
+ * with no visible reason in the app. `modelsUrl` is the provider's catalog
+ * endpoint (e.g. the Nous inference API's /v1/models); the check is a plain
+ * GET with the chat key, exactly what the model call itself would do.
+ *
+ * Unreachable is NOT a verdict: a gateway that is briefly down must not
+ * have its model declared dead. Only a listed catalog without the id is one.
+ */
+export async function checkPinnedModel(
+  configYaml: string,
+  modelsUrl: string,
+  apiKey: string,
+  fetchImpl: typeof fetch,
+): Promise<ModelCheck> {
+  const model = pinnedModel(configYaml);
+  if (!model) return { kind: "no-model" };
+  let ids: unknown;
+  try {
+    const res = await fetchImpl(modelsUrl, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return { kind: "unreachable" };
+    ids = (await res.json()) as unknown;
+  } catch {
+    return { kind: "unreachable" };
+  }
+  const listed = Array.isArray((ids as { data?: unknown }).data)
+    ? ((ids as { data: Array<{ id?: unknown }> }).data)
+    : Array.isArray(ids)
+      ? (ids as unknown[])
+      : [];
+  const known = new Set(
+    listed
+      .map((m) => (m && typeof m === "object" ? (m as { id?: unknown }).id : m))
+      .filter((v): v is string => typeof v === "string"),
+  );
+  return known.has(model) ? { kind: "ok" } : { kind: "retired", model };
+}
+
 export function nextFreePort(taken: Set<number>, start: number): number {
   let port = start;
   const limit = start + 100;

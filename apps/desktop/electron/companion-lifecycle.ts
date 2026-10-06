@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import {
+  checkPinnedModel,
   COMPANION_SOUL,
   DEFAULT_API_PORT,
   MCP_URL,
@@ -9,6 +10,7 @@ import {
   attachCandidateBaseUrls,
   ensureMcpServer,
   ensureRootCompanionHeader,
+  modelsUrlFromConfig,
   seedModelFromRoot,
   hermesRoot,
   portFromBaseUrl,
@@ -17,6 +19,7 @@ import {
   shouldSeedSoul,
   upsertEnv,
 } from "./companion-profile.ts";
+import type { ModelCheck } from "./companion-profile.ts";
 
 const RESERVED = new Set<number>(RESERVED_PORTS);
 
@@ -29,6 +32,13 @@ export type CompanionReady = {
   cliPath: string;
   apiKey: string;
   childPid: number | null;
+  /**
+   * Set when the startup model probe found the pinned model retired: the
+   * gateway runs, but every chat will 404 until the operator picks a live
+   * model. Absent when the probe passed, was skipped, or could not reach
+   * the catalog (an unreachable catalog is not a verdict).
+   */
+  modelWarning?: string;
 };
 
 export type CompanionStatus =
@@ -60,6 +70,16 @@ export type CompanionIo = {
    * token; a test may pass its own.
    */
   companionToken?: () => Promise<string | null>;
+  /**
+   * The startup model probe: is the profile's pinned model still live?
+   * Injected so tests can stub the catalog. Absent (older callers) skips
+   * the check rather than failing it.
+   */
+  checkModel?: (
+    configYaml: string,
+    modelsUrl: string | null,
+    apiKey: string,
+  ) => Promise<ModelCheck>;
 };
 
 /**
@@ -236,10 +256,38 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
         cliPath: cli,
         apiKey,
         childPid: null,
+        ...await modelProbe(apiKey),
       };
     }
     return null;
   };
+
+  /**
+   * The pinned model, checked against its provider's live catalog. A retired
+   * id turns into a warning that rides on the ready status — the gateway is
+   * up, but every chat would 404 until the operator picks a live model. The
+   * probe is best-effort: an error or an unreachable catalog is silence, not
+   * a warning, and never blocks attach.
+   */
+  async function modelProbe(apiKey: string): Promise<{ modelWarning?: string }> {
+    if (!io.checkModel) return {};
+    try {
+      const configYaml = (await io.readFile(configPath)) ?? "";
+      const verdict: ModelCheck = await io.checkModel(
+        configYaml,
+        modelsUrlFromConfig(configYaml),
+        apiKey,
+      );
+      if (verdict.kind === "retired") {
+        return {
+          modelWarning: `The companion's model "${verdict.model}" no longer exists at its provider — chats will fail until you pick a new model.`,
+        };
+      }
+    } catch {
+      // The probe must never block attach; a skipped check is the old status.
+    }
+    return {};
+  }
 
   const attached = await tryAttach();
   if (attached) return attached;
