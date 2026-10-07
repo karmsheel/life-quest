@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import type { SavedView, ViewRunResult } from "@lifequest/vault-core";
+import type {
+  ComposedViewRunResult,
+  SavedView,
+  ViewPresentation,
+  ViewRunResult,
+} from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 
 /**
@@ -7,13 +12,18 @@ import { api } from "@/lib/ipc";
  * home pin board and a page's view-ref block both render this. Inline SVG in
  * current theme tokens, no chart library. The view is re-run on mount and when
  * reloadGeneration moves, so a card reflects new rows without a reload.
+ *
+ * Composed views (2026-10-07): one card may hold several blocks. The card draws
+ * each in order under one title, so "the weekly summary" — a total, its week
+ * table, and its trend — is a single pinnable thing rather than three pins the
+ * operator has to keep together by hand.
  */
 
 type RunState =
   | { state: "loading" }
   | { state: "error"; error: string }
   | { state: "missing" }
-  | { state: "run"; view: SavedView; result: ViewRunResult };
+  | { state: "run"; view: SavedView; result: ComposedViewRunResult };
 
 export function ViewCard({ domainSlug, viewId }: { domainSlug: string; viewId: string }) {
   const [run, setRun] = useState<RunState>({ state: "loading" });
@@ -64,23 +74,48 @@ export function ViewCard({ domainSlug, viewId }: { domainSlug: string; viewId: s
   }
 
   const { view, result } = run;
+  // The view's own title is the card's heading, so a one-block view does not
+  // print its title twice; a composed card labels each panel.
+  const showBlockTitles = result.blocks.length > 1;
   return (
     <section className="view-card">
       <h2 className="view-card__title">{view.title}</h2>
       {result.warnings.length > 0 ? (
         <p className="muted view-card__warnings">{result.warnings.join("; ")}</p>
       ) : null}
-      {result.rows.length === 0 ? (
-        <p className="muted view-card__empty">No rows in this window.</p>
-      ) : view.presentation === "metric" ? (
-        <ViewMetric result={result} />
-      ) : view.presentation === "table" ? (
-        <ViewTable result={result} />
-      ) : (
-        <ViewChart result={result} presentation={view.presentation} />
-      )}
+      <div className="view-card__blocks">
+        {result.blocks.map((block) => (
+          <div
+            key={block.id}
+            className={
+              block.span === 2 ? "view-card__block view-card__block--span2" : "view-card__block"
+            }
+          >
+            {showBlockTitles ? (
+              <h3 className="view-card__block-title">{block.title}</h3>
+            ) : null}
+            <ViewBlockBody result={block.result} presentation={block.presentation} />
+          </div>
+        ))}
+      </div>
     </section>
   );
+}
+
+/** One block's drawing: the single place a presentation maps to markup. */
+function ViewBlockBody({
+  result,
+  presentation,
+}: {
+  result: ViewRunResult;
+  presentation: ViewPresentation;
+}) {
+  if (result.rows.length === 0) {
+    return <p className="muted view-card__empty">No rows in this window.</p>;
+  }
+  if (presentation === "metric") return <ViewMetric result={result} />;
+  if (presentation === "table") return <ViewTable result={result} />;
+  return <ViewChart result={result} presentation={presentation} />;
 }
 
 function fmtNumber(n: number): string {

@@ -906,6 +906,41 @@ export type ViewMeasure = "sum" | "count" | "last" | "avg";
 
 export type ViewSort = { by: "label" | "value"; dir: "asc" | "desc" };
 
+/**
+ * One panel of a composed view: exactly the query fields one aggregate needs,
+ * plus the two that name it. `id` is stable across renames so React keys and a
+ * block's position in the card never depend on its title.
+ */
+export type ViewBlock = {
+  id: string;
+  title: string;
+  presentation: ViewPresentation;
+  groupBy: string | null;
+  timeBucket: "day" | "week" | "month" | null;
+  timeColumnId: string | null;
+  timeWindow: ViewTimeWindow;
+  filters: ViewFilter[];
+  measure: ViewMeasure;
+  measureColumnId: string | null;
+  sort: ViewSort;
+  limit: number;
+  convertToZar: boolean;
+  /** 1 = one grid cell, 2 = the card's full width. */
+  span?: 1 | 2;
+};
+
+/**
+ * A dashboard view (plan.md design, 2026-09-30; composed views 2026-10-07).
+ *
+ * Two shapes, one file: the ORIGINAL single-aggregate view, whose query fields
+ * live at the root, and a COMPOSED view, which carries `blocks` and repeats
+ * those same fields at the root as the first block's defaults. `blocks` is
+ * present and non-empty exactly when the view is composed, so
+ * `effectiveViewBlocks()` — not either shape — is what a reader should use.
+ *
+ * A budget table plus its trend chart is one card the operator can pin, reorder,
+ * and widen; without this it was two views that could only sit apart.
+ */
 export type ViewSpec = {
   schemaVersion: 1;
   databaseId: string;
@@ -927,6 +962,38 @@ export type ViewSpec = {
   limit: number;
   /** finance:transactions amount measures only. */
   convertToZar: boolean;
+  /** Present and non-empty only on a composed view. */
+  blocks?: ViewBlock[];
+};
+
+/** One block of a composed view resolved against its spec: always complete. */
+export type ViewBlockSpec = {
+  id: string;
+  title: string;
+  presentation: ViewPresentation;
+  groupBy: string | null;
+  timeBucket: "day" | "week" | "month" | null;
+  timeColumnId: string | null;
+  timeWindow: ViewTimeWindow;
+  filters: ViewFilter[];
+  measure: ViewMeasure;
+  measureColumnId: string | null;
+  sort: ViewSort;
+  limit: number;
+  convertToZar: boolean;
+  /** 1 = one grid cell, 2 = the card's full width. */
+  span?: 1 | 2;
+};
+
+/**
+ * Exactly what one parameterized read needs: which database, and which rows of
+ * it. A block and a whole one-aggregate view both satisfy this, which is how
+ * the same SQL builder serves both without either having to fake the other's
+ * shape (a block has no `schemaVersion`; a view has no block `id`).
+ */
+export type ViewQuerySpec = {
+  databaseId: string;
+  filters: ViewFilter[];
 };
 
 export type ViewRunResult = {
@@ -935,6 +1002,18 @@ export type ViewRunResult = {
   warnings: string[];
   /** The single currency when every row shares one; "mixed" or null otherwise. */
   currency: "ZAR" | "USD" | "mixed" | null;
+};
+
+/**
+ * A composed view's run: one result per block, in block order, each carrying
+ * the block it came from so a card can title and draw it without re-reading the
+ * file. A single-aggregate view also runs through this shape, as one block.
+ */
+export type ComposedViewRunResult = {
+  title: string;
+  blocks: Array<{ id: string; title: string; presentation: ViewPresentation; span?: 1 | 2; result: ViewRunResult }>;
+  /** Warnings from every block, prefixed with the block that raised them. */
+  warnings: string[];
 };
 
 

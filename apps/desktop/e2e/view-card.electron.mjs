@@ -17,7 +17,11 @@
  *  3. A metric view renders one large number with the resolved currency.
  *  4. A missing view file renders the "missing and can be unpinned" copy.
  *  5. Warnings reach the card as a muted line.
- *  6. A span-2 wrapper gets the grid's full row (measured width == grid width).
+ *  6. A COMPOSED view draws every panel under one title, in block order, each
+ *     panel naming itself: a metric, a table, and a bar chart. This is the card
+ *     the artifact screenshot shows, and the shape `dashboard-views-e2e`
+ *     produces from a real vault.
+ *  7. A span-2 wrapper gets the grid's full row (measured width == grid width).
  *
  * Falsification: the CSS mutation (dropping `.home-pin--span2` from the
  * full-row rule) is proven to go red and restore green. The empty/missing
@@ -28,10 +32,9 @@
  * a `/src/` edit does not until the server restarts) — do not trust a
  * green source-mutation run here without confirming the served bytes first.
  *
- * NOT covered here: that vault-core computes the aggregation correctly (the
- * vault-core suite that ran it over a real vault went with the unit tests, and
- * nothing here replaces it) and the HomePage pin spread itself (a page-level
- * concern whose source-text contract test went the same way).
+ * NOT covered here: that vault-core computes the aggregation correctly and that
+ * the full propose -> approve -> pin chain holds. That is `dashboard-views-e2e`,
+ * which runs the same ViewCard against blocks a real vault produced.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -47,6 +50,7 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
 /** One rect per chip-styled bar; fill read straight off the rect. */
 const SAMPLE = `(() => {
   const card = document.querySelector(".view-card");
+  const blocks = Array.from(document.querySelectorAll(".view-card__block"));
   const bars = Array.from(document.querySelectorAll(".view-card__bar")).map((r) => {
     const box = r.getBoundingClientRect();
     return {
@@ -69,6 +73,15 @@ const SAMPLE = `(() => {
     empty: card ? (card.querySelector(".view-card__empty") || {}).textContent ?? null : null,
     metric: card ? (card.querySelector(".view-card__metric") || {}).textContent ?? null : null,
     missingCopy: card ? card.textContent.includes("missing and can be unpinned") : null,
+    // Composed views: one entry per panel, in draw order.
+    blocks: blocks.map((b) => ({
+      title: b.querySelector(".view-card__block-title") ? b.querySelector(".view-card__block-title").textContent : null,
+      metric: b.querySelector(".view-card__metric") ? b.querySelector(".view-card__metric").textContent : null,
+      tableRows: b.querySelectorAll(".view-card__table tbody tr").length,
+      bars: b.querySelectorAll(".view-card__bar").length,
+      lines: b.querySelectorAll(".view-card__line").length,
+      empty: b.querySelector(".view-card__empty") ? b.querySelector(".view-card__empty").textContent : null,
+    })),
     bars,
     ticks: Array.from(document.querySelectorAll(".view-card__tick")).map((t) => (t.textContent || "").trim()),
     gridWidth: gridBox ? Math.round(gridBox.width) : null,
@@ -76,6 +89,30 @@ const SAMPLE = `(() => {
     accent: getComputedStyle(document.documentElement).getPropertyValue("--accent"),
   };
 })()`;
+
+/**
+ * Wrap one block's result in the shape `viewRunSaved` answers with: a title over
+ * a list of blocks. The card draws blocks either way, so every fixture goes
+ * through here rather than each one knowing the envelope. The rollup mirrors
+ * `runViewBlocks`: with more than one panel a warning names the panel it came
+ * from, and with one panel it reads as the card's own line.
+ */
+function composed(title, blocks) {
+  const list = blocks.map((b, i) => ({
+    id: b.id ?? `block-${i + 1}`,
+    title: b.title ?? `Block ${i + 1}`,
+    presentation: b.presentation,
+    ...(b.span ? { span: b.span } : {}),
+    result: b.result ?? b,
+  }));
+  const warnings = [];
+  for (const b of list) {
+    for (const w of b.result.warnings) {
+      warnings.push(list.length > 1 ? `${b.title}: ${w}` : w);
+    }
+  }
+  return { title, blocks: list, warnings };
+}
 
 const errors = [];
 const failure = (message) => {
@@ -154,6 +191,61 @@ const BAR_RUN = {
   currency: "ZAR",
 };
 
+/**
+ * The composed fixture the artifact is built around: a weekly summary as the
+ * companion would propose it — the range total, the week-by-week table, and the
+ * same weeks as a chart, in one card.
+ */
+const COMPOSED_KEY = "financial::v-composed";
+const COMPOSED_FIXTURE = {
+  view: { ...ZAR_BAR_VIEW, title: "Weekly expenses", presentation: "table" },
+  run: {
+    ok: true,
+    value: composed("Weekly expenses", [
+      {
+        id: "total",
+        title: "Last 5 weeks",
+        presentation: "metric",
+        columns: ["label", "value"],
+        rows: [["value", 7028.34]],
+        warnings: [],
+        currency: "ZAR",
+      },
+      {
+        id: "weeks",
+        title: "Week by week",
+        presentation: "table",
+        columns: ["label", "value"],
+        rows: [
+          ["2026-W36", 1111],
+          ["2026-W37", 1114],
+          ["2026-W38", 1148],
+          ["2026-W39", 1265],
+          ["2026-W40", 2390.34],
+        ],
+        warnings: [],
+        currency: "ZAR",
+      },
+      {
+        id: "trend",
+        title: "Trend",
+        presentation: "bar",
+        span: 2,
+        columns: ["label", "value"],
+        rows: [
+          ["2026-W36", 1111],
+          ["2026-W37", 1114],
+          ["2026-W38", 1148],
+          ["2026-W39", 1265],
+          ["2026-W40", 2390.34],
+        ],
+        warnings: [],
+        currency: "ZAR",
+      },
+    ]),
+  },
+};
+
 async function main() {
   // A per-run partition isolates the HTTP disk cache: without it the window
   // serves a stale transform of ViewCard from a previous run's cache (the
@@ -186,7 +278,10 @@ async function main() {
   const checks = {};
 
   // ── 1. the bar view draws, in accent, one rect per group ───────────────────
-  const bar = await render(win, "financial::v-bar", { view: ZAR_BAR_VIEW, run: { ok: true, value: BAR_RUN } });
+  const bar = await render(win, "financial::v-bar", {
+    view: ZAR_BAR_VIEW,
+    run: { ok: true, value: composed(ZAR_BAR_VIEW.title, [{ presentation: "bar", ...BAR_RUN }]) },
+  });
   checks.barTitle = bar.title;
   checks.barRects = bar.bars.length;
   checks.barTicks = bar.ticks;
@@ -213,7 +308,12 @@ async function main() {
   // ── 2. an empty window reads as a quiet line, not a crash ─────────────────
   const empty = await render(win, "financial::v-empty", {
     view: { ...ZAR_BAR_VIEW, title: "Spend, quiet month" },
-    run: { ok: true, value: { columns: ["label", "value"], rows: [], warnings: [], currency: "ZAR" } },
+    run: {
+      ok: true,
+      value: composed("Spend, quiet month", [
+        { presentation: "bar", columns: ["label", "value"], rows: [], warnings: [], currency: "ZAR" },
+      ]),
+    },
   });
   checks.emptyCopy = empty.empty;
   if (empty.empty !== "No rows in this window.") {
@@ -230,7 +330,9 @@ async function main() {
     },
     run: {
       ok: true,
-      value: { columns: ["label", "value"], rows: [["value", -280.5]], warnings: [], currency: "ZAR" },
+      value: composed("Total spend", [
+        { presentation: "metric", columns: ["label", "value"], rows: [["value", -280.5]], warnings: [], currency: "ZAR" },
+      ]),
     },
   });
   checks.metricText = metric.metric;
@@ -254,7 +356,9 @@ async function main() {
     view: ZAR_BAR_VIEW,
     run: {
       ok: true,
-      value: { ...BAR_RUN, warnings: ["Rows span more than one currency; series kept separate."] },
+      value: composed(ZAR_BAR_VIEW.title, [
+        { presentation: "bar", ...BAR_RUN, warnings: ["Rows span more than one currency; series kept separate."] },
+      ]),
     },
   });
   checks.warningText = warned.warnings;
@@ -262,13 +366,42 @@ async function main() {
     failure(`the card did not show the run's warning: ${JSON.stringify(warned.warnings)}`);
   }
 
-  // ── 6. a span-2 wrapper owns the grid row ─────────────────────────────────
+  // ── 6. a COMPOSED view is one card holding metric + table + chart ─────────
+  // This is the "weekly summary" shape: the panels the operator asked for, in
+  // one pinnable card, titled once, with each panel naming itself.
+  const composedCard = await render(win, COMPOSED_KEY, COMPOSED_FIXTURE);
+  checks.composed = {
+    blockCount: composedCard.blocks.length,
+    titles: composedCard.blocks.map((b) => b.title),
+    metric: composedCard.blocks[0]?.metric ?? null,
+    tableRows: composedCard.blocks[1]?.tableRows ?? 0,
+    bars: composedCard.blocks[2]?.bars ?? 0,
+    cardTitle: composedCard.title,
+  };
+  if (composedCard.blocks.length !== 3) {
+    failure(`a composed card drew ${composedCard.blocks.length} panels, expected 3`);
+  }
+  if (composedCard.blocks.map((b) => b.title).join("|") !== "Last 5 weeks|Week by week|Trend") {
+    failure(`composed panel titles read ${JSON.stringify(composedCard.blocks.map((b) => b.title))}`);
+  }
+  if ((composedCard.blocks[0]?.metric ?? "").indexOf("7") < 0) {
+    failure(`the composed metric panel read ${JSON.stringify(composedCard.blocks[0]?.metric)}`);
+  }
+  if ((composedCard.blocks[1]?.tableRows ?? 0) !== 5) {
+    failure(`the composed table drew ${composedCard.blocks[1]?.tableRows} rows, expected 5`);
+  }
+  if ((composedCard.blocks[2]?.bars ?? 0) !== 5) {
+    failure(`the composed chart drew ${composedCard.blocks[2]?.bars} bars, expected 5`);
+  }
+
+  // ── 7. a span-2 wrapper owns the grid row ─────────────────────────────────
   // Re-mount with a wide wrapper; the driver measures wrapper vs grid width.
   const span2 = await win.webContents.executeJavaScript(
     `(() => {
       const grid = document.querySelector(".home-dashboard__grid");
       const pin = document.createElement("div");
       pin.className = "home-pin home-pin--span2";
+      pin.dataset.viewCardProbe = "span2";
       grid.appendChild(pin);
       const pinBox = pin.getBoundingClientRect();
       const cs = getComputedStyle(grid);
@@ -276,6 +409,7 @@ async function main() {
       const contentWidth = grid.clientWidth - padX;
       const probe = document.createElement("div");
       probe.className = "home-pin";
+      probe.dataset.viewCardProbe = "plain";
       grid.appendChild(probe);
       return {
         gridContentWidth: Math.round(contentWidth),
@@ -294,7 +428,30 @@ async function main() {
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
 
-  const report = { pass: errors.length === 0, failures: errors, checks, samples: { bar, empty, metric, missing, warned } };
+  // Leave the composed card mounted: it is the artifact's subject, so the PNG
+  // shows the shape the operator asked for rather than the last assertion run.
+  // This re-render repeats the key already on screen, and `viewCardCommits` only
+  // moves when (slug, viewId) changes — waiting for a commit here would hang
+  // forever, which is what `render()` above is careful never to do twice. The
+  // span-2 step appended its probes straight into the grid, so React never owned
+  // them: drop them by hand, then let two frames paint before the capture.
+  await win.webContents.executeJavaScript(
+    `document.querySelectorAll("[data-view-card-probe]").forEach((el) => el.remove())`,
+  );
+  await win.webContents.executeJavaScript(
+    `window.installFixture(${JSON.stringify(COMPOSED_KEY)}, ${JSON.stringify(COMPOSED_FIXTURE)})`,
+  );
+  await win.webContents.executeJavaScript(`window.renderViewCard("financial", "v-composed")`);
+  await waitFor(
+    win,
+    `document.querySelectorAll(".home-dashboard__grid > .home-pin").length === 1 && document.querySelectorAll(".view-card__block").length === 3`,
+    "the composed card alone in the grid",
+  );
+  await win.webContents.executeJavaScript(
+    `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
+  );
+
+  const report = { pass: errors.length === 0, failures: errors, checks, samples: { bar, empty, metric, missing, warned, composedCard } };
   fs.mkdirSync(artifactsDir, { recursive: true });
   fs.writeFileSync(path.join(artifactsDir, "view-card.json"), `${JSON.stringify(report, null, 2)}\n`);
   const image = await win.webContents.capturePage();
@@ -304,7 +461,14 @@ async function main() {
   console.log(`metric: ${checks.metricText}`);
   console.log(`empty: ${checks.emptyCopy}`);
   console.log(`missing: ${checks.missingCopy}`);
-  console.log(`span2: ${checks.span2.span2Width}px of ${checks.span2.gridWidth}px grid`);
+  console.log(
+    `composed: ${checks.composed.blockCount} panels [${checks.composed.titles.join(", ")}], ` +
+      `metric ${checks.composed.metric}, ${checks.composed.tableRows} table rows, ${checks.composed.bars} bars`,
+  );
+  console.log(
+    `span2: ${checks.span2.span2Width}px of the grid's ${checks.span2.gridContentWidth}px content row ` +
+      `(plain pin ${checks.span2.plainWidth}px)`,
+  );
   console.log(`failures: ${errors.length === 0 ? "none" : errors.join("; ")}`);
 
   win.destroy();

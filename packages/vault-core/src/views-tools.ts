@@ -2,15 +2,16 @@ import type { MapToolDef } from "./map/tools.ts";
 import type { Actor } from "./types.ts";
 import {
   listViews,
-  runView,
+  runViewBlocks,
   validateViewSpec,
   getView,
+  MAX_VIEW_BLOCKS,
 } from "./views.ts";
 import { getDatabase } from "./domain-databases.ts";
 import { listPins, setPins } from "./pins.ts";
 import { getPage } from "./pages.ts";
 import { SYSTEM_PIN_KINDS } from "./types.ts";
-import type { Pin, Result, ViewSpec, ViewRunResult } from "./types.ts";
+import type { ComposedViewRunResult, Pin, Result, ViewSpec } from "./types.ts";
 
 /**
  * Agent-built dashboard views (plan.md design). The Dashboard is the home pin
@@ -24,6 +25,12 @@ import type { Pin, Result, ViewSpec, ViewRunResult } from "./types.ts";
  * The companion never emits SQL: preview_view runs the same parameterized read
  * the dashboard card will. At most three previews per data question, then
  * write the comparison in prose instead of another chart.
+ *
+ * Composed views (2026-10-07): a spec may carry `blocks`, so one pinned card can
+ * hold a metric, a table, and a chart together — which is what "a weekly summary"
+ * actually means. The shape is taught in the tool descriptions rather than left
+ * to be discovered, because a model that has only ever written one aggregate
+ * will invent a second view instead of a second block.
  */
 
 export const VIEW_TOOL_DEFS: MapToolDef[] = [
@@ -51,7 +58,11 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
       "or unpin by leaving a pin out. The array is the COMPLETE board, so keep every pin you do " +
       "not change and keep their order meaningful. You can only pin views that are already saved " +
       "(see list_views); a view you proposed but the operator has not approved yet cannot be " +
-      "pinned. Read get_dashboard first and send back the full board with your changes.",
+      "pinned. Read get_dashboard first and send back the full board with your changes.\n\n" +
+      "A pin's `domainSlug` is the domain that OWNS the view, which is not always the board's: the " +
+      "Overview board (domainSlug: null) is the cross-domain board and accepts any live domain's " +
+      "view, so a financial weekly summary belongs there. A domain board still shows only its own " +
+      "domain's views, and a page pin must belong to the board's domain.",
     parameters: {
       type: "object",
       properties: {
@@ -83,7 +94,15 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
       "Run a view spec against a domain database and return what the dashboard card would show: " +
       "rows of [label, value], warnings, and the shared currency. Nothing is saved. Use this to " +
       "check the numbers before proposing a view. At most three previews per data question, then " +
-      "write the comparison in prose instead of another chart.",
+      "write the comparison in prose instead of another chart.\n\n" +
+      "A spec is either ONE aggregate (query fields at the top level) or a COMPOSED view: add a " +
+      "`blocks` array (up to " + MAX_VIEW_BLOCKS + ") and each entry is one panel of the same card, " +
+      'e.g. {"schemaVersion":1,"databaseId":"finance:transactions","title":"Weekly expenses",' +
+      '"blocks":[{"id":"total","title":"Last 3 weeks","presentation":"metric",...},' +
+      '{"id":"weeks","title":"Week by week","presentation":"table",...}]}. Each block carries its ' +
+      "own presentation (table | bar | line | metric), filters, and measure; a field a block omits " +
+      "is inherited from the top-level query fields. Use blocks whenever the operator asks for a " +
+      '"summary" that needs more than one figure — a metric plus its table is one card, not two views.',
     parameters: {
       type: "object",
       properties: {
@@ -100,7 +119,8 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
       "spec and a preview of the rows it produces today; nothing is saved until the operator " +
       "approves. After approval the view is pinnable via arrange_dashboard. Name the view in " +
       "your reply and reference the decision id. The spec must come from a successful " +
-      "preview_view in the same conversation.",
+      "preview_view in the same conversation. A composed spec (see preview_view) is proposed the " +
+      "same way: the whole card is one Decision.",
     parameters: {
       type: "object",
       properties: {
@@ -120,26 +140,16 @@ export async function executeViewTool(
 ): Promise<unknown> {
   switch (name) {
     case "get_dashboard": {
-      const domainSlug =
-        args.domainSlug === null || args.domainSlug === undefined
-          ? null
-          : typeof args.domainSlug === "string" && args.domainSlug.trim()
-            ? args.domainSlug
-            : null;
-      if (args.domainSlug != null && domainSlug === null) return toolError("domainSlug must be a slug or null");
+      const domainSlug = parseBoardSlug(args.domainSlug);
+      if (domainSlug === INVALID) return toolError("domainSlug must be a slug or null");
       const res = await listPins(root, domainSlug);
       if (!res.ok) return toolError(res.error);
       return { domainSlug, pins: await Promise.all(res.value.map((p) => describePin(root, p))) };
     }
 
     case "arrange_dashboard": {
-      const domainSlug =
-        args.domainSlug === null || args.domainSlug === undefined
-          ? null
-          : typeof args.domainSlug === "string" && args.domainSlug.trim()
-            ? args.domainSlug
-            : null;
-      if (args.domainSlug != null && domainSlug === null) return toolError("domainSlug must be a slug or null");
+      const domainSlug = parseBoardSlug(args.domainSlug);
+      if (domainSlug === INVALID) return toolError("domainSlug must be a slug or null");
       const pinsRes = parsePins(args.pins);
       if (!pinsRes.ok) return toolError(pinsRes.error);
       const res = await setPins(root, domainSlug, pinsRes.value, actor);
@@ -174,11 +184,9 @@ export async function executeViewTool(
       const slug = typeof args.domainSlug === "string" ? args.domainSlug : "";
       const specRes = parseSpec(args.spec);
       if (!specRes.ok) return toolError(specRes.error);
-      const live = await getDatabase(root, slug, specRes.value.databaseId);
-      if (!live.ok) return toolError(live.error);
-      const check = validateViewSpec(specRes.value, live.value);
-      if (!check.ok) return toolError(check.error);
-      const run = await runView(root, slug, specRes.value);
+      const error = await checkSpec(root, slug, specRes.value);
+      if (error) return toolError(error);
+      const run = await runViewBlocks(root, slug, specRes.value);
       if (!run.ok) return toolError(run.error);
       return previewShape(run.value);
     }
@@ -188,13 +196,11 @@ export async function executeViewTool(
       const specRes = parseSpec(args.spec);
       if (!specRes.ok) return toolError(specRes.error);
       const spec = specRes.value;
-      const live = await getDatabase(root, slug, spec.databaseId);
-      if (!live.ok) return toolError(live.error);
-      const check = validateViewSpec(spec, live.value);
-      if (!check.ok) return toolError(check.error);
+      const error = await checkSpec(root, slug, spec);
+      if (error) return toolError(error);
       // The preview rides inside the Decision so the operator sees today's
       // rows at approve time without running the view themselves.
-      const run = await runView(root, slug, spec);
+      const run = await runViewBlocks(root, slug, spec);
       const preview = run.ok ? previewShape(run.value) : { error: run.error };
       const { fileViewDecision } = await import("./views.ts");
       const filed = await fileViewDecision(root, actor, slug, spec, preview);
@@ -205,6 +211,33 @@ export async function executeViewTool(
     default:
       return toolError(`Unknown view tool: ${name}`);
   }
+}
+
+/** The sentinel `parseBoardSlug` returns for an argument that is neither. */
+const INVALID = Symbol("invalid-board");
+
+/**
+ * A board argument: a domain slug, or `null` for the Overview board. An absent
+ * value is the Overview board too, because that is what a caller meant by not
+ * naming one; a value that is neither a string nor null is a mistake worth
+ * reporting rather than silently reinterpreting as Overview.
+ */
+function parseBoardSlug(raw: unknown): string | null | typeof INVALID {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === "string" && raw.trim()) return raw;
+  return INVALID;
+}
+
+/** Validate one spec against its live database; the error string, or null. */
+async function checkSpec(
+  root: string,
+  slug: string,
+  spec: ViewSpec,
+): Promise<string | null> {
+  const live = await getDatabase(root, slug, spec.databaseId);
+  if (!live.ok) return live.error;
+  const check = validateViewSpec(spec, live.value);
+  return check.ok ? null : check.error;
 }
 
 function toolError(message: string): { error: { code: string; message: string } } {
@@ -297,19 +330,35 @@ function parsePins(raw: unknown): Result<Pin[]> {
   return { ok: true, value: out };
 }
 
-/** The compact shape a preview or proposal shows: rows plus warnings. */
-function previewShape(run: ViewRunResult): {
-  columns: string[];
-  rows: Array<[string, number]>;
+/**
+ * The compact shape a preview or proposal shows: every block's rows, plus the
+ * warnings rolled up. A one-aggregate view is one block named after its
+ * presentation, so a caller reads one shape either way.
+ */
+function previewShape(run: ComposedViewRunResult): {
+  title: string;
+  blocks: Array<{
+    id: string;
+    title: string;
+    presentation: string;
+    columns: string[];
+    rows: Array<[string, number]>;
+    rowCount: number;
+    currency: ComposedViewRunResult["blocks"][number]["result"]["currency"];
+  }>;
   warnings: string[];
-  currency: ViewRunResult["currency"];
-  rowCount: number;
 } {
   return {
-    columns: run.columns,
-    rows: run.rows,
+    title: run.title,
+    blocks: run.blocks.map((b) => ({
+      id: b.id,
+      title: b.title,
+      presentation: b.presentation,
+      columns: b.result.columns,
+      rows: b.result.rows,
+      rowCount: b.result.rows.length,
+      currency: b.result.currency,
+    })),
     warnings: run.warnings,
-    currency: run.currency,
-    rowCount: run.rows.length,
   };
 }

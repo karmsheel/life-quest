@@ -16,6 +16,14 @@ import { ActiveAgentsCard } from "@/pages/home-pins/ActiveAgentsCard";
 import { ViewCard } from "@/components/ui/ViewCard";
 import type { SavedView } from "@lifequest/vault-core";
 
+/**
+ * A view plus the domain that owns it. `SavedView` is the file's contents and
+ * carries no domain — the domain is which directory it was read from — and the
+ * Overview board shows views from every domain, so the pair has to travel
+ * together or a pin cannot be addressed.
+ */
+type BoardView = SavedView & { domainSlug: string };
+
 export default function HomePage() {
   const { snapshot, reloadGeneration } = useVault();
   const lens = useDomainLens();
@@ -29,7 +37,7 @@ export default function HomePage() {
   const [events, setEvents] = useState<LifeEvent[]>([]);
   const [pins, setPins] = useState<Pin[]>([]);
   const [pages, setPages] = useState<PageListEntry[]>([]);
-  const [views, setViews] = useState<SavedView[]>([]);
+  const [views, setViews] = useState<BoardView[]>([]);
   const [moveBusy, setMoveBusy] = useState(false);
   const [installedKits, setInstalledKits] = useState<string[] | null>(null);
 
@@ -42,17 +50,20 @@ export default function HomePage() {
         api().pinsList(boardSlug),
         api().pageList(boardSlug),
         // Views exist per domain; Overview lists all domains' views so a card
-        // can be pinned there from any lens.
+        // can be pinned there from any lens. Each one is tagged with the domain
+        // it came from, because that is what its pin has to name.
         lens.kind === "domain"
-          ? api().viewList(lens.slug).then((r) => (r.ok ? (r.value as SavedView[]) : []))
+          ? api()
+              .viewList(lens.slug)
+              .then((r) => (r.ok ? (r.value as SavedView[]).map((v) => ({ ...v, domainSlug: lens.slug })) : []))
           : (async () => {
               const slugs = (snapshot?.domains ?? [])
                 .filter((d) => !d.meta.archivedAt)
                 .map((d) => d.slug);
-              const all: SavedView[] = [];
+              const all: BoardView[] = [];
               for (const s of slugs) {
                 const res = await api().viewList(s);
-                if (res.ok) all.push(...(res.value as SavedView[]));
+                if (res.ok) all.push(...(res.value as SavedView[]).map((v) => ({ ...v, domainSlug: s })));
               }
               return all;
             })(),
@@ -106,26 +117,32 @@ export default function HomePage() {
     const onBoard = new Set(
       pins
         .filter((p) => p.kind === "page")
-        .map((p) => `${p.domainSlug}:${p.pageId}`),
+        .map((p) => (p.kind === "page" ? `${p.domainSlug}:${p.pageId}` : "")),
     );
     return pages.filter((e) => !onBoard.has(`${e.domainSlug}:${e.page.id}`));
   }
 
-  function availableViewPins(): SavedView[] {
+  /**
+   * Views not yet on this board.
+   *
+   * A view belongs to the domain that owns its database, and the board may be
+   * that domain or Overview. A view pin carries its OWN domainSlug — including
+   * on Overview, which is the board that aggregates them — so the identity of a
+   * pin is domain + view, never the board plus view. Keying on the board would
+   * silently drop every cross-domain view from the Overview board's add list.
+   */
+  function availableViewPins(): BoardView[] {
     const onBoard = new Set(
-      pins
-        .filter((p) => p.kind === "view" && p.domainSlug === boardSlug)
-        .map((p) => (p.kind === "view" ? p.viewId : "")),
+      pins.filter((p) => p.kind === "view").map((p) => (p.kind === "view" ? `${p.domainSlug}:${p.viewId}` : "")),
     );
-    return views.filter((v) => !onBoard.has(v.id));
+    return views.filter((v) => !onBoard.has(`${v.domainSlug}:${v.id}`));
   }
 
-  async function onAddViewPin(view: SavedView) {
-    if (!boardSlug) return;
+  async function onAddViewPin(view: BoardView) {
     const newPin: Pin = {
-      id: `view:${boardSlug}:${view.id}`,
+      id: `view:${view.domainSlug}:${view.id}`,
       kind: "view",
-      domainSlug: boardSlug,
+      domainSlug: view.domainSlug,
       viewId: view.id,
       span: 1,
     };

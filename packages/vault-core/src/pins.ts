@@ -150,7 +150,9 @@ export async function listPins(
         validPins.push(pin);
       } else if (pin.kind === "view") {
         // A view pin needs a live domain and an existing view file; a deleted
-        // view drops off the board instead of crashing the dashboard.
+        // view drops off the board instead of crashing the dashboard. A domain
+        // board shows only its own views; Overview takes any live domain's,
+        // which is the rule setPins enforces on the way in.
         if (!liveSlugs.has(pin.domainSlug)) continue;
         if (domainSlug !== null && pin.domainSlug !== domainSlug) continue;
         if (!(await viewExists(root, pin.domainSlug, pin.viewId))) continue;
@@ -222,6 +224,14 @@ export async function setPins(
         if (!(await viewExists(root, pin.domainSlug, pin.viewId))) {
           return { ok: false, error: `View not found: ${pin.viewId}` };
         }
+        // A view pin carries the domain that OWNS the view, and the board it
+        // sits on is a separate thing. A domain board shows only its own
+        // views; the Overview board is the cross-domain board and takes any
+        // live domain's view, because that is the only place a summary that
+        // spans domains can live. This is the same rule listPins already
+        // applies, and the two must not disagree: a pin the read path accepts
+        // and the write path refuses is a card the operator can see and never
+        // create.
         if (domainSlug !== null && pin.domainSlug !== domainSlug) {
           return { ok: false, error: `View pin belongs to different domain: ${pin.domainSlug}` };
         }

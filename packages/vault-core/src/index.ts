@@ -201,7 +201,9 @@ export {
 export {
   validateViewSpec,
   applyViewDefaults,
+  resolveViewBlocks,
   runView,
+  runViewBlocks,
   runSavedView,
   saveView,
   listViews,
@@ -215,6 +217,7 @@ export {
   TIME_BUCKETS,
   FILTER_OPS,
   MEASURES,
+  MAX_VIEW_BLOCKS,
   VIEW_ID_PATTERN,
   fileViewDecision,
   type SavedView,
