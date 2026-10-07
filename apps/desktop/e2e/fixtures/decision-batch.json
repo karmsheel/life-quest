@@ -1,0 +1,129 @@
+{
+  "_comment": [
+    "A batch-insert Decision (`insert_rows`) in the shape the propose path files it:",
+    "the target names one database and the body carries every row, each with the id",
+    "minted for it at propose time. Three rows, so the card has to render three",
+    "tables and two different row titles — a labelled row, a row with no label (the",
+    "`Row n` fallback), and a row whose empty cell must not read as a field.",
+    "Column keys are Transactions column ids, and `account` / `category` are relation",
+    "columns, so their cell values are row ids: the same payload a single-row write",
+    "carries, which is the case the read path resolves labels for. Values are neutral",
+    "stand-ins for a real proposal; the shape is not."
+  ],
+  "target": {
+    "type": "database-batch",
+    "domainSlug": "financial",
+    "databaseId": "finance:transactions"
+  },
+  "rowIds": {
+    "checkers": "2a41f7c9-58d3-4a1e-9c7b-6f2d8e04b391",
+    "unknown": "7b9c0e12-3d64-4f58-8a02-15c7e9b3467d",
+    "fuel": "c05e8a34-9f17-42b6-8d53-a21b7f90c468"
+  },
+  "accountId": "f8ad445e-5c6c-4cef-a900-d88eba634324",
+  "groceriesId": "47083ecb-b581-4ba2-8a6a-2db8cf2d5a87",
+  "body": {
+    "op": "insert-rows",
+    "databaseName": "Transactions",
+    "rows": [
+      {
+        "id": "2a41f7c9-58d3-4a1e-9c7b-6f2d8e04b391",
+        "rowLabel": "8/2/26 Checkers Capitec",
+        "cells": {
+          "date": "2026-08-02",
+          "amount": -412.5,
+          "account": "f8ad445e-5c6c-4cef-a900-d88eba634324",
+          "category": "47083ecb-b581-4ba2-8a6a-2db8cf2d5a87",
+          "payee": "8/2/26 Checkers Capitec",
+          "provenance": "chat:companion"
+        }
+      },
+      {
+        "id": "7b9c0e12-3d64-4f58-8a02-15c7e9b3467d",
+        "rowLabel": null,
+        "cells": {
+          "date": "2026-08-03",
+          "amount": -880,
+          "account": "f8ad445e-5c6c-4cef-a900-d88eba634324",
+          "category": "47083ecb-b581-4ba2-8a6a-2db8cf2d5a87",
+          "notes": null,
+          "provenance": "chat:companion"
+        }
+      },
+      {
+        "id": "c05e8a34-9f17-42b6-8d53-a21b7f90c468",
+        "rowLabel": "8/4/26 Fuel Engen",
+        "cells": {
+          "date": "2026-08-04",
+          "amount": -65.4,
+          "account": "f8ad445e-5c6c-4cef-a900-d88eba634324",
+          "category": "47083ecb-b581-4ba2-8a6a-2db8cf2d5a87",
+          "payee": "8/4/26 Fuel Engen",
+          "source_file": null,
+          "provenance": "chat:companion"
+        }
+      }
+    ]
+  },
+  "_resolvedComment": [
+    "The same body as the read path now hands the card: every row whose cells name a",
+    "relation row gains that row's display label beside the id (`cellLabels`), which",
+    "is the sibling a single-row write already gets. The stored file keeps the raw",
+    "payload; only what the card reads changes."
+  ],
+  "resolved": {
+    "op": "insert-rows",
+    "databaseName": "Transactions",
+    "rows": [
+      {
+        "id": "2a41f7c9-58d3-4a1e-9c7b-6f2d8e04b391",
+        "rowLabel": "8/2/26 Checkers Capitec",
+        "cells": {
+          "date": "2026-08-02",
+          "amount": -412.5,
+          "account": "f8ad445e-5c6c-4cef-a900-d88eba634324",
+          "category": "47083ecb-b581-4ba2-8a6a-2db8cf2d5a87",
+          "payee": "8/2/26 Checkers Capitec",
+          "provenance": "chat:companion"
+        },
+        "cellLabels": {
+          "account": "Capitec",
+          "category": "Groceries"
+        }
+      },
+      {
+        "id": "7b9c0e12-3d64-4f58-8a02-15c7e9b3467d",
+        "rowLabel": null,
+        "cells": {
+          "date": "2026-08-03",
+          "amount": -880,
+          "account": "f8ad445e-5c6c-4cef-a900-d88eba634324",
+          "category": "47083ecb-b581-4ba2-8a6a-2db8cf2d5a87",
+          "notes": null,
+          "provenance": "chat:companion"
+        },
+        "cellLabels": {
+          "account": "Capitec",
+          "category": "Groceries"
+        }
+      },
+      {
+        "id": "c05e8a34-9f17-42b6-8d53-a21b7f90c468",
+        "rowLabel": "8/4/26 Fuel Engen",
+        "cells": {
+          "date": "2026-08-04",
+          "amount": -65.4,
+          "account": "f8ad445e-5c6c-4cef-a900-d88eba634324",
+          "category": "47083ecb-b581-4ba2-8a6a-2db8cf2d5a87",
+          "payee": "8/4/26 Fuel Engen",
+          "source_file": null,
+          "provenance": "chat:companion"
+        },
+        "cellLabels": {
+          "account": "Capitec",
+          "category": "Groceries"
+        }
+      }
+    ]
+  }
+}

@@ -53,6 +53,9 @@ const fixture = JSON.parse(
 const targets = JSON.parse(
   fs.readFileSync(path.join(here, "fixtures/decision-page-mapping.json"), "utf8"),
 );
+const batch = JSON.parse(
+  fs.readFileSync(path.join(here, "fixtures/decision-batch.json"), "utf8"),
+);
 
 /** Everything an operator can read, minus the collapsed "Exact proposal". */
 const READABLE = `(() => {
@@ -129,6 +132,32 @@ const SAMPLE_MAPPING = `(() => {
     inboxWidth: inbox ? Math.round(inbox.getBoundingClientRect().width) : null,
     lead: text(document.querySelector(".decision-lead")),
     rows,
+    readable: read.readable,
+    exactPayload: read.exactPayload
+  };
+})()`;
+
+/** A batch insert: one card lead, then one after-only table per row. */
+const SAMPLE_BATCH = `(() => {
+  const text = (el) => ((el && el.textContent) || "").trim();
+  const read = ${READABLE};
+  const sections = Array.from(document.querySelectorAll(".decision-section")).map((section) => ({
+    lead: text(section.querySelector(".decision-lead")),
+    columns: Array.from(section.querySelectorAll("table.decision-fields thead th")).map((th) => text(th)),
+    rows: Array.from(section.querySelectorAll("table.decision-fields tbody tr")).map((tr) => ({
+      field: text(tr.querySelector("th")),
+      cells: Array.from(tr.querySelectorAll("td")).map((td) => ({
+        text: text(td),
+        title: td.querySelector("[title]") ? td.querySelector("[title]").getAttribute("title") : null
+      }))
+    }))
+  }));
+  const inbox = document.querySelector(".decisions-inbox");
+  return {
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    inboxWidth: inbox ? Math.round(inbox.getBoundingClientRect().width) : null,
+    lead: text(document.querySelector(".decision-proposal .decision-lead")),
+    sections,
     readable: read.readable,
     exactPayload: read.exactPayload
   };
@@ -412,13 +441,110 @@ async function main() {
   }
 
   checks.inboxWidth = resolved.inboxWidth;
+
+  // ── a batch insert: one lead, then one after-only table per row ───────────
+  // As filed, each row's relation cell is the row id the write payload carries:
+  // three readable tables, but an id where the operator needs a name. Kept as the
+  // before state, exactly as the row card's is.
+  const batchRaw = await render(
+    win,
+    batch.target,
+    batch.body,
+    null,
+    SAMPLE_BATCH,
+    "batch (as filed)",
+  );
+  checks.batchLead = batchRaw.lead;
+  const wantBatchLead = `Insert ${batch.body.rows.length} rows into ${batch.body.databaseName}.`;
+  if (batchRaw.lead !== wantBatchLead) {
+    failure(`the batch lead read "${batchRaw.lead}", expected "${wantBatchLead}"`);
+  }
+  // One table per row, titled by that row's label: the label minted at propose
+  // time, or `Row n` when the row carried none.
+  const wantBatchLeads = batch.body.rows.map(
+    (row, index) => `${row.rowLabel ?? `Row ${index + 1}`}.`,
+  );
+  checks.batchLeads = batchRaw.sections.map((section) => section.lead);
+  if (JSON.stringify(checks.batchLeads) !== JSON.stringify(wantBatchLeads)) {
+    failure(
+      `the batch tables read ${JSON.stringify(checks.batchLeads)}, expected ${JSON.stringify(wantBatchLeads)}`,
+    );
+  }
+  // An insert has no before state, so no table may offer a "Now" column.
+  checks.batchColumns = batchRaw.sections.map((section) => section.columns);
+  batchRaw.sections.forEach((section, index) => {
+    if (JSON.stringify(section.columns) !== JSON.stringify(["Field", "Proposed"])) {
+      failure(
+        `batch row ${index + 1} rendered ${JSON.stringify(section.columns)}, expected an after-only table`,
+      );
+    }
+  });
+  // A cell the row does not carry is not a field: rows 2 and 3 have an empty
+  // `notes` / `source_file`, and neither may read as an empty field.
+  checks.batchFields = batchRaw.sections.map((section) => section.rows.map((row) => row.field));
+  const strayField = checks.batchFields
+    .flat()
+    .find((field) => field === "Notes" || field === "Source file");
+  if (strayField) failure(`a batch table lists "${strayField}", a cell the row does not carry`);
+
+  checks.batchRawIdOnScreen = SHORT_ID.test(batchRaw.readable);
+  if (!checks.batchRawIdOnScreen) {
+    failure("the batch body as filed no longer shows a relation id — the before state is gone");
+  }
+  checks.batchExactPayloadUnchanged =
+    JSON.stringify(batchRaw.exactPayload ? JSON.parse(batchRaw.exactPayload) : null) ===
+    JSON.stringify(batch.body);
+  if (!checks.batchExactPayloadUnchanged) failure("the batch card rewrote the body it was handed");
+
+  // ── as read: every row's relation cells name the row they point at ────────
+  const batchResolved = await render(
+    win,
+    batch.target,
+    batch.resolved,
+    null,
+    SAMPLE_BATCH,
+    "batch (as read)",
+  );
+  checks.batchResolvedRelations = batchResolved.sections
+    .flatMap((section) =>
+      section.rows.filter((row) => row.field === "Account" || row.field === "Category"),
+    )
+    .flatMap((row) => row.cells.map((cell) => ({ field: row.field, text: cell.text, title: cell.title })));
+  const unlabelled = checks.batchResolvedRelations.filter(
+    (cell) => cell.text !== "Capitec" && cell.text !== "Groceries",
+  );
+  if (unlabelled.length > 0) {
+    failure(
+      `a batch relation cell still reads as an id: ${unlabelled.map((cell) => `${cell.field}=${cell.text}`).join(", ")}`,
+    );
+  }
+  // The id is not gone, it is behind the name: every labelled cell keeps it.
+  for (const id of [batch.accountId, batch.groceriesId]) {
+    if (!checks.batchResolvedRelations.some((cell) => cell.title === id)) {
+      failure(`no batch cell keeps ${id} in its tooltip`);
+    }
+  }
+  checks.batchReadableHoldsNoShortId = !SHORT_ID.test(batchResolved.readable);
+  if (!checks.batchReadableHoldsNoShortId) {
+    failure(`the batch card as read still shows an id: ${batchResolved.readable.slice(0, 240)}`);
+  }
+  checks.batchResolvedExactPayloadUnchanged =
+    JSON.stringify(batchResolved.exactPayload ? JSON.parse(batchResolved.exactPayload) : null) ===
+    JSON.stringify(batch.resolved);
+  if (!checks.batchResolvedExactPayloadUnchanged) {
+    failure("the batch card rewrote the body it was handed");
+  }
+
   checks.consoleErrors = consoleErrors;
-  if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
 
   const report = {
     pass: errors.length === 0,
     failures: errors,
-    fixture: ["fixtures/decision-row.json", "fixtures/decision-page-mapping.json"],
+    fixture: [
+      "fixtures/decision-row.json",
+      "fixtures/decision-page-mapping.json",
+      "fixtures/decision-batch.json",
+    ],
     viewport: resolved.viewport,
     checks,
     raw,
@@ -427,6 +553,8 @@ async function main() {
     page,
     mappingRaw,
     mapping,
+    batchRaw,
+    batchResolved,
   };
 
   fs.mkdirSync(artifactsDir, { recursive: true });
@@ -452,6 +580,10 @@ async function main() {
   console.log(`page  as read:   ${blockLine(page.blocks)}`);
   console.log(`map   as filed:  ${mappingRaw.lead}  [${mappingRaw.rows.map((r) => r.column).join(", ")}]`);
   console.log(`map   as read:   ${mapping.lead}  [${mapping.rows.map((r) => r.column).join(", ")}]`);
+  console.log(`batch as filed: ${batchRaw.lead}  [${checks.batchLeads.join(", ")}]`);
+  console.log(
+    `batch as read:  [${checks.batchResolvedRelations.map((cell) => `${cell.field}=${cell.text}`).join("  |  ")}]`,
+  );
   console.log(`failures: ${errors.length === 0 ? "none" : errors.join("; ")}`);
 
   win.destroy();

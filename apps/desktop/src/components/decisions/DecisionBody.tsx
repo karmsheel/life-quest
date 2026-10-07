@@ -139,13 +139,16 @@ function BatchBody({
       <p className="decision-lead">Insert {rows.length} rows into {databaseName}.</p>
       {rows.map((row, index) => {
         const cells = isRecord(row.cells) ? row.cells : null;
+        // The read path adds a row's relation names as `cellLabels`; without
+        // them a relation cell reads as the id the write payload carries.
+        const cellLabels = stringMap(row.cellLabels);
         const label =
           typeof row.rowLabel === "string" && row.rowLabel ? row.rowLabel : `Row ${index + 1}`;
         return (
           <ChangeTable
             key={typeof row.id === "string" ? row.id : `row-${index}`}
             lead={label}
-            rows={rowsFrom(null, cells, "after")}
+            rows={rowsFrom(null, cells, "after", { after: cellLabels })}
             mode="after"
             lookups={lookups}
           />

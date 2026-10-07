@@ -66,6 +66,18 @@ type Sample = {
   rows: { field: string; cells: Cell[] }[];
 };
 
+type BatchSample = {
+  inboxWidth: number | null;
+  lead: string;
+  sections: {
+    lead: string;
+    columns: string[];
+    rows: { field: string; cells: Cell[] }[];
+  }[];
+  readable: string;
+  exactPayload: string | null;
+};
+
 type Report = {
   pass: boolean;
   failures: string[];
@@ -78,6 +90,15 @@ type Report = {
     mappingExactPayloadUnchanged: boolean;
     labelledCellTitles: string[];
     inboxWidth: number | null;
+    batchLead: string;
+    batchLeads: string[];
+    batchColumns: string[][];
+    batchFields: string[][];
+    batchRawIdOnScreen: boolean;
+    batchExactPayloadUnchanged: boolean;
+    batchResolvedRelations: { field: string; text: string; title: string | null }[];
+    batchReadableHoldsNoShortId: boolean;
+    batchResolvedExactPayloadUnchanged: boolean;
   };
   raw: Sample;
   resolved: Sample;
@@ -85,6 +106,8 @@ type Report = {
   page: { blocks: Block[]; readable: string };
   mappingRaw: { lead: string; rows: MappingRow[]; readable: string };
   mapping: { lead: string; rows: MappingRow[]; readable: string };
+  batchRaw: BatchSample;
+  batchResolved: BatchSample;
 };
 
 /** "47083ecb…" — the shortId the card falls back to for a raw id. */
@@ -195,5 +218,71 @@ describe("decision body labels", () => {
     assert.equal(report.mapping.rows[2]?.columnTitle, null, "an unmapped column claims an id");
     assert.doesNotMatch(report.mapping.readable, SHORT_ID, "a column id is still on the mapping");
     assert.equal(report.checks.mappingExactPayloadUnchanged, true, "the mapping card rewrote the body");
+  });
+
+  it("draws a batch insert as one table per row, and names the rows it points at", async (t) => {
+    if (!(await devServerUp())) {
+      t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
+      return;
+    }
+
+    assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
+    const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
+    const batch = JSON.parse(
+      fs.readFileSync(path.join(desktopRoot, "e2e/fixtures/decision-batch.json"), "utf8"),
+    ) as {
+      body: { databaseName: string; rows: { rowLabel: string | null }[] };
+      resolved: unknown;
+    };
+
+    // The lead counts the rows and names the database, and each row gets its own
+    // table: an insert has no before state, so no table offers one.
+    assert.equal(
+      report.checks.batchLead,
+      `Insert ${batch.body.rows.length} rows into ${batch.body.databaseName}.`,
+      "the batch lead does not count the rows",
+    );
+    assert.deepEqual(
+      report.batchRaw.sections.map((section) => section.lead),
+      batch.body.rows.map((row, index) => `${row.rowLabel ?? `Row ${index + 1}`}.`),
+      "a row is not titled by its label, nor by its number when it carries none",
+    );
+    assert.deepEqual(
+      report.checks.batchColumns,
+      batch.body.rows.map(() => ["Field", "Proposed"]),
+      "a batch table offers a column an insert cannot fill",
+    );
+    // A cell the row does not carry is not a field.
+    assert.deepEqual(
+      report.checks.batchFields.filter((fields) => fields.includes("Notes") || fields.includes("Source file")),
+      [],
+      "a batch table lists a cell the row does not carry",
+    );
+
+    // As filed, a relation cell is the row id the payload carries; as read, the
+    // same cell names the row while keeping that id behind it.
+    assert.equal(report.checks.batchRawIdOnScreen, true, "the filed batch shows no id to fix");
+    const relations = report.checks.batchResolvedRelations;
+    assert.ok(relations.length >= 2, "no batch relation cell rendered");
+    assert.deepEqual(
+      [...new Set(relations.map((cell) => cell.text))].sort(),
+      ["Capitec", "Groceries"],
+      "a batch relation cell still reads as an id",
+    );
+    assert.equal(report.checks.batchReadableHoldsNoShortId, true, "an id is still on screen");
+
+    // Neither variant may rewrite the body it was handed: the exact payload is
+    // what the approve path will write.
+    assert.equal(report.checks.batchExactPayloadUnchanged, true, "the card rewrote the filed body");
+    assert.equal(
+      report.checks.batchResolvedExactPayloadUnchanged,
+      true,
+      "the card rewrote the read body",
+    );
+    assert.deepEqual(
+      JSON.parse(report.batchRaw.exactPayload ?? "null"),
+      batch.body,
+      "the exact payload is not the filed body",
+    );
   });
 });

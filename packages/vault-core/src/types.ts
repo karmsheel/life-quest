@@ -109,6 +109,8 @@ export type DatabaseBatchDecisionBody = {
     id: string;
     cells: Record<string, unknown>;
     rowLabel: string | null;
+    /** Read-time relation labels for `cells`, keyed by column id. Not a write payload. */
+    cellLabels?: Record<string, string>;
   }>;
 };
 

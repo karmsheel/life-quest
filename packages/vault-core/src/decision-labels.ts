@@ -61,6 +61,9 @@ async function withLabels(
   if (target.type === "database-row" || target.type === "database") {
     return withDatabaseLabels(root, decision, cache);
   }
+  if (target.type === "database-batch") {
+    return withBatchLabels(root, decision, target.domainSlug, target.databaseId, cache);
+  }
   if (target.type === "page") {
     return withPageBlockNames(root, decision, target.domainSlug, metas);
   }
@@ -112,6 +115,46 @@ async function withDatabaseLabels(
     ...decision,
     proposedBodyMarkdown: JSON.stringify({ ...body, ...added }, null, 2),
   };
+}
+
+/**
+ * A batch insert's rows are new rows, so each row's relation cell holds the same
+ * target row id a single-row write's does — and an id is not what the operator
+ * reads. Every row gains its own `cellLabels`, the sibling the row write gets, so
+ * the card's per-row table shows the name while the cell keeps the id behind it.
+ * The database comes from the target, not the body: a batch body names none.
+ */
+async function withBatchLabels(
+  root: string,
+  decision: DecisionRecord,
+  domainSlug: string,
+  databaseId: string,
+  cache: LabelCache,
+): Promise<DecisionRecord> {
+  const body = parseBody(decision.proposedBodyMarkdown);
+  if (!body || body.op !== "insert-rows" || !Array.isArray(body.rows)) return decision;
+
+  const db = await getDatabase(root, domainSlug, databaseId);
+  if (!db.ok) return decision;
+
+  let labelled = false;
+  const rows: unknown[] = [];
+  for (const row of body.rows) {
+    if (!isRecord(row)) {
+      rows.push(row);
+      continue;
+    }
+    const labels = await cellDisplayLabels(root, domainSlug, db.value, asCellMap(row.cells), cache);
+    if (Object.keys(labels).length === 0) {
+      rows.push(row);
+      continue;
+    }
+    rows.push({ ...row, cellLabels: labels });
+    labelled = true;
+  }
+
+  if (!labelled) return decision;
+  return { ...decision, proposedBodyMarkdown: JSON.stringify({ ...body, rows }, null, 2) };
 }
 
 /**
