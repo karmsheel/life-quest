@@ -22,6 +22,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, nativeTheme, nativeImage } from "electron";
 import { build } from "esbuild";
@@ -64,7 +65,12 @@ function pruneOldVaults() {
 }
 
 /** The real modules under test, bundled into one importable ESM file. */
-const MODULES = ["packages/vault-core/src/index.ts"];
+const MODULES = [
+  "packages/vault-core/src/index.ts",
+  "apps/desktop/electron/receipt-image.ts",
+  "apps/desktop/electron/pending-receipt.ts",
+  "apps/desktop/electron/vault-service.ts",
+];
 
 async function loadModules() {
   const contents = MODULES.map(
@@ -83,9 +89,26 @@ async function loadModules() {
   return import(pathToFileURL(BUNDLE).href);
 }
 
-/** A 1x1 PNG, re-encoded to JPEG so every fixture is a real image. */
-const PNG_1PX =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==";
+/**
+ * A small real image, built rather than embedded. Hand-written base64 is a
+ * fixture that can be silently undecodable, and then the rig proves that the
+ * *fixture* is broken rather than that the code refuses a bad image.
+ */
+function fixtureImage() {
+  const width = 8;
+  const height = 8;
+  const bgra = Buffer.allocUnsafe(width * height * 4);
+  for (let i = 0; i < bgra.length; i += 4) {
+    bgra[i] = 40;
+    bgra[i + 1] = 90;
+    bgra[i + 2] = 200;
+    bgra[i + 3] = 255;
+  }
+  return nativeImage.createFromBitmap(bgra, { width, height });
+}
+
+const jpegFixture = () => new Uint8Array(fixtureImage().toJPEG(95));
+const pngFixture = () => new Uint8Array(fixtureImage().toPNG());
 
 const failures = [];
 const scenarios = [];
@@ -148,7 +171,7 @@ async function mainLeg(mod) {
 
   // The original: written through the vault's own file writer, so the path the
   // tool must accept is the path the app really produces.
-  const jpeg = new Uint8Array(nativeImage.createFromBuffer(Buffer.from(PNG_1PX, "base64")).toJPEG(95));
+  const jpeg = jpegFixture();
   const saved = await mod.saveDatabaseFile(root, mod.FINANCE_DOMAIN_SLUG, {
     bytes: jpeg,
     mime: "image/jpeg",
@@ -257,7 +280,211 @@ async function mainLeg(mod) {
     `outcome ${JSON.stringify(undone)} / row ${JSON.stringify(afterUndo)} / file ${fs.existsSync(storedAbs)}`,
   );
 
-  return { storedPath, bytes: jpeg.byteLength, scenarios: scenarios.length };
+  return { vault: root, storedPath, bytes: jpeg.byteLength, scenarios: scenarios.length };
+}
+
+const sha256 = (bytes) => createHash("sha256").update(Buffer.from(bytes)).digest("hex");
+
+/**
+ * A JPEG with far more entropy than a 1x1 has. A flat fixture compresses to a
+ * few kilobytes, so the copy ladder would pass its first rung and prove nothing
+ * about stepping down; random pixels make rung one overshoot the ceiling.
+ */
+function makeLargeJpeg(minBytes) {
+  let largest = null;
+  for (const width of [1800, 2400, 3000]) {
+    const height = Math.round(width * 0.66);
+    const noise = Buffer.allocUnsafe(width * height * 4);
+    for (let i = 0; i < noise.length; i += 4) {
+      noise[i] = (Math.random() * 256) | 0;
+      noise[i + 1] = (Math.random() * 256) | 0;
+      noise[i + 2] = (Math.random() * 256) | 0;
+      noise[i + 3] = 255;
+    }
+    const jpeg = nativeImage.createFromBitmap(noise, { width, height }).toJPEG(100);
+    const bytes = new Uint8Array(jpeg);
+    if (!largest || bytes.byteLength > largest.bytes.byteLength) {
+      largest = { bytes, width, height };
+    }
+    if (bytes.byteLength >= minBytes) return largest;
+  }
+  return largest;
+}
+
+const COPY_CEILING = 2 * 1024 * 1024;
+const ORIGINAL_CEILING = 25 * 1024 * 1024;
+
+/** The real preparation path, called the way the attach channel calls it. */
+async function prepareLeg(mod, vaultRoot) {
+  const jpegBytes = jpegFixture();
+  const pngBytes = pngFixture();
+
+  // 1 — the original lands in the domain's own file store, byte for byte.
+  const stored = await mod.prepareReceipt(vaultRoot, {
+    bytes: jpegBytes,
+    mime: "image/jpeg",
+    name: "receipt.jpg",
+  });
+  const storedAbs = stored.ok ? path.join(vaultRoot, stored.value.relPath) : null;
+  const onDisk = storedAbs && fs.existsSync(storedAbs) ? readBytes(storedAbs) : null;
+  check(
+    "stores the original in the finance file store",
+    stored.ok === true &&
+      /^domains\/financial\/data\/files\/[0-9a-f-]{36}\/receipt\.jpg$/.test(stored.value.relPath) &&
+      onDisk !== null &&
+      sha256(onDisk) === sha256(jpegBytes) &&
+      stored.value.size === jpegBytes.byteLength,
+    stored.ok
+      ? `path ${stored.value.relPath} / onDisk ${onDisk ? sha256(onDisk).slice(0, 12) : "missing"} vs ${sha256(jpegBytes).slice(0, 12)} / size ${stored.value.size} vs ${jpegBytes.byteLength}`
+      : `refused: ${stored.error}`,
+  );
+
+  // 2 — a PNG is kept as a PNG and handed to the model as a JPEG.
+  const png = await mod.prepareReceipt(vaultRoot, {
+    bytes: pngBytes,
+    mime: "image/png",
+    name: "receipt.png",
+  });
+  const pngAbs = png.ok ? path.join(vaultRoot, png.value.relPath) : null;
+  const pngOnDisk = pngAbs && fs.existsSync(pngAbs) ? readBytes(pngAbs) : null;
+  const modelIsJpeg = png.ok
+    ? png.value.modelCopy[0] === 0xff &&
+      png.value.modelCopy[1] === 0xd8 &&
+      png.value.modelCopy[2] === 0xff
+    : false;
+  check(
+    "keeps a PNG as stored and copies it to the model as JPEG",
+    png.ok === true && pngOnDisk !== null && sha256(pngOnDisk) === sha256(pngBytes) && modelIsJpeg,
+    png.ok
+      ? `stored ${pngOnDisk ? sha256(pngOnDisk).slice(0, 12) : "missing"} vs ${sha256(pngBytes).slice(0, 12)} / model JPEG ${modelIsJpeg}`
+      : `refused: ${png.error}`,
+  );
+
+  // 3 — the copy ladder: a busy original still yields a small copy.
+  const large = makeLargeJpeg(2.5 * 1024 * 1024);
+  const big = large
+    ? await mod.prepareReceipt(vaultRoot, {
+        bytes: large.bytes,
+        mime: "image/jpeg",
+        name: "receipt-large.jpg",
+      })
+    : null;
+  check(
+    "re-encodes a busy original under the copy ceiling",
+    big?.ok === true &&
+      large.bytes.byteLength > COPY_CEILING &&
+      big.value.modelCopy.byteLength <= COPY_CEILING,
+    big?.ok
+      ? `original ${large.bytes.byteLength} → copy ${big.value.modelCopy.byteLength} (ceiling ${COPY_CEILING})`
+      : `refused or no fixture: ${big ? big.error : "no large fixture"}`,
+  );
+
+  // 4 — a text file with an image's name.
+  const notImage = await mod.prepareReceipt(vaultRoot, {
+    bytes: new Uint8Array(Buffer.from("this is not an image, whatever the name says")),
+    mime: "image/jpeg",
+    name: "receipt.jpg",
+  });
+  check(
+    "refuses bytes that are not an image",
+    notImage.ok === false && notImage.error === "Receipts must be JPEG or PNG images.",
+    notImage.ok ? "accepted a text buffer" : `error ${JSON.stringify(notImage.error)}`,
+  );
+
+  // 5 — the size ceiling, refused before any decode.
+  const oversized = Buffer.alloc(ORIGINAL_CEILING + 1024 * 1024);
+  oversized[0] = 0xff;
+  oversized[1] = 0xd8;
+  oversized[2] = 0xff;
+  const tooBig = await mod.prepareReceipt(vaultRoot, {
+    bytes: new Uint8Array(oversized),
+    mime: "image/jpeg",
+    name: "receipt-huge.jpg",
+  });
+  check(
+    "refuses an original over 25 MB",
+    tooBig.ok === false && tooBig.error === "That receipt is larger than 25 MB.",
+    tooBig.ok ? "accepted a 26 MB buffer" : `error ${JSON.stringify(tooBig.error)}`,
+  );
+
+  // 6 — no Finance kit, no receipt store.
+  const bareVault = path.join(userDataDir, `bare-${process.pid}`);
+  fs.rmSync(bareVault, { recursive: true, force: true, maxRetries: 5 });
+  fs.mkdirSync(bareVault, { recursive: true });
+  const bare = await mod.createVault(bareVault, "No kit");
+  const noKit = bare.ok
+    ? await mod.prepareReceipt(bareVault, {
+        bytes: jpegBytes,
+        mime: "image/jpeg",
+        name: "receipt.jpg",
+      })
+    : null;
+  check(
+    "refuses when the Finance kit is missing",
+    noKit?.ok === false && noKit.error === "Install the Finance kit first",
+    bare.ok === false
+      ? `could not make the bare vault: ${bare.error}`
+      : noKit.ok
+        ? "accepted a receipt with no Finance kit"
+        : `error ${JSON.stringify(noKit.error)}`,
+  );
+
+  return { jpegBytes: jpegBytes.byteLength, largeBytes: large?.bytes.byteLength ?? 0 };
+}
+
+/** The attach channel's own path: open the vault, prepare, and hold the slot. */
+async function attachLeg(mod, vaultRoot) {
+  const opened = await mod.vaultOpen(vaultRoot);
+  if (!opened.ok) {
+    check("opens the vault before attaching", false, `vaultOpen failed: ${opened.error}`);
+    return null;
+  }
+
+  const jpegBytes = jpegFixture();
+  const attached = await mod.receiptAttach({
+    bytes: jpegBytes,
+    mime: "image/jpeg",
+    name: "receipt-held.jpg",
+  });
+  const held = attached.ok ? mod.pendingReceipt.peek() : null;
+  const taken = attached.ok ? mod.pendingReceipt.take(attached.value.relPath) : null;
+  const afterTake = mod.pendingReceipt.peek();
+  check(
+    "holds the prepared receipt for the turn that follows",
+    attached.ok === true &&
+      held?.relPath === attached.value.relPath &&
+      taken?.relPath === attached.value.relPath &&
+      typeof taken?.dataUrl === "string" &&
+      taken.dataUrl.startsWith("data:image/jpeg;base64,") &&
+      afterTake === null,
+    attached.ok
+      ? `held ${held?.relPath ?? "none"} / took ${taken?.relPath ?? "none"} / slot after ${afterTake === null ? "empty" : "still full"}`
+      : `refused: ${attached.error}`,
+  );
+
+  // A second attach, then a take naming something the slot does not hold.
+  const again = await mod.receiptAttach({
+    bytes: jpegBytes,
+    mime: "image/jpeg",
+    name: "receipt-held-2.jpg",
+  });
+  const wrong = mod.pendingReceipt.take(
+    "domains/financial/data/files/00000000-0000-0000-0000-000000000000/other.jpg",
+  );
+  const stillHeld = mod.pendingReceipt.peek();
+  check(
+    "will not hand over a receipt it does not hold",
+    again.ok === true && wrong === null && stillHeld?.relPath === again.value.relPath,
+    again.ok
+      ? `wrong take ${wrong === null ? "refused" : "returned"} / slot still ${stillHeld?.relPath ?? "empty"}`
+      : `refused: ${again.error}`,
+  );
+
+  return attached.ok ? { relPath: attached.value.relPath, name: attached.value.name } : null;
+}
+
+function readBytes(abs) {
+  return new Uint8Array(fs.readFileSync(abs));
 }
 
 async function main() {
@@ -276,11 +503,15 @@ async function main() {
   try {
     const mod = await loadModules();
     const summary = await mainLeg(mod);
+    const preparation = await prepareLeg(mod, summary.vault);
+    const attached = await attachLeg(mod, summary.vault);
 
     report = {
       ranAt: new Date().toISOString(),
       vault: VAULT,
       fixture: { path: summary.storedPath, bytes: summary.bytes },
+      preparation,
+      attached,
       scenarios,
       failures,
       pass: failures.length === 0,

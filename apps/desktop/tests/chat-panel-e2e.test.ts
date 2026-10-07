@@ -929,6 +929,14 @@ describe("chat panel rigs", { concurrency: true }, () => {
     "one receipt backs two rows",
     "correction keeps the receipt",
     "undo leaves the file",
+    "stores the original in the finance file store",
+    "keeps a PNG as stored and copies it to the model as JPEG",
+    "re-encodes a busy original under the copy ceiling",
+    "refuses bytes that are not an image",
+    "refuses an original over 25 MB",
+    "refuses when the Finance kit is missing",
+    "holds the prepared receipt for the turn that follows",
+    "will not hand over a receipt it does not hold",
   ];
 
   function runReceiptDriver(): Promise<number> {

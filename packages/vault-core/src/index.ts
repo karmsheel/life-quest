@@ -178,6 +178,8 @@ export {
   captureUtterance,
   undoCapture,
   correctCapture,
+  isStoredReceiptPath,
+  isReceiptStoreReady,
 } from "./capture.ts";
 export {
   budgetVsActual,

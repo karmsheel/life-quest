@@ -7,10 +7,12 @@ import { vaultPaths } from "./paths.ts";
 import {
   deleteRow,
   getRow,
+  isDomainLive,
   listRows,
   upsertRow,
 } from "./domain-databases.ts";
 import { readRegistry } from "./domain-databases.ts";
+import { listInstalledKits } from "./finance-kit.ts";
 import {
   FINANCE_KIT_ID,
   FINANCE_DOMAIN_SLUG,
@@ -301,6 +303,17 @@ export async function isStoredReceiptPath(
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether this vault can hold a receipt at all: the finance domain is live and
+ * the Finance kit is installed. The capture path needs the same pair, so the
+ * check lives in one place rather than being restated by each caller.
+ */
+export async function isReceiptStoreReady(root: string): Promise<boolean> {
+  if (!(await isDomainLive(root, FINANCE_DOMAIN_SLUG))) return false;
+  const kits = await listInstalledKits(root, FINANCE_DOMAIN_SLUG);
+  return kits.ok && kits.value.includes(FINANCE_KIT_ID);
 }
 
 export async function captureUtterance(

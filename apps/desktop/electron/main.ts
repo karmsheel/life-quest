@@ -139,6 +139,13 @@ function registerIpcHandlers() {
   ipcMain.handle("db:upsertRow", (_e, slug: string, dbId: string, input: { id?: string; cells: Record<string, unknown> }) => vault.dbUpsertRow(slug, dbId, input));
   ipcMain.handle("db:deleteRow", (_e, slug: string, dbId: string, rowId: string) => vault.dbDeleteRow(slug, dbId, rowId));
   ipcMain.handle("db:fileSave", (_e, slug: string, input: { bytes: Uint8Array; mime: string; name: string }) => vault.dbFileSave(slug, input));
+  // The composer's receipt. The original is written here, before the turn that
+  // scans it is ever posted, so the row always points at bytes on disk.
+  ipcMain.handle(
+    "receipt:attach",
+    (_e, input: { bytes: Uint8Array; mime: string; name: string }) =>
+      vault.receiptAttach(input),
+  );
 
   // KAR-58 books export and restore
   ipcMain.handle("db:exportBooks", (_e, slug: string) => vault.dbExportBooks(slug));

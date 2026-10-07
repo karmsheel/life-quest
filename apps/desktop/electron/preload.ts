@@ -131,6 +131,11 @@ const lifequest = {
     ipcRenderer.invoke("view:run", slug, spec) as Promise<Result<unknown>>,
   viewRunSaved: (slug: string, viewId: string) =>
     ipcRenderer.invoke("view:runSaved", slug, viewId) as Promise<Result<unknown>>,
+  // The composer's receipt: stored in the vault before the turn is posted.
+  receiptAttach: (input: { bytes: Uint8Array; mime: string; name: string }) =>
+    ipcRenderer.invoke("receipt:attach", input) as Promise<
+      Result<{ relPath: string; fileId: string; name: string; size: number }>
+    >,
   // KAR-53 ingest
   // KAR-61 finance kit
   kitInstallFinance: () =>

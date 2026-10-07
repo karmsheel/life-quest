@@ -146,6 +146,8 @@ import {
   type SyncConflict,
 } from "@lifequest/vault-core";
 import { getFileUnsolicited } from "./companion-filing.js";
+import { prepareReceipt } from "./receipt-image.js";
+import { pendingReceipt } from "./pending-receipt.js";
 import {
   getActiveDomain,
   listRecentVaults,
@@ -737,6 +739,31 @@ export async function dbFileSave(
   input: { bytes: Uint8Array; mime: string; name: string },
 ): Promise<Result<{ relPath: string; fileId: string }>> {
   return withVault((root) => saveDatabaseFile(root, slug, input));
+}
+
+/**
+ * Take one receipt from the composer: store the original, re-encode the copy
+ * Hermes will see, and leave that copy waiting for the next turn. The copy
+ * never leaves this process — the renderer gets the display fields, and the
+ * turn names the path.
+ */
+export async function receiptAttach(input: {
+  bytes: Uint8Array;
+  mime: string;
+  name: string;
+}): Promise<Result<{ relPath: string; fileId: string; name: string; size: number }>> {
+  return withVault(async (root) => {
+    const prepared = await prepareReceipt(root, input);
+    if (!prepared.ok) return prepared;
+    const { relPath, fileId, name, size, modelCopy } = prepared.value;
+    pendingReceipt.set({
+      relPath,
+      name,
+      dataUrl: `data:image/jpeg;base64,${Buffer.from(modelCopy).toString("base64")}`,
+      bytes: modelCopy.byteLength,
+    });
+    return { ok: true, value: { relPath, fileId, name, size } };
+  });
 }
 
 export async function dbExportBooks(
