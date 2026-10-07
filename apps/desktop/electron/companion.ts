@@ -132,6 +132,9 @@ async function capabilities(baseUrl: string, key: string): Promise<unknown | nul
   try {
     const res = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/capabilities`, {
       headers: { Authorization: `Bearer ${key}` },
+      // An endpoint that accepts the connection and then never answers must not
+      // hold the cold start: bound it the way `health` bounds itself.
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return null;
     return (await res.json()) as unknown;
@@ -139,6 +142,38 @@ async function capabilities(baseUrl: string, key: string): Promise<unknown | nul
     return null;
   }
 }
+
+/**
+ * Kill a hung CLI and its children. A `.cmd` shim (which is what `where hermes`
+ * resolves first on Windows) spawns a python grandchild that outlives a plain
+ * kill, so the tree goes, not just the shell.
+ */
+function killTree(pid: number | undefined): void {
+  if (pid === undefined) return;
+  if (process.platform === "win32") {
+    execFile("taskkill", ["/pid", String(pid), "/T", "/F"], { windowsHide: true }, () => {
+      /* best effort: the timeout already reported the failure */
+    });
+    return;
+  }
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    /* already gone */
+  }
+}
+
+/**
+ * How long one hermes command may run before it is killed and reported.
+ *
+ * `gateway restart` hangs on this machine — it stops inside its own scheduled
+ * task repair (`schtasks /Delete` → access denied) and never exits, so its
+ * `close` event never fires. Unbounded, that one command held `companionEnsure`
+ * open forever and parked the cold-start splash with it: the app looked frozen
+ * on launch with no error anywhere. Every CLI call is bounded now, so a wedged
+ * hermes degrades the companion status instead of the whole window.
+ */
+const HERMES_TIMEOUT_MS = 45_000;
 
 async function runHermes(
   cli: string,
@@ -155,16 +190,36 @@ async function runHermes(
       return;
     }
     let stderr = "";
+    let settled = false;
+    const settle = (finish: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      finish();
+    };
+    const timer = setTimeout(() => {
+      killTree(spawned.pid);
+      settle(() =>
+        reject(
+          new Error(
+            `hermes ${args.join(" ")} did not exit within ${HERMES_TIMEOUT_MS / 1000}s and was killed.` +
+              (stderr.trim() ? `\n${stderr.trim()}` : ""),
+          ),
+        ),
+      );
+    }, HERMES_TIMEOUT_MS);
     spawned.stderr?.on("data", (chunk) => {
       stderr += String(chunk);
     });
-    spawned.once("error", (err) => reject(spawnError(cli, err)));
+    spawned.once("error", (err) => settle(() => reject(spawnError(cli, err))));
     spawned.once("close", (code) => {
-      if (code === 0) resolve();
+      if (code === 0) settle(resolve);
       else {
-        reject(
-          new Error(
-            stderr.trim() || `hermes ${args.join(" ")} exited ${code ?? "unknown"}`,
+        settle(() =>
+          reject(
+            new Error(
+              stderr.trim() || `hermes ${args.join(" ")} exited ${code ?? "unknown"}`,
+            ),
           ),
         );
       }

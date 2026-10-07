@@ -162,6 +162,96 @@ export function ensureMcpServer(
 }
 
 /**
+ * KAR-71: keep the profile's tool surface eager.
+ *
+ * Hermes' progressive tool disclosure ("tool search") replaces every MCP tool in
+ * the model-visible array with the `tool_search` / `tool_describe` / `tool_call`
+ * bridges and defers the rest behind them. The rule in `tools/tool_search.py`
+ * (`is_deferrable_tool_name`) is categorical — ANY MCP tool defers, and there is
+ * no "keep these eager" list — so the whole `lifequest` server disappears from
+ * the companion's toolset the moment the bridge activates. That is a correct
+ * optimisation for a thousand-tool API and a broken one for the companion,
+ * which is *supposed* to see `preview_view`, `propose_view`, `get_dashboard`
+ * and `arrange_dashboard` directly: it cannot plan a call to a tool it cannot
+ * see, and `tool_search`'s embedded listing is not enough to guarantee it will
+ * look. The symptom was the companion honestly reporting "the Dashboard-pinning
+ * tools aren't available in my current toolset" while the door advertised all
+ * 61 of them.
+ *
+ * `load_config()` resolves `$HERMES_HOME/config.yaml` under the per-turn profile
+ * override the multiplexed gateway installs (`gateway/run.py`
+ * `_profile_runtime_scope`), so this line in the PROFILE config un-defers the
+ * companion alone. The operator's other eleven profiles keep progressive
+ * disclosure, and the root config is never touched.
+ *
+ * An explicit `tools.tool_search.enabled` line is replaced in place; a profile
+ * that has no `tools:` block gets one. Written plain (`off`, never quoted) so
+ * `_tri_state` reads it as the tri-state it is.
+ */
+export function ensureEagerToolSearch(yaml: string): string {
+  const nl = lineBreak(yaml);
+  // Anchored to the `tools:` parent, and to the two-space indent every writer of
+  // this file uses. Only the `tool_search:` ENTRY line is matched here; its
+  // children are walked line by line below, because a regex spanning them would
+  // also span the entry's siblings — `tools:` children all sit at the same
+  // indent, so `enabled:` of a sibling block would match as if it were ours.
+  const entry = /^tools:[ \t]*\r?\n([ \t]+)tool_search:[ \t]*(\r?\n|$)/m.exec(yaml);
+  if (entry) {
+    const indent = entry[1] ?? "  ";
+    const childIndent = `${indent}  `;
+    // The block ends at the first non-blank line at the entry's own indent or
+    // shallower: the next sibling of `tool_search:`, or the next top-level key.
+    // Blank lines inside the block stay inside it.
+    const body = yaml.slice(entry.index + entry[0].length);
+    let blockEnd = body.length;
+    let scan = 0;
+    while (scan < body.length) {
+      const lineEnd = body.indexOf("\n", scan);
+      const line = lineEnd < 0 ? body.slice(scan) : body.slice(scan, lineEnd + 1);
+      const trimmed = line.replace(/\r?\n$/, "").trim();
+      if (trimmed !== "") {
+        const own = /^([ \t]*)/.exec(line)?.[1] ?? "";
+        if (own.length <= indent.length) {
+          blockEnd = scan;
+          break;
+        }
+      }
+      if (lineEnd < 0) break;
+      scan = lineEnd + 1;
+    }
+    const children = body.slice(0, blockEnd);
+
+    const enabledRe = new RegExp(`^${childIndent}enabled:[ \\t]*(.*)$`, "m");
+    const enabledLine = enabledRe.exec(children);
+    if (enabledLine) {
+      if (enabledLine[1]?.trim() === "off") return yaml;
+      return (
+        yaml.slice(0, entry.index + entry[0].length) +
+        children.replace(enabledRe, `${childIndent}enabled: off`) +
+        body.slice(blockEnd)
+      );
+    }
+    // A `tool_search:` block with no `enabled` key: add one as its first child.
+    return (
+      yaml.slice(0, entry.index + entry[0].length) +
+      `${childIndent}enabled: off${nl}` +
+      children +
+      body.slice(blockEnd)
+    );
+  }
+
+  if (hasTopLevelKey(yaml, "tools")) {
+    return yaml.replace(
+      /^tools:[ \t]*\r?\n/m,
+      (line) => `${line}  tool_search:${nl}    enabled: off${nl}`,
+    );
+  }
+  const block = `tools:${nl}  tool_search:${nl}    enabled: off${nl}`;
+  const prefix = yaml.length === 0 || yaml.endsWith("\n") ? yaml : `${yaml}${nl}`;
+  return `${prefix}${block}`;
+}
+
+/**
  * Rewrite one existing entry in place. Its block runs from the entry key to the
  * next line at that key's indent or shallower, which is where the next sibling
  * `mcp_servers` entry — or the next top-level key — starts.
