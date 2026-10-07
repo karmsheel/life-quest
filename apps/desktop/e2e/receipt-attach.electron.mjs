@@ -25,7 +25,7 @@ import http from "node:http";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { app, nativeTheme, nativeImage } from "electron";
+import { app, nativeTheme, nativeImage, BrowserWindow } from "electron";
 import { build } from "esbuild";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -532,6 +532,262 @@ function startRecordingGateway() {
   });
 }
 
+/**
+ * The composer leg: the real ChatPanel on the chat-panel harness page, driven
+ * through the real control for each way a receipt can arrive.
+ *
+ * This leg stops at the page's stubbed bridge — a dev-server page has no
+ * preload, so the panel's `receiptAttach` call ends here rather than in main.
+ * It proves the payload the panel builds; the main leg proves what main does
+ * with that payload.
+ */
+async function composerLeg() {
+  const url =
+    process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/chat-panel.html";
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 900,
+    show: false,
+    backgroundColor: "#1a1917",
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+  const run = (expression) => win.webContents.executeJavaScript(expression, true);
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  /** Page-side helpers, re-declared inside each evaluation. */
+  const BYTES = JSON.stringify(Array.from(jpegFixture()));
+  const PRELUDE = `
+    const mkFile = (name) => new File([new Uint8Array(${BYTES})], name, { type: "image/jpeg" });
+    const until = async (read, budget) => {
+      const deadline = Date.now() + budget;
+      for (;;) {
+        const value = read();
+        if (value) return value;
+        if (Date.now() >= deadline) return null;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+    };
+    const chip = () => {
+      const name = document.querySelector(".chat-panel__receipt-name");
+      const thumb = document.querySelector(".chat-panel__receipt-thumb");
+      return name ? { name: name.textContent, hasThumb: Boolean(thumb && thumb.src) } : null;
+    };
+    const chipCount = () => document.querySelectorAll(".chat-panel__receipt").length;
+    const calls = () => (window.__lqChatCalls || []).map((c) => c.receiptRelPath);`;
+
+  try {
+    await win.loadURL(url);
+    await run("window.chatPanelHarnessReady.then(() => true)");
+    win.setContentSize(1280, 900);
+    await wait(250);
+    win.showInactive();
+
+    // 1 — a pick through the file control.
+    const pick = await run(`(async () => { ${PRELUDE}
+      window.__lqChatCalls = []; window.__lqAttachCalls = [];
+      const input = document.querySelector(".chat-panel__receipt-input");
+      const dt = new DataTransfer();
+      dt.items.add(mkFile("receipt.jpg"));
+      input.files = dt.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      const shown = await until(() => chip(), 4000);
+      return { shown, attaches: window.__lqAttachCalls || [] };
+    })()`);
+    check(
+      "shows a chip when a receipt is picked",
+      pick.shown?.name === "receipt.jpg" &&
+        pick.shown.hasThumb === true &&
+        pick.attaches.length === 1 &&
+        pick.attaches[0].mime === "image/jpeg" &&
+        pick.attaches[0].bytes > 0,
+      `chip ${JSON.stringify(pick.shown)} / attaches ${JSON.stringify(pick.attaches)}`,
+    );
+
+    // 2 — the turn names the path the bridge minted.
+    const send = await run(`(async () => { ${PRELUDE}
+      document.querySelector(".chat-panel__send").click();
+      const sent = await until(() => (window.__lqChatCalls || []).length ? true : null, 4000);
+      await new Promise((r) => setTimeout(r, 60));
+      return { sent, calls: calls(), chipAfter: chipCount() };
+    })()`);
+    check(
+      "carries the stored path on the turn and clears the chip",
+      send.sent === true &&
+        send.calls.length === 1 &&
+        send.calls[0] === "domains/financial/data/files/11111111-2222-3333-4444-555555555555/receipt.jpg" &&
+        send.chipAfter === 0,
+      `calls ${JSON.stringify(send.calls)} / chips after send ${send.chipAfter}`,
+    );
+
+    // 3 — a drop on the composer.
+    const drop = await run(`(async () => { ${PRELUDE}
+      const form = document.querySelector(".chat-panel__composer");
+      const dt = new DataTransfer();
+      dt.items.add(mkFile("dropped.jpg"));
+      form.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+      return { shown: await until(() => chip(), 4000) };
+    })()`);
+    check(
+      "shows a chip when a receipt is dropped",
+      drop.shown?.name === "dropped.jpg",
+      `chip ${JSON.stringify(drop.shown)}`,
+    );
+
+    // 4 — a paste into the field. The dropped receipt is removed first so the
+    // chip proved here is the pasted one's.
+    const paste = await run(`(async () => { ${PRELUDE}
+      document.querySelector(".chat-panel__receipt-remove").click();
+      await until(() => (chipCount() === 0 ? true : null), 2000);
+      const field = document.querySelector(".chat-panel__composer-input");
+      const dt = new DataTransfer();
+      dt.items.add(mkFile("pasted.jpg"));
+      field.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: dt }));
+      return { shown: await until(() => chip(), 4000) };
+    })()`);
+    check(
+      "shows a chip when a receipt is pasted",
+      paste.shown?.name === "pasted.jpg",
+      `chip ${JSON.stringify(paste.shown)}`,
+    );
+
+    // 5 — a second attach replaces the first: one chip, never two.
+    const replace = await run(`(async () => { ${PRELUDE}
+      const input = document.querySelector(".chat-panel__receipt-input");
+      const dt = new DataTransfer();
+      dt.items.add(mkFile("second.jpg"));
+      input.files = dt.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      const shown = await until(() => (chip()?.name === "second.jpg" ? chip() : null), 4000);
+      return { shown, count: chipCount() };
+    })()`);
+    check(
+      "replaces the pending receipt rather than adding one",
+      replace.shown?.name === "second.jpg" && replace.count === 1,
+      `chip ${JSON.stringify(replace.shown)} / count ${replace.count}`,
+    );
+
+    // 6 — removing it sends no receipt on the next turn.
+    const remove = await run(`(async () => { ${PRELUDE}
+      window.__lqChatCalls = [];
+      document.querySelector(".chat-panel__receipt-remove").click();
+      const cleared = await until(() => (chipCount() === 0 ? true : null), 3000);
+      const field = document.querySelector(".chat-panel__composer-input");
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+      setter.call(field, "Just text");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 80));
+      document.querySelector(".chat-panel__send").click();
+      const sent = await until(() => (calls().length ? true : null), 4000);
+      return { cleared, sent, calls: calls() };
+    })()`);
+    check(
+      "sends no receipt once the chip is removed",
+      remove.cleared === true && remove.calls.length === 1 && remove.calls[0] === null,
+      `cleared ${remove.cleared} / calls ${JSON.stringify(remove.calls)}`,
+    );
+
+    // 7 — switching chats drops the pending receipt with the chat it was
+    // attached in. The row is picked as "not the one already open": this rig's
+    // Electron profile keeps localStorage between runs, so the panel can come up
+    // on either chat, and a fixed row would sometimes be a no-op click that
+    // looked like the panel keeping the chip.
+    const switched = await run(`(async () => { ${PRELUDE}
+      const input = document.querySelector(".chat-panel__receipt-input");
+      const dt = new DataTransfer();
+      dt.items.add(mkFile("switched.jpg"));
+      input.files = dt.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      const attached = Boolean(await until(() => chip(), 4000));
+      const readTranscript = () =>
+        Array.from(document.querySelectorAll(".chat-panel__message-content"))
+          .map((el) => el.textContent || "")
+          .join(" | ");
+      const before = readTranscript();
+      document.querySelector('[aria-label="Chat history"]').click();
+      const other = await until(
+        () => Array.from(document.querySelectorAll(".chat-panel__session"))
+          .find((el) => !el.classList.contains("chat-panel__session--active")) ?? null,
+        8000,
+      );
+      if (!other) return { attached, rowFound: false, gone: false, switchedNow: false };
+      other.click();
+      const gone = await until(() => (chipCount() === 0 ? true : null), 8000);
+      return {
+        attached,
+        rowFound: true,
+        gone: gone === true,
+        switchedNow: before !== readTranscript(),
+      };
+    })()`);
+    check(
+      "clears the pending receipt when the chat changes",
+      switched.attached === true &&
+        switched.rowFound === true &&
+        switched.switchedNow === true &&
+        switched.gone === true,
+      `attached ${switched.attached} / other chat found ${switched.rowFound} / switched ${switched.switchedNow} / cleared ${switched.gone}`,
+    );
+
+    const chipShot = path.join(artifactsDir, "receipt-attach-chip.png");
+    const threadShot = path.join(artifactsDir, "receipt-attach-thread.png");
+
+    // The pictures, for the operator: the chip with a receipt waiting, and the
+    // thread showing the turn that carried one.
+    const shots = await run(`(async () => { ${PRELUDE}
+      const input = document.querySelector(".chat-panel__receipt-input");
+      const dt = new DataTransfer();
+      dt.items.add(mkFile("receipt-photo.jpg"));
+      input.files = dt.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      const shown = await until(() => chip(), 4000);
+      return { shown: Boolean(shown) };
+    })()`);
+    if (shots.shown) {
+      fs.writeFileSync(chipShot, (await win.webContents.capturePage()).toPNG());
+      await run(`(async () => { ${PRELUDE}
+        document.querySelector(".chat-panel__send").click();
+        await until(() => (document.querySelector(".chat-panel__message-receipt") ? true : null), 4000);
+        return true;
+      })()`);
+      fs.writeFileSync(threadShot, (await win.webContents.capturePage()).toPNG());
+    }
+    check(
+      "photographs the chip and the turn that carried it",
+      shots.shown === true &&
+        fs.existsSync(chipShot) &&
+        fs.existsSync(threadShot),
+      `chip shown ${shots.shown} / files ${fs.existsSync(chipShot)}/${fs.existsSync(threadShot)}`,
+    );
+
+    // 8 — a refusal from main shows on the composer and leaves no chip.
+    await win.loadURL(`${url}?attachfail=1`);
+    await run("window.chatPanelHarnessReady.then(() => true)");
+    win.setContentSize(1280, 900);
+    await wait(250);
+    const refused = await run(`(async () => { ${PRELUDE}
+      const input = document.querySelector(".chat-panel__receipt-input");
+      const dt = new DataTransfer();
+      dt.items.add(mkFile("bad.jpg"));
+      input.files = dt.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      const message = await until(() => {
+        const el = document.querySelector(".chat-panel__error, [role=alert]");
+        return el && el.textContent ? el.textContent.trim() : null;
+      }, 4000);
+      return { message, count: chipCount() };
+    })()`);
+    check(
+      "shows the refusal and keeps no chip",
+      refused.count === 0 && typeof refused.message === "string" && refused.message.length > 0,
+      `count ${refused.count} / message ${JSON.stringify(refused.message)}`,
+    );
+
+    return { shots: [chipShot, threadShot] };
+  } finally {
+    win.destroy();
+  }
+}
+
 /** The turn the app builds, with and without a receipt on it. */
 async function turnLeg(mod) {
   const gateway = await startRecordingGateway();
@@ -663,6 +919,7 @@ async function main() {
     const preparation = await prepareLeg(mod, summary.vault);
     const attached = await attachLeg(mod, summary.vault);
     const turn = await turnLeg(mod);
+    const composer = await composerLeg();
 
     report = {
       ranAt: new Date().toISOString(),
@@ -671,6 +928,7 @@ async function main() {
       preparation,
       attached,
       turn,
+      composer,
       scenarios,
       failures,
       pass: failures.length === 0,
