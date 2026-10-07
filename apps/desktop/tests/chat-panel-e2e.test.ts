@@ -911,4 +911,83 @@ describe("chat panel rigs", { concurrency: true }, () => {
       );
     });
   });
+
+  const RECEIPT_REPORT = path.join(desktopRoot, "e2e/artifacts/receipt-attach.json");
+
+  /**
+   * Every scenario the receipt rig must report as passing. The names are the
+   * rig's own, so a rig that quietly stops checking one is a failure here rather
+   * than a shorter green run.
+   */
+  const RECEIPT_SCENARIOS = [
+    "posts a row citing the stored receipt",
+    "refuses a path escape",
+    "refuses another domain's store",
+    "refuses a path that is not on disk",
+    "refuses a backslash path",
+    "posts without a receipt",
+    "one receipt backs two rows",
+    "correction keeps the receipt",
+    "undo leaves the file",
+  ];
+
+  function runReceiptDriver(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      execFile(
+        electron,
+        [path.join(desktopRoot, "e2e/receipt-attach.electron.mjs")],
+        { cwd: desktopRoot, timeout: 120_000 },
+        (error) => {
+          if (error && typeof error.code !== "number") {
+            reject(error);
+            return;
+          }
+          resolve(error ? (error.code as number) : 0);
+        },
+      );
+    });
+  }
+
+  type ReceiptReport = {
+    pass: boolean;
+    failures: string[];
+    scenarios: { name: string; pass: boolean; detail: string | null }[];
+    fixture?: { path: string; bytes: number };
+  };
+
+  describe("receipt attach", () => {
+    it("stores an original and cites it on the row it produces", async (t) => {
+      if (!(await devServerUp())) {
+        t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
+        return;
+      }
+
+      fs.rmSync(RECEIPT_REPORT, { force: true });
+      const exitCode = await runReceiptDriver();
+      assert.equal(fs.existsSync(RECEIPT_REPORT), true, "driver wrote no report artifact");
+
+      const report = JSON.parse(fs.readFileSync(RECEIPT_REPORT, "utf8")) as ReceiptReport;
+      assert.equal(
+        exitCode,
+        0,
+        `the receipt rig exited ${exitCode}: ${report.failures.join("; ")}`,
+      );
+      assert.equal(report.pass, true, `the rig reported failures: ${report.failures.join("; ")}`);
+
+      const byName = new Map(report.scenarios.map((s) => [s.name, s]));
+      for (const name of RECEIPT_SCENARIOS) {
+        const scenario = byName.get(name);
+        assert.ok(scenario, `the rig reported no scenario named "${name}"`);
+        assert.equal(scenario.pass, true, `"${name}" failed: ${scenario.detail ?? "no detail"}`);
+      }
+
+      // The path the row cites has to be the store's own shape, not a path the
+      // rig invented and the tool happened to accept.
+      assert.match(
+        report.fixture?.path ?? "",
+        /^domains\/financial\/data\/files\/[0-9a-f-]{36}\/receipt\.jpg$/,
+        `the fixture was stored at ${report.fixture?.path}`,
+      );
+    });
+  });
 });

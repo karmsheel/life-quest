@@ -6,6 +6,7 @@ import { appendLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
 import {
   deleteRow,
+  getRow,
   listRows,
   upsertRow,
 } from "./domain-databases.ts";
@@ -277,6 +278,31 @@ export function resolveAmount(
   return isInflow ? absAmount : -absAmount;
 }
 
+/**
+ * The `source_file` contract for a captured row, in one place.
+ *
+ * The shape half is what `checkDatabaseCells` already enforces for every `file`
+ * column: a vault-relative path inside this domain's own file store, with no
+ * ascent and no Windows separator. The existence half is what keeps a row from
+ * citing an original that was never stored — the defect this whole path exists
+ * to prevent.
+ */
+export async function isStoredReceiptPath(
+  root: string,
+  relPath: unknown,
+): Promise<boolean> {
+  if (typeof relPath !== "string" || relPath.length === 0) return false;
+  if (path.isAbsolute(relPath)) return false;
+  if (relPath.includes("..") || relPath.includes("\\")) return false;
+  if (!relPath.startsWith(`domains/${FINANCE_DOMAIN_SLUG}/data/files/`)) return false;
+  try {
+    const stat = await fs.stat(path.join(root, ...relPath.split("/")));
+    return stat.isFile();
+  } catch {
+    return false;
+  }
+}
+
 export async function captureUtterance(
   root: string,
   input: {
@@ -284,9 +310,19 @@ export async function captureUtterance(
     today: string;
     threadId: string;
     actor: Actor;
+    /** Vault-relative path of the original this row came from. */
+    sourceFile?: string | null;
   },
 ): Promise<Result<CaptureOutcome>> {
   const { text, today, threadId, actor } = input;
+  const sourceFile = input.sourceFile ?? null;
+
+  // Refuse before any row work: a row that cites an original which is not in the
+  // vault is worse than no row at all, because nothing downstream can tell the
+  // difference from a real one.
+  if (sourceFile !== null && !(await isStoredReceiptPath(root, sourceFile))) {
+    return { ok: false, error: "source_file must name a stored receipt" };
+  }
 
   // Check kit installed + domain live
   const paths = vaultPaths(root);
@@ -389,7 +425,7 @@ export async function captureUtterance(
       category: categoryId,
       payee: parsed.payee,
       notes: null,
-      source_file: null,
+      source_file: sourceFile,
       provenance: `chat:${threadId}`,
       external_id: null,
     };
@@ -621,6 +657,20 @@ export async function correctCapture(
       return { ok: false, error: "Nothing to undo" };
     }
 
+    // A correction re-parses the text; it says nothing about where the row came
+    // from, so the original the row already cites is carried across rather than
+    // cleared. Reading it from the row keeps a correction from unlinking a
+    // receipt.
+    const existing = await getRow(
+      root,
+      FINANCE_DOMAIN_SLUG,
+      FINANCE_DB_IDS.transactions,
+      rowId,
+    );
+    const existingSourceFile = existing.ok && existing.value
+      ? (existing.value.cells.source_file ?? null)
+      : null;
+
     const accountName =
       accounts.find((a) => a.id === accountId)?.name ?? "";
 
@@ -631,7 +681,7 @@ export async function correctCapture(
       category: categoryId,
       payee: parsed.payee,
       notes: null,
-      source_file: null,
+      source_file: existingSourceFile,
       provenance: `chat:${threadId}`,
       external_id: null,
     };
