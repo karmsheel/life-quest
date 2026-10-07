@@ -11,8 +11,22 @@ export * from "./open-vault.ts";
 export * from "./domains.ts";
 export * from "./domain-documents.ts";
 export * from "./decisions.ts";
+export * from "./decision-labels.ts";
 export * from "./agents.ts";
 export { readAutoApproveInserts } from "./agents.ts";
+export {
+  PENDING_PAIRING_CAP,
+  fingerprintOf,
+  getConnectedAgentByFingerprint,
+  introduceConnectedAgent,
+  listConnectedAgents,
+  markConnectedAgent,
+  removeConnectedAgent,
+  removeDecision,
+    updateConnectedAgent,
+  } from "./connected-agents.ts";
+  export type { ConnectedAgent, ConnectedAgentStatus } from "./connected-agents.ts";
+  export * from "./pairing-grant.ts";
 export * from "./signal-chain.ts";
 export * from "./domain-lens.ts";
 export * from "./library-documents.ts";
@@ -114,6 +128,8 @@ export {
   deleteRow,
   checkDatabaseCells,
   validateRowCells,
+  rowDisplayLabel,
+  cellDisplayLabels,
   saveDatabaseFile,
   ensureVaultDatabaseGitignore,
   invalidateDomainCache,
@@ -185,6 +201,31 @@ export {
   parseScriptSource,
 } from "./script-block.ts";
 export {
+  validateViewSpec,
+  applyViewDefaults,
+  runView,
+  runSavedView,
+  saveView,
+  listViews,
+  getView,
+  deleteView,
+  buildReadSql,
+  windowBounds,
+  isoWeekLabel,
+  PRESENTATIONS,
+  TIME_WINDOWS,
+  TIME_BUCKETS,
+  FILTER_OPS,
+  MEASURES,
+  VIEW_ID_PATTERN,
+  fileViewDecision,
+  type SavedView,
+} from "./views.ts";
+export {
+  VIEW_TOOL_DEFS,
+  executeViewTool,
+} from "./views-tools.ts";
+export {
   SCRIPT_TOOL_DEFS,
   executeScriptTool,
 } from "./script-tools.ts";
@@ -202,6 +243,7 @@ import { CAPTURE_TOOL_DEFS } from "./capture-tools.ts";
 import { SCRIPT_TOOL_DEFS } from "./script-tools.ts";
 import { PROJECT_TOOL_DEFS } from "./projects.ts";
 import { DATABASE_TOOL_DEFS } from "./database-tools.ts";
+import { VIEW_TOOL_DEFS } from "./views-tools.ts";
 import type { MapToolDef } from "./map/tools.ts";
 
 /**
@@ -218,4 +260,5 @@ export const ALL_TOOL_DEFS: MapToolDef[] = [
   ...SCRIPT_TOOL_DEFS,
   ...PROJECT_TOOL_DEFS,
   ...DATABASE_TOOL_DEFS,
+  ...VIEW_TOOL_DEFS,
 ];

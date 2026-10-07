@@ -18,6 +18,7 @@ import {
   countRows,
   getDatabase,
   getRow,
+  rowDisplayLabel,
   isDomainLive,
   listDatabases,
   listRows,
@@ -268,7 +269,10 @@ function engineError(error: string): DatabaseToolResult {
 function prefixRowError(rowNumber: number, error: string): DatabaseToolResult {
   const mapped = engineError(error);
   if (!("error" in mapped)) return mapped;
-  return fail(mapped.error.code, `Row ${rowNumber}: ${mapped.error.message}`);
+  // `engineError` also returns the Record arm, so `in` alone leaves the property
+  // as `unknown`. The failure arm is the only one that carries `error`.
+  const failure = mapped.error as { code: DatabaseErrorCode; message: string };
+  return fail(failure.code, `Row ${rowNumber}: ${failure.message}`);
 }
 
 function pageInt(
@@ -352,18 +356,6 @@ async function liveDomainSlugs(root: string): Promise<string[]> {
 const isFinanceDb = (domainSlug: string, databaseId: string): boolean =>
   domainSlug === FINANCE_DOMAIN_SLUG &&
   (Object.values(FINANCE_DB_IDS) as string[]).includes(databaseId);
-
-/** A short human label for a row, for the Decision title the operator reads. */
-function rowLabel(db: DatabaseMeta, cells: Record<string, unknown>): string {
-  const byName = (name: string) => db.columns.find((c) => c.name.toLowerCase() === name)?.id;
-  for (const key of ["payee", "name", "title", "account", "category", "date"]) {
-    const id = byName(key);
-    if (!id) continue;
-    const v = cells[id];
-    if (typeof v === "string" && v.trim()) return v;
-  }
-  return "";
-}
 
 function decisionTitle(
   op: DatabaseDecisionBody["op"],
@@ -736,7 +728,7 @@ export async function executeDatabaseTool(
       const referential = await checkDatabaseCells(root, domainSlug, databaseId, cellMap);
       if (!referential.ok) return engineError(referential.error);
 
-      const label = rowLabel(dbMeta, cellMap) || null;
+      const label = rowDisplayLabel(dbMeta, cellMap) || null;
       const body: DatabaseDecisionBody = {
         op: "upsert",
         databaseName: dbMeta.name,
@@ -781,7 +773,7 @@ export async function executeDatabaseTool(
       const conflict = await checkConflicts(root, domainSlug, dbMeta, rowId, previousCells);
       if (conflict) return conflict;
 
-      const label = rowLabel(dbMeta, previousCells) || null;
+      const label = rowDisplayLabel(dbMeta, previousCells) || null;
       const body: DatabaseDecisionBody = {
         op: "delete",
         databaseName: dbMeta.name,
@@ -957,7 +949,7 @@ export async function executeDatabaseTool(
         batchRows.push({
           id: randomUUID(),
           cells: cellMap,
-          rowLabel: rowLabel(dbMeta, cellMap) || null,
+          rowLabel: rowDisplayLabel(dbMeta, cellMap) || null,
         });
       }
 

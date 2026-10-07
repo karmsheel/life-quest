@@ -7,19 +7,31 @@ import { shell } from "electron";
 import {
   DEFAULT_API_PORT,
   PROFILE_NAME,
+  hermesRoot,
+  profileDir,
   readEnv,
+  checkPinnedModel,
 } from "./companion-profile.ts";
 import { hermesSpawnSpec } from "./companion-spawn.ts";
 import {
   buildInstructions,
+  createdSessionFromPayload,
+  messagesFromPayload,
+  modelCatalogFromPayload,
+  runtimeRequestBody,
+  sessionFromPayload,
+  sessionsFromPayload,
   splitSse,
   type ChatStreamEvent,
   type CompanionInstructionsInput,
+  type CompanionModelCatalog,
+  type CompanionRuntimeOverride,
   type HermesSession,
 } from "./companion-client.ts";
 import {
   ensureCompanion,
   shutdownCompanion,
+  writeCompanionMcpProfile,
   type CompanionIo,
   type CompanionStatus,
 } from "./companion-lifecycle.ts";
@@ -32,6 +44,7 @@ export type PublicCompanionStatus = Exclude<CompanionStatus, { kind: "ready" }> 
   profilePath: string;
   cliPath: string;
   childPid: number | null;
+  modelWarning?: string;
 };
 
 export function publicStatus(status: CompanionStatus): PublicCompanionStatus {
@@ -227,6 +240,7 @@ function realIo(): CompanionIo {
       /* Host multiplexer is not LifeQuest-owned. */
     },
     listeningPid: async () => null,
+    checkModel: checkPinnedModel,
   };
 }
 
@@ -237,6 +251,37 @@ export function companionStatus(): PublicCompanionStatus {
 export async function companionEnsure(): Promise<PublicCompanionStatus> {
   current = await ensureCompanion(realIo());
   return publicStatus(current);
+}
+
+/**
+ * KAR-70: write a vault's companion token into the Hermes profile.
+ *
+ * Called after a vault opens or is switched, because that is the moment
+ * the doors have been rebound to the vault whose credential they now
+ * accept.
+ *
+ * `companionToken` is passed in rather than looked up here. The caller is
+ * `rememberOpen`, which runs on the vault queue; minting a token through
+ * `vault-service` would re-enter that same queue and deadlock — the outer
+ * task would be waiting on the inner one it just enqueued. Null means no
+ * token, and the profile is left exactly as it is.
+ */
+export async function companionWriteMcpProfile(
+  companionToken: string | null,
+): Promise<boolean> {
+  if (!companionToken) return false;
+  try {
+    const root = hermesRoot(process.env, os.homedir());
+    await writeCompanionMcpProfile(
+      realIo(),
+      path.join(profileDir(root), "config.yaml"),
+      companionToken,
+      path.join(root, "config.yaml"),
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function companionShutdown(): Promise<void> {
@@ -264,34 +309,32 @@ async function hermesFetch(
   return fetch(`${base}${pathname}`, { ...init, headers });
 }
 
-function asSessions(payload: unknown): HermesSession[] {
-  const rows = Array.isArray(payload)
-    ? payload
-    : payload && typeof payload === "object"
-      ? ((payload as { sessions?: unknown; data?: unknown; items?: unknown })
-          .sessions ??
-        (payload as { data?: unknown }).data ??
-        (payload as { items?: unknown }).items)
-      : [];
-  if (!Array.isArray(rows)) return [];
-  const out: HermesSession[] = [];
-  for (const row of rows) {
-    if (!row || typeof row !== "object") continue;
-    const r = row as { id?: unknown; session_id?: unknown; title?: unknown; name?: unknown };
-    const id = String(r.id ?? r.session_id ?? "");
-    if (!id) continue;
-    out.push({ id, title: String(r.title ?? r.name ?? "Session") });
+async function errorDetail(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: { message?: unknown } | string; message?: unknown };
+    if (typeof body.error === "string" && body.error.trim()) return body.error.trim();
+    if (
+      body.error &&
+      typeof body.error === "object" &&
+      typeof body.error.message === "string" &&
+      body.error.message.trim()
+    ) {
+      return body.error.message.trim();
+    }
+    if (typeof body.message === "string" && body.message.trim()) return body.message.trim();
+  } catch {
+    // The status line is enough when the body is not JSON.
   }
-  return out;
+  return fallback;
 }
 
 export async function companionSessionsList(): Promise<
   { ok: true; value: HermesSession[] } | { ok: false; error: string }
 > {
   try {
-    const res = await hermesFetch("/api/sessions");
+    const res = await hermesFetch("/api/sessions?limit=200");
     if (!res.ok) return { ok: false, error: `Sessions list failed (${res.status})` };
-    return { ok: true, value: asSessions(await res.json()) };
+    return { ok: true, value: sessionsFromPayload(await res.json()) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -301,15 +344,17 @@ export async function companionSessionCreate(
   title: string,
 ): Promise<{ ok: true; value: HermesSession } | { ok: false; error: string }> {
   try {
+    const trimmed = title.trim();
     const res = await hermesFetch("/api/sessions", {
       method: "POST",
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(trimmed ? { title: trimmed } : {}),
     });
-    if (!res.ok) return { ok: false, error: `Create session failed (${res.status})` };
-    const data = (await res.json()) as { id?: string; title?: string };
-    const id = String(data.id ?? "");
-    if (!id) return { ok: false, error: "Create session missing id" };
-    return { ok: true, value: { id, title: String(data.title ?? title) } };
+    if (!res.ok) {
+      return { ok: false, error: await errorDetail(res, `Create session failed (${res.status})`) };
+    }
+    const created = createdSessionFromPayload(await res.json(), trimmed);
+    if (!created) return { ok: false, error: "Create session missing id" };
+    return { ok: true, value: created };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -318,44 +363,111 @@ export async function companionSessionCreate(
 export async function companionSessionMessages(
   id: string,
 ): Promise<
-  | { ok: true; value: { role: string; content: string }[] }
+  | { ok: true; value: { role: "user" | "assistant"; content: string }[] }
   | { ok: false; error: string }
 > {
   try {
     const res = await hermesFetch(`/api/sessions/${encodeURIComponent(id)}/messages`);
     if (!res.ok) return { ok: false, error: `Messages failed (${res.status})` };
-    const payload = (await res.json()) as unknown;
-    const rows = Array.isArray(payload)
-      ? payload
-      : payload && typeof payload === "object" && Array.isArray((payload as { messages?: unknown }).messages)
-        ? (payload as { messages: unknown[] }).messages
-        : [];
-    const value: { role: string; content: string }[] = [];
-    for (const row of rows) {
-      if (!row || typeof row !== "object") continue;
-      const r = row as { role?: unknown; content?: unknown };
-      const role = r.role === "assistant" ? "assistant" : "user";
-      const content = typeof r.content === "string" ? r.content : "";
-      value.push({ role, content });
-    }
-    return { ok: true, value };
+    return { ok: true, value: messagesFromPayload(await res.json()) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
+/** The client-safe session fields the gateway's PATCH accepts. */
+export type CompanionSessionPatch = {
+  title?: string;
+  pinned?: boolean;
+  archived?: boolean;
+};
+
+/**
+ * PATCH /api/sessions/{id} — rename, pin or archive one chat.
+ *
+ * All three are durable Hermes-side flags, so Hermes Desktop (and every other
+ * channel on this profile) sees the same state; LifeQuest keeps no copy.
+ */
+export async function companionSessionPatch(
+  id: string,
+  patch: CompanionSessionPatch,
+): Promise<{ ok: true; value: HermesSession } | { ok: false; error: string }> {
+  try {
+    const body: Record<string, unknown> = {};
+    if (typeof patch.title === "string") body.title = patch.title;
+    if (typeof patch.pinned === "boolean") body.pinned = patch.pinned;
+    if (typeof patch.archived === "boolean") body.archived = patch.archived;
+    if (Object.keys(body).length === 0) {
+      return { ok: false, error: "Session update had nothing to change" };
+    }
+    const res = await hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      return { ok: false, error: await errorDetail(res, `Session update failed (${res.status})`) };
+    }
+    const updated = sessionFromPayload(await res.json());
+    if (!updated) return { ok: false, error: "Session update returned no session" };
+    return { ok: true, value: updated };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * DELETE /api/sessions/{id} — remove one chat and every message under it.
+ *
+ * This is not `archived` in a stronger key: the store's own delete, so the row
+ * is gone from Hermes everywhere and nothing brings it back. LifeQuest keeps no
+ * copy of a chat, so there is nothing to reconcile here afterwards.
+ */
+export async function companionSessionDelete(
+  id: string,
+): Promise<
+  { ok: true; value: { id: string; deleted: boolean } } | { ok: false; error: string }
+> {
+  try {
+    const res = await hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      return { ok: false, error: await errorDetail(res, `Delete session failed (${res.status})`) };
+    }
+    const body = (await res.json()) as { id?: unknown; deleted?: unknown };
+    // The gateway answers `{object, id, deleted}`; `deleted: false` means the row
+    // was already gone, which is the outcome the caller wanted either way.
+    if (typeof body?.id !== "string") return { ok: false, error: "Delete session returned no id" };
+    return { ok: true, value: { id: body.id, deleted: body.deleted !== false } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * One turn: the operator's text, the vault context, and — when the composer's
+ * pills carry a pick — the model/provider and thinking level that turn should
+ * run under. The pick is per turn, never persisted app-side beyond the
+ * composer's own stored preference, so a chat that is opened in Hermes Desktop
+ * keeps running whatever that client asks for.
+ */
 export async function companionChatStream(
   sessionId: string,
   input: string,
   ctx: CompanionInstructionsInput,
   onEvent: (evt: ChatStreamEvent) => void,
+  runtime?: CompanionRuntimeOverride | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const res = await hermesFetch(
       `/api/sessions/${encodeURIComponent(sessionId)}/chat/stream`,
       {
         method: "POST",
-        body: JSON.stringify({ input, instructions: buildInstructions(ctx) }),
+        body: JSON.stringify({
+          input,
+          instructions: buildInstructions(ctx),
+          ...runtimeRequestBody(runtime),
+        }),
       },
     );
     if (!res.ok || !res.body) {
@@ -381,6 +493,30 @@ export async function companionChatStream(
   }
 }
 
+/**
+ * GET /api/model/options — the gateway's own model inventory for this profile.
+ *
+ * This is the same payload the Hermes dashboard's picker is built from, so the
+ * composer's menu cannot drift from what the gateway can actually route. It is
+ * read once when the dock needs it and never polled: the catalog changes when
+ * the operator changes providers in Hermes, which is a restart-shaped event.
+ */
+export async function companionModelOptions(): Promise<
+  { ok: true; value: CompanionModelCatalog } | { ok: false; error: string }
+> {
+  try {
+    const res = await hermesFetch("/api/model/options");
+    if (!res.ok) {
+      return { ok: false, error: `Model catalog failed (${res.status})` };
+    }
+    const catalog = modelCatalogFromPayload(await res.json());
+    if (!catalog) return { ok: false, error: "Model catalog listed no models" };
+    return { ok: true, value: catalog };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function companionApproval(
   runId: string,
   requestId: string,
@@ -392,6 +528,25 @@ export async function companionApproval(
       body: JSON.stringify({ request_id: requestId, allow }),
     });
     if (!res.ok) return { ok: false, error: `Approval failed (${res.status})` };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Interrupt a live run. The gateway stops it cooperatively (the run ends as
+ * `cancelled` and the SSE stream closes on its own), so the caller learns the
+ * turn is over from the stream, never from this response.
+ */
+export async function companionRunStop(
+  runId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await hermesFetch(`/v1/runs/${encodeURIComponent(runId)}/stop`, {
+      method: "POST",
+    });
+    if (!res.ok) return { ok: false, error: `Stop failed (${res.status})` };
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

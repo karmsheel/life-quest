@@ -1,0 +1,150 @@
+{
+  "note": "Life-Chain records as the vault returns them: SignalRecord rows, newest first (vault-core sorts createdAt desc, then id desc). Seeded by hand in the shape of .lifequest/signals/<id>.json so the dock's chain view can be measured without a vault. One record carries a domain and one carries a title, so the row's meta line and its title branch are both covered; the dates are fixed in the past so formatSignalWhen renders the same string on every run instead of depending on the day the rig runs.",
+  "records": [
+    {
+      "id": "sig-harness-01",
+      "createdAt": "2026-09-30T21:40:00.000Z",
+      "updatedAt": "2026-09-30T21:40:00.000Z",
+      "deletedAt": null,
+      "type": "thought",
+      "source": "manual",
+      "sourceRef": null,
+      "title": null,
+      "body": "The migration only fails when two writes land in the same second. Is the lock per file or per folder?",
+      "domainSlug": null
+    },
+    {
+      "id": "sig-harness-02",
+      "createdAt": "2026-09-30T18:05:00.000Z",
+      "updatedAt": "2026-09-30T18:05:00.000Z",
+      "deletedAt": null,
+      "type": "thought",
+      "source": "manual",
+      "sourceRef": null,
+      "title": "Morning runs stick",
+      "body": "The 6am slot is the only one I never miss. Move the runs there.",
+      "domainSlug": "health"
+    },
+    {
+      "id": "sig-harness-03",
+      "createdAt": "2026-09-30T09:12:00.000Z",
+      "updatedAt": "2026-09-30T09:12:00.000Z",
+      "deletedAt": null,
+      "type": "thought",
+      "source": "manual",
+      "sourceRef": null,
+      "title": null,
+      "body": "Ask why the client deck still says pilot when we are three months in.",
+      "domainSlug": null
+    },
+    {
+      "id": "sig-harness-04",
+      "createdAt": "2026-09-29T22:31:00.000Z",
+      "updatedAt": "2026-09-29T22:31:00.000Z",
+      "deletedAt": null,
+      "type": "thought",
+      "source": "manual",
+      "sourceRef": null,
+      "title": null,
+      "body": "Four thousand signal files and listing them takes 300ms. Worth a cache?",
+      "domainSlug": null
+    },
+    {
+      "id": "sig-harness-05",
+      "createdAt": "2026-09-29T14:47:00.000Z",
+      "updatedAt": "2026-09-29T14:47:00.000Z",
+      "deletedAt": null,
+      "type": "thought",
+      "source": "manual",
+      "sourceRef": null,
+      "title": null,
+      "body": "A competitor shipped the exact onboarding flow we sketched in March.",
+      "domainSlug": null
+    },
+    {
+      "id": "sig-harness-06",
+      "createdAt": "2026-09-29T07:20:00.000Z",
+      "updatedAt": "2026-09-29T07:20:00.000Z",
+      "deletedAt": null,
+      "type": "thought",
+      "source": "manual",
+      "sourceRef": null,
+      "title": null,
+      "body": "Deadline math: nine days left, three of them are travel days.",
+      "domainSlug": null
+    },
+    {
+      "id": "sig-harness-07",
+      "createdAt": "2026-09-28T19:58:00.000Z",
+      "updatedAt": "2026-09-28T19:58:00.000Z",
+      "deletedAt": null,
+      "type": "thought",
+      "source": "manual",
+      "sourceRef": null,
+      "title": null,
+      "body": "I keep rewriting the same email to the accountant. Template it.",
+      "domainSlug": null
+    },
+    {
+      "id": "sig-harness-08",
+      "createdAt": "2026-09-28T11:03:00.000Z",
+      "updatedAt": "2026-09-28T11:03:00.000Z",
+      "deletedAt": null,
+      "type": "thought",
+      "source": "manual",
+      "sourceRef": null,
+      "title": null,
+      "body": "The dashboard hides the one number I actually check daily.",
+      "domainSlug": null
+    },
+    {
+      "id": "sig-harness-09",
+      "createdAt": "2026-09-27T16:12:00.000Z",
+      "updatedAt": "2026-09-27T16:12:00.000Z",
+      "deletedAt": null,
+      "type": "thought",
+      "source": "manual",
+      "sourceRef": null,
+      "title": null,
+      "body": "Coffee after 2pm costs me the 4pm block.",
+      "domainSlug": null
+    },
+    {
+      "id": "sig-harness-10",
+      "createdAt": "2026-09-27T08:40:00.000Z",
+      "updatedAt": "2026-09-27T08:40:00.000Z",
+      "deletedAt": null,
+      "type": "thought",
+      "source": "manual",
+      "sourceRef": null,
+      "title": null,
+      "body": "Re-read the premise for Health before the next review.",
+      "domainSlug": null
+    },
+    {
+      "id": "sig-harness-11",
+      "createdAt": "2026-09-26T21:15:00.000Z",
+      "updatedAt": "2026-09-26T21:15:00.000Z",
+      "deletedAt": null,
+      "type": "thought",
+      "source": "manual",
+      "sourceRef": null,
+      "title": null,
+      "body": "Every project I stalled on had no next action written down.",
+      "domainSlug": null
+    },
+    {
+      "id": "sig-harness-12",
+      "createdAt": "2026-09-26T09:05:00.000Z",
+      "updatedAt": "2026-09-26T09:05:00.000Z",
+      "deletedAt": null,
+      "type": "thought",
+      "source": "manual",
+      "sourceRef": null,
+      "title": null,
+      "body": "Start a chain entry the moment a thought is worth keeping, not later.",
+      "domainSlug": null
+    }
+  ],
+  "skipped": 0
+}

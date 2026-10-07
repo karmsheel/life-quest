@@ -77,6 +77,31 @@ export function formatSignalWhen(iso: string, now: Date = new Date()): string {
   }
 }
 
+/**
+ * The date and the time on their own lines, for a stamp the width of a date.
+ * `formatSignalWhen` answers one string ("Today, 14:32") that wraps badly in a
+ * square, and the square needs the two halves separately to stack them. Recent
+ * days keep the Today/Yesterday word; anything older falls back to a short
+ * month-and-day so the box stays one line wide.
+ */
+export function signalStampWhen(
+  iso: string,
+  now: Date = new Date(),
+): { day: string; time: string } {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return { day: iso, time: "" };
+    const label = dayLabel(localDayKey(iso), now);
+    const day =
+      label === "Today" || label === "Yesterday"
+        ? label
+        : d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    return { day, time: formatSignalTime(iso) };
+  } catch {
+    return { day: iso, time: "" };
+  }
+}
+
 export function filterSignals(
   records: SignalRecord[],
   filters: SignalFilters,

@@ -1,169 +1,129 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
-import { createServer, type Server } from "node:http";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { z, type ZodTypeAny } from "zod";
-import { ALL_TOOL_DEFS, type MapToolDef, type Result } from "@lifequest/vault-core";
-import { executeTool } from "./map-tools.js";
+// KAR-70 Task 6: the Electron-facing door manager.
+//
+// Both listeners live in `pairing-door.ts`; this module owns the app-level
+// state around them — which vault is open, where the secrets live in userData,
+// and what Settings is told when one of the two doors cannot bind.
+//
+// Opening a vault binds both doors to it. Opening a *second* vault while the
+// first is still open rebinds them rather than keeping the first vault's root:
+// a door serves one vault, the one that is open.
+import path from "node:path";
+import { app } from "electron";
+import {
+  startPairingDoors,
+  LOCAL_MCP_PORT,
+  INVITE_MCP_PORT,
+} from "./pairing-door.ts";
+import type { Result } from "@lifequest/vault-core";
 
 const MCP_HOST = "127.0.0.1";
-const MCP_PORT = 8643;
-const MCP_PATH = "/mcp";
 
-let server: Server | null = null;
-let mcpRoot: string | null = null;
-let mcpVaultId: string | null = null;
-let getActiveSlug: () => string | null = () => null;
+type Doors = Awaited<ReturnType<typeof startPairingDoors>>;
 
-function toZod(prop: unknown): ZodTypeAny {
-  const p = prop as {
-    type?: string | string[];
-    enum?: unknown[];
-    items?: unknown;
-    properties?: Record<string, unknown>;
-    // KAR-63: a free-form object (a cells map) declares no properties. Without
-    // this the object branch below would compile it to z.object({}) and Zod
-    // would strip every cell on the way in.
-    additionalProperties?: boolean;
+let doors: Doors | null = null;
+let openVaultId: string | null = null;
+/**
+ * KAR-70: the desktop's in-memory lens, handed to the doors. Held here
+ * rather than read per request from userData, so a lens change lands
+ * on the next call with no vault write.
+ */
+let currentLens: () => string | null = () => null;
+
+/** The two urls and their per-door errors, as Settings reads them. */
+export type McpDoors = {
+  localUrl: string;
+  inviteUrl: string;
+  localError: string | null;
+  inviteError: string | null;
+};
+
+function localUrl(): string {
+  return `http://${MCP_HOST}:${LOCAL_MCP_PORT}/mcp`;
+}
+
+function inviteUrl(): string {
+  return `http://${MCP_HOST}:${INVITE_MCP_PORT}/mcp`;
+}
+
+function secretsDir(): string {
+  return path.join(app.getPath("userData"), "pairing-secrets");
+}
+
+/**
+ * KAR-70: where the pairing secrets live — app userData beside the other app
+ * secrets, never inside a vault. A vault can be copied or synced, and a copied
+ * vault must not carry the companion's credential with it.
+ */
+export function getPairingSecretsDir(): string {
+  return secretsDir();
+}
+
+export function getMcpDoors(): McpDoors {
+  if (!doors) {
+    // No vault open: no door, and no error to report — there is nothing to try.
+    return { localUrl: "", inviteUrl: "", localError: null, inviteError: null };
+  }
+  return {
+    // A door that failed to bind shows no url; its error explains why.
+    localUrl: doors.localError ? "" : localUrl(),
+    inviteUrl: doors.inviteError ? "" : inviteUrl(),
+    localError: doors.localError,
+    inviteError: doors.inviteError,
   };
-  if (Array.isArray(p.enum)) {
-    const vals = p.enum;
-    if (vals.length > 0 && vals.every((v) => typeof v === "string")) {
-      return z.enum(vals as [string, ...string[]]);
-    }
-    const literals = vals.filter(
-      (v): v is string | number | boolean | bigint | null =>
-        v === null ||
-        typeof v === "string" ||
-        typeof v === "number" ||
-        typeof v === "boolean" ||
-        typeof v === "bigint",
-    );
-    if (literals.length === 0) return z.unknown();
-    if (literals.length === 1) return z.literal(literals[0]);
-    const [first, second, ...rest] = literals.map((v) => z.literal(v));
-    return z.union([first, second, ...rest]);
-  }
-  if (Array.isArray(p.type)) {
-    const nonNull = p.type.filter((t) => t !== "null");
-    if (nonNull.length === 1) {
-      return z.nullable(toZod({ ...p, type: nonNull[0] }));
-    }
-    return z.nullable(z.unknown());
-  }
-  switch (p.type) {
-    case "string":
-      return z.string();
-    case "number":
-      return z.number();
-    case "boolean":
-      return z.boolean();
-    case "array":
-      return z.array(p.items ? toZod(p.items) : z.unknown());
-    case "object":
-      // A free-form object must keep every key: z.object({}) would strip all of
-      // them. The `!p.properties` guard (not an emptiness check) is what keeps
-      // existing property-less objects unaffected — list_documents declares
-      // `properties: {}`, so it still compiles to z.object({}), which is correct
-      // for a tool that takes no arguments.
-      if (!p.properties && p.additionalProperties) {
-        return z.record(z.string(), z.unknown());
-      }
-      return z.object(buildShape(p.properties ?? {}));
-    default:
-      return z.unknown();
-  }
 }
 
-function buildShape(properties: Record<string, unknown>): Record<string, ZodTypeAny> {
-  const shape: Record<string, ZodTypeAny> = {};
-  for (const [key, value] of Object.entries(properties)) {
-    shape[key] = toZod(value).optional();
-  }
-  return shape;
+export function getMcpError(): string | null {
+  const d = getMcpDoors();
+  return d.localError ?? d.inviteError;
 }
 
-function registerTools(mcp: McpServer): void {
-  // One composed constant, so the MCP server and the planner cannot drift apart
-  // in which tools exist.
-  for (const def of ALL_TOOL_DEFS) {
-    const toolDef = def as MapToolDef;
-    const inputSchema = buildShape(toolDef.parameters.properties ?? {});
-    mcp.registerTool(
-      toolDef.name,
-      { description: toolDef.description, inputSchema },
-      async (toolArgs) => {
-        const activeSlug = getActiveSlug();
-        const result = await executeTool(mcpRoot as string, activeSlug, toolDef.name, toolArgs as Record<string, unknown>);
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result) }],
-        };
-      },
-    );
-  }
+/**
+ * The local door's url, for existing callers that expect a single string. It is
+ * empty when the local door failed to bind or no vault is open.
+ */
+export function getMcpUrl(): string {
+  return getMcpDoors().localUrl;
 }
 
-function handleRequest(req: IncomingMessage, res: ServerResponse): void {
-  const mcp = new McpServer({ name: "lifequest-map", version: "0.1.0" });
-  registerTools(mcp);
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-  });
-  void mcp.connect(transport);
-  void transport.handleRequest(req, res);
-  res.on("close", () => {
-    void transport.close();
-    void mcp.close();
-  });
-}
-
+/**
+ * Open (or rebind) the doors for this vault. The lens argument is gone: the
+ * doors resolve the lens themselves, and a connected agent's view is its grant
+ * rather than whatever the desktop happens to be looking at.
+ */
 export async function startMcp(
   rootPath: string,
   vaultId: string,
   getLens: () => string | null = () => null,
-): Promise<Result<{ url: string }>> {
-  getActiveSlug = getLens;
-  if (server) return { ok: true, value: { url: `http://${MCP_HOST}:${MCP_PORT}${MCP_PATH}` } };
-  mcpRoot = rootPath;
-  mcpVaultId = vaultId;
-  const httpServer = createServer((req, res) => {
-    const url = req.url ?? "";
-    if (req.method === "POST" && url.split("?")[0].endsWith(MCP_PATH)) {
-      handleRequest(req, res);
-      return;
-    }
-    res.statusCode = 404;
-    res.end("Not found");
+): Promise<Result<McpDoors>> {
+  currentLens = getLens;
+  if (doors) {
+    // Already listening. Rebind to the newly opened vault's root, roster, and
+    // companion credential rather than serving the previous vault.
+    doors.rebind(rootPath, vaultId);
+    openVaultId = vaultId;
+    return { ok: true, value: getMcpDoors() };
+  }
+  doors = await startPairingDoors({
+    root: rootPath,
+    vaultId,
+    secretsDir: secretsDir(),
+    lens: () => currentLens(),
   });
-  return new Promise<Result<{ url: string }>>((resolve) => {
-    httpServer.once("error", (err: NodeJS.ErrnoException) => {
-      if (err.code === "EADDRINUSE") {
-        resolve({
-          ok: false,
-          error: "MCP port 8643 is in use. Close the other process or quit LifeQuest.",
-        });
-        return;
-      }
-      resolve({ ok: false, error: `MCP server failed to start: ${err.message}` });
-    });
-    httpServer.listen(MCP_PORT, MCP_HOST, () => {
-      server = httpServer;
-      resolve({ ok: true, value: { url: `http://${MCP_HOST}:${MCP_PORT}${MCP_PATH}` } });
-    });
-  });
+  openVaultId = vaultId;
+  const value = getMcpDoors();
+  // Neither door bound is a failure the caller should throw on: the vault is
+  // open and the other door may be serving.
+  return { ok: true, value };
 }
 
 export async function stopMcp(): Promise<void> {
-  if (!server) {
-    mcpRoot = null;
-    mcpVaultId = null;
-    return;
-  }
-  const current = server;
-  server = null;
-  mcpRoot = null;
-  mcpVaultId = null;
-  await new Promise<void>((resolve) => {
-    current.close(() => resolve());
-  });
+  const current = doors;
+  doors = null;
+  openVaultId = null;
+  if (current) await current.close();
+}
+
+/** The vault the doors are currently bound to, for tests and diagnostics. */
+export function getMcpVaultId(): string | null {
+  return openVaultId;
 }

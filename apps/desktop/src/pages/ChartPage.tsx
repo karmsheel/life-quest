@@ -2,6 +2,7 @@ import { Dashboard } from "@/components/map/Dashboard";
 import { MonthPage } from "@/components/map/MonthPage";
 import { DoctrineStrip } from "@/components/doctrine/DoctrineStrip";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { useConfirm } from "@/components/ui/useConfirm";
 import { useVault } from "@/state/VaultProvider";
 import { useMapYear } from "@/state/MapYearProvider";
 import { api } from "@/lib/ipc";
@@ -27,6 +28,8 @@ function ChartContent() {
   const lens = useDomainLens();
   const { yearNum, month, setYearNum, setMonth } = useMapYear();
   const map = snapshot?.map ?? null;
+  /** The year's delete asks in the app's own dialog, not the platform's. */
+  const { ask, dialog } = useConfirm();
 
   async function onCommand(command: MapCommand) {
     const result = await api().mapApply(command);
@@ -82,10 +85,26 @@ function ChartContent() {
           </button>
         )}
         {selected?.status === "live" && selected.year !== todayYear && (
-          <button type="button" onClick={() => {
-            if (yearHasContent(selected) && !window.confirm(`Delete ${selected.year}? It has events, month text, or detached weeks.`)) return;
-            void onCommand({ type: "deleteYear", year: selected.year });
-          }}>
+          <button
+            type="button"
+            onClick={() => {
+              const year = selected.year;
+              // An empty year goes on the click: there is nothing in it to lose
+              // and so nothing to ask about. One with content asks first, and
+              // the question is where that content is named.
+              if (!yearHasContent(selected)) {
+                void onCommand({ type: "deleteYear", year });
+                return;
+              }
+              ask({
+                title: "Delete year",
+                message: `Delete ${year}? It has events, month text, or detached weeks.`,
+                confirmLabel: "Delete year",
+                destructive: true,
+                run: () => void onCommand({ type: "deleteYear", year }),
+              });
+            }}
+          >
             Delete year
           </button>
         )}
@@ -116,6 +135,7 @@ function ChartContent() {
           lens={lens}
         />
       )}
+      {dialog}
     </div>
   );
 }

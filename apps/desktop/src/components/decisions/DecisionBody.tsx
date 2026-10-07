@@ -28,6 +28,7 @@ const FIELD_LABELS: Record<string, string> = {
   sourceKind: "Source",
   columnId: "Column",
   relationDatabaseId: "Relates to",
+  relationDatabaseName: "Relates to",
   pageId: "Page",
 };
 
@@ -41,7 +42,13 @@ type ChangeRow = {
   before: unknown;
   after: unknown;
   changed: boolean;
+  /** A relation cell's readable face; the raw id stays as the tooltip. */
+  beforeLabel?: string | null;
+  afterLabel?: string | null;
 };
+
+/** Column id to display label, as resolved for this Decision when it was read. */
+type CellLabelMap = Record<string, string> | null;
 
 export function DecisionBody({
   target,
@@ -96,10 +103,17 @@ function renderStructured(
       return <PinsBody body={body} />;
     case "mapping":
       return <MappingBody body={body} />;
+    // KAR-70: the pairing Decision carries no document body. Its proposed
+    // body is the fingerprint and the door the caller arrived on, and the
+    // generic body would render those as if they were field edits.
+    case "agent-pairing":
+      return <PairingBody body={body} />;
     case "kit-install":
       return <p className="decision-lead">Install the Finance kit.</p>;
     case "assumption-set":
       return <AssumptionBody body={body} lookups={lookups} />;
+    case "view":
+      return <ViewBody body={body} />;
     case "database-batch":
       return <BatchBody body={body} lookups={lookups} />;
     default:
@@ -141,6 +155,93 @@ function BatchBody({
   );
 }
 
+/**
+ * KAR-70: what the operator approves when they approve a pairing.
+ *
+ * The fingerprint is the 12-hex hash of the bearer — the only handle on
+ * the caller that is safe to show and to store. The raw bearer is not here
+ * and never was.
+ */
+function PairingBody({ body }: { body: Record<string, unknown> }) {
+  const fingerprint = typeof body.fingerprint === "string" ? body.fingerprint : "—";
+  const door = typeof body.door === "string" ? body.door : "—";
+  return (
+    <div className="decision-proposal">
+      <p className="decision-lead">
+        Connect this agent. It starts read-only, with no domain assigned and
+        Schedule off — you grant what it may reach from Personnel.
+      </p>
+      <dl className="settings-hermes">
+        <div className="settings-field">
+          <span>Fingerprint</span>
+          <p className="muted">{fingerprint}</p>
+        </div>
+        <div className="settings-field">
+          <span>Door</span>
+          <p className="muted">{door}</p>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
+/**
+ * Agent-built dashboard views: what the operator approves is a chart or table
+ * on their dashboard. The lead names what will appear and where; the preview
+ * rows are the same data the card would show on the day of the proposal.
+ */
+function ViewBody({ body }: { body: Record<string, unknown> }) {
+  const spec = body.spec as Record<string, unknown> | undefined;
+  const preview = body.preview as { rows?: unknown[]; currency?: string; warnings?: string[] } | undefined;
+  if (!spec || typeof spec !== "object") {
+    return <p className="decision-lead">Save a dashboard view. (Spec missing from this proposal.)</p>;
+  }
+  const title = typeof spec.title === "string" ? spec.title : "Saved view";
+  const presentation = typeof spec.presentation === "string" ? spec.presentation : "table";
+  return (
+    <div className="decision-proposal">
+      <p className="decision-lead">
+        Save a dashboard view: {title} ({presentation}
+        {preview?.rows?.length != null ? ` — showing ${preview.rows.length} row${preview.rows.length === 1 ? "" : "s"} today` : ""}).
+        Approve to pin it from the dashboard's Add-pin row.
+      </p>
+      <dl className="settings-hermes">
+        <div className="settings-field">
+          <span>Measure</span>
+          <p className="muted">
+            {typeof spec.measure === "string" ? spec.measure : "?"}
+            {typeof spec.measureColumnId === "string" && spec.measureColumnId
+              ? ` of ${spec.measureColumnId}`
+              : ""}
+          </p>
+        </div>
+        <div className="settings-field">
+          <span>Group by</span>
+          <p className="muted">
+            {typeof spec.groupBy === "string" && spec.groupBy
+              ? spec.groupBy
+              : typeof spec.timeBucket === "string" && spec.timeBucket
+                ? `time (${spec.timeBucket})`
+                : "everything in the window"}
+          </p>
+        </div>
+        {preview?.currency ? (
+          <div className="settings-field">
+            <span>Currency</span>
+            <p className="muted">{preview.currency}</p>
+          </div>
+        ) : null}
+        {preview?.warnings && preview.warnings.length > 0 ? (
+          <div className="settings-field">
+            <span>Warnings</span>
+            <p className="muted">{preview.warnings.join("; ")}</p>
+          </div>
+        ) : null}
+      </dl>
+    </div>
+  );
+}
+
 function DatabaseBody({
   target,
   body,
@@ -153,6 +254,8 @@ function DatabaseBody({
   lookups: Lookups;
 }) {
   const op = typeof body.op === "string" ? body.op : "";
+  const cellLabels = stringMap(body.cellLabels);
+  const previousCellLabels = stringMap(body.previousCellLabels);
   const databaseName =
     typeof body.databaseName === "string" && body.databaseName
       ? body.databaseName
@@ -166,9 +269,20 @@ function DatabaseBody({
   }
 
   if (op === "add-column") {
-    const rows: ChangeRow[] = ["name", "type", "options", "relationDatabaseId"]
-      .filter((key) => key in body && !isEmpty(body[key]))
-      .map((key) => ({ key, before: undefined, after: body[key], changed: true }));
+    // A relation is proposed by database id. The read path resolves that to the
+    // target's name; the id is only shown when it could not be resolved.
+    const keys = ["name", "type", "options", "relationDatabaseId", "relationDatabaseName"].filter(
+      (key) => key in body && !isEmpty(body[key]),
+    );
+    const collapsed = keys.includes("relationDatabaseName")
+      ? keys.filter((key) => key !== "relationDatabaseId")
+      : keys;
+    const rows: ChangeRow[] = collapsed.map((key) => ({
+      key,
+      before: undefined,
+      after: body[key],
+      changed: true,
+    }));
     return (
       <ChangeTable
         lead={`Add a column to ${databaseName}.`}
@@ -191,7 +305,7 @@ function DatabaseBody({
     (isRecord(previousParsed) && !("op" in previousParsed) ? previousParsed : null);
 
   if (op === "delete") {
-    const rows = rowsFrom(before, null, "before");
+    const rows = rowsFrom(before, null, "before", { before: previousCellLabels });
     return (
       <ChangeTable
         lead={`Delete this row from ${databaseName}.`}
@@ -207,7 +321,7 @@ function DatabaseBody({
     return (
       <ChangeTable
         lead={`Add a row to ${databaseName}.`}
-        rows={rowsFrom(null, after, "after")}
+        rows={rowsFrom(null, after, "after", { after: cellLabels })}
         mode="after"
         lookups={lookups}
       />
@@ -217,7 +331,7 @@ function DatabaseBody({
   return (
     <ChangeTable
       lead={`Update a row in ${databaseName}.`}
-      rows={rowsFrom(before, after, "diff")}
+      rows={rowsFrom(before, after, "diff", { before: previousCellLabels, after: cellLabels })}
       mode="diff"
       lookups={lookups}
     />
@@ -370,7 +484,11 @@ function PageBody({ body }: { body: Record<string, unknown> }) {
           {blocks.map((block, index) => {
             const summary = blockSummary(block);
             return (
-              <li key={typeof block.id === "string" ? block.id : index} className="decision-block">
+              <li
+                key={typeof block.id === "string" ? block.id : index}
+                className="decision-block"
+                title={summary.ids || undefined}
+              >
                 <span className="decision-block__kind">{summary.kind}</span>
                 {summary.detail ? <span className="decision-block__detail">{summary.detail}</span> : null}
               </li>
@@ -406,11 +524,24 @@ function PinsBody({ body }: { body: Record<string, unknown> }) {
 function MappingBody({ body }: { body: Record<string, unknown> }) {
   const columns = Array.isArray(body.columns) ? body.columns.filter(isRecord) : [];
   const databaseId = typeof body.databaseId === "string" ? body.databaseId : "";
-  const database = databaseId && !isUuid(databaseId) ? labelize(databaseId) : "";
+  const databaseName = typeof body.databaseName === "string" ? body.databaseName : "";
+  const database = databaseName
+    ? labelize(databaseName)
+    : databaseId && !isUuid(databaseId)
+      ? labelize(databaseId)
+      : "";
   return (
     <section className="decision-section">
       <p className="decision-lead">
-        {database ? `Map incoming columns onto ${database}.` : "Map incoming columns onto a database."}
+        {databaseName || databaseId ? (
+          <span title={databaseId || undefined}>
+            {database
+              ? `Map incoming columns onto ${database}.`
+              : "Map incoming columns onto a database."}
+          </span>
+        ) : (
+          "Map incoming columns onto a database."
+        )}
       </p>
       {columns.length > 0 ? (
         <table className="decision-fields">
@@ -424,10 +555,18 @@ function MappingBody({ body }: { body: Record<string, unknown> }) {
             {columns.map((column, index) => {
               const source = typeof column.source === "string" ? column.source : "—";
               const columnId = typeof column.columnId === "string" ? column.columnId : "";
+              const columnName =
+                typeof column.columnName === "string" ? column.columnName : "";
               return (
                 <tr key={`${source}-${index}`}>
                   <td>{source}</td>
-                  <td>{columnId ? labelize(columnId) : <span className="decision-empty">Unmapped</span>}</td>
+                  <td title={columnName && columnId ? columnId : undefined}>
+                    {columnId || columnName ? (
+                      labelize(columnName || columnId)
+                    ) : (
+                      <span className="decision-empty">Unmapped</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -470,7 +609,16 @@ function GenericBody({
 }) {
   const prior = parseJson(previous ?? "");
   const priorRec = isRecord(prior) ? prior : null;
-  const hidden = new Set(["type", "id", "expectedUpdatedAt", "schemaVersion", "previousCells", "cells"]);
+  const hidden = new Set([
+    "type",
+    "id",
+    "expectedUpdatedAt",
+    "schemaVersion",
+    "previousCells",
+    "cells",
+    "previousCellLabels",
+    "cellLabels",
+  ]);
   const rows = rowsFrom(priorRec, body, priorRec ? "diff" : "after").filter(
     (row) => !hidden.has(row.key),
   );
@@ -561,12 +709,22 @@ function ChangeRowView({
       </th>
       {mode !== "after" ? (
         <td className={mode === "diff" && row.changed ? "decision-value--was" : undefined}>
-          <ValueView value={row.before} field={row.key} lookups={lookups} />
+          <ValueView
+            value={row.before}
+            field={row.key}
+            lookups={lookups}
+            label={row.beforeLabel}
+          />
         </td>
       ) : null}
       {mode !== "before" ? (
         <td className={mode === "diff" && row.changed ? "decision-value--now" : undefined}>
-          <ValueView value={row.after} field={row.key} lookups={lookups} />
+          <ValueView
+            value={row.after}
+            field={row.key}
+            lookups={lookups}
+            label={row.afterLabel}
+          />
         </td>
       ) : null}
     </tr>
@@ -577,12 +735,19 @@ function ValueView({
   value,
   field,
   lookups,
+  label,
 }: {
   value: unknown;
   field: string;
   lookups: Lookups;
+  label?: string | null;
 }) {
   if (isEmpty(value)) return <span className="decision-empty">—</span>;
+  // A relation cell holds a row id. The label is its readable face and the id
+  // stays in the tooltip, so the operator reads prose without losing the value
+  // the vault will actually store.
+  const raw = typeof value === "string" ? value : null;
+  if (label && label !== raw) return <span title={raw ?? undefined}>{label}</span>;
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") {
     if (field === "horizonMonths") return `${value.toLocaleString()} months`;
@@ -648,7 +813,11 @@ function ProseCompare({ proposed, previous }: { proposed: string; previous: stri
   );
 }
 
-function blockSummary(block: Record<string, unknown>): { kind: string; detail: string } {
+function blockSummary(block: Record<string, unknown>): {
+  kind: string;
+  detail: string;
+  ids: string;
+} {
   const kind = typeof block.kind === "string" ? block.kind : "block";
   const labels: Record<string, string> = {
     markdown: "Note",
@@ -664,19 +833,37 @@ function blockSummary(block: Record<string, unknown>): { kind: string; detail: s
     script: "Script",
   };
   let detail = "";
+  const raw: string[] = [];
+  // The body carries a name beside each id the vault could resolve; without
+  // one, labelize is the best the renderer can do for the id it holds.
+  const named = (idField: string, nameField: string): { text: string; raw: string } => {
+    const id = typeof block[idField] === "string" ? (block[idField] as string) : "";
+    const name = typeof block[nameField] === "string" ? (block[nameField] as string) : "";
+    if (id && name) return { text: labelize(name), raw: id };
+    return { text: id ? labelize(id) : name, raw: "" };
+  };
   if (kind === "markdown") detail = firstLine(typeof block.markdown === "string" ? block.markdown : "");
-  else if (kind === "bound-table" && typeof block.databaseId === "string") detail = labelize(block.databaseId);
-  else if (kind === "metric") {
-    detail = [block.agg, block.columnId].filter((part) => typeof part === "string").map(String).map(labelize).join(" · ");
+  else if (kind === "bound-table") {
+    const table = named("databaseId", "databaseName");
+    detail = table.text;
+    if (table.raw) raw.push(table.raw);
+  } else if (kind === "metric") {
+    const column = named("columnId", "columnName");
+    detail = [labelize(String(block.agg ?? "")), column.text].filter(Boolean).join(" · ");
+    if (column.raw) raw.push(column.raw);
   } else if (kind === "chart") {
-    detail = [block.chartType, block.yColumnId].filter((part) => typeof part === "string").map(String).map(labelize).join(" · ");
+    const y = named("yColumnId", "yColumnName");
+    detail = [labelize(String(block.chartType ?? "")), y.text].filter(Boolean).join(" · ");
+    if (y.raw) raw.push(y.raw);
   } else if (kind === "date-range") {
     detail = `${plain(block.start) || "open"} – ${plain(block.end) || "open"}`;
   } else if (kind === "script" && typeof block.name === "string") detail = block.name;
-  else if (kind === "scenario-compare" && typeof block.assumptionSetId === "string") {
-    detail = labelize(block.assumptionSetId);
+  else if (kind === "scenario-compare") {
+    const set = named("assumptionSetId", "assumptionSetName");
+    detail = set.text;
+    if (set.raw) raw.push(set.raw);
   }
-  return { kind: labels[kind] ?? labelize(kind), detail };
+  return { kind: labels[kind] ?? labelize(kind), detail, ids: raw.join(" · ") };
 }
 
 function pinLabel(pin: Record<string, unknown>): string {
@@ -697,6 +884,7 @@ function rowsFrom(
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null,
   mode: "diff" | "after" | "before",
+  labels?: { before?: CellLabelMap; after?: CellLabelMap },
 ): ChangeRow[] {
   const keys: string[] = [];
   const seen = new Set<string>();
@@ -713,12 +901,22 @@ function rowsFrom(
     const hasAfter = after != null && key in after;
     const beforeValue = hasBefore ? before[key] : undefined;
     const afterValue = hasAfter ? after[key] : undefined;
+    // A cell the proposal drops while it was already empty is not a change. A
+    // row write is a full replace, so empty cells are simply absent from the new
+    // set: without this every null column reads as "- -> -" and the operator has
+    // to hunt through the table for the one field that actually moved.
+    const bothEmpty = isEmpty(beforeValue) && isEmpty(afterValue);
     const changed =
       mode !== "diff" ||
-      !hasBefore ||
-      !hasAfter ||
-      !sameValue(beforeValue, afterValue);
-    return { key, before: beforeValue, after: afterValue, changed };
+      (!bothEmpty && (!hasBefore || !hasAfter || !sameValue(beforeValue, afterValue)));
+    return {
+      key,
+      before: beforeValue,
+      after: afterValue,
+      changed,
+      beforeLabel: labels?.before?.[key] ?? null,
+      afterLabel: labels?.after?.[key] ?? null,
+    };
   });
 }
 
@@ -759,6 +957,15 @@ function parseJson(text: string): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringMap(value: unknown): Record<string, string> | null {
+  if (!isRecord(value)) return null;
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string") out[key] = entry;
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 function isItem(value: unknown): value is { id: string; text: string; priority?: string } {

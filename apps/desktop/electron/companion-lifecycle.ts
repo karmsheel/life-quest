@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import {
+  checkPinnedModel,
   COMPANION_SOUL,
   DEFAULT_API_PORT,
   MCP_URL,
@@ -8,6 +9,9 @@ import {
   RESERVED_PORTS,
   attachCandidateBaseUrls,
   ensureMcpServer,
+  ensureRootCompanionHeader,
+  modelsUrlFromConfig,
+  seedModelFromRoot,
   hermesRoot,
   portFromBaseUrl,
   profileDir,
@@ -15,6 +19,7 @@ import {
   shouldSeedSoul,
   upsertEnv,
 } from "./companion-profile.ts";
+import type { ModelCheck } from "./companion-profile.ts";
 
 const RESERVED = new Set<number>(RESERVED_PORTS);
 
@@ -27,6 +32,13 @@ export type CompanionReady = {
   cliPath: string;
   apiKey: string;
   childPid: number | null;
+  /**
+   * Set when the startup model probe found the pinned model retired: the
+   * gateway runs, but every chat will 404 until the operator picks a live
+   * model. Absent when the probe passed, was skipped, or could not reach
+   * the catalog (an unreachable catalog is not a verdict).
+   */
+  modelWarning?: string;
 };
 
 export type CompanionStatus =
@@ -52,7 +64,76 @@ export type CompanionIo = {
   ensureHostGateway: (cli: string, hermesHome: string) => Promise<void>;
   stopPid: (pid: number) => Promise<void>;
   listeningPid: (port: number) => Promise<number | null>;
+  /**
+   * KAR-70: the open vault's companion token, or null when no vault is
+   * open or the token cannot be minted. Defaults to the open vault's own
+   * token; a test may pass its own.
+   */
+  companionToken?: () => Promise<string | null>;
+  /**
+   * The startup model probe: is the profile's pinned model still live?
+   * Injected so tests can stub the catalog. Absent (older callers) skips
+   * the check rather than failing it.
+   */
+  checkModel?: (
+    configYaml: string,
+    modelsUrl: string | null,
+    apiKey: string,
+  ) => Promise<ModelCheck>;
 };
+
+/**
+ * KAR-70: the token for the vault that is open right now, for the profile
+ * writer's Authorization header.
+ *
+ * Imported lazily: vault-service imports this module for the companion's
+ * chat stream, so a static import here would close a cycle. A failure to
+ * reach it (no vault open, the secrets file unwritable) yields null and
+ * the profile is written without the header, which the door answers
+ * AUTH_REQUIRED — a loud failure, not a silent one, and never a Decision
+ * filed for Hermes.
+ */
+/**
+ * KAR-70: write (or refresh) the profile's `mcp_servers.lifequest` entry.
+ *
+ * With no token the file is left untouched — it is not even read. `ensure`
+ * runs on app start, before any vault is open, so there is nothing to write
+ * then, and rewriting the entry with an empty header list would strip the
+ * header the companion needs. Opening a vault calls this again with that
+ * vault's token, which is the credential the rebound doors accept.
+ */
+export async function writeCompanionMcpProfile(
+  io: Pick<CompanionIo, "readFile" | "writeFile">,
+  configPath: string,
+  companionToken: string | null,
+  rootConfigPath?: string | null,
+): Promise<void> {
+  // Before ensureMcpServer, and before the read: a missing token must not
+  // rewrite config.yaml at all.
+  if (!companionToken) return;
+  const authorization = `Bearer ${companionToken}`;
+  const yaml = (await io.readFile(configPath)) ?? "";
+  const rootYaml = rootConfigPath ? await io.readFile(rootConfigPath) : null;
+  let next = ensureMcpServer(yaml, PROFILE_NAME, MCP_URL, {
+    Authorization: authorization,
+  });
+  if (rootYaml) next = seedModelFromRoot(next, rootYaml);
+  if (next !== yaml) await io.writeFile(configPath, next);
+  if (rootConfigPath && rootYaml) {
+    const rootNext = ensureRootCompanionHeader(rootYaml, authorization);
+    if (rootNext !== rootYaml) await io.writeFile(rootConfigPath, rootNext);
+  }
+}
+
+async function openVaultCompanionToken(): Promise<string | null> {
+  try {
+    const vault = await import("./vault-service.ts");
+    const res = await vault.ensureCurrentCompanionToken();
+    return res.ok ? res.value : null;
+  } catch {
+    return null;
+  }
+}
 
 export function capabilitiesSupportSessions(payload: unknown): boolean {
   if (!payload || typeof payload !== "object") return false;
@@ -134,8 +215,13 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
   try {
     envText = upsertEnv(envText, { API_SERVER_KEY: apiKey });
     await io.writeFile(envPath, envText);
-    const yaml = (await io.readFile(configPath)) ?? "";
-    await io.writeFile(configPath, ensureMcpServer(yaml, PROFILE_NAME, MCP_URL));
+    const companionToken = await (io.companionToken ?? openVaultCompanionToken)();
+    await writeCompanionMcpProfile(
+      io,
+      configPath,
+      companionToken,
+      path.join(root, "config.yaml"),
+    );
     const soul = await io.readFile(soulPath);
     if (shouldSeedSoul(soul)) {
       await io.writeFile(soulPath, COMPANION_SOUL);
@@ -170,10 +256,38 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
         cliPath: cli,
         apiKey,
         childPid: null,
+        ...await modelProbe(apiKey),
       };
     }
     return null;
   };
+
+  /**
+   * The pinned model, checked against its provider's live catalog. A retired
+   * id turns into a warning that rides on the ready status — the gateway is
+   * up, but every chat would 404 until the operator picks a live model. The
+   * probe is best-effort: an error or an unreachable catalog is silence, not
+   * a warning, and never blocks attach.
+   */
+  async function modelProbe(apiKey: string): Promise<{ modelWarning?: string }> {
+    if (!io.checkModel) return {};
+    try {
+      const configYaml = (await io.readFile(configPath)) ?? "";
+      const verdict: ModelCheck = await io.checkModel(
+        configYaml,
+        modelsUrlFromConfig(configYaml),
+        apiKey,
+      );
+      if (verdict.kind === "retired") {
+        return {
+          modelWarning: `The companion's model "${verdict.model}" no longer exists at its provider — chats will fail until you pick a new model.`,
+        };
+      }
+    } catch {
+      // The probe must never block attach; a skipped check is the old status.
+    }
+    return {};
+  }
 
   const attached = await tryAttach();
   if (attached) return attached;

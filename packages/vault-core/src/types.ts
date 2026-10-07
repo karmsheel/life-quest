@@ -55,7 +55,16 @@ export type DocumentTarget =
   // (for a create_database the id is minted at propose time).
   | { type: "database-row"; domainSlug: string; databaseId: string; rowId: string | null }
   | { type: "database"; domainSlug: string; databaseId: string }
-  | { type: "database-batch"; domainSlug: string; databaseId: string };
+  // One Decision for a whole batch of new rows in one database; the rows and
+  // their minted ids live in proposedBodyMarkdown.
+  | { type: "database-batch"; domainSlug: string; databaseId: string }
+  // Agent-built dashboard views (plan.md design): one Decision proposes one
+  // saved view in one live domain. viewId is EMPTY at propose time — the id is
+  // minted when the operator approves and the spec is saved.
+  | { type: "view"; domainSlug: string; viewId: string }
+  // KAR-70: the pairing Decision a new MCP caller files on first contact. It
+  // resolves the connected-agent roster row, not a document.
+  | { type: "agent-pairing"; agentId: string };
 
 /**
  * KAR-64: the payload a database Decision carries in its proposedBodyMarkdown.
@@ -84,6 +93,12 @@ export type DatabaseDecisionBody = {
   options?: string[];
   /** add-column only, required for relation. */
   relationDatabaseId?: string;
+  /** Read-time relation labels for `cells`, keyed by column id. Not a write payload. */
+  cellLabels?: Record<string, string>;
+  /** Same, for `previousCells`. */
+  previousCellLabels?: Record<string, string>;
+  /** add-column only, resolved on read: the relation target's name. */
+  relationDatabaseName?: string;
 };
 
 /** A batch insert Decision. Cells live in proposedBodyMarkdown, same as a row write. */
@@ -536,6 +551,7 @@ export const PAGE_BLOCK_KINDS = [
   "net-worth",
   "scenario-compare",
   "script",
+  "view-ref",
 ] as const;
 export type PageBlockKind = (typeof PAGE_BLOCK_KINDS)[number];
 
@@ -575,7 +591,10 @@ export type PageBlock =
       assumptionSetId: string;
       compareSetId?: string | null;
     }
-  | { id: string; kind: "script"; name: string; source: string };
+  | { id: string; kind: "script"; name: string; source: string }
+  // Agent-built dashboard views (plan.md design): an embedded saved view. The
+  // view belongs to the page's domain; the card resolves the spec on read.
+  | { id: string; kind: "view-ref"; viewId: string };
 
 // KAR-56 script block run types
 export type ScriptQueryResult = { sql: string; columns: string[]; rows: unknown[][] };
@@ -613,7 +632,10 @@ export type SystemPinKind = (typeof SYSTEM_PIN_KINDS)[number];
 
 export type Pin =
   | { id: string; kind: "system"; system: SystemPinKind }
-  | { id: string; kind: "page"; domainSlug: string; pageId: string };
+  | { id: string; kind: "page"; domainSlug: string; pageId: string }
+  // Agent-built dashboard views (plan.md design, 2026-09-30): a saved view
+  // pinned on a board. span 1 is one grid cell, span 2 the full row.
+  | { id: string; kind: "view"; domainSlug: string; viewId: string; span: 1 | 2 };
 
 export type PinBoard = {
   schemaVersion: 1;
@@ -870,5 +892,69 @@ export type AssumptionSetSaveResult = {
 };
 
 // KAR-57 finance plan round2
+
+// ---------------------------------------------------------------------------
+// Agent-built dashboard views (plan.md design, 2026-09-30). A view is a saved,
+// validated spec over one database; the SQL is built in vault-core, the
+// companion never emits it.
+// ---------------------------------------------------------------------------
+
+export const VIEW_PRESENTATIONS = ["table", "bar", "line", "metric"] as const;
+export type ViewPresentation = (typeof VIEW_PRESENTATIONS)[number];
+
+export const VIEW_MEASURES = ["sum", "count", "last"] as const;
+
+export type ViewFilterOp = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in";
+
+export type ViewFilter = {
+  columnId: string;
+  op: ViewFilterOp;
+  value: unknown;
+};
+
+export type ViewTimeWindow =
+  | "all"
+  | "this-month"
+  | "last-30-days"
+  | "this-year"
+  // The trailing window the weekly tables ask for: count back from today's
+  // week (Monday start), inclusive. weeks: 1..260.
+  | { kind: "last-weeks"; weeks: number }
+  | { kind: "custom"; start: string; end: string };
+
+export type ViewMeasure = "sum" | "count" | "last" | "avg";
+
+export type ViewSort = { by: "label" | "value"; dir: "asc" | "desc" };
+
+export type ViewSpec = {
+  schemaVersion: 1;
+  databaseId: string;
+  title: string;
+  presentation: ViewPresentation;
+  /** null for a metric (one number for the whole database). */
+  groupBy: string | null;
+  /** day | week | month; required when a line groups on a date column. */
+  timeBucket: "day" | "week" | "month" | null;
+  /** The date column a timeWindow acts on; null means no window. */
+  timeColumnId: string | null;
+  timeWindow: ViewTimeWindow;
+  filters: ViewFilter[];
+  measure: ViewMeasure;
+  /** null for a count measure. */
+  measureColumnId: string | null;
+  sort: ViewSort;
+  /** 1..50; default 12. */
+  limit: number;
+  /** finance:transactions amount measures only. */
+  convertToZar: boolean;
+};
+
+export type ViewRunResult = {
+  columns: string[];
+  rows: Array<[label: string, value: number]>;
+  warnings: string[];
+  /** The single currency when every row shares one; "mixed" or null otherwise. */
+  currency: "ZAR" | "USD" | "mixed" | null;
+};
 
 

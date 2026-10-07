@@ -6,6 +6,7 @@ import {
 } from "@lifequest/vault-core/pure";
 import { Button } from "@/components/ui/Button";
 import { SettingsSection } from "@/components/ui/SettingsSection";
+import { useConfirm } from "@/components/ui/useConfirm";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 
@@ -31,6 +32,8 @@ export function SettingsDomains() {
   const [renameValue, setRenameValue] = useState("");
   const [busySlug, setBusySlug] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  /** Archive and delete ask in the app's own dialog, not the platform's. */
+  const { ask, dialog } = useConfirm();
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -82,14 +85,18 @@ export function SettingsDomains() {
     }
   }
 
-  async function archiveDomain(slug: string) {
-    if (
-      !window.confirm(
-        "Archive this domain? It will leave the active switcher list.",
-      )
-    ) {
-      return;
-    }
+  /** Archive is the soft one — the folder and its database stay — so it asks plainly. */
+  function archiveDomain(slug: string) {
+    ask({
+      title: "Archive domain",
+      message:
+        "The domain leaves the active switcher list. Its folder and everything in it stay in the vault.",
+      confirmLabel: "Archive domain",
+      run: () => void runArchiveDomain(slug),
+    });
+  }
+
+  async function runArchiveDomain(slug: string) {
     setBusySlug(slug);
     setActionError(null);
     try {
@@ -104,6 +111,57 @@ export function SettingsDomains() {
       await refresh();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to archive");
+    } finally {
+      setBusySlug(null);
+    }
+  }
+
+  async function unarchiveDomain(slug: string) {
+    setBusySlug(slug);
+    setActionError(null);
+    try {
+      const result = await api().domainUnarchive(slug);
+      if (!result.ok) {
+        setActionError(result.error);
+        return;
+      }
+      await refresh();
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to unarchive",
+      );
+    } finally {
+      setBusySlug(null);
+    }
+  }
+
+  /** Delete is not archive: the folder and its database go, so it wears the danger. */
+  function deleteDomain(slug: string, name: string) {
+    ask({
+      title: "Delete domain",
+      message: `Delete "${name}"? This permanently removes the domain and everything in it, including doctrine, pages, and its database. This cannot be undone.`,
+      confirmLabel: "Delete domain",
+      destructive: true,
+      run: () => void runDeleteDomain(slug),
+    });
+  }
+
+  async function runDeleteDomain(slug: string) {
+    setBusySlug(slug);
+    setActionError(null);
+    try {
+      const result = await api().domainDelete(slug);
+      if (!result.ok) {
+        setActionError(result.error);
+        return;
+      }
+      if (activeSlug === slug) {
+        await setActiveSlug(null);
+      }
+      if (renamingSlug === slug) setRenamingSlug(null);
+      await refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to delete");
     } finally {
       setBusySlug(null);
     }
@@ -293,16 +351,38 @@ export function SettingsDomains() {
         {archived.length > 0 ? (
           <>
             <h3 className="domains-manager__section-title">Archived</h3>
-            <ul className="archived-list muted">
-              {archived.map((d) => (
-                <li key={d.slug}>
-                  {d.meta.name}{" "}
-                  <span className="domain-card__slug">({d.slug})</span>
-                </li>
-              ))}
+            <ul className="archived-list">
+              {archived.map((d) => {
+                const busy = busySlug === d.slug;
+                return (
+                  <li key={d.slug} className="archived-list__item">
+                    <span>
+                      {d.meta.name}{" "}
+                      <span className="domain-card__slug muted">({d.slug})</span>
+                    </span>
+                    <span className="archived-list__actions">
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => void unarchiveDomain(d.slug)}
+                      >
+                        Unarchive
+                      </Button>
+                      <Button
+                        destructive
+                        disabled={busy}
+                        onClick={() => void deleteDomain(d.slug, d.meta.name)}
+                      >
+                        Delete
+                      </Button>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </>
         ) : null}
+      {dialog}
     </SettingsSection>
   );
 }

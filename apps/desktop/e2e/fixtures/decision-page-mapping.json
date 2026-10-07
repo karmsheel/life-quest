@@ -1,0 +1,139 @@
+{
+  "_comment": [
+    "A page Decision and a mapping Decision, in the shape the propose path files",
+    "them (`raw`) and the shape the read path hands the card (`resolved`).",
+    "Both bodies name their data by id: a page block is bound to a database and to",
+    "columns, a mapping names a column per incoming source column. The ids that are",
+    "not slugs are uuids — every column added through add_column mints one, so this",
+    "is the common case — and the card used to render them as \"8f3d2b41…\".",
+    "Values are neutral stand-ins for a real proposal; the shapes are not."
+  ],
+  "page": {
+    "target": {
+      "type": "page",
+      "domainSlug": "financial",
+      "pageId": "finance-page-spend"
+    },
+    "ids": {
+      "databaseId": "finance:transactions",
+      "mileageColumnId": "8f3d2b41-5c0e-4f2a-9d77-1b6e0a2c4d31",
+      "distanceColumnId": "3c9a1b77-2e4d-4a19-8f05-6d2c7b9e4a10",
+      "assumptionSetId": "finance-assumption-scenario-1"
+    },
+    "raw": {
+      "title": "Spend",
+      "blocks": [
+        {
+          "id": "blk-table",
+          "kind": "bound-table",
+          "databaseId": "finance:transactions"
+        },
+        {
+          "id": "blk-metric",
+          "kind": "metric",
+          "databaseId": "finance:transactions",
+          "columnId": "8f3d2b41-5c0e-4f2a-9d77-1b6e0a2c4d31",
+          "agg": "sum"
+        },
+        {
+          "id": "blk-chart",
+          "kind": "chart",
+          "chartType": "line",
+          "databaseId": "finance:transactions",
+          "xColumnId": "date",
+          "yColumnId": "3c9a1b77-2e4d-4a19-8f05-6d2c7b9e4a10"
+        },
+        {
+          "id": "blk-scenario",
+          "kind": "scenario-compare",
+          "assumptionSetId": "finance-assumption-scenario-1"
+        },
+        {
+          "id": "blk-note",
+          "kind": "markdown",
+          "markdown": "Top spend this month.\n"
+        }
+      ]
+    },
+    "resolved": {
+      "title": "Spend",
+      "blocks": [
+        {
+          "id": "blk-table",
+          "kind": "bound-table",
+          "databaseId": "finance:transactions",
+          "databaseName": "Transactions"
+        },
+        {
+          "id": "blk-metric",
+          "kind": "metric",
+          "databaseId": "finance:transactions",
+          "columnId": "8f3d2b41-5c0e-4f2a-9d77-1b6e0a2c4d31",
+          "agg": "sum",
+          "databaseName": "Transactions",
+          "columnName": "Mileage"
+        },
+        {
+          "id": "blk-chart",
+          "kind": "chart",
+          "chartType": "line",
+          "databaseId": "finance:transactions",
+          "xColumnId": "date",
+          "yColumnId": "3c9a1b77-2e4d-4a19-8f05-6d2c7b9e4a10",
+          "databaseName": "Transactions",
+          "xColumnName": "date",
+          "yColumnName": "Distance"
+        },
+        {
+          "id": "blk-scenario",
+          "kind": "scenario-compare",
+          "assumptionSetId": "finance-assumption-scenario-1",
+          "assumptionSetName": "Scenario 1"
+        },
+        {
+          "id": "blk-note",
+          "kind": "markdown",
+          "markdown": "Top spend this month.\n"
+        }
+      ]
+    }
+  },
+  "mapping": {
+    "target": {
+      "type": "mapping",
+      "domainSlug": "financial",
+      "mappingId": "map-capture-csv"
+    },
+    "raw": {
+      "id": "map-capture-csv",
+      "databaseId": "finance:transactions",
+      "fingerprint": "sha256:9f2c41ab7d0e5c68",
+      "sourceKind": "csv",
+      "columns": [
+        { "source": "Date", "columnId": "date" },
+        { "source": "Odometer", "columnId": "8f3d2b41-5c0e-4f2a-9d77-1b6e0a2c4d31" },
+        { "source": "Notes", "columnId": "" }
+      ],
+      "createdAt": "2026-09-29T17:30:57.690Z",
+      "updatedAt": "2026-09-29T17:30:57.690Z"
+    },
+    "resolved": {
+      "id": "map-capture-csv",
+      "databaseId": "finance:transactions",
+      "fingerprint": "sha256:9f2c41ab7d0e5c68",
+      "sourceKind": "csv",
+      "columns": [
+        { "source": "Date", "columnId": "date", "columnName": "date" },
+        {
+          "source": "Odometer",
+          "columnId": "8f3d2b41-5c0e-4f2a-9d77-1b6e0a2c4d31",
+          "columnName": "Mileage"
+        },
+        { "source": "Notes", "columnId": "" }
+      ],
+      "createdAt": "2026-09-29T17:30:57.690Z",
+      "updatedAt": "2026-09-29T17:30:57.690Z",
+      "databaseName": "Transactions"
+    }
+  }
+}

@@ -33,6 +33,7 @@ import WelcomePage from "@/pages/WelcomePage";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
+import { NavDockProvider } from "@/state/NavDockProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
 
@@ -126,12 +127,14 @@ export default function App() {
           <VaultProvider>
             <SplashGate />
             <ChatDockProvider>
-              <div className="app-root">
-                <WindowTitleBar />
-                <div className="app-root__body">
-                  <AppRoutes />
+              <NavDockProvider>
+                <div className="app-root">
+                  <WindowTitleBar />
+                  <div className="app-root__body">
+                    <AppRoutes />
+                  </div>
                 </div>
-              </div>
+              </NavDockProvider>
             </ChatDockProvider>
           </VaultProvider>
         </CompanionProvider>

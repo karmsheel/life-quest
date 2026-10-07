@@ -1,0 +1,305 @@
+/* Pages list and the create rail. Chrome is the Home wing's: corner radius is
+   2px and the type scale is the shared studio header, so this surface reads as
+   the sibling of the Data studio and the Dashboard cards. */
+
+.pages-studio {
+  --pages-radius: 2px;
+  container-type: inline-size;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.pages-studio__header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+}
+
+.pages-studio__eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.pages-studio__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.pages-studio__lead,
+.pages-studio__hint,
+.pages-studio__empty-title,
+.pages-studio__empty-hint {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.pages-studio__lead {
+  max-width: 40rem;
+}
+
+.pages-studio__empty-title {
+  padding-top: 0.35rem;
+}
+
+.pages-studio__empty-hint {
+  margin-top: 0.2rem;
+  padding-bottom: 0.15rem;
+  font-size: 0.8rem;
+}
+
+.pages-studio__banner {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--blue) 35%, var(--border));
+  border-radius: var(--pages-radius);
+  background: color-mix(in srgb, var(--blue) 10%, var(--bg-panel));
+  color: var(--foreground);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.pages-studio__banner--error {
+  border-color: color-mix(in srgb, var(--destructive) 40%, var(--border));
+  background: color-mix(in srgb, var(--destructive) 10%, var(--bg-panel));
+  color: var(--destructive);
+}
+
+.pages-studio__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(17rem, 22.5rem);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.pages-studio__rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.pages-studio__panel {
+  border: 1px solid var(--border);
+  border-radius: var(--pages-radius);
+  background: var(--bg-panel);
+  padding: 0.85rem 0.95rem 0.95rem;
+  box-shadow: var(--shadow-xs);
+}
+
+.pages-studio__panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.7rem;
+}
+
+.pages-studio__panel-head h2 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.pages-studio__count {
+  min-width: 1.4rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--pages-radius);
+  background: var(--bg-subtle);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.pages-studio__filter {
+  margin-bottom: 0.7rem;
+}
+
+.pages-studio__stats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.pages-studio__stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+}
+
+.pages-studio__stat-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pages-studio__stat-count {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pages-studio .btn {
+  border-radius: var(--pages-radius);
+}
+
+.pages-studio__submit {
+  width: 100%;
+}
+
+.pages-studio .input-field {
+  appearance: none;
+  width: 100%;
+  margin: 0;
+  border: 1px solid var(--input);
+  border-radius: var(--pages-radius);
+  background-color: var(--background);
+  padding: 0.48rem 0.65rem;
+  line-height: 1.35;
+}
+
+.pages-studio select.input-field {
+  padding-right: 1.75rem;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 55%,
+    calc(100% - 9px) 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.pages-studio .input-field:focus-visible,
+.pages-studio .page-list__open:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.pages-studio .input-field:focus-visible {
+  border-color: var(--ring);
+}
+
+.pages-studio .pages-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.pages-studio .pages-field__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.pages-studio .pages-studio__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.pages-studio .page-list {
+  list-style: none;
+  margin: 0 -0.95rem;
+  padding: 0;
+}
+
+.pages-studio .page-list__item + .page-list__item {
+  border-top: 1px solid var(--border-soft);
+}
+
+.pages-studio .page-list__open {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.7rem 0.95rem 0.7rem 0.85rem;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pages-studio .page-list__open:hover {
+  border-left-color: var(--accent);
+  background: var(--bg-subtle);
+}
+
+.pages-studio .page-list__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.pages-studio .page-list__name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pages-studio .page-list__sub {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.pages-studio .page-list__domain {
+  flex-shrink: 0;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.12rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--pages-radius);
+  background: var(--bg-subtle);
+  color: var(--foreground);
+  font-size: 0.72rem;
+}
+
+.pages-studio .page-list__chevron {
+  flex-shrink: 0;
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--text-soft);
+}
+
+@container (max-width: 720px) {
+  .pages-studio__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

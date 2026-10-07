@@ -2,6 +2,7 @@
 
 import type {
   AgentHire,
+  ConnectedAgent,
   DatabaseListEntry,
   DatabaseMeta,
   DatabaseRow,
@@ -38,6 +39,8 @@ import type {
   ReviewRecord,
   ScriptApplyResult,
   ScriptRunResult,
+  SavedView,
+  ViewRunResult,
   SignalChainListResult,
   SignalCreateInput,
   SignalRecord,
@@ -45,6 +48,15 @@ import type {
   VaultSettings,
   VaultSnapshot,
 } from "@lifequest/vault-core";
+// The composer's model/thinking pick, declared once in the main-side module the
+// renderer already imports its session helpers from — so the shape the pill
+// sends and the shape main hands the gateway cannot drift apart.
+import type {
+  CompanionModelCatalog,
+  CompanionModelChoice,
+  CompanionModelProvider,
+  CompanionRuntimeOverride,
+} from "../electron/companion-client";
 
 type RecentVaultEntry = {
   id: string;
@@ -62,6 +74,8 @@ type CompanionStatus =
       profilePath: string;
       cliPath: string;
       childPid: number | null;
+      /** Set when the startup probe found the pinned model retired. */
+      modelWarning?: string;
     }
   | { kind: "needs_install" }
   | { kind: "profile_error"; message: string; path?: string }
@@ -74,6 +88,8 @@ type CompanionStatus =
 type CompanionInstructionsContext = {
   domainName: string | null;
   domainSlug: string | null;
+  /** Which home Dashboard board the operator is looking at: null = Overview. */
+  viewingBoard?: string | null;
   aboutMe: string;
   locked: boolean;
   vaultOpen: boolean;
@@ -82,14 +98,35 @@ type CompanionInstructionsContext = {
 };
 
 type ChatStreamEvent =
+  | { type: "run.started"; runId: string }
   | { type: "assistant.delta"; text: string }
-  | { type: "tool.started"; name: string }
-  | { type: "tool.completed"; name: string; ok: boolean }
+  | { type: "tool.started"; name: string; target: string }
+  | { type: "tool.completed"; name: string }
   | { type: "approval.request"; runId: string; requestId: string; summary: string }
+  | { type: "run.stopped" }
+  | { type: "run.incomplete"; reason: string }
   | { type: "run.completed" }
   | { type: "error"; message: string };
 
-type HermesSession = { id: string; title: string };
+type HermesSession = {
+  id: string;
+  title: string;
+  preview: string | null;
+  lastActive: number | null;
+  /** Durable Hermes-side flag: pinned chats sort into their own section. */
+  pinned: boolean;
+};
+
+/**
+ * KAR-70: the two loopback doors and their own bind errors. A door that
+ * failed to bind has an empty url and a non-null error of its own.
+ */
+export type McpDoors = {
+  localUrl: string;
+  inviteUrl: string;
+  localError: string | null;
+  inviteError: string | null;
+};
 
 /** Frozen IPC API exposed on window.lifequest via preload. */
 type LifequestApi = {
@@ -109,6 +146,8 @@ type LifequestApi = {
     >,
   ) => Promise<Result<DomainRecord>>;
   domainArchive: (slug: string) => Promise<Result<DomainRecord>>;
+  domainUnarchive: (slug: string) => Promise<Result<DomainRecord>>;
+  domainDelete: (slug: string) => Promise<Result<{ slug: string }>>;
   domainSetActive: (slug: string | null) => Promise<Result<string | null>>;
   domainGetActive: () => Promise<string | null>;
   documentGet: (
@@ -197,26 +236,55 @@ type LifequestApi = {
   hermesScanAgents: () => Promise<Result<{ id: string; name: string }[]>>;
   mcpGetUrl: () => Promise<string>;
   mcpGetError: () => Promise<string | null>;
+  mcpGetDoors: () => Promise<McpDoors>;
+  connectedAgentsList: () => Promise<Result<ConnectedAgent[]>>;
+  connectedAgentsUpdate: (
+    id: string,
+    patch: { access?: "read" | "write"; domainSlugs?: string[]; schedule?: boolean },
+  ) => Promise<Result<ConnectedAgent>>;
+  connectedAgentsRevoke: (id: string) => Promise<Result<ConnectedAgent>>;
+  connectedAgentsInvite: () =>
+    Promise<Result<{ id: string; code: string; expiresAt: string }>>;
+  connectedAgentsListInvites: () =>
+    Promise<Result<{ id: string; expiresAt: string }[]>>;
+  connectedAgentsDropInvite: (id: string) =>
+    Promise<Result<{ dropped: true }>>;
   companionEnsure: () => Promise<CompanionStatus>;
   companionStatus: () => Promise<CompanionStatus>;
   companionSessionsList: () => Promise<Result<HermesSession[]>>;
   companionSessionCreate: (title: string) => Promise<Result<HermesSession>>;
   companionSessionMessages: (
     id: string,
-  ) => Promise<Result<{ role: string; content: string }[]>>;
+  ) => Promise<Result<{ role: "user" | "assistant"; content: string }[]>>;
+  companionSessionPatch: (
+    id: string,
+    patch: { title?: string; pinned?: boolean; archived?: boolean },
+  ) => Promise<Result<HermesSession>>;
+  companionSessionDelete: (
+    id: string,
+  ) => Promise<Result<{ id: string; deleted: boolean }>>;
+  /** The gateway's model inventory for this profile, for the composer's pills. */
+  companionModelOptions: () => Promise<
+    { ok: true; value: CompanionModelCatalog } | { ok: false; error: string }
+  >;
   companionChatStream: (payload: {
     sessionId: string;
     input: string;
     instructionsContext: CompanionInstructionsContext;
+    /** The composer's model / thinking-level pick for this turn. */
+    runtime?: CompanionRuntimeOverride | null;
   }) => Promise<Result<true> | { ok: true } | { ok: false; error: string }>;
   companionApproval: (payload: {
     runId: string;
     requestId: string;
     allow: boolean;
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  companionRunStop: (
+    runId: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   companionOpenProfileFolder: () => Promise<void>;
-  companionGetFiling: (sessionId: string) => Promise<boolean>;
-  companionSetFiling: (sessionId: string, enabled: boolean) => Promise<void>;
+  companionGetFiling: () => Promise<boolean>;
+  companionSetFiling: (enabled: boolean) => Promise<void>;
   onCompanionStream: (cb: (evt: ChatStreamEvent) => void) => () => void;
   mapGetState: () => Promise<Result<MapStoreState>>;
   mapApply: (command: MapCommand) => Promise<Result<VaultSnapshot>>;
@@ -337,6 +405,13 @@ type LifequestApi = {
   scriptRun: (input: { domainSlug: string; source: string }) => Promise<Result<ScriptRunResult>>;
   pinsList: (domainSlug: string | null) => Promise<Result<Pin[]>>;
   pinsSet: (domainSlug: string | null, pins: Pin[]) => Promise<Result<PinWriteResult>>;
+  // Agent-built dashboard views (plan.md design, slices 2/3)
+  viewList: (slug: string) => Promise<Result<SavedView[]>>;
+  viewGet: (slug: string, viewId: string) => Promise<Result<SavedView>>;
+  viewSave: (slug: string, spec: Record<string, unknown>, viewId?: string) => Promise<Result<SavedView>>;
+  viewDelete: (slug: string, viewId: string) => Promise<Result<{ id: string }>>;
+  viewRun: (slug: string, spec: Record<string, unknown>) => Promise<Result<ViewRunResult>>;
+  viewRunSaved: (slug: string, viewId: string) => Promise<Result<ViewRunResult>>;
   // KAR-61 finance kit
   kitInstallFinance: () => Promise<Result<unknown>>;
   kitList: (slug: string) => Promise<Result<unknown>>;
@@ -402,6 +477,10 @@ declare global {
 export type {
   ChatStreamEvent,
   CompanionInstructionsContext,
+  CompanionModelCatalog,
+  CompanionModelChoice,
+  CompanionModelProvider,
+  CompanionRuntimeOverride,
   CompanionStatus,
   HermesSession,
   LifequestApi,

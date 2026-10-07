@@ -64,7 +64,9 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
       isProjectExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isDatabaseRowExplicitTarget(explicitTarget as Record<string, unknown>) ||
       isDatabaseExplicitTarget(explicitTarget as Record<string, unknown>) ||
-      isDatabaseBatchExplicitTarget(explicitTarget as Record<string, unknown>))
+      isDatabaseBatchExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isViewExplicitTarget(explicitTarget as Record<string, unknown>) ||
+      isAgentPairingExplicitTarget(explicitTarget as Record<string, unknown>))
   ) {
     const t = explicitTarget as Record<string, unknown>;
     if (t.type === "review") {
@@ -123,8 +125,25 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
         domainSlug: String(t.domainSlug),
         databaseId: String(t.databaseId),
       };
-    } else {
+    } else if (t.type === "view") {
+      // Agent-built dashboard views: viewId is empty at propose time, so the
+      // guard accepts "" and this branch keeps it empty on the way through.
+      target = {
+        type: "view",
+        domainSlug: String(t.domainSlug),
+        viewId: typeof t.viewId === "string" ? t.viewId : "",
+      };
+    } else if (t.type === "library") {
+      // The library branch used to be the fallthrough. KAR-70 replaces that
+      // fallthrough with a throw, so library now needs a branch of its own.
       target = { type: "library", id: String(t.id) };
+    } else if (t.type === "agent-pairing") {
+      target = { type: "agent-pairing", agentId: String(t.agentId) };
+    } else {
+      // KAR-70: an explicit target that got past the guard but has no branch
+      // here is a target type this build does not know. Mapping it to a library
+      // note would file it against a document the operator never named.
+      throw new Error(`Unknown decision target type: ${String(t.type)}`);
     }
   } else if (
     typeof raw.documentKind === "string" &&
@@ -286,6 +305,16 @@ function isDatabaseRowExplicitTarget(raw: Record<string, unknown>): boolean {
   );
 }
 
+function isAgentPairingExplicitTarget(raw: Record<string, unknown>): boolean {
+  return raw.type === "agent-pairing" && typeof raw.agentId === "string" && raw.agentId.length > 0;
+}
+
+function isViewExplicitTarget(raw: Record<string, unknown>): boolean {
+  // viewId is "" at propose time (the id is minted at approval), so length is
+  // not required here — only the domain must be named.
+  return raw.type === "view" && typeof raw.domainSlug === "string" && raw.domainSlug.length > 0;
+}
+
 function isDatabaseExplicitTarget(raw: Record<string, unknown>): boolean {
   return (
     raw.type === "database" &&
@@ -412,6 +441,16 @@ export async function createDecision(
       if (!input.target.domainSlug.trim() || !input.target.databaseId.trim()) {
         return { ok: false, error: "domainSlug and databaseId are required" };
       }
+    } else if (input.target.type === "agent-pairing") {
+      if (!input.target.agentId.trim()) {
+        return { ok: false, error: "agentId is required" };
+      }
+    } else if (input.target.type === "view") {
+      // Agent-built dashboard views: the domain must be named; viewId is
+      // minted at approval, so an empty one is the normal propose shape.
+      if (!input.target.domainSlug.trim()) {
+        return { ok: false, error: "domainSlug is required" };
+      }
     } else if (
       input.target.type === "goal" ||
       input.target.type === "day-template" ||
@@ -460,6 +499,10 @@ export async function createDecision(
     ) {
       // Neither goals, day templates, nor projects are lockable or pre-existing files.
       // A project create is allowed to name a file that does not exist yet: approve creates it.
+      docLocked = false;
+      domainSlugForLog = null;
+    } else if (input.target.type === "agent-pairing") {
+      // A roster row is not a document: nothing to lock, no domain for the log.
       docLocked = false;
       domainSlugForLog = null;
     } else if (input.target.type === "review") {
@@ -545,6 +588,12 @@ export async function createDecision(
       }
       docLocked = false;
       domainSlugForLog = input.target.domainSlug;
+    } else if (input.target.type === "view") {
+      // Agent-built dashboard views: not a lockable document. The live-domain
+      // check happens in the view runner at apply time; the propose path only
+      // needs the domain named, which the shape validation already confirmed.
+      docLocked = false;
+      domainSlugForLog = input.target.domainSlug;
     } else {
       const noteRes = await libraryGet(rootPath, input.target.id);
       if (!noteRes.ok) {
@@ -597,10 +646,13 @@ export async function createDecision(
                             ? libraryNote.value.domainSlugs
                             : (input.domainSlugs ?? []);
 
-    const title = `Proposed change to ${documentTargetLabel(
-      input.target,
-      input.proposedTitle ?? "",
-    )}`;
+    // KAR-70: the pairing Decision title is already a sentence. Wrapping it in
+    // "Proposed change to" would make the inbox read "Proposed change to
+    // Finance bot".
+    const title =
+      input.target.type === "agent-pairing" && input.proposedTitle
+        ? input.proposedTitle
+        : `Proposed change to ${documentTargetLabel(input.target, input.proposedTitle ?? "")}`;
 
     const paths = vaultPaths(rootPath);
     const id = randomUUID();
@@ -665,11 +717,75 @@ type ApplyOutcome =
   | { ok: true; value?: undefined }
   | { ok: false; error: string; terminal: boolean };
 
+/**
+ * Agent-built dashboard views: the one applied outcome that carries a value —
+ * the freshly minted view id, which the proposer must learn to name. All other
+ * applications update state the caller already knows how to re-read.
+ */
+type ViewApplyOutcome = { ok: true; value: { viewId: string } } | { ok: false; error: string; terminal: boolean };
+
+async function applyViewDecision(
+  rootPath: string,
+  decision: DecisionRecord & { target: { type: "view"; domainSlug: string; viewId: string } },
+): Promise<ViewApplyOutcome> {
+  // Parse and validate here, then delegate the file write to saveView. The
+  // schemaVersion the propose-time copy carried is stripped: the file-level
+  // invariant belongs to the runner, not to a decision body frozen earlier.
+  let body: { op?: unknown; spec?: unknown };
+  try {
+    body = JSON.parse(decision.proposedBodyMarkdown) as { op?: unknown; spec?: unknown };
+  } catch {
+    return { ok: false, error: "View proposedBody must be valid JSON", terminal: false };
+  }
+  if (!body || typeof body !== "object" || body.op !== "save-view" || !body.spec) {
+    return {
+      ok: false,
+      error: "View proposedBody must carry { op: 'save-view', spec }",
+      terminal: false,
+    };
+  }
+  const spec = body.spec as Record<string, unknown>;
+  delete spec.schemaVersion;
+  const { saveView } = await import("./views.ts");
+  const save = await saveView(
+    rootPath,
+    decision.target.domainSlug,
+    spec as Parameters<typeof saveView>[2],
+    { id: decision.target.viewId || undefined },
+  );
+  if (!save.ok) return { ok: false, error: save.error, terminal: false };
+  return { ok: true, value: { viewId: save.value.id } };
+}
+
 async function applyApprovedBody(
   rootPath: string,
   decision: DecisionRecord,
 ): Promise<ApplyOutcome> {
   try {
+    if (decision.target.type === "agent-pairing") {
+      // Approval only flips the row to active. It must not touch access,
+      // domainSlugs, or schedule: those are operator grants, set in Personnel.
+      const { markConnectedAgent } = await import("./connected-agents.ts");
+      const res = await markConnectedAgent(rootPath, decision.target.agentId, "active");
+      if (!res.ok) {
+        // Only a row that is actually gone is terminal. A transient write
+        // failure must leave the Decision pending: resolveDecision records a
+        // terminal failure as a rejection, which would strand the roster row
+        // at `pending` with no Decision left to activate it.
+        if (/^Agent not found/.test(res.error)) {
+          return { ok: false, error: "Agent not found", terminal: true };
+        }
+        return { ok: false, error: res.error, terminal: false };
+      }
+      return { ok: true, value: undefined };
+    }
+    if (decision.target.type === "view") {
+      const applied = await applyViewDecision(rootPath, decision as DecisionRecord & {
+        target: { type: "view"; domainSlug: string; viewId: string };
+      });
+      if (!applied.ok) return applied;
+      return { ok: true, value: undefined };
+    }
     if (decision.target.type === "review") {
       const res = await applyLockedReviewBody(
         rootPath,
@@ -1156,6 +1272,29 @@ export async function resolveDecision(
     }
 
     const now = new Date().toISOString();
+
+    // KAR-70: rejecting a pairing Decision is a roster transition, not just a
+    // file edit. It runs before the Decision file is written, so a rejection
+    // that cannot land never leaves a resolved Decision pointing at a row that
+    // still says pending — which would answer PAIRING_PENDING forever to a
+    // bearer the operator has already turned away.
+    if (resolution === "rejected" && decision.target.type === "agent-pairing") {
+      const { markConnectedAgent } = await import("./connected-agents.ts");
+      const res = await markConnectedAgent(
+        rootPath,
+        decision.target.agentId,
+        "rejected",
+      );
+      if (!res.ok) {
+        // A row that is genuinely gone is terminal: recording the rejection is
+        // still the right record, since the operator did decide. Anything else
+        // is a transient write failure, so the Decision stays pending and the
+        // operator can reject again.
+        if (!/^Agent not found/.test(res.error)) {
+          return { ok: false, error: res.error };
+        }
+      }
+    }
 
     if (resolution === "approved") {
       const applyRes = await applyApprovedBody(rootPath, decision);

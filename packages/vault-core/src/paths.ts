@@ -9,6 +9,8 @@ export function vaultPaths(root: string) {
     lifequestDir: path.join(rootPath, ".lifequest"),
     settingsJson: path.join(rootPath, ".lifequest", "settings.json"),
     agentsJson: path.join(rootPath, ".lifequest", "agents.json"),
+    // KAR-70: the connected-agent roster. No secrets live here.
+    connectedAgentsJson: path.join(rootPath, ".lifequest", "connected-agents.json"),
     logJsonl: path.join(rootPath, ".lifequest", "log.jsonl"),
     decisionsDir: path.join(rootPath, ".lifequest", "decisions"),
     signalChainDir: path.join(rootPath, ".lifequest", "signal-chain"),
@@ -70,6 +72,10 @@ export function vaultPaths(root: string) {
     domainPage: (slug: string, pageId: string) =>
       safeJoin(rootPath, "domains", slug, "pages", `${pageId}.json`),
     domainPins: (slug: string) => safeJoin(rootPath, "domains", slug, "pins.json"),
+    // Agent-built dashboard views (plan.md design, 2026-09-30)
+    domainViewsDir: (slug: string) => safeJoin(rootPath, "domains", slug, "views"),
+    domainView: (slug: string, viewId: string) =>
+      safeJoin(rootPath, "domains", slug, "views", `${viewId}.json`),
     overviewPins: path.join(rootPath, ".lifequest", "overview-pins.json"),
     cacheDir: path.join(rootPath, ".lifequest", "cache"),
   };

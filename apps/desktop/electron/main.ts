@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 import { stopMcp } from "./mcp-server.js";
 import * as companion from "./companion.js";
 import { getFileUnsolicited, setFileUnsolicited } from "./companion-filing.js";
-import type { CompanionInstructionsInput } from "./companion-client.js";
+import type {
+  CompanionInstructionsInput,
+  CompanionRuntimeOverride,
+} from "./companion-client.js";
 import * as vault from "./vault-service.js";
 import {
   setDeadlineDismissedOn,
@@ -115,6 +118,12 @@ function registerIpcHandlers() {
   ipcMain.handle("domain:archive", (_e, slug: string) =>
     vault.domainArchive(slug),
   );
+  ipcMain.handle("domain:unarchive", (_e, slug: string) =>
+    vault.domainUnarchive(slug),
+  );
+  ipcMain.handle("domain:delete", (_e, slug: string) =>
+    vault.domainDelete(slug),
+  );
   ipcMain.handle("domain:setActive", (_e, slug: string | null) =>
     vault.domainSetActive(slug),
   );
@@ -153,6 +162,13 @@ function registerIpcHandlers() {
   ipcMain.handle("script:run", (_e, input: { domainSlug: string; source: string }) => vault.scriptRun(input));
   ipcMain.handle("pins:list", (_e, domainSlug: string | null) => vault.pinsList(domainSlug));
   ipcMain.handle("pins:set", (_e, domainSlug: string | null, pins: Parameters<typeof vault.pinsSet>[1]) => vault.pinsSet(domainSlug, pins));
+  // KAR-V: agent-built dashboard views
+  ipcMain.handle("view:list", (_e, slug: string) => vault.viewList(slug));
+  ipcMain.handle("view:get", (_e, slug: string, viewId: string) => vault.viewGet(slug, viewId));
+  ipcMain.handle("view:save", (_e, slug: string, spec: Parameters<typeof vault.viewSave>[1], viewId?: string) => vault.viewSave(slug, spec, viewId));
+  ipcMain.handle("view:delete", (_e, slug: string, viewId: string) => vault.viewDelete(slug, viewId));
+  ipcMain.handle("view:run", (_e, slug: string, spec: Parameters<typeof vault.viewRun>[1]) => vault.viewRun(slug, spec));
+  ipcMain.handle("view:runSaved", (_e, slug: string, viewId: string) => vault.viewRunSaved(slug, viewId));
 
   // KAR-53 ingest
   ipcMain.handle("ingest:file", (_e, slug: string, input: { databaseId: string; bytes: Uint8Array; mime: string; name: string; extractedRows?: Record<string, string>[] }) => vault.ingestFile(slug, input));
@@ -328,15 +344,59 @@ function registerIpcHandlers() {
 
   ipcMain.handle("mcp:getUrl", () => vault.getMcpUrl());
   ipcMain.handle("mcp:getError", () => vault.getMcpError());
+  // KAR-70: both doors, each with its own bind error.
+  ipcMain.handle("mcp:getDoors", () => vault.getMcpDoorState());
+
+  ipcMain.handle("connectedAgents:list", () =>
+    vault.connectedAgentsList(),
+  );
+  ipcMain.handle(
+    "connectedAgents:update",
+    (
+    _e,
+    id: string,
+    patch: { access?: "read" | "write"; domainSlugs?: string[]; schedule?: boolean },
+  ) => vault.connectedAgentsUpdate(typeof id === "string" ? id : "", patch),
+  );
+  ipcMain.handle("connectedAgents:revoke", (_e, id: string) =>
+    vault.connectedAgentsRevoke(typeof id === "string" ? id : ""),
+  );
+  ipcMain.handle("connectedAgents:invite", () =>
+    vault.connectedAgentsInvite(),
+  );
+  ipcMain.handle("connectedAgents:listInvites", () =>
+    vault.connectedAgentsListInvites(),
+  );
+  ipcMain.handle("connectedAgents:dropInvite", (_e, id: string) =>
+    vault.connectedAgentsDropInvite(typeof id === "string" ? id : ""),
+  );
 
   ipcMain.handle("companion:ensure", () => companion.companionEnsure());
   ipcMain.handle("companion:status", () => companion.companionStatus());
   ipcMain.handle("companion:sessionsList", () => companion.companionSessionsList());
   ipcMain.handle("companion:sessionCreate", (_e, title: string) =>
-    companion.companionSessionCreate(title || "LifeQuest"),
+    companion.companionSessionCreate(typeof title === "string" ? title : ""),
   );
   ipcMain.handle("companion:sessionMessages", (_e, id: string) =>
     companion.companionSessionMessages(id),
+  );
+  ipcMain.handle(
+    "companion:sessionPatch",
+    (
+      _e,
+      id: string,
+      patch: { title?: string; pinned?: boolean; archived?: boolean },
+    ) =>
+      companion.companionSessionPatch(
+        typeof id === "string" ? id : "",
+        patch && typeof patch === "object" ? patch : {},
+      ),
+  );
+  ipcMain.handle("companion:sessionDelete", (_e, id: string) =>
+    companion.companionSessionDelete(typeof id === "string" ? id : ""),
+  );
+  ipcMain.handle("companion:modelOptions", () =>
+    companion.companionModelOptions(),
   );
   ipcMain.handle(
     "companion:chatStream",
@@ -346,6 +406,8 @@ function registerIpcHandlers() {
         sessionId: string;
         input: string;
         instructionsContext: CompanionInstructionsInput;
+        /** The composer's model / thinking-level pick for this turn. */
+        runtime?: CompanionRuntimeOverride | null;
       },
     ) => {
       return vault.companionChatStreamWithPack(
@@ -357,6 +419,7 @@ function registerIpcHandlers() {
             event.sender.send("companion:stream", evt);
           }
         },
+        payload.runtime ?? null,
       );
     },
   );
@@ -365,14 +428,15 @@ function registerIpcHandlers() {
     (_e, payload: { runId: string; requestId: string; allow: boolean }) =>
       companion.companionApproval(payload.runId, payload.requestId, payload.allow),
   );
+  ipcMain.handle("companion:runStop", (_e, runId: string) =>
+    companion.companionRunStop(runId),
+  );
   ipcMain.handle("companion:openProfileFolder", () =>
     companion.companionOpenProfileFolder(),
   );
-  ipcMain.handle("companion:getFiling", (_e, sessionId: string) =>
-    getFileUnsolicited(sessionId),
-  );
-  ipcMain.handle("companion:setFiling", (_e, sessionId: string, enabled: boolean) =>
-    setFileUnsolicited(sessionId, enabled),
+  ipcMain.handle("companion:getFiling", () => getFileUnsolicited());
+  ipcMain.handle("companion:setFiling", (_e, enabled: boolean) =>
+    setFileUnsolicited(enabled),
   );
 
   ipcMain.handle("map:getState", () => vault.mapGetState());

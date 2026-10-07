@@ -30,6 +30,46 @@ function domainLabel(
   return domains.find((d) => d.slug === domainSlug)?.meta.name ?? domainSlug;
 }
 
+function kindLabel(target: DecisionRecord["target"]): string {
+  switch (target.type) {
+    case "doctrine":
+      return DOCUMENT_KIND_LABELS[target.kind];
+    case "library":
+      return "Library note";
+    case "review":
+      return "Review";
+    case "page":
+      return "Page";
+    case "pins":
+      return "Pins";
+    case "mapping":
+      return "Mapping";
+    case "kit-install":
+      return "Finance kit";
+    case "assumption-set":
+      return "Assumptions";
+    case "goal":
+      return "Goal";
+    case "day-template":
+      return "Day template";
+    case "project":
+      return "Project";
+    case "database-row":
+      return "Database row";
+    case "database":
+      return "Database";
+    // One card stands for a whole batch of new rows, so the kind says rows.
+    case "database-batch":
+      return "Database rows";
+    // KAR-70: a pairing Decision, not a document. Falling through would leave
+    // the card with no kind label at all.
+    case "agent-pairing":
+      return "Agent pairing";
+    case "view":
+      return "Dashboard view";
+  }
+}
+
 export function DecisionsInbox() {
   const { snapshot, refresh } = useVault();
   const lens = useDomainLens();
@@ -58,7 +98,14 @@ export function DecisionsInbox() {
       } else {
         list = list.filter((d) => d.status !== "pending");
       }
-      list = list.filter((d) => recordVisibleMulti(lens, d.domainSlugs));
+      // KAR-70: a pairing Decision belongs to no domain, so the lens
+      // filter would hide the very card the operator has to act on. Every
+      // pairing Decision stays visible under every lens.
+      list = list.filter(
+        (d) =>
+          d.target.type === "agent-pairing" ||
+          recordVisibleMulti(lens, d.domainSlugs),
+      );
       // Newest first
       list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       setItems(list);
@@ -85,9 +132,7 @@ export function DecisionsInbox() {
         return;
       }
       setActionMessage(
-        resolution === "approved"
-          ? "Decision approved. Document body updated."
-          : "Decision rejected.",
+        resolution === "approved" ? "Decision approved." : "Decision rejected.",
       );
       await load();
       // Refresh vault snapshot so document editors pick up approved body.
@@ -104,9 +149,10 @@ export function DecisionsInbox() {
   return (
     <div className="decisions-inbox">
       <header className="decisions-inbox__header">
+        <p className="decisions-inbox__eyebrow">Inbox</p>
         <h1 className="stub-page__title">Decisions</h1>
         <p className="stub-page__desc muted">
-          Proposals to locked documents. Approve or reject.
+          Approve a proposal to write it into the vault. Reject it to leave the vault as it is.
         </p>
       </header>
 
@@ -168,128 +214,102 @@ export function DecisionsInbox() {
         </p>
       ) : (
         <ul className="decisions-inbox__list">
-          {items.map((d) => (
-            <li key={d.id} className="decision-card">
-              <div className="decision-card__top">
+          {items.map((d) => {
+            const title =
+              tab === "pending" && d.proposedTitle ? d.proposedTitle : d.title;
+            const domainsLabel = d.domainSlugs
+              .map((slug) => domainLabel(slug, domains))
+              .join(", ");
+            const statusLabel = d.reason ? "Could not apply" : d.status;
+            const statusClass = d.reason
+              ? "decision-status--stale"
+              : `decision-status--${d.status}`;
+            return (
+              <li key={d.id} className="decision-card">
+                <div className="decision-card__kicker">
+                  <span className="decision-kind">{kindLabel(d.target)}</span>
+                  <span className={`decision-status ${statusClass}`}>{statusLabel}</span>
+                </div>
                 <div>
-                  <h2 className="decision-card__title">
-                    {tab === "pending" && d.proposedTitle
-                      ? d.proposedTitle
-                      : d.title}
-                  </h2>
+                  <h2 className="decision-card__title">{title}</h2>
                   <p className="decision-card__meta muted">
-                    {actorDisplayName(d.actor)} ·{" "}
-                    {d.domainSlugs.map((slug) => domainLabel(slug, domains)).join(", ")}
-                    ·{" "}
-                    {d.target.type === "doctrine"
-                      ? DOCUMENT_KIND_LABELS[d.target.kind]
-                      : d.target.type === "database-row"
-                        ? d.target.rowId
-                          ? `Row in ${d.target.databaseId}`
-                          : `New row in ${d.target.databaseId}`
-                        : d.target.type === "database"
-                          ? `Database in ${d.target.domainSlug}`
-                          : d.target.type === "database-batch"
-                            ? "Database rows"
-                            : d.proposedTitle ?? d.title}
-                    ·{" "}
-                    {formatWhen(d.createdAt)}
-                    {d.status !== "pending" ? (
+                    <span>{actorDisplayName(d.actor)}</span>
+                    {domainsLabel ? (
                       <>
-                        {" "}
-                        ·{" "}
-                        <span
-                          className={`decision-card__status decision-card__status--${d.status}`}
-                        >
-                          {d.status}
-                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>{domainsLabel}</span>
                       </>
                     ) : null}
+                    <span aria-hidden="true">·</span>
+                    <time dateTime={d.createdAt}>{formatWhen(d.createdAt)}</time>
                   </p>
                 </div>
-              </div>
 
-              {d.rationale ? (
-                <p className="decision-card__rationale">
-                  <span className="muted">Rationale:</span> {d.rationale}
-                </p>
-              ) : null}
+                {d.rationale ? (
+                  <p className="decision-card__rationale">{d.rationale}</p>
+                ) : null}
 
-              {/* KAR-64: a Decision the operator approved whose apply failed
-                  terminally is rejected with a reason. It must not read like one
-                  they declined, so it is labelled and explained distinctly. */}
-              {d.reason ? (
-                <p className="decision-card__reason" role="note">
-                  <span className="muted">Rejected · proposal no longer applies.</span>{" "}
-                  {d.reason}
-                </p>
-              ) : null}
+                {/* KAR-64: a Decision the operator approved whose apply failed
+                    terminally is rejected with a reason. It must not read like one
+                    they declined, so it is labelled and explained distinctly. */}
+                {d.reason ? (
+                  <p className="decision-card__reason" role="note">
+                    <span className="decision-card__reason-label">
+                      Rejected · proposal no longer applies.
+                    </span>
+                    {d.reason}
+                  </p>
+                ) : null}
 
-              {tab === "pending" && d.status === "pending" &&
+                {tab === "pending" &&
+                d.status === "pending" &&
                 d.previousTitle != null &&
                 d.previousTitle !== (d.proposedTitle ?? "") ? (
-                <p className="decision-card__title-change muted">
-                  Title: {d.previousTitle} → {d.proposedTitle}
-                </p>
-              ) : null}
+                  <p className="decision-card__title-change">
+                    <span className="muted">Title</span>
+                    <span className="decision-value--was">{d.previousTitle}</span>
+                    <span aria-hidden="true">→</span>
+                    <span>{d.proposedTitle}</span>
+                  </p>
+                ) : null}
 
-              {d.target.type === "database-batch" ? (
                 <DecisionBody
                   target={d.target}
                   proposed={d.proposedBodyMarkdown}
                   previous={d.previousBodyMarkdown}
-                  goalName={(id) =>
-                    snapshot?.goals.find((goal) => goal.id === id)?.name ?? null
-                  }
+                  goalName={(id) => snapshot?.goals.find((goal) => goal.id === id)?.name ?? null}
                   domainName={(slug) => domainLabel(slug, domains)}
                 />
-              ) : (
-                <div className="decision-card__bodies">
-                  {d.previousBodyMarkdown != null ? (
-                    <label className="decision-card__body-block">
-                      <span className="muted">Current body</span>
-                      <pre className="decision-card__pre">
-                        {d.previousBodyMarkdown || "(empty)"}
-                      </pre>
-                    </label>
-                  ) : null}
-                  <label className="decision-card__body-block">
-                    <span className="muted">Proposed body</span>
-                    <pre className="decision-card__pre">
-                      {d.proposedBodyMarkdown || "(empty)"}
-                    </pre>
-                  </label>
-                </div>
-              )}
 
-              {tab === "pending" && d.status === "pending" ? (
-                <div className="decision-card__actions">
-                  <button
-                    type="button"
-                    className="btn btn-danger"
-                    disabled={resolvingId === d.id}
-                    onClick={() => void resolve(d.id, "rejected")}
-                  >
-                    {resolvingId === d.id ? "…" : "Reject"}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={resolvingId === d.id}
-                    onClick={() => void resolve(d.id, "approved")}
-                  >
-                    {resolvingId === d.id ? "…" : "Approve"}
-                  </button>
-                </div>
-              ) : null}
+                {tab === "pending" && d.status === "pending" ? (
+                  <div className="decision-card__actions">
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      disabled={resolvingId === d.id}
+                      onClick={() => void resolve(d.id, "rejected")}
+                    >
+                      {resolvingId === d.id ? "…" : "Reject"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={resolvingId === d.id}
+                      onClick={() => void resolve(d.id, "approved")}
+                    >
+                      {resolvingId === d.id ? "…" : "Approve"}
+                    </button>
+                  </div>
+                ) : null}
 
-              {d.resolvedAt ? (
-                <p className="decision-card__resolved muted">
-                  Resolved {formatWhen(d.resolvedAt)}
-                </p>
-              ) : null}
-            </li>
-          ))}
+                {d.resolvedAt ? (
+                  <p className="decision-card__resolved muted">
+                    Resolved {formatWhen(d.resolvedAt)}
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

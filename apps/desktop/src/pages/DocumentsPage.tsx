@@ -13,6 +13,7 @@ import {
   type LibraryDocument,
 } from "@lifequest/vault-core/pure";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { useConfirm } from "@/components/ui/useConfirm";
 import { doctrineMarkdownToHtml } from "@/lib/doctrine-markdown";
 import { createWikiResolver } from "@/lib/wiki-links";
 import { api } from "@/lib/ipc";
@@ -53,6 +54,8 @@ export default function DocumentsPage() {
   const [editingLocked, setEditingLocked] = useState(false);
   const [proposeOpen, setProposeOpen] = useState(false);
   const tagsDirty = useRef(false);
+  /** The note's delete asks in the app's own dialog, not the platform's. */
+  const { ask, dialog } = useConfirm();
 
   const liveDomains = useMemo(
     () =>
@@ -225,17 +228,24 @@ export default function DocumentsPage() {
     }
   }
 
-  async function onDelete() {
+  /** Delete asks first: the note is hidden from the library, not erased. */
+  function onDelete() {
     if (!editingId) return;
-    if (
-      !window.confirm("Delete this note? It will be hidden from the library.")
-    ) {
-      return;
-    }
+    const id = editingId;
+    ask({
+      title: "Delete note",
+      message: "The note is hidden from the library. Its file stays in the vault.",
+      confirmLabel: "Delete note",
+      destructive: true,
+      run: () => void runDelete(id),
+    });
+  }
+
+  async function runDelete(id: string) {
     setBusy(true);
     setError(null);
     try {
-      const result = await api().libraryDelete(editingId);
+      const result = await api().libraryDelete(id);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -482,6 +492,7 @@ export default function DocumentsPage() {
         onClose={onProposeClose}
         onSubmitted={onProposeSubmitted}
       />
+      {dialog}
     </div>
   );
 }

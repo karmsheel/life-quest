@@ -24,6 +24,7 @@ import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { Button } from "@/components/ui/Button";
+import { ViewCard } from "@/components/ui/ViewCard";
 
 type ScriptRunState =
   | { running: true }
@@ -42,6 +43,7 @@ const BLOCK_LABELS: Record<string, string> = {
   "net-worth": "Net worth",
   "scenario-compare": "Scenario compare",
   script: "Script",
+  "view-ref": "Saved view",
 };
 
 function genId(): string {
@@ -636,6 +638,18 @@ export default function PageCanvasPage() {
                 ) : (
                   <p className="muted">Pick a database and columns.</p>
                 )}
+              </section>
+            );
+          }
+          if (block.kind === "view-ref") {
+            const b = block as Extract<PageBlock, { kind: "view-ref"; viewId: string }>;
+            return (
+              <section key={b.id} className="page-block">
+                <div className="page-block__head">
+                  <span className="muted">Saved view</span>
+                  <button className="page-block__remove" onClick={() => removeBlock(b.id)}>Remove</button>
+                </div>
+                {slug ? <ViewCard domainSlug={slug} viewId={b.viewId} /> : null}
               </section>
             );
           }

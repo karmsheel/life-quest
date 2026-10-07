@@ -2,6 +2,8 @@
 @import "./map.css";
 @import "./goals.css";
 @import "./schedule.css";
+@import "./data.css";
+@import "./pages.css";
 
 * {
   box-sizing: border-box;
@@ -257,7 +259,12 @@ a {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  /* The frame on three sides only: the rail owns the left edge flush, so the
+     rail's trailing gap comes from the shell's own column gap rather than from
+     a second frame stacked on top of it. That is what keeps the rail→sheet gap
+     equal to the sheet→chat gap. */
   padding: var(--shell-frame);
+  padding-left: 0;
 }
 
 .app-root__body > * {
@@ -281,6 +288,7 @@ a {
   box-sizing: border-box;
   display: flex;
   align-items: center;
+  position: relative; /* anchor for the toggle floating in the rail's column */
   min-width: 0;
   height: 100%;
   margin-left: env(titlebar-area-x, 0px);
@@ -294,47 +302,55 @@ a {
   flex: 1 1 auto;
 }
 
-.window-titlebar__brand {
+.window-titlebar__vault {
+  /* no-drag: the strip it sits in is a window drag handle. */
   -webkit-app-region: no-drag;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   display: flex;
   align-items: center;
-  justify-content: center;
-  height: 100%;
-  padding: 0 0.45rem;
-  text-decoration: none;
-  color: inherit;
-}
-
-.window-titlebar__logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: var(--radius-xs);
-  background: var(--accent);
-  color: var(--accent-fg);
-  font-size: 0.5rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.window-titlebar__brand:hover .window-titlebar__logo {
-  background: var(--accent-hover);
-}
-
-.window-titlebar__label {
-  box-sizing: border-box;
   min-width: 0;
-  flex: 1 1 auto;
-  padding: 0 0.5rem 0 0.15rem;
-  font-size: 0.8rem;
+  max-width: 100%;
+  /* Full strip height: the chip hangs off the window's top edge with no margin
+     at either end, and only its own padding keeps the text off the chrome. */
+  align-self: stretch;
+  /* Lines the chip's leading border up with the sheet's: the strip indents by
+     the rail's column, then by the same pane gap the sheet sits behind. */
+  margin-left: var(--shell-frame);
+  padding: 0 0.6rem;
+  border-radius: 0;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: -0.01em;
+  text-decoration: none;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.window-titlebar__vault:hover {
+  background: var(--accent-hover);
+  color: var(--accent-hover-fg);
+}
+
+/* The whole shell — rail open or closed — reserves the rail's column, so the
+   toggle and the chip hold their places instead of sliding when it toggles. */
+.window-titlebar--nav-column .window-titlebar__leading {
+  padding-left: var(--shell-nav-width);
+}
+
+/* The toggle is out of flow inside that reserved column: it floats there whether
+   it is standing in for the rail or sitting in the rail itself, and nothing
+   downstream is laid out after it — which is what makes the chip's x a constant.
+   Two classes on purpose — `.nav-toggle`'s own `margin: 0` is later in the sheet
+   and would win at equal specificity. */
+.window-titlebar__leading .window-titlebar__nav-toggle {
+  position: absolute;
+  left: calc((var(--shell-nav-width) - var(--nav-toggle-size)) / 2);
+  top: 50%;
+  margin: 0;
+  transform: translateY(-50%);
 }
 
 .window-titlebar__trailing {
@@ -423,17 +439,50 @@ a {
 }
 
 .shell {
+  /* Track widths as vars so the two collapse variants compose instead of each
+     overwriting the other's grid-template-columns. */
+  --nav-column: var(--shell-nav-width);
+  --chat-column: var(--chatbar-width);
   display: grid;
-  grid-template-columns: var(--shell-nav-width) 1fr var(--chatbar-width);
+  grid-template-columns: var(--nav-column) 1fr var(--chat-column);
   height: 100%;
   color: var(--fg);
   gap: var(--shell-frame);
 }
 
 .shell--chat-collapsed {
-  grid-template-columns: var(--shell-nav-width) 1fr 2.75rem;
+  --chat-column: 2.75rem;
 }
 
+/* Collapsed rail: its column goes back to the workspace sheet and the re-open
+   toggle moves to the titlebar's leading edge. The column gap stays — the sheet
+   has to keep the same inset from the window edge that it keeps from the chat
+   panel, and the zero-width track still contributes one gap. */
+.shell--nav-collapsed {
+  --nav-column: 0px;
+}
+
+.shell--nav-collapsed > .nav-rail {
+  display: none;
+}
+
+/* Explicit tracks: the rail leaves the grid entirely when collapsed, and
+   auto-placed items would otherwise slide one track left — handing the sidebar's
+   column to the chat panel. */
+.shell > .nav-rail {
+  grid-column: 1;
+}
+
+.shell > .shell__main {
+  grid-column: 2;
+}
+
+.shell > .chat-panel {
+  grid-column: 3;
+}
+
+/* Square, on the window's own mat, wearing a full hairline frame: the sheet is
+   the one pane boxed on all four sides. */
 .shell__main {
   min-width: 0;
   display: flex;
@@ -441,7 +490,6 @@ a {
   overflow: hidden;
   min-height: 0;
   background: var(--card);
-  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
 }
@@ -459,25 +507,49 @@ a {
 }
 
 /* —— Nav rail —— */
+/* Flush to the window's top, left and bottom edges the way the desktop shell's
+   own sidebar is. The tray keeps its frame for the workspace sheet on the top,
+   right and bottom, and the rail escapes those three sides with negative margins
+   and reaches over the titlebar row by its height. The left edge has no frame to
+   escape — the strip's own column gap supplies the rail's inset on that side —
+   so the rail's box starts at zero. Its trailing edge keeps the pane gap and no
+   line of its own — the sheet's frame is the seam's single divider — and no
+   radius or shadow survives a flush panel. */
 .nav-rail {
   background: var(--card-glass);
   backdrop-filter: var(--backdrop-panel);
   -webkit-backdrop-filter: var(--backdrop-panel);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  box-shadow:
-    var(--shadow-sm),
-    inset 0 1px 0 color-mix(in srgb, white 62%, transparent);
+  border: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 0.5rem 0.35rem;
+  padding: 0 0.35rem 0.5rem;
   gap: 0.25rem;
   overflow-y: auto;
   overflow-x: hidden;
-  height: 100%;
-  position: sticky;
-  top: 0;
+  margin-top: calc(-1 * (var(--shell-frame) + var(--window-titlebar-height)));
+  margin-right: 0;
+  margin-bottom: calc(-1 * var(--shell-frame));
+  margin-left: 0;
+  /* Explicit: a stretched grid item would grow to the track PLUS the escaped
+     frame, landing the rail's trailing edge 12px inside the workspace gap. */
+  width: var(--shell-nav-width);
+  height: calc(100% + var(--window-titlebar-height) + 2 * var(--shell-frame));
+  /* Positioned so the rail's topband paints over the titlebar it overlaps. */
+  position: relative;
+  z-index: 20;
+}
+
+/* The band the rail shares with the titlebar: exactly one control, centred on
+   the column, and the rest of the strip stays a window drag handle. */
+.nav-rail__header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: var(--window-titlebar-height);
+  margin: 0 -0.35rem 0.1rem;
+  -webkit-app-region: drag;
 }
 
 .nav-rail__section {
@@ -526,11 +598,72 @@ a {
   display: inline-flex;
 }
 
+.nav-rail__badge {
+  position: absolute;
+  top: -0.35rem;
+  right: -0.55rem;
+  min-width: 0.95rem;
+  height: 0.95rem;
+  padding: 0 0.22rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-fg);
+  box-shadow: 0 0 0 2px var(--card);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 0.95rem;
+  text-align: center;
+  pointer-events: none;
+}
+
 .nav-rail__label {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.nav-rail__version {
+  margin: 0.45rem 0 0.15rem;
+  padding: 0 0.15rem;
+  color: var(--muted);
+  font-size: 0.6rem;
+  line-height: 1.1;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* The sidebar toggle, wherever it is docked (rail header, or the titlebar once
+   the rail is gone). `no-drag` is load-bearing: both placements sit inside the
+   window's drag band, and a drag region wins hit-testing over the DOM, so
+   without the carve-out the click never reaches the button. */
+.nav-toggle {
+  --nav-toggle-size: 1.75rem;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--nav-toggle-size);
+  height: var(--nav-toggle-size);
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.nav-toggle:hover {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.nav-toggle svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 /* —— Top bar —— */
@@ -744,9 +877,29 @@ a {
 
 .archived-list {
   margin: 0;
-  padding-left: 1.25rem;
+  padding: 0;
+  list-style: none;
   font-size: 0.9rem;
   line-height: 1.6;
+}
+
+.archived-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+}
+
+.archived-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.archived-list__actions .btn {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
 }
 
 /* —— Act page —— */
@@ -1259,6 +1412,48 @@ a {
   margin-top: 0.25rem;
 }
 
+/* —— Confirm dialog —— */
+/* The app's own confirmation, centred in the application window. A
+   `window.confirm` is owned by the platform and centres on the display instead,
+   which a half-width window shows as a dialog floating over the desktop. */
+.confirm-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+
+.confirm-dialog {
+  width: min(24rem, 100%);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--bg);
+  padding: 1rem 1.1rem 1.1rem;
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--fg) 18%, transparent);
+}
+
+.confirm-dialog__title {
+  margin: 0 0 0.3rem;
+  font-size: 1rem;
+}
+
+.confirm-dialog__message {
+  margin: 0 0 0.9rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 /* —— Documents page cards —— */
 .documents-page {
   max-width: 48rem;
@@ -1423,36 +1618,51 @@ a {
 
 /* —— Decisions inbox —— */
 .decisions-inbox {
-  max-width: 48rem;
+  max-width: 52rem;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.9rem;
 }
 
 .decisions-inbox__header {
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.15rem;
+}
+
+.decisions-inbox__eyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
 }
 
 .decisions-inbox__tabs {
   display: inline-flex;
-  gap: 0.35rem;
-  margin-bottom: 0.25rem;
+  align-self: flex-start;
+  gap: 0.15rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
 }
 
 .decisions-inbox__tab {
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  padding: 0.4rem 0.85rem;
+  border: 0;
+  border-radius: var(--radius-pill);
+  padding: 0.38rem 0.95rem;
   background: transparent;
   cursor: pointer;
   font-size: 0.85rem;
+  color: var(--muted);
 }
 
 .decisions-inbox__tab--active {
-  background: var(--selected-soft);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--card);
+  color: var(--fg);
   font-weight: 600;
+  box-shadow: var(--shadow-xs);
 }
 
 .decisions-inbox__list {
@@ -1461,103 +1671,404 @@ a {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 0.9rem;
 }
 
 .decisions-inbox__empty {
-  margin: 0.5rem 0 0;
+  margin: 0.35rem 0 0;
 }
 
 .decision-card {
   border: 1px solid var(--border);
-  border-radius: 0.65rem;
-  padding: 0.9rem 1rem;
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.1rem 0.95rem;
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
+  gap: 0.75rem;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.decision-card__kicker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.decision-kind {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.55rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.decision-status {
+  padding: 0.18rem 0.55rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: capitalize;
+}
+
+.decision-status--pending {
+  color: var(--blue);
+  background: var(--blue-bg);
+}
+
+.decision-status--approved {
+  color: var(--green);
+  background: var(--green-bg);
+}
+
+.decision-status--rejected {
+  color: var(--danger);
+  background: var(--red-bg);
+}
+
+.decision-status--stale {
+  color: var(--amber);
+  background: var(--amber-bg);
+  text-transform: none;
 }
 
 .decision-card__title {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
 }
 
 .decision-card__meta {
-  margin: 0.2rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.45rem;
+  margin: 0.28rem 0 0;
   font-size: 0.8rem;
-}
-
-.decision-card__status {
-  text-transform: capitalize;
-  font-weight: 600;
-}
-
-.decision-card__status--approved {
-  color: var(--success);
-}
-
-.decision-card__status--rejected {
-  color: var(--danger);
 }
 
 .decision-card__rationale {
   margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.4;
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  font-size: 0.92rem;
+  line-height: 1.45;
 }
 
-.decision-card__bodies {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.65rem;
-}
-
-@media (min-width: 40rem) {
-  .decision-card__bodies {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-.decision-card__body-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.8rem;
-}
-
-.decision-card__pre {
+.decision-card__reason {
   margin: 0;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: 0.45rem;
-  max-height: 12rem;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Monaco,
-    Consolas,
-    "Liberation Mono",
-    "Courier New",
-    monospace;
-  font-size: 0.78rem;
-  line-height: 1.4;
-  background: color-mix(in srgb, var(--selected) 55%, transparent);
+  padding: 0.6rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--amber) 35%, var(--border));
+  border-radius: var(--radius-xs);
+  background: var(--amber-bg);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.decision-card__reason-label {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.decision-card__title-change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.86rem;
 }
 
 .decision-card__actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+  padding-top: 0.15rem;
 }
 
 .decision-card__resolved {
   margin: 0;
   font-size: 0.8rem;
+}
+
+.decision-proposal,
+.decision-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.decision-lead {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.decision-change {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+
+.decision-fields {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.decision-fields th,
+.decision-fields td {
+  padding: 0.48rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.decision-fields thead th {
+  background: var(--bg-subtle);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.decision-fields tbody tr:last-child th,
+.decision-fields tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.decision-fields__name {
+  width: 28%;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.decision-row--changed {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.decision-value--was {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--danger) 50%, transparent);
+}
+
+.decision-value--now {
+  font-weight: 600;
+}
+
+.decision-empty {
+  color: var(--text-faint);
+}
+
+.decision-unchanged {
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-subtle);
+}
+
+.decision-unchanged summary {
+  cursor: pointer;
+  padding: 0.4rem 0.7rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.decision-prose-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+}
+
+@media (min-width: 42rem) {
+  .decision-prose-grid:not(.decision-prose-grid--single) {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.decision-prose-pane__label {
+  margin: 0 0 0.3rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.decision-prose {
+  margin: 0;
+  max-height: 16rem;
+  overflow: auto;
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--radius-xs);
+  background: var(--bg-subtle);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.decision-blocks,
+.decision-pins,
+.decision-checklist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.decision-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.decision-block {
+  display: flex;
+  gap: 0.65rem;
+  align-items: baseline;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xs);
+  background: var(--bg-subtle);
+}
+
+.decision-block__kind {
+  flex: none;
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.decision-block__detail {
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.decision-pin {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.42rem 0.1rem;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 0.9rem;
+}
+
+.decision-pin:last-child {
+  border-bottom: 0;
+}
+
+.decision-pin__n {
+  flex: none;
+  width: 1.35rem;
+  height: 1.35rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.decision-checklist {
+  padding-left: 1.1rem;
+  list-style: disc;
+}
+
+.decision-checklist li {
+  margin: 0.15rem 0;
+}
+
+.decision-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.decision-swatch {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 18%, transparent);
+}
+
+.decision-source {
+  margin: 0;
+}
+
+.decision-source summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.decision-source summary:hover {
+  color: var(--fg);
+}
+
+.decision-source pre {
+  margin: 0.4rem 0 0;
+  max-height: 12rem;
+  overflow: auto;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xs);
+  background: var(--bg-subtle);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 40rem) {
+  .decision-fields thead {
+    display: none;
+  }
+
+  .decision-fields,
+  .decision-fields tbody,
+  .decision-fields tr,
+  .decision-fields th,
+  .decision-fields td {
+    display: block;
+    width: auto;
+  }
+
+  .decision-fields tr {
+    padding: 0.45rem 0.7rem;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .decision-fields th,
+  .decision-fields td {
+    padding: 0.08rem 0;
+    border-bottom: 0;
+  }
+
+  .decision-fields__name {
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
 }
 
 /* —— Life log feed —— */
@@ -1658,10 +2169,19 @@ a {
 
 /* —— Home dashboard —— */
 .home-dashboard {
+  --home-radius: 2px;
   display: flex;
   flex-direction: column;
-  gap: 1.1rem;
-  max-width: var(--shell-max-width);
+  gap: 0.9rem;
+  width: 100%;
+}
+
+.home-dashboard .btn {
+  border-radius: var(--home-radius);
+}
+
+.home-dashboard__submit {
+  width: 100%;
 }
 
 .deadline-banner {
@@ -1669,10 +2189,10 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.75rem 1rem;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
+  padding: 0.7rem 0.85rem;
+  background: color-mix(in srgb, var(--blue) 10%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--blue) 35%, var(--border));
+  border-radius: var(--home-radius);
 }
 
 .deadline-banner__content {
@@ -1694,13 +2214,13 @@ a {
 
 .deadline-banner__dismiss {
   appearance: none;
-  background: transparent;
+  background: var(--background);
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 0.35rem 0.85rem;
+  border-radius: var(--home-radius);
+  padding: 0.35rem 0.7rem;
   font-size: 0.8rem;
   cursor: pointer;
-  color: var(--muted);
+  color: var(--foreground);
 }
 
 .deadline-banner__dismiss:hover:not(:disabled) {
@@ -1715,7 +2235,7 @@ a {
 
 .home-dashboard__header {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
@@ -1723,20 +2243,29 @@ a {
 
 .home-dashboard__eyebrow {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  color: var(--accent);
 }
 
 .home-dashboard__title {
-  margin: 0.1rem 0 0;
-  font-size: 1.6rem;
-  font-weight: 800;
+  margin: 0.15rem 0 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 .home-dashboard__subtitle {
-  font-weight: 500;
-  font-size: 1.1rem;
+  display: block;
+  max-width: 40rem;
+  margin: 0.25rem 0 0;
+  font-weight: 400;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--muted-foreground);
 }
 
 .home-dashboard__progress {
@@ -1753,9 +2282,10 @@ a {
 
 .home-progress-bar {
   flex: 1;
-  height: 0.5rem;
-  border-radius: 999px;
-  background: var(--border);
+  height: 0.35rem;
+  border-radius: var(--home-radius);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-soft);
   overflow: hidden;
 }
 
@@ -1768,40 +2298,51 @@ a {
 .home-dashboard__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
-  gap: 0.9rem;
+  gap: 0.85rem;
 }
 
 .home-card {
   border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  padding: 1rem 1.1rem;
+  border-radius: var(--home-radius);
+  padding: 0.85rem 0.95rem 0.95rem;
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  background: transparent;
+  gap: 0.7rem;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-xs);
 }
 
-.home-card--wide {
+.home-card--wide,
+.home-pin:has(.home-card--wide),
+.home-pin:has(.deadline-banner) {
   grid-column: 1 / -1;
 }
 
 .home-card__title {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 0.72rem;
   font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
 .home-card__count {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #fff;
-  background: var(--accent);
-  border-radius: 999px;
-  padding: 0.05rem 0.45rem;
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted-foreground);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--home-radius);
+  padding: 0.05rem 0.4rem;
   line-height: 1.4;
+  font-variant-numeric: tabular-nums;
 }
 
 .home-card__empty {
@@ -1812,14 +2353,16 @@ a {
 
 .home-card__more {
   margin-top: auto;
-  font-size: 0.82rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.8rem;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--foreground);
   text-decoration: none;
 }
 
 .home-card__more:hover {
-  text-decoration: underline;
+  color: var(--accent);
 }
 
 .home-dashboard__inline-link {
@@ -1831,11 +2374,11 @@ a {
 .home-mini-list,
 .home-activity-list {
   list-style: none;
-  margin: 0;
+  margin: 0 -0.95rem;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0;
 }
 
 .home-doctrine-row {
@@ -1843,9 +2386,21 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.45rem 0.55rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  padding: 0.6rem 0.95rem;
+  border: 0;
+  border-top: 1px solid var(--border-soft);
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+}
+
+.home-doctrine-list > .home-doctrine-row:first-child {
+  border-top: 0;
+}
+
+.home-doctrine-row:hover {
+  border-left-color: var(--accent);
+  background: var(--bg-subtle);
 }
 
 .home-doctrine-row__main {
@@ -1876,8 +2431,8 @@ a.home-doctrine-row__main:hover .home-doctrine-row__label {
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.35rem 0.1rem;
-  border-bottom: 1px solid var(--border);
+  padding: 0.55rem 0.95rem;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .home-mini-list__item:last-child {
@@ -1895,7 +2450,6 @@ a.home-doctrine-row__main:hover .home-doctrine-row__label {
 
 a.home-mini-list__link:hover {
   color: var(--accent);
-  text-decoration: underline;
 }
 
 .home-mini-list__meta {
@@ -1908,8 +2462,8 @@ a.home-mini-list__link:hover {
   grid-template-columns: minmax(8rem, auto) minmax(6rem, auto) 1fr;
   gap: 0.3rem 0.75rem;
   align-items: baseline;
-  padding: 0.45rem 0.1rem;
-  border-bottom: 1px solid var(--border);
+  padding: 0.55rem 0.95rem;
+  border-bottom: 1px solid var(--border-soft);
   font-size: 0.875rem;
 }
 
@@ -1931,6 +2485,138 @@ a.home-mini-list__link:hover {
 
 .home-activity-row__summary {
   line-height: 1.4;
+}
+
+.home-pin {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.home-pin__chrome {
+  position: absolute;
+  z-index: 1;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  gap: 0.2rem;
+}
+
+.home-pin__btn {
+  appearance: none;
+  width: 1.55rem;
+  height: 1.55rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--home-radius);
+  background: var(--background);
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.home-pin__btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--foreground);
+}
+
+.home-pin__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.home-pin__btn:focus-visible,
+.home-pin-add__btn:focus-visible,
+.deadline-banner__dismiss:focus-visible,
+.home-goal-current-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.home-pin:has(.home-pin__chrome) .home-card__title,
+.home-pin:has(.home-pin__chrome) .home-dashboard__progress {
+  padding-right: 5.2rem;
+}
+
+.home-pin:has(.deadline-banner) .home-pin__chrome {
+  position: static;
+  justify-content: flex-end;
+  margin-bottom: 0.35rem;
+}
+
+.home-doctrine-pin {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.home-dashboard .doc-status-badge {
+  border-radius: var(--home-radius);
+}
+
+.home-card .form-error {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--destructive) 40%, var(--border));
+  border-radius: var(--home-radius);
+  background: color-mix(in srgb, var(--destructive) 10%, var(--bg-panel));
+}
+
+.home-pin-add__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.home-pin-add__btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: var(--home-radius);
+  background: var(--background);
+  color: var(--foreground);
+  padding: 0.38rem 0.6rem;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.home-pin-add__btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.home-pin-add__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.home-task-cols__head {
+  margin: 0 0 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.home-card--wide {
+  container-type: inline-size;
+}
+
+@container (max-width: 520px) {
+  .home-task-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .home-activity-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* —— Form feedback —— */
@@ -2332,23 +3018,31 @@ a.home-mini-list__link:hover {
 }
 
 /* —— Hermes chat dock —— */
+/* Flush to the window's right and bottom edges the way the rail is to the left:
+   the tray keeps the frame for the sheet on the top, right and bottom, and this
+   panel's box carries the right and bottom halves of that frame. On the sheet's
+   own surface rather than a frosted one — a translucent panel reads as a card
+   floating over the page, and there is no page behind it to blur. Its top edge
+   wears the same hairline as the sheet's, so the line under the titlebar runs
+   across both panes, and its leading edge keeps the pane gap with no line of its
+   own — the sheet's frame is the seam's divider; no radius or shadow survives a
+   flush panel. */
 .chat-panel {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 100%;
   position: sticky;
   top: 0;
   align-self: stretch;
-  background: var(--card-glass);
-  backdrop-filter: var(--backdrop-panel);
-  -webkit-backdrop-filter: var(--backdrop-panel);
+  background: var(--card);
   color: var(--fg);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  box-shadow:
-    var(--shadow-sm),
-    inset 0 1px 0 color-mix(in srgb, white 62%, transparent);
+  border: 0;
+  border-top: 1px solid var(--border);
+  /* The escape lives in the box, not in a negative margin: a stretched grid item
+     is exactly the track, so the frame goes into the width and height. Measured
+     — the box lands on the window's right edge and bottom. */
+  width: calc(var(--chat-column) + var(--shell-frame));
+  height: calc(100% + var(--shell-frame));
   z-index: 20;
   overflow: hidden;
 }
@@ -2359,8 +3053,7 @@ a.home-mini-list__link:hover {
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .nav-rail,
-  .chat-panel {
+  .nav-rail {
     background: var(--card);
   }
 }
@@ -2402,12 +3095,259 @@ a.home-mini-list__link:hover {
 .chat-panel__header {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 0.5rem;
   min-height: 3rem;
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+.chat-panel__heading {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.chat-panel__sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 11rem;
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.chat-panel__sessions-empty {
+  margin: 0;
+  padding: 0.55rem 0.85rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The row is the chat and its 3-dot control side by side: a button nested in the
+   row's own button is not a thing, so the control is a sibling and the chat keeps
+   the rest of the width. */
+.chat-panel__session-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  margin: 0;
+  min-width: 0;
+}
+
+.chat-panel__session {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-panel__session:hover:not(:disabled) {
+  background: var(--selected-soft);
+}
+
+.chat-panel__session--active {
+  background: var(--selected-soft);
+}
+
+.chat-panel__session:disabled {
+  cursor: default;
+}
+
+.chat-panel__session-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.chat-panel__session-when {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.chat-panel__session-pin {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+/* The 3-dot control: the only thing that opens a row's menu, and the only way to
+   rename, archive or delete a chat without opening it first. */
+.chat-panel__session-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chat-panel__session-menu-btn:hover:not(:disabled),
+.chat-panel__session-menu-btn[aria-expanded="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.chat-panel__session-menu-btn:disabled {
+  cursor: default;
+}
+
+/* Hangs under the control that opened it, over the rows below: the list scrolls,
+   so an inline menu would push the rows under it around instead. */
+.chat-panel__session-menu {
+  position: absolute;
+  top: 100%;
+  right: 0.25rem;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 6.5rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-panel__session-menu button {
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-panel__session-menu button:hover:not(:disabled) {
+  background: var(--selected-soft);
+}
+
+/* Delete is the one item Hermes cannot undo — the row and its messages are gone
+   — so it wears the app's destructive token while Edit and Archive stay plain. */
+.chat-panel__session-menu button.chat-panel__session-menu-danger {
+  color: var(--danger);
+}
+
+/* Renaming takes the row's own place: the field replaces the chat it names, so
+   the row keeps its position while the name is edited in the list. */
+.chat-panel__session-rename {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The list is a page of its own, not the thread's strip: it owns the panel's
+   height, so twenty chats are reachable by scrolling instead of piling up
+   inside an 11rem box. */
+.chat-panel__list {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.35rem;
+  overflow-y: auto;
+}
+
+.chat-panel__sessions--full {
+  max-height: none;
+  overflow: visible;
+  border-bottom: none;
+  flex: 1 1 auto;
+}
+
+.chat-panel__sessions-group {
+  margin: 0.4rem 0 0.15rem;
+  padding: 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chat-panel__sessions-group:first-child {
+  margin-top: 0;
+}
+
+/* Body and composer belong to the thread view. `hidden` needs the explicit
+   override below because both elements set `display: flex`. */
+.chat-panel__body[hidden],
+.chat-panel__footer[hidden] {
+  display: none;
+}
+
+.chat-panel__header--thread {
+  gap: 0.35rem;
+  justify-content: flex-start;
+}
+
+.chat-panel__heading--thread {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.chat-panel__rename {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chat-panel__rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--input);
+  border-radius: 2px;
+  background: var(--background);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.chat-panel__rename-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 
 .chat-panel__header-actions {
@@ -2582,11 +3522,141 @@ a.home-mini-list__link:hover {
   font-style: italic;
 }
 
+/* A turn's tool calls, standing in as one grey line (see `lib/tool-run.ts`).
+   Opening it shows the calls it summarizes; it is closed by default, so a
+   tool-heavy turn costs the transcript one line instead of one bubble per
+   event. It is in-flight evidence: a reloaded transcript has no tool rows. */
+.chat-panel__activity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.chat-panel__activity-line {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.6875rem;
+  font-style: italic;
+  color: var(--muted);
+  text-align: left;
+}
+
+button.chat-panel__activity-line {
+  cursor: pointer;
+}
+
+button.chat-panel__activity-line:hover {
+  color: var(--fg);
+}
+
+.chat-panel__activity-line > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel__activity-caret {
+  flex-shrink: 0;
+  transition: transform 120ms ease;
+}
+
+.chat-panel__activity-caret--open {
+  transform: rotate(90deg);
+}
+
+/* A bounded block that scrolls its own overflow, with the rows kept whole.
+   The two halves are one decision and neither works alone: the cap bounds
+   what a tool-heavy turn costs the transcript, and the row's `flex-shrink:
+   0` (below) is what stops the capped column squeezing the line boxes --
+   the row clips itself to ellipsize, which drops its automatic minimum
+   height to 0, and the cap then read 16.5px rows as 3.6px with every
+   line's text cut off instead of overflowing. */
+.chat-panel__activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0 0 0 1.05rem;
+  max-height: 10rem;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.chat-panel__activity-row {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.6875rem;
+  /* The row clips itself to ellipsize, so its line box has to hold the font's
+     whole glyph box: monospace's `normal` sits a hair under it, and what falls
+     off the edge is the descent — `p` and `q` lose their tails, `_` vanishes. */
+  line-height: 1.5;
+  /* The other half of the capped block below: `overflow: hidden` drops the
+     row's automatic minimum height to 0, so without this the cap squeezes
+     the line boxes instead of scrolling them out of sight. */
+  flex-shrink: 0;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* How a turn ended, when it did not end cleanly. Live-only, like `Thinking…`:
+   the transcript is Hermes's, and the deltas already shown above it are what
+   the reply actually contains. */
+.chat-panel__turn-note {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-style: italic;
+  color: var(--muted);
+}
+
+/* The composer's band is a plain gutter — no fill of its own, no hairline. The
+   accent it used to wear as a tinted frame around the field lives on the field's
+   own border instead: one crisp box that is the composer, not a box inside a box. */
 .chat-panel__footer {
   flex-shrink: 0;
-  border-top: 1px solid var(--border);
   padding: 0.75rem;
-  background: color-mix(in srgb, var(--selected) 30%, var(--bg));
+}
+
+/* Bottom chrome of the bar: the dock's own actions, shared by both views. A
+   sibling band of the composer footer, with the hairline and the fill that
+   separate them, so the two read as stacked rows of one column rather than a
+   single mixed strip. */
+.chat-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  padding: 0.35rem 0.5rem;
+  border-top: 1px solid var(--border);
+  /* Deliberately NOT the composer's accent. The composer's accent is its own
+     field's border, two elements up; this is neutral chrome below it. */
+  background: var(--muted-surface);
+}
+
+/* Larger than the thread header's utilities (1.75rem/16px): the bar is primary
+   navigation and carries one action per slot, the header holds per-chat trivia. */
+.chat-panel__action {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.45rem;
+}
+
+.chat-panel__action[aria-pressed="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.chat-panel__action:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .chat-panel__composer {
@@ -2595,25 +3665,34 @@ a.home-mini-list__link:hover {
   gap: 0.35rem;
 }
 
-.chat-panel__composer-label {
-  font-size: 0.625rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
+/* The composer row is the input's own surface: the control (send arrow, or the
+   stop square while a run is live) is positioned inside it rather than sitting
+   beside it, so the field keeps the full width of the panel. Only the right
+   gutter is paid for, and only while the control is on screen. */
 .chat-panel__composer-row {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 0.4rem;
 }
 
+.chat-panel__composer-row--control .chat-panel__composer-input {
+  padding-right: 2.5rem;
+}
+
+/* Height is JS-driven (ChatPanel `syncComposerHeight`): the field grows with its
+   text up to half the panel, then scrolls in place. `overflow-y` here is only
+   the pre-script state — an empty draft keeps the `rows` attribute shape.
+   The field carries the composer's accent itself — a 2px ring of the skin's
+   accent — rather than wearing a frame painted around it. Height folds the
+   border in (`offsetHeight - clientHeight`), so the thicker ring cannot clip
+   the last line. */
 .chat-panel__composer-input {
   width: 100%;
   resize: none;
+  overflow-y: hidden;
   border-radius: 0.4rem;
-  border: 1px solid var(--border);
+  border: 2px solid var(--accent);
   background: var(--bg);
   color: var(--fg);
   padding: 0.625rem 0.75rem;
@@ -2622,11 +3701,17 @@ a.home-mini-list__link:hover {
   line-height: 1.4;
   flex: 1;
   min-width: 0;
+  transition: box-shadow var(--dur-quick) var(--ease-out);
 }
 
+/* Selected: the accent emits. The border stays the same 2px ring, so focus reads
+   as the field lighting up rather than changing colour — a tight ring plus a
+   soft halo, which is the glow the outline alone cannot give. */
 .chat-panel__composer-input:focus {
   outline: none;
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent),
+    0 0 14px 2px color-mix(in srgb, var(--accent) 38%, transparent);
 }
 
 .chat-panel__composer-input:disabled {
@@ -2634,19 +3719,23 @@ a.home-mini-list__link:hover {
   cursor: not-allowed;
 }
 
+/* Icon-only, anchored inside the field's bottom-right corner (26px, matching
+   the Hermes Desktop composer's primary control) so it costs the textarea one
+   narrow gutter instead of a whole column. */
 .chat-panel__send {
+  position: absolute;
+  right: 0.375rem;
+  bottom: 0.375rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 3.25rem;
-  height: 2.25rem;
-  flex-shrink: 0;
-  border-radius: 0.4rem;
+  width: 1.625rem;
+  height: 1.625rem;
+  padding: 0;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
   background: var(--accent);
   color: var(--accent-fg);
-  font-weight: 600;
-  font-size: 0.8125rem;
   cursor: pointer;
 }
 
@@ -2659,20 +3748,387 @@ a.home-mini-list__link:hover {
   filter: brightness(1.05);
 }
 
-.chat-panel__composer-help {
-  margin: 0;
-  font-size: 0.6875rem;
-  color: var(--muted);
+/* Stop state of the same control: Hermes Desktop swaps the arrow for a square
+   while a run is live, so the one button reads as "send" or "interrupt". */
+.chat-panel__send-stop {
+  display: block;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 0.1875rem;
+  background: currentColor;
 }
 
-.chat-panel__composer-help kbd {
-  display: inline-block;
-  padding: 0.05rem 0.3rem;
+/* The composer's runtime row: the model and thinking pills, one gap under the
+   field. This is the dock's own take on the two pills in the Hermes Desktop
+   composer — small chips that open upward into the transcript, because the
+   composer is the bottom of the panel and there is no room below it. The row
+   paints nothing of its own; it is the field's column, one gap down. */
+.chat-panel__composer-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.chat-panel__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 12rem;
+  min-width: 0;
+  height: 1.5rem;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+
+.chat-panel__pill:not(:disabled):hover {
+  color: var(--fg);
+  background: var(--muted-surface);
+}
+
+.chat-panel__pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* A pick of the operator's own reads brighter than the profile default it is
+   overriding, and carries the small dot the Desktop pill uses for a pin — the
+   one sign that a turn is not running on the gateway's default any more. */
+.chat-panel__pill[data-override="true"] {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.chat-panel__pill-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel__pill-dot {
+  flex-shrink: 0;
+  width: 0.25rem;
+  height: 0.25rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.chat-panel__composer-menu {
+  position: absolute;
+  bottom: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: min(18rem, 100%);
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-panel__composer-menu--reasoning {
+  width: 10rem;
+}
+
+/* The provider strip is one row of chips that scrolls sideways: the gateway
+   knows fifty-odd providers here, and a column of them would bury the models
+   the menu exists to offer. */
+.chat-panel__menu-providers {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.25rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-panel__menu-provider {
+  flex-shrink: 0;
+  height: 1.35rem;
+  padding: 0 0.45rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.6875rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chat-panel__menu-provider[aria-checked="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.chat-panel__menu-provider[data-authenticated="false"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chat-panel__menu-models {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 11rem;
+  overflow-y: auto;
+}
+
+.chat-panel__menu-models button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-panel__menu-models button:hover {
+  background: var(--muted-surface);
+}
+
+.chat-panel__menu-models button[aria-checked="true"] {
+  background: var(--selected-soft);
+}
+
+.chat-panel__menu-meta {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.625rem;
+}
+
+/* The chain, as the dock's third surface: the same records the Life-Chain page
+   shows, read like a chat — oldest at the top, newest last, just above the
+   composer. The list is a plain column (the panel renders it oldest first), so
+   the DOM order is the reading order. `margin-top: auto` is what rests a short
+   stack on the composer; a flex item's auto margin resolves to 0 once the
+   content overflows, so the overflow stays reachable by scrolling rather than
+   being clipped (`justify-content: flex-end` would clip the start edge, leaving
+   the oldest entries unreachable). Overflow is scrolled to the bottom in the
+   panel's own layout effect, which is what keeps the newest entry in view. */
+.chat-panel__body--chain {
+  gap: 0.5rem;
+}
+
+.chat-panel__chain-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: auto 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The thread the stamps hang on: one dashed line down the rail column, drawn on
+   the list rather than per row so it runs unbroken across the gaps between
+   rows. The stamps are opaque and sit over it, which is what makes them read as
+   beads on the string instead of boxes beside a line. Two pixels and a heavier
+   mix: at one pixel the dots read as a smudge against the panel. */
+.chat-panel__chain-list::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 1.625rem;
+  border-left: 2px dashed color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+/* One signal: the rail, the message beside it, and the assignment picker under
+   the message. `when` spans both rows — that is what gives the rail the full
+   height of the row for the thread to run down. */
+.chat-panel__chain-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "when message"
+    "when assign";
+  column-gap: 0.5rem;
+  row-gap: 0.3rem;
+  align-items: start;
+}
+
+.chat-panel__chain-rail {
+  grid-area: when;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  width: 3.25rem;
+  align-self: stretch;
+}
+
+/* The square, and the grey one of the two blocks: the message carries the
+   content, this carries the moment. */
+.chat-panel__chain-stamp {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.05rem;
+  width: 3.25rem;
+  height: 3.25rem;
   border: 1px solid var(--border);
   border-radius: 0.25rem;
-  background: color-mix(in srgb, var(--selected) 55%, transparent);
+  background: var(--muted-surface);
+  color: var(--muted);
   font-size: 0.625rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.chat-panel__chain-stamp-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.chat-panel__chain-message {
+  grid-area: message;
+  position: relative;
+  padding: 0.5rem 1.5rem 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--selected) 55%, transparent);
+}
+
+.chat-panel__chain-body {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* A titled signal keeps its title: the panel's composer never writes one, so a
+   row that has one came from somewhere else — an import, or Hermes itself — and
+   dropping it would hide data the record carries. */
+.chat-panel__chain-title {
+  margin: 0 0 0.2rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* The 3-dot control sits in the message box's top-right corner, paid for out of
+   the body's padding rather than a flex sibling, so the text keeps the box's
+   whole width until it wraps. */
+.chat-panel__chain-menu-btn {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chat-panel__chain-menu-btn:hover,
+.chat-panel__chain-menu-btn[aria-expanded="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.chat-panel__chain-menu {
+  position: absolute;
+  top: 1.5rem;
+  right: 0.25rem;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 6.5rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-panel__chain-menu button {
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-panel__chain-menu button:hover:not(:disabled) {
+  background: var(--selected-soft);
+}
+
+/* Editing keeps the message's own box: the field is what the body was. */
+.chat-panel__chain-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.chat-panel__chain-edit-input {
+  width: 100%;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.chat-panel__chain-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+/* The assignment picker, under the message box: it lines up with the box and
+   not with the rail, so what the row says and where it is filed read as one
+   column. */
+.chat-panel__chain-assign {
+  grid-area: assign;
+  width: 100%;
+  padding: 0.2rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+
+.chat-panel__chain-empty {
+  margin: auto 0 0;
+  font-size: 0.8125rem;
 }
 
 /* —— Life Signal Chain —— */
@@ -3263,10 +4719,10 @@ a.home-mini-list__link:hover {
 
 .home-goal-current-input {
   width: 4.5rem;
-  padding: 0.15rem 0.35rem;
-  border: 1px solid var(--border);
-  border-radius: 0.35rem;
-  background: transparent;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--input);
+  border-radius: 2px;
+  background: var(--background);
   color: var(--fg);
   font: inherit;
 }
@@ -3293,4 +4749,72 @@ a.home-mini-list__link:hover {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* Agent-built dashboard views (plan.md design, slice 2): ViewCard on the home
+   pin board and on view-ref page blocks. Theme colors through variables only —
+   no raw hex here, per the design system contract. */
+.view-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.view-card__title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.view-card__warnings,
+.view-card__empty,
+.view-card__metric-label {
+  font-size: 0.75rem;
+}
+
+.view-card__metric {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--fg);
+}
+
+.view-card__table th,
+.view-card__table td {
+  text-align: left;
+}
+
+.view-card__chart {
+  width: 100%;
+  height: auto;
+}
+
+.view-card__tick {
+  fill: var(--muted-foreground);
+}
+
+.view-card__bar {
+  fill: var(--accent);
+}
+
+.view-card__line {
+  stroke: var(--accent);
+  stroke-width: 2;
+  fill: none;
+}
+
+.view-card__dot {
+  fill: var(--accent);
+}
+
+/* A span-2 view pin is the design's whole layout model: one cell or the row. */
+.home-pin--span2,
+.home-pin:has(.view-card--span2),
+.page-block--view-span2 {
+  grid-column: 1 / -1;
 }

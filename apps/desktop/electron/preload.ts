@@ -2,6 +2,28 @@ import { contextBridge, ipcRenderer } from "electron";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
+/** KAR-70: the two loopback doors, as main reports them. */
+type McpDoors = {
+  localUrl: string;
+  inviteUrl: string;
+  localError: string | null;
+  inviteError: string | null;
+};
+
+/** KAR-70: one roster row. Mirrors vault-core ConnectedAgent. */
+type ConnectedAgent = {
+  id: string;
+  name: string;
+  fingerprint: string;
+  status: "pending" | "active" | "rejected" | "revoked";
+  access: "read" | "write";
+  domainSlugs: string[];
+  schedule: boolean;
+  door: "local" | "invite";
+  createdAt: string;
+  decidedAt: string | null;
+};
+
 const lifequest = {
   vaultCreate: (path: string, name?: string) =>
     ipcRenderer.invoke("vault:create", path, name) as Promise<Result<unknown>>,
@@ -24,6 +46,10 @@ const lifequest = {
     >,
   domainArchive: (slug: string) =>
     ipcRenderer.invoke("domain:archive", slug) as Promise<Result<unknown>>,
+  domainUnarchive: (slug: string) =>
+    ipcRenderer.invoke("domain:unarchive", slug) as Promise<Result<unknown>>,
+  domainDelete: (slug: string) =>
+    ipcRenderer.invoke("domain:delete", slug) as Promise<Result<unknown>>,
   domainSetActive: (slug: string | null) =>
     ipcRenderer.invoke("domain:setActive", slug) as Promise<Result<string | null>>,
   domainGetActive: () =>
@@ -92,6 +118,19 @@ const lifequest = {
     ipcRenderer.invoke("pins:list", domainSlug) as Promise<Result<unknown>>,
   pinsSet: (domainSlug: string | null, pins: unknown[]) =>
     ipcRenderer.invoke("pins:set", domainSlug, pins) as Promise<Result<unknown>>,
+  // Agent-built dashboard views (plan.md design)
+  viewList: (slug: string) =>
+    ipcRenderer.invoke("view:list", slug) as Promise<Result<unknown>>,
+  viewGet: (slug: string, viewId: string) =>
+    ipcRenderer.invoke("view:get", slug, viewId) as Promise<Result<unknown>>,
+  viewSave: (slug: string, spec: Record<string, unknown>, viewId?: string) =>
+    ipcRenderer.invoke("view:save", slug, spec, viewId) as Promise<Result<unknown>>,
+  viewDelete: (slug: string, viewId: string) =>
+    ipcRenderer.invoke("view:delete", slug, viewId) as Promise<Result<unknown>>,
+  viewRun: (slug: string, spec: Record<string, unknown>) =>
+    ipcRenderer.invoke("view:run", slug, spec) as Promise<Result<unknown>>,
+  viewRunSaved: (slug: string, viewId: string) =>
+    ipcRenderer.invoke("view:runSaved", slug, viewId) as Promise<Result<unknown>>,
   // KAR-53 ingest
   // KAR-61 finance kit
   kitInstallFinance: () =>
@@ -240,6 +279,28 @@ const lifequest = {
     ipcRenderer.invoke("mcp:getUrl") as Promise<string>,
   mcpGetError: () =>
     ipcRenderer.invoke("mcp:getError") as Promise<string | null>,
+  // KAR-70: both doors and their own errors.
+  mcpGetDoors: () => ipcRenderer.invoke("mcp:getDoors") as Promise<McpDoors>,
+
+  connectedAgentsList: () =>
+    ipcRenderer.invoke("connectedAgents:list") as Promise<Result<ConnectedAgent[]>>,
+  connectedAgentsUpdate: (
+    id: string,
+    patch: { access?: "read" | "write"; domainSlugs?: string[]; schedule?: boolean },
+  ) =>
+    ipcRenderer.invoke("connectedAgents:update", id, patch) as Promise<Result<ConnectedAgent>>,
+  connectedAgentsRevoke: (id: string) =>
+    ipcRenderer.invoke("connectedAgents:revoke", id) as Promise<Result<ConnectedAgent>>,
+  connectedAgentsInvite: () =>
+    ipcRenderer.invoke("connectedAgents:invite") as Promise<
+    Result<{ id: string; code: string; expiresAt: string }>
+  >,
+  connectedAgentsListInvites: () =>
+    ipcRenderer.invoke("connectedAgents:listInvites") as Promise<
+    Result<{ id: string; expiresAt: string }[]>
+  >,
+  connectedAgentsDropInvite: (id: string) =>
+    ipcRenderer.invoke("connectedAgents:dropInvite", id) as Promise<Result<{ dropped: true }>>,
 
   companionEnsure: () => ipcRenderer.invoke("companion:ensure"),
   companionStatus: () => ipcRenderer.invoke("companion:status"),
@@ -248,6 +309,13 @@ const lifequest = {
     ipcRenderer.invoke("companion:sessionCreate", title),
   companionSessionMessages: (id: string) =>
     ipcRenderer.invoke("companion:sessionMessages", id),
+  companionSessionPatch: (
+    id: string,
+    patch: { title?: string; pinned?: boolean; archived?: boolean },
+  ) => ipcRenderer.invoke("companion:sessionPatch", id, patch),
+  companionSessionDelete: (id: string) =>
+    ipcRenderer.invoke("companion:sessionDelete", id),
+  companionModelOptions: () => ipcRenderer.invoke("companion:modelOptions"),
   companionChatStream: (payload: {
     sessionId: string;
     input: string;
@@ -258,18 +326,27 @@ const lifequest = {
       locked: boolean;
       vaultOpen: boolean;
     };
+    runtime?: {
+      model?: string;
+      provider?: string;
+      reasoningEffort?: string;
+    } | null;
   }) => ipcRenderer.invoke("companion:chatStream", payload),
   companionApproval: (payload: {
     runId: string;
     requestId: string;
     allow: boolean;
   }) => ipcRenderer.invoke("companion:approval", payload),
+  companionRunStop: (runId: string) =>
+    ipcRenderer.invoke("companion:runStop", runId) as Promise<
+      { ok: true } | { ok: false; error: string }
+    >,
   companionOpenProfileFolder: () =>
     ipcRenderer.invoke("companion:openProfileFolder"),
-  companionGetFiling: (sessionId: string) =>
-    ipcRenderer.invoke("companion:getFiling", sessionId) as Promise<boolean>,
-  companionSetFiling: (sessionId: string, enabled: boolean) =>
-    ipcRenderer.invoke("companion:setFiling", sessionId, enabled) as Promise<void>,
+  companionGetFiling: () =>
+    ipcRenderer.invoke("companion:getFiling") as Promise<boolean>,
+  companionSetFiling: (enabled: boolean) =>
+    ipcRenderer.invoke("companion:setFiling", enabled) as Promise<void>,
   onCompanionStream: (cb: (evt: unknown) => void) => {
     const listener = (_event: unknown, evt: unknown) => {
       cb(evt);
