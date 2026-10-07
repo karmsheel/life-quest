@@ -415,6 +415,8 @@ function registerIpcHandlers() {
         instructionsContext: CompanionInstructionsInput;
         /** The composer's model / thinking-level pick for this turn. */
         runtime?: CompanionRuntimeOverride | null;
+        /** The pending receipt this turn carries, named by the path main minted. */
+        receiptRelPath?: string | null;
       },
     ) => {
       return vault.companionChatStreamWithPack(
@@ -427,6 +429,7 @@ function registerIpcHandlers() {
           }
         },
         payload.runtime ?? null,
+        payload.receiptRelPath ?? null,
       );
     },
   );

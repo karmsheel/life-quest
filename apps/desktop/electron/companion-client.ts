@@ -9,7 +9,41 @@ export type CompanionInstructionsInput = {
   reviewContext?: string;
   /** Session pref: may this turn file an implied Decision? Omitted means on. */
   fileUnsolicited?: boolean;
+  /**
+   * The receipt this turn carries, if any. Set by the chat call from the
+   * pending slot rather than by the renderer, so the path the agent is told to
+   * cite and the path main holds cannot come from two different places.
+   */
+  attachedFile?: { relPath: string; name: string } | null;
 };
+
+/** One receipt riding a turn: what the model sees, and where the original is. */
+export type TurnAttachment = {
+  relPath: string;
+  name: string;
+  /** The re-encoded copy, as a `data:image/jpeg;base64,` URL. */
+  dataUrl: string;
+};
+
+/**
+ * What `/chat/stream` receives as `input`.
+ *
+ * A turn with no receipt stays the plain string it has always been: the
+ * gateway collapses text-only content to a string for its own logging, and
+ * sending a one-part array would be a different shape for no gain. A turn with
+ * a receipt becomes the two-part vision form the gateway validates — the words
+ * first, then the image.
+ */
+export function buildTurnInput(
+  text: string,
+  attachment?: TurnAttachment | null,
+): unknown {
+  if (!attachment) return text;
+  return [
+    { type: "text", text },
+    { type: "image_url", image_url: { url: attachment.dataUrl, detail: "high" } },
+  ];
+}
 
 export type ChatStreamEvent =
   | { type: "run.started"; runId: string }
@@ -348,6 +382,17 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     : [
         "Filing implied changes is off for this session. Do not emit a lifequest-decision fence; just describe the change in prose and let the operator ask for it.",
       ];
+  // The receipt line names the stored path and nothing else: the agent may cite
+  // a path the app handed it, and only the app knows which path that was.
+  const attached = input.attachedFile;
+  const receiptLine = attached
+    ? [
+        `One receipt image is attached to this turn. Its original is stored in the vault at ${attached.relPath} (${attached.name}).`,
+        "When you log a transaction from that image, pass that exact string as source_file.",
+        "Pass source_file only for a path the app gave you.",
+        "If the image does not give you an amount or an account, ask and post no row; the stored file stays.",
+      ].join(" ")
+    : "";
   const base = [
     "You are chatting inside the LifeQuest app.",
     `Active domain: ${domain}`,
@@ -356,6 +401,7 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     `Vault: ${input.vaultOpen ? "open" : "closed"}`,
     "LifeQuest MCP server name is lifequest. Use it for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
     "Money the operator states must be logged with capture_transaction (or undo_capture / correct_capture in that thread). Do not claim a row was posted unless the tool result says posted: true. If the tool returns ask, ask that and do not invent an account.",
+    receiptLine,
     "A page script block is the one page change you apply yourself: use apply_script_block, then name the script you applied in your reply, and do not file a Decision for it. Every other page edit still goes through a Decision. Do not claim a script ran unless run_script_block returned queries or fetches.",
     "The Dashboard is the app's home screen — the pin board the operator sees first, one per domain plus one Overview. It is NOT a page; never ask for a page id for it and never create a 'Dashboard page'. To put a table, chart, or metric there: preview_view to check the numbers (at most three previews, then prose), propose_view to file the one Decision that saves it, and arrange_dashboard (with the full pin list from get_dashboard) to pin it.",
     boardLine,
