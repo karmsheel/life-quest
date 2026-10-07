@@ -1,9 +1,15 @@
 /**
- * E2E harness for the Chat panel, driven by two scripts:
+ * E2E harness for the Chat panel, driven by four scripts:
  *
  *  - `composer-autogrow.electron.mjs` — the composer's growth, its inline
  *    send/stop control and the turn-outcome note. Failure modes listed there.
  *  - `tool-run.electron.mjs` — how a turn's tool calls are shown. Failure modes
+ *    listed there.
+ *  - `composer-model-pills.electron.mjs` — the model and thinking pills.
+ *  - `receipt-attach.electron.mjs` — the receipt the composer attaches, and the
+ *    turn it rides. Its composer leg ends at this page's stubbed bridge: a
+ *    dev-server page has no preload, so the real `receipt:attach` handler is
+ *    exercised in that rig's other leg, against a real vault. Failure modes
  *    listed there.
  *
  * This is a system-in-isolation rig: the real ChatPanel, the real CSS, the real
@@ -50,7 +56,22 @@ const OTHER_SESSION = {
 
 const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value });
 
-type ChatCall = { sessionId: string; input: string; runtime?: unknown };
+type ChatCall = {
+  sessionId: string;
+  input: string;
+  runtime?: unknown;
+  receiptRelPath?: string | null;
+};
+
+/**
+ * What the stubbed `receipt:attach` answers with, and the case a driver asks
+ * for with `?attachfail=1`: a refusal must show on the composer and leave no
+ * chip behind. The path is the shape main mints, so a driver can assert the
+ * panel put exactly that string on the turn.
+ */
+const ATTACHED_REL_PATH =
+  "domains/financial/data/files/11111111-2222-3333-4444-555555555555/receipt.jpg";
+const ATTACH_FAILS = new URLSearchParams(window.location.search).has("attachfail");
 
 /**
  * The composer control row's fixture: the shape `GET /api/model/options` answers
@@ -109,12 +130,15 @@ type HarnessWindow = {
   __lqEmit?: (evt: unknown) => void;
   /** The real SSE decoder, so a driver can prove a wire frame maps to an event. */
   __lqParseSse?: (raw: string) => unknown;
+  /** Every `receiptAttach` the panel made, in order. */
+  __lqAttachCalls?: { mime: string; name: string; bytes: number }[];
   chatPanelHarnessReady?: Promise<void>;
 };
 
 const harness = window as unknown as HarnessWindow;
 harness.__lqChatDelay = 0;
 harness.__lqParseSse = parseSseBlock;
+harness.__lqAttachCalls = [];
 
 const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(null),
@@ -146,6 +170,24 @@ const bridge: Record<string, unknown> = {
     harness.__lqChatCalls = [...(harness.__lqChatCalls ?? []), payload];
     await new Promise((resolve) => setTimeout(resolve, harness.__lqChatDelay ?? 0));
     return ok(true);
+  },
+  // Answers the way main does: the stored path back, never the bytes. Records
+  // what the panel sent so a driver can prove the file it picked is the file it
+  // asked about.
+  receiptAttach: async (input: { bytes: Uint8Array; mime: string; name: string }) => {
+    harness.__lqAttachCalls = [
+      ...(harness.__lqAttachCalls ?? []),
+      { mime: input.mime, name: input.name, bytes: input.bytes?.byteLength ?? 0 },
+    ];
+    if (ATTACH_FAILS) {
+      return { ok: false as const, error: "Receipts must be JPEG or PNG images." };
+    }
+    return ok({
+      relPath: ATTACHED_REL_PATH,
+      fileId: "11111111-2222-3333-4444-555555555555",
+      name: input.name,
+      size: input.bytes?.byteLength ?? 0,
+    });
   },
   companionRunStop: async (runId: string) => {
     harness.__lqStopCalls = [...(harness.__lqStopCalls ?? []), runId];

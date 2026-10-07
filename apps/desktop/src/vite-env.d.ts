@@ -273,6 +273,8 @@ type LifequestApi = {
     instructionsContext: CompanionInstructionsContext;
     /** The composer's model / thinking-level pick for this turn. */
     runtime?: CompanionRuntimeOverride | null;
+    /** The receipt waiting in main for this turn, by the path main minted. */
+    receiptRelPath?: string | null;
   }) => Promise<Result<true> | { ok: true } | { ok: false; error: string }>;
   companionApproval: (payload: {
     runId: string;

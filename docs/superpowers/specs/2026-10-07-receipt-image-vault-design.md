@@ -69,11 +69,13 @@ A PNG is flattened to JPEG for the model copy. The original PNG stays in the vau
 
 ## The composer
 
-- An attach control sits on the composer row beside the send button: an `ImagePlus` icon button wrapping an `<input type="file" accept="image/png,image/jpeg">`. It is disabled while a turn is sending, while no session is selected, and while the vault is closed.
+- The attach control sits in a slim row above the field: an `ImagePlus` icon button wrapping an `<input type="file" accept="image/png,image/jpeg">`. It is disabled while a turn is sending, while no session is selected, and while the vault is closed.
+- The row is above the field rather than inside it because the send control already spends the composer's gutter budget. A second control inside the field would cost more width than the side column the composer replaced, which is a regression the composer's own rig exists to catch.
 - The composer form accepts a drop, and the textarea accepts a paste carrying an image.
-- The chip above the field shows a thumbnail, the file name, the size, and a remove control.
+- The chip in that row shows a thumbnail, the file name, the size, and a remove control. The chip on the operator's own turn in the thread shows the name and size.
 - A pending receipt is cleared on send, on session switch, on a new session, and on unmount. One receipt at a time: a second attach replaces the first.
-- The operator's own turn renders in the thread with the chip. After a thread reload the app shows the transcript's text stand-in, which does not carry the file name; the file identity then lives on the transaction row's `source_file` cell, which is the source of record.
+- A turn may be sent with a receipt and no text at all, which is what photographing a receipt and hitting send looks like.
+- After a thread reload the app shows the transcript's text stand-in, which does not carry the file name; the file identity then lives on the transaction row's `source_file` cell, which is the source of record.
 
 ## The instruction line
 

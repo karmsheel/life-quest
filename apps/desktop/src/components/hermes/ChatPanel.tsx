@@ -16,6 +16,7 @@ import {
   Check,
   ChevronRight,
   History,
+  ImagePlus,
   MoreVertical,
   PanelRightOpen,
   Pencil,
@@ -51,7 +52,16 @@ export type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  /** The receipt this turn carried, as the thread remembers it after sending. */
+  receipt?: { name: string; size: number };
 };
+
+/** Bytes as the chip says them: 287 B, 41 KB, 1.2 MB. */
+function formatReceiptSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 type ChatPanelProps = {
   open: boolean;
@@ -145,6 +155,80 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
+   * The receipt waiting to ride the next turn. Main keeps the original and the
+   * copy it built for the model, so what lives here is a name to show and the
+   * path to name on the turn — the bytes never come back through the bridge.
+   */
+  const [receipt, setReceipt] = useState<{
+    relPath: string;
+    name: string;
+    size: number;
+    previewUrl: string;
+  } | null>(null);
+  const receiptInputRef = useRef<HTMLInputElement | null>(null);
+  /** The live thumbnail URL, held in a ref so it can always be released. */
+  const receiptPreviewRef = useRef<string | null>(null);
+
+  /** Replace (or drop) the pending receipt, releasing the old thumbnail. */
+  const putReceipt = useCallback(
+    (next: { relPath: string; name: string; size: number; previewUrl: string } | null) => {
+      if (receiptPreviewRef.current) {
+        URL.revokeObjectURL(receiptPreviewRef.current);
+        receiptPreviewRef.current = null;
+      }
+      if (next) receiptPreviewRef.current = next.previewUrl;
+      setReceipt(next);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (receiptPreviewRef.current) URL.revokeObjectURL(receiptPreviewRef.current);
+    };
+  }, []);
+
+  /**
+   * Take one image from the composer. Main stores the original and answers with
+   * the path the turn has to cite — the bytes are never handed back, so the
+   * thumbnail is made here from the operator's own file.
+   *
+   * One receipt at a time: a second attach replaces the first, and a refusal
+   * from main leaves the previous one exactly where it was.
+   */
+  async function attachReceipt(file: File) {
+    setError(null);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const result = await api().receiptAttach({
+        bytes,
+        mime: file.type,
+        name: file.name,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      putReceipt({
+        relPath: result.value.relPath,
+        name: result.value.name,
+        size: result.value.size,
+        previewUrl: URL.createObjectURL(file),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not attach that receipt");
+    }
+  }
+
+  /** The first image in a drop or a paste, if the gesture carried one. */
+  function imageFrom(files: FileList | null): File | null {
+    if (!files) return null;
+    for (const file of Array.from(files)) {
+      if (file.type === "image/png" || file.type === "image/jpeg") return file;
+    }
+    return null;
+  }
+  /**
    * The composer's model and thinking pills. The catalog is the gateway's own
    * inventory for this profile, so the menu cannot offer a model the gateway
    * cannot route; the pick is the *chat's*, remembered across launches so a
@@ -180,7 +264,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
    */
   const { ask, dialog } = useConfirm(open);
   /** Drives the inline control: the arrow needs text, the stop square needs a run. */
-  const sendable = draft.trim().length > 0;
+  const sendable = draft.trim().length > 0 || receipt !== null;
   const controlVisible = sending || sendable;
   const [approval, setApproval] = useState<{
     runId: string;
@@ -323,7 +407,9 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     setSessionId(id);
     window.localStorage.setItem(LAST_SESSION_KEY, id);
     // Everything below describes the turn running in the chat being left
-    // behind, so it goes with it.
+    // behind, so it goes with it. The pending receipt is part of that: it was
+    // attached to the chat being left, and its original stays in the vault.
+    putReceipt(null);
     setTools([]);
     setToolsOpen(false);
     setTurnNote(null);
@@ -344,7 +430,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
         ),
       );
     }
-  }, []);
+  }, [putReceipt]);
 
   /** Refresh the list and hand it back, so a caller can pick a row off it. */
   const loadSessions = useCallback(async (): Promise<HermesSession[] | null> => {
@@ -581,19 +667,31 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   async function sendMessage(text: string, overrideSessionId?: string) {
     const content = text.trim();
     const activeId = overrideSessionId ?? sessionId;
-    if (!content || sending || !activeId) return;
+    // A receipt can carry the turn on its own: the operator photographs a
+    // receipt and sends it without typing anything.
+    const attached = receipt;
+    if ((!content && !attached) || sending || !activeId) return;
 
     setMessages((prev) => [
       ...prev,
-      { id: nextId(), role: "user", content },
+      {
+        id: nextId(),
+        role: "user",
+        content,
+        ...(attached ? { receipt: { name: attached.name, size: attached.size } } : {}),
+      },
     ]);
+    // The path goes with the turn and the chip goes away. Main took the copy out
+    // of its slot, so the receipt now lives on the row the agent writes.
+    putReceipt(null);
     setSessions((prev) =>
       prev
         .map((s) => {
           if (s.id !== activeId) return s;
+          const preview = content || attached?.name || "";
           return {
             ...s,
-            preview: s.preview?.trim() ? s.preview : content,
+            preview: s.preview?.trim() ? s.preview : preview,
             lastActive: Date.now() / 1000,
           };
         })
@@ -626,6 +724,8 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
         // The composer's pills, if the operator has picked anything: absent
         // fields leave the turn on the gateway's own defaults.
         runtime: runtimePick,
+        // The receipt waiting in main for this turn. Absent means a text turn.
+        receiptRelPath: attached?.relPath ?? null,
       });
       if ("ok" in result && result.ok === false) {
         setError(result.error);
@@ -814,7 +914,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (sending || !draft.trim()) return;
+    if (sending || (!draft.trim() && !receipt)) return;
     const text = draft.trim();
     setDraft("");
     await sendMessage(text);
@@ -823,7 +923,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (sending || !draft.trim()) return;
+      if (sending || (!draft.trim() && !receipt)) return;
       const text = draft.trim();
       setDraft("");
       void sendMessage(text);
@@ -1469,7 +1569,18 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                     <span className="chat-panel__message-role">
                       {m.role === "user" ? "You" : "Hermes"}
                     </span>
-                    <div className="chat-panel__message-content">{m.content}</div>
+                    <div className="chat-panel__message-content">
+                      {m.receipt ? (
+                        <span className="chat-panel__message-receipt">
+                          <ImagePlus size={12} aria-hidden />
+                          {m.receipt.name}
+                          <span className="chat-panel__receipt-size">
+                            {formatReceiptSize(m.receipt.size)}
+                          </span>
+                        </span>
+                      ) : null}
+                      {m.content}
+                    </div>
                   </div>
                 ))}
                 {sending && tools.length === 0 ? (
@@ -1597,7 +1708,76 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                 </div>
               </form>
             ) : (
-              <form className="chat-panel__composer" onSubmit={(e) => void onSubmit(e)}>
+              <form
+                className="chat-panel__composer"
+                onSubmit={(e) => void onSubmit(e)}
+                onDragOver={(e) => {
+                  // Only a file drag needs the drop; text drags keep their
+                  // native behaviour over the field.
+                  if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  const file = imageFrom(e.dataTransfer.files);
+                  if (!file) return;
+                  e.preventDefault();
+                  void attachReceipt(file);
+                }}
+              >
+                {/*
+                  One slim row above the field, so the attach control costs the
+                  textarea no width: the composer has to stay narrower than the
+                  side column it replaced, and a second control inside the field
+                  would not. The chip lives here beside it when a receipt is
+                  waiting.
+                */}
+                <div className="chat-panel__receipts">
+                  <input
+                    ref={receiptInputRef}
+                    className="chat-panel__receipt-input"
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    aria-label="Receipt image"
+                    onChange={(e) => {
+                      const file = imageFrom(e.target.files);
+                      if (file) void attachReceipt(file);
+                      // Clear the picker so choosing the same file twice still
+                      // fires a change event.
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="chat-panel__attach"
+                    disabled={sending || !sessionId}
+                    aria-label="Attach a receipt"
+                    title="Attach a receipt"
+                    onClick={() => receiptInputRef.current?.click()}
+                  >
+                    <ImagePlus size={15} aria-hidden />
+                  </button>
+                  {receipt ? (
+                    <div className="chat-panel__receipt">
+                      <img
+                        className="chat-panel__receipt-thumb"
+                        src={receipt.previewUrl}
+                        alt=""
+                      />
+                      <span className="chat-panel__receipt-name">{receipt.name}</span>
+                      <span className="chat-panel__receipt-size">
+                        {formatReceiptSize(receipt.size)}
+                      </span>
+                      <button
+                        type="button"
+                        className="chat-panel__receipt-remove"
+                        aria-label="Remove receipt"
+                        title="Remove receipt"
+                        onClick={() => putReceipt(null)}
+                      >
+                        <X size={12} aria-hidden />
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
                 <div
                   className={
                     controlVisible
@@ -1612,6 +1792,14 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={onKeyDown}
+                    onPaste={(e) => {
+                      // A pasted screenshot is a receipt too: take the image and
+                      // leave any pasted text to the field's own handling.
+                      const file = imageFrom(e.clipboardData?.files ?? null);
+                      if (!file) return;
+                      e.preventDefault();
+                      void attachReceipt(file);
+                    }}
                     disabled={sending || !sessionId}
                     rows={2}
                     aria-label="Message Hermes"

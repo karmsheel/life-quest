@@ -8,6 +8,7 @@ import {
   DEFAULT_API_PORT,
   PROFILE_NAME,
   hermesRoot,
+  portFromBaseUrl,
   profileDir,
   readEnv,
   checkPinnedModel,
@@ -15,6 +16,7 @@ import {
 import { hermesSpawnSpec } from "./companion-spawn.ts";
 import {
   buildInstructions,
+  buildTurnInput,
   createdSessionFromPayload,
   messagesFromPayload,
   modelCatalogFromPayload,
@@ -27,6 +29,7 @@ import {
   type CompanionModelCatalog,
   type CompanionRuntimeOverride,
   type HermesSession,
+  type TurnAttachment,
 } from "./companion-client.ts";
 import {
   ensureCompanion,
@@ -254,6 +257,33 @@ export async function companionEnsure(): Promise<PublicCompanionStatus> {
 }
 
 /**
+ * Attach to a gateway that is already listening, instead of discovering one.
+ *
+ * `companionEnsure` probes for a Hermes on this machine and attaches to what it
+ * finds; this is that same attach, given the address rather than searching for
+ * it. The E2E rigs point the chat client at their own recording server with it,
+ * because the alternative — making them drive the real discovery path — would
+ * have them write an API key into the operator's own Hermes profile.
+ */
+export function companionAttachToGateway(
+  baseUrl: string,
+  apiKey: string,
+): PublicCompanionStatus {
+  const normalized = baseUrl.replace(/\/$/, "");
+  current = {
+    kind: "ready",
+    port: portFromBaseUrl(normalized),
+    baseUrl: normalized,
+    startedByLifeQuest: false,
+    profilePath: "",
+    cliPath: "",
+    childPid: null,
+    apiKey,
+  };
+  return publicStatus(current);
+}
+
+/**
  * KAR-70: write a vault's companion token into the Hermes profile.
  *
  * Called after a vault opens or is switched, because that is the moment
@@ -450,6 +480,10 @@ export async function companionSessionDelete(
  * run under. The pick is per turn, never persisted app-side beyond the
  * composer's own stored preference, so a chat that is opened in Hermes Desktop
  * keeps running whatever that client asks for.
+ *
+ * A receipt rides the same call when the operator attached one. The attachment
+ * is already in hand here: main took it out of the pending slot, so this
+ * function never sees a path it cannot also produce the bytes for.
  */
 export async function companionChatStream(
   sessionId: string,
@@ -457,15 +491,19 @@ export async function companionChatStream(
   ctx: CompanionInstructionsInput,
   onEvent: (evt: ChatStreamEvent) => void,
   runtime?: CompanionRuntimeOverride | null,
+  attachment?: TurnAttachment | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
+    const instructions = attachment
+      ? { ...ctx, attachedFile: { relPath: attachment.relPath, name: attachment.name } }
+      : ctx;
     const res = await hermesFetch(
       `/api/sessions/${encodeURIComponent(sessionId)}/chat/stream`,
       {
         method: "POST",
         body: JSON.stringify({
-          input,
-          instructions: buildInstructions(ctx),
+          input: buildTurnInput(input, attachment),
+          instructions: buildInstructions(instructions),
           ...runtimeRequestBody(runtime),
         }),
       },

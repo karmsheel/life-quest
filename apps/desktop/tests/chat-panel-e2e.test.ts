@@ -937,6 +937,20 @@ describe("chat panel rigs", { concurrency: true }, () => {
     "refuses when the Finance kit is missing",
     "holds the prepared receipt for the turn that follows",
     "will not hand over a receipt it does not hold",
+    "posts a text-only turn as a plain string",
+    "posts a receipt turn as a text part and an image part",
+    "names the stored path in the turn's instructions",
+    "keeps a busy receipt turn under the body ceiling",
+    "refuses a turn naming a receipt it does not hold",
+    "shows a chip when a receipt is picked",
+    "carries the stored path on the turn and clears the chip",
+    "shows a chip when a receipt is dropped",
+    "shows a chip when a receipt is pasted",
+    "replaces the pending receipt rather than adding one",
+    "sends no receipt once the chip is removed",
+    "clears the pending receipt when the chat changes",
+    "photographs the chip and the turn that carried it",
+    "shows the refusal and keeps no chip",
   ];
 
   function runReceiptDriver(): Promise<number> {

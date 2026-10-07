@@ -336,6 +336,7 @@ const lifequest = {
       provider?: string;
       reasoningEffort?: string;
     } | null;
+    receiptRelPath?: string | null;
   }) => ipcRenderer.invoke("companion:chatStream", payload),
   companionApproval: (payload: {
     runId: string;

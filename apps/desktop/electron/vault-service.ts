@@ -189,6 +189,7 @@ import type {
   ChatStreamEvent,
   CompanionInstructionsInput,
   CompanionRuntimeOverride,
+  TurnAttachment,
 } from "./companion-client.js";
 import {
   buildBoundReviewContext,
@@ -1379,7 +1380,19 @@ export async function companionChatStreamWithPack(
   instructionsContext: CompanionInstructionsInput,
   onEvent: (evt: ChatStreamEvent) => void,
   runtime?: CompanionRuntimeOverride | null,
+  receiptRelPath?: string | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  // The slot is the only source of the image, so a turn that names a receipt
+  // main is not holding is refused rather than sent as a text-only turn the
+  // operator would read as "the agent ignored my photo".
+  let attachment: TurnAttachment | null = null;
+  if (receiptRelPath) {
+    attachment = pendingReceipt.take(receiptRelPath);
+    if (!attachment) {
+      return { ok: false, error: "Attach that receipt again." };
+    }
+  }
+
   const fileUnsolicited = await getFileUnsolicited().catch(() => true);
   const ctx: CompanionInstructionsInput = { ...instructionsContext, fileUnsolicited };
   if (currentRoot) {
@@ -1410,6 +1423,7 @@ export async function companionChatStreamWithPack(
     ctx,
     forward,
     runtime,
+    attachment,
   );
   if (result.ok && currentRoot) {
     try {
