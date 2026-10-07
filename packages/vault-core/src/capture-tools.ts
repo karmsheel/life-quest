@@ -1,7 +1,12 @@
 import { todayLocalIso } from "./map/public.ts";
 import type { MapToolDef } from "./map/tools.ts";
 import type { Actor } from "./types.ts";
-import { captureUtterance, undoCapture, correctCapture } from "./capture.ts";
+import {
+  captureUtterance,
+  undoCapture,
+  correctCapture,
+  isStoredReceiptPath,
+} from "./capture.ts";
 
 export const CAPTURE_TOOL_DEFS: MapToolDef[] = [
   {
@@ -13,6 +18,7 @@ export const CAPTURE_TOOL_DEFS: MapToolDef[] = [
         text: { type: "string", description: "The transaction description, e.g. 'Bought food for R85 today'." },
         threadId: { type: "string", description: "Optional thread id for undo/correct grouping. Defaults to 'companion'." },
         today: { type: "string", description: "Optional YYYY-MM-DD date for 'today'. Defaults to local date." },
+        source_file: { type: "string", description: "Vault-relative path of the original receipt, exactly as the app reported it (domains/financial/data/files/<id>/<name>). Omit when the row came from stated text with no stored original." },
       },
       required: ["text"],
     },
@@ -53,7 +59,20 @@ export async function executeCaptureTool(
       const text = typeof args.text === "string" ? args.text : "";
       const threadId = typeof args.threadId === "string" && args.threadId ? args.threadId : "companion";
       const today = typeof args.today === "string" && args.today ? args.today : todayLocalIso();
-      const result = await captureUtterance(root, { text, today, threadId, actor });
+      // The argument is the one place an agent could point a row at an original
+      // that is not there, so it is checked here and refused by name.
+      const sourceFile = typeof args.source_file === "string" && args.source_file
+        ? args.source_file
+        : null;
+      if (sourceFile !== null && !(await isStoredReceiptPath(root, sourceFile))) {
+        return {
+          error: {
+            code: "MALFORMED",
+            message: "source_file must name a stored receipt",
+          },
+        };
+      }
+      const result = await captureUtterance(root, { text, today, threadId, actor, sourceFile });
       return result.ok ? result.value : { error: { code: "FAILED", message: result.error } };
     }
     case "undo_capture": {

@@ -364,6 +364,15 @@ type LifequestApi = {
     mime: string;
     name: string;
   }) => Promise<Result<{ relPath: string; fileId: string }>>;
+  /**
+   * Stores one receipt in the finance file store and leaves the copy for the
+   * next turn waiting in main. The bytes never come back through this bridge.
+   */
+  receiptAttach: (input: {
+    bytes: Uint8Array;
+    mime: string;
+    name: string;
+  }) => Promise<Result<{ relPath: string; fileId: string; name: string; size: number }>>;
   // KAR-58 books export and restore
   dbExportBooks: (slug: string) => Promise<Result<DomainBooksExport>>;
   dbRestoreBooks: (
