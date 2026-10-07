@@ -11,6 +11,12 @@ const require = createRequire(import.meta.url);
 
 const DEV_PORT = 5173;
 const DEV_URL = `http://localhost:${DEV_PORT}`;
+/**
+ * STATUS_BREAKPOINT: what Electron exits with when this machine's Windows
+ * refuses Chromium's sandbox. Electron 35 died here on Windows 11 build 26200 —
+ * no window, no console output, nothing an operator can act on.
+ */
+const SANDBOX_UNAVAILABLE_EXIT = 0x80000003;
 
 /** @type {import('node:child_process').ChildProcess[]} */
 const children = [];
@@ -110,7 +116,18 @@ function startElectron() {
   });
   children.push(child);
   child.on("exit", (code) => {
-    if (!shuttingDown) cleanup(code ?? 0);
+    if (shuttingDown) return;
+    // A silent STATUS_BREAKPOINT is the worst failure mode there is: name it.
+    if (((code ?? 0) >>> 0) === SANDBOX_UNAVAILABLE_EXIT) {
+      console.error(
+        "[dev] Electron exited 0x80000003: this machine's Windows refused Chromium's sandbox before a\n" +
+          "[dev] window could open. Electron 35 cannot start its sandbox on Windows 11 build 26200;\n" +
+          "[dev] updating `electron` is the fix (44.6.0 starts and runs here). ELECTRON_DISABLE_SANDBOX=1\n" +
+          "[dev] also starts it, but Chromium then runs the renderer at low integrity, where it can no\n" +
+          "[dev] longer write the app's profile under %APPDATA%.",
+      );
+    }
+    cleanup(code ?? 0);
   });
   return child;
 }

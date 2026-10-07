@@ -12,13 +12,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
     "@lifequest/vault-core": "*",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/node": "^20.19.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^4.5.0",
-    "electron": "^35.0.0",
+    "electron": "^44.6.0",
     "electron-builder": "^26.15.7",
     "esbuild": "^0.25.0",
     "lucide-react": "^0.511.0",
