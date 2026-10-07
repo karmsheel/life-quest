@@ -6,7 +6,7 @@ export const DEFAULT_API_PORT = 8642;
 export const RESERVED_PORTS = [8642, 8643, 8644] as const;
 export const DISCOVERY_PORTS = [8642, 8644, 8645, 8650] as const;
 export const MCP_URL = "http://127.0.0.1:8643/mcp";
-export const COMPANION_SOUL = `You are the LifeQuest companion. Help the user set up and use LifeQuest: vaults, domains, Premise, Vision, Purpose, and Strategy (How), Life Map, Architecture, tasks, and the agent lock. Prefer LifeQuest MCP tools (lifequest) for map and task changes. If a tool returns LOCKED, tell the user the map is locked and do not retry writes. Do not rewrite Premise, Vision, Purpose, or Strategy (How); use get_doctrine to read them. Do not flip the agent lock. You also exist in Hermes Desktop and other channels on this same profile — stay consistent. The Dashboard is the app's home screen (the pin board), one per domain plus one Overview — never a page. To put a table, chart, or metric on it: preview_view, propose_view (one Decision), arrange_dashboard with the full pin list from get_dashboard; your arrange_dashboard applies at once.
+export const COMPANION_SOUL = `You are the LifeQuest companion. Help the user set up and use LifeQuest: vaults, domains, Premise, Vision, Purpose, and Strategy (How), Life Map, Architecture, tasks, and the agent lock. Prefer LifeQuest MCP tools (lifequest) for map and task changes. If a tool returns LOCKED, tell the user the map is locked and do not retry writes. Do not rewrite Premise, Vision, Purpose, or Strategy (How); use get_doctrine to read them. Do not flip the agent lock. You also exist in Hermes Desktop and other channels on this same profile — stay consistent. The Dashboard is the app's home screen (the pin board), one per domain plus one Overview — never a page. To put a table, chart, or metric on it: preview_view, propose_view (one Decision), arrange_dashboard with the full pin list from get_dashboard; your arrange_dashboard applies at once. When a summary needs more than one figure, write ONE composed view with a "blocks" array: a metric, a table, and a chart are panels of a single card, not three separate views. Your views run against live data, so never paste numbers into a card — express them as a query and the card stays correct tomorrow.
 `;
 
 const RESERVED = new Set<number>(RESERVED_PORTS);
@@ -159,6 +159,96 @@ export function ensureMcpServer(
   }
   const prefix = yaml.endsWith("\n") || yaml.length === 0 ? yaml : `${yaml}\n`;
   return `${prefix}mcp_servers:\n${block}`;
+}
+
+/**
+ * KAR-71: keep the profile's tool surface eager.
+ *
+ * Hermes' progressive tool disclosure ("tool search") replaces every MCP tool in
+ * the model-visible array with the `tool_search` / `tool_describe` / `tool_call`
+ * bridges and defers the rest behind them. The rule in `tools/tool_search.py`
+ * (`is_deferrable_tool_name`) is categorical — ANY MCP tool defers, and there is
+ * no "keep these eager" list — so the whole `lifequest` server disappears from
+ * the companion's toolset the moment the bridge activates. That is a correct
+ * optimisation for a thousand-tool API and a broken one for the companion,
+ * which is *supposed* to see `preview_view`, `propose_view`, `get_dashboard`
+ * and `arrange_dashboard` directly: it cannot plan a call to a tool it cannot
+ * see, and `tool_search`'s embedded listing is not enough to guarantee it will
+ * look. The symptom was the companion honestly reporting "the Dashboard-pinning
+ * tools aren't available in my current toolset" while the door advertised all
+ * 61 of them.
+ *
+ * `load_config()` resolves `$HERMES_HOME/config.yaml` under the per-turn profile
+ * override the multiplexed gateway installs (`gateway/run.py`
+ * `_profile_runtime_scope`), so this line in the PROFILE config un-defers the
+ * companion alone. The operator's other eleven profiles keep progressive
+ * disclosure, and the root config is never touched.
+ *
+ * An explicit `tools.tool_search.enabled` line is replaced in place; a profile
+ * that has no `tools:` block gets one. Written plain (`off`, never quoted) so
+ * `_tri_state` reads it as the tri-state it is.
+ */
+export function ensureEagerToolSearch(yaml: string): string {
+  const nl = lineBreak(yaml);
+  // Anchored to the `tools:` parent, and to the two-space indent every writer of
+  // this file uses. Only the `tool_search:` ENTRY line is matched here; its
+  // children are walked line by line below, because a regex spanning them would
+  // also span the entry's siblings — `tools:` children all sit at the same
+  // indent, so `enabled:` of a sibling block would match as if it were ours.
+  const entry = /^tools:[ \t]*\r?\n([ \t]+)tool_search:[ \t]*(\r?\n|$)/m.exec(yaml);
+  if (entry) {
+    const indent = entry[1] ?? "  ";
+    const childIndent = `${indent}  `;
+    // The block ends at the first non-blank line at the entry's own indent or
+    // shallower: the next sibling of `tool_search:`, or the next top-level key.
+    // Blank lines inside the block stay inside it.
+    const body = yaml.slice(entry.index + entry[0].length);
+    let blockEnd = body.length;
+    let scan = 0;
+    while (scan < body.length) {
+      const lineEnd = body.indexOf("\n", scan);
+      const line = lineEnd < 0 ? body.slice(scan) : body.slice(scan, lineEnd + 1);
+      const trimmed = line.replace(/\r?\n$/, "").trim();
+      if (trimmed !== "") {
+        const own = /^([ \t]*)/.exec(line)?.[1] ?? "";
+        if (own.length <= indent.length) {
+          blockEnd = scan;
+          break;
+        }
+      }
+      if (lineEnd < 0) break;
+      scan = lineEnd + 1;
+    }
+    const children = body.slice(0, blockEnd);
+
+    const enabledRe = new RegExp(`^${childIndent}enabled:[ \\t]*(.*)$`, "m");
+    const enabledLine = enabledRe.exec(children);
+    if (enabledLine) {
+      if (enabledLine[1]?.trim() === "off") return yaml;
+      return (
+        yaml.slice(0, entry.index + entry[0].length) +
+        children.replace(enabledRe, `${childIndent}enabled: off`) +
+        body.slice(blockEnd)
+      );
+    }
+    // A `tool_search:` block with no `enabled` key: add one as its first child.
+    return (
+      yaml.slice(0, entry.index + entry[0].length) +
+      `${childIndent}enabled: off${nl}` +
+      children +
+      body.slice(blockEnd)
+    );
+  }
+
+  if (hasTopLevelKey(yaml, "tools")) {
+    return yaml.replace(
+      /^tools:[ \t]*\r?\n/m,
+      (line) => `${line}  tool_search:${nl}    enabled: off${nl}`,
+    );
+  }
+  const block = `tools:${nl}  tool_search:${nl}    enabled: off${nl}`;
+  const prefix = yaml.length === 0 || yaml.endsWith("\n") ? yaml : `${yaml}${nl}`;
+  return `${prefix}${block}`;
 }
 
 /**

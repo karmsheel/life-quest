@@ -14,13 +14,13 @@
 import { StrictMode, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import type { CSSProperties } from "react";
-import type { SavedView, ViewRunResult } from "@lifequest/vault-core";
+import type { ComposedViewRunResult, SavedView } from "@lifequest/vault-core";
 import { ViewCard } from "@/components/ui/ViewCard";
 import "@/styles/global.css";
 
 type Fixture = {
   view: SavedView;
-  run: { ok: true; value: ViewRunResult } | { ok: false; error: string } | null;
+  run: { ok: true; value: ComposedViewRunResult } | { ok: false; error: string } | null;
   missing?: boolean;
 };
 

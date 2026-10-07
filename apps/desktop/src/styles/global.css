@@ -4901,6 +4901,40 @@ button.chat-panel__activity-line:hover {
   font-size: 0.75rem;
 }
 
+/* Composed views (2026-10-07): one card, several panels. A hairline separates
+   panels so a metric does not read as part of the table under it. */
+.view-card__blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.view-card__block + .view-card__block {
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+
+.view-card__block-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* A metric panel is the card's headline: give it the room a number needs. */
+.view-card__block:has(.view-card__metric) {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.view-card__block--span2 {
+  grid-column: 1 / -1;
+}
+
 .view-card__metric {
   margin: 0;
   font-size: 1.8rem;

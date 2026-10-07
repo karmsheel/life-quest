@@ -40,6 +40,7 @@ import type {
   ScriptApplyResult,
   ScriptRunResult,
   SavedView,
+  ComposedViewRunResult,
   ViewRunResult,
   SignalChainListResult,
   SignalCreateInput,
@@ -421,8 +422,8 @@ type LifequestApi = {
   viewGet: (slug: string, viewId: string) => Promise<Result<SavedView>>;
   viewSave: (slug: string, spec: Record<string, unknown>, viewId?: string) => Promise<Result<SavedView>>;
   viewDelete: (slug: string, viewId: string) => Promise<Result<{ id: string }>>;
-  viewRun: (slug: string, spec: Record<string, unknown>) => Promise<Result<ViewRunResult>>;
-  viewRunSaved: (slug: string, viewId: string) => Promise<Result<ViewRunResult>>;
+  viewRun: (slug: string, spec: Record<string, unknown>) => Promise<Result<ComposedViewRunResult>>;
+  viewRunSaved: (slug: string, viewId: string) => Promise<Result<ComposedViewRunResult>>;
   // KAR-61 finance kit
   kitInstallFinance: () => Promise<Result<unknown>>;
   kitList: (slug: string) => Promise<Result<unknown>>;

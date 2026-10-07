@@ -9,6 +9,7 @@ import {
   RESERVED_PORTS,
   attachCandidateBaseUrls,
   ensureMcpServer,
+  ensureEagerToolSearch,
   ensureRootCompanionHeader,
   modelsUrlFromConfig,
   seedModelFromRoot,
@@ -95,12 +96,17 @@ export type CompanionIo = {
  */
 /**
  * KAR-70: write (or refresh) the profile's `mcp_servers.lifequest` entry.
+ * KAR-71: and the profile's `tools.tool_search.enabled: off` line.
  *
- * With no token the file is left untouched — it is not even read. `ensure`
- * runs on app start, before any vault is open, so there is nothing to write
- * then, and rewriting the entry with an empty header list would strip the
- * header the companion needs. Opening a vault calls this again with that
- * vault's token, which is the credential the rebound doors accept.
+ * With no token the `mcp_servers` entry is left untouched — rewriting it with an
+ * empty header list would strip the header the companion needs. `ensure` runs on
+ * app start, before any vault is open, so there is nothing to write then for the
+ * credential. Opening a vault calls this again with that vault's token, which is
+ * the credential the rebound doors accept.
+ *
+ * The tool-search line is independent of the token and is written on either
+ * call, because it decides which tools the model may see rather than what the
+ * door accepts (see `ensureEagerToolSearch`).
  */
 export async function writeCompanionMcpProfile(
   io: Pick<CompanionIo, "readFile" | "writeFile">,
@@ -108,17 +114,29 @@ export async function writeCompanionMcpProfile(
   companionToken: string | null,
   rootConfigPath?: string | null,
 ): Promise<void> {
-  // Before ensureMcpServer, and before the read: a missing token must not
-  // rewrite config.yaml at all.
-  if (!companionToken) return;
-  const authorization = `Bearer ${companionToken}`;
   const yaml = (await io.readFile(configPath)) ?? "";
+
+  // KAR-71: the tool-surface line lands even with NO token, so it does not wait
+  // on a vault being open. It needs no credential — it decides which of the
+  // profile's tools the model may see — and without it the companion cannot see
+  // the Dashboard tools at all (see ensureEagerToolSearch). Only a file that
+  // already exists is rewritten: before the first vault is opened there is no
+  // profile config yet, and the token path below is what creates it.
+  const eager = ensureEagerToolSearch(yaml);
+  if (eager !== yaml && yaml !== "") await io.writeFile(configPath, eager);
+
+  // A missing token must not rewrite the mcp_servers entry: the header it would
+  // strip is the only thing making the companion work.
+  if (!companionToken) return;
+
+  const authorization = `Bearer ${companionToken}`;
+  const current = (await io.readFile(configPath)) ?? "";
   const rootYaml = rootConfigPath ? await io.readFile(rootConfigPath) : null;
-  let next = ensureMcpServer(yaml, PROFILE_NAME, MCP_URL, {
+  let next = ensureMcpServer(current, PROFILE_NAME, MCP_URL, {
     Authorization: authorization,
   });
   if (rootYaml) next = seedModelFromRoot(next, rootYaml);
-  if (next !== yaml) await io.writeFile(configPath, next);
+  if (next !== current) await io.writeFile(configPath, next);
   if (rootConfigPath && rootYaml) {
     const rootNext = ensureRootCompanionHeader(rootYaml, authorization);
     if (rootNext !== rootYaml) await io.writeFile(rootConfigPath, rootNext);
