@@ -1723,61 +1723,6 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                   void attachReceipt(file);
                 }}
               >
-                {/*
-                  One slim row above the field, so the attach control costs the
-                  textarea no width: the composer has to stay narrower than the
-                  side column it replaced, and a second control inside the field
-                  would not. The chip lives here beside it when a receipt is
-                  waiting.
-                */}
-                <div className="chat-panel__receipts">
-                  <input
-                    ref={receiptInputRef}
-                    className="chat-panel__receipt-input"
-                    type="file"
-                    accept="image/png,image/jpeg"
-                    aria-label="Receipt image"
-                    onChange={(e) => {
-                      const file = imageFrom(e.target.files);
-                      if (file) void attachReceipt(file);
-                      // Clear the picker so choosing the same file twice still
-                      // fires a change event.
-                      e.target.value = "";
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="chat-panel__attach"
-                    disabled={sending || !sessionId}
-                    aria-label="Attach a receipt"
-                    title="Attach a receipt"
-                    onClick={() => receiptInputRef.current?.click()}
-                  >
-                    <ImagePlus size={15} aria-hidden />
-                  </button>
-                  {receipt ? (
-                    <div className="chat-panel__receipt">
-                      <img
-                        className="chat-panel__receipt-thumb"
-                        src={receipt.previewUrl}
-                        alt=""
-                      />
-                      <span className="chat-panel__receipt-name">{receipt.name}</span>
-                      <span className="chat-panel__receipt-size">
-                        {formatReceiptSize(receipt.size)}
-                      </span>
-                      <button
-                        type="button"
-                        className="chat-panel__receipt-remove"
-                        aria-label="Remove receipt"
-                        title="Remove receipt"
-                        onClick={() => putReceipt(null)}
-                      >
-                        <X size={12} aria-hidden />
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
                 <div
                   className={
                     controlVisible
@@ -1823,20 +1768,78 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                     </button>
                   ) : null}
                 </div>
-                {/*
-                  The turn's runtime pick, under the field: the dock's version of
-                  the Hermes Desktop composer's model and reasoning pills. It is
-                  inside the form so it rides the composer's own column gap, and
-                  every control in it is `type="button"` — nothing here can
-                  submit the field above it. Absent entirely when the gateway
-                  served no catalog.
-                */}
-                <ComposerModelControls
-                  catalog={modelCatalog}
-                  disabled={sending || !sessionId}
-                  pick={runtimePick}
-                  onChange={updateRuntimePick}
-                />
+                <div className="chat-panel__composer-runtime">
+                  {/*
+                    The composer's footer line, under the field: the attach control
+                    on the left, the turn's runtime pick on the right. The attach
+                    control stays outside the field so it costs the textarea no
+                    width - the field keeps the panel's full width, and the send
+                    control already spends a gutter of it - with the waiting chip
+                    riding beside it.
+                  */}
+                  <div className="chat-panel__receipts">
+                    <input
+                      ref={receiptInputRef}
+                      className="chat-panel__receipt-input"
+                      type="file"
+                      accept="image/png,image/jpeg"
+                      aria-label="Receipt image"
+                      onChange={(e) => {
+                        const file = imageFrom(e.target.files);
+                        if (file) void attachReceipt(file);
+                        // Clear the picker so choosing the same file twice still
+                        // fires a change event.
+                        e.target.value = "";
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="chat-panel__attach"
+                      disabled={sending || !sessionId}
+                      aria-label="Attach a receipt"
+                      title="Attach a receipt"
+                      onClick={() => receiptInputRef.current?.click()}
+                    >
+                      <ImagePlus size={15} aria-hidden />
+                    </button>
+                    {receipt ? (
+                      <div className="chat-panel__receipt">
+                        <img
+                          className="chat-panel__receipt-thumb"
+                          src={receipt.previewUrl}
+                          alt=""
+                        />
+                        <span className="chat-panel__receipt-name">{receipt.name}</span>
+                        <span className="chat-panel__receipt-size">
+                          {formatReceiptSize(receipt.size)}
+                        </span>
+                        <button
+                          type="button"
+                          className="chat-panel__receipt-remove"
+                          aria-label="Remove receipt"
+                          title="Remove receipt"
+                          onClick={() => putReceipt(null)}
+                        >
+                          <X size={12} aria-hidden />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  {/*
+                    The turn's runtime pick, at the right end of the footer line
+                    under the field: the dock's version of the Hermes Desktop
+                    composer's model and reasoning pills. Every control in it
+                    is `type="button"` - nothing here can submit the field
+                    above it. Absent entirely when the gateway served no
+                    catalog, which leaves the attach control alone on the line.
+                  */}
+                  <ComposerModelControls
+                    catalog={modelCatalog}
+                    disabled={sending || !sessionId}
+                    pick={runtimePick}
+                    onChange={updateRuntimePick}
+                  />
+                </div>
               </form>
             )}
           </div>

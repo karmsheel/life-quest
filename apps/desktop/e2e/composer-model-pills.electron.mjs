@@ -134,6 +134,34 @@ async function main() {
           height: pill.offsetHeight,
           wrap: getComputedStyle(pill).borderTopWidth,
         })),
+        // The line under the field, and the two ends of it: the attach control
+        // owns the left end, the runtime pick the right. Measured against the
+        // field's own box, so "under the composer" is a number, not a claim.
+        line: (() => {
+          const lineEl = document.querySelector(".chat-panel__composer-runtime");
+          const attachEl = document.querySelector(".chat-panel__attach");
+          const pickEl = document.querySelector(".chat-panel__composer-controls");
+          if (!lineEl || !attachEl || !pickEl) return null;
+          const box = (el) => {
+            const r = el.getBoundingClientRect();
+            return {
+              left: Math.round(r.left),
+              right: Math.round(r.right),
+              top: Math.round(r.top),
+              bottom: Math.round(r.bottom),
+            };
+          };
+          const attach = box(attachEl);
+          const pick = box(pickEl);
+          return {
+            fieldBottom: Math.round(field.getBoundingClientRect().bottom),
+            line: box(lineEl),
+            attach,
+            pick,
+            sameLine: attach.top < pick.bottom && pick.top < attach.bottom,
+            attachGroup: Boolean(document.querySelector(".chat-panel__receipts")),
+          };
+        })(),
       };
     })()`;
 
@@ -244,6 +272,21 @@ async function main() {
       "the row sits under the field it belongs to",
       initial.rowBelowField === true,
       "the pills are not below the composer field",
+    );
+    check(
+      "the attach control sits under the field, at the left end of the line",
+      Boolean(initial.line?.attach) &&
+        initial.line.attach.top >= initial.line.fieldBottom &&
+        Math.abs(initial.line.attach.left - initial.line.line.left) <= 1 &&
+        initial.line.attach.right < initial.line.pick.left,
+      `attach ${JSON.stringify(initial.line?.attach)} on line ${JSON.stringify(initial.line?.line)}, ` +
+        `field bottom ${initial.line?.fieldBottom}`,
+    );
+    check(
+      "the runtime pick sits at the right end of that same line",
+      initial.line?.sameLine === true &&
+        Math.abs(initial.line.pick.right - initial.line.line.right) <= 1,
+      `pick ${JSON.stringify(initial.line?.pick)} on line ${JSON.stringify(initial.line?.line)}`,
     );
     check(
       "two pills at rest: the model and its thinking level",
@@ -756,6 +799,11 @@ async function main() {
     console.log(
       `row: ${report.initial.rowHeight}px tall, ${report.initial.pills?.length} pill(s) — ` +
         `${report.initial.pills?.map((p) => `${p.label}${p.override === "true" ? "*" : ""}`).join(" | ")}`,
+    );
+    console.log(
+      `line: attach ${JSON.stringify(report.initial.line?.attach)} | ` +
+        `pick ${JSON.stringify(report.initial.line?.pick)} | ` +
+        `line ${JSON.stringify(report.initial.line?.line)} (field bottom ${report.initial.line?.fieldBottom})`,
     );
     console.log(
       `menu: opens upward ${report.menu?.opensUpward}, inside the panel ${report.menu?.insidePanel}, ` +

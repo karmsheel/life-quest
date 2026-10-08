@@ -334,6 +334,16 @@ describe("chat panel rigs", { concurrency: true }, () => {
       rowBelowField: boolean;
       menuClosed: boolean;
       pills: Pill[];
+      /** The line under the field: its box, and where the attach control and
+       *  the runtime pick sit on it. Null when either end is missing. */
+      line: {
+        fieldBottom: number;
+        line: { left: number; right: number; top: number; bottom: number };
+        attach: { left: number; right: number; top: number; bottom: number };
+        pick: { left: number; right: number; top: number; bottom: number };
+        sameLine: boolean;
+        attachGroup: boolean;
+      } | null;
     };
     defaultThinking: { rows: string[]; closedByEscape: boolean };
     menu: {
@@ -424,6 +434,22 @@ describe("chat panel rigs", { concurrency: true }, () => {
       );
       assert.equal(report.initial.rowBorderTopWidth, "0px", "the runtime row painted a hairline");
       assert.equal(report.initial.rowBelowField, true, "the pills are not under the field");
+      assert.ok(report.initial.line, "the footer line under the field was not measured");
+      assert.ok(
+        report.initial.line!.attach.top >= report.initial.line!.fieldBottom,
+        `the attach control is not under the field: ${JSON.stringify(report.initial.line!.attach)} vs field bottom ${report.initial.line!.fieldBottom}`,
+      );
+      assert.ok(
+        Math.abs(report.initial.line!.attach.left - report.initial.line!.line.left) <= 1 &&
+          report.initial.line!.attach.right < report.initial.line!.pick.left,
+        `the attach control is not at the left end of the line: attach ${JSON.stringify(report.initial.line!.attach)} pick left ${report.initial.line!.pick.left}`,
+      );
+      assert.equal(report.initial.line!.sameLine, true, "the attach control and the pick are not on one line");
+      assert.ok(
+        Math.abs(report.initial.line!.pick.right - report.initial.line!.line.right) <= 1,
+        `the runtime pick is not at the right end of the line: pick ${JSON.stringify(report.initial.line!.pick)} line right ${report.initial.line!.line.right}`,
+      );
+      assert.equal(report.initial.line!.attachGroup, true, "the attach control left its receipt group");
       assert.equal(report.initial.pills.length, 2, "expected exactly the model and thinking pills");
       assert.equal(report.initial.pills[0]?.label, "space-bunny-alpha", "the model pill lost the default label");
       assert.equal(report.initial.pills[0]?.override, "false", "an unpicked model pill claimed an override");

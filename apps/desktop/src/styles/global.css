@@ -3665,16 +3665,35 @@ button.chat-panel__activity-line:hover {
   gap: 0.35rem;
 }
 
-/* The receipt row: the attach control and, when one is waiting, the receipt
-   itself. It sits above the field rather than inside it because the composer
-   must stay narrower than the side column it replaced — the send control
-   already spends that budget, and a second control in the field would spend
-   more than the column cost. */
+/* The attach control and, when one is waiting, the receipt itself: the left
+   end of the composer's footer line, under the field. It sits beside the field
+   rather than inside it because the composer must stay narrower than the side
+   column it replaced — the send control already spends that budget, and a
+   second control in the field would spend more than the column cost.
+   `min-width: 0` lets a long file name ellipsize rather than push the runtime
+   pick off the line's right end. */
 .chat-panel__receipts {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
   min-height: 1.5rem;
+}
+
+/* The composer's own footer line, under the field: the attach control at its
+   left end, the runtime pick at its right. The row is the positioned box the
+   pills' menus anchor to — they open upward into the transcript, because the
+   composer is the bottom of the panel and there is no room below it. It is
+   `position: relative` rather than the pills' own wrapper for a reason: that
+   wrapper is narrow and pushed right, and a menu sized as a percentage of it
+   would collapse to the width of the two chips. The row paints nothing of its
+   own; it is the field's column, one gap down. */
+.chat-panel__composer-runtime {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
 }
 
 /* The picker is driven by the button beside it; the input stays reachable to
@@ -3883,17 +3902,18 @@ button.chat-panel__activity-line:hover {
   background: currentColor;
 }
 
-/* The composer's runtime row: the model and thinking pills, one gap under the
-   field. This is the dock's own take on the two pills in the Hermes Desktop
-   composer — small chips that open upward into the transcript, because the
-   composer is the bottom of the panel and there is no room below it. The row
-   paints nothing of its own; it is the field's column, one gap down. */
+/* The model and thinking pills: the right end of the footer line under the
+   field, the dock's take on the two pills in the Hermes Desktop composer.
+   `margin-left: auto` is what puts them on the right — the attach
+   control owns the left end of the same line. The wrapper paints nothing and
+   is not a positioning context; the pills' menus anchor to
+   `.chat-panel__composer-runtime`. */
 .chat-panel__composer-controls {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
+  margin-left: auto;
 }
 
 .chat-panel__pill {
