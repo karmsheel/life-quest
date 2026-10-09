@@ -69,7 +69,8 @@ type Arm = {
 
 type Lift = {
   pinId: string;
-  pointerId: number;
+  /** The pointer that owns the gesture; null when the keyboard raised the card. */
+  pointerId: number | null;
   /** The pointer's offset inside the card when it was lifted. */
   grabX: number;
   grabY: number;
@@ -82,6 +83,8 @@ type Lift = {
   moved: boolean;
   /** Where the card would land: an index into the board without it. */
   to: number;
+  /** A keyboard lift stays in the flow: an arrow key reorders it, it does not fly. */
+  keyboard: boolean;
 };
 
 export type PinArrange = {
@@ -108,11 +111,39 @@ function cardIn(grid: HTMLElement | null, pinId: string): HTMLElement | null {
   return grid?.querySelector<HTMLElement>(`[data-pin-id="${CSS.escape(pinId)}"]`) ?? null;
 }
 
+/**
+ * What a card is called, for the one place a card is spoken rather than drawn.
+ *
+ * Read off the card's own heading rather than rebuilt from the pin: the heading
+ * is what the operator can see, so it cannot drift from what they are being told.
+ * A card's heading is the only name it has, and a spoken name that disagrees with
+ * the screen is worse than no name at all.
+ */
+function cardName(grid: HTMLElement | null, pinId: string): string {
+  const card = cardIn(grid, pinId);
+  const heading = card?.querySelector<HTMLElement>(".home-card__title, .view-card__title");
+  return heading?.textContent?.trim() || pinId;
+}
+
+/**
+ * How many tracks the board has, which is what "down" means to the keyboard.
+ *
+ * Read from the grid's resolved `grid-template-columns` rather than by counting
+ * the cards in a row: several home cards are legitimately full-row, so a row of
+ * the board is not a row of the grid and counting cards gives 1.
+ */
+function trackCount(grid: HTMLElement | null): number {
+  if (!grid) return 1;
+  const tracks = getComputedStyle(grid).gridTemplateColumns.trim();
+  if (!tracks || tracks === "none") return 1;
+  return Math.max(1, tracks.split(/\s+/).length);
+}
+
 export function usePinArrange(input: {
   pins: Pin[];
   locked: boolean;
   busy: boolean;
-  onCommit: (next: Pin[]) => Promise<CommitOutcome>;
+  onCommit: (next: Pin[]) => Promise<CommitOutcome>
 }): PinArrange {
   const { pins, locked, busy, onCommit } = input;
   const gridRef = useRef<HTMLDivElement | null>(null);
@@ -220,6 +251,41 @@ export function usePinArrange(input: {
     endLift();
   }, [disarm, endLift]);
 
+  /** Put the grip's focus back after the board has re-rendered around it. */
+  const refocusGrip = useCallback((pinId: string) => {
+    requestAnimationFrame(() => {
+      cardIn(gridRef.current, pinId)?.querySelector<HTMLElement>("[data-pin-grip]")?.focus();
+    });
+  }, []);
+
+  /**
+   * Finish a gesture — the one place a drop becomes a write.
+   *
+   * The order is rebuilt from the pins the page holds right now, not from the
+   * ones the gesture began with, so a board that changed underneath it still ends
+   * up with the operator's intent applied to it. The page owns everything after
+   * this: it puts the new order on screen, and it is the page that takes it back
+   * down if the vault refuses.
+   */
+  const finishLift = useCallback(
+    (current: Lift, options: { focus: boolean }) => {
+      const from = pins.findIndex((pin) => pin.id === current.pinId);
+      const to = current.to;
+      const pinId = current.pinId;
+      endLift();
+      if (from < 0 || to === from) {
+        if (options.focus) refocusGrip(pinId);
+        return;
+      }
+      const next = movePin(pins, from, to);
+      void onCommit(next).then((outcome) => {
+        setAnnounce(announceOutcome(outcome));
+        if (options.focus) refocusGrip(pinId);
+      });
+    },
+    [endLift, onCommit, pins, refocusGrip],
+  );
+
   /** Take the card out of the board's flow, frozen where it stood. */
   const liftCard = useCallback(
     (arm: Arm, point: { x: number; y: number }) => {
@@ -250,6 +316,7 @@ export function usePinArrange(input: {
         height: cardRect.height,
         moved: false,
         to: pins.findIndex((pin) => pin.id === arm.pinId),
+        keyboard: false,
       };
       liftRef.current = next;
       setLift(next);
@@ -332,22 +399,9 @@ export function usePinArrange(input: {
       }
       const current = liftRef.current;
       if (!current || current.pointerId !== event.pointerId) return;
-      const from = pins.findIndex((pin) => pin.id === current.pinId);
-      const to = current.to;
-      endLift();
-      /**
-       * One drop, one write — and none at all when the card came back to where
-       * it started. The order is rebuilt from the pins the page holds right now,
-       * not from the ones the drag began with, so a board that changed underneath
-       * the gesture still ends up with the operator's intent applied to it. The
-       * page owns everything after this: it puts the new order on screen, and it
-       * is the page that takes it back down if the vault refuses.
-       */
-      if (from < 0 || to === from) return;
-      const next = movePin(pins, from, to);
-      void onCommit(next).then((outcome) => setAnnounce(announceOutcome(outcome)));
+      finishLift(current, { focus: false });
     },
-    [disarm, endLift, onCommit, pins],
+    [disarm, finishLift],
   );
 
   const onPointerCancel = useCallback(
@@ -376,6 +430,76 @@ export function usePinArrange(input: {
       window.removeEventListener("blur", cancel);
     };
   }, [cancel]);
+
+  /**
+   * Arranging from the keyboard, which is not a fallback but a second way to do
+   * the same thing: the grip is a real button, so Enter lifts the card it belongs
+   * to, the arrows move it, and Enter drops it.
+   *
+   * The listener is on the window rather than on the grid because a reorder moves
+   * the focused grip through the DOM, and a moved node can lose focus — a keydown
+   * that then went to the body would never reach a grid handler. Only the *start*
+   * needs the grip under the event, and after that the gesture is the page's.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const current = liftRef.current;
+      if (!current) {
+        if (locked || busy || pins.length < 2) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        const target = event.target as Element | null;
+        if (!target || typeof target.closest !== "function") return;
+        const card = target.closest<HTMLElement>("[data-pin-id]");
+        const pinId = card?.dataset.pinId;
+        if (!pinId || !target.closest("[data-pin-grip]")) return;
+        event.preventDefault();
+        const from = pins.findIndex((candidate) => candidate.id === pinId);
+        if (from < 0) return;
+        const next: Lift = {
+          pinId,
+          pointerId: null,
+          grabX: 0,
+          grabY: 0,
+          left: 0,
+          top: 0,
+          width: 0,
+          height: 0,
+          moved: false,
+          to: from,
+          keyboard: true,
+        };
+        liftRef.current = next;
+        setLift(next);
+        setAnnounce(`Moving ${cardName(gridRef.current, pinId)}. Use the arrow keys, then Enter to drop.`);
+        return;
+      }
+      if (!current.keyboard) return;
+
+      const lastIndex = pins.length - 1;
+      const clamp = (value: number) => Math.max(0, Math.min(value, lastIndex));
+
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        finishLift(current, { focus: true });
+        return;
+      }
+      let to: number | null = null;
+      if (event.key === "ArrowLeft") to = clamp(current.to - 1);
+      else if (event.key === "ArrowRight") to = clamp(current.to + 1);
+      else if (event.key === "ArrowUp") to = clamp(current.to - trackCount(gridRef.current));
+      else if (event.key === "ArrowDown") to = clamp(current.to + trackCount(gridRef.current));
+      if (to == null) return;
+      event.preventDefault();
+      const next: Lift = { ...current, moved: true, to };
+      liftRef.current = next;
+      setLift(next);
+      setAnnounce(
+        `Moved ${cardName(gridRef.current, current.pinId)} to position ${to + 1} of ${pins.length}. Enter to drop, Escape to cancel.`,
+      );
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [busy, finishLift, locked, pins]);
 
   // A card that leaves the board mid-drag (an unpin, a re-read) must not leave
   // the gesture hanging over an element that is gone, and must not leave its

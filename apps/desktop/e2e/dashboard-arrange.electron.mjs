@@ -933,6 +933,144 @@ async function checkCancelAndRefusal(win) {
   );
 }
 
+/**
+ * Arranging from the keyboard: the same board, the same one write per drop, and
+ * the same announcements. This leg is what makes removing the `↑` / `↓` buttons
+ * a trade rather than a loss — they were the only non-pointer path, and this is
+ * the one that replaces them.
+ */
+async function checkKeyboard(win) {
+  const base = [
+    "sys:goal-progress",
+    "view:financial:v-weekly",
+    "page:financial:ledger",
+    "sys:today-week",
+    "view:financial:v-summary",
+    "sys:pending-decisions",
+    "sys:recent-log",
+  ];
+
+  /** Put the keyboard's focus on a card's grip, the way Tab would. */
+  const focusGrip = (pinId) =>
+    win.webContents.executeJavaScript(
+      `(() => {
+         const grip = document.querySelector('[data-pin-id="${pinId}"] [data-testid="pin-grip"]');
+         if (!grip) return false;
+         grip.focus();
+         return document.activeElement === grip;
+       })()`,
+    );
+
+  // 1. Enter lifts, arrows move, Enter drops: one write, and the exact order.
+  step("keyboard-moves-and-writes");
+  await beginScenario(win);
+  const focused = await focusGrip("sys:today-week");
+  await pressKey(win, "Return");
+  await pressKey(win, "Left");
+  await pressKey(win, "Left");
+  await pressKey(win, "Return");
+  await sleep(200);
+  const keyOrder = await restingOrder(win);
+  const keyWrites = writesOf(await pinWrites(win));
+  check(
+    "keyboard-moves-and-writes",
+    focused === true &&
+      keyOrder.join(",") ===
+        [
+          "sys:goal-progress",
+          "sys:today-week",
+          "view:financial:v-weekly",
+          "page:financial:ledger",
+          "view:financial:v-summary",
+          "sys:pending-decisions",
+          "sys:recent-log",
+        ].join(",") &&
+      keyWrites.length === 1 &&
+      keyWrites[0].join(",") === keyOrder.join(","),
+    `two ArrowLefts from index 3 gave ${JSON.stringify(keyOrder)} for ${keyWrites.length} write(s)`,
+  );
+
+  // 2. Down is a row, not a slot — the claim the old arrows got wrong.
+  step("keyboard-down-moves-a-row");
+  await beginScenario(win);
+  const tracks = await columns(win);
+  await focusGrip("sys:pending-decisions");
+  await pressKey(win, "Return");
+  await pressKey(win, "Up");
+  await pressKey(win, "Return");
+  await sleep(200);
+  const rowOrder = await restingOrder(win);
+  const rowWrites = writesOf(await pinWrites(win));
+  check(
+    "keyboard-down-moves-a-row",
+    tracks === 3 &&
+      rowOrder.indexOf("sys:pending-decisions") === 2 &&
+      rowWrites.length === 1,
+    `one ArrowUp on a ${tracks}-track board moved the card to index ` +
+      `${rowOrder.indexOf("sys:pending-decisions")} for ${rowWrites.length} write(s)`,
+  );
+
+  // 3. Escape puts it back and writes nothing.
+  step("keyboard-escape-writes-nothing");
+  await beginScenario(win);
+  await focusGrip("sys:today-week");
+  await pressKey(win, "Return");
+  await pressKey(win, "Right");
+  await pressKey(win, "Escape");
+  await sleep(160);
+  const escapedOrder = await restingOrder(win);
+  check(
+    "keyboard-escape-writes-nothing",
+    escapedOrder.join(",") === base.join(",") && (await pinWrites(win)).length === 0,
+    `Escape from a keyboard lift left ${JSON.stringify(escapedOrder)} with ` +
+      `${(await pinWrites(win)).length} write(s)`,
+  );
+
+  // 4. The moves are spoken, and so is the outcome.
+  step("keyboard-is-announced");
+  await beginScenario(win);
+  await focusGrip("sys:today-week");
+  await pressKey(win, "Return");
+  const movingStatus = await statusText(win);
+  await pressKey(win, "Left");
+  const movedStatus = await statusText(win);
+  await pressKey(win, "Return");
+  await sleep(200);
+  const savedStatus = await statusText(win);
+  check(
+    "keyboard-is-announced",
+    /moving .*today/i.test(movingStatus ?? "") &&
+      /position 3 of 7/i.test(movedStatus ?? "") &&
+      /saved/i.test(savedStatus ?? ""),
+    `the live region said ${JSON.stringify([movingStatus, movedStatus, savedStatus])}`,
+  );
+
+  // 5. Focus comes back to the grip of the card that moved, so the operator can
+  //    keep arranging without hunting for where they were.
+  step("focus-returns-to-the-grip");
+  await beginScenario(win);
+  await focusGrip("sys:today-week");
+  await pressKey(win, "Return");
+  await pressKey(win, "Left");
+  await pressKey(win, "Return");
+  await sleep(300);
+  const focusBack = await win.webContents.executeJavaScript(
+    `(() => {
+       const el = document.activeElement;
+       const card = el && el.closest ? el.closest("[data-pin-id]") : null;
+       return {
+         isGrip: Boolean(el && el.dataset && el.dataset.testid === "pin-grip"),
+         pinId: card ? card.dataset.pinId : null,
+       };
+     })()`,
+  );
+  check(
+    "focus-returns-to-the-grip",
+    focusBack.isGrip === true && focusBack.pinId === "sys:today-week",
+    `after the drop, focus was on ${JSON.stringify(focusBack)}`,
+  );
+}
+
 async function main() {
   const sessionPartition = `dashboard-arrange-${Date.now()}`;
   nativeTheme.themeSource = "dark";
@@ -994,6 +1132,7 @@ async function main() {
   await checkActivation(win);
   await checkOrdering(win);
   await checkCancelAndRefusal(win);
+  await checkKeyboard(win);
 
   await renderBoard(win, SEED, false);
   await settleFrames(win);

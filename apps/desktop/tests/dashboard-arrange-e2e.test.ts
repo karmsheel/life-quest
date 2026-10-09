@@ -35,6 +35,11 @@ const SCENARIOS = [
   "blur-cancels",
   "refusal-reverts",
   "refusal-is-announced",
+  "keyboard-moves-and-writes",
+  "keyboard-down-moves-a-row",
+  "keyboard-escape-writes-nothing",
+  "keyboard-is-announced",
+  "focus-returns-to-the-grip",
 ];
 
 /**

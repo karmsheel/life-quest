@@ -364,9 +364,9 @@ git commit -m "feat(desktop): revert a refused card order and say why" -m "Escap
 Using real key events (`sendInputEvent({ type: "keyDown", keyCode: "Return" })` and the matching `keyUp` — `"Left"`, `"Right"`, `"Up"`, `"Down"`, `"Space"`, `"Escape"`):
 
 - `keyboard-moves-and-writes`: focus card 4's grip (`.focus()` from the driver), press Return, press Left twice, press Return → the order moved card 4 two slots toward the start, `dashboardArrangePinWrites.length` is 1, and the payload is the exact expected array.
-- `keyboard-up-down-moves-a-row`: with three columns measured, focus card 5's grip, Return, Down, Return → card 5 moved **three** slots (one row), not one.
+- `keyboard-down-moves-a-row`: with three columns measured, focus `sys:pending-decisions`, Return, Up, Return → the card moved **three** slots (one row), not one.
 - `keyboard-escape-writes-nothing`: Return, Right, Escape → order unchanged, zero writes.
-- `keyboard-is-announced`: after the first Left the status text matches `/position 3 of 7/i`, and after the drop it reads "Card order saved".
+- `keyboard-is-announced`: after the lift the status names the card and says what to do; after the first Left it matches `/position 3 of 7/i`; after the drop it reads "Card order saved".
 - `focus-returns-to-the-grip`: after a drop, `document.activeElement` is the grip of the card that moved.
 
 Add the scenario names to the wrapper's array.
@@ -386,7 +386,9 @@ In the hook, add `onKeyDown` for the grip's `keydown` (the delegated grid listen
 - Escape while lifted: cancel with no write;
 - after a commit or a cancel, restore focus to `[data-pin-id="<id>"] [data-testid="pin-grip"]`.
 
-Announcements must carry the card's name, not its id: a system pin's humanised kind, a view pin's view title when the page has it, a page pin's page title. The page already resolves page titles; pass a `labelOf(pin)` into the hook rather than duplicating it.
+Announcements must carry the card's name, not its id — and the name comes from the card's own heading (`.home-card__title` / `.view-card__title`), read off the rendered card, rather than from a second resolver the page keeps alongside it. That was the first design: a `labelOf(pin)` passed into the hook, which spoke "Today week" for a card the screen calls "Today & this week". A spoken name that disagrees with the screen is worse than no name, and the heading is the card's only name.
+
+The keyboard listener lives on the **window**, not on the grid, and that is load-bearing: a reorder moves the focused grip through the DOM, and a moved node can lose focus — a keydown that then went to the body would never reach a grid handler. Only the *start* of the gesture needs the grip under the event; after that the gesture belongs to the page, and Escape already ends it.
 
 - [ ] **Step 4: Run the rig and the suite, and confirm both pass**
 

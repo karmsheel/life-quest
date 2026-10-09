@@ -51,6 +51,14 @@ export default function HomePage() {
   const [moveBusy, setMoveBusy] = useState(false);
   const [installedKits, setInstalledKits] = useState<string[] | null>(null);
 
+  /** A page pin's card names the page the board lists. */
+  const pageTitleOf = useCallback(
+    (pin: Extract<Pin, { kind: "page" }>) =>
+      pages.find((entry) => entry.domainSlug === pin.domainSlug && entry.page.id === pin.pageId)
+        ?.page.title ?? pin.pageId,
+    [pages],
+  );
+
   /**
    * The board's own gesture: hold a card to lift it, drag it, drop it. The hook
    * needs the lock and the write guard because a locked board has no gesture at
@@ -254,13 +262,6 @@ export default function HomePage() {
     await persistPins([...pins, newPin]);
   }
 
-  const pageTitle = (pin: Extract<Pin, { kind: "page" }>) => {
-    const entry = pages.find(
-      (e) => e.domainSlug === pin.domainSlug && e.page.id === pin.pageId,
-    );
-    return entry?.page.title ?? pin.pageId;
-  };
-
   const renderPin = (pin: Pin) => {
     if (pin.kind === "system") {
       switch (pin.system) {
@@ -296,7 +297,7 @@ export default function HomePage() {
       pin.domainSlug;
     return (
       <section key={pin.id} className="home-card">
-        <h2 className="home-card__title">{pageTitle(pin)}</h2>
+        <h2 className="home-card__title">{pageTitleOf(pin)}</h2>
         <p className="muted home-mini-list__meta">{domainName}</p>
         <Link to={`/pages/${pin.domainSlug}/${pin.pageId}`} className="home-card__more">
           Open page →
