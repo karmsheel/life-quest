@@ -41,6 +41,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, nativeTheme } from "electron";
 
+/**
+ * Keep this rig's window painting when another window covers it.
+ *
+ * A rig runs hidden, beside every other rig in the suite, and Chromium stops
+ * painting a window it decides is occluded — `backgroundThrottling: false` does
+ * not cover this one, because occlusion is a browser-process decision rather than
+ * a renderer throttle. What stops is `requestAnimationFrame`: the renderer still
+ * answers `executeJavaScript` and still runs timers, so a rig that waits on a
+ * frame does not fail, it hangs, and reports only which step it was on.
+ */
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
 const url =
@@ -167,6 +179,28 @@ const failure = (message) => {
   errors.push(message);
   return message;
 };
+
+/**
+ * Wait for two painted frames, with a floor.
+ *
+ * A hidden window's `requestAnimationFrame` can be throttled to nothing, and an
+ * unbounded promise on it does not fail — it hangs: the rig dies on its 90 s
+ * watchdog, and the report names the step it was on, which is not a diagnosis.
+ * Bounded, a window that has stopped painting says exactly that, in two seconds
+ * instead of ninety. `dashboard-arrange` reached the same conclusion for the same
+ * reason; this rig had two of the unbounded kind left.
+ */
+async function settleFrames(win, timeoutMs = 2_000) {
+  const painted = await win.webContents.executeJavaScript(
+    `new Promise((resolve) => {
+       let n = 0;
+       const tick = () => { n += 1; if (n >= 2) resolve(true); else requestAnimationFrame(tick); };
+       requestAnimationFrame(tick);
+       setTimeout(() => resolve(false), ${timeoutMs});
+     })`,
+  );
+  if (!painted) throw new Error(`the window painted no frame within ${timeoutMs}ms`);
+}
 
 /**
  * The last step the rig reached, so a timeout names the step that produced it
@@ -397,7 +431,10 @@ async function main() {
     height: DEFAULT_SIZE.height,
     show: false,
     backgroundColor: "#1a1917",
-    webPreferences: { contextIsolation: true, nodeIntegration: false, partition: sessionPartition },
+    // A hidden rig shares the machine with every other rig in the suite, and
+    // Chromium throttles a backgrounded window's timers: a real 220 ms hold
+    // becomes a coin toss without this. Painting is the switch above.
+    webPreferences: { contextIsolation: true, nodeIntegration: false, partition: sessionPartition, backgroundThrottling: false },
   });
   win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
   win.showInactive();
@@ -630,9 +667,7 @@ async function main() {
     `document.querySelectorAll(".home-dashboard__grid > .home-pin").length === 1 && document.querySelectorAll(".view-card__block").length === 3`,
     "the composed card alone in the grid",
   );
-  await win.webContents.executeJavaScript(
-    `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
-  );
+  await settleFrames(win);
   const image = await win.webContents.capturePage();
   fs.mkdirSync(artifactsDir, { recursive: true });
   fs.writeFileSync(path.join(artifactsDir, "view-card.png"), image.toPNG());
@@ -787,9 +822,7 @@ async function main() {
     `document.querySelectorAll(".home-dashboard__grid > .home-pin").length === 1 && document.querySelectorAll(".view-card__block").length === 3`,
     "the composed card alone in the grid",
   );
-  await win.webContents.executeJavaScript(
-    `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
-  );
+  await settleFrames(win);
 
   at("report");
   const report = { pass: errors.length === 0, failures: errors, checks, samples: { bar, empty, metric, missing, warned, composedCard } };

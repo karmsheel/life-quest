@@ -26,6 +26,12 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, nativeTheme, nativeImage, BrowserWindow } from "electron";
+
+// An occluded window stops painting, and a window that stops painting stops
+// firing requestAnimationFrame: a rig that waits on a frame then hangs until its
+// watchdog instead of failing, and reports only which step it was on. A rig runs
+// hidden beside every other rig in the suite, so it has to keep painting.
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 import { build } from "esbuild";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -549,7 +555,10 @@ async function composerLeg() {
     height: 900,
     show: false,
     backgroundColor: "#1a1917",
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    // A hidden rig shares the machine with every other rig in the suite, and
+    // Chromium throttles a backgrounded window's timers: a real 220 ms hold
+    // becomes a coin toss without this. Painting is the switch above.
+    webPreferences: { contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
   });
   const run = (expression) => win.webContents.executeJavaScript(expression, true);
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

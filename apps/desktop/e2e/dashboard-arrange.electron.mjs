@@ -56,6 +56,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, nativeTheme } from "electron";
 
+// An occluded window stops painting, and a window that stops painting stops
+// firing requestAnimationFrame: a rig that waits on a frame then hangs until its
+// watchdog instead of failing, and reports only which step it was on. A rig runs
+// hidden beside every other rig in the suite, so it has to keep painting.
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
 const url =

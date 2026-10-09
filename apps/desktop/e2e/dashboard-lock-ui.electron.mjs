@@ -43,6 +43,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, nativeTheme } from "electron";
 
+// An occluded window stops painting, and a window that stops painting stops
+// firing requestAnimationFrame: a rig that waits on a frame then hangs until its
+// watchdog instead of failing, and reports only which step it was on. A rig runs
+// hidden beside every other rig in the suite, so it has to keep painting.
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
 const url =
@@ -146,7 +152,10 @@ async function main() {
     height: DEFAULT_SIZE.height,
     show: false,
     backgroundColor: "#1a1917",
-    webPreferences: { contextIsolation: true, nodeIntegration: false, partition: sessionPartition },
+    // A hidden rig shares the machine with every other rig in the suite, and
+    // Chromium throttles a backgrounded window's timers: a real 220 ms hold
+    // becomes a coin toss without this. Painting is the switch above.
+    webPreferences: { contextIsolation: true, nodeIntegration: false, partition: sessionPartition, backgroundThrottling: false },
   });
   win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
   win.showInactive();
