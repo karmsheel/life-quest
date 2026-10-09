@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { Pin as PinIcon } from "lucide-react";
 import type { DecisionRecord, LifeEvent, PageListEntry, Pin } from "@lifequest/vault-core";
 import { SYSTEM_PIN_KINDS, type SystemPinKind } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
@@ -13,6 +14,7 @@ import { PendingDecisionsCard } from "@/pages/home-pins/PendingDecisionsCard";
 import { TodayWeekCard } from "@/pages/home-pins/TodayWeekCard";
 import { RecentLogCard } from "@/pages/home-pins/RecentLogCard";
 import { ActiveAgentsCard } from "@/pages/home-pins/ActiveAgentsCard";
+import { PinChrome } from "@/components/home/PinChrome";
 import { ViewCard } from "@/components/ui/ViewCard";
 import type { SavedView } from "@lifequest/vault-core";
 
@@ -219,20 +221,6 @@ export default function HomePage() {
     await persistPins([...pins, newPin]);
   }
 
-  async function onMoveUp(index: number) {
-    if (index === 0 || moveBusy) return;
-    const next = [...pins];
-    [next[index - 1], next[index]] = [next[index], next[index - 1]];
-    await persistPins(next);
-  }
-
-  async function onMoveDown(index: number) {
-    if (index === pins.length - 1 || moveBusy) return;
-    const next = [...pins];
-    [next[index], next[index + 1]] = [next[index + 1], next[index]];
-    await persistPins(next);
-  }
-
   const pageTitle = (pin: Extract<Pin, { kind: "page" }>) => {
     const entry = pages.find(
       (e) => e.domainSlug === pin.domainSlug && e.page.id === pin.pageId,
@@ -325,50 +313,21 @@ export default function HomePage() {
       </header>
 
       <div className="home-dashboard__grid">
-        {pins.map((pin, index) => (
+        {pins.map((pin) => (
           <div
             key={pin.id}
+            data-pin-id={pin.id}
             className={
               pin.kind === "view" && pin.span === 2 ? "home-pin home-pin--span2" : "home-pin"
             }
           >
             {locked ? null : (
-              <div className="home-pin__chrome">
-                <button
-                  className="home-pin__btn"
-                  onClick={() => onUnpin(pin.id)}
-                  disabled={moveBusy}
-                  title="Unpin"
-                >
-                  ✕
-                </button>
-                <button
-                  className="home-pin__btn"
-                  onClick={() => onMoveUp(index)}
-                  disabled={moveBusy || index === 0}
-                  title="Move up"
-                >
-                  ↑
-                </button>
-                <button
-                  className="home-pin__btn"
-                  onClick={() => onMoveDown(index)}
-                  disabled={moveBusy || index === pins.length - 1}
-                  title="Move down"
-                >
-                  ↓
-                </button>
-                {pin.kind === "view" ? (
-                  <button
-                    className="home-pin__btn"
-                    onClick={() => onCycleSpan(pin.id)}
-                    disabled={moveBusy}
-                    title={pin.span === 2 ? "Shrink to one cell" : "Widen to full row"}
-                  >
-                    {pin.span === 2 ? "◧" : "♭"}
-                  </button>
-                ) : null}
-              </div>
+              <PinChrome
+                pin={pin}
+                busy={moveBusy}
+                onUnpin={() => void onUnpin(pin.id)}
+                onCycleSpan={() => void onCycleSpan(pin.id)}
+              />
             )}
             {renderPin(pin)}
           </div>
@@ -404,7 +363,12 @@ export default function HomePage() {
       {!locked &&
       (availableKinds.length > 0 || addablePages.length > 0 || addableViews.length > 0) ? (
         <section className="home-card home-pin-add" data-testid="board-add-pin">
-          <h2 className="home-card__title">Add pin</h2>
+          {/* One pin vocabulary: the row that puts a card on wears the same
+              pin the chrome takes it off with. */}
+          <h2 className="home-card__title">
+            <PinIcon size={12} aria-hidden />
+            Add pin
+          </h2>
           <div className="home-pin-add__row">
           {availableKinds.map((kind) => (
             <button

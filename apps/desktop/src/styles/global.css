@@ -2524,6 +2524,9 @@ a.home-mini-list__link:hover {
 
 .home-pin__btn {
   appearance: none;
+  position: relative;
+  display: grid;
+  place-items: center;
   width: 1.55rem;
   height: 1.55rem;
   margin: 0;
@@ -2536,6 +2539,26 @@ a.home-mini-list__link:hover {
   font-size: 0.72rem;
   line-height: 1;
   cursor: pointer;
+}
+
+/* The buttons are icon-only, so the glyph decides the size and the button only
+   has to hold it. The hit area is a quarter-rem larger on every side than the
+   box that draws it — these are the controls a hold-and-drag operator aims at,
+   and 1.55rem is a small target to aim at with a card moving under the hand. */
+.home-pin__btn svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  display: block;
+}
+
+.home-pin__btn::after {
+  content: "";
+  position: absolute;
+  inset: -0.25rem;
+}
+
+.home-pin__grip {
+  cursor: grab;
 }
 
 .home-pin__btn:hover:not(:disabled) {
@@ -2557,9 +2580,11 @@ a.home-mini-list__link:hover {
   outline-offset: 1px;
 }
 
+/* Three icon buttons wide (move, width, unpin) plus the chrome's own inset:
+   the title clears them instead of running underneath. */
 .home-pin:has(.home-pin__chrome) .home-card__title,
 .home-pin:has(.home-pin__chrome) .home-dashboard__progress {
-  padding-right: 5.2rem;
+  padding-right: 5.6rem;
 }
 
 .home-pin:has(.deadline-banner) .home-pin__chrome {
