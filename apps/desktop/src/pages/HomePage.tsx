@@ -36,6 +36,14 @@ export default function HomePage() {
   const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
   const [events, setEvents] = useState<LifeEvent[]>([]);
   const [pins, setPins] = useState<Pin[]>([]);
+  /**
+   * The operator's page lock on THIS board. Unlocked, the board is edited in
+   * place by the pin chrome and by the companion; locked, the board is read-only
+   * here and every agent change lands in Decisions instead. The lock itself is
+   * read from the board file, so the state and the pins always agree.
+   */
+  const [locked, setLocked] = useState(false);
+  const [lockBusy, setLockBusy] = useState(false);
   const [pages, setPages] = useState<PageListEntry[]>([]);
   const [views, setViews] = useState<BoardView[]>([]);
   const [moveBusy, setMoveBusy] = useState(false);
@@ -77,7 +85,8 @@ export default function HomePage() {
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       );
       setEvents(allEvents);
-      setPins(pinsRes.ok ? (pinsRes.value as Pin[]) : []);
+      setPins(pinsRes.ok ? pinsRes.value.pins : []);
+      setLocked(pinsRes.ok ? pinsRes.value.locked : false);
       setPages(pagesRes.ok ? (pagesRes.value as PageListEntry[]) : []);
       setViews(viewsRes);
       const kitRes = await api().kitList("financial");
@@ -86,6 +95,7 @@ export default function HomePage() {
       setDecisions([]);
       setEvents([]);
       setPins([]);
+      setLocked(false);
       setPages([]);
       setViews([]);
       setInstalledKits([]);
@@ -161,12 +171,32 @@ export default function HomePage() {
   }
 
   async function persistPins(next: Pin[]) {
+    // The locked board has no chrome to click, but a keyboard path or a stale
+    // render could still reach here: refuse locally rather than filing a
+    // Decision the operator did not ask for by clicking.
+    if (locked) return;
     setMoveBusy(true);
     try {
       const res = await api().pinsSet(boardSlug, next);
-      if (res.ok) setPins(next);
+      if (res.ok && res.value.applied) setPins(res.value.pins);
     } finally {
       setMoveBusy(false);
+    }
+  }
+
+  /** Flip this board's page lock. Read-only boards can only be unlocked. */
+  async function onToggleLock() {
+    if (lockBusy) return;
+    const next = !locked;
+    setLockBusy(true);
+    try {
+      const res = await api().pinsSetLocked(boardSlug, next);
+      if (res.ok) {
+        setLocked(res.value.locked);
+        setPins(res.value.pins);
+      }
+    } finally {
+      setLockBusy(false);
     }
   }
 
@@ -230,11 +260,13 @@ export default function HomePage() {
       }
     }
     // A view pin renders ViewCard, the design's single drawing path. Span 2
-    // marks the wrapper so the grid gives the card the full row.
+    // marks the wrapper so the grid gives the card the full row. A locked board
+    // hands the card `editable: false`: the board's page lock governs the cards
+    // on it, for the operator as much as for the companion.
     if (pin.kind === "view") {
       return (
         <div className={pin.span === 2 ? "view-card view-card--span2" : "view-card"}>
-          <ViewCard domainSlug={pin.domainSlug} viewId={pin.viewId} />
+          <ViewCard domainSlug={pin.domainSlug} viewId={pin.viewId} editable={!locked} />
         </div>
       );
     }
@@ -261,10 +293,34 @@ export default function HomePage() {
       <header className="home-dashboard__header">
         <div>
           <p className="home-dashboard__eyebrow">Dashboard</p>
-          <h1 className="home-dashboard__title">{title}</h1>
+          <h1 className="home-dashboard__title">
+            {title}
+            <span
+              className={`doc-status-badge doc-status-badge--${locked ? "locked" : "unlocked"}`}
+              data-locked={locked ? "true" : "false"}
+              data-testid="board-lock-badge"
+            >
+              {locked ? "Locked" : "Unlocked"}
+            </span>
+          </h1>
           <p className="home-dashboard__subtitle">
             Premise → Vision → Purpose → Strategy (How)
           </p>
+          <p className="home-dashboard__lock-hint muted" data-testid="board-lock-hint">
+            {locked
+              ? "This dashboard is locked. Unlock to add, move, or remove cards; the companion's changes wait in Decisions."
+              : "This dashboard is unlocked. You and the companion change it in place."}
+          </p>
+        </div>
+        <div className="home-dashboard__lock">
+          <Button
+            variant={locked ? "primary" : "outline"}
+            onClick={() => void onToggleLock()}
+            disabled={lockBusy}
+            data-testid="board-lock-toggle"
+          >
+            {lockBusy ? "Saving…" : locked ? "Unlock" : "Lock"}
+          </Button>
         </div>
       </header>
 
@@ -276,42 +332,44 @@ export default function HomePage() {
               pin.kind === "view" && pin.span === 2 ? "home-pin home-pin--span2" : "home-pin"
             }
           >
-            <div className="home-pin__chrome">
-              <button
-                className="home-pin__btn"
-                onClick={() => onUnpin(pin.id)}
-                disabled={moveBusy}
-                title="Unpin"
-              >
-                ✕
-              </button>
-              <button
-                className="home-pin__btn"
-                onClick={() => onMoveUp(index)}
-                disabled={moveBusy || index === 0}
-                title="Move up"
-              >
-                ↑
-              </button>
-              <button
-                className="home-pin__btn"
-                onClick={() => onMoveDown(index)}
-                disabled={moveBusy || index === pins.length - 1}
-                title="Move down"
-              >
-                ↓
-              </button>
-              {pin.kind === "view" ? (
+            {locked ? null : (
+              <div className="home-pin__chrome">
                 <button
                   className="home-pin__btn"
-                  onClick={() => onCycleSpan(pin.id)}
+                  onClick={() => onUnpin(pin.id)}
                   disabled={moveBusy}
-                  title={pin.span === 2 ? "Shrink to one cell" : "Widen to full row"}
+                  title="Unpin"
                 >
-                  {pin.span === 2 ? "◧" : "♭"}
+                  ✕
                 </button>
-              ) : null}
-            </div>
+                <button
+                  className="home-pin__btn"
+                  onClick={() => onMoveUp(index)}
+                  disabled={moveBusy || index === 0}
+                  title="Move up"
+                >
+                  ↑
+                </button>
+                <button
+                  className="home-pin__btn"
+                  onClick={() => onMoveDown(index)}
+                  disabled={moveBusy || index === pins.length - 1}
+                  title="Move down"
+                >
+                  ↓
+                </button>
+                {pin.kind === "view" ? (
+                  <button
+                    className="home-pin__btn"
+                    onClick={() => onCycleSpan(pin.id)}
+                    disabled={moveBusy}
+                    title={pin.span === 2 ? "Shrink to one cell" : "Widen to full row"}
+                  >
+                    {pin.span === 2 ? "◧" : "♭"}
+                  </button>
+                ) : null}
+              </div>
+            )}
             {renderPin(pin)}
           </div>
         ))}
@@ -340,8 +398,12 @@ export default function HomePage() {
         </section>
         ) : null}
 
-      {availableKinds.length > 0 || addablePages.length > 0 || addableViews.length > 0 ? (
-        <section className="home-card home-pin-add">
+      {/* A locked board has no Add-pin row at all: the board is read-only, and
+          an "Add pin" that silently filed a Decision would be a second, hidden
+          way to propose what the Lock button already says is not editable. */}
+      {!locked &&
+      (availableKinds.length > 0 || addablePages.length > 0 || addableViews.length > 0) ? (
+        <section className="home-card home-pin-add" data-testid="board-add-pin">
           <h2 className="home-card__title">Add pin</h2>
           <div className="home-pin-add__row">
           {availableKinds.map((kind) => (

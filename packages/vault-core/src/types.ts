@@ -639,9 +639,30 @@ export type Pin =
   // pinned on a board. span 1 is one grid cell, span 2 the full row.
   | { id: string; kind: "view"; domainSlug: string; viewId: string; span: 1 | 2 };
 
+/**
+ * A dashboard: the home pin board for one lens, plus the operator's page lock.
+ *
+ * The lock is the same mechanic a doctrine document carries, on the board
+ * instead of a markdown file: unlocked, the operator and the companion change
+ * the board in place; locked, the board is read-only and every change becomes a
+ * pending Decision. It is stored in the board file so it travels with the board
+ * it governs and needs no second registry to stay in step.
+ *
+ * `locked` is optional on read: a board file written before the lock existed has
+ * no field and reads as unlocked, and the flag is persisted on the next write.
+ * That is the read-migration the document lock already uses, and it keeps
+ * `schemaVersion: 1`.
+ */
 export type PinBoard = {
   schemaVersion: 1;
   pins: Pin[];
+  locked?: boolean;
+};
+
+/** One board as a reader sees it: the pins, and whether the page is locked. */
+export type PinBoardRead = {
+  pins: Pin[];
+  locked: boolean;
 };
 
 export type PageWriteResult =
@@ -649,8 +670,8 @@ export type PageWriteResult =
   | { applied: false; decision: DecisionRecord };
 
 export type PinWriteResult =
-  | { applied: true; pins: Pin[] }
-  | { applied: false; decision: DecisionRecord };
+  | { applied: true; pins: Pin[]; locked: boolean }
+  | { applied: false; decision: DecisionRecord; locked: boolean };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 

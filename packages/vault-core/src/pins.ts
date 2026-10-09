@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { atomicWriteFile } from "./atomic-write.ts";
+import { appendLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
 import { VIEW_ID_PATTERN } from "./views.ts";
 import {
@@ -7,6 +8,7 @@ import {
   type Actor,
   type Pin,
   type PinBoard,
+  type PinBoardRead,
   type PinWriteResult,
   type Result,
   type SystemPinKind,
@@ -24,60 +26,28 @@ export function defaultPins(): Pin[] {
   }));
 }
 
-function validatePins(
-  pins: unknown,
-  liveDomainSlugs: Set<string>,
-  pageExists: (slug: string, pageId: string) => Promise<boolean>,
-): Result<Pin[]> {
-  if (!Array.isArray(pins)) {
-    return { ok: false, error: "pins must be an array" };
-  }
-  const seenIds = new Set<string>();
-  for (const raw of pins) {
-    if (!raw || typeof raw !== "object") {
-      return { ok: false, error: "pin must be an object" };
-    }
-    const p = raw as Record<string, unknown>;
-    if (typeof p.id !== "string" || !p.id) {
-      return { ok: false, error: "pin id is required" };
-    }
-    if (seenIds.has(p.id)) {
-      return { ok: false, error: `Duplicate pin id: ${p.id}` };
-    }
-    seenIds.add(p.id);
-    if (p.kind === "system") {
-      if (!isSystemPinKind(p.system)) {
-        return { ok: false, error: `Unknown system pin kind: ${String(p.system)}` };
-      }
-    } else if (p.kind === "page") {
-      if (typeof p.domainSlug !== "string" || !p.domainSlug) {
-        return { ok: false, error: "page pin requires domainSlug" };
-      }
-      if (typeof p.pageId !== "string" || !p.pageId) {
-        return { ok: false, error: "page pin requires pageId" };
-      }
-      // Overview may pin a page from any live domain; domain board must belong to that domain
-      // We'll validate page existence separately in setPins/listPins where we know the context
-    } else if (p.kind === "view") {
-      // Agent-built view pin (plan.md design): the shape guard here, existence
-      // validated in listPins where the live domain and view file are known.
-      if (typeof p.domainSlug !== "string" || !p.domainSlug) {
-        return { ok: false, error: "view pin requires domainSlug" };
-      }
-      if (typeof p.viewId !== "string" || !p.viewId) {
-        return { ok: false, error: "view pin requires viewId" };
-      }
-      if (p.span !== 1 && p.span !== 2) {
-        return { ok: false, error: "view pin span must be 1 or 2" };
-      }
-    } else {
-      return { ok: false, error: `Invalid pin kind: ${String(p.kind)}` };
-    }
-  }
-  return { ok: true, value: pins as Pin[] };
+/**
+ * A board's default lock state. A brand-new dashboard is unlocked, so the
+ * operator can arrange it, and only becomes read-only when they say so — the
+ * same default every doctrine document and library note ships with.
+ */
+export const DEFAULT_BOARD_LOCKED = false;
+
+/** How a board is named in copy and in Decision headlines. */
+export function boardLabel(domainSlug: string | null): string {
+  return domainSlug == null ? "Overview dashboard" : `${domainSlug} dashboard`;
 }
 
-async function readPinBoard(filePath: string): Promise<PinBoard | null> {
+/**
+ * The board file as it stands, lock flag included, with no validation of the
+ * pins themselves. Callers that are about to write need exactly this: the lock
+ * is a property of the stored file, not of the pins the read path kept, so a
+ * lock gate that asked the filtered list would see a board whose only difference
+ * from an unlocked one is which cards survived.
+ */
+async function readBoard(root: string, domainSlug: string | null): Promise<PinBoard | null> {
+  const paths = vaultPaths(root);
+  const filePath = domainSlug == null ? paths.overviewPins : paths.domainPins(domainSlug);
   try {
     const raw = await fs.readFile(filePath, "utf8");
     const parsed = JSON.parse(raw);
@@ -93,6 +63,20 @@ async function readPinBoard(filePath: string): Promise<PinBoard | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * One board's page lock. A board file that predates the lock, or that is not
+ * there at all, reads as unlocked: the flag is added on the next write, and the
+ * absence of a file is not a lock. That is the same read-migration doctrine
+ * documents use, and it keeps `schemaVersion` at 1.
+ */
+export async function isPinBoardLocked(
+  root: string,
+  domainSlug: string | null,
+): Promise<boolean> {
+  const board = await readBoard(root, domainSlug);
+  return board?.locked === true;
 }
 
 async function pageExists(root: string, slug: string, pageId: string): Promise<boolean> {
@@ -115,18 +99,17 @@ async function viewExists(root: string, slug: string, viewId: string): Promise<b
   }
 }
 
-export async function listPins(
+export async function listPinBoard(
   root: string,
   domainSlug?: string | null,
-): Promise<Result<Pin[]>> {
+): Promise<Result<PinBoardRead>> {
   try {
     const paths = vaultPaths(root);
-    const filePath = domainSlug == null ? paths.overviewPins : paths.domainPins(domainSlug);
-
-    const board = await readPinBoard(filePath);
+    const slug = domainSlug ?? null;
+    const board = await readBoard(root, slug);
     if (!board) {
-      // Missing file → return defaults, do not write
-      return { ok: true, value: defaultPins() };
+      // Missing file → the seeded defaults, and unlocked. Reading never writes.
+      return { ok: true, value: { pins: defaultPins(), locked: DEFAULT_BOARD_LOCKED } };
     }
 
     // Validate pins against live domains and existing pages
@@ -154,7 +137,7 @@ export async function listPins(
         // board shows only its own views; Overview takes any live domain's,
         // which is the rule setPins enforces on the way in.
         if (!liveSlugs.has(pin.domainSlug)) continue;
-        if (domainSlug !== null && pin.domainSlug !== domainSlug) continue;
+        if (slug !== null && pin.domainSlug !== slug) continue;
         if (!(await viewExists(root, pin.domainSlug, pin.viewId))) continue;
         validPins.push(pin);
       } else {
@@ -162,15 +145,24 @@ export async function listPins(
         if (!liveSlugs.has(pin.domainSlug)) continue;
         if (!(await pageExists(root, pin.domainSlug, pin.pageId))) continue;
         // Domain board: page pin must belong to that domain
-        if (domainSlug !== null && pin.domainSlug !== domainSlug) continue;
+        if (slug !== null && pin.domainSlug !== slug) continue;
         validPins.push(pin);
       }
     }
 
-    return { ok: true, value: validPins };
+    return { ok: true, value: { pins: validPins, locked: board.locked === true } };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/** The pins alone, for callers that do not care about the lock. */
+export async function listPins(
+  root: string,
+  domainSlug?: string | null,
+): Promise<Result<Pin[]>> {
+  const res = await listPinBoard(root, domainSlug);
+  return res.ok ? { ok: true, value: res.value.pins } : res;
 }
 
 export async function setPins(
@@ -178,6 +170,13 @@ export async function setPins(
   domainSlug: string | null,
   pins: Pin[],
   actor: Actor,
+  /**
+   * Set only by the Decision applier. Approving a board Decision IS the
+   * operator's consent, so the write must land even though the board it lands
+   * on is still locked — the lock is what put the change in the inbox, not a
+   * bar the approval then has to clear a second time.
+   */
+  opts?: { approvedChange?: boolean },
 ): Promise<Result<PinWriteResult>> {
   try {
     const paths = vaultPaths(root);
@@ -214,10 +213,10 @@ export async function setPins(
           return { ok: false, error: `Page pin belongs to different domain: ${pin.domainSlug}` };
         }
       } else if (pin.kind === "view") {
-        // Agent-built view pin (plan.md design): the shape guard ran in
-        // validatePins; existence is checked like a page pin — a view pointed
-        // at a dead domain, a foreign board, or a missing file is a hard
-        // error here, while listPins (the read path) drops it silently.
+        // Agent-built view pin (plan.md design): the shape guard runs in the
+        // tool's own parser; existence is checked like a page pin — a view
+        // pointed at a dead domain, a foreign board, or a missing file is a hard
+        // error here, while listPinBoard (the read path) drops it silently.
         if (!liveSlugs.has(pin.domainSlug)) {
           return { ok: false, error: `Domain not live: ${pin.domainSlug}` };
         }
@@ -249,28 +248,77 @@ export async function setPins(
       seenIds.add(pin.id);
     }
 
-    // The companion is the operator's own hands: its board change applies at
-    // once, like the user's, and the log line names it. Any OTHER agent (a
-    // connected hire) still files a Decision — a hire editing a board the
-    // operator is not looking at is exactly what approvals are for.
-    if (actor.type === "agent" && actor.id !== "companion") {
+    // The page lock is the gate, and it is the ONLY one — the actor no longer
+    // decides. Unlocked, the operator and the companion change the board in
+    // place, and a connected hire does too, because the operator has said this
+    // board is still being worked on. Locked, the board is read-only and every
+    // change becomes one pending Decision: the operator's own click (a locked
+    // board has no chrome to click), the companion's arrange, and a hire's
+    // alike. The old rule special-cased the companion by name, which is exactly
+    // the kind of rule that drifts from what the operator believes they set.
+    const board = await readBoard(root, domainSlug);
+    const locked = board?.locked === true;
+    if (locked && !opts?.approvedChange) {
       const { createDecision } = await import("./decisions.ts");
-      const label = domainSlug == null ? "Overview pins" : `${domainSlug} pins`;
       const decisionRes = await createDecision(root, {
         target: { type: "pins", domainSlug },
-        proposedTitle: label,
+        proposedTitle: `${boardLabel(domainSlug)} pins`,
         proposedBodyMarkdown: JSON.stringify({ pins }, null, 2),
         actor,
       });
       if (!decisionRes.ok) return decisionRes;
-      return { ok: true, value: { applied: false, decision: decisionRes.value } };
+      return { ok: true, value: { applied: false, decision: decisionRes.value, locked } };
     }
 
-    // Companion or user → write file
-    const board: PinBoard = { schemaVersion: 1, pins };
-    await atomicWriteFile(filePath, `${JSON.stringify(board, null, 2)}\n`);
-    return { ok: true, value: { applied: true, pins } };
+    // Unlocked (or an approval landing through the gate) → write file. The lock
+    // flag is carried over: a pin write must never silently unlock the page.
+    const next: PinBoard = { schemaVersion: 1, pins, locked };
+    await atomicWriteFile(filePath, `${JSON.stringify(next, null, 2)}\n`);
+    return { ok: true, value: { applied: true, pins, locked } };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
+
+/**
+ * The operator's page lock on one dashboard. User-only, exactly like a document
+ * lock: an agent that could unlock the page could then edit it unapproved, which
+ * would make the gate advisory. The Life log line names who toggled it.
+ */
+export async function setPinBoardLocked(
+  root: string,
+  domainSlug: string | null,
+  locked: boolean,
+  actor: Actor,
+): Promise<Result<PinBoardRead>> {
+  if (actor.type !== "user") {
+    return { ok: false, error: "Only the user can lock or unlock a dashboard" };
+  }
+  try {
+    const paths = vaultPaths(root);
+    const filePath = domainSlug == null ? paths.overviewPins : paths.domainPins(domainSlug);
+    const board = await readBoard(root, domainSlug);
+    // Reading and writing the lock are separate acts: a lock toggle on a board
+    // that has never been arranged must keep the seeded pins, not empty it.
+    // The stored pins are taken as-is — listPins is the validated view, and a
+    // pin dropped for pointing at a dead domain must not be deleted by a lock.
+    const pins = board?.pins ?? defaultPins();
+    const next: PinBoard = { schemaVersion: 1, pins, locked };
+    await atomicWriteFile(filePath, `${JSON.stringify(next, null, 2)}\n`);
+
+    await appendLog(root, {
+      domainSlug,
+      type: "board.lock_changed",
+      summary: locked
+        ? `Locked the ${boardLabel(domainSlug)}`
+        : `Unlocked the ${boardLabel(domainSlug)}`,
+      payload: { domainSlug, locked },
+      actor,
+    });
+
+    return { ok: true, value: { pins, locked } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+

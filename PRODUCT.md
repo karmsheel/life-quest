@@ -2,7 +2,7 @@
 
 ## Users
 
-LifeQuest is for one person running a local vault on their desktop: organizing life into Domains, locking Premise → Vision → Purpose → Strategy (How), reviewing Decisions, keeping a Life log, and working with a Hermes companion. The studio does not open without the companion. Capture is not the studio.
+LifeQuest is for one person running a local vault on their desktop: organizing life into Domains, locking Premise → Vision → Purpose → Strategy (How), reviewing Decisions, keeping a Life log, and working with a Hermes companion. Pages carry the same lock, including the home Dashboard, whose lock governs the pin board and the cards on it. The studio does not open without the companion. Capture is not the studio.
 
 ## Product Purpose
 

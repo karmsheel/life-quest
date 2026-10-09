@@ -306,7 +306,7 @@ async function mergeOverviewPins(root: string): Promise<void> {
   const overviewPath = paths.overviewPins;
   await fs.mkdir(path.dirname(overviewPath), { recursive: true });
 
-  let board: { schemaVersion?: number; pins: Pin[] } | null = null;
+  let board: { schemaVersion?: number; pins: Pin[]; locked?: boolean } | null = null;
   try {
     const raw = await fs.readFile(overviewPath, "utf8");
     board = JSON.parse(raw);
@@ -338,7 +338,8 @@ async function mergeOverviewPins(root: string): Promise<void> {
   }
 
   // Append the six starter page pins if not present
-  const pagePins: Pin[] = [
+  type PagePin = Extract<Pin, { kind: "page" }>;
+  const pagePins: PagePin[] = [
     { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.ledger}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.ledger },
     { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.spend}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.spend },
     { id: `page:${FINANCE_DOMAIN_SLUG}:${FINANCE_PAGE_IDS.budget}`, kind: "page", domainSlug: FINANCE_DOMAIN_SLUG, pageId: FINANCE_PAGE_IDS.budget },
@@ -348,17 +349,20 @@ async function mergeOverviewPins(root: string): Promise<void> {
   ];
   const presentPageIds = new Set(
     pins
-      .filter((p) => p.kind === "page")
+      .filter((p): p is PagePin => p.kind === "page")
       .map((p) => `${p.domainSlug}:${p.pageId}`),
   );
+  const merged: Pin[] = pins;
   for (const pp of pagePins) {
     const key = `${pp.domainSlug}:${pp.pageId}`;
     if (!presentPageIds.has(key)) {
-      pins = [...pins, pp];
+      merged.push(pp);
     }
   }
 
-  const newBoard = { schemaVersion: 1, pins };
+  // The page lock travels with the board it governs: a kit install that rebuilt
+  // this object without it would silently unlock the operator's dashboard.
+  const newBoard = { schemaVersion: 1, pins: merged, ...(board?.locked === true ? { locked: true } : {}) };
   await atomicWriteFile(overviewPath, `${JSON.stringify(newBoard, null, 2)}\n`);
 }
 

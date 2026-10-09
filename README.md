@@ -21,6 +21,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 | [Skeleton design](docs/superpowers/specs/2026-07-17-lifequest-skeleton-design.md) | Product IA (Domains / rooms / forge / log) |
 | [Hermes chatbar design](docs/superpowers/specs/2026-07-18-hermes-chatbar-connection-design.md) | Hermes connection UX |
 | [Domain databases & Finance kit](docs/superpowers/specs/2026-09-23-domain-databases-finance-kit-prs.md) | Domain-owned databases, pages, and the Finance kit |
+| [Dashboard page lock](docs/superpowers/specs/2026-10-08-dashboard-page-lock-design.md) | The home pin board's lock, and one call that saves and pins a card |
 
 ## Prerequisites
 
@@ -69,6 +70,18 @@ Windows SmartScreen may warn on first launch (unsigned private build). Choose **
 | `npm run build` | Production Vite build + Electron main bundle (does not produce an `.exe`) |
 | `npm run typecheck` | Typecheck desktop renderer + main |
 
+### Acceptance against a real vault
+
+Three scripts under `apps/desktop/e2e/` are deliberately **not** in `npm test`, because they write to the operator's own vault rather than a fixture. Run them in order with `npm run dev` up:
+
+```bash
+node apps/desktop/e2e/dashboard-live-summary.mts   # pin a real summary table, via the companion's own tools
+node apps/desktop/e2e/dashboard-live-app.mjs       # boot the built app and assert it renders + the lock toggles
+node apps/desktop/e2e/dashboard-live-card.electron.mjs   # screenshot that exact card
+```
+
+Artifacts land in `apps/desktop/e2e/artifacts/dashboard-live-*.{json,png}`. The app is launched with `LIFEQUEST_E2E` (a throwaway profile and a hidden window), so `%APPDATA%\LifeQuest` is untouched.
+
 ## Repository layout
 
 ```text
@@ -92,6 +105,7 @@ LifeQuest owns the vault, the MCP door, and the UI. Hermes owns the agent loop, 
 
 - Opening a vault **is** identity — no sign-up / sign-in.
 - Doctrine is Markdown with frontmatter (`locked: true | false`).
+- The Dashboard is the home pin board, one per lens, and it carries the same page lock: unlocked, the operator and the companion arrange it in place; locked, it is read-only and the companion's changes wait in Decisions. Type **Lock** / **Unlock** in the board header.
 - Structured state is git-friendly JSON / JSONL under the vault’s prescribed layout.
 - Active domain and recent vaults live in app `userData`, not inside the vault.
 - Home includes **Data** and **Pages**.

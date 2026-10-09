@@ -134,10 +134,12 @@ export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "write_review",
   "mark_review_done",
   "unlock_review",
-  // Agent-built dashboard views (plan.md design): proposing a view or a pin
-  // change files a Decision, exactly like a database write — approval stays
-  // with the operator in the Decisions card.
-  "propose_view",
+  // Agent-built dashboard views (plan.md design): a view or a pin change is a
+  // write, and whether it lands or becomes a Decision is the board's own page
+  // lock rather than this list. It is classified here because the gate is what
+  // decides whether an agent may write in these domains at all — the lock is
+  // checked later, inside the tool.
+  "save_view",
   "arrange_dashboard",
 ]);
 

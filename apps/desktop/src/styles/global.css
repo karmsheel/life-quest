@@ -2256,6 +2256,25 @@ a {
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.15;
+  /* The page-lock badge rides the title rather than a separate row: it labels
+     the board the same way it labels a doctrine document. */
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.home-dashboard__lock {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.home-dashboard__lock-hint {
+  max-width: 40rem;
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .home-dashboard__subtitle {
@@ -2883,6 +2902,85 @@ a.home-mini-list__link:hover {
 
 .settings-hermes__probe--fail {
   color: var(--danger);
+}
+
+/* —— Settings · Agent: the prompts and skills the companion is given —— */
+.settings-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.settings-prompt__body {
+  margin: 0;
+  width: 100%;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--foreground);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.settings-prompt__path,
+.settings-skill__path {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.settings-prompt__count {
+  margin-left: 0.5rem;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--muted-surface);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.settings-prompt__foot {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.settings-skill {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-skill__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.settings-skill__name {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.settings-skill__meta {
+  font-size: 0.75rem;
+}
+
+.settings-skill__desc {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 @media (max-width: 47.5rem) {
@@ -4897,13 +4995,35 @@ button.chat-panel__activity-line:hover {
 }
 
 /* Agent-built dashboard views (plan.md design, slice 2): ViewCard on the home
-   pin board and on view-ref page blocks. Theme colors through variables only —
-   no raw hex here, per the design system contract. */
+   pin board and on view-ref page blocks.
+   
+   The card wears the SAME shell as every other home pin (`.home-card`): same
+   paper, hairline, radius, shadow and title treatment. A pinned view is a card
+   on the board, not a drawing dropped onto it, and a companion-built table that
+   did not look like its neighbours is exactly what this rules out. Colors come
+   from tokens only — no raw hex here, per the design system contract. */
 .view-card {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.55rem;
   min-width: 0;
+  /* `--home-radius` exists only under `.home-dashboard`, and this card also
+     renders on a page canvas, so it takes the design's own small radius. */
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 0.85rem 0.95rem 0.95rem;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-xs);
+}
+
+/* The page canvas already frames each block with its own head, so a view there
+   keeps the frame and drops the shell — one frame, never two. */
+.page-block .view-card {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .view-card__title {
@@ -4915,37 +5035,111 @@ button.chat-panel__activity-line:hover {
   color: var(--muted-foreground);
 }
 
-.view-card__warnings,
-.view-card__empty,
+/* Warnings are a footnote, never the headline: the run's caveat must not push
+   the numbers it is about below the fold. */
+.view-card__warnings {
+  margin: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-soft);
+}
+
+.view-card__empty {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
 .view-card__metric-label {
   font-size: 0.75rem;
 }
 
 /* Composed views (2026-10-07): one card, several panels. A hairline separates
-   panels so a metric does not read as part of the table under it. */
+   panels so a metric does not read as part of the table under it. Centred, so a
+   card that got the full row does not leave its content stranded at the top. */
 .view-card__blocks {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.7rem;
   min-width: 0;
+  justify-content: center;
 }
 
 .view-card__block + .view-card__block {
-  border-top: 1px solid var(--border);
-  padding-top: 0.6rem;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.7rem;
 }
 
 .view-card__block-title {
-  margin: 0 0 0.35rem;
-  font-size: 0.68rem;
+  margin: 0 0 0.4rem;
+  font-size: 0.66rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--muted-foreground);
+  color: var(--text-soft);
 }
 
-/* A metric panel is the card's headline: give it the room a number needs. */
-.view-card__block:has(.view-card__metric) {
+/* A panel's heading and its display controls share one line: the switch belongs
+   to the panel it changes, and the heading is what names it. */
+.view-card__block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 1.1rem;
+}
+
+.view-card__block-head .view-card__block-title {
+  margin-bottom: 0.4rem;
+}
+
+/* Four quiet text controls. They sit at the panel's own scale — smaller than
+   anything the card says — because a card is the operator's data, not a form. */
+.view-card__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  margin-bottom: 0.4rem;
+}
+
+.view-card__tool {
+  padding: 0.05rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.view-card__tool:hover:not(:disabled) {
+  border-color: var(--border-soft);
+  color: var(--foreground);
+}
+
+.view-card__tool.is-active {
+  border-color: var(--border);
+  background: var(--muted-surface);
+  color: var(--foreground);
+  cursor: default;
+}
+
+.view-card__tool:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.view-card__edit-error {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+}
+
+/* A metric panel is the card's headline: one number, given room to breathe but
+   never allowed to out-shout the board's own headings. */
+.view-card__block--metric {
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -4957,15 +5151,77 @@ button.chat-panel__activity-line:hover {
 
 .view-card__metric {
   margin: 0;
-  font-size: 1.8rem;
+  font-size: 1.5rem;
   font-weight: 700;
-  line-height: 1.2;
-  color: var(--fg);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+
+.view-card__metric-unit {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+}
+
+/* A view table reads as part of the app: hairline header row, hairline rules,
+   the label column sized to its content and the value column right-aligned so
+   a column of money can be compared at a glance. */
+.view-card__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
 }
 
 .view-card__table th,
 .view-card__table td {
   text-align: left;
+  padding: 0.32rem 0;
+}
+
+.view-card__table th {
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.view-card__table td {
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.view-card__table tr:last-child td {
+  border-bottom: 0;
+}
+
+.view-card__table th + th,
+.view-card__table td + td {
+  padding-left: 0.75rem;
+  text-align: right;
+}
+
+.view-card__table th + th {
+  width: 40%;
+  white-space: nowrap;
+}
+
+.view-card__table td + td {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+
+.view-card__table tbody th {
+  /* Row headers, when a table names its own label column. */
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--foreground);
 }
 
 .view-card__chart {
@@ -4975,6 +5231,11 @@ button.chat-panel__activity-line:hover {
 
 .view-card__tick {
   fill: var(--muted-foreground);
+}
+
+.view-card__axis {
+  stroke: var(--border);
+  stroke-width: 1;
 }
 
 .view-card__bar {

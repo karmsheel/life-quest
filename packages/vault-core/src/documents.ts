@@ -35,7 +35,9 @@ export function documentTargetLabel(
   if (target.type === "doctrine") return DOCUMENT_KIND_LABELS[target.kind];
   if (target.type === "review") return periodTitle(target.cadence, target.period, "monday");
   if (target.type === "page") return fallbackTitle || "Page";
-  if (target.type === "pins") return target.domainSlug ? `${target.domainSlug} pins` : "Overview pins";
+  if (target.type === "pins") {
+    return target.domainSlug ? `${target.domainSlug} dashboard` : "Overview dashboard";
+  }
   if (target.type === "mapping") return fallbackTitle ? `${fallbackTitle}` : "Ingest mapping";
   if (target.type === "kit-install") return "Finance kit";
   if (target.type === "assumption-set") return "Assumption set";

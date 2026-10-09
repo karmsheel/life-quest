@@ -722,8 +722,20 @@ type ApplyOutcome =
  * the freshly minted view id, which the proposer must learn to name. All other
  * applications update state the caller already knows how to re-read.
  */
-type ViewApplyOutcome = { ok: true; value: { viewId: string } } | { ok: false; error: string; terminal: boolean };
+type ViewApplyOutcome =
+  | { ok: true; value: { viewId: string; boardSlug: string | null } }
+  | { ok: false; error: string; terminal: boolean };
 
+/**
+ * Save a view the operator approved, and pin it when the proposal asked for a
+ * pin.
+ *
+ * A locked dashboard is what put this Decision in the inbox, so approval is the
+ * consent that writes the board: `setPins` is called with `approvedChange`, and
+ * the lock itself is left exactly as the operator set it. The pin flag is read
+ * from the body rather than assumed, because a body written before the page lock
+ * existed carries no `boardSlug` and meant only "save this view".
+ */
 async function applyViewDecision(
   rootPath: string,
   decision: DecisionRecord & { target: { type: "view"; domainSlug: string; viewId: string } },
@@ -731,9 +743,9 @@ async function applyViewDecision(
   // Parse and validate here, then delegate the file write to saveView. The
   // schemaVersion the propose-time copy carried is stripped: the file-level
   // invariant belongs to the runner, not to a decision body frozen earlier.
-  let body: { op?: unknown; spec?: unknown };
+  let body: { op?: unknown; spec?: unknown; boardSlug?: unknown; span?: unknown };
   try {
-    body = JSON.parse(decision.proposedBodyMarkdown) as { op?: unknown; spec?: unknown };
+    body = JSON.parse(decision.proposedBodyMarkdown) as typeof body;
   } catch {
     return { ok: false, error: "View proposedBody must be valid JSON", terminal: false };
   }
@@ -754,7 +766,42 @@ async function applyViewDecision(
     { id: decision.target.viewId || undefined },
   );
   if (!save.ok) return { ok: false, error: save.error, terminal: false };
-  return { ok: true, value: { viewId: save.value.id } };
+
+  // Pin what was just saved, when the proposal was a pin. `null` is the
+  // Overview board and is a real board, so "absent" and "null" have to be told
+  // apart: absent means a body from before the page lock, which only saved.
+  const rawBoard = body.boardSlug;
+  const boardSlug: string | null | undefined =
+    rawBoard === null ? null : typeof rawBoard === "string" && rawBoard.trim() ? rawBoard : undefined;
+  if (boardSlug === undefined) {
+    return { ok: true, value: { viewId: save.value.id, boardSlug: null } };
+  }
+  const span: 1 | 2 = body.span === 2 ? 2 : 1;
+  const { listPinBoard, setPins } = await import("./pins.ts");
+  const { USER_ACTOR } = await import("./types.ts");
+  const board = await listPinBoard(rootPath, boardSlug);
+  if (!board.ok) return { ok: false, error: board.error, terminal: false };
+  const pin = {
+    id: `view:${decision.target.domainSlug}:${save.value.id}`,
+    kind: "view" as const,
+    domainSlug: decision.target.domainSlug,
+    viewId: save.value.id,
+    span,
+  };
+  const pins = [
+    ...board.value.pins.filter(
+      (p) =>
+        !(
+          p.kind === "view" &&
+          p.domainSlug === decision.target.domainSlug &&
+          p.viewId === save.value.id
+        ),
+    ),
+    pin,
+  ];
+  const pinned = await setPins(rootPath, boardSlug, pins, USER_ACTOR, { approvedChange: true });
+  if (!pinned.ok) return { ok: false, error: pinned.error, terminal: false };
+  return { ok: true, value: { viewId: save.value.id, boardSlug } };
 }
 
 async function applyApprovedBody(
