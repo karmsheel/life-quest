@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { Pin } from "@lifequest/vault-core";
+import { insertionIndex, movePin, type SlotRect } from "@/components/home/pin-order";
 
 /**
  * Arranging the dashboard: pick a card up, put it down where it belongs.
@@ -63,6 +64,8 @@ type Lift = {
   height: number;
   /** True once the pointer has moved, which is when the card leaves the flow. */
   moved: boolean;
+  /** Where the card would land: an index into the board without it. */
+  to: number;
 };
 
 export type PinArrange = {
@@ -73,6 +76,8 @@ export type PinArrange = {
     onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
     onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => void;
   };
+  /** The board's order while a card is in the air, and its order at rest. */
+  order: Pin[];
   isArranging: boolean;
   isLifted: (pinId: string) => boolean;
 };
@@ -89,13 +94,48 @@ export function usePinArrange(input: {
   pins: Pin[];
   locked: boolean;
   busy: boolean;
+  onCommit: (next: Pin[]) => void | Promise<void>;
 }): PinArrange {
-  const { pins, locked, busy } = input;
+  const { pins, locked, busy, onCommit } = input;
   const gridRef = useRef<HTMLDivElement | null>(null);
   const armRef = useRef<Arm | null>(null);
   const liftRef = useRef<Lift | null>(null);
   const geometryRef = useRef<HTMLElement | null>(null);
   const [lift, setLift] = useState<Lift | null>(null);
+  /** The board's order as the operator sees it: committed pins, plus the drag. */
+  const order = useMemo(() => {
+    if (!lift) return pins;
+    const from = pins.findIndex((pin) => pin.id === lift.pinId);
+    if (from < 0) return pins;
+    return movePin(pins, from, lift.to);
+  }, [lift, pins]);
+
+  /**
+   * The cards the pointer is measured against: every pin but the lifted one, in
+   * the order the board currently shows them. Read from the live DOM rather than
+   * from the last computed order, because the DOM is what the operator is aiming
+   * at — including while the board reflows under a drop.
+   */
+  const slots = useCallback(
+    (liftedId: string): SlotRect[] => {
+      const grid = gridRef.current;
+      if (!grid) return [];
+      return [...grid.querySelectorAll<HTMLElement>("[data-pin-id]")]
+        .filter((card) => card.dataset.pinId !== liftedId)
+        .map((card) => {
+          const rect = card.getBoundingClientRect();
+          return {
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+          };
+        });
+    },
+    [],
+  );
 
   /** Hand the lifted card's box to the DOM, and give it back on the way out. */
   const clearGeometry = useCallback(() => {
@@ -187,11 +227,12 @@ export function usePinArrange(input: {
         width: cardRect.width,
         height: cardRect.height,
         moved: false,
+        to: pins.findIndex((pin) => pin.id === arm.pinId),
       };
       liftRef.current = next;
       setLift(next);
     },
-    [disarm],
+    [disarm, pins],
   );
 
   const onPointerDown = useCallback(
@@ -246,17 +287,18 @@ export function usePinArrange(input: {
       }
       const current = liftRef.current;
       if (!current || current.pointerId !== event.pointerId) return;
-      if (!current.moved) {
-        // The first movement is what takes the card out of the board's flow.
-        const moved: Lift = { ...current, moved: true };
-        liftRef.current = moved;
-        setLift(moved);
-        followPointer(moved, event.clientX, event.clientY);
-        return;
-      }
+      // The card follows the pointer, and the pointer decides the slot. The slot
+      // is resolved against the other cards' *live* rects, so the order the board
+      // is showing is the order the operator is aiming at.
       followPointer(current, event.clientX, event.clientY);
+      const to = insertionIndex(slots(current.pinId), { x: event.clientX, y: event.clientY });
+      if (!current.moved || to !== current.to) {
+        const next: Lift = { ...current, moved: true, to };
+        liftRef.current = next;
+        setLift(next);
+      }
     },
-    [disarm, followPointer, liftCard],
+    [disarm, followPointer, liftCard, slots],
   );
 
   const onPointerUp = useCallback(
@@ -267,9 +309,20 @@ export function usePinArrange(input: {
         return;
       }
       const current = liftRef.current;
-      if (current && current.pointerId === event.pointerId) endLift();
+      if (!current || current.pointerId !== event.pointerId) return;
+      endLift();
+      /**
+       * One drop, one write — and none at all when the card came back to where
+       * it started. The order is rebuilt from the pins the page holds right now,
+       * not from the ones the drag began with, so a board that changed underneath
+       * the gesture still ends up with the operator's intent applied to it.
+       */
+      const from = pins.findIndex((pin) => pin.id === current.pinId);
+      if (from < 0 || current.to === from) return;
+      const next = movePin(pins, from, current.to);
+      void onCommit(next);
     },
-    [disarm, endLift],
+    [disarm, endLift, onCommit, pins],
   );
 
   const onPointerCancel = useCallback(
@@ -314,6 +367,7 @@ export function usePinArrange(input: {
   return {
     gridRef,
     gridHandlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel },
+    order,
     isArranging: lift !== null,
     isLifted,
   };

@@ -25,6 +25,12 @@ const SCENARIOS = [
   "press-on-a-link-is-not-a-drag",
   "lift-leaves-a-gap",
   "locked-is-inert",
+  "same-row-targets-by-x",
+  "drop-past-a-full-row-card",
+  "wide-card-left-and-right",
+  "drop-on-the-agents-card",
+  "hold-then-release-writes-nothing",
+  "grip-drags-and-writes-once",
 ];
 
 /**

@@ -39,7 +39,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
 const url =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/dashboard-arrange.html";
-const DEFAULT_SIZE = { width: 1280, height: 900 };
+/**
+ * Tall enough that the whole seeded board is on screen at once, because a drag
+ * can only start on one card and end on another if both are reachable. The
+ * harness's scrollport is the window's height, and the size is set per claim:
+ * the auto-scroll leg shrinks the window so the board overflows.
+ */
+const BOARD_SIZE = { width: 1280, height: 1200 };
 
 /** The board the harness seeds, restated so the driver can install it again. */
 const SEED = [
@@ -304,7 +310,72 @@ const writesOf = (writeList) => writeList.map((pins) => pins.map((pin) => pin.id
 /** Every scenario starts from the same seeded board, and from an empty write log. */
 async function beginScenario(win, options = {}) {
   await renderBoard(win, SEED, options.locked === true);
-  await win.webContents.executeJavaScript("window.dashboardArrangePinWrites.length = 0");
+  await win.webContents.executeJavaScript(
+    "window.dashboardArrangePinWrites.length = 0; document.querySelector('.arrange-scroll').scrollTop = 0;",
+  );
+}
+
+/** Scroll the board so its far end is on screen; returns nothing. */
+async function scrollBoardToEnd(win) {
+  await win.webContents.executeJavaScript(
+    "(() => { const s = document.querySelector('.arrange-scroll'); s.scrollTop = s.scrollHeight; return s.scrollTop; })()",
+  );
+  await settleFrames(win);
+}
+
+/**
+ * Pick a card up by its heading or its grip and put it down on a point.
+ *
+ * The pointer travels in steps rather than jumping: the slot resolver runs on
+ * every move, so a single jump would only prove the last position was read. The
+ * three steps are what a real hand does, and they are also what makes "the board
+ * reflows as you go" falsifiable.
+ *
+ * `aim` is a function, not a point, and that is load-bearing: taking a card out
+ * of the flow changes the height of the row it was in, so every card below it
+ * moves up the moment the drag begins. A point measured before the lift is a
+ * point at a card that is no longer there. The aim is resolved *after* the
+ * board has reflowed, which is also what an operator does — they watch the board
+ * shift and then put the card where the card now is.
+ */
+async function dragCard(win, pinId, aim, options = {}) {
+  const source = await pointOn(
+    win,
+    options.via === "grip" ? `[data-pin-id="${pinId}"] [data-testid="pin-grip"]` : headingOf(pinId),
+  );
+  mouse(win, "mouseDown", source.x, source.y);
+  // A grip needs no hold but it does need movement: it is armed to drag, not to
+  // lift on the press itself.
+  if (options.via === "grip") mouse(win, "mouseMove", source.x + 6, source.y);
+  const lifted = await waitForLift(win, pinId);
+  if (!lifted.includes(pinId)) {
+    mouse(win, "mouseUp", source.x, source.y);
+    throw new Error(`${pinId} never lifted, so it could not be dragged`);
+  }
+  // Leave the flow, let the board settle into its new shape, then aim.
+  mouse(win, "mouseMove", source.x + 12, source.y + 12);
+  await settleFrames(win);
+  const target = await aim();
+  const steps = 3;
+  for (let step = 1; step <= steps; step += 1) {
+    mouse(
+      win,
+      "mouseMove",
+      source.x + 12 + ((target.x - source.x - 12) * step) / steps,
+      source.y + 12 + ((target.y - source.y - 12) * step) / steps,
+    );
+    await sleep(40);
+  }
+  await settleFrames(win);
+  mouse(win, "mouseUp", target.x, target.y);
+  await sleep(140);
+}
+
+/** A point at a fraction across a card, and just inside its top edge. */
+async function pointIn(win, pinId, acrossX, downY = 30) {
+  const box = await cardRect(win, pinId);
+  if (!box) throw new Error(`no card for ${pinId}`);
+  return { x: box.left + box.width * acrossX, y: box.top + downY };
 }
 
 /** Press, wait, and let go — the shape of every activation claim here. */
@@ -548,13 +619,173 @@ async function checkActivation(win) {
   await beginScenario(win);
 }
 
+/**
+ * The ordering claims: where a dropped card lands, and that it lands for one
+ * write. The board is three tracks wide with full-row cards in it, which is
+ * exactly the board the old `↑` / `↓` buttons got wrong: an arrow said "next in
+ * the list" while the operator read it as "the cell above".
+ */
+async function checkOrdering(win) {
+  const base = [
+    "sys:goal-progress",
+    "view:financial:v-weekly",
+    "page:financial:ledger",
+    "sys:today-week",
+    "view:financial:v-summary",
+    "sys:pending-decisions",
+    "sys:recent-log",
+  ];
+
+  // 1. The cell to the right of the card beside it is one slot, not one row.
+  step("same-row-targets-by-x");
+  await beginScenario(win);
+  const tracks = await columns(win);
+  await dragCard(win, "view:financial:v-weekly", () => pointIn(win, "page:financial:ledger", 0.8));
+  const swapped = await restingOrder(win);
+  const swappedWrites = writesOf(await pinWrites(win));
+  check(
+    "same-row-targets-by-x",
+    tracks === 3 &&
+      swapped[0] === base[0] &&
+      swapped[1] === "page:financial:ledger" &&
+      swapped[2] === "view:financial:v-weekly" &&
+      swappedWrites.length === 1 &&
+      swappedWrites[0].join(",") === swapped.join(","),
+    `on a ${tracks}-track board the drop gave ${JSON.stringify(swapped)} for ${swappedWrites.length} write(s)`,
+  );
+
+  // 2. A full-row card is not a dead zone: the row band decides, and past its
+  //    midpoint the card belongs on the far side of it.
+  step("drop-past-a-full-row-card");
+  await beginScenario(win);
+  await dragCard(win, "view:financial:v-weekly", () => pointIn(win, "sys:today-week", 0.8));
+  const afterFullRow = await restingOrder(win);
+  check(
+    "drop-past-a-full-row-card",
+    afterFullRow.join(",") ===
+      [
+        "sys:goal-progress",
+        "page:financial:ledger",
+        "sys:today-week",
+        "view:financial:v-weekly",
+        "view:financial:v-summary",
+        "sys:pending-decisions",
+        "sys:recent-log",
+      ].join(","),
+    `dropping past the midpoint of a full-row card gave ${JSON.stringify(afterFullRow)}`,
+  );
+
+  // 3. A span-2 card is droppable on either side, and a drop that changes
+  //    nothing writes nothing — the second half of this claim is what keeps a
+  //    stray drop from reordering the board for free.
+  step("wide-card-left-and-right");
+  await beginScenario(win);
+  await dragCard(win, "sys:pending-decisions", () => pointIn(win, "view:financial:v-summary", 0.2));
+  const beforeWide = await restingOrder(win);
+  const writesBefore = (await pinWrites(win)).length;
+  // The same slot again: the card is already where it would land, so this drop
+  // must not reach the vault at all.
+  await dragCard(win, "sys:pending-decisions", () => pointIn(win, "view:financial:v-summary", 0.2));
+  const afterNoop = await restingOrder(win);
+  const writesAfterNoop = (await pinWrites(win)).length;
+  // And past the midpoint, the other side of the same card.
+  await dragCard(win, "sys:pending-decisions", () => pointIn(win, "view:financial:v-summary", 0.8));
+  const afterWide = await restingOrder(win);
+  const writesAfter = (await pinWrites(win)).length;
+  check(
+    "wide-card-left-and-right",
+    beforeWide.indexOf("sys:pending-decisions") === 4 &&
+      beforeWide.indexOf("view:financial:v-summary") === 5 &&
+      writesBefore === 1 &&
+      afterNoop.join(",") === beforeWide.join(",") &&
+      writesAfterNoop === 1 &&
+      afterWide.indexOf("view:financial:v-summary") === 4 &&
+      afterWide.indexOf("sys:pending-decisions") === 5 &&
+      writesAfter === 2,
+    `left half gave ${JSON.stringify(beforeWide)} (${writesBefore} write(s)); a repeat drop gave ` +
+      `${JSON.stringify(afterNoop)} (${writesAfterNoop} write(s)); right half gave ` +
+      `${JSON.stringify(afterWide)} (${writesAfter} write(s))`,
+  );
+
+  // 4. The board's one non-pinnable card is not a slot: dropping on it means the
+  //    end of the pins, and no pin is ever placed after it.
+  step("drop-on-the-agents-card");
+  await beginScenario(win);
+  await scrollBoardToEnd(win);
+  const agents = await win.webContents.executeJavaScript(
+    `(() => {
+       const el = [...document.querySelectorAll(".home-dashboard__grid > .home-pin")].find((c) => !c.dataset.pinId);
+       if (!el) return null;
+       const r = el.getBoundingClientRect();
+       return { x: r.left + 40, y: r.top + 20 };
+     })()`,
+  );
+  if (!agents) throw new Error("the board has no Active-agents card");
+  await dragCard(win, "sys:pending-decisions", () => agents);
+  const ended = await restingOrder(win);
+  const endedWrites = writesOf(await pinWrites(win));
+  const lastChildIsAgents = await win.webContents.executeJavaScript(
+    `!document.querySelector(".home-dashboard__grid").lastElementChild.dataset.pinId`,
+  );
+  check(
+    "drop-on-the-agents-card",
+    ended.join(",") ===
+      [
+        "sys:goal-progress",
+        "view:financial:v-weekly",
+        "page:financial:ledger",
+        "sys:today-week",
+        "view:financial:v-summary",
+        "sys:recent-log",
+        "sys:pending-decisions",
+      ].join(",") &&
+      endedWrites.length === 1 &&
+      lastChildIsAgents === true,
+    `dropping on the agents card gave ${JSON.stringify(ended)} for ${endedWrites.length} write(s), ` +
+      `agents last: ${lastChildIsAgents}`,
+  );
+
+  // 5. A hold and release in place is not a change: the card goes back and the
+  //    vault is never asked.
+  step("hold-then-release-writes-nothing");
+  await beginScenario(win);
+  const stillPoint = await pointOn(win, headingOf("view:financial:v-weekly"));
+  mouse(win, "mouseDown", stillPoint.x, stillPoint.y);
+  await waitForLift(win, "view:financial:v-weekly");
+  mouse(win, "mouseUp", stillPoint.x, stillPoint.y);
+  await sleep(140);
+  const stillOrder = await restingOrder(win);
+  check(
+    "hold-then-release-writes-nothing",
+    stillOrder.join(",") === base.join(",") && (await pinWrites(win)).length === 0,
+    `a hold and release gave ${JSON.stringify(stillOrder)} for ${(await pinWrites(win)).length} write(s)`,
+  );
+
+  // 6. The grip is the same gesture: it drags, and it writes once.
+  step("grip-drags-and-writes-once");
+  await beginScenario(win);
+  await dragCard(win, "page:financial:ledger", () => pointIn(win, "view:financial:v-weekly", 0.2), {
+    via: "grip",
+  });
+  const gripOrder = await restingOrder(win);
+  const gripWrites = writesOf(await pinWrites(win));
+  check(
+    "grip-drags-and-writes-once",
+    gripOrder[0] === "sys:goal-progress" &&
+      gripOrder[1] === "page:financial:ledger" &&
+      gripOrder[2] === "view:financial:v-weekly" &&
+      gripWrites.length === 1,
+    `the grip drag gave ${JSON.stringify(gripOrder)} for ${gripWrites.length} write(s)`,
+  );
+}
+
 async function main() {
   const sessionPartition = `dashboard-arrange-${Date.now()}`;
   nativeTheme.themeSource = "dark";
 
   const win = new BrowserWindow({
-    width: DEFAULT_SIZE.width,
-    height: DEFAULT_SIZE.height,
+    width: BOARD_SIZE.width,
+    height: BOARD_SIZE.height,
     show: false,
     backgroundColor: "#1a1917",
     webPreferences: {
@@ -571,7 +802,7 @@ async function main() {
       backgroundThrottling: false,
     },
   });
-  win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
+  win.setContentSize(BOARD_SIZE.width, BOARD_SIZE.height);
   win.showInactive();
 
   const consoleErrors = [];
@@ -597,15 +828,20 @@ async function main() {
 
   const sample = await win.webContents.executeJavaScript(SAMPLE);
   checkChromeIdentity(sample);
-
-  await checkActivation(win);
-  const order = await restingOrder(win);
+  /**
+   * The board's seeded order and column count, read before any scenario runs.
+   * The ordering claims legitimately leave the board rearranged — that is what
+   * they are for — so "this rig renders the seven pins in this order" has to be
+   * a claim about the fresh board, not about whatever the last drag left behind.
+   */
+  const order = sample.order;
   const tracks = await columns(win);
 
+  await checkActivation(win);
+  await checkOrdering(win);
+
   await renderBoard(win, SEED, false);
-  await win.webContents.executeJavaScript(
-    `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
-  );
+  await settleFrames(win);
   const image = await win.webContents.capturePage();
   fs.mkdirSync(artifactsDir, { recursive: true });
   fs.writeFileSync(path.join(artifactsDir, "dashboard-arrange.png"), image.toPNG());

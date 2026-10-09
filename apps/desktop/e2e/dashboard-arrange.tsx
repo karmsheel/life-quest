@@ -361,19 +361,17 @@ function Harness({ generation }: { generation: number }) {
     harness.dashboardArrangeCommits = commits.current;
   }, [generation]);
   /**
-   * A fixed-width, fixed-height scrollport: the column count has to be the same
-   * on every machine for a row claim to mean anything, and the board has to be
-   * taller than its box for auto-scroll to have somewhere to go.
+   * A fixed-width scrollport, as tall as the window the driver gives us.
    *
-   * 700 px is not arbitrary either: it is tall enough that the board's first
-   * three rows — including the side-by-side pair a "cell to the left" claim needs
-   * — are on screen, so a drag can start and end on real, hittable cards. The
-   * board's own scroll height is over twice that, which is what the auto-scroll
-   * claim uses.
+   * The width is fixed so the column count is the same on every machine — a row
+   * claim means nothing otherwise. The height follows the window because the
+   * claims need different shapes: a drag can only start on one card and end on
+   * another if both are on screen, while the auto-scroll claim needs a board that
+   * overflows its box. The driver sizes the window to the claim.
    */
   return (
     <div style={{ width: 1000, margin: "0 auto" }}>
-      <div className="arrange-scroll" style={{ height: 700, overflowY: "auto" }}>
+      <div className="arrange-scroll" style={{ height: "calc(100vh - 2rem)", overflowY: "auto" }}>
         <MemoryRouter initialEntries={["/"]}>
           <VaultProvider>
             {/* `key` forces VaultProvider to re-read the board, so a driver can

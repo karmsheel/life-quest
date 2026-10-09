@@ -56,7 +56,12 @@ export default function HomePage() {
    * needs the lock and the write guard because a locked board has no gesture at
    * all, and a card being written must not be picked up mid-flight.
    */
-  const arrange = usePinArrange({ pins, locked, busy: moveBusy });
+  const arrange = usePinArrange({
+    pins,
+    locked,
+    busy: moveBusy,
+    onCommit: (next) => persistPins(next),
+  });
 
   const load = useCallback(async () => {
     const boardSlug = lens.kind === "domain" ? lens.slug : null;
@@ -324,7 +329,7 @@ export default function HomePage() {
         ref={arrange.gridRef}
         {...arrange.gridHandlers}
       >
-        {pins.map((pin) => (
+        {arrange.order.map((pin) => (
           <div
             key={pin.id}
             data-pin-id={pin.id}
