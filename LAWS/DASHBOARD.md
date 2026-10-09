@@ -19,3 +19,7 @@ The Dashboard's pin board MUST be a control the operator can open and close.
 Every pinned card on a Dashboard MUST be addable to the companion chat as context.
 
 A card in context MUST be named in the companion chat before the turn is sent.
+
+Deleting what a Dashboard card draws MUST be confirmed by the operator first.
+
+Taking a card off a Dashboard MUST NOT delete what the card draws.
