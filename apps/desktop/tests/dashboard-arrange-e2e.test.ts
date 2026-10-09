@@ -31,6 +31,10 @@ const SCENARIOS = [
   "drop-on-the-agents-card",
   "hold-then-release-writes-nothing",
   "grip-drags-and-writes-once",
+  "escape-cancels",
+  "blur-cancels",
+  "refusal-reverts",
+  "refusal-is-announced",
 ];
 
 /**
@@ -72,7 +76,13 @@ type Scenario = { name: string; pass: boolean; detail: string | null };
 type Report = {
   pass: boolean;
   failures: string[];
-  checks: { scenarios: Scenario[]; order: string[]; columns: number };
+  checks: {
+    scenarios: Scenario[];
+    order: string[];
+    columns: number;
+    unexpectedBridgeCalls: string[];
+    consoleErrors: string[];
+  };
 };
 
 /**
@@ -118,5 +128,10 @@ describe("dashboard arrange e2e", () => {
     for (const scenario of report.checks.scenarios) {
       assert.equal(scenario.pass, true, `${scenario.name}: ${scenario.detail ?? ""}`);
     }
+
+    // Nothing reached the bridge that this rig does not model, and the page
+    // logged nothing while cards were being thrown around it.
+    assert.deepEqual(report.checks.unexpectedBridgeCalls, []);
+    assert.deepEqual(report.checks.consoleErrors, []);
   });
 });

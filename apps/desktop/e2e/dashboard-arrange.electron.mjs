@@ -26,6 +26,12 @@
  * A dev-server page has no preload, so the page's bridge is a stub and a drop's
  * `pinsSet` ends at this rig's recorder.
  *
+ * Two seams worth naming. The window is shown inactive and never holds OS focus,
+ * so `blur-cancels` dispatches the event a focused window would receive rather
+ * than losing focus for real; `dashboard-live-app` covers the real one. And the
+ * harness renders the page without the shell around it, so the scrollport the
+ * board scrolls inside is the harness's own box, not `.shell__content`.
+ *
  * Input is dispatched through `webContents.sendInputEvent` — the browser's own
  * input pipeline — never through a hand-built `PointerEvent`, because the claims
  * to come are about activation timing, hit-testing, and pointer capture.
@@ -779,6 +785,154 @@ async function checkOrdering(win) {
   );
 }
 
+/** The status line's current text: what the board says about the last gesture. */
+function statusText(win) {
+  return win.webContents.executeJavaScript(
+    `(() => {
+       const el = document.querySelector('[data-testid="pin-arrange-status"]');
+       return el ? (el.textContent || "").trim() : null;
+     })()`,
+  );
+}
+
+/** A real key press, through the browser's input pipeline. */
+async function pressKey(win, keyCode) {
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode });
+  win.webContents.sendInputEvent({ type: "char", keyCode });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode });
+  await sleep(60);
+}
+
+/**
+ * Start a drag and hold the card in the air, without dropping it.
+ *
+ * The gesture is left mid-flight on purpose: the claims that follow are about
+ * what ends it — a key, a lost window, a vault that says no — so the test has to
+ * be the thing that ends it.
+ */
+async function holdInTheAir(win, pinId, aim) {
+  const source = await pointOn(win, headingOf(pinId));
+  mouse(win, "mouseDown", source.x, source.y);
+  const lifted = await waitForLift(win, pinId);
+  if (!lifted.includes(pinId)) throw new Error(`${pinId} never lifted`);
+  mouse(win, "mouseMove", source.x + 12, source.y + 12);
+  await settleFrames(win);
+  const target = await aim();
+  mouse(win, "mouseMove", target.x, target.y);
+  await sleep(80);
+  return target;
+}
+
+/**
+ * The claims about how a drag ends when it does not end in a write: a cancelled
+ * gesture, and a vault that refuses the order. Both must leave the board in the
+ * order it actually has, and both must say so.
+ */
+async function checkCancelAndRefusal(win) {
+  const base = [
+    "sys:goal-progress",
+    "view:financial:v-weekly",
+    "page:financial:ledger",
+    "sys:today-week",
+    "view:financial:v-summary",
+    "sys:pending-decisions",
+    "sys:recent-log",
+  ];
+  const toLedger = () => pointIn(win, "page:financial:ledger", 0.8);
+
+  // 1. Escape mid-drag: the card goes home and nothing is written.
+  step("escape-cancels");
+  await beginScenario(win);
+  const escaped = await holdInTheAir(win, "view:financial:v-weekly", toLedger);
+  await pressKey(win, "Escape");
+  mouse(win, "mouseUp", escaped.x, escaped.y);
+  await sleep(160);
+  const escapedOrder = await restingOrder(win);
+  const escapedLifted = await liftedIds(win);
+  check(
+    "escape-cancels",
+    escapedOrder.join(",") === base.join(",") &&
+      escapedLifted.length === 0 &&
+      (await pinWrites(win)).length === 0,
+    `Escape left ${JSON.stringify(escapedOrder)} with ${escapedLifted.length} card(s) still lifted ` +
+      `and ${(await pinWrites(win)).length} write(s)`,
+  );
+
+  // 2. A lost window ends a drag the same way.
+  //
+  //    The seam: this rig's window is shown inactive and never holds OS focus —
+  //    deliberately, because a suite that steals the operator's focus every run
+  //    is a suite they turn off — and a window that was never focused cannot
+  //    lose focus, so `win.blur()` is a no-op here and a real blur is impossible
+  //    to produce. What is dispatched below is the event such a window *would*
+  //    receive, which is exactly the hook's contract; that a real focus change
+  //    raises one is a claim for `dashboard-live-app`, which runs a shown app.
+  step("blur-cancels");
+  await beginScenario(win);
+  const blurred = await holdInTheAir(win, "view:financial:v-weekly", toLedger);
+  await win.webContents.executeJavaScript("window.dispatchEvent(new Event('blur')); true");
+  await sleep(200);
+  const liftedAfterBlur = await liftedIds(win);
+  mouse(win, "mouseUp", blurred.x, blurred.y);
+  await sleep(160);
+  const blurredOrder = await restingOrder(win);
+  check(
+    "blur-cancels",
+    liftedAfterBlur.length === 0 &&
+      blurredOrder.join(",") === base.join(",") &&
+      (await pinWrites(win)).length === 0,
+    `losing the window left ${liftedAfterBlur.length} card(s) lifted, ` +
+      `${JSON.stringify(blurredOrder)} on the board, and ${(await pinWrites(win)).length} write(s)`,
+  );
+
+  // 3. The board locked while the drag was in the air: the vault answers
+  //    `applied: false`, and the board must stop showing an order it does not
+  //    have.
+  step("refusal-reverts");
+  await beginScenario(win);
+  await win.webContents.executeJavaScript("window.dashboardArrangeSetRefuse(true)");
+  const refused = await holdInTheAir(win, "view:financial:v-weekly", toLedger);
+  mouse(win, "mouseUp", refused.x, refused.y);
+  await waitFor(
+    win,
+    `document.querySelectorAll('[data-testid="pin-arrange-status"]').length === 1`,
+    "the status line to exist",
+  );
+  await sleep(400);
+  const refusedOrder = await restingOrder(win);
+  const refusedWrites = writesOf(await pinWrites(win));
+  const refusedStatus = await statusText(win);
+  await win.webContents.executeJavaScript("window.dashboardArrangeSetRefuse(false)");
+  check(
+    "refusal-reverts",
+    refusedOrder.join(",") === base.join(",") &&
+      refusedWrites.length === 1 &&
+      /locked/i.test(refusedStatus ?? ""),
+    `a refused write left ${JSON.stringify(refusedOrder)} after ${refusedWrites.length} write(s), ` +
+      `and said ${JSON.stringify(refusedStatus)}`,
+  );
+
+  // 4. The write that fails outright: same rollback, different words.
+  step("refusal-is-announced");
+  await beginScenario(win);
+  await win.webContents.executeJavaScript("window.dashboardArrangeSetFail(true)");
+  const failed = await holdInTheAir(win, "view:financial:v-weekly", toLedger);
+  mouse(win, "mouseUp", failed.x, failed.y);
+  await sleep(400);
+  const failedOrder = await restingOrder(win);
+  const failedWrites = writesOf(await pinWrites(win));
+  const failedStatus = await statusText(win);
+  await win.webContents.executeJavaScript("window.dashboardArrangeSetFail(false)");
+  check(
+    "refusal-is-announced",
+    failedOrder.join(",") === base.join(",") &&
+      failedWrites.length === 1 &&
+      /could not save/i.test(failedStatus ?? ""),
+    `a failed write left ${JSON.stringify(failedOrder)} after ${failedWrites.length} write(s), ` +
+      `and said ${JSON.stringify(failedStatus)}`,
+  );
+}
+
 async function main() {
   const sessionPartition = `dashboard-arrange-${Date.now()}`;
   nativeTheme.themeSource = "dark";
@@ -839,6 +993,7 @@ async function main() {
 
   await checkActivation(win);
   await checkOrdering(win);
+  await checkCancelAndRefusal(win);
 
   await renderBoard(win, SEED, false);
   await settleFrames(win);
@@ -849,7 +1004,22 @@ async function main() {
   const report = {
     pass: errors.length === 0,
     failures: errors,
-    checks: { skin, scenarios, order, columns: tracks, sample },
+    checks: {
+      skin,
+      scenarios,
+      order,
+      columns: tracks,
+      sample,
+      /**
+       * A page that grows a dependency on a bridge method this rig does not model
+       * fails by name rather than by rendering a quietly empty board, and a page
+       * that logs an error while arranging fails too.
+       */
+      unexpectedBridgeCalls: await win.webContents.executeJavaScript(
+        "window.dashboardArrangeUnexpectedCalls",
+      ),
+      consoleErrors,
+    },
     samples: { board: sample },
   };
   fs.writeFileSync(

@@ -15,7 +15,7 @@ import { TodayWeekCard } from "@/pages/home-pins/TodayWeekCard";
 import { RecentLogCard } from "@/pages/home-pins/RecentLogCard";
 import { ActiveAgentsCard } from "@/pages/home-pins/ActiveAgentsCard";
 import { PinChrome } from "@/components/home/PinChrome";
-import { usePinArrange } from "@/components/home/usePinArrange";
+import { usePinArrange, type CommitOutcome } from "@/components/home/usePinArrange";
 import { ViewCard } from "@/components/ui/ViewCard";
 import type { SavedView } from "@lifequest/vault-core";
 
@@ -184,15 +184,36 @@ export default function HomePage() {
     await persistPins(next);
   }
 
-  async function persistPins(next: Pin[]) {
+  /**
+   * The board's one write path, and the only thing that reaches the vault for a
+   * pin change.
+   *
+   * The new order goes on screen first — a dropped card that springs back to
+   * where it came from while the write is in flight would undo the gesture the
+   * operator just made — and comes back down if the vault did not take it. The
+   * rollback is a re-read rather than a restored copy of the old array: the
+   * vault is the truth, and a board that changed while the write was in flight
+   * must not be overwritten with a stale list.
+   */
+  async function persistPins(next: Pin[]): Promise<CommitOutcome> {
     // The locked board has no chrome to click, but a keyboard path or a stale
     // render could still reach here: refuse locally rather than filing a
     // Decision the operator did not ask for by clicking.
-    if (locked) return;
+    if (locked) return "locked";
     setMoveBusy(true);
+    setPins(next);
     try {
       const res = await api().pinsSet(boardSlug, next);
-      if (res.ok && res.value.applied) setPins(res.value.pins);
+      if (!res.ok) {
+        await load();
+        return "refused";
+      }
+      if (!res.value.applied) {
+        await load();
+        return "locked";
+      }
+      setPins(res.value.pins);
+      return "applied";
     } finally {
       setMoveBusy(false);
     }
@@ -424,6 +445,20 @@ export default function HomePage() {
           </div>
         </section>
       ) : null}
+
+      {/* Arranging is a gesture, so its outcome is not visible in the chrome the
+          way a button's is: this line is how a keyboard or screen-reader
+          operator learns that the card moved, that the order was saved, or that
+          the vault refused it. Polite, not assertive — an arrangement is not an
+          emergency, and the operator is mid-gesture. */}
+      <p
+        className="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-testid="pin-arrange-status"
+      >
+        {arrange.announce}
+      </p>
     </div>
   );
 }

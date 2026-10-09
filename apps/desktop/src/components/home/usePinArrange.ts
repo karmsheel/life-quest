@@ -42,6 +42,22 @@ export const HOLD_CANCEL_PX = 8;
 /** How far a press on the grip must move to begin a drag — a grip needs no hold. */
 export const GRIP_ACTIVATE_PX = 4;
 
+/**
+ * What the board's one write path did with a new order.
+ *
+ * The gesture has to tell these apart because they read differently to the
+ * operator: a locked board is a thing they can fix in one click, a refusal is
+ * the vault saying no, and only `applied` means the order is on disk.
+ */
+export type CommitOutcome = "applied" | "locked" | "refused";
+
+/** What the live region says when a drag ends. */
+function announceOutcome(outcome: CommitOutcome): string {
+  if (outcome === "applied") return "Card order saved.";
+  if (outcome === "locked") return "This board is locked; unlock it to arrange it.";
+  return "Could not save the new order.";
+}
+
 type Arm = {
   pinId: string;
   pointerId: number;
@@ -80,6 +96,8 @@ export type PinArrange = {
   order: Pin[];
   isArranging: boolean;
   isLifted: (pinId: string) => boolean;
+  /** What to say about the last gesture: a live region reads this out. */
+  announce: string;
 };
 
 /**
@@ -94,7 +112,7 @@ export function usePinArrange(input: {
   pins: Pin[];
   locked: boolean;
   busy: boolean;
-  onCommit: (next: Pin[]) => void | Promise<void>;
+  onCommit: (next: Pin[]) => Promise<CommitOutcome>;
 }): PinArrange {
   const { pins, locked, busy, onCommit } = input;
   const gridRef = useRef<HTMLDivElement | null>(null);
@@ -102,6 +120,7 @@ export function usePinArrange(input: {
   const liftRef = useRef<Lift | null>(null);
   const geometryRef = useRef<HTMLElement | null>(null);
   const [lift, setLift] = useState<Lift | null>(null);
+  const [announce, setAnnounce] = useState("");
   /** The board's order as the operator sees it: committed pins, plus the drag. */
   const order = useMemo(() => {
     if (!lift) return pins;
@@ -195,6 +214,9 @@ export function usePinArrange(input: {
 
   const cancel = useCallback(() => {
     disarm();
+    // A cancelled drag is worth saying out loud only when there was something to
+    // cancel: a bare Escape on a resting board is not an event.
+    if (liftRef.current?.moved) setAnnounce("Move cancelled.");
     endLift();
   }, [disarm, endLift]);
 
@@ -310,17 +332,20 @@ export function usePinArrange(input: {
       }
       const current = liftRef.current;
       if (!current || current.pointerId !== event.pointerId) return;
+      const from = pins.findIndex((pin) => pin.id === current.pinId);
+      const to = current.to;
       endLift();
       /**
        * One drop, one write — and none at all when the card came back to where
        * it started. The order is rebuilt from the pins the page holds right now,
        * not from the ones the drag began with, so a board that changed underneath
-       * the gesture still ends up with the operator's intent applied to it.
+       * the gesture still ends up with the operator's intent applied to it. The
+       * page owns everything after this: it puts the new order on screen, and it
+       * is the page that takes it back down if the vault refuses.
        */
-      const from = pins.findIndex((pin) => pin.id === current.pinId);
-      if (from < 0 || current.to === from) return;
-      const next = movePin(pins, from, current.to);
-      void onCommit(next);
+      if (from < 0 || to === from) return;
+      const next = movePin(pins, from, to);
+      void onCommit(next).then((outcome) => setAnnounce(announceOutcome(outcome)));
     },
     [disarm, endLift, onCommit, pins],
   );
@@ -370,5 +395,6 @@ export function usePinArrange(input: {
     order,
     isArranging: lift !== null,
     isLifted,
+    announce,
   };
 }
