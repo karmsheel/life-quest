@@ -15,7 +15,17 @@ const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/dashboard-arrange.json");
 
 /** Every claim the driver must have recorded, by name. */
-const SCENARIOS = ["skin", "chrome-identity"];
+const SCENARIOS = [
+  "skin",
+  "chrome-identity",
+  "short-press-is-not-a-drag",
+  "movement-cancels-the-hold",
+  "hold-lifts",
+  "grip-lifts-at-once",
+  "press-on-a-link-is-not-a-drag",
+  "lift-leaves-a-gap",
+  "locked-is-inert",
+];
 
 /**
  * The rig renders the real Dashboard in a real layout engine, so it needs the
@@ -56,7 +66,7 @@ type Scenario = { name: string; pass: boolean; detail: string | null };
 type Report = {
   pass: boolean;
   failures: string[];
-  checks: { scenarios: Scenario[]; order: string[] };
+  checks: { scenarios: Scenario[]; order: string[]; columns: number };
 };
 
 /**
@@ -65,7 +75,7 @@ type Report = {
  * writing once and reverting when the vault refuses.
  */
 describe("dashboard arrange e2e", () => {
-  it("draws standard icons in the card chrome", async (t) => {
+  it("lifts a card on a hold or the grip, and draws standard chrome icons", async (t) => {
     if (!(await devServerUp())) {
       t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
       return;
@@ -91,6 +101,9 @@ describe("dashboard arrange e2e", () => {
       "sys:pending-decisions",
       "sys:recent-log",
     ]);
+    // Three tracks: the slot rule and the keyboard's row moves are claims about
+    // a board that wraps, and a one-column board would make them vacuous.
+    assert.equal(report.checks.columns, 3, "the harness board is not three columns wide");
 
     const recorded = report.checks.scenarios.map((s) => s.name);
     for (const name of SCENARIOS) {

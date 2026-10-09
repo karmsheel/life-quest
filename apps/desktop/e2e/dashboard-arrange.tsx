@@ -364,10 +364,16 @@ function Harness({ generation }: { generation: number }) {
    * A fixed-width, fixed-height scrollport: the column count has to be the same
    * on every machine for a row claim to mean anything, and the board has to be
    * taller than its box for auto-scroll to have somewhere to go.
+   *
+   * 700 px is not arbitrary either: it is tall enough that the board's first
+   * three rows — including the side-by-side pair a "cell to the left" claim needs
+   * — are on screen, so a drag can start and end on real, hittable cards. The
+   * board's own scroll height is over twice that, which is what the auto-scroll
+   * claim uses.
    */
   return (
     <div style={{ width: 1000, margin: "0 auto" }}>
-      <div className="arrange-scroll" style={{ height: 420, overflowY: "auto" }}>
+      <div className="arrange-scroll" style={{ height: 700, overflowY: "auto" }}>
         <MemoryRouter initialEntries={["/"]}>
           <VaultProvider>
             {/* `key` forces VaultProvider to re-read the board, so a driver can

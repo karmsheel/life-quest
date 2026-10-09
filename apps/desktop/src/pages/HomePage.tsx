@@ -15,6 +15,7 @@ import { TodayWeekCard } from "@/pages/home-pins/TodayWeekCard";
 import { RecentLogCard } from "@/pages/home-pins/RecentLogCard";
 import { ActiveAgentsCard } from "@/pages/home-pins/ActiveAgentsCard";
 import { PinChrome } from "@/components/home/PinChrome";
+import { usePinArrange } from "@/components/home/usePinArrange";
 import { ViewCard } from "@/components/ui/ViewCard";
 import type { SavedView } from "@lifequest/vault-core";
 
@@ -29,7 +30,6 @@ type BoardView = SavedView & { domainSlug: string };
 export default function HomePage() {
   const { snapshot, reloadGeneration } = useVault();
   const lens = useDomainLens();
-
   const title =
     lens.kind === "domain"
       ? (snapshot?.domains.find((d) => d.slug === lens.slug)?.meta.name ?? "Overview")
@@ -50,6 +50,13 @@ export default function HomePage() {
   const [views, setViews] = useState<BoardView[]>([]);
   const [moveBusy, setMoveBusy] = useState(false);
   const [installedKits, setInstalledKits] = useState<string[] | null>(null);
+
+  /**
+   * The board's own gesture: hold a card to lift it, drag it, drop it. The hook
+   * needs the lock and the write guard because a locked board has no gesture at
+   * all, and a card being written must not be picked up mid-flight.
+   */
+  const arrange = usePinArrange({ pins, locked, busy: moveBusy });
 
   const load = useCallback(async () => {
     const boardSlug = lens.kind === "domain" ? lens.slug : null;
@@ -312,14 +319,22 @@ export default function HomePage() {
         </div>
       </header>
 
-      <div className="home-dashboard__grid">
+      <div
+        className={arrange.isArranging ? "home-dashboard__grid is-arranging" : "home-dashboard__grid"}
+        ref={arrange.gridRef}
+        {...arrange.gridHandlers}
+      >
         {pins.map((pin) => (
           <div
             key={pin.id}
             data-pin-id={pin.id}
-            className={
-              pin.kind === "view" && pin.span === 2 ? "home-pin home-pin--span2" : "home-pin"
-            }
+            className={[
+              "home-pin",
+              pin.kind === "view" && pin.span === 2 ? "home-pin--span2" : "",
+              arrange.isLifted(pin.id) ? "is-lifted" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
           >
             {locked ? null : (
               <PinChrome

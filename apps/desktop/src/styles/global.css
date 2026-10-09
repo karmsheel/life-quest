@@ -2318,6 +2318,9 @@ a {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
   gap: 0.85rem;
+  /* The containing block for a lifted card: it leaves grid flow and is placed in
+     the grid's own coordinates, so the board's auto-placement closes the gap. */
+  position: relative;
 }
 
 .home-card {
@@ -2511,6 +2514,32 @@ a.home-mini-list__link:hover {
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* While a card is being arranged the board is a surface, not a page of links:
+   nothing in it is a target, and the whole of it is being grabbed. */
+.home-dashboard__grid.is-arranging,
+.home-dashboard__grid.is-arranging * {
+  cursor: grabbing;
+}
+
+.home-dashboard__grid.is-arranging {
+  user-select: none;
+}
+
+/* The lifted card. It keeps its cell until the pointer actually moves — the
+   `position: absolute` that ends its time in the flow is written by the gesture,
+   not by this class, so a hold that has not moved cannot reflow the board under
+   the operator's hand. `outline` and not `border`, because a border would resize
+   the box the card is being dropped into and would double the inner card's own
+   hairline; the shadow is `--shadow-sm`, the ceiling the elevation ladder sets. */
+.home-pin.is-lifted {
+  z-index: 2;
+  pointer-events: none;
+  transform: scale(1.015);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  box-shadow: var(--shadow-sm);
 }
 
 .home-pin__chrome {
