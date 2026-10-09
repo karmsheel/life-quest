@@ -86,13 +86,27 @@ const NAMES = [
 
 /** The chrome each card must still offer, by kind. Unlocked only. */
 const CHROME = {
-  "sys:goal-progress": ["pin-grip", "pin-unpin"],
-  "view:financial:v-weekly": ["pin-grip", "pin-span", "pin-unpin"],
-  "page:financial:ledger": ["pin-grip", "pin-unpin"],
-  "sys:today-week": ["pin-grip", "pin-unpin"],
-  "view:financial:v-summary": ["pin-grip", "pin-span", "pin-unpin"],
-  "sys:pending-decisions": ["pin-grip", "pin-unpin"],
-  "sys:recent-log": ["pin-grip", "pin-unpin"],
+  "sys:goal-progress": ["pin-grip", "pin-menu-toggle"],
+  "view:financial:v-weekly": ["pin-grip", "pin-menu-toggle", "pin-span"],
+  "page:financial:ledger": ["pin-grip", "pin-menu-toggle"],
+  "sys:today-week": ["pin-grip", "pin-menu-toggle"],
+  "view:financial:v-summary": ["pin-grip", "pin-menu-toggle", "pin-span"],
+  "sys:pending-decisions": ["pin-grip", "pin-menu-toggle"],
+  "sys:recent-log": ["pin-grip", "pin-menu-toggle"],
+};
+
+/**
+ * What each card's menu must hold, by kind.
+ *
+ * A built-in card is app furniture, not a record, so its menu offers Archive
+ * alone; a view and a page each have something behind them, so Delete is there
+ * too. The list is exact and ordered, so a menu that grew an item nobody asked
+ * for fails by name.
+ */
+const MENU = {
+  "sys:goal-progress": ["Archive"],
+  "view:financial:v-weekly": ["Archive", "Delete"],
+  "page:financial:ledger": ["Archive", "Delete"],
 };
 
 /**
@@ -137,6 +151,29 @@ const SAMPLE = `(() => {
     strayAddButtons: document.querySelectorAll('.home-pin-add__btn').length,
     chromeBars: document.querySelectorAll('.home-pin__chrome').length,
     chromeButtons: document.querySelectorAll('.home-pin__chrome .home-pin__btn').length,
+    menuToggles: document.querySelectorAll('[data-testid="pin-menu-toggle"]').length,
+    menus: [...document.querySelectorAll('[data-testid="pin-menu"]')].map((menu) => ({
+      pinId: (menu.closest('[data-pin-id]') || {}).dataset?.pinId ?? null,
+      role: menu.getAttribute('role'),
+      items: [...menu.querySelectorAll('[role="menuitem"]')].map((b) => (b.textContent || '').trim()),
+      testids: [...menu.querySelectorAll('[role="menuitem"]')].map((b) => b.dataset.testid || null),
+      danger: [...menu.querySelectorAll('[role="menuitem"]')].map((b) => b.classList.contains('home-pin__menu-danger')),
+    })),
+    dialog: (() => {
+      const box = document.querySelector('.confirm-dialog');
+      if (!box) return null;
+      const confirm = box.querySelector('.confirm-dialog__confirm');
+      return {
+        role: box.getAttribute('role'),
+        modal: box.getAttribute('aria-modal'),
+        title: (box.querySelector('.confirm-dialog__title') || {}).textContent?.trim() ?? null,
+        message: (box.querySelector('.confirm-dialog__message') || {}).textContent?.trim() ?? null,
+        confirmLabel: confirm ? (confirm.textContent || '').trim() : null,
+        confirmAria: confirm ? confirm.getAttribute('aria-label') : null,
+        destructive: confirm ? /destructive|danger/i.test(confirm.className) : null,
+        cancel: Boolean(box.querySelector('.confirm-dialog__cancel')),
+      };
+    })(),
     chatControls: document.querySelectorAll('[data-testid="pin-chat"]').length,
     lifted: document.querySelectorAll('.home-pin.is-lifted').length,
     cards: cards.map((card) => {
@@ -156,8 +193,25 @@ const SAMPLE = `(() => {
         chromeButtons: [...card.querySelectorAll(':scope > .home-pin__tools > .home-pin__chrome .home-pin__btn')]
           .map((b) => b.dataset.testid || null)
           .sort(),
+        // The pin-off glyph this replaced is gone, and its absence is part of
+        // the claim: one removal vocabulary, in the menu.
+        unpinGlyphs: card.querySelectorAll('[data-testid="pin-unpin"]').length,
       };
     }),
+    menuToggle: (() => {
+      const el = document.querySelector('[data-pin-id="sys:today-week"] [data-testid="pin-menu-toggle"]');
+      return el
+        ? {
+            text: (el.textContent || '').trim(),
+            label: el.getAttribute('aria-label'),
+            title: el.getAttribute('title'),
+            svgs: el.querySelectorAll('svg').length,
+            icon: icon(el),
+            haspopup: el.getAttribute('aria-haspopup'),
+            expanded: el.getAttribute('aria-expanded'),
+          }
+        : null;
+    })(),
   };
 })()`;
 
@@ -310,6 +364,28 @@ const dock = (win) =>
   win.webContents.executeJavaScript("window.dashboardCardContextDock ?? null");
 const pinWrites = (win) =>
   win.webContents.executeJavaScript("window.dashboardCardContextPinWrites ?? []");
+const deletes = (win) =>
+  win.webContents.executeJavaScript("window.dashboardCardContextDeletes ?? []");
+
+/** Open one card's 3-dot menu and wait for the popup. */
+async function openMenu(win, pinId) {
+  await win.webContents.executeJavaScript(
+    `document.querySelector('[data-pin-id="${pinId}"] [data-testid="pin-menu-toggle"]').click()`,
+  );
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-pin-id="${pinId}"] [data-testid="pin-menu"]'))`,
+    `${pinId}'s menu to open`,
+  );
+}
+
+/** Click one item in the open menu. */
+async function clickMenuItem(win, pinId, testid) {
+  await win.webContents.executeJavaScript(
+    `document.querySelector('[data-pin-id="${pinId}"] [data-testid="${testid}"]').click()`,
+  );
+  await sleep(60);
+}
 
 async function main() {
   const sessionPartition = `dashboard-card-context-${Date.now()}`;
@@ -583,6 +659,223 @@ async function main() {
       `${(await pinWrites(win)).length - gripWritesBefore} write(s)`,
   );
 
+  // ── 12. the menu, and the two removals it holds ───────────────────────────
+  await render(win, false);
+  const menuBoard = await sample(win);
+  const badToggles = menuBoard.cards.filter((card) => card.chromeButtons.includes("pin-menu-toggle") === false);
+  checks.menuToggle = menuBoard.menuToggle;
+  checks.menuBoard = { menuToggles: menuBoard.menuToggles, unpinGlyphs: menuBoard.cards.map((c) => c.unpinGlyphs) };
+  check(
+    "every-card-offers-the-menu",
+    menuBoard.cards.length === SEED.length &&
+      menuBoard.menuToggles === SEED.length &&
+      badToggles.length === 0 &&
+      menuBoard.cards.every((c) => c.unpinGlyphs === 0) &&
+      menuBoard.menuToggle?.text === "" &&
+      menuBoard.menuToggle?.svgs === 1 &&
+      (menuBoard.menuToggle?.icon ?? "").includes("lucide-ellipsis-vertical") &&
+      Boolean(menuBoard.menuToggle?.label) &&
+      Boolean(menuBoard.menuToggle?.title) &&
+      menuBoard.menuToggle?.haspopup === "menu" &&
+      menuBoard.menuToggle?.expanded === "false",
+    `${menuBoard.menuToggles} trigger(s) over ${menuBoard.cards.length} card(s); ` +
+      `toggle ${JSON.stringify(menuBoard.menuToggle)}; stray unpin glyphs ` +
+      `${JSON.stringify(checks.menuBoard.unpinGlyphs)}`,
+  );
+
+  const menuHeld = {};
+  for (const [pinId, expected] of Object.entries(MENU)) {
+    await openMenu(win, pinId);
+    const open = await sample(win);
+    menuHeld[pinId] = open.menus[0] ?? null;
+    // Press the trigger again: the menu closes, and one popup is all there is.
+    await click(win, `[data-pin-id="${pinId}"] [data-testid="pin-menu-toggle"]`);
+    await waitFor(win, `document.querySelectorAll('[data-testid="pin-menu"]').length === 0`, "the menu to close");
+    if ((await sample(win)).menus.length !== 0) {
+      menuHeld[`${pinId}:stayedOpen`] = true;
+    }
+  }
+  checks.menus = menuHeld;
+  const menuProblems = Object.entries(MENU).flatMap(([pinId, expected]) => {
+    const got = menuHeld[pinId];
+    const problems = [];
+    if (got?.role !== "menu") problems.push(`${pinId} menu role ${JSON.stringify(got?.role)}`);
+    if (JSON.stringify(got?.items) !== JSON.stringify(expected)) {
+      problems.push(`${pinId} holds ${JSON.stringify(got?.items)}, expected ${JSON.stringify(expected)}`);
+    }
+    // Delete is the destructive one; Archive never is.
+    if (got?.danger?.[0] !== false) problems.push(`${pinId} Archive wore the destructive token`);
+    if (expected.includes("Delete") && got?.danger?.[1] !== true) {
+      problems.push(`${pinId} Delete did not wear the destructive token`);
+    }
+    if (expected.includes("Delete") && got?.testids?.[1] !== "pin-delete") {
+      problems.push(`${pinId} Delete item was ${JSON.stringify(got?.testids?.[1])}`);
+    }
+    return problems;
+  });
+  check("the-menu-holds-archive-and-delete-where-there-is-one", menuProblems.length === 0, menuProblems.join("; "));
+
+  // One at a time: opening a second card's menu leaves exactly one open.
+  await openMenu(win, "sys:today-week");
+  await openMenu(win, "sys:recent-log");
+  const twoMenus = await sample(win);
+  checks.oneMenuAtATime = twoMenus.menus;
+  check(
+    "one-menu-at-a-time",
+    twoMenus.menus.length === 1 && twoMenus.menus[0]?.pinId === "sys:recent-log",
+    `${twoMenus.menus.length} menu(s) open: ${JSON.stringify(twoMenus.menus.map((m) => m.pinId))}`,
+  );
+
+  // Escape closes it.
+  await win.webContents.executeJavaScript(
+    `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
+  );
+  await sleep(60);
+  const afterEscape = await sample(win);
+  check("escape-closes-the-menu", afterEscape.menus.length === 0, `${afterEscape.menus.length} menu(s) still open`);
+
+  // A real press on the board closes it too — the gesture that starts elsewhere.
+  await openMenu(win, "sys:today-week");
+  const boardPoint = await pointAt(win, ".home-dashboard__header");
+  mouse(win, "mouseDown", boardPoint.x, boardPoint.y);
+  mouse(win, "mouseUp", boardPoint.x, boardPoint.y);
+  await sleep(80);
+  const afterPress = await sample(win);
+  check(
+    "a-press-away-closes-the-menu",
+    afterPress.menus.length === 0,
+    `${afterPress.menus.length} menu(s) survived a press on the header`,
+  );
+
+  // ── 13. Archive takes the card off this board ─────────────────────────────
+  const archiveWritesBefore = (await pinWrites(win)).length;
+  await openMenu(win, "sys:today-week");
+  await clickMenuItem(win, "sys:today-week", "pin-archive");
+  await waitFor(
+    win,
+    `!document.querySelector('[data-pin-id="sys:today-week"]')`,
+    "the archived card to leave the board",
+  );
+  const archiveWrites = (await pinWrites(win)).slice(archiveWritesBefore);
+  const expectedArchive = SEED.filter((p) => p.id !== "sys:today-week");
+  checks.archiveWrites = archiveWrites;
+  check(
+    "archive-takes-the-card-off-the-board",
+    archiveWrites.length === 1 &&
+      JSON.stringify(archiveWrites[0]) === JSON.stringify(expectedArchive) &&
+      (await sample(win)).menus.length === 0,
+    `Archive wrote ${JSON.stringify(archiveWrites)}`,
+  );
+
+  // ── 14. a locked board has no menu at all ─────────────────────────────────
+  await render(win, true);
+  const lockedMenus = await sample(win);
+  checks.lockedMenus = { menuToggles: lockedMenus.menuToggles, menus: lockedMenus.menus.length, chat: lockedMenus.chatControls };
+  check(
+    "a-locked-board-has-no-menu",
+    lockedMenus.menuToggles === 0 &&
+      lockedMenus.menus.length === 0 &&
+      lockedMenus.chatControls === SEED.length,
+    `the locked board read ${JSON.stringify(checks.lockedMenus)}`,
+  );
+
+  // ── 15. Delete asks first, and only then writes ───────────────────────────
+  await render(win, false);
+  const deleteWritesBefore = (await deletes(win)).length;
+  const pinWritesBeforeDelete = (await pinWrites(win)).length;
+  await openMenu(win, "view:financial:v-weekly");
+  await clickMenuItem(win, "view:financial:v-weekly", "pin-delete");
+  await waitFor(win, `Boolean(document.querySelector('.confirm-dialog'))`, "the question to be asked");
+  const asking = await sample(win);
+  checks.asking = asking.dialog;
+  check(
+    "delete-asks-before-it-writes",
+    asking.dialog?.role === "dialog" &&
+      asking.dialog?.modal === "true" &&
+      asking.dialog?.title === "Delete “Weekly expenses”?" &&
+      /cannot be undone/i.test(asking.dialog?.message ?? "") &&
+      asking.dialog?.destructive === true &&
+      asking.dialog?.cancel === true &&
+      (await deletes(win)).length === deleteWritesBefore &&
+      (await pinWrites(win)).length === pinWritesBeforeDelete,
+    `the question read ${JSON.stringify(asking.dialog)} with ` +
+      `${(await deletes(win)).length - deleteWritesBefore} delete(s) already sent`,
+  );
+
+  // Cancelling is a no-op, and the card is untouched.
+  await win.webContents.executeJavaScript(
+    `document.querySelector('.confirm-dialog__cancel').click()`,
+  );
+  await waitFor(win, `!document.querySelector('.confirm-dialog')`, "the question to close");
+  const afterCancel = await sample(win);
+  check(
+    "cancelling-deletes-nothing",
+    afterCancel.dialog === null &&
+      (await deletes(win)).length === deleteWritesBefore &&
+      afterCancel.cards.some((c) => c.id === "view:financial:v-weekly"),
+    `Cancel left ${(await deletes(win)).length - deleteWritesBefore} delete(s) and ` +
+      `${afterCancel.cards.length} card(s)`,
+  );
+
+  // Confirming deletes the view, and the card leaves the board — through the
+  // pin board's own validation, which drops a pin whose view file is gone.
+  await openMenu(win, "view:financial:v-weekly");
+  await clickMenuItem(win, "view:financial:v-weekly", "pin-delete");
+  await waitFor(win, `Boolean(document.querySelector('.confirm-dialog'))`, "the question again");
+  await win.webContents.executeJavaScript(
+    `document.querySelector('.confirm-dialog__confirm').click()`,
+  );
+  await waitFor(
+    win,
+    `!document.querySelector('[data-pin-id="view:financial:v-weekly"]')`,
+    "the deleted view's card to leave the board",
+  );
+  const deleteWrites = (await deletes(win)).slice(deleteWritesBefore);
+  const afterDelete = await sample(win);
+  checks.deleteWrites = deleteWrites;
+  check(
+    "deleting-a-view-takes-the-card-with-it",
+    deleteWrites.length === 1 &&
+      deleteWrites[0]?.kind === "view" &&
+      deleteWrites[0]?.slug === "financial" &&
+      deleteWrites[0]?.id === "v-weekly" &&
+      afterDelete.dialog === null &&
+      afterDelete.cards.every((c) => c.id !== "view:financial:v-weekly") &&
+      afterDelete.gridCards === SEED.length - 1,
+    `the delete sent ${JSON.stringify(deleteWrites)} and left ` +
+      `${JSON.stringify(afterDelete.cards.map((c) => c.id))}`,
+  );
+
+  // ── 16. the same, through a page pin ──────────────────────────────────────
+  await render(win, false);
+  const pageDeleteBefore = (await deletes(win)).length;
+  await openMenu(win, "page:financial:ledger");
+  await clickMenuItem(win, "page:financial:ledger", "pin-delete");
+  await waitFor(win, `Boolean(document.querySelector('.confirm-dialog'))`, "the page's question");
+  const pageQuestion = await sample(win);
+  await win.webContents.executeJavaScript(
+    `document.querySelector('.confirm-dialog__confirm').click()`,
+  );
+  await waitFor(
+    win,
+    `!document.querySelector('[data-pin-id="page:financial:ledger"]')`,
+    "the deleted page's card to leave the board",
+  );
+  const pageDeletes = (await deletes(win)).slice(pageDeleteBefore);
+  checks.pageQuestion = pageQuestion.dialog;
+  checks.pageDeletes = pageDeletes;
+  check(
+    "deleting-a-page-takes-the-card-with-it",
+    pageQuestion.dialog?.title === "Delete “Ledger”?" &&
+      pageQuestion.dialog?.confirmLabel === "Delete page" &&
+      pageDeletes.length === 1 &&
+      pageDeletes[0]?.kind === "page" &&
+      pageDeletes[0]?.id === "ledger" &&
+      (await sample(win)).cards.every((c) => c.id !== "page:financial:ledger"),
+    `the page question read ${JSON.stringify(pageQuestion.dialog)} and the delete sent ` +
+      `${JSON.stringify(pageDeletes)}`,
+  );
+
   // ── 12. the deadline pin is not a card, and lays its controls out its own way
   await render(win, false, [...SEED, DEADLINE_PIN]);
   await waitFor(
@@ -617,10 +910,14 @@ async function main() {
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
 
-  // The artifact screenshot is the board with the pin board open: it is the
-  // state this feature is about, so that is what a reader should see.
+  // The artifact screenshot is the board with the pin board open and a card's
+  // menu open: both of this page's subjects in one frame, so that is what a
+  // reader should see. The card is the surviving view — the two this run deleted
+  // are really gone from the harness's vault, so the board draws six cards, which
+  // is what the app would draw too.
   await render(win, false);
   await openPinBoard(win);
+  await openMenu(win, "view:financial:v-summary");
   await win.webContents.executeJavaScript(
     `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
   );

@@ -2574,9 +2574,64 @@ a.home-mini-list__link:hover {
   gap: 0.2rem;
 }
 
+/* The chrome is the row, and it is also the popup's anchor: the menu hangs under
+   the controls that opened it. */
 .home-pin__chrome {
+  position: relative;
   display: flex;
   gap: 0.2rem;
+}
+
+/* The card's actions, under the 3-dot that opened them and over the cards below.
+   The board is a grid, so an inline menu would push its own card's neighbours
+   around instead of floating; it wears the chat list's menu idiom — the same
+   hairline, radius, paper and shadow — because it is the same kind of thing. */
+.home-pin__menu {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  right: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 6.5rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.home-pin__menu button {
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-pin__menu button:hover:not(:disabled) {
+  background: var(--selected-soft);
+}
+
+.home-pin__menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.home-pin__menu button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+/* Delete is the one item the vault cannot bring back — the view, or the page and
+   its blocks, are gone from every board — so it wears the destructive token
+   while Archive stays plain. */
+.home-pin__menu button.home-pin__menu-danger {
+  color: var(--danger);
 }
 
 .home-pin__btn {

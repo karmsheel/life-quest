@@ -15,15 +15,20 @@
  *                        base tokens judges a palette nobody runs.
  *  2. `chrome-identity` — every card's chrome is icon-only, and the icon is the
  *                        named one: `lucide-grip-vertical` for move,
- *                        `lucide-pin-off` for unpin, `lucide-maximize-2` /
- *                        `lucide-minimize-2` for the card's width. The rig reads
- *                        the class lucide-react stamps on the `<svg>`, so the
- *                        claim is "this exact icon" rather than "some svg". No
- *                        glyph character (`✕ ↑ ↓ ◧ ♭`) survives anywhere in the
- *                        chrome, which is what a half-migrated chrome fails.
- *                        The chrome is read inside the card's own tool row, which
- *                        also holds the chat control: that control is not chrome,
- *                        and this fixture is what keeps the two apart.
+ *                        `lucide-ellipsis-vertical` for the card's own menu,
+ *                        `lucide-maximize-2` / `lucide-minimize-2` for the card's
+ *                        width. The rig reads the class lucide-react stamps on
+ *                        the `<svg>`, so the claim is "this exact icon" rather
+ *                        than "some svg". No glyph character (`✕ ↑ ↓ ◧ ♭`)
+ *                        survives anywhere in the chrome, which is what a
+ *                        half-migrated chrome fails. The chrome is read inside
+ *                        the card's own tool row, which also holds the chat
+ *                        control: that control is not chrome, and this fixture is
+ *                        what keeps the two apart.
+ *                        The pin-off glyph that used to be the unpin control is
+ *                        gone: removal lives in the 3-dot menu now, as Archive
+ *                        and Delete, and `dashboard-card-context` claims what
+ *                        the menu holds.
  *
  * The Add-pin row is behind the header's toggle, so the driver asks for it before
  * reading its heading. Landing on the page with it closed is `dashboard-card-
@@ -444,7 +449,9 @@ async function waitForLift(win, pinId, timeoutMs = 3000) {
 
 /** The named icon each control must draw, per card kind. */
 function expectedIcons(pin) {
-  const expected = { "pin-grip": "lucide-grip-vertical", "pin-unpin": "lucide-pin-off" };
+  // `MoreVertical` is lucide's alias for `ellipsis-vertical`, and the class the
+  // svg carries is the icon's own name, not the component's.
+  const expected = { "pin-grip": "lucide-grip-vertical", "pin-menu-toggle": "lucide-ellipsis-vertical" };
   if (pin.kind === "view") {
     expected["pin-span"] = pin.span === 2 ? "lucide-minimize-2" : "lucide-maximize-2";
   }

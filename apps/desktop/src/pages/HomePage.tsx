@@ -5,6 +5,7 @@ import type { DecisionRecord, LifeEvent, PageListEntry, Pin } from "@lifequest/v
 import { SYSTEM_PIN_KINDS, type SystemPinKind } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { Button } from "@/components/ui/Button";
+import { useConfirm } from "@/components/ui/useConfirm";
 import { useVault } from "@/state/VaultProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
@@ -30,13 +31,19 @@ import type { SavedView } from "@lifequest/vault-core";
 type BoardView = SavedView & { domainSlug: string };
 
 export default function HomePage() {
-  const { snapshot, reloadGeneration } = useVault();
+  const { snapshot, reloadGeneration, refresh } = useVault();
   const { setContextCard, setOpen: setChatOpen } = useChatDock();
   const lens = useDomainLens();
   const title =
     lens.kind === "domain"
       ? (snapshot?.domains.find((d) => d.slug === lens.slug)?.meta.name ?? "Overview")
       : "Overview";
+  /**
+   * The app's own yes/no question, for the one thing on this page that cannot be
+   * undone. It is asked in the window rather than by the platform, so it lands
+   * over the board that asked it and a rig can answer it.
+   */
+  const { ask, dialog } = useConfirm();
 
   const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
   const [events, setEvents] = useState<LifeEvent[]>([]);
@@ -59,9 +66,26 @@ export default function HomePage() {
    * there is no file that says how somebody left a row, and this adds none.
    */
   const [addOpen, setAddOpen] = useState(false);
+  /**
+   * Which card's 3-dot menu is open, if any.
+   *
+   * One at a time, the same rule the chat list and the chain follow: two open
+   * menus on one board is not a state worth supporting. It closes when the
+   * trigger is pressed again, when another card's is, on Escape, on any press
+   * outside the menu, and when either item is chosen.
+   */
+  const [menuPinId, setMenuPinId] = useState<string | null>(null);
   const [pages, setPages] = useState<PageListEntry[]>([]);
   const [views, setViews] = useState<BoardView[]>([]);
-  const [moveBusy, setMoveBusy] = useState(false);
+  /**
+   * A board write in flight — a pin write, an arrange, or a delete.
+   *
+   * One flag for all of them, because they are one thing to the operator: while
+   * any of them is running the board must not be picked up, dropped, or written
+   * again. `usePinArrange` takes it as its `busy`, so a card being written cannot
+   * be lifted mid-flight.
+   */
+  const [boardBusy, setBoardBusy] = useState(false);
   const [installedKits, setInstalledKits] = useState<string[] | null>(null);
 
   /** A page pin's card names the page the board lists. */
@@ -80,7 +104,7 @@ export default function HomePage() {
   const arrange = usePinArrange({
     pins,
     locked,
-    busy: moveBusy,
+    busy: boardBusy,
     onCommit: (next) => persistPins(next),
   });
 
@@ -141,6 +165,37 @@ export default function HomePage() {
     void load();
   }, [load, reloadGeneration]);
 
+  /**
+   * A menu closes on anything that is not it.
+   *
+   * Escape, and any press that is not on the open menu or on a trigger: the
+   * second half is what keeps a menu from outliving the gesture that started
+   * elsewhere — a press on the board is the beginning of an arrange, a press on
+   * another card is the beginning of that card's menu, and neither should leave
+   * a popup floating over a board that has moved on.
+   *
+   * Presses *on a trigger* are exempt rather than closed: the trigger's own click
+   * decides, which is what makes pressing it again close the menu instead of
+   * closing and immediately reopening it.
+   */
+  useEffect(() => {
+    if (!menuPinId) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      if (target?.closest(".home-pin__menu, [data-testid='pin-menu-toggle']")) return;
+      setMenuPinId(null);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuPinId(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuPinId]);
+
   const boardSlug = lens.kind === "domain" ? lens.slug : null;
   const financialLive = (snapshot?.domains ?? []).some(
     (d) => d.slug === "financial" && !d.meta.archivedAt,
@@ -196,7 +251,7 @@ export default function HomePage() {
 
   async function onCycleSpan(pinId: string) {
     const target = pins.find((p) => p.id === pinId);
-    if (!target || target.kind !== "view" || moveBusy) return;
+    if (!target || target.kind !== "view" || boardBusy) return;
     const next = pins.map((p) =>
       p.id === pinId && p.kind === "view"
         ? ({ ...p, span: p.span === 2 ? 1 : 2 } as Pin)
@@ -221,7 +276,7 @@ export default function HomePage() {
     // render could still reach here: refuse locally rather than filing a
     // Decision the operator did not ask for by clicking.
     if (locked) return "locked";
-    setMoveBusy(true);
+    setBoardBusy(true);
     setPins(next);
     try {
       const res = await api().pinsSet(boardSlug, next);
@@ -236,7 +291,7 @@ export default function HomePage() {
       setPins(res.value.pins);
       return "applied";
     } finally {
-      setMoveBusy(false);
+      setBoardBusy(false);
     }
   }
 
@@ -256,8 +311,58 @@ export default function HomePage() {
     }
   }
 
-  async function onUnpin(pinId: string) {
+  /**
+   * Take one card off this board.
+   *
+   * This is the whole of "remove the card": the pin goes, the thing it draws
+   * stays. It is reversible — the Add-pin row offers the card again — which is
+   * why it asks nothing, and why Delete, which is not reversible, does.
+   */
+  async function onArchive(pinId: string) {
+    setMenuPinId(null);
     await persistPins(pins.filter((p) => p.id !== pinId));
+  }
+
+  /**
+   * Delete what a card draws — the saved view, or the page and its blocks.
+   *
+   * Asked for by name first, because this is the only thing the board can do
+   * that the vault cannot bring back. Nothing here re-pins by hand: `listPinBoard`
+   * already drops a pin whose view or page is gone, and `deletePage` strips its
+   * own page pins, so one `load()` is what makes the card leave every board that
+   * showed it — including the ones the operator is not looking at.
+   */
+  function onDeleteRequest(pin: Pin, control: HTMLElement) {
+    setMenuPinId(null);
+    const label = cardNameIn(control.closest(".home-pin")) || pin.id;
+    const view = pin.kind === "view";
+    ask({
+      title: `Delete “${label}”?`,
+      message: view
+        ? "The saved view is deleted from the vault, and the card leaves every dashboard that shows it. This cannot be undone."
+        : "The page and its blocks are deleted from the vault, and the card leaves every dashboard that shows it. This cannot be undone.",
+      confirmLabel: view ? "Delete view" : "Delete page",
+      destructive: true,
+      run: () => void runDelete(pin),
+    });
+  }
+
+  async function runDelete(pin: Pin) {
+    if (pin.kind === "system" || boardBusy) return;
+    setBoardBusy(true);
+    try {
+      const res =
+        pin.kind === "view"
+          ? await api().viewDelete(pin.domainSlug, pin.viewId)
+          : await api().pageDelete(pin.domainSlug, pin.pageId);
+      if (!res.ok) return;
+      // The board is re-read rather than patched: the vault is the truth about
+      // which cards survive a delete, and it is the read path that decides.
+      await load();
+      void refresh();
+    } finally {
+      setBoardBusy(false);
+    }
   }
 
   /**
@@ -418,7 +523,7 @@ export default function HomePage() {
               key={kind}
               className="home-pin-add__btn"
               onClick={() => onAddSystemPin(kind)}
-              disabled={moveBusy}
+              disabled={boardBusy}
             >
               {kind}
             </button>
@@ -428,7 +533,7 @@ export default function HomePage() {
               key={`${entry.domainSlug}:${entry.page.id}`}
               className="home-pin-add__btn"
               onClick={() => onAddPagePin(entry)}
-              disabled={moveBusy}
+              disabled={boardBusy}
             >
               {entry.page.title}
             </button>
@@ -438,7 +543,7 @@ export default function HomePage() {
               key={`view:${boardSlug}:${view.id}`}
               className="home-pin-add__btn home-pin-add__btn--view"
               onClick={() => onAddViewPin(view)}
-              disabled={moveBusy}
+              disabled={boardBusy}
               title="Pin this saved view to the dashboard"
             >
               {view.title}
@@ -488,8 +593,19 @@ export default function HomePage() {
               {locked ? null : (
                 <PinChrome
                   pin={pin}
-                  busy={moveBusy}
-                  onUnpin={() => void onUnpin(pin.id)}
+                  busy={boardBusy}
+                  menuOpen={menuPinId === pin.id}
+                  onToggleMenu={() =>
+                    setMenuPinId((openId) => (openId === pin.id ? null : pin.id))
+                  }
+                  onArchive={() => void onArchive(pin.id)}
+                  onDelete={
+                    // A built-in card is app furniture, not a record: there is
+                    // nothing behind it to delete, so the menu does not offer it.
+                    pin.kind === "system"
+                      ? undefined
+                      : (control) => onDeleteRequest(pin, control)
+                  }
                   onCycleSpan={() => void onCycleSpan(pin.id)}
                 />
               )}
@@ -535,6 +651,11 @@ export default function HomePage() {
       >
         {arrange.announce}
       </p>
+
+      {/* The board's own yes/no question, drawn over the window it was asked
+          from. Delete is the one thing here the vault cannot bring back, so it
+          is the one thing that asks. */}
+      {dialog}
     </div>
   );
 }

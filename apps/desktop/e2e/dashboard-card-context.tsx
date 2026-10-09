@@ -86,6 +86,8 @@ type HarnessWindow = Window & {
   dashboardCardContextSkin?: string;
   dashboardCardContextState?: BoardState;
   dashboardCardContextPinWrites?: Pin[][];
+  /** Every destructive write the page made, in order. */
+  dashboardCardContextDeletes?: { kind: "view" | "page"; slug: string; id: string }[];
   dashboardCardContextSetBoard?: (pins: Pin[], locked: boolean) => boolean;
   dashboardCardContextRender?: (generation: number) => boolean;
 };
@@ -95,6 +97,7 @@ const harness = window as HarnessWindow;
 harness.dashboardCardContextCalls = [];
 harness.dashboardCardContextUnexpectedCalls = [];
 harness.dashboardCardContextPinWrites = [];
+harness.dashboardCardContextDeletes = [];
 
 const state: BoardState = { pins: [...SEED], locked: false };
 harness.dashboardCardContextState = state;
@@ -214,6 +217,16 @@ function savedView(id: string, title: string, presentation: SavedView["presentat
 const VIEW_WEEKLY = savedView("v-weekly", "Weekly expenses", "table");
 const VIEW_SUMMARY = savedView("v-summary", "Spending by month", "metric");
 
+/**
+ * The vault this rig serves, as two mutable stores.
+ *
+ * A delete has to be able to take something *out* of the vault, or "the card
+ * leaves the board" would be a claim about a stub's bookkeeping instead of about
+ * the read path that really decides it.
+ */
+const views: SavedView[] = [VIEW_WEEKLY, VIEW_SUMMARY];
+const pages: PageListEntry[] = [...PAGES];
+
 /** The database both views read, for the card's own presentation menu. */
 const DATABASE: DatabaseMeta = {
   id: "finance:transactions",
@@ -270,25 +283,41 @@ const RUNS: Record<string, ComposedViewRunResult> = {
 };
 
 /**
+ * The board as the vault would hand it back.
+ *
+ * The same validation `listPinBoard` applies: a view or page pin whose file is
+ * gone is dropped from the read, so deleting the thing behind a card is what
+ * takes the card off the board — this rig never rewrites a pin list to make that
+ * true. A stub that answered `state.pins` verbatim would let a dead card sit on a
+ * board the real app would never draw it on, and every delete claim would be
+ * about the rig's own bookkeeping instead.
+ */
+function livePins(): Pin[] {
+  return state.pins.filter((pin) => {
+    if (pin.kind === "system") return true;
+    if (pin.kind === "view") return views.some((v) => v.id === pin.viewId);
+    return pages.some((e) => e.page.id === pin.pageId && e.domainSlug === pin.domainSlug);
+  });
+}
+
+/**
  * Every bridge method the page uses, with the value it answers. A method the
  * page calls that is not here is recorded and answered `{ ok: false }`, so the
  * run reports it by name.
  */
-function bridge(): Record<string, (...args: unknown[]) => Promise<unknown>> {
-  return {
+function bridge(): Record<string, (...args: unknown[]) => Promise<unknown>> {  return {
     vaultGetSnapshot: async () => ok(SNAPSHOT),
     vaultListRecent: async () => [],
     domainGetActive: async () => null,
     onVaultFileChanged: () => () => {},
     decisionList: async () => ok([]),
     logList: async () => ok([]),
-    pageList: async () => ok(PAGES),
-    viewList: async () => ok([VIEW_WEEKLY, VIEW_SUMMARY] as SavedView[]),
+    pageList: async () => ok(pages),
+    viewList: async () => ok(views.slice()),
     viewGet: async (_slug: unknown, viewId: unknown) => {
-      const view = [VIEW_WEEKLY, VIEW_SUMMARY].find((v) => v.id === viewId);
+      const view = views.find((v) => v.id === viewId);
       return view ? ok(view) : { ok: false, error: `View not found: ${String(viewId)}` };
-    },
-    viewRunSaved: async (slug: unknown, viewId: unknown) => {
+    },    viewRunSaved: async (slug: unknown, viewId: unknown) => {
       const run = RUNS[`${String(slug)}::${String(viewId)}`];
       return run ? ok(run) : { ok: false, error: `View not found: ${String(viewId)}` };
     },
@@ -298,7 +327,7 @@ function bridge(): Record<string, (...args: unknown[]) => Promise<unknown>> {
     deadlineMaybeNotify: async () => ok(null),
     deadlineDismiss: async () => ok(true),
     goalsApply: async () => ok({}),
-    pinsList: async () => ok({ pins: state.pins, locked: state.locked } satisfies PinBoardRead),
+    pinsList: async () => ok({ pins: livePins(), locked: state.locked } satisfies PinBoardRead),
     pinsSetLocked: async (_boardSlug: unknown, locked: unknown) => {
       state.locked = locked === true;
       return ok({ pins: state.pins, locked: state.locked } satisfies PinBoardRead);
@@ -307,6 +336,27 @@ function bridge(): Record<string, (...args: unknown[]) => Promise<unknown>> {
       harness.dashboardCardContextPinWrites!.push(pins as Pin[]);
       state.pins = pins as Pin[];
       return ok({ applied: true, pins: state.pins, locked: state.locked });
+    },
+    /**
+     * The two destructive writes, stubbed the way the vault behaves rather than
+     * the way a mock would: the view or the page is taken out of the harness's
+     * own store and nothing else is touched. `pinsList` then stops answering for
+     * the pin that pointed at it, which is `listPinBoard`'s own rule — so "the
+     * card leaves the board" is the read path's doing, not the rig's.
+     */
+    viewDelete: async (slug: unknown, viewId: unknown) => {
+      harness.dashboardCardContextDeletes!.push({ kind: "view", slug: String(slug), id: String(viewId) });
+      const index = views.findIndex((v) => v.id === viewId);
+      if (index === -1) return { ok: false, error: `View not found: ${String(viewId)}` };
+      views.splice(index, 1);
+      return ok({ id: String(viewId) });
+    },
+    pageDelete: async (slug: unknown, pageId: unknown) => {
+      harness.dashboardCardContextDeletes!.push({ kind: "page", slug: String(slug), id: String(pageId) });
+      const index = pages.findIndex((e) => e.page.id === pageId && e.domainSlug === slug);
+      if (index === -1) return { ok: false, error: `Page not found: ${String(pageId)}` };
+      pages.splice(index, 1);
+      return ok({ id: String(pageId) });
     },
   };
 }

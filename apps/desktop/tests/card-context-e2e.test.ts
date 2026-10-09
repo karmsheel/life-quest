@@ -113,6 +113,17 @@ describe("dashboard card context e2e", () => {
       "the-name-comes-off-the-heading",
       "a-locked-board-still-offers-it",
       "the-chat-control-does-not-lift-the-card",
+      "every-card-offers-the-menu",
+      "the-menu-holds-archive-and-delete-where-there-is-one",
+      "one-menu-at-a-time",
+      "escape-closes-the-menu",
+      "a-press-away-closes-the-menu",
+      "archive-takes-the-card-off-the-board",
+      "a-locked-board-has-no-menu",
+      "delete-asks-before-it-writes",
+      "cancelling-deletes-nothing",
+      "deleting-a-view-takes-the-card-with-it",
+      "deleting-a-page-takes-the-card-with-it",
       "the-deadline-pin-keeps-its-controls-out-of-the-way",
     ]);
 
@@ -174,6 +185,56 @@ describe("dashboard card context e2e", () => {
 
     // Asking about a card is not picking one up — and the hold still works.
     assert.deepEqual(report.checks.heldOnChatControl, { lifted: 0, liftedByTheHold: 1 });
+
+    // The card's own menu: Archive everywhere, Delete only where there is
+    // something behind the card, and Delete is the destructive one.
+    const menus = report.checks.menus as Record<
+      string,
+      { role: string | null; items: string[]; testids: (string | null)[]; danger: boolean[] } | undefined
+    >;
+    assert.equal(menus["sys:goal-progress"]?.items.join(","), "Archive");
+    assert.equal(menus["sys:goal-progress"]?.danger[0], false, "Archive wore the destructive token");
+    for (const id of ["view:financial:v-weekly", "page:financial:ledger"]) {
+      assert.deepEqual(menus[id]?.items, ["Archive", "Delete"], `${id}'s menu is not Archive + Delete`);
+      assert.equal(menus[id]?.danger[1], true, `${id}'s Delete is not marked destructive`);
+      assert.equal(menus[id]?.testids[1], "pin-delete");
+    }
+
+    // Archive is the old unpin: one pin write, the card gone, no question asked.
+    const archiveWrites = report.checks.archiveWrites as { id: string }[][];
+    assert.equal(archiveWrites.length, 1, "Archive did not write exactly once");
+    assert.equal(
+      archiveWrites[0]?.some((p) => p.id === "sys:today-week"),
+      false,
+      "the archived card is still in the pin list that was written",
+    );
+
+    // Delete asks by name, and writes nothing until it is answered.
+    const asking = report.checks.asking as {
+      title: string;
+      message: string;
+      confirmLabel: string;
+      destructive: boolean;
+    } | null;
+    assert.equal(asking?.title, "Delete “Weekly expenses”?", "the question did not name the card");
+    assert.match(asking?.message ?? "", /cannot be undone/i);
+    assert.equal(asking?.destructive, true, "the confirming control is not the destructive one");
+
+    // Confirming deletes the view; the card leaves the board through the pin
+    // board's own validation, not through a pin rewrite.
+    assert.deepEqual(report.checks.deleteWrites, [
+      { kind: "view", slug: "financial", id: "v-weekly" },
+    ]);
+    assert.deepEqual(report.checks.pageDeletes, [
+      { kind: "page", slug: "financial", id: "ledger" },
+    ]);
+    assert.equal(
+      (report.checks.pageQuestion as { confirmLabel: string } | null)?.confirmLabel,
+      "Delete page",
+    );
+
+    // A locked board has no menu, and still has the chat control.
+    assert.deepEqual(report.checks.lockedMenus, { menuToggles: 0, menus: 0, chat: 7 });
 
     assert.deepEqual(report.checks.unexpectedBridgeCalls, []);
     assert.deepEqual(report.checks.consoleErrors, []);
