@@ -17,6 +17,7 @@ import {
   ChevronRight,
   History,
   ImagePlus,
+  MessageSquare,
   MoreVertical,
   PanelRightOpen,
   Pencil,
@@ -35,7 +36,7 @@ import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
 import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
 import { useActiveDomain, useDashboardBoard } from "@/components/shell/useActiveDomain";
 import { useConfirm } from "@/components/ui/useConfirm";
-import { useChatDock } from "@/state/ChatDockProvider";
+import { useChatDock, type ChatCardContext } from "@/state/ChatDockProvider";
 import { useVault } from "@/state/VaultProvider";
 import type {
   ChatStreamEvent,
@@ -46,6 +47,7 @@ import type {
 import {
   formatSessionWhen,
   sessionLabel,
+  type FocusedCardContext,
 } from "../../../electron/companion-client.ts";
 
 export type ChatMessage = {
@@ -55,6 +57,31 @@ export type ChatMessage = {
   /** The receipt this turn carried, as the thread remembers it after sending. */
   receipt?: { name: string; size: number };
 };
+
+/**
+ * The dock's card, flattened for the turn.
+ *
+ * The pin travels whole through the dock because the companion's tools address a
+ * card by the pin's own ids; this is the same fact in the shape the instructions
+ * are built from. A field the pin does not have is left off rather than filled
+ * in: a system card has no `viewId`, and saying it did would invite a `save_view`
+ * that cannot work.
+ */
+function focusedCardOf(card: ChatCardContext): FocusedCardContext {
+  const pin = card.pin;
+  const shared = {
+    label: card.label,
+    pinId: pin.id,
+    boardSlug: card.boardSlug,
+  };
+  if (pin.kind === "view") {
+    return { ...shared, kind: "view", domainSlug: pin.domainSlug, viewId: pin.viewId };
+  }
+  if (pin.kind === "page") {
+    return { ...shared, kind: "page", domainSlug: pin.domainSlug, pageId: pin.pageId };
+  }
+  return { ...shared, kind: "system", domainSlug: null, system: pin.system };
+}
 
 /** Bytes as the chip says them: 287 B, 41 KB, 1.2 MB. */
 function formatReceiptSize(bytes: number): string {
@@ -163,6 +190,8 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     requestedSessionId,
     requestedKickoff,
     clearRequestedSession,
+    contextCard,
+    setContextCard,
   } = useChatDock();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessions, setSessions] = useState<HermesSession[]>([]);
@@ -601,7 +630,35 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     if (view === "thread" && (sending || !sessionId)) return;
     if (view === "chain" && chainBusy) return;
     focusComposer();
-  }, [open, view, sessionId, sending, chainBusy, asking, focusComposer]);
+    // `contextCard` is in the list because a card handed over from the Dashboard
+    // is that same moment: the field goes from "not what I am writing in" to
+    // "where I describe this card", and the operator should not have to click
+    // twice to start.
+  }, [open, view, sessionId, sending, chainBusy, asking, focusComposer, contextCard]);
+
+  /**
+   * A card handed over from the Dashboard brings the chat with it.
+   *
+   * The pill lives above the composer, so a dock sitting on the chat list would
+   * take the card and show the operator nothing — the click would look like it
+   * did nothing at all. The thread takes over, and a vault with no chats gets
+   * the empty one "New chat" would have made, because a composer with no session
+   * cannot be typed in.
+   *
+   * Only the arrival is reacted to. Taking the card off, or leaving it there,
+   * changes no surface: the operator is already where they need to be.
+   */
+  useEffect(() => {
+    if (!contextCard) return;
+    onOpenChange(true);
+    if (view !== "list") return;
+    if (sessionId) setView("thread");
+    else void newSession();
+    // Deliberately keyed on the card alone: this is "a card arrived", not "the
+    // view or the session changed" — reacting to those would fight the
+    // operator's own navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextCard]);
 
   useEffect(() => {
     return api().onCompanionStream((evt: ChatStreamEvent) => {
@@ -773,6 +830,10 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
           // And whether that board is read-only right now, which is what decides
           // between an applied change and a pending Decision.
           viewingBoardLocked: boardLocked,
+          // The card the operator put in front of this chat, if they did: the
+          // turn is then about that card and they never have to name it. Absent
+          // when nothing is in context, which is the turn it always was.
+          ...(contextCard ? { focusedCard: focusedCardOf(contextCard) } : {}),
           aboutMe: snapshot?.map?.aboutMe ?? "",
           locked: false,
           vaultOpen: Boolean(snapshot),
@@ -1779,6 +1840,35 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                   void attachReceipt(file);
                 }}
               >
+                {/*
+                  The card this chat is about, above the field.
+
+                  It sits here rather than in the transcript because it is not
+                  something either side said: it is what the next turn will be
+                  about, and it stays until the operator takes it off. The field
+                  below keeps the placeholder it always had — a card in context
+                  does not change what the composer is for, only what "this card"
+                  means inside it.
+                */}
+                {contextCard ? (
+                  <div className="chat-panel__context" data-testid="chat-context-pill">
+                    <MessageSquare size={12} aria-hidden />
+                    <span className="chat-panel__context-label" title={contextCard.label}>
+                      {contextCard.label}
+                    </span>
+                    <span className="chat-panel__context-kind">in context</span>
+                    <button
+                      type="button"
+                      className="chat-panel__context-remove"
+                      data-testid="chat-context-remove"
+                      aria-label="Remove card from context"
+                      title="Remove card from context"
+                      onClick={() => setContextCard(null)}
+                    >
+                      <X size={12} aria-hidden />
+                    </button>
+                  </div>
+                ) : null}
                 <div
                   className={
                     controlVisible

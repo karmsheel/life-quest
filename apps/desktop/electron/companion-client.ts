@@ -12,6 +12,11 @@ export type CompanionInstructionsInput = {
    * this turn" rather than as unlocked.
    */
   viewingBoardLocked?: boolean;
+  /**
+   * The one card the operator put in front of the chat, if any. Absent means
+   * nobody pointed at a card, and the turn is the turn it always was.
+   */
+  focusedCard?: FocusedCardContext | null;
   reviewContext?: string;
   /** Session pref: may this turn file an implied Decision? Omitted means on. */
   fileUnsolicited?: boolean;
@@ -22,6 +27,33 @@ export type CompanionInstructionsInput = {
    */
   attachedFile?: { relPath: string; name: string } | null;
 };
+
+/**
+ * The dashboard card the chat is about.
+ *
+ * Flat and IPC-serializable, because it crosses the renderer/main boundary on
+ * every turn. It is the pin's own identity, not a second vocabulary: the ids
+ * here are the ones `get_view` / `save_view` address a card by. `label` and
+ * `boardSlug` exist so the instruction can name the card the way the operator
+ * sees it, and say which board it is on.
+ */
+export type FocusedCardContext = {
+  /** What the board calls the card, off its own heading. */
+  label: string;
+  pinId: string;
+  kind: "system" | "view" | "page";
+  /** The board it sits on: null is the Overview board. */
+  boardSlug: string | null;
+  /** A view or page card's own domain, which is not always the board's. */
+  domainSlug: string | null;
+  /** A view card: the key `save_view` updates in place. */
+  viewId?: string;
+  /** A page card: the page it draws. */
+  pageId?: string;
+  /** A built-in card: which one, e.g. "goal-progress". */
+  system?: string;
+};
+
 
 /** One receipt riding a turn: what the model sees, and where the original is. */
 export type TurnAttachment = {
@@ -356,6 +388,54 @@ export function messagesFromPayload(
   return value;
 }
 
+/**
+ * The one card the operator put in front of this chat, said in the terms that
+ * card can actually be changed in.
+ *
+ * The three kinds of card are changed three different ways, so one generic "a
+ * card is in context" would teach a model to offer the wrong tool: a built-in
+ * card has no spec for `save_view` to rewrite, and a page card is not a view at
+ * all. Each branch names the card, says what "it" means, and gives the path that
+ * works — or says plainly that there is not one, which is the honest answer and
+ * the one that keeps a promise from being made and then broken.
+ */
+function focusedCardLine(card: FocusedCardContext): string {
+  const where =
+    card.boardSlug === null
+      ? "the Overview dashboard"
+      : `the ${card.boardSlug} dashboard`;
+  const ids =
+    card.kind === "view"
+      ? `(pinId "${card.pinId}", viewId "${card.viewId}", domainSlug "${card.domainSlug}")`
+      : card.kind === "page"
+        ? `(pinId "${card.pinId}", pageId "${card.pageId}", domainSlug "${card.domainSlug}")`
+        : `(pinId "${card.pinId}", built-in card "${card.system}")`;
+  const named = `the card titled "${card.label}" on ${where}`;
+  const means = `When the operator says "this card", "it", or "this block", they mean that one — do not ask which card they mean.`;
+  const opening = `The operator has put ONE dashboard card in front of this chat as context: ${named} ${ids}.`;
+  if (card.kind === "view") {
+    return [
+      opening,
+      means,
+      "Read it with get_view, then change it in place with save_view carrying the same viewId and the same boardSlug — that updates the card where it already sits.",
+      "save_view's reply carries the card's own rows, so explain the figures from that rather than reading them yourself.",
+    ].join(" ");
+  }
+  if (card.kind === "page") {
+    return [
+      opening,
+      means,
+      "It is a page card, not a saved view: it has no viewId and save_view cannot change it, so read the page and edit the page instead.",
+    ].join(" ");
+  }
+  return [
+    opening,
+    means,
+    "It is a built-in board card, not a saved view: it has no viewId and save_view cannot change it, so do not offer a spec for it.",
+    "Say what it draws from the records behind it, and change those records with the tool that owns them.",
+  ].join(" ");
+}
+
 export function buildInstructions(input: CompanionInstructionsInput): string {
   const domain =
     input.domainName || input.domainSlug
@@ -408,6 +488,11 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
         "If the image does not give you an amount or an account, ask and post no row; the stored file stays.",
       ].join(" ")
     : "";
+  // The one card the operator pointed at, if they pointed at one. Absent is the
+  // ordinary turn and must stay the ordinary turn: no line, no change in shape.
+  const focusedCard = input.focusedCard
+    ? focusedCardLine(input.focusedCard)
+    : "";
   const base = [
     "You are chatting inside the LifeQuest app.",
     `Active domain: ${domain}`,
@@ -427,6 +512,7 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     "arrange_dashboard is for reordering or unpinning cards that already exist, and it takes the COMPLETE pin list from get_dashboard. It is not how you add a new card: save_view is. On a locked board neither one writes — both file a Decision.",
     boardLine,
     boardLock,
+    focusedCard,
     ...fenceRule,
   ].filter(Boolean).join("\n");
   const reviewContext = input.reviewContext?.trim();

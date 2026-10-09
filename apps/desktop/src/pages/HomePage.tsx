@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Pin as PinIcon } from "lucide-react";
+import { MessageSquare, Pin as PinIcon } from "lucide-react";
 import type { DecisionRecord, LifeEvent, PageListEntry, Pin } from "@lifequest/vault-core";
 import { SYSTEM_PIN_KINDS, type SystemPinKind } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { Button } from "@/components/ui/Button";
 import { useVault } from "@/state/VaultProvider";
+import { useChatDock } from "@/state/ChatDockProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { GoalProgressCard } from "@/pages/home-pins/GoalProgressCard";
 import { DeadlineBanner } from "@/pages/home-pins/DeadlineBanner";
@@ -15,6 +16,7 @@ import { TodayWeekCard } from "@/pages/home-pins/TodayWeekCard";
 import { RecentLogCard } from "@/pages/home-pins/RecentLogCard";
 import { ActiveAgentsCard } from "@/pages/home-pins/ActiveAgentsCard";
 import { PinChrome } from "@/components/home/PinChrome";
+import { cardNameIn } from "@/components/home/card-name";
 import { usePinArrange, type CommitOutcome } from "@/components/home/usePinArrange";
 import { ViewCard } from "@/components/ui/ViewCard";
 import type { SavedView } from "@lifequest/vault-core";
@@ -29,6 +31,7 @@ type BoardView = SavedView & { domainSlug: string };
 
 export default function HomePage() {
   const { snapshot, reloadGeneration } = useVault();
+  const { setContextCard, setOpen: setChatOpen } = useChatDock();
   const lens = useDomainLens();
   const title =
     lens.kind === "domain"
@@ -46,6 +49,16 @@ export default function HomePage() {
    */
   const [locked, setLocked] = useState(false);
   const [lockBusy, setLockBusy] = useState(false);
+  /**
+   * Whether the pin board is showing.
+   *
+   * The row is furniture for a control used once in a while, and below a board of
+   * seven cards it sat off the bottom of the window — so the operator had to
+   * scroll past everything they own to add anything. It is a header control now,
+   * closed on landing, and the board is the page. Live state, not a preference:
+   * there is no file that says how somebody left a row, and this adds none.
+   */
+  const [addOpen, setAddOpen] = useState(false);
   const [pages, setPages] = useState<PageListEntry[]>([]);
   const [views, setViews] = useState<BoardView[]>([]);
   const [moveBusy, setMoveBusy] = useState(false);
@@ -247,6 +260,24 @@ export default function HomePage() {
     await persistPins(pins.filter((p) => p.id !== pinId));
   }
 
+  /**
+   * Hand one card to the chat.
+   *
+   * The name travels with the pin, and it is read off the card the control sits
+   * in rather than rebuilt from the pin: the heading is what the operator is
+   * looking at, and the companion has to be told about the card in front of
+   * them. The dock opens on the way — a card in context that the operator cannot
+   * see the pill for is a click that appears to do nothing.
+   */
+  function onChatAbout(pin: Pin, control: HTMLElement) {
+    setContextCard({
+      pin,
+      label: cardNameIn(control.closest(".home-pin")) || pin.id,
+      boardSlug,
+    });
+    setChatOpen(true);
+  }
+
   async function onAddSystemPin(kind: SystemPinKind) {
     const newPin: Pin = { id: `sys:${kind}`, kind: "system", system: kind };
     await persistPins([...pins, newPin]);
@@ -309,6 +340,17 @@ export default function HomePage() {
   const availableKinds = availableSystemKinds();
   const addablePages = availablePagePins();
   const addableViews = availableViewPins();
+  /**
+   * Whether there is an add path at all.
+   *
+   * A locked board has none: the board is read-only, and an "Add pin" that
+   * silently filed a Decision would be a second, hidden way to propose what the
+   * Lock button already says is not editable. A board with everything already
+   * pinned has none either — there is nothing to offer.
+   */
+  const canAdd =
+    !locked &&
+    (availableKinds.length > 0 || addablePages.length > 0 || addableViews.length > 0);
 
   return (
     <div className="home-dashboard">
@@ -334,7 +376,22 @@ export default function HomePage() {
               : "This dashboard is unlocked. You and the companion change it in place."}
           </p>
         </div>
-        <div className="home-dashboard__lock">
+        <div className="home-dashboard__controls">
+          {/* The pin board's own control, at the top of the page with the page's
+              other controls. It is absent exactly when the row would be empty:
+              a locked board is not editable here, and a board with everything
+              pinned has nothing left to offer. */}
+          {canAdd ? (
+            <Button
+              variant="outline"
+              aria-expanded={addOpen}
+              data-testid="board-add-toggle"
+              onClick={() => setAddOpen((wasOpen) => !wasOpen)}
+            >
+              <PinIcon size={13} aria-hidden />
+              {addOpen ? "Hide pin board" : "Pin board"}
+            </Button>
+          ) : null}
           <Button
             variant={locked ? "primary" : "outline"}
             onClick={() => void onToggleLock()}
@@ -346,64 +403,8 @@ export default function HomePage() {
         </div>
       </header>
 
-      <div
-        className={arrange.isArranging ? "home-dashboard__grid is-arranging" : "home-dashboard__grid"}
-        ref={arrange.gridRef}
-        {...arrange.gridHandlers}
-      >
-        {arrange.order.map((pin) => (
-          <div
-            key={pin.id}
-            data-pin-id={pin.id}
-            className={[
-              "home-pin",
-              pin.kind === "view" && pin.span === 2 ? "home-pin--span2" : "",
-              arrange.isLifted(pin.id) ? "is-lifted" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            {locked ? null : (
-              <PinChrome
-                pin={pin}
-                busy={moveBusy}
-                onUnpin={() => void onUnpin(pin.id)}
-                onCycleSpan={() => void onCycleSpan(pin.id)}
-              />
-            )}
-            {renderPin(pin)}
-          </div>
-        ))}
-
-        <div className="home-pin">
-          <ActiveAgentsCard />
-        </div>
-        </div>
-
-        {showFinanceInstall ? (
-        <section className="home-card home-rail__finance-cta">
-          <h2 className="home-card__title">Finance</h2>
-          <p className="home-card__empty">
-            Install the kit into the Financial domain. It adds the ledger databases and starter pages.
-          </p>
-          <Button
-            variant="primary"
-            className="home-dashboard__submit"
-            onClick={async () => {
-              const res = await api().kitInstallFinance();
-              if (res.ok) await load();
-            }}
-          >
-            Install Finance kit
-          </Button>
-        </section>
-        ) : null}
-
-      {/* A locked board has no Add-pin row at all: the board is read-only, and
-          an "Add pin" that silently filed a Decision would be a second, hidden
-          way to propose what the Lock button already says is not editable. */}
-      {!locked &&
-      (availableKinds.length > 0 || addablePages.length > 0 || addableViews.length > 0) ? (
+      {/* The pin board, above the board it adds to. */}
+      {canAdd && addOpen ? (
         <section className="home-card home-pin-add" data-testid="board-add-pin">
           {/* One pin vocabulary: the row that puts a card on wears the same
               pin the chrome takes it off with. */}
@@ -446,6 +447,80 @@ export default function HomePage() {
           </div>
         </section>
       ) : null}
+
+      <div
+        className={arrange.isArranging ? "home-dashboard__grid is-arranging" : "home-dashboard__grid"}
+        ref={arrange.gridRef}
+        {...arrange.gridHandlers}
+      >
+        {arrange.order.map((pin) => (
+          <div
+            key={pin.id}
+            data-pin-id={pin.id}
+            className={[
+              "home-pin",
+              pin.kind === "view" && pin.span === 2 ? "home-pin--span2" : "",
+              arrange.isLifted(pin.id) ? "is-lifted" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            {/*
+              The card's own controls, in one row in the corner.
+
+              The chat control is NOT part of `.home-pin__chrome`: that is the
+              board-editing chrome, and the lock takes it away. Asking the
+              companion about a card is not changing it, so the chat control
+              survives the lock — which is exactly why it is a sibling of the
+              chrome rather than the fourth button inside it.
+            */}
+            <div className="home-pin__tools">
+              <button
+                type="button"
+                className="home-pin__btn home-pin__chat"
+                data-testid="pin-chat"
+                aria-label="Ask the companion about this card"
+                title="Ask the companion about this card"
+                onClick={(e) => onChatAbout(pin, e.currentTarget)}
+              >
+                <MessageSquare size={14} aria-hidden />
+              </button>
+              {locked ? null : (
+                <PinChrome
+                  pin={pin}
+                  busy={moveBusy}
+                  onUnpin={() => void onUnpin(pin.id)}
+                  onCycleSpan={() => void onCycleSpan(pin.id)}
+                />
+              )}
+            </div>
+            {renderPin(pin)}
+          </div>
+        ))}
+
+        <div className="home-pin">
+          <ActiveAgentsCard />
+        </div>
+        </div>
+
+        {showFinanceInstall ? (
+        <section className="home-card home-rail__finance-cta">
+          <h2 className="home-card__title">Finance</h2>
+          <p className="home-card__empty">
+            Install the kit into the Financial domain. It adds the ledger databases and starter pages.
+          </p>
+          <Button
+            variant="primary"
+            className="home-dashboard__submit"
+            onClick={async () => {
+              const res = await api().kitInstallFinance();
+              if (res.ok) await load();
+            }}
+          >
+            Install Finance kit
+          </Button>
+        </section>
+        ) : null}
 
       {/* Arranging is a gesture, so its outcome is not visible in the chrome the
           way a button's is: this line is how a keyboard or screen-reader

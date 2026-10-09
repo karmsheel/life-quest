@@ -122,6 +122,7 @@ const SAMPLE = `(() => {
     chrome: document.querySelectorAll(".home-pin__chrome").length,
     pinCount: document.querySelectorAll(".home-dashboard__grid > .home-pin").length,
     addPin: Boolean(document.querySelector('[data-testid="board-add-pin"]')),
+    addToggle: Boolean(document.querySelector('[data-testid="board-add-toggle"]')),
   };
 })()`;
 
@@ -273,11 +274,13 @@ async function main() {
   if (board.locked !== "false") failure(`the Overview board read locked=${JSON.stringify(board.locked)}`);
   if (board.toggle !== "Lock") failure(`the live board's control read ${JSON.stringify(board.toggle)}`);
   if (board.chrome === 0) failure("the live unlocked board drew no pin chrome");
-  // The Add-pin row only renders when something is left to pin, and this board
-  // already carries every system pin, every finance page and the new card — so
-  // its absence here is the honest answer, not a lock. The chrome count above
-  // is what proves the unlocked board is editable.
+  // Adding is a control now, not a permanent row: it is offered at the top of
+  // the page and draws the row when asked. This board already carries every
+  // system pin, every finance page and the new card, so nothing is left to pin —
+  // and the honest answer to "is there an add path?" is no control at all. The
+  // chrome count above is what proves the unlocked board is editable.
   checks.addPinRowOffered = board.addPin;
+  checks.pinBoardOffered = board.addToggle;
 
   // ── the lock toggle, over the real IPC channel ───────────────────────────
   // `pins:setLocked` is the one channel this feature adds; a rig with a stubbed

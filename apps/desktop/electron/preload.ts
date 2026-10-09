@@ -329,6 +329,18 @@ const lifequest = {
     instructionsContext: {
       domainName: string | null;
       domainSlug: string | null;
+      viewingBoard?: string | null;
+      viewingBoardLocked?: boolean;
+      focusedCard?: {
+        label: string;
+        pinId: string;
+        kind: "system" | "view" | "page";
+        boardSlug: string | null;
+        domainSlug: string | null;
+        viewId?: string;
+        pageId?: string;
+        system?: string;
+      } | null;
       aboutMe: string;
       locked: boolean;
       vaultOpen: boolean;

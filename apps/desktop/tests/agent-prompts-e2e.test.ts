@@ -237,6 +237,87 @@ describe("companion prompts e2e", () => {
     assert.equal(checks.lockedLine, true, "a locked board is not named as locked in the instructions");
     assert.equal(/UNLOCKED/.test(lockedText), false, "a locked board is described as unlocked");
 
+    // ── 8. the card the operator put in front of the chat ─────────────────
+    // The whole point of the pill is that the operator never has to describe
+    // the card. Three kinds of card are changed three different ways, and the
+    // instructions have to say the one that actually works for the card in hand.
+    const viewCard = buildInstructions({
+      ...context,
+      focusedCard: {
+        label: "Weekly expenses",
+        pinId: "view:financial:v-weekly",
+        kind: "view",
+        boardSlug: null,
+        domainSlug: "financial",
+        viewId: "v-weekly",
+      },
+    });
+    checks.focusedView = {
+      names: viewCard.includes('the card titled "Weekly expenses"'),
+      ids: viewCard.includes('viewId "v-weekly"') && viewCard.includes('domainSlug "financial"'),
+      board: viewCard.includes("the Overview dashboard"),
+      means: /"this card", "it", or "this block"/.test(viewCard),
+      changePath: /get_view/.test(viewCard) && /save_view carrying the same viewId/.test(viewCard),
+    };
+    assert.equal(checks.focusedView.names, true, "the card in context is not named");
+    assert.equal(checks.focusedView.ids, true, "the card's own ids are missing");
+    assert.equal(checks.focusedView.board, true, "the board the card sits on is not named");
+    assert.equal(checks.focusedView.means, true, "the instructions never say what 'this card' means");
+    assert.equal(checks.focusedView.changePath, true, "the in-place change path is not taught");
+
+    const systemCard = buildInstructions({
+      ...context,
+      focusedCard: {
+        label: "Goals",
+        pinId: "sys:goal-progress",
+        kind: "system",
+        boardSlug: "financial",
+        domainSlug: null,
+        system: "goal-progress",
+      },
+    });
+    checks.focusedSystem = {
+      names: systemCard.includes('the card titled "Goals"'),
+      board: systemCard.includes("the financial dashboard"),
+      noSpec: /no viewId and save_view cannot change it/.test(systemCard),
+    };
+    assert.equal(checks.focusedSystem.names, true, "the built-in card is not named");
+    assert.equal(checks.focusedSystem.board, true, "the board the built-in card sits on is not named");
+    assert.equal(
+      checks.focusedSystem.noSpec,
+      true,
+      "a built-in card was offered a view spec it does not have",
+    );
+
+    const pageCard = buildInstructions({
+      ...context,
+      focusedCard: {
+        label: "Ledger",
+        pinId: "page:financial:ledger",
+        kind: "page",
+        boardSlug: "financial",
+        domainSlug: "financial",
+        pageId: "ledger",
+      },
+    });
+    checks.focusedPage = {
+      names: pageCard.includes('the card titled "Ledger"'),
+      isAPage: /It is a page card, not a saved view/.test(pageCard),
+      noSpec: /save_view cannot change it/.test(pageCard),
+    };
+    assert.equal(checks.focusedPage.names, true, "the page card is not named");
+    assert.equal(checks.focusedPage.isAPage, true, "a page card was described as a view");
+
+    // And the ordinary turn — nobody pointed at a card — is unchanged: no line,
+    // and not even the word.
+    checks.noCardLine =
+      !/in front of this chat as context/.test(text) && !/focusedCard/.test(text);
+    assert.equal(
+      checks.noCardLine,
+      true,
+      "a turn with no card in context still carried the card line",
+    );
+
     // ── 7. the skill parser reads a real frontmatter block ───────────────
     checks.frontmatter = parseSkillFrontmatter(skillFile("demo", "A description"));
     assert.equal(checks.frontmatter.name, "demo");

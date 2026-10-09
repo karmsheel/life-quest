@@ -53,6 +53,7 @@ type BoardSample = {
   badgeLocked: string | null;
   toggle: string | null;
   hint: string | null;
+  addToggle: boolean;
   addPinRow: boolean;
   pins: number;
   chrome: number;
@@ -64,6 +65,7 @@ type Report = {
   failures: string[];
   checks: {
     unlocked: BoardSample;
+    openedPinBoard: BoardSample;
     locked: BoardSample;
     toggleCalls: { locked: boolean; boardSlug: string | null }[];
     afterUnlockClick: BoardSample;
@@ -95,17 +97,22 @@ describe("dashboard lock ui e2e", () => {
     assert.equal(report.pass, true);
     assert.equal(exitCode, 0, "driver exited non-zero");
 
-    // The unlocked board is editable, and says so.
+    // The unlocked board is editable, and says so. The pin board is a control
+    // now: it is offered closed, and asking for it is what draws the row.
     assert.equal(report.checks.unlocked.badge, "Unlocked");
     assert.equal(report.checks.unlocked.badgeLocked, "false");
     assert.equal(report.checks.unlocked.toggle, "Lock");
-    assert.equal(report.checks.unlocked.addPinRow, true, "an unlocked board hid the Add-pin row");
+    assert.equal(report.checks.unlocked.addToggle, true, "an unlocked board offered no pin board");
+    assert.equal(report.checks.unlocked.addPinRow, false, "the pin board was open on landing");
+    assert.equal(report.checks.openedPinBoard.addPinRow, true, "the control did not draw the row");
+    assert.ok(report.checks.openedPinBoard.strayAddButtons > 0, "the row offered nothing to add");
     assert.ok(report.checks.unlocked.chrome > 0, "an unlocked board drew no pin chrome");
 
     // The locked board is read-only: this is the claim the feature rests on.
     assert.equal(report.checks.locked.badge, "Locked");
     assert.equal(report.checks.locked.badgeLocked, "true");
     assert.equal(report.checks.locked.toggle, "Unlock");
+    assert.equal(report.checks.locked.addToggle, false, "a locked board still offered a pin board");
     assert.equal(report.checks.locked.addPinRow, false, "a locked board still offered Add pin");
     assert.equal(report.checks.locked.chrome, 0, "a locked board is still editable");
     assert.equal(report.checks.locked.chromeButtons, 0);
@@ -121,7 +128,16 @@ describe("dashboard lock ui e2e", () => {
     // The control is a real write to the board, and it toggles back.
     assert.deepEqual(report.checks.toggleCalls, [{ locked: false, boardSlug: null }]);
     assert.equal(report.checks.afterUnlockClick.badge, "Unlocked");
-    assert.equal(report.checks.afterUnlockClick.addPinRow, true, "unlocking did not restore Add pin");
+    assert.equal(
+      report.checks.afterUnlockClick.addToggle,
+      true,
+      "unlocking did not restore the pin-board control",
+    );
+    assert.equal(
+      report.checks.afterUnlockClick.addPinRow,
+      false,
+      "unlocking left the pin board open by itself",
+    );
 
     // Nothing reached the bridge that this rig does not model, and no pin write
     // was attempted while the board was locked.

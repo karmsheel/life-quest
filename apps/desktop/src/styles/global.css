@@ -2264,7 +2264,9 @@ a {
   flex-wrap: wrap;
 }
 
-.home-dashboard__lock {
+/* The header's controls: the pin board's toggle and the page lock. Two controls
+   with nothing in common but their place, which is the top of the page. */
+.home-dashboard__controls {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -2557,11 +2559,22 @@ a.home-mini-list__link:hover {
   box-shadow: var(--shadow-sm);
 }
 
-.home-pin__chrome {
+/* The card's control row, in the corner. It is the positioned box, and the
+   chrome is a row inside it, because the row now holds two different kinds of
+   control: the board-editing chrome (`PinChrome`, which the lock takes away) and
+   the chat control, which survives the lock. `.home-pin__chrome` therefore still
+   means "board-editing chrome" — a locked board draws none of them — while the
+   operator keeps a way to ask about the card in front of them. */
+.home-pin__tools {
   position: absolute;
   z-index: 1;
   top: 0.5rem;
   right: 0.5rem;
+  display: flex;
+  gap: 0.2rem;
+}
+
+.home-pin__chrome {
   display: flex;
   gap: 0.2rem;
 }
@@ -2624,14 +2637,18 @@ a.home-mini-list__link:hover {
   outline-offset: 1px;
 }
 
-/* Three icon buttons wide (move, width, unpin) plus the chrome's own inset:
-   the title clears them instead of running underneath. */
-.home-pin:has(.home-pin__chrome) .home-card__title,
-.home-pin:has(.home-pin__chrome) .home-dashboard__progress {
-  padding-right: 5.6rem;
+/* Four icon buttons wide (chat, move, width, unpin) plus the row's own inset:
+   the title clears them instead of running underneath. The reserve follows the
+   row rather than the chrome, because the chat control is the one button that is
+   still there when the chrome is not. */
+.home-pin:has(.home-pin__tools) .home-card__title,
+.home-pin:has(.home-pin__tools) .home-dashboard__progress {
+  padding-right: 7.4rem;
 }
 
-.home-pin:has(.deadline-banner) .home-pin__chrome {
+/* The deadline banner is not a card: it has no padded shell for a corner row to
+   sit in, so its controls take a line of their own above it. */
+.home-pin:has(.deadline-banner) .home-pin__tools {
   position: static;
   justify-content: flex-end;
   margin-bottom: 0.35rem;
@@ -3824,6 +3841,67 @@ button.chat-panel__activity-line:hover {
 .chat-panel__action:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* The card this chat is about, above the field. It wears the receipt's own
+   shape — a pill with a hairline tinted by the accent, one icon, one ellipsized
+   name and a small remove — because it is the same kind of thing: something the
+   operator put in front of the turn and can take back. */
+.chat-panel__context {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0.15rem 0.3rem 0.15rem 0.5rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  background: var(--bg-muted);
+  color: var(--muted);
+}
+
+.chat-panel__context-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.chat-panel__context-kind {
+  flex: none;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.chat-panel__context-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chat-panel__context-remove:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+}
+
+.chat-panel__context-remove:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 
 .chat-panel__composer {

@@ -98,11 +98,31 @@ type CompanionInstructionsContext = {
    * view, which gates nothing.
    */
   viewingBoardLocked?: boolean;
+  /** The one dashboard card the operator put in front of this chat, if any. */
+  focusedCard?: FocusedCardContext | null;
   aboutMe: string;
   locked: boolean;
   vaultOpen: boolean;
   reviewContext?: string;
   fileUnsolicited?: boolean;
+};
+
+/**
+ * The dashboard card the chat is about, in the flat shape the per-turn
+ * instructions are built from. Its ids are the ones the companion's card tools
+ * address a view by, so the model is told how to change the card it was given.
+ */
+type FocusedCardContext = {
+  /** What the board calls the card, read off its own heading. */
+  label: string;
+  pinId: string;
+  kind: "system" | "view" | "page";
+  /** The board it sits on: null is the Overview board. */
+  boardSlug: string | null;
+  domainSlug: string | null;
+  viewId?: string;
+  pageId?: string;
+  system?: string;
 };
 
 type ChatStreamEvent =
@@ -535,6 +555,7 @@ export type {
   CompanionRuntimeOverride,
   CompanionSkill,
   CompanionStatus,
+  FocusedCardContext,
   HermesSession,
   LifequestApi,
   RecentVaultEntry,

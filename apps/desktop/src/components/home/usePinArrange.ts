@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { Pin } from "@lifequest/vault-core";
 import { insertionIndex, movePin, type SlotRect } from "@/components/home/pin-order";
+import { cardNameIn } from "@/components/home/card-name";
 
 /** How far into the scrollport's edge a drag starts scrolling the board. */
 const AUTOSCROLL_BAND_PX = 56;
@@ -166,16 +167,12 @@ function cardIn(grid: HTMLElement | null, pinId: string): HTMLElement | null {
 
 /**
  * What a card is called, for the one place a card is spoken rather than drawn.
- *
- * Read off the card's own heading rather than rebuilt from the pin: the heading
- * is what the operator can see, so it cannot drift from what they are being told.
- * A card's heading is the only name it has, and a spoken name that disagrees with
- * the screen is worse than no name at all.
+ * The reader itself lives in `card-name.ts`, because the chat names a card too
+ * and the two must not drift; a card that painted no heading falls back to its
+ * id, which is what a screen reader would have had before this existed.
  */
 function cardName(grid: HTMLElement | null, pinId: string): string {
-  const card = cardIn(grid, pinId);
-  const heading = card?.querySelector<HTMLElement>(".home-card__title, .view-card__title");
-  return heading?.textContent?.trim() || pinId;
+  return cardNameIn(cardIn(grid, pinId)) || pinId;
 }
 
 /**

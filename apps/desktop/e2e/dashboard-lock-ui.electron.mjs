@@ -12,12 +12,14 @@
  * What this rig claims, and what makes each claim falsifiable:
  *
  *  1. UNLOCKED, the board is editable: the badge reads Unlocked, the header
- *     control offers Lock, the Add-pin row is present, and every pin carries its
- *     unpin / move chrome. Removing the `locked` gate from any of those renders
- *     the locked sample with editable chrome, which fails.
- *  2. LOCKED, the board is read-only: badge Locked, control offers Unlock, no
- *     Add-pin row, NO pin chrome at all, and the hint says where the companion's
- *     changes go. This is the claim the whole feature rests on.
+ *     control offers Lock, the pin board is offered (closed, and it draws its row
+ *     when asked), and every pin carries its unpin / move chrome. Removing the
+ *     `locked` gate from any of those renders the locked sample with editable
+ *     chrome, which fails.
+ *  2. LOCKED, the board is read-only: badge Locked, control offers Unlock, NO
+ *     pin-board control at all, no Add-pin row, NO pin chrome at all, and the
+ *     hint says where the companion's changes go. This is the claim the whole
+ *     feature rests on.
  *  3. The toggle is a real write: clicking it records exactly one
  *     `pinsSetLocked` call carrying the board slug and the new value, and the
  *     page re-renders to the new state.
@@ -62,6 +64,10 @@ const SAMPLE = `(() => {
     badgeClass: badge ? badge.className : null,
     toggle: toggle ? toggle.textContent.trim() : null,
     hint: text('[data-testid="board-lock-hint"]'),
+    // The pin board is a header control now, closed on landing, so "is Add pin
+    // offered?" is two facts: is the control there, and does asking for it draw
+    // the row? Both are recorded, and both are asserted.
+    addToggle: Boolean(document.querySelector('[data-testid="board-add-toggle"]')),
     addPinRow: Boolean(document.querySelector('[data-testid="board-add-pin"]')),
     pins: document.querySelectorAll(".home-dashboard__grid > .home-pin").length,
     chrome: document.querySelectorAll(".home-pin__chrome").length,
@@ -173,9 +179,29 @@ async function main() {
   if (unlocked.toggle !== "Lock") {
     failure(`the unlocked board's control read ${JSON.stringify(unlocked.toggle)}`);
   }
-  if (!unlocked.addPinRow) failure("the unlocked board has no Add-pin row");
+  if (!unlocked.addToggle) {
+    failure("the unlocked board offered no pin-board control at all");
+  }
+  if (unlocked.addPinRow) {
+    failure("the unlocked board landed with its pin board already open");
+  }
   if (unlocked.chrome === 0) failure("the unlocked board drew no pin chrome");
   if (unlocked.chromeButtons === 0) failure("the unlocked board's pin chrome has no buttons");
+
+  // 1b. And the control really draws the row. Without this, "an unlocked board
+  //     offers Add pin" would be a claim about a button nobody pressed.
+  await win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="board-add-toggle"]').click()`,
+  );
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="board-add-pin"]'))`,
+    "the pin board to open on the unlocked board",
+  );
+  const opened = await win.webContents.executeJavaScript(SAMPLE);
+  checks.openedPinBoard = opened;
+  if (!opened.addPinRow) failure("the pin-board control did not draw the Add-pin row");
+  if (opened.strayAddButtons === 0) failure("the opened Add-pin row offered nothing to add");
 
   // ── 2. LOCKED: read-only ──────────────────────────────────────────────────
   const locked = await render(win, true);
@@ -188,6 +214,9 @@ async function main() {
   }
   if (locked.toggle !== "Unlock") {
     failure(`the locked board's control read ${JSON.stringify(locked.toggle)}`);
+  }
+  if (locked.addToggle) {
+    failure("a locked board still offered the pin-board control");
   }
   if (locked.addPinRow) failure("a locked board still offered the Add-pin row");
   if (locked.chrome !== 0) {
@@ -241,8 +270,24 @@ async function main() {
     failure("unlocking did not restore the pin chrome");
   }
   checks.afterUnlockClick = await win.webContents.executeJavaScript(SAMPLE);
-  if (checks.afterUnlockClick.addPinRow !== true) {
-    failure("unlocking did not restore the Add-pin row");
+  if (checks.afterUnlockClick.addToggle !== true) {
+    failure("unlocking did not restore the pin-board control");
+  }
+  // Unlocking restores the *offer*, not an open row: the pin board is a control
+  // the operator opens, so a fresh unlocked render lands closed like any other.
+  if (checks.afterUnlockClick.addPinRow !== false) {
+    failure("unlocking left the pin board open on its own");
+  }
+  await win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="board-add-toggle"]').click()`,
+  );
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="board-add-pin"]'))`,
+    "the restored pin-board control to draw the row",
+  );
+  if ((await win.webContents.executeJavaScript(SAMPLE)).addPinRow !== true) {
+    failure("the restored pin-board control did not draw the Add-pin row");
   }
 
   // ── 5. nothing unexpected, nothing on fire ────────────────────────────────
@@ -276,8 +321,8 @@ async function main() {
   const image = await win.webContents.capturePage();
   fs.writeFileSync(path.join(artifactsDir, "dashboard-lock-ui.png"), image.toPNG());
 
-  console.log(`unlocked: badge ${unlocked.badge}, control ${unlocked.toggle}, chrome ${unlocked.chrome}, add-pin ${unlocked.addPinRow}`);
-  console.log(`locked:   badge ${locked.badge}, control ${locked.toggle}, chrome ${locked.chrome}, add-pin ${locked.addPinRow}`);
+  console.log(`unlocked: badge ${unlocked.badge}, control ${unlocked.toggle}, chrome ${unlocked.chrome}, pin-board ${unlocked.addToggle} (row ${unlocked.addPinRow})`);
+  console.log(`locked:   badge ${locked.badge}, control ${locked.toggle}, chrome ${locked.chrome}, pin-board ${locked.addToggle} (row ${locked.addPinRow})`);
   console.log(`toggle:   ${JSON.stringify(calls)}`);
   console.log(`failures: ${errors.length === 0 ? "none" : errors.join("; ")}`);
 

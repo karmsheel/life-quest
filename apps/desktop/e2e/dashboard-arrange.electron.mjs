@@ -21,6 +21,13 @@
  *                        claim is "this exact icon" rather than "some svg". No
  *                        glyph character (`✕ ↑ ↓ ◧ ♭`) survives anywhere in the
  *                        chrome, which is what a half-migrated chrome fails.
+ *                        The chrome is read inside the card's own tool row, which
+ *                        also holds the chat control: that control is not chrome,
+ *                        and this fixture is what keeps the two apart.
+ *
+ * The Add-pin row is behind the header's toggle, so the driver asks for it before
+ * reading its heading. Landing on the page with it closed is `dashboard-card-
+ * context`'s claim, not this rig's.
  *
  * NOT covered here: anything about dragging, and the vault-core half of a write.
  * A dev-server page has no preload, so the page's bridge is a stub and a drop's
@@ -80,8 +87,11 @@ const SAMPLE = `(() => {
     order: cards.map((card) => card.dataset.pinId),
     cards: cards.map((card) => ({
       id: card.dataset.pinId,
-      chrome: card.querySelectorAll(":scope > .home-pin__chrome").length,
-      buttons: [...card.querySelectorAll(":scope > .home-pin__chrome .home-pin__btn")].map((b) => ({
+      // The chrome sits inside the card's own tool row now — that row also holds
+      // the chat control, which is NOT chrome, so the chrome is still read by its
+      // own class and the fixture still means "board-editing chrome".
+      chrome: card.querySelectorAll(":scope > .home-pin__tools > .home-pin__chrome").length,
+      buttons: [...card.querySelectorAll(":scope > .home-pin__tools > .home-pin__chrome .home-pin__btn")].map((b) => ({
         testid: b.dataset.testid || null,
         label: b.getAttribute("aria-label"),
         title: b.getAttribute("title"),
@@ -321,6 +331,24 @@ async function beginScenario(win, options = {}) {
   await renderBoard(win, SEED, options.locked === true);
   await win.webContents.executeJavaScript(
     "window.dashboardArrangePinWrites.length = 0; document.querySelector('.arrange-scroll').scrollTop = 0;",
+  );
+}
+
+/**
+ * Ask the board for its Add-pin row.
+ *
+ * The row is behind the header's toggle, and every render lands it closed — the
+ * page is keyed on the generation, so a fresh render is a fresh page. Called
+ * only where the row itself is being judged; the arranging claims never touch it.
+ */
+async function openPinBoard(win) {
+  await win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="board-add-toggle"]')?.click()`,
+  );
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="board-add-pin"]'))`,
+    "the Add-pin row to open",
   );
 }
 
@@ -1319,6 +1347,11 @@ async function main() {
   );
 
   await renderBoard(win, SEED, false);
+  // The Add-pin row lives behind the header's own toggle now: it is a control at
+  // the top of the page rather than permanent furniture below the board, and it
+  // lands closed. The heading-identity claim below is about the row, so the row
+  // has to be asked for first.
+  await openPinBoard(win);
 
   const sample = await win.webContents.executeJavaScript(SAMPLE);
   checkChromeIdentity(sample);

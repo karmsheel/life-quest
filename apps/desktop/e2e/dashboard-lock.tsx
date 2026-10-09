@@ -25,6 +25,7 @@ import type {
   VaultSnapshot,
 } from "@lifequest/vault-core";
 import HomePage from "@/pages/HomePage";
+import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import { applyAppSkin } from "./apply-app-skin";
 import "@/styles/global.css";
@@ -190,9 +191,13 @@ function Harness({ generation }: { generation: number }) {
   return (
     <MemoryRouter initialEntries={["/"]}>
       <VaultProvider>
-        {/* `key` forces VaultProvider to re-read the board, so a driver can
-            change the lock behind the page and see it applied. */}
-        <HomePage key={generation} />
+        {/* The board's cards hand a card to the chat dock, so the dock has to be
+            up: `useChatDock` throws without it. */}
+        <ChatDockProvider>
+          {/* `key` forces VaultProvider to re-read the board, so a driver can
+              change the lock behind the page and see it applied. */}
+          <HomePage key={generation} />
+        </ChatDockProvider>
       </VaultProvider>
     </MemoryRouter>
   );

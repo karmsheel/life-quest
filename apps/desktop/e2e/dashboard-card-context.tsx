@@ -1,35 +1,30 @@
 /**
- * E2E harness page for arranging the Dashboard's cards (`pages/HomePage`).
+ * E2E harness page for the Dashboard's card controls (`pages/HomePage`).
  *
- * HomePage is where a board's order becomes something the operator does rather
- * than something the file says: the chrome lifts a card, the board's own reflow
- * shows where it will land, and one drop is one write. That is what this rig
- * renders — the real page, with the IPC bridge stubbed.
+ * Two things are judged here, and they are the two halves of one idea — that the
+ * board is the page, and that a card on it can be put in front of the chat:
  *
- * The board is SEVEN pins on purpose. A rig cannot prove that "move up" used to
- * mean "move left" on a board with one row, and it cannot prove that a wide card
- * is droppable at all without one. So the seeded order contains both wrap points
- * and a span-2 card, and every claim about order is an exact id array:
+ *  1. The pin board is a header control now, open on request, sitting above the
+ *     grid it adds to. A locked board has no add path at all.
+ *  2. Every pinned card carries a chat control beside its editing chrome, and
+ *     clicking it puts that card — with the name off its own heading — into the
+ *     dock's context.
  *
- *   sys:goal-progress · view:financial:v-weekly (1 cell) · page:financial:ledger ·
- *   sys:today-week · view:financial:v-summary (full row) · sys:pending-decisions ·
- *   sys:recent-log
- *
- * The grid sits in a fixed-height, fixed-width scrollport so the column count is
- * deterministic and a long board is actually scrollable: the auto-scroll claim
- * needs a board taller than the box it is in.
+ * The board is the arrange rig's seven pins on purpose: a view, a page and five
+ * built-ins, so "every kind of card offers the control" is a claim about all
+ * three kinds rather than about the one the rig happened to seed. The grid is
+ * three columns wide at this width, and `view:financial:v-weekly` carries a real
+ * title ("Weekly expenses") so the name read off a heading is falsifiable
+ * against the id it must not be.
  *
  * The bridge is a recording stub, deliberately small: every method the page
  * calls is listed, and anything else answers `{ ok: false }` and is NAMED in
- * `dashboardArrangeUnexpectedCalls`, so a page that grows a new dependency fails
- * the run loudly instead of rendering a quietly empty board. `pinsSet` records
- * every write in `dashboardArrangePinWrites`, which is how "one drop is one
- * write" and "a hold writes nothing" are falsified; `dashboardArrangeSetRefuse`
- * makes the next write answer `applied: false`, which is the locked-underneath
- * case the page must not lie about.
+ * `dashboardCardContextUnexpectedCalls`, so a page that grows a new dependency
+ * fails the run loudly instead of rendering a quietly empty board.
  *
- * The driver waits on `dashboardArrangeCommits`, bumped from an effect after
- * React has committed, so it never samples a half-painted page.
+ * `ChatDockProbe` is the seam for the second half: it mirrors the dock's context
+ * to `window.dashboardCardContextDock` and installs a setter, so a driver can
+ * read what the card control handed over.
  */
 import { StrictMode, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -47,6 +42,7 @@ import type {
 import HomePage from "@/pages/HomePage";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
+import { ChatDockProbe } from "./chat-dock-probe";
 import { applyAppSkin } from "./apply-app-skin";
 import "@/styles/global.css";
 
@@ -71,7 +67,7 @@ const SYS = (system: string): Pin => ({
   system: system as Extract<Pin, { kind: "system" }>["system"],
 });
 
-/** The seeded order. Seven pins, one wide card, three columns at this width. */
+/** The seeded order: a view, a page, and five built-ins. */
 const SEED: Pin[] = [
   SYS("goal-progress"),
   { id: "view:financial:v-weekly", kind: "view", domainSlug: "financial", viewId: "v-weekly", span: 1 },
@@ -83,34 +79,27 @@ const SEED: Pin[] = [
 ];
 
 type HarnessWindow = Window & {
-  dashboardArrangeReady?: boolean;
-  dashboardArrangeCommits?: number;
-  dashboardArrangeCalls?: string[];
-  dashboardArrangeUnexpectedCalls?: string[];
-  dashboardArrangeSkin?: string;
-  dashboardArrangeState?: BoardState;
-  dashboardArrangePinWrites?: Pin[][];
-  dashboardArrangeSetBoard?: (pins: Pin[], locked: boolean) => boolean;
-  dashboardArrangeSetRefuse?: (refuse: boolean) => boolean;
-  dashboardArrangeRender?: (generation: number) => boolean;
+  dashboardCardContextReady?: boolean;
+  dashboardCardContextCommits?: number;
+  dashboardCardContextCalls?: string[];
+  dashboardCardContextUnexpectedCalls?: string[];
+  dashboardCardContextSkin?: string;
+  dashboardCardContextState?: BoardState;
+  dashboardCardContextPinWrites?: Pin[][];
+  dashboardCardContextSetBoard?: (pins: Pin[], locked: boolean) => boolean;
+  dashboardCardContextRender?: (generation: number) => boolean;
 };
 
 const harness = window as HarnessWindow;
 
-harness.dashboardArrangeCalls = [];
-harness.dashboardArrangeUnexpectedCalls = [];
-harness.dashboardArrangePinWrites = [];
+harness.dashboardCardContextCalls = [];
+harness.dashboardCardContextUnexpectedCalls = [];
+harness.dashboardCardContextPinWrites = [];
 
 const state: BoardState = { pins: [...SEED], locked: false };
-harness.dashboardArrangeState = state;
+harness.dashboardCardContextState = state;
 
-/** When true, the next `pinsSet` answers `applied: false` — the locked race. */
-let refuseWrite = false;
-
-/** When true, `pinsSet` answers `{ ok: false }` — the write that failed. */
-let failWrite = false;
-
-/** One live domain, so the board can pin its pages and views. */
+/** One live domain, so the board can list its pages and views to add. */
 const SNAPSHOT: VaultSnapshot = {
   rootPath: "C:\\harness\\vault",
   lifequest: {
@@ -145,16 +134,31 @@ const SNAPSHOT: VaultSnapshot = {
   log: [],
   map: null,
   mapError: null,
-  goals: [],
+  // One open goal, so the goals card paints its count badge — the case that
+  // proves a card's name is its heading and not its whole subtree.
+  goals: [
+    {
+      id: "g-run",
+      name: "Run 5k",
+      notes: "",
+      status: "open",
+      domainSlug: null,
+      deadline: null,
+      metric: null,
+      target: null,
+      definitionOfDone: null,
+      current: null,
+    },
+  ],
   goalsError: null,
   reviews: [],
   planning: [],
   weeklyFileCount: 0,
 };
 
-const NOW = "2026-10-08T00:00:00.000Z";
+const NOW = "2026-10-09T00:00:00.000Z";
 
-/** A page pin's card names the page the board lists, so the list has to have it. */
+/** One page the board can offer, and the page pin's card names. */
 const PAGES: PageListEntry[] = [
   {
     domainSlug: "financial",
@@ -169,7 +173,7 @@ const PAGES: PageListEntry[] = [
   },
 ];
 
-/** A saved view: the card draws the run below, so only the title is load-bearing here. */
+/** A saved view. Only the title is load-bearing for these claims. */
 function savedView(id: string, title: string, presentation: SavedView["presentation"]): SavedView {
   return {
     schemaVersion: 1,
@@ -195,11 +199,7 @@ function savedView(id: string, title: string, presentation: SavedView["presentat
 const VIEW_WEEKLY = savedView("v-weekly", "Weekly expenses", "table");
 const VIEW_SUMMARY = savedView("v-summary", "Spending by month", "metric");
 
-/**
- * The database both views read. `ViewCard` asks for it to decide which
- * presentations a block may switch to, so answering it is what makes the board's
- * cards the app's cards rather than a reduced version of them.
- */
+/** The database both views read, for the card's own presentation menu. */
 const DATABASE: DatabaseMeta = {
   id: "finance:transactions",
   name: "Transactions",
@@ -227,9 +227,6 @@ const RUNS: Record<string, ComposedViewRunResult> = {
           rows: [
             ["2026-W36", 1111],
             ["2026-W37", 1114],
-            ["2026-W38", 1148],
-            ["2026-W39", 1265],
-            ["2026-W40", 2390.34],
           ],
           warnings: [],
           currency: "ZAR",
@@ -248,21 +245,6 @@ const RUNS: Record<string, ComposedViewRunResult> = {
         result: {
           columns: ["label", "value"],
           rows: [["value", 7028.34]],
-          warnings: [],
-          currency: "ZAR",
-        },
-      },
-      {
-        id: "by-month",
-        title: "Month by month",
-        presentation: "table",
-        result: {
-          columns: ["label", "value"],
-          rows: [
-            ["2026-06", 1204],
-            ["2026-07", 1310],
-            ["2026-08", 1180],
-          ],
           warnings: [],
           currency: "ZAR",
         },
@@ -307,9 +289,7 @@ function bridge(): Record<string, (...args: unknown[]) => Promise<unknown>> {
       return ok({ pins: state.pins, locked: state.locked } satisfies PinBoardRead);
     },
     pinsSet: async (_boardSlug: unknown, pins: unknown) => {
-      harness.dashboardArrangePinWrites!.push(pins as Pin[]);
-      if (failWrite) return { ok: false, error: "the vault refused the write" };
-      if (refuseWrite) return ok({ applied: false, decision: { id: "d1" }, locked: true });
+      harness.dashboardCardContextPinWrites!.push(pins as Pin[]);
       state.pins = pins as Pin[];
       return ok({ applied: true, pins: state.pins, locked: state.locked });
     },
@@ -324,34 +304,21 @@ const stubs = bridge();
     const found = target[prop];
     if (found) {
       return (...args: unknown[]) => {
-        harness.dashboardArrangeCalls!.push(prop);
+        harness.dashboardCardContextCalls!.push(prop);
         return found(...args);
       };
     }
     return (..._args: unknown[]) => {
-      harness.dashboardArrangeUnexpectedCalls!.push(prop);
+      harness.dashboardCardContextUnexpectedCalls!.push(prop);
       return Promise.resolve({ ok: false, error: `unexpected bridge call: ${prop}` });
     };
   },
 });
 
-/** Install a board before the page reads it; re-render with `renderDashboard`. */
-harness.dashboardArrangeSetBoard = (pins, locked) => {
+/** Install a board before the page reads it; re-render with `render`. */
+harness.dashboardCardContextSetBoard = (pins, locked) => {
   state.pins = pins;
   state.locked = locked;
-  return true;
-};
-
-harness.dashboardArrangeSetRefuse = (refuse) => {
-  refuseWrite = refuse;
-  return true;
-};
-
-/** The write that fails outright, as distinct from the one that is refused. */
-(window as unknown as { dashboardArrangeSetFail?: (fail: boolean) => boolean }).dashboardArrangeSetFail = (
-  fail,
-) => {
-  failWrite = fail;
   return true;
 };
 
@@ -359,40 +326,27 @@ function Harness({ generation }: { generation: number }) {
   const commits = useRef(0);
   useEffect(() => {
     commits.current += 1;
-    harness.dashboardArrangeCommits = commits.current;
+    harness.dashboardCardContextCommits = commits.current;
   }, [generation]);
-  /**
-   * A fixed-width scrollport, as tall as the window the driver gives us.
-   *
-   * The width is fixed so the column count is the same on every machine — a row
-   * claim means nothing otherwise. The height follows the window because the
-   * claims need different shapes: a drag can only start on one card and end on
-   * another if both are on screen, while the auto-scroll claim needs a board that
-   * overflows its box. The driver sizes the window to the claim.
-   */
   return (
-    <div style={{ width: 1000, margin: "0 auto" }}>
-      <div className="arrange-scroll" style={{ height: "calc(100vh - 2rem)", overflowY: "auto" }}>
-        <MemoryRouter initialEntries={["/"]}>
-          <VaultProvider>
-            {/* The page's cards hand a card to the chat dock, so the dock has to
-                be up: `useChatDock` throws without it, which is exactly what a
-                missing provider should do. */}
-            <ChatDockProvider>
-              {/* `key` forces VaultProvider to re-read the board, so a driver can
-                  change the board behind the page and see it applied. */}
-              <HomePage key={generation} />
-            </ChatDockProvider>
-          </VaultProvider>
-        </MemoryRouter>
-      </div>
+    <div style={{ width: 1180, margin: "0 auto" }}>
+      <MemoryRouter initialEntries={["/"]}>
+        <VaultProvider>
+          <ChatDockProvider>
+            <ChatDockProbe channel="dashboardCardContext" />
+            {/* `key` forces VaultProvider to re-read the board, so a driver can
+                change the board behind the page and see it applied. */}
+            <HomePage key={generation} />
+          </ChatDockProvider>
+        </VaultProvider>
+      </MemoryRouter>
     </div>
   );
 }
 
 const root = createRoot(document.getElementById("root")!);
 
-harness.dashboardArrangeRender = (generation) => {
+harness.dashboardCardContextRender = (generation) => {
   root.render(
     <StrictMode>
       <Harness generation={generation} />
@@ -401,6 +355,5 @@ harness.dashboardArrangeRender = (generation) => {
   return true;
 };
 
-harness.dashboardArrangeReady = true;
-harness.dashboardArrangeSkin = skinName;
-
+harness.dashboardCardContextReady = true;
+harness.dashboardCardContextSkin = skinName;
