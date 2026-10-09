@@ -27,12 +27,20 @@
 - The rig applies the app's own skin before its first render (`e2e/apply-app-skin.ts`), exposes it as `window.dashboardArrangeSkin`, and the driver fails the run if `document.documentElement.dataset.skin` disagrees.
 - The rig writes `e2e/artifacts/dashboard-arrange.json`, `dashboard-arrange.png` (the resting board, chrome visible), and `dashboard-arrange-lift.png` (mid-drag, one card lifted). `apps/desktop/e2e/artifacts/` is gitignored — never `git add` an artifact.
 - The rig's doc comment names the seam it cannot cross: a dev-server page has no preload, so the page's bridge is a stub and the drop's `pinsSet` ends there. The vault-core half of a write is `dashboard-lock-e2e`'s, and the wired-app half is `dashboard-live-app`'s.
-- Focused loop, with `npm run dev` up: from `apps/desktop`, `node e2e/dashboard-arrange.electron.mjs`. Full proof: from the repo root, `npm test`. That script ignores extra argv and runs every rig, so do not pass it a file path.
+- Focused loop, with `npm run dev` up: from `apps/desktop`, run the rig **under Electron**, never under plain node — it is an Electron main script, and `node` dies on `import { BrowserWindow } from "electron"`. This host also exports `ELECTRON_RUN_AS_NODE`, which makes the same command run as plain node, so clear it first:
+
+  ```powershell
+  Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+  & (node -p "require('electron')") e2e/dashboard-arrange.electron.mjs
+  ```
+
+  Every "run the rig" step below means exactly that command. Full proof: from the repo root, `npm test`. That script ignores extra argv and runs every rig, so do not pass it a file path.
+- The board is three grid tracks wide at the harness's fixed 1000 px page, and it is taller than its 420 px scrollport. Several home cards are legitimately full-row (`home-card--wide`, a span-2 view, the deadline banner), so the rig reads the column count from the grid's resolved `grid-template-columns` — never by counting the cards in a row, which is 1 when the first card is full-row.
+- The working tree this plan was written against carried uncommitted work (`view-card`, `receipt-attach`). Before starting, check `git status`: if it is dirty, do not disturb it — branch, stage only this feature's paths, and never `git stash` or `git checkout --` a path this plan does not own. If it is clean, branch off `master` and carry on.
 - The wrapper follows its siblings: probe `127.0.0.1:5173`, and `t.skip("dev server not listening on 5173 — run \`npm run dev\` to include this e2e")` when it is down; `fs.rmSync` the report first; `execFile(electron, [...], { cwd: desktopRoot, timeout: 120_000 })`; then assert the report exists, `report.pass` is true, `failures` is `[]`, the exit code is 0, and every scenario name this plan adds is present with `pass: true`.
 - The driver follows its siblings: `nativeTheme.themeSource = "dark"`, `show: false` then `win.showInactive()` before any input is dispatched (a hidden window can swallow input), a 90 s timeout that exits 1, `app.exit(report.pass ? 0 : 1)`, and a printed summary line.
 - Spec and plan land as their own commit before Task 1. Do not edit `LAWS`, `README`, `PRODUCT`, or `VISION` except in Task 7, and keep them out of the feature commits.
 - Windows commits use two `-m` flags. Stage explicit paths. Do not `git add -A`. Do not merge or push.
-- The working tree currently carries uncommitted work (`view-card`, `receipt-attach`). Do not disturb it: work on a branch, stage only this feature's paths, and never `git stash` or `git checkout --` a path this plan does not own.
 
 ---
 
@@ -72,7 +80,7 @@ Create `apps/desktop/e2e/dashboard-arrange.electron.mjs` with the standard shape
 - A `dispatch` helper wrapping `win.webContents.sendInputEvent`, with `mouseDown(x, y)`, `mouseMove(x, y)`, `mouseUp(x, y)` (left button, `clickCount: 1`), and `key(keyCode)`.
 - A `center(selector)` helper reading a `getBoundingClientRect` and returning the point in CSS pixels — `sendInputEvent` takes the same coordinate space, so no DPR conversion is applied.
 - A `restingOrder()` reader: `[...document.querySelectorAll('.home-dashboard__grid > .home-pin[data-pin-id]')].map((el) => el.dataset.pinId)`.
-- A `columns()` reader: the count of `.home-pin[data-pin-id]` whose rounded `top` equals the first one's.
+- A `columns()` reader: the number of tracks in the grid's resolved `grid-template-columns` (three at this width). Not a count of the cards sharing a row — a full-row card makes that read 1.
 
 Scenario `chrome-identity`, which this task turns green, for every `.home-pin__chrome` on the board:
 
@@ -90,11 +98,7 @@ Create `apps/desktop/tests/dashboard-arrange-e2e.test.ts` mirroring `dashboard-l
 
 - [ ] **Step 4: Run the rig and confirm it fails**
 
-From `apps/desktop`:
-
-```
-node e2e/dashboard-arrange.electron.mjs
-```
+Run the rig (Global Constraints), under Electron and with `ELECTRON_RUN_AS_NODE` cleared.
 
 Expected: **FAIL** on `chrome-identity` — the chrome draws `✕`, `↑`, `↓`, `◧`, `♭` as text, so no button holds an `svg` and the glyph sweep finds characters.
 
@@ -121,7 +125,7 @@ Optional in the same step: refresh the stale glyphs in `apps/desktop/data-previe
 
 - [ ] **Step 6: Run the rig and the suite, and confirm both pass**
 
-From `apps/desktop`: `node e2e/dashboard-arrange.electron.mjs` → PASS on `chrome-identity`.
+From `apps/desktop`: Run the rig (Global Constraints) → PASS on `chrome-identity`.
 
 From the repo root: `npm test` → PASS, with the new describe green and `dashboard-lock-ui` / `dashboard-live-app` untouched and still green.
 
@@ -155,18 +159,21 @@ git commit -m "feat(desktop): standard icons in the dashboard card chrome" -m "U
 
 Add these scenarios to the driver, each failing before the hook exists:
 
-- `short-press-is-not-a-drag`: mouseDown on the centre of card 3's body, 80 ms, mouseUp → no `.is-lifted`, `dashboardArrangePinWrites` empty.
-- `movement-cancels-the-hold`: mouseDown on card 3's body, mouseMove +20 px at 60 ms, then hold 400 ms → no `.is-lifted`.
-- `hold-lifts`: mouseDown on card 3's body, 400 ms → card 3 has `.is-lifted` and the grid has `.is-arranging`.
-- `grip-lifts-at-once`: mouseDown on `[data-testid="pin-grip"]` of card 5, mouseMove +6 px → card 5 lifted with no hold.
-- `lift-leaves-a-gap`: while card 1 is lifted, its computed `position` is `absolute`, and the rects of the other pins have closed up to where it was (assert card 2's `top`/`left` is where card 1's was at rest).
+Presses go on the card's own `<h2>` heading — `.home-card__title` or `.view-card__title` — and never on the card's centre, because every home card ends in a link and a press on an interactive element is deliberately not a drag. The title is in every card, is never interactive, and is the card's own name.
+
+- `short-press-is-not-a-drag`: mouseDown on `sys:today-week`'s heading, 80 ms, mouseUp → no `.is-lifted`, `dashboardArrangePinWrites` empty.
+- `movement-cancels-the-hold`: mouseDown on `sys:today-week`'s heading, mouseMove +20 px at 60 ms, then hold 400 ms → no `.is-lifted`.
+- `hold-lifts`: mouseDown on `sys:today-week`'s heading, 400 ms → that card has `.is-lifted` and the grid has `.is-arranging`.
+- `grip-lifts-at-once`: mouseDown on `[data-testid="pin-grip"]` of `sys:pending-decisions`, mouseMove +6 px → that card lifted, with no hold.
+- `press-on-a-link-is-not-a-drag`: mouseDown on the page card's "Open page →" link, 400 ms → no `.is-lifted` and no write. The control still gets its click.
+- `lift-leaves-a-gap`: while `sys:goal-progress` is lifted, its computed `position` is `absolute`, and the board has closed up behind it: the card that followed it (`view:financial:v-weekly`) now sits at the lifted card's resting `top` and `left`. That card is full-row, so the whole first row is what closes — which is the strongest form of the claim.
 - `locked-is-inert`: `dashboardArrangeSetBoard(<the seven pins>, true)`, re-render, then mouseDown + hold 400 ms on a card → no `.is-lifted`, no chrome, zero writes.
 
 Add a `lift(mouseDown …, wait, …)` helper so the timing constants live in one place, and add these names to the wrapper's expected-scenario array.
 
 - [ ] **Step 2: Run the rig and confirm it fails**
 
-`node e2e/dashboard-arrange.electron.mjs` → FAIL on all six (no `.is-lifted` ever appears).
+Run the rig (Global Constraints) → FAIL on all six (no `.is-lifted` ever appears).
 
 - [ ] **Step 3: Implement the activation half of the controller**
 
@@ -206,7 +213,7 @@ In `global.css`:
 
 - [ ] **Step 4: Run the rig and the suite, and confirm both pass**
 
-`node e2e/dashboard-arrange.electron.mjs` → PASS on the six new scenarios plus `chrome-identity`. From the repo root, `npm test` → PASS.
+Run the rig (Global Constraints) → PASS on the six new scenarios plus `chrome-identity`. From the repo root, `npm test` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -236,18 +243,21 @@ git commit -m "feat(desktop): lift a dashboard card on a hold or the grip" -m "A
 
 Add:
 
-- `same-row-targets-by-x`: drag card 1 (`sys:goal-progress`) to a point just past the horizontal midpoint of card 2 but inside card 2's row band, drop → `restingOrder()` is `[v-weekly, goal-progress, ledger, …]`, i.e. card 1 moved **one** slot. Assert `columns() >= 2` first so the claim cannot pass vacuously on a one-column board.
-- `wide-card-left-and-right`: drag card 6 onto the left half of the span-2 card (`view:financial:v-summary`) → final order places card 6 immediately **before** `v-summary`; then drag the same card onto the right half → immediately **after** it.
-- `drop-past-the-last`: drag card 1 to a point below the last pin → it lands last among the pins, still before the non-pinnable Active-agents card.
+- `same-row-targets-by-x`: assert `columns() === 3` first, so the claim cannot pass vacuously. Then drag `view:financial:v-weekly` (index 1, the first cell of the board's second row) to a point just past the horizontal midpoint of `page:financial:ledger` (index 2, the cell beside it) but inside its row band, drop → `restingOrder()` is `[goal-progress, ledger, v-weekly, …]`: the two swapped, and the card landed where it was aimed.
+
+  Note which cards a drag may target. `sys:goal-progress` (row 1), `sys:today-week` (row 3), `view:financial:v-summary` (row 4) and `sys:recent-log` (row 6) are all full-row cards — `home-card--wide` or a span-2 view — so the board's only side-by-side pair is `v-weekly` beside `ledger` in row 2. A claim about "the cell to the left" has to be made there, which is why the seeded order puts those two together.
+- `a-row-is-not-a-slot`: drag `sys:pending-decisions` (index 5, first cell of the row after the wide view) onto the midpoint of `page:financial:ledger` (index 2, row 2) → it lands at index 2, three slots from where it started. One row up is `columns` slots, not one — which is the whole reason the `↑` arrow read as broken.
+- `wide-card-left-and-right`: drag `sys:pending-decisions` onto the left half of the span-2 card (`view:financial:v-summary`) → the final order places it immediately **before** `v-summary`; drag it onto the right half → immediately **after** it. A full-row card must not be an insertion dead zone.
+- `drop-past-the-last`: drag `view:financial:v-weekly` to a point below every card → it lands last among the pins, and still before the non-pinnable Active-agents card.
 - `one-write-per-drop`: after a clean drag, `dashboardArrangePinWrites.length` is exactly 1 and its payload is the exact expected id array. After a second drag, exactly 2.
-- `hold-then-release-writes-nothing`: press and hold card 3 for 400 ms, release without moving → `dashboardArrangePinWrites` still empty and the resting order unchanged.
+- `hold-then-release-writes-nothing`: press and hold `sys:today-week`'s heading for 400 ms, release without moving → `dashboardArrangePinWrites` still empty and the resting order unchanged.
 - `agents-card-is-not-a-slot`: the last grid child is the Active-agents card, it has no `data-pin-id`, and no drop ever places a pin after it.
 
 Add a `drag(fromSelector, toPoint)` helper: mouseDown on the source, 400 ms (or +6 px from the grip), mouseMove in **three** steps to the target so the slot resolver runs more than once, wait a frame, mouseUp, then wait for the write or a short settle. Add the scenario names to the wrapper's array.
 
 - [ ] **Step 2: Run the rig and confirm it fails**
 
-`node e2e/dashboard-arrange.electron.mjs` → FAIL: the card lifts but never moves, and no write is recorded.
+Run the rig (Global Constraints) → FAIL: the card lifts but never moves, and no write is recorded.
 
 - [ ] **Step 3: Implement the resolver and the commit**
 
@@ -264,7 +274,7 @@ In `HomePage.tsx`, render `arrange.order` instead of `pins`, and keep the `avail
 
 - [ ] **Step 4: Run the rig and the suite, and confirm both pass**
 
-`node e2e/dashboard-arrange.electron.mjs` → PASS on all twelve scenarios, with `one-write-per-drop` green. From the repo root, `npm test` → PASS.
+Run the rig (Global Constraints) → PASS on all twelve scenarios, with `one-write-per-drop` green. From the repo root, `npm test` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -301,7 +311,7 @@ Add a `status()` reader for `[data-testid="pin-arrange-status"]` and the scenari
 
 - [ ] **Step 2: Run the rig and confirm it fails**
 
-`node e2e/dashboard-arrange.electron.mjs` → FAIL on all four.
+Run the rig (Global Constraints) → FAIL on all four.
 
 - [ ] **Step 3: Implement revert and announcements**
 
@@ -318,7 +328,7 @@ In `HomePage.tsx`, render one `<p className="visually-hidden" role="status" aria
 
 - [ ] **Step 4: Run the rig and the suite, and confirm both pass**
 
-`node e2e/dashboard-arrange.electron.mjs` → PASS on all sixteen scenarios. From the repo root, `npm test` → PASS.
+Run the rig (Global Constraints) → PASS on all sixteen scenarios. From the repo root, `npm test` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -355,7 +365,7 @@ Add the scenario names to the wrapper's array.
 
 - [ ] **Step 2: Run the rig and confirm it fails**
 
-`node e2e/dashboard-arrange.electron.mjs` → FAIL on all five: Return on the grip does nothing.
+Run the rig (Global Constraints) → FAIL on all five: Return on the grip does nothing.
 
 - [ ] **Step 3: Implement the keyboard contract**
 
@@ -372,7 +382,7 @@ Announcements must carry the card's name, not its id: a system pin's humanised k
 
 - [ ] **Step 4: Run the rig and the suite, and confirm both pass**
 
-`node e2e/dashboard-arrange.electron.mjs` → PASS on all twenty-one scenarios. From the repo root, `npm test` → PASS.
+Run the rig (Global Constraints) → PASS on all twenty-one scenarios. From the repo root, `npm test` → PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -406,7 +416,7 @@ If `Emulation.setEmulatedMedia` cannot be attached in this Electron build, **dro
 
 - [ ] **Step 2: Run the rig and confirm it fails**
 
-`node e2e/dashboard-arrange.electron.mjs` → FAIL on the three: cards snap with no transform, and a drag near the edge does not scroll.
+Run the rig (Global Constraints) → FAIL on the three: cards snap with no transform, and a drag near the edge does not scroll.
 
 - [ ] **Step 3: Implement FLIP and auto-scroll**
 
@@ -416,7 +426,7 @@ Auto-scroll, exactly as spec §3.6: resolve the scrollport at lift time by walki
 
 - [ ] **Step 4: Run the rig and the suite, and confirm both pass**
 
-`node e2e/dashboard-arrange.electron.mjs` → PASS on all twenty-four scenarios (or twenty-three, with the reduced-motion seam named). From the repo root, `npm test` → PASS.
+Run the rig (Global Constraints) → PASS on all twenty-four scenarios (or twenty-three, with the reduced-motion seam named). From the repo root, `npm test` → PASS.
 
 - [ ] **Step 5: Commit**
 
