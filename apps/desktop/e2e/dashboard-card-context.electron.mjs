@@ -747,7 +747,7 @@ async function main() {
     `${afterPress.menus.length} menu(s) survived a press on the header`,
   );
 
-  // ── 13. Archive takes the card off this board ─────────────────────────────
+  // ── 13. Archive takes the card off this board, and deletes nothing ────────
   const archiveWritesBefore = (await pinWrites(win)).length;
   await openMenu(win, "sys:today-week");
   await clickMenuItem(win, "sys:today-week", "pin-archive");
@@ -765,6 +765,38 @@ async function main() {
       JSON.stringify(archiveWrites[0]) === JSON.stringify(expectedArchive) &&
       (await sample(win)).menus.length === 0,
     `Archive wrote ${JSON.stringify(archiveWrites)}`,
+  );
+
+  /**
+   * And Archive is not a delete, on the card where the difference is real: a
+   * view card has a saved view behind it, and taking the card off must leave
+   * that view alone — still in the vault, still offered by the pin board, so the
+   * operator can put the card back. This is the pair the two laws make: the
+   * reversible act and the irreversible one must not be the same act.
+   */
+  const viewArchiveBefore = (await pinWrites(win)).length;
+  const deletesBeforeArchive = (await deletes(win)).length;
+  await openMenu(win, "view:financial:v-summary");
+  await clickMenuItem(win, "view:financial:v-summary", "pin-archive");
+  await waitFor(
+    win,
+    `!document.querySelector('[data-pin-id="view:financial:v-summary"]')`,
+    "the archived view card to leave the board",
+  );
+  await openPinBoard(win);
+  const afterViewArchive = await sample(win);
+  const offeredAgain = (afterViewArchive.section?.buttons ?? []).includes("Spending by month");
+  checks.viewArchive = {
+    writes: (await pinWrites(win)).length - viewArchiveBefore,
+    deletes: (await deletes(win)).length - deletesBeforeArchive,
+    offeredAgain,
+  };
+  check(
+    "archiving-a-view-card-keeps-the-view",
+    checks.viewArchive.writes === 1 &&
+      checks.viewArchive.deletes === 0 &&
+      offeredAgain === true,
+    `archiving a view card read ${JSON.stringify(checks.viewArchive)}`,
   );
 
   // ── 14. a locked board has no menu at all ─────────────────────────────────

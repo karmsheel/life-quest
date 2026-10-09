@@ -119,6 +119,7 @@ describe("dashboard card context e2e", () => {
       "escape-closes-the-menu",
       "a-press-away-closes-the-menu",
       "archive-takes-the-card-off-the-board",
+      "archiving-a-view-card-keeps-the-view",
       "a-locked-board-has-no-menu",
       "delete-asks-before-it-writes",
       "cancelling-deletes-nothing",
@@ -208,6 +209,11 @@ describe("dashboard card context e2e", () => {
       false,
       "the archived card is still in the pin list that was written",
     );
+
+    // The pair the two laws make: taking a card off is not deleting what it
+    // draws. Archiving a view card writes one pin list, deletes nothing, and
+    // leaves the view offered again — so the card can come back.
+    assert.deepEqual(report.checks.viewArchive, { writes: 1, deletes: 0, offeredAgain: true });
 
     // Delete asks by name, and writes nothing until it is answered.
     const asking = report.checks.asking as {
