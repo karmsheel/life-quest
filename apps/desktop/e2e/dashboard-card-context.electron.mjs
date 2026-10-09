@@ -75,7 +75,7 @@ const SEED = [
 
 /** What each seeded card must be called, and what its heading actually says. */
 const NAMES = [
-  { id: "sys:goal-progress", label: "Goals", heading: "Goals1" },
+  { id: "sys:goal-progress", label: "Goals", heading: "Goals2" },
   { id: "view:financial:v-weekly", label: "Weekly expenses", heading: "Weekly expenses" },
   { id: "page:financial:ledger", label: "Ledger", heading: "Ledger" },
   { id: "sys:today-week", label: "Today & this week", heading: "Today & this week" },
@@ -163,6 +163,38 @@ const SAMPLE = `(() => {
 
 const errors = [];
 const scenarios = [];
+
+/**
+ * The deadline pin, which is not a card: it has no padded shell for a corner row
+ * to sit in, so its controls take a line of their own above the banner. That is
+ * the one place this layout differs, so it is measured rather than assumed.
+ */
+const DEADLINE_PIN = { id: "sys:deadline", kind: "system", system: "deadline" };
+
+const DEADLINE_SAMPLE = `(() => {
+  const pin = document.querySelector('[data-pin-id="sys:deadline"]');
+  if (!pin) return { present: false };
+  const banner = pin.querySelector('.deadline-banner');
+  const tools = pin.querySelector(':scope > .home-pin__tools');
+  const chat = tools ? tools.querySelector('[data-testid="pin-chat"]') : null;
+  const rect = (el) => (el ? el.getBoundingClientRect() : null);
+  const pinRect = rect(pin);
+  const bannerRect = rect(banner);
+  const toolsRect = rect(tools);
+  return {
+    present: true,
+    banner: Boolean(banner),
+    tools: Boolean(tools),
+    toolsPosition: tools ? getComputedStyle(tools).position : null,
+    toolsRight: toolsRect ? Math.round(toolsRect.right) : null,
+    pinRight: Math.round(pinRect.right),
+    toolsBottom: toolsRect ? Math.round(toolsRect.bottom) : null,
+    bannerTop: bannerRect ? Math.round(bannerRect.top) : null,
+    chatSvgs: chat ? chat.querySelectorAll('svg').length : 0,
+    chatLabel: chat ? chat.getAttribute('aria-label') : null,
+    chrome: pin.querySelectorAll('.home-pin__chrome').length,
+  };
+})()`;
 
 function failure(message) {
   errors.push(message);
@@ -549,6 +581,29 @@ async function main() {
     `a hold on the chat control left ${held.lifted} card(s) lifted (the same hold on the ` +
       `heading lifted ${liftedByTheHold}) and ` +
       `${(await pinWrites(win)).length - gripWritesBefore} write(s)`,
+  );
+
+  // ── 12. the deadline pin is not a card, and lays its controls out its own way
+  await render(win, false, [...SEED, DEADLINE_PIN]);
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-pin-id="sys:deadline"] .deadline-banner'))`,
+    "the deadline banner to draw",
+  );
+  const deadline = await win.webContents.executeJavaScript(DEADLINE_SAMPLE);
+  checks.deadlinePin = deadline;
+  check(
+    "the-deadline-pin-keeps-its-controls-out-of-the-way",
+    deadline.present === true &&
+      deadline.banner === true &&
+      deadline.tools === true &&
+      deadline.toolsPosition === "static" &&
+      deadline.chatSvgs === 1 &&
+      Boolean(deadline.chatLabel) &&
+      deadline.chrome === 1 &&
+      Math.abs(deadline.toolsRight - deadline.pinRight) <= 2 &&
+      deadline.toolsBottom <= deadline.bannerTop,
+    `the deadline pin's controls read ${JSON.stringify(deadline)}`,
   );
 
   // ── nothing unexpected, nothing on fire ───────────────────────────────────

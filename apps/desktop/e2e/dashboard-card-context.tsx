@@ -134,8 +134,11 @@ const SNAPSHOT: VaultSnapshot = {
   log: [],
   map: null,
   mapError: null,
-  // One open goal, so the goals card paints its count badge — the case that
-  // proves a card's name is its heading and not its whole subtree.
+  // Two open goals, so the goals card paints its count badge — the case that
+  // proves a card's name is its heading and not its whole subtree. The second
+  // carries a deadline three days out, which is what draws the deadline banner:
+  // that pin is not a card, and it is the one place the tool row is laid out
+  // differently, so it has to be reachable from a claim.
   goals: [
     {
       id: "g-run",
@@ -144,6 +147,18 @@ const SNAPSHOT: VaultSnapshot = {
       status: "open",
       domainSlug: null,
       deadline: null,
+      metric: null,
+      target: null,
+      definitionOfDone: null,
+      current: null,
+    },
+    {
+      id: "g-renew",
+      name: "Renew the passport",
+      notes: "",
+      status: "open",
+      domainSlug: null,
+      deadline: new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10),
       metric: null,
       target: null,
       definitionOfDone: null,

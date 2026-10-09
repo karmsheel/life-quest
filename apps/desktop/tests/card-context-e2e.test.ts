@@ -113,6 +113,7 @@ describe("dashboard card context e2e", () => {
       "the-name-comes-off-the-heading",
       "a-locked-board-still-offers-it",
       "the-chat-control-does-not-lift-the-card",
+      "the-deadline-pin-keeps-its-controls-out-of-the-way",
     ]);
 
     // Landing: closed, and above the grid the moment it is opened.
@@ -152,7 +153,24 @@ describe("dashboard card context e2e", () => {
     });
     // The goals card paints a count inside its heading; the name is the words.
     const board = report.checks.board as { cards: { id: string; heading: string | null }[] };
-    assert.equal(board.cards.find((c) => c.id === "sys:goal-progress")?.heading, "Goals1");
+    assert.equal(board.cards.find((c) => c.id === "sys:goal-progress")?.heading, "Goals2");
+
+    // The deadline pin is not a card: its controls take their own line above the
+    // banner instead of a corner, and they must not land on top of it.
+    const deadline = report.checks.deadlinePin as {
+      banner: boolean;
+      toolsPosition: string | null;
+      toolsBottom: number;
+      bannerTop: number;
+      chatSvgs: number;
+    };
+    assert.equal(deadline.banner, true, "the deadline banner did not draw");
+    assert.equal(deadline.toolsPosition, "static", "the deadline pin's controls took a corner");
+    assert.ok(
+      deadline.toolsBottom <= deadline.bannerTop,
+      `the deadline pin's controls sat on the banner: ${deadline.toolsBottom} > ${deadline.bannerTop}`,
+    );
+    assert.equal(deadline.chatSvgs, 1, "the deadline pin lost its chat control");
 
     // Asking about a card is not picking one up — and the hold still works.
     assert.deepEqual(report.checks.heldOnChatControl, { lifted: 0, liftedByTheHold: 1 });
