@@ -13,3 +13,9 @@ Approving a Decision that puts a card on a locked Dashboard MUST NOT unlock the 
 An unlocked Dashboard MUST be reorderable by dragging a card to the position it is dropped in.
 
 Every card on an unlocked Dashboard MUST be reorderable from the keyboard.
+
+The Dashboard's pin board MUST be a control the operator can open and close.
+
+Every pinned card on a Dashboard MUST be addable to the companion chat as context.
+
+A card in context MUST be named in the companion chat before the turn is sent.
