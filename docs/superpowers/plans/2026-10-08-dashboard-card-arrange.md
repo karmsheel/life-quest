@@ -167,7 +167,7 @@ Presses go on the card's own `<h2>` heading — `.home-card__title` or `.view-ca
 - `hold-lifts`: mouseDown on `sys:today-week`'s heading, 400 ms → that card has `.is-lifted` and the grid has `.is-arranging`.
 - `grip-lifts-at-once`: mouseDown on `[data-testid="pin-grip"]` of `sys:pending-decisions`, mouseMove +6 px → that card lifted, with no hold.
 - `press-on-a-link-is-not-a-drag`: mouseDown on the page card's "Open page →" link, 400 ms → no `.is-lifted` and no write. The control still gets its click.
-- `lift-leaves-a-gap`: while `sys:goal-progress` is lifted, its computed `position` is `absolute`, and the board has closed up behind it: the card that followed it (`view:financial:v-weekly`) now sits at the lifted card's resting `top` and `left`. That card is full-row, so the whole first row is what closes — which is the strongest form of the claim.
+- `lift-leaves-a-gap`: the card *keeps its slot*, and the slot follows the pointer. Held and not yet moved, nothing on the board has shifted and the card's computed `position` is still `relative`; dragged into the row below, the card that followed it (`view:financial:v-weekly`) has closed up into the row it left (its **layout** top equals the lifted card's resting top) while the lifted card's own layout top has moved into the row it will land in, with a non-zero translate drawing it under the pointer. `sys:goal-progress` is full-row, so a whole row is what moves — the strongest form of the claim. Compare *layout* positions (drawn box minus the card's own transform): the drawn box of a card mid-FLIP, and of the card being dragged, is not where it lives.
 - `locked-is-inert`: `dashboardArrangeSetBoard(<the seven pins>, true)`, re-render, then mouseDown + hold 400 ms on a card → no `.is-lifted`, no chrome, zero writes.
 
 Add a `lift(mouseDown …, wait, …)` helper so the timing constants live in one place, and add these names to the wrapper's expected-scenario array.
@@ -200,17 +200,19 @@ In `global.css`:
 .home-dashboard__grid.is-arranging * { cursor: grabbing; }
 .home-dashboard__grid.is-arranging { user-select: none; }
 .home-pin.is-lifted {
-  position: absolute;
   z-index: 2;
   pointer-events: none;
-  transform: scale(1.015);
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   box-shadow: var(--shadow-sm);
 }
 ```
 
-`outline`, not `border`: a border would change the box the lift is sitting in and would double the inner card's own hairline. `--shadow-sm` is the ceiling DESIGN.md sets for the sheet.
+The class does **not** set `position` or `transform`: the card stays in flow, and
+the transform belongs to the gesture (the next task writes it, and a keyboard
+lift never needs one). `outline`, not `border`: a border would change the box the
+card is being dropped into and would double the inner card's own hairline.
+`--shadow-sm` is the ceiling DESIGN.md sets for the sheet.
 
 - [ ] **Step 4: Run the rig and the suite, and confirm both pass**
 
@@ -418,7 +420,7 @@ git commit -m "feat(desktop): arrange a dashboard card from the keyboard" -m "Th
 
 Add:
 
-- `siblings-animate`: start a drag that changes the slot, and immediately after the change read every pin's `transform` and rect: at least one sibling has a non-identity `transform`, and its rect is strictly between its old and new resting positions. After 260 ms every pin's `transform` is `none`/identity and its rect equals its resting rect. Then drop and re-assert identity, so a stale transform cannot survive the drop.
+- `siblings-animate`: three samples around one reorder. On the reorder frame at least one non-lifted pin carries a non-zero translate **and is drawn where it already was** — and its *layout* position is the new one, which is the whole trick: nothing jumps, and the card is already in its slot. Mid-animation (about 100 ms later) that card's drawn position is strictly between the two, which is what proves the transition is playing rather than frozen at either end. After 160 ms every pin's translate is zero and the card is at its new place; after the drop it still is, so no stale transform survives.
 - `auto-scroll-follows-the-pointer`: with the scrollport shorter than the board, drag into the bottom 56 px and hold → `scrollTop` increases, and the lifted card's rect still contains the pointer's y.
 - `reduced-motion-is-still`: attach CDP on the window (`win.webContents.debugger.attach("1.3")`) and send `Emulation.setEmulatedMedia` with `features: [{ name: "prefers-reduced-motion", value: "reduce" }]`, then repeat the slot change → no pin ever carries a non-identity transform.
 

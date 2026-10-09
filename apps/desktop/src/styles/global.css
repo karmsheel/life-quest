@@ -2527,16 +2527,31 @@ a.home-mini-list__link:hover {
   user-select: none;
 }
 
-/* The lifted card. It keeps its cell until the pointer actually moves — the
-   `position: absolute` that ends its time in the flow is written by the gesture,
-   not by this class, so a hold that has not moved cannot reflow the board under
-   the operator's hand. `outline` and not `border`, because a border would resize
-   the box the card is being dropped into and would double the inner card's own
-   hairline; the shadow is `--shadow-sm`, the ceiling the elevation ladder sets. */
+/* Cards move out of each other's way while a card is in the air. The transition
+   lives on the arranging board rather than on `.home-pin`, so a board nobody is
+   touching never pays for it — and the gesture still writes the transform
+   directly (FLIP), which is what makes a reflow read as movement rather than as
+   a jump. */
+.home-dashboard__grid.is-arranging .home-pin {
+  transition: transform 160ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-dashboard__grid.is-arranging .home-pin {
+    transition: none;
+  }
+}
+
+/* The lifted card. It never leaves the grid's flow: it stays in its slot, and
+   the gesture translates it to follow the pointer. That is what makes the room
+   the board keeps for it *the room it will land in* — the gap travels with the
+   drag instead of the card hovering over a board that has already closed up.
+   `outline` and not `border`, because a border would resize the box the card is
+   being dropped into and would double the inner card's own hairline; the shadow
+   is `--shadow-sm`, the ceiling the elevation ladder sets. */
 .home-pin.is-lifted {
   z-index: 2;
   pointer-events: none;
-  transform: scale(1.015);
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   box-shadow: var(--shadow-sm);

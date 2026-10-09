@@ -1,7 +1,65 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { Pin } from "@lifequest/vault-core";
 import { insertionIndex, movePin, type SlotRect } from "@/components/home/pin-order";
+
+/** How far into the scrollport's edge a drag starts scrolling the board. */
+const AUTOSCROLL_BAND_PX = 56;
+/** The fastest the board scrolls under a drag, in pixels per frame. */
+const AUTOSCROLL_MAX_PX = 14;
+
+/** What the board does for an operator who has asked for less movement. */
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/**
+ * The nearest ancestor the board actually scrolls inside.
+ *
+ * Resolved rather than assumed: in the app this is `.shell__content`, and in a
+ * rig it is the rig's own box. A board that guessed would scroll the wrong thing
+ * — or nothing — in whichever of the two it was not written for.
+ */
+function scrollParentOf(start: HTMLElement | null): HTMLElement | null {
+  let node = start?.parentElement ?? null;
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") return node;
+    node = node.parentElement;
+  }
+  return (document.scrollingElement as HTMLElement | null) ?? null;
+}
+
+/**
+ * A card's *layout* box: where it sits in the board, with its own transform
+ * taken back off.
+ *
+ * The lifted card is displaced from its layout position by a transform, and the
+ * layout position is the truth: it is the slot the card occupies, the slot the
+ * board has made room for, and the slot the pointer is aiming at. Measuring the
+ * displaced box instead would let a drag aim at a card that is still flying to
+ * where it is going.
+ */
+function layoutBox(card: HTMLElement): SlotRect {
+  const rect = card.getBoundingClientRect();
+  let tx = 0;
+  let ty = 0;
+  const transform = getComputedStyle(card).transform;
+  const matrix = transform && transform !== "none" ? transform.match(/matrix\(([^)]+)\)/) : null;
+  if (matrix) {
+    const parts = matrix[1]!.split(",").map((value) => Number(value.trim()));
+    tx = parts[4] ?? 0;
+    ty = parts[5] ?? 0;
+  }
+  return {
+    left: rect.left - tx,
+    top: rect.top - ty,
+    right: rect.right - tx,
+    bottom: rect.bottom - ty,
+    width: rect.width,
+    height: rect.height,
+  };
+}
 
 /**
  * Arranging the dashboard: pick a card up, put it down where it belongs.
@@ -74,12 +132,7 @@ type Lift = {
   /** The pointer's offset inside the card when it was lifted. */
   grabX: number;
   grabY: number;
-  /** The card's resting box, in the grid's own coordinates. */
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  /** True once the pointer has moved, which is when the card leaves the flow. */
+  /** True once the pointer has moved, which is when the card leaves its slot. */
   moved: boolean;
   /** Where the card would land: an index into the board without it. */
   to: number;
@@ -152,6 +205,13 @@ export function usePinArrange(input: {
   const geometryRef = useRef<HTMLElement | null>(null);
   const [lift, setLift] = useState<Lift | null>(null);
   const [announce, setAnnounce] = useState("");
+  /** The pointer's last position, for the auto-scroll loop. */
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
+  /** The box the board scrolls inside, resolved when a gesture starts. */
+  const scrollRef = useRef<HTMLElement | null>(null);
+  const scrollFrameRef = useRef<number | null>(null);
+  /** Every card's box before a reorder, so the reflow can be animated (FLIP). */
+  const flipRef = useRef<Map<string, DOMRect> | null>(null);
   /** The board's order as the operator sees it: committed pins, plus the drag. */
   const order = useMemo(() => {
     if (!lift) return pins;
@@ -161,10 +221,12 @@ export function usePinArrange(input: {
   }, [lift, pins]);
 
   /**
-   * The cards the pointer is measured against: every pin but the lifted one, in
-   * the order the board currently shows them. Read from the live DOM rather than
-   * from the last computed order, because the DOM is what the operator is aiming
-   * at — including while the board reflows under a drop.
+   * The cards the pointer is measured against: every pin but the lifted one, at
+   * their *layout* positions in the order the board currently shows them.
+   *
+   * The lifted card is excluded because the pointer is choosing a slot *among*
+   * the others, and their layout positions are read rather than their drawn ones
+   * because a sibling mid-animation is not where it lives.
    */
   const slots = useCallback(
     (liftedId: string): SlotRect[] => {
@@ -172,41 +234,79 @@ export function usePinArrange(input: {
       if (!grid) return [];
       return [...grid.querySelectorAll<HTMLElement>("[data-pin-id]")]
         .filter((card) => card.dataset.pinId !== liftedId)
-        .map((card) => {
-          const rect = card.getBoundingClientRect();
-          return {
-            left: rect.left,
-            top: rect.top,
-            right: rect.right,
-            bottom: rect.bottom,
-            width: rect.width,
-            height: rect.height,
-          };
-        });
+        .map((card) => layoutBox(card));
     },
     [],
   );
 
-  /** Hand the lifted card's box to the DOM, and give it back on the way out. */
+  /**
+   * Every card's box, for the reflow that is about to happen (FLIP's "first").
+   *
+   * Captured *before* the state change, because after it the old positions are
+   * gone and a card that moved would simply appear in its new place.
+   */
+  const captureRects = useCallback(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const map = new Map<string, DOMRect>();
+    for (const card of grid.querySelectorAll<HTMLElement>("[data-pin-id]")) {
+      const id = card.dataset.pinId;
+      if (id) map.set(id, card.getBoundingClientRect());
+    }
+    flipRef.current = map;
+  }, []);
+
+  /**
+   * Animate the cards that moved.
+   *
+   * A grid reflow is instant, so the card that changed places would teleport.
+   * This inverts the delta on each card that moved and lets the CSS transition
+   * carry it home — the "invert" and "play" halves of FLIP. The lifted card is
+   * left alone when a pointer owns it: it is following a hand, not a slot.
+   */
+  useLayoutEffect(() => {
+    const before = flipRef.current;
+    flipRef.current = null;
+    if (!before || prefersReducedMotion()) return;
+    const grid = gridRef.current;
+    if (!grid) return;
+    const lifted = liftRef.current;
+    for (const card of grid.querySelectorAll<HTMLElement>("[data-pin-id]")) {
+      const id = card.dataset.pinId;
+      const previous = id ? before.get(id) : undefined;
+      if (!id || !previous) continue;
+      // The lifted card is following a hand, not a slot: followPointer owns it.
+      if (lifted?.pinId === id) continue;
+      const now = card.getBoundingClientRect();
+      const dx = previous.left - now.left;
+      const dy = previous.top - now.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+      card.style.transition = "none";
+      card.style.transform = `translate(${dx}px, ${dy}px)`;
+      requestAnimationFrame(() => {
+        card.style.transition = "";
+        card.style.transform = "";
+      });
+    }
+  }, [order]);
+
+  /** Hand the lifted card's transform back to the stylesheet on the way out. */
   const clearGeometry = useCallback(() => {
     const card = geometryRef.current;
-    if (card) {
-      card.style.position = "";
-      card.style.left = "";
-      card.style.top = "";
-      card.style.width = "";
-      card.style.height = "";
-    }
+    if (card) card.style.transform = "";
     geometryRef.current = null;
   }, []);
 
-  /** Leave grid flow at the size the card already had. */
-  const beginGeometry = useCallback((current: Lift): HTMLElement | null => {
-    const card = cardIn(gridRef.current, current.pinId);
+  /**
+   * The lifted card's box, for the FLIP pass and for the drag's own geometry.
+   *
+   * Nothing is written here: the card never leaves the grid's flow. It is
+   * displaced from its slot by a transform, so the board has already made room
+   * for it exactly where it will land and the operator can see that room.
+   */
+  const claimGeometry = useCallback((): HTMLElement | null => {
+    const card = cardIn(gridRef.current, liftRef.current?.pinId ?? "");
     if (!card) return null;
-    card.style.position = "absolute";
-    card.style.width = `${current.width}px`;
-    card.style.height = `${current.height}px`;
     geometryRef.current = card;
     return card;
   }, []);
@@ -214,21 +314,21 @@ export function usePinArrange(input: {
   /**
    * Put the card under the pointer.
    *
-   * The offset is recomputed from the pointer's client position every time, and
-   * never accumulated: the grid's own box moves when the board scrolls, so a
-   * delta added to a stored position would drift as soon as the board moved
-   * under a stationary hand.
+   * The translate is recomputed from the pointer and the card's *current* layout
+   * box on every frame, never accumulated: the card's slot moves as the board
+   * reflows and the board itself moves when it scrolls, so a delta added to a
+   * stored offset would drift the moment either happened.
    */
   const followPointer = useCallback(
     (current: Lift, clientX: number, clientY: number) => {
-      const grid = gridRef.current;
-      const card = geometryRef.current ?? beginGeometry(current);
-      if (!grid || !card) return;
-      const gridRect = grid.getBoundingClientRect();
-      card.style.left = `${clientX - gridRect.left - current.grabX}px`;
-      card.style.top = `${clientY - gridRect.top - current.grabY}px`;
+      const card = geometryRef.current ?? claimGeometry();
+      if (!card) return;
+      const box = layoutBox(card);
+      const dx = clientX - current.grabX - box.left;
+      const dy = clientY - current.grabY - box.top;
+      card.style.transform = `translate(${dx}px, ${dy}px) scale(1.015)`;
     },
-    [beginGeometry],
+    [claimGeometry],
   );
 
   const disarm = useCallback(() => {
@@ -237,11 +337,72 @@ export function usePinArrange(input: {
     armRef.current = null;
   }, []);
 
+  /** Stop the board scrolling under a drag. */
+  const stopAutoScroll = useCallback(() => {
+    if (scrollFrameRef.current != null) {
+      cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Keep the board moving while a drag sits at its edge, and keep the card under
+   * the pointer while it does.
+   *
+   * The board scrolls under a stationary hand, so the card's position is
+   * recomputed from the pointer each frame rather than nudged by however much the
+   * board moved — the latter drifts the moment two things move at once. Declared
+   * after `followPointer` and `slots` because it calls them: a callback that runs
+   * later still has to be *created* after what it closes over.
+   */
+  const autoScrollFrame = useCallback(() => {
+    scrollFrameRef.current = null;
+    const current = liftRef.current;
+    const pointer = pointerRef.current;
+    const scroller = scrollRef.current;
+    if (!current || !pointer || !scroller || !current.moved || current.keyboard) return;
+    const box = scroller.getBoundingClientRect();
+    const fromTop = pointer.y - box.top;
+    const fromBottom = box.bottom - pointer.y;
+    let delta = 0;
+    if (fromTop < AUTOSCROLL_BAND_PX) {
+      delta = -Math.ceil(
+        AUTOSCROLL_MAX_PX * Math.min(1, (AUTOSCROLL_BAND_PX - fromTop) / AUTOSCROLL_BAND_PX),
+      );
+    } else if (fromBottom < AUTOSCROLL_BAND_PX) {
+      delta = Math.ceil(
+        AUTOSCROLL_MAX_PX * Math.min(1, (AUTOSCROLL_BAND_PX - fromBottom) / AUTOSCROLL_BAND_PX),
+      );
+    }
+    if (delta !== 0) {
+      const was = scroller.scrollTop;
+      scroller.scrollTop = was + delta;
+      if (scroller.scrollTop !== was) {
+        followPointer(current, pointer.x, pointer.y);
+        const to = insertionIndex(slots(current.pinId), pointer);
+        if (to !== current.to) {
+          const next: Lift = { ...current, to };
+          liftRef.current = next;
+          setLift(next);
+        }
+      }
+    }
+    scrollFrameRef.current = requestAnimationFrame(autoScrollFrame);
+  }, [followPointer, slots]);
+
+  const startAutoScroll = useCallback(() => {
+    if (scrollFrameRef.current == null) {
+      scrollFrameRef.current = requestAnimationFrame(autoScrollFrame);
+    }
+  }, [autoScrollFrame]);
+
   const endLift = useCallback(() => {
+    stopAutoScroll();
+    pointerRef.current = null;
     clearGeometry();
     liftRef.current = null;
     setLift(null);
-  }, [clearGeometry]);
+  }, [clearGeometry, stopAutoScroll]);
 
   const cancel = useCallback(() => {
     disarm();
@@ -295,7 +456,6 @@ export function usePinArrange(input: {
         disarm();
         return;
       }
-      const gridRect = grid.getBoundingClientRect();
       const cardRect = card.getBoundingClientRect();
       try {
         // Capture so the drag keeps its moves outside the card it started on.
@@ -310,14 +470,14 @@ export function usePinArrange(input: {
         pointerId: arm.pointerId,
         grabX: point.x - cardRect.left,
         grabY: point.y - cardRect.top,
-        left: cardRect.left - gridRect.left,
-        top: cardRect.top - gridRect.top,
-        width: cardRect.width,
-        height: cardRect.height,
         moved: false,
         to: pins.findIndex((pin) => pin.id === arm.pinId),
         keyboard: false,
       };
+      // The box the board scrolls inside, resolved once per gesture: it is what
+      // auto-scroll moves, and it does not change while a card is in the air.
+      scrollRef.current = scrollParentOf(grid);
+      pointerRef.current = point;
       liftRef.current = next;
       setLift(next);
     },
@@ -379,15 +539,18 @@ export function usePinArrange(input: {
       // The card follows the pointer, and the pointer decides the slot. The slot
       // is resolved against the other cards' *live* rects, so the order the board
       // is showing is the order the operator is aiming at.
+      pointerRef.current = { x: event.clientX, y: event.clientY };
       followPointer(current, event.clientX, event.clientY);
       const to = insertionIndex(slots(current.pinId), { x: event.clientX, y: event.clientY });
       if (!current.moved || to !== current.to) {
+        captureRects();
         const next: Lift = { ...current, moved: true, to };
         liftRef.current = next;
         setLift(next);
       }
+      startAutoScroll();
     },
-    [disarm, followPointer, liftCard, slots],
+    [captureRects, disarm, followPointer, liftCard, slots, startAutoScroll],
   );
 
   const onPointerUp = useCallback(
@@ -460,10 +623,6 @@ export function usePinArrange(input: {
           pointerId: null,
           grabX: 0,
           grabY: 0,
-          left: 0,
-          top: 0,
-          width: 0,
-          height: 0,
           moved: false,
           to: from,
           keyboard: true,
@@ -490,6 +649,7 @@ export function usePinArrange(input: {
       else if (event.key === "ArrowDown") to = clamp(current.to + trackCount(gridRef.current));
       if (to == null) return;
       event.preventDefault();
+      captureRects();
       const next: Lift = { ...current, moved: true, to };
       liftRef.current = next;
       setLift(next);
@@ -499,7 +659,7 @@ export function usePinArrange(input: {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [busy, finishLift, locked, pins]);
+  }, [busy, captureRects, finishLift, locked, pins]);
 
   // A card that leaves the board mid-drag (an unpin, a re-read) must not leave
   // the gesture hanging over an element that is gone, and must not leave its
@@ -508,8 +668,15 @@ export function usePinArrange(input: {
     if (lift && !pins.some((pin) => pin.id === lift.pinId)) cancel();
   }, [cancel, lift, pins]);
 
-  // React never writes these properties, so the unmount path has to.
-  useEffect(() => clearGeometry, [clearGeometry]);
+  // React never writes these properties, so the unmount path has to — and a
+  // gesture in flight when the page goes away must not leave a rAF loop behind.
+  useEffect(
+    () => () => {
+      clearGeometry();
+      stopAutoScroll();
+    },
+    [clearGeometry, stopAutoScroll],
+  );
 
   const isLifted = useCallback((pinId: string) => lift?.pinId === pinId, [lift]);
 

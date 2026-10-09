@@ -564,9 +564,10 @@ async function checkActivation(win) {
     "a hold on a card's link lifted the card",
   );
 
-  // 6. A hold does not move the board, and a drag does. `sys:goal-progress` is a
-  //    full-row card, so when it does leave the flow the whole first row is what
-  //    closes — the strongest form of the claim.
+  // 6. A hold does not move the board, and a drag moves the *room* for the card
+  //    into the slot it will land in. `sys:goal-progress` is the board's first
+  //    card and a full-row one, so this is the strongest version of the claim:
+  //    the whole row it left is what the cards below move up into.
   step("lift-leaves-a-gap");
   await beginScenario(win);
   const restingGoal = await cardRect(win, "sys:goal-progress");
@@ -575,34 +576,39 @@ async function checkActivation(win) {
   mouse(win, "mouseDown", gapPoint.x, gapPoint.y);
   await waitForLift(win, "sys:goal-progress");
   // Still held, not yet moved: the card is lifted and nothing has shifted.
-  const heldGoal = await cardRect(win, "sys:goal-progress");
   const heldWeekly = await cardRect(win, "view:financial:v-weekly");
-  const boardStoodStill =
-    heldGoal.position === "relative" &&
-    Math.abs(heldGoal.top - restingGoal.top) <= 2 &&
-    Math.abs(heldWeekly.top - restingWeekly.top) <= 2;
-  // Now drag it, and the board closes the gap behind it.
-  mouse(win, "mouseMove", gapPoint.x + 40, gapPoint.y + 4);
-  const dragged = await waitFor(win, `(() => {
-    const el = document.querySelector('[data-pin-id="sys:goal-progress"]');
-    return el && getComputedStyle(el).position === 'absolute';
-  })()`, "the dragged card to leave the board's flow", 3000).then(() => true, () => false);
+  const boardStoodStill = Math.abs(heldWeekly.top - restingWeekly.top) <= 2;
+  // Now drag it into the row below. The card follows the pointer, and its slot
+  // follows it: the layout box is the room it will land in.
+  const gapTarget = await pointIn(win, "page:financial:ledger", 0.5, 60);
+  mouse(win, "mouseMove", gapTarget.x, gapTarget.y);
   await settleFrames(win);
-  const draggedGoal = await cardRect(win, "sys:goal-progress");
-  const closedWeekly = await cardRect(win, "view:financial:v-weekly");
-  mouse(win, "mouseUp", gapPoint.x + 40, gapPoint.y + 4);
-  await sleep(80);
-  const closedUp =
-    closedWeekly &&
-    Math.abs(closedWeekly.top - restingGoal.top) <= 2 &&
-    Math.abs(closedWeekly.left - restingGoal.left) <= 2;
+  const dragged = await cardMotion(win);
+  const goalNow = dragged.find((card) => card.id === "sys:goal-progress");
+  const weeklyNow = dragged.find((card) => card.id === "view:financial:v-weekly");
+  // A drag in progress is the one picture worth keeping: it shows the card in
+  // the hand and the room the board has made for it in the same frame.
+  try {
+    await settleFrames(win);
+    const dragShot = await win.webContents.capturePage();
+    fs.mkdirSync(artifactsDir, { recursive: true });
+    fs.writeFileSync(path.join(artifactsDir, "dashboard-arrange-drag.png"), dragShot.toPNG());
+  } catch (error) {
+    console.log(`[drag screenshot skipped] ${error}`);
+  }
+  mouse(win, "mouseUp", gapTarget.x, gapTarget.y);
+  await sleep(200);
+  const gapOrder = await restingOrder(win);
+  const closedUp = Boolean(weeklyNow) && Math.abs(weeklyNow.layoutTop - restingGoal.top) <= 2;
+  const roomMoved = Boolean(goalNow) && goalNow.layoutTop > restingGoal.top + 40;
+  const followsHand = Boolean(goalNow) && Math.abs(goalNow.ty) > 10;
   check(
     "lift-leaves-a-gap",
-    boardStoodStill && dragged && draggedGoal.position === "absolute" && closedUp,
-    `held: ${heldGoal.position} at ${heldGoal.top} against a resting ${restingGoal.top}, ` +
-      `the next card at ${heldWeekly.top}/${heldWeekly.left}; ` +
-      `dragged: ${draggedGoal.position}, the next card at ` +
-      `${closedWeekly?.top}/${closedWeekly?.left} against the resting ${restingGoal.top}/${restingGoal.left}`,
+    boardStoodStill && closedUp && roomMoved && followsHand && gapOrder[0] !== "sys:goal-progress",
+    `held: the next card at ${heldWeekly.top} against its resting ${restingWeekly.top}; ` +
+      `dragged: the next card's slot at ${weeklyNow?.layoutTop} against the row it left (${restingGoal.top}), ` +
+      `the card's own slot at ${goalNow?.layoutTop} with a ${goalNow?.ty} translate, ` +
+      `the board now ${JSON.stringify(gapOrder)}`,
   );
 
   // 7. A locked board is inert — no chrome, no lift, no write.
@@ -1071,6 +1077,199 @@ async function checkKeyboard(win) {
   );
 }
 
+/**
+ * Every pin's transform, drawn box, and layout box.
+ *
+ * The layout box is the drawn box with the card's own translate taken back off:
+ * that is the slot the card occupies and the slot the board has made room for. A
+ * card mid-animation, and a card being dragged, are both somewhere else on screen
+ * than their slot — so a claim about *where the board put a card* is a claim
+ * about the layout box, and a claim about movement is a claim about the drawn one.
+ */
+function cardMotion(win) {
+  return win.webContents.executeJavaScript(
+    `(() => {
+       const parse = (transform) => {
+         if (!transform || transform === "none") return { tx: 0, ty: 0 };
+         const m = transform.match(/matrix\\(([^)]+)\\)/);
+         if (!m) return { tx: 0, ty: 0 };
+         const parts = m[1].split(",").map((n) => Number(n.trim()));
+         return { tx: parts[4] ?? 0, ty: parts[5] ?? 0 };
+       };
+       return [...document.querySelectorAll(".home-dashboard__grid > .home-pin[data-pin-id]")].map((el) => {
+         const box = el.getBoundingClientRect();
+         const { tx, ty } = parse(getComputedStyle(el).transform);
+         return {
+           id: el.dataset.pinId,
+           lifted: el.classList.contains("is-lifted"),
+           tx: Math.round(tx * 100) / 100,
+           ty: Math.round(ty * 100) / 100,
+           left: Math.round(box.left),
+           top: Math.round(box.top),
+           layoutLeft: Math.round(box.left - tx),
+           layoutTop: Math.round(box.top - ty),
+         };
+       });
+     })()`,
+  );
+}
+
+/**
+ * The motion claims: cards move into their new places rather than teleporting,
+ * a long board scrolls under a drag, and an operator who asked for less movement
+ * gets none of it.
+ */
+async function checkMotion(win) {
+  const movedCards = (sample) => sample.filter((card) => !card.lifted && (card.tx !== 0 || card.ty !== 0));
+
+  // 1. FLIP: the card that changes places is *drawn where it was* at the moment
+  //    of the reorder and travels to where it belongs, rather than teleporting.
+  //    Three samples: the reorder frame, mid-animation, and at rest.
+  step("siblings-animate");
+  await beginScenario(win);
+  const source = await pointOn(win, headingOf("view:financial:v-weekly"));
+  mouse(win, "mouseDown", source.x, source.y);
+  await waitForLift(win, "view:financial:v-weekly");
+  mouse(win, "mouseMove", source.x + 12, source.y + 12);
+  await settleFrames(win);
+  const before = await cardMotion(win);
+  const target = await pointIn(win, "page:financial:ledger", 0.8);
+  mouse(win, "mouseMove", target.x, target.y);
+  await sleep(30);
+  const reorder = await cardMotion(win);
+  await sleep(70);
+  const travelling = await cardMotion(win);
+  await sleep(320);
+  const settled = await cardMotion(win);
+  mouse(win, "mouseUp", target.x, target.y);
+  await sleep(220);
+  const after = await cardMotion(win);
+
+  const flying = movedCards(reorder);
+  const flyer = flying[0];
+  const wasThere = flyer ? before.find((card) => card.id === flyer.id) : null;
+  const endedUp = flyer ? settled.find((card) => card.id === flyer.id) : null;
+  const midWay = flyer ? travelling.find((card) => card.id === flyer.id) : null;
+  const between = (value, a, b) => value > Math.min(a, b) && value < Math.max(a, b);
+  check(
+    "siblings-animate",
+    flying.length > 0 &&
+      Boolean(wasThere && endedUp) &&
+      // Drawn where it was on the reorder frame, in the *layout* position it is
+      // heading for: the inverse transform is what stops the jump.
+      Math.abs(flyer.left - wasThere.left) <= 2 &&
+      Math.abs(flyer.layoutLeft - endedUp.layoutLeft) <= 2 &&
+      // And mid-animation it is strictly between the two places, which is what
+      // proves it is playing rather than frozen at either end.
+      Boolean(midWay) &&
+      between(midWay.left, wasThere.left, endedUp.layoutLeft) &&
+      movedCards(settled).length === 0 &&
+      movedCards(after).length === 0 &&
+      Boolean(wasThere && endedUp && wasThere.layoutLeft !== endedUp.layoutLeft),
+    `reorder frame: ${JSON.stringify(flyer)} against where it was ${wasThere?.left}; ` +
+      `mid-animation: ${midWay?.left}; settled: ${endedUp?.layoutLeft} ` +
+      `(${movedCards(settled).length} still moving, ${movedCards(after).length} after the drop)`,
+  );
+
+  // 2. A board taller than its box scrolls under a drag, and the card stays under
+  //    the pointer while it does.
+  step("auto-scroll-follows-the-pointer");
+  win.setContentSize(1280, 520);
+  await sleep(250);
+  await beginScenario(win);
+  const shortSource = await pointOn(win, headingOf("view:financial:v-weekly"));
+  mouse(win, "mouseDown", shortSource.x, shortSource.y);
+  await waitForLift(win, "view:financial:v-weekly");
+  mouse(win, "mouseMove", shortSource.x + 10, shortSource.y + 10);
+  await settleFrames(win);
+  const scrollStart = await win.webContents.executeJavaScript(
+    "document.querySelector('.arrange-scroll').scrollTop",
+  );
+  const edge = await win.webContents.executeJavaScript(
+    `(() => { const s = document.querySelector('.arrange-scroll'); const r = s.getBoundingClientRect(); return { x: r.left + 120, y: r.bottom - 12 }; })()`,
+  );
+  mouse(win, "mouseMove", edge.x, edge.y);
+  await sleep(700);
+  const scrollEnd = await win.webContents.executeJavaScript(
+    "document.querySelector('.arrange-scroll').scrollTop",
+  );
+  const underPointer = await win.webContents.executeJavaScript(
+    `(() => {
+       const card = document.querySelector('[data-pin-id="view:financial:v-weekly"]');
+       if (!card) return false;
+       const r = card.getBoundingClientRect();
+       return r.top <= ${Math.round(edge.y)} && r.bottom >= ${Math.round(edge.y)};
+     })()`,
+  );
+  mouse(win, "mouseUp", edge.x, edge.y);
+  await sleep(160);
+  win.setContentSize(BOARD_SIZE.width, BOARD_SIZE.height);
+  await sleep(250);
+  check(
+    "auto-scroll-follows-the-pointer",
+    scrollEnd > scrollStart && underPointer === true,
+    `the board scrolled from ${scrollStart} to ${scrollEnd} while the pointer sat at the edge; ` +
+      `the card still covers the pointer: ${underPointer}`,
+  );
+
+  // 3. Reduced motion: the same reorder, and no card is ever displaced.
+  //
+  //    The media feature is emulated over CDP because that is the only way to ask
+  //    a real engine for it. If this Electron build will not take the emulation,
+  //    the claim is dropped rather than faked with an injected stylesheet — an
+  //    uncovered CSS guard is honest, a falsely covered one is not.
+  step("reduced-motion-is-still");
+  let emulated = false;
+  try {
+    win.webContents.debugger.attach("1.3");
+    await win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+    });
+    emulated = true;
+  } catch (error) {
+    console.log(`[reduced motion not emulated] ${error}`);
+  }
+  if (!emulated) {
+    check(
+      "reduced-motion-is-still",
+      false,
+      "this Electron build refused Emulation.setEmulatedMedia, so prefers-reduced-motion could not be asked for",
+    );
+  } else {
+    await beginScenario(win);
+    const prefersReduce = await win.webContents.executeJavaScript(
+      "window.matchMedia('(prefers-reduced-motion: reduce)').matches",
+    );
+    const calmSource = await pointOn(win, headingOf("view:financial:v-weekly"));
+    mouse(win, "mouseDown", calmSource.x, calmSource.y);
+    await waitForLift(win, "view:financial:v-weekly");
+    mouse(win, "mouseMove", calmSource.x + 12, calmSource.y + 12);
+    await settleFrames(win);
+    const calmTarget = await pointIn(win, "page:financial:ledger", 0.8);
+    mouse(win, "mouseMove", calmTarget.x, calmTarget.y);
+    await sleep(40);
+    const calmMid = await cardMotion(win);
+    await sleep(200);
+    const calmSettled = await cardMotion(win);
+    mouse(win, "mouseUp", calmTarget.x, calmTarget.y);
+    await sleep(200);
+    try {
+      win.webContents.debugger.detach();
+    } catch {
+      // Detaching a debugger that already went away is not a failure.
+    }
+    check(
+      "reduced-motion-is-still",
+      prefersReduce === true &&
+        movedCards(calmMid).length === 0 &&
+        movedCards(calmSettled).length === 0,
+      `under reduced motion (${prefersReduce}) the board drew ` +
+        `${movedCards(calmMid).length} moving card(s) mid-reorder and ` +
+        `${movedCards(calmSettled).length} after it`,
+    );
+  }
+}
+
 async function main() {
   const sessionPartition = `dashboard-arrange-${Date.now()}`;
   nativeTheme.themeSource = "dark";
@@ -1133,6 +1332,7 @@ async function main() {
   await checkOrdering(win);
   await checkCancelAndRefusal(win);
   await checkKeyboard(win);
+  await checkMotion(win);
 
   await renderBoard(win, SEED, false);
   await settleFrames(win);

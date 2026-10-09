@@ -41,8 +41,8 @@ This spec makes the board behave like a phone's home screen: **hold a card and i
 | 1 | Layout model | Order only. `Pin[]` order is the layout; no positions are stored. Free placement is a separate, later phase (§8). |
 | 2 | Activation | Two paths: the grip handle starts a drag on ≥4 px of movement; the card body starts one after a 220 ms hold with <8 px of movement. |
 | 3 | Cancellation of a pending hold | Pointer movement over 8 px before the hold fires, `pointerup`, or a press on an interactive element inside the card. |
-| 4 | Lift | The card leaves grid flow as an absolutely positioned child of the grid, sized to its resting rect, outlined in `--accent`, on `--shadow-sm`. |
-| 5 | Target slot | The gap is the card's own DOM position: the rendered order is the preview order, and the lifted card is out of flow, so the board's own reflow shows the drop. |
+| 4 | Lift | The card stays in grid flow and is displaced from its slot by an inline transform; its slot follows the pointer, so the gap it leaves *is* where it will land. |
+| 5 | Target slot | The gap is the card's own layout box: the rendered order is the preview order, so the board's reflow shows the drop and the room travels with the drag. |
 | 6 | Slot rule | Reading-order scan with a row-band test on the pointer (the first slot whose row band contains the pointer and whose horizontal midpoint is past it, else the first slot whose vertical midpoint is below it). |
 | 7 | Drop | Exactly one `pinsSet(boardSlug, next)` per drop, and none if the index did not change. |
 | 8 | Optimism | The preview order is committed locally at lift and reverted if the vault refuses or the drag is cancelled. |
@@ -50,7 +50,7 @@ This spec makes the board behave like a phone's home screen: **hold a card and i
 | 10 | Locked board | No chrome, no listeners, no lift, no write. |
 | 11 | Keyboard | Enter/Space on the grip lifts and drops; Left/Right move one slot; Up/Down move one row (the measured column count); Escape cancels. |
 | 12 | Announcements | A `role="status"` line names each keyboard move and the outcome of a drop. |
-| 13 | Motion | Sibling cards animate into place over 160 ms, and the whole board is still-cards under `prefers-reduced-motion: reduce`. |
+| 13 | Motion | Sibling cards animate into place over 160 ms, drawn where they were on the reorder frame; the whole board is still under `prefers-reduced-motion: reduce`. |
 | 14 | Long boards | Dragging within 56 px of the scrollport's top or bottom edge auto-scrolls, and the lifted card stays under the pointer while it does. |
 | 15 | Icons | `PinOff`, `GripVertical`, `Maximize2` / `Minimize2` from `lucide-react`, icon-only, each with an accessible name. |
 | 16 | Chrome order | Left to right: move (grip), width (view pins only), unpin. |
@@ -80,8 +80,8 @@ This spec makes the board behave like a phone's home screen: **hold a card and i
         └── otherwise                                          → armed (drag on 220 ms hold, <8 px)
                      │
                      ▼
-            LIFT:  measure the grid + every card rect
-                   lifted card → position:absolute, left/top/width/height inline
+            LIFT:  measure the card's layout box
+                   card stays in flow, marked lifted, displaced by transform
                    grid → .is-arranging,  card → .is-lifted
                      │
                      ▼  pointermove (captured) + rAF + scroll
@@ -152,30 +152,65 @@ export function movePin<T>(list: T[], from: number, to: number): T[];
 
 ### 3.4 Lift and the ghost
 
-The lifted card is **not** reparented and **not** cloned. It stays the same React element at the same `key`; the controller only gives it a class and inline geometry:
+The lifted card **never leaves the grid's flow**, and this is the correction the
+board itself forced. The first design took it out of flow as an absolutely
+positioned child. That version works, and it has a hole in it: the in-flow items
+keep their relative order no matter where the lifted card's index goes, so the
+board never reflows during a drag, the "gap" never travels, and the operator gets
+no visual answer to *where will this land* — only a card hovering over a board
+that has already closed up. FLIP had nothing to animate either, which is what
+gave the hole away.
 
-- `position: absolute` in the grid (the grid gains `position: relative`). Out of flow, so the grid's own auto-placement closes the gap behind it.
-- `left` / `top` recomputed on every frame from **client coordinates** (`pointer.clientX - gridRect.left - grab.dx + scrollLeft`), never accumulated, so it stays under the pointer while the board auto-scrolls.
-- `width` / `height` frozen from the resting rect, so a span-2 card keeps the row while it is lifted and no text reflows mid-drag.
-- `pointer-events: none`, `z-index: 2`, `transform: scale(1.015)`, `outline: 2px solid var(--accent); outline-offset: 1px`, `box-shadow: var(--shadow-sm)`.
+What the board does instead:
 
-`outline` rather than `border` is load-bearing: a border would change the box and nudge the layout it is sitting in, and it would double the inner card's own hairline. `--shadow-sm` is the ceiling DESIGN.md sets for the sheet, so the lift stays inside the elevation ladder.
+- The lifted card keeps its slot, **and its slot follows the pointer**: the
+  rendered order is `movePin(pins, from, to)`, so the board's own auto-placement
+  puts the card's box where it will land and moves every other card aside. The
+  **gap is the card's layout box**, and it travels with the drag.
+- The card is displaced from that box by an inline `transform`, so it is drawn
+  under the pointer while its layout stays in the slot:
+  `translate(dx, dy)`, where `dx = pointer.x - grabX - layoutBox.left`, recomputed
+  from the pointer and the card's *current* layout box on every frame, never
+  accumulated.
+- `layoutBox(card)` is the card's drawn box minus its own transform. That
+  distinction is load-bearing twice over: the pointer must aim at where cards
+  *live* — a sibling mid-animation is somewhere else — and the lifted card must be
+  displaced from where it *lives*, not from where it is drawn.
+- The lifted look is `outline: 2px solid var(--accent); outline-offset: 1px`, with
+  `box-shadow: var(--shadow-sm)`, `z-index: 2`, `pointer-events: none`.
+- Before the pointer has moved, the card is lifted *in place*: same slot, same
+  outline, no reflow. A hold that means nothing must not move the board.
+
+`outline` rather than `border` is load-bearing: a border would change the box and
+nudge the layout it is sitting in, and it would double the inner card's own
+hairline. `--shadow-sm` is the ceiling DESIGN.md sets for the sheet, so the lift
+stays inside the elevation ladder.
+
+This needs no clone, no reparent, and no placeholder element: the one card the
+operator is holding is the card in the slot and the card under the hand, at once.
 
 ### 3.5 Sibling motion (FLIP)
 
-After a preview-index change React reflows the grid. The controller:
+A slot change reflows the grid — cards really do move, which is the whole point
+of §3.4 — and a grid reflow is instant. The controller:
 
-1. keeps the last measured rect per pin id (captured *before* the state update),
-2. in a layout effect, measures again and for every pin that moved sets `transform: translate(dx, dy)` with `transition: none`,
-3. clears both on the next frame, so the CSS `transition: transform 160ms` animates each card from where it was to where it now is.
+1. keeps the last measured layout box per pin id, captured *before* the state update,
+2. in a layout effect, measures again and, for every pin that moved, sets
+   `transform: translate(dx, dy)` with `transition: none`,
+3. clears both on the next frame, so the CSS `transition: transform 160ms` plays
+   each card from where it was drawn to where it now lives.
 
-Cards whose delta is zero are left alone, and the whole step is skipped under `prefers-reduced-motion: reduce`.
+The effect is that the reorder frame draws every card exactly where it already
+was — no jump — and the animation carries it to its new place. The lifted card is
+excluded: it is following a hand, and its transform belongs to the drag.
+Cards whose delta is zero are left alone, and the whole step is skipped under
+`prefers-reduced-motion: reduce`.
 
 ### 3.6 Auto-scroll
 
 The scrollport is resolved at lift time by walking up from the grid for the first ancestor whose computed `overflow-y` is `auto` or `scroll`, falling back to `document.scrollingElement`. In the app that is `.shell__content` (`overflow: auto`); a harness page supplies its own.
 
-While the pointer sits within 56 px of that scrollport's top or bottom edge, a `requestAnimationFrame` loop scrolls it by up to 14 px per frame (scaled by how deep into the band the pointer is), and the lifted card's `left`/`top` are recomputed from the same frame's client coordinates. The loop stops on drop, cancel, or when the pointer leaves both bands.
+While the pointer sits within 56 px of that scrollport's top or bottom edge, a `requestAnimationFrame` loop scrolls it by up to 14 px per frame (scaled by how deep into the band the pointer is), and the lifted card's transform is recomputed in that same frame — from the pointer and the card's current layout box, which the scroll has just moved. The loop stops on drop, cancel, or when the pointer leaves both bands.
 
 ### 3.7 Keyboard
 

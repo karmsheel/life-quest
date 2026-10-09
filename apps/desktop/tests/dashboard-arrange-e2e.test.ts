@@ -40,6 +40,9 @@ const SCENARIOS = [
   "keyboard-escape-writes-nothing",
   "keyboard-is-announced",
   "focus-returns-to-the-grip",
+  "siblings-animate",
+  "auto-scroll-follows-the-pointer",
+  "reduced-motion-is-still",
 ];
 
 /**
