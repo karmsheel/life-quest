@@ -28,9 +28,12 @@
  *
  * Two seams worth naming. The window is shown inactive and never holds OS focus,
  * so `blur-cancels` dispatches the event a focused window would receive rather
- * than losing focus for real; `dashboard-live-app` covers the real one. And the
- * harness renders the page without the shell around it, so the scrollport the
- * board scrolls inside is the harness's own box, not `.shell__content`.
+ * than losing focus for real: a window that was never focused cannot lose focus,
+ * and no rig here can seize the operator's desktop to arrange one. The listener
+ * is what is covered; that the OS raises the event is not. And the harness renders
+ * the page without the shell around it, so the scrollport the board scrolls inside
+ * is the harness's own box, not `.shell__content` — which the live-app leg covers,
+ * since it runs the app's own window.
  *
  * Input is dispatched through `webContents.sendInputEvent` — the browser's own
  * input pipeline — never through a hand-built `PointerEvent`, because the claims

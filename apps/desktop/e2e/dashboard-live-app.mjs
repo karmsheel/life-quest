@@ -49,6 +49,12 @@ fs.rmSync(REPORT, { force: true });
 const shot = process.argv.includes("--shot");
 if (shot) env.LIFEQUEST_E2E_SHOT = "1";
 
+// `--drag` adds the one leg that writes: it reorders the operator's own Overview
+// board through the real IPC channel and puts the order back. Opt-in, because a
+// run that touches a real vault should be a decision and not a default.
+const drag = process.argv.includes("--drag");
+if (drag) env.LIFEQUEST_E2E_DRAG = "1";
+
 const child = spawn(electron, [path.join(here, "dashboard-live-app.electron.mjs")], {
   cwd: desktopRoot,
   stdio: "inherit",

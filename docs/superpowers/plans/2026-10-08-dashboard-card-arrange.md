@@ -461,21 +461,23 @@ git commit -m "feat(desktop): animate the reflow and auto-scroll a long board" -
 
 - [ ] **Step 1: Add the live leg and run it**
 
-Extend `dashboard-live-app.electron.mjs` with one leg against the built app and a throwaway profile: read the board's order through the real IPC bridge, drag the second card to the first position with real input, assert the board file on disk now holds that order, then lock the board and assert a hold on a card neither lifts nor writes. Record it in `dashboard-live-app.json`.
+Extend `dashboard-live-app.electron.mjs` with one leg against the built app and a throwaway profile: read the board's order through the real IPC bridge, drag the second card to the first position with real input, assert the board file on disk now holds that order, then put the order back and assert the board is as it was found. Then lock the board through the real channel and assert a gesture over a card neither lifts it nor files a proposal, and unlock again. Record it in `dashboard-live-app.json`. The leg is opt-in (`--drag`, through the launcher, mirroring `--shot`) because it is the only leg in this suite that writes to the operator's own vault; everything else reads.
 
-Expected: **PASS**. This leg is written after the feature exists, so a failure here is a real defect (most likely `setPointerCapture` or the scroll-parent resolution behaving differently under the real shell), not a missing feature. Fix the code, not the assertion.
+**It uses the grip, not a hold.** This window is hidden, and Chromium throttles timers in a window nobody is looking at — a 220 ms hold that never fires would make "a press on a locked board does nothing" pass for the wrong reason.
 
-- [ ] **Step 2: Add the two laws, or decline them**
+**Status on the branch this plan was written on: written, not verified.** The live rig does not boot in that environment — it times out waiting for the Dashboard to mount, and it does the same with the leg disabled, on a freshly built bundle, so the failure is the rig's and not this feature's. The gesture itself is covered by `dashboard-arrange`, which is in `npm test`; what stays unproven here is only the join, and the leg is the thing to run when the live rig boots again.
 
-`LAWS/DASHBOARD.md` gains, if the operator wants the behavior locked in (one requirement per law, per `LAWS/README.md`):
+- [ ] **Step 2: Add the two laws**
+
+`LAWS/DASHBOARD.md` gains (one requirement per law, per `LAWS/README.md`):
 
 ```
-An unlocked Dashboard MUST be reorderable by dragging a card to a new position.
+An unlocked Dashboard MUST be reorderable by dragging a card to the position it is dropped in.
 
 Every card on an unlocked Dashboard MUST be reorderable from the keyboard.
 ```
 
-This is the one step in the plan that may be declined: the feature is complete without it, and the laws are the product contract rather than the implementation's. Ask before writing.
+The second one is the point of the pair: the `↑` / `↓` buttons were the board's only non-pointer path, and a feature that removes them without a keyboard replacement trades one clunky control for no control at all. Declining the laws means declining the requirement, not the feature — the rig proves the behaviour either way.
 
 - [ ] **Step 3: Run the whole suite**
 

@@ -17,6 +17,18 @@
  * `%APPDATA%\LifeQuest` is never written; the window is hidden, so nothing
  * flashes on their desktop. This is the only rig here that runs the application
  * itself rather than a harness page.
+ *
+ * `--drag` (through the launcher) adds the one leg that writes: it reorders the
+ * operator's own Overview board through the real IPC channel and then puts the
+ * order back, asserting the board file at each step. It is opt-in for the same
+ * reason the screenshot is: everything else here reads, and a run that writes to
+ * a real vault should be a decision rather than a default.
+ *
+ * The drag uses the **grip**, not a hold. This window is hidden, and Chromium
+ * throttles timers in a window nobody is looking at — a 220 ms hold that never
+ * fires would make "a press on a locked board does nothing" pass for the wrong
+ * reason. The grip is armed on movement and needs no timer, so the leg proves the
+ * channel rather than the frame rate.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -112,6 +124,43 @@ const SAMPLE = `(() => {
     addPin: Boolean(document.querySelector('[data-testid="board-add-pin"]')),
   };
 })()`;
+
+/** The board's pins, in the order the live DOM has them. */
+const ORDER = `[...document.querySelectorAll(".home-dashboard__grid > .home-pin[data-pin-id]")].map((el) => el.dataset.pinId)`;
+
+/** Real input, through the browser's own pipeline: this is the app's own window. */
+function mouse(win, type, x, y) {
+  win.webContents.sendInputEvent({
+    type,
+    x: Math.round(x),
+    y: Math.round(y),
+    button: "left",
+    clickCount: 1,
+  });
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** The centre of a selector's box, in the CSS pixels `sendInputEvent` takes. */
+async function pointAt(win, selector) {
+  const point = await win.webContents.executeJavaScript(
+    `(() => {
+       const el = document.querySelector(${JSON.stringify(selector)});
+       if (!el) return null;
+       const r = el.getBoundingClientRect();
+       return { x: r.left + r.width / 2, y: r.top + r.height / 2, left: r.left, top: r.top, width: r.width, height: r.height };
+     })()`,
+  );
+  if (!point) throw new Error(`no element for ${selector}`);
+  return point;
+}
+
+/** How many proposals are waiting for the operator right now. */
+async function pendingDecisions(win) {
+  const list = await win.webContents.executeJavaScript("window.lifequest.decisionList()");
+  const records = list && list.ok ? list.value : [];
+  return records.filter((record) => record.status === "pending").length;
+}
 
 async function main() {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "lq-live-app-"));
@@ -272,6 +321,109 @@ async function main() {
   }
   if (checks.afterUnlockClick.addPin !== board.addPin) {
     failure("unlocking did not restore the Add-pin row to its unlocked state");
+  }
+
+  // ── arranging the operator's own board, over the real IPC channel ─────────
+  //
+  // The harness rig proves the gesture against a stubbed bridge. This is the only
+  // place the whole chain is real at once: grip → pointer capture → the slot rule
+  // → `pins:set` → the board file on disk → the renderer reading it back.
+  if (process.env.LIFEQUEST_E2E_DRAG) {
+    const before = await win.webContents.executeJavaScript(ORDER);
+    checks.dragBefore = before;
+    if (before.length < 2) {
+      failure(`the live board has ${before.length} pin(s); there is nothing to arrange`);
+    } else {
+      const [first, second] = before;
+      /** Drag the grip of `id` onto a fraction across the card `ontoId`. */
+      const drag = async (id, ontoId, across) => {
+        const grip = await pointAt(win, `[data-pin-id="${id}"] [data-testid="pin-grip"]`);
+        mouse(win, "mouseDown", grip.x, grip.y);
+        mouse(win, "mouseMove", grip.x + 8, grip.y);
+        await sleep(120);
+        const onto = await pointAt(win, `[data-pin-id="${ontoId}"]`);
+        const target = { x: onto.left + onto.width * across, y: onto.top + 24 };
+        for (let step = 1; step <= 3; step += 1) {
+          mouse(win, "mouseMove", grip.x + ((target.x - grip.x) * step) / 3, grip.y + ((target.y - grip.y) * step) / 3);
+          await sleep(60);
+        }
+        mouse(win, "mouseUp", target.x, target.y);
+        await sleep(400);
+      };
+
+      // Onto the first card's left half: `second` lands before `first`.
+      await drag(second, first, 0.2);
+      const swapped = await win.webContents.executeJavaScript(ORDER);
+      checks.dragAfterSwap = swapped;
+      if (swapped.join(",") !== [second, first, ...before.slice(2)].join(",")) {
+        failure(`the live drag gave ${JSON.stringify(swapped)}, expected ${JSON.stringify([second, first, ...before.slice(2)])}`);
+      }
+      // Onto the first card's right half: `second` goes back where it belongs,
+      // so the operator's board is left exactly as it was found.
+      await drag(second, first, 0.8);
+      const restored = await win.webContents.executeJavaScript(ORDER);
+      checks.dragRestored = restored;
+      if (restored.join(",") !== before.join(",")) {
+        failure(`the live board was not put back: ${JSON.stringify(restored)} against ${JSON.stringify(before)}`);
+      }
+
+      // A locked board has no arrange affordance at all, and a gesture over it
+      // must not reach the bridge: no lift, and no new proposal in the inbox.
+      await win.webContents.executeJavaScript(
+        `document.querySelector('[data-testid="board-lock-toggle"]').click()`,
+      );
+      await waitFor(
+        win,
+        `(() => { const b = document.querySelector('[data-testid="board-lock-badge"]'); return b && b.dataset.locked === 'true'; })()`,
+        "the live board to lock for the drag check",
+      );
+      const proposalsBefore = await pendingDecisions(win);
+      const lockedChrome = await win.webContents.executeJavaScript(
+        `document.querySelectorAll(".home-pin__chrome").length`,
+      );
+      const lockedCard = await pointAt(win, `[data-pin-id="${before[0]}"] .home-card__title, [data-pin-id="${before[0]}"] .view-card__title`);
+      mouse(win, "mouseDown", lockedCard.x, lockedCard.y);
+      await sleep(500);
+      mouse(win, "mouseMove", lockedCard.x + 60, lockedCard.y + 30);
+      await sleep(200);
+      const lockedLifted = await win.webContents.executeJavaScript(
+        `document.querySelectorAll(".home-pin.is-lifted").length`,
+      );
+      mouse(win, "mouseUp", lockedCard.x + 60, lockedCard.y + 30);
+      await sleep(400);
+      const proposalsAfter = await pendingDecisions(win);
+      const afterLockedGesture = await win.webContents.executeJavaScript(ORDER);
+      checks.dragLocked = {
+        chrome: lockedChrome,
+        lifted: lockedLifted,
+        proposalsBefore,
+        proposalsAfter,
+        order: afterLockedGesture,
+      };
+      if (lockedChrome !== 0) {
+        failure(`the locked live board drew ${lockedChrome} chrome bar(s), so there was a grip to drag with`);
+      }
+      if (lockedLifted !== 0) {
+        failure("a gesture on the locked live board lifted a card");
+      }
+      if (proposalsAfter !== proposalsBefore) {
+        failure(
+          `a gesture on the locked live board filed a proposal: ${proposalsBefore} pending before, ${proposalsAfter} after`,
+        );
+      }
+      if (afterLockedGesture.join(",") !== before.join(",")) {
+        failure(`the locked live board changed its order: ${JSON.stringify(afterLockedGesture)}`);
+      }
+      // ...and back, so the operator's board is left unlocked.
+      await win.webContents.executeJavaScript(
+        `document.querySelector('[data-testid="board-lock-toggle"]').click()`,
+      );
+      await waitFor(
+        win,
+        `(() => { const b = document.querySelector('[data-testid="board-lock-badge"]'); return b && b.dataset.locked === 'false'; })()`,
+        "the live board to unlock after the drag check",
+      );
+    }
   }
 
   const report = {
