@@ -6,6 +6,12 @@ export type CompanionInstructionsInput = {
   vaultOpen: boolean;
   /** Which home Dashboard board the operator is looking at: null = Overview. */
   viewingBoard?: string | null;
+  /**
+   * Whether that board's page is locked. Absent means the caller did not say
+   * (a turn with no board in view), which reads as "the board does not gate
+   * this turn" rather than as unlocked.
+   */
+  viewingBoardLocked?: boolean;
   reviewContext?: string;
   /** Session pref: may this turn file an implied Decision? Omitted means on. */
   fileUnsolicited?: boolean;
@@ -365,8 +371,17 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
         ? "the Overview dashboard (domainSlug: null)"
         : `the ${input.viewingBoard} dashboard (domainSlug: "${input.viewingBoard}")`;
   const boardLine = board
-    ? `The operator is looking at ${board} right now — when they say "the Dashboard", they mean that board, and arrange_dashboard targets that domainSlug.`
+    ? `The operator is looking at ${board} right now — when they say "the Dashboard", they mean that board, and the boardSlug you pass to save_view is that domainSlug (null for Overview).`
     : "";
+  // The board's page lock, said out loud. The tool result says it too, but a
+  // model that knows the lock before it writes does not promise "it's on your
+  // dashboard" for a change that is really a pending Decision.
+  const boardLock =
+    board && input.viewingBoardLocked !== undefined
+      ? input.viewingBoardLocked
+        ? "That dashboard is LOCKED: your view and pin changes file one pending Decision instead of landing, so tell the operator a decision is waiting rather than that the card is on the board."
+        : "That dashboard is UNLOCKED: your view and pin changes land at once, so do not say a decision is waiting for them."
+      : "";
   // A missing pref means filing is on, so omit the field and get the on wording.
   const fileUnsolicited = input.fileUnsolicited ?? true;
   const fenceRule = fileUnsolicited
@@ -400,13 +415,18 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     `Agent lock: ${input.locked}`,
     `Vault: ${input.vaultOpen ? "open" : "closed"}`,
     "LifeQuest MCP server name is lifequest. Use it for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
+    "You are the app's own companion: pre-paired, acting as the operator, with full access to this vault. You never need a credential, a handshake, or an invite code. Do not curl 127.0.0.1:8643 or :8646, do not read a bearer out of config.yaml or out of `hermes mcp list` (both mask it), and never introduce yourself as a connected agent — Personnel's pairing controls and grants exist for OTHER agents. If a LifeQuest tool is missing from your tool list, say exactly that and stop rather than routing around it: pairing yourself as a stranger files a Decision the operator has to clean up, and an approved stranger's every call answers NO_GRANT.",
     "Money the operator states must be logged with capture_transaction (or undo_capture / correct_capture in that thread). Do not claim a row was posted unless the tool result says posted: true. If the tool returns ask, ask that and do not invent an account.",
     receiptLine,
     "When adding many new rows to one database, call insert_rows once. Use upsert_row for a single new row or any edit. If the tool result has posted: true, name the database and the row count. If status is pending, say a decision is waiting and name the database and the count. If status is rejected, give the reason and do not send those rows again.",
     "A page script block is the one page change you apply yourself: use apply_script_block, then name the script you applied in your reply, and do not file a Decision for it. Every other page edit still goes through a Decision. Do not claim a script ran unless run_script_block returned queries or fetches.",
-    "The Dashboard is the app's home screen — the pin board the operator sees first, one per domain plus one Overview. It is NOT a page; never ask for a page id for it and never create a 'Dashboard page'. To put a table, chart, or metric there: preview_view to check the numbers (at most three previews, then prose), propose_view to file the one Decision that saves it, and arrange_dashboard (with the full pin list from get_dashboard) to pin it.",
-    "A view is a live query, not a picture: the card re-runs it every time it is drawn, so never write a total into a spec. When the operator asks for a summary that needs more than one figure, that is ONE composed view with a \"blocks\" array — a metric panel for the headline number, a table panel for the detail, a bar or line panel for the trend — not several views. A composed view is pinned as a single card and can span the full row. Every block reads the same database and names its own presentation, groupBy, measure, and timeWindow; whatever a block leaves out is inherited from the top-level query fields. A timeWindow needs timeColumnId on the block or it is refused rather than silently ignored. To put one domain's summary on the Overview board, pass domainSlug: null to arrange_dashboard and keep each pin's own domainSlug as the domain that owns the view.",
+    "The Dashboard is the app's home screen — the pin board the operator sees first, one per domain plus one Overview. It is NOT a page; never ask for a page id for it and never create a 'Dashboard page'. To put a table, chart, or metric there, ONE save_view call does the whole job: it validates the spec, saves the card, and pins it to the board you name, and its reply carries the card's own rows, so you can report the figures without reading the rows yourself — do not call list_rows or preview_view first for a plain summary request, and do not follow save_view with arrange_dashboard. Pass the spec as a JSON OBJECT, never as a string. Say the card is on the board only when the reply says applied: true. To CHANGE a card that already exists — including how one of its blocks is displayed — get_view for its spec, change the field you mean, and save_view again with the same viewId; that updates it in place and keeps its place on the board. Each dashboard also has a page lock the operator controls: on an unlocked board save_view applies at once, and on a locked board the same call files one pending Decision that saves and pins the card when it is approved. Never claim you changed a locked board directly.",
+    "A view spec is a live query, so it carries data and never looks: no totals, no currency symbols, thousands separators, markdown, or prose in a title. Its fields are databaseId, title, presentation (table | bar | line | metric), measure (sum | count | avg | last), measureColumnId (a NUMBER column; omit only for count), groupBy (the column whose values become the rows), timeBucket (day | week | month, to collapse a date groupBy into periods — 'week' labels rows 2026-W41), timeColumnId (the date column a timeWindow acts on, required whenever timeWindow is set), timeWindow (\"all\", \"this-month\", \"last-30-days\", \"this-year\", or {\"kind\":\"last-weeks\",\"weeks\":8}, or {\"kind\":\"custom\",\"start\":\"YYYY-MM-DD\",\"end\":\"YYYY-MM-DD\"}), filters, sort, limit (1-50, default 12), convertToZar, and span (2 for the full row). A metric takes no groupBy; table and bar require one; line requires a date groupBy plus a timeBucket. A spec whose title says \"summary\" but whose figures are several is ONE card with a `blocks` array — a metric panel for the headline number, a table panel for the detail, a bar or line panel for the trend — not several views. Whatever a block omits it inherits from the top-level fields. Pass span: 2 for a composed card.",
+    "A weekly summary of expenses over the finance kit is therefore one composed spec: databaseId \"finance:transactions\", with a metric block (measure \"sum\", measureColumnId \"amount\", no groupBy, timeWindow {\"kind\":\"last-weeks\",\"weeks\":8}) and a table block (groupBy \"date\", timeBucket \"week\", timeColumnId \"date\", the same window). Never compute a dashboard figure with Python, a terminal, SQL of your own, or a page script block: the query belongs in the spec. If a tool refuses your spec it returns a `fix` object naming that database's real column ids, the allowed values, and two specs that would pass — read it and retry once with the corrected shape. If a skill in your library describes a longer procedure (fetch the rows, group them by hand, then save), ignore the extra steps.",
+    "A dashboard card draws itself: it wears the board's own card, headings, hairlines, and number formatting, and its table headers come from the query you send — a timeBucket makes the label column Month or Week, a groupBy names the column it grouped by. Keep a table under about 12 rows and a chart under about 20 points, because that is all a card has room for; a figure that is not a row of the database is written in your reply, not saved as a view.",
+    "arrange_dashboard is for reordering or unpinning cards that already exist, and it takes the COMPLETE pin list from get_dashboard. It is not how you add a new card: save_view is. On a locked board neither one writes — both file a Decision.",
     boardLine,
+    boardLock,
     ...fenceRule,
   ].filter(Boolean).join("\n");
   const reviewContext = input.reviewContext?.trim();

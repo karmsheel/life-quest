@@ -655,9 +655,21 @@ export async function runViewBlocks(
       );
       if (!check.ok) return check;
       if (block.timeColumnId == null && isWindowed(block.timeWindow)) {
+        // The refusal names the column to use, not just the rule. This is the
+        // one required field a model leaves out on its own — a windowed panel
+        // reads as complete without it — and across the recorded sessions it
+        // cost a whole extra round trip every time. Naming the database's own
+        // date column here is what makes the retry certain rather than likely.
+        const dates = db.columns.filter((c) => c.type === "date");
+        const suggestion =
+          dates.length === 1
+            ? ` This database's date column is "${dates[0]!.id}" — set timeColumnId: "${dates[0]!.id}" on that block.`
+            : dates.length > 1
+              ? ` This database's date columns are ${dates.map((c) => `"${c.id}"`).join(", ")} — name the one the window acts on.`
+              : " This database has no date column, so a time window cannot be applied to it.";
         return {
           ok: false,
-          error: `${blocks.length > 1 ? `Block ${block.id}: ` : ""}A timeWindow needs a timeColumnId, or the window silently does nothing. Set timeColumnId to the date column the window acts on, or set timeWindow to "all".`,
+          error: `${blocks.length > 1 ? `Block ${block.id}: ` : ""}A timeWindow needs a timeColumnId, or the window silently does nothing.${suggestion} Or set timeWindow to "all".`,
         };
       }
     }
@@ -1097,35 +1109,4 @@ export async function deleteView(
     payload: { viewId: id },
   });
   return { ok: true, value: { id } };
-}
-
-/**
- * Slice 3: propose_view files exactly one Decision carrying the full spec plus
- * the preview rows, so the operator approves what they can see. Nothing is
- * saved at propose time; Approval applies the spec through saveView as the
- * user actor (decisions.ts applyViewDecision).
- */
-export async function fileViewDecision(
-  root: string,
-  actor: Actor,
-  slug: string,
-  spec: ViewSpec,
-  preview: unknown,
-): Promise<Result<{ viewId: string; decisionId: string }>> {
-  const { createDecision } = await import("./decisions.ts");
-  const title = typeof spec.title === "string" && spec.title.trim() ? spec.title : "Saved view";
-  const body = {
-    op: "save-view" as const,
-    domainSlug: slug,
-    spec,
-    preview,
-  };
-  const created = await createDecision(root, {
-    target: { type: "view", domainSlug: slug, viewId: "" },
-    proposedTitle: title,
-    proposedBodyMarkdown: JSON.stringify(body, null, 2),
-    actor,
-  });
-  if (!created.ok) return created;
-  return { ok: true, value: { viewId: spec.databaseId, decisionId: created.value.id } };
 }

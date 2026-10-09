@@ -118,6 +118,8 @@ const lifequest = {
     ipcRenderer.invoke("pins:list", domainSlug) as Promise<Result<unknown>>,
   pinsSet: (domainSlug: string | null, pins: unknown[]) =>
     ipcRenderer.invoke("pins:set", domainSlug, pins) as Promise<Result<unknown>>,
+  pinsSetLocked: (domainSlug: string | null, locked: boolean) =>
+    ipcRenderer.invoke("pins:setLocked", domainSlug, locked) as Promise<Result<unknown>>,
   // Agent-built dashboard views (plan.md design)
   viewList: (slug: string) =>
     ipcRenderer.invoke("view:list", slug) as Promise<Result<unknown>>,
@@ -353,6 +355,7 @@ const lifequest = {
     ipcRenderer.invoke("companion:getFiling") as Promise<boolean>,
   companionSetFiling: (enabled: boolean) =>
     ipcRenderer.invoke("companion:setFiling", enabled) as Promise<void>,
+  companionPrompts: () => ipcRenderer.invoke("companion:prompts"),
   onCompanionStream: (cb: (evt: unknown) => void) => {
     const listener = (_event: unknown, evt: unknown) => {
       cb(evt);

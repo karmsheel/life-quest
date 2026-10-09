@@ -695,9 +695,15 @@ async function connectedWriteRefusal(
   }
 
   // ── agent-built dashboard views ──────────────────────────────────────────
-  if (name === "propose_view") {
-    // One view in one domain: the spec's target is the proposal's domain.
-    return allow([rec.domainSlug as string | null | undefined]);
+  if (name === "save_view") {
+    // Two domains are in play and both have to be inside the grant: the domain
+    // that owns the view file being written, and — when the call names one —
+    // the board it is pinned on. An omitted boardSlug reads as the Overview
+    // board (the tool's own rule for an absent board), so the grant check has
+    // to judge it as one: a grant that does not cover Overview refuses, which
+    // is the right call, because Overview is everything.
+    const board = rec.boardSlug === undefined ? null : (rec.boardSlug as string | null);
+    return allow([rec.domainSlug as string | null | undefined, board]);
   }
   if (name === "arrange_dashboard") {
     // A board rewrite touches the board's domain; null (the Overview board) is

@@ -23,6 +23,36 @@ type Doors = Awaited<ReturnType<typeof startPairingDoors>>;
 let doors: Doors | null = null;
 let openVaultId: string | null = null;
 /**
+ * The ports the doors bind, and the only reason they are not constants.
+ *
+ * The product always serves 8643 and 8646. An e2e rig cannot: a running
+ * LifeQuest holds both, so a rig that wanted to watch a door bind would fail to
+ * bind one and prove nothing. `LIFEQUEST_E2E` therefore carries the ports the
+ * same way it carries the throwaway profile, and both the listeners and the url
+ * written into the Hermes profile follow them — a profile pointing at 8643 while
+ * the door serves 18643 would look exactly like the bug this app already has.
+ */
+let ports: { local: number; invite: number } = {
+  local: LOCAL_MCP_PORT,
+  invite: INVITE_MCP_PORT,
+};
+
+export function setMcpPorts(next: { local?: number; invite?: number }): void {
+  ports = {
+    local: typeof next.local === "number" ? next.local : ports.local,
+    invite: typeof next.invite === "number" ? next.invite : ports.invite,
+  };
+}
+
+export function getMcpPorts(): { local: number; invite: number } {
+  return ports;
+}
+
+/** The local door's url as the companion must be told it, override included. */
+export function companionMcpUrl(): string {
+  return `http://${MCP_HOST}:${ports.local}/mcp`;
+}
+/**
  * KAR-70: the desktop's in-memory lens, handed to the doors. Held here
  * rather than read per request from userData, so a lens change lands
  * on the next call with no vault write.
@@ -38,11 +68,11 @@ export type McpDoors = {
 };
 
 function localUrl(): string {
-  return `http://${MCP_HOST}:${LOCAL_MCP_PORT}/mcp`;
+  return `http://${MCP_HOST}:${ports.local}/mcp`;
 }
 
 function inviteUrl(): string {
-  return `http://${MCP_HOST}:${INVITE_MCP_PORT}/mcp`;
+  return `http://${MCP_HOST}:${ports.invite}/mcp`;
 }
 
 function secretsDir(): string {
@@ -107,6 +137,8 @@ export async function startMcp(
     root: rootPath,
     vaultId,
     secretsDir: secretsDir(),
+    localPort: ports.local,
+    invitePort: ports.invite,
     lens: () => currentLens(),
   });
   openVaultId = vaultId;
@@ -126,4 +158,18 @@ export async function stopMcp(): Promise<void> {
 /** The vault the doors are currently bound to, for tests and diagnostics. */
 export function getMcpVaultId(): string | null {
   return openVaultId;
+}
+
+/**
+ * When the doors bound and whether the companion has used them since, or null
+ * with no vault open.
+ *
+ * `companion.ts` reads this to decide whether a running Hermes host ever reached
+ * the door that is up now. A host that started before the door did — or before
+ * the vault was reopened, which re-binds the door under a new credential — has
+ * already failed its one discovery attempt and parked, so its sessions have no
+ * lifequest tools even though the door is serving happily.
+ */
+export function getMcpDoorState(): { boundAt: number; companionSeenAt: number | null } | null {
+  return doors ? doors.doorsState() : null;
 }

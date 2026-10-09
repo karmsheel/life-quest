@@ -143,8 +143,13 @@ export {
 } from "./pages.ts";
 export {
   listPins,
+  listPinBoard,
   setPins,
+  setPinBoardLocked,
+  isPinBoardLocked,
   defaultPins,
+  boardLabel,
+  DEFAULT_BOARD_LOCKED,
 } from "./pins.ts";
 export {
   exportDomainBooks,
@@ -223,13 +228,17 @@ export {
   MEASURES,
   MAX_VIEW_BLOCKS,
   VIEW_ID_PATTERN,
-  fileViewDecision,
   type SavedView,
 } from "./views.ts";
 export {
   VIEW_TOOL_DEFS,
   executeViewTool,
 } from "./views-tools.ts";
+export {
+  VIEW_SPEC_SCHEMA,
+  VIEW_VOCABULARY,
+  viewSpecTemplate,
+} from "./view-schema.ts";
 export {
   SCRIPT_TOOL_DEFS,
   executeScriptTool,

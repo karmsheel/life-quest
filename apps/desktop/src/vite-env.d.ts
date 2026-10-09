@@ -32,6 +32,7 @@ import type {
   PageWriteResult,
   PeriodPack,
   Pin,
+  PinBoardRead,
   PinWriteResult,
   PlanningStub,
   Result,
@@ -91,6 +92,12 @@ type CompanionInstructionsContext = {
   domainSlug: string | null;
   /** Which home Dashboard board the operator is looking at: null = Overview. */
   viewingBoard?: string | null;
+  /**
+   * That board's page lock. Unlocked, the companion's dashboard writes land;
+   * locked, the same calls file a pending Decision. Absent means no board is in
+   * view, which gates nothing.
+   */
+  viewingBoardLocked?: boolean;
   aboutMe: string;
   locked: boolean;
   vaultOpen: boolean;
@@ -127,6 +134,32 @@ export type McpDoors = {
   inviteUrl: string;
   localError: string | null;
   inviteError: string | null;
+};
+
+/** One skill in the companion's library, as Settings lists it. */
+export type CompanionSkill = {
+  name: string;
+  description: string;
+  category: string;
+  relPath: string;
+  /** True for the skills this app's own domain owns — skills/lifequest/*. */
+  lifequest: boolean;
+  bundled: boolean;
+  pinned: boolean;
+  useCount: number;
+  viewCount: number;
+  lastUsedAt: string | null;
+  version: string | null;
+  tags: string[];
+};
+
+/** What the companion is told, and what it has been given to read. */
+export type CompanionPrompts = {
+  profilePath: string;
+  soul: { path: string; text: string; seeded: boolean; edited: boolean };
+  instructions: { text: string; context: CompanionInstructionsContext };
+  skills: CompanionSkill[];
+  soulSeedPath: string;
 };
 
 /** Frozen IPC API exposed on window.lifequest via preload. */
@@ -288,6 +321,10 @@ type LifequestApi = {
   companionOpenProfileFolder: () => Promise<void>;
   companionGetFiling: () => Promise<boolean>;
   companionSetFiling: (enabled: boolean) => Promise<void>;
+  /** The system prompts and skill library the companion is actually given. */
+  companionPrompts: () => Promise<
+    { ok: true; value: CompanionPrompts } | { ok: false; error: string }
+  >;
   onCompanionStream: (cb: (evt: ChatStreamEvent) => void) => () => void;
   mapGetState: () => Promise<Result<MapStoreState>>;
   mapApply: (command: MapCommand) => Promise<Result<VaultSnapshot>>;
@@ -415,8 +452,10 @@ type LifequestApi = {
     source: string;
   }) => Promise<Result<ScriptApplyResult>>;
   scriptRun: (input: { domainSlug: string; source: string }) => Promise<Result<ScriptRunResult>>;
-  pinsList: (domainSlug: string | null) => Promise<Result<Pin[]>>;
+  pinsList: (domainSlug: string | null) => Promise<Result<PinBoardRead>>;
   pinsSet: (domainSlug: string | null, pins: Pin[]) => Promise<Result<PinWriteResult>>;
+  /** The Dashboard page lock. User-only; the board read reports the state. */
+  pinsSetLocked: (domainSlug: string | null, locked: boolean) => Promise<Result<PinBoardRead>>;
   // Agent-built dashboard views (plan.md design, slices 2/3)
   viewList: (slug: string) => Promise<Result<SavedView[]>>;
   viewGet: (slug: string, viewId: string) => Promise<Result<SavedView>>;
@@ -492,7 +531,9 @@ export type {
   CompanionModelCatalog,
   CompanionModelChoice,
   CompanionModelProvider,
+  CompanionPrompts,
   CompanionRuntimeOverride,
+  CompanionSkill,
   CompanionStatus,
   HermesSession,
   LifequestApi,

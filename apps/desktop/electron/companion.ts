@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { shell } from "electron";
+import { companionMcpUrl } from "./mcp-server.ts";
 import {
   DEFAULT_API_PORT,
   PROFILE_NAME,
@@ -14,6 +15,11 @@ import {
   checkPinnedModel,
 } from "./companion-profile.ts";
 import { hermesSpawnSpec } from "./companion-spawn.ts";
+import { getFileUnsolicited } from "./companion-filing.ts";
+import {
+  readCompanionPrompts,
+  type CompanionPrompts,
+} from "./companion-prompts.ts";
 import {
   buildInstructions,
   buildTurnInput,
@@ -33,6 +39,7 @@ import {
 } from "./companion-client.ts";
 import {
   ensureCompanion,
+  hostMissedDoors,
   shutdownCompanion,
   writeCompanionMcpProfile,
   type CompanionIo,
@@ -246,7 +253,17 @@ async function waitForHealth(url: string, attempts: number, delayMs: number): Pr
   return false;
 }
 
-async function ensureHostGateway(cli: string, hermesHome: string): Promise<void> {
+/**
+ * Make the host serve `/p/{profile}`.
+ *
+ * `force` skips the "already healthy" shortcut. It exists for one case: this run
+ * rewrote the companion credential, and a host that is already up read its
+ * `mcp_servers` at start and keeps that connection for its lifetime — so the
+ * repaired header only reaches its sessions after a restart. Without the force,
+ * the host looks healthy, the app attaches, and every session on the profile
+ * silently has no lifequest tools.
+ */
+async function ensureHostGateway(cli: string, hermesHome: string, force = false): Promise<void> {
   const extraEnv: Record<string, string> = {
     HERMES_HOME: hermesHome,
     GATEWAY_MULTIPLEX_PROFILES: "true",
@@ -255,7 +272,7 @@ async function ensureHostGateway(cli: string, hermesHome: string): Promise<void>
   const hostBase = `http://127.0.0.1:${port}`;
   const prefix = `${hostBase}/p/${PROFILE_NAME}`;
   const hostUp = await health(hostBase);
-  if (hostUp && (await waitForHealth(prefix, 40, 500))) return;
+  if (!force && hostUp && (await waitForHealth(prefix, 40, 500))) return;
 
   await runHermes(
     cli,
@@ -293,7 +310,43 @@ function realIo(): CompanionIo {
     isPortFree,
     health,
     capabilities,
-    ensureHostGateway: (cli, home) => ensureHostGateway(cli, home),
+    ensureHostGateway: (cli, home, force) => ensureHostGateway(cli, home, force),
+    // Imported lazily for the same reason the vault token is: mcp-server owns
+    // the doors and reaches Electron, and this module is imported by the chat
+    // path, so a static import would close a cycle for no gain.
+    doorsState: async () => {
+      try {
+        const { getMcpDoorState } = await import("./mcp-server.ts");
+        return getMcpDoorState();
+      } catch {
+        return null;
+      }
+    },
+    // The doors may be serving on e2e ports rather than 8643, and the profile
+    // has to name the door that is actually listening.
+    mcpUrl: () => {
+      return companionMcpUrl();
+    },
+    /**
+     * When the host itself last started, from its own pid file's mtime.
+     *
+     * The host writes `%HERMES_HOME%/gateway.pid` as it boots (2026-10-08:
+     * process start 17:07:50, file 17:08:02), so a stamp older than the doors is
+     * proof that this host has already run its one discovery pass — over a door
+     * that was not there. The PID FILE IN THE PROFILE IS NOT THIS ONE: the
+     * multiplexing host serves every profile out of the root home, and a
+     * profile's own pid file is a stale standalone gateway's.
+     */
+    hostStartedAt: async () => {
+      try {
+        const st = await fs.stat(
+          path.join(hermesRoot(process.env, os.homedir()), "gateway.pid"),
+        );
+        return st.mtimeMs;
+      } catch {
+        return null;
+      }
+    },
     stopPid: async () => {
       /* Host multiplexer is not LifeQuest-owned. */
     },
@@ -306,9 +359,114 @@ export function companionStatus(): PublicCompanionStatus {
   return publicStatus(current);
 }
 
+/**
+ * The `ensure` that is running right now, if one is.
+ *
+ * The post-bind door check must not run its own `gateway restart` while an
+ * ensure is starting that same host: two lifecycle commands racing over one
+ * gateway is noise at best. Waiting for the ensure to settle costs nothing —
+ * the check re-reads the doors afterwards, and a host the app has just started
+ * is a host whose startup covers the binding.
+ */
+let ensureInFlight: Promise<PublicCompanionStatus> | null = null;
+
 export async function companionEnsure(): Promise<PublicCompanionStatus> {
-  current = await ensureCompanion(realIo());
-  return publicStatus(current);
+  const run = ensureCompanion(realIo()).then((status) => {
+    current = status;
+    return publicStatus(status);
+  });
+  ensureInFlight = run.finally(() => {
+    ensureInFlight = null;
+  });
+  return ensureInFlight;
+}
+
+/**
+ * What a post-bind door check found, for the caller and for the rigs.
+ *
+ * `seen` and `repeat` are healthy; `no-door` means there was nothing to check
+ * (no vault open, or the local door could not bind); `unavailable` means the
+ * host could not be asked to re-read, which is reported and not retried in a
+ * loop.
+ */
+export type CompanionDoorCheck =
+  | { kind: "no-door" }
+  | { kind: "seen" }
+  | { kind: "refreshed"; boundAt: number }
+  | { kind: "repeat"; boundAt: number }
+  | { kind: "unavailable"; error: string };
+
+let doorCheck: Promise<CompanionDoorCheck> | null = null;
+/** The binding this run has already restarted the host for. */
+let refreshedBind: number | null = null;
+
+/**
+ * Make the running host able to see the doors that have just bound.
+ *
+ * `ensureCompanion` decides this once, at app start, and at app start no vault
+ * need be open — so it usually has no doors to judge and attaches to whatever
+ * host is serving. That host read its `mcp_servers` when IT started; if that was
+ * before these doors bound, it tried, was refused, and parked. Hermes does not
+ * probe a parked server again for 300s, so every session on the profile is
+ * tool-less until it does — the 2026-10-08 report: "My tool list does not
+ * include the LifeQuest MCP tools", from an agent that then correctly stopped
+ * instead of improvising.
+ *
+ * So the vault-open path calls this after the doors bind. It waits the binding's
+ * window out (see `hostMissedDoors`: seconds for a host that was already
+ * running, the long one for a host still starting) and, if the companion never
+ * arrived, restarts the host so it re-reads a config that now points at a live
+ * door. That is the same lever `ensureCompanion` pulls when it writes a
+ * credential a running host cannot see, and it is the only one the app owns: the
+ * host's own reconnect lives behind a chat slash command, not an endpoint.
+ *
+ * One restart per binding. A vault switch rebinds the doors and resets the
+ * question, so the new binding is checked on its own; re-opening the same vault
+ * asks again about a binding already answered and gets `repeat`.
+ */
+export function companionConfirmDoors(): Promise<CompanionDoorCheck> {
+  if (doorCheck) return doorCheck;
+  const run = confirmDoorsOnce().finally(() => {
+    doorCheck = null;
+  });
+  doorCheck = run;
+  return run;
+}
+
+async function confirmDoorsOnce(): Promise<CompanionDoorCheck> {
+  const { getMcpDoors, getMcpDoorState } = await import("./mcp-server.ts");
+  // A local door that failed to bind — 8643 held by another process — has
+  // nothing for the companion to reach. That failure is Settings' to report, and
+  // restarting the host over it would be motion without cause.
+  if (!getMcpDoors().localUrl || !getMcpDoorState()) return { kind: "no-door" };
+
+  // An ensure that is starting the host right now owns that host's lifecycle:
+  // let it settle, then ask the doors again. Its startup covers this binding, so
+  // the answer is very often "seen" by the time we look.
+  if (ensureInFlight) {
+    try {
+      await ensureInFlight;
+    } catch {
+      /* a failed ensure is the ensure caller's to report, not this check's */
+    }
+  }
+
+  const missed = await hostMissedDoors(realIo());
+  if (!missed) return { kind: "seen" };
+  if (refreshedBind === missed.boundAt) return { kind: "repeat", boundAt: missed.boundAt };
+
+  const cli = await whichHermes();
+  if (!cli) return { kind: "unavailable", error: "hermes is not on PATH" };
+  const root = hermesRoot(process.env, os.homedir());
+  try {
+    // `force` skips the "already healthy" shortcut: the host is healthy and that
+    // is exactly the problem — it is serving without this door.
+    await ensureHostGateway(cli, root, true);
+  } catch (e) {
+    return { kind: "unavailable", error: e instanceof Error ? e.message : String(e) };
+  }
+  refreshedBind = missed.boundAt;
+  return { kind: "refreshed", boundAt: missed.boundAt };
 }
 
 /**
@@ -649,4 +807,84 @@ export async function companionRunStop(
 export async function companionOpenProfileFolder(): Promise<void> {
   if (current.kind !== "ready") return;
   await shell.openPath(current.profilePath);
+}
+
+/**
+ * What the companion is told, and what it has been given to read — for Settings.
+ *
+ * The system prompt is assembled from three places the operator cannot see from
+ * inside the app: the profile's SOUL.md, the per-turn `instructions` this app
+ * appends to every chat turn, and the skill library Hermes keeps beside the
+ * profile. Showing them is the point; the reason it matters is the empty-schema
+ * failure, where the answer to "why can my companion not make a card?" was in
+ * none of the three.
+ *
+ * `instructions` is built from the same context the chat path would send for the
+ * turn in front of the operator — the active domain lens, its board, that board's
+ * lock, About me, and the filing pref — so what Settings shows is what the agent
+ * would actually receive, not a generic sample.
+ */
+export async function companionPrompts(): Promise<
+  { ok: true; value: CompanionPrompts } | { ok: false; error: string }
+> {
+  try {
+    const root = hermesRoot(process.env, os.homedir());
+    const dir = profileDir(root);
+    const context = await currentInstructionsContext();
+    const instructions = buildInstructions(context);
+    const value = await readCompanionPrompts({ profilePath: dir, instructions, context });
+    return { ok: true, value };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * The instructions context as the chat panel would send it right now.
+ *
+ * Imported lazily, like the companion token: `vault-service` imports this module
+ * for the chat stream, so a static import would close a cycle. A failure to read
+ * the vault is not an error for a read-only Settings page — it means no vault is
+ * open, and the context says exactly that.
+ */
+async function currentInstructionsContext(): Promise<CompanionInstructionsInput> {
+  const fileUnsolicited = await getFileUnsolicited();
+  try {
+    const vault = await import("./vault-service.ts");
+    const [snap, activeSlug] = await Promise.all([
+      vault.vaultGetSnapshot(),
+      vault.domainGetActive(),
+    ]);
+    const snapshot = snap.ok ? snap.value : null;
+    // The home board follows the domain lens, so the active domain IS the board
+    // the operator is looking at; null (Overview) when no domain is active.
+    const boardSlug = activeSlug ?? null;
+    let boardLocked: boolean | undefined;
+    if (snapshot) {
+      const board = await vault.pinsList(boardSlug);
+      if (board.ok) boardLocked = board.value.locked;
+    }
+    return {
+      domainName:
+        snapshot?.domains.find((d) => d.slug === activeSlug)?.meta.name ?? null,
+      domainSlug: activeSlug,
+      viewingBoard: boardSlug,
+      ...(boardLocked === undefined ? {} : { viewingBoardLocked: boardLocked }),
+      aboutMe: snapshot?.map?.aboutMe ?? "",
+      // The agent lock belongs to the map, not to this page; the chat panel sends
+      // false and so does this, so the two texts agree.
+      locked: false,
+      vaultOpen: Boolean(snapshot),
+      fileUnsolicited,
+    };
+  } catch {
+    return {
+      domainName: null,
+      domainSlug: null,
+      aboutMe: "",
+      locked: false,
+      vaultOpen: false,
+      fileUnsolicited,
+    };
+  }
 }

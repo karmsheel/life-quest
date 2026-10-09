@@ -35,7 +35,7 @@ import {
   listDatabases,
   listDecisions,
   listPages,
-  listPins,
+  listPinBoard,
   listRows,
   listSignals,
   markConnectedAgent,
@@ -56,6 +56,7 @@ import {
   setLibraryLocked,
   shouldFileImpliedTurn,
   setPins,
+  setPinBoardLocked,
   unarchiveDomain,
   unlockReview,
   updateConnectedAgent,
@@ -340,6 +341,17 @@ async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
     token = null;
   }
   await companion.companionWriteMcpProfile(token);
+  // KAR-71: the profile now names a live door, but the host read its
+  // `mcp_servers` when it started — and a host that was already running when
+  // these doors bound has parked on them, which leaves every session on the
+  // profile without lifequest tools until Hermes probes it again 300s later.
+  // Ask after the handshake window and restart the host if the companion never
+  // arrived. Deliberately not awaited: the vault is open, the answer is a
+  // restart that takes seconds, and neither a slow host nor a failed one may
+  // hold the open — or the vault queue this runs on — while it is decided.
+  void companion.companionConfirmDoors().catch(() => {
+    /* the companion's own status is where a failure to reach it is reported */
+  });
 }
 
 export function getMcpError(): string | null {
@@ -825,8 +837,10 @@ export async function scriptRun(input: {
   return withVault((root) => runScriptBlock(root, { domainSlug: input.domainSlug, source: input.source }));
 }
 
-export async function pinsList(domainSlug: string | null): Promise<Result<import("@lifequest/vault-core").Pin[]>> {
-  return withVault((root) => listPins(root, domainSlug));
+export async function pinsList(
+  domainSlug: string | null,
+): Promise<Result<import("@lifequest/vault-core").PinBoardRead>> {
+  return withVault((root) => listPinBoard(root, domainSlug));
 }
 
 export async function pinsSet(
@@ -834,6 +848,18 @@ export async function pinsSet(
   pins: import("@lifequest/vault-core").Pin[],
 ): Promise<Result<import("@lifequest/vault-core").PinWriteResult>> {
   return withVault((root) => setPins(root, domainSlug, pins, USER_ACTOR));
+}
+
+/**
+ * The operator's page lock on one dashboard. The user actor is passed here and
+ * nowhere else: `setPinBoardLocked` refuses an agent, so an agent tool call
+ * cannot reach an unlocked board by unlocking it first.
+ */
+export async function pinsSetLocked(
+  domainSlug: string | null,
+  locked: boolean,
+): Promise<Result<import("@lifequest/vault-core").PinBoardRead>> {
+  return withVault((root) => setPinBoardLocked(root, domainSlug, locked, USER_ACTOR));
 }
 
 // Agent-built dashboard views (plan.md design)

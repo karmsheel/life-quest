@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification } from "electron";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { stopMcp } from "./mcp-server.js";
+import { stopMcp, setMcpPorts } from "./mcp-server.js";
 import * as companion from "./companion.js";
 import { getFileUnsolicited, setFileUnsolicited } from "./companion-filing.js";
 import type {
@@ -26,6 +27,64 @@ if (process.platform === "win32") {
   app.setAppUserModelId("com.lifequest.desktop");
 }
 const isDev = !app.isPackaged;
+
+/**
+ * The one e2e seam in the main process, and it is off unless a caller asks.
+ *
+ * An e2e rig has to do two things a normal launch cannot: point the app at a
+ * throwaway profile so the operator's own `%APPDATA%\\LifeQuest` is never
+ * touched, and keep the window off their desktop. Both are facts only the main
+ * process can set, and neither is reachable from the renderer or a preload.
+ *
+ * `LIFEQUEST_E2E={"userData":"…","showWindow":false}`. Absent (the product
+ * case) nothing here runs and the app behaves exactly as it always has, and
+ * `showWindow` defaults to true so a rig that only wants an isolated profile
+ * still gets a visible window.
+ *
+ * `mcpPorts` is the third fact a rig needs and cannot otherwise get: the doors
+ * are 8643 and 8646 in the product, and the operator's own app holds both, so a
+ * rig that watches a door bind has to move it off those ports. The listeners and
+ * the url written into the Hermes profile move together (see `mcp-server.ts`).
+ */
+const E2E_RAW = process.env.LIFEQUEST_E2E;
+const E2E: {
+  userData?: string;
+  showWindow: boolean;
+  mcpPorts?: { local?: number; invite?: number };
+} = { showWindow: true };
+if (E2E_RAW) {
+  try {
+    const parsed = JSON.parse(E2E_RAW) as {
+      userData?: unknown;
+      showWindow?: unknown;
+      mcpPorts?: { local?: unknown; invite?: unknown };
+    };
+    if (typeof parsed.userData === "string" && parsed.userData.trim()) {
+      // Realpath, not the string: `userData` must be absolute and existing
+      // before Electron resolves its own paths, and a typo here would silently
+      // fall back to the operator's profile.
+      E2E.userData = fs.realpathSync(parsed.userData);
+    }
+    if (parsed.showWindow === false) E2E.showWindow = false;
+    const local = parsed.mcpPorts?.local;
+    const invite = parsed.mcpPorts?.invite;
+    if (typeof local === "number" || typeof invite === "number") {
+      E2E.mcpPorts = {
+        ...(typeof local === "number" ? { local } : {}),
+        ...(typeof invite === "number" ? { invite } : {}),
+      };
+    }
+  } catch (err) {
+    console.error("[e2e] LIFEQUEST_E2E is not valid JSON; ignoring:", err);
+  }
+}
+if (E2E.userData) {
+  app.setPath("userData", E2E.userData);
+}
+if (E2E.mcpPorts) {
+  // Before any window or vault: a door binds with whatever is set here.
+  setMcpPorts(E2E.mcpPorts);
+}
 
 const TITLEBAR_OVERLAY_HEIGHT = 32;
 const DEFAULT_OVERLAY_COLOR = "#1a1917";
@@ -80,8 +139,7 @@ function registerWindowAccelerators(win: BrowserWindow) {
   });
 }
 
-function registerIpcHandlers() {
-  ipcMain.handle("vault:create", (_e, rootPath: string, name?: string) =>
+function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: string, name?: string) =>
     vault.vaultCreate(rootPath, name),
   );
   ipcMain.handle("vault:open", (_e, rootPath: string) =>
@@ -169,6 +227,10 @@ function registerIpcHandlers() {
   ipcMain.handle("script:run", (_e, input: { domainSlug: string; source: string }) => vault.scriptRun(input));
   ipcMain.handle("pins:list", (_e, domainSlug: string | null) => vault.pinsList(domainSlug));
   ipcMain.handle("pins:set", (_e, domainSlug: string | null, pins: Parameters<typeof vault.pinsSet>[1]) => vault.pinsSet(domainSlug, pins));
+  // The Dashboard page lock: the board read reports it, and this is the only
+  // write that changes it. It rides the user actor, so an agent tool can never
+  // unlock a board to get around the gate.
+  ipcMain.handle("pins:setLocked", (_e, domainSlug: string | null, locked: boolean) => vault.pinsSetLocked(domainSlug, locked));
   // KAR-V: agent-built dashboard views
   ipcMain.handle("view:list", (_e, slug: string) => vault.viewList(slug));
   ipcMain.handle("view:get", (_e, slug: string, viewId: string) => vault.viewGet(slug, viewId));
@@ -448,6 +510,9 @@ function registerIpcHandlers() {
   ipcMain.handle("companion:setFiling", (_e, enabled: boolean) =>
     setFileUnsolicited(enabled),
   );
+  // What the companion is told and what it has been given to read: the profile's
+  // SOUL, the per-turn instructions this app builds, and the skill library.
+  ipcMain.handle("companion:prompts", () => companion.companionPrompts());
 
   ipcMain.handle("map:getState", () => vault.mapGetState());
   ipcMain.handle("map:apply", (_e, command: Parameters<typeof vault.mapApply>[0]) =>
@@ -612,10 +677,39 @@ function registerIpcHandlers() {
   });
 }
 
+/**
+ * The app's one window, published for the e2e seam.
+ *
+ * `bootForE2e` must hand back the window the PRODUCT created, not a second one:
+ * a rig that opened its own would be testing its own boot rather than the app's.
+ * `bootForE2e` also has to be safe to call after `app.whenReady()` has already
+ * run the product's boot — registering the ipc handlers twice throws — so the
+ * handlers are registered once behind this latch.
+ */
+let ipcRegistered = false;
+let windowReady: Promise<BrowserWindow> | null = null;
+
+/**
+ * Boot the app for a caller other than the packaged entry point.
+ *
+ * The e2e seam at the top of this file isolates the profile; this gives a rig a
+ * supported way to run the SAME ipc handlers and the SAME window the product
+ * runs, instead of re-implementing them and testing a copy.
+ */
+export async function bootForE2e(): Promise<BrowserWindow> {
+  await app.whenReady();
+  if (!ipcRegistered) {
+    ipcRegistered = true;
+    registerIpcHandlers();
+  }
+  if (windowReady) return windowReady;
+  windowReady = createWindow();
+  return windowReady;
+}
+
 async function createWindow() {
   const overlay = usesTitleBarOverlay();
-  const win = new BrowserWindow({
-    width: 1280,
+  const win = new BrowserWindow({    width: 1280,
     height: 800,
     titleBarStyle: "hidden",
     ...(overlay
@@ -638,6 +732,11 @@ async function createWindow() {
     win.removeMenu();
   }
   registerWindowAccelerators(win);
+  // Hidden only for an e2e rig that asked for it, and applied after Electron
+  // has already shown the window during load (see the E2E block at the top).
+  if (!E2E.showWindow) {
+    win.hide();
+  }
 
   const sendMaximized = () => {
     if (win.isDestroyed()) return;
@@ -668,11 +767,19 @@ async function createWindow() {
   } else {
     await win.loadFile(path.join(__dirname, "../dist/index.html"));
   }
+  return win;
 }
 
 app.whenReady().then(() => {
-  registerIpcHandlers();
-  void createWindow();
+  if (!ipcRegistered) {
+    ipcRegistered = true;
+    registerIpcHandlers();
+  }
+  // Published before it is awaited, so a rig that calls `bootForE2e` while the
+  // product's own boot is still loading joins that window instead of opening a
+  // second one.
+  windowReady = createWindow();
+  void windowReady;
 });
 
 app.on("window-all-closed", () => {
