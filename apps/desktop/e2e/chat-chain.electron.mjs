@@ -150,11 +150,34 @@ const SAMPLE = `(() => {
           box: box(field),
           value: field.value,
           disabled: field.disabled === true,
+          // Capture is one gesture — type, Enter, type again — so the caret is
+          // measured with the field. document.activeElement is the handle a
+          // driver has on it: the :focus pseudo-class does not match while the
+          // window itself is unfocused (showInactive), while the caret is set
+          // either way.
+          focused: document.activeElement === field,
           placeholder: field.getAttribute("placeholder"),
           rows: field.getAttribute("rows")
         }
       : { present: false },
-    chatField: chatField ? { present: true, box: box(chatField), value: chatField.value } : { present: false },
+    /** What holds the caret, named so a failed check can say where it went. */
+    active: (() => {
+      const el = document.activeElement;
+      if (!el) return null;
+      return {
+        tag: el.tagName.toLowerCase(),
+        label: el.getAttribute("aria-label"),
+        composer: el === field || el === chatField
+      };
+    })(),
+    chatField: chatField
+      ? {
+          present: true,
+          box: box(chatField),
+          value: chatField.value,
+          focused: document.activeElement === chatField
+        }
+      : { present: false },
     send: send
       ? {
           present: true,
@@ -246,6 +269,22 @@ async function main() {
       return true;
     })()`);
 
+  /**
+   * The same press, the way a person makes it: a real one focuses the control
+   * before it fires, so the caret starts on the arrow rather than in the field
+   * the write is about to disable. A programmatic click never moves focus, so
+   * the field would hold the caret for free and a missing hand-back would
+   * measure as a pass.
+   */
+  const pressAria = (label) =>
+    run(`(() => {
+      const el = document.querySelector('[aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']');
+      if (!el) return false;
+      el.focus();
+      el.click();
+      return true;
+    })()`);
+
   /** Type into a React-controlled field the way a person does. */
   const typeInto = (selector, value) =>
     run(`(() => {
@@ -262,6 +301,15 @@ async function main() {
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) return false;
       el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      return true;
+    })()`);
+
+  /** Put the caret in a field, the way typing into it does. */
+  const focusSelector = (selector) =>
+    run(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return false;
+      el.focus();
       return true;
     })()`);
 
@@ -397,6 +445,11 @@ async function main() {
         chain.field.disabled === false &&
         chain.field.placeholder === "Log a signal…",
       `field ${JSON.stringify(chain.field)}`,
+    );
+    check(
+      "swapping the surface in hands the new composer the caret",
+      chain.field.focused === true,
+      `caret on ${JSON.stringify(chain.active)}`,
     );
     check(
       "the send control is absent until there is something to log",
@@ -576,7 +629,11 @@ async function main() {
     screenshots.push(await shot("overflow"));
 
     // 3 — logging writes through the bridge, and what was written is on screen
-    // afterwards without touching the scrollbar.
+    // afterwards without touching the scrollbar. The write is held open for a
+    // beat: the composer disables its field while one is in flight, and a stub
+    // that answers in a microtask settles inside a single React batch, so the
+    // field is never observably disabled and the caret never leaves it.
+    await run("window.__lqSignalDelay = 600");
     await typeInto('[aria-label="Log a signal"]', "Buy the standing desk before Monday");
     const typed = await waitFor(
       (state) => state.send.present === true,
@@ -590,7 +647,16 @@ async function main() {
         typed.send.state === "send",
       `send ${JSON.stringify(typed.send)}`,
     );
-    await clickAria("Log signal");
+    await pressAria("Log signal");
+    const inFlight = await waitFor(
+      (state) => state.field.disabled === true,
+      "the field goes inert while the write is in flight",
+    );
+    check(
+      "the field is inert, and holds no caret, while its write is in flight",
+      inFlight.field.disabled === true && inFlight.field.focused === false,
+      `field ${JSON.stringify(inFlight.field)}, caret on ${JSON.stringify(inFlight.active)}`,
+    );
     const logged = await waitFor(
       (state) => state.createCalls.length === 1 && state.items.length === expected.total + 1,
       "the logged signal is on the chain",
@@ -624,6 +690,15 @@ async function main() {
       logged.field.value === "" && logged.send.present === false,
       `field "${logged.field.value}", send ${logged.send.present}`,
     );
+    const caretAfterLog = await waitFor(
+      (state) => state.field.focused === true,
+      "the caret returns to the chain composer once the write settles",
+    );
+    check(
+      "logging a signal hands the caret back to the field, ready for the next one",
+      caretAfterLog.field.focused === true,
+      `caret on ${JSON.stringify(caretAfterLog.active)}`,
+    );
     check(
       "logging a signal sent no chat traffic",
       logged.messageCalls.length === landing.messageCalls.length,
@@ -631,16 +706,36 @@ async function main() {
     );
     screenshots.push(await shot("logged"));
 
-    // 4 — Enter logs too. The dock reuses the Life-Chain page's own key handler,
-    // so a composing keystroke or a held-down repeat cannot submit on its own.
+    // 4 — Enter logs too, from the field the operator is already in. The dock
+    // reuses the Life-Chain page's own key handler, so a composing keystroke or a
+    // held-down repeat cannot submit on its own — and the caret starts in the
+    // field, which is what the write then takes it out of.
     await typeInto('[aria-label="Log a signal"]', "Ask the accountant about the VAT window");
     await waitFor(
       (state) => state.send.present === true,
       "the send control appears before pressing Enter",
     );
+    const caretPlaced = await focusSelector('[aria-label="Log a signal"]');
+    await waitFor(
+      (state) => state.field.focused === true,
+      "the field holds the caret before Enter",
+    );
     const enterPressed = await pressEnter('[aria-label="Log a signal"]');
+    const enterInFlight = await waitFor(
+      (state) => state.field.disabled === true,
+      "Enter's write disables the field",
+    );
+    check(
+      "Enter's write drops the caret out of the field it disabled",
+      caretPlaced &&
+        enterInFlight.field.disabled === true &&
+        enterInFlight.field.focused === false,
+      `field ${JSON.stringify(enterInFlight.field)}, caret on ${JSON.stringify(enterInFlight.active)}`,
+    );
     const entered = await waitFor(
-      (state) => state.createCalls.length === 2,
+      // The call is recorded when the write starts, so the field's own release
+      // is what says the write settled and the re-read has landed.
+      (state) => state.createCalls.length === 2 && state.field.disabled === false,
       "Enter logs the signal",
     );
     check("dispatched Enter on the field", enterPressed, "no chain field to type into");
@@ -650,6 +745,16 @@ async function main() {
         entered.items[entered.items.length - 1]?.body === "Ask the accountant about the VAT window",
       `bridge saw ${JSON.stringify(entered.createCalls[1])}`,
     );
+    const caretAfterEnter = await waitFor(
+      (state) => state.field.focused === true,
+      "the caret returns to the chain composer after Enter",
+    );
+    check(
+      "Enter hands the caret back to the field too",
+      caretAfterEnter.field.focused === true,
+      `caret on ${JSON.stringify(caretAfterEnter.active)}`,
+    );
+    await run("window.__lqSignalDelay = 0");
 
     // 5 — the row's own controls. The 3-dot menu's Edit and Delete, and the
     // assignment picker, each write through the same bridge calls the page uses.
@@ -874,8 +979,12 @@ async function main() {
         landing,
         chain,
         typed,
+        inFlight,
         logged,
+        caretAfterLog,
+        enterInFlight,
         entered,
+        caretAfterEnter,
         editing,
         cancelled,
         saved,
@@ -914,8 +1023,12 @@ async function main() {
       ["landing", states.landing],
       ["chain (overflow)", states.chain],
       ["with a draft", states.typed],
+      ["log in flight", states.inFlight],
       ["logged", states.logged],
+      ["caret after log", states.caretAfterLog],
+      ["enter in flight", states.enterInFlight],
       ["enter-logged", states.entered],
+      ["caret after enter", states.caretAfterEnter],
       ["editing", states.editing],
       ["cancelled", states.cancelled],
       ["edited + assigned", states.saved],

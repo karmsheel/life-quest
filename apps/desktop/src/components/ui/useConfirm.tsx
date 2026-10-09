@@ -37,10 +37,16 @@ export function useConfirm(when = true) {
   const [pending, setPending] = useState<ConfirmRequest | null>(null);
 
   const ask = useCallback((request: ConfirmRequest) => setPending(request), []);
+  /**
+   * Whether the question is actually on screen, `when` included. Callers that
+   * hand the caret around need it: a dialog is the surface while it is up, so
+   * nothing behind it may take the caret back.
+   */
+  const asking = when && pending !== null;
 
   const dialog = (
     <ConfirmDialog
-      open={when && pending !== null}
+      open={asking}
       title={pending?.title ?? ""}
       message={pending?.message ?? ""}
       confirmLabel={pending?.confirmLabel ?? "Confirm"}
@@ -54,5 +60,5 @@ export function useConfirm(when = true) {
     />
   );
 
-  return { ask, dialog };
+  return { ask, dialog, asking };
 }

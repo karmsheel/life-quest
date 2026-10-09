@@ -33,7 +33,7 @@ import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
 import { summarizeToolRun, toolRowLabel, type ToolCall } from "@/lib/tool-run";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
 import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
-import { useActiveDomain } from "@/components/shell/useActiveDomain";
+import { useActiveDomain, useDashboardBoard } from "@/components/shell/useActiveDomain";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useVault } from "@/state/VaultProvider";
@@ -131,6 +131,19 @@ function nextId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * Whether the caret sits in a field somebody is typing in — ours or another
+ * surface's. The dock's composer only ever takes the caret from a control (a
+ * button, a row, the window itself), never from under a keystroke.
+ */
+function isTypingTarget(el: Element | null): boolean {
+  if (!el) return false;
+  if (el instanceof HTMLInputElement) return true;
+  if (el instanceof HTMLTextAreaElement) return true;
+  if (el instanceof HTMLSelectElement) return true;
+  return el instanceof HTMLElement && el.isContentEditable;
+}
+
 function sessionTimeValue(lastActive: number | null): string | undefined {
   if (lastActive == null || !Number.isFinite(lastActive)) return undefined;
   const date = new Date(lastActive * 1000);
@@ -142,6 +155,10 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const activeDomain = useActiveDomain();
   const domainName = activeDomain?.meta.name ?? "Overview";
   const { snapshot, refresh, reloadGeneration, lens } = useVault();
+  // The board the operator is on, and its page lock. The turn carries both so
+  // the companion knows whether a dashboard change lands or files a Decision —
+  // and it is the same board/file HomePage reads, not a second guess at it.
+  const { slug: boardSlug, locked: boardLocked } = useDashboardBoard();
   const {
     requestedSessionId,
     requestedKickoff,
@@ -262,7 +279,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
    * app's own dialog, and gated on the dock being open: a question asked from
    * the list cannot float over the window once the panel is collapsed.
    */
-  const { ask, dialog } = useConfirm(open);
+  const { ask, dialog, asking } = useConfirm(open);
   /** Drives the inline control: the arrow needs text, the stop square needs a run. */
   const sendable = draft.trim().length > 0 || receipt !== null;
   const controlVisible = sending || sendable;
@@ -319,6 +336,25 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const assistantId = useRef<string | null>(null);
   /** Bottom for the composer: the box height it rests at with an empty draft. */
   const restingHeightRef = useRef(0);
+
+  /**
+   * Put the caret back in the dock's composer — the one field all three of its
+   * surfaces share, since only one of them is ever mounted.
+   *
+   * Every write the composer starts disables its own field while the write is in
+   * flight (the arrow becomes the stop square, the chain's field goes inert), and
+   * a disabled field cannot hold the caret: the browser drops it on `body`.
+   * Capture is one gesture — type, Enter, type again — so the field takes the
+   * caret back the moment it is usable again. It is never taken from a field the
+   * operator is typing in, which is what keeps an eager rule from being a rude
+   * one.
+   */
+  const focusComposer = useCallback(() => {
+    const field = inputRef.current;
+    if (!field || field.disabled) return;
+    if (isTypingTarget(document.activeElement)) return;
+    field.focus();
+  }, []);
 
   /** The open chat's row, when it is still listed (an archived one is not). */
   const activeSession = sessions.find((s) => s.id === sessionId) ?? null;
@@ -449,8 +485,14 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     async (id: string) => {
       setView("thread");
       await loadSession(id);
+      // Opening a chat is the gesture that asks for the caret. It is handed over
+      // here as well as in the effect below because the New chat slot has a case
+      // no state change can signal: the blank chat it lands on is already the
+      // open one, so neither the view nor the session moves and the effect never
+      // fires.
+      focusComposer();
     },
-    [loadSession],
+    [loadSession, focusComposer],
   );
 
   /** Read the chain — the same call the Life-Chain page makes. */
@@ -546,9 +588,20 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     chainRef.current.scrollTop = chainRef.current.scrollHeight;
   }, [open, view, chainItems, chainBusy]);
 
+  /**
+   * When the composer is handed the caret: the panel opens, a surface swaps in,
+   * a chat finishes loading, or a write that disabled the field settles. Those
+   * are exactly the moments the field goes from unusable to usable, which is why
+   * they are what this effect waits on. The dock's own question gates all of it:
+   * while a dialog is up it is the surface, so the composer must not reach behind
+   * it for a caret the operator has already given to the answer.
+   */
   useEffect(() => {
-    if (open && view !== "list") inputRef.current?.focus();
-  }, [open, view]);
+    if (!open || view === "list" || asking) return;
+    if (view === "thread" && (sending || !sessionId)) return;
+    if (view === "chain" && chainBusy) return;
+    focusComposer();
+  }, [open, view, sessionId, sending, chainBusy, asking, focusComposer]);
 
   useEffect(() => {
     return api().onCompanionStream((evt: ChatStreamEvent) => {
@@ -716,7 +769,10 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
           domainSlug: activeDomain?.slug ?? null,
           // What the operator is looking at: the home board's domain, null on
           // Overview. This anchors "the Dashboard" in the agent's instructions.
-          viewingBoard: lens.kind === "domain" ? lens.slug : null,
+          viewingBoard: boardSlug,
+          // And whether that board is read-only right now, which is what decides
+          // between an applied change and a pending Decision.
+          viewingBoardLocked: boardLocked,
           aboutMe: snapshot?.map?.aboutMe ?? "",
           locked: false,
           vaultOpen: Boolean(snapshot),

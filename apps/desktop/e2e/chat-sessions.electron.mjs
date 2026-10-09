@@ -89,8 +89,26 @@ const SAMPLE = `(() => {
       ? { box: box(footer), display: getComputedStyle(footer).display, hidden: footer.hidden }
       : null,
     composer: composer
-      ? { box: box(composer), display: getComputedStyle(composer).display }
+      ? {
+          box: box(composer),
+          display: getComputedStyle(composer).display,
+          // The caret is half of what the field is for, and this is the only
+          // handle a driver has on it: the :focus pseudo-class does not match
+          // while the window itself is unfocused (showInactive), while
+          // document.activeElement is set either way.
+          focused: document.activeElement === composer
+        }
       : null,
+    /** What holds the caret, named so a failed check can say where it went. */
+    active: (() => {
+      const el = document.activeElement;
+      if (!el) return null;
+      return {
+        tag: el.tagName.toLowerCase(),
+        label: el.getAttribute("aria-label"),
+        composer: el === composer
+      };
+    })(),
     threadHeader: threadHeader
       ? {
           box: box(threadHeader),
@@ -275,6 +293,23 @@ async function main() {
     run(`(async () => {
       const el = document.querySelector('[aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']');
       if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /**
+   * The same press, the way a person makes it: a real one focuses the control
+   * before it fires, so the caret starts on the button — which is exactly what
+   * the composer has to take it back from. `clickAria` cannot show that: a
+   * programmatic click never moves focus, so the field would still hold the
+   * caret for free and a missing hand-back would measure as a pass.
+   */
+  const pressAria = (label) =>
+    run(`(async () => {
+      const el = document.querySelector('[aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']');
+      if (!el) return false;
+      el.focus();
       el.click();
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
       return true;
@@ -741,7 +776,7 @@ async function main() {
       `calls ${reserved.patchCalls.length + reserved.createCalls.length} vs ${beforeReserved}, view ${reserved.list ? "list" : "thread"}`,
     );
 
-    const newClicked = await clickAria("New chat");
+    const newClicked = await pressAria("New chat");
     const created = await settle();
     check("clicked New chat", newClicked, "no New chat slot in the action bar");
     check(
@@ -764,6 +799,11 @@ async function main() {
       created.threadHeader?.label === "New chat",
       `header "${created.threadHeader?.label}"`,
     );
+    check(
+      "the New chat slot leaves the caret in the composer",
+      created.composer?.focused === true,
+      `caret on ${JSON.stringify(created.active)}`,
+    );
 
     // 9 — an empty chat is the New chat slot's destination, not its raw
     // material: leaving it for another chat and clicking the slot again returns
@@ -774,7 +814,7 @@ async function main() {
     const rowMoved = await clickRow(2);
     await settle();
     check("moved off the empty chat", rowMoved, "no chat row at index 2");
-    const reusedClicked = await clickAria("New chat");
+    const reusedClicked = await pressAria("New chat");
     const reused = await settle();
     check("clicked New chat again", reusedClicked, "no New chat slot in the action bar");
     check(
@@ -791,6 +831,28 @@ async function main() {
       "the reused chat is still named New chat and still empty",
       reused.threadHeader?.label === "New chat" && reused.messages.length === 0,
       `header "${reused.threadHeader?.label}", ${reused.messages.length} bubbles`,
+    );
+    check(
+      "reusing a chat leaves the caret in the composer",
+      reused.composer?.focused === true,
+      `caret on ${JSON.stringify(reused.active)}`,
+    );
+
+    // 9b — the same slot, pressed while its blank chat is already the open one,
+    // changes no state at all: no create, no load, not even a view swap. The
+    // caret still has to land in the field, so this is the case that a
+    // focus rule hung only on state changes would miss.
+    const againClicked = await pressAria("New chat");
+    const again = await settle();
+    check(
+      "clicked New chat while its own chat was already open",
+      againClicked,
+      "no New chat slot in the action bar",
+    );
+    check(
+      "pressing New chat on the chat it already opened still leaves the caret in the composer",
+      again.composer?.focused === true,
+      `caret on ${JSON.stringify(again.active)}`,
     );
     await clickAria("All chats");
     const reusedList = await settle();
@@ -1078,6 +1140,7 @@ async function main() {
         reserved,
         created,
         reused,
+        again,
         reusedList,
         menuState,
         menuShut,
@@ -1126,6 +1189,7 @@ async function main() {
       ["archived", states.archived],
       ["new chat", states.created],
       ["new chat reuse", states.reused],
+      ["new chat again", states.again],
       ["reuse list", states.reusedList],
       ["row menu", states.menuState],
       ["row edit", states.rowRenameStarted],

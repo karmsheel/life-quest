@@ -60,7 +60,9 @@ type State = {
   lastRow: Box | null;
   body: { box: Box; display: string; hidden: boolean } | null;
   footer: { box: Box; display: string; hidden: boolean } | null;
-  composer: { box: Box; display: string } | null;
+  composer: { box: Box; display: string; focused: boolean } | null;
+  /** What holds the caret, so a failure can say where it went. */
+  active: { tag: string; label: string | null; composer: boolean } | null;
   threadHeader: { box: Box; label: string; actions: string[] } | null;
   renaming: boolean;
   renameValue: string | null;
@@ -326,6 +328,11 @@ describe("chat sessions rigs", { concurrency: true }, () => {
         "the row click reopened the resumed chat",
       );
       assert.equal(thread.list, null, "the list stayed up behind the thread");
+      assert.equal(
+        thread.composer?.focused,
+        true,
+        `opening a chat left the caret on ${JSON.stringify(thread.active)}`,
+      );
 
       const pin = pinnedList.patchCalls.at(-1);
       assert.equal(pin?.patch.pinned, true, "pin never reached the bridge");
@@ -383,6 +390,11 @@ describe("chat sessions rigs", { concurrency: true }, () => {
         archived.patchCalls.length,
         "creating a chat wrote session flags",
       );
+      assert.equal(
+        created.composer?.focused,
+        true,
+        `the New chat slot left the caret on ${JSON.stringify(created.active)}`,
+      );
 
       // An empty chat is where the New chat slot goes, not what it makes: clicking
       // the slot with a blank chat already listed must reopen that chat, not mint
@@ -399,6 +411,25 @@ describe("chat sessions rigs", { concurrency: true }, () => {
         "the reused empty chat did not reopen as a thread",
       );
       assert.deepEqual(reused.messages, [], "the reused chat opened with a transcript");
+      assert.equal(
+        reused.composer?.focused,
+        true,
+        `reusing a chat left the caret on ${JSON.stringify(reused.active)}`,
+      );
+
+      // The slot's own blank chat, already open: no create, no load, no view
+      // swap. A hand-back hung only on state changes misses this one entirely.
+      const again = report.states.again;
+      assert.equal(
+        again.createCalls.length,
+        reused.createCalls.length,
+        "pressing New chat on its own open chat minted another",
+      );
+      assert.equal(
+        again.composer?.focused,
+        true,
+        `pressing New chat on the chat it already opened left the caret on ${JSON.stringify(again.active)}`,
+      );
       assert.equal(
         report.states.reusedList.rowCount,
         report.fixture.rows,
@@ -618,8 +649,16 @@ describe("chat sessions rigs", { concurrency: true }, () => {
       };
     } | null;
     items: Item[];
-    field: { present: boolean; value?: string; disabled?: boolean; placeholder?: string };
-    chatField: { present: boolean; value?: string };
+    field: {
+      present: boolean;
+      value?: string;
+      disabled?: boolean;
+      placeholder?: string;
+      focused?: boolean;
+    };
+    chatField: { present: boolean; value?: string; focused?: boolean };
+    /** What holds the caret, so a failure can say where it went. */
+    active: { tag: string; label: string | null; composer: boolean } | null;
     send: { present: boolean; disabled?: boolean; type?: string; state?: string };
     actions: { label: string | null; pressed: boolean; disabled: boolean }[];
     transcript: string[];
@@ -698,6 +737,10 @@ describe("chat sessions rigs", { concurrency: true }, () => {
         chain,
         logged,
         entered,
+        inFlight,
+        caretAfterLog,
+        enterInFlight,
+        caretAfterEnter,
         editing,
         cancelled,
         saved,
@@ -749,6 +792,11 @@ describe("chat sessions rigs", { concurrency: true }, () => {
         `the chain does not open on its newest entry: scrollTop ${chain.chainBody!.scrollTop} in ${chain.chainBody!.scrollHeight}px`,
       );
       assert.equal(chain.send.present, false, "the send control shows on an empty draft");
+      assert.equal(
+        chain.field.focused,
+        true,
+        `the swapped-in composer did not take the caret: it is on ${JSON.stringify(chain.active)}`,
+      );
 
       // Two blocks per row, plus the picker under the message and the thread
       // through the date boxes. Measured, not read off the source.
@@ -804,6 +852,11 @@ describe("chat sessions rigs", { concurrency: true }, () => {
       // The row's own controls, all three writing through the same bridge calls.
       assert.equal(editing.items[0]?.editing, true, "Edit did not open the row");
       assert.equal(
+        editing.active?.label,
+        "Edit signal",
+        `the hand-back rule stole the caret from the row's editor: ${JSON.stringify(editing.active)}`,
+      );
+      assert.equal(
         editing.items[0]?.editValue,
         report.fixture.oldestBody,
         "the editor did not open on the row's own text",
@@ -855,7 +908,40 @@ describe("chat sessions rigs", { concurrency: true }, () => {
         "the logged signal is not the newest row",
       );
       assert.equal(logged.field.value, "", "the field kept its text");
+      // The write disables the field, and a disabled field cannot hold the caret:
+      // the browser drops it on `body`. Capture is one gesture, so the field has
+      // to take it back when it comes back enabled.
+      assert.equal(
+        inFlight.field.disabled,
+        true,
+        "the field stayed live through its own write, so this rig measured nothing",
+      );
+      assert.equal(
+        inFlight.field.focused,
+        false,
+        `the in-flight write kept the caret in the field: ${JSON.stringify(inFlight.active)}`,
+      );
+      assert.equal(
+        caretAfterLog.field.focused,
+        true,
+        `logging a signal left the caret on ${JSON.stringify(caretAfterLog.active)}`,
+      );
       assert.equal(entered.createCalls.length, 2, "Enter did not log the second signal");
+      assert.equal(
+        enterInFlight.field.disabled,
+        true,
+        "Enter's write never disabled the field, so this rig measured nothing",
+      );
+      assert.equal(
+        enterInFlight.field.focused,
+        false,
+        `Enter's write kept the caret in the field it disabled: ${JSON.stringify(enterInFlight.active)}`,
+      );
+      assert.equal(
+        caretAfterEnter.field.focused,
+        true,
+        `Enter left the caret on ${JSON.stringify(caretAfterEnter.active)}`,
+      );
 
       assert.equal(short.items.length, 3, "the short chain did not shrink to the limit");
       assert.ok(

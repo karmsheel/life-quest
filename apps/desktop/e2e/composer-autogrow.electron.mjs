@@ -607,8 +607,13 @@ async function main() {
       };
       const ring = { reference1px: reference("1px"), reference2px: reference("2px") };
       const devicePixelRatio = window.devicePixelRatio;
+      // The dock hands the caret back to its composer once a turn ends, so the
+      // field is usually focused when this step starts: the blur below is a real
+      // 120ms transition and not a no-op. Both reads wait it out — the resting
+      // one has to be at rest, or it catches the glow mid-fade and the equality
+      // with "none" fails on a value that is 98% of the way there.
       el.blur();
-      await wait(60);
+      await wait(260);
       const blurred = read();
       el.focus();
       // Past the 120ms box-shadow transition, or the read catches it mid-flight.

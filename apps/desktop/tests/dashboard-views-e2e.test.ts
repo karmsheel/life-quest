@@ -10,9 +10,8 @@ import {
   createVault,
   executeViewTool,
   getDatabase,
-  listPins,
+  listPinBoard,
   listViews,
-  resolveDecision,
   runSavedView,
   runViewBlocks,
   setPins,
@@ -25,9 +24,12 @@ import { writeCompanionMcpProfile } from "../electron/companion-lifecycle.ts";
  * The dashboard-view chain, end to end, against a real vault on disk.
  *
  * This is one run of the whole product path: the companion's profile is written
- * eager, a composed view is proposed, the Decision is approved, the saved view
- * is pinned to the Overview board, and the board reads it back — with the
- * numbers coming out of real rows in a real sqlite file.
+ * eager, one composed view is saved through save_view, the saved view is pinned
+ * to the Overview board in that same call, and the board reads it back — with
+ * the numbers coming out of real rows in a real sqlite file.
+ *
+ * The LOCKED half of the same call is `dashboard-lock-e2e`'s: this rig holds the
+ * unlocked path, where the write lands with no Decision at all.
  *
  * It runs under `npm test` (`node --experimental-strip-types --test`), which is
  * why it does not need Electron: vault-core's `node:sqlite` is available to
@@ -82,7 +84,7 @@ function parseYaml(text: string): Record<string, Record<string, unknown>> {
 }
 
 describe("dashboard views e2e", () => {
-  it("proposes, approves, pins and reads back a composed weekly summary", async () => {
+  it("saves and pins a composed weekly summary on the Overview board in one call", async () => {
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "lq-dashboard-views-"));
     const vaultRoot = path.join(workDir, "vault");
     const checks: Record<string, unknown> = {};
@@ -304,10 +306,14 @@ describe("dashboard views e2e", () => {
     checks.windowWithoutTimeColumn = noTimeColumn.ok ? "ran" : noTimeColumn.error;
     assert.equal(noTimeColumn.ok, false, "a timeWindow without a timeColumnId must be refused");
 
-    // ── 5. propose -> approve -> saved, in that order ───────────────────────
+    // ── 5. one save_view call: the card is saved AND on the board ───────────
     const before = await listViews(vaultRoot, "financial");
     assert.equal(before.ok, true, `listViews failed: ${before.ok ? "" : before.error}`);
-    checks.viewsBeforePropose = (before as { ok: true; value: unknown[] }).value.length;
+    checks.viewsBefore = (before as { ok: true; value: unknown[] }).value.length;
+    const boardBefore = await listPinBoard(vaultRoot, null);
+    assert.equal(boardBefore.ok, true, `listPinBoard failed: ${boardBefore.ok ? "" : boardBefore.error}`);
+    checks.overviewLocked = (boardBefore as { ok: true; value: { locked: boolean } }).value.locked;
+    assert.equal(checks.overviewLocked, false, "a fresh Overview board must start unlocked");
 
     const preview = (await executeViewTool(vaultRoot, ACTOR, "preview_view", {
       domainSlug: "financial",
@@ -317,36 +323,38 @@ describe("dashboard views e2e", () => {
     assert.equal(preview.error, undefined, `preview_view failed: ${preview.error?.message}`);
     assert.equal(preview.blocks?.length, 3, `preview_view returned ${preview.blocks?.length} panels`);
 
-    const proposed = (await executeViewTool(vaultRoot, ACTOR, "propose_view", {
+    // One call, one card. This replaced propose -> approve -> arrange, a chain
+    // that could strand a saved-but-unpinned view and that made the companion
+    // wait on an approval it could not see.
+    const saved = (await executeViewTool(vaultRoot, ACTOR, "save_view", {
       domainSlug: "financial",
+      boardSlug: null,
       spec,
-    })) as { proposed?: boolean; decisionId?: string };
-    checks.propose = proposed;
-    assert.equal(proposed.proposed, true, "propose_view filed no Decision");
-    assert.ok(proposed.decisionId, "propose_view returned no decision id");
+      span: 2,
+    })) as {
+      applied?: boolean;
+      proposed?: boolean;
+      viewId?: string;
+      boardSlug?: string | null;
+      error?: { message: string };
+    };
+    checks.saveView = saved;
+    assert.equal(saved.error, undefined, `save_view failed: ${saved.error?.message}`);
+    assert.equal(saved.applied, true, `save_view did not apply on an unlocked board: ${JSON.stringify(saved)}`);
+    assert.equal(saved.proposed, undefined, "save_view filed a Decision on an unlocked board");
+    assert.ok(saved.viewId, "save_view returned no view id");
 
-    const afterPropose = await listViews(vaultRoot, "financial");
-    assert.equal(afterPropose.ok, true);
-    checks.viewsAfterPropose = (afterPropose as { ok: true; value: unknown[] }).value.length;
-    assert.equal(
-      checks.viewsAfterPropose,
-      checks.viewsBeforePropose,
-      "propose_view must save nothing: approval is the write",
+    const after = await listViews(vaultRoot, "financial");
+    assert.equal(after.ok, true);
+    const savedView = (after as { ok: true; value: { id: string; title: string; blocks?: unknown[] }[] }).value.find(
+      (v) => v.id === saved.viewId,
     );
-
-    const approved = await resolveDecision(vaultRoot, proposed.decisionId, "approved");
-    assert.equal(approved.ok, true, `resolveDecision failed: ${approved.ok ? "" : approved.error}`);
-    const afterApprove = await listViews(vaultRoot, "financial");
-    assert.equal(afterApprove.ok, true);
-    const saved = (afterApprove as { ok: true; value: { id: string; title: string; blocks?: unknown[] }[] }).value.find(
-      (v) => v.title === "Weekly expenses",
-    );
-    assert.ok(saved, "approving the Decision did not save the view");
-    assert.equal(saved.blocks?.length, 3, `the saved view carries ${saved.blocks?.length} blocks, expected 3`);
-    checks.savedView = { id: saved.id, title: saved.title, blocks: saved.blocks?.length ?? 0 };
+    assert.ok(savedView, "save_view did not write the view file");
+    assert.equal(savedView.blocks?.length, 3, `the saved view carries ${savedView.blocks?.length} blocks, expected 3`);
+    checks.savedView = { id: savedView.id, title: savedView.title, blocks: savedView.blocks?.length ?? 0 };
 
     // The saved file must run exactly as the preview did: same path, same rows.
-    const savedRun = await runSavedView(vaultRoot, "financial", saved.id, runAt);
+    const savedRun = await runSavedView(vaultRoot, "financial", savedView.id, runAt);
     assert.equal(savedRun.ok, true, `runSavedView failed: ${savedRun.ok ? "" : savedRun.error}`);
     const savedCounts = (savedRun as { ok: true; value: { blocks: { result: { rows: unknown[] } }[] } }).value.blocks.map(
       (b) => b.result.rows.length,
@@ -357,27 +365,20 @@ describe("dashboard views e2e", () => {
     // ── 6. a financial view pins onto the OVERVIEW board ────────────────────
     // This is the write/read agreement that made "a weekly summary on the
     // Dashboard" impossible: the read path always allowed a cross-domain view
-    // on Overview, and the write path refused it.
-    const emptyBoard = await listPins(vaultRoot, null);
-    assert.equal(emptyBoard.ok, true);
-    checks.overviewPinsBefore = (emptyBoard as { ok: true; value: unknown[] }).value.length;
-
-    const pin = { id: `view:financial:${saved.id}`, kind: "view" as const, domainSlug: "financial", viewId: saved.id, span: 2 as const };
-    const pinned = await setPins(vaultRoot, null, [pin], ACTOR);
-    assert.equal(pinned.ok, true, `pinning a financial view to Overview was refused: ${pinned.ok ? "" : pinned.error}`);
-    checks.pinWrite = (pinned as { ok: true; value: { applied: boolean } }).value;
-
-    const readBack = await listPins(vaultRoot, null);
+    // on Overview, and the write path refused it. save_view pins as part of the
+    // same call, so this is checked against the board the call reported.
+    const readBack = await listPinBoard(vaultRoot, null);
     assert.equal(readBack.ok, true);
-    const back = (readBack as { ok: true; value: { kind: string; viewId?: string; domainSlug?: string; span?: number }[] }).value.find(
-      (p) => p.kind === "view" && p.viewId === saved.id,
+    const back = (readBack as { ok: true; value: { pins: { kind: string; viewId?: string; domainSlug?: string; span?: number }[] } }).value.pins.find(
+      (p) => p.kind === "view" && p.viewId === savedView.id,
     );
-    assert.ok(back, "the pinned view did not read back from the Overview board");
+    assert.ok(back, "the saved view was not pinned to the Overview board");
     assert.equal(back.domainSlug, "financial", "the Overview pin lost the domain that owns the view");
     assert.equal(back.span, 2, `the Overview pin lost its span: ${back.span}`);
     checks.overviewPin = back;
 
     // The rule stayed narrow: a domain board still refuses another's view.
+    const pin = { id: `view:financial:${savedView.id}`, kind: "view" as const, domainSlug: "financial", viewId: savedView.id, span: 2 as const };
     const foreign = await setPins(vaultRoot, "health", [pin], ACTOR);
     checks.foreignViewOnDomainBoard = foreign.ok ? "accepted" : foreign.error;
     assert.equal(foreign.ok, false, "a financial view was accepted onto the health board");
@@ -386,7 +387,7 @@ describe("dashboard views e2e", () => {
     fs.mkdirSync(path.dirname(ARTIFACT), { recursive: true });
     const report = {
       pass: true,
-      what: "propose -> approve -> save -> pin a composed weekly summary onto the Overview board",
+      what: "one save_view call saves a composed weekly summary and pins it on the Overview board",
       command: "npm test  (this file: tests/dashboard-views-e2e.test.ts)",
       checks,
       generatedAt: new Date().toISOString(),

@@ -47,6 +47,27 @@ const url =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/view-card.html";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
+/**
+ * Paint the rig in the app's own theme before the first paint that matters.
+ *
+ * The theme lives in `localStorage` (`lifequest-skin` + `lifequest-theme`),
+ * scoped to an origin — so setting it on any page of the dev server settles it
+ * for every page in this window, including the harness the rig actually loads.
+ * Without this the rig renders the base tokens, and a design review would be
+ * judging a palette the operator never sees. Both values mirror the product
+ * defaults: the Forge OS skin, and dark.
+ */
+async function applyAppTheme(win) {
+  await win.loadURL(`${url}?v=theme-seed`);
+  await win.webContents.executeJavaScript(
+    `(() => {
+       localStorage.setItem("lifequest-skin", "forge-os");
+       localStorage.setItem("lifequest-theme", "dark");
+       return true;
+     })()`,
+  );
+}
+
 /** One rect per chip-styled bar; fill read straight off the rect. */
 const SAMPLE = `(() => {
   const card = document.querySelector(".view-card");
@@ -81,12 +102,39 @@ const SAMPLE = `(() => {
       bars: b.querySelectorAll(".view-card__bar").length,
       lines: b.querySelectorAll(".view-card__line").length,
       empty: b.querySelector(".view-card__empty") ? b.querySelector(".view-card__empty").textContent : null,
+      // The operator's own switches for this panel: which one is on, and which
+      // ones this database can actually express.
+      tools: Array.from(b.querySelectorAll(".view-card__tool")).map((btn) => ({
+        presentation: btn.getAttribute("data-presentation"),
+        label: (btn.textContent || "").trim(),
+        active: btn.getAttribute("aria-pressed") === "true",
+        disabled: btn.disabled,
+        title: btn.getAttribute("title"),
+      })),
     })),
     bars,
     ticks: Array.from(document.querySelectorAll(".view-card__tick")).map((t) => (t.textContent || "").trim()),
     gridWidth: gridBox ? Math.round(gridBox.width) : null,
     pinWidth: pinBox ? Math.round(pinBox.width) : null,
     accent: getComputedStyle(document.documentElement).getPropertyValue("--accent"),
+    // The card must wear the board's own shell: same paper, hairline and radius
+    // as every sibling pin. A view that drew without them is the regression this
+    // sample exists to catch.
+    shell: (() => {
+      const cs = card ? getComputedStyle(card) : null;
+      return {
+        background: cs ? cs.backgroundColor : null,
+        border: cs ? cs.borderTopWidth : null,
+        radius: cs ? cs.borderTopLeftRadius : null,
+      };
+    })(),
+    headers: Array.from(document.querySelectorAll(".view-card__table thead th")).map((th) =>
+      (th.textContent || "").trim(),
+    ),
+    tableAlign: (() => {
+      const cell = document.querySelector(".view-card__table tbody td + td");
+      return cell ? getComputedStyle(cell).textAlign : null;
+    })(),
   };
 })()`;
 
@@ -120,8 +168,17 @@ const failure = (message) => {
   return message;
 };
 
-function waitFor(win, expression, label, timeoutMs = 10_000) {
-  const deadline = Date.now() + timeoutMs;
+/**
+ * The last step the rig reached, so a timeout names the step that produced it
+ * instead of only saying "timed out" — which is the difference between one run
+ * and a bisect.
+ */
+let step = "start";
+const at = (name) => {
+  step = name;
+};
+
+function waitFor(win, expression, label, timeoutMs = 10_000) {  const deadline = Date.now() + timeoutMs;
   return new Promise((resolve, reject) => {
     const poll = async () => {
       let value;
@@ -196,9 +253,64 @@ const BAR_RUN = {
  * companion would propose it — the range total, the week-by-week table, and the
  * same weeks as a chart, in one card.
  */
-const COMPOSED_KEY = "financial::v-composed";
-const COMPOSED_FIXTURE = {
-  view: { ...ZAR_BAR_VIEW, title: "Weekly expenses", presentation: "table" },
+const COMPOSED_KEY = "financial::v-composed";const COMPOSED_FIXTURE = {
+  // The file the app reads: the card's spec, blocks and all, so the table's
+  // headers come from the query that shaped the rows rather than a guess.
+  view: {
+    ...ZAR_BAR_VIEW,
+    title: "Weekly expenses",
+    presentation: "table",
+    timeBucket: "week",
+    groupBy: "date",
+    blocks: [
+      {
+        id: "total",
+        title: "Last 5 weeks",
+        presentation: "metric",
+        groupBy: null,
+        timeBucket: "week",
+        timeColumnId: "date",
+        timeWindow: "this-month",
+        filters: [],
+        measure: "sum",
+        measureColumnId: "amount",
+        sort: { by: "label", dir: "asc" },
+        limit: 12,
+        convertToZar: false,
+      },
+      {
+        id: "weeks",
+        title: "Week by week",
+        presentation: "table",
+        groupBy: "date",
+        timeBucket: "week",
+        timeColumnId: "date",
+        timeWindow: "this-month",
+        filters: [],
+        measure: "sum",
+        measureColumnId: "amount",
+        sort: { by: "label", dir: "asc" },
+        limit: 12,
+        convertToZar: false,
+      },
+      {
+        id: "trend",
+        title: "Trend",
+        presentation: "bar",
+        span: 2,
+        groupBy: "date",
+        timeBucket: "week",
+        timeColumnId: "date",
+        timeWindow: "this-month",
+        filters: [],
+        measure: "sum",
+        measureColumnId: "amount",
+        sort: { by: "label", dir: "asc" },
+        limit: 12,
+        convertToZar: false,
+      },
+    ],
+  },
   run: {
     ok: true,
     value: composed("Weekly expenses", [
@@ -246,6 +358,28 @@ const COMPOSED_FIXTURE = {
   },
 };
 
+/**
+ * The same card under its own key, for the block-switch step.
+ *
+ * It needs a key of its own because `renderViewCard` only remounts when
+ * (slug, viewId) changes: re-rendering `v-composed` would leave the card with
+ * the props it already had and re-read nothing. The view id is the one the save
+ * must carry back, so this is also what makes "the write used the card's own id"
+ * a claim rather than a coincidence.
+ */
+const TOOLS_KEY = "financial::v-tools";
+const TOOLS_FIXTURE = {
+  ...COMPOSED_FIXTURE,
+  view: { ...COMPOSED_FIXTURE.view, id: "v-tools" },
+};
+
+/** The same card mounted read-only: what a locked dashboard draws. */
+const READONLY_KEY = "financial::v-readonly";
+const READONLY_FIXTURE = {
+  ...COMPOSED_FIXTURE,
+  view: { ...COMPOSED_FIXTURE.view, id: "v-readonly" },
+};
+
 async function main() {
   // A per-run partition isolates the HTTP disk cache: without it the window
   // serves a stale transform of ViewCard from a previous run's cache (the
@@ -253,8 +387,9 @@ async function main() {
   // passes silently. This is the measured failure; the partition is the fix.
   const sessionPartition = `view-card-${Date.now()}`;
   // The rig opens a real window on the operator's desktop: paint it in the
-  // theme the app itself defaults to (tokens.css, [data-theme="dark"]) so a
-  // test run is not a white sheet flashing across the screen.
+  // SKIN the app itself defaults to, not the base tokens. A view card is judged
+  // against the theme the operator actually sees, and `forge-os` night is that
+  // theme — a rig on bare tokens reviews a palette no one runs.
   nativeTheme.themeSource = "dark";
 
   const win = new BrowserWindow({
@@ -268,15 +403,34 @@ async function main() {
   win.showInactive();
 
   const consoleErrors = [];
+  /**
+   * Every console line the page emitted, in order. The block-switch step reads
+   * its two channels out of this rather than asking the page, so the claim does
+   * not depend on the renderer still answering questions after a write.
+   */
+  const pageLines = [];
   win.webContents.on("console-message", (event) => {
+    pageLines.push(event.message);
     if (event.level === "error") consoleErrors.push(event.message);
   });
 
+  await applyAppTheme(win);
   await win.loadURL(`${url}?v=${Date.now()}`);
   await waitFor(win, "Boolean(window.viewCardReady)", "viewCardReady");
 
   const checks = {};
 
+  // A harness that never applied the skin would draw a palette the operator
+  // does not run, and every design claim below would be about the wrong theme.
+  const skin = await win.webContents.executeJavaScript(
+    "({ name: window.viewCardSkin, applied: document.documentElement.dataset.skin ?? null })",
+  );
+  checks.skin = skin;
+  if (!skin.name || skin.applied !== skin.name) {
+    failure(`the harness did not paint in the app's skin: ${JSON.stringify(skin)}`);
+  }
+
+  at("1 bar");
   // ── 1. the bar view draws, in accent, one rect per group ───────────────────
   const bar = await render(win, "financial::v-bar", {
     view: ZAR_BAR_VIEW,
@@ -289,7 +443,9 @@ async function main() {
     failure(`bar title read ${JSON.stringify(bar.title)}`);
   }
   if (bar.bars.length !== 2) failure(`bar view drew ${bar.bars.length} rects, expected 2`);
-  if (bar.ticks.join(",") !== "Transpo…,Groceri…") {
+  // Labels fill their slot, so a short label is drawn whole; the claim is that
+  // every tick is present and none is wider than the slot it sits in.
+  if (bar.ticks.join(",") !== "Transport,Groceries") {
     failure(`bar ticks read ${JSON.stringify(bar.ticks)}`);
   }
   const fills = new Set(bar.bars.map((b) => b.fill));
@@ -366,6 +522,7 @@ async function main() {
     failure(`the card did not show the run's warning: ${JSON.stringify(warned.warnings)}`);
   }
 
+  at("6 composed");
   // ── 6. a COMPOSED view is one card holding metric + table + chart ─────────
   // This is the "weekly summary" shape: the panels the operator asked for, in
   // one pinnable card, titled once, with each panel naming itself.
@@ -394,7 +551,33 @@ async function main() {
     failure(`the composed chart drew ${composedCard.blocks[2]?.bars} bars, expected 5`);
   }
 
-  // ── 7. a span-2 wrapper owns the grid row ─────────────────────────────────
+  // ── 7. the card wears the board's shell, and its table reads as a table ────
+  // A pinned view is a card on the board, not a drawing dropped onto it. The
+  // composed fixture's table is grouped by week, so its label column is a week.
+  const shell = composedCard.shell;
+  checks.shell = shell;
+  if (!shell.background || shell.background === "rgba(0, 0, 0, 0)") {
+    failure(`the card drew no shell background: ${JSON.stringify(shell)}`);
+  }
+  if (shell.border === "0px") failure("the card drew no shell border");
+  if (!shell.radius || shell.radius === "0px") {
+    failure(`the card drew no shell radius: ${JSON.stringify(shell.radius)}`);
+  }
+  checks.composedHeaders = composedCard.headers;
+  // The fixture groups by week, so the label column is a week and the value
+  // column says what it sums in the run's currency.
+  if (composedCard.headers[0] !== "Week") {
+    failure(`the composed table's label column read ${JSON.stringify(composedCard.headers[0])}`);
+  }
+  if (composedCard.headers[1] !== "Total (ZAR)") {
+    failure(`the composed table's value column read ${JSON.stringify(composedCard.headers[1])}`);
+  }
+  if (composedCard.tableAlign !== "right") {
+    failure(`the composed table's value column is ${JSON.stringify(composedCard.tableAlign)}-aligned, expected right`);
+  }
+
+  at("8 span2");
+  // ── 8. a span-2 wrapper owns the grid row ─────────────────────────────────
   // Re-mount with a wide wrapper; the driver measures wrapper vs grid width.
   const span2 = await win.webContents.executeJavaScript(
     `(() => {
@@ -425,6 +608,163 @@ async function main() {
     );
   }
 
+  // Leave the composed card mounted: it is the artifact's subject, so the PNG
+  // shows the shape the operator asked for rather than the last assertion run.
+  // This runs BEFORE the block-switch step, because that step's save is the last
+  // thing this rig asks the page to do.
+  //
+  // This re-render repeats the key already on screen, and `viewCardCommits` only
+  // moves when (slug, viewId) changes — waiting for a commit here would hang
+  // forever, which is what `render()` above is careful never to do twice. The
+  // span-2 step appended its probes straight into the grid, so React never owned
+  // them: drop them by hand, then let two frames paint before the capture.
+  await win.webContents.executeJavaScript(
+    `document.querySelectorAll("[data-view-card-probe]").forEach((el) => el.remove())`,
+  );
+  await win.webContents.executeJavaScript(
+    `window.installFixture(${JSON.stringify(COMPOSED_KEY)}, ${JSON.stringify(COMPOSED_FIXTURE)})`,
+  );
+  await win.webContents.executeJavaScript(`window.renderViewCard("financial", "v-composed")`);
+  await waitFor(
+    win,
+    `document.querySelectorAll(".home-dashboard__grid > .home-pin").length === 1 && document.querySelectorAll(".view-card__block").length === 3`,
+    "the composed card alone in the grid",
+  );
+  await win.webContents.executeJavaScript(
+    `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
+  );
+  const image = await win.webContents.capturePage();
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(path.join(artifactsDir, "view-card.png"), image.toPNG());
+
+  // ── 9. the operator can change how one block is displayed ────────────────
+  // "Modify a certain block on the dashboard — like editing how a certain block
+  // is displayed." Each panel carries the four ways it can be drawn; the ones
+  // this database cannot express are drawn disabled rather than hidden, and a
+  // click writes the card back through the app's own view:save with the card's
+  // own id, so the file keeps its identity and the pin keeps its place.
+  //
+  // This is the LAST step on purpose, and nothing after the click asks the page
+  // a question. A save re-runs the card, and at that moment this renderer can
+  // stop answering `executeJavaScript` at all (a Vite HMR message lands on the
+  // same thread); a console line the page already emitted does not have that
+  // problem. So the click is the last thing the page is told, and everything
+  // after it is read from the two channels above.
+  //
+  // The read-only claim comes FIRST, on a card of its own: a locked dashboard is
+  // the state the card is MOUNTED in, not a prop flip on a card that has just
+  // saved. The seam this leaves is named rather than hidden — that a live lock
+  // toggle reaches the card is HomePage's wiring, and `dashboard-lock-ui` is the
+  // rig that owns the toggle itself.
+  at("9 block tools");
+  await win.webContents.executeJavaScript(`window.viewCardSetEditable(false)`);
+  const readOnly = await render(win, READONLY_KEY, READONLY_FIXTURE);
+  checks.readOnlyTools = readOnly.blocks.map((b) => b.tools.length);
+  if (readOnly.blocks.some((b) => b.tools.length > 0)) {
+    failure("a read-only card still drew block switches");
+  }
+  await win.webContents.executeJavaScript(`window.viewCardSetEditable(true)`);
+
+  const toolsCard = await render(win, TOOLS_KEY, TOOLS_FIXTURE);
+  checks.blockTools = toolsCard.blocks.map((b) => b.tools);
+  const panels = toolsCard.blocks;
+  if (panels.length !== 3) failure(`the composed card drew ${panels.length} panels, expected 3`);
+  for (const [index, panel] of panels.entries()) {
+    const offered = panel.tools.map((t) => t.presentation);
+    if (offered.join(",") !== "metric,table,bar,line") {
+      failure(`panel ${index} offers ${offered.join(",")} instead of all four presentations`);
+    }
+    const on = panel.tools.filter((t) => t.active).map((t) => t.presentation);
+    if (on.length !== 1) failure(`panel ${index} marks ${on.length} presentations as current, expected 1`);
+  }
+  // The disabled state is driven by the database's own column types, not by a
+  // guess: this fixture has a date column, so a line IS expressible for a metric
+  // panel, and it must be offered live.
+  const metricLine = panels[0].tools.find((t) => t.presentation === "line");
+  if (!metricLine || metricLine.disabled) {
+    failure("a metric panel cannot be switched to a line even though the database has a date column");
+  }
+
+  at("9a click");
+  const clickedBar = await win.webContents.executeJavaScript(
+    `(() => {
+      const block = document.querySelectorAll(".view-card__block")[1];
+      const btn = Array.from(block.querySelectorAll(".view-card__tool")).find(
+        (b) => b.getAttribute("data-presentation") === "bar"
+      );
+      if (!btn || btn.disabled) return false;
+      btn.click();
+      return true;
+    })()`,
+  );
+  if (!clickedBar) failure("the week table's panel offered no usable Bar switch");
+  at("9a1 read channels");
+  // The save record and the card's own report come from the page's console, not
+  // from an `executeJavaScript`: a save re-runs the card, and a Vite HMR message
+  // can wedge this renderer's JS thread at that exact moment, while a line
+  // already emitted is still in the main process's hands. `pageLines` is filled
+  // by the `console-message` listener above.
+  const readChannels = () => {
+    const saves = pageLines
+      .filter((line) => line.startsWith("viewCardSave:"))
+      .map((line) => JSON.parse(line.slice("viewCardSave:".length)));
+    const states = pageLines
+      .filter((line) => line.startsWith("viewCardState:"))
+      .map((line) => JSON.parse(line.slice("viewCardState:".length)));
+    return { saves, states };
+  };
+  let channels = readChannels();
+  const channelStates = () => channels.states.filter((s) => s.viewId === "v-tools");
+  // Wait for the save AND the redraw it causes: the card re-reads itself after a
+  // write, so the last report of the OLD shape arrives before the new one, and
+  // reading too early would call a correct card a stale one.
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    channels = readChannels();
+    const last = channelStates().at(-1);
+    if (channels.saves.length > 0 && last?.blocks?.[1]?.active?.[0] === "bar") break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  const saves = channels.saves;
+  const states = channelStates();
+  const switched = states.at(-1) ?? null;
+  checks.blockSwitch = { saves, states };
+  if (saves.length !== 1) failure(`one click made ${saves.length} writes, expected 1`);
+  if (saves[0]?.viewId !== "v-tools") {
+    failure(`the block switch saved under viewId ${JSON.stringify(saves[0]?.viewId)}, not the card's own id`);
+  }
+  const savedBlocks = saves[0]?.blocks ?? [];
+  if (savedBlocks.length !== 3) failure(`the saved spec carries ${savedBlocks.length} blocks, expected 3`);
+  if (savedBlocks[1]?.[1] !== "bar") {
+    failure(`the saved spec's week panel is a ${savedBlocks[1]?.[1]}, expected bar`);
+  }
+  if (savedBlocks[0]?.[1] !== "metric" || savedBlocks[2]?.[1] !== "bar") {
+    failure("switching one panel changed another panel's presentation");
+  }
+  if (!switched) {
+    failure("the card reported nothing after the switch");
+  } else {
+    if ((switched.blocks[1]?.bars ?? 0) === 0) {
+      failure("the panel did not redraw as a bar after the switch");
+    }
+    if ((switched.blocks[1]?.tableRows ?? 0) !== 0) {
+      failure("the panel still draws a table after switching to a bar");
+    }
+    if (switched.blocks[0]?.metric === null) failure("switching a sibling panel lost the metric");
+    if (switched.blocks[0]?.active?.[0] !== "metric") {
+      failure("the metric panel no longer marks itself as the current presentation");
+    }
+    if (switched.blocks[1]?.active?.[0] !== "bar") {
+      failure("the switched panel does not mark the bar as current");
+    }
+    if (switched.blocks[2]?.active?.[0] !== "bar") {
+      failure("switching one panel changed the third panel's current presentation");
+    }
+  }
+
+  // A read-only card — a locked dashboard — draws no switches at all; that claim
+  // was made above, before this card saved anything.
+
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
 
@@ -451,11 +791,10 @@ async function main() {
     `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
   );
 
+  at("report");
   const report = { pass: errors.length === 0, failures: errors, checks, samples: { bar, empty, metric, missing, warned, composedCard } };
   fs.mkdirSync(artifactsDir, { recursive: true });
   fs.writeFileSync(path.join(artifactsDir, "view-card.json"), `${JSON.stringify(report, null, 2)}\n`);
-  const image = await win.webContents.capturePage();
-  fs.writeFileSync(path.join(artifactsDir, "view-card.png"), image.toPNG());
 
   console.log(`bar: ${checks.barRects} rects, fill ${checks.barFills[0]}, tooltip ${JSON.stringify(checks.barTooltip)}`);
   console.log(`metric: ${checks.metricText}`);
@@ -511,6 +850,6 @@ app.whenReady()
   });
 
 setTimeout(() => {
-  console.error("view-card rig timed out");
+  console.error(`view-card rig timed out at: ${step}`);
   app.exit(1);
 }, 90_000);

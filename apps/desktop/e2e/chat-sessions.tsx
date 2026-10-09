@@ -46,6 +46,18 @@
  *     centres on the display and a rig cannot click it at all.
  * 19. Deleting the open chat leaves the panel on a thread for a chat that no
  *     longer exists, or leaves the stored last-chat pointer aimed at it.
+ * 20. The dock is handed a chat and does not hand back the caret: "New chat"
+ *     opens (or reopens) a thread whose field is not focused, so the first
+ *     keystroke after the press goes to the button that was pressed instead of
+ *     into the composer. The worst case changes no state at all — the slot's own
+ *     blank chat is already open — so a rule hung only on state changes misses
+ *     it.
+ * 21. A write takes the caret and never gives it back. Every composer in the
+ *     dock disables its field while its write is in flight (the arrow becomes
+ *     the stop square; the chain's field goes inert), and a disabled field
+ *     cannot hold the caret: the browser drops it on `body`. Capture is one
+ *     gesture — type, Enter, type again — so a field that comes back enabled
+ *     with the caret elsewhere costs the next thought a click.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page) and answers from `fixtures/companion-sessions.json`, which was seeded
@@ -139,6 +151,12 @@ type HarnessWindow = {
    * on the composer and one that overflows the panel.
    */
   __lqSignalLimit?: number | null;
+  /**
+   * How long the next chain write takes, in ms. Zero (the default) answers in a
+   * microtask; a rig that measures what the composer looks like *during* a write
+   * has to hold it open.
+   */
+  __lqSignalDelay?: number;
   __lqSignalListCalls?: number;
   __lqSignalCreateCalls?: SignalCreateRow[];
   __lqSignalUpdateCalls?: PatchCall[];
@@ -161,6 +179,7 @@ harness.__lqSignalUpdateCalls = [];
 harness.__lqSignalDeleteCalls = [];
 harness.__lqSignalListCalls = 0;
 harness.__lqSignalLimit = null;
+harness.__lqSignalDelay = 0;
 
 /**
  * Nothing here stubs `window.confirm`: the dock's destructive writes ask through
@@ -321,11 +340,19 @@ const bridge: Record<string, unknown> = {
       skipped: signalFixture.skipped,
     });
   },
-  signalChainCreate: (input: SignalCreateRow) => {
+  signalChainCreate: async (input: SignalCreateRow) => {
     harness.__lqSignalCreateCalls = [
       ...(harness.__lqSignalCreateCalls ?? []),
       { ...input },
     ];
+    // How long the write takes. The composer disables its field while a write
+    // is in flight, and a stub that answers in a microtask can settle inside one
+    // React batch, so the disabled state never reaches the DOM and the caret
+    // never leaves the field. A rig that wants to see the field it disables has
+    // to make the write take real time — the same knob `__lqChatDelay` is for
+    // the chat stream.
+    const delay = harness.__lqSignalDelay ?? 0;
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
     const now = new Date().toISOString();
     const record: SignalRecordRow = {
       id: `sig-harness-created-${signalRecords.length + 1}`,

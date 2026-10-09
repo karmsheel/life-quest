@@ -190,23 +190,43 @@ function PairingBody({ body }: { body: Record<string, unknown> }) {
 
 /**
  * Agent-built dashboard views: what the operator approves is a chart or table
- * on their dashboard. The lead names what will appear and where; the preview
+ * on their dashboard. The lead names what will appear and WHERE, because a
+ * pinned proposal does the whole job on approval — the copy must not send the
+ * operator looking for an Add-pin row that has nothing left to do. The preview
  * rows are the same data the card would show on the day of the proposal.
  */
 function ViewBody({ body }: { body: Record<string, unknown> }) {
   const spec = body.spec as Record<string, unknown> | undefined;
-  const preview = body.preview as { rows?: unknown[]; currency?: string; warnings?: string[] } | undefined;
+  const preview = body.preview as
+    | { rows?: unknown[]; blocks?: { rows?: unknown[] }[]; currency?: string; warnings?: string[] }
+    | undefined;
   if (!spec || typeof spec !== "object") {
     return <p className="decision-lead">Save a dashboard view. (Spec missing from this proposal.)</p>;
   }
   const title = typeof spec.title === "string" ? spec.title : "Saved view";
   const presentation = typeof spec.presentation === "string" ? spec.presentation : "table";
+  // A composed proposal previews one row set per panel, so the count has to
+  // cover both shapes or a three-panel card would claim zero rows.
+  const rowCount = Array.isArray(preview?.blocks)
+    ? preview.blocks.reduce((n, b) => n + (b.rows?.length ?? 0), 0)
+    : preview?.rows?.length;
+  const pinned = typeof body.boardSlug === "string" || body.boardSlug === null;
+  const boardName =
+    body.boardSlug === null
+      ? "the Overview dashboard"
+      : typeof body.boardSlug === "string"
+        ? `the ${body.boardSlug} dashboard`
+        : "";
   return (
     <div className="decision-proposal">
       <p className="decision-lead">
-        Save a dashboard view: {title} ({presentation}
-        {preview?.rows?.length != null ? ` — showing ${preview.rows.length} row${preview.rows.length === 1 ? "" : "s"} today` : ""}).
-        Approve to pin it from the dashboard's Add-pin row.
+        {pinned
+          ? `Pin a dashboard card on ${boardName}: ${title} (${presentation}`
+          : `Save a dashboard view: ${title} (${presentation}`}
+        {rowCount != null ? ` — showing ${rowCount} row${rowCount === 1 ? "" : "s"} today` : ""}).
+        {pinned
+          ? " Approve to save it and put it on that board; the dashboard's lock stays as it is."
+          : " Approve, then pin it from the dashboard's Add-pin row."}
       </p>
       <dl className="settings-hermes">
         <div className="settings-field">
