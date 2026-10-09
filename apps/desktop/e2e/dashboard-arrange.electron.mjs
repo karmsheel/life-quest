@@ -1116,7 +1116,9 @@ async function checkKeyboard(win) {
 }
 
 /**
- * Every pin's transform, drawn box, and layout box.
+ * Every pin's transform, drawn box, and layout box, as one expression the page
+ * can run — used both for a one-shot sample and, once per frame, by the motion
+ * recorder below.
  *
  * The layout box is the drawn box with the card's own translate taken back off:
  * that is the slot the card occupies and the slot the board has made room for. A
@@ -1124,33 +1126,68 @@ async function checkKeyboard(win) {
  * than their slot — so a claim about *where the board put a card* is a claim
  * about the layout box, and a claim about movement is a claim about the drawn one.
  */
+const MOTION_OF_ALL_PINS = `(() => {
+   const parse = (transform) => {
+     if (!transform || transform === "none") return { tx: 0, ty: 0 };
+     const m = transform.match(/matrix\\(([^)]+)\\)/);
+     if (!m) return { tx: 0, ty: 0 };
+     const parts = m[1].split(",").map((n) => Number(n.trim()));
+     return { tx: parts[4] ?? 0, ty: parts[5] ?? 0 };
+   };
+   return [...document.querySelectorAll(".home-dashboard__grid > .home-pin[data-pin-id]")].map((el) => {
+     const box = el.getBoundingClientRect();
+     const { tx, ty } = parse(getComputedStyle(el).transform);
+     return {
+       id: el.dataset.pinId,
+       lifted: el.classList.contains("is-lifted"),
+       tx: Math.round(tx * 100) / 100,
+       ty: Math.round(ty * 100) / 100,
+       left: Math.round(box.left),
+       top: Math.round(box.top),
+       layoutLeft: Math.round(box.left - tx),
+       layoutTop: Math.round(box.top - ty),
+     };
+   });
+ })()`;
+
 function cardMotion(win) {
+  return win.webContents.executeJavaScript(MOTION_OF_ALL_PINS);
+}
+
+/**
+ * Sample every pin's motion on each of the next `frames` animation frames.
+ *
+ * A FLIP is a real 160 ms transition on the browser's own frame clock, so "the
+ * card is drawn where it was on the reorder frame" is a claim about *which frame
+ * was sampled* — and a wall-clock sleep cannot name one. `sleep(30)` races the
+ * frame that clears the FLIP's initial `transition: none`: land before it and the
+ * card is frozen at its old place, land after it and the transition is already a
+ * tenth of the way along. That race is the whole of this scenario's flakiness —
+ * it is not a slow machine, it is a coin toss that a loaded suite biases.
+ *
+ * Recording per frame removes the race rather than widening the tolerance: the
+ * first frame that shows a displaced card is the reorder frame or the one after
+ * it, whatever the machine is doing, so the claim can be made against the frame
+ * the reorder actually happened on.
+ */
+function startMotionRecorder(win, frames) {
   return win.webContents.executeJavaScript(
     `(() => {
-       const parse = (transform) => {
-         if (!transform || transform === "none") return { tx: 0, ty: 0 };
-         const m = transform.match(/matrix\\(([^)]+)\\)/);
-         if (!m) return { tx: 0, ty: 0 };
-         const parts = m[1].split(",").map((n) => Number(n.trim()));
-         return { tx: parts[4] ?? 0, ty: parts[5] ?? 0 };
+       window.__motionFrames = [];
+       let n = 0;
+       const tick = () => {
+         window.__motionFrames.push(${MOTION_OF_ALL_PINS});
+         n += 1;
+         if (n < ${frames}) requestAnimationFrame(tick);
        };
-       return [...document.querySelectorAll(".home-dashboard__grid > .home-pin[data-pin-id]")].map((el) => {
-         const box = el.getBoundingClientRect();
-         const { tx, ty } = parse(getComputedStyle(el).transform);
-         return {
-           id: el.dataset.pinId,
-           lifted: el.classList.contains("is-lifted"),
-           tx: Math.round(tx * 100) / 100,
-           ty: Math.round(ty * 100) / 100,
-           left: Math.round(box.left),
-           top: Math.round(box.top),
-           layoutLeft: Math.round(box.left - tx),
-           layoutTop: Math.round(box.top - ty),
-         };
-       });
+       requestAnimationFrame(tick);
+       return true;
      })()`,
   );
 }
+
+const motionFrames = (win) =>
+  win.webContents.executeJavaScript("window.__motionFrames ?? []");
 
 /**
  * The motion claims: cards move into their new places rather than teleporting,
@@ -1158,11 +1195,14 @@ function cardMotion(win) {
  * gets none of it.
  */
 async function checkMotion(win) {
-  const movedCards = (sample) => sample.filter((card) => !card.lifted && (card.tx !== 0 || card.ty !== 0));
+  /** A card that is in the air under its own FLIP: not the one being dragged. */
+  const isMoving = (card) => !card.lifted && (card.tx !== 0 || card.ty !== 0);
+  const movedCards = (sample) => sample.filter(isMoving);
 
-  // 1. FLIP: the card that changes places is *drawn where it was* at the moment
-  //    of the reorder and travels to where it belongs, rather than teleporting.
-  //    Three samples: the reorder frame, mid-animation, and at rest.
+  // 1. FLIP: the card that changes places is *drawn where it was* when the
+  //    reorder lands and travels to where it belongs, rather than teleporting.
+  //    The whole journey is recorded frame by frame; the claims below are made
+  //    against the frame the reorder happened on, not against a slept instant.
   step("siblings-animate");
   await beginScenario(win);
   const source = await pointOn(win, headingOf("view:financial:v-weekly"));
@@ -1172,41 +1212,62 @@ async function checkMotion(win) {
   await settleFrames(win);
   const before = await cardMotion(win);
   const target = await pointIn(win, "page:financial:ledger", 0.8);
+  // Armed before the move that reorders the board, so the reorder frame is in
+  // the series. 24 frames is ~400 ms at 60 Hz: the whole 160 ms transition, and
+  // the settled board after it.
+  await startMotionRecorder(win, 24);
   mouse(win, "mouseMove", target.x, target.y);
-  await sleep(30);
-  const reorder = await cardMotion(win);
-  await sleep(70);
-  const travelling = await cardMotion(win);
-  await sleep(320);
-  const settled = await cardMotion(win);
+  await sleep(420);
+  const frames = await motionFrames(win);
   mouse(win, "mouseUp", target.x, target.y);
   await sleep(220);
   const after = await cardMotion(win);
 
-  const flying = movedCards(reorder);
-  const flyer = flying[0];
-  const wasThere = flyer ? before.find((card) => card.id === flyer.id) : null;
-  const endedUp = flyer ? settled.find((card) => card.id === flyer.id) : null;
-  const midWay = flyer ? travelling.find((card) => card.id === flyer.id) : null;
   const between = (value, a, b) => value > Math.min(a, b) && value < Math.max(a, b);
+  /** The first frame the board reflowed on, and the card that moved on it. */
+  const reorderFrame = frames.find((sample) => sample.some(isMoving)) ?? null;
+  const flyer = reorderFrame ? movedCards(reorderFrame)[0] : null;
+  const wasThere = flyer ? (before.find((card) => card.id === flyer.id) ?? null) : null;
+  const settledFrame = frames[frames.length - 1] ?? [];
+  const endedUp = flyer ? (settledFrame.find((card) => card.id === flyer.id) ?? null) : null;
+  /** Every frame's reading of the one card this claim follows. */
+  const series = flyer
+    ? frames.map((sample) => sample.find((card) => card.id === flyer.id)).filter(Boolean)
+    : [];
+
+  const journey = wasThere && endedUp ? Math.abs(wasThere.left - endedUp.layoutLeft) : 0;
+  const travelled = flyer && wasThere ? Math.abs(flyer.left - wasThere.left) : Infinity;
+  /** Frames drawn strictly between the two places — the middle of the journey. */
+  const midJourney = endedUp
+    ? series.filter((card) => between(card.left, wasThere.left, endedUp.layoutLeft)).length
+    : 0;
+
   check(
     "siblings-animate",
-    flying.length > 0 &&
-      Boolean(wasThere && endedUp) &&
-      // Drawn where it was on the reorder frame, in the *layout* position it is
-      // heading for: the inverse transform is what stops the jump.
-      Math.abs(flyer.left - wasThere.left) <= 2 &&
+    Boolean(flyer && wasThere && endedUp) &&
+      // The card really changed slots, and by enough for the rest to mean
+      // something: a one-pixel move would make every tolerance below vacuous.
+      wasThere.layoutLeft !== endedUp.layoutLeft &&
+      journey >= 50 &&
+      // Drawn where it was when the reorder landed — nearer its old place than
+      // the one it is heading for — while its *layout* is already the slot it is
+      // heading for. The inverse transform is what stops the jump, and the
+      // tolerance is a quarter of the journey because the first recorded frame
+      // may be the one after the transition started: a tenth of the way at 60 Hz,
+      // against a teleport's whole of it.
+      travelled <= journey * 0.25 &&
       Math.abs(flyer.layoutLeft - endedUp.layoutLeft) <= 2 &&
-      // And mid-animation it is strictly between the two places, which is what
-      // proves it is playing rather than frozen at either end.
-      Boolean(midWay) &&
-      between(midWay.left, wasThere.left, endedUp.layoutLeft) &&
-      movedCards(settled).length === 0 &&
-      movedCards(after).length === 0 &&
-      Boolean(wasThere && endedUp && wasThere.layoutLeft !== endedUp.layoutLeft),
-    `reorder frame: ${JSON.stringify(flyer)} against where it was ${wasThere?.left}; ` +
-      `mid-animation: ${midWay?.left}; settled: ${endedUp?.layoutLeft} ` +
-      `(${movedCards(settled).length} still moving, ${movedCards(after).length} after the drop)`,
+      // And it travels: some frame is drawn strictly between the two places,
+      // which is what proves the transition is playing rather than frozen at
+      // either end. A snap would show the endpoints and nothing in between.
+      midJourney >= 1 &&
+      movedCards(settledFrame).length === 0 &&
+      movedCards(after).length === 0,
+    `reorder frame: ${JSON.stringify(flyer)} — ${Math.round((travelled / Math.max(journey, 1)) * 100)}% ` +
+      `of a ${journey}px journey, from ${wasThere?.left} to ${endedUp?.layoutLeft}, ` +
+      `layout already at ${flyer?.layoutLeft}; ${midJourney} of ${series.length} recorded frame(s) ` +
+      `mid-journey; settled: ${movedCards(settledFrame).length} still moving, ` +
+      `${movedCards(after).length} after the drop`,
   );
 
   // 2. A board taller than its box scrolls under a drag, and the card stays under
