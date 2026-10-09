@@ -187,6 +187,7 @@ describe("dashboard card context e2e", () => {
       "the-turn-carries-the-card",
       "the-pill-survives-the-turn",
       "removing-the-pill-clears-the-context",
+      "the-card-control-puts-it-in-the-chat",
     ]);
 
     // The turn is the whole point: the card's ids have to reach the companion.
@@ -209,7 +210,26 @@ describe("dashboard card context e2e", () => {
     assert.equal(cleared.dock.contextCard, null);
     assert.equal(cleared.focusedCard, "<absent>");
 
-    assert.equal(report.checks.turnsSent, 4, "the rig did not send every turn it claims about");
+    // The join: the operator's own click on a card's chat control, on one page
+    // that holds both the real Dashboard and the real panel.
+    const joined = report.checks.fromTheCard as {
+      pill: { label: string } | null;
+      focused: { tag: string; cls: string } | null;
+      focusedCard: unknown;
+    };
+    assert.equal(joined.pill?.label, "Weekly expenses", "the click grew no pill");
+    assert.equal(joined.focused?.tag, "TEXTAREA", "the click did not hand the caret to the composer");
+    assert.match(joined.focused?.cls ?? "", /chat-panel__composer-input/);
+    assert.deepEqual(joined.focusedCard, {
+      label: "Weekly expenses",
+      pinId: "view:financial:v-weekly",
+      kind: "view",
+      boardSlug: null,
+      domainSlug: "financial",
+      viewId: "v-weekly",
+    });
+
+    assert.equal(report.checks.turnsSent, 5, "the rig did not send every turn it claims about");
     assert.deepEqual(report.checks.consoleErrors, []);
   });
 });

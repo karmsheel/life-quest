@@ -1,26 +1,36 @@
 /**
- * E2E harness page for a dashboard card in the chat's context (`ChatPanel`).
+ * E2E harness page for a dashboard card in the chat's context.
  *
- * The Dashboard's chat control ends at the dock: it puts a card in
- * `ChatDockProvider`. Everything after that is the chat's, and this is where it
- * is judged — the pill above the composer, what the turn carries, and what
- * happens when the operator takes the card off.
+ * This page renders BOTH ends of the feature at once — the real `HomePage` in the
+ * shell's main column and the real `ChatPanel` in its dock column — because the
+ * claim that matters is the one that crosses them: clicking a card's chat control
+ * is what puts the card in the pill and on the next turn. Two rigs, one per page,
+ * would each prove their own half and neither would prove the join.
  *
- * This is a system-in-isolation rig: the real `ChatPanel`, the real dock
- * provider, the real CSS and layout engine, with only the IPC bridge stubbed
- * (there is no preload on a dev-server page). `companionChatStream` records whole
- * payloads rather than a summary, because the claim is about the instruction
- * context the turn carries, field by field.
+ * The Dashboard is still judged on its own page (`dashboard-card-context`), where
+ * the pin board's toggle and the control on every card kind are the subject. Here
+ * the board is one saved view, because that is all the join needs.
  *
- * `ChatDockProbe` is the seam in the other direction: the Dashboard is not
- * mounted here, so a driver installs a card through the probe exactly as the
- * card control installs one.
+ * This is a system-in-isolation rig: the real pages, the real dock provider, the
+ * real CSS and layout engine, with only the IPC bridge stubbed (there is no
+ * preload on a dev-server page). `companionChatStream` records whole payloads
+ * rather than a summary, because the claim is about the instruction context the
+ * turn carries, field by field.
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import type { VaultSnapshot } from "@lifequest/vault-core";
+import type {
+  ComposedViewRunResult,
+  DatabaseMeta,
+  DomainRecord,
+  Pin,
+  PinBoardRead,
+  SavedView,
+  VaultSnapshot,
+} from "@lifequest/vault-core";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
+import HomePage from "@/pages/HomePage";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import { ChatDockProbe } from "./chat-dock-probe";
@@ -39,7 +49,69 @@ const SESSION = {
   pinned: false,
 };
 
-/** One live domain, so the panel's lens lines have something to read. */
+const NOW = "2026-10-09T00:00:00.000Z";
+
+/** The board the Dashboard column reads: one saved view, and nothing else. */
+const BOARD: Pin[] = [
+  { id: "view:financial:v-weekly", kind: "view", domainSlug: "financial", viewId: "v-weekly", span: 1 },
+];
+
+const VIEW_WEEKLY: SavedView = {
+  schemaVersion: 1,
+  id: "v-weekly",
+  title: "Weekly expenses",
+  presentation: "table",
+  databaseId: "finance:transactions",
+  groupBy: "week",
+  timeBucket: "week",
+  timeColumnId: "occurred_on",
+  timeWindow: { kind: "last-weeks", weeks: 5 },
+  filters: [],
+  measure: "sum",
+  measureColumnId: "amount",
+  sort: { by: "label", dir: "asc" },
+  limit: 12,
+  convertToZar: true,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
+const DATABASE: DatabaseMeta = {
+  id: "finance:transactions",
+  name: "Transactions",
+  sotMode: "local-only",
+  adapter: null,
+  columns: [
+    { id: "occurred_on", name: "Occurred on", type: "date" },
+    { id: "amount", name: "Amount", type: "number" },
+    { id: "week", name: "Week", type: "text" },
+  ],
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
+const RUN: ComposedViewRunResult = {
+  title: VIEW_WEEKLY.title,
+  blocks: [
+    {
+      id: "week-by-week",
+      title: "Week by week",
+      presentation: "table",
+      result: {
+        columns: ["label", "value"],
+        rows: [
+          ["2026-W36", 1111],
+          ["2026-W37", 1114],
+        ],
+        warnings: [],
+        currency: "ZAR",
+      },
+    },
+  ],
+  warnings: [],
+};
+
+/** One live domain, so the Dashboard's lens lines have something to read. */
 const SNAPSHOT = {
   rootPath: "C:\\harness\\vault",
   lifequest: {
@@ -54,7 +126,21 @@ const SNAPSHOT = {
     weekStartDay: "monday",
     autoApproveInserts: [],
   },
-  domains: [],
+  domains: [
+    {
+      slug: "financial",
+      meta: {
+        name: "Financial",
+        description: null,
+        color: null,
+        sortOrder: 3,
+        archivedAt: null,
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+      documents: {} as DomainRecord["documents"],
+    },
+  ],
   agents: [],
   decisions: [],
   log: [],
@@ -84,11 +170,26 @@ const harness = window as unknown as HarnessWindow;
 harness.__cardChatCalls = [];
 
 const bridge: Record<string, unknown> = {
+  // ── the Dashboard's own reads ─────────────────────────────────────────────
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
-  // Absent on Overview, and the panel asks for it on every render.
-  pinsList: () => ok({ pins: [], locked: false }),
+  pinsList: () => ok({ pins: BOARD, locked: false } satisfies PinBoardRead),
+  pinsSet: () => ok({ applied: true, pins: BOARD, locked: false }),
+  pinsSetLocked: () => ok({ pins: BOARD, locked: false } satisfies PinBoardRead),
+  pageList: () => ok([]),
+  viewList: () => ok([VIEW_WEEKLY]),
+  viewGet: () => ok(VIEW_WEEKLY),
+  viewRunSaved: () => ok(RUN),
+  dbGet: () => ok(DATABASE),
+  decisionList: () => ok([]),
+  logList: () => ok([]),
+  kitList: () => ok([]),
+  deadlineGetDismissed: () => ok(false),
+  deadlineMaybeNotify: () => ok(null),
+  deadlineDismiss: () => ok(true),
+  goalsApply: () => ok({}),
+  // ── the chat's own reads ──────────────────────────────────────────────────
   companionSessionsList: () => ok([SESSION]),
   companionSessionMessages: () =>
     ok([
@@ -124,9 +225,14 @@ createRoot(root).render(
       <VaultProvider>
         <ChatDockProvider>
           <ChatDockProbe channel="cardContext" />
-          <div className="shell">
+          {/* The app's own three panes, so the join is judged where it lives. */}
+          <div className="shell shell--chat-open">
             <div className="nav-rail" />
-            <div className="shell__main" />
+            <div className="shell__main">
+              <div className="shell__content">
+                <HomePage />
+              </div>
+            </div>
             <ChatPanel open onOpenChange={() => {}} />
           </div>
         </ChatDockProvider>
@@ -138,20 +244,22 @@ createRoot(root).render(
 harness.cardContextSkin = skinName;
 
 // The runner waits on this rather than on a timer, so a slow first Vite
-// transform cannot be mistaken for "the panel never rendered".
+// transform cannot be mistaken for "the page never rendered". It waits for both
+// ends: the composer, and the card whose chat control is clicked.
 let settle: () => void = () => {};
 const ready = new Promise<void>((resolve) => {
   settle = resolve;
 });
 
-const waitForComposer = () => {
-  const el = document.querySelector(".chat-panel__composer-input");
-  if (!el) {
-    requestAnimationFrame(waitForComposer);
+const waitForBoth = () => {
+  const composer = document.querySelector(".chat-panel__composer-input");
+  const control = document.querySelector('[data-testid="pin-chat"]');
+  if (!composer || !control) {
+    requestAnimationFrame(waitForBoth);
     return;
   }
   requestAnimationFrame(() => requestAnimationFrame(() => settle()));
 };
-requestAnimationFrame(waitForComposer);
+requestAnimationFrame(waitForBoth);
 
 harness.cardContextReady = ready;

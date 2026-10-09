@@ -27,6 +27,11 @@
  *     is gone, and the next turn carries no card.
  *  6. `the-pill-survives-the-turn` — a follow-up question about the same card
  *     needs no second click: both turns carry it and the pill stays.
+ *  7. `the-card-control-puts-it-in-the-chat` — the join, end to end on one page:
+ *     the real Dashboard's chat control is clicked, the real panel grows the pill
+ *     and takes the caret, and the turn that follows carries that card. Every
+ *     other claim here starts from a card the probe installed; this one starts
+ *     from the operator's own click.
  *
  * The bridge is a stub (a dev-server page has no preload), so this rig ends at
  * the recorded payload. What the companion *does* with the line is the agent's,
@@ -325,13 +330,41 @@ async function main() {
       `focusedCard=${JSON.stringify(checks.cleared.focusedCard)}`,
   );
 
+  // ── 7. the operator's own click, all the way to the turn ──────────────────
+  // Everything above starts from a card the probe installed. This starts where
+  // the operator starts: a chat control on a card on the board.
+  await setContext(win, null);
+  await win.webContents.executeJavaScript(
+    `document.querySelector('[data-pin-id="view:financial:v-weekly"] [data-testid="pin-chat"]').click()`,
+  );
+  await waitFor(win, `Boolean(document.querySelector('[data-testid="chat-context-pill"]'))`, "the pill from a real click");
+  const fromTheCard = await sample(win);
+  const focused = await win.webContents.executeJavaScript(
+    `(() => { const el = document.activeElement; return el ? { tag: el.tagName, cls: el.className } : null; })()`,
+  );
+  const byTheClick = await send(win, "Turn this into a bar chart");
+  checks.fromTheCard = {
+    pill: fromTheCard.pill,
+    focused,
+    focusedCard: byTheClick?.instructionsContext?.focusedCard ?? null,
+  };
+  check(
+    "the-card-control-puts-it-in-the-chat",
+    fromTheCard.pill?.label === "Weekly expenses" &&
+      focused?.tag === "TEXTAREA" &&
+      (focused?.cls ?? "").includes("chat-panel__composer-input") &&
+      sameFields(byTheClick?.instructionsContext?.focusedCard, EXPECTED_FOCUSED),
+    `clicking the card's chat control left ${JSON.stringify(checks.fromTheCard)}`,
+  );
+
   // ── nothing unexpected, nothing on fire ───────────────────────────────────
-  // Four turns: one with no card, two with it, and one after it was taken off.
-  // A run that sent fewer never exercised the claim that names them.
+  // Five turns: one with no card, two with it, one after it was taken off, and
+  // one sent from a card the operator clicked. A run that sent fewer never
+  // exercised the claim that names them.
   const turnCount = (await calls(win)).length;
   checks.turnsSent = turnCount;
-  if (turnCount !== 4) {
-    failure(`the rig sent ${turnCount} turn(s), expected 4 — a claim above may be vacuous`);
+  if (turnCount !== 5) {
+    failure(`the rig sent ${turnCount} turn(s), expected 5 — a claim above may be vacuous`);
   }
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
