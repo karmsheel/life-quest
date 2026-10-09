@@ -287,6 +287,26 @@ function waitFor(win, expression, label, timeoutMs = 10_000) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Wait for a card to be lifted, or give up.
+ *
+ * The page's hold is a real 220 ms timer on its own event loop, and this rig
+ * shares a machine with every other Electron rig in the suite: a stalled
+ * renderer can miss a fixed sleep by more than the hold. Polling makes the claim
+ * "a hold lifts the card" rather than "a hold lifts the card within 400 ms of a
+ * stalled machine". The negative claims keep their fixed margin, because a
+ * renderer too busy to fire the timer is exactly the case they must not mistake
+ * for a pass.
+ */
+async function waitForLift(win, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if ((await sample(win)).lifted > 0) return true;
+    if (Date.now() > deadline) return false;
+    await sleep(40);
+  }
+}
+
 let generation = 0;
 
 /**
@@ -641,11 +661,12 @@ async function main() {
   await sleep(120);
   // The same hold on the card's own heading DOES lift it. Without this, "a hold
   // on the chat control does nothing" would also pass on a board where the hold
-  // gesture was broken outright — the claim has to distinguish the two.
+  // gesture was broken outright — the claim has to distinguish the two. It is
+  // polled rather than slept at: the hold is a real 220 ms timer, and a stalled
+  // renderer missing a fixed sleep would fail a claim that is not about timing.
   const headingPoint = await pointAt(win, '[data-pin-id="sys:today-week"] .home-card__title');
   mouse(win, "mouseDown", headingPoint.x, headingPoint.y);
-  await sleep(420);
-  const liftedByTheHold = (await sample(win)).lifted;
+  const liftedByTheHold = (await waitForLift(win)) ? 1 : 0;
   mouse(win, "mouseUp", headingPoint.x, headingPoint.y);
   await sleep(120);
   checks.heldOnChatControl = { lifted: held.lifted, liftedByTheHold };
@@ -730,7 +751,7 @@ async function main() {
   await win.webContents.executeJavaScript(
     `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
   );
-  await sleep(60);
+  await waitFor(win, `document.querySelectorAll('[data-testid="pin-menu"]').length === 0`, "Escape to close the menu");
   const afterEscape = await sample(win);
   check("escape-closes-the-menu", afterEscape.menus.length === 0, `${afterEscape.menus.length} menu(s) still open`);
 
@@ -739,7 +760,11 @@ async function main() {
   const boardPoint = await pointAt(win, ".home-dashboard__header");
   mouse(win, "mouseDown", boardPoint.x, boardPoint.y);
   mouse(win, "mouseUp", boardPoint.x, boardPoint.y);
-  await sleep(80);
+  await waitFor(
+    win,
+    `document.querySelectorAll('[data-testid="pin-menu"]').length === 0`,
+    "a press away to close the menu",
+  );
   const afterPress = await sample(win);
   check(
     "a-press-away-closes-the-menu",
