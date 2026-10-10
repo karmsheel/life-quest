@@ -15,6 +15,8 @@ import {
   ArrowUp,
   Check,
   ChevronRight,
+  Eye,
+  EyeOff,
   History,
   ImagePlus,
   MessageSquare,
@@ -30,6 +32,7 @@ import {
 } from "lucide-react";
 import type { SignalRecord } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
+import { readPageContext } from "@/lib/page-context";
 import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
 import { summarizeToolRun, toolRowLabel, type ToolCall } from "@/lib/tool-run";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
@@ -192,6 +195,8 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     clearRequestedSession,
     contextCard,
     setContextCard,
+    pageContext,
+    setPageContextOn,
   } = useChatDock();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessions, setSessions] = useState<HermesSession[]>([]);
@@ -782,6 +787,15 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     const attached = receipt;
     if ((!content && !attached) || sending || !activeId) return;
 
+    // The screen, read at the moment of sending rather than at the moment the
+    // panel opened: the operator may have scrolled, filtered or navigated since,
+    // and what rides the turn has to be what they were looking at when they
+    // pressed send. Off — or unreadable — sends no `pageContext` key at all, so
+    // the turn is exactly the turn it was before the pill existed.
+    const page = pageContext.on
+      ? readPageContext(pageContext.route)
+      : null;
+
     setMessages((prev) => [
       ...prev,
       {
@@ -834,6 +848,10 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
           // turn is then about that card and they never have to name it. Absent
           // when nothing is in context, which is the turn it always was.
           ...(contextCard ? { focusedCard: focusedCardOf(contextCard) } : {}),
+          // The screen the operator is looking at, when the pill beside the
+          // attach control says it is in context. Absent when it is off, which
+          // is the turn the composer sent before this existed.
+          ...(page ? { pageContext: page } : {}),
           aboutMe: snapshot?.map?.aboutMe ?? "",
           locked: false,
           vaultOpen: Boolean(snapshot),
@@ -1947,6 +1965,51 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                       onClick={() => receiptInputRef.current?.click()}
                     >
                       <ImagePlus size={15} aria-hidden />
+                    </button>
+                    {/*
+                      The page, beside the receipt control and wearing its shape:
+                      one pill that says which screen rides the next turn.
+
+                      It defaults to on and re-arms on every navigation, because
+                      the failure it answers is an agent that offered to build a
+                      card the screen was already showing. The operator can turn
+                      it off — sometimes the question is about something else —
+                      and the pill stays on the line in its off state, because a
+                      control that vanished when used could not be turned back
+                      on.
+                    */}
+                    <button
+                      type="button"
+                      className="chat-panel__page"
+                      data-state={pageContext.on ? "on" : "off"}
+                      data-testid="chat-page-context"
+                      aria-pressed={pageContext.on}
+                      aria-label={
+                        pageContext.on
+                          ? `Page context on: the ${pageContext.label} screen rides your next message`
+                          : `Page context off: the ${pageContext.label} screen will not be sent`
+                      }
+                      title={
+                        pageContext.on
+                          ? `The ${pageContext.label} screen is sent with your message — click to stop sending it`
+                          : `The ${pageContext.label} screen is not sent — click to send it again`
+                      }
+                      onClick={() => setPageContextOn(!pageContext.on)}
+                    >
+                      {pageContext.on ? (
+                        <Eye size={12} aria-hidden />
+                      ) : (
+                        <EyeOff size={12} aria-hidden />
+                      )}
+                      <span
+                        className="chat-panel__page-label"
+                        data-testid="chat-page-context-label"
+                      >
+                        {pageContext.label}
+                      </span>
+                      <span className="chat-panel__page-kind">
+                        {pageContext.on ? "in context" : "off"}
+                      </span>
                     </button>
                     {receipt ? (
                       <div className="chat-panel__receipt">

@@ -341,6 +341,11 @@ const lifequest = {
         pageId?: string;
         system?: string;
       } | null;
+      pageContext?: {
+        route: string;
+        label: string;
+        body: string;
+      } | null;
       aboutMe: string;
       locked: boolean;
       vaultOpen: boolean;

@@ -53,6 +53,13 @@ export function AppShell() {
               ]
                 .filter(Boolean)
                 .join(" ")}
+              /*
+                This column is the page. The dock reads it off this attribute
+                when the operator sends a turn, so what the agent is told about
+                the screen is exactly this subtree — never the rail, the title
+                bar, or the chat panel sitting beside it.
+              */
+              data-page-context-root=""
             >
               <Outlet />
             </div>

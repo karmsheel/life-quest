@@ -2,11 +2,14 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import { useLocation } from "react-router-dom";
 import type { Pin } from "@lifequest/vault-core";
+import { pageLabelFor } from "@/lib/page-context";
 
 /**
  * One dashboard card the operator has put in front of the chat.
@@ -41,6 +44,16 @@ type ChatDockContextValue = {
    */
   contextCard: ChatCardContext | null;
   setContextCard: (card: ChatCardContext | null) => void;
+  /**
+   * The screen the operator is on, and whether the next turn will quote it.
+   *
+   * `on` re-arms on every navigation: walking to another page is the operator
+   * saying "this is what I am looking at now", and the page they just arrived
+   * on is the one they will ask about. Turning the pill off is about the screen
+   * in front of them, so it does not survive the walk to the next one.
+   */
+  pageContext: { route: string; label: string; on: boolean };
+  setPageContextOn: (on: boolean) => void;
 };
 
 const ChatDockContext = createContext<ChatDockContextValue | null>(null);
@@ -53,6 +66,14 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
   );
   const [requestedKickoff, setRequestedKickoff] = useState<string | null>(null);
   const [contextCard, setContextCard] = useState<ChatCardContext | null>(null);
+  const { pathname } = useLocation();
+  const [pageContextOn, setPageContextOn] = useState(true);
+
+  // The page changed, so the page in context changed with it: the operator is
+  // looking at something new, and the pill says so from the moment it draws.
+  useEffect(() => {
+    setPageContextOn(true);
+  }, [pathname]);
 
   const requestSession = useCallback((id: string, kickoff?: string) => {
     setRequestedSessionId(id);
@@ -63,6 +84,8 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
     setRequestedSessionId(null);
     setRequestedKickoff(null);
   }, []);
+
+  const pageLabel = useMemo(() => pageLabelFor(pathname), [pathname]);
 
   const value = useMemo(
     () => ({
@@ -76,6 +99,8 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       clearRequestedSession,
       contextCard,
       setContextCard,
+      pageContext: { route: pathname, label: pageLabel, on: pageContextOn },
+      setPageContextOn,
     }),
     [
       open,
@@ -85,6 +110,9 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       requestSession,
       clearRequestedSession,
       contextCard,
+      pathname,
+      pageLabel,
+      pageContextOn,
     ],
   );
 

@@ -58,6 +58,7 @@ import type {
   CompanionModelChoice,
   CompanionModelProvider,
   CompanionRuntimeOverride,
+  PageContextInput,
 } from "../electron/companion-client";
 
 type RecentVaultEntry = {
@@ -100,6 +101,11 @@ type CompanionInstructionsContext = {
   viewingBoardLocked?: boolean;
   /** The one dashboard card the operator put in front of this chat, if any. */
   focusedCard?: FocusedCardContext | null;
+  /**
+   * The page the operator has open, when the composer's page-context pill is
+   * on. Absent means the pill is off, and the turn is the turn it always was.
+   */
+  pageContext?: PageContextInput | null;
   aboutMe: string;
   locked: boolean;
   vaultOpen: boolean;
@@ -558,6 +564,7 @@ export type {
   FocusedCardContext,
   HermesSession,
   LifequestApi,
+  PageContextInput,
   RecentVaultEntry,
   Result,
 };

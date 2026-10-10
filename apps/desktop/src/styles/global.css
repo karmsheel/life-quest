@@ -4038,6 +4038,70 @@ button.chat-panel__activity-line:hover {
   cursor: not-allowed;
 }
 
+/* The page the next turn will quote, beside the attach control.
+   It wears the receipt's shape and the footer line's proportions: one icon, the
+   screen's own name, and a small word for the state. The line under the field is
+   short, so the pill shrinks before it pushes the runtime pick off the right end
+   — `min-width: 0` plus an ellipsized label does that, and `max-width` stops a
+   long page name from spending the field's whole width. Off is the same pill,
+   drained: a control that disappeared when used could not be turned back on. */
+.chat-panel__page {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 12rem;
+  height: 1.5rem;
+  padding: 0 0.5rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  background: var(--bg-muted);
+  color: var(--accent);
+  cursor: pointer;
+  transition:
+    color var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out);
+}
+
+.chat-panel__page[data-state="off"] {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--muted);
+}
+
+.chat-panel__page:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.chat-panel__page:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.chat-panel__page-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.chat-panel__page[data-state="off"] .chat-panel__page-label {
+  color: var(--muted);
+}
+
+.chat-panel__page-kind {
+  flex: none;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .chat-panel__receipt {
   display: inline-flex;
   align-items: center;
