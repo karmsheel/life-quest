@@ -48,15 +48,25 @@ On launch:
 2. **Open vault** — pick an existing LifeQuest vault directory (or a recent path).
 3. Work offline against files on disk. API keys never enter the vault (OS secure storage via Electron `safeStorage`).
 
-### Use the packaged app (Windows)
+### Build and ship (Windows)
 
 ```bash
-npm run package
+npm run package   # dev build: a folder you can run
+npm run release   # shippable build: the installer and the portable zip
 ```
 
-Then double-click `apps/desktop/release/win-unpacked/LifeQuest.exe`. No Node or `npm run dev` is required to *use* that build.
+`npm run package` writes `apps/desktop/release/win-unpacked/` — double-click `LifeQuest.exe`. No Node or `npm run dev` is required to *use* that build.
 
-Windows SmartScreen may warn on first launch (unsigned private build). Choose **More info → Run anyway**. Quit LifeQuest before running `npm run package` again — a running `.exe` can lock files under `release/`. Deleting `win-unpacked` removes that build only; vault folders and `%APPDATA%\LifeQuest` stay.
+`npm run release` writes the two files a release uploads, both named from `version` in `apps/desktop/package.json`:
+
+| Asset | What it is |
+|-------|------------|
+| `LifeQuest-<version>-setup.exe` | NSIS installer; assisted, per-user, asks where to install |
+| `LifeQuest-<version>-win-x64.zip` | Portable build — extract and run `LifeQuest.exe` |
+
+It prints the size and SHA-256 of each, and writes `release/release-manifest.json`. It exits non-zero rather than reporting success when an asset is missing. Uploading is deliberately not part of the build: `gh release create` attaches the files, and nothing half-publishes on its own.
+
+Windows SmartScreen may warn on first launch (unsigned private build). Choose **More info → Run anyway**. Quit LifeQuest before building again — a running `.exe` can lock files under `release/`. Deleting `win-unpacked` removes that build only; vault folders and `%APPDATA%\LifeQuest` stay.
 
 `release/` is gitignored.
 
@@ -65,9 +75,10 @@ Windows SmartScreen may warn on first launch (unsigned private build). Choose **
 | Script | Purpose |
 |--------|---------|
 | `npm run dev` / `npm run dev:desktop` | Electron + Vite desktop app (develop) |
-| `npm run package` | Windows portable folder at `apps/desktop/release/win-unpacked/LifeQuest.exe` (use) |
+| `npm run package` | Windows portable folder at `apps/desktop/release/win-unpacked/LifeQuest.exe` (dev build) |
+| `npm run release` | Windows installer `.exe` + portable `.zip` under `apps/desktop/release/` (ship) |
 | `npm test` | The desktop E2E rigs — each skips unless `npm run dev` is listening on 5173 |
-| `npm run build` | Production Vite build + Electron main bundle (does not produce an `.exe`) |
+| `npm run build` | Production Vite build + Electron main bundle (produces no artifact by itself) |
 | `npm run typecheck` | Typecheck desktop renderer + main |
 
 ### Acceptance against a real vault
@@ -81,6 +92,17 @@ node apps/desktop/e2e/dashboard-live-card.electron.mjs   # screenshot that exact
 ```
 
 Artifacts land in `apps/desktop/e2e/artifacts/dashboard-live-*.{json,png}`. The app is launched with `LIFEQUEST_E2E` (a throwaway profile and a hidden window), so `%APPDATA%\LifeQuest` is untouched.
+
+### Acceptance of the packaged build
+
+`npm test` proves the app works when Electron loads it off the disk, and `npm run release` proves files were written. Neither proves those files *run* — everything that breaks between them breaks only once the app is packed into `app.asar`. So a release is not a release until this passes against the built `.exe`:
+
+```bash
+npm run release
+node apps/desktop/e2e/packaged-smoke.mjs
+```
+
+It checks the asar really holds the main, the preload and the renderer; then launches `release/win-unpacked/LifeQuest.exe` with a throwaway profile and a vault it creates in `%TEMP%`, and requires the window to reach the title `dist/index.html` declares, the app's own MCP door to bind, and the vault to come back rewritten into that throwaway `recent.json` — which between them can only happen if the preload shipped, React mounted, IPC round-tripped, and the vault opened from inside the asar. It exits non-zero with the app's own transcript when any of that fails, and writes `e2e/artifacts/packaged-smoke.json`. Your vault and `%APPDATA%\LifeQuest` are never opened. It is not part of `npm test`, because it needs that packaged build to exist first.
 
 ## Repository layout
 
