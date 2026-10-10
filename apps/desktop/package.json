@@ -3,11 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "description": "Local-first life-management studio for the desktop.",
+  "author": "karmsheel",
+  "license": "UNLICENSED",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "node ./scripts/dev.mjs",
     "build": "vite build && node ./scripts/bundle-electron.mjs",
     "package": "npm run build && node ./scripts/package.mjs",
+    "release": "npm run build && node ./scripts/release.mjs",
     "test": "node ./scripts/test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit"
   },

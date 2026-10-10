@@ -12,8 +12,31 @@ forceCodeSigning: false
 extraMetadata:
   main: dist-electron/main.js
 win:
+  # `npm run package` passes `--dir` and so builds only the first target, fast.
+  # `npm run release` builds all three: the folder, the installer and the zip.
+  artifactName: ${productName}-${version}-win-${arch}.${ext}
   target:
     - target: dir
       arch:
         - x64
+    - target: nsis
+      arch:
+        - x64
+    - target: zip
+      arch:
+        - x64
+nsis:
+  # An assisted installer rather than a one-click one, because the operator is
+  # choosing where a studio that owns files on disk gets installed.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: LifeQuest
+  # Uninstalling the app must not touch a vault, and must not quietly take the
+  # recent-vault list with it: the studio is recoverable, the operator's work is
+  # theirs.
+  deleteAppDataOnUninstall: false
+  artifactName: ${productName}-${version}-setup.${ext}
 publish: null
