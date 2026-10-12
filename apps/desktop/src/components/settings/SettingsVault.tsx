@@ -14,7 +14,8 @@ const WEEK_START_OPTIONS = [
 ];
 
 export function SettingsVault() {
-  const { snapshot, updateSettings } = useVault();
+  const { snapshot, updateSettings, openVault, busy, error, clearError } =
+    useVault();
   const [weekStartError, setWeekStartError] = useState<string | null>(null);
   const [exportMessages, setExportMessages] = useState<Record<string, string>>(
     {},
@@ -72,12 +73,28 @@ export function SettingsVault() {
     }
   }
 
+  // The path above is only a display of the folder that is open right now.
+  // This is how it changes: ask the platform for a folder, open whatever
+  // vault is there, and reload in place. A cancelled or refused picker leaves
+  // this page on the same vault, with the provider's own error saying why.
+  async function onChangeFolder() {
+    clearError();
+    await openVault();
+  }
+
   return (
     <>
       <SettingsSection
         icon={<Building2 size={16} />}
         title="Vault"
         subtitle="Identity and location on disk"
+        banner={
+          error ? (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          ) : undefined
+        }
       >
         <dl className="settings-vault">
           <div>
@@ -93,6 +110,20 @@ export function SettingsVault() {
             <dd className="settings-vault__mono">{rootPath}</dd>
           </div>
         </dl>
+        <SettingsRow
+          label="Vault folder"
+          description="Point LifeQuest at another vault folder on this computer — a second vault, or the one you meant to pick. The new vault's files load in place; nothing is moved or deleted."
+          action={
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void onChangeFolder()}
+            >
+              {busy ? "Opening…" : "Change folder…"}
+            </Button>
+          }
+        />
         <SettingsRow
           label="Week starts on"
           description={
