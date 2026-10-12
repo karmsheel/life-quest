@@ -110,6 +110,28 @@ type State = {
   messageCalls: string[];
   listCalls: number;
   overflow: { scrollWidth: number; clientWidth: number };
+  /**
+   * The thread transcript's own geometry, when a thread is up with bubbles in
+   * it: where the first and last bubbles sit relative to the content box of
+   * the scroll area they are painted in, and how the scroll reads. The
+   * short-chat contract (KAR-67) is a last bubble flush with that floor and a
+   * first bubble with the room the chat grew into above it; the long-chat
+   * contract is the first bubble reading from the ceiling, with both ends
+   * reachable by scrolling.
+   */
+  transcript: {
+    bodyBox: Box | null;
+    paddingTop: number;
+    paddingBottom: number;
+    firstTopRelContent: number | null;
+    lastBottomRelContent: number | null;
+    firstTop: number | null;
+    lastBottom: number | null;
+    bodyScrollTop: number;
+    bodyScrollHeight: number;
+    bodyClientHeight: number;
+    bubbleCount: number;
+  } | null;
 };
 
 type Report = {
@@ -582,6 +604,62 @@ describe("chat sessions rigs", { concurrency: true }, () => {
         openDeleted.rows.some((row) => row.active),
         false,
         "a chat is still marked open after its row was deleted",
+      );
+
+      // A short transcript rests on the composer and reads from the bottom up,
+      // the way the chat happened (KAR-67) — measured against the scroll
+      // area's content box, since the stack itself is only ever as tall as the
+      // chat inside it. The shortest chat of all is measured at full size, and
+      // resting the transcript on the composer must not cost the scroll, so the
+      // same chat is measured again in a window it cannot fit.
+      const shortChat = report.states.landing;
+      assert.ok(shortChat.transcript, "the landing thread exposed no transcript geometry");
+      assert.ok(
+        (shortChat.transcript!.lastBottomRelContent ?? -99) >= -2,
+        `the last bubble of a short chat sits ${shortChat.transcript!.lastBottomRelContent}px above the scroll area's floor`,
+      );
+      assert.ok(
+        (shortChat.transcript!.firstTopRelContent ?? 0) > 100,
+        `a short chat hangs under the header: its first bubble is ${shortChat.transcript!.firstTopRelContent}px below the scroll area's ceiling`,
+      );
+
+      const tooTall = report.states.tooTall;
+      assert.ok(tooTall.transcript, "the small-window thread exposed no transcript geometry");
+      assert.ok(
+        tooTall.transcript!.bodyScrollHeight > tooTall.transcript!.bodyClientHeight,
+        `the small window did not overflow the transcript: ${tooTall.transcript!.bodyScrollHeight}px in ${tooTall.transcript!.bodyClientHeight}px`,
+      );
+      assert.ok(
+        (tooTall.transcript!.firstTopRelContent ?? 99) <= 2,
+        `an overflowing transcript is not stacked from the top: first bubble ${tooTall.transcript!.firstTopRelContent}px below the scroll area's ceiling`,
+      );
+      const scrolledTop = report.states.atTop;
+      assert.ok(
+        (scrolledTop.transcript!.firstTop ?? -999) >=
+          (scrolledTop.transcript!.bodyBox?.top ?? 999) - 2 &&
+          (scrolledTop.transcript!.firstTop ?? -999) <=
+            (scrolledTop.transcript!.bodyBox?.bottom ?? -999),
+        `the top of a long transcript is unreachable: first bubble at ${scrolledTop.transcript!.firstTop}px, scroll area spans ${scrolledTop.transcript!.bodyBox?.top}–${scrolledTop.transcript!.bodyBox?.bottom}px`,
+      );
+      const scrolledBottom = report.states.atBottom;
+      assert.ok(
+        (scrolledBottom.transcript!.lastBottom ?? -999) <=
+          (scrolledBottom.transcript!.bodyBox?.bottom ?? 999) + 2 &&
+          (scrolledBottom.transcript!.lastBottom ?? 999) >=
+            (scrolledBottom.transcript!.bodyBox?.top ?? -999),
+        `the newest message of a long transcript is unreachable: last bubble ends at ${scrolledBottom.transcript!.lastBottom}px, scroll area spans ${scrolledBottom.transcript!.bodyBox?.top}–${scrolledBottom.transcript!.bodyBox?.bottom}px`,
+      );
+
+      const single = report.states.oneBubble;
+      assert.equal(
+        single.transcript?.bubbleCount,
+        1,
+        `the last scenario did not open a one-bubble chat: ${single.transcript?.bubbleCount} bubbles`,
+      );
+      assert.ok(
+        (single.transcript!.lastBottomRelContent ?? -99) >= -2 &&
+          (single.transcript!.firstTopRelContent ?? 0) > 16,
+        `a one-bubble chat does not rest on the composer: last bubble ${single.transcript!.lastBottomRelContent}px from the floor, first ${single.transcript!.firstTopRelContent}px from the ceiling`,
       );
 
       for (const file of report.screenshots) {

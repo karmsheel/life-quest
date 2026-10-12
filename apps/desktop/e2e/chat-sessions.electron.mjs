@@ -162,6 +162,39 @@ const SAMPLE = `(() => {
     messages: Array.from(document.querySelectorAll(".chat-panel__message-content")).map((el) =>
       text(el).slice(0, 80)
     ),
+    transcript: (() => {
+      const body = document.querySelector(".chat-panel__body");
+      const stack = document.querySelector(".chat-panel__messages");
+      const bubbles = Array.from(document.querySelectorAll(".chat-panel__message"));
+      if (!body || !stack || bubbles.length === 0) return null;
+      const first = box(bubbles[0]);
+      const last = box(bubbles[bubbles.length - 1]);
+      const bodyStyle = getComputedStyle(body);
+      const padTop = parseFloat(bodyStyle.paddingTop) || 0;
+      const padBottom = parseFloat(bodyStyle.paddingBottom) || 0;
+      const bodyRect = body.getBoundingClientRect();
+      return {
+        bodyBox: box(body),
+        paddingTop: padTop,
+        paddingBottom: padBottom,
+        // Where the transcript's own ends sit, measured against the content box
+        // of the scroll area it is painted in — not the stack, which is only
+        // ever as tall as the chat inside it. The short-chat contract (KAR-67):
+        // the last bubble sits flush with the floor, with the room the chat
+        // grew into above the first. The long-chat contract: the first bubble
+        // reads from the top of that content box, and both ends stay reachable.
+        firstTopRelContent: first ? Math.round(first.top - (bodyRect.top + padTop)) : null,
+        lastBottomRelContent: last
+          ? Math.round(last.bottom - (bodyRect.bottom - padBottom))
+          : null,
+        firstTop: first ? first.top : null,
+        lastBottom: last ? last.bottom : null,
+        bodyScrollTop: body.scrollTop,
+        bodyScrollHeight: body.scrollHeight,
+        bodyClientHeight: body.clientHeight,
+        bubbleCount: bubbles.length
+      };
+    })(),
     actionsBar: box(document.querySelector(".chat-panel__actions")),
     actionsBarBackground: (() => {
       const el = document.querySelector(".chat-panel__actions");
@@ -501,6 +534,22 @@ async function main() {
       `pressed ${landing.actions[0]?.pressed}`,
     );
     screenshots.push(await shot("thread"));
+
+    // 1b — the landing transcript is a short chat (four seeded bubbles), and a
+    // short chat rests on the composer: it reads from the bottom up, the way
+    // the chat happened, instead of hanging under the header with the composer
+    // a screen below the last word (KAR-67). Measured against the scroll
+    // area's content box, not the stack — the stack is only ever as tall as
+    // the chat inside it, so a stack-relative measurement cannot tell a
+    // resting transcript from a hanging one.
+    check(
+      "a short transcript rests on the composer",
+      landing.transcript !== null &&
+        (landing.transcript.lastBottomRelContent ?? -99) >= -2 &&
+        (landing.transcript.firstTopRelContent ?? 0) > 100,
+      `last bubble ends ${landing.transcript?.lastBottomRelContent}px short of the scroll area's floor, first bubble sits ${landing.transcript?.firstTopRelContent}px below its ceiling`,
+    );
+    screenshots.push(await shot("thread-resting"));
 
     // 2 — the list is a page: it owns the panel's height and holds every chat.
     const opened = await clickAria("All chats");
@@ -1129,6 +1178,68 @@ async function main() {
       `localStorage holds ${JSON.stringify(openDeleted.lastChatStored)}`,
     );
 
+    // 15 — the shortest chat there is: one bubble, answered by the harness's
+    // own fallback transcript. It rests on the composer too, or "short" only
+    // ever meant "short enough to fit under the header" (KAR-67).
+    const oneBubbleClicked = await clickRow(0);
+    const oneBubble = await settle();
+    check("clicked a remaining chat row", oneBubbleClicked, "no chat row at index 0");
+    check(
+      "the chat opened is the one-bubble fallback",
+      oneBubble.transcript?.bubbleCount === 1,
+      `${oneBubble.transcript?.bubbleCount} bubbles`,
+    );
+    check(
+      "a one-bubble chat rests on the composer",
+      (oneBubble.transcript?.lastBottomRelContent ?? -99) >= -2 &&
+        (oneBubble.transcript?.firstTopRelContent ?? 0) > 16,
+      `last bubble ends ${oneBubble.transcript?.lastBottomRelContent}px short of the scroll area's floor, first bubble sits ${oneBubble.transcript?.firstTopRelContent}px below its ceiling`,
+    );
+    screenshots.push(await shot("thread-one-bubble"));
+
+    // 16 — the same chat in a window it cannot fit. Resting the transcript on
+    // the composer must not cost the scroll: it still reads from the top, and
+    // both ends stay reachable. This is the failure `justify-content: flex-end`
+    // buys (it parks the start edge outside the scroll), and the reason the
+    // fix is an auto margin that resolves to 0 on overflow.
+    win.setContentSize(DEFAULT_SIZE.width, 220);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const tooTall = await settle();
+    check(
+      "the small window actually overflowed the transcript",
+      (tooTall.transcript?.bodyScrollHeight ?? 0) >
+        (tooTall.transcript?.bodyClientHeight ?? 0),
+      `scrollHeight ${tooTall.transcript?.bodyScrollHeight} vs client ${tooTall.transcript?.bodyClientHeight}`,
+    );
+    check(
+      "an overflowing transcript still reads from the top",
+      (tooTall.transcript?.firstTopRelContent ?? 99) <= 2,
+      `first bubble sits ${tooTall.transcript?.firstTopRelContent}px below the scroll area's ceiling`,
+    );
+    await run(
+      "(() => { const body = document.querySelector('.chat-panel__body'); if (body) body.scrollTop = 0; return true; })()",
+    );
+    const atTop = await settle();
+    check(
+      "the top of a long transcript is reachable",
+      (atTop.transcript?.firstTop ?? -999) >= (atTop.transcript?.bodyBox?.top ?? 999) - 2 &&
+        (atTop.transcript?.firstTop ?? -999) <= (atTop.transcript?.bodyBox?.bottom ?? -999),
+      `first bubble at ${atTop.transcript?.firstTop}px, scroll area spans ${atTop.transcript?.bodyBox?.top}–${atTop.transcript?.bodyBox?.bottom}px`,
+    );
+    await run(
+      "(() => { const body = document.querySelector('.chat-panel__body'); if (body) body.scrollTop = body.scrollHeight; return true; })()",
+    );
+    const atBottom = await settle();
+    check(
+      "the newest message of a long transcript is reachable",
+      (atBottom.transcript?.lastBottom ?? -999) <=
+        (atBottom.transcript?.bodyBox?.bottom ?? 999) + 2 &&
+        (atBottom.transcript?.lastBottom ?? 999) >=
+          (atBottom.transcript?.bodyBox?.top ?? -999),
+      `last bubble ends at ${atBottom.transcript?.lastBottom}px, scroll area spans ${atBottom.transcript?.bodyBox?.top}–${atBottom.transcript?.bodyBox?.bottom}px`,
+    );
+    screenshots.push(await shot("thread-overflow"));
+
     report = {
       url,
       ranAt: new Date().toISOString(),
@@ -1161,6 +1272,10 @@ async function main() {
         deleted,
         activeList,
         openDeleted,
+        tooTall,
+        atTop,
+        atBottom,
+        oneBubble,
       },
       screenshots,
       failures,

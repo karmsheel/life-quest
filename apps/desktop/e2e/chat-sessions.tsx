@@ -58,6 +58,14 @@
  *     cannot hold the caret: the browser drops it on `body`. Capture is one
  *     gesture — type, Enter, type again — so a field that comes back enabled
  *     with the caret elsewhere costs the next thought a click.
+ * 22. A short transcript hangs under the header instead of resting on the
+ *     composer (KAR-67): a previous session with a few bubbles in it is
+ *     painted from the top down, with the composer a screen below the last
+ *     word, where a chat that happened reads from the bottom up. The fix has
+ *     to survive its own success: resting the stack on the composer must not
+ *     park the oldest bubble outside the scroll once the transcript
+ *     overflows, so the rig measures the transcript both short (at the landing
+ *     window size) and too tall for the window.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page) and answers from `fixtures/companion-sessions.json`, which was seeded

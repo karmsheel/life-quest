@@ -3942,12 +3942,131 @@ a.home-mini-list__link:hover {
   margin-top: 0.35rem;
 }
 
+/* —— Companion profile picker (setup screen + Settings → Hermes) ——
+   One Hermes profile runs the companion. These rows are the whole surface
+   for choosing it: radio semantics, because the choice is remembered and
+   re-seeds the profile, and a disabled row while an ensure is in flight,
+   because a second switch would race the first. */
+.companion-profile-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.companion-profile-picker__lead {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.companion-profile-picker__lead code {
+  font-size: 0.78rem;
+}
+
+.companion-profile-picker__empty {
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.companion-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.companion-profile-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.15rem 0.6rem;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  background: color-mix(in srgb, var(--selected) 30%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.companion-profile-row:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--selected) 55%, transparent);
+}
+
+.companion-profile-row:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.companion-profile-row--active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.companion-profile-row--create {
+  background: transparent;
+  border-style: dashed;
+}
+
+.companion-profile-row__name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.companion-profile-row__tag {
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.companion-profile-row__desc {
+  grid-column: 1;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.companion-profile-row__in-use {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* A transcript reads like a chat: it rests on the composer and grows upward
+   from it, so a short one — a previous session with three bubbles in it — does
+   not hang under the thread header with the composer a screen away.
+   `margin: auto 0 0` is the chain's own idiom (`.chat-panel__chain-list`): the
+   auto margin takes the spare room while the transcript fits and resolves to 0
+   once it overflows, so the oldest bubble stays reachable by scrolling — which
+   is what `justify-content: flex-end` costs, parking the start edge outside
+   the scroll. The panel's own layout effect keeps an overflowing transcript
+   pinned to its newest message. */
 .chat-panel__messages {
-  flex: 1;
-  min-height: 8rem;
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+  margin: auto 0 0;
 }
 
 .chat-panel__message {
