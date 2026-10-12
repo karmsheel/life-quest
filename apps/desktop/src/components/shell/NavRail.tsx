@@ -1,10 +1,10 @@
 import { useMemo } from "react";
 import { NavLink } from "react-router-dom";
 import { recordVisibleMulti } from "@lifequest/vault-core/pure";
-import { version } from "../../../package.json";
 import { useVault } from "@/state/VaultProvider";
 import { NavCollapseButton } from "./NavCollapseButton";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
+import { UpdateBadge } from "./UpdateBadge";
 import { useDomainLens } from "./useActiveDomain";
 import { useWing } from "./WingProvider";
 
@@ -67,7 +67,9 @@ export function NavRail() {
       <div className="nav-rail__section nav-rail__section--bottom">
         <div className="nav-rail__divider" role="separator" />
         <div className="nav-rail__section">{bottomPinned.map(renderItem)}</div>
-        <p className="nav-rail__version">v{version}</p>
+        {/* The build number. Quiet text until the feed names something newer,
+            and then a glowing button that opens the upgrade. */}
+        <UpdateBadge />
       </div>
     </nav>
   );

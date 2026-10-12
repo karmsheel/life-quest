@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Notification } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,13 @@ import type {
   CompanionRuntimeOverride,
 } from "./companion-client.js";
 import * as vault from "./vault-service.js";
+import {
+  checkForUpdate,
+  installUpdate,
+  setUpdateFeedUrl,
+  setUpdateLauncher,
+  setUpdateTrustPolicy,
+} from "./updater.js";
 import {
   setDeadlineDismissedOn,
   setDeadlineNotifiedOn,
@@ -51,6 +58,19 @@ const E2E: {
   userData?: string;
   showWindow: boolean;
   mcpPorts?: { local?: number; invite?: number };
+  /**
+   * The update feed and the installer launcher, for the auto-update rig. Both
+   * are off unless this object names them: the product always reads GitHub and
+   * always hands the file to the OS.
+   */
+  updateFeedUrl?: string;
+  updateLauncher?: { exe?: unknown; args?: unknown };
+  /**
+   * Where the install's bytes are allowed to come from. Present only for the
+   * auto-update rig, which serves them over loopback; the product leaves the
+   * policy at GitHub over https.
+   */
+  updateTrust?: { hosts: string[]; allowHttp?: boolean };
 } = { showWindow: true };
 if (E2E_RAW) {
   try {
@@ -58,6 +78,9 @@ if (E2E_RAW) {
       userData?: unknown;
       showWindow?: unknown;
       mcpPorts?: { local?: unknown; invite?: unknown };
+      updateFeedUrl?: unknown;
+      updateLauncher?: { exe?: unknown; args?: unknown };
+      updateTrust?: { hosts?: unknown; allowHttp?: unknown };
     };
     if (typeof parsed.userData === "string" && parsed.userData.trim()) {
       // Realpath, not the string: `userData` must be absolute and existing
@@ -74,6 +97,37 @@ if (E2E_RAW) {
         ...(typeof invite === "number" ? { invite } : {}),
       };
     }
+    if (typeof parsed.updateFeedUrl === "string" && parsed.updateFeedUrl.trim()) {
+      E2E.updateFeedUrl = parsed.updateFeedUrl;
+    }
+    // A rig cannot let the app launch a real installer, and cannot read an
+    // assertion out of a process it did not start: the launcher is replaced by
+    // one the rig owns, which records the file it was handed.
+    if (
+      parsed.updateLauncher &&
+      typeof parsed.updateLauncher.exe === "string" &&
+      parsed.updateLauncher.exe.trim()
+    ) {
+      E2E.updateLauncher = {
+        exe: parsed.updateLauncher.exe,
+        args: Array.isArray(parsed.updateLauncher.args)
+          ? parsed.updateLauncher.args.filter(
+              (arg): arg is string => typeof arg === "string",
+            )
+          : [],
+      };
+    }
+    const hosts = parsed.updateTrust?.hosts;
+    if (
+      Array.isArray(hosts) &&
+      hosts.length > 0 &&
+      hosts.every((host): host is string => typeof host === "string")
+    ) {
+      E2E.updateTrust = {
+        hosts,
+        allowHttp: parsed.updateTrust?.allowHttp === true,
+      };
+    }
   } catch (err) {
     console.error("[e2e] LIFEQUEST_E2E is not valid JSON; ignoring:", err);
   }
@@ -84,6 +138,21 @@ if (E2E.userData) {
 if (E2E.mcpPorts) {
   // Before any window or vault: a door binds with whatever is set here.
   setMcpPorts(E2E.mcpPorts);
+}
+if (E2E.updateFeedUrl) {
+  setUpdateFeedUrl(E2E.updateFeedUrl);
+}
+if (typeof E2E.updateLauncher?.exe === "string") {
+  setUpdateLauncher({
+    exe: E2E.updateLauncher.exe,
+    args: (E2E.updateLauncher.args as string[] | undefined) ?? [],
+  });
+}
+if (E2E.updateTrust) {
+  setUpdateTrustPolicy({
+    hosts: E2E.updateTrust.hosts,
+    allowHttp: E2E.updateTrust.allowHttp === true,
+  });
 }
 
 const TITLEBAR_OVERLAY_HEIGHT = 32;
@@ -638,6 +707,45 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
       new Notification({ title, body }).show();
     }
     return { ok: true, notified: true, title, body };
+  });
+
+  // —— auto-update ——————————————————————————————————————————————————————————
+  // `update:check` is the launch's one call; `force` is Settings asking by hand.
+  // Progress is pushed, not polled: a download reports itself as it arrives.
+  ipcMain.handle(
+    "update:check",
+    (_e, options?: { force?: boolean }) =>
+      checkForUpdate({ force: options?.force === true }),
+  );
+  ipcMain.handle("update:install", (event, asset: unknown) => {
+    const win = windowFromEvent(event);
+    return installUpdate(asset, (progress) => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send("update:progress", progress);
+      }
+    });
+  });
+  ipcMain.handle("update:tokenStatus", () => vault.secretsHasUpdateToken());
+  ipcMain.handle("update:setToken", (_e, token: string) =>
+    vault.secretsSetUpdateToken(token),
+  );
+  ipcMain.handle("update:clearToken", () => vault.secretsClearUpdateToken());
+  ipcMain.handle("update:openReleasePage", async (_e, url: string) => {
+    // The renderer chooses the url, so it is checked here: this opens the
+    // operator's own browser, and the only page the app has any business
+    // opening on its behalf is the release it just told them about.
+    if (!/^https:\/\/(www\.)?github\.com\//i.test(url)) {
+      return { ok: false as const, error: "Only GitHub release pages are opened." };
+    }
+    try {
+      await shell.openExternal(url);
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+    return { ok: true as const, value: true as const };
   });
 
   ipcMain.handle("window:getChrome", () => ({

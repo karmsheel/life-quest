@@ -1,8 +1,8 @@
-export type WingId = "home" | "vision" | "plan" | "execute" | "review";
+export type WingId = "home" | "define" | "plan" | "execute" | "review";
 
 export const WING_IDS: WingId[] = [
   "home",
-  "vision",
+  "define",
   "plan",
   "execute",
   "review",
@@ -10,7 +10,7 @@ export const WING_IDS: WingId[] = [
 
 export const WING_LABELS: Record<WingId, string> = {
   home: "Home",
-  vision: "Vision",
+  define: "Define",
   plan: "Plan",
   execute: "Execute",
   review: "Review",
@@ -18,7 +18,7 @@ export const WING_LABELS: Record<WingId, string> = {
 
 export const WING_DEFAULTS: Record<WingId, string> = {
   home: "/home",
-  vision: "/dream",
+  define: "/dream",
   plan: "/goals",
   execute: "/daily",
   review: "/review/daily",
@@ -30,9 +30,10 @@ const PATH_WING: Record<string, WingId> = {
   "/home": "home",
   "/data": "home",
   "/pages": "home",
+  "/documents": "home",
   "/personnel": "home",
-  "/dream": "vision",
-  "/documents": "vision",
+  "/dream": "define",
+  "/vision": "define",
   "/goals": "plan",
   "/projects": "plan",
   "/chart": "plan",
@@ -64,7 +65,8 @@ export function isPinnedPath(pathname: string): boolean {
 
 export function wingForPath(pathname: string): WingId | null {
   if (PATH_WING[pathname]) return PATH_WING[pathname];
-  if (pathname.startsWith("/dream/")) return "vision";
+  if (pathname.startsWith("/dream/")) return "define";
+  if (pathname.startsWith("/vision/")) return "define";
   if (pathname.startsWith("/track/")) return "plan";
   if (pathname.startsWith("/data/")) return "home";
   if (pathname.startsWith("/pages/")) return "home";

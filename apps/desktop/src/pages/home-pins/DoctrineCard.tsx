@@ -12,6 +12,7 @@ const DOCTRINE_ROWS = (["premise", "what", "why", "how"] as const).map((kind) =>
 
 function doctrineHref(kind: string, slug: string): string {
   if (kind === "how") return `/track/${slug}/how`;
+  if (kind === "what") return `/vision/${slug}/what`;
   return `/dream/${slug}/${kind}`;
 }
 

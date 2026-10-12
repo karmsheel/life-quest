@@ -23,6 +23,19 @@
  *  9. Rail scrolls its own topband away, or spills past the window box.
  * 10. Bridge stubs masking real calls — anything the shell reaches for that is
  *     not named here must not throw.
+ * 11. Night ladder half-applied — the sheet keeps the card step it used to wear,
+ *     so the page canvas and the cards are one tone and the cards stop reading as
+ *     surfaces on a page.
+ * 12. Night ladder applied to the wrong side — the rail and the strip painted
+ *     *below* the page canvas, which is the "darkest chrome, lightest page" order
+ *     this rig exists to keep out.
+ * 13. Cards left on the pre-swap panel ink — `.home-card` / `.view-card` deeper
+ *     than the page canvas, so the cards punch holes in the page instead of
+ *     stepping up off it.
+ * 14. Day knocked over — the shared sheet rule dragging the night ladder into the
+ *     light theme, where the mat and the panels must keep sinking below the sheet.
+ * 15. The mat drifting off the dock's own band — the sidebar and the strip a
+ *     near-miss grey beside the `.chat-panel__actions` row they are meant to match.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page); everything else — the real AppShell, the real NavRail, the real
@@ -128,7 +141,20 @@ createRoot(root).render(
                     <Route element={<AppShell />}>
                       <Route
                         path="/home"
-                        element={<div className="stub-page" />}
+                        element={
+                          <div className="stub-page">
+                            {/*
+                              Card probes. The ladder is measured on the shipping
+                              card rules — these two classes are what the dashboard
+                              paints — so a change to them shows up here instead of
+                              passing on a fill no page in the app renders.
+                            */}
+                            <div className="home-dashboard">
+                              <div className="home-card" data-probe="home-card" />
+                              <div className="view-card" data-probe="view-card" />
+                            </div>
+                          </div>
+                        }
                       />
                     </Route>
                   </Routes>

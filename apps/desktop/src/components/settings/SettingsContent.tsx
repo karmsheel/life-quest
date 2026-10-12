@@ -6,6 +6,7 @@ import { SettingsCompanionPrompts } from "./SettingsCompanionPrompts";
 import { SettingsDomains } from "./SettingsDomains";
 import { SettingsHermes } from "./SettingsHermes";
 import { SettingsVault } from "./SettingsVault";
+import { SettingsUpdates } from "./SettingsUpdates";
 import { SettingsAbout } from "./SettingsAbout";
 
 function SettingsNavItem({
@@ -44,6 +45,8 @@ function SettingsPanel({ view }: { view: SettingsViewId }) {
       return <SettingsHermes />;
     case "agent":
       return <SettingsCompanionPrompts />;
+    case "updates":
+      return <SettingsUpdates />;
     case "about":
       return <SettingsAbout />;
     default:

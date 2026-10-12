@@ -232,6 +232,12 @@ const FORGE_OS_LIGHT = {
   muted: "#6E6C68",
 } as const;
 
+/**
+ * Night on the cooling floor: the page canvas is the deepest ink (`background`),
+ * and `card` is the one step above it that the cards and the panels wear. The day
+ * palette runs the other way — there the mat sinks below the paper — so
+ * `darkColors` names its `canvas` to invert the ladder.
+ */
 const FORGE_OS_DARK = {
   background: "#111214",
   card: "#1A1D22",
@@ -241,6 +247,18 @@ const FORGE_OS_DARK = {
   text: "#F3F3F3",
   muted: "#8B8B8B",
 } as const;
+
+/**
+ * The quiet ink between the page and the cards: the dock's own bottom action band
+ * (`.chat-panel__actions`), the hover fills, and the mat the rail and the titlebar
+ * wear — so the window's frame and that band read as one material rather than two
+ * greys that nearly match. Named once, so moving the band moves the frame with it.
+ */
+const FORGE_OS_DARK_BAND = mix(
+  FORGE_OS_DARK.background,
+  FORGE_OS_DARK.card,
+  0.36,
+);
 
 function forgeOsLine(
   tokens: typeof FORGE_OS_LIGHT | typeof FORGE_OS_DARK,
@@ -306,7 +324,12 @@ export const forgeOsSkin: ForgeSkin = {
     foreground: FORGE_OS_DARK.text,
     card: FORGE_OS_DARK.card,
     cardForeground: FORGE_OS_DARK.text,
-    muted: mix(FORGE_OS_DARK.background, FORGE_OS_DARK.card, 0.36),
+    // The rail and the titlebar wear the dock's own bottom band rather than the
+    // card step: the frame sits under the cards, so the sidebar and the strip are
+    // the darkest chrome in the window after the page itself, and match the icon
+    // menu at the foot of the chat bar.
+    canvas: FORGE_OS_DARK_BAND,
+    muted: FORGE_OS_DARK_BAND,
     mutedForeground: FORGE_OS_DARK.muted,
     popover: "#1E2229",
     popoverForeground: FORGE_OS_DARK.text,

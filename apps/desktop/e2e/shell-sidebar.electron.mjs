@@ -7,7 +7,9 @@
  *   node e2e/shell-sidebar.electron.mjs
  *
  * Exit code 0 = every invariant held. The JSON report is the repeatable
- * artifact: same command, same numbers, no eyeballing the app required.
+ * artifact: same command, same numbers, no eyeballing the app required. It carries
+ * the colour ladder too — night and day, surface ink and luminance — so the
+ * "darkest page canvas" claim is a number in a file, not a screenshot to squint at.
  *
  * NOT covered here: whether Windows lets the click through the titlebar's drag
  * band. Synthetic DOM clicks bypass the OS hit test, so the `-webkit-app-region:
@@ -59,6 +61,7 @@ const SAMPLE = `(() => {
   const titlebarToggle = document.querySelector(".window-titlebar__nav-toggle");
   const main = document.querySelector(".shell__main");
   const chat = document.querySelector(".chat-panel");
+  const dockActions = document.querySelector(".chat-panel__actions");
   const shell = document.querySelector(".shell");
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
 
@@ -82,6 +85,24 @@ const SAMPLE = `(() => {
       frame: px(root.getPropertyValue("--shell-frame")),
       titlebarHeight
     },
+    theme: {
+      dataTheme: document.documentElement.getAttribute("data-theme"),
+      skin: document.documentElement.getAttribute("data-skin"),
+      canvasBase: root.getPropertyValue("--canvas-base").trim(),
+      background: root.getPropertyValue("--background").trim(),
+      card: root.getPropertyValue("--card").trim(),
+      bgPanel: root.getPropertyValue("--bg-panel").trim(),
+      mutedSurface: root.getPropertyValue("--muted-surface").trim()
+    },
+    cards: Object.fromEntries(
+      Array.from(document.querySelectorAll("[data-probe]")).map((el) => [
+        el.getAttribute("data-probe"),
+        getComputedStyle(el).backgroundColor
+      ])
+    ),
+    dockActions: dockActions
+      ? getComputedStyle(dockActions).backgroundColor
+      : null,
     rail: rail
       ? {
           box: box(rail),
@@ -94,6 +115,7 @@ const SAMPLE = `(() => {
           borderLeftWidth: getComputedStyle(rail).borderLeftWidth,
           borderRadius: getComputedStyle(rail).borderRadius,
           background: getComputedStyle(rail).backgroundColor,
+          backdropFilter: getComputedStyle(rail).backdropFilter,
           scrollTop: rail.scrollTop,
           scrollHeight: rail.scrollHeight,
           clientHeight: rail.clientHeight
@@ -213,6 +235,45 @@ const isHighlighted = (color) => {
   const parts = match[1].split(",").map((part) => parseFloat(part));
   const alpha = parts.length > 3 ? parts[3] : 1;
   return alpha > 0.05;
+};
+
+/**
+ * WCAG relative luminance of a computed `rgb()` colour, 0 = black, 1 = white.
+ * The ladder is an ordering claim, so it is asserted on gamma-corrected numbers
+ * rather than on the hex strings — a skin is free to move the inks as long as the
+ * order holds.
+ */
+const luminance = (color) => {
+  const match = /^rgba?\(([^)]+)\)$/.exec(color ?? "");
+  if (!match) return Number.NaN;
+  const [r, g, b] = match[1]
+    .split(",")
+    .slice(0, 3)
+    .map((part) => parseFloat(part) / 255);
+  const linear = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+};
+
+/** The ladder as numbers, for the report and the stdout table. */
+const ladderOf = (state) => {
+  const surfaces = {
+    chrome: state.rail?.background ?? null,
+    titlebar: state.titlebarBackground ?? null,
+    page: state.mainBackground ?? null,
+    dock: state.chat?.background ?? null,
+    dockActions: state.dockActions ?? null,
+    card: state.cards?.["home-card"] ?? null,
+    viewCard: state.cards?.["view-card"] ?? null,
+  };
+  return {
+    dataTheme: state.theme?.dataTheme ?? null,
+    skin: state.theme?.skin ?? null,
+    tokens: state.theme ?? null,
+    surfaces,
+    luminance: Object.fromEntries(
+      Object.entries(surfaces).map(([key, color]) => [key, luminance(color)]),
+    ),
+  };
 };
 
 async function main() {
@@ -425,22 +486,29 @@ async function main() {
       `rail toggle starts at ${expanded.railToggle?.box.left}px, column centre would be ${Math.round((track - (expanded.railToggle?.box.width ?? 0)) / 2)}px`,
     );
 
-    // 5 — the workspace sheet's three insets are one pane gap each, on every
-    // side it does not share with the rail, and its leading gap is the same
-    // pane gap rather than a frame stacked on a gap.
+    // 5 — the workspace sheet is flush to the rail and the dock, and keeps its
+    // one pane gap only under the strip. The chrome around it is a single band of
+    // mat: the rail wears the titlebar's own fill with no frost in between.
     check(
-      "the sheet's gaps match on both sides",
-      expanded.main &&
-        expanded.rail &&
-        expanded.chat &&
-        expanded.main.left - expanded.rail.box.right ===
-          expanded.chat.box.left - expanded.main.right,
-      `rail→sheet ${(expanded.main?.left ?? 0) - (expanded.rail?.box.right ?? 0)}px vs sheet→chat ${(expanded.chat?.box.left ?? 0) - (expanded.main?.right ?? 0)}px`,
+      "the sheet abuts the rail's trailing edge",
+      expanded.main?.left === track,
+      `sheet left ${expanded.main?.left}px vs rail right ${expanded.rail?.box.right}px`,
     );
     check(
-      "the leading gap is one pane gap",
-      expanded.main?.left === track + frame,
-      `sheet left ${expanded.main?.left}px vs rail ${track}px + gap ${frame}px`,
+      "the chrome is one band: the rail wears the titlebar's fill, unfrosted",
+      expanded.rail?.background === expanded.titlebarBackground &&
+        expanded.rail?.backdropFilter === "none",
+      `rail ${expanded.rail?.background} backdrop ${expanded.rail?.backdropFilter} vs titlebar ${expanded.titlebarBackground}`,
+    );
+    check(
+      "the sheet closes the gap to the dock and the window's bottom",
+      Boolean(
+        expanded.main &&
+          expanded.chat &&
+          expanded.main.right === expanded.chat.box.left &&
+          expanded.main.bottom === viewportHeight,
+      ),
+      `sheet right ${expanded.main?.right}px vs dock left ${expanded.chat?.box.left}px, sheet bottom ${expanded.main?.bottom}px vs window ${viewportHeight}px`,
     );
     // The panel is the rightmost pane now, and it is flush rather than inset.
     check(
@@ -482,10 +550,9 @@ async function main() {
       `shadow ${expanded.chat?.boxShadow}`,
     );
     check(
-      "the sheet keeps its frame on the top and bottom",
-      expanded.main?.top === titlebarHeight + frame &&
-        viewportHeight - (expanded.main?.bottom ?? 0) === frame,
-      `sheet top ${expanded.main?.top}px (want ${titlebarHeight + frame}px), bottom inset ${viewportHeight - (expanded.main?.bottom ?? 0)}px`,
+      "the sheet keeps its pane gap under the strip",
+      expanded.main?.top === titlebarHeight + frame,
+      `sheet top ${expanded.main?.top}px (want ${titlebarHeight + frame}px)`,
     );
     // The sheet's own chrome: square, wearing a hairline on all four sides —
     // the page's box, drawn one pane gap in from the rail and the dock.
@@ -526,6 +593,48 @@ async function main() {
       expanded.vault?.box.left === expanded.main?.left,
       `chip at ${expanded.vault?.box.left}px vs sheet at ${expanded.main?.left}px`,
     );
+
+    // The night ladder: the studio is a frame around the darkest page. The page
+    // canvas is the floor, the cards step up off it, and the chrome band — the rail
+    // and the strip — wears the dock's own quiet band, under the cards and clear of
+    // the floor.
+    const night = ladderOf(expanded);
+    const { chrome, page, card, viewCard } = night.luminance;
+    const band = night.luminance.dockActions;
+    check(
+      "the rig is painted in the night skin",
+      night.dataTheme === "dark" && night.skin === "forge-os",
+      `theme ${night.dataTheme}, skin ${night.skin}`,
+    );
+    check(
+      "the card probes are on screen",
+      Number.isFinite(card) && Number.isFinite(viewCard),
+      `probe fills ${JSON.stringify(expanded.cards)}`,
+    );
+    check(
+      "night: the chrome band wears the dock's own action band",
+      Number.isFinite(band) &&
+        night.surfaces.chrome === night.surfaces.dockActions &&
+        night.tokens.canvasBase === night.tokens.mutedSurface,
+      `mat ${night.surfaces.chrome} vs .chat-panel__actions ${night.surfaces.dockActions}; tokens ${night.tokens.canvasBase} vs ${night.tokens.mutedSurface}`,
+    );
+    check(
+      "night: the chrome band sits under the cards and off the page",
+      chrome > page && chrome < card && chrome < viewCard,
+      `mat ${chrome.toFixed(4)} between page ${page.toFixed(4)} and card ${card.toFixed(4)}/${viewCard.toFixed(4)}`,
+    );
+    check(
+      "night: the cards step up off the page canvas",
+      card > page && viewCard > page,
+      `card ${night.surfaces.card} (${card.toFixed(4)}), view card ${night.surfaces.viewCard} (${viewCard.toFixed(4)}) vs page ${page.toFixed(4)}`,
+    );
+    check(
+      "night: the page canvas is the darkest surface in the window",
+      [chrome, night.luminance.titlebar, page, night.luminance.dock, band, card, viewCard].every(
+        (lum) => Number.isFinite(lum) && lum >= page,
+      ),
+      `page ${page.toFixed(4)} against ${JSON.stringify(night.luminance)}`,
+    );
     check(
       "nothing spills past the window",
       expanded.overflow.scrollWidth <= viewportWidth,
@@ -562,17 +671,17 @@ async function main() {
     );
     check(
       "collapse gives the column back",
-      collapsed.main?.left === frame,
-      `sheet left ${collapsed.main?.left}px vs frame ${frame}px`,
+      collapsed.main?.left === 0,
+      `sheet left ${collapsed.main?.left}px — with no rail the sheet starts on the window's own edge`,
     );
     check(
-      "the collapse spares the sheet-to-chat gap",
+      "the collapse leaves the sheet flush to the dock",
       Boolean(
         collapsed.main &&
           collapsed.chat &&
-          collapsed.chat.box.left - collapsed.main.right === frame,
+          collapsed.main.right === collapsed.chat.box.left,
       ),
-      `sheet→chat ${(collapsed.chat?.box.left ?? 0) - (collapsed.main?.right ?? 0)}px vs frame ${frame}px`,
+      `sheet right ${collapsed.main?.right}px vs dock left ${collapsed.chat?.box.left}px`,
     );
     check(
       "reopen toggle lands on the titlebar",
@@ -649,6 +758,40 @@ async function main() {
       `vault chip left ${restored.vault?.box.left}px vs ${expanded.vault?.box.left}px`,
     );
 
+    // 8 — the ladder is a *night* ladder. Day keeps its own order, where the mat
+    // and the panels sink below the sheet; the same rig, the same skin and only
+    // the preference flipped, so a day that inherited the night inks fails here
+    // rather than on the operator's screen.
+    await run(`localStorage.setItem("lifequest-theme", "light")`);
+    await win.loadURL(url);
+    await waitForHarness();
+    win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
+    const day = await settled();
+    // Leave the preference as the rig found it — the default is dark.
+    await run(`localStorage.removeItem("lifequest-theme")`);
+
+    const dawn = ladderOf(day);
+    check(
+      "day renders the same skin in its own mode",
+      dawn.dataTheme === "light" && dawn.skin === "forge-os",
+      `theme ${dawn.dataTheme}, skin ${dawn.skin}`,
+    );
+    check(
+      "day: the mat still sinks below the sheet",
+      dawn.luminance.chrome < dawn.luminance.page &&
+        dawn.luminance.titlebar < dawn.luminance.page,
+      `mat ${dawn.surfaces.chrome} (${dawn.luminance.chrome.toFixed(4)}) and titlebar ${dawn.luminance.titlebar.toFixed(4)} vs sheet ${dawn.surfaces.page} (${dawn.luminance.page.toFixed(4)})`,
+    );
+    check(
+      "day: the panels still recess below the sheet",
+      dawn.luminance.card < dawn.luminance.page,
+      `card ${dawn.surfaces.card} (${dawn.luminance.card.toFixed(4)}) vs sheet ${dawn.luminance.page.toFixed(4)}`,
+    );
+
+    const dayShot = await win.webContents.capturePage();
+    const dayFile = path.join(artifactsDir, "shell-sidebar-day.png");
+    fs.writeFileSync(dayFile, dayShot.toPNG());
+
     report = {
       url,
       ranAt: new Date().toISOString(),
@@ -658,8 +801,10 @@ async function main() {
       expanded,
       collapsed,
       restored,
+      day,
+      ladder: { night, day: dawn },
       reclaimedPx: (expanded.main?.left ?? 0) - (collapsed.main?.left ?? 0),
-      screenshots: [expandedFile, cornerFile, collapsedFile],
+      screenshots: [expandedFile, cornerFile, collapsedFile, dayFile],
       failures,
       pass: failures.length === 0,
     };
@@ -711,6 +856,45 @@ async function main() {
   const widths = table[0].map((_, i) => Math.max(...table.map((row) => row[i].length)));
   const format = (row) => row.map((cell, i) => cell.padEnd(widths[i])).join("  ");
   for (const row of table) console.log(format(row));
+
+  // The ladder, mode by mode: surface ink and its luminance, so the ordering the
+  // run asserts is readable without opening the JSON.
+  if (report.ladder) {
+    const cell = (data, key) =>
+      data?.surfaces?.[key]
+        ? `${data.surfaces[key]} ${(data.luminance[key] ?? Number.NaN).toFixed(4)}`
+        : "—";
+    const rows = [
+      [
+        "mode",
+        "mat (chrome)",
+        "sheet (page canvas)",
+        "card",
+        "view card",
+        "dock action band",
+      ],
+    ];
+    for (const mode of ["night", "day"]) {
+      const data = report.ladder[mode];
+      if (!data) continue;
+      rows.push([
+        mode,
+        cell(data, "chrome"),
+        cell(data, "page"),
+        cell(data, "card"),
+        cell(data, "viewCard"),
+        cell(data, "dockActions"),
+      ]);
+    }
+    const widths = rows[0].map((_, i) =>
+      Math.max(...rows.map((row) => row[i].length)),
+    );
+    console.log("");
+    for (const row of rows) {
+      console.log(row.map((value, i) => value.padEnd(widths[i])).join("  "));
+    }
+  }
+
   console.log("");
   console.log(`report: ${reportFile}`);
   for (const failure of report.failures ?? []) console.log(`FAIL ${failure}`);

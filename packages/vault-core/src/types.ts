@@ -16,12 +16,26 @@ export const DOCUMENT_KIND_LABELS: Record<DocumentKind, string> = {
   how: "Strategy (How)",
 };
 
-export const DREAM_DOCUMENT_KINDS: readonly DocumentKind[] = [
+/**
+ * Every doctrine document, in the order the app reads them: the four-part chain
+ * a domain is defined by. The groups below are which wing page carries each one.
+ */
+export const DOCTRINE_ORDER: readonly DocumentKind[] = [
   "premise",
   "what",
   "why",
   "how",
 ];
+
+/** The Dream page: everything a domain is defined by except its Vision. */
+export const DREAM_DOCUMENT_KINDS: readonly DocumentKind[] = [
+  "premise",
+  "why",
+  "how",
+];
+
+/** The Vision page: the ideal state a domain is reaching for, on its own. */
+export const VISION_DOCUMENT_KINDS: readonly DocumentKind[] = ["what"];
 
 export type Actor =
   | { type: "user" }

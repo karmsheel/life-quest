@@ -15,7 +15,7 @@ export function DoctrineStrip({ kind }: { kind: DocumentKind }) {
   const preview = body ? body.slice(0, 180) : `No ${label} yet.`;
   const editTo =
     kind === "what"
-      ? `/dream/${domain.slug}/what`
+      ? `/vision/${domain.slug}/what`
       : `/track/${domain.slug}/how`;
 
   return (

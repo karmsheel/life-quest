@@ -444,6 +444,41 @@ const lifequest = {
       Result<{ ok: true; notified: boolean; title: string; body: string }>
     >,
 
+  // —— auto-update ——————————————————————————————————————————————————————————
+  // The renderer never sees the token: it may ask whether one is stored, set a
+  // new one, and clear it. Reading it back is not on this bridge.
+  updateCheck: (options?: { force?: boolean }) =>
+    ipcRenderer.invoke("update:check", options) as Promise<
+      { ok: true; decision: unknown } | { ok: false; error: string }
+    >,
+  updateInstall: (asset: { name: string; url: string; size: number }) =>
+    ipcRenderer.invoke("update:install", asset) as Promise<
+      | { ok: true; launched: true; installer: string; bytes: number }
+      | { ok: false; error: string }
+    >,
+  updateTokenStatus: () =>
+    ipcRenderer.invoke("update:tokenStatus") as Promise<boolean>,
+  updateSetToken: (token: string) =>
+    ipcRenderer.invoke("update:setToken", token) as Promise<Result<true>>,
+  updateClearToken: () =>
+    ipcRenderer.invoke("update:clearToken") as Promise<Result<true>>,
+  updateOpenReleasePage: (url: string) =>
+    ipcRenderer.invoke("update:openReleasePage", url) as Promise<Result<true>>,
+  onUpdateProgress: (
+    cb: (progress: { downloaded: number; total: number }) => void,
+  ) => {
+    const listener = (
+      _event: unknown,
+      progress: { downloaded: number; total: number },
+    ) => {
+      cb(progress);
+    };
+    ipcRenderer.on("update:progress", listener);
+    return () => {
+      ipcRenderer.removeListener("update:progress", listener);
+    };
+  },
+
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => {
     const listener = (_event: unknown, payload: { path: string }) => {
       cb(payload);

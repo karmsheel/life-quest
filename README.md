@@ -22,6 +22,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 | [Hermes chatbar design](docs/superpowers/specs/2026-07-18-hermes-chatbar-connection-design.md) | Hermes connection UX |
 | [Domain databases & Finance kit](docs/superpowers/specs/2026-09-23-domain-databases-finance-kit-prs.md) | Domain-owned databases, pages, and the Finance kit |
 | [Dashboard page lock](docs/superpowers/specs/2026-10-08-dashboard-page-lock-design.md) | The home pin board's lock, and one call that saves and pins a card |
+| [Auto-update](docs/superpowers/specs/2026-10-12-auto-update-design.md) | The glowing build number, and the upgrade it offers |
 
 ## Prerequisites
 
@@ -65,6 +66,14 @@ npm run release   # shippable build: the installer and the portable zip
 | `LifeQuest-<version>-win-x64.zip` | Portable build — extract and run `LifeQuest.exe` |
 
 It prints the size and SHA-256 of each, and writes `release/release-manifest.json`. It exits non-zero rather than reporting success when an asset is missing. Uploading is deliberately not part of the build: `gh release create` attaches the files, and nothing half-publishes on its own.
+
+### Who hears about a release
+
+The app asks GitHub Releases **once per launch** for the newest release of `karmsheel/life-quest`. If it names something newer than this build, the version number at the foot of the left rail starts to glow; clicking it opens a popup that names both versions, the release's notes, and the installer — and offers to download it and run it. After the installer is up, the app quits so it can be replaced.
+
+The release repository is public, so the check needs no token. If it is ever made private, a fine-grained token with read access to its contents can be stored at **Settings → Updates**: it goes into OS secure storage (the same mechanism as the Hermes key), never inside a vault, and is never read back into the window. With nothing to read, the app reports that it could not check — it never claims to be up to date.
+
+Two things it will not do. It never offers a version that is not strictly newer, so an older or unreadable tag is reported rather than installed. And it only ever downloads an installer from a GitHub host, checked again after redirects; anything else is refused before a byte moves.
 
 Windows SmartScreen may warn on first launch (unsigned private build). Choose **More info → Run anyway**. Quit LifeQuest before building again — a running `.exe` can lock files under `release/`. Deleting `win-unpacked` removes that build only; vault folders and `%APPDATA%\LifeQuest` stay.
 

@@ -1,0 +1,463 @@
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import net from "node:net";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, it } from "node:test";
+
+const desktopRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+const require = createRequire(import.meta.url);
+const electron = require("electron") as string;
+
+/**
+ * The build under test, off the app's own `package.json`. The rigs read the same
+ * file, so this suite's expectations move with a version bump instead of breaking
+ * on one.
+ */
+const APP_VERSION = (require("../package.json") as { version: string }).version;
+
+/** The release the harness's stub feed offers — a fixed fixture. */
+const OFFERED = "0.4.0";
+
+const DEV_PORT = 5173;
+const REPORT = path.join(desktopRoot, "e2e/artifacts/update-badge.json");
+
+type ShadowLayer = {
+  color: { rgb: string; alpha: number } | null;
+  x: number;
+  y: number;
+  blur: number;
+  spread: number;
+};
+
+type Dialog = {
+  role: string | null;
+  ariaModal: string | null;
+  title: string;
+  versionsText: string;
+  fileLine: string;
+  buttons: { label: string; disabled: boolean }[];
+  notesToggle: boolean;
+  notesBody: string | null;
+  progressText: string | null;
+  progressNow: string | null;
+  error: string | null;
+};
+
+type State = {
+  reducedMotion: boolean;
+  calls: { check: number; install: number; installAsset: { name: string } | null } | null;
+  chip: {
+    tag: string;
+    className: string;
+    text: string;
+    dataState: string | null;
+    dataVersion: string | null;
+    ariaLabel: string | null;
+    ariaHaspopup: string | null;
+    ariaExpanded: string | null;
+    boxShadow: string;
+    color: string;
+    background: string;
+    borderRadius: string;
+    animationName: string;
+    box: { left: number; right: number };
+    halo: {
+      boxShadow: string;
+      opacity: number;
+      animationName: string;
+      content: string;
+      pointerEvents: string;
+      inset: string;
+    };
+    tokens: {
+      accent: string;
+      accentFill: string;
+      resolved: { accent: string; accentFill: string };
+    };
+  } | null;
+  rail: {
+    box: { left: number; right: number };
+    scrollTop: number;
+    scrollHeight: number;
+    clientHeight: number;
+  } | null;
+  dialog: Dialog | null;
+  backdropPresent: boolean;
+  listenerAttached: boolean | null;
+  dom: { hasRail: boolean; hasChip: boolean; errors: string[] | null };
+  settings: {
+    summaryState: string | null;
+    summaryText: string | null;
+    token: string | null;
+    tokenText: string | null;
+    inputValue: string | null;
+    buttons: { label: string | null; disabled: boolean }[];
+    message: string | null;
+    error: string | null;
+  } | null;
+  overflow: { scrollWidth: number; clientWidth: number };
+};
+
+type Report = {
+  pass: boolean;
+  failures: string[];
+  states: Record<string, State>;
+  glow: {
+    accent: string;
+    accentFill: string;
+    resolved: { accent: string; accentFill: string };
+    chipInk: string;
+    chipFill: string;
+    halo: string;
+    layers: ShadowLayer[];
+    reach: number;
+    room: number;
+    animation: string | null;
+  };
+  screenshots: string[];
+};
+
+/** The `rgb(...)` inside an `rgb()`/`rgba()` colour, or a `color(srgb …)` one. */
+function rgbKey(color: string): string | null {
+  const rgb = /^rgba?\(([^)]+)\)$/.exec(color.trim());
+  if (rgb) {
+    const parts = rgb[1].split(",").map((part) => parseFloat(part.trim()));
+    return `rgb(${parts.slice(0, 3).join(", ")})`;
+  }
+  const srgb = /^color\(srgb\s+([^)]+)\)$/.exec(color.trim());
+  if (srgb) {
+    const nums = srgb[1]
+      .split("/")[0]
+      .trim()
+      .split(/\s+/)
+      .map((part) => Math.round(parseFloat(part) * 255));
+    return `rgb(${nums.join(", ")})`;
+  }
+  return null;
+}
+
+/**
+ * The badge rig drives the real shell in a real Electron window, so it needs the
+ * Vite dev server. With the server down the test skips; `npm run dev` in another
+ * shell turns it on.
+ */
+function devServerUp(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ port: DEV_PORT, host: "127.0.0.1" });
+    const done = (up: boolean) => {
+      socket.destroy();
+      resolve(up);
+    };
+    socket.on("connect", () => done(true));
+    socket.on("error", () => done(false));
+  });
+}
+
+function runDriver(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      electron,
+      [path.join(desktopRoot, "e2e/update-badge.electron.mjs")],
+      { cwd: desktopRoot, timeout: 180_000 },
+      (error) => {
+        if (error && typeof error.code !== "number") {
+          reject(error);
+          return;
+        }
+        resolve(error ? (error.code as number) : 0);
+      },
+    );
+  });
+}
+
+describe("auto-update badge", () => {
+  it("glows when a newer release exists, opens the upgrade, and stays quiet otherwise", async (t) => {
+    if (!(await devServerUp())) {
+      t.skip(
+        `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
+      );
+      return;
+    }
+
+    fs.rmSync(REPORT, { force: true });
+    const exitCode = await runDriver();
+    assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
+
+    const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
+    assert.deepEqual(report.failures, []);
+    assert.equal(exitCode, 0, "driver exited non-zero");
+    assert.equal(report.pass, true);
+
+    const { available, opened, notesOpen, installing, halfway, installFailed, upToDate, junk, afterRemount } =
+      report.states;
+
+    // The version line at rest: the same paragraph it has always been, so a rail
+    // with nothing to install gains no control and no focus stop.
+    assert.equal(upToDate.chip?.tag, "p", "an up-to-date build made the version a control");
+    assert.equal(
+      upToDate.chip?.boxShadow,
+      "none",
+      `an up-to-date build glowed anyway (${upToDate.chip?.boxShadow})`,
+    );
+    assert.equal(
+      upToDate.chip?.className.includes("--available"),
+      false,
+      "an up-to-date build carried the available class",
+    );
+    assert.equal(
+      upToDate.chip?.dataVersion,
+      null,
+      "an up-to-date build named a release it is not offering",
+    );
+
+    // The glow, restated here so the suite — not only the driver — asserts the
+    // halves of the claim: a halo paints, it paints the palette's own inks, and it
+    // paints them on a layer of its own rather than as a shadow on the chip.
+    assert.equal(available.chip?.tag, "button", "an available release was not clickable");
+    assert.equal(
+      available.chip?.dataVersion,
+      OFFERED,
+      "the glowing build number did not name the release",
+    );
+    assert.equal(
+      available.chip?.text,
+      `v${APP_VERSION}`,
+      "the build number stopped reading the running version",
+    );
+    assert.equal(
+      available.chip?.boxShadow,
+      "none",
+      "the chip carries the halo itself — it belongs on its own layer, where the breath can animate opacity",
+    );
+    assert.equal(
+      available.chip?.halo.content,
+      '""',
+      "the chip grew no halo layer",
+    );
+    assert.equal(
+      available.chip?.halo.pointerEvents,
+      "none",
+      "the halo layer would swallow clicks meant for the chip",
+    );
+    assert.equal(
+      available.chip?.animationName,
+      "none",
+      "the chip animates itself instead of the halo layer",
+    );
+    assert.equal(
+      available.chip?.halo.animationName,
+      "nav-rail-version-breathe",
+      "the halo does not breathe",
+    );
+
+    // A hairline of the state ink, then a bloom of the accent's translucent fill.
+    const [hairline, bloom] = report.glow.layers;
+    assert.equal(report.glow.layers.length, 2, `the halo has ${report.glow.layers.length} layers`);
+    assert.equal(
+      hairline?.color?.rgb,
+      rgbKey(report.glow.resolved.accent),
+      `the hairline is not the state ink: ${JSON.stringify(hairline?.color)} vs ${report.glow.resolved.accent}`,
+    );
+    assert.equal(hairline?.color?.alpha, 1, "the hairline is not a solid hairline");
+    assert.equal(
+      bloom?.color?.rgb,
+      rgbKey(report.glow.resolved.accentFill),
+      `the bloom is not the accent's own fill: ${JSON.stringify(bloom?.color)} vs ${report.glow.resolved.accentFill}`,
+    );
+    assert.ok(
+      (bloom?.color?.alpha ?? 0) > 0.05 && (bloom?.color?.alpha ?? 0) < 1,
+      `the bloom is not translucent: ${JSON.stringify(bloom?.color)}`,
+    );
+    // Light around the chip, not a lift under it.
+    for (const layer of report.glow.layers) {
+      assert.equal(layer.x, 0, `a halo layer is offset horizontally by ${layer.x}px`);
+      assert.equal(layer.y, 0, `a halo layer is offset vertically by ${layer.y}px — that is a drop shadow`);
+    }
+    // And it has to fit: the rail clips its overflow at its own edge, so a bloom
+    // reaching past the padding around the chip would be sliced off flat.
+    assert.ok(
+      report.glow.reach <= report.glow.room,
+      `the halo reaches ${report.glow.reach}px into the ${report.glow.room}px the rail gives it — it would be clipped`,
+    );
+
+    // The chip wears the palette's own inks, not new ones.
+    assert.equal(
+      rgbKey(available.chip?.color ?? ""),
+      rgbKey(report.glow.resolved.accent),
+      "the glowing build number is not wearing the state ink",
+    );
+    assert.equal(
+      available.chip?.background,
+      report.glow.resolved.accentFill,
+      `the chip is not on the accent's translucent fill: ${available.chip?.background}`,
+    );
+
+    // The glow must not break the rail's own contract: a halo is not a reflow.
+    assert.equal(available.rail?.scrollTop, 0, "the glow scrolled the rail's topband away");
+    assert.ok(
+      (available.rail?.scrollHeight ?? 0) <= (available.rail?.clientHeight ?? 0),
+      `the glow made the rail taller than its column: ${available.rail?.scrollHeight}px in ${available.rail?.clientHeight}px`,
+    );
+
+    // One check per launch, even under StrictMode's second mount effect.
+    assert.equal(
+      available.calls?.check,
+      1,
+      `the launch asked the feed ${available.calls?.check} times`,
+    );
+
+    // The popup: a modal that names both versions, the file, and the way out.
+    assert.ok(opened.dialog, "clicking the glowing build number opened no popup");
+    assert.equal(opened.dialog?.role, "dialog", "the popup is not a dialog");
+    assert.equal(opened.dialog?.ariaModal, "true", "the popup is not modal");
+    assert.equal(opened.dialog?.title, `LifeQuest ${OFFERED}`, "the popup does not name the release");
+    assert.ok(
+      opened.dialog?.versionsText.includes(`v${APP_VERSION}`) &&
+        opened.dialog?.versionsText.includes(OFFERED),
+      `the popup does not name both versions: ${opened.dialog?.versionsText}`,
+    );
+    assert.ok(
+      opened.dialog?.fileLine.includes(`LifeQuest-${OFFERED}-setup.exe`),
+      `the popup does not name the file: ${opened.dialog?.fileLine}`,
+    );
+    const labels = opened.dialog?.buttons.map((button) => button.label) ?? [];
+    assert.ok(
+      labels.includes("Download and install") &&
+        labels.includes("Open the release page") &&
+        labels.includes("Not now"),
+      `the popup's actions are ${JSON.stringify(labels)}`,
+    );
+    assert.ok(
+      notesOpen.dialog?.notesBody?.includes("The build number glows"),
+      `the release notes could not be read: ${JSON.stringify(notesOpen.dialog?.notesBody)}`,
+    );
+    assert.equal(
+      opened.dialog?.notesBody,
+      null,
+      "the notes were already open — they start folded away",
+    );
+
+    // The install: once, with the release's own asset, and reporting progress.
+    assert.equal(
+      installing.calls?.install,
+      1,
+      `the install reached the bridge ${installing.calls?.install} times`,
+    );
+    assert.equal(
+      installing.calls?.installAsset?.name,
+      `LifeQuest-${OFFERED}-setup.exe`,
+      `the bridge was handed ${JSON.stringify(installing.calls?.installAsset)}`,
+    );
+    assert.equal(
+      halfway.dialog?.progressNow,
+      "25",
+      `the download's progress did not reach the popup: ${JSON.stringify(halfway.dialog?.progressText)}`,
+    );
+
+    // A failure is reported rather than swallowed, and the popup stays escapable.
+    assert.ok(
+      installFailed.dialog?.error?.includes("no handler"),
+      `a failed install was not reported: ${JSON.stringify(installFailed.dialog?.error)}`,
+    );
+    assert.equal(
+      installFailed.dialog?.buttons.find((button) => button.label === "Download and install")
+        ?.disabled,
+      false,
+      "a failed install left the action disabled",
+    );
+
+    // A bridge that does not know this channel must not glow, and must not throw.
+    assert.equal(junk.chip?.tag, "p", "a junk answer turned the version into a control");
+    assert.equal(junk.chip?.boxShadow, "none", "a junk answer produced a glow");
+    assert.equal(junk.dialog, null, "a junk answer opened the popup");
+    assert.equal(
+      junk.listenerAttached,
+      true,
+      "the provider never subscribed to the progress channel",
+    );
+    // The junk is the *handle*, not the callback: a bridge that does not know the
+    // channel answers with something that is not an unsubscribe. Unmounting the
+    // provider runs that cleanup, so a guard that tried to call it would surface
+    // here as an uncaught TypeError.
+    assert.deepEqual(
+      afterRemount.dom.errors,
+      [],
+      `unmounting with a junk progress handle threw: ${JSON.stringify(afterRemount.dom.errors)}`,
+    );
+    assert.equal(
+      afterRemount.rail !== null && afterRemount.chip?.tag === "p",
+      true,
+      "the rail did not survive the provider's remount",
+    );
+
+    for (const file of report.screenshots) {
+      assert.equal(fs.existsSync(file), true, `driver wrote no screenshot ${file}`);
+    }
+
+    // The Settings view — where the token lives and where the operator can ask by
+    // hand. Asserted from the report's own numbers rather than only inside the
+    // driver, so a regression names the field it broke.
+    const { settings, saved, checked, removed } = report.states;
+    assert.ok(settings.settings, "the Settings view rendered nothing");
+    assert.equal(
+      settings.settings?.summaryState,
+      "available",
+      `the view did not report the release the feed found: ${JSON.stringify(settings.settings?.summaryText)}`,
+    );
+    assert.equal(
+      settings.settings?.token,
+      "unset",
+      "the view claimed a token was stored when none was",
+    );
+    assert.equal(
+      settings.settings?.buttons.find((b) => b.label === "Remove GitHub token")?.disabled,
+      true,
+      "the view offered to remove a token that is not there",
+    );
+
+    assert.deepEqual(
+      saved.calls?.setToken,
+      ["ghp_harness_token"],
+      `saving did not hand the typed value to main: ${JSON.stringify(saved.calls?.setToken)}`,
+    );
+    assert.equal(
+      saved.settings?.tokenText,
+      "Stored",
+      `the view did not report the token as stored: ${JSON.stringify(saved.settings?.tokenText)}`,
+    );
+    assert.equal(
+      saved.settings?.inputValue,
+      "",
+      "the secret was left in the field after it was stored",
+    );
+    assert.equal(
+      saved.settings?.buttons.find((b) => b.label === "Remove GitHub token")?.disabled,
+      false,
+      "the view still refuses to remove the token it just stored",
+    );
+
+    assert.equal(
+      checked.calls?.check,
+      2,
+      `checking by hand did not reach the feed: ${JSON.stringify(checked.calls?.checkOptions)}`,
+    );
+    assert.equal(
+      checked.calls?.checkOptions?.[1]?.force,
+      true,
+      `the hand's check replayed the session instead of forcing the feed: ${JSON.stringify(checked.calls?.checkOptions)}`,
+    );
+
+    assert.equal(removed.calls?.clearToken, 1, "removing did not reach the bridge once");
+    assert.equal(
+      removed.settings?.tokenText,
+      "Not set",
+      `the view did not return to not-set: ${JSON.stringify(removed.settings?.tokenText)}`,
+    );
+  });
+});

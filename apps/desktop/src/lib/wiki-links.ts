@@ -32,7 +32,9 @@ function doctrineLink(slug: string, kind: DocumentKind): WikiLink {
   const href =
     kind === "how"
       ? `#/track/${slug}/how`
-      : `#/dream/${slug}/${kind}`;
+      : kind === "what"
+        ? `#/vision/${slug}/what`
+        : `#/dream/${slug}/${kind}`;
   return { href, kind: "doctrine" };
 }
 

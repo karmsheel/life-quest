@@ -29,12 +29,25 @@ type Box = {
 type State = {
   viewport: { width: number; height: number };
   tokens: { track: number; frame: number; titlebarHeight: number };
+  theme: {
+    dataTheme: string | null;
+    skin: string | null;
+    canvasBase: string;
+    background: string;
+    card: string;
+    bgPanel: string;
+    mutedSurface: string;
+  };
+  cards: Record<string, string>;
+  dockActions: string | null;
   rail: {
     box: Box;
     marginTop: string;
     borderRightWidth: string;
     borderLeftWidth: string;
     borderRadius: string;
+    background: string;
+    backdropFilter: string;
     scrollTop: number;
     scrollHeight: number;
     clientHeight: number;
@@ -76,6 +89,22 @@ type State = {
   overflow: { scrollWidth: number; clientWidth: number };
 };
 
+type Ladder = {
+  dataTheme: string | null;
+  skin: string | null;
+  tokens: State["theme"];
+  surfaces: {
+    chrome: string | null;
+    titlebar: string | null;
+    page: string | null;
+    dock: string | null;
+    dockActions: string | null;
+    card: string | null;
+    viewCard: string | null;
+  };
+  luminance: Record<keyof Ladder["surfaces"], number>;
+};
+
 type Report = {
   pass: boolean;
   failures: string[];
@@ -84,6 +113,8 @@ type Report = {
   expanded: State;
   collapsed: State;
   restored: State;
+  day: State;
+  ladder: { night: Ladder; day: Ladder };
   reclaimedPx: number;
   screenshots: string[];
 };
@@ -111,6 +142,13 @@ function alpha(color: string): number {
   if (!rgba) return 1;
   const parts = rgba[1].split(",");
   return parts.length > 3 ? parseFloat(parts[3]) : 1;
+}
+
+/** The `rgb()` Chromium computes for a palette's `#rrggbb` fill. */
+function computedHex(hex: string): string {
+  const clean = hex.trim().replace(/^#/, "");
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(clean.slice(i, i + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 function runDriver(): Promise<number> {
@@ -265,18 +303,18 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.equal(
       expanded.main?.left,
-      track + frame,
-      "the sheet is not one pane gap past the rail",
+      track,
+      "the sheet is not flush to the rail's trailing edge",
     );
     assert.equal(
-      expanded.rail?.box.right !== undefined &&
-        expanded.chat?.box.left !== undefined &&
-        expanded.main?.right !== undefined
-        ? expanded.main.left - expanded.rail.box.right ===
-            expanded.chat.box.left - expanded.main.right
-        : false,
-      true,
-      "the rail→sheet and sheet→chat gaps disagree",
+      expanded.main?.right,
+      expanded.chat.box.left,
+      "the sheet left a gap between itself and the dock",
+    );
+    assert.equal(
+      expanded.main?.bottom,
+      expanded.viewport.height,
+      "the sheet stopped short of the window bottom",
     );
     assert.equal(
       expanded.vault?.box.left,
@@ -284,8 +322,23 @@ describe("shell sidebar (docked rail)", () => {
       "the chip's leading border does not line up with the sheet's",
     );
 
+    // The chrome is one band of mat: the rail that wraps the sheet's leading edge
+    // wears the very fill the titlebar across the top does, with no frost of its
+    // own left between them.
+    assert.equal(
+      expanded.rail?.background,
+      expanded.titlebarBackground,
+      `the rail (${expanded.rail?.background}) is not wearing the titlebar's fill (${expanded.titlebarBackground})`,
+    );
+    assert.equal(
+      expanded.rail?.backdropFilter,
+      "none",
+      `the rail is still frosted (${expanded.rail?.backdropFilter})`,
+    );
+
     // The sheet's own chrome: square, a hairline on all four sides — the page's
-    // box, drawn one pane gap in from the rail and the dock.
+    // box, drawn one pane gap under the strip and flush to the rail, the dock and
+    // the window's bottom edge on the other three sides.
     assert.ok(expanded.sheet, "the shell rendered no workspace sheet");
     assert.equal(
       expanded.sheet.borderRadius,
@@ -326,8 +379,8 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.equal(
       collapsed.main?.left,
-      frame,
-      "the sheet did not reclaim the collapsed column",
+      0,
+      "the sheet did not reclaim the collapsed column — with no rail it starts on the window's own edge",
     );
     assert.equal(
       collapsed.titlebarToggle?.label,
@@ -374,8 +427,8 @@ describe("shell sidebar (docked rail)", () => {
 
     assert.equal(
       collapsed.chat.box.left - (collapsed.main?.right ?? 0),
-      frame,
-      "collapsing the rail ate the sheet's gap to the chat panel",
+      0,
+      "collapsing the rail opened a gap between the sheet and the dock",
     );
 
     // The dock's own contract: square, flush right and bottom, on the sheet's
@@ -426,6 +479,107 @@ describe("shell sidebar (docked rail)", () => {
       "the chat panel is not on the sheet's surface",
     );
     assert.equal(expanded.chat.boxShadow, "none", "the chat panel still floats on a shadow");
+
+    // The night ladder, restated on the numbers the driver wrote down: the studio
+    // is a frame around the darkest page. The page canvas is the floor, the cards
+    // step up off it, and the chrome band wears the dock's own quiet band. A skin
+    // may move the inks; it may not move them in this order.
+    const { ladder } = report;
+    assert.ok(ladder, "report carries no colour ladder");
+    assert.equal(ladder.night.dataTheme, "dark", "the rig did not run at night");
+    assert.equal(ladder.night.skin, "forge-os", "the night rig is not on Forge OS");
+    for (const surface of [
+      "chrome",
+      "titlebar",
+      "page",
+      "dock",
+      "dockActions",
+      "card",
+      "viewCard",
+    ] as const) {
+      assert.equal(
+        Number.isFinite(ladder.night.luminance[surface]),
+        true,
+        `no luminance for the night ${surface} (${ladder.night.surfaces[surface]})`,
+      );
+    }
+    assert.ok(
+      ladder.night.luminance.chrome > ladder.night.luminance.page,
+      `the chrome band is not lighter than the page canvas: mat ${ladder.night.surfaces.chrome} (${ladder.night.luminance.chrome}) vs page ${ladder.night.surfaces.page} (${ladder.night.luminance.page})`,
+    );
+    assert.ok(
+      ladder.night.luminance.titlebar > ladder.night.luminance.page,
+      `the titlebar is not lighter than the page canvas: ${ladder.night.surfaces.titlebar} (${ladder.night.luminance.titlebar}) vs ${ladder.night.luminance.page}`,
+    );
+    // The sidebar and the strip are the darker chrome: under the cards, and the
+    // same ink as the icon menu at the foot of the chat bar.
+    for (const surface of ["card", "viewCard"] as const) {
+      assert.ok(
+        ladder.night.luminance.chrome < ladder.night.luminance[surface],
+        `the chrome band is not darker than the night ${surface}: mat ${ladder.night.surfaces.chrome} (${ladder.night.luminance.chrome}) vs ${ladder.night.surfaces[surface]} (${ladder.night.luminance[surface]})`,
+      );
+    }
+    assert.equal(
+      ladder.night.surfaces.chrome,
+      ladder.night.surfaces.dockActions,
+      `the mat does not wear the dock's action band: mat ${ladder.night.surfaces.chrome} vs .chat-panel__actions ${ladder.night.surfaces.dockActions}`,
+    );
+    assert.equal(
+      ladder.night.tokens.canvasBase,
+      ladder.night.tokens.mutedSurface,
+      `--canvas-base and --muted-surface are different inks: ${ladder.night.tokens.canvasBase} vs ${ladder.night.tokens.mutedSurface}`,
+    );
+    for (const surface of ["card", "viewCard"] as const) {
+      assert.ok(
+        ladder.night.luminance[surface] > ladder.night.luminance.page,
+        `the ${surface} does not step up off the page canvas: ${ladder.night.surfaces[surface]} (${ladder.night.luminance[surface]}) vs page ${ladder.night.surfaces.page} (${ladder.night.luminance.page})`,
+      );
+    }
+    // Nothing in the window may paint below the page canvas — that is what makes
+    // it the darkest surface rather than merely a dark one.
+    for (const surface of [
+      "chrome",
+      "titlebar",
+      "dock",
+      "dockActions",
+      "card",
+      "viewCard",
+    ] as const) {
+      assert.ok(
+        ladder.night.luminance[surface] >= ladder.night.luminance.page,
+        `the night ${surface} paints below the page canvas: ${ladder.night.surfaces[surface]} (${ladder.night.luminance[surface]}) vs page (${ladder.night.luminance.page})`,
+      );
+    }
+    // And day keeps its own ladder: the mat and the panels sink below the sheet,
+    // so the night swap cannot have been bought with the light theme.
+    assert.equal(ladder.day.dataTheme, "light", "the day pass did not run in light");
+    assert.ok(
+      ladder.day.luminance.chrome < ladder.day.luminance.page &&
+        ladder.day.luminance.titlebar < ladder.day.luminance.page,
+      `day lost the sunk mat: mat ${ladder.day.surfaces.chrome} (${ladder.day.luminance.chrome}) and titlebar (${ladder.day.luminance.titlebar}) vs sheet ${ladder.day.surfaces.page} (${ladder.day.luminance.page})`,
+    );
+    assert.ok(
+      ladder.day.luminance.card < ladder.day.luminance.page,
+      `day lost its recessed panels: ${ladder.day.surfaces.card} (${ladder.day.luminance.card}) vs sheet (${ladder.day.luminance.page})`,
+    );
+    // Both passes are the same skin, so a run that fell back to the tokens.css
+    // palette — the one nobody ships — cannot pass as Forge OS.
+    assert.equal(ladder.day.skin, "forge-os", "the day rig is not on Forge OS");
+    assert.equal(
+      ladder.night.surfaces.chrome,
+      computedHex(ladder.night.tokens.canvasBase),
+      `the mat is not painting --canvas-base: ${ladder.night.surfaces.chrome} vs ${ladder.night.tokens.canvasBase}`,
+    );
+    assert.equal(
+      ladder.night.surfaces.page,
+      computedHex(ladder.night.tokens.background),
+      `the sheet is not painting --background: ${ladder.night.surfaces.page} vs ${ladder.night.tokens.background}`,
+    );
+    assert.equal(
+      ladder.night.surfaces.card,
+      computedHex(ladder.night.tokens.bgPanel),
+      `the card is not painting --bg-panel: ${ladder.night.surfaces.card} vs ${ladder.night.tokens.bgPanel}`,
+    );
 
     for (const file of report.screenshots) {
       assert.equal(fs.existsSync(file), true, `driver wrote no screenshot ${file}`);

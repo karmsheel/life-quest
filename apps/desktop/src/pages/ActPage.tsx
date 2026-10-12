@@ -10,8 +10,9 @@ import type {
 import {
   canDispatchAgent,
   DOCUMENT_KIND_LABELS,
-  DREAM_DOCUMENT_KINDS,
+  DOCTRINE_ORDER,
   recordVisible,
+  type DocumentKind,
 } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import {
@@ -23,10 +24,18 @@ import { useVault } from "@/state/VaultProvider";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { DocumentLockBadge } from "@/components/documents/DocumentLockBadge";
 
-const BRIEF_KINDS = DREAM_DOCUMENT_KINDS.map((kind) => ({
+/** Which wing page owns each document, so the brief links where it reads. */
+const KIND_ROOM: Record<DocumentKind, { room: string; to: string }> = {
+  premise: { room: "Dream", to: "/dream" },
+  what: { room: "Vision", to: "/vision" },
+  why: { room: "Dream", to: "/dream" },
+  how: { room: "Track", to: "/track" },
+};
+
+const BRIEF_KINDS = DOCTRINE_ORDER.map((kind) => ({
   kind,
   label: DOCUMENT_KIND_LABELS[kind],
-  room: kind === "how" ? "Track" : "Dream",
+  ...KIND_ROOM[kind],
 }));
 
 type AgentRun = {
@@ -254,14 +263,14 @@ function ActContent() {
                 {briefDomains.length > 1 ? (
                   <p className="act-brief__label">{domain.meta.name}</p>
                 ) : null}
-                {BRIEF_KINDS.map(({ kind, label, room }) => {
+                {BRIEF_KINDS.map(({ kind, label, room, to }) => {
                   const doc = domain.documents[kind];
                   const body = doc?.bodyMarkdown.trim() ?? "";
                   return (
                     <div key={kind} className="act-brief__row">
                       <div className="act-brief__head">
                         <span className="act-brief__label">{label}</span>
-                        <Link to={`/${room.toLowerCase()}`} className="act-brief__room">
+                        <Link to={to} className="act-brief__room">
                           {room}
                         </Link>
                         <DocumentLockBadge locked={doc?.locked ?? false} />

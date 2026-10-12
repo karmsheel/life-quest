@@ -22,6 +22,7 @@ import PageCanvasPage from "@/pages/PageCanvasPage";
 import DecisionsPage from "@/pages/DecisionsPage";
 import DocumentsPage from "@/pages/DocumentsPage";
 import DreamPage from "@/pages/DreamPage";
+import VisionPage from "@/pages/VisionPage";
 import GoalsPage from "@/pages/GoalsPage";
 import ProjectsPage from "@/pages/ProjectsPage";
 import HomePage from "@/pages/HomePage";
@@ -35,6 +36,7 @@ import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
+import { UpdateProvider } from "@/state/UpdateProvider";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
 
 function RequireVault({ children }: { children: ReactNode }) {
@@ -89,6 +91,11 @@ function AppRoutes() {
           path="/dream/:slug/:kind"
           element={<DoctrineEditorPage backTo="/dream" />}
         />
+        <Route path="/vision" element={<VisionPage />} />
+        <Route
+          path="/vision/:slug/:kind"
+          element={<DoctrineEditorPage backTo="/vision" />}
+        />
         <Route path="/goals" element={<GoalsPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/chart" element={<ChartPage />} />
@@ -123,21 +130,27 @@ export default function App() {
   return (
     <HashRouter>
       <ThemeProvider>
-        <CompanionProvider>
-          <VaultProvider>
-            <SplashGate />
-            <ChatDockProvider>
-              <NavDockProvider>
-                <div className="app-root">
-                  <WindowTitleBar />
-                  <div className="app-root__body">
-                    <AppRoutes />
+        {/* Above the companion gate on purpose: the launch's one update check
+            runs whether or not a gateway is up, because a newer LifeQuest is
+            news the operator wants before they go looking for why chat is
+            quiet. */}
+        <UpdateProvider>
+          <CompanionProvider>
+            <VaultProvider>
+              <SplashGate />
+              <ChatDockProvider>
+                <NavDockProvider>
+                  <div className="app-root">
+                    <WindowTitleBar />
+                    <div className="app-root__body">
+                      <AppRoutes />
+                    </div>
                   </div>
-                </div>
-              </NavDockProvider>
-            </ChatDockProvider>
-          </VaultProvider>
-        </CompanionProvider>
+                </NavDockProvider>
+              </ChatDockProvider>
+            </VaultProvider>
+          </CompanionProvider>
+        </UpdateProvider>
       </ThemeProvider>
     </HashRouter>
   );

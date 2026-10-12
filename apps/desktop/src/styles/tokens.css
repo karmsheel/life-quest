@@ -20,8 +20,6 @@
   --foreground: #1a1916;
   --card: #fffefc;
   --card-foreground: var(--foreground);
-  --card-glass: color-mix(in srgb, var(--card) 52%, transparent);
-  --backdrop-panel: blur(18px) saturate(160%) brightness(1.02);
   --popover: var(--card);
   --popover-foreground: var(--foreground);
   --muted-surface: #eef1f5;
@@ -135,16 +133,17 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --canvas-base: #1a1917;
-  --background: #2a2825;
+  /* Night inverts the ladder: the page canvas is the deepest ink, the cards step
+     up off it, and the mat — the rail, the titlebar, the window frame — wears the
+     same quiet band as the chat dock's bottom action row. */
+  --canvas-base: #1f1e1c;
+  --background: #1a1917;
   --foreground: #e8e4dc;
-  --card: #2a2825;
+  --card: #222120;
   --card-foreground: var(--foreground);
-  --card-glass: color-mix(in srgb, var(--card) 60%, transparent);
-  --backdrop-panel: blur(18px) saturate(160%) brightness(1.08);
   --popover: var(--card);
   --popover-foreground: var(--foreground);
-  --muted-surface: #2e2c29;
+  --muted-surface: #1f1e1c;
   --muted-foreground: #9a9690;
   --primary: #d97a56;
   --primary-foreground: #1a1917;
@@ -159,7 +158,7 @@
   --ring: #2563eb;
 
   --bg-panel: #222120;
-  --bg-subtle: #252321;
+  --bg-subtle: #1c1b1a;
   --bg-fill-tertiary: rgba(255, 255, 255, 0.06);
   --bg-fill-secondary: rgba(255, 255, 255, 0.1);
   --border-soft: #2a2825;
@@ -208,16 +207,17 @@
   html:not([data-theme]) {
     color-scheme: dark;
 
-    --canvas-base: #1a1917;
-    --background: #2a2825;
+    /* Night inverts the ladder: the page canvas is the deepest ink, the cards step
+       up off it, and the mat — the rail, the titlebar, the window frame — wears the
+       same quiet band as the chat dock's bottom action row. */
+    --canvas-base: #1f1e1c;
+    --background: #1a1917;
     --foreground: #e8e4dc;
-    --card: #2a2825;
+    --card: #222120;
     --card-foreground: var(--foreground);
-    --card-glass: color-mix(in srgb, var(--card) 60%, transparent);
-    --backdrop-panel: blur(18px) saturate(160%) brightness(1.08);
     --popover: var(--card);
     --popover-foreground: var(--foreground);
-    --muted-surface: #2e2c29;
+    --muted-surface: #1f1e1c;
     --muted-foreground: #9a9690;
     --primary: #d97a56;
     --primary-foreground: #1a1917;
@@ -232,7 +232,7 @@
     --ring: #2563eb;
 
     --bg-panel: #222120;
-    --bg-subtle: #252321;
+    --bg-subtle: #1c1b1a;
     --bg-fill-tertiary: rgba(255, 255, 255, 0.06);
     --bg-fill-secondary: rgba(255, 255, 255, 0.1);
     --border-soft: #2a2825;

@@ -9,6 +9,10 @@ function pickHex(...candidates: (string | undefined)[]): string {
   return "#000000";
 }
 
+/**
+ * The mat for a palette whose ladder sinks it: the palette's own background, or
+ * a step below the sheet when the palette runs background and card together.
+ */
 function canvasBaseFromColors(
   c: SkinColors,
   elevated: string,
@@ -149,13 +153,18 @@ export function forgeVarsFromColors(c: SkinColors): ForgeSkinVars {
   const fgHsl = hexToHsl(c.foreground);
   const chromaticFg = Boolean(fgHsl && fgHsl.s >= 10);
 
+  // A dark palette that names its mat has inverted the ladder: the page canvas is
+  // the palette's deepest ink, and the mat, the cards and the panels all step up
+  // off it. Every other palette keeps the day order, where the mat and the panels
+  // sink below the sheet.
+  const inverted = Boolean(dark && c.canvas);
+
   const vars: ForgeSkinVars = {
-    "--background": elevated,
-    "--canvas-base": canvasBaseFromColors(c, elevated, dark),
+    "--background": inverted ? bg : elevated,
+    "--canvas-base": inverted ? pickHex(c.canvas, elevated) : canvasBaseFromColors(c, elevated, dark),
     "--foreground": c.foreground,
     "--card": elevated,
     "--card-foreground": c.cardForeground ?? c.foreground,
-    "--card-glass": `color-mix(in srgb, ${elevated} ${dark ? 60 : 52}%, transparent)`,
     "--popover": pickHex(c.popover, elevated),
     "--popover-foreground": c.popoverForeground ?? c.foreground,
     "--muted-surface": muted,
@@ -171,7 +180,7 @@ export function forgeVarsFromColors(c: SkinColors): ForgeSkinVars {
     "--border": border,
     "--input": borderStrong,
     "--ring": selected,
-    "--bg-panel": panel,
+    "--bg-panel": inverted ? elevated : panel,
     "--bg-subtle": subtle,
     "--border-soft": borderSoft,
     "--line": structuralLine,
@@ -252,7 +261,6 @@ export function clearSkinVars(el: HTMLElement = document.documentElement): void 
     "--foreground",
     "--card",
     "--card-foreground",
-    "--card-glass",
     "--popover",
     "--popover-foreground",
     "--muted-surface",

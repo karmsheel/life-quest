@@ -60,6 +60,10 @@ import type {
   CompanionRuntimeOverride,
   PageContextInput,
 } from "../electron/companion-client";
+// The update decision is declared once, in the main-side module that makes it:
+// the shape main hands the renderer and the shape the badge renders cannot drift
+// apart, and no second copy of the version rules is born here.
+import type { UpdateAsset, UpdateDecision } from "../electron/updater";
 
 type RecentVaultEntry = {
   id: string;
@@ -408,6 +412,31 @@ type LifequestApi = {
   deadlineMaybeNotify: () => Promise<
     Result<{ ok: true; notified: boolean; title: string; body: string }>
   >;
+  /**
+   * Auto-update. `updateCheck` without `force` answers with the session's one
+   * answer — the launch's check; `force` re-reads the feed, and only Settings
+   * does that. `updateInstall` downloads the release's installer, hands it to
+   * Windows, and quits the app so the installer can replace it.
+   */
+  updateCheck: (
+    options?: { force?: boolean },
+  ) => Promise<
+    { ok: true; decision: UpdateDecision } | { ok: false; error: string }
+  >;
+  updateInstall: (
+    asset: UpdateAsset,
+  ) => Promise<
+    | { ok: true; launched: true; installer: string; bytes: number }
+    | { ok: false; error: string }
+  >;
+  /** Whether a GitHub token is stored. The token itself never crosses this line. */
+  updateTokenStatus: () => Promise<boolean>;
+  updateSetToken: (token: string) => Promise<Result<true>>;
+  updateClearToken: () => Promise<Result<true>>;
+  updateOpenReleasePage: (url: string) => Promise<Result<true>>;
+  onUpdateProgress: (
+    cb: (progress: { downloaded: number; total: number }) => void,
+  ) => () => void;
   // KAR-55 domain databases
   dbList: (domainSlug: string | null) => Promise<Result<DatabaseListEntry[]>>;
   dbGet: (slug: string, dbId: string) => Promise<Result<DatabaseMeta>>;
@@ -567,4 +596,6 @@ export type {
   PageContextInput,
   RecentVaultEntry,
   Result,
+  UpdateAsset,
+  UpdateDecision,
 };

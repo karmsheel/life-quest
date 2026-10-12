@@ -146,17 +146,24 @@ a {
 }
 
 /* —— Welcome —— */
+/* The boot surfaces — the vault picker and the companion setup screen — wear the
+   same frame as the workspace sheet: one pane gap under the titlebar, and no mat
+   at all on the other three sides, where the pane reaches the window's own edges.
+   Square and unshadowed like the sheet: a corner radius on a box flush with the
+   window's edge shows the canvas through the notch it leaves, and a shadow on it
+   only survives along the one seam it does not share with the window (Flat
+   First — the sheet is the one pane on `--shadow-sm`). */
 .welcome {
   min-height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  background: var(--card);
-  border-radius: var(--radius-sm);
+  background: var(--background);
   overflow: auto;
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
+  margin-right: calc(-1 * var(--shell-frame));
+  margin-bottom: calc(-1 * var(--shell-frame));
 }
 
 .welcome-card {
@@ -259,10 +266,11 @@ a {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  /* The frame on three sides only: the rail owns the left edge flush, so the
-     rail's trailing gap comes from the shell's own column gap rather than from
-     a second frame stacked on top of it. That is what keeps the rail→sheet gap
-     equal to the sheet→chat gap. */
+  /* The mat on three sides only, and only the top third of it ever paints: the
+     strip between the titlebar and the sheet. The rail owns the left edge flush,
+     so nothing is stacked there. The right and bottom thirds are slack — the dock
+     reaches past the right one to the window's edge, and the sheet reaches past
+     the bottom one. */
   padding: var(--shell-frame);
   padding-left: 0;
 }
@@ -314,8 +322,9 @@ a {
      at either end, and only its own padding keeps the text off the chrome. */
   align-self: stretch;
   /* Lines the chip's leading border up with the sheet's: the strip indents by
-     the rail's column, then by the same pane gap the sheet sits behind. */
-  margin-left: var(--shell-frame);
+     the rail's column and nothing else, so the chip starts exactly where the
+     sheet starts. */
+  margin-left: 0;
   padding: 0 0.6rem;
   border-radius: 0;
   background: var(--accent-tint);
@@ -447,7 +456,10 @@ a {
   grid-template-columns: var(--nav-column) 1fr var(--chat-column);
   height: 100%;
   color: var(--fg);
-  gap: var(--shell-frame);
+  /* No gap: the panes abut, and each seam is the sheet's own hairline. The mat
+     is not this tray's business any more — the only one that survives is the
+     strip under the titlebar, and that comes from the body's own padding. */
+  gap: 0;
 }
 
 .shell--chat-collapsed {
@@ -455,9 +467,9 @@ a {
 }
 
 /* Collapsed rail: its column goes back to the workspace sheet and the re-open
-   toggle moves to the titlebar's leading edge. The column gap stays — the sheet
-   has to keep the same inset from the window edge that it keeps from the chat
-   panel, and the zero-width track still contributes one gap. */
+   toggle moves to the titlebar's leading edge. With no gap in the tray the sheet
+   then starts at zero, flush to the window's own left edge — the same edge the
+   boot surfaces start from. */
 .shell--nav-collapsed {
   --nav-column: 0px;
 }
@@ -481,17 +493,24 @@ a {
   grid-column: 3;
 }
 
-/* Square, on the window's own mat, wearing a full hairline frame: the sheet is
-   the one pane boxed on all four sides. */
+/* Square, wearing a full hairline frame: the sheet is the one pane boxed on all
+   four sides. The mat survives on the one edge it does not share with a
+   neighbour — the pane gap under the titlebar. On the other three it runs to the
+   rail, to the dock's leading edge, and to the window's bottom. The bottom escape
+   lives in the box the way the dock's does: the pane gap goes into the height.
+
+   Painted on `--background`, the page canvas, rather than on `--card`: the cards,
+   the menus and the panels that step up off this page are what `--card` is for. */
 .shell__main {
   min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
-  background: var(--card);
+  background: var(--background);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
+  height: calc(100% + var(--shell-frame));
 }
 
 .shell__content {
@@ -508,17 +527,17 @@ a {
 
 /* —— Nav rail —— */
 /* Flush to the window's top, left and bottom edges the way the desktop shell's
-   own sidebar is. The tray keeps its frame for the workspace sheet on the top,
-   right and bottom, and the rail escapes those three sides with negative margins
-   and reaches over the titlebar row by its height. The left edge has no frame to
-   escape — the strip's own column gap supplies the rail's inset on that side —
-   so the rail's box starts at zero. Its trailing edge keeps the pane gap and no
-   line of its own — the sheet's frame is the seam's single divider — and no
-   radius or shadow survives a flush panel. */
+   own sidebar is, and painted on the window's own mat — the same `--canvas-base`
+   fill the titlebar wears, so the two read as one band of chrome wrapping the
+   sheet rather than as two surfaces meeting at the corner. The tray keeps its
+   padding for the workspace sheet on the top, right and bottom, and the rail
+   escapes those three sides with negative margins and reaches over the titlebar
+   row by its height. The left edge has no frame to escape, so the rail's box
+   starts at zero. Its trailing edge carries no line of its own — the sheet's
+   frame is the seam's single divider — and no radius or shadow survives a flush
+   panel. */
 .nav-rail {
-  background: var(--card-glass);
-  backdrop-filter: var(--backdrop-panel);
-  -webkit-backdrop-filter: var(--backdrop-panel);
+  background: var(--canvas-base);
   border: 0;
   display: flex;
   flex-direction: column;
@@ -531,8 +550,8 @@ a {
   margin-right: 0;
   margin-bottom: calc(-1 * var(--shell-frame));
   margin-left: 0;
-  /* Explicit: a stretched grid item would grow to the track PLUS the escaped
-     frame, landing the rail's trailing edge 12px inside the workspace gap. */
+  /* Explicit: the rail's box is the column itself, so its trailing edge lands
+     exactly on the sheet's leading hairline. */
   width: var(--shell-nav-width);
   height: calc(100% + var(--window-titlebar-height) + 2 * var(--shell-frame));
   /* Positioned so the rail's topband paints over the titlebar it overlaps. */
@@ -608,7 +627,8 @@ a {
   border-radius: var(--radius-pill);
   background: var(--accent);
   color: var(--accent-fg);
-  box-shadow: 0 0 0 2px var(--card);
+  /* The ring masks the icon behind the badge, so it wears the rail's own fill. */
+  box-shadow: 0 0 0 2px var(--canvas-base);
   font-size: 0.62rem;
   font-weight: 700;
   line-height: 0.95rem;
@@ -631,6 +651,71 @@ a {
   line-height: 1.1;
   text-align: center;
   flex-shrink: 0;
+}
+
+/* The build number once the feed has named a newer release. It is the one thing
+   in the rail that can appear out of nowhere, so it wears the state ink and a
+   halo — a *state*, not decoration: the accent here means "there is something for
+   you to do", the same thing it means on a nav badge.
+
+   Sized to its own label rather than stretched across the column, and that is
+   load-bearing rather than cosmetic: `.nav-rail` clips its overflow at its own
+   edge, so a glow drawn on a full-width chip would be sliced off flat on both
+   sides. Centred, the halo has the rail's own padding to bloom into, and the
+   rig measures that room against the halo's reach. */
+.nav-rail__version--available {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  position: relative;
+  align-self: center;
+  width: fit-content;
+  border-radius: var(--radius-pill);
+  background: var(--accent-fill);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+}
+
+/* The halo is its own layer rather than a shadow on the chip, for two reasons.
+   The breath animates `opacity` — a compositor property, so the glow does not
+   repaint a blur every frame — and the shadow itself then stays a value read back
+   exactly as written, instead of the `oklab()` Chromium reports for an
+   interpolated one. Both inks are tokens: a solid hairline of the accent, and the
+   same accent at the alpha the app already uses for soft accent fills. */
+.nav-rail__version--available::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0.55rem 0.06rem var(--accent-fill);
+  animation: nav-rail-version-breathe 4s ease-in-out infinite;
+}
+
+.nav-rail__version--available:hover {
+  background: var(--accent-soft);
+}
+
+.nav-rail__version--available:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+/* A slow, shallow breath: enough that the eye finds it in a column of quiet rows,
+   never enough to read as a warning. */
+@keyframes nav-rail-version-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 /* The sidebar toggle, wherever it is docked (rail header, or the titlebar once
@@ -1452,6 +1537,137 @@ a {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+
+/* —— Update dialog —— */
+/* The popup behind the glowing build number. Same in-window modal material as
+   the confirm dialog, and one step above it in the stack: this one is opened from
+   the rail, which paints at z-index 20, and it must clear the sheet as well as the
+   chrome. Portalled to the body, so the rail's own scroll box cannot clip it. */
+.update-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+
+.update-dialog {
+  width: min(30rem, 100%);
+  max-height: min(80vh, 40rem);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  padding: 1.1rem 1.2rem 1.2rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.update-dialog__kicker {
+  margin: 0 0 0.2rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.update-dialog__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+
+.update-dialog__body {
+  margin: 0 0 0.9rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.update-dialog__notes {
+  margin-bottom: 0.9rem;
+}
+
+/* A link-styled disclosure, not a Button: it opens a panel in place, and the
+   popup's two real actions are the buttons at the foot. */
+.update-dialog__notes-toggle {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  text-decoration: underline;
+}
+
+.update-dialog__notes-body {
+  margin: 0.5rem 0 0;
+  max-height: 12rem;
+  overflow: auto;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.update-dialog__file {
+  margin: 0 0 0.9rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.update-dialog__progress {
+  margin-bottom: 0.9rem;
+}
+
+.update-dialog__bar {
+  height: 0.35rem;
+  border-radius: var(--radius-pill);
+  background: var(--selected-soft);
+  overflow: hidden;
+}
+
+.update-dialog__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.update-dialog__progress-text {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.update-dialog__error {
+  margin: 0 0 0.75rem;
+}
+
+.update-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-dialog__bar-fill {
+    transition: none;
+  }
 }
 
 /* —— Documents page cards —— */
@@ -2542,6 +2758,12 @@ a.home-mini-list__link:hover {
   .home-dashboard__grid.is-arranging .home-pin {
     transition: none;
   }
+  /* The glow stays — it is the state, not the motion. Only the breath stops, so
+     the halo layer holds its brightest frame still. */
+  .nav-rail__version--available::after {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 /* The lifted card. It never leaves the grid's flow: it stays in its slot, and
@@ -3031,6 +3253,13 @@ a.home-mini-list__link:hover {
   gap: 0.5rem;
 }
 
+/* The update token's field and its two buttons on one row, the field taking the
+   room and the buttons holding their own. */
+.settings-updates__token input {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
 .settings-hermes__probe {
   margin: 0;
   font-size: 0.85rem;
@@ -3273,7 +3502,9 @@ a.home-mini-list__link:hover {
   position: sticky;
   top: 0;
   align-self: stretch;
-  background: var(--card);
+  /* The sheet's own canvas — the dock is the right-hand pane of one page, so it
+     takes `--background` with the sheet and not the card step above it. */
+  background: var(--background);
   color: var(--fg);
   border: 0;
   border-top: 1px solid var(--border);
@@ -3289,12 +3520,6 @@ a.home-mini-list__link:hover {
 .chat-panel--collapsed {
   align-items: stretch;
   justify-content: stretch;
-}
-
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .nav-rail {
-    background: var(--card);
-  }
 }
 
 /* Open content wrapper: fill aside height so body/footer layout still works. */
@@ -5088,14 +5313,14 @@ button.chat-panel__activity-line:hover {
   flex-shrink: 0;
 }
 
-/* —— Doctrine indexes (Dream / Architecture) —— */
-.dream-page {
+/* —— Doctrine indexes (Dream / Vision / Architecture) —— */
+.doctrine-page {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
 }
 
-.dream-page h1 {
+.doctrine-page h1 {
   margin: 0;
 }
 
@@ -5150,7 +5375,10 @@ button.chat-panel__activity-line:hover {
 
 .doctrine-index__cards {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* One column per card the page carries — Dream three, Vision one. The count
+     is `--doctrine-cols`, set by the index itself; the rules below outrank it on
+     a narrow window, so a page never gets more columns than it has room for. */
+  grid-template-columns: repeat(var(--doctrine-cols, 4), minmax(0, 1fr));
   gap: 0.75rem;
 }
 .doctrine-index__card {

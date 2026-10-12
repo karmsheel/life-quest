@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import type { CSSProperties } from "react";
 import {
   DOCUMENT_KIND_LABELS,
   type DocumentKind,
@@ -9,26 +10,24 @@ import { DOCUMENT_KIND_COACHING } from "@/lib/doctrine-copy";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 
-function rowHref(
-  kind: DocumentKind,
-  slug: string,
-  howHref: "dream" | "track",
-): string {
-  if (kind === "how") {
-    return howHref === "dream"
-      ? `/dream/${slug}/how`
-      : `/track/${slug}/how`;
-  }
-  return `/dream/${slug}/${kind}`;
+/**
+ * Which page owns a doctrine document's editor. One page per wing surface:
+ * Dream carries Premise / Purpose / Strategy, Vision carries Vision & Desire,
+ * and Architecture carries Strategy (How) for the Plan wing.
+ */
+export type DoctrineBasePath = "/dream" | "/vision" | "/track";
+
+function rowHref(kind: DocumentKind, slug: string, basePath: DoctrineBasePath): string {
+  return `${basePath}/${slug}/${kind}`;
 }
 
 export function DoctrineIndex({
   kinds,
-  howHref = "track",
+  basePath = "/track",
   layout = "list",
 }: {
   kinds: DocumentKind[];
-  howHref?: "dream" | "track";
+  basePath?: DoctrineBasePath;
   layout?: "list" | "cards";
 }) {
   const { snapshot } = useVault();
@@ -50,7 +49,15 @@ export function DoctrineIndex({
         <section key={domain.slug} className="doctrine-index__group">
           <h2 className="doctrine-index__heading">{domain.meta.name}</h2>
           {layout === "cards" ? (
-            <div className="doctrine-index__cards">
+            <div
+              className="doctrine-index__cards"
+              /*
+                The grid is as wide as the page has cards: Dream carries three,
+                Vision one. The count rides a custom property so the narrow-width
+                rules in the stylesheet still outrank it.
+              */
+              style={{ "--doctrine-cols": kinds.length } as CSSProperties}
+            >
               {kinds.map((kind) => {
                 const doc = domain.documents[kind];
                 const body = doc?.bodyMarkdown ?? "";
@@ -58,7 +65,7 @@ export function DoctrineIndex({
                 return (
                   <Link
                     key={kind}
-                    to={rowHref(kind, domain.slug, howHref)}
+                    to={rowHref(kind, domain.slug, basePath)}
                     className="doctrine-index__card"
                   >
                     <div className="doctrine-index__card-head">
@@ -87,7 +94,7 @@ export function DoctrineIndex({
                 return (
                   <li key={kind} className="doctrine-index__row">
                     <Link
-                      to={rowHref(kind, domain.slug, howHref)}
+                      to={rowHref(kind, domain.slug, basePath)}
                       className="doctrine-index__label"
                     >
                       {DOCUMENT_KIND_LABELS[kind]}

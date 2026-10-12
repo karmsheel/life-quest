@@ -1,5 +1,13 @@
 import type { LucideIcon } from "lucide-react";
-import { Building2, Layers, Palette, ScrollText, Sparkles, User } from "lucide-react";
+import {
+  Building2,
+  Layers,
+  Palette,
+  RefreshCw,
+  ScrollText,
+  Sparkles,
+  User,
+} from "lucide-react";
 
 export type SettingsViewId =
   | "appearance"
@@ -7,6 +15,7 @@ export type SettingsViewId =
   | "vault"
   | "hermes"
   | "agent"
+  | "updates"
   | "about";
 
 export interface SettingsSection {
@@ -23,6 +32,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   // The prompts and skills sit beside Hermes rather than inside it: that page is
   // the connection, this one is what the connection is told.
   { id: "agent", label: "Agent", icon: ScrollText },
+  // Updates is its own view rather than a row on About: the token belongs to the
+  // installation, and this is the only page that changes it.
+  { id: "updates", label: "Updates", icon: RefreshCw },
   { id: "about", label: "About me", icon: User },
 ];
 

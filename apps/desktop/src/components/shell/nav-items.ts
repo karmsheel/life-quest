@@ -18,6 +18,7 @@ import {
   ScrollText,
   Sparkles,
   Target,
+  Telescope,
   Users,
   Zap,
 } from "lucide-react";
@@ -33,7 +34,7 @@ export type NavItem = {
   pin?: "top" | "bottom";
 };
 
-/** Top: Life-Chain, Decisions. Home: Dashboard, Data, Pages, Personnel. Vision: Dream, Documents. Plan: Goals, Projects, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
+/** Top: Life-Chain, Decisions. Home: Dashboard, Data, Pages, Documents, Personnel. Define: Dream, Vision. Plan: Goals, Projects, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -76,6 +77,14 @@ export const NAV_ITEMS: NavItem[] = [
     wing: "home",
   },
   {
+    id: "documents",
+    href: "/documents",
+    label: "Documents",
+    icon: FileText,
+    section: "main",
+    wing: "home",
+  },
+  {
     id: "personnel",
     href: "/personnel",
     label: "Personnel",
@@ -89,15 +98,15 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Dream",
     icon: Sparkles,
     section: "main",
-    wing: "vision",
+    wing: "define",
   },
   {
-    id: "documents",
-    href: "/documents",
-    label: "Documents",
-    icon: FileText,
+    id: "vision",
+    href: "/vision",
+    label: "Vision",
+    icon: Telescope,
     section: "main",
-    wing: "vision",
+    wing: "define",
   },
   {
     id: "goals",

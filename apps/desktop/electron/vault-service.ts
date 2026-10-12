@@ -164,6 +164,9 @@ import {
   getAdapterSecret,
   setAdapterSecret,
   clearAdapterSecret,
+  clearUpdateToken,
+  hasUpdateToken,
+  setUpdateToken,
 } from "./secrets.js";
 import {
   dropInvite,
@@ -1165,6 +1168,23 @@ export async function secretsClearHermesKey(): Promise<Result<true>> {
     if (!currentVaultId) return noVaultError<true>();
     return clearHermesKey(currentVaultId);
   });
+}
+
+/**
+ * The update feed's token is per installation, not per vault — the releases it
+ * reads belong to the app, and opening a different vault must not lose it. So
+ * unlike the Hermes key these three do not touch `currentVaultId`.
+ */
+export async function secretsHasUpdateToken(): Promise<boolean> {
+  return enqueue(() => hasUpdateToken());
+}
+
+export async function secretsSetUpdateToken(token: string): Promise<Result<true>> {
+  return enqueue(() => setUpdateToken(token));
+}
+
+export async function secretsClearUpdateToken(): Promise<Result<true>> {
+  return enqueue(() => clearUpdateToken());
 }
 
 async function loadHermesCreds(): Promise<
