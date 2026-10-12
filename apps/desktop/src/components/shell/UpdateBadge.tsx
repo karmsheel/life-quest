@@ -15,7 +15,7 @@ import { UpdateDialog } from "./UpdateDialog";
  * decoration colour, and it is the only thing about the rail that moves.
  */
 export function UpdateBadge() {
-  const { current, available, phase, decision } = useUpdate();
+  const { current, available, phase, shown, previewing } = useUpdate();
   const [open, setOpen] = useState(false);
 
   if (!available) {
@@ -26,7 +26,7 @@ export function UpdateBadge() {
     );
   }
 
-  const latest = decision?.state === "available" ? decision.latest : null;
+  const latest = shown?.state === "available" ? shown.latest : null;
 
   return (
     <>
@@ -35,10 +35,19 @@ export function UpdateBadge() {
         className="nav-rail__version nav-rail__version--available"
         data-update-state="available"
         data-update-version={latest ?? ""}
-        aria-label={`Version ${current}. LifeQuest ${latest} is available to download.`}
+        data-update-preview={previewing ? "true" : "false"}
+        aria-label={
+          previewing
+            ? `Version ${current}. Previewing the update badge — no release is being offered.`
+            : `Version ${current}. LifeQuest ${latest} is available to download.`
+        }
         aria-haspopup="dialog"
         aria-expanded={open}
-        title={`LifeQuest ${latest} is available`}
+        title={
+          previewing
+            ? "Preview of the update badge"
+            : `LifeQuest ${latest} is available`
+        }
         onClick={() => setOpen(true)}
       >
         v{current}

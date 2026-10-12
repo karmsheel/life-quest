@@ -9,5 +9,8 @@ dist-electron
 release
 .superpowers/
 
+# Local tool state, including a bridge token — never published.
+.agent-native/
+
 # E2E artifacts (reproduce with `node e2e/composer-autogrow.electron.mjs`)
 apps/desktop/e2e/artifacts/

@@ -207,8 +207,8 @@ describe("auto-update install", () => {
     assert.equal(noAsset.installer, null, "a release with no setup exe produced an installer");
     assert.equal(states.four04.ok, false, "a 404 was reported as a settled answer");
     assert.ok(
-      (states.four04 as { error: string }).error.includes("token"),
-      `a 404 did not name the token as the reason: ${JSON.stringify(states.four04)}`,
+      (states.four04 as { error: string }).error.includes("404"),
+      `a 404 was not reported as a 404: ${JSON.stringify(states.four04)}`,
     );
     const untrusted = (
       states.untrusted as { decision: Extract<Decision, { state: "available" }> }

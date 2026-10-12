@@ -429,10 +429,6 @@ type LifequestApi = {
     | { ok: true; launched: true; installer: string; bytes: number }
     | { ok: false; error: string }
   >;
-  /** Whether a GitHub token is stored. The token itself never crosses this line. */
-  updateTokenStatus: () => Promise<boolean>;
-  updateSetToken: (token: string) => Promise<Result<true>>;
-  updateClearToken: () => Promise<Result<true>>;
   updateOpenReleasePage: (url: string) => Promise<Result<true>>;
   onUpdateProgress: (
     cb: (progress: { downloaded: number; total: number }) => void,

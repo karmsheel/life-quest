@@ -7,6 +7,7 @@ import { SettingsDomains } from "./SettingsDomains";
 import { SettingsHermes } from "./SettingsHermes";
 import { SettingsVault } from "./SettingsVault";
 import { SettingsUpdates } from "./SettingsUpdates";
+import { SettingsDeveloper } from "./SettingsDeveloper";
 import { SettingsAbout } from "./SettingsAbout";
 
 function SettingsNavItem({
@@ -49,6 +50,8 @@ function SettingsPanel({ view }: { view: SettingsViewId }) {
       return <SettingsUpdates />;
     case "about":
       return <SettingsAbout />;
+    case "developer":
+      return <SettingsDeveloper />;
     default:
       return <SettingsAppearance />;
   }

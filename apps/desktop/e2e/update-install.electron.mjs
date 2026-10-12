@@ -482,8 +482,8 @@ async function main() {
   const four04 = await decide("four04");
   states.four04 = four04;
   check(
-    "a private repository without a token reports that it could not check",
-    four04?.ok === false && four04.error.includes("token"),
+    "a feed with no release to compare against reports that it could not check",
+    four04?.ok === false && four04.error.includes("404"),
     `answer ${JSON.stringify(four04)}`,
   );
 
@@ -743,7 +743,7 @@ app
       ["garbage tag", report.states?.garbage?.decision?.current, "—", report.states?.garbage?.decision?.state, "—"],
       ["no asset", report.states?.noasset?.decision?.current, report.states?.noasset?.decision?.latest, report.states?.noasset?.decision?.state, "none"],
       ["untrusted host", report.states?.untrusted?.decision?.current, report.states?.untrusted?.decision?.latest, report.states?.untrusted?.decision?.state, "none"],
-      ["404 (private)", "—", "—", report.states?.four04?.ok === false ? "could not check" : "—", "—"],
+      ["404 (no release)", "—", "—", report.states?.four04?.ok === false ? "could not check" : "—", "—"],
     ]) {
       console.log(row.map((cell) => String(cell ?? "—").padEnd(16)).join(" "));
     }

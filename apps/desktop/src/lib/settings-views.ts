@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Building2,
+  FlaskConical,
   Layers,
   Palette,
   RefreshCw,
@@ -16,7 +17,8 @@ export type SettingsViewId =
   | "hermes"
   | "agent"
   | "updates"
-  | "about";
+  | "about"
+  | "developer";
 
 export interface SettingsSection {
   id: SettingsViewId;
@@ -32,10 +34,11 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   // The prompts and skills sit beside Hermes rather than inside it: that page is
   // the connection, this one is what the connection is told.
   { id: "agent", label: "Agent", icon: ScrollText },
-  // Updates is its own view rather than a row on About: the token belongs to the
-  // installation, and this is the only page that changes it.
   { id: "updates", label: "Updates", icon: RefreshCw },
   { id: "about", label: "About me", icon: User },
+  // Last on purpose: it is a bench, not a setting, and it is the only page here
+  // that changes what the app would otherwise show.
+  { id: "developer", label: "Developer", icon: FlaskConical },
 ];
 
 export const DEFAULT_SETTINGS_VIEW: SettingsViewId = "appearance";

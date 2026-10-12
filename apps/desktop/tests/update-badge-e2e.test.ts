@@ -39,6 +39,8 @@ type Dialog = {
   role: string | null;
   ariaModal: string | null;
   title: string;
+  kicker: string;
+  kickerKind: string | null;
   versionsText: string;
   fileLine: string;
   buttons: { label: string; disabled: boolean }[];
@@ -58,6 +60,7 @@ type State = {
     text: string;
     dataState: string | null;
     dataVersion: string | null;
+    dataPreview: string | null;
     ariaLabel: string | null;
     ariaHaspopup: string | null;
     ariaExpanded: string | null;
@@ -94,9 +97,12 @@ type State = {
   settings: {
     summaryState: string | null;
     summaryText: string | null;
-    token: string | null;
-    tokenText: string | null;
-    inputValue: string | null;
+    hasTokenField: boolean;
+    note: string | null;
+    previewChecked: boolean | null;
+    previewState: string | null;
+    previewNote: string | null;
+    storedPreview: string | null;
     buttons: { label: string | null; disabled: boolean }[];
     message: string | null;
     error: string | null;
@@ -400,48 +406,27 @@ describe("auto-update badge", () => {
       assert.equal(fs.existsSync(file), true, `driver wrote no screenshot ${file}`);
     }
 
-    // The Settings view — where the token lives and where the operator can ask by
-    // hand. Asserted from the report's own numbers rather than only inside the
-    // driver, so a regression names the field it broke.
-    const { settings, saved, checked, removed } = report.states;
+    // Settings → Updates — what the feed said, and asking by hand. Asserted from
+    // the report's own numbers rather than only inside the driver, so a regression
+    // names the field it broke.
+    const { settings, checked } = report.states;
     assert.ok(settings.settings, "the Settings view rendered nothing");
     assert.equal(
       settings.settings?.summaryState,
       "available",
       `the view did not report the release the feed found: ${JSON.stringify(settings.settings?.summaryText)}`,
     );
+    // The feed is public: the page must not ask for a token, nor imply one is
+    // needed. This is the assertion that would have caught the leftover field.
     assert.equal(
-      settings.settings?.token,
-      "unset",
-      "the view claimed a token was stored when none was",
-    );
-    assert.equal(
-      settings.settings?.buttons.find((b) => b.label === "Remove GitHub token")?.disabled,
-      true,
-      "the view offered to remove a token that is not there",
-    );
-
-    assert.deepEqual(
-      saved.calls?.setToken,
-      ["ghp_harness_token"],
-      `saving did not hand the typed value to main: ${JSON.stringify(saved.calls?.setToken)}`,
-    );
-    assert.equal(
-      saved.settings?.tokenText,
-      "Stored",
-      `the view did not report the token as stored: ${JSON.stringify(saved.settings?.tokenText)}`,
-    );
-    assert.equal(
-      saved.settings?.inputValue,
-      "",
-      "the secret was left in the field after it was stored",
-    );
-    assert.equal(
-      saved.settings?.buttons.find((b) => b.label === "Remove GitHub token")?.disabled,
+      settings.settings?.hasTokenField,
       false,
-      "the view still refuses to remove the token it just stored",
+      "the Updates page still asks the operator for a token",
     );
-
+    assert.ok(
+      (settings.settings?.note ?? "").includes("public"),
+      `the page does not say the feed is public: ${JSON.stringify(settings.settings?.note)}`,
+    );
     assert.equal(
       checked.calls?.check,
       2,
@@ -453,11 +438,120 @@ describe("auto-update badge", () => {
       `the hand's check replayed the session instead of forcing the feed: ${JSON.stringify(checked.calls?.checkOptions)}`,
     );
 
-    assert.equal(removed.calls?.clearToken, 1, "removing did not reach the bridge once");
+    // Settings → Developer: the switch that makes the badge glow on demand. It is
+    // the only way to look at the upgrade affordance without cutting a release.
+    const { developer, previewOn, previewRail, previewDialog, shadowed, shadowedDialog, developerOn, developerOff } =
+      report.states;
     assert.equal(
-      removed.settings?.tokenText,
-      "Not set",
-      `the view did not return to not-set: ${JSON.stringify(removed.settings?.tokenText)}`,
+      developer.settings?.previewChecked,
+      false,
+      "the preview switch came up already on",
+    );
+    assert.equal(
+      developer.settings?.previewState,
+      "off",
+      `the page did not report the switch as off: ${developer.settings?.previewState}`,
+    );
+    assert.equal(
+      previewOn.settings?.previewChecked,
+      true,
+      "the switch did not come up checked when it was turned on",
+    );
+    assert.equal(
+      previewOn.settings?.storedPreview,
+      "1",
+      "turning the switch on did not write the preference the rail reads",
+    );
+    assert.equal(
+      previewOn.settings?.previewState,
+      "previewing",
+      `the page misreported what the rail is showing: ${previewOn.settings?.previewState}`,
+    );
+
+    // And the rail really glows from it, with the feed offering nothing.
+    assert.equal(
+      previewRail.chip?.tag,
+      "button",
+      "the preview did not turn the build number into a control",
+    );
+    assert.equal(
+      previewRail.chip?.dataPreview,
+      "true",
+      "the glowing chip does not say it is a preview",
+    );
+    assert.equal(
+      report.glow.layers.length,
+      2,
+      "the preview glow is not the same halo",
+    );
+    assert.equal(
+      previewDialog.dialog?.kickerKind,
+      "preview",
+      `the preview's popup does not announce itself: ${JSON.stringify(previewDialog.dialog?.kicker)}`,
+    );
+    assert.equal(
+      previewDialog.dialog?.dataVersion,
+      "9.9.9",
+      "the preview did not name the version that does not exist",
+    );
+    assert.equal(
+      (previewDialog.dialog?.buttons ?? []).some(
+        (button) => button.label === "Download and install",
+      ),
+      false,
+      "the preview offered an install — a preview must not be able to start one",
+    );
+    assert.equal(
+      previewDialog.calls?.install,
+      0,
+      "the preview reached the install channel",
+    );
+
+    // A real release outranks the preview: a switch that could hide an upgrade
+    // would be worse than no switch at all.
+    assert.equal(
+      shadowed.chip?.dataVersion,
+      OFFERED,
+      `the preview hid a real release — the chip offered ${shadowed.chip?.dataVersion}`,
+    );
+    assert.equal(
+      shadowed.chip?.dataPreview,
+      "false",
+      "the chip claims to be a preview while showing a real release",
+    );
+    assert.equal(
+      shadowedDialog.dialog?.kickerKind,
+      "release",
+      "the popup announced a real release as a preview",
+    );
+    assert.ok(
+      (shadowedDialog.dialog?.buttons ?? []).some(
+        (button) => button.label === "Download and install",
+      ),
+      "the real release behind the switch lost its install action",
+    );
+
+    // The switch clears up after itself: a preference left behind would glow the
+    // rail on the next launch with no visible cause.
+    assert.equal(
+      developerOn.settings?.previewChecked,
+      true,
+      "a stored preference did not bring the switch up on",
+    );
+    assert.equal(
+      developerOff.settings?.previewChecked,
+      false,
+      "the switch did not turn off",
+    );
+    assert.equal(
+      developerOff.settings?.storedPreview,
+      null,
+      "turning the switch off left the preference behind",
+    );
+    assert.equal(
+      developerOff.settings?.previewState,
+      "off",
+      `the page still reports a preview after the switch went off: ${developerOff.settings?.previewState}`,
     );
   });
 });

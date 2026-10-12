@@ -13,6 +13,22 @@
     </style>
     <script>
       /*
+       * Seeds the Developer preview switch before the app module reads it, exactly
+       * as the rail's harness does — same key the switch itself writes.
+       *
+       * `?preview=1` turns it on, `?preview=0` off, absent leaves it alone.
+       */
+      (() => {
+        try {
+          const asked = new URLSearchParams(location.search).get("preview");
+          if (asked === "1") localStorage.setItem("lifequest-update-preview", "1");
+          else if (asked === "0") localStorage.removeItem("lifequest-update-preview");
+        } catch {
+          /* storage unavailable: the switch simply stays off */
+        }
+      })();
+
+      /*
        * Captures what a rig can never read out of a `console` it does not own: the
        * harness's own module-load and render failures. A React tree that throws
        * unmounts to an empty `#root`, which otherwise reports as "no settings" and

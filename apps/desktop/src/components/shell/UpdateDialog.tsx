@@ -39,7 +39,8 @@ export function UpdateDialog({
 }) {
   const {
     current,
-    decision,
+    shown,
+    previewing,
     installing,
     progress,
     installError,
@@ -67,9 +68,9 @@ export function UpdateDialog({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, installing, onClose]);
 
-  if (!open || decision?.state !== "available") return null;
+  if (!open || shown?.state !== "available") return null;
 
-  const { latest, installer, notes } = decision;
+  const { latest, installer, notes } = shown;
   const done = percent(progress?.downloaded ?? 0, progress?.total ?? 0);
 
   return createPortal(
@@ -90,19 +91,31 @@ export function UpdateDialog({
         aria-describedby={bodyId}
         data-update-dialog={latest}
       >
-        <p className="update-dialog__kicker">Upgrade available</p>
+        <p className="update-dialog__kicker" data-update-kicker={previewing ? "preview" : "release"}>
+          {previewing ? "Preview — not a real release" : "Upgrade available"}
+        </p>
         <h2 className="update-dialog__title" id={titleId}>
           LifeQuest {latest}
         </h2>
 
         <p className="update-dialog__body" id={bodyId} data-update-body="versions">
-          You are running <strong>v{current}</strong>. Version{" "}
-          <strong>{latest}</strong> is ready to download.
-          {installer ? null : (
+          You are running <strong>v{current}</strong>.{" "}
+          {previewing ? (
             <>
-              {" "}
-              This release carries no Windows installer, so it has to be taken
-              from its own page.
+              This is a local preview of the upgrade popup, drawn by Settings →
+              Developer. Nothing is being downloaded and no release is being
+              offered.
+            </>
+          ) : (
+            <>
+              Version <strong>{latest}</strong> is ready to download.
+              {installer ? null : (
+                <>
+                  {" "}
+                  This release carries no Windows installer, so it has to be
+                  taken from its own page.
+                </>
+              )}
             </>
           )}
         </p>
@@ -177,23 +190,28 @@ export function UpdateDialog({
           >
             Not now
           </Button>
-          <Button
-            variant="outline"
-            aria-label="Open the release page"
-            onClick={() => void openReleasePage()}
-          >
-            Release page
-          </Button>
           {installer ? (
-            <Button
-              variant="primary"
-              disabled={installing}
-              aria-label="Download and install"
-              onClick={() => void install()}
-            >
-              {installing ? "Installing…" : "Download and install"}
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                aria-label="Open the release page"
+                onClick={() => void openReleasePage()}
+              >
+                Release page
+              </Button>
+              <Button
+                variant="primary"
+                disabled={installing}
+                aria-label="Download and install"
+                onClick={() => void install()}
+              >
+                {installing ? "Installing…" : "Download and install"}
+              </Button>
+            </>
           ) : (
+            // No installer to run — a release published without one, or the
+            // Developer preview — so the page is the only thing to offer, and it
+            // is offered once.
             <Button
               variant="primary"
               aria-label="Open the release page to download"

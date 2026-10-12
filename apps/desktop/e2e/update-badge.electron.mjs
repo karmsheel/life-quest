@@ -129,8 +129,6 @@ const SAMPLE = `(() => {
             checkOptions: list(c.check),
             install: list(c.install).length,
             openRoll: list(c.openRoll).length,
-            setToken: list(c.setToken),
-            clearToken: typeof c.clearToken === "number" ? c.clearToken : 0,
             installAsset: list(c.install)[0] ?? null
           };
         })()
@@ -142,6 +140,7 @@ const SAMPLE = `(() => {
           text: (chip.textContent || "").trim(),
           dataState: chip.getAttribute("data-update-state"),
           dataVersion: chip.getAttribute("data-update-version"),
+          dataPreview: chip.getAttribute("data-update-preview"),
           ariaLabel: chip.getAttribute("aria-label"),
           ariaHaspopup: chip.getAttribute("aria-haspopup"),
           ariaExpanded: chip.getAttribute("aria-expanded"),
@@ -186,6 +185,11 @@ const SAMPLE = `(() => {
           ariaModal: dialog.getAttribute("aria-modal"),
           ariaLabelledby: dialog.getAttribute("aria-labelledby"),
           dataVersion: dialog.getAttribute("data-update-dialog"),
+          kicker: (dialog.querySelector(".update-dialog__kicker")?.textContent || "").trim(),
+          kickerKind: (() => {
+            const el = dialog.querySelector(".update-dialog__kicker");
+            return el ? el.getAttribute("data-update-kicker") : null;
+          })(),
           title: (dialog.querySelector(".update-dialog__title")?.textContent || "").trim(),
           versionsText: (
             dialog.querySelector('[data-update-body="versions"]')?.textContent || ""
@@ -213,17 +217,30 @@ const SAMPLE = `(() => {
       const summary = document.querySelector("[data-update-summary]");
       const token = document.querySelector("[data-update-token]");
       const input = document.querySelector(".settings-updates__token input");
-      if (!summary && !token) return null;
+      const previewToggle = document.querySelector("[data-developer-preview]");
+      const previewState = document.querySelector("[data-developer-state]");
+      if (!summary && !token && !previewToggle) return null;
       const text = (sel) => {
         const el = document.querySelector(sel);
         return el ? (el.textContent || "").trim() : null;
       };
+      const stored = (() => {
+        try {
+          return window.localStorage.getItem("lifequest-update-preview");
+        } catch {
+          return "unavailable";
+        }
+      })();
       return {
         summaryState: summary ? summary.getAttribute("data-update-summary") : null,
         summaryText: summary ? (summary.textContent || "").trim() : null,
-        token: token ? token.getAttribute("data-update-token") : null,
-        tokenText: token ? (token.textContent || "").trim() : null,
-        inputValue: input ? input.value : null,
+        /** True when the page still asks the operator for a token. */
+        hasTokenField: Boolean(token || input),
+        note: text(".settings-card__desc"),
+        previewChecked: previewToggle ? previewToggle.checked : null,
+        previewState: previewState ? previewState.getAttribute("data-developer-state") : null,
+        previewNote: previewState ? (previewState.textContent || "").trim() : null,
+        storedPreview: stored,
         buttons: Array.from(
           document.querySelectorAll(".settings-page-shell button[aria-label]")
         ).map((el) => ({
@@ -352,26 +369,20 @@ async function main() {
     console.log(`[update-badge] DID FAIL LOAD ${code} ${description} ${url}`);
   });
 
-  const loadScenario = async (scenario, view = "rail") => {
-    // The scenario rides the page's own query string rather than localStorage:
-    // the driver has to choose one before this page has ever been loaded, and
-    // there is no origin to write to until then. `view` picks which harness page
-    // mounts — the rail's chip, or the Settings view. Two pages rather than one
-    // branch, because a page's module graph is evaluated once per load and a flag
-    // read off its query string decides what that one page mounts.
-    const page = view === "settings" ? "update-settings.html" : "update-badge.html";
-    const target = `${url.replace(/[^/]*$/, page)}?scenario=${scenario}`;
-    console.log(`[update-badge] loading ${view}/${scenario}`);
-    await win.loadURL(target);
+  /**
+   * Wait for the page's harness to say it has mounted something.
+   *
+   * Each poll is raced against a page-side timeout on purpose: `executeJavaScript`
+   * resolves when the expression's promise does, so a harness whose ready promise
+   * never settles would hang this rig until its watchdog instead of failing with a
+   * reason. This way the loop keeps making progress and the report can name what
+   * the page actually threw.
+   */
+  const waitForHarness = async () => {
     const deadline = Date.now() + 30_000;
     let lastError = "harness globals never appeared";
     for (;;) {
       try {
-        // Raced against a page-side timeout on purpose: `executeJavaScript`
-        // resolves when the expression's promise does, so a harness whose ready
-        // promise never settles would hang this rig until its watchdog instead of
-        // failing with a reason. This way the loop keeps making progress and the
-        // report can name what the page actually threw.
         const ready = await run(`(async () => {
           if (typeof window.updateHarnessReady !== "object") return "no-globals";
           return Promise.race([
@@ -379,7 +390,7 @@ async function main() {
             new Promise((r) => setTimeout(() => r("pending"), 1500)),
           ]);
         })()`);
-        if (ready === "ready") break;
+        if (ready === "ready") return;
         lastError =
           ready === "pending"
             ? `the harness's ready signal never fired; the page threw ${JSON.stringify(
@@ -389,11 +400,52 @@ async function main() {
       } catch (error) {
         lastError = String(error);
       }
-      if (Date.now() > deadline) {
-        throw new Error(`harness never became ready for ${scenario}: ${lastError}`);
-      }
+      if (Date.now() > deadline) throw new Error(lastError);
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
+  };
+
+  const loadScenario = async (scenario, view = "rail", preview = null) => {
+    // The scenario rides the page's own query string rather than localStorage:
+    // the driver has to choose one before this page has ever been loaded, and
+    // there is no origin to write to until then. `view` picks which harness page
+    // mounts — the rail's chip, or a Settings panel. Pages rather than one branch,
+    // because a page's module graph is evaluated once per load and a flag read off
+    // its query string decides what that one page mounts.
+    //
+    // `preview` seeds the Developer switch, through the same storage key the switch
+    // itself writes. It is written on *every* load — `null` means off — so one pass
+    // cannot inherit the last one's state and turn a later assertion green for the
+    // wrong reason.
+    const page = view === "rail" ? "update-badge.html" : "update-settings.html";
+    const params = new URLSearchParams({ scenario, preview: preview ? "1" : "0" });
+    if (view !== "rail") {
+      params.set("view", view === "developer" ? "developer" : "updates");
+    }
+    const target = `${url.replace(/[^/]*$/, page)}?${params.toString()}`;
+    console.log(`[update-badge] loading ${view}/${scenario} preview=${Boolean(preview)}`);
+
+    // Vite re-optimises its dependencies the first time a new import appears, and
+    // answers the in-flight module request with a 504 while it reloads: that load
+    // never registers the harness globals, so waiting on it can only time out. A
+    // second load is the cure, and cheaper than asking the operator to warm the
+    // dev server before every run.
+    for (let attempt = 1; ; attempt += 1) {
+      await win.loadURL(target);
+      try {
+        await waitForHarness();
+        break;
+      } catch (error) {
+        if (attempt >= 3) {
+          throw new Error(`harness never became ready for ${scenario}: ${error.message}`);
+        }
+        console.log(
+          `[update-badge] reloading ${view}/${scenario} (attempt ${attempt + 1}): ${error.message}`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
     await new Promise((resolve) => setTimeout(resolve, 300));
     win.showInactive();
@@ -806,7 +858,7 @@ async function main() {
     );
     screenshots.push(await shoot("update-badge-junk.png"));
 
-    // ── 7 — the Settings view: the token, and asking by hand ────────────────
+    // ── 7 — Settings → Updates: what the feed said, and asking by hand ──────
     await loadScenario("available", "settings");
     const settings = await settle();
     check(
@@ -826,66 +878,23 @@ async function main() {
         (settings.settings?.summaryText ?? "").includes(APP_VERSION),
       `summary ${JSON.stringify(settings.settings?.summaryText)} (${settings.settings?.summaryState})`,
     );
-    check(
-      "a token that is not stored says so",
-      settings.settings?.token === "unset" && settings.settings?.tokenText === "Not set",
-      `token ${settings.settings?.token} / ${JSON.stringify(settings.settings?.tokenText)}`,
-    );
     const settingsLabels = (settings.settings?.buttons ?? []).map((button) => button.label);
     check(
-      "the view offers the token, a check, and the release page",
-      settingsLabels.includes("Save GitHub token") &&
-        settingsLabels.includes("Remove GitHub token") &&
-        settingsLabels.includes("Check for updates now") &&
+      "the view offers a check by hand and the release page",
+      settingsLabels.includes("Check for updates now") &&
         settingsLabels.includes("Open the release page"),
       `buttons ${JSON.stringify(settingsLabels)}`,
     );
+    // The feed is public: nothing on this page asks the operator for a secret.
     check(
-      "removing is not offered when there is nothing to remove",
-      (settings.settings?.buttons ?? []).some(
-        (button) => button.label === "Remove GitHub token" && button.disabled,
-      ),
-      `buttons ${JSON.stringify(settings.settings?.buttons)}`,
-    );
-
-    // Type into the field the way a person does, then save.
-    await run(`(() => {
-      const input = document.querySelector(".settings-updates__token input");
-      if (!input) return false;
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-      setter.call(input, "ghp_harness_token");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      return true;
-    })()`);
-    await click('button[aria-label="Save GitHub token"]');
-    const saved = await settle(320);
-    check(
-      "saving hands the token to main",
-      saved.calls?.setToken?.length === 1 &&
-        saved.calls.setToken[0] === "ghp_harness_token",
-      `updateSetToken called with ${JSON.stringify(saved.calls?.setToken)}`,
+      "the view holds no token field",
+      settings.settings?.hasTokenField === false,
+      `a token field is still on the page: ${settings.settings?.hasTokenField}`,
     );
     check(
-      "the view then reports the token as stored",
-      saved.settings?.token === "set" && saved.settings?.tokenText === "Stored",
-      `token ${saved.settings?.token} / ${JSON.stringify(saved.settings?.tokenText)}`,
-    );
-    check(
-      "the field is cleared rather than holding the secret",
-      saved.settings?.inputValue === "",
-      `input value ${JSON.stringify(saved.settings?.inputValue)}`,
-    );
-    check(
-      "saving confirms itself",
-      (saved.settings?.message ?? "").includes("secure storage"),
-      `message ${JSON.stringify(saved.settings?.message)}`,
-    );
-    check(
-      "removing is offered once a token is stored",
-      (saved.settings?.buttons ?? []).some(
-        (button) => button.label === "Remove GitHub token" && !button.disabled,
-      ),
-      `buttons ${JSON.stringify(saved.settings?.buttons)}`,
+      "the view says the feed is public",
+      (settings.settings?.note ?? "").includes("public"),
+      `note ${JSON.stringify(settings.settings?.note)}`,
     );
 
     // "Check now" is the operator asking by hand, so it must force the feed.
@@ -904,17 +913,138 @@ async function main() {
 
     screenshots.push(await shoot("update-badge-settings.png"));
 
-    await click('button[aria-label="Remove GitHub token"]');
-    const removed = await settle(320);
+    // ── 8 — Settings → Developer: the preview switch ────────────────────────
+    await loadScenario("current", "developer", false);
+    const developer = await settle();
     check(
-      "removing calls the bridge once",
-      removed.calls?.clearToken === 1,
-      `updateClearToken called ${removed.calls?.clearToken} times`,
+      "the Developer page renders its switch",
+      developer.settings?.previewChecked === false,
+      `preview ${JSON.stringify(developer.settings)}`,
     );
     check(
-      "the view returns to not-set",
-      removed.settings?.token === "unset" && removed.settings?.tokenText === "Not set",
-      `token ${removed.calls?.clearToken} / ${JSON.stringify(removed.settings?.tokenText)}`,
+      "the switch starts off, with nothing glowing",
+      developer.settings?.previewState === "off" &&
+        !(developer.settings?.previewNote ?? "").includes("9.9.9"),
+      `state ${developer.settings?.previewState}, note ${JSON.stringify(developer.settings?.previewNote)}`,
+    );
+
+    await click('input[aria-label="Preview the update badge"]');
+    const previewOn = await settle(320);
+    check(
+      "turning the switch on writes the preference",
+      previewOn.settings?.storedPreview === "1",
+      `stored ${JSON.stringify(previewOn.settings?.storedPreview)}`,
+    );
+    check(
+      "the switch reports itself on",
+      previewOn.settings?.previewChecked === true &&
+        previewOn.settings?.previewState === "previewing",
+      `checked ${previewOn.settings?.previewChecked}, state ${previewOn.settings?.previewState}`,
+    );
+    check(
+      "the page says what the preview is showing",
+      (previewOn.settings?.previewNote ?? "").includes("9.9.9"),
+      `note ${JSON.stringify(previewOn.settings?.previewNote)}`,
+    );
+    screenshots.push(await shoot("update-badge-developer.png"));
+
+    // ── 9 — and the rail really glows from it ──────────────────────────────
+    // The feed says "up to date"; the only reason for a glow is the switch.
+    await loadScenario("current", "rail", true);
+    const previewRail = await settle();
+    check(
+      "the preview makes the build number glow",
+      previewRail.chip?.tag === "button" &&
+        previewRail.chip?.dataPreview === "true" &&
+        previewRail.chip?.boxShadow === "none",
+      `tag ${previewRail.chip?.tag}, preview ${previewRail.chip?.dataPreview}, halo ${JSON.stringify(previewRail.chip?.halo?.boxShadow)}`,
+    );
+    check(
+      "the preview's halo rests on its own layer, like a real one",
+      parseShadowLayers(previewRail.chip?.halo?.boxShadow ?? "").length === 2,
+      `halo ${JSON.stringify(previewRail.chip?.halo?.boxShadow)}`,
+    );
+    check(
+      "the preview glow keeps the feed's answer quiet",
+      previewRail.calls?.check === 1,
+      `update:check called ${previewRail.calls?.check} times`,
+    );
+
+    await click(".nav-rail__version");
+    const previewDialog = await settle();
+    check(
+      "the preview opens the popup",
+      Boolean(previewDialog.dialog),
+      `dialog ${JSON.stringify(previewDialog.dialog)}`,
+    );
+    check(
+      "the popup says it is a preview",
+      previewDialog.dialog?.kickerKind === "preview" &&
+        (previewDialog.dialog?.kicker ?? "").includes("Preview"),
+      `kicker ${JSON.stringify(previewDialog.dialog?.kicker)} (${previewDialog.dialog?.kickerKind})`,
+    );
+    check(
+      "the preview names a version that cannot be installed",
+      previewDialog.dialog?.dataVersion === "9.9.9" &&
+        !(previewDialog.dialog?.buttons ?? []).some(
+          (button) => button.label === "Download and install",
+        ),
+      `version ${previewDialog.dialog?.dataVersion}, buttons ${JSON.stringify(
+        (previewDialog.dialog?.buttons ?? []).map((button) => button.label),
+      )}`,
+    );
+    check(
+      "the preview's install path is unreachable",
+      previewDialog.calls?.install === 0,
+      `updateInstall called ${previewDialog.calls?.install} times`,
+    );
+    screenshots.push(await shoot("update-badge-preview.png"));
+
+    // ── 10 — a real release outranks the preview ───────────────────────────
+    // The switch on, and the feed offering something: the popup must be the
+    // release, not the preview. A switch that could hide an upgrade would be
+    // worse than no switch.
+    await loadScenario("available", "rail", true);
+    const shadowed = await settle();
+    check(
+      "a real release wins over the preview",
+      shadowed.chip?.dataVersion === OFFERED &&
+        shadowed.chip?.dataPreview === "false",
+      `offering ${shadowed.chip?.dataVersion}, preview ${shadowed.chip?.dataPreview}`,
+    );
+    await click(".nav-rail__version");
+    const shadowedDialog = await settle();
+    check(
+      "and its popup is the real one",
+      shadowedDialog.dialog?.dataVersion === OFFERED &&
+        shadowedDialog.dialog?.kickerKind === "release" &&
+        (shadowedDialog.dialog?.buttons ?? []).some(
+          (button) => button.label === "Download and install",
+        ),
+      `version ${shadowedDialog.dialog?.dataVersion}, kicker ${shadowedDialog.dialog?.kickerKind}, buttons ${JSON.stringify(
+        (shadowedDialog.dialog?.buttons ?? []).map((button) => button.label),
+      )}`,
+    );
+
+    // Leave the machine as it was found — and prove the switch clears the
+    // preference rather than merely drawing itself unchecked. Seeded on, turned
+    // off here, so the round trip is the assertion.
+    await loadScenario("current", "developer", true);
+    const developerOn = await settle();
+    check(
+      "a stored preference brings the switch up already on",
+      developerOn.settings?.previewChecked === true &&
+        developerOn.settings?.previewState === "previewing",
+      `checked ${developerOn.settings?.previewChecked}, state ${developerOn.settings?.previewState}`,
+    );
+    await click('input[aria-label="Preview the update badge"]');
+    const developerOff = await settle(320);
+    check(
+      "turning the switch off clears the preference",
+      developerOff.settings?.previewChecked === false &&
+        developerOff.settings?.storedPreview === null &&
+        developerOff.settings?.previewState === "off",
+      `checked ${developerOff.settings?.previewChecked}, stored ${JSON.stringify(developerOff.settings?.storedPreview)}, state ${developerOff.settings?.previewState}`,
     );
 
     // Nothing anywhere in the run may have thrown: an uncaught render error
@@ -925,15 +1055,20 @@ async function main() {
       opened,
       notesOpen,
       installing,
-      halfway,
       installFailed: failed,
       upToDate,
       junk,
       afterRemount,
       settings,
-      saved,
       checked,
-      removed,
+      developer,
+      previewOn,
+      previewRail,
+      previewDialog,
+      shadowed,
+      shadowedDialog,
+      developerOn,
+      developerOff,
     })
       .filter(([, state]) => (state.dom?.errors?.length ?? 0) > 0)
       .map(([name, state]) => `${name}: ${JSON.stringify(state.dom?.errors)}`);
@@ -954,9 +1089,15 @@ async function main() {
         junk,
         afterRemount,
         settings,
-        saved,
         checked,
-        removed,
+        developer,
+        previewOn,
+        previewRail,
+        previewDialog,
+        shadowed,
+        shadowedDialog,
+        developerOn,
+        developerOff,
       },
       glow: {
         accent: resting.chip?.tokens?.accent ?? null,

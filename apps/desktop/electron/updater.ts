@@ -5,9 +5,10 @@
  * This system talks to the network and then *runs a downloaded executable*, so
  * the ways it can fail are written down before the code:
  *
- *  1. The feed answers 404 (private repo, no token) or 401/403 — must report
- *     "could not check", never "up to date", and never glow. A check that did
- *     not happen is not a check that found nothing.
+ *  1. The feed answers 404 — a repository with nothing published, or one that
+ *     stopped being public. Must report "could not check", never "up to date",
+ *     and never glow. A check that did not happen is not a check that found
+ *     nothing.
  *  2. The feed answers 200 naming an older or equal version — no offer. A
  *     downgrade is not an upgrade.
  *  3. A tag that cannot be read (`nightly`, `release-2`, `2026-01-01`) — fail
@@ -41,7 +42,6 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createWriteStream } from "node:fs";
 import pkg from "../package.json";
-import { getUpdateToken } from "./secrets.js";
 
 /**
  * The version this build *is*, baked where it is bundled.
@@ -355,16 +355,21 @@ function feedUrl(): string {
   return feedUrlOverride ?? DEFAULT_FEED_URL;
 }
 
+/**
+ * The newest published release, read **unauthenticated**.
+ *
+ * The repository is public, so there is no token to hold and nothing to store in
+ * OS secure storage: the check is one anonymous GET. That also keeps the app
+ * honest about what it is — a read of a public feed, with no secret in it.
+ */
 async function fetchLatestRelease(): Promise<
   { ok: true; release: GitHubRelease } | { ok: false; error: string }
 > {
-  const token = await getUpdateToken().catch(() => null);
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": `LifeQuest/${APP_VERSION}`,
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
 
   let response: Response;
   try {
@@ -381,12 +386,10 @@ async function fetchLatestRelease(): Promise<
   }
 
   if (!response.ok) {
-    if (response.status === 404 || response.status === 401 || response.status === 403) {
+    if (response.status === 404) {
       return {
         ok: false,
-        error: token
-          ? `GitHub refused the update check (HTTP ${response.status}). The stored token may have expired, or lost its read access to ${OWNER_REPO}.`
-          : "GitHub refused the update check (HTTP 404). Either the repository has no published release yet, or it is private and needs a token — Settings → Updates.",
+        error: `GitHub has no release to compare against (HTTP 404) — nothing has been published for ${OWNER_REPO} yet.`,
       };
     }
     return { ok: false, error: `GitHub answered HTTP ${response.status}.` };
@@ -533,12 +536,10 @@ async function runInstall(
   // pass for the wrong reason.
   await fs.rm(file, { force: true });
 
-  const token = await getUpdateToken().catch(() => null);
   const headers: Record<string, string> = {
     Accept: "application/octet-stream",
     "User-Agent": `LifeQuest/${APP_VERSION}`,
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
 
   let response: Response;
   try {

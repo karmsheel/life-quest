@@ -7,8 +7,6 @@ import type { Result } from "@lifequest/vault-core";
 type SecretsFile = {
   hermesKeys: Record<string, string>;
   adapterSecrets: Record<string, string>;
-  /** One per installation, not per vault: the update feed is the same repo. */
-  updateToken?: string;
 };
 
 function secretsPath(): string {
@@ -28,11 +26,6 @@ async function loadSecrets(): Promise<SecretsFile> {
         parsed.adapterSecrets && typeof parsed.adapterSecrets === "object"
           ? parsed.adapterSecrets
           : {},
-      // Carried through, not dropped: `saveSecrets` writes this whole object
-      // back, so a field left out here is a field erased on the next save.
-      ...(typeof parsed.updateToken === "string"
-        ? { updateToken: parsed.updateToken }
-        : {}),
     };
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") {
@@ -151,52 +144,6 @@ export async function clearAdapterSecret(bindingId: string): Promise<Result<true
 export async function getAdapterSecret(bindingId: string): Promise<string | null> {
   const data = await loadSecrets();
   const enc = data.adapterSecrets[bindingId];
-  if (!enc) return null;
-  return decryptString(enc);
-}
-
-// —— the update feed's token ————————————————————————————————————————————————
-/**
- * One token for the installation: the releases it reads belong to the app, not
- * to any vault, so switching vaults must not lose it. Encrypted with the same
- * OS secure storage the Hermes key uses, and never handed back to the renderer —
- * only `hasUpdateToken` crosses that line.
- */
-export async function hasUpdateToken(): Promise<boolean> {
-  const data = await loadSecrets();
-  return Boolean(data.updateToken);
-}
-
-export async function setUpdateToken(token: string): Promise<Result<true>> {
-  try {
-    const trimmed = token.trim();
-    if (!trimmed) {
-      return { ok: false, error: "Token must not be empty" };
-    }
-    const data = await loadSecrets();
-    data.updateToken = encryptString(trimmed);
-    await saveSecrets(data);
-    return { ok: true, value: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
-}
-
-export async function clearUpdateToken(): Promise<Result<true>> {
-  try {
-    const data = await loadSecrets();
-    delete data.updateToken;
-    await saveSecrets(data);
-    return { ok: true, value: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
-}
-
-/** Returns the decrypted token, or null if none is stored. */
-export async function getUpdateToken(): Promise<string | null> {
-  const data = await loadSecrets();
-  const enc = data.updateToken;
   if (!enc) return null;
   return decryptString(enc);
 }

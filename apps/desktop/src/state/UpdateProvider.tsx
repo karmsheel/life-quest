@@ -34,15 +34,63 @@ import type { UpdateDecision } from "@/vite-env";
 
 type Phase = "checking" | "ready" | "failed";
 
+/** Where the Developer page keeps its preview switch. */
+const PREVIEW_KEY = "lifequest-update-preview";
+
+/**
+ * What the rail and the popup show when the Developer preview is on and the feed
+ * has nothing for us.
+ *
+ * Nothing about this can be installed: `installer` is null, so the popup draws
+ * the release-page offer it already draws for a release published without a
+ * Windows installer. A preview must never be able to start a download, and this
+ * is the cheapest possible way to guarantee it — the install path is simply not
+ * reachable from here.
+ */
+const PREVIEW: UpdateDecision = {
+  state: "available",
+  current: version,
+  latest: "9.9.9",
+  title: "LifeQuest 9.9.9 (preview)",
+  notes:
+    "A local preview from Settings → Developer. Nothing is being downloaded, and this release does not exist.",
+  publishedAt: null,
+  releaseUrl: "https://github.com/karmsheel/life-quest/releases",
+  installer: null,
+};
+
+function readPreviewPreference(): boolean {
+  try {
+    return window.localStorage.getItem(PREVIEW_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export type UpdateValue = {
   /** What this build is running, off its own package.json. */
   current: string;
   phase: Phase;
+  /**
+   * What the *feed* said. Settings → Updates reports on this, so the preview
+   * switch can never change what the app claims GitHub told it.
+   */
   decision: UpdateDecision | null;
   /** Why the last check could not answer, if it could not. */
   error: string | null;
-  /** True only when the feed named something newer than this build. */
+  /**
+   * What the rail and the popup draw: the feed's answer when it offered one,
+   * otherwise the preview if the Developer switch is on. A real release always
+   * wins — the preview cannot hide an upgrade.
+   */
+  shown: UpdateDecision | null;
+  /** True when `shown` is the preview rather than anything GitHub said. */
+  previewing: boolean;
+  /** True only when the rail should glow — a real offer, or a preview of one. */
   available: boolean;
+  /** The Developer page's switch. Persisted, and off to begin with. */
+  preview: boolean;
+  setPreview: (on: boolean) => void;
   installing: boolean;
   progress: { downloaded: number; total: number } | null;
   installError: string | null;
@@ -77,6 +125,17 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const [installing, setInstalling] = useState(false);
   const [progress, setProgress] = useState<UpdateValue["progress"]>(null);
   const [installError, setInstallError] = useState<string | null>(null);
+  const [preview, setPreviewState] = useState(readPreviewPreference);
+
+  const setPreview = useCallback((on: boolean) => {
+    setPreviewState(on);
+    try {
+      if (on) window.localStorage.setItem(PREVIEW_KEY, "1");
+      else window.localStorage.removeItem(PREVIEW_KEY);
+    } catch {
+      // A window with no storage still previews; it just forgets on restart.
+    }
+  }, []);
 
   // One check per launch. The ref, not state: StrictMode's second mount effect
   // must find the first request already made rather than make its own.
@@ -153,8 +212,14 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // What the rail and the popup draw. A real offer always wins: the preview is a
+  // way to *see* the upgrade affordance, never a way to hide a real upgrade.
+  const realOffer = decision?.state === "available";
+  const previewing = preview && !realOffer;
+  const shown = previewing ? PREVIEW : decision;
+
   const install = useCallback(async () => {
-    if (decision?.state !== "available" || !decision.installer) return;
+    if (shown?.state !== "available" || !shown.installer) return;
     let bridge: ReturnType<typeof api>;
     try {
       bridge = api();
@@ -163,9 +228,9 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     }
     setInstalling(true);
     setInstallError(null);
-    setProgress({ downloaded: 0, total: decision.installer.size });
+    setProgress({ downloaded: 0, total: shown.installer.size });
     try {
-      const result = await bridge.updateInstall(decision.installer);
+      const result = await bridge.updateInstall(shown.installer);
       if (!result || result.ok !== true) {
         setInstallError(
           result && typeof result.error === "string"
@@ -181,16 +246,16 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       setInstallError(err instanceof Error ? err.message : String(err));
       setInstalling(false);
     }
-  }, [decision]);
+  }, [shown]);
 
   const openReleasePage = useCallback(async () => {
-    if (decision?.state !== "available") return;
+    if (shown?.state !== "available") return;
     try {
-      await api().updateOpenReleasePage(decision.releaseUrl);
+      await api().updateOpenReleasePage(shown.releaseUrl);
     } catch {
       // Opening a browser is not worth an error card; the url is on screen.
     }
-  }, [decision]);
+  }, [shown]);
 
   const value = useMemo<UpdateValue>(
     () => ({
@@ -198,7 +263,11 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       phase,
       decision,
       error,
-      available: decision?.state === "available",
+      shown,
+      previewing,
+      available: shown?.state === "available",
+      preview,
+      setPreview,
       installing,
       progress,
       installError,
@@ -210,6 +279,10 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       phase,
       decision,
       error,
+      shown,
+      previewing,
+      preview,
+      setPreview,
       installing,
       progress,
       installError,
@@ -240,7 +313,11 @@ export function useUpdate(): UpdateValue {
     phase: "failed",
     decision: null,
     error: null,
+    shown: null,
+    previewing: false,
     available: false,
+    preview: false,
+    setPreview: () => {},
     installing: false,
     progress: null,
     installError: null,

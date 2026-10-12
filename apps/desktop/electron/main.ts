@@ -725,11 +725,6 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
       }
     });
   });
-  ipcMain.handle("update:tokenStatus", () => vault.secretsHasUpdateToken());
-  ipcMain.handle("update:setToken", (_e, token: string) =>
-    vault.secretsSetUpdateToken(token),
-  );
-  ipcMain.handle("update:clearToken", () => vault.secretsClearUpdateToken());
   ipcMain.handle("update:openReleasePage", async (_e, url: string) => {
     // The renderer chooses the url, so it is checked here: this opens the
     // operator's own browser, and the only page the app has any business

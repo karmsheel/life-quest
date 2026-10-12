@@ -1,34 +1,36 @@
 /**
- * E2E harness for the Settings → Updates view (driven by
- * `update-badge.electron.mjs` with `view=settings`).
+ * E2E harness for the Settings surfaces the update feature owns — Updates and
+ * Developer (driven by `update-badge.electron.mjs` with `view=settings` or
+ * `view=developer`).
  *
  * A harness of its own rather than a branch inside `update-badge.tsx`, because a
  * page's module graph is evaluated once per load: a flag read off the query
  * string decides what that one page mounts, and flipping it for a later
  * navigation turns out to be decided by whatever the dev server and the browser
- * cache do with a module URL that has not changed. Two surfaces, two pages — each
- * one mounting only what it asserts on.
+ * cache do with a module URL that has not changed. Separate pages, each mounting
+ * only what its own assertions cover — and which of the two panels it opens is
+ * itself read off the query string, for the same reason.
  *
  * This is a system-in-isolation rig, so the ways it can fail are written down
  * before the assertions:
  *
- *  1. The token row reports the wrong state — "Stored" when nothing is stored, or
- *     "Not set" after a save, which is the one lie that would let an operator
- *     believe the feed is authenticated when it is not.
- *  2. Saving never reaches the bridge, or reaches it with a value that was not
- *     what was typed.
- *  3. The secret is left in the field after it has been stored — a shoulder-surfed
- *     token and a second save on the next keystroke.
- *  4. `Remove` is offered with nothing to remove, or never enabled once there is.
- *  5. A refusal from the bridge is reported as success.
- *  6. "Check now" does not force the feed, so the operator asking by hand is
+ *  1. "Check now" does not force the feed, so the operator asking by hand is
  *     answered from the session's cache instead of from GitHub.
+ *  2. The page still asks for a token, or still claims the feed needs one, after
+ *     the repository became public.
+ *  3. The Developer switch does not write its preference, so the rail never
+ *     glows from it.
+ *  4. The switch writes the preference but does not clear it, leaving the app
+ *     glowing on the next launch with no visible cause.
+ *  5. The switch reports a state the rail is not actually in — "previewing" while
+ *     a real release is the thing being shown.
  *
  * The bridge is stubbed (there is no Electron preload on the dev-server page);
- * the real `UpdateProvider`, the real `SettingsUpdates`, the real `Button`,
- * `SettingsSection` and `SettingsRow`, and the real CSS are shipping code.
+ * the real `UpdateProvider`, the real `SettingsContent` with its real split
+ * layout, the real `SettingsUpdates` and `SettingsDeveloper`, and the real CSS
+ * are shipping code.
  */
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { version as appVersion } from "../package.json";
 import { SettingsContent } from "@/components/settings/SettingsContent";
@@ -58,39 +60,39 @@ const AVAILABLE = {
   },
 };
 
+/** The feed with nothing to offer — what "up to date" looks like. */
+const CURRENT = {
+  state: "current" as const,
+  current: appVersion,
+  latest: appVersion,
+};
+
+/** Which answer the stub feed gives, off the page's own query string. */
+const scenario = new URLSearchParams(window.location.search).get("scenario");
+
+/**
+ * Which Settings panel this page opens, off the query string. A prop decided at
+ * mount rather than something switched later, so each page load mounts one panel
+ * and the driver navigates by loading another.
+ */
+const view = ((): "updates" | "developer" =>
+  new URLSearchParams(window.location.search).get("view") === "developer"
+    ? "developer"
+    : "updates")();
+
 /** What the stub bridge was asked for, so the driver can assert on the calls. */
 const calls: {
   check: ({ force?: boolean } | null)[];
-  setToken: unknown[];
-  clearToken: number;
   openRoll: unknown[];
-} = { check: [], setToken: [], clearToken: 0, openRoll: [] };
-
-/** Whether the stub says a token is stored, and what a save does to it. */
-let tokenStored = false;
-let refuseNext = false;
+} = { check: [], openRoll: [] };
 
 const bridge: Record<string, unknown> = {
   updateCheck: (options?: { force?: boolean }) => {
     calls.check.push(options ?? null);
-    return Promise.resolve({ ok: true as const, decision: AVAILABLE });
-  },
-  updateTokenStatus: () => Promise.resolve(tokenStored),
-  updateSetToken: (token: unknown) => {
-    calls.setToken.push(token);
-    if (refuseNext) {
-      return Promise.resolve({
-        ok: false as const,
-        error: "OS secure storage is unavailable; cannot persist the token",
-      });
-    }
-    tokenStored = true;
-    return ok(true);
-  },
-  updateClearToken: () => {
-    calls.clearToken += 1;
-    tokenStored = false;
-    return ok(true);
+    return Promise.resolve({
+      ok: true as const,
+      decision: scenario === "available" ? AVAILABLE : CURRENT,
+    });
   },
   updateOpenReleasePage: (url: unknown) => {
     calls.openRoll.push(url);
@@ -126,28 +128,16 @@ const stubbed = new Proxy(bridge, {
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from update-settings.html");
 
-/**
- * The provider is keyed so the driver can unmount and remount it, the same way
- * the badge harness does: it is the only way to run the progress subscription's
- * cleanup.
- */
-let generation = 0;
-let remount: () => void = () => {};
-
 function Harness() {
-  const [generationState, setGeneration] = useState(generation);
-  useEffect(() => {
-    remount = () => setGeneration((value) => value + 1);
-  }, []);
   return (
     <ThemeProvider>
-      <UpdateProvider key={generationState}>
-        {/* The real Settings surface, with Updates selected — not the panel on its
-            own: the split layout and its scroll column are what constrain the
-            field's width, and a rig that skipped them would judge the view on a
+      <UpdateProvider>
+        {/* The real Settings surface, with one panel selected — not the panel on
+            its own: the split layout and its scroll column are what constrain the
+            content's width, and a rig that skipped them would judge the view on a
             shape the app never renders. */}
         <div className="settings-page-shell">
-          <SettingsContent activeView="updates" onViewChange={() => {}} />
+          <SettingsContent activeView={view} onViewChange={() => {}} />
         </div>
       </UpdateProvider>
     </ThemeProvider>
@@ -167,9 +157,12 @@ const ready = new Promise<void>((resolve) => {
   settle = resolve;
 });
 requestAnimationFrame(function waitForView() {
-  const summary = document.querySelector("[data-update-summary]");
-  const input = document.querySelector(".settings-updates__token input");
-  if (!summary || !input) {
+  // Whichever panel this page opened, its own first element is the signal.
+  const found =
+    view === "developer"
+      ? document.querySelector("[data-developer-preview]")
+      : document.querySelector("[data-update-summary]");
+  if (!found) {
     requestAnimationFrame(waitForView);
     return;
   }
@@ -178,17 +171,5 @@ requestAnimationFrame(function waitForView() {
 
 (Object.assign(window, {
   updateHarnessReady: ready,
-  updateHarness: {
-    calls,
-    tokenStored: () => tokenStored,
-    /** Make the next save fail, for the refusal path. */
-    refuseNextSave: (refuse: boolean) => {
-      refuseNext = refuse;
-      return true;
-    },
-    remount: () => {
-      remount();
-      return true;
-    },
-  },
+  updateHarness: { view, calls },
 }) as unknown as Record<string, unknown>);

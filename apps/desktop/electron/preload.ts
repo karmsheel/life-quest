@@ -445,8 +445,8 @@ const lifequest = {
     >,
 
   // —— auto-update ——————————————————————————————————————————————————————————
-  // The renderer never sees the token: it may ask whether one is stored, set a
-  // new one, and clear it. Reading it back is not on this bridge.
+  // The release feed is public, so there is no secret on this bridge at all:
+  // reading the feed, and running what it offers.
   updateCheck: (options?: { force?: boolean }) =>
     ipcRenderer.invoke("update:check", options) as Promise<
       { ok: true; decision: unknown } | { ok: false; error: string }
@@ -456,12 +456,6 @@ const lifequest = {
       | { ok: true; launched: true; installer: string; bytes: number }
       | { ok: false; error: string }
     >,
-  updateTokenStatus: () =>
-    ipcRenderer.invoke("update:tokenStatus") as Promise<boolean>,
-  updateSetToken: (token: string) =>
-    ipcRenderer.invoke("update:setToken", token) as Promise<Result<true>>,
-  updateClearToken: () =>
-    ipcRenderer.invoke("update:clearToken") as Promise<Result<true>>,
   updateOpenReleasePage: (url: string) =>
     ipcRenderer.invoke("update:openReleasePage", url) as Promise<Result<true>>,
   onUpdateProgress: (
