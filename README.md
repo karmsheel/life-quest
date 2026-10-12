@@ -75,6 +75,8 @@ The release repository is public, so the check needs no token. If it is ever mad
 
 Two things it will not do. It never offers a version that is not strictly newer, so an older or unreadable tag is reported rather than installed. And it only ever downloads an installer from a GitHub host, checked again after redirects; anything else is refused before a byte moves.
 
+`node apps/desktop/e2e/update-live-feed.mjs` reads the real feed, through the real main process and the real network, and prints what the app would decide — *up to date*, or what it would offer. It is deliberately not in `npm test`, because it needs GitHub to answer; run it before cutting a release, and again after publishing one.
+
 Windows SmartScreen may warn on first launch (unsigned private build). Choose **More info → Run anyway**. Quit LifeQuest before building again — a running `.exe` can lock files under `release/`. Deleting `win-unpacked` removes that build only; vault folders and `%APPDATA%\LifeQuest` stay.
 
 `release/` is gitignored.
