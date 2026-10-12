@@ -22,6 +22,13 @@ export type UserPrefs = {
   activeDomainByVaultId: Record<string, string>;
   deadlineDismissedOnByVaultId: Record<string, string>;
   deadlineNotifiedOnByVaultId: Record<string, string>;
+  /**
+   * The Hermes profile the companion runs on (see `companionUseProfile`).
+   * Absent means the app's own `lifequest` profile, which is what every
+   * install used before the picker existed — so an older prefs file keeps
+   * behaving exactly as it did.
+   */
+  companionProfile?: string;
 };
 
 const MAX_RECENT = 20;
@@ -138,5 +145,18 @@ export async function getDeadlineNotifiedOn(vaultId: string): Promise<string | n
 export async function setDeadlineNotifiedOn(vaultId: string): Promise<void> {
   const prefs = await loadPrefs();
   prefs.deadlineNotifiedOnByVaultId[vaultId] = localIsoDate();
+  await savePrefs(prefs);
+}
+
+/** The Hermes profile the companion runs on; null = the app's own `lifequest`. */
+export async function getCompanionProfile(): Promise<string | null> {
+  const prefs = await loadPrefs();
+  const name = prefs.companionProfile?.trim();
+  return name ? name : null;
+}
+
+export async function setCompanionProfile(name: string): Promise<void> {
+  const prefs = await loadPrefs();
+  prefs.companionProfile = name;
   await savePrefs(prefs);
 }

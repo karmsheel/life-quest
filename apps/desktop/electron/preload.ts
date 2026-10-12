@@ -311,6 +311,12 @@ const lifequest = {
 
   companionEnsure: () => ipcRenderer.invoke("companion:ensure"),
   companionStatus: () => ipcRenderer.invoke("companion:status"),
+  // The profile picker (see CompanionSetupScreen): every installed Hermes
+  // profile plus the active one, and the switch that moves the companion onto
+  // one — or creates the app's own `lifequest`.
+  companionProfilesList: () => ipcRenderer.invoke("companion:profilesList"),
+  companionUseProfile: (name: string) =>
+    ipcRenderer.invoke("companion:useProfile", name),
   companionSessionsList: () => ipcRenderer.invoke("companion:sessionsList"),
   companionSessionCreate: (title: string) =>
     ipcRenderer.invoke("companion:sessionCreate", title),

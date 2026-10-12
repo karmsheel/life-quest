@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 
 export const PROFILE_NAME = "lifequest";
@@ -99,8 +100,11 @@ export function hermesRoot(
   return path.join(homedir, ".hermes");
 }
 
-/** Host-multiplexer bases. Only `/p/lifequest` — a raw host URL is the default profile. */
-export function attachCandidateBaseUrls(envPort: number | null): string[] {
+/** Host-multiplexer bases. Only `/p/<profile>` — a raw host URL is the default profile. */
+export function attachCandidateBaseUrls(
+  envPort: number | null,
+  profileName: string = PROFILE_NAME,
+): string[] {
   const urls: string[] = [];
   const seen = new Set<string>();
   const add = (url: string) => {
@@ -108,7 +112,13 @@ export function attachCandidateBaseUrls(envPort: number | null): string[] {
     seen.add(url);
     urls.push(url);
   };
-  const prefix = (port: number) => `http://127.0.0.1:${port}/p/${PROFILE_NAME}`;
+  // The default profile IS the root home: the multiplexer serves it at the
+  // bare base, with no `/p/` prefix (hermes_cli/webhook.py builds the same
+  // prefix this way). Every other profile hangs off `/p/<name>`.
+  const prefix = (port: number) =>
+    profileName === "default"
+      ? `http://127.0.0.1:${port}`
+      : `http://127.0.0.1:${port}/p/${profileName}`;
   if (envPort && envPort > 0) add(prefix(envPort));
   for (const port of DISCOVERY_PORTS) add(prefix(port));
   return urls;
@@ -123,8 +133,137 @@ export function portFromBaseUrl(baseUrl: string): number {
   }
 }
 
-export function profileDir(root: string): string {
-  return path.join(root, "profiles", PROFILE_NAME);
+export function profileDir(root: string, profileName: string = PROFILE_NAME): string {
+  // The default profile is the root home itself, not a directory under
+  // `profiles/` — which is also why it is listed as its own entry below.
+  if (profileName === "default") return root;
+  return path.join(root, "profiles", profileName);
+}
+
+/** A profile name that can safely stand in a path segment and a URL prefix. */
+export function isSafeProfileName(name: string): boolean {
+  if (typeof name !== "string") return false;
+  if (name.length === 0 || name.length > 64) return false;
+  if (name === "." || name === "..") return false;
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name);
+}
+
+/** One installed Hermes profile, as the picker lists it. */
+export type HermesProfileInfo = {
+  name: string;
+  path: string;
+  /** The root home itself, which the multiplexer serves with no `/p/` prefix. */
+  isDefault: boolean;
+  hasConfig: boolean;
+  hasSoul: boolean;
+  hasEnv: boolean;
+};
+
+/**
+ * Every profile this Hermes install has, the way `hermes profile list` would
+ * answer: the `profiles/<name>` directories, plus `default` (the root home).
+ *
+ * This is what the setup screen offers when the companion cannot attach, and
+ * the reason a stuck connect is no longer a dead end: the operator sees the
+ * profiles that exist on this machine and either picks one or creates the
+ * `lifequest` one. Read off the filesystem rather than the CLI so a wedged or
+ * missing CLI still leaves the picker usable, and so this answers in the main
+ * process with no spawn.
+ */
+export async function listHermesProfiles(root: string): Promise<HermesProfileInfo[]> {
+  const profilesRoot = path.join(root, "profiles");
+  const out: HermesProfileInfo[] = [];
+  let names: string[] = [];
+  try {
+    const entries = await fs.readdir(profilesRoot, { withFileTypes: true });
+    names = entries
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+      .map((entry) => entry.name)
+      .sort((a, b) => a.localeCompare(b));
+  } catch {
+    // No profiles directory at all: only `default` is on offer, which is the
+    // honest answer on a machine that has never created a second profile.
+  }
+  for (const name of names) {
+    const dir = path.join(profilesRoot, name);
+    out.push({
+      name,
+      path: dir,
+      isDefault: false,
+      hasConfig: await fileExists(path.join(dir, "config.yaml")),
+      hasSoul: await fileExists(path.join(dir, "SOUL.md")),
+      hasEnv: await fileExists(path.join(dir, ".env")),
+    });
+  }
+  out.unshift({
+    name: "default",
+    path: root,
+    isDefault: true,
+    hasConfig: await fileExists(path.join(root, "config.yaml")),
+    hasSoul: await fileExists(path.join(root, "SOUL.md")),
+    hasEnv: await fileExists(path.join(root, ".env")),
+  });
+  return out;
+}
+
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    const st = await fs.stat(p);
+    return st.isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The Hermes CLI, resolved the way a shell would — without a shell.
+ *
+ * `command -v hermes` is what this used to run, and `command` is a shell
+ * BUILTIN: there is no `/usr/bin/command` on the Linux distros that ship no
+ * such binary (Arch and friends), so `execFile("command", ...)` died with
+ * ENOENT and the app answered "Install Hermes Agent" on machines that have
+ * Hermes installed and on PATH. That is the stuck connect screen this whole
+ * feature exists to escape, so the lookup walks PATH by hand: no spawn, no
+ * shell, and the same answer on every platform.
+ *
+ * Two passes: PATH first (what `command -v` would find), then the Hermes
+ * install's own shim directory — a GUI launch often carries a minimal PATH,
+ * and `<HERMES_HOME>/hermes-agent/.hermes/bin/hermes` is where the installer
+ * puts the launcher regardless.
+ */
+export async function resolveHermesCli(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+  homedir: string,
+): Promise<string | null> {
+  const names =
+    process.platform === "win32"
+      ? ["hermes.cmd", "hermes.exe", "hermes"]
+      : ["hermes"];
+  const dirs: string[] = (env.PATH ?? "")
+    .split(path.delimiter)
+    .map((dir) => dir.trim())
+    .filter(Boolean);
+  // The install's own shim, checked after PATH so a PATH entry still wins.
+  dirs.push(path.join(hermesRoot(env, homedir), "hermes-agent", ".hermes", "bin"));
+
+  for (const dir of dirs) {
+    for (const name of names) {
+      const candidate = path.join(dir, name);
+      try {
+        const st = await fs.stat(candidate);
+        if (!st.isFile()) continue;
+        // On POSIX a PATH hit must be executable; on Windows the extension is
+        // the whole contract, so the stat above is enough.
+        if (process.platform !== "win32") {
+          await fs.access(candidate, fs.constants.X_OK);
+        }
+        return candidate;
+      } catch {
+        // Not there, not a file, or not executable: keep looking.
+      }
+    }
+  }
+  return null;
 }
 
 export function readEnv(text: string): Record<string, string> {

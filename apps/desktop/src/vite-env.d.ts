@@ -92,6 +92,23 @@ type CompanionStatus =
   | { kind: "hermes_too_old"; version?: string }
   | { kind: "auth_error" };
 
+/** One installed Hermes profile, as the picker lists it. */
+type CompanionProfileInfo = {
+  name: string;
+  path: string;
+  /** The root home itself, which the multiplexer serves with no `/p/` prefix. */
+  isDefault: boolean;
+  hasConfig: boolean;
+  hasSoul: boolean;
+  hasEnv: boolean;
+};
+
+type CompanionProfilesResult = {
+  /** The profile the companion runs on right now. */
+  active: string;
+  profiles: CompanionProfileInfo[];
+};
+
 type CompanionInstructionsContext = {
   domainName: string | null;
   domainSlug: string | null;
@@ -315,6 +332,18 @@ type LifequestApi = {
     Promise<Result<{ dropped: true }>>;
   companionEnsure: () => Promise<CompanionStatus>;
   companionStatus: () => Promise<CompanionStatus>;
+  /**
+   * Every Hermes profile this install has, plus the one the companion runs on
+   * — the setup screen's way out of a stuck connect, and Settings' way to
+   * switch later.
+   */
+  companionProfilesList: () => Promise<CompanionProfilesResult>;
+  /**
+   * Move the companion onto one profile (an installed one, or the app's own
+   * `lifequest`, which is created on the spot) and bring it up. Answers with
+   * the new status, so the caller re-renders from one call.
+   */
+  companionUseProfile: (name: string) => Promise<CompanionStatus>;
   companionSessionsList: () => Promise<Result<HermesSession[]>>;
   companionSessionCreate: (title: string) => Promise<Result<HermesSession>>;
   companionSessionMessages: (
@@ -582,6 +611,8 @@ export type {
   CompanionModelCatalog,
   CompanionModelChoice,
   CompanionModelProvider,
+  CompanionProfileInfo,
+  CompanionProfilesResult,
   CompanionPrompts,
   CompanionRuntimeOverride,
   CompanionSkill,

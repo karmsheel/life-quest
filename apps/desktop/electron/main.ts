@@ -511,6 +511,12 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
 
   ipcMain.handle("companion:ensure", () => companion.companionEnsure());
   ipcMain.handle("companion:status", () => companion.companionStatus());
+  // The profile picker: every installed Hermes profile, and the switch that
+  // moves the companion onto one (or creates the app's own `lifequest`).
+  ipcMain.handle("companion:profilesList", () => companion.companionProfilesList());
+  ipcMain.handle("companion:useProfile", (_e, name: string) =>
+    companion.companionUseProfile(typeof name === "string" ? name : ""),
+  );
   ipcMain.handle("companion:sessionsList", () => companion.companionSessionsList());
   ipcMain.handle("companion:sessionCreate", (_e, title: string) =>
     companion.companionSessionCreate(typeof title === "string" ? title : ""),

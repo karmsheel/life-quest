@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 import type { DatabaseListEntry } from "@lifequest/vault-core";
 import { Button } from "@/components/ui/Button";
+import { CompanionProfilePicker } from "@/components/hermes/CompanionProfilePicker";
 import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
 import { api } from "@/lib/ipc";
@@ -34,7 +35,7 @@ const NO_VAULT: McpDoors = {
 
 export function SettingsHermes() {
   const { snapshot, updateSettings } = useVault();
-  const { status, ensuring, retry } = useCompanion();
+  const { status, ensuring, retry, profile } = useCompanion();
   const [doors, setDoors] = useState<McpDoors>(NO_VAULT);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -198,7 +199,7 @@ export function SettingsHermes() {
       <SettingsSection
         icon={<Sparkles size={16} />}
         title="Hermes"
-        subtitle="LifeQuest companion on the lifequest Hermes profile"
+        subtitle={`LifeQuest companion on the ${profile ?? "lifequest"} Hermes profile`}
         banner={
           error || listError || message ? (
             <>
@@ -254,6 +255,17 @@ export function SettingsHermes() {
             </div>
           </dl>
         ) : null}
+
+        {/*
+          The same picker the setup screen offers, so switching the companion's
+          profile later does not mean being stuck first: every installed Hermes
+          profile, the active one marked, and the app's own `lifequest` on
+          offer. Choosing one re-runs the ensure against it.
+        */}
+        <div className="settings-hermes__profile">
+          <h3 className="settings-panel__section-title">Companion profile</h3>
+          <CompanionProfilePicker />
+        </div>
 
         <SettingsRow
           label="File implied changes"

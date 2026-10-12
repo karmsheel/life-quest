@@ -62,7 +62,17 @@ export type CompanionIo = {
   isPortFree: (port: number) => Promise<boolean>;
   health: (url: string) => Promise<boolean>;
   capabilities: (baseUrl: string, key: string) => Promise<unknown | null>;
-  ensureHostGateway: (cli: string, hermesHome: string, force?: boolean) => Promise<void>;
+  ensureHostGateway: (
+    cli: string,
+    hermesHome: string,
+    force?: boolean,
+    /**
+     * The profile whose `/p/<name>` prefix the host must serve. Absent means
+     * the app's own `lifequest` profile, which is what every caller used
+     * before the picker existed.
+     */
+    profileName?: string,
+  ) => Promise<void>;
   stopPid: (pid: number) => Promise<void>;
   listeningPid: (port: number) => Promise<number | null>;
   /**
@@ -444,12 +454,26 @@ export async function hostMissedDoors(
   }
 }
 
-export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus> {
+/**
+ * Bring the companion up on ONE profile — `lifequest` unless the operator has
+ * chosen another in the picker (see `companionUseProfile`).
+ *
+ * The profile name decides three things and nothing else: the directory the
+ * app writes its `.env` / `config.yaml` / `SOUL.md` into, the `/p/<name>`
+ * prefix it attaches to, and where Settings opens. Everything the companion
+ * is TOLD (the soul, the MCP entry, the eager tool-search line) is identical
+ * on every profile — an operator's profile becomes the LifeQuest companion
+ * the moment it is chosen, and stays theirs everywhere else.
+ */
+export async function ensureCompanion(
+  io: CompanionIo,
+  profileName: string = PROFILE_NAME,
+): Promise<CompanionStatus> {
   const cli = await io.whichHermes();
   if (!cli) return { kind: "needs_install" };
 
   const root = hermesRoot(io.env, io.homedir);
-  const dir = profileDir(root);
+  const dir = profileDir(root, profileName);
   const envPath = path.join(dir, ".env");
   const configPath = path.join(dir, "config.yaml");
   const soulPath = path.join(dir, "SOUL.md");
@@ -468,6 +492,22 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
   const existing = readEnv(envText);
   const apiKey =
     existing.API_SERVER_KEY?.trim() || randomBytes(24).toString("hex");
+
+  // The API server's startup guard reads API_SERVER_KEY from the home the
+  // gateway PROCESS runs as — the root, not the profile — and refuses to bind
+  // without one (`api_server.py`: missing, or fewer than 16 chars). The
+  // profile key written below authorises /p/<profile> requests; this one is
+  // what makes the listener exist at all, so a machine that has never run an
+  // API server gets one here instead of a companion that can never attach.
+  // An existing root key is never replaced: Hermes Desktop and every other
+  // client on this machine may already hold it.
+  const rootEnvText = (await io.readFile(path.join(root, ".env"))) ?? "";
+  if ((readEnv(rootEnvText).API_SERVER_KEY?.trim() ?? "").length < 16) {
+    await io.writeFile(
+      path.join(root, ".env"),
+      upsertEnv(rootEnvText, { API_SERVER_KEY: randomBytes(24).toString("hex") }),
+    );
+  }
 
   // Set by the profile writer below when it had to write a credential the files
   // did not already carry. A running host cannot see that write, so it forces
@@ -504,7 +544,7 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
       : DEFAULT_API_PORT;
 
   const tryAttach = async (): Promise<CompanionStatus | null> => {
-    for (const baseUrl of attachCandidateBaseUrls(hostPort)) {
+    for (const baseUrl of attachCandidateBaseUrls(hostPort, profileName)) {
       if (!(await io.health(baseUrl))) continue;
       const caps = await io.capabilities(baseUrl, apiKey);
       const capsKind = sessionCapsKind(caps);
@@ -566,7 +606,7 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
   if (attached && !forceRefresh) return attached;
 
   try {
-    await io.ensureHostGateway(cli, root, forceRefresh);
+    await io.ensureHostGateway(cli, root, forceRefresh, profileName);
   } catch (e) {
     // A refresh that fails must not take a working companion away. The host is
     // still serving; it just did not re-read its config.
@@ -582,7 +622,10 @@ export async function ensureCompanion(io: CompanionIo): Promise<CompanionStatus>
   if (attached) return attached;
   return {
     kind: "gateway_exited",
-    stderr: "Host gateway did not serve /p/lifequest.",
+    stderr:
+      profileName === "default"
+        ? "Host gateway did not serve the default profile."
+        : `Host gateway did not serve /p/${profileName}.`,
   };
 }
 

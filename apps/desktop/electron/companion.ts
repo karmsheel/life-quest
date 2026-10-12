@@ -9,13 +9,21 @@ import {
   DEFAULT_API_PORT,
   PROFILE_NAME,
   hermesRoot,
+  isSafeProfileName,
+  listHermesProfiles,
   portFromBaseUrl,
   profileDir,
   readEnv,
   checkPinnedModel,
+  resolveHermesCli,
+  type HermesProfileInfo,
 } from "./companion-profile.ts";
 import { hermesSpawnSpec } from "./companion-spawn.ts";
 import { getFileUnsolicited } from "./companion-filing.ts";
+import {
+  getCompanionProfile,
+  setCompanionProfile,
+} from "./recent-vaults.ts";
 import {
   readCompanionPrompts,
   type CompanionPrompts,
@@ -74,40 +82,15 @@ function spawnError(cli: string, err: unknown): Error {
   return new Error(`spawn ${code || "error"} (${cli}): ${msg}`);
 }
 
+/**
+ * The Hermes CLI on this machine. Delegates to `resolveHermesCli`, which
+ * walks PATH by hand — the old `execFile("command", ["-v", "hermes"])` died
+ * with ENOENT on every Linux that ships no `command` binary, and the app
+ * answered "install Hermes" on machines that have it. See
+ * `companion-profile.ts` for the full story.
+ */
 async function whichHermes(): Promise<string | null> {
-  const cmd = process.platform === "win32" ? "where.exe" : "command";
-  const args = process.platform === "win32" ? ["hermes"] : ["-v", "hermes"];
-  try {
-    const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-      execFile(cmd, args, { timeout: 5000, windowsHide: true }, (err, stdout) => {
-        if (err) reject(err);
-        else resolve({ stdout: String(stdout) });
-      });
-    });
-    const line = stdout.split(/\r?\n/).map((s) => s.trim()).find(Boolean);
-    return line || null;
-  } catch {
-    if (process.platform === "win32") {
-      try {
-        const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-          execFile(
-            "where.exe",
-            ["hermes.cmd"],
-            { timeout: 5000, windowsHide: true },
-            (err, stdout) => {
-              if (err) reject(err);
-              else resolve({ stdout: String(stdout) });
-            },
-          );
-        });
-        const line = stdout.split(/\r?\n/).map((s) => s.trim()).find(Boolean);
-        return line || null;
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
+  return resolveHermesCli(process.env, os.homedir());
 }
 
 function isPortFree(port: number): Promise<boolean> {
@@ -263,14 +246,21 @@ async function waitForHealth(url: string, attempts: number, delayMs: number): Pr
  * the host looks healthy, the app attaches, and every session on the profile
  * silently has no lifequest tools.
  */
-async function ensureHostGateway(cli: string, hermesHome: string, force = false): Promise<void> {
+async function ensureHostGateway(
+  cli: string,
+  hermesHome: string,
+  force = false,
+  profileName: string = PROFILE_NAME,
+): Promise<void> {
   const extraEnv: Record<string, string> = {
     HERMES_HOME: hermesHome,
     GATEWAY_MULTIPLEX_PROFILES: "true",
   };
   const port = await hostPort(hermesHome);
   const hostBase = `http://127.0.0.1:${port}`;
-  const prefix = `${hostBase}/p/${PROFILE_NAME}`;
+  // The default profile hangs off the bare base; every other one off `/p/<name>`.
+  const prefix =
+    profileName === "default" ? hostBase : `${hostBase}/p/${profileName}`;
   const hostUp = await health(hostBase);
   if (!force && hostUp && (await waitForHealth(prefix, 40, 500))) return;
 
@@ -279,17 +269,37 @@ async function ensureHostGateway(cli: string, hermesHome: string, force = false)
     ["config", "set", "gateway.multiplex_profiles", "true"],
     extraEnv,
   );
-  if (hostUp) {
-    try {
-      await runHermes(cli, ["gateway", "restart"], extraEnv);
-    } catch {
-      await runHermes(cli, ["gateway", "start"], extraEnv);
-    }
-  } else {
+  // The API server is the platform the companion talks to — `/health`,
+  // `/v1/capabilities`, `/api/sessions` — and Hermes ships every platform
+  // DISABLED (`PlatformConfig.enabled` defaults to False). A machine that has
+  // never opened its API server therefore never listens on 8642, and no
+  // amount of gateway restarting changes that: the app would probe forever
+  // and report "Host gateway did not serve /p/<profile>". LifeQuest is the
+  // one thing on this machine that needs it, so it turns it on — the same
+  // way it already turns multiplexing on. The listener is 127.0.0.1 only and
+  // still demands the profile's API_SERVER_KEY.
+  await runHermes(
+    cli,
+    ["config", "set", "gateway.api_server.enabled", "true"],
+    extraEnv,
+  );
+  // A restart covers both shapes this function is called for: a host that is
+  // down (the service manager starts it) and one that is up with a PARKED
+  // api_server — the degraded state a missing API_SERVER_KEY leaves behind,
+  // which only a restart clears, because the parked adapter is never retried
+  // in-process. `start` is the fallback for an install with no service
+  // manager at all.
+  try {
+    await runHermes(cli, ["gateway", "restart"], extraEnv);
+  } catch {
     await runHermes(cli, ["gateway", "start"], extraEnv);
   }
   if (await waitForHealth(prefix, 180, 500)) return;
-  throw new Error("Host gateway did not serve /p/lifequest.");
+  throw new Error(
+    profileName === "default"
+      ? "Host gateway did not serve the default profile."
+      : `Host gateway did not serve /p/${profileName}.`,
+  );
 }
 
 function realIo(): CompanionIo {
@@ -310,7 +320,8 @@ function realIo(): CompanionIo {
     isPortFree,
     health,
     capabilities,
-    ensureHostGateway: (cli, home, force) => ensureHostGateway(cli, home, force),
+    ensureHostGateway: (cli, home, force, profileName) =>
+      ensureHostGateway(cli, home, force, profileName),
     // Imported lazily for the same reason the vault token is: mcp-server owns
     // the doors and reaches Electron, and this module is imported by the chat
     // path, so a static import would close a cycle for no gain.
@@ -360,6 +371,30 @@ export function companionStatus(): PublicCompanionStatus {
 }
 
 /**
+ * The profile the companion runs on: `lifequest` until the operator picks
+ * another in the picker, and remembered across launches in the app prefs.
+ *
+ * Read once, lazily, because the first `companionEnsure` can arrive before
+ * anything has had a chance to load the prefs file — and `needs_install` must
+ * not have to wait on a settings read to answer.
+ */
+let activeProfile: string | null = null;
+let profileLoaded = false;
+
+async function activeProfileName(): Promise<string> {
+  if (!profileLoaded) {
+    try {
+      const stored = await getCompanionProfile();
+      if (stored && isSafeProfileName(stored)) activeProfile = stored;
+    } catch {
+      // An unreadable prefs file leaves the app on its own profile.
+    }
+    profileLoaded = true;
+  }
+  return activeProfile ?? PROFILE_NAME;
+}
+
+/**
  * The `ensure` that is running right now, if one is.
  *
  * The post-bind door check must not run its own `gateway restart` while an
@@ -371,7 +406,7 @@ export function companionStatus(): PublicCompanionStatus {
 let ensureInFlight: Promise<PublicCompanionStatus> | null = null;
 
 export async function companionEnsure(): Promise<PublicCompanionStatus> {
-  const run = ensureCompanion(realIo()).then((status) => {
+  const run = ensureCompanion(realIo(), await activeProfileName()).then((status) => {
     current = status;
     return publicStatus(status);
   });
@@ -379,6 +414,46 @@ export async function companionEnsure(): Promise<PublicCompanionStatus> {
     ensureInFlight = null;
   });
   return ensureInFlight;
+}
+
+/** What the picker lists, and which profile the app is on right now. */
+export async function companionProfilesList(): Promise<{
+  active: string;
+  profiles: HermesProfileInfo[];
+}> {
+  const active = await activeProfileName();
+  const root = hermesRoot(process.env, os.homedir());
+  const profiles = await listHermesProfiles(root);
+  return { active, profiles };
+}
+
+/**
+ * Choose the profile the companion runs on — an installed one, or `lifequest`
+ * (which the ensure then creates on the spot) — and bring it up.
+ *
+ * This is the way out of a stuck connect. A machine whose host never served
+ * `/p/lifequest` is no longer a dead end: the operator sees every profile this
+ * Hermes install has, picks one, and the app seeds it (soul, MCP entry, eager
+ * tool search) and attaches to it. The choice is persisted, so the next launch
+ * comes up on the same profile.
+ *
+ * The name is validated here even though the renderer is ours: a name that is
+ * not a plain segment would escape `profiles/` or the `/p/` prefix, and the
+ * bridge is the one boundary where that is worth refusing.
+ */
+export async function companionUseProfile(name: string): Promise<PublicCompanionStatus> {
+  const trimmed = (name ?? "").trim();
+  if (!isSafeProfileName(trimmed)) {
+    return { kind: "profile_error", message: `Not a usable profile name: "${name}"` };
+  }
+  activeProfile = trimmed;
+  profileLoaded = true;
+  try {
+    await setCompanionProfile(trimmed);
+  } catch {
+    // A prefs write that fails costs the choice its memory, not this session.
+  }
+  return companionEnsure();
 }
 
 /**
@@ -461,7 +536,7 @@ async function confirmDoorsOnce(): Promise<CompanionDoorCheck> {
   try {
     // `force` skips the "already healthy" shortcut: the host is healthy and that
     // is exactly the problem — it is serving without this door.
-    await ensureHostGateway(cli, root, true);
+    await ensureHostGateway(cli, root, true, await activeProfileName());
   } catch (e) {
     return { kind: "unavailable", error: e instanceof Error ? e.message : String(e) };
   }
@@ -517,7 +592,7 @@ export async function companionWriteMcpProfile(
     const root = hermesRoot(process.env, os.homedir());
     await writeCompanionMcpProfile(
       realIo(),
-      path.join(profileDir(root), "config.yaml"),
+      path.join(profileDir(root, await activeProfileName()), "config.yaml"),
       companionToken,
       path.join(root, "config.yaml"),
     );
@@ -829,7 +904,7 @@ export async function companionPrompts(): Promise<
 > {
   try {
     const root = hermesRoot(process.env, os.homedir());
-    const dir = profileDir(root);
+    const dir = profileDir(root, await activeProfileName());
     const context = await currentInstructionsContext();
     const instructions = buildInstructions(context);
     const value = await readCompanionPrompts({ profilePath: dir, instructions, context });
