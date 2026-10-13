@@ -153,15 +153,15 @@ export function forgeVarsFromColors(c: SkinColors): ForgeSkinVars {
   const fgHsl = hexToHsl(c.foreground);
   const chromaticFg = Boolean(fgHsl && fgHsl.s >= 10);
 
-  // A dark palette that names its mat has inverted the ladder: the page canvas is
-  // the palette's deepest ink, and the mat, the cards and the panels all step up
-  // off it. Every other palette keeps the day order, where the mat and the panels
-  // sink below the sheet.
-  const inverted = Boolean(dark && c.canvas);
-
+  // Night inverts the day ladder for every dark palette: the page canvas — the
+  // sheet, the dock, the boot pane — is the palette's deepest ink, the cards and
+  // the panels step up off it, and the mat the rail and the titlebar wear is the
+  // palette's quiet band, the very ink `--muted-surface` gives the dock's bottom
+  // action row. The frame and that row are then one material in every skin, and
+  // nothing in the window paints below the page.
   const vars: ForgeSkinVars = {
-    "--background": inverted ? bg : elevated,
-    "--canvas-base": inverted ? pickHex(c.canvas, elevated) : canvasBaseFromColors(c, elevated, dark),
+    "--background": dark ? bg : elevated,
+    "--canvas-base": dark ? muted : canvasBaseFromColors(c, elevated, dark),
     "--foreground": c.foreground,
     "--card": elevated,
     "--card-foreground": c.cardForeground ?? c.foreground,
@@ -180,7 +180,7 @@ export function forgeVarsFromColors(c: SkinColors): ForgeSkinVars {
     "--border": border,
     "--input": borderStrong,
     "--ring": selected,
-    "--bg-panel": inverted ? elevated : panel,
+    "--bg-panel": dark ? elevated : panel,
     "--bg-subtle": subtle,
     "--border-soft": borderSoft,
     "--line": structuralLine,

@@ -36,6 +36,11 @@
  *     light theme, where the mat and the panels must keep sinking below the sheet.
  * 15. The mat drifting off the dock's own band — the sidebar and the strip a
  *     near-miss grey beside the `.chat-panel__actions` row they are meant to match.
+ * 16. Lines creeping back between the panes — a hairline on the sheet's top,
+ *     leading or bottom edge, on the rail's trailing edge, or on any edge of the
+ *     dock. The studio has exactly one: the sheet's trailing edge, the seam with
+ *     the dock. The line under the strip belongs to the top bar, and it must
+ *     survive: lose it and the wing and domain selectors lose their underline.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page); everything else — the real AppShell, the real NavRail, the real
@@ -47,6 +52,9 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { applySkin } from "@/lib/themes/apply-skin";
+import { BUILTIN_SKINS, DEFAULT_SKIN_NAME } from "@/lib/themes/presets";
+import { applyThemePreference } from "@/lib/theme";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
@@ -194,3 +202,31 @@ requestAnimationFrame(waitForShell);
 (
   window as unknown as { shellHarnessVaultName: string }
 ).shellHarnessVaultName = VAULT_NAME;
+
+/**
+ * Switch the harness's skin and mode for the rig's night sweep — the same two
+ * product calls `ThemeProvider` makes when the preference or the skin changes
+ * (`applyThemePreference` + `applySkin`), so the sweep measures the shipping
+ * writer on every palette rather than a stub. Reached this way instead of through
+ * the stored preference so a sweep of six palettes costs no page reloads and
+ * leaves the operator's own stored theme and skin untouched.
+ *
+ * The stored-preference path itself is the provider's, and the rigs that mount
+ * `ThemeProvider` cover it.
+ *
+ * Returns the resolved skin name, so a driver can assert the palette landed and a
+ * sweep cannot quietly measure the previous one.
+ */
+(
+  window as unknown as {
+    shellHarnessApplyTheme: (
+      skinName: string,
+      mode: "light" | "dark",
+    ) => string;
+  }
+).shellHarnessApplyTheme = (skinName, mode) => {
+  const skin = BUILTIN_SKINS[skinName] ?? BUILTIN_SKINS[DEFAULT_SKIN_NAME]!;
+  applyThemePreference(mode);
+  applySkin(skin, mode);
+  return skin.name;
+};

@@ -28,19 +28,6 @@ export interface SkinColors {
   destructiveForeground: string;
   sidebarBackground?: string;
   sidebarBorder?: string;
-  /**
-   * Dark-only mat: the fill of the window mat and the chrome band on it — the
-   * titlebar and the nav rail. Naming it inverts the dark ladder: the palette's
-   * `background` becomes the page canvas (the deepest surface, worn by the sheet
-   * and the dock) and the mat takes the ink named here. Forge OS points it at the
-   * quiet band the dock's bottom action row wears; a palette that wants its frame
-   * a step *above* the page and its cards names a lighter ink.
-   *
-   * A palette that leaves it out keeps the day order at night, where the mat sinks
-   * below the sheet — Nous's night is a deliberately deeper brand-blue rail over a
-   * lighter sheet, and it declines the inversion.
-   */
-  canvas?: string;
   userBubble?: string;
   userBubbleBorder?: string;
   /** Text on userBubble / home composer surfaces (defaults to white). */

@@ -493,11 +493,19 @@ a {
   grid-column: 3;
 }
 
-/* Square, wearing a full hairline frame: the sheet is the one pane boxed on all
-   four sides. The mat survives on the one edge it does not share with a
+/* Square, and wearing a single hairline: the one on its trailing edge, the seam
+   with the dock. That is the studio's only divider between panes — the rail meets
+   this pane with no line at all, and the sheet's top and bottom edges are read by
+   the fill alone. The mat survives on the one edge it does not share with a
    neighbour — the pane gap under the titlebar. On the other three it runs to the
    rail, to the dock's leading edge, and to the window's bottom. The bottom escape
    lives in the box the way the dock's does: the pane gap goes into the height.
+
+   One corner is rounded: the leading top, beside the wing selector's first tab.
+   That is the one corner of the studio's three panes with mat on both sides of it
+   — the rail to its left and the pane gap above — so the curve opens onto the
+   chrome band instead of notching a window edge, and `overflow: hidden` clips the
+   top bar into it.
 
    Painted on `--background`, the page canvas, rather than on `--card`: the cards,
    the menus and the panels that step up off this page are what `--card` is for. */
@@ -508,7 +516,9 @@ a {
   overflow: hidden;
   min-height: 0;
   background: var(--background);
-  border: 1px solid var(--border);
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-top-left-radius: var(--radius-sm);
   box-shadow: var(--shadow-sm);
   height: calc(100% + var(--shell-frame));
 }
@@ -752,12 +762,16 @@ a {
 }
 
 /* —— Top bar —— */
+/* The band that runs across the top of the sheet. `--shell-topbar-height` is the
+   height of that band in *both* panes — the dock's header wears it too — so the
+   two underlines land on one line instead of stepping at the seam. No vertical
+   padding: the band is the height, and its contents centre in it. */
 .top-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 0.75rem;
-  padding: 0.4rem 0.75rem;
+  padding: 0 0.75rem;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
   min-height: var(--shell-topbar-height);
@@ -3490,11 +3504,10 @@ a.home-mini-list__link:hover {
    the tray keeps the frame for the sheet on the top, right and bottom, and this
    panel's box carries the right and bottom halves of that frame. On the sheet's
    own surface rather than a frosted one — a translucent panel reads as a card
-   floating over the page, and there is no page behind it to blur. Its top edge
-   wears the same hairline as the sheet's, so the line under the titlebar runs
-   across both panes, and its leading edge keeps the pane gap with no line of its
-   own — the sheet's frame is the seam's divider; no radius or shadow survives a
-   flush panel. */
+   floating over the page, and there is no page behind it to blur. It paints no
+   line of its own on any edge: the sheet's trailing hairline is the seam's only
+   divider, and the top edge is read by the fill alone — no radius or shadow
+   survives a flush panel either. */
 .chat-panel {
   display: flex;
   flex-direction: column;
@@ -3507,7 +3520,6 @@ a.home-mini-list__link:hover {
   background: var(--background);
   color: var(--fg);
   border: 0;
-  border-top: 1px solid var(--border);
   /* The escape lives in the box, not in a negative margin: a stretched grid item
      is exactly the track, so the frame goes into the width and height. Measured
      — the box lands on the window's right edge and bottom. */
@@ -3556,13 +3568,17 @@ a.home-mini-list__link:hover {
   color: var(--fg);
 }
 
+/* The dock's own band, one height with the sheet's top bar: both wear
+   `--shell-topbar-height`, so their bottom hairlines are a single line across the
+   page and the dock rather than two lines a pixel apart at the seam. No vertical
+   padding — the contents centre in the band. */
 .chat-panel__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  min-height: 3rem;
-  padding: 0.5rem 0.75rem;
+  min-height: var(--shell-topbar-height);
+  padding: 0 0.75rem;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }

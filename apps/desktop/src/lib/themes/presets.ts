@@ -235,8 +235,8 @@ const FORGE_OS_LIGHT = {
 /**
  * Night on the cooling floor: the page canvas is the deepest ink (`background`),
  * and `card` is the one step above it that the cards and the panels wear. The day
- * palette runs the other way — there the mat sinks below the paper — so
- * `darkColors` names its `canvas` to invert the ladder.
+ * palette runs the other way — there the mat sinks below the paper — because night
+ * inverts the ladder in every skin.
  */
 const FORGE_OS_DARK = {
   background: "#111214",
@@ -250,9 +250,9 @@ const FORGE_OS_DARK = {
 
 /**
  * The quiet ink between the page and the cards: the dock's own bottom action band
- * (`.chat-panel__actions`), the hover fills, and the mat the rail and the titlebar
- * wear — so the window's frame and that band read as one material rather than two
- * greys that nearly match. Named once, so moving the band moves the frame with it.
+ * (`.chat-panel__actions`), the hover fills, and — because night hangs the mat on
+ * this band — the rail and the titlebar too. Both read as one material rather than
+ * two greys that nearly match, and moving the band moves the frame with it.
  */
 const FORGE_OS_DARK_BAND = mix(
   FORGE_OS_DARK.background,
@@ -324,11 +324,8 @@ export const forgeOsSkin: ForgeSkin = {
     foreground: FORGE_OS_DARK.text,
     card: FORGE_OS_DARK.card,
     cardForeground: FORGE_OS_DARK.text,
-    // The rail and the titlebar wear the dock's own bottom band rather than the
-    // card step: the frame sits under the cards, so the sidebar and the strip are
-    // the darkest chrome in the window after the page itself, and match the icon
-    // menu at the foot of the chat bar.
-    canvas: FORGE_OS_DARK_BAND,
+    // The quiet band the mat reads: the rail and the titlebar wear the dock's own
+    // bottom action row's ink, a step under the cards and clear of the page.
     muted: FORGE_OS_DARK_BAND,
     mutedForeground: FORGE_OS_DARK.muted,
     popover: "#1E2229",
@@ -346,7 +343,6 @@ export const forgeOsSkin: ForgeSkin = {
     composerRing: FORGE_OS_DARK.accent,
     destructive: "#D64545",
     destructiveForeground: FORGE_OS_DARK.text,
-    sidebarBackground: "#0D0E10",
     sidebarBorder: forgeOsDarkLine(30),
     userBubble: FORGE_OS_DARK.card,
     userBubbleBorder: forgeOsDarkLine(42),

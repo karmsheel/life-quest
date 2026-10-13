@@ -62,6 +62,8 @@ const SAMPLE = `(() => {
   const main = document.querySelector(".shell__main");
   const chat = document.querySelector(".chat-panel");
   const dockActions = document.querySelector(".chat-panel__actions");
+  const topBar = document.querySelector(".top-bar");
+  const chatHeader = document.querySelector(".chat-panel__header");
   const shell = document.querySelector(".shell");
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
 
@@ -83,7 +85,8 @@ const SAMPLE = `(() => {
     tokens: {
       track,
       frame: px(root.getPropertyValue("--shell-frame")),
-      titlebarHeight
+      titlebarHeight,
+      radiusSm: root.getPropertyValue("--radius-sm").trim()
     },
     theme: {
       dataTheme: document.documentElement.getAttribute("data-theme"),
@@ -171,10 +174,30 @@ const SAMPLE = `(() => {
       : null,
     main: box(main),
     mainBackground: main ? getComputedStyle(main).backgroundColor : null,
+    topBar: topBar
+      ? {
+          box: box(topBar),
+          borderBottomWidth: getComputedStyle(topBar).borderBottomWidth,
+          borderBottomColor: getComputedStyle(topBar).borderBottomColor,
+          background: getComputedStyle(topBar).backgroundColor
+        }
+      : null,
+    chatHeader: chatHeader
+      ? {
+          box: box(chatHeader),
+          borderBottomWidth: getComputedStyle(chatHeader).borderBottomWidth,
+          borderBottomColor: getComputedStyle(chatHeader).borderBottomColor,
+          background: getComputedStyle(chatHeader).backgroundColor
+        }
+      : null,
     sheet: main
       ? {
           box: box(main),
           borderRadius: getComputedStyle(main).borderRadius,
+          borderTopLeftRadius: getComputedStyle(main).borderTopLeftRadius,
+          borderTopRightRadius: getComputedStyle(main).borderTopRightRadius,
+          borderBottomRightRadius: getComputedStyle(main).borderBottomRightRadius,
+          borderBottomLeftRadius: getComputedStyle(main).borderBottomLeftRadius,
           borderTopWidth: getComputedStyle(main).borderTopWidth,
           borderRightWidth: getComputedStyle(main).borderRightWidth,
           borderBottomWidth: getComputedStyle(main).borderBottomWidth,
@@ -349,6 +372,38 @@ async function main() {
       return true;
     })()`);
 
+  /**
+   * The harness's own theme switch: `applyThemePreference` + `applySkin`, the two
+   * calls the provider makes when the preference or the skin changes. It returns
+   * the skin it resolved, so a sweep can prove the palette landed rather than
+   * measure the previous one.
+   */
+  const applyTheme = async (skinName, mode) => {
+    const applied = await run(
+      `window.shellHarnessApplyTheme?.(${JSON.stringify(skinName)}, ${JSON.stringify(mode)}) ?? null`,
+    );
+    check(
+      `the harness switched to ${skinName} ${mode}`,
+      applied === skinName,
+      `harness resolved ${JSON.stringify(applied)}`,
+    );
+    return applied;
+  };
+
+  /**
+   * Every night palette in the app. Named here rather than discovered so a run
+   * measures a fixed set; the suite cross-checks this list against the skin
+   * registry, so a new dark skin cannot land without being measured.
+   */
+  const NIGHT_SKINS = [
+    "forge-os",
+    "nous",
+    "midnight",
+    "ember",
+    "mono",
+    "cyberpunk",
+  ];
+
   let report;
   const timeout = setTimeout(() => {
     console.error("shell-sidebar: timed out after 90s");
@@ -363,6 +418,12 @@ async function main() {
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
     await new Promise((resolve) => setTimeout(resolve, 250));
     win.showInactive();
+
+    // The rig pins the palette it measures. A rig shares this window's storage
+    // with the operator's own dev profile, so whatever skin and mode they last
+    // chose would otherwise decide what "expanded" is painted in — and a forge-os
+    // claim measured on another palette is worse than no claim at all.
+    await applyTheme("forge-os", "dark");
 
     const expanded = await settled();
     const { track, frame, titlebarHeight } = expanded.tokens;
@@ -523,16 +584,13 @@ async function main() {
       `radius ${expanded.chat?.borderRadius}`,
     );
     check(
-      "the chat panel wears only its top hairline",
-      expanded.chat?.borderRightWidth === "0px" &&
+      "the dock paints no line of its own",
+      expanded.chat?.borderTopWidth === "0px" &&
+        expanded.chat?.borderRightWidth === "0px" &&
         expanded.chat?.borderBottomWidth === "0px" &&
-        expanded.chat?.borderLeftWidth === "0px" &&
-        parseFloat(expanded.chat?.borderTopWidth ?? "0") > 0 &&
-        parseFloat(expanded.chat?.borderTopWidth ?? "0") <= 1,
+        expanded.chat?.borderLeftWidth === "0px",
       `borders t/r/b/l ${expanded.chat?.borderTopWidth}/${expanded.chat?.borderRightWidth}/${expanded.chat?.borderBottomWidth}/${expanded.chat?.borderLeftWidth}`,
     );
-    // The top hairline has to be the same line the sheet's top edge carries:
-    // one level, under the strip, spanning the dock as well as the sheet.
     check(
       "the panel's top edge is level with the sheet's",
       expanded.chat?.box.top === titlebarHeight + frame,
@@ -554,42 +612,64 @@ async function main() {
       expanded.main?.top === titlebarHeight + frame,
       `sheet top ${expanded.main?.top}px (want ${titlebarHeight + frame}px)`,
     );
-    // The sheet's own chrome: square, wearing a hairline on all four sides —
-    // the page's box, drawn one pane gap in from the rail and the dock.
+    // One rounded corner: the leading top, next to the wing selector's first tab,
+    // where the mat is on both sides of the corner. The other three stay square —
+    // a radius there would notch the rail's seam or the window's own edge.
     check(
-      "the sheet has square corners",
-      expanded.sheet?.borderRadius === "0px",
-      `radius ${expanded.sheet?.borderRadius}`,
+      "the sheet's leading top corner is the only rounded one",
+      expanded.sheet?.borderTopLeftRadius === expanded.tokens?.radiusSm &&
+        expanded.sheet?.borderTopRightRadius === "0px" &&
+        expanded.sheet?.borderBottomRightRadius === "0px" &&
+        expanded.sheet?.borderBottomLeftRadius === "0px",
+      `corners tl/tr/br/bl ${expanded.sheet?.borderTopLeftRadius}/${expanded.sheet?.borderTopRightRadius}/${expanded.sheet?.borderBottomRightRadius}/${expanded.sheet?.borderBottomLeftRadius} vs --radius-sm ${expanded.tokens?.radiusSm}`,
     );
+    // One line between panes, and only one: the sheet's trailing hairline, the
+    // seam with the dock. The sheet's top and leading edges paint nothing — the
+    // rail meets it as a change of fill, and the pane gap is what separates it from
+    // the strip — and neither neighbour draws an edge of its own.
     check(
-      "the sheet wears a hairline on all four sides",
-      [
-        expanded.sheet?.borderTopWidth,
-        expanded.sheet?.borderRightWidth,
-        expanded.sheet?.borderBottomWidth,
-        expanded.sheet?.borderLeftWidth,
-      ].every(
-        (width) => parseFloat(width ?? "0") > 0 && parseFloat(width ?? "0") <= 1,
-      ),
+      "the sheet wears one hairline, on its trailing edge",
+      parseFloat(expanded.sheet?.borderRightWidth ?? "0") > 0 &&
+        parseFloat(expanded.sheet?.borderRightWidth ?? "0") <= 1 &&
+        expanded.sheet?.borderTopWidth === "0px" &&
+        expanded.sheet?.borderBottomWidth === "0px" &&
+        expanded.sheet?.borderLeftWidth === "0px",
       `borders t/r/b/l ${expanded.sheet?.borderTopWidth}/${expanded.sheet?.borderRightWidth}/${expanded.sheet?.borderBottomWidth}/${expanded.sheet?.borderLeftWidth}`,
     );
-    // One line per seam: the sheet's frame, with neither neighbour painting an
-    // edge of its own into the same pane gap.
     check(
-      "each seam carries the sheet's frame alone",
-      expanded.sheet?.borderLeftWidth !== "0px" &&
-        expanded.sheet?.borderRightWidth !== "0px" &&
-        expanded.rail?.borderRightWidth === "0px" &&
-        expanded.chat?.borderLeftWidth === "0px",
-      `rail right ${expanded.rail?.borderRightWidth}, sheet left ${expanded.sheet?.borderLeftWidth}, sheet right ${expanded.sheet?.borderRightWidth}, dock left ${expanded.chat?.borderLeftWidth}`,
+      "the rail meets the sheet with no line between them",
+      expanded.rail?.borderRightWidth === "0px" &&
+        expanded.sheet?.borderLeftWidth === "0px",
+      `rail right ${expanded.rail?.borderRightWidth}, sheet left ${expanded.sheet?.borderLeftWidth}`,
     );
     check(
-      "that hairline sits on the sheet's top edge, one pane gap under the strip",
+      "the sheet's top edge sits one pane gap under the strip",
       expanded.sheet?.box.top === titlebarHeight + frame,
-      `hairline at y=${expanded.sheet?.box.top}px, strip ends at ${titlebarHeight}px, pane gap ${frame}px`,
+      `sheet top at y=${expanded.sheet?.box.top}px, strip ends at ${titlebarHeight}px, pane gap ${frame}px`,
+    );
+    // The line the strip reads as its own is the top bar's, under the wing and
+    // domain selectors — not a frame on the sheet's top edge.
+    check(
+      "the line under the wing and domain selectors is the top bar's own",
+      parseFloat(expanded.topBar?.borderBottomWidth ?? "0") > 0 &&
+        parseFloat(expanded.topBar?.borderBottomWidth ?? "0") <= 1 &&
+        expanded.topBar?.background === expanded.mainBackground,
+      `top bar bottom ${expanded.topBar?.borderBottomWidth} on ${expanded.topBar?.background} vs page ${expanded.mainBackground}`,
+    );
+    // ...and it is one line across both panes: the dock's header wears the same
+    // band height, so the two underlines land on the same row rather than stepping
+    // a pixel apart where they meet.
+    check(
+      "the sheet's top bar and the dock's header are one band",
+      Boolean(expanded.topBar && expanded.chatHeader) &&
+        expanded.topBar.box.top === expanded.chatHeader.box.top &&
+        expanded.topBar.box.bottom === expanded.chatHeader.box.bottom &&
+        expanded.topBar.box.top === titlebarHeight + frame &&
+        parseFloat(expanded.chatHeader.borderBottomWidth || "0") > 0,
+      `top bar ${JSON.stringify(expanded.topBar?.box)} vs dock header ${JSON.stringify(expanded.chatHeader?.box)}, header underline ${expanded.chatHeader?.borderBottomWidth}`,
     );
     check(
-      "the chip lines up with the sheet's leading border",
+      "the chip lines up with the sheet's leading edge",
       expanded.vault?.box.left === expanded.main?.left,
       `chip at ${expanded.vault?.box.left}px vs sheet at ${expanded.main?.left}px`,
     );
@@ -658,6 +738,16 @@ async function main() {
     });
     const cornerFile = path.join(artifactsDir, "shell-sidebar-corner.png");
     fs.writeFileSync(cornerFile, cornerShot.toPNG());
+    // The seam where the two bands meet, zoomed to the one line they should share —
+    // the claim the colour and border checks make, in pixels.
+    const seamShot = await win.webContents.capturePage({
+      x: Math.max(0, (expanded.chat?.box.left ?? 0) - 140),
+      y: titlebarHeight,
+      width: 280,
+      height: 120,
+    });
+    const seamFile = path.join(artifactsDir, "shell-sidebar-seam.png");
+    fs.writeFileSync(seamFile, seamShot.toPNG());
 
     // 6 — the toggle collapses: rail gone, column given back, way back in place.
     const clickedCollapse = await clickToggle(".nav-rail .nav-toggle");
@@ -760,15 +850,10 @@ async function main() {
 
     // 8 — the ladder is a *night* ladder. Day keeps its own order, where the mat
     // and the panels sink below the sheet; the same rig, the same skin and only
-    // the preference flipped, so a day that inherited the night inks fails here
-    // rather than on the operator's screen.
-    await run(`localStorage.setItem("lifequest-theme", "light")`);
-    await win.loadURL(url);
-    await waitForHarness();
-    win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
+    // the mode flipped, so a day that inherited the night inks fails here rather
+    // than on the operator's screen.
+    await applyTheme("forge-os", "light");
     const day = await settled();
-    // Leave the preference as the rig found it — the default is dark.
-    await run(`localStorage.removeItem("lifequest-theme")`);
 
     const dawn = ladderOf(day);
     check(
@@ -792,6 +877,65 @@ async function main() {
     const dayFile = path.join(artifactsDir, "shell-sidebar-day.png");
     fs.writeFileSync(dayFile, dayShot.toPNG());
 
+    // 9 — the night ladder holds for every dark palette, not just the default one.
+    // The same four claims per skin: the page canvas is the deepest surface in the
+    // window, the cards step up off it, the mat is its own ink and not the page,
+    // and the mat and the dock's action row are one material.
+    const skins = {};
+    const skinShots = [];
+    for (const skinName of NIGHT_SKINS) {
+      await applyTheme(skinName, "dark");
+      const ladder = ladderOf(await settled());
+      skins[skinName] = ladder;
+
+      const skinShot = await win.webContents.capturePage();
+      const skinFile = path.join(artifactsDir, `shell-sidebar-night-${skinName}.png`);
+      fs.writeFileSync(skinFile, skinShot.toPNG());
+      skinShots.push(skinFile);
+
+      const { luminance, surfaces, tokens } = ladder;
+      const floors = [
+        "chrome",
+        "titlebar",
+        "dock",
+        "dockActions",
+        "card",
+        "viewCard",
+      ];
+      const lum = (key) => (luminance[key] ?? Number.NaN).toFixed(4);
+      check(
+        `night[${skinName}]: the rig is on that skin`,
+        ladder.skin === skinName && ladder.dataTheme === "dark",
+        `theme ${ladder.dataTheme}, skin ${ladder.skin}`,
+      );
+      check(
+        `night[${skinName}]: every surface was measured`,
+        floors.every((key) => Number.isFinite(luminance[key])),
+        `fills ${JSON.stringify(surfaces)}`,
+      );
+      check(
+        `night[${skinName}]: the mat and the dock's action band are one ink`,
+        surfaces.chrome === surfaces.dockActions &&
+          tokens.canvasBase === tokens.mutedSurface,
+        `mat ${surfaces.chrome} vs .chat-panel__actions ${surfaces.dockActions}; tokens ${tokens.canvasBase} vs ${tokens.mutedSurface}`,
+      );
+      check(
+        `night[${skinName}]: the page canvas is the darkest surface in the window`,
+        floors.every((key) => luminance[key] >= luminance.page),
+        `page ${lum("page")} against ${JSON.stringify(Object.fromEntries(floors.map((key) => [key, lum(key)])))}`,
+      );
+      check(
+        `night[${skinName}]: the mat is its own ink, not the page`,
+        surfaces.chrome !== surfaces.page && luminance.chrome > luminance.page,
+        `mat ${surfaces.chrome} (${lum("chrome")}) vs page ${surfaces.page} (${lum("page")})`,
+      );
+      check(
+        `night[${skinName}]: the cards step up off the page canvas`,
+        luminance.card > luminance.page && luminance.viewCard > luminance.page,
+        `card ${surfaces.card} (${lum("card")}) vs page ${surfaces.page} (${lum("page")})`,
+      );
+    }
+
     report = {
       url,
       ranAt: new Date().toISOString(),
@@ -802,9 +946,16 @@ async function main() {
       collapsed,
       restored,
       day,
-      ladder: { night, day: dawn },
+      ladder: { night, day: dawn, skins },
       reclaimedPx: (expanded.main?.left ?? 0) - (collapsed.main?.left ?? 0),
-      screenshots: [expandedFile, cornerFile, collapsedFile, dayFile],
+      screenshots: [
+        expandedFile,
+        cornerFile,
+        seamFile,
+        collapsedFile,
+        dayFile,
+        ...skinShots,
+      ],
       failures,
       pass: failures.length === 0,
     };
@@ -857,35 +1008,28 @@ async function main() {
   const format = (row) => row.map((cell, i) => cell.padEnd(widths[i])).join("  ");
   for (const row of table) console.log(format(row));
 
-  // The ladder, mode by mode: surface ink and its luminance, so the ordering the
-  // run asserts is readable without opening the JSON.
+  // The ladder, palette by palette: surface ink and its luminance, so the ordering
+  // the run asserts is readable without opening the JSON.
   if (report.ladder) {
     const cell = (data, key) =>
       data?.surfaces?.[key]
         ? `${data.surfaces[key]} ${(data.luminance[key] ?? Number.NaN).toFixed(4)}`
         : "—";
     const rows = [
-      [
-        "mode",
-        "mat (chrome)",
-        "sheet (page canvas)",
-        "card",
-        "view card",
-        "dock action band",
-      ],
+      ["palette", "mat (chrome)", "page canvas", "card", "dock action band"],
     ];
-    for (const mode of ["night", "day"]) {
-      const data = report.ladder[mode];
-      if (!data) continue;
+    const row = (label, data) =>
       rows.push([
-        mode,
+        label,
         cell(data, "chrome"),
         cell(data, "page"),
         cell(data, "card"),
-        cell(data, "viewCard"),
         cell(data, "dockActions"),
       ]);
+    for (const [name, data] of Object.entries(report.ladder.skins ?? {})) {
+      row(`night ${name}`, data);
     }
+    if (report.ladder.day) row("day forge-os", report.ladder.day);
     const widths = rows[0].map((_, i) =>
       Math.max(...rows.map((row) => row[i].length)),
     );

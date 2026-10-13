@@ -10,6 +10,8 @@
   --shell-sidebar-width: 16rem;
   --shell-chatbar-height: 3rem;
   --shell-max-width: 80rem;
+  /* The band across the top of the studio: one height for the sheet's top bar and
+     the dock's header, so their underlines land on the same line at the seam. */
   --shell-topbar-height: 2.75rem;
   --window-titlebar-height: 32px;
   --shell-frame: 12px;

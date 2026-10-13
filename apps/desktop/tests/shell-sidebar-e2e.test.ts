@@ -6,6 +6,7 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import { BUILTIN_SKIN_LIST, filterSkinsForMode } from "../src/lib/themes/presets.ts";
 
 const desktopRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -28,7 +29,7 @@ type Box = {
 
 type State = {
   viewport: { width: number; height: number };
-  tokens: { track: number; frame: number; titlebarHeight: number };
+  tokens: { track: number; frame: number; titlebarHeight: number; radiusSm: string };
   theme: {
     dataTheme: string | null;
     skin: string | null;
@@ -75,6 +76,18 @@ type State = {
   titlebarBackground: string | null;
   main: Box | null;
   mainBackground: string | null;
+  topBar: {
+    box: Box;
+    borderBottomWidth: string;
+    borderBottomColor: string;
+    background: string;
+  } | null;
+  chatHeader: {
+    box: Box;
+    borderBottomWidth: string;
+    borderBottomColor: string;
+    background: string;
+  } | null;
   sheet: {
     box: Box;
     borderRadius: string;
@@ -114,7 +127,7 @@ type Report = {
   collapsed: State;
   restored: State;
   day: State;
-  ladder: { night: Ladder; day: Ladder };
+  ladder: { night: Ladder; day: Ladder; skins: Record<string, Ladder> };
   reclaimedPx: number;
   screenshots: string[];
 };
@@ -336,40 +349,88 @@ describe("shell sidebar (docked rail)", () => {
       `the rail is still frosted (${expanded.rail?.backdropFilter})`,
     );
 
-    // The sheet's own chrome: square, a hairline on all four sides — the page's
-    // box, drawn one pane gap under the strip and flush to the rail, the dock and
-    // the window's bottom edge on the other three sides.
+    // The sheet's own chrome: square, and carrying the studio's one hairline —
+    // its trailing edge, the seam with the dock.
     assert.ok(expanded.sheet, "the shell rendered no workspace sheet");
+    // One rounded corner — the leading top, beside the wing selector's first tab —
+    // and three square ones.
     assert.equal(
-      expanded.sheet.borderRadius,
-      "0px",
-      `the sheet kept a rounded corner (${expanded.sheet.borderRadius})`,
+      expanded.sheet.borderTopLeftRadius,
+      expanded.tokens.radiusSm,
+      `the sheet's leading top corner is not the system radius (${expanded.sheet.borderTopLeftRadius} vs ${expanded.tokens.radiusSm})`,
+    );
+    for (const [corner, radius] of [
+      ["top right", expanded.sheet.borderTopRightRadius],
+      ["bottom right", expanded.sheet.borderBottomRightRadius],
+      ["bottom left", expanded.sheet.borderBottomLeftRadius],
+    ] as const) {
+      assert.equal(
+        radius,
+        "0px",
+        `the sheet grew a radius on its ${corner} corner (${radius})`,
+      );
+    }
+    assert.ok(
+      parseFloat(expanded.sheet.borderRightWidth) > 0 &&
+        parseFloat(expanded.sheet.borderRightWidth) <= 1,
+      `the sheet lost the seam with the dock (${expanded.sheet.borderRightWidth})`,
     );
     for (const [side, width] of [
       ["top", expanded.sheet.borderTopWidth],
-      ["right", expanded.sheet.borderRightWidth],
       ["bottom", expanded.sheet.borderBottomWidth],
       ["left", expanded.sheet.borderLeftWidth],
     ] as const) {
-      assert.ok(
-        parseFloat(width) > 0 && parseFloat(width) <= 1,
-        `the sheet has no hairline on its ${side} edge (${width})`,
+      assert.equal(
+        width,
+        "0px",
+        `the sheet grew a line on its ${side} edge (${width})`,
       );
     }
     assert.equal(
       expanded.sheet.box.top,
       titlebarHeight + frame,
-      `the titlebar's hairline is not one pane gap under the strip (${expanded.sheet.box.top}px vs ${titlebarHeight + frame}px)`,
+      `the sheet's top edge is not one pane gap under the strip (${expanded.sheet.box.top}px vs ${titlebarHeight + frame}px)`,
     );
-    // One line per seam: the sheet's frame, with neither neighbour painting an
-    // edge of its own into the same pane gap.
+    // The rail meets the sheet with no line between them, and the dock paints none
+    // of its own on any edge.
     assert.equal(
       expanded.rail.borderRightWidth === "0px" &&
-        expanded.chat.borderLeftWidth === "0px" &&
-        expanded.sheet.borderLeftWidth !== "0px" &&
-        expanded.sheet.borderRightWidth !== "0px",
+        expanded.sheet.borderLeftWidth === "0px" &&
+        expanded.chat.borderTopWidth === "0px" &&
+        expanded.chat.borderRightWidth === "0px" &&
+        expanded.chat.borderBottomWidth === "0px" &&
+        expanded.chat.borderLeftWidth === "0px",
       true,
-      `rail right ${expanded.rail.borderRightWidth}, dock left ${expanded.chat.borderLeftWidth}, sheet left/right ${expanded.sheet.borderLeftWidth}/${expanded.sheet.borderRightWidth}`,
+      `rail right ${expanded.rail.borderRightWidth}, sheet left ${expanded.sheet.borderLeftWidth}, dock t/r/b/l ${expanded.chat.borderTopWidth}/${expanded.chat.borderRightWidth}/${expanded.chat.borderBottomWidth}/${expanded.chat.borderLeftWidth}`,
+    );
+    // And the line under the strip is still there — it is the top bar's own, under
+    // the wing and domain selectors, not a frame on the sheet — and it is one line
+    // across both panes: the dock's header wears the same band height.
+    assert.ok(
+      parseFloat(expanded.topBar?.borderBottomWidth ?? "0") > 0 &&
+        parseFloat(expanded.topBar?.borderBottomWidth ?? "0") <= 1,
+      `the wing and domain selectors lost their underline (${expanded.topBar?.borderBottomWidth})`,
+    );
+    assert.equal(
+      expanded.topBar?.background,
+      expanded.mainBackground,
+      `the top bar is not on the page canvas: ${expanded.topBar?.background} vs ${expanded.mainBackground}`,
+    );
+    assert.ok(expanded.chatHeader, "the dock rendered no header band");
+    assert.equal(
+      expanded.topBar.box.top,
+      expanded.chatHeader.box.top,
+      `the two bands do not start on the same row: ${expanded.topBar.box.top}px vs ${expanded.chatHeader.box.top}px`,
+    );
+    assert.equal(
+      expanded.topBar.box.bottom,
+      expanded.chatHeader.box.bottom,
+      `the top bar's underline and the dock header's do not meet on one line: ${expanded.topBar.box.bottom}px vs ${expanded.chatHeader.box.bottom}px`,
+    );
+    assert.ok(
+      parseFloat(expanded.chatHeader.borderBottomWidth) > 0 &&
+        parseFloat(expanded.chatHeader.borderBottomWidth) <= 1,
+      `the dock header lost its underline (${expanded.chatHeader.borderBottomWidth})`,
     );
 
     // Collapsed: rail gone, its width back to the sheet, a toggle left behind.
@@ -432,9 +493,8 @@ describe("shell sidebar (docked rail)", () => {
     );
 
     // The dock's own contract: square, flush right and bottom, on the sheet's
-    // surface rather than a frosted one, with one hairline on its top edge —
-    // on the sheet's own top line — and no leading line, since the sheet's
-    // frame draws that seam.
+    // surface rather than a frosted one, and painting no line of its own on any
+    // edge — the sheet's trailing hairline is the seam's only divider.
     const { height: viewportHeight, width: viewportWidth } = expanded.viewport;
     assert.equal(
       viewportWidth - expanded.chat.box.right,
@@ -447,22 +507,18 @@ describe("shell sidebar (docked rail)", () => {
       "the chat panel stopped short of the window bottom",
     );
     assert.equal(expanded.chat.borderRadius, "0px", "the chat panel kept its radius");
-    assert.equal(
-      expanded.chat.borderLeftWidth,
-      "0px",
-      "the chat panel grew a leading border — the sheet draws that seam",
-    );
-    assert.equal(expanded.chat.borderRightWidth, "0px", "the chat panel kept its right border");
-    assert.equal(
-      expanded.chat.borderBottomWidth,
-      "0px",
-      "the chat panel kept its bottom border",
-    );
-    assert.ok(
-      parseFloat(expanded.chat.borderTopWidth) > 0 &&
-        parseFloat(expanded.chat.borderTopWidth) <= 1,
-      `the chat panel lost its top hairline (${expanded.chat.borderTopWidth})`,
-    );
+    for (const [edge, width] of [
+      ["top", expanded.chat.borderTopWidth],
+      ["right", expanded.chat.borderRightWidth],
+      ["bottom", expanded.chat.borderBottomWidth],
+      ["left", expanded.chat.borderLeftWidth],
+    ] as const) {
+      assert.equal(
+        width,
+        "0px",
+        `the chat panel grew a line on its ${edge} edge (${width})`,
+      );
+    }
     assert.equal(
       expanded.chat.box.top,
       titlebarHeight + frame,
@@ -511,8 +567,10 @@ describe("shell sidebar (docked rail)", () => {
       ladder.night.luminance.titlebar > ladder.night.luminance.page,
       `the titlebar is not lighter than the page canvas: ${ladder.night.surfaces.titlebar} (${ladder.night.luminance.titlebar}) vs ${ladder.night.luminance.page}`,
     );
-    // The sidebar and the strip are the darker chrome: under the cards, and the
-    // same ink as the icon menu at the foot of the chat bar.
+    // Forge OS's own band sits *under* its cards, so its sidebar and strip are the
+    // darker chrome and the cards stay the lighter grey. That ordering is this
+    // palette's — a palette whose quiet band sits above its cards is held only to
+    // the sweep's claims below.
     for (const surface of ["card", "viewCard"] as const) {
       assert.ok(
         ladder.night.luminance.chrome < ladder.night.luminance[surface],
@@ -580,6 +638,67 @@ describe("shell sidebar (docked rail)", () => {
       computedHex(ladder.night.tokens.bgPanel),
       `the card is not painting --bg-panel: ${ladder.night.surfaces.card} vs ${ladder.night.tokens.bgPanel}`,
     );
+
+    // And the same ladder on every other dark palette — not just the default one.
+    // The sweep is cross-checked against the skin registry, so a new night skin
+    // cannot land without being measured, and each palette is held to the four
+    // claims: the page canvas is the deepest surface, the cards step up off it, the
+    // mat is its own ink, and the mat and the dock's action row are one material.
+    const swept = ladder.skins ?? {};
+    const darkSkins = filterSkinsForMode(BUILTIN_SKIN_LIST, "dark")
+      .map((skin) => skin.name)
+      .sort();
+    assert.deepEqual(
+      Object.keys(swept).sort(),
+      darkSkins,
+      "the night sweep did not cover every dark skin",
+    );
+    const floors = [
+      "chrome",
+      "titlebar",
+      "dock",
+      "dockActions",
+      "card",
+      "viewCard",
+    ] as const;
+    for (const name of darkSkins) {
+      const skin = swept[name];
+      assert.equal(skin.dataTheme, "dark", `${name} was swept in the day palette`);
+      assert.equal(skin.skin, name, `the sweep measured ${skin.skin} as ${name}`);
+      for (const surface of [...floors, "page"] as const) {
+        assert.equal(
+          Number.isFinite(skin.luminance[surface]),
+          true,
+          `${name}: no luminance for the ${surface} (${skin.surfaces[surface]})`,
+        );
+      }
+      assert.equal(
+        skin.surfaces.chrome,
+        skin.surfaces.dockActions,
+        `${name}: the mat does not wear the dock's action band (${skin.surfaces.chrome} vs ${skin.surfaces.dockActions})`,
+      );
+      assert.equal(
+        skin.tokens.canvasBase,
+        skin.tokens.mutedSurface,
+        `${name}: --canvas-base and --muted-surface are different inks (${skin.tokens.canvasBase} vs ${skin.tokens.mutedSurface})`,
+      );
+      assert.ok(
+        skin.luminance.chrome > skin.luminance.page,
+        `${name}: the mat does not lift off the page canvas (${skin.surfaces.chrome} vs ${skin.surfaces.page})`,
+      );
+      for (const surface of floors) {
+        assert.ok(
+          skin.luminance[surface] >= skin.luminance.page,
+          `${name}: the ${surface} paints below the page canvas (${skin.luminance[surface]} vs page ${skin.luminance.page})`,
+        );
+      }
+      for (const surface of ["card", "viewCard"] as const) {
+        assert.ok(
+          skin.luminance[surface] > skin.luminance.page,
+          `${name}: the ${surface} does not step up off the page canvas (${skin.surfaces[surface]} vs ${skin.surfaces.page})`,
+        );
+      }
+    }
 
     for (const file of report.screenshots) {
       assert.equal(fs.existsSync(file), true, `driver wrote no screenshot ${file}`);
