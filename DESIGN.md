@@ -24,7 +24,8 @@ ThemeProvider may apply a named skin and light/dark/system. It must not generate
 - State Color — red/green/blue/amber mean state, not decoration.
 - Theme Provider — named skins fill the contract.
 - Raw Color — hex only in primitives and palettes.
-- Dark Ladder — at night the page canvas is the darkest surface: the sheet and the dock paint `--background`, the cards and the panels step up off it, and the mat wears the palette's `--muted-surface` ink. Never paint a card or the mat below the page.
+- Dark Ladder — at night the page canvas is the darkest surface: the sheet and the dock paint `--background`, the cards and the panels step up off it, and the mat wears the palette's `--muted-surface` ink. Never paint a card or the mat below the page. **Named exemption:** a skin that is a faithful copy of an upstream theme may declare `darkLadder: "inverted"` and keep that theme's own elevation direction. `nous` does, because GitHub Dark Default puts its cards below its page. The mat still lifts off the page either way; both rigs assert the *declared* direction rather than skipping the claim.
+- Palette-Only Skin — a skin carries a palette and, optionally, font stacks. It does not ship layout, radii, motion, imagery or a `[data-skin]` CSS layer. The one exception this file ever granted — Nous's type treatment, orbit art and mat texture — was retired when Nous was replaced by the Hermes Desktop preset.
 - Closed Primitive — extend `Button` / settings primitives; do not restyle in features.
 - Flat First — canvas vs sheet is the elevation ladder; do not add shadows beyond `--shadow-sm` on the sheet.
 - Calm Scale — radii are `6 / 12 / 18 / 24 / --radius-pill`. Do not change the type scale here.
@@ -40,3 +41,70 @@ The studio is three square panes (`.nav-rail`, `.shell__main`, `.chat-panel`) on
 ## Remaining visual do-not-do
 
 Do not add dot-grid, Inter/Geist as default UI fonts, a pill composer, `PageShell`, or reclaim `--accent` as hover.
+
+## Nous and Nous Classic
+
+Both are **copies of Hermes Desktop's bundled presets**, taken from
+`apps/shared/src/theme-presets.ts` in the Hermes install. Hermes ships them as its
+product identity — `nous` is its `DEFAULT_SKIN_NAME` — so LifeQuest carries the
+same two names and the same palettes rather than a re-derivation of them, and a
+user moving between the two apps sees one look. Re-import from Hermes rather than
+hand-editing hexes here.
+
+Neither is a special skin. Both are **palettes and nothing else**: Hermes's theme
+model keeps layout, sizing, radius and typography out of the palette, and both
+themes declare only the system font stacks, no imagery and no second accent. So
+neither has a `[data-skin]` CSS layer, and the type treatment, orbit art and mat
+texture that this file once specified for Nous are retired.
+
+| | **Nous** | **Nous Classic** |
+| --- | --- | --- |
+| Hermes id | `nous` | `nous-alt` |
+| Idea | "GitHub chrome, Nous blue accent" | "Glass neutrals, cream on mission-blue" |
+| Light | GitHub Light Default + `#0053fd` | `#f8faff` glass + `#0053fd` |
+| Dark | GitHub Dark Default + `#4a84fe` | `#ffe6cb` cream on `#0d2f86` |
+| Brand blue | the accent only | the surface itself |
+
+Two mapping notes, both deliberate:
+
+- **`background` and `card` are swapped in the light palettes.** LifeQuest's light
+  ladder sinks the mat below the sheet: `background` becomes `--canvas-base` (the
+  rail and titlebar) and `card` becomes `--background` (the sheet). Hermes has no
+  such ladder. Read straight across, Nous would paint a white rail around a grey
+  sheet — GitHub's layout inverted — so Hermes's page white goes in `card` and its
+  grey sidebar in `background`.
+- **`nous` declares `darkLadder: "inverted"`.** GitHub Dark Default puts its cards
+  (`#010409`) below its page (`#0d1117`). See the exemption under Dark Ladder
+  above.
+
+Classic's declared `color-mix(in srgb, …)` values are resolved to hex **in sRGB**,
+faithfully, so the violet cast Hermes's own preset carries is preserved rather
+than corrected. Fixing it would be a re-derivation, not a copy.
+
+### Blending: OKLab, not sRGB
+
+The one piece of Hermes's design style that is not a palette entry, and the piece
+that matters most here.
+
+`mix()` lerps gamma-encoded sRGB channels, which bends hue on the way: a saturated
+blue mixed 88% toward white lands **~21° violet** of where it started
+(`#0000f2` → `#e0e0fd`, measured). That is how a clean blue accent produced a
+lavender selected row, a lilac chip border and a periwinkle mat — and it is a
+property of the blend, not of the palette, so **no palette hex can fix it**. The
+drift happens after the palette.
+
+`mixOklab()` in `src/lib/themes/color.ts` (ported from Hermes's
+`apps/desktop/src/themes/color.ts`) walks chroma and lightness instead and holds
+the hue: the same blend lands **0.3°** off. `apply-skin.ts` uses it for the blends
+whose ink is the brand — `--accent-tint`, the input edge and `--line`. Everything
+else there blends neutrals, where `mix` is correct and there is no hue to
+preserve.
+
+Two things worth remembering when reading those numbers:
+
+- Hermes's comment says 7.6°; that is for a different reference blue. The figure to
+  trust is the one the rig measures, and it measures both mixers every run.
+- Near white the metric stops meaning anything: OKLCH chroma collapses, so the hue
+  angle of `#0053fd` at 88% is numerically unstable in either direction. The rig
+  therefore asserts on a saturated seed (`#0000f2`) where the two mixers visibly
+  part company, and only reports the near-white case.

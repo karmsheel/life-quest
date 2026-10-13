@@ -1,4 +1,4 @@
-import { hexToHsl, isDarkBackground, mix, readableOn } from "./color.ts";
+import { hexToHsl, isDarkBackground, mix, mixOklab, readableOn } from "./color.ts";
 import { resolveSkinPalette } from "./presets.ts";
 import type { ForgeSkin, ForgeSkinVars, SkinColors } from "./types.ts";
 
@@ -136,12 +136,21 @@ export function forgeVarsFromColors(c: SkinColors): ForgeSkinVars {
   const primary = c.primary;
   const accentHover = pickHex(c.midground, c.ring, c.primary);
   const accentSoft = pickHex(c.secondary, c.accent, c.muted);
-  const accentTint = mix(accentSoft, bg, dark ? 0.35 : 0.55);
+  // The three blends whose ink is the *brand* go through OKLab; every other mix
+  // here is between neutrals, where `mix` is the right tool and there is no hue
+  // to preserve. Blending a saturated accent toward a surface in gamma-encoded
+  // sRGB rotates its hue (~7.6° violet for a blue at 88% toward white), which is
+  // how a clean blue accent produced a lavender selected row and a lilac chip
+  // border — the drift happens after the palette, so no palette hex can fix it.
+  // Hermes Desktop hit the same bug and ships `mixOklab` for the same reason.
+  const accentTint = mixOklab(accentSoft, bg, dark ? 0.35 : 0.55);
   const border = pickHex(c.border, c.input);
   const borderStrongInk = pickHex(c.composerRing, c.foreground);
-  const borderStrong = mix(border, borderStrongInk, dark ? 0.35 : 0.22);
+  const borderStrong = c.composerRing
+    ? mixOklab(border, borderStrongInk, dark ? 0.35 : 0.22)
+    : mix(border, borderStrongInk, dark ? 0.35 : 0.22);
   const structuralLine = c.composerRing
-    ? mix(pickHex(c.composerRing), bg, dark ? 0.55 : 0.7)
+    ? mixOklab(pickHex(c.composerRing), bg, dark ? 0.55 : 0.7)
     : border;
   const sidebarBorder = pickHex(c.sidebarBorder, structuralLine, border);
   const borderSoft = mix(border, bg, 0.45);
@@ -237,11 +246,16 @@ export function forgeVarsFromColors(c: SkinColors): ForgeSkinVars {
   return vars;
 }
 
+/** The face tokens a skin may own. Cleared on every switch so a skin that
+ *  declares none falls back to the stacks in `tokens.css`. */
+const FONT_VARS = ["--font-sans", "--font-mono", "--font-display"] as const;
+
 export function forgeVarsFromSkin(skin: ForgeSkin, mode: "light" | "dark"): ForgeSkinVars {
   const vars = forgeVarsFromColors(resolveSkinPalette(skin, mode));
-  if (skin.typography?.fontDisplay) {
-    vars["--font-display"] = skin.typography.fontDisplay;
-  }
+  const t = skin.typography;
+  if (t?.fontSans) vars["--font-sans"] = t.fontSans;
+  if (t?.fontMono) vars["--font-mono"] = t.fontMono;
+  if (t?.fontDisplay) vars["--font-display"] = t.fontDisplay;
   return vars;
 }
 
@@ -313,7 +327,7 @@ export function clearSkinVars(el: HTMLElement = document.documentElement): void 
     "--composer-border",
     "--composer-border-soft",
     "--composer-border-strong",
-    "--font-display",
+    ...FONT_VARS,
   ];
   for (const key of toRemove) {
     el.style.removeProperty(key);
@@ -326,7 +340,7 @@ export function applySkin(
   el: HTMLElement = document.documentElement,
 ): void {
   // Clear previous skin typography so non-display skins fall back to tokens.css.
-  el.style.removeProperty("--font-display");
+  for (const key of FONT_VARS) el.style.removeProperty(key);
   applySkinVars(forgeVarsFromSkin(skin, mode), el);
   el.setAttribute("data-skin", skin.name);
 }

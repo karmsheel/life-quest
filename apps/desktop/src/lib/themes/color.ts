@@ -84,6 +84,115 @@ export function mix(a: string, b: string, amount: number): string {
   ]);
 }
 
+/* ── OKLab ───────────────────────────────────────────────────────────────────
+ *
+ * `mix` lerps gamma-encoded sRGB channels, which bends hue on the way: a
+ * saturated blue mixed 88% toward white lands ~7.6° violet of where it started.
+ * That is the whole reason a clean blue accent produced a lavender selection
+ * row, and it is a property of the blend, not of the palette — no hex can fix
+ * it, because the drift happens after the palette. OKLab is near-perceptually
+ * uniform, so the same blend walks chroma and lightness and keeps the hue: the
+ * soft surface reads as a pale version of the accent rather than a new colour.
+ *
+ * Ported from Hermes Desktop's `apps/desktop/src/themes/color.ts`, which hit
+ * this exact bug and fixed it here. `mix` remains correct for blending
+ * neutrals, where there is no hue to preserve; use `mixOklab` for anything
+ * derived from a brand seed.
+ */
+
+/** Perceptual lightness 0..1, chroma, hue 0..360. */
+export interface Oklch {
+  l: number;
+  c: number;
+  h: number;
+}
+
+const delinearize = (channel: number): number =>
+  channel <= 0.0031308 ? channel * 12.92 : 1.055 * channel ** (1 / 2.4) - 0.055;
+
+/** 0–255 sRGB triple → OKLab [L, a, b]. */
+function rgbToOklab([r255, g255, b255]: readonly number[]): [number, number, number] {
+  const [r, g, b] = [r255, g255, b255].map((v) => linearize(v / 255));
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+
+/** Raw (possibly out-of-gamut) 0–255 sRGB triple for an OKLCH colour. */
+function oklchToRgbRaw({ l: okL, c, h }: Oklch): [number, number, number] {
+  const rad = (h * Math.PI) / 180;
+  const okA = c * Math.cos(rad);
+  const okB = c * Math.sin(rad);
+
+  const l = (okL + 0.3963377774 * okA + 0.2158037573 * okB) ** 3;
+  const m = (okL - 0.1055613458 * okA - 0.0638541728 * okB) ** 3;
+  const s = (okL - 0.0894841775 * okA - 1.291485548 * okB) ** 3;
+
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ].map((channel) => delinearize(channel) * 255) as [number, number, number];
+}
+
+const inSrgbGamut = (rgb: readonly number[]): boolean =>
+  rgb.every((channel) => channel >= -0.25 && channel <= 255.25);
+
+/**
+ * OKLCH → `#rrggbb`, reducing chroma until the colour fits sRGB.
+ *
+ * Clipping the channels instead would shift hue and lightness — a saturated blue
+ * clips to a different blue. Binary-searching chroma holds hue and perceived
+ * lightness exactly and gives up only the colourfulness the display cannot show.
+ */
+export function oklchToHex(color: Oklch): string {
+  if (inSrgbGamut(oklchToRgbRaw(color))) return rgbToHex(oklchToRgbRaw(color));
+
+  let lo = 0;
+  let hi = color.c;
+  for (let i = 0; i < 24; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (inSrgbGamut(oklchToRgbRaw({ ...color, c: mid }))) lo = mid;
+    else hi = mid;
+  }
+  return rgbToHex(oklchToRgbRaw({ ...color, c: lo }));
+}
+
+export function hexToOklch(hex: string): Oklch | null {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return null;
+  const [okL, okA, okB] = rgbToOklab(rgb);
+  return {
+    l: okL,
+    c: Math.hypot(okA, okB),
+    h: ((Math.atan2(okB, okA) * 180) / Math.PI + 360) % 360,
+  };
+}
+
+/** Blend two colours in OKLab — the hue-stable counterpart to `mix`. */
+export function mixOklab(a: string, b: string, amount: number): string {
+  const ra = hexToRgb(a);
+  const rb = hexToRgb(b);
+  if (!ra || !rb) return a;
+
+  const la = rgbToOklab(ra);
+  const lb = rgbToOklab(rb);
+  const t = Math.min(1, Math.max(0, amount));
+  const blended = la.map((v, i) => v + (lb[i] - v) * t) as [number, number, number];
+  return oklchToHex({
+    l: blended[0],
+    c: Math.hypot(blended[1], blended[2]),
+    h: ((Math.atan2(blended[2], blended[1]) * 180) / Math.PI + 360) % 360,
+  });
+}
+
+
 const linearize = (channel: number): number =>
   channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
 

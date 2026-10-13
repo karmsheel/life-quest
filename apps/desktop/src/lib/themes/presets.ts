@@ -1,105 +1,195 @@
 import { isDarkBackground, mix } from "./color.ts";
 import type { ForgeSkin, SkinColors } from "./types.ts";
 
-/** Muzli Nous palette — https://colors.muz.li/palette/0000f2/002aa9/bfcfff/809fff/ffffff */
-const NOUS = {
-  blue: "#0000f2",
-  dark: "#002aa9",
-  light: "#bfcfff",
-  mid: "#809fff",
-  white: "#ffffff",
-} as const;
+/**
+ * The two Nous themes, taken verbatim from Hermes Desktop's bundled presets
+ * (`apps/shared/src/theme-presets.ts` + `apps/desktop/src/themes/presets.ts`).
+ * Hermes ships them as the product's identity — `nous` is its `DEFAULT_SKIN_NAME`
+ * — so LifeQuest carries the same two names and the same palettes rather than a
+ * re-derivation, and a user moving between the two apps sees one look.
+ *
+ * Neither ships a font opinion: Hermes's theme model keeps layout, sizing,
+ * radius and typography out of the palette (`types.ts`: "Everything else ...
+ * lives in styles.css"), and both themes declare only the system stacks. They
+ * also carry no imagery and no second accent, so neither skin has a CSS layer.
+ */
 
-function nousLine(pct: number): string {
-  return mix(NOUS.blue, NOUS.white, (100 - pct) / 100);
-}
-
-/** Subtle wash from brand blue — keeps #0000f2 as the only vivid blue. */
-function nousBrandTint(pct: number): string {
-  return mix(NOUS.blue, NOUS.white, (100 - pct) / 100);
-}
-
-/** Neutral structural borders — avoids competing with the brand blue. */
-function nousNeutralLine(pct: number): string {
-  return mix("#0A0A12", NOUS.white, (100 - pct) / 100);
-}
+/* ── Nous ────────────────────────────────────────────────────────────────────
+ * "GitHub chrome, Nous blue accent." A fork of the GitHub VS Code theme with
+ * only the accent family re-seeded; every neutral is upstream GitHub's.
+ *
+ * Two seeds, one hue. `#0053fd` is the brand colour and reads 5.4:1 on the
+ * light sidebar, but only 3.6:1 on the near-black dark one, so dark carries
+ * `#4a84fe` — the same hue (263°) lifted to clear AA at 5.9:1.
+ *
+ * The soft surfaces (`secondary`, `accent`, `userBubble`) are the author's
+ * OKLab blends of those seeds into their backgrounds, which is what keeps a
+ * saturated blue from drifting violet on its way to white. They are literals
+ * here because they are literals upstream; `mixOklab` in `color.ts` is what the
+ * rest of our derived tokens use, for the same reason.
+ */
+const NOUS_BLUE = "#0053fd";
+const NOUS_BLUE_DARK = "#4a84fe";
 
 export const nousSkin: ForgeSkin = {
   name: "nous",
   label: "Nous",
-  description: "Crisp blue on white — the Nous palette",
-  // Matches hermes-agent.nousresearch.com display face (Sigurd via next/font --font-sigurd).
-  typography: {
-    fontDisplay: 'var(--font-sigurd), "Times New Roman", serif',
-  },
+  description: "GitHub chrome, Nous blue accent",
+  /**
+   * GitHub Dark Default puts its cards **below** its page (`#010409` under
+   * `#0d1117`), which is the inverse of LifeQuest's Dark Ladder. The palette is
+   * a copy of Hermes's, so the direction is kept and declared rather than bent:
+   * see `darkLadder` on `ForgeSkin`, and the exemption named in DESIGN.md.
+   */
+  darkLadder: "inverted",
+  /**
+   * `background` and `card` are Hermes's **swapped**, and that is deliberate.
+   *
+   * LifeQuest's light ladder sinks the mat below the sheet: `colors.background`
+   * becomes `--canvas-base` (the rail and titlebar) and `colors.card` becomes
+   * `--background` (the sheet). Hermes has no such ladder — its `background` is
+   * the page and its `card` is the raised surface. Read straight across, Nous
+   * would paint a *white rail around a grey sheet*: GitHub's layout inverted.
+   * So Hermes's page white goes in `card` and its grey sidebar goes in
+   * `background`, which renders the layout GitHub actually has.
+   */
   colors: {
-    background: NOUS.white,
-    foreground: "#0A0A12",
-    card: NOUS.white,
-    cardForeground: "#0A0A12",
-    muted: nousBrandTint(6),
-    mutedForeground: "#5C5C70",
-    popover: NOUS.white,
-    popoverForeground: "#0A0A12",
-    primary: NOUS.blue,
-    primaryForeground: NOUS.white,
-    secondary: nousBrandTint(8),
-    secondaryForeground: NOUS.dark,
-    accent: nousBrandTint(10),
-    accentForeground: NOUS.dark,
-    border: nousNeutralLine(12),
-    input: nousNeutralLine(16),
-    ring: NOUS.blue,
-    midground: NOUS.blue,
-    composerRing: NOUS.blue,
-    destructive: "#C72E4D",
-    destructiveForeground: NOUS.white,
-    sidebarBackground: nousBrandTint(5),
-    sidebarBorder: nousNeutralLine(12),
-    userBubble: NOUS.blue,
-    userBubbleBorder: nousLine(32),
-    // Match home-composer hint grey (composer-fg-soft) — not cyan on brand blue.
-    composerPlaceholder: mix(NOUS.white, NOUS.blue, 0.48),
-    info: NOUS.blue,
-    success: "#1A7A42",
+    background: "#f6f8fa", // Hermes `sidebarBackground` — the mat/rail tone
+    foreground: "#1f2328",
+    card: "#ffffff", // Hermes `background` — the sheet
+    cardForeground: "#1f2328",
+    muted: "#f6f6f6",
+    mutedForeground: "#656d76",
+    popover: "#ffffff",
+    popoverForeground: "#1f2328",
+    primary: NOUS_BLUE,
+    primaryForeground: "#ffffff",
+    secondary: "#deeaff",
+    secondaryForeground: "#1f2328",
+    accent: "#e3edff",
+    accentForeground: "#1f2328",
+    border: "#d0d7de",
+    input: "#ffffff",
+    ring: NOUS_BLUE,
+    midground: NOUS_BLUE,
+    midgroundForeground: "#ffffff",
+    composerRing: NOUS_BLUE,
+    destructive: "#cf222e",
+    destructiveForeground: "#ffffff",
+    sidebarBackground: "#f6f8fa",
+    sidebarBorder: "#d0d7de",
+    userBubble: "#dae7fd",
+    userBubbleBorder: "#d0d7de",
   },
-  // Night mode mirrors hermes-agent.nousresearch.com: solid brand blue + pure white
-  // (no cream). Surfaces lift with white tints; wells drop with black tints.
   darkColors: {
-    background: NOUS.blue,
-    foreground: NOUS.white,
-    card: mix(NOUS.blue, NOUS.white, 0.08),
-    cardForeground: NOUS.white,
-    muted: mix(NOUS.blue, NOUS.white, 0.12),
-    mutedForeground: mix(NOUS.white, NOUS.blue, 0.28),
-    popover: mix(NOUS.blue, NOUS.white, 0.1),
-    popoverForeground: NOUS.white,
-    primary: NOUS.white,
-    primaryForeground: NOUS.blue,
-    secondary: mix(NOUS.blue, NOUS.white, 0.14),
-    secondaryForeground: mix(NOUS.white, NOUS.blue, 0.08),
-    accent: mix(NOUS.blue, NOUS.white, 0.16),
-    accentForeground: NOUS.white,
-    // Near-white chrome so home cards (and other surfaces) read with a clear outline
-    border: mix(NOUS.white, NOUS.blue, 0.08),
-    input: mix(NOUS.blue, "#000000", 0.15),
-    ring: NOUS.white,
-    midground: NOUS.mid,
-    composerRing: NOUS.white,
-    destructive: "#C0473A",
-    destructiveForeground: NOUS.white,
-    // Deeper brand blue for the left nav rail
-    sidebarBackground: mix(NOUS.blue, "#000000", 0.32),
-    sidebarBorder: mix(NOUS.white, NOUS.blue, 0.22),
-    // Inverted from day: white composer/bubble on brand blue
-    userBubble: NOUS.white,
-    userBubbleBorder: mix(NOUS.white, NOUS.blue, 0.18),
-    composerForeground: NOUS.blue,
-    composerPlaceholder: mix(NOUS.blue, NOUS.white, 0.42),
-    info: NOUS.light,
-    success: "#5AD68A",
+    background: "#0d1117",
+    foreground: "#e6edf3",
+    card: "#010409",
+    cardForeground: "#e6edf3",
+    muted: "#1a1e24",
+    mutedForeground: "#7d8590",
+    popover: "#161b22",
+    popoverForeground: "#e6edf3",
+    primary: NOUS_BLUE_DARK,
+    primaryForeground: "#161616",
+    secondary: "#1d2e4f",
+    secondaryForeground: "#e6edf3",
+    accent: "#17243a",
+    accentForeground: "#e6edf3",
+    border: "#30363d",
+    input: "#0d1117",
+    ring: NOUS_BLUE_DARK,
+    midground: NOUS_BLUE_DARK,
+    midgroundForeground: "#161616",
+    composerRing: NOUS_BLUE_DARK,
+    destructive: "#f85149",
+    destructiveForeground: "#ffffff",
+    sidebarBackground: "#010409",
+    sidebarBorder: "#30363d",
+    userBubble: "#07162c",
+    userBubbleBorder: "#30363d",
   },
 };
+
+/* ── Nous Classic ────────────────────────────────────────────────────────────
+ * Hermes calls this `nous-alt`: "the hand-authored Nous from before the GitHub
+ * fork. Light is glass neutrals with brand blue; dark is cream on
+ * mission-blue." It is the older Nous, kept because it is a different idea —
+ * here the brand blue *is* the surface, where `nous` uses it only as an accent.
+ *
+ * Hermes declares its soft surfaces as CSS `color-mix(in srgb, …)` and lets the
+ * browser blend them, so these are that mix computed to hex (LifeQuest's token
+ * pipeline needs literals). Worth knowing: measured against the seed's OKLCH hue
+ * of 262.7°, those particular sRGB blends land 1.7–4.0° violet. That drift is
+ * Hermes's own, kept deliberately — the palette is a copy, not a correction.
+ */
+const NOUS_CLASSIC_BLUE = "#0053fd";
+const NOUS_CLASSIC_NAVY = "#1540b1";
+const NOUS_CLASSIC_CREAM = "#ffe6cb";
+
+export const nousClassicSkin: ForgeSkin = {
+  name: "nous-classic",
+  label: "Nous Classic",
+  description: "Glass neutrals by day, cream on mission-blue by night",
+  // Same swap as `nous`, for the same reason: LifeQuest's light ladder reads
+  // `background` as the mat and `card` as the sheet, so Hermes's sidebar tone
+  // (`#F3F7FF`) lands in `background` and its page (`#F8FAFF`) in `card`.
+  colors: {
+    background: "#f3f7ff",
+    foreground: "#17171a",
+    card: "#f8faff",
+    cardForeground: "#17171a",
+    muted: "#f2f6ff",
+    mutedForeground: "#666678",
+    popover: "#ffffff",
+    popoverForeground: "#17171a",
+    primary: NOUS_CLASSIC_BLUE,
+    primaryForeground: "#fcfcfc",
+    secondary: "#edf3ff",
+    secondaryForeground: "#242432",
+    accent: "#e6eeff",
+    accentForeground: "#202030",
+    border: "#c1d5ff",
+    input: "#aec8fe",
+    ring: NOUS_CLASSIC_BLUE,
+    midground: NOUS_CLASSIC_BLUE,
+    composerRing: NOUS_CLASSIC_BLUE,
+    destructive: "#c72e4d",
+    destructiveForeground: "#ffffff",
+    sidebarBackground: "#f3f7ff",
+    sidebarBorder: "#c7d9ff",
+    userBubble: "#f0f5ff",
+    userBubbleBorder: "#bcd2ff",
+  },
+  darkColors: {
+    background: "#0d2f86",
+    foreground: NOUS_CLASSIC_CREAM,
+    card: "#12378f",
+    cardForeground: NOUS_CLASSIC_CREAM,
+    muted: "#183f9a",
+    mutedForeground: "#b5c7f3",
+    popover: "#123a96",
+    popoverForeground: NOUS_CLASSIC_CREAM,
+    primary: NOUS_CLASSIC_CREAM,
+    primaryForeground: "#0d2f86",
+    secondary: "#1b45a4",
+    secondaryForeground: "#e0e8ff",
+    accent: NOUS_CLASSIC_NAVY,
+    accentForeground: "#f0f4ff",
+    border: "#3158ad",
+    input: "#0b2566",
+    ring: NOUS_CLASSIC_CREAM,
+    midground: NOUS_CLASSIC_BLUE,
+    composerRing: NOUS_CLASSIC_CREAM,
+    destructive: "#c0473a",
+    destructiveForeground: "#fef2f2",
+    sidebarBackground: "#09286f",
+    sidebarBorder: "#234a9c",
+    userBubble: "#143b91",
+    userBubbleBorder: "#3a63bd",
+  },
+};
+
 
 export const midnightSkin: ForgeSkin = {
   name: "midnight",
@@ -354,6 +444,7 @@ export const forgeOsSkin: ForgeSkin = {
 export const BUILTIN_SKINS: Record<string, ForgeSkin> = {
   "forge-os": forgeOsSkin,
   nous: nousSkin,
+  "nous-classic": nousClassicSkin,
   midnight: midnightSkin,
   ember: emberSkin,
   mono: monoSkin,

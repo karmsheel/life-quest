@@ -230,3 +230,17 @@ requestAnimationFrame(waitForShell);
   applySkin(skin, mode);
   return skin.name;
 };
+
+/**
+ * Which way a skin's night ladder runs. The rig reads this rather than hardcoding
+ * a name: a skin that is a faithful copy of an upstream theme may inherit that
+ * theme's own elevation direction (GitHub Dark Default puts its cards below its
+ * page), and the rig asserts the declared direction instead of the standard one.
+ */
+(
+  window as unknown as {
+    shellHarnessDarkLadder: (skinName: string) => string;
+  }
+).shellHarnessDarkLadder = (skinName) =>
+  (BUILTIN_SKINS[skinName] ?? BUILTIN_SKINS[DEFAULT_SKIN_NAME]!)?.darkLadder ??
+  "standard";

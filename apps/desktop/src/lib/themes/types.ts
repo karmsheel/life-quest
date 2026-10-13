@@ -43,7 +43,7 @@ export interface SkinColors {
 export interface SkinTypography {
   fontSans: string;
   fontMono: string;
-  /** Optional display/heading face (e.g. Sigurd for Nous). Maps to --font-display. */
+  /** Optional display/heading face. Maps to --font-display. */
   fontDisplay?: string;
   fontUrl?: string;
 }
@@ -54,6 +54,20 @@ export interface ForgeSkin {
   description: string;
   colors: SkinColors;
   darkColors?: SkinColors;
+  /**
+   * Which way this skin's night ladder runs. Omitted means the standard one.
+   *
+   * Every first-party LifeQuest skin steps **up**: the page canvas is the
+   * deepest surface and the cards and panels rise off it. A faithful copy of an
+   * upstream theme can inherit the opposite from its source — GitHub Dark
+   * Default, which `nous` forks, paints its cards (`#010409`) *below* its page
+   * (`#0d1117`) — and bending the palette to fit would stop it being a copy.
+   *
+   * Declaring `"inverted"` keeps the palette faithful and tells the shell rig to
+   * assert the inverted direction rather than skip the claim, so a palette that
+   * drifts either way still fails.
+   */
+  darkLadder?: "inverted";
   typography?: Partial<SkinTypography>;
 }
 

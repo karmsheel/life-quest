@@ -398,6 +398,7 @@ async function main() {
   const NIGHT_SKINS = [
     "forge-os",
     "nous",
+    "nous-classic",
     "midnight",
     "ember",
     "mono",
@@ -919,21 +920,42 @@ async function main() {
           tokens.canvasBase === tokens.mutedSurface,
         `mat ${surfaces.chrome} vs .chat-panel__actions ${surfaces.dockActions}; tokens ${tokens.canvasBase} vs ${tokens.mutedSurface}`,
       );
-      check(
-        `night[${skinName}]: the page canvas is the darkest surface in the window`,
-        floors.every((key) => luminance[key] >= luminance.page),
-        `page ${lum("page")} against ${JSON.stringify(Object.fromEntries(floors.map((key) => [key, lum(key)])))}`,
-      );
-      check(
-        `night[${skinName}]: the mat is its own ink, not the page`,
-        surfaces.chrome !== surfaces.page && luminance.chrome > luminance.page,
-        `mat ${surfaces.chrome} (${lum("chrome")}) vs page ${surfaces.page} (${lum("page")})`,
-      );
-      check(
-        `night[${skinName}]: the cards step up off the page canvas`,
-        luminance.card > luminance.page && luminance.viewCard > luminance.page,
-        `card ${surfaces.card} (${lum("card")}) vs page ${surfaces.page} (${lum("page")})`,
-      );
+      // An imported theme can carry its own elevation direction. `nous` is a
+      // faithful copy of GitHub Dark Default, whose cards sit *below* its page.
+      // The inverted branch asserts that direction rather than skipping the
+      // claim, so a palette that drifts either way still fails.
+      const inverted =
+        (await run(
+          `window.shellHarnessDarkLadder?.(${JSON.stringify(skinName)}) ?? "standard"`,
+        )) === "inverted";
+      if (inverted) {
+        check(
+          `night[${skinName}]: the cards sit below the page canvas (upstream ladder)`,
+          luminance.card <= luminance.page && luminance.viewCard <= luminance.page,
+          `card ${surfaces.card} (${lum("card")}) / viewCard ${surfaces.viewCard} (${lum("viewCard")}) vs page ${surfaces.page} (${lum("page")}) — this skin declares darkLadder "inverted"`,
+        );
+        check(
+          `night[${skinName}]: the mat is still its own ink, above the page`,
+          surfaces.chrome !== surfaces.page && luminance.chrome > luminance.page,
+          `mat ${surfaces.chrome} (${lum("chrome")}) vs page ${surfaces.page} (${lum("page")})`,
+        );
+      } else {
+        check(
+          `night[${skinName}]: the page canvas is the darkest surface in the window`,
+          floors.every((key) => luminance[key] >= luminance.page),
+          `page ${lum("page")} against ${JSON.stringify(Object.fromEntries(floors.map((key) => [key, lum(key)])))}`,
+        );
+        check(
+          `night[${skinName}]: the mat is its own ink, not the page`,
+          surfaces.chrome !== surfaces.page && luminance.chrome > luminance.page,
+          `mat ${surfaces.chrome} (${lum("chrome")}) vs page ${surfaces.page} (${lum("page")})`,
+        );
+        check(
+          `night[${skinName}]: the cards step up off the page canvas`,
+          luminance.card > luminance.page && luminance.viewCard > luminance.page,
+          `card ${surfaces.card} (${lum("card")}) vs page ${surfaces.page} (${lum("page")})`,
+        );
+      }
     }
 
     report = {

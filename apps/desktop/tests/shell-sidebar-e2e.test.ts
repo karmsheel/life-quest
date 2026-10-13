@@ -682,17 +682,34 @@ describe("shell sidebar (docked rail)", () => {
         skin.tokens.mutedSurface,
         `${name}: --canvas-base and --muted-surface are different inks (${skin.tokens.canvasBase} vs ${skin.tokens.mutedSurface})`,
       );
+      // A skin may declare that its night ladder runs inverted: a faithful copy
+      // of an upstream theme that puts its cards *below* its page. GitHub Dark
+      // Default does, and `nous` forks it, so the palette is kept and the
+      // direction declared rather than bent. See `darkLadder` on `ForgeSkin`.
+      const inverted =
+        BUILTIN_SKIN_LIST.find((candidate) => candidate.name === name)?.darkLadder ===
+        "inverted";
+      // The mat lifts off the page either way — that one is structural, not a
+      // property of the upstream theme's card direction.
       assert.ok(
         skin.luminance.chrome > skin.luminance.page,
         `${name}: the mat does not lift off the page canvas (${skin.surfaces.chrome} vs ${skin.surfaces.page})`,
       );
       for (const surface of floors) {
+        if (inverted && (surface === "card" || surface === "viewCard")) continue;
         assert.ok(
           skin.luminance[surface] >= skin.luminance.page,
           `${name}: the ${surface} paints below the page canvas (${skin.luminance[surface]} vs page ${skin.luminance.page})`,
         );
       }
       for (const surface of ["card", "viewCard"] as const) {
+        if (inverted) {
+          assert.ok(
+            skin.luminance[surface] < skin.luminance.page,
+            `${name}: declares an inverted ladder but the ${surface} does not sit below the page canvas (${skin.surfaces[surface]} vs ${skin.surfaces.page})`,
+          );
+          continue;
+        }
         assert.ok(
           skin.luminance[surface] > skin.luminance.page,
           `${name}: the ${surface} does not step up off the page canvas (${skin.surfaces[surface]} vs ${skin.surfaces.page})`,
