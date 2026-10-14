@@ -250,6 +250,18 @@ const check = (label, condition, detail) => {
   return Boolean(condition);
 };
 
+/**
+ * The last step the rig reached.
+ *
+ * A throw anywhere inside the run leaves `report` as the catch branch, so without
+ * this the failure reads as a bare "Script failed to execute" with no indication
+ * of which evaluation produced it — which is a bisect instead of a diagnosis.
+ */
+let step = "start";
+const at = (name) => {
+  step = name;
+};
+
 /** A "highlighted" chip paints a real fill — any alpha above a rounding crumb,
  *  and not the surface behind it. */
 const isHighlighted = (color) => {
@@ -298,6 +310,152 @@ const ladderOf = (state) => {
     ),
   };
 };
+
+/**
+ * The app's own scrollbar, measured on the two scrollers the operator names: the
+ * sheet's content (`.shell__content`) and the chat transcript
+ * (`.chat-panel__body`).
+ *
+ * What makes this falsifiable is the GUTTER. Chromium lays out a styled
+ * scrollbar at exactly the width the CSS asks for, and leaves a platform bar at
+ * the platform's own width — 15 to 17 px on Windows. So `offsetWidth -
+ * clientWidth` is 8 on a scroller that got the app's treatment and something
+ * else on one that did not, and no amount of eyeballing is needed to tell them
+ * apart.
+ *
+ * The pseudo-element reads are Chromium's; where an engine does not answer for
+ * them the field is null and the gutter above still carries the claim. That is
+ * recorded rather than assumed: `pseudoReadable` in the report says which kind of
+ * run this was, so a silently-absent assertion cannot pass for a held one.
+ */
+const SCROLL_CHROME = `(() => {
+  const read = (selector) => {
+    const el = document.querySelector(selector);
+    if (!el) return null;
+    const thumb = getComputedStyle(el, "::-webkit-scrollbar-thumb");
+    const track = getComputedStyle(el, "::-webkit-scrollbar-track");
+    const bar = getComputedStyle(el, "::-webkit-scrollbar");
+    const r = el.getBoundingClientRect();
+    return {
+      selector,
+      box: {
+        left: Math.round(r.left),
+        top: Math.round(r.top),
+        right: Math.round(r.right),
+        bottom: Math.round(r.bottom),
+        width: Math.round(r.width),
+        height: Math.round(r.height)
+      },
+      // 0 when nothing overflows: the claim below refuses that run first.
+      gutterX: el.offsetWidth - el.clientWidth,
+      gutterY: el.offsetHeight - el.clientHeight,
+      overflowsY: el.scrollHeight > el.clientHeight,
+      // Whether the browser itself considers this scroller hovered. This is what
+      // separates "the rig cannot make a hidden window hover" — which is a limit
+      // of the rig and is recorded as one — from "the hover rule does not fire",
+      // which would be a bug in the stylesheet.
+      hovered: el.matches(":hover"),
+      barWidth: bar ? bar.width : null,
+      thumbBackground: thumb ? thumb.backgroundColor : null,
+      thumbRadius: thumb ? thumb.borderTopLeftRadius : null,
+      trackBackground: track ? track.backgroundColor : null
+    };
+  };
+  const root = getComputedStyle(document.documentElement);
+  return {
+    sheet: read(".shell__content"),
+    transcript: read(".chat-panel__body"),
+    thumbToken: root.getPropertyValue("--scrollbar-thumb").trim(),
+    mutedForeground: root.getPropertyValue("--muted-foreground").trim(),
+    accent: root.getPropertyValue("--accent").trim(),
+    primary: root.getPropertyValue("--primary").trim()
+  };
+})()`;
+
+/**
+ * A colour's alpha, or NaN when the value is not a colour at all.
+ *
+ * Chromium answers a plain `rgba()` for a transparent thumb but a
+ * `color(srgb r g b / a)` for one painted by `color-mix()`, so both forms are
+ * read here rather than only the first.
+ */
+const alphaOf = (color) => {
+  const value = (color ?? "").trim();
+  const rgb = /^rgba?\(([^)]+)\)$/.exec(value);
+  if (rgb) {
+    const parts = rgb[1].split(/[,/ ]+/).filter(Boolean).map(parseFloat);
+    return parts.length > 3 ? parts[3] : 1;
+  }
+  const srgb = /^color\(srgb\s+([^)]+)\)$/.exec(value);
+  if (srgb) {
+    const parts = srgb[1].split(/[/ ]+/).filter(Boolean).map(parseFloat);
+    return parts.length > 3 ? parts[3] : 1;
+  }
+  return Number.NaN;
+};
+
+/**
+ * The scrollbar claims for one palette. `label` names the mode the caller put the
+ * window in, so a failure says which run it came from.
+ *
+ * Every scroller in the window is styled, but only two of them are *asserted*: a
+ * claim needs a region that really scrolls, and these are the two the operator
+ * named. The rail, the settings overlays and the dialogs take the same rule by
+ * cascade, so a regression in the rule shows up here.
+ */
+function checkScrollChrome(label, scroll) {
+  const both = [scroll.sheet, scroll.transcript];
+  check(
+    `${label}: both named scrollers exist and really overflow`,
+    both.every((region) => region && region.overflowsY),
+    `sheet ${JSON.stringify(scroll.sheet?.overflowsY)} / transcript ${JSON.stringify(scroll.transcript?.overflowsY)}`,
+  );
+
+  for (const [name, region] of [
+    ["the sheet's content", scroll.sheet],
+    ["the chat transcript", scroll.transcript],
+  ]) {
+    if (!region) {
+      check(`${label}: ${name} was found`, false, "the region is not in the tree");
+      continue;
+    }
+    // The load-bearing one: the platform bar is 15-17px on Windows and the app's
+    // is 0.5rem. A gutter of 8 is proof the app's rules won, not a proxy for it.
+    check(
+      `${label}: ${name} wears the app's 8px bar, not the platform's`,
+      region.gutterX === 8,
+      `gutter ${region.gutterX}px (bar width ${JSON.stringify(region.barWidth)})`,
+    );
+    if (region.thumbBackground !== null) {
+      // Drawn at rest, and quiet: present enough to read as a bar, faint enough
+      // not to compete with the content. A fully transparent thumb is the failure
+      // this pins shut — it is invisible, and an operator reads that as "there is
+      // no scrollbar here".
+      check(
+        `${label}: ${name} draws its thumb at rest, quietly`,
+        alphaOf(region.thumbBackground) > 0 && alphaOf(region.thumbBackground) <= 0.2,
+        `thumb background ${JSON.stringify(region.thumbBackground)}`,
+      );
+      check(
+        `${label}: ${name} draws no track`,
+        alphaOf(region.trackBackground) === 0,
+        `track background ${JSON.stringify(region.trackBackground)}`,
+      );
+    }
+  }
+
+  // The ink is a neutral taken from the palette's mid ink — the same one muted
+  // text wears — and never the accent. A brand-tinted scrollbar is chrome wearing
+  // the brand's colour, which is what this pins shut.
+  check(
+    `${label}: the thumb ink is the palette's mid ink, not the accent`,
+    scroll.thumbToken !== "" &&
+      scroll.thumbToken === scroll.mutedForeground &&
+      scroll.thumbToken !== scroll.accent &&
+      scroll.thumbToken !== scroll.primary,
+    `--scrollbar-thumb ${JSON.stringify(scroll.thumbToken)} vs --muted-foreground ${JSON.stringify(scroll.mutedForeground)}, --accent ${JSON.stringify(scroll.accent)}`,
+  );
+}
 
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
@@ -878,16 +1036,151 @@ async function main() {
     const dayFile = path.join(artifactsDir, "shell-sidebar-day.png");
     fs.writeFileSync(dayFile, dayShot.toPNG());
 
+    // 8a — the scrollbar is chrome, so it takes the same two claims the ladder
+    // does: it is the app's own bar in both modes, and its ink comes from the
+    // palette that is on. Measured here in daylight, where a wrong ink is a dark
+    // smudge on a white sheet rather than a subtlety.
+    at("scroll-chrome: at rest");
+    const dayScroll = await run(SCROLL_CHROME);
+    checkScrollChrome("day", dayScroll);
+
+    // Nothing is hovered yet, and in this rig nothing can be: a hidden window
+    // never establishes `:hover` from a synthetic pointer — measured, not assumed,
+    // via `el.matches(":hover")` in the sample above. So this read IS the resting
+    // state, and the hovered one is produced below by the only device that can.
+    const scrollRest = {
+      sheet: dayScroll.sheet?.thumbBackground ?? null,
+      transcript: dayScroll.transcript?.thumbBackground ?? null,
+    };
+    let scrollSheetHover = { sheet: null, transcript: null };
+    let scrollHover = { sheet: null, transcript: null };
+
+    /** Wait for painted frames, bounded — the settle a style change needs. */
+    const paint = () =>
+      run(
+        `new Promise((resolve) => {
+           let frames = 0;
+           const tick = () => {
+             frames += 1;
+             if (frames >= 3) resolve(true);
+             else requestAnimationFrame(tick);
+           };
+           requestAnimationFrame(tick);
+         })`,
+      );
+
+    // And the bar is hover-only, which is the whole of the Hermes treatment: not
+    // drawn at rest, drawn when the pointer is in the region it belongs to, and
+    // still not drawn in the *other* region — a custom scrollbar follows its own
+    // scroller, not hover anywhere in the app.
+    //
+    // A hidden window cannot be made to hover. That is measured, not assumed: with
+    // the pointer dispatched through the browser's own input pipeline,
+    // `el.matches(":hover")` still reads false in this rig, so every painted
+    // reading of the hovered bar returned the resting one. The device that can
+    // produce the state is the one DevTools uses — `CSS.forcePseudoState` over the
+    // debugger — and it is used here for exactly that reason. Where the debugger
+    // is unavailable the claims below are not silently skipped: `hoverForced` in
+    // the report says so, and the resting, gutter and ink claims still carry.
+    const forced = { hoverForced: false, error: null };
+    const forcePseudo = async (selector, on) => {
+      const dbg = win.webContents.debugger;
+      if (!dbg.isAttached()) {
+        dbg.attach("1.3");
+        await dbg.sendCommand("DOM.enable");
+        await dbg.sendCommand("CSS.enable");
+      }
+      const { root } = await dbg.sendCommand("DOM.getDocument", { depth: 1 });
+      const { nodeId } = await dbg.sendCommand("DOM.querySelector", {
+        nodeId: root.nodeId,
+        selector,
+      });
+      if (!nodeId) throw new Error(`no node for ${selector}`);
+      await dbg.sendCommand("CSS.forcePseudoState", {
+        nodeId,
+        forcedPseudoClasses: on ? ["hover"] : [],
+      });
+    };
+    // No strip capture here, deliberately.
+    //
+    // A 1:1 crop of the edge is the obvious visual proof, and it cannot be taken
+    // from this rig: `capturePage` of a small rect stops settling once the
+    // debugger session below is open — the window never returns a bitmap and the
+    // rig dies on its own watchdog. That was measured, twice, and it is also why
+    // the crops taken before the state was forced came back byte-identical.
+    //
+    // So the hover claim rests on the computed thumb — which does change, and which
+    // went red before the state was forced — and the visual check is the full-window
+    // captures, where the resting bar is now drawn and therefore visible, plus the
+    // running app where the pointer is real.
+
+    at("scroll-chrome: forced hover");
+    try {
+      await forcePseudo(".shell__content", true);
+      await paint();
+      const overSheet = await run(SCROLL_CHROME);
+      await forcePseudo(".shell__content", false);
+      await forcePseudo(".chat-panel__body", true);
+      await paint();
+      const overTranscript = await run(SCROLL_CHROME);
+      await forcePseudo(".chat-panel__body", false);
+
+      scrollSheetHover = {
+        sheet: overSheet.sheet?.thumbBackground ?? null,
+        transcript: overSheet.transcript?.thumbBackground ?? null,
+      };
+      scrollHover = {
+        transcript: overTranscript.transcript?.thumbBackground ?? null,
+        sheet: overTranscript.sheet?.thumbBackground ?? null,
+      };
+      forced.hoverForced = true;
+    } catch (error) {
+      forced.error = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (win.webContents.debugger.isAttached()) win.webContents.debugger.detach();
+    }
+
+    check(
+      "day: at rest both regions draw a quiet thumb",
+      alphaOf(scrollRest.sheet) > 0 && alphaOf(scrollRest.transcript) > 0,
+      `sheet ${JSON.stringify(scrollRest.sheet)}, transcript ${JSON.stringify(scrollRest.transcript)}`,
+    );
+    if (forced.hoverForced) {
+      check(
+        "day: hovering the sheet strengthens its thumb and leaves the transcript at rest",
+        alphaOf(scrollSheetHover.sheet) > alphaOf(scrollRest.sheet) &&
+          alphaOf(scrollSheetHover.transcript) === alphaOf(scrollRest.transcript),
+        `sheet ${JSON.stringify(scrollSheetHover.sheet)} (rest ${JSON.stringify(scrollRest.sheet)}), transcript ${JSON.stringify(scrollSheetHover.transcript)}`,
+      );
+      check(
+        "day: hovering the transcript strengthens its thumb and leaves the sheet at rest",
+        alphaOf(scrollHover.transcript) > alphaOf(scrollRest.transcript) &&
+          alphaOf(scrollHover.sheet) === alphaOf(scrollRest.sheet),
+        `transcript ${JSON.stringify(scrollHover.transcript)} (rest ${JSON.stringify(scrollRest.transcript)}), sheet ${JSON.stringify(scrollHover.sheet)}`,
+      );
+    } else {
+      failures.push(
+        `day: the hovered scrollbar was NOT measured — the debugger could not force :hover (${forced.error ?? "unknown"})`,
+      );
+    }
+
     // 9 — the night ladder holds for every dark palette, not just the default one.
     // The same four claims per skin: the page canvas is the deepest surface in the
     // window, the cards step up off it, the mat is its own ink and not the page,
     // and the mat and the dock's action row are one material.
     const skins = {};
+    const scrolls = {};
     const skinShots = [];
     for (const skinName of NIGHT_SKINS) {
       await applyTheme(skinName, "dark");
       const ladder = ladderOf(await settled());
       skins[skinName] = ladder;
+
+      // The scrollbar rides the same sweep: it is chrome, so every palette has to
+      // give it its own mid ink, and the app's own bar has to survive every one.
+      const scroll = await run(SCROLL_CHROME);
+      scrolls[skinName] = scroll;
+      checkScrollChrome(`night[${skinName}]`, scroll);
 
       const skinShot = await win.webContents.capturePage();
       const skinFile = path.join(artifactsDir, `shell-sidebar-night-${skinName}.png`);
@@ -969,6 +1262,26 @@ async function main() {
       restored,
       day,
       ladder: { night, day: dawn, skins },
+      scroll: {
+        day: dayScroll,
+        night: scrolls,
+        hover: {
+          pointerOut: scrollRest,
+          overSheet: scrollSheetHover,
+          overTranscript: scrollHover,
+          // How the hovered state was produced. A hidden window cannot be made to
+          // hover by dispatching a pointer (`matches(":hover")` stays false), so the
+          // state is forced through the debugger, the way DevTools' `:hov` panel
+          // does. Recorded here because it is the difference between a measured
+          // claim and an unmeasurable one.
+          forcedByDebugger: forced.hoverForced,
+          forceError: forced.error,
+        },
+        // Whether this engine answers for the scrollbar pseudo-elements at all.
+        // Where it does not, the gutter is the claim that carries this section,
+        // and the absence is visible here instead of passing for a held one.
+        pseudoReadable: dayScroll.sheet?.thumbBackground !== null,
+      },
       reclaimedPx: (expanded.main?.left ?? 0) - (collapsed.main?.left ?? 0),
       screenshots: [
         expandedFile,
@@ -987,7 +1300,7 @@ async function main() {
       ranAt: new Date().toISOString(),
       failures: [
         ...failures,
-        `threw: ${error instanceof Error ? error.message : String(error)}`,
+        `threw at ${step}: ${error instanceof Error ? error.message : String(error)}`,
       ],
       pass: false,
     };
@@ -1059,6 +1372,55 @@ async function main() {
     for (const row of rows) {
       console.log(row.map((value, i) => value.padEnd(widths[i])).join("  "));
     }
+  }
+
+  // The scrollbar, palette by palette: the gutter that proves the app's bar
+  // replaced the platform's, and the ink it drew with.
+  if (report.scroll) {
+    const rows = [["palette", "sheet gutter", "sheet thumb ink", "transcript gutter", "transcript thumb ink"]];
+    const row = (label, data) =>
+      rows.push([
+        label,
+        data?.sheet ? `${data.sheet.gutterX}px` : "—",
+        data?.thumbToken || "—",
+        data?.transcript ? `${data.transcript.gutterX}px` : "—",
+        data?.thumbToken || "—",
+      ]);
+    row("day forge-os", report.scroll.day);
+    for (const [name, data] of Object.entries(report.scroll.night ?? {})) {
+      row(`night ${name}`, data);
+    }
+    rows.push([
+      "pointer out",
+      "—",
+      JSON.stringify(report.scroll.hover?.pointerOut?.sheet ?? null),
+      "—",
+      JSON.stringify(report.scroll.hover?.pointerOut?.transcript ?? null),
+    ]);
+    rows.push([
+      "over sheet",
+      "—",
+      JSON.stringify(report.scroll.hover?.overSheet?.sheet ?? null),
+      "—",
+      JSON.stringify(report.scroll.hover?.overSheet?.transcript ?? null),
+    ]);
+    rows.push([
+      "over transcript",
+      "—",
+      JSON.stringify(report.scroll.hover?.overTranscript?.sheet ?? null),
+      "—",
+      JSON.stringify(report.scroll.hover?.overTranscript?.transcript ?? null),
+    ]);
+    const widths = rows[0].map((_, i) =>
+      Math.max(...rows.map((r) => r[i].length)),
+    );
+    console.log("");
+    for (const r of rows) {
+      console.log(r.map((value, i) => value.padEnd(widths[i])).join("  "));
+    }
+    console.log(
+      `scrollbar pseudo-elements readable: ${report.scroll.pseudoReadable}`,
+    );
   }
 
   console.log("");

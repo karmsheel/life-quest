@@ -29,6 +29,17 @@
  *                        gone: removal lives in the 3-dot menu now, as Archive
  *                        and Delete, and `dashboard-card-context` claims what
  *                        the menu holds.
+ *  3. `card-shell`     — every pin draws exactly ONE card frame. A view pin is a
+ *                        `ViewCard`, which renders `section.view-card` itself, and
+ *                        `HomePage`'s span wrapper used to wear that same class —
+ *                        so the pin nested two shells and the operator got a frame
+ *                        inside a frame: two borders, two radii, two shadows and
+ *                        the card's padding twice (measured at a 16px inset). The
+ *                        claim counts painted frames, counts the card classes, and
+ *                        checks that the INNERMOST frame is flush with its pin
+ *                        across the width and on the top edge. Proven falsifiable:
+ *                        restoring the wrapper's class takes it red on both view
+ *                        pins and restoring the fix takes it green.
  *
  * The Add-pin row is behind the header's toggle, so the driver asks for it before
  * reading its heading. Landing on the page with it closed is `dashboard-card-
@@ -134,6 +145,101 @@ function check(name, pass, detail) {
   scenarios.push({ name, pass: Boolean(pass), detail: detail ?? null });
   if (!pass) failure(`${name}: ${detail ?? "failed"}`);
   return Boolean(pass);
+}
+
+/**
+ * Every pin draws exactly one card frame.
+ *
+ * A view pin is a `ViewCard`, and `ViewCard` already renders
+ * `section.view-card` — the shell with the paper, the hairline, the radius and the
+ * shadow. `HomePage` wraps it in a div that carries the span marker, and that
+ * wrapper used to carry `view-card` as well, so the pin nested two card shells:
+ * two borders, two radii, two shadows and the card's own padding twice over. That
+ * is the frame inside a frame the operator reported as a double border.
+ *
+ * The claim is made on the rendered board rather than on the markup, and three
+ * ways, because each catches a different half of the bug:
+ *
+ *  - `shells` counts elements drawing the shell's *painted signature* — a visible
+ *    border, a non-zero radius and a box-shadow. The shadow is what separates a
+ *    card shell from the many small bordered things inside a card (the block
+ *    tools carry a transparent 1px border and no shadow).
+ *  - `classes` counts `.home-card` / `.view-card`, which is what a future wrapper
+ *    would most likely duplicate.
+ *  - `inset` compares the pin's box to the shell's: a second frame pads the inner
+ *    one inward by its own border and padding, so this is the geometry the
+ *    operator actually sees. Across the width and on the top edge only — see the
+ *    note in the check.
+ *
+ * The last one is stated as "the shell fills its pin" rather than as a pixel
+ * number, so a deliberate change to the board's padding or gap cannot fail it.
+ */
+async function checkCardShell(win) {
+  const pins = await win.webContents.executeJavaScript(
+    `[...document.querySelectorAll(".home-dashboard__grid > .home-pin")].map((pin) => {
+       const box = (el) => {
+         const r = el.getBoundingClientRect();
+         return { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom) };
+       };
+       const painted = [...pin.querySelectorAll("*")].filter((el) => {
+         const cs = getComputedStyle(el);
+         const bordered =
+           parseFloat(cs.borderTopWidth) > 0 &&
+           cs.borderTopStyle !== "none" &&
+           !/rgba\\(.*,\\s*0\\)$/.test(cs.borderTopColor);
+         return bordered && parseFloat(cs.borderTopLeftRadius) > 0 && cs.boxShadow !== "none";
+       });
+       const shell = painted[0] ?? null;
+       // The INNERMOST frame is the one that gets pushed inward when a wrapper
+       // draws a frame of its own, so the geometry claim is made against that one
+       // and not against the outer wrapper (which stays flush with the pin).
+       const inner = painted.length ? painted[painted.length - 1] : null;
+       return {
+         id: pin.dataset.pinId ?? null,
+         shells: painted.length,
+         classes: pin.querySelectorAll(".home-card, .view-card").length,
+         shellClass: shell ? (typeof shell.className === "string" ? shell.className : "") : null,
+         pinBox: box(pin),
+         shellBox: inner ? box(inner) : null,
+       };
+     })`,
+  );
+
+  const problems = [];
+  if (pins.length !== SEED.length + 1) {
+    problems.push(`the board rendered ${pins.length} pins, expected ${SEED.length + 1}`);
+  }
+  for (const pin of pins) {
+    const where = pin.id ?? "the Active-agents card";
+    if (pin.shells !== 1) {
+      problems.push(
+        `${where} draws ${pin.shells} card frames (${JSON.stringify(pin.shellClass)})`,
+      );
+    }
+    if (pin.classes !== 1) {
+      problems.push(`${where} wears ${pin.classes} card classes`);
+    }
+    // The shell has to fill the pin across its width and sit on its top: a frame
+    // around a frame insets the inner one by its own border and padding, which is
+    // how the operator saw the second border. The BOTTOM is deliberately not part
+    // of this: a grid row stretches the pin, so a content-height card is legitimately
+    // shorter than the pin that holds it, and asserting the bottom would be a claim
+    // about the board's rows rather than about the card's frame.
+    if (pin.shellBox) {
+      const flush = ["left", "right", "top"].every(
+        (edge) => Math.abs(pin.pinBox[edge] - pin.shellBox[edge]) <= 1,
+      );
+      if (!flush) {
+        problems.push(
+          `${where}'s card is inset inside its pin: pin ${JSON.stringify(pin.pinBox)} vs card ${JSON.stringify(pin.shellBox)}`,
+        );
+      }
+    } else {
+      problems.push(`${where} draws no card frame at all`);
+    }
+  }
+
+  return check("card-shell", problems.length === 0, problems.join("; "));
 }
 
 function waitFor(win, expression, label, timeoutMs = 10_000) {
@@ -1429,6 +1535,10 @@ async function main() {
 
   const sample = await win.webContents.executeJavaScript(SAMPLE);
   checkChromeIdentity(sample);
+  // The cards' own frames, read off the same fresh board: a pin that drew its
+  // shell twice is a claim about the render, so it is measured here rather than
+  // inferred from the markup.
+  await checkCardShell(win);
   /**
    * The board's seeded order and column count, read before any scenario runs.
    * The ordering claims legitimately leave the board rearranged — that is what

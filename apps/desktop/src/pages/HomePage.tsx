@@ -421,9 +421,16 @@ export default function HomePage() {
     // marks the wrapper so the grid gives the card the full row. A locked board
     // hands the card `editable: false`: the board's page lock governs the cards
     // on it, for the operator as much as for the companion.
+    //
+    // This wrapper carries the span marker and NOTHING else. `ViewCard` already
+    // draws `section.view-card`, so giving the wrapper that class too nested two
+    // card shells and the pin showed a frame inside its frame — two borders,
+    // two radii, two shadows, and the card's own padding twice over. The marker
+    // is an unstyled hook (`global.css`: `.home-pin:has(.view-card--span2)`), so
+    // the wrapper is only ever the grid's business, never the card's.
     if (pin.kind === "view") {
       return (
-        <div className={pin.span === 2 ? "view-card view-card--span2" : "view-card"}>
+        <div className={pin.span === 2 ? "view-card--span2" : undefined}>
           <ViewCard domainSlug={pin.domainSlug} viewId={pin.viewId} editable={!locked} />
         </div>
       );

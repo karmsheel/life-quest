@@ -51,6 +51,77 @@ a {
   padding: 2rem;
 }
 
+/* —— Scrollbars ——
+
+   Every native scroller in the app wears the app's own bar instead of the
+   platform's: the sheet and the chat transcript first, and then the rail, the
+   settings overlays, dialogs and code blocks, because a themed bar in one pane
+   beside a stock one in the next is the mismatch this section exists to remove.
+   The shape is Hermes Desktop's — a thin pill on a transparent track.
+
+   Hermes draws that pill ONLY while the pointer is over the region it belongs to,
+   which leaves the bar invisible at rest and reads to an operator as "there is no
+   scrollbar here". This app keeps the shape and drops that one rule: the thumb is
+   drawn quietly at rest, steps up when its region is hovered, and steps up once
+   more under the pointer. A bar nobody can find is not quiet chrome, it is a
+   missing affordance.
+
+   The thumb's ink is `--scrollbar-thumb`, a neutral, so the bar follows the
+   palette while the accent never reaches it. Geometry is fixed (0.5rem, hover
+   included) and only the color changes, so strengthening the bar cannot change a
+   content width and re-wrap the text it belongs to.
+
+   Chromium 121+ — which is what Electron is — prefers the standard
+   `scrollbar-width` / `scrollbar-color` over `::-webkit-scrollbar` and IGNORES
+   the latter when both are set, hence the gate: the standard properties are for
+   engines that have no webkit pseudo-elements at all. */
+*::-webkit-scrollbar {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Quiet at rest, never absent: enough ink to read as a bar against both the light
+   and the dark palettes, little enough to stay out of the way until the pointer
+   arrives. The box is already the size it will be on hover, so nothing moves when
+   it strengthens. */
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--scrollbar-thumb) 14%, transparent);
+  border-radius: var(--radius-pill);
+  background-clip: padding-box;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--scrollbar-thumb) 30%, transparent);
+}
+
+*:hover::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--scrollbar-thumb) 50%, transparent);
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    /* The same three steps as above, which is all this engine can express: thin
+       plus a transparent track is the closest match there is to the webkit path. */
+    scrollbar-color: color-mix(in srgb, var(--scrollbar-thumb) 14%, transparent)
+      transparent;
+  }
+
+  *:hover {
+    scrollbar-color: color-mix(in srgb, var(--scrollbar-thumb) 30%, transparent)
+      transparent;
+  }
+}
+
 /* —— Buttons —— */
 .btn {
   appearance: none;

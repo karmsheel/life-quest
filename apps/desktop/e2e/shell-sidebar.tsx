@@ -41,10 +41,24 @@
  *     dock. The studio has exactly one: the sheet's trailing edge, the seam with
  *     the dock. The line under the strip belongs to the top bar, and it must
  *     survive: lose it and the wing and domain selectors lose their underline.
+ * 17. Native bar left in place — a scroller whose gutter is the platform's own
+ *     15-17px instead of the app's 8px, which is what a `::-webkit-scrollbar`
+ *     rule that never applied looks like.
+ * 18. Scrollbar ink off the palette — a thumb reading a colour from another skin,
+ *     or worse the accent, so the chrome wears the brand.
+ * 19. Thumb invisible at rest, or unstrengthened on hover — a bar an operator
+ *     cannot find, or one that never responds to the pointer. It is quiet at rest
+ *     on purpose and must still be DRAWN; a custom scrollbar also follows its own
+ *     region, not hover anywhere in the app.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page); everything else — the real AppShell, the real NavRail, the real
  * WindowTitleBar, the real CSS and the real layout engine — is shipping code.
+ *
+ * The sheet and the transcript are both seeded to overflow (60 filler lines, 40
+ * turns) because a scrollbar claim needs a scroller that actually scrolls: with
+ * nothing to scroll there is no bar, and every claim about one would pass for the
+ * wrong reason.
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -106,7 +120,16 @@ const bridge: Record<string, unknown> = {
   companionSessionsList: () => ok([SESSION]),
   companionSessionCreate: () => ok(SESSION),
   companionSessionMessages: () =>
-    ok([{ role: "user" as const, content: "Shell sidebar harness" }]),
+    // Long enough that the transcript really overflows its scrollport. The
+    // scrollbar claims need a scroller that scrolls: a one-line transcript has no
+    // bar to measure, and "no bar" would pass every claim below for the wrong
+    // reason.
+    ok(
+      Array.from({ length: 40 }, (_, i) => ({
+        role: (i % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+        content: `Shell sidebar harness turn ${i + 1}`,
+      })),
+    ),
   onCompanionStream: () => () => {},
   // Mirrors the shipped window: overlay caption buttons, so the titlebar shows
   // its trailing cluster (theme, settings, chat) and not the fallback controls.
@@ -161,6 +184,19 @@ createRoot(root).render(
                               <div className="home-card" data-probe="home-card" />
                               <div className="view-card" data-probe="view-card" />
                             </div>
+                            {/*
+                              The sheet's scroller has to really overflow, for the
+                              same reason the transcript does: a scrollbar claim
+                              measured on a region with nothing to scroll is a claim
+                              about an empty box. Drawn AFTER the two probes, and
+                              carrying no app class, so the ladder probes keep the
+                              geometry and the ink they were measured with.
+                            */}
+                            {Array.from({ length: 60 }, (_, i) => (
+                              <p key={i} className="muted" data-probe="sheet-filler">
+                                Sheet filler line {i + 1}
+                              </p>
+                            ))}
                           </div>
                         }
                       />

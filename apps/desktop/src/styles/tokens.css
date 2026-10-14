@@ -53,6 +53,13 @@
   --accent-soft: #f5d8cb;
   --accent-tint: #fbeee5;
 
+  /* The ink of the app's own scrollbar thumb. A neutral, and deliberately the
+     same mid ink a skin gives muted text rather than the accent: the bar is
+     chrome, and the brand must not tint it. Because this aliases a token the
+     skins write, a skin repaint reaches the scrollbar with no extra wiring —
+     the same reason Hermes derives its own thumb from its midground. */
+  --scrollbar-thumb: var(--muted-foreground);
+
   --composer-bg: var(--card);
   --composer-fg: var(--foreground);
   --composer-fg-muted: var(--muted-foreground);

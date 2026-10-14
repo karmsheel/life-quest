@@ -118,6 +118,30 @@ type Ladder = {
   luminance: Record<keyof Ladder["surfaces"], number>;
 };
 
+/** One scroller as the driver measured it. */
+type ScrollRegion = {
+  selector: string;
+  box: Box;
+  gutterX: number;
+  gutterY: number;
+  overflowsY: boolean;
+  hovered: boolean;
+  barWidth: string | null;
+  thumbBackground: string | null;
+  thumbRadius: string | null;
+  trackBackground: string | null;
+};
+
+/** The app's own scrollbar, on the two scrollers the driver measured. */
+type ScrollChrome = {
+  sheet: ScrollRegion;
+  transcript: ScrollRegion;
+  thumbToken: string;
+  mutedForeground: string;
+  accent: string;
+  primary: string;
+};
+
 type Report = {
   pass: boolean;
   failures: string[];
@@ -128,9 +152,34 @@ type Report = {
   restored: State;
   day: State;
   ladder: { night: Ladder; day: Ladder; skins: Record<string, Ladder> };
+  scroll: {
+    day: ScrollChrome;
+    night: Record<string, ScrollChrome>;
+    hover: {
+      pointerOut: { sheet: string | null; transcript: string | null };
+      overSheet: { sheet: string | null; transcript: string | null };
+      overTranscript: { sheet: string | null; transcript: string | null };
+      forcedByDebugger: boolean;
+      forceError: string | null;
+    };
+    pseudoReadable: boolean;
+  };
   reclaimedPx: number;
   screenshots: string[];
 };
+
+/** A colour's alpha from `rgb()`/`rgba()` or `color(srgb r g b / a)`. */
+function alphaOf(value: string | null): number {
+  const text = (value ?? "").trim();
+  const rgb = /^rgba?\(([^)]+)\)$/.exec(text);
+  const srgb = /^color\(srgb\s+([^)]+)\)$/.exec(text);
+  const parts = (rgb ?? srgb)?.[1]
+    .split(/[,/ ]+/)
+    .filter(Boolean)
+    .map(Number);
+  if (!parts) return Number.NaN;
+  return parts.length > 3 ? parts[3] : 1;
+}
 
 /**
  * The sidebar rig measures the real shell in a real Electron window, so it needs
@@ -715,6 +764,97 @@ describe("shell sidebar (docked rail)", () => {
           `${name}: the ${surface} does not step up off the page canvas (${skin.surfaces[surface]} vs ${skin.surfaces.page})`,
         );
       }
+    }
+
+    // The app's own scrollbar, cross-checked the same way the ladder is: the sweep
+    // has to have measured every dark palette, so a new night skin cannot land with
+    // a scrollbar nobody looked at — and each palette is held to the two claims the
+    // driver made in the loop (the app's 8px gutter replaced the platform bar, and
+    // the thumb ink is that palette's own mid ink rather than the accent).
+    const { scroll } = report;
+    assert.ok(scroll, "report carries no scrollbar section");
+    assert.equal(
+      scroll.pseudoReadable,
+      true,
+      "the engine did not answer for the scrollbar pseudo-elements, so the thumb was never read",
+    );
+    assert.equal(
+      scroll.hover.forcedByDebugger,
+      true,
+      `the hovered scrollbar was never measured: ${scroll.hover.forceError ?? "no reason recorded"}`,
+    );
+    assert.deepEqual(
+      Object.keys(scroll.night).sort(),
+      darkSkins,
+      "the scrollbar sweep did not cover every dark skin",
+    );
+    for (const [name, chrome] of [
+      ["day", scroll.day],
+      ...Object.entries(scroll.night),
+    ] as const) {
+      for (const [region, worst] of [
+        ["the sheet's content", chrome.sheet],
+        ["the chat transcript", chrome.transcript],
+      ] as const) {
+        assert.equal(
+          worst.overflowsY,
+          true,
+          `${name}: ${region} does not scroll, so its bar proves nothing`,
+        );
+        // The load-bearing measurement: Chromium lays a styled scrollbar out at
+        // exactly the width the CSS asks for and leaves a platform bar at the
+        // platform's own width (15-17px on Windows). 8 is the app's rule winning.
+        assert.equal(
+          worst.gutterX,
+          8,
+          `${name}: ${region} left a ${worst.gutterX}px gutter, so the platform bar is still in place`,
+        );
+      }
+      assert.equal(
+        chrome.thumbToken,
+        chrome.mutedForeground,
+        `${name}: the scrollbar ink is not the palette's mid ink (${chrome.thumbToken} vs ${chrome.mutedForeground})`,
+      );
+      assert.notEqual(
+        chrome.thumbToken,
+        chrome.accent,
+        `${name}: the scrollbar wears the accent`,
+      );
+      // The bar is QUIET at rest, not absent. A transparent thumb reads to an
+      // operator as "there is no scrollbar here", which is the whole reason this
+      // app departs from Hermes on this one point.
+      for (const [region, worst] of [
+        ["the sheet's content", chrome.sheet],
+        ["the chat transcript", chrome.transcript],
+      ] as const) {
+        assert.ok(
+          alphaOf(worst.thumbBackground) > 0,
+          `${name}: ${region} draws no thumb at rest (${worst.thumbBackground})`,
+        );
+        assert.ok(
+          alphaOf(worst.thumbBackground) <= 0.2,
+          `${name}: ${region} draws a loud thumb at rest (${worst.thumbBackground})`,
+        );
+      }
+    }
+
+    // And hovering a region strengthens ITS thumb while the other stays at rest:
+    // a custom scrollbar follows its own scroller, not hover anywhere in the app.
+    for (const [hovered, region] of [
+      ["the sheet", "sheet"],
+      ["the transcript", "transcript"],
+    ] as const) {
+      const other = region === "sheet" ? "transcript" : "sheet";
+      const over = hovered === "the sheet" ? scroll.hover.overSheet : scroll.hover.overTranscript;
+      assert.ok(
+        alphaOf(over[region]) > alphaOf(scroll.hover.pointerOut[region]),
+        `hovering ${hovered} did not strengthen its thumb (${over[region]} vs rest ${scroll.hover.pointerOut[region]})`,
+      );
+      assert.equal(
+        alphaOf(over[other]),
+        alphaOf(scroll.hover.pointerOut[other]),
+        `hovering ${hovered} changed the other region's thumb (${over[other]} vs rest ${scroll.hover.pointerOut[other]})`,
+      );
     }
 
     for (const file of report.screenshots) {
