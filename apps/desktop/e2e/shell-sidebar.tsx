@@ -50,6 +50,12 @@
  *     cannot find, or one that never responds to the pointer. It is quiet at rest
  *     on purpose and must still be DRAWN; a custom scrollbar also follows its own
  *     region, not hover anywhere in the app.
+ * 20. A frame back around either selector on the band — `.ui-segmented`'s shared
+ *     hairline, sitting one pixel outside the active tab's own, is what made the
+ *     wing switcher and the domain lens read as two concentric outlines in a row.
+ *     The pair carries no outer frame; the fill is what sets each off the band,
+ *     and the active tab keeps its line. Both halves are measured, so "frameless"
+ *     cannot be satisfied by a control that stopped rendering its fill or its tab.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page); everything else — the real AppShell, the real NavRail, the real

@@ -82,6 +82,22 @@ type State = {
     borderBottomColor: string;
     background: string;
   } | null;
+  /**
+   * The band's two selectors, the wing switcher and the domain lens. Each is a
+   * `.ui-segmented`, whose shared rule framed the whole control one pixel outside
+   * the active tab's own line.
+   */
+  topBarSelectors: {
+    selector: string;
+    borderTopWidth: string;
+    borderRightWidth: string;
+    borderBottomWidth: string;
+    borderLeftWidth: string;
+    background: string;
+    activeBorderWidth: string | null;
+    activeBackground: string | null;
+    optionCount: number;
+  }[];
   chatHeader: {
     box: Box;
     borderBottomWidth: string;
@@ -481,6 +497,46 @@ describe("shell sidebar (docked rail)", () => {
         parseFloat(expanded.chatHeader.borderBottomWidth) <= 1,
       `the dock header lost its underline (${expanded.chatHeader.borderBottomWidth})`,
     );
+
+    // Neither of the band's two selectors wears a frame of its own. The frame is
+    // what the pair doubled: `.ui-segmented`'s hairline sits one pixel outside the
+    // active tab's own, so the wing switcher and the domain lens read as two
+    // concentric outlines in a row. The control must still read as one without it
+    // — its fill separates it from the band, and the active tab keeps its line.
+    assert.equal(
+      expanded.topBarSelectors?.length,
+      2,
+      `the rig did not measure both of the band's selectors: ${JSON.stringify(expanded.topBarSelectors)}`,
+    );
+    for (const entry of expanded.topBarSelectors ?? []) {
+      assert.equal(
+        [
+          entry.borderTopWidth,
+          entry.borderRightWidth,
+          entry.borderBottomWidth,
+          entry.borderLeftWidth,
+        ].join("/"),
+        "0px/0px/0px/0px",
+        `${entry.selector} still wears an outer frame`,
+      );
+      assert.ok(
+        alphaOf(entry.background) > 0.05,
+        `${entry.selector} lost its fill too, so it vanishes into the band (${entry.background})`,
+      );
+      assert.ok(
+        entry.optionCount > 0,
+        `${entry.selector} rendered no options`,
+      );
+      assert.notEqual(
+        entry.activeBorderWidth,
+        "0px",
+        `${entry.selector}'s active tab lost the line that marks it as the current one`,
+      );
+      assert.ok(
+        alphaOf(entry.activeBackground) > 0.05,
+        `${entry.selector}'s active tab lost its fill (${entry.activeBackground})`,
+      );
+    }
 
     // Collapsed: rail gone, its width back to the sheet, a toggle left behind.
     assert.ok(

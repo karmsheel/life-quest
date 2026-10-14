@@ -182,6 +182,30 @@ const SAMPLE = `(() => {
           background: getComputedStyle(topBar).backgroundColor
         }
       : null,
+    // The band's two selectors — the wing switcher and the domain lens. Both are
+    // a .ui-segmented, and the shared rule frames the whole control: that frame,
+    // one pixel outside the active tab's own line, is what made the pair read as
+    // concentric outlines. Measured by selector rather than by a single class so
+    // the report names whichever one regressed.
+    topBarSelectors: [".top-bar__wings", ".domain-switcher__tabs"].map((selector) => {
+      const el = document.querySelector(selector);
+      if (!el) return { selector, optionCount: 0 };
+      const style = getComputedStyle(el);
+      const active = el.querySelector(".ui-segmented__option.is-active");
+      return {
+        selector,
+        borderTopWidth: style.borderTopWidth,
+        borderRightWidth: style.borderRightWidth,
+        borderBottomWidth: style.borderBottomWidth,
+        borderLeftWidth: style.borderLeftWidth,
+        background: style.backgroundColor,
+        activeBorderWidth: active ? getComputedStyle(active).borderTopWidth : null,
+        activeBackground: active
+          ? getComputedStyle(active).backgroundColor
+          : null,
+        optionCount: el.querySelectorAll(".ui-segmented__option").length
+      };
+    }),
     chatHeader: chatHeader
       ? {
           box: box(chatHeader),
@@ -886,6 +910,37 @@ async function main() {
       `scrollTop ${expanded.rail?.scrollTop}, content ${expanded.rail?.scrollHeight}px in ${expanded.rail?.clientHeight}px`,
     );
 
+    // Each of the band's two selectors is one control with no frame of its own.
+    // The frame is what the pair doubled: `.ui-segmented`'s hairline lands a pixel
+    // outside the active tab's own, so the wing switcher and the domain lens sat
+    // as two concentric outlines on the same row. Dropping the outer one must not
+    // cost the control its shape — the fill is what sets it off the band, and the
+    // active tab keeps the line that makes it the current one.
+    const selectors = expanded.topBarSelectors ?? [];
+    check(
+      "the band's two selectors wear no frame of their own",
+      selectors.length === 2 &&
+        selectors.every(
+          (entry) =>
+            entry.borderTopWidth === "0px" &&
+            entry.borderRightWidth === "0px" &&
+            entry.borderBottomWidth === "0px" &&
+            entry.borderLeftWidth === "0px",
+        ),
+      `borders ${JSON.stringify(selectors.map((entry) => [entry.selector, entry.borderTopWidth, entry.borderRightWidth, entry.borderBottomWidth, entry.borderLeftWidth]))}`,
+    );
+    check(
+      "each selector still reads as a control without it",
+      selectors.length === 2 &&
+        selectors.every(
+          (entry) =>
+            entry.optionCount > 0 &&
+            isHighlighted(entry.background) &&
+            entry.activeBorderWidth !== "0px",
+        ),
+      `fills ${JSON.stringify(selectors.map((entry) => [entry.selector, entry.background, entry.optionCount, entry.activeBorderWidth]))}`,
+    );
+
     const expandedShot = await win.webContents.capturePage();
     const expandedFile = path.join(artifactsDir, "shell-sidebar-expanded.png");
     fs.writeFileSync(expandedFile, expandedShot.toPNG());
@@ -907,6 +962,25 @@ async function main() {
     });
     const seamFile = path.join(artifactsDir, "shell-sidebar-seam.png");
     fs.writeFileSync(seamFile, seamShot.toPNG());
+    // The band itself, cropped to the sheet's width: the pixel reading of the two
+    // border checks above — one outline per control (the active tab's), none
+    // around the control, fill still doing the separating.
+    const bandShot = await win.webContents.capturePage({
+      x: expanded.main?.left ?? 0,
+      y: expanded.topBar?.box.top ?? 0,
+      width: Math.max(
+        1,
+        (expanded.chat?.box.left ?? 0) - (expanded.main?.left ?? 0),
+      ),
+      height: Math.max(
+        1,
+        (expanded.topBar?.box.bottom ?? 0) -
+          (expanded.topBar?.box.top ?? 0) +
+          1,
+      ),
+    });
+    const bandFile = path.join(artifactsDir, "shell-sidebar-band.png");
+    fs.writeFileSync(bandFile, bandShot.toPNG());
 
     // 6 — the toggle collapses: rail gone, column given back, way back in place.
     const clickedCollapse = await clickToggle(".nav-rail .nav-toggle");
@@ -1287,6 +1361,7 @@ async function main() {
         expandedFile,
         cornerFile,
         seamFile,
+        bandFile,
         collapsedFile,
         dayFile,
         ...skinShots,

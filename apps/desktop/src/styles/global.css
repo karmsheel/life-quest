@@ -853,6 +853,20 @@ a {
   min-width: 0;
 }
 
+/* Neither selector on the band wears a frame of its own. `.ui-segmented` draws a
+   hairline around the whole control, and the active tab draws its own inside it —
+   one pixel apart, so the wing switcher and the domain lens each read as two
+   concentric outlines sitting in a row. The control's soft fill still sets it off
+   the band, and the active tab keeps its line, which is what a tab is. Prefixed
+   with the band both because the shared `.ui-segmented` rule is declared further
+   down this sheet (so a bare class here would lose on source order) and to keep
+   the frame everywhere else the control appears — Goals' filters, the settings
+   nav — where there is no second outline to clash with. */
+.top-bar .top-bar__wings,
+.top-bar .domain-switcher__tabs {
+  border: none;
+}
+
 .top-bar__controls {
   display: flex;
   flex-wrap: wrap;
