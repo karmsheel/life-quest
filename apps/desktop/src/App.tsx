@@ -37,6 +37,7 @@ import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
+import { LiveDataProvider } from "@/state/LiveDataProvider";
 import { UpdateProvider } from "@/state/UpdateProvider";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
 
@@ -139,17 +140,22 @@ export default function App() {
         <UpdateProvider>
           <CompanionProvider>
             <VaultProvider>
-              <SplashGate />
-              <ChatDockProvider>
-                <NavDockProvider>
-                  <div className="app-root">
-                    <WindowTitleBar />
-                    <div className="app-root__body">
-                      <AppRoutes />
+              {/* Inside the vault, outside every page: a card's numbers are a
+                  function of the vault and the clock, and this is the one place
+                  both are watched for the whole app. */}
+              <LiveDataProvider>
+                <SplashGate />
+                <ChatDockProvider>
+                  <NavDockProvider>
+                    <div className="app-root">
+                      <WindowTitleBar />
+                      <div className="app-root__body">
+                        <AppRoutes />
+                      </div>
                     </div>
-                  </div>
-                </NavDockProvider>
-              </ChatDockProvider>
+                  </NavDockProvider>
+                </ChatDockProvider>
+              </LiveDataProvider>
             </VaultProvider>
           </CompanionProvider>
         </UpdateProvider>

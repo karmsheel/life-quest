@@ -32,11 +32,40 @@ export function presentationLabel(presentation: ViewPresentation): string {
   if (presentation === "metric") return "Metric";
   if (presentation === "table") return "Table";
   if (presentation === "bar") return "Bar";
-  return "Line";
+  if (presentation === "line") return "Line";
+  return "List";
 }
 
 function columnsOfType(db: DatabaseMeta | null, type: string): string[] {
   return (db?.columns ?? []).filter((c) => c.type === type).map((c) => c.id);
+}
+
+/**
+ * A measure an aggregate can actually take.
+ *
+ * A listing has none — it prints rows, it does not fold them — so moving one to
+ * a table would hand the table `measure: "sum"` with no column, and the save
+ * would be refused: the operator's own click would come back as a validation
+ * error. The database's first number column is what a total would have measured;
+ * a database with no number column counts rows instead.
+ *
+ * A block that ALREADY has a usable measure keeps it untouched, so a weekly
+ * table switched to a bar chart still measures what it measured.
+ */
+function measureFor(
+  block: ViewBlock,
+  db: DatabaseMeta | null,
+): Pick<ViewBlock, "measure" | "measureColumnId"> {
+  if (block.measure === "count") return { measure: "count", measureColumnId: null };
+  const current = block.measureColumnId;
+  const columns = db?.columns ?? [];
+  if (current && columns.some((c) => c.id === current && c.type === "number")) {
+    return { measure: block.measure, measureColumnId: current };
+  }
+  const number = columns.find((c) => c.type === "number");
+  return number
+    ? { measure: "sum", measureColumnId: number.id }
+    : { measure: "count", measureColumnId: null };
 }
 
 /**
@@ -47,6 +76,14 @@ function columnsOfType(db: DatabaseMeta | null, type: string): string[] {
  * are kept whenever the target allows them, so switching a weekly table to a bar
  * chart keeps the weeks, and switching back to a table returns the operator to
  * exactly what they had.
+ *
+ * `columns` is the one field that never survives the move. It is what makes a
+ * block a LISTING, and a listing is not one of the four aggregates this switch
+ * moves between — so leaving it behind would write a saved spec carrying a field
+ * the validator refuses on an aggregate ("Only a list view takes `columns`").
+ * Switching a listing to a table therefore drops the column list and takes the
+ * grouping AND the measure a table needs, which is exactly what the operator
+ * asked for.
  */
 export function retargetBlock(
   block: ViewBlock,
@@ -57,6 +94,7 @@ export function retargetBlock(
   const groupable = (db?.columns ?? []).filter(
     (c) => c.type === "select" || c.type === "relation" || c.type === "text",
   ).map((c) => c.id);
+  const measure = measureFor(block, db);
 
   // Which column this block groups by now, and whether it is a date.
   const current = block.groupBy ?? null;
@@ -73,7 +111,14 @@ export function retargetBlock(
 
   if (target === "metric") {
     // One number for the whole window: no grouping at all.
-    return { ...block, presentation: "metric", groupBy: null, timeBucket: null };
+    return {
+      ...block,
+      ...measure,
+      presentation: "metric",
+      groupBy: null,
+      timeBucket: null,
+      columns: [],
+    };
   }
 
   if (target === "line") {
@@ -85,9 +130,11 @@ export function retargetBlock(
     const timeBucket = block.timeBucket ?? "month";
     return {
       ...block,
+      ...measure,
       presentation: "line",
       groupBy,
       timeBucket,
+      columns: [],
       // A window is only honoured when the block names the column it acts on.
       timeColumnId: block.timeWindow == null || block.timeWindow === "all"
         ? block.timeColumnId
@@ -102,9 +149,11 @@ export function retargetBlock(
   const timeBucket = groupIsDate ? (block.timeBucket ?? null) : null;
   return {
     ...block,
+    ...measure,
     presentation: target,
     groupBy,
     timeBucket,
+    columns: [],
     timeColumnId: block.timeWindow == null || block.timeWindow === "all"
       ? (groupIsDate ? groupBy : block.timeColumnId)
       : (block.timeColumnId ?? (groupIsDate ? groupBy : null)),

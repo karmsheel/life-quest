@@ -27,9 +27,46 @@ import type { DatabaseMeta } from "./types.ts";
  */
 
 const BUCKETS = ["day", "week", "month"];
-const PRESENTATIONS = ["table", "bar", "line", "metric"];
+const PRESENTATIONS = ["table", "bar", "line", "metric", "list"];
 const MEASURES = ["sum", "count", "last", "avg"];
-const WINDOWS = ["all", "this-month", "last-30-days", "this-year"];
+const WINDOWS = ["all", "today", "this-week", "this-month", "last-30-days", "this-year"];
+
+/**
+ * What every `timeWindow` description says, in one place.
+ *
+ * `today` and `this-week` lead the list after `all` because they are the windows
+ * a model gets WRONG BY DEFAULT: asked for "today's spending", it has no word for
+ * today and writes the date it is looking at into a `filters` entry instead. That
+ * card recomputes correctly forever and never changes, which is how the operator
+ * came to report "the Today's Expense value hasn't changed in days". The rule
+ * against freezing a date is stated here, where the model reads the field.
+ */
+const TIME_WINDOW_DESCRIPTION =
+  "The window the rows are read from: 'all' (default), 'today', 'this-week' (Monday " +
+  "through today), 'this-month', 'last-30-days', 'this-year'. For a trailing week count pass an " +
+  'object instead: {"kind":"last-weeks","weeks":8} — 8 Monday-start weeks ending with today\'s. ' +
+  'For explicit dates pass {"kind":"custom","start":"2026-01-01","end":"2026-03-31"}. ' +
+  "The named windows are LIVE: they are recomputed from the current date every time the card is " +
+  "drawn, so 'today' means today and tomorrow it means tomorrow. NEVER write a date into a " +
+  "`filters` entry to mean 'today', 'yesterday', or 'this week' — that freezes the card on one " +
+  "day forever. Use a filter with a literal date only when the operator names that specific date.";
+
+/**
+ * The columns a listing prints. Only a `list` uses this: an aggregate's two
+ * columns come from its fold, and a listing that named none would draw an empty
+ * table, so the shape is refused rather than drawn blank.
+ */
+const LIST_COLUMNS_SCHEMA = {
+  type: "array",
+  description:
+    "The `list` presentation's columns, in order — which database columns the listing prints, " +
+    "each headed by the column's own name. Name 1 to 6, e.g. ['date','payee','category','amount']. " +
+    "Omit for every other presentation.",
+  items: {
+    type: "string",
+    description: "A column id of this database, e.g. 'date'. A relation prints its target's name.",
+  },
+} as const;
 
 /**
  * One panel of a composed card. Every query field is optional here on purpose:
@@ -54,7 +91,10 @@ const VIEW_BLOCK_SCHEMA = {
       enum: PRESENTATIONS,
       description:
         "How this panel draws. 'metric' is one number and must not group; 'table' and 'bar' need a " +
-        "groupBy; 'line' needs a date groupBy plus a timeBucket.",
+        "groupBy; 'line' needs a date groupBy plus a timeBucket; 'list' is not an aggregate at all " +
+        "— it prints one line per row, newest first, in its own `columns`, and takes no measure and " +
+        "no groupBy. Use 'list' for \"show me the recent transactions\", and 'table' for \"a table " +
+        "of totals\".",
     },
     measure: {
       type: "string",
@@ -84,11 +124,7 @@ const VIEW_BLOCK_SCHEMA = {
     timeWindow: {
       type: "string",
       enum: WINDOWS,
-      description:
-        "The window the rows are read from: 'all' (default), 'this-month', 'last-30-days', " +
-        "'this-year'. For a trailing week count pass an object instead: " +
-        '{"kind":"last-weeks","weeks":8} — 8 Monday-start weeks ending with today\'s. ' +
-        'For explicit dates pass {"kind":"custom","start":"2026-01-01","end":"2026-03-31"}.',
+      description: TIME_WINDOW_DESCRIPTION,
     },
     filters: {
       type: "array",
@@ -109,6 +145,7 @@ const VIEW_BLOCK_SCHEMA = {
         },
       },
     },
+    columns: LIST_COLUMNS_SCHEMA,
     sort: {
       type: "object",
       description: "Order of the rows the card shows. Defaults to label ascending.",
@@ -167,7 +204,9 @@ export const VIEW_SPEC_SCHEMA = {
       description:
         "How the card draws when it has no blocks, and the default for blocks that omit their own. " +
         "'metric' is one number and must not group; 'table' and 'bar' need a groupBy; 'line' needs a " +
-        "date groupBy plus a timeBucket.",
+        "date groupBy plus a timeBucket; 'list' is not an aggregate at all — it prints one line per " +
+        "row, newest first, in its own `columns`, and takes no measure and no groupBy. Use 'list' " +
+        'for "show me the recent transactions", and \'table\' for "a table of totals".',
     },
     measure: {
       type: "string",
@@ -197,11 +236,7 @@ export const VIEW_SPEC_SCHEMA = {
     timeWindow: {
       type: "string",
       enum: WINDOWS,
-      description:
-        "The window the rows are read from: 'all' (default), 'this-month', 'last-30-days', " +
-        "'this-year'. For a trailing week count pass an object instead: " +
-        '{"kind":"last-weeks","weeks":8} — 8 Monday-start weeks ending with today\'s. ' +
-        'For explicit dates pass {"kind":"custom","start":"2026-01-01","end":"2026-03-31"}.',
+      description: TIME_WINDOW_DESCRIPTION,
     },
     filters: {
       type: "array",
@@ -211,6 +246,7 @@ export const VIEW_SPEC_SCHEMA = {
     sort: VIEW_BLOCK_SCHEMA.properties.sort,
     limit: VIEW_BLOCK_SCHEMA.properties.limit,
     convertToZar: VIEW_BLOCK_SCHEMA.properties.convertToZar,
+    columns: LIST_COLUMNS_SCHEMA,
     span: VIEW_BLOCK_SCHEMA.properties.span,
     blocks: {
       type: "array",
@@ -245,6 +281,8 @@ export const VIEW_VOCABULARY = {
 export function viewSpecTemplate(db: DatabaseMeta): {
   metric: Record<string, unknown>;
   table: Record<string, unknown>;
+  list: Record<string, unknown>;
+  today: Record<string, unknown> | null;
   dateColumnId: string | null;
   numberColumnId: string | null;
 } {
@@ -280,9 +318,48 @@ export function viewSpecTemplate(db: DatabaseMeta): {
     ...(date ? { ...windowed, timeBucket: "week" } : {}),
   };
 
+  // The listing is the third shape a spec can take, and the one a model reaches
+  // for when the operator says "recent" without saying "totals": it names the
+  // columns it prints instead of a measure and a groupBy, and carries no
+  // measure at all. Built from this database's own columns so the ids are real.
+  const listColumns = [
+    date?.id,
+    ...db.columns
+      .filter((c) => c.type === "relation" || c.type === "text")
+      .slice(0, 2)
+      .map((c) => c.id),
+    number?.id,
+  ].filter((id): id is string => Boolean(id));
+  const list: Record<string, unknown> = {
+    databaseId: db.id,
+    title: "Recent rows",
+    presentation: "list",
+    ...(listColumns.length > 0 ? { columns: listColumns.slice(0, 4) } : {}),
+    ...windowed,
+  };
+
+  // The fourth shape, and the one the reported bug needed: a metric over TODAY,
+  // as a window rather than as a date written into a filter. It is only possible
+  // when the database has a date column to anchor the window on, and it is
+  // deliberately shown beside the other three — a model that has never seen the
+  // word "today" in this vocabulary is a model that freezes a literal date.
+  const today: Record<string, unknown> | null = date
+    ? {
+        databaseId: db.id,
+        title: "Today",
+        presentation: "metric",
+        measure: number ? "sum" : "count",
+        ...(number ? { measureColumnId: number.id } : {}),
+        timeColumnId: date.id,
+        timeWindow: "today",
+      }
+    : null;
+
   return {
     metric,
     table,
+    list,
+    today,
     dateColumnId: date?.id ?? null,
     numberColumnId: number?.id ?? null,
   };

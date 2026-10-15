@@ -135,6 +135,59 @@
   border-top: 1px solid var(--border-soft);
 }
 
+/* The USD→ZAR source: a short stack of fields, an action row, and what the last
+   read actually said. The state block is pushed below the buttons on purpose —
+   it answers "did that work?", so it belongs after the thing that asked. */
+.data-studio .data-rail__fx {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.data-studio .data-rail__fx .data-studio__hint {
+  margin: 0;
+}
+
+.data-studio .data-rail__fx-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.1rem;
+}
+
+.data-studio .data-rail__fx-state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0.15rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.data-studio .data-rail__fx-state > div {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.data-studio .data-rail__fx-state dt {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.data-studio .data-rail__fx-state dd {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--foreground);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .data-studio .btn {
   border-radius: var(--data-radius);
 }

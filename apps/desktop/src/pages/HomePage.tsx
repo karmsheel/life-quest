@@ -7,6 +7,7 @@ import { api } from "@/lib/ipc";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useVault } from "@/state/VaultProvider";
+import { useLiveData } from "@/state/LiveDataProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { GoalProgressCard } from "@/pages/home-pins/GoalProgressCard";
@@ -32,6 +33,14 @@ type BoardView = SavedView & { domainSlug: string };
 
 export default function HomePage() {
   const { snapshot, reloadGeneration, refresh } = useVault();
+  /**
+   * The board's own liveness. A view pin re-runs itself off this (see
+   * `ViewCard`), and the built-in cards — the life log, pending Decisions, the
+   * week, goal progress — read data this page owns, so the page re-reads that
+   * data too. Both halves are needed: a write that lands while the operator
+   * watches must move the ledger table AND the log line that says it happened.
+   */
+  const live = useLiveData();
   const { setContextCard, setOpen: setChatOpen } = useChatDock();
   const lens = useDomainLens();
   const title =
@@ -163,7 +172,7 @@ export default function HomePage() {
 
   useEffect(() => {
     void load();
-  }, [load, reloadGeneration]);
+  }, [load, reloadGeneration, live]);
 
   /**
    * A menu closes on anything that is not it.

@@ -198,6 +198,15 @@ export {
   setFinanceCaptureAccount,
 } from "./finance-kit.ts";
 export {
+  DEFAULT_FX_SOURCE,
+  fxSourceOf,
+  readJsonPath,
+  parseRate,
+  parseAsOf,
+  refreshFxRate,
+  setFxRateSource,
+} from "./finance-fx.ts";
+export {
   captureUtterance,
   undoCapture,
   correctCapture,

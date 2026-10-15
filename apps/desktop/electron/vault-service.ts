@@ -86,6 +86,9 @@ import {
   applyGoalsCommand,
   applyMapCommand,
   installFinanceKit,
+  refreshFxRate,
+  setFxRateSource,
+  fxSourceOf,
   listInstalledKits,
   getFinanceKitSettings,
   setFinanceCaptureAccount,
@@ -969,11 +972,39 @@ export async function kitList(slug: string): Promise<Result<string[]>> {
 }
 
 export async function kitFinanceSettings(): Promise<Result<unknown>> {
-  return withVault((root) => getFinanceKitSettings(root));
+  return withVault(async (root) => {
+    const res = await getFinanceKitSettings(root);
+    if (!res.ok || !res.value) return res;
+    // The operator is shown the source IN FORCE, not the absence of a setting: a
+    // vault nobody has pointed anywhere still reads a rate from the default, and
+    // three blank fields would say the opposite. Resolving it here rather than in
+    // the renderer also keeps the default out of the browser bundle, which cannot
+    // import vault-core's root — it reaches node:sqlite.
+    return { ok: true, value: { ...res.value, fxSource: fxSourceOf(res.value) } };
+  });
 }
 
 export async function kitSetCaptureAccount(accountRowId: string | null): Promise<Result<unknown>> {
   return withVault((root) => setFinanceCaptureAccount(root, accountRowId));
+}
+
+// KAR-57 finance FX (USD→ZAR): the rate comes from a source the operator names,
+// and the main process is what reads it — the renderer never fetches a URL.
+export async function fxRateRefresh(): Promise<Result<unknown>> {
+  return withVault((root) => refreshFxRate(root));
+}
+
+export async function fxSetSource(input: {
+  url?: string | null;
+  path?: string | null;
+  asOfPath?: string | null;
+}): Promise<Result<unknown>> {
+  return withVault((root) => setFxRateSource(root, input, USER_ACTOR));
+}
+
+/** True when a vault is open — the hourly refresh has nothing to do otherwise. */
+export function fxVaultOpen(): boolean {
+  return currentRoot !== null;
 }
 
 // KAR-57 finance plan loop

@@ -6053,6 +6053,52 @@ button.chat-panel__activity-line:hover {
   color: var(--text-strong);
 }
 
+/* A listing's cells are the database's own columns, so the aggregate table's
+   "everything after the first column is a number" rule is wrong here — a payee
+   is not money. Alignment follows the cell instead: text keeps the left edge,
+   numbers take the right one in tabular figures, and only the money column
+   wears the card's strong ink. Source order is what makes these win: they carry
+   the same specificity as the rules above and come after them. */
+.view-card__table--list th + th,
+.view-card__table--list td + td {
+  text-align: left;
+  width: auto;
+}
+
+.view-card__table--list td + td {
+  color: inherit;
+  font-variant-numeric: normal;
+}
+
+.view-card__table--list th {
+  white-space: nowrap;
+}
+
+/* The first column is the row's own name — a date, usually — and a name column
+   that stretches to three times its content leaves the card reading as though it
+   has a gap in it. `width: 1%` is the shrink-to-fit idiom: the browser takes the
+   smallest width the content allows and gives the slack to the columns that can
+   use it. */
+.view-card__table--list th:first-child,
+.view-card__table--list td:first-child {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* A number column takes the right edge in its cells AND in its heading — the
+   same claim the aggregate table makes, made per column instead of by position,
+   so a heading can never sit over a column it does not describe. */
+.view-card__table--list td.view-card__cell--num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+
+.view-card__table--list th.view-card__cell--num {
+  text-align: right;
+}
+
 .view-card__table tbody th {
   /* Row headers, when a table names its own label column. */
   border-bottom: 1px solid var(--border-soft);

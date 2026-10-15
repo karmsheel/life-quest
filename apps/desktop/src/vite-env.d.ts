@@ -555,6 +555,18 @@ type LifequestApi = {
   kitList: (slug: string) => Promise<Result<unknown>>;
   kitFinanceSettings: () => Promise<Result<unknown>>;
   kitSetCaptureAccount: (accountRowId: string | null) => Promise<Result<unknown>>;
+  /**
+   * Read the USD→ZAR rate from the configured source and store it. The fetch
+   * happens in the main process, so this is the renderer's only way to ask for
+   * one and never a URL the renderer itself opens.
+   */
+  fxRefresh: () => Promise<Result<unknown>>;
+  /** Point the vault at another rate source; null url restores the default. */
+  fxSetSource: (input: {
+    url?: string | null;
+    path?: string | null;
+    asOfPath?: string | null;
+  }) => Promise<Result<unknown>>;
   // KAR-57 finance plan loop
   financeBudgetVsActual: (asOf: string) => Promise<Result<unknown>>;
   financeNetWorth: (asOf: string) => Promise<Result<unknown>>;
@@ -591,6 +603,11 @@ type LifequestApi = {
   ingestAccept: (slug: string, batchId: string, rowIds?: string[]) => Promise<Result<unknown>>;
   ingestReject: (slug: string, batchId: string, rowIds?: string[]) => Promise<Result<unknown>>;
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => () => void;
+  /**
+   * The vault changed: re-read whatever the page draws. `revision` only ever
+   * moves forward, so a listener can ignore a value it has already seen.
+   */
+  onVaultDataChanged: (cb: (revision: number) => void) => () => void;
   windowChrome: {
     get: () => Promise<{ overlay: boolean; platform: string }>;
     setTitleBarOverlay: (opts: {

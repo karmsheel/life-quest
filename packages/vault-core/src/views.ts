@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { appendLog } from "./log.ts";
-import { todayLocalIso } from "./map/dates.ts";
+import { mondayOnOrBefore, todayLocalIso } from "./map/dates.ts";
 import { vaultPaths } from "./paths.ts";
 import { isDomainLive, getDatabase, rowDisplayLabel, readRegistry } from "./domain-databases.ts";
 import {
@@ -16,6 +16,7 @@ import {
   type Result,
   type ViewBlock,
   type ViewBlockSpec,
+  type ViewListCell,
   type ViewMeasure,
   type ViewPresentation,
   type ViewQuerySpec,
@@ -38,8 +39,27 @@ import {
 
 export const VIEW_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
-export const PRESENTATIONS: readonly ViewPresentation[] = ["table", "bar", "line", "metric"];
-export const TIME_WINDOWS = ["all", "this-month", "last-30-days", "this-year"] as const;
+export const PRESENTATIONS: readonly ViewPresentation[] = ["table", "bar", "line", "metric", "list"];
+/**
+ * The windows a card can read, in the order the vocabulary teaches them.
+ *
+ * `today` and `this-week` are here because their absence was a measured failure.
+ * Every other window is anchored on a period the OPERATOR names; a card asking
+ * for today's spending or this week's totals had no way to say so, and an agent
+ * asked for one therefore wrote the date it happened to be looking at into a
+ * `filters` entry — producing a card that recomputes correctly and can never
+ * change, which is exactly how "the Today's Expense value hasn't changed in
+ * days" was reported. A window that moves with the clock is the fix; a literal
+ * date is still legal, because "the trip on 2026-10-10" is a real question.
+ */
+export const TIME_WINDOWS = [
+  "all",
+  "today",
+  "this-week",
+  "this-month",
+  "last-30-days",
+  "this-year",
+] as const;
 export const TIME_BUCKETS = ["day", "week", "month"] as const;
 export const FILTER_OPS = ["eq", "neq", "gt", "gte", "lt", "lte", "in"] as const;
 export const MEASURES: readonly ViewMeasure[] = ["sum", "count", "last", "avg"];
@@ -48,6 +68,11 @@ const DEFAULT_VIEW_LIMIT = 12;
 const MAX_VIEW_LIMIT = 50;
 /** A composed view is a card, not a report: eight panels is already a lot. */
 export const MAX_VIEW_BLOCKS = 8;
+/**
+ * A listing is one line per row on a card, not a spreadsheet: past this many
+ * columns there is no room left for the values themselves.
+ */
+export const MAX_LIST_COLUMNS = 6;
 
 type RawSpec = {
   title?: unknown;
@@ -62,6 +87,7 @@ type RawSpec = {
   sort?: unknown;
   limit?: unknown;
   convertToZar?: unknown;
+  columns?: unknown;
 };
 
 function isDateString(v: unknown): v is string {
@@ -177,6 +203,56 @@ function validateBlock(block: ViewBlockSpec & { databaseId: string }, db: Databa
     return { ok: false, error: `${at}View groupBy column does not exist: ${String(v.groupBy)}` };
   }
 
+  // A listing is every matched row, one line each. It is not an aggregate, so it
+  // has no grouping to make, no measure to take, and no period to collapse time
+  // into — and what it does need is the columns it prints, named in order.
+  const isList = presentation === "list";
+  if (isList) {
+    if (groupCol) {
+      return { ok: false, error: `${at}A list view is one row per database row and must not group` };
+    }
+    if (v.timeBucket != null) {
+      return {
+        ok: false,
+        error:
+          `${at}A list view shows rows, not periods: drop timeBucket. A date column may still be ` +
+          "the timeColumnId a timeWindow acts on.",
+      };
+    }
+    const cols = v.columns;
+    if (!Array.isArray(cols) || cols.length === 0) {
+      return {
+        ok: false,
+        error: `${at}A list view needs a non-empty columns array naming the database columns it prints`,
+      };
+    }
+    if (cols.length > MAX_LIST_COLUMNS) {
+      return { ok: false, error: `${at}A list view prints at most ${MAX_LIST_COLUMNS} columns` };
+    }
+    const seenCols = new Set<string>();
+    for (const c of cols) {
+      if (typeof c !== "string" || !col(c)) {
+        return {
+          ok: false,
+          error: `${at}View columns must name existing columns of this database: ${String(c)}`,
+        };
+      }
+      if (seenCols.has(c)) return { ok: false, error: `${at}View columns repeats ${c}` };
+      seenCols.add(c);
+    }
+  } else if (Array.isArray(v.columns) && v.columns.length > 0) {
+    // Naming columns is what a LIST does, so an aggregate that names them is
+    // almost always a `presentation` that should have said "list". Refusing it
+    // names that, rather than saving a field nothing will ever read.
+    return {
+      ok: false,
+      error:
+        `${at}Only a list view takes \`columns\`. For one row per database row set ` +
+        `presentation: "list" and keep columns; for a table of totals drop columns and give the ` +
+        "block a groupBy.",
+    };
+  }
+
   if ((presentation === "table" || presentation === "bar") && !groupCol) {
     return { ok: false, error: `${at}A ${presentation} view requires a groupBy column` };
   }
@@ -212,17 +288,22 @@ function validateBlock(block: ViewBlockSpec & { databaseId: string }, db: Databa
     return { ok: false, error: `${at}View timeWindow is invalid` };
   }
 
-  if (measure === "count") {
-    if (v.measureColumnId != null) {
-      return { ok: false, error: `${at}A count measure takes no measureColumnId` };
-    }
-  } else {
-    const mCol = v.measureColumnId != null ? col(v.measureColumnId) : null;
-    if (!mCol) {
-      return { ok: false, error: `${at}A ${measure} measure needs an existing measureColumnId` };
-    }
-    if (mCol.type !== "number") {
-      return { ok: false, error: `${at}Measure column ${mCol.name} must be a number column` };
+  // A listing takes no measure: it prints the rows, it does not fold them. The
+  // measure fields a list inherits are inert rather than absent, which is why
+  // this check is skipped rather than satisfied.
+  if (!isList) {
+    if (measure === "count") {
+      if (v.measureColumnId != null) {
+        return { ok: false, error: `${at}A count measure takes no measureColumnId` };
+      }
+    } else {
+      const mCol = v.measureColumnId != null ? col(v.measureColumnId) : null;
+      if (!mCol) {
+        return { ok: false, error: `${at}A ${measure} measure needs an existing measureColumnId` };
+      }
+      if (mCol.type !== "number") {
+        return { ok: false, error: `${at}Measure column ${mCol.name} must be a number column` };
+      }
     }
   }
 
@@ -314,6 +395,7 @@ function fillBlockDefaults(block: ViewBlock): Omit<ViewBlock, "id" | "title" | "
     sort: block.sort ?? { by: "label", dir: "asc" },
     limit: block.limit ?? DEFAULT_VIEW_LIMIT,
     convertToZar: block.convertToZar ?? false,
+    columns: block.columns ?? [],
   };
 }
 
@@ -352,6 +434,7 @@ function asBlock(raw: Record<string, unknown>): ViewBlock {
   // The rest carry only their own type; `null` is not a value a writer means.
   for (const key of [
     "presentation", "measure", "timeWindow", "filters", "sort", "limit", "convertToZar", "span",
+    "columns",
   ]) {
     if (raw[key] !== undefined && raw[key] !== null) out[key] = raw[key];
   }
@@ -364,6 +447,13 @@ function asBlock(raw: Record<string, unknown>): ViewBlock {
  * always the block's own, because a metric panel must not inherit the root's
  * measure column or it would fail its own "one number must not group" check.
  *
+ * A listing is the second exception, and for the same reason: it is not an
+ * aggregate, so it must not inherit the root's grouping. A composed card's root
+ * fields are an aggregate's — the "Spending by month" card on the operator's own
+ * board roots a `groupBy: "date"` — and a list block layered over them would
+ * otherwise be handed a grouping it can never honour. Only an INHERITED grouping
+ * is dropped; a single-aggregate list that names one is refused by the validator.
+ *
  * `parent` may itself be partial: a root built from a proposal has only the
  * fields the author wrote. `completeBlock` supplies the rest.
  */
@@ -371,6 +461,10 @@ function resolveBlock(parent: ViewBlock, raw: ViewBlock): ViewBlock {
   const layered: ViewBlock = { ...parent, ...raw, id: raw.id, title: raw.title } as ViewBlock;
   layered.measure = raw.measure ?? "sum";
   layered.measureColumnId = raw.measureColumnId ?? null;
+  if (layered.presentation === "list") {
+    layered.groupBy = null;
+    layered.timeBucket = null;
+  }
   return layered;
 }
 
@@ -428,7 +522,19 @@ function toBlockSpec(block: ViewBlock, index: number): ViewBlockSpec {
   };
 }
 
-/** Window bounds as YYYY-MM-DD strings; null bounds mean "all time". */
+/**
+ * Window bounds as YYYY-MM-DD strings; null bounds mean "all time".
+ *
+ * Every named window is computed from `today` — the LOCAL calendar day of the
+ * instant the card is drawn — so the same spec reads a different span tomorrow.
+ * That is the whole point of the anchored windows: a card is a live query, and a
+ * query that cannot move is a picture of one.
+ *
+ * The two period windows end at TODAY rather than at the period's last day.
+ * "This month" and "this week" are asked by an operator looking at actuals, and
+ * a spend that has not happened yet is not a spend; a window that ran to the end
+ * of the month would also silently include a row someone dated ahead by mistake.
+ */
 export function windowBounds(
   w: ViewSpec["timeWindow"],
   today: string,
@@ -436,6 +542,10 @@ export function windowBounds(
   if (typeof w === "object" && w.kind === "custom") return { start: w.start, end: w.end };
   if (typeof w === "object" && w.kind === "last-weeks") return lastWeeksBounds(w, today);
   switch (w) {
+    case "today":
+      return { start: today, end: today };
+    case "this-week":
+      return { start: mondayOnOrBefore(today), end: today };
     case "this-month":
       return { start: today.slice(0, 8) + "01", end: today };
     case "this-year":
@@ -798,10 +908,19 @@ async function runBlock(
 
   // Finance amount path: resolve account currencies once, before the
   // aggregation loop, so the loop stays a single pass.
+  //
+  // A listing draws the amount as a COLUMN and an aggregate measures it, so the
+  // two ask different questions and must still reach the same answer: a listing
+  // whose rows were converted differently from the total printed beside them
+  // would be lying about one of the two.
+  const isList = spec.presentation === "list";
+  const amountColumnId = db.columns.find((c) => c.name === "amount")?.id ?? "";
+  const drawsAmount =
+    isList ? amountColumnId !== "" && spec.columns.includes(amountColumnId) : measureCol?.name === "amount";
   const isFinanceAmount =
   slug === "financial" &&
   spec.databaseId === FINANCE_DB_IDS.transactions &&
-  measureCol?.name === "amount";
+  drawsAmount;
   const accountColId = isFinanceAmount
   ? (db.columns.find((c) => c.name === "account")?.id ?? "")
   : "";
@@ -824,6 +943,20 @@ async function runBlock(
     warnings.push("usdZarRate is unset; USD amounts cannot convert to ZAR.");
   }
 
+  // A listing keeps the rows the read above matched instead of folding them, so
+  // it shares every part of the query — the database, the filters, the window —
+  // and only the fold differs. The rows it prints are therefore the same rows a
+  // table over the same window would have counted.
+  if (isList) {
+    return {
+      ok: true,
+      value: listResult(
+        rawRows, db, spec, relationLabels, accountColId, amountColumnId,
+        accountCurrency, usdZarRate, isFinanceAmount, warnings,
+      ),
+    };
+  }
+
   // Aggregate in TS: every rule the design pins as a warning lives here, one
   // loop, no silent bucket. Conversion happens per row at aggregation time,
   // so a group sum is already in home currency when conversion applies.
@@ -839,23 +972,16 @@ async function runBlock(
     let rowCurrency: string | null = null;
     if (spec.measure === "count") {
       value = 1;
+    } else if (isFinanceAmount && accountColId) {
+      const resolved = financeAmount(cells, measureCol!.id, accountColId, accountCurrency, usdZarRate);
+      if (resolved.value === null) continue;
+      value = resolved.value;
+      rowCurrency = resolved.currency;
+      if (rowCurrency) seenCurrencies.add(rowCurrency);
     } else {
       const mv = cells[measureCol!.id];
       if (typeof mv !== "number" || !Number.isFinite(mv)) continue;
-      if (isFinanceAmount && accountColId) {
-        const acctId = cells[accountColId];
-        rowCurrency =
-        typeof acctId === "string" ? (accountCurrency.get(acctId) ?? null) : null;
-        if (rowCurrency === "USD" && usdZarRate != null) {
-          value = mv * usdZarRate;
-          rowCurrency = "ZAR";
-        } else {
-          value = mv;
-        }
-        if (rowCurrency) seenCurrencies.add(rowCurrency);
-      } else {
-        value = mv;
-      }
+      value = mv;
     }
 
     let label: string;
@@ -950,15 +1076,188 @@ async function runBlock(
   }
   const shown = entries.slice(0, limit);
 
+  // A metric over an empty window is a real number, not a blank one.
+  //
+  // This is what makes a "today" card usable: a day with no spending is the
+  // normal case, and it must read 0 rather than "no rows" — the same thing a
+  // spreadsheet says for SUM over nothing. Only the two measures for which zero
+  // is the true answer qualify: a count of no rows IS 0, and a sum of no rows IS
+  // 0. An `avg` of no rows is undefined and a `last` of no rows does not exist,
+  // so those keep drawing nothing, which is the honest answer.
+  const isEmptyMetric =
+    spec.presentation === "metric" &&
+    spec.groupBy == null &&
+    shown.length === 0 &&
+    (spec.measure === "sum" || spec.measure === "count");
+  const rows: Array<[string, number]> = isEmptyMetric
+    ? [["value", 0]]
+    : shown.map((e) => [e.label, e.value]);
+
   return {
     ok: true,
     value: {
       columns: ["label", "value"],
-      rows: shown.map((e) => [e.label, e.value]),
+      rows,
       warnings,
       currency,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Listings: `presentation: "list"` — the rows themselves, not a fold of them
+// ---------------------------------------------------------------------------
+
+/**
+ * A row's amount, and the currency it ends up in after the finance rule.
+ *
+ * One function because two callers must not disagree: an aggregate folds these
+ * values into a bucket and a listing prints them side by side, and a card that
+ * showed a total at one rate and the rows behind it at another would be lying
+ * about one of the two. `null` means "this row has no usable amount" — which an
+ * aggregate skips and a listing still prints, as an empty cell.
+ */
+function financeAmount(
+  cells: Record<string, unknown>,
+  measureColId: string,
+  accountColId: string,
+  accountCurrency: Map<string, string>,
+  usdZarRate: number | null,
+): { value: number | null; currency: string | null } {
+  const mv = cells[measureColId];
+  if (typeof mv !== "number" || !Number.isFinite(mv)) return { value: null, currency: null };
+  const acctId = cells[accountColId];
+  const rowCurrency = typeof acctId === "string" ? (accountCurrency.get(acctId) ?? null) : null;
+  if (rowCurrency === "USD" && usdZarRate != null) {
+    return { value: mv * usdZarRate, currency: "ZAR" };
+  }
+  return { value: mv, currency: rowCurrency };
+}
+
+/**
+ * A listing: every row the query matched, one line each, newest first.
+ *
+ * Ordered by the block's own time column when it names one, because the reason a
+ * listing exists is that "recent" is at the top; without a date to order by, the
+ * read's own order (created_at ascending) is reversed, which puts the newest
+ * ENTERED rows first instead. Either way it is a listing's order, which is why
+ * the block's `sort` — a field about comparing aggregate groups — is not
+ * consulted here.
+ *
+ * A relation cell is resolved to its target's label, exactly as a relation
+ * groupBy is in the fold: an operator reading a ledger wants "Groceries", not
+ * the uuid of the row it points at. A cell the row does not have is left empty
+ * rather than dropped, because a listing's job is to show the rows as they are.
+ */
+function listResult(
+  rawRows: Array<{ id: string; cells: string }>,
+  db: DatabaseMeta,
+  spec: ViewBlockSpec & ViewQuerySpec,
+  relationLabels: Map<string, string>,
+  accountColId: string,
+  amountColumnId: string,
+  accountCurrency: Map<string, string>,
+  usdZarRate: number | null,
+  isFinanceAmount: boolean,
+  warnings: string[],
+): ViewRunResult {
+  const colById = new Map(db.columns.map((c) => [c.id, c]));
+  const listed = spec.columns
+    .map((id) => colById.get(id))
+    .filter((c): c is DatabaseColumn => Boolean(c));
+  const timeCol = spec.timeColumnId ? colById.get(spec.timeColumnId) : undefined;
+
+  const projected: Array<{ cells: ViewListCell[]; sortKey: string }> = [];
+  const seenCurrencies = new Set<string>();
+
+  for (const raw of rawRows) {
+    const cells = parseCells(raw.cells);
+    if (!cells) continue;
+
+    let rowCurrency: string | null = null;
+    const line: ViewListCell[] = [];
+    for (const column of listed) {
+      if (isFinanceAmount && column.id === amountColumnId) {
+        const resolved = financeAmount(cells, amountColumnId, accountColId, accountCurrency, usdZarRate);
+        if (resolved.currency) {
+          rowCurrency = resolved.currency;
+          seenCurrencies.add(resolved.currency);
+        }
+        line.push(resolved.value ?? "");
+        continue;
+      }
+      const value = cells[column.id];
+      if (column.type === "relation") {
+        const rid = typeof value === "string" && value ? value : null;
+        line.push(
+          rid ? (relationLabels.get(`${column.relationDatabaseId}::${rid}`) ?? rid) : "",
+        );
+        continue;
+      }
+      line.push(cellText(value));
+    }
+
+    const key = timeCol ? cells[timeCol.id] : undefined;
+    projected.push({ cells: line, sortKey: typeof key === "string" ? key : "" });
+  }
+
+  // Newest first by the time column. Equal dates keep the read's order — the
+  // sort is stable — so the card never shuffles rows that share a day.
+  if (timeCol) {
+    projected.sort((a, b) => (a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0));
+  } else {
+    projected.reverse();
+  }
+
+  let currency: ViewRunResult["currency"] = null;
+  if (isFinanceAmount) {
+    if (seenCurrencies.size === 1 && seenCurrencies.has("ZAR")) {
+      currency = "ZAR";
+    } else if (seenCurrencies.has("USD") && seenCurrencies.has("ZAR")) {
+      // An aggregate says "series kept separate", because it draws one line per
+      // currency. A listing has no series to keep apart: it prints the rows, so
+      // the useful thing to say is which currencies are on the card and that the
+      // amounts were not converted — the money column cannot carry a unit when
+      // its rows do not share one, and this warning is the only place left that
+      // can say so.
+      currency = "mixed";
+      warnings.push(
+        `Rows span more than one currency (${[...seenCurrencies].sort().join(", ")}); each amount ` +
+          "is shown exactly as its row stores it.",
+      );
+    } else if (seenCurrencies.has("USD")) {
+      currency = "mixed";
+      warnings.push("USD amounts could not convert to ZAR; shown as-is.");
+    }
+  }
+
+  const limit = spec.limit ?? DEFAULT_VIEW_LIMIT;
+  if (projected.length > limit) {
+    warnings.push(`Showing ${limit} of ${projected.length} rows.`);
+  }
+
+  const headers = listed.map((c) => c.name);
+  const moneyIndex = listed.findIndex((c) => c.id === amountColumnId);
+
+  return {
+    columns: headers,
+    rows: [],
+    listRows: projected.slice(0, limit).map((p) => p.cells),
+    // Which column the `currency` above actually describes, so a card can put
+    // the unit on the money column instead of guessing at the last one.
+    ...(currency !== null && moneyIndex >= 0 ? { currencyColumn: headers[moneyIndex] } : {}),
+    warnings,
+    currency,
+  };
+}
+
+/** One cell as text: a value the row stores, never a formatted one. */
+function cellText(value: unknown): ViewListCell {
+  if (value == null) return "";
+  if (typeof value === "number") return Number.isFinite(value) ? value : "";
+  if (typeof value === "string") return value;
+  if (typeof value === "boolean") return value ? "true" : "false";
+  return String(value);
 }
 
 // ---------------------------------------------------------------------------

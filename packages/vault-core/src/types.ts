@@ -512,11 +512,37 @@ export type DomainDatabaseRegistry = {
   finance?: FinanceKitSettings;
 };
 
+/**
+ * Where the USD→ZAR rate is read from, and how that read last went.
+ *
+ * `path` is the operator's because "a different source" means a different shape:
+ * the common providers all nest the rate under `rates` keyed by currency code,
+ * which is why that is the default, but the field is what makes any other JSON
+ * endpoint usable rather than a source this app happens to know.
+ */
+export type FxRateSource = {
+  /** The JSON endpoint the rate is read from. */
+  url: string;
+  /** Dot path to the rate inside that JSON, e.g. "rates.ZAR". */
+  path: string;
+  /**
+   * Dot path to the source's own date, when it publishes one. Null means the
+   * source does not say, and the read is dated today.
+   */
+  asOfPath: string | null;
+  /** When the source was last read, successfully or not. */
+  lastFetchedAt: string | null;
+  /** Why the last read failed; null after a read that worked. */
+  lastError: string | null;
+};
+
 export type FinanceKitSettings = {
   homeCurrency: "ZAR";
   usdZarRate: number | null;
   usdZarAsOf: string | null; // YYYY-MM-DD or null
   defaultCaptureAccountId: string | null;
+  /** Null until the operator changes it; the default source is used instead. */
+  fxSource?: FxRateSource | null;
 };
 
 export type CaptureOutcome =
@@ -958,7 +984,14 @@ export type AssumptionSetSaveResult = {
 // companion never emits it.
 // ---------------------------------------------------------------------------
 
-export const VIEW_PRESENTATIONS = ["table", "bar", "line", "metric"] as const;
+/**
+ * How a card draws. `table`, `bar`, `line` and `metric` are AGGREGATES over the
+ * rows the query matches: they fold many rows into label/value groups. `list` is
+ * not an aggregate at all — it keeps the rows, one line each, in the card's own
+ * columns — which is why it takes no measure and no grouping, and why its result
+ * rides in `ViewRunResult.listRows` rather than in `rows`.
+ */
+export const VIEW_PRESENTATIONS = ["table", "bar", "line", "metric", "list"] as const;
 export type ViewPresentation = (typeof VIEW_PRESENTATIONS)[number];
 
 export const VIEW_MEASURES = ["sum", "count", "last"] as const;
@@ -973,6 +1006,12 @@ export type ViewFilter = {
 
 export type ViewTimeWindow =
   | "all"
+  // Anchored on the day the card is drawn, so the query moves with the clock.
+  // `today` is one day and `this-week` runs from that day's Monday to the day
+  // itself; both exist because a card asked for "today's spending" had no way to
+  // say so and an agent froze a literal date in a filter instead.
+  | "today"
+  | "this-week"
   | "this-month"
   | "last-30-days"
   | "this-year"
@@ -1004,6 +1043,13 @@ export type ViewBlock = {
   sort: ViewSort;
   limit: number;
   convertToZar: boolean;
+  /**
+   * The `list` presentation's own columns, in order: which database columns a
+   * listing prints, and in what order, each headed by the column's own name.
+   * Empty for every aggregate, which needs no such list — its two columns come
+   * from the fold. A list must name at least one; an aggregate must name none.
+   */
+  columns: string[];
   /** 1 = one grid cell, 2 = the card's full width. */
   span?: 1 | 2;
 };
@@ -1041,6 +1087,8 @@ export type ViewSpec = {
   limit: number;
   /** finance:transactions amount measures only. */
   convertToZar: boolean;
+  /** The `list` presentation's columns, in order; empty for an aggregate. */
+  columns: string[];
   /** Present and non-empty only on a composed view. */
   blocks?: ViewBlock[];
 };
@@ -1060,6 +1108,8 @@ export type ViewBlockSpec = {
   sort: ViewSort;
   limit: number;
   convertToZar: boolean;
+  /** The `list` presentation's columns, in order; empty for an aggregate. */
+  columns: string[];
   /** 1 = one grid cell, 2 = the card's full width. */
   span?: 1 | 2;
 };
@@ -1075,12 +1125,40 @@ export type ViewQuerySpec = {
   filters: ViewFilter[];
 };
 
+/** One cell of a listing row, as the row stores it and never formatted. */
+export type ViewListCell = string | number;
+
+/**
+ * What one block returned.
+ *
+ * Two shapes, and the presentation decides which one is filled. An aggregate
+ * (`table`, `bar`, `line`, `metric`) folds the matched rows into label/value
+ * groups, and they ride in `rows`. A listing (`list`) keeps the rows, and they
+ * ride in `listRows`, one entry per row with its cells in `columns` order.
+ * Exactly one of the two is ever non-empty — `rows` is empty for a listing and
+ * `listRows` is absent for an aggregate — so no reader has to guess which shape
+ * it is holding, and a listing can never be mistaken for a two-column fold.
+ */
 export type ViewRunResult = {
+  /** The card's column headings, in order: `["label","value"]`, or a listing's own. */
   columns: string[];
+  /** An aggregate's two columns. Empty for a listing. */
   rows: Array<[label: string, value: number]>;
+  /**
+   * A listing's rows: one entry per database row, cells in `columns` order.
+   * Absent unless the block's presentation is `list`.
+   */
+  listRows?: ViewListCell[][];
   warnings: string[];
   /** The single currency when every row shares one; "mixed" or null otherwise. */
   currency: "ZAR" | "USD" | "mixed" | null;
+  /**
+   * Which of `columns` the `currency` above describes, for a listing — the money
+   * column, so a card puts the unit on the column it belongs to rather than on
+   * whichever one happens to be last. Absent for an aggregate, whose single
+   * value column is the only candidate there is.
+   */
+  currencyColumn?: string;
 };
 
 /**

@@ -11,6 +11,7 @@ import type {
 } from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
+import { useLiveData } from "@/state/LiveDataProvider";
 import { Button } from "@/components/ui/Button";
 
 async function loadBatches(slug: string, id: string, setBatches: (b: IngestBatch[]) => void, setErr: (e: string | null) => void) {
@@ -26,6 +27,8 @@ export default function DatabasePage() {
   const { slug = "", dbId = "" } = useParams<{ slug: string; dbId: string }>();
   const navigate = useNavigate();
   const { snapshot } = useVault();
+  /** The vault's live revision: the ledger table re-reads when a row lands. */
+  const live = useLiveData();
 
   const [meta, setMeta] = useState<DatabaseMeta | null>(null);
   const [rows, setRows] = useState<DatabaseRow[]>([]);
@@ -69,7 +72,7 @@ export default function DatabasePage() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, live]);
 
   const columnTypeOptions = ["text", "number", "date", "select", "checkbox", "relation", "file"];
 

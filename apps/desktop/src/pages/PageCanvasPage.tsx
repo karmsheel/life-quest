@@ -22,6 +22,7 @@ import {
 } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
+import { useLiveData } from "@/state/LiveDataProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { Button } from "@/components/ui/Button";
 import { ViewCard } from "@/components/ui/ViewCard";
@@ -224,6 +225,13 @@ export default function PageCanvasPage() {
   const { slug, pageId } = useParams<{ slug: string; pageId: string }>();
   const { snapshot } = useVault();
   const lens = useDomainLens();
+  /**
+   * The vault's live revision. A page's metrics, tables, and charts are the same
+   * kind of thing a dashboard card is — a query over rows — so a page that is
+   * open when the companion logs an expense must move with it, exactly as the
+   * dashboard does. `rowsByDb` below is a cache, and this is what invalidates it.
+   */
+  const live = useLiveData();
 
   const [page, setPage] = useState<PageRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -354,8 +362,58 @@ export default function PageCanvasPage() {
     }
   }, [installedKits, hasBudgetBlock, hasNetWorthBlock, scenarioBlock?.assumptionSetId, scenarioBlock?.compareSetId]);
 
-  async function loadRows(dbId: string) {
-    if (rowsByDb[dbId]) return;
+  /**
+   * Live data: re-read every number this page draws, when the vault changes.
+   *
+   * `live === 0` is the mount value, and the effects above have already made the
+   * first read — re-reading there would double every request on open. Past that,
+   * one write anywhere in the vault re-reads the blocks' databases, the finance
+   * extras the kit blocks need, and the three finance reports.
+   *
+   * The reports are the reason this is not just "invalidate the row cache": a
+   * budget-vs-actual figure is computed in the engine, not in this component, so
+   * the only way for it to be live is to ask again.
+   */
+  useEffect(() => {
+    if (live === 0 || !slug) return;
+    const dbIds = new Set<string>();
+    for (const block of blocks) {
+      const dbId = (block as { databaseId?: string }).databaseId;
+      if (typeof dbId === "string" && dbId) dbIds.add(dbId);
+    }
+    for (const dbId of dbIds) void loadRows(dbId, { force: true });
+
+    if (!installedKits?.includes("finance")) return;
+    for (const dbId of ["finance:accounts", "finance:holdings", "finance:budgets"]) {
+      void loadRows(dbId, { force: true });
+    }
+    const asOf = localIsoDate();
+    if (hasBudgetBlock) {
+      void (async () => {
+        const res = await api().financeBudgetVsActual(asOf);
+        if (res.ok) setBudgetReport(res.value as BudgetVsActualReport);
+      })();
+    }
+    if (hasNetWorthBlock) {
+      void (async () => {
+        const res = await api().financeNetWorth(asOf);
+        if (res.ok) setNetWorthReport(res.value as NetWorthReport);
+      })();
+    }
+    if (scenarioBlock?.assumptionSetId) {
+      void (async () => {
+        const res = await api().financeScenarioCompare({
+          asOf,
+          assumptionSetId: scenarioBlock.assumptionSetId,
+          compareSetId: scenarioBlock.compareSetId ?? null,
+        });
+        if (res.ok) setScenarioReport(res.value as ScenarioCompareReport);
+      })();
+    }
+  }, [live]);
+
+  async function loadRows(dbId: string, opts?: { force?: boolean }) {
+    if (!opts?.force && rowsByDb[dbId]) return;
     const res = await api().dbListRows(slug!, dbId);
     if (res.ok) {
       setRowsByDb((prev) => ({ ...prev, [dbId]: res.value as DatabaseRow[] }));

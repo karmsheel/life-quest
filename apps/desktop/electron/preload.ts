@@ -148,6 +148,11 @@ const lifequest = {
     ipcRenderer.invoke("kit:financeSettings") as Promise<Result<unknown>>,
   kitSetCaptureAccount: (accountRowId: string | null) =>
     ipcRenderer.invoke("kit:setCaptureAccount", accountRowId) as Promise<Result<unknown>>,
+  // The USD→ZAR rate source: the main process reads the URL, the renderer only
+  // names it.
+  fxRefresh: () => ipcRenderer.invoke("fx:refresh") as Promise<Result<unknown>>,
+  fxSetSource: (input: { url?: string | null; path?: string | null; asOfPath?: string | null }) =>
+    ipcRenderer.invoke("fx:setSource", input) as Promise<Result<unknown>>,
 
   // KAR-57 finance plan loop
   financeBudgetVsActual: (asOf: string) =>
@@ -495,6 +500,24 @@ const lifequest = {
     ipcRenderer.on("vault:fileChanged", listener);
     return () => {
       ipcRenderer.removeListener("vault:fileChanged", listener);
+    };
+  },
+
+  /**
+   * The vault changed: something was written that a dashboard card reads.
+   *
+   * `revision` is a monotonic count, not a payload — a listener re-reads what it
+   * draws rather than being handed the new data, because the read paths (a view
+   * run, a row list) are the app's own and must stay the single source of truth
+   * about what a card shows.
+   */
+  onVaultDataChanged: (cb: (revision: number) => void) => {
+    const listener = (_event: unknown, revision: number) => {
+      cb(typeof revision === "number" ? revision : 0);
+    };
+    ipcRenderer.on("vault:dataChanged", listener);
+    return () => {
+      ipcRenderer.removeListener("vault:dataChanged", listener);
     };
   },
 

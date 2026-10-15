@@ -9,6 +9,7 @@ import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { Button } from "@/components/ui/Button";
+import { FxRatePanel } from "@/components/data/FxRatePanel";
 
 export default function DataPage() {
   const { snapshot } = useVault();
@@ -61,7 +62,10 @@ export default function DataPage() {
     if (finLive && kitInstalled) {
       const settingsRes = await api().kitFinanceSettings();
       if (settingsRes.ok && settingsRes.value) {
-        const settings = settingsRes.value as { defaultCaptureAccountId?: string | null; homeCurrency?: string };
+        const settings = settingsRes.value as {
+          defaultCaptureAccountId?: string | null;
+          homeCurrency?: string;
+        };
         setDefaultCaptureAccount(settings.defaultCaptureAccountId ?? null);
       }
       // Load accounts
@@ -447,6 +451,8 @@ export default function DataPage() {
               </label>
             </section>
           ) : null}
+
+          <FxRatePanel />
         </div>
       </div>
     </div>

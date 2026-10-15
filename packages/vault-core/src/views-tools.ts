@@ -119,8 +119,10 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
       "The CARD draws itself in the app's design system, so a spec carries data and never looks: " +
       "no currency symbols, thousands separators, markdown, or prose in a title. Its table headers " +
       "come from the query — a timeBucket names the label column (Month, Week), a groupBy names the " +
-      "column it grouped by — and a number's format follows the theme. Keep a table under about 12 " +
-      "rows and a chart under about 20 points, which is all a card has room for.",
+      "column it grouped by, and a `list` names its own `columns` — and a number's format follows " +
+      "the theme. Keep a table under about 12 rows and a chart under about 20 points, which is all " +
+      "a card has room for; a `list` shows up to 50 rows of the database as they stand, newest " +
+      "first, which is what \"the recent transactions\" means.",
     parameters: {
       type: "object",
       properties: {
@@ -216,9 +218,10 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
     name: "preview_view",
     description:
       "Run a view spec against a domain database and return what the dashboard card would show: " +
-      "rows of [label, value], warnings, and the shared currency. Nothing is saved. Use this only " +
-      "when you need to compare options or check a number before committing — save_view already " +
-      "returns the card's rows, so a plain \"make me a weekly summary\" needs no preview at all. " +
+      "each block's rows, warnings, and the shared currency. `columns` names what a row holds — an " +
+      "aggregate's two, or a listing's own. Nothing is saved. Use this only when you need to " +
+      "compare options or check a number before committing — save_view already returns the card's " +
+      "rows, so a plain \"make me a weekly summary\" needs no preview at all. " +
       "The reply also names whether the board you are aiming at is locked, when you pass boardSlug.\n\n" +
       "A spec is either ONE aggregate (query fields at the top level) or a COMPOSED view: add a " +
       "`blocks` array (up to " + MAX_VIEW_BLOCKS + ") and each entry is one panel of the same card, " +
@@ -618,12 +621,24 @@ function specFix(db: DatabaseMeta, domainSlug: string): Record<string, unknown> 
     allowed: VIEW_VOCABULARY,
     dateColumnId: template.dateColumnId,
     numberColumnId: template.numberColumnId,
-    workingSpecs: { metric: template.metric, table: template.table },
+    workingSpecs: {
+      metric: template.metric,
+      table: template.table,
+      list: template.list,
+      ...(template.today ? { today: template.today } : {}),
+    },
     rules: [
       "presentation 'metric' takes no groupBy; 'table' and 'bar' require one.",
       "presentation 'line' requires a date groupBy plus timeBucket ('day' | 'week' | 'month').",
+      "presentation 'list' is not an aggregate: it requires a `columns` array naming 1-6 of this " +
+        "database's columns, and takes no groupBy, no timeBucket and no measure. It prints one line " +
+        "per row, newest first. Use it for \"the recent transactions\".",
       "timeBucket only applies to a date groupBy. 'week' labels rows like 2026-W41, 'month' like 2026-10.",
       "A timeWindow needs timeColumnId on the same block, or it is refused rather than ignored.",
+      "A named timeWindow is LIVE and recomputed from the current date on every draw: \"today\", " +
+        "\"this-week\", \"this-month\", \"this-year\", \"last-30-days\". NEVER put a date in `filters` " +
+        "to mean today or this week — that freezes the card on one day forever, which is what " +
+        "workingSpecs.today exists to replace.",
       "measureColumnId must name a number column of this database; a 'count' measure takes none.",
       "Pass `spec` as a JSON object, not as a string.",
     ],
@@ -792,6 +807,11 @@ function parsePins(raw: unknown): Result<Pin[]> {
  * The compact shape a preview or proposal shows: every block's rows, plus the
  * warnings rolled up. A one-aggregate view is one block named after its
  * presentation, so a caller reads one shape either way.
+ *
+ * An aggregate's `rows` are label/value pairs and a listing's are N cells wide,
+ * and they arrive on the same field here on purpose: a caller that had to know
+ * which of two fields to look in would be reading the card's shape rather than
+ * its answer. `columns` above names what each cell of a row is.
  */
 function previewShape(run: ComposedViewRunResult): {
   title: string;
@@ -800,7 +820,7 @@ function previewShape(run: ComposedViewRunResult): {
     title: string;
     presentation: string;
     columns: string[];
-    rows: Array<[string, number]>;
+    rows: Array<Array<string | number>>;
     rowCount: number;
     currency: ComposedViewRunResult["blocks"][number]["result"]["currency"];
   }>;
@@ -808,15 +828,18 @@ function previewShape(run: ComposedViewRunResult): {
 } {
   return {
     title: run.title,
-    blocks: run.blocks.map((b) => ({
-      id: b.id,
-      title: b.title,
-      presentation: b.presentation,
-      columns: b.result.columns,
-      rows: b.result.rows,
-      rowCount: b.result.rows.length,
-      currency: b.result.currency,
-    })),
+    blocks: run.blocks.map((b) => {
+      const rows = b.result.listRows ?? b.result.rows;
+      return {
+        id: b.id,
+        title: b.title,
+        presentation: b.presentation,
+        columns: b.result.columns,
+        rows,
+        rowCount: rows.length,
+        currency: b.result.currency,
+      };
+    }),
     warnings: run.warnings,
   };
 }

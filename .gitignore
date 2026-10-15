@@ -12,5 +12,8 @@ release
 # Local tool state, including a bridge token — never published.
 .agent-native/
 
+# Local scratch: rig logs and throwaway repro scripts, never published.
+.scratch/
+
 # E2E artifacts (reproduce with `node e2e/composer-autogrow.electron.mjs`)
 apps/desktop/e2e/artifacts/

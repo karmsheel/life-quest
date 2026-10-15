@@ -52,6 +52,7 @@ import {
   type Result,
   type Actor as VaultActor,
 } from "@lifequest/vault-core";
+import { noteDataChanged, toolMayChangeData } from "./data-revision.ts";
 import { hermesChatWithTools } from "./hermes-proxy.ts";
 
 const AGENT_ACTOR = { type: "agent", id: "companion", name: "Hermes" } as const;
@@ -121,7 +122,36 @@ function grantRefusal(code: keyof typeof GRANT_MESSAGES): unknown {
   return { error: { code, message: GRANT_MESSAGES[code] } };
 }
 
+/**
+ * One tool call, as the door serves it.
+ *
+ * This is the wrapper every caller uses, and it is thin on purpose: the call it
+ * makes is what it always was, and the one thing it adds is the vault's change
+ * notice. It is here — at the door, not inside any tool — because this is the
+ * only place the companion's writes are knowable in one line: the door serves
+ * every tool through this function (see `pairing-door.ts`), so "the agent logged
+ * an expense" and "the dashboard repaints" can never be wired up separately and
+ * drift apart.
+ *
+ * A tool the notice list calls a read writes nothing, and announcing it anyway
+ * would only repaint the cards an extra time; a tool the list does not know is
+ * announced whether or not it wrote, because a wasted repaint is cheap and a
+ * dashboard that misses a write is the bug this exists to fix.
+ */
 export async function executeTool(
+  root: string,
+  activeSlug: string | null,
+  name: string,
+  args: unknown,
+  actor: VaultActor = AGENT_ACTOR,
+  grant?: ConnectedGrant,
+): Promise<unknown> {
+  const result = await executeToolInner(root, activeSlug, name, args, actor, grant);
+  if (toolMayChangeData(name)) noteDataChanged();
+  return result;
+}
+
+async function executeToolInner(
   root: string,
   activeSlug: string | null,
   name: string,

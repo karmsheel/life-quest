@@ -1,8 +1,22 @@
-import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain as electronIpcMain,
+  Notification,
+  shell,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent,
+} from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stopMcp, setMcpPorts } from "./mcp-server.js";
+import {
+  channelMayChangeData,
+  noteDataChanged,
+  onDataChanged,
+} from "./data-revision.js";
 import * as companion from "./companion.js";
 import { getFileUnsolicited, setFileUnsolicited } from "./companion-filing.js";
 import type {
@@ -208,12 +222,88 @@ function registerWindowAccelerators(win: BrowserWindow) {
   });
 }
 
+/**
+ * `ipcMain`, with the live-dashboard notice added.
+ *
+ * Every channel below is registered through this object rather than through
+ * Electron's registrar directly, so "which channels announce a change" is one
+ * list in `data-revision.ts` instead of a decision taken again at each of the
+ * hundred-odd registration sites — and a channel added later is covered by
+ * whatever that list says about it rather than by whether its author remembered.
+ *
+ * The notice is sent once a handler has settled, and only for a channel the list
+ * names. Both of those are load-bearing. The filter, because a card's repaint
+ * re-enters this same registrar to read (`view:runSaved`, `db:get`), so a READ
+ * that announced a change would drive the cards to re-run for ever. And
+ * "settled" rather than "resolved successfully": a handler that throws AFTER it
+ * has written still changed the vault, and a board left showing the old numbers
+ * because the write reported badly is the bug this exists to fix. The notice
+ * carries no payload, so a spurious one costs a repaint and nothing else.
+ *
+ * `any` on the listener's arguments is deliberate. The handlers below take every
+ * shape an IPC channel can carry, and Electron's own `handle` is typed the same
+ * way; narrowing it here would make the registrar refuse the handlers it exists
+ * to register.
+ */
+const ipcMain = {
+  handle(
+    channel: string,
+    listener: (event: IpcMainInvokeEvent, ...args: any[]) => unknown,
+  ): void {
+    electronIpcMain.handle(channel, async (event, ...args: unknown[]) => {
+      try {
+        return await listener(event, ...args);
+      } finally {
+        if (channelMayChangeData(channel)) noteDataChanged();
+      }
+    });
+  },
+  on(channel: string, listener: (event: IpcMainEvent, ...args: any[]) => void): void {
+    electronIpcMain.on(channel, listener);
+  },
+};
+
+/**
+ * Publish the vault's change signal to every open window.
+ *
+ * Coalesced to one message per frame: a single agent action can write several
+ * times (a Decision that inserts twenty rows, a kit install that writes a
+ * registry, pages, pins and a log line), and twenty messages would be twenty
+ * repaints of the same board. One per frame is what the eye can see anyway.
+ *
+ * A window that is mid-teardown is skipped rather than awaited: the notice is
+ * about a change that is already on disk, and the next window to open reads it.
+ */
+function startDataChangeBroadcast(): void {
+  let pending: number | null = null;
+  let flush: NodeJS.Timeout | null = null;
+  const send = () => {
+    flush = null;
+    const revision = pending;
+    pending = null;
+    if (revision === null) return;
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send("vault:dataChanged", revision);
+    }
+  };
+  onDataChanged((revision) => {
+    pending = revision;
+    if (flush === null) flush = setTimeout(send, 16);
+  });
+}
+
 function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: string, name?: string) =>
     vault.vaultCreate(rootPath, name),
   );
-  ipcMain.handle("vault:open", (_e, rootPath: string) =>
-    vault.vaultOpen(rootPath),
-  );
+  ipcMain.handle("vault:open", async (_e, rootPath: string) => {
+    const res = await vault.vaultOpen(rootPath);
+    // The stored rate is stale the moment the app has been closed for an hour,
+    // and a card drawn before the timer's first tick would show the old number
+    // without saying so. A read on open is cheap and makes the first draw
+    // correct; it is a refresh of a stored setting, not a Decision.
+    if (res.ok) void refreshFxNow();
+    return res;
+  });
   ipcMain.handle("vault:getSnapshot", () => vault.vaultGetSnapshot());
   ipcMain.handle("vault:listRecent", () => vault.vaultListRecent());
 
@@ -365,6 +455,16 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("kit:list", (_e, slug: string) => vault.kitList(slug));
   ipcMain.handle("kit:financeSettings", () => vault.kitFinanceSettings());
   ipcMain.handle("kit:setCaptureAccount", (_e, accountRowId: string | null) => vault.kitSetCaptureAccount(accountRowId));
+
+  // The USD→ZAR rate: read in the MAIN process, never in the renderer, so a
+  // source the operator pastes is reached by the app's own network access and
+  // the rate lands in the vault whatever window is open.
+  ipcMain.handle("fx:refresh", () => vault.fxRateRefresh());
+  ipcMain.handle(
+    "fx:setSource",
+    (_e, input: { url?: string | null; path?: string | null; asOfPath?: string | null }) =>
+      vault.fxSetSource(input),
+  );
 
   // KAR-57 finance plan loop
   ipcMain.handle("finance:budgetVsActual", (_e, asOf: string) => vault.financeBudgetVsActual(asOf));
@@ -865,7 +965,15 @@ async function createWindow() {
 
   // External edits: on focus, re-stat doctrine files and notify renderer.
   // Channel name matches preload.ts (`vault:fileChanged`).
+  //
+  // Focus also announces a data change unconditionally, which is the app's
+  // catch-all: the vault is a folder the operator syncs, opens in other tools,
+  // and lets the companion write to with tools this process never sees. Coming
+  // back to the window is the moment to re-read the numbers — the same thing a
+  // spreadsheet does when you return to it — and one repaint of the visible
+  // cards per focus is a price worth paying for never showing a stale figure.
   win.on("focus", () => {
+    noteDataChanged();
     void (async () => {
       try {
         const changes = await vault.detectExternalDoctrineChanges();
@@ -888,16 +996,73 @@ async function createWindow() {
   return win;
 }
 
+/**
+ * The USD→ZAR rate, refreshed every hour while the app is open.
+ *
+ * A timer rather than a fetch on each draw: a card re-runs its spec every time it
+ * is drawn, and a rate that was read once an hour is the same fact for every card
+ * on the board and every conversion in a report. It is also the only shape that
+ * works with no window open at all.
+ *
+ * Two things it deliberately does NOT do. It does not fire when no vault is open
+ * — there is nowhere to write — and it does not fire again while the previous
+ * read is still in flight, because an hourly timer that overlaps itself on a slow
+ * source would queue reads faster than they finish.
+ */
+const FX_REFRESH_MS = 60 * 60 * 1000;
+let fxRefreshing = false;
+let fxTimer: NodeJS.Timeout | null = null;
+
+async function refreshFxNow(): Promise<void> {
+  if (fxRefreshing || !vault.fxVaultOpen()) return;
+  fxRefreshing = true;
+  try {
+    const res = await vault.fxRateRefresh();
+    // A vault with no finance kit is the normal case, not an error worth
+    // shouting about: the loop simply has nothing to refresh.
+    if (res.ok && res.value && (res.value as { refreshed?: boolean }).refreshed) {
+      console.log(`[fx] USD→ZAR ${(res.value as { rate?: number }).rate} as of ${(res.value as { asOf?: string }).asOf}`);
+      // The rate is what every USD amount on the board is worth: a new one moves
+      // the numbers on cards that no row write will ever touch. A refresh that
+      // changed nothing announces nothing, so an idle vault stays quiet.
+      noteDataChanged();
+    }
+  } catch {
+    // A refresh must never take the app down; the failure is recorded in the
+    // vault by `refreshFxRate` and read back by the Settings surface.
+  } finally {
+    fxRefreshing = false;
+  }
+}
+
+function startFxRefreshLoop(): void {
+  if (fxTimer) return;
+  fxTimer = setInterval(() => void refreshFxNow(), FX_REFRESH_MS);
+}
+
+/** Exported for the e2e seam: a rig should not wait an hour to see a refresh. */
+export async function fxRefreshForE2e(): Promise<void> {
+  await refreshFxNow();
+}
+
 app.whenReady().then(() => {
   if (!ipcRegistered) {
     ipcRegistered = true;
     registerIpcHandlers();
   }
+  // Before any window exists, so the first write of the session already has
+  // somewhere to go. Subscribing once is enough: the broadcast walks whatever
+  // windows are open at the moment a change is noted, so a window opened later
+  // is covered without re-subscribing.
+  startDataChangeBroadcast();
   // Published before it is awaited, so a rig that calls `bootForE2e` while the
   // product's own boot is still loading joins that window instead of opening a
   // second one.
   windowReady = createWindow();
   void windowReady;
+  // The rate is read on a clock, not on a draw, so it is armed once here rather
+  // than wherever a card happens to be rendered.
+  startFxRefreshLoop();
 });
 
 app.on("window-all-closed", () => {

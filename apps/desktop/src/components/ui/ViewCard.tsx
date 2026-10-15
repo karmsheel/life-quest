@@ -6,8 +6,8 @@ import type {
   ViewBlock,
   ViewPresentation,
   ViewRunResult,
-} from "@lifequest/vault-core";
-import { api } from "@/lib/ipc";
+} from "@lifequest/vault-core";import { api } from "@/lib/ipc";
+import { useLiveData } from "@/state/LiveDataProvider";
 import {
   applyPresentation,
   availablePresentations,
@@ -17,8 +17,18 @@ import {
 /**
  * ViewCard — the one drawing path the design names (plan.md, slice 2): the
  * home pin board and a page's view-ref block both render this. Inline SVG in
- * current theme tokens, no chart library. The view is re-run on mount and when
- * reloadGeneration moves, so a card reflects new rows without a reload.
+ * current theme tokens, no chart library. The view is re-run on mount, when
+ * `reloadGeneration` moves, and — since 2026-10-14 — whenever the vault's live
+ * revision moves, so a card reflects new rows without a reload.
+ *
+ * "Whenever the vault changes" is the part that was missing, and it is the whole
+ * of the reported bug: the operator told the companion to log an expense, the
+ * row was written at 19:59:33, and the pinned "Recent transactions" card had last
+ * read the ledger at 19:54:42 — because a card only ever ran on mount. The spec
+ * was a live query and the engine re-ran it correctly; nothing asked it to. Every
+ * read a card makes is now a dependency of the effect that makes it, so a write
+ * anywhere in the app, a Decision being approved, or the local day turning over
+ * re-runs the card the same way opening the page does.
  *
  * Composed views (2026-10-07): one card may hold several blocks. The card draws
  * each in order under one title, so "the weekly summary" — a total, its week
@@ -71,6 +81,8 @@ export function ViewCard({
   const [generation, setGeneration] = useState(0);
   const [saving, setSaving] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  /** The vault's live revision: it moves on any write, and on the day turning. */
+  const live = useLiveData();
 
   const reload = useCallback(() => setGeneration((g) => g + 1), []);
 
@@ -103,7 +115,7 @@ export function ViewCard({
     return () => {
       alive = false;
     };
-  }, [domainSlug, viewId, generation]);
+  }, [domainSlug, viewId, generation, live]);
 
   /**
    * One block's presentation, changed and saved in place.
@@ -220,12 +232,18 @@ export function ViewCard({
 }
 
 /**
- * The four ways a block can be displayed, as one quiet row.
+ * The ways a block can be displayed, as one quiet row.
  *
  * A switch that cannot be expressed against this database — a line with no date
  * column to group by — is drawn disabled rather than hidden: the operator should
  * be able to see that the option exists and is not available here, and a control
  * that disappears is a control they will report as a bug.
+ *
+ * Which is also why a panel that is NOT one of the four aggregates shows its own
+ * shape as well. A listing is not a thing this switch moves between — it names
+ * its own columns, and an aggregate has none to move back with — so it is drawn
+ * marked and unclickable. Without it, a listing's row of four unmarked buttons
+ * says "none of these", which is the one thing that is certainly not true.
  */
 function BlockPresentationControls({
   block,
@@ -239,15 +257,19 @@ function BlockPresentationControls({
   onPick: (target: ViewPresentation) => void;
 }) {
   const available = availablePresentations(block.spec as ViewBlock, db);
+  const aggregates: ViewPresentation[] = ["metric", "table", "bar", "line"];
+  const shapes = aggregates.includes(block.presentation)
+    ? aggregates
+    : [block.presentation, ...aggregates];
   return (
     <div
       className="view-card__tools"
       role="group"
       aria-label={`How ${block.title} is displayed`}
     >
-      {(["metric", "table", "bar", "line"] as ViewPresentation[]).map((p) => {
+      {shapes.map((p) => {
         const active = block.presentation === p;
-        const enabled = available.includes(p);
+        const enabled = active || available.includes(p);
         return (
           <button
             key={p}
@@ -256,11 +278,13 @@ function BlockPresentationControls({
             aria-pressed={active}
             data-testid="view-block-tool"
             data-presentation={p}
-            disabled={busy || !enabled || active}
+            disabled={busy || active || !enabled}
             title={
-              enabled
-                ? `Show ${block.title} as a ${presentationLabel(p).toLowerCase()}`
-                : `This database cannot draw a ${presentationLabel(p).toLowerCase()} here`
+              active
+                ? `${block.title} is drawn as a ${presentationLabel(p).toLowerCase()}`
+                : enabled
+                  ? `Show ${block.title} as a ${presentationLabel(p).toLowerCase()}`
+                  : `This database cannot draw a ${presentationLabel(p).toLowerCase()} here`
             }
             onClick={() => onPick(p)}
           >
@@ -275,6 +299,16 @@ function BlockPresentationControls({
 /** One block's drawing: the single place a presentation maps to markup. */
 function ViewBlockBody({ block }: { block: DrawnBlock }) {
   const { result, presentation } = block;
+  // A listing carries its rows in `listRows`, and an aggregate in `rows`, so the
+  // emptiness of one says nothing about the other. Asking the wrong one is how a
+  // card that has twelve lines of ledger draws "No rows in this window."
+  if (presentation === "list") {
+    const rows = result.listRows ?? [];
+    if (rows.length === 0) {
+      return <p className="muted view-card__empty">No rows in this window.</p>;
+    }
+    return <ViewList result={result} rows={rows} />;
+  }
   if (result.rows.length === 0) {
     return <p className="muted view-card__empty">No rows in this window.</p>;
   }
@@ -349,6 +383,67 @@ function ViewTable({ result, spec }: { result: ViewRunResult; spec?: ViewBlock }
           <tr key={label}>
             <td>{label}</td>
             <td>{fmtNumber(value)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * A listing: the database's own rows, one line each, under the same chrome an
+ * aggregate table wears — because it is a table, and a card that changed its
+ * hairlines when its shape changed would read as a different object.
+ *
+ * One thing does differ. An aggregate has exactly one number in it, so the
+ * table's CSS can right-align everything after the first cell and be right every
+ * time. A listing holds whatever columns the operator asked for, so each cell is
+ * aligned by what it holds: text keeps the left edge, a number takes the right
+ * one in tabular figures, and the money column carries the currency unit when
+ * every row shares one.
+ */
+function ViewList({
+  result,
+  rows,
+}: {
+  result: ViewRunResult;
+  rows: NonNullable<ViewRunResult["listRows"]>;
+}) {
+  const unit = result.currency && result.currency !== "mixed" ? ` (${result.currency})` : "";
+  // A column is a number column when its own cells are numbers. The engine hands
+  // back each value as the row stores it — a number stays a number — so the
+  // heading can be aligned from the data rather than from a guess at what the
+  // column is called, and a heading and its cells cannot disagree about it.
+  const numeric = result.columns.map((_, index) =>
+    rows.some((row) => typeof row[index] === "number"),
+  );
+  return (
+    <table className="view-card__table view-card__table--list">
+      <thead>
+        <tr>
+          {result.columns.map((name, index) => (
+            <th
+              key={name}
+              scope="col"
+              className={numeric[index] ? "view-card__cell--num" : undefined}
+            >
+              {humanizeId(name)}
+              {result.currencyColumn === name ? unit : ""}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, rowIndex) => (
+          <tr key={rowIndex}>
+            {row.map((cell, cellIndex) => (
+              <td
+                key={cellIndex}
+                className={numeric[cellIndex] ? "view-card__cell--num" : undefined}
+              >
+                {typeof cell === "number" ? fmtNumber(cell) : cell}
+              </td>
+            ))}
           </tr>
         ))}
       </tbody>
