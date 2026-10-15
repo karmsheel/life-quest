@@ -324,7 +324,7 @@ Manual check: open an existing vault, confirm `premise.md` appears, Dream shows 
 | `apps/desktop/electron/companion-profile.ts` | Soul copy |
 | `apps/desktop/src/components/doctrine/DoctrineEditorPage.tsx` | Valid kinds via `DOCUMENT_KINDS`; breadcrumb label |
 | `apps/desktop/src/components/doctrine/DoctrineStrip.tsx` | Shared labels (Vision & Desire, Strategy (How)) |
-| `apps/desktop/src/styles/global.css` | Card grid, split editor, markdown/image styles |
+| `apps/desktop/src/styles/global.css` | Card grid, the shared note box (`.note-live`), markdown/image styles |
 | `apps/desktop/tests/*` | Index order, coaching, get_doctrine, soul, markdown helper |
 | `PRODUCT.md` | Doctrine line: four docs, Strategy (How) |
 

@@ -32,6 +32,7 @@ type State = {
   groups: Group[];
   editorTitle: string | null;
   editorValue: string | null;
+  editorReadOnly: boolean | null;
   editorBackHref: string | null;
   documentsHeading: string | null;
   documentsComposer: boolean;
@@ -158,6 +159,12 @@ describe("define wing (Define rail, Dream / Vision split, Documents on Home)", (
     assert.equal(editor.route, "/vision/health/what");
     assert.equal(editor.editorTitle, "Vision & Desire · Health");
     assert.equal(editor.editorBackHref, "/vision", "Back does not return to Vision");
+    assert.equal(
+      editor.editorValue,
+      "A calm, strong body at 60. (health)",
+      "the editor does not hold the what document's body",
+    );
+    assert.equal(editor.editorReadOnly, false, "an unlocked document came up read-only");
     assert.ok(
       editor.calls.includes("health:what"),
       `the editor did not read the what document (${JSON.stringify(editor.calls)})`,

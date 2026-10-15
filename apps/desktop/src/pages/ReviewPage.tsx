@@ -15,7 +15,7 @@ import { useVault } from "@/state/VaultProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { Button } from "@/components/ui/Button";
-import { MarkdownView } from "@/components/documents/MarkdownView";
+import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
 import { ReviewPreview } from "@/components/reviews/ReviewPreview";
 
 const VALID_CADENCES: ReviewCadence[] = [
@@ -313,25 +313,15 @@ export default function ReviewPage() {
       {loading ? (
         <p className="muted">Loading review…</p>
       ) : editing && !record?.locked ? (
-        <div className="review-page__editor doc-editor__split">
-          <label className="field doc-editor__body-field">
-            <span>Markdown (full file)</span>
-            <textarea
-              className="doc-editor__textarea"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={18}
-              spellCheck
-            />
-          </label>
-          <div className="doc-editor__preview">
-            <span className="doc-editor__preview-label">Preview</span>
-            <MarkdownView
-              markdown={draft}
-              slug={`review-${cadence}-${period}`}
-            />
-          </div>
-        </div>
+        <LiveMarkdownEditor
+          testId="review-editor"
+          className="review-page__editor"
+          value={draft}
+          onChange={setDraft}
+          slug={`review-${cadence}-${period}`}
+          ariaLabel={`${title} review`}
+          placeholder="Write this review."
+        />
       ) : (
         <ReviewPreview
           record={record}

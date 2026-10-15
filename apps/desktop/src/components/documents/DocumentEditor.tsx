@@ -4,8 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ClipboardEvent,
-  type DragEvent,
 } from "react";
 import {
   assertEditable,
@@ -18,18 +16,8 @@ import { DOCUMENT_KIND_COACHING } from "@/lib/doctrine-copy";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { DocumentLockBadge } from "./DocumentLockBadge";
-import { MarkdownView } from "./MarkdownView";
+import { LiveMarkdownEditor } from "./LiveMarkdownEditor";
 import { ProposeChangeDialog } from "./ProposeChangeDialog";
-
-function insertAtCaret(
-  value: string,
-  start: number,
-  end: number,
-  insert: string,
-): { next: string; caret: number } {
-  const next = `${value.slice(0, start)}${insert}${value.slice(end)}`;
-  return { next, caret: start + insert.length };
-}
 
 async function saveImageFile(
   slug: string,
@@ -37,20 +25,6 @@ async function saveImageFile(
 ): Promise<Result<{ relPath: string }>> {
   const buf = new Uint8Array(await file.arrayBuffer());
   return api().documentMediaSave(slug, { bytes: buf, mime: file.type });
-}
-
-function firstImageFile(data: DataTransfer | null): File | null {
-  if (!data) return null;
-  for (const item of data.items) {
-    if (item.kind === "file" && item.type.startsWith("image/")) {
-      const file = item.getAsFile();
-      if (file) return file;
-    }
-  }
-  for (const file of data.files) {
-    if (file.type.startsWith("image/")) return file;
-  }
-  return null;
 }
 
 function applyDocument(
@@ -88,7 +62,12 @@ export function DocumentEditor({
   const appliedGenerationRef = useRef(reloadGeneration);
   /** Bumped on each load so stale documentGet results are ignored. */
   const loadGenRef = useRef(0);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  /** The draft as it stands now, for a save that lands on text typed since. */
+  const latestDraftRef = useRef(draft);
+
+  useEffect(() => {
+    latestDraftRef.current = draft;
+  }, [draft]);
 
   const load = useCallback(
     async (opts?: { quiet?: boolean }) => {
@@ -161,19 +140,26 @@ export function DocumentEditor({
     current: DoctrineDocument,
   ): Promise<DoctrineDocument | null> {
     if (!slug) return null;
+    const sent = draft;
     const titleChanged =
       titleDraft.trim().length > 0 && titleDraft.trim() !== current.title;
     const result = await api().documentSave(
       slug,
       kind,
-      draft,
+      sent,
       titleChanged ? titleDraft.trim() : undefined,
     );
     if (!result.ok) {
       setActionError(result.error);
       return null;
     }
-    applyDocument(result.value, setDocument, setTitleDraft, setDraft);
+    // The box is never closed while a write is in flight, so the operator can
+    // type on. The file holds what was sent; text newer than that stays theirs.
+    if (latestDraftRef.current === sent) {
+      applyDocument(result.value, setDocument, setTitleDraft, setDraft);
+    } else {
+      setDocument(result.value);
+    }
     return result.value;
   }
 
@@ -251,42 +237,16 @@ export function DocumentEditor({
 
   const busy = saving || lockPending;
 
-  async function insertSavedImage(file: File) {
+  async function insertSavedImage(file: File): Promise<string | null> {
     const result = await saveImageFile(slug, file);
     if (!result.ok) {
       setActionError(result.error);
-      return;
+      return null;
     }
     setActionError(null);
-    const el = textareaRef.current;
-    const value = el?.value ?? draft;
-    const start = el?.selectionStart ?? value.length;
-    const end = el?.selectionEnd ?? start;
-    const insert = `\n![](${result.value.relPath})\n`;
-    const { next, caret } = insertAtCaret(value, start, end, insert);
-    setDraft(next);
-    requestAnimationFrame(() => {
-      const node = textareaRef.current;
-      if (!node) return;
-      node.focus();
-      node.setSelectionRange(caret, caret);
-    });
-  }
-
-  async function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
-    if (locked) return;
-    const file = firstImageFile(e.clipboardData);
-    if (!file) return;
-    e.preventDefault();
-    await insertSavedImage(file);
-  }
-
-  async function onDrop(e: DragEvent<HTMLTextAreaElement>) {
-    if (locked) return;
-    const file = firstImageFile(e.dataTransfer);
-    if (!file) return;
-    e.preventDefault();
-    await insertSavedImage(file);
+    // The image goes exactly where the gesture landed: the box puts this
+    // markdown at the caret, and the renderer pulls the file back by that path.
+    return `\n![](${result.value.relPath})\n`;
   }
 
   return (
@@ -325,30 +285,16 @@ export function DocumentEditor({
         />
       </label>
 
-      <div className="doc-editor__split">
-        <label className="field doc-editor__body-field">
-          <span>Markdown</span>
-          <textarea
-            ref={textareaRef}
-            className="doc-editor__textarea"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onPaste={(e) => void onPaste(e)}
-            onDrop={(e) => void onDrop(e)}
-            onDragOver={(e) => {
-              if (!locked) e.preventDefault();
-            }}
-            readOnly={locked}
-            disabled={busy}
-            rows={18}
-            spellCheck
-          />
-        </label>
-        <div className="doc-editor__preview">
-          <span className="doc-editor__preview-label">Preview</span>
-          <MarkdownView markdown={draft} slug={slug} />
-        </div>
-      </div>
+      <LiveMarkdownEditor
+        testId="document-editor"
+        value={draft}
+        onChange={setDraft}
+        slug={slug}
+        readOnly={locked}
+        onInsertFile={insertSavedImage}
+        ariaLabel={`${DOCUMENT_KIND_LABELS[kind]}${domainName ? ` for ${domainName}` : ""} body`}
+        placeholder="Write this document."
+      />
 
       {actionError ? (
         <p className="form-error" role="alert">

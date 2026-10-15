@@ -88,7 +88,18 @@ const SAMPLE = `(() => {
   const back = Array.from(
     document.querySelectorAll("[data-page-context-root] a"),
   ).find((a) => text(a) === "Back");
-  const editorArea = document.querySelector(".doc-editor__textarea");
+  const editorBox = document.querySelector(".doc-editor .note-live");
+  // The body is one box: it reads as prose until a paragraph is opened, so the
+  // note is read off the blocks rather than off a single textarea.
+  const editorValue = editorBox
+    ? Array.from(editorBox.querySelectorAll("[data-note-block]"))
+        .map((el) => {
+          const area = el.querySelector("textarea");
+          return area ? area.value : (el.textContent || "");
+        })
+        .join("\\n\\n")
+        .trim()
+    : null;
   return {
     route: window.defineWingRoute ?? null,
     tabs,
@@ -100,7 +111,8 @@ const SAMPLE = `(() => {
     pageRootClass: page && page.firstElementChild ? page.firstElementChild.className : null,
     groups,
     editorTitle: text(document.querySelector(".doc-editor__title")),
-    editorValue: editorArea ? editorArea.value : null,
+    editorValue,
+    editorReadOnly: editorBox ? editorBox.getAttribute("data-read-only") === "true" : null,
     editorBackHref: back ? back.getAttribute("href") : null,
     documentsHeading: text(document.querySelector(".documents-page h1")),
     documentsComposer: Boolean(document.querySelector(".documents-page .library-composer")),

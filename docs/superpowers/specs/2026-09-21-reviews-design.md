@@ -38,7 +38,7 @@ The operator needs a place to look back over a lived period and write **next-per
 | 4 | Domain done vs lock | Domain `done` is a section status (planning may already use it). The file stays editable until overall is done. |
 | 5 | Files | **One markdown file per cadence × period.** Domains are sections, not separate files. |
 | 6 | Creation | File created on first Start conversation **or** first Edit-save for any scope. Always plants the overall skeleton, so overall becomes `draft` even if Health was started first. Missing = that domain section was never started. |
-| 7 | UI | Preview first, optional Edit (doctrine-style split editor + Save). After overall lock, editor read-only until Unlock. |
+| 7 | UI | Preview first, optional Edit (the shared note box — `.note-live`, one surface rendered as it is written — + Save). After overall lock, editor read-only until Unlock. |
 | 8 | Periods | Calendar buckets in **local** time. Daily = date. Weekly = week-start through +6 days. Monthly = calendar month. Quarterly = Jan–Mar / Apr–Jun / Jul–Sep / Oct–Dec. Yearly = calendar year. |
 | 9 | Week start | Vault setting `monday` \| `sunday`, default `monday`. **Blocked** while any `reviews/weekly/` or `planning/weekly/` file exists. |
 | 10 | Default period | Land on **current** in-progress period. You may review it before it ends. |
@@ -51,7 +51,7 @@ The operator needs a place to look back over a lived period and write **next-per
 | 17 | Plan lens | Lens-matched planning sessions (Overview / Health / …), same resume rule as reviews. |
 | 18 | Storage | Vault-root `reviews/` and `planning/`. Not under `.lifequest/`. Not Library `documents/`. |
 | 19 | Weekly filename | **Week-start date** `YYYY-MM-DD`, not ISO `YYYY-Www`. |
-| 20 | Approach | First-class review engine in vault-core. Reuse split editor and Decisions machinery; new `DocumentTarget` for reviews. |
+| 20 | Approach | First-class review engine in vault-core. Reuse the shared note box and Decisions machinery; new `DocumentTarget` for reviews. |
 
 ### Explicitly out of scope
 
@@ -263,7 +263,7 @@ One page component parameterized by cadence; five routes stay as they are.
 
 Chrome (all lenses): period pager (prev / label / next), lock badge, Unlock when locked, “Plan next period”. Next disabled on the current period. Stale/future period ids snap to current with an error.
 
-**Overview:** rendered overall four subsections; domain status list (live non-archived domains + any extra sections already in the file) with Missing / Draft / Done and jump (sets lens). Start/resume overall session. Mark done (overall → lock). Edit toggles split editor on the **full** file (Edit is the exception to “show only active scope”: the editor is the whole document so skeleton stays intact). Preview mode still shows only overall + status list.
+**Overview:** rendered overall four subsections; domain status list (live non-archived domains + any extra sections already in the file) with Missing / Draft / Done and jump (sets lens). Start/resume overall session. Mark done (overall → lock). Edit toggles the shared note box on the **full** file (Edit is the exception to “show only active scope”: the editor is the whole document so skeleton stays intact). Preview mode still shows only overall + status list.
 
 **Domain lens:** preview of that domain’s four subsections, or empty state if Missing. Start/resume that domain session. Mark done (section status only). Edit still opens the full file.
 
