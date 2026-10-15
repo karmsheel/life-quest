@@ -16,6 +16,7 @@ import { useChatDock } from "@/state/ChatDockProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
+import { DailyNotesPanel } from "@/components/reviews/DailyNotesPanel";
 import { ReviewPreview } from "@/components/reviews/ReviewPreview";
 
 const VALID_CADENCES: ReviewCadence[] = [
@@ -357,6 +358,15 @@ export default function ReviewPage() {
           </Button>
         ) : null}
       </div>
+
+      {/* The days the operator wrote, under the review body and its controls:
+          the same notes the companion's period pack carries. Scope-independent
+          by design — a note belongs to no domain. */}
+      <DailyNotesPanel
+        cadence={cadence}
+        period={period}
+        weekStartDay={weekStartDay}
+      />
     </div>
   );
 }

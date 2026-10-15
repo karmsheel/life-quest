@@ -437,6 +437,15 @@ const lifequest = {
       scope,
     ) as Promise<Result<unknown>>,
 
+  dailyNoteGet: (date: string) =>
+    ipcRenderer.invoke("note:get", date) as Promise<Result<unknown>>,
+  dailyNoteWrite: (date: string, body: string) =>
+    ipcRenderer.invoke("note:write", date, body) as Promise<Result<unknown>>,
+  dailyNoteList: () =>
+    ipcRenderer.invoke("note:list") as Promise<Result<unknown>>,
+  dailyNoteWindow: (start: string, end: string) =>
+    ipcRenderer.invoke("note:window", start, end) as Promise<Result<unknown>>,
+
   deadlineDismiss: () =>
     ipcRenderer.invoke("deadline:dismiss") as Promise<Result<true>>,
 

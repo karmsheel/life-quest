@@ -22,6 +22,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 | [Hermes chatbar design](docs/superpowers/specs/2026-07-18-hermes-chatbar-connection-design.md) | Hermes connection UX |
 | [Domain databases & Finance kit](docs/superpowers/specs/2026-09-23-domain-databases-finance-kit-prs.md) | Domain-owned databases, pages, and the Finance kit |
 | [Dashboard page lock](docs/superpowers/specs/2026-10-08-dashboard-page-lock-design.md) | The home pin board's lock, and one call that saves and pins a card |
+| [Daily Note](docs/superpowers/specs/2026-10-14-daily-note-design.md) | One journal note per day, and the review pack that reads it |
 | [Auto-update](docs/superpowers/specs/2026-10-12-auto-update-design.md) | The glowing build number, and the upgrade it offers |
 
 ## Prerequisites
@@ -140,6 +141,7 @@ LifeQuest owns the vault, the MCP door, and the UI. Hermes owns the agent loop, 
 
 - Opening a vault **is** identity — no sign-up / sign-in.
 - Doctrine is Markdown with frontmatter (`locked: true | false`).
+- **Daily Note** is one markdown file per local date at `notes/daily/{YYYY-MM-DD}.md`: the operator's own account of the day, written from the rail entry under Decisions, and read back by any Review whose period covers it. The companion may read it and cannot write it.
 - The Dashboard is the home pin board, one per lens, and it carries the same page lock: unlocked, the operator and the companion arrange it in place; locked, it is read-only and the companion's changes wait in Decisions. Type **Lock** / **Unlock** in the board header.
 - Structured state is git-friendly JSON / JSONL under the vault’s prescribed layout.
 - Active domain and recent vaults live in app `userData`, not inside the vault.

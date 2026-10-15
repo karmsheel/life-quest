@@ -1,0 +1,120 @@
+/* Daily Note — the operator's one note for a day.
+   The page chrome is the day pager, the save row and the strip of earlier days.
+   The editor itself is the shared note box (`.note-live`, in `global.css`): one
+   surface, rendered as it is written. */
+
+.daily-note {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 60rem;
+}
+
+.daily-note__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.daily-note__header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.daily-note__pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.daily-note__date {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+/* The Daily Note panel on a Review: the days the operator wrote inside the
+   period being reviewed. It sits under the review body and its controls, so the
+   controls stay where they were and a long year of prose never pushes them off
+   the screen. Collapsed rows are one line; the body is mounted only when opened. */
+
+.review-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+  max-width: 48rem;
+}
+
+.review-notes__header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.review-notes__header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.review-notes__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 22rem;
+  overflow: auto;
+}
+
+.review-notes__item {
+  display: flex;
+  flex-direction: column;
+}
+
+.review-notes__day {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.review-notes__day:hover {
+  background: var(--muted-surface);
+}
+
+.review-notes__day[aria-expanded="true"] {
+  border-color: var(--border);
+  background: var(--card);
+}
+
+.review-notes__label {
+  flex: 0 0 auto;
+  font-weight: 500;
+}
+
+.review-notes__excerpt {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.review-notes__body {
+  padding: 0.35rem 0.5rem 0.75rem;
+}

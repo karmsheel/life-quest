@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { dailyNotesInWindow } from "./daily-notes.ts";
 import { listDomains } from "./domains.ts";
 import { loadGoals } from "./goals.ts";
 import { readLog } from "./log.ts";
@@ -11,6 +12,7 @@ import {
 import { getReview } from "./reviews.ts";
 import { vaultPaths } from "./paths.ts";
 import type {
+  DailyNote,
   Goal,
   LifeEvent,
   LiveDay,
@@ -193,6 +195,18 @@ export async function getPeriodPack(
     }
   }
 
+  // --- Daily notes ---
+  // The operator's own account of the days in this window. A note is not
+  // domain-scoped, so every scope sees the same journal; the window is what
+  // narrows it.
+  let dailyNotes: DailyNote[] = [];
+  const notesRes = await dailyNotesInWindow(rootPath, { start, end });
+  if (!notesRes.ok) {
+    missingSources.push("daily-notes");
+  } else {
+    dailyNotes = notesRes.value;
+  }
+
   // --- Previous review ---
   let previousReview: ReviewRecord | null = null;
   const prevResult = previousPeriod(input.cadence, input.period, weekStartDay);
@@ -235,6 +249,9 @@ export async function getPeriodPack(
   const CAP_TASKS = 80;
   const CAP_EVENTS = 80;
   const CAP_LIVE_DAYS = 62;
+  // A quarter's worth of notes: full bodies, and enough of them to cover a
+  // quarterly review without dumping a whole year of prose into the turn.
+  const CAP_DAILY_NOTES = 92;
 
   if (log.length > CAP_LOG) {
     log = log.slice(0, CAP_LOG);
@@ -252,6 +269,12 @@ export async function getPeriodPack(
     liveDays = liveDays.slice(0, CAP_LIVE_DAYS);
     truncated = true;
   }
+  if (dailyNotes.length > CAP_DAILY_NOTES) {
+    // Keep the most recent days: a capped yearly review wants the end of the
+    // year it is looking back on, not January.
+    dailyNotes = dailyNotes.slice(-CAP_DAILY_NOTES);
+    truncated = true;
+  }
 
   return {
     ok: true,
@@ -266,6 +289,7 @@ export async function getPeriodPack(
       liveDays,
       events,
       previousReview,
+      dailyNotes,
       domainSections,
       missingSources,
       truncated,

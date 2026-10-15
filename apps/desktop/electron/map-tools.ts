@@ -13,6 +13,8 @@ import {
   executeDocumentTool,
   REVIEW_TOOL_DEFS,
   executeReviewTool,
+  DAILY_NOTE_TOOL_DEFS,
+  executeDailyNoteTool,
   CAPTURE_TOOL_DEFS,
   executeCaptureTool,
   SCRIPT_TOOL_DEFS,
@@ -164,6 +166,13 @@ export async function executeTool(
   // get_review, list_reviews, write_review, mark_review_done, unlock_review, get_period_pack
   if (REVIEW_TOOL_DEFS.some((t) => t.name === name)) {
     return executeReviewTool(root, actor, name, rec);
+  }
+
+  // list_daily_notes, get_daily_note — the operator's journal, read-only. A
+  // daily note is vault-level, not domain-scoped, so no grant can contain it:
+  // connected agents are refused by name in `toolAllowed` and never reach here.
+  if (DAILY_NOTE_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeDailyNoteTool(root, actor, name, rec);
   }
 
   // capture_transaction, undo_capture, correct_capture

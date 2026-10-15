@@ -97,6 +97,9 @@ export {
   isFuturePeriod,
   isCurrentPeriod,
   periodTitle,
+  isValidLocalIsoDate,
+  shiftLocalIsoDate,
+  formatLocalIsoDate,
 } from "./period.ts";
 export {
   ensureReview,
@@ -115,6 +118,17 @@ export {
   listPlanningIndex,
 } from "./planning-stubs.ts";
 export { getPeriodPack } from "./period-pack.ts";
+export {
+  DAILY_NOTE_FILE,
+  dailyNotesInWindow,
+  getDailyNote,
+  listDailyNotes,
+  writeDailyNote,
+} from "./daily-notes.ts";
+export {
+  DAILY_NOTE_TOOL_DEFS,
+  executeDailyNoteTool,
+} from "./daily-note-tools.ts";
 export {
   createDatabase,
   listDatabases,
@@ -258,6 +272,7 @@ import { SCRIPT_TOOL_DEFS } from "./script-tools.ts";
 import { PROJECT_TOOL_DEFS } from "./projects.ts";
 import { DATABASE_TOOL_DEFS } from "./database-tools.ts";
 import { VIEW_TOOL_DEFS } from "./views-tools.ts";
+import { DAILY_NOTE_TOOL_DEFS } from "./daily-note-tools.ts";
 import type { MapToolDef } from "./map/tools.ts";
 
 /**
@@ -275,4 +290,5 @@ export const ALL_TOOL_DEFS: MapToolDef[] = [
   ...PROJECT_TOOL_DEFS,
   ...DATABASE_TOOL_DEFS,
   ...VIEW_TOOL_DEFS,
+  ...DAILY_NOTE_TOOL_DEFS,
 ];

@@ -222,6 +222,26 @@ export type PlanningIndexEntry = {
   scopes: Record<string, { sessionId: string | null }>;
 };
 
+/**
+ * The operator's journal entry for one local calendar date. One note per day:
+ * the date *is* the identity, and `notes/daily/{date}.md` is the only file that
+ * can hold it.
+ */
+export type DailyNote = {
+  /** Local calendar date, `YYYY-MM-DD`. */
+  date: string;
+  createdAt: string;
+  updatedAt: string;
+  bodyMarkdown: string;
+};
+
+/** An index row: the date a note exists for, and when it was last written. */
+export type DailyNoteIndexEntry = {
+  date: string;
+  updatedAt: string | null;
+  error?: string;
+};
+
 export type AgentHire = {
   id: string;
   hermesAgentId: string;
@@ -862,6 +882,8 @@ export type PeriodPack = {
   liveDays: LiveDay[];
   events: MapEvent[];
   previousReview: ReviewRecord | null;
+  /** Daily notes whose date falls inside the period window, oldest first. */
+  dailyNotes: DailyNote[];
   domainSections: Array<{ slug: string; name: string; status: "draft" | "done"; body: string }>;
   missingSources: string[];
   truncated: boolean;

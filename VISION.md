@@ -10,7 +10,7 @@ It owns exactly one thing: the life vault as the database of that life, shown th
 Opening a vault is identity.
 The product does not require an account or a hosted database to use a vault.
 The vault is the operator's life database: doctrine, goals, projects, map, library, capture, decisions, log, domain databases, and pages live in that folder on disk.
-Doctrine, library, reviews, and pages are prescribed files.
+Doctrine, library, reviews, daily notes, and pages are prescribed files.
 A domain database's rows live in a SQLite file inside that domain folder.
 That file is the live book: copy the folder and the books come with it.
 It is not a LifeQuest-hosted replica, and it is not merged as text in git.

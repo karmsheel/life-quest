@@ -643,6 +643,15 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
       scope: Parameters<typeof vault.reviewPeriodPack>[2],
     ) => vault.reviewPeriodPack(cadence, period, scope),
   );
+  // Daily notes: the operator's one note for a day, read and written here.
+  ipcMain.handle("note:get", (_e, date: string) => vault.dailyNoteGet(date));
+  ipcMain.handle("note:write", (_e, date: string, body: string) =>
+    vault.dailyNoteWrite(date, body),
+  );
+  ipcMain.handle("note:list", () => vault.dailyNoteList());
+  ipcMain.handle("note:window", (_e, start: string, end: string) =>
+    vault.dailyNoteWindow(start, end),
+  );
   ipcMain.handle(
     "planning:ensure",
     (

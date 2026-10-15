@@ -10,6 +10,7 @@ import {
   createPage,
   createSignal,
   createVault,
+  dailyNotesInWindow,
   deletePage,
   deleteRow,
   deleteSignal,
@@ -18,6 +19,7 @@ import {
   ensurePlanningStub,
   ensureReview,
   fileImpliedChange,
+  getDailyNote,
   getDatabase,
   getDocument,
   getPage,
@@ -33,6 +35,7 @@ import {
   listAgents,
   listConnectedAgents,
   listDatabases,
+  listDailyNotes,
   listDecisions,
   listPages,
   listPinBoard,
@@ -62,6 +65,7 @@ import {
   updateConnectedAgent,
   updateDomain,
   updatePage,
+  writeDailyNote,
   // Agent-built dashboard views (plan.md design)
   saveView,
   listViews,
@@ -105,6 +109,8 @@ import {
   resolveSyncConflict,
   type AgentHire,
   type ConnectedAgent,
+  type DailyNote,
+  type DailyNoteIndexEntry,
   type DatabaseColumnType,
   type GoalsCommand,
   type IngestBatch,
@@ -1355,6 +1361,32 @@ export async function reviewPeriodPack(
   scope: "overall" | string,
 ): Promise<Result<PeriodPack>> {
   return withVault((root) => getPeriodPack(root, { cadence, period, scope }));
+}
+
+/** The day's note, or `Daily note not found` for a day never written. */
+export async function dailyNoteGet(date: string): Promise<Result<DailyNote>> {
+  return withVault((root) => getDailyNote(root, date));
+}
+
+/** Write the one note that day has. The operator is the author, always. */
+export async function dailyNoteWrite(
+  date: string,
+  body: string,
+): Promise<Result<DailyNote>> {
+  return withVault((root) => writeDailyNote(root, { date, bodyMarkdown: body }));
+}
+
+/** Every date that holds a note, oldest first. */
+export async function dailyNoteList(): Promise<Result<DailyNoteIndexEntry[]>> {
+  return withVault((root) => listDailyNotes(root));
+}
+
+/** The notes inside an inclusive date window — what a review period reads. */
+export async function dailyNoteWindow(
+  start: string,
+  end: string,
+): Promise<Result<DailyNote[]>> {
+  return withVault((root) => dailyNotesInWindow(root, { start, end }));
 }
 
 export async function planningEnsure(

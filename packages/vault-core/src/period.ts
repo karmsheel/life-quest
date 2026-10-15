@@ -84,6 +84,25 @@ function formatDay(date: string): string {
   return `${day} ${month} ${dt.getUTCFullYear()}`;
 }
 
+/**
+ * True when `value` is a real local calendar date in `YYYY-MM-DD` form. The
+ * round-trip check is what rejects `2026-02-31`: a daily note's date is also its
+ * filename, so a plausible-looking string is not enough.
+ */
+export function isValidLocalIsoDate(value: string): boolean {
+  return utc(value) !== null;
+}
+
+/** `date` moved by `days` on the calendar; null when `date` is not a date. */
+export function shiftLocalIsoDate(date: string, days: number): string | null {
+  return addDays(date, days);
+}
+
+/** The operator-facing label for a local date, e.g. `11 Feb 2026`. */
+export function formatLocalIsoDate(date: string): string {
+  return formatDay(date);
+}
+
 export function weekStartOnOrBefore(
   date: string,
   weekStartDay: WeekStartDay,

@@ -30,6 +30,8 @@ import type {
   PageListEntry,
   PageRecord,
   PageWriteResult,
+  DailyNote,
+  DailyNoteIndexEntry,
   PeriodPack,
   Pin,
   PinBoardRead,
@@ -435,6 +437,11 @@ type LifequestApi = {
   ) => Promise<
     Result<{ sessionId: string; created: boolean; kickoff: string }>
   >;
+  /** The one note a day has. Missing is `Daily note not found`, not an error. */
+  dailyNoteGet: (date: string) => Promise<Result<DailyNote>>;
+  dailyNoteWrite: (date: string, body: string) => Promise<Result<DailyNote>>;
+  dailyNoteList: () => Promise<Result<DailyNoteIndexEntry[]>>;
+  dailyNoteWindow: (start: string, end: string) => Promise<Result<DailyNote[]>>;
   deadlineDismiss: () => Promise<Result<true>>;
   deadlineGetDismissed: () =>
     Promise<Result<{ ok: true; value: string | null }>>;

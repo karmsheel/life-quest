@@ -44,6 +44,11 @@ export function vaultPaths(root: string) {
       safeJoin(rootPath, "planning", cadence),
     planningMd: (cadence: string, period: string) =>
       safeJoin(rootPath, "planning", cadence, `${period}.md`),
+    // Daily notes — one markdown file per local calendar date
+    notesDir: path.join(rootPath, "notes"),
+    dailyNotesDir: path.join(rootPath, "notes", "daily"),
+    dailyNoteMd: (date: string) =>
+      safeJoin(rootPath, "notes", "daily", `${date}.md`),
     // KAR-55 domain database paths
     domainDataDir: (slug: string) => safeJoin(rootPath, "domains", slug, "data"),
     domainSqlite: (slug: string) =>

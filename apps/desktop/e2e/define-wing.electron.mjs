@@ -271,7 +271,7 @@ async function main() {
     );
     check(
       "the pinned rows are untouched",
-      same(home.pinned.map((l) => l.label), ["Life-Chain", "Decisions"]) &&
+      same(home.pinned.map((l) => l.label), ["Life-Chain", "Decisions", "Daily Note"]) &&
         same(home.pinnedBottom.map((l) => l.label), ["Log"]),
       `pinned ${JSON.stringify(home.pinned.map((l) => l.label))} bottom ${JSON.stringify(home.pinnedBottom.map((l) => l.label))}`,
     );

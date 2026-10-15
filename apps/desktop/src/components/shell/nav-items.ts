@@ -14,6 +14,7 @@ import {
   Goal,
   Home,
   Map,
+  NotebookPen,
   Radio,
   ScrollText,
   Sparkles,
@@ -34,7 +35,7 @@ export type NavItem = {
   pin?: "top" | "bottom";
 };
 
-/** Top: Life-Chain, Decisions. Home: Dashboard, Data, Pages, Documents, Personnel. Define: Dream, Vision. Plan: Goals, Projects, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
+/** Top: Life-Chain, Decisions, Daily Note. Home: Dashboard, Data, Pages, Documents, Personnel. Define: Dream, Vision. Plan: Goals, Projects, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -49,6 +50,16 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/decisions",
     label: "Decisions",
     icon: ClipboardList,
+    section: "governance",
+    pin: "top",
+  },
+  {
+    // Directly under Decisions: the day's own page, and the journal a review
+    // reads back. Governance, not a wing — it belongs to no domain.
+    id: "note",
+    href: "/notes",
+    label: "Daily Note",
+    icon: NotebookPen,
     section: "governance",
     pin: "top",
   },
