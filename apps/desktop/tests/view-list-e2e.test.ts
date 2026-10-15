@@ -649,6 +649,26 @@ describe("recent transactions listing e2e", () => {
       "no view-list artifact — the first case in this file did not run",
     );
 
+    /**
+     * The engine's own answer for the same card. The fixture seeds its rows
+     * relative to today (`daysBefore(today, i)`), so the dates a card must lead
+     * with are read from the run the first case recorded rather than written out
+     * here: a literal date in this file is a claim that was true on the day it was
+     * typed and rots the next morning.
+     */
+    const engine = (
+      JSON.parse(fs.readFileSync(ARTIFACT, "utf8")) as {
+        checks: {
+          run: {
+            dates: string[];
+            payees: string[];
+            categories: string[];
+            amounts: number[];
+          };
+        };
+      }
+    ).checks.run;
+
     fs.rmSync(RIG_REPORT, { force: true });
     fs.rmSync(RIG_SHOT, { force: true });
     const exitCode = await runRig();
@@ -671,13 +691,24 @@ describe("recent transactions listing e2e", () => {
     // The card the operator sees, held to the engine's own answer.
     assert.deepEqual(report.headers, ["Date", "Payee", "Category", "Amount (ZAR)"]);
     assert.equal(report.rows, 9, `the card drew ${report.rows} lines`);
-    // Newest first, all the way down to the oldest row the window keeps.
+    // Newest first, all the way down to the oldest row the window keeps. The
+    // first line is held to the engine's own first row — date and all — and the
+    // last to the oldest payee the fixture seeded, which no calendar can move.
     assert.deepEqual(
       report.firstRow,
-      ["2026-10-13", "Payee 1", "Transport", "-101"],
-      "the card does not lead with the newest transaction",
+      [
+        engine.dates[0],
+        engine.payees[0],
+        engine.categories[0],
+        String(engine.amounts[0]),
+      ],
+      "the card does not lead with the engine's newest transaction",
     );
-    assert.equal(report.lastRow?.[1], "Payee 9", "the card does not end with the oldest in the window");
+    assert.equal(
+      report.lastRow?.[1],
+      engine.payees[engine.payees.length - 1],
+      "the card does not end with the oldest in the window",
+    );
     assert.match(report.moneyHeader, /ZAR/);
     // The picture is the artifact, and it is there to be looked at.
     assert.equal(fs.existsSync(RIG_SHOT), true, "the rig captured no screenshot");
