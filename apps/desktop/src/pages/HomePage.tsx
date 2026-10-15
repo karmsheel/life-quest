@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { MessageSquare, Pin as PinIcon } from "lucide-react";
 import type { DecisionRecord, LifeEvent, PageListEntry, Pin } from "@lifequest/vault-core";
@@ -19,6 +19,14 @@ import { RecentLogCard } from "@/pages/home-pins/RecentLogCard";
 import { ActiveAgentsCard } from "@/pages/home-pins/ActiveAgentsCard";
 import { PinChrome } from "@/components/home/PinChrome";
 import { cardNameIn } from "@/components/home/card-name";
+import {
+  anchorOf,
+  boardFrame,
+  boardScrolls,
+  restoreBoardHold,
+  watchBoardHold,
+  type BoardHold,
+} from "@/components/home/board-hold";
 import { usePinArrange, type CommitOutcome } from "@/components/home/usePinArrange";
 import { ViewCard } from "@/components/ui/ViewCard";
 import type { SavedView } from "@lifequest/vault-core";
@@ -41,7 +49,7 @@ export default function HomePage() {
    * watches must move the ledger table AND the log line that says it happened.
    */
   const live = useLiveData();
-  const { setContextCard, setOpen: setChatOpen } = useChatDock();
+  const { setContextCard, setOpen: setChatOpen, livePinId } = useChatDock();
   const lens = useDomainLens();
   const title =
     lens.kind === "domain"
@@ -116,6 +124,79 @@ export default function HomePage() {
     busy: boardBusy,
     onCommit: (next) => persistPins(next),
   });
+
+  /**
+   * The place the board is in, held across whatever the vault does to it.
+   *
+   * A card is a live query: the companion saves a view, the card redraws with
+   * different content, its box changes height, and the grid below it reflows —
+   * which moves every card after it. The operator did not scroll, and their
+   * `scrollTop` did not change, but everything they were reading moved. That is the
+   * reported bug, and `board-hold.ts` is the whole of the repair.
+   *
+   * WHY THE CORRECTION IS UNCONDITIONAL, AND WHY THAT IS NOT RECKLESS
+   *
+   * The hold is a description of where the operator was looking when it was taken,
+   * so restoring it IS enforcing that description — and enforcing a description the
+   * operator has left is the failure mode worth fearing. The answer is not to make
+   * the correction conditional on some reading of the board; two such readings were
+   * tried and measured, and both are wrong in the same direction (see the listener
+   * below). The answer is that the hold is kept current by the one signal that
+   * genuinely means "the operator moved": a scroll event.
+   *
+   * THE BROWSER'S OWN ANCHORING RUNS TOO, deliberately. Chromium frequently absorbs
+   * a reflow before a layout pass of ours can, and when it has, the hold already
+   * agrees with the board and our correction is a no-op. The two are not in conflict:
+   * the browser reacts within the frame, and this is the exact, named correction that
+   * always runs — the rig is what says that between them no frame is wrong.
+   *
+   * Written in a layout effect so the correction lands before the frame is painted —
+   * a `useEffect` would let the browser draw the reflowed board once and then snap it
+   * back, which is the jump the operator reported, only faster. Skipped entirely
+   * while the operator is arranging: a drag moves the anchor card as the whole point
+   * of the gesture, and holding it then would be the page overruling the hand.
+   */
+  const holdRef = useRef<BoardHold | null>(null);
+  const arrangingRef = useRef(arrange.isArranging);
+  arrangingRef.current = arrange.isArranging;
+  useLayoutEffect(() => {
+    const frame = boardFrame(arrange.gridRef.current);
+    if (!frame || !boardScrolls(frame) || arrange.isArranging) return;
+    restoreBoardHold(frame, holdRef.current);
+    holdRef.current = anchorOf(frame);
+    // `pins` and the live revision are the two things that can change the board's
+    // layout — one reorders it, the other redraws every card on it.
+  }, [arrange.gridRef, arrange.isArranging, pins, live]);
+
+  /**
+   * The other half of the hold: the operator's own scrolling.
+   *
+   * A manual scroll changes no React state, so the layout effect above would never
+   * hear about it — and a hold taken at the top of the board would still be on the
+   * books after the operator had scrolled six screens down, dragging them back the
+   * next time the companion wrote anything. A scroll EVENT is the honest signal for
+   * that and the only one.
+   *
+   * Two plausible alternatives were tried and are both wrong in the same direction.
+   * "The offset is not the one I last wrote" and "the anchor is not where the hold
+   * says it is" are each a comparison of a remembered board against the live one —
+   * and a card re-running displaces the board inside React's own commit, before any
+   * layout pass of ours runs, so each of them reads a reflow as the operator moving
+   * and drops the hold at exactly the moment the hold is needed. Measured, with the
+   * browser's own anchoring switched off: both slid the anchor 64px on the rig's
+   * above-the-eye leg, where this passes it.
+   *
+   * The page's own correction fires this listener too, and that is harmless: at that
+   * instant the hold and the board agree, so re-taking it is a no-op.
+   */
+  useEffect(() => {
+    const frame = boardFrame(arrange.gridRef.current);
+    if (!frame) return;
+    return watchBoardHold(frame, (hold) => {
+      if (arrangingRef.current) return;
+      holdRef.current = hold;
+    });
+  }, [arrange.gridRef, pins, live]);
 
   const load = useCallback(async () => {
     const boardSlug = lens.kind === "domain" ? lens.slug : null;
@@ -582,6 +663,7 @@ export default function HomePage() {
               "home-pin",
               pin.kind === "view" && pin.span === 2 ? "home-pin--span2" : "",
               arrange.isLifted(pin.id) ? "is-lifted" : "",
+              livePinId === pin.id ? "is-live" : "",
             ]
               .filter(Boolean)
               .join(" ")}

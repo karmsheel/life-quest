@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ComposedViewRunResult,
   DatabaseMeta,
@@ -81,8 +81,45 @@ export function ViewCard({
   const [generation, setGeneration] = useState(0);
   const [saving, setSaving] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  /**
+   * The card the operator is watching is the one the companion is editing, and a
+   * card that redrew with new content should say so — once, quietly, where it
+   * stands.
+   *
+   * Nothing tells this card that it was the one touched, and it does not need to
+   * be told: it compares what it just drew against what it was already drawing, and
+   * it is the only component that knows both. A revision that leaves the numbers
+   * alone — and "every write anywhere in the vault" is a revision this card hears
+   * about whether or not it concerns this card — is not a change, and pulsing for
+   * it would make the board flicker every time anything was written.
+   *
+   * `changedAt` is a tick rather than a boolean so that two edits in a row are two
+   * animations: the class is keyed on the tick, so React replaces the node's class
+   * instead of leaving an already-playing animation alone.
+   */
+  const [changedAt, setChangedAt] = useState(0);
+  /**
+   * What is on screen, for the comparison above.
+   *
+   * Serialized rather than held as objects, because what is being asked is
+   * "does this draw differently", and object identity answers the wrong question:
+   * every revision parses a fresh copy of the same view. A card's spec and result
+   * are plain JSON out of the vault, so the encoding is stable; the SIZE cap is a
+   * guard against a listing with hundreds of rows turning every revision into a
+   * megabyte of string work, and a change beyond it simply skips the pulse.
+   */
+  const drawnRef = useRef<string | null>(null);
   /** The vault's live revision: it moves on any write, and on the day turning. */
   const live = useLiveData();
+  const armChanged = useCallback((signature: string) => {
+    if (drawnRef.current === null || drawnRef.current === signature) {
+      drawnRef.current = signature;
+      return;
+    }
+    drawnRef.current = signature;
+    if (signature.length > 20_000) return;
+    setChangedAt(Date.now());
+  }, []);
 
   const reload = useCallback(() => setGeneration((g) => g + 1), []);
 
@@ -105,6 +142,11 @@ export function ViewCard({
         setRun({ state: "error", error: result.error });
         return;
       }
+      // The comparison is made against the spec AND the run together: a card whose
+      // blocks were reordered draws the same numbers in a different order, and a
+      // card whose rows changed draws different numbers in the same order. One
+      // signature covers both, which is why it is not a hash of the result alone.
+      armChanged(JSON.stringify({ view: get.value, result: result.value }));
       setRun({
         state: "run",
         view: get.value,
@@ -115,7 +157,19 @@ export function ViewCard({
     return () => {
       alive = false;
     };
-  }, [domainSlug, viewId, generation, live]);
+  }, [armChanged, domainSlug, viewId, generation, live]);
+
+  /**
+   * The pulse is one animation long. It is cleared on a timer rather than left on
+   * the card, so a later `is-changed` is a new animation rather than a class that
+   * was already there; `animationend` would be the tidier signal and is the wrong
+   * one here, because a card whose whole subtree redrew can swallow the event.
+   */
+  useEffect(() => {
+    if (!changedAt) return;
+    const timer = window.setTimeout(() => setChangedAt(0), 900);
+    return () => window.clearTimeout(timer);
+  }, [changedAt]);
 
   /**
    * One block's presentation, changed and saved in place.
@@ -147,23 +201,32 @@ export function ViewCard({
     }
   }
 
+  /**
+   * The card's shell, plus the one thing that is about THIS turn: whether the card
+   * just redrew with different content. The key is the tick, so a second edit
+   * restarts the animation instead of inheriting a class that was already there.
+   */
+  const cardClass = changedAt
+    ? `view-card is-changed view-card--changed-${changedAt}`
+    : "view-card";
+
   if (run.state === "loading") {
     return (
-      <section className="view-card">
+      <section className={cardClass}>
         <p className="muted">Loading…</p>
       </section>
     );
   }
   if (run.state === "missing") {
     return (
-      <section className="view-card">
+      <section className={cardClass}>
         <p className="muted">This view is missing and can be unpinned.</p>
       </section>
     );
   }
   if (run.state === "error") {
     return (
-      <section className="view-card">
+      <section className={cardClass}>
         <p className="form-error" role="alert">{run.error}</p>
       </section>
     );
@@ -186,7 +249,7 @@ export function ViewCard({
   }));
 
   return (
-    <section className="view-card">
+    <section className={cardClass}>
       <h2 className="view-card__title">{view.title}</h2>
       <div className="view-card__blocks">
         {blocks.map((block) => (

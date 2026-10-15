@@ -195,6 +195,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     clearRequestedSession,
     contextCard,
     setContextCard,
+    setLivePinId,
     pageContext,
     setPageContextOn,
   } = useChatDock();
@@ -368,6 +369,16 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const panelRef = useRef<HTMLElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const assistantId = useRef<string | null>(null);
+  /**
+   * The card in context, readable from a listener that outlives a render.
+   *
+   * The turn stream's listener is installed once, so a closure over `contextCard`
+   * would name whichever card was in context when the listener was built — and the
+   * card being worked on is read at the moment a turn STARTS, which can be many
+   * renders later. The ref is the same fact without the staleness.
+   */
+  const contextCardRef = useRef<ChatCardContext | null>(null);
+  contextCardRef.current = contextCard;
   /** Bottom for the composer: the box height it rests at with an empty draft. */
   const restingHeightRef = useRef(0);
 
@@ -666,10 +677,15 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   }, [contextCard]);
 
   useEffect(() => {
-    return api().onCompanionStream((evt: ChatStreamEvent) => {
+    const off = api().onCompanionStream((evt: ChatStreamEvent) => {
       if (evt.type === "run.started") {
         // First frame of every turn: this is the id `stop` has to name.
         setRunId(evt.runId || null);
+        // ...and the card the turn is about, which the board draws a ring around
+        // for as long as this is set. The turn is the window the operator waits
+        // through: it opens before the first write and closes after the last, so
+        // a card being re-read is already wearing it.
+        setLivePinId(contextCardRef.current?.pin.id ?? null);
         return;
       }
       if (evt.type === "assistant.delta") {
@@ -719,6 +735,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
         setTurnNote(
           "Stopped — the reply above is only what arrived before the interrupt",
         );
+        setLivePinId(null);
         return;
       }
       if (evt.type === "run.incomplete") {
@@ -727,6 +744,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
             ? `Ended before finishing — ${evt.reason}`
             : "Ended before finishing",
         );
+        setLivePinId(null);
         return;
       }
       if (evt.type === "error") {
@@ -735,10 +753,19 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       }
       if (evt.type === "run.completed") {
         setRunId(null);
+        // The turn is over, so the card is nobody's work in progress. What it drew
+        // stays exactly as it is: this clears a ring, it does not undo an edit.
+        setLivePinId(null);
         void refresh();
       }
     });
-  }, [refresh]);
+    return () => {
+      off();
+      // A dock that goes away mid-turn must not leave a ring on a board it can no
+      // longer explain.
+      setLivePinId(null);
+    };
+  }, [refresh, setLivePinId]);
 
   /**
    * Read the model inventory once, when the dock is first opened.

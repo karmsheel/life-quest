@@ -45,6 +45,23 @@ type ChatDockContextValue = {
   contextCard: ChatCardContext | null;
   setContextCard: (card: ChatCardContext | null) => void;
   /**
+   * The card a running companion turn is working on, by pin id, or null.
+   *
+   * This is the donut, not the filling: it says a turn is under way and which card
+   * it is about, and it changes nothing about the card's content. The card redraws
+   * itself off the vault's own change signal, exactly as it does for any other
+   * write — so a board that was told "this one is being edited" and a board that
+   * was not are drawing the same picture. This exists so the operator can see that
+   * the quiet card in front of them is the one being worked on rather than one
+   * that failed to update.
+   *
+   * It is set from the chat's own turn events rather than from the vault: the turn
+   * begins before any write and ends after the last one, which is the window the
+   * operator actually waits through.
+   */
+  livePinId: string | null;
+  setLivePinId: (pinId: string | null) => void;
+  /**
    * The screen the operator is on, and whether the next turn will quote it.
    *
    * `on` re-arms on every navigation: walking to another page is the operator
@@ -66,6 +83,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
   );
   const [requestedKickoff, setRequestedKickoff] = useState<string | null>(null);
   const [contextCard, setContextCard] = useState<ChatCardContext | null>(null);
+  const [livePinId, setLivePinId] = useState<string | null>(null);
   const { pathname } = useLocation();
   const [pageContextOn, setPageContextOn] = useState(true);
 
@@ -99,6 +117,8 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       clearRequestedSession,
       contextCard,
       setContextCard,
+      livePinId,
+      setLivePinId,
       pageContext: { route: pathname, label: pageLabel, on: pageContextOn },
       setPageContextOn,
     }),
@@ -110,6 +130,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       requestSession,
       clearRequestedSession,
       contextCard,
+      livePinId,
       pathname,
       pageLabel,
       pageContextOn,

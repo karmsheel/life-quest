@@ -3005,6 +3005,20 @@ a.home-mini-list__link:hover {
   box-shadow: var(--shadow-sm);
 }
 
+/* The card the companion is working on.
+   A turn is not a write: it opens before the first tool call and closes after the
+   last, and for that whole window the card the operator handed to the chat is
+   being read, re-run and re-run again. This is the board saying so — one ring, in
+   the same vocabulary as the lifted card's, so "something is happening to this
+   one" reads the same whether the hand or the companion is the one doing it.
+   The ring is the state and never animates; there is nothing here a
+   `prefers-reduced-motion` operator is missing. */
+.home-pin.is-live {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--home-radius);
+}
+
 /* The card's control row, in the corner. It is the positioned box, and the
    chrome is a row inside it, because the row now holds two different kinds of
    control: the board-editing chrome (`PinChrome`, which the lock takes away) and
@@ -5863,6 +5877,36 @@ button.chat-panel__activity-line:hover {
   padding: 0;
   background: transparent;
   box-shadow: none;
+}
+
+/* A card that just redrew with different content, in place.
+   The companion edits a card the operator is already looking at, and the card
+   arriving at a new answer with no punctuation reads as a flicker — or, worse, as
+   the card having been replaced. One aura that fades is the whole gesture: the
+   card stays exactly where it is, and it says "this one changed" once.
+   `--accent-soft` rather than a tint mixed at use, so a skin repaint repaints it.
+   Nothing animates under `prefers-reduced-motion`: the card still changed, and the
+   operator can see that in its content, which is where the fact lives anyway. */
+.view-card.is-changed {
+  animation: view-card-changed 900ms ease-out;
+}
+
+@keyframes view-card-changed {
+  0% {
+    box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm);
+  }
+  70% {
+    box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-xs);
+  }
+  100% {
+    box-shadow: var(--shadow-xs);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-card.is-changed {
+    animation: none;
+  }
 }
 
 .view-card__title {
