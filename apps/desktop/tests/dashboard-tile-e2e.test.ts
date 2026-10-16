@@ -20,7 +20,7 @@ const SCENARIOS = [
   "board",
   "rows-mix",
   "no-spill",
-  "card-asks-for-its-cells",
+  "card-fits-its-table",
   "operator-card",
   "row-card",
   "board-floors",
@@ -76,6 +76,12 @@ type CardSample = {
   gridColumnEnd: string;
   rowCard: boolean;
   widthControl: string | null;
+  table: {
+    width: number;
+    preferred: number;
+    content: number;
+    columns: { header: string; width: number }[];
+  } | null;
   spills: { tag: string; cls: string; past: number }[];
 };
 
@@ -83,7 +89,8 @@ type WidthSample = {
   name: string;
   width: number;
   tracks: number[];
-  cellRem: string;
+  unitRem: string;
+  minUnits: string;
   gap: number;
   inlineMinWidth: string | null;
   gridWidth: number;
@@ -175,28 +182,48 @@ describe("dashboard tile e2e", () => {
     // two cells" would be a claim about a board that never had to choose.
     assert.ok(wide.tracks.length > narrow.tracks.length, "the board did not narrow with the window");
 
-    // The reported card: four nowrap columns in a pin stored one cell wide. It is
-    // drawn in more than one track at both roomy widths, and its frame is wider
-    // than the one-number metric's — the cards are sized by what they hold.
+    // The reported cards: a four-column listing whose cells cannot wrap, in a pin
+    // stored one cell wide. It is drawn in more than one layout unit, its table is
+    // NOT stretched past the width its columns need, the card around it is within
+    // one step of that width, and it is wider than the one-number metric beside it
+    // — the cards are sized by what they hold.
     const listingWide = wide.cards.find((card) => card.id === "view:financial:v-listing");
     const listingNarrow = narrow.cards.find((card) => card.id === "view:financial:v-listing");
     const metricWide = wide.cards.find((card) => card.id === "view:financial:v-metric");
-    assert.equal(listingWide?.covered, 2, "the listing is not two cells wide at 1280px");
-    assert.equal(listingNarrow?.covered, 2, "the listing is not two cells wide at 700px");
-    assert.equal(metricWide?.covered, 1, "the metric is not one cell wide at 1280px");
+    assert.ok((listingWide?.covered ?? 0) >= 4, "the listing is under one minimum card wide at 1280px");
+    assert.ok((listingNarrow?.covered ?? 0) >= 4, "the listing is under one minimum card at 700px");
     assert.ok(
-      (listingWide?.width ?? 0) > (metricWide?.width ?? 0) + 100,
+      (listingWide?.width ?? 0) > (metricWide?.width ?? 0) + 40,
       "the listing and the metric are drawn the same width",
     );
-    assert.deepEqual(listingWide?.spills, [], "the listing still paints outside its own frame");
+    for (const entry of [wide, narrow, tiny]) {
+      const listing = entry.cards.find((card) => card.id === "view:financial:v-listing");
+      assert.ok(listing?.table, `the listing drew no table at ${entry.name}`);
+      // The hole the operator reported: a table told to fill its card spends the
+      // difference between its columns.
+      assert.ok(
+        (listing?.table?.width ?? 0) - (listing?.table?.preferred ?? 0) <= 2,
+        `the listing's table was stretched to ${listing?.table?.width}px from the ` +
+          `${listing?.table?.preferred}px its columns need at ${entry.name}`,
+      );
+      // And the empty space around it: one layout step, not 225px.
+      const step = (Number.parseFloat(entry.unitRem) || 0) * 16 + entry.gap;
+      assert.ok(
+        (listing?.table?.content ?? 0) - (listing?.table?.preferred ?? 0) <= step,
+        `the listing card leaves ${Math.round(
+          (listing?.table?.content ?? 0) - (listing?.table?.preferred ?? 0),
+        )}px around a ${listing?.table?.preferred}px table at ${entry.name} (one step is ${Math.round(step)}px)`,
+      );
+      assert.deepEqual(listing?.spills, [], `the listing paints outside its own frame at ${entry.name}`);
+    }
 
     // And the operator's own card — their rows, their columns, their view file's
     // `span: 2` on a pin that says `span: 1` — is drawn the same way.
     for (const entry of [wide, narrow, tiny]) {
       const operator = entry.cards.find((card) => card.id === "view:financial:v-real");
       assert.ok(
-        (operator?.covered ?? 0) >= 2,
-        `the operator's Recent-transactions card is ${operator?.covered} track wide at ${entry.name}`,
+        (operator?.covered ?? 0) >= 4,
+        `the operator's Recent-transactions card is ${operator?.covered} unit(s) wide at ${entry.name}`,
       );
       assert.deepEqual(
         operator?.spills,
@@ -215,14 +242,22 @@ describe("dashboard tile e2e", () => {
       );
     }
 
-    // The tiny window: the board refused to shrink below its own cells and the
+    // The tiny window: the board refused to shrink below its own units and the
     // sheet's scroller took the overflow sideways — no card was squeezed.
     assert.ok(tiny.scrollport, "the tiny sample has no scrollport");
-    assert.ok(tiny.gridWidth > tiny.scrollport.client, "the board shrank below its own cells");
+    assert.ok(tiny.gridWidth > tiny.scrollport.client, "the board shrank below its own units");
     assert.equal(tiny.scrollport.canScrollSideways, true, "the sheet cannot scroll sideways");
-    const cell = (Number.parseFloat(tiny.cellRem) || 17) * 16;
+    const unit = (Number.parseFloat(tiny.unitRem) || 4.25) * 16;
+    const minCard =
+      (Number.parseInt(tiny.minUnits, 10) || 4) * (unit + tiny.gap) - tiny.gap;
     for (const track of tiny.tracks) {
-      assert.ok(track >= cell - 1, `a track is ${track}px against a ${cell}px cell`);
+      assert.ok(track >= unit - 1, `a track is ${track}px against a ${unit}px unit`);
+    }
+    for (const card of tiny.cards) {
+      assert.ok(
+        card.width >= minCard - 1,
+        `${card.id} is ${card.width}px against a ${Math.round(minCard)}px minimum card`,
+      );
     }
     assert.deepEqual(
       tiny.cards.flatMap((card) => card.spills),

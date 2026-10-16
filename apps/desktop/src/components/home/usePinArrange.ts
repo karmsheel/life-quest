@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { Pin } from "@lifequest/vault-core";
-import { insertionIndex, movePin, type SlotRect } from "@/components/home/pin-order";
+import { insertionIndex, movePin, rowTarget, type SlotRect } from "@/components/home/pin-order";
 import { cardNameIn } from "@/components/home/card-name";
 
 /** How far into the scrollport's edge a drag starts scrolling the board. */
@@ -174,18 +174,15 @@ function cardName(grid: HTMLElement | null, pinId: string): string {
 }
 
 /**
- * How many tracks the board has, which is what "down" means to the keyboard.
+ * How far "down" is, for the keyboard.
  *
- * Read from the grid's resolved `grid-template-columns` rather than by counting
- * the cards in a row: several home cards are legitimately full-row, so a row of
- * the board is not a row of the grid and counting cards gives 1.
+ * This used to be the grid's own track count, read off `grid-template-columns`,
+ * and it is not that any more: a card's width is measured from its content and
+ * expressed in layout units a quarter of a cell wide, so the tracks are four
+ * times as many as they used to be and say nothing about how many cards share a
+ * line. `rowTarget` in `pin-order.ts` answers the real question — the start of
+ * the next or previous line — from the cards' own boxes.
  */
-function trackCount(grid: HTMLElement | null): number {
-  if (!grid) return 1;
-  const tracks = getComputedStyle(grid).gridTemplateColumns.trim();
-  if (!tracks || tracks === "none") return 1;
-  return Math.max(1, tracks.split(/\s+/).length);
-}
 
 export function usePinArrange(input: {
   pins: Pin[];
@@ -644,8 +641,19 @@ export function usePinArrange(input: {
       let to: number | null = null;
       if (event.key === "ArrowLeft") to = clamp(current.to - 1);
       else if (event.key === "ArrowRight") to = clamp(current.to + 1);
-      else if (event.key === "ArrowUp") to = clamp(current.to - trackCount(gridRef.current));
-      else if (event.key === "ArrowDown") to = clamp(current.to + trackCount(gridRef.current));
+      else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+        // A row is a line of the board, not a count of tracks: the card's own box
+        // and its neighbours' decide where "up" and "down" are. The card is still
+        // in its slot while the keyboard holds it, so its box is its slot.
+        const card = cardIn(gridRef.current, current.pinId);
+        if (!card) return;
+        const answer = rowTarget(
+          slots(current.pinId),
+          layoutBox(card),
+          event.key === "ArrowDown" ? 1 : -1,
+        );
+        to = clamp(answer);
+      }
       if (to == null) return;
       event.preventDefault();
       captureRects();
@@ -658,7 +666,7 @@ export function usePinArrange(input: {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [busy, captureRects, finishLift, locked, pins]);
+  }, [busy, captureRects, finishLift, locked, pins, slots]);
 
   // A card that leaves the board mid-drag (an unpin, a re-read) must not leave
   // the gesture hanging over an element that is gone, and must not leave its

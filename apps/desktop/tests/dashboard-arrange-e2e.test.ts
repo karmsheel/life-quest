@@ -37,7 +37,7 @@ const SCENARIOS = [
   "refusal-is-announced",
   "card-is-the-handle",
   "keyboard-moves-and-writes",
-  "keyboard-down-moves-a-row",
+  "keyboard-moves-a-line",
   "keyboard-escape-writes-nothing",
   "keyboard-is-announced",
   "focus-returns-to-the-card",
@@ -89,6 +89,7 @@ type Report = {
     scenarios: Scenario[];
     order: string[];
     columns: number;
+    minCardsPerLine: number;
     unexpectedBridgeCalls: string[];
     consoleErrors: string[];
   };
@@ -127,9 +128,20 @@ describe("dashboard arrange e2e", () => {
       "sys:pending-decisions",
       "sys:recent-log",
     ]);
-    // Three tracks: the slot rule and the keyboard's row moves are claims about
-    // a board that wraps, and a one-column board would make them vacuous.
-    assert.equal(report.checks.columns, 3, "the harness board is not three columns wide");
+    // The board is wide enough for three minimum cards on a line: the slot rule
+    // and the keyboard's line moves are claims about a board that wraps, and a
+    // one-card-wide board would make them vacuous. The track count is no longer
+    // the measure of that — cards are measured from their content and drawn in
+    // layout units a quarter of a cell wide, so the tracks outnumber the cards by
+    // design and three of them mean nothing.
+    assert.ok(
+      report.checks.minCardsPerLine >= 3,
+      `the harness board holds only ${report.checks.minCardsPerLine} minimum cards a line`,
+    );
+    assert.ok(
+      report.checks.columns >= 8,
+      `the harness board drew ${report.checks.columns} tracks, which is not the fine grid`,
+    );
 
     const recorded = report.checks.scenarios.map((s) => s.name);
     for (const name of SCENARIOS) {

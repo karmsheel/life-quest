@@ -2855,19 +2855,22 @@ a {
 }
 
 /* The board's tiles.
-   `--home-tile-rem` is the one cell's floor, and it is written down exactly once:
-   the tracks below are sized from it, and `useTileSpans` reads the same variable
-   back to decide how many cells a card's content needs. A card gets as many cells
-   as it needs — so one row can hold two wide cards and the next three narrow ones
-   — and the board's own `min-width` (also written by that hook) is the width of
-   its widest card, so a window too small for those cells scrolls the sheet
-   sideways instead of squeezing a card until its table spills over the frame.
-   The `min-width` is deliberately NOT a fixed number of cells here: it is the
-   measurement, and only the measurement can be right about a four-column listing. */
+   `--home-tile-unit-rem` is the layout step a card's width is a whole number of,
+   and it is written down exactly once: the tracks below are sized from it, and
+   `useTileSpans` reads the same variable back to decide how many units a card's
+   content needs. A quarter of the 17rem cell this board used to be built from —
+   so every width the old grid could draw is still drawable, but a card no longer
+   jumps from one whole cell to two and hands its table 225px of leftover to
+   spread between its columns.
+   `--home-tile-min-units` is the floor: the narrowest a one-number card may be.
+   The board's own `min-width` (written by that hook) is the width of its widest
+   card, so a window too small for those units scrolls the sheet sideways instead
+   of squeezing a card until its table spills over the frame. */
 .home-dashboard__grid {
-  --home-tile-rem: 17;
+  --home-tile-unit-rem: 4.25;
+  --home-tile-min-units: 4;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(calc(var(--home-tile-rem) * 1rem), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--home-tile-unit-rem) * 1rem), 1fr));
   gap: 0.85rem;
   /* The containing block for a lifted card: it leaves grid flow and is placed in
      the grid's own coordinates, so the board's auto-placement closes the gap. */
@@ -6267,6 +6270,28 @@ button.chat-panel__activity-line:hover {
 .view-card__table--list td + td {
   text-align: left;
   width: auto;
+}
+
+/* A LISTING KEEPS ITS OWN WIDTH, and this is the whole of the operator's "the
+   space between Category and Amount is too much".
+   A table told to be `100%` — or told nothing at all, since a table's own `auto`
+   also means "fill the containing block" — takes whatever card it lands in, and
+   the leftover has to go somewhere: the browser shares it between the columns,
+   which opens a hole in the middle of the row. When the column before that hole
+   holds money that is right-aligned, the hole lands immediately before the
+   numbers, which is exactly where it reads as a mistake.
+   `max-content` is the table's own answer instead: the width at which every cell
+   is drawn at the size its content wants, no column stretched and none squeezed.
+   `max-width: 100%` is the floor under it — a table may never be wider than the
+   card that holds it. Together they read as "as wide as it needs, never wider than
+   it has", and the leftover, when there is any, stays at the card's right edge as
+   ordinary margin.
+   The AGGREGATE table above deliberately keeps filling its card: its second column
+   is a total, and a total belongs against the card's right edge the way a
+   statement reads. */
+.view-card__table--list {
+  width: max-content;
+  max-width: 100%;
 }
 
 .view-card__table--list td + td {

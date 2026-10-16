@@ -347,21 +347,37 @@ function restingOrder(win) {
 }
 
 /**
- * How many grid tracks the board has: the column count the slot rule and the
- * keyboard's Up/Down have to respect.
+ * How many grid tracks the board has, and how many minimum cards fit across it.
  *
- * Read from the grid's resolved `grid-template-columns` rather than by counting
- * the cards in the first row, because several home cards are full-row
- * (`home-card--wide`, a span-2 view, the deadline banner), so a "row" of the
- * board is not a row of the grid.
+ * Two numbers rather than one, because the board's width is measured from what
+ * each card holds and expressed in layout units — a quarter of the cell this
+ * board used to be built from — so the track count is four times what it was and
+ * no longer says anything about how many cards share a line. The claims below need
+ * the second number: a board two minimum cards wide cannot tell "a drop lands
+ * beside its neighbour" from "the board wrapped".
+ *
+ * Both are read off the board's own resolved geometry rather than assumed:
+ * `minmax(unit, 1fr)` tracks, and the minimum card the sheet declares.
  */
 function columns(win) {
   return win.webContents.executeJavaScript(
     `(() => {
       const grid = document.querySelector(".home-dashboard__grid");
-      if (!grid) return 0;
-      const tracks = getComputedStyle(grid).gridTemplateColumns.trim();
-      return tracks === "" || tracks === "none" ? 0 : tracks.split(/\\s+/).length;
+      if (!grid) return { tracks: 0, minCards: 0 };
+      const style = getComputedStyle(grid);
+      const list = style.gridTemplateColumns.trim();
+      const tracks = list === "" || list === "none" ? [] : list.split(/\\s+/);
+      const gap = parseFloat(style.columnGap) || 0;
+      const unit =
+        (parseFloat(style.getPropertyValue("--home-tile-unit-rem")) || 4.25) *
+        (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16);
+      const minUnits = parseInt(style.getPropertyValue("--home-tile-min-units"), 10) || 4;
+      const minCard = minUnits * (unit + gap) - gap;
+      const content = grid.clientWidth;
+      return {
+        tracks: tracks.length,
+        minCards: Math.floor((content + gap) / (minCard + gap)),
+      };
     })()`,
   );
 }
@@ -803,19 +819,20 @@ async function checkOrdering(win) {
   // 1. The cell to the right of the card beside it is one slot, not one row.
   step("same-row-targets-by-x");
   await beginScenario(win);
-  const tracks = await columns(win);
+  const board = await columns(win);
   await dragCard(win, "view:financial:v-weekly", () => pointIn(win, "page:financial:ledger", 0.8));
   const swapped = await restingOrder(win);
   const swappedWrites = writesOf(await pinWrites(win));
   check(
     "same-row-targets-by-x",
-    tracks === 3 &&
+    board.minCards >= 3 &&
       swapped[0] === base[0] &&
       swapped[1] === "page:financial:ledger" &&
       swapped[2] === "view:financial:v-weekly" &&
       swappedWrites.length === 1 &&
       swappedWrites[0].join(",") === swapped.join(","),
-    `on a ${tracks}-track board the drop gave ${JSON.stringify(swapped)} for ${swappedWrites.length} write(s)`,
+    `on a ${board.tracks}-track board holding ${board.minCards} minimum cards a line, the drop gave ` +
+      `${JSON.stringify(swapped)} for ${swappedWrites.length} write(s)`,
   );
 
   // 2. A full-row card is not a dead zone: the row band decides, and past its
@@ -1182,10 +1199,25 @@ async function checkKeyboard(win) {
     `two ArrowLefts from index 3 gave ${JSON.stringify(keyOrder)} for ${keyWrites.length} write(s)`,
   );
 
-  // 2. Down is a row, not a slot — the claim the old arrows got wrong.
-  step("keyboard-down-moves-a-row");
+  // 2. Up and Down are LINES, not a count of slots — and the count of slots is
+  //    what they used to be: the old arrows moved a card by the grid's track
+  //    count, which was exactly one row while every card was one cell wide and is
+  //    nothing at all now that a card's width is measured from its content and
+  //    drawn in units a quarter of a cell.
+  //
+  //    So the claim is geometric, and it is made against the board it is standing
+  //    on: the card moves onto the line above it, which is the line whose top edge
+  //    is the greatest one still above the card.
+  step("keyboard-moves-a-line");
   await beginScenario(win);
-  const tracks = await columns(win);
+  const lineBoard = await columns(win);
+  const beforeMove = await cardMotion(win);
+  const moving = beforeMove.find((card) => card.id === "sys:pending-decisions");
+  const above = beforeMove.filter(
+    (card) => moving && card.layoutTop < moving.layoutTop - 2,
+  );
+  const lineTop = above.length ? Math.max(...above.map((card) => card.layoutTop)) : 0;
+  const lineAbove = above.filter((card) => card.layoutTop === lineTop).map((card) => card.id);
   await focusCard("sys:pending-decisions");
   await pressKey(win, "Return");
   await pressKey(win, "Up");
@@ -1193,13 +1225,16 @@ async function checkKeyboard(win) {
   await sleep(200);
   const rowOrder = await restingOrder(win);
   const rowWrites = writesOf(await pinWrites(win));
+  const afterMove = await cardMotion(win);
+  const landed = afterMove.find((card) => card.id === "sys:pending-decisions");
   check(
-    "keyboard-down-moves-a-row",
-    tracks === 3 &&
-      rowOrder.indexOf("sys:pending-decisions") === 2 &&
-      rowWrites.length === 1,
-    `one ArrowUp on a ${tracks}-track board moved the card to index ` +
-      `${rowOrder.indexOf("sys:pending-decisions")} for ${rowWrites.length} write(s)`,
+    "keyboard-moves-a-line",
+    lineBoard.minCards >= 3 &&
+      rowWrites.length === 1 &&
+      Math.abs((landed?.layoutTop ?? -999) - lineTop) <= 2,
+    `one ArrowUp on a ${lineBoard.tracks}-track board moved the card from the top of its line to ` +
+      `${landed?.layoutTop} for ${rowWrites.length} write(s); the line above was at ${lineTop} ` +
+      `(${JSON.stringify(lineAbove)}), and the board is now ${JSON.stringify(rowOrder)}`,
   );
 
   // 3. Escape puts it back and writes nothing.
@@ -1581,8 +1616,15 @@ async function main() {
    * they are for — so "this rig renders the seven pins in this order" has to be
    * a claim about the fresh board, not about whatever the last drag left behind.
    */
+  /**
+   * The board's seeded order, its track count and how many minimum cards fit on a
+   * line, read before any scenario runs. The ordering claims legitimately leave
+   * the board rearranged — that is what they are for — so "this rig renders the
+   * seven pins in this order" has to be a claim about the fresh board, not about
+   * whatever the last drag left behind.
+   */
   const order = sample.order;
-  const tracks = await columns(win);
+  const board = await columns(win);
 
   await checkActivation(win);
   await checkOrdering(win);
@@ -1603,7 +1645,8 @@ async function main() {
       skin,
       scenarios,
       order,
-      columns: tracks,
+      columns: board.tracks,
+      minCardsPerLine: board.minCards,
       sample,
       /**
        * A page that grows a dependency on a bridge method this rig does not model
@@ -1623,7 +1666,7 @@ async function main() {
   );
 
   console.log(`order:    ${order.join(" ")}`);
-  console.log(`columns:  ${tracks}`);
+  console.log(`columns:  ${board.tracks} track(s), ${board.minCards} minimum card(s) a line`);
   console.log(`cards:    ${sample.cards.length}`);
   for (const scenario of scenarios) {
     console.log(`${scenario.name}: ${scenario.pass ? "PASS" : "FAIL"}${scenario.detail ? ` — ${scenario.detail}` : ""}`);

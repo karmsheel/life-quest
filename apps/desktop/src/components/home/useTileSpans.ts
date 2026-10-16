@@ -2,20 +2,26 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import type { RefObject } from "react";
 import type { Pin } from "@lifequest/vault-core";
 import {
-  boardCellsNeeded,
+  boardUnitsNeeded,
   boardWidth,
-  cellsNeeded,
-  tileCell,
+  minTileUnits,
+  tileStep,
+  unitsNeeded,
 } from "@/components/home/tile-span";
 
 /**
  * Sizing the board's tiles from what the cards actually hold.
  *
  * The page renders cards; this hook asks each one how wide it has to be and
- * writes the answer back as a grid span — one cell, two, or as many as a table
- * with six nowrap columns needs — and as the board's own floor, so a window too
- * small for those cells gets a board that is wider than it is instead of a card
+ * writes the answer back as a grid span — a whole number of layout units, as many
+ * as the card's content needs — and as the board's own floor, so a window too
+ * small for those units gets a board that is wider than it is instead of a card
  * squeezed until its content spills over the frame.
+ *
+ * The unit is a quarter of the 17rem cell the board used to be built from, and
+ * that is not a detail: a card measured in whole cells is either too narrow for
+ * its table or hundreds of pixels too wide, and the operator sees the difference
+ * as empty space inside the card they are reading. See `tile-span.ts`.
  *
  * WHAT "HOW WIDE IT HAS TO BE" MEANS, EXACTLY
  *
@@ -49,12 +55,12 @@ import {
  *
  * WHAT IT DELIBERATELY DOES NOT DO
  *
- * It does not measure while a card is in the air. A drag owns the geometry of the
- * card under it, and a measurement pass writes `width` on every card on the
- * board; the board is re-measured the moment the gesture ends. It also does not
- * touch a card that already owns the row — the operator's own `span: 2`, and the
- * cards that are drawn as banners — which the sheet paints `1 / -1` and this hook
- * leaves alone.
+ * It does not measure while a gesture owns the board — a card in the air, or a
+ * width being dragged. Both write geometry directly, and a measurement pass
+ * writes `width` on every card on the board; the board is re-measured the moment
+ * the gesture ends. It also does not touch a card that already owns the row — the
+ * operator's own `span: 2`, and the cards that are drawn as banners — which the
+ * sheet paints `1 / -1` and this hook leaves alone.
  */
 export function useTileSpans(input: {
   gridRef: RefObject<HTMLDivElement | null>;
@@ -85,11 +91,12 @@ export function useTileSpans(input: {
     if (cards.length === 0) return;
 
     const boardStyle = getComputedStyle(grid);
-    const cell = tileCell(
+    const step = tileStep(
       boardStyle,
       Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
     );
     const gap = Number.parseFloat(boardStyle.columnGap) || 0;
+    const minUnits = minTileUnits(boardStyle);
 
     // Write all, read all, restore all. Interleaving would make the browser
     // lay the board out once per card; this is one layout for the measurements
@@ -98,17 +105,17 @@ export function useTileSpans(input: {
     const needs = cards.map((card) => card.getBoundingClientRect().width);
     for (const card of cards) card.style.removeProperty("width");
 
-    const cells = needs.map((need) => cellsNeeded(need, cell, gap));
+    const units = needs.map((need) => unitsNeeded(need, step, gap, minUnits));
 
     // The board's floor first: it decides how many tracks there are, and a span
     // wider than the track count would create an implicit track instead — a
     // column of the board that is not part of the board's rhythm.
-    const minWidth = `${Math.ceil(boardWidth(boardCellsNeeded(cells), cell, gap))}px`;
+    const minWidth = `${Math.ceil(boardWidth(boardUnitsNeeded(units, minUnits), step, gap))}px`;
     if (grid.style.minWidth !== minWidth) grid.style.minWidth = minWidth;
 
     cards.forEach((card, index) => {
       // An empty string puts a row card back on the sheet's own rule.
-      const count = cells[index];
+      const count = units[index];
       const span = widthFollowsContent(card) ? `span ${count}` : "";
       if (card.style.gridColumn !== span) card.style.gridColumn = span;
     });

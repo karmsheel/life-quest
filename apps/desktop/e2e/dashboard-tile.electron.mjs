@@ -8,39 +8,54 @@
  *
  * Exit code 0 = every claim held. The JSON report is the repeatable artifact.
  *
- * THE FAULT THIS RIG IS AIMED AT (reported, then measured in the operator's own
- * vault): the "Recent transactions" card holds a four-column listing, every cell
- * of it nowrap, and is pinned ONE cell wide. A table does not shrink below its
- * own min-content width, so it painted outside the card's frame.
+ * THE FAULTS THIS RIG IS AIMED AT (both reported, then measured in the operator's
+ * own vault):
+ *
+ *   "The tables can change size but when made smaller they often compress beyond
+ *    the data they hold, causing it to spill over."
+ *
+ * The "Recent transactions" card holds a four-column listing, every cell of it
+ * nowrap, and was pinned ONE cell wide. A table does not shrink below its own
+ * min-content width, so it painted outside the card's frame.
+ *
+ *   "Some tables are still showing lots of empty space — the space between the
+ *    Category and Amount columns is too much."
+ *
+ * Sizing a card in whole 17rem cells is a coarse instrument: that same card needs
+ * 348px and the next cell up is 605px, so 225px of leftover was handed to a card
+ * whose table was then told to fill it, and the table spent the difference
+ * between its columns — which is the hole, right where the money column begins.
  *
  * The claims, and what makes each falsifiable:
  *
  *  1. `no-spill`      — no part of any card is drawn outside that card's frame,
  *                       at every width the board is asked to draw at. This is the
- *                       reported fault stated as a measurement: the rig walks
- *                       every descendant of every card and compares it with the
- *                       card's own box. On the pre-fix build the listing's cells
- *                       hang out of their card by tens of pixels and this fails.
- *  2. `card-asks-for-its-cells` — the listing occupies more than one track and the
- *                       one-number metric occupies exactly one: the cards are
- *                       sized by what they hold rather than alike. On the pre-fix
- *                       build both are one track.
+ *                       first fault stated as a measurement: the rig walks every
+ *                       descendant of every card and compares it with the card's
+ *                       own box. On the pre-fix build the listing's cells hang
+ *                       out of their card by tens of pixels and this fails.
+ *  2. `card-fits-its-table` — the second fault, as two numbers: a listing draws at
+ *                       the width its columns need (it is not stretched to fill
+ *                       its card), and the card around it is within one layout
+ *                       step of that width. The one-number metric is the control:
+ *                       its content needs almost nothing, and it must not come out
+ *                       as wide as the listing beside it.
  *  3. `operator-card` — the operator's OWN card, row for row out of their vault,
- *                       is also two tracks wide and also holds its cells. The
- *                       reported case, with the reported data, rather than a
- *                       fixture the rig made up to be wide.
- *  4. `rows-mix`      — two rows of the board hold different numbers of cards
+ *                       holds its cells and is wider than the metric. The reported
+ *                       case, with the reported data, rather than a fixture the
+ *                       rig made up to be wide.
+ *  4. `rows-mix`      — two lines of the board hold different numbers of cards
  *                       (three on one line, two on another), which is the
  *                       arrangement the operator asked for by name.
- *  5. `row-card`      — a card the operator stored two cells wide is drawn across
+ *  5. `row-card`      — a card the operator stored across the row is drawn across
  *                       the whole row, at every width. The control that stops
  *                       "everything is as wide as its content" from passing.
- *  6. `board-floors`  — a window too small for the board's cells gets a board
- *                       that is wider than the window, every track at least the
- *                       cell floor, and the sheet's own scroller taking the
- *                       overflow sideways. A card is never the thing that gives
- *                       way.
- *  7. `stable`        — a content-sized card draws in the same number of cells at
+ *  6. `board-floors`  — a window too small for the board's units gets a board that
+ *                       is wider than the window, every track at least one unit,
+ *                       every card at least one minimum card, and the sheet's own
+ *                       scroller taking the overflow sideways. A card is never the
+ *                       thing that gives way.
+ *  7. `stable`        — a content-sized card draws in the same number of units at
  *                       every width, and coming back to a width reproduces it
  *                       exactly: a board measured against its own tracks would
  *                       oscillate between two answers, and this is the claim that
@@ -72,13 +87,13 @@ const url =
 /**
  * The three widths the board is judged at, and what each one is for.
  *
- * `wide` is a normal desktop window, where the board has room for four tracks.
- * `narrow` is the operator making the window small — the case in the report,
- * where the board still has room for two cells and must give the listing both of
- * them. `tiny` is smaller than the board's own floor (two cells and the gutter):
- * there the board refuses to shrink and the sheet's scroller takes it sideways,
- * and a rig that never asks for this width cannot tell "the board does not
- * squeeze cards" from "the board never had to".
+ * `wide` is a normal desktop window, where the board has room for a whole line of
+ * cards. `narrow` is the operator making the window small — the case in the first
+ * report, where the board still has room for two minimum cards and must give the
+ * listing what it needs out of them. `tiny` is smaller than the board's own floor
+ * (two minimum cards and the gutter): there the board refuses to shrink and the
+ * sheet's scroller takes it sideways, and a rig that never asks for this width
+ * cannot tell "the board does not squeeze cards" from "the board never had to".
  */
 const WIDTHS = [
   { name: "wide", width: 1280, height: 1100 },
@@ -169,6 +184,54 @@ const SAMPLE = `(() => {
     const mid = (t) => t.at + t.width / 2;
     const control = card.querySelector('[data-testid="pin-span"]');
     const className = typeof card.className === "string" ? card.className : "";
+    /**
+     * What the card's table did with the width it was given.
+     *
+     * A card is a tile, so it is nearly always wider than the table inside it,
+     * and the width has to go somewhere. This is where the operator's "the space
+     * between Category and Amount is too much" is a measurement: the table's own
+     * preferred width (asked of the browser, the same way the card's is), the
+     * width it was stretched to, each column's box, and the slack left over.
+     */
+    const table = card.querySelector(".view-card__table");
+    let tableReport = null;
+    if (table) {
+      // The table's own two answers, asked of the browser: under min-content the
+      // narrowest it can be without its cells overflowing, under max-content the
+      // width where nothing has to wrap. Both are recorded because a table's
+      // intrinsic sizing is not the same question as a box's, and the claim that
+      // follows needs to say which one it means.
+      const previous = table.style.width;
+      table.style.width = "min-content";
+      const min = table.getBoundingClientRect().width;
+      table.style.width = "max-content";
+      const max = table.getBoundingClientRect().width;
+      const maxColumns = [...table.querySelectorAll("thead th")].map((th) => ({
+        header: (th.textContent || "").trim(),
+        width: round(th.getBoundingClientRect().width),
+      }));
+      table.style.width = previous;
+      const columnBoxes = [...table.querySelectorAll("thead th")].map((th) => ({
+        header: (th.textContent || "").trim(),
+        width: round(th.getBoundingClientRect().width),
+      }));
+      const shellStyle = getComputedStyle(shell);
+      const padX =
+        (parseFloat(shellStyle.paddingLeft) || 0) + (parseFloat(shellStyle.paddingRight) || 0);
+      tableReport = {
+        width: round(table.getBoundingClientRect().width),
+        preferred: round(max),
+        min: round(min),
+        content: round(shellBox.width - padX - (parseFloat(shellStyle.borderLeftWidth) || 0) * 2),
+        columns: columnBoxes,
+        maxColumns,
+      };
+    }
+    // What the hook measured this card at: the pin's own min-content width.
+    const widthBefore = card.style.width;
+    card.style.width = "min-content";
+    const need = round(card.getBoundingClientRect().width);
+    card.style.width = widthBefore;
     return {
       id: card.dataset.pinId ?? "(agents)",
       label: (card.querySelector(".view-card__title, .home-card__title")?.textContent ?? "").trim(),
@@ -188,6 +251,8 @@ const SAMPLE = `(() => {
         className.includes("home-pin--span2") ||
         card.querySelector(".home-card--wide, .deadline-banner") !== null,
       widthControl: control ? control.getAttribute("aria-label") : null,
+      need,
+      table: tableReport,
       spills,
     };
   });
@@ -207,7 +272,8 @@ const SAMPLE = `(() => {
     declared: declared || null,
     tracks: tracks.map((t) => round(t.width)),
     gap,
-    cellRem: cs.getPropertyValue("--home-tile-rem").trim(),
+    unitRem: cs.getPropertyValue("--home-tile-unit-rem").trim(),
+    minUnits: cs.getPropertyValue("--home-tile-min-units").trim(),
     inlineMinWidth: grid.style.minWidth || null,
     gridWidth: round(gridBox.width),
     cardCount: cards.length,
@@ -331,40 +397,70 @@ function checkNoSpill(boards) {
 }
 
 /**
- * 2. A card asks for the cells its content needs, and a card that needs one gets
- *    one.
+ * 2. A card is as wide as its table, and the table keeps its own width.
  *
- * Two halves, and both are needed. The listing — four nowrap columns in a pin
- * stored one cell wide — must be MORE than one track, which is the fix; the
- * metric beside it must be exactly one, which is what says the board measured the
- * cards rather than widening everything it could.
+ * This is the operator's second report made into a measurement:
+ *
+ *   "Some tables are still showing lots of empty space — the space between the
+ *    Category and Amount columns is too much."
+ *
+ * Two numbers, and they are the two halves of that sentence. A LISTING must draw
+ * at the width its columns need — `table.width == table.preferred` — because a
+ * table told to fill its card spends the difference between its columns, which is
+ * the hole. And the CARD must be within one layout step of what its table needs,
+ * which is what "lots of empty space" was: 605px of card around a 348px table.
+ *
+ * The metric is the control: a card whose content needs almost nothing must still
+ * come out small, not stretched to match the wide card beside it.
  */
-function checkCardAsksForItsCells(boards) {
+function checkCardFitsItsTable(boards) {
   const problems = [];
   const readings = [];
   for (const { name, board } of boards) {
-    const listing = cardOf(board, LISTING);
+    const step = (Number.parseFloat(board.unitRem) || 0) * 16 + board.gap;
+    const minUnits = Number.parseInt(board.minUnits, 10) || 4;
+    const minCard = minUnits * step - board.gap;
+    for (const id of [LISTING, OPERATOR]) {
+      const card = cardOf(board, id);
+      if (!card) {
+        problems.push(`${name}: no card for ${id}`);
+        continue;
+      }
+      if (!card.table) {
+        problems.push(`${name}: ${id} draws no table to measure`);
+        continue;
+      }
+      const { width, preferred, content } = card.table;
+      readings.push(
+        `${name} ${card.id}: card ${card.width}px, table ${width}px of ${preferred}px needed`,
+      );
+      if (width - preferred > 2) {
+        problems.push(
+          `${name}: ${id}'s table was stretched to ${width}px from the ${preferred}px its columns ` +
+            `need — ${Math.round(width - preferred)}px spread between the columns`,
+        );
+      }
+      if (content - preferred > step) {
+        problems.push(
+          `${name}: ${id} is ${card.width}px around a ${preferred}px table — ` +
+            `${Math.round(content - preferred)}px of leftover, more than one ${Math.round(step)}px step`,
+        );
+      }
+    }
     const metric = cardOf(board, METRIC);
-    if (!listing || !metric) {
-      problems.push(`${name}: the board is missing its listing or its metric card`);
+    if (!metric) {
+      problems.push(`${name}: no card for ${METRIC}`);
       continue;
     }
-    readings.push(
-      `${name}: listing ${listing.covered} track(s) at ${listing.width}px, metric ${metric.covered} at ${metric.width}px`,
-    );
-    if (listing.covered < 2) {
-      problems.push(`${name}: the four-column listing was drawn in ${listing.covered} track`);
-    }
-    if (metric.covered !== 1) {
-      problems.push(`${name}: the one-number metric was drawn in ${metric.covered} tracks`);
-    }
-    if (!(listing.width > metric.width)) {
+    readings.push(`${name} metric: ${metric.width}px against a ${Math.round(minCard)}px minimum card`);
+    if (metric.width > minCard + step) {
       problems.push(
-        `${name}: the listing (${listing.width}px) is not wider than the metric (${metric.width}px)`,
+        `${name}: the one-number metric is ${metric.width}px, wider than the ${Math.round(minCard)}px ` +
+          `minimum card by more than one step`,
       );
     }
   }
-  return check("card-asks-for-its-cells", problems.length === 0, problems.join("; ") || readings.join("; "));
+  return check("card-fits-its-table", problems.length === 0, problems.join("; ") || readings.join("; "));
 }
 
 /**
@@ -386,11 +482,10 @@ function checkOperatorCard(boards) {
       problems.push(`${name}: no card for ${OPERATOR}`);
       continue;
     }
-    readings.push(`${name}: ${card.covered} track(s) at ${card.width}px`);
-    if (card.covered < 2) {
+    readings.push(`${name}: ${card.covered} unit(s) at ${card.width}px`);
+    if (card.covered < 4) {
       problems.push(
-        `${name}: the operator's four-column card was drawn in ${card.covered} track ` +
-          `(${card.width}px) — the reported fault`,
+        `${name}: the operator's card was drawn in ${card.covered} unit(s) (${card.width}px)`,
       );
     }
     if (card.spills.length > 0) {
@@ -439,7 +534,7 @@ function checkRowsMix(boards) {
   return check("rows-mix", problems.length === 0, problems.join("; ") || readings.join("; "));
 }
 
-/** 4. The card the operator stored two cells wide is drawn across the row. */
+/** 4. The card the operator stored across the row is drawn across the row. */
 function checkRowCard(boards) {
   const problems = [];
   const readings = [];
@@ -463,29 +558,33 @@ function checkRowCard(boards) {
 }
 
 /**
- * 5. A window too small for the board's cells gets a board wider than the window.
+ * 5. A window too small for the board's units gets a board wider than the window.
  *
  * Three facts, and each fails on the pre-fix build for its own reason: the board
  * is wider than its scroller (it refused to shrink), the scroller can move
- * sideways (the overflow went to the sheet rather than to a card), and every
- * track is at least the cell floor (nothing was squeezed).
+ * sideways (the overflow went to the sheet rather than to a card), and no track is
+ * below one unit and no card below one minimum card (nothing was squeezed).
  */
 function checkBoardFloors(boards) {
   const tiny = boards.find((entry) => entry.name === "tiny");
   if (!tiny) return check("board-floors", false, "the tiny width was never sampled");
   const { board } = tiny;
-  const cell = (Number.parseFloat(board.cellRem) || 17) * 16;
-  const narrowTracks = board.tracks.filter((width) => width < cell - 1);
+  const unit = (Number.parseFloat(board.unitRem) || 4.25) * 16;
+  const minUnits = Number.parseInt(board.minUnits, 10) || 4;
+  const minCard = minUnits * (unit + board.gap) - board.gap;
+  const narrowTracks = board.tracks.filter((width) => width < unit - 1);
+  const narrowCards = board.cards.filter((card) => card.width < minCard - 1);
   const scrollport = board.scrollport ?? { client: 0, scroll: 0, canScrollSideways: false };
   return check(
     "board-floors",
     board.gridWidth > scrollport.client + 1 &&
       scrollport.canScrollSideways &&
       narrowTracks.length === 0 &&
-      board.tracks.length >= 2,
+      narrowCards.length === 0,
     `at ${tiny.width}px wide: board ${board.gridWidth}px in a ${scrollport.client}px scrollport ` +
-      `(scroll ${scrollport.scroll}, ${scrollport.overflowX}), tracks ${JSON.stringify(board.tracks)} ` +
-      `against a ${cell}px cell, ${narrowTracks.length} below the floor`,
+      `(scroll ${scrollport.scroll}, ${scrollport.overflowX}), tracks ${JSON.stringify(board.tracks.slice(0, 4))}… ` +
+      `against a ${Math.round(unit)}px unit, ${narrowTracks.length} below the unit and ` +
+      `${narrowCards.length} card(s) below the ${Math.round(minCard)}px minimum`,
   );
 }
 
@@ -494,12 +593,12 @@ function checkBoardFloors(boards) {
  *
  * This is the claim that the board cannot oscillate, and it is made only about
  * the cards the board sizes. A card the operator stored across the row covers
- * every track there is — four at 1280px, two at 700px — and that is its width
+ * every track there is — fifteen at 1280px, eight at 700px — and that is its width
  * behaving exactly as asked; it is excluded here and claimed in `row-card`.
  *
  * A span decided from the track width the card happens to have would flip between
- * one cell and two as the window moved, which is why the arithmetic is done
- * against the design's cell instead. The round trip at the end is the other half:
+ * one span and another as the window moved, which is why the arithmetic is done
+ * against the design's unit instead. The round trip at the end is the other half:
  * the first and last samples are the same width, so a board that had drifted
  * would show it.
  */
@@ -650,7 +749,7 @@ async function main() {
   );
   checkRowsMix(boards);
   checkNoSpill(boards);
-  checkCardAsksForItsCells(boards);
+  checkCardFitsItsTable(boards);
   checkOperatorCard(boards);
   checkRowCard(boards);
   checkBoardFloors(boards);
@@ -698,9 +797,11 @@ async function main() {
     pass: errors.length === 0,
     failures: errors,
     what:
-      "a dashboard whose cards are sized by what they hold: a four-column listing gets the cells " +
-      "it needs, a one-number metric keeps one, and a window too small for the board scrolls the " +
-      "sheet sideways instead of squeezing a card until its content spills over the frame",
+      "a dashboard whose cards are sized by what they hold, in layout units a quarter of the cell " +
+      "this board used to be built from: a four-column listing draws at the width its columns need " +
+      "inside a card within one step of that width, a one-number metric stays small, and a window " +
+      "too small for the board scrolls the sheet sideways instead of squeezing a card until its " +
+      "content spills over the frame",
     skin,
     checks: {
       scenarios,
@@ -708,7 +809,8 @@ async function main() {
         name: entry.name,
         width: entry.width,
         tracks: entry.board.tracks,
-        cellRem: entry.board.cellRem,
+        unitRem: entry.board.unitRem,
+        minUnits: entry.board.minUnits,
         gap: entry.board.gap,
         inlineMinWidth: entry.board.inlineMinWidth,
         gridWidth: entry.board.gridWidth,
@@ -724,6 +826,8 @@ async function main() {
           gridColumnEnd: card.gridColumnEnd,
           rowCard: card.rowCard,
           widthControl: card.widthControl,
+          need: card.need,
+          table: card.table,
           spills: card.spills,
         })),
       })),
