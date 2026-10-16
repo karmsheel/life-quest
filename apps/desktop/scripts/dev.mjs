@@ -191,12 +191,20 @@ let lastChange = null;
 let restarting = false;
 let restartQueued = false;
 
-/** A source file we care about, as opposed to an editor's scratch file. */
+/**
+ * A source file we care about, as opposed to an editor's scratch file.
+ *
+ * Editors write beside the real file while you type — `.file.ts.swp`, `.#file`,
+ * `file.ts~` — and a watcher that rebuilt the app for those would relaunch it
+ * mid-sentence, which is worse than not watching at all. `dist` is excluded for
+ * the same reason one level up: it is esbuild's output, not our input.
+ */
 function isMainSource(filename) {
   if (!filename) return true;
   const name = String(filename);
   if (/node_modules|[\\/]dist[\\/]|[\\/]dist$/.test(name)) return false;
-  if (/[\\/]\./.test(name)) return false;
+  if (/(^|[\\/])\./.test(name)) return false;
+  if (/~$/.test(name)) return false;
   return /\.(ts|mts|cts|js|mjs|json)$/.test(name);
 }
 
@@ -293,7 +301,12 @@ function watchMainSources() {
       );
     }
   }
-  console.log(`[dev] watching ${WATCH_DIRS.map((dir) => path.relative(root, dir)).join(" and ")}`);
+  // Named from the repository root, not from `apps/desktop`: `packages` sits two
+  // levels up, and the line an operator reads to decide whether their change is
+  // being watched should say `packages/`, not `..\..\packages`.
+  const repoRoot = path.join(root, "..", "..");
+  const label = (dir) => `${path.relative(repoRoot, dir).split(path.sep).join("/")}/`;
+  console.log(`[dev] watching ${WATCH_DIRS.map(label).join(" and ")}`);
   return watchers;
 }
 
