@@ -84,6 +84,13 @@ function measureFor(
  * Switching a listing to a table therefore drops the column list and takes the
  * grouping AND the measure a table needs, which is exactly what the operator
  * asked for.
+ *
+ * `per` goes the same way as `columns`, and for the same kind of reason. A period
+ * average ("average spend per month") is a metric-only measure and must not group,
+ * so switching such a card to a table cannot keep it: the block keeps the
+ * aggregation it was averaging — its total — and loses the division. That is what
+ * "show me this as a table instead" means, and the alternative is the operator's
+ * own click coming back as a validation error.
  */
 export function retargetBlock(
   block: ViewBlock,
@@ -94,7 +101,14 @@ export function retargetBlock(
   const groupable = (db?.columns ?? []).filter(
     (c) => c.type === "select" || c.type === "relation" || c.type === "text",
   ).map((c) => c.id);
-  const measure = measureFor(block, db);
+  const base: ViewBlock =
+    block.measure === "avg-per" && target !== "metric"
+      ? { ...block, measure: block.measureColumnId ? "sum" : "count", per: null }
+      : block;
+  const measure = measureFor(base, db);
+  /** The period field a metric keeps and no grouped presentation may carry. */
+  const periodField: Pick<ViewBlock, "per"> =
+    target === "metric" && base.measure === "avg-per" ? { per: base.per ?? null } : { per: null };
 
   // Which column this block groups by now, and whether it is a date.
   const current = block.groupBy ?? null;
@@ -114,6 +128,7 @@ export function retargetBlock(
     return {
       ...block,
       ...measure,
+      ...periodField,
       presentation: "metric",
       groupBy: null,
       timeBucket: null,
@@ -131,6 +146,7 @@ export function retargetBlock(
     return {
       ...block,
       ...measure,
+      ...periodField,
       presentation: "line",
       groupBy,
       timeBucket,
@@ -150,6 +166,7 @@ export function retargetBlock(
   return {
     ...block,
     ...measure,
+    ...periodField,
     presentation: target,
     groupBy,
     timeBucket,

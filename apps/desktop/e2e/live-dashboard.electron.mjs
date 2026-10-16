@@ -28,6 +28,15 @@
  *     its date in a filter and does not move at all, exactly as the operator's
  *     stuck card did.
  *
+ *  3b. A PERIOD AVERAGE reads the calendar and not the rows. `Average monthly
+ *     spend` is one metric: measure "avg-per", per "month", over
+ *     `{"kind":"previous-months","months":4}`. It holds still when an expense is
+ *     written, because that expense is in the current month and the window is the
+ *     four whole months before it — and then it MOVES when the last leg turns the
+ *     month over, with nothing written at all. Both halves are asserted: a window
+ *     that leaked this month would move on the write, and a card that was never
+ *     asked again would not move on the turn.
+ *
  *  4. The card is drawn by the app's own ViewCard in the app's own skin: the rig
  *     refuses an unstyled or empty run, so "it updated" cannot mean "it drew an
  *     error message in the right place".
@@ -116,7 +125,7 @@ const SAMPLE = `(() => {
       Array.from(tr.querySelectorAll("td")).map((td) => td.textContent.trim()),
     );
   const cards = {};
-  for (const key of ["card-list", "card-today", "card-frozen"]) {
+  for (const key of ["card-list", "card-today", "card-frozen", "card-average"]) {
     const el = cardOf(key);
     cards[key] = {
       title: text(el, ".view-card__title"),
@@ -284,7 +293,7 @@ async function main() {
     if (doorReady === null) failure(`the MCP door on port ${port} never answered`);
     checks.doorReady = doorReady !== null;
 
-    // ── the three cards, drawn by the real ViewCard over the real bridge ────
+    // ── the four cards, drawn by the real ViewCard over the real bridge ────
     await win.webContents.executeJavaScript(
       `window.liveDashboardRender(${JSON.stringify(
         plan.cards.map((c) => ({
@@ -301,11 +310,11 @@ async function main() {
       "the listing card to draw its rows",
     );
     // The metric cards paint their number when the run answers, so wait for all
-    // three shells to be painted rather than for the first one.
+    // four shells to be painted rather than for the first one.
     await waitFor(
       win,
-      `document.querySelectorAll('[data-testid^="card-"] .view-card').length === 3`,
-      "all three cards to paint",
+      `document.querySelectorAll('[data-testid^="card-"] .view-card').length === 4`,
+      "all four cards to paint",
     );
     await sleep(200);
 
@@ -335,6 +344,17 @@ async function main() {
     const frozenBefore = metricNumbers(before, "card-frozen");
     if (frozenBefore[0] !== plan.expected.frozenBefore) {
       failure(`the frozen card read ${JSON.stringify(frozenBefore)} before the write, expected [${plan.expected.frozenBefore}]`);
+    }
+    // The average card, before anything is written: the previous four whole
+    // months, divided by four. It is the operator's own ask, drawn.
+    const averageBefore = metricNumbers(before, "card-average");
+    checks.averageBefore = averageBefore;
+    if (averageBefore[0] !== plan.expected.averageBefore) {
+      failure(
+        `the average-month card read ${JSON.stringify(averageBefore)} before the write, ` +
+          `expected [${plan.expected.averageBefore}] over ${plan.expected.averageWindows.before.start}` +
+          `..${plan.expected.averageWindows.before.end}`,
+      );
     }
 
     // ── the write: the agent's own door, the agent's own tool ───────────────
@@ -407,6 +427,20 @@ async function main() {
         );
       }
 
+      // The average card held still too, and for a REASON rather than by being
+      // stuck: the expense was written inside the CURRENT month, and this card
+      // averages the four whole months before it. A window that leaked the
+      // current month would have moved here.
+      const averageAfter = metricNumbers(after, "card-average");
+      checks.averageAfter = averageAfter;
+      if (averageAfter[0] !== plan.expected.averageAfter) {
+        failure(
+          `the average-month card read ${JSON.stringify(averageAfter)} after the write, expected ` +
+            `[${plan.expected.averageAfter}]: the previous-months window must not include the ` +
+            `month the expense was written in`,
+        );
+      }
+
       if (after.loads !== 1) {
         failure(`the harness page was loaded ${after.loads} times: the cards were not live, the page was replaced`);
       }
@@ -426,7 +460,7 @@ async function main() {
 
     // ── the drawing itself is the app's own ────────────────────────────────
     const painted = after ?? before;
-    for (const key of ["card-list", "card-today", "card-frozen"]) {
+    for (const key of ["card-list", "card-today", "card-frozen", "card-average"]) {
       const card = painted.cards[key];
       if (!card || card.painted !== 1) failure(`${key} did not draw exactly one view card`);
       if (card.errors.length > 0) failure(`${key} drew an error: ${card.errors.join(" | ")}`);
@@ -492,6 +526,17 @@ async function main() {
             `expected [${plan.expected.todayEdited}]: an IPC write did not reach the card`,
         );
       }
+      // The operator's own write is in this month too, so the average of the
+      // months before it is still the number it was — the same rule, reached
+      // through the app's other write door.
+      const averageAfterEdit = metricNumbers(editedSample, "card-average");
+      checks.averageAfterEdit = averageAfterEdit;
+      if (averageAfterEdit[0] !== plan.expected.averageAfterEdit) {
+        failure(
+          `the average-month card read ${JSON.stringify(averageAfterEdit)} after the operator's own edit, ` +
+            `expected [${plan.expected.averageAfterEdit}]`,
+        );
+      }
       if (editedSample.cards["card-list"].rows.length !== plan.expected.listRowsEdited) {
         failure(
           `the listing drew ${editedSample.cards["card-list"].rows.length} rows after the operator's edit, ` +
@@ -505,13 +550,23 @@ async function main() {
     // A board left open overnight is the other half of "it's stuck on a particular
     // day": a `today` window is computed from the calendar, so at 00:01 the card
     // is showing yesterday's answer and nothing on disk has changed to say so.
-    // The clock is moved a day on BOTH sides, because both of them read it: the
+    // The clock is moved on BOTH sides, because both of them read it: the
     // renderer's day check decides when to re-run, and the engine's `today`
     // decides what the re-run means. A vault whose only row for the new day is
     // none at all makes the answer unambiguous: a live `today` metric falls to 0.
+    //
+    // It is moved to the FIRST OF NEXT MONTH rather than merely to tomorrow,
+    // which makes this one leg carry two claims at once. The `today` window
+    // follows the day as it always did, and the average card's
+    // `previous-months` window — the four whole months before whatever month it
+    // is — steps forward by a month. October's spending drops out of the average
+    // and November becomes the month that just ended, with no write anywhere.
+    // That is the operator's "Every month it gets recalculated", observed in the
+    // real app rather than argued.
     const moved = await win.webContents.executeJavaScript(`(() => {
       const Real = Date;
-      const ahead = new Real(Real.now() + 24 * 60 * 60 * 1000);
+      const [y, m, d] = ${JSON.stringify(plan.nextMonthStart)}.split('-').map(Number);
+      const ahead = new Real(y, m - 1, d, 12, 0, 0, 0);
       const Fake = class extends Real {
         constructor(...args) { if (args.length === 0) super(ahead.getTime()); else super(...args); }
         static now() { return ahead.getTime(); }
@@ -522,7 +577,8 @@ async function main() {
     checks.clockMovedInRenderer = moved;
     // The same shift in the main process, where the engine computes the window.
     const RealDate = Date;
-    const aheadMs = RealDate.now() + 24 * 60 * 60 * 1000;
+    const [nextY, nextM, nextD] = String(plan.nextMonthStart).split("-").map(Number);
+    const aheadMs = new RealDate(nextY, nextM - 1, nextD, 12, 0, 0, 0).getTime();
     // eslint-disable-next-line no-global-assign
     globalThis.Date = class extends RealDate {
       constructor(...args) {
@@ -536,10 +592,12 @@ async function main() {
     checks.clockMovedInMain = new RealDate(aheadMs).toISOString();
 
     const todayBeforeRollover = metricNumbers(checks.afterEdit ?? after ?? before, "card-today");
-    // The metric's own number, parsed out of its text, so "0" cannot be matched
-    // by a "-320" or by the word "No rows".
-    const metricIs = (value) => `(() => {
-      const el = document.querySelector('[data-testid="card-today"] .view-card__metric');
+    const averageBeforeRollover = metricNumbers(checks.afterEdit ?? after ?? before, "card-average");
+    checks.averageBeforeMonthTurn = averageBeforeRollover;
+    // A metric's own number, parsed out of its text, so "0" cannot be matched by
+    // a "-320" or by the word "No rows".
+    const metricIs = (key, value) => `(() => {
+      const el = document.querySelector('[data-testid="${key}"] .view-card__metric');
       if (!el) return false;
       const match = /-?[\\d\\s.,]+/.exec((el.textContent || '').replace(/\\u00a0/g, ' '));
       if (!match) return false;
@@ -548,25 +606,46 @@ async function main() {
     try {
       await waitFor(
         win,
-        metricIs(plan.expected.todayNextDay),
-        "the card to roll over to the new day",
+        // The average card is the discriminating one: a card that was never
+        // asked again would still read the old month's number, while `today`
+        // reads 0 on any day with no rows.
+        `(${metricIs("card-today", plan.expected.todayNextDay)}) && ` +
+          `(${metricIs("card-average", plan.expected.averageAfterMonthTurn)})`,
+        "the cards to follow the calendar into the new month",
         // The day check runs on a 30-second clock, so this leg is bounded by that
         // rather than by the write path. It is the one wait in this rig that is
         // not driven by an event, because the thing being tested is a timer.
         40_000,
       );
-      checks.todayAfterRollover = metricNumbers(await win.webContents.executeJavaScript(SAMPLE), "card-today");
+      const rolled = await win.webContents.executeJavaScript(SAMPLE);
+      checks.todayAfterRollover = metricNumbers(rolled, "card-today");
+      checks.averageAfterMonthTurn = metricNumbers(rolled, "card-average");
     } catch (error) {
-      checks.todayAfterRollover = metricNumbers(await win.webContents.executeJavaScript(SAMPLE), "card-today");
+      const rolled = await win.webContents.executeJavaScript(SAMPLE);
+      checks.todayAfterRollover = metricNumbers(rolled, "card-today");
+      checks.averageAfterMonthTurn = metricNumbers(rolled, "card-average");
       failure(
         `${error instanceof Error ? error.message : String(error)}: ` +
-          `Today's expenses read ${JSON.stringify(checks.todayAfterRollover)} (${JSON.stringify(todayBeforeRollover)} before the clock moved)`,
+          `Today's expenses read ${JSON.stringify(checks.todayAfterRollover)} ` +
+          `(${JSON.stringify(todayBeforeRollover)} before the clock moved) and the average read ` +
+          `${JSON.stringify(checks.averageAfterMonthTurn)} ` +
+          `(${JSON.stringify(averageBeforeRollover)} before, expected ` +
+          `${JSON.stringify([plan.expected.averageAfterMonthTurn])} over ` +
+          `${plan.expected.averageWindows.afterMonthTurn.start}..${plan.expected.averageWindows.afterMonthTurn.end})`,
       );
     }
     if (checks.todayAfterRollover?.[0] !== plan.expected.todayNextDay) {
       failure(
         `After the day changed, Today's expenses read ${JSON.stringify(checks.todayAfterRollover)}, ` +
           `expected [${plan.expected.todayNextDay}] — a live window did not follow the calendar`,
+      );
+    }
+    if (checks.averageAfterMonthTurn?.[0] !== plan.expected.averageAfterMonthTurn) {
+      failure(
+        `After the month turned, the average read ${JSON.stringify(checks.averageAfterMonthTurn)}, ` +
+          `expected [${plan.expected.averageAfterMonthTurn}] over ` +
+          `${plan.expected.averageWindows.afterMonthTurn.start}..${plan.expected.averageWindows.afterMonthTurn.end} ` +
+          `— the previous-months window did not step forward on its own, with no write anywhere`,
       );
     }
     const nextDayImage = await shot(win);
@@ -580,7 +659,9 @@ async function main() {
   const report = {
     pass: errors.length === 0,
     failures: errors,
-    what: "a pinned dashboard card repaints itself when the agent posts a row through the app's own MCP door",
+    what:
+      "a pinned dashboard card repaints itself when the agent posts a row through the app's own MCP " +
+      "door, and a period average over the previous months follows the calendar with no write",
     command: "node e2e/live-dashboard.mjs  (also reached by npm test via tests/live-dashboard-ui-e2e.test.ts)",
     vault: plan.vault,
     captureText: plan.captureText,
@@ -596,8 +677,9 @@ async function main() {
   fs.writeFileSync(REPORT, `${JSON.stringify(report, null, 2)}\n`);
 
   console.log(`[live-dashboard] listing rows: ${checks.before?.cards["card-list"].rows.length} → ${checks.after?.cards["card-list"].rows.length} (agent) → ${checks.afterEdit?.cards["card-list"].rows.length} (operator)`);
-  console.log(`[live-dashboard] today: ${JSON.stringify(metricNumbers(checks.before ?? { cards: {} }, "card-today"))} → ${JSON.stringify(checks.todayAfter ?? [])} (agent) → ${JSON.stringify(metricNumbers(checks.afterEdit ?? { cards: {} }, "card-today"))} (operator) → ${JSON.stringify(checks.todayAfterRollover ?? [])} (next day)`);
+  console.log(`[live-dashboard] today: ${JSON.stringify(metricNumbers(checks.before ?? { cards: {} }, "card-today"))} → ${JSON.stringify(checks.todayAfter ?? [])} (agent) → ${JSON.stringify(metricNumbers(checks.afterEdit ?? { cards: {} }, "card-today"))} (operator) → ${JSON.stringify(checks.todayAfterRollover ?? [])} (next month)`);
   console.log(`[live-dashboard] frozen: ${JSON.stringify(metricNumbers(checks.before ?? { cards: {} }, "card-frozen"))} → ${JSON.stringify(checks.frozenAfter ?? [])}`);
+  console.log(`[live-dashboard] average: ${JSON.stringify(metricNumbers(checks.before ?? { cards: {} }, "card-average"))} → ${JSON.stringify(checks.averageAfter ?? [])} (agent) → ${JSON.stringify(metricNumbers(checks.afterEdit ?? { cards: {} }, "card-average"))} (operator) → ${JSON.stringify(checks.averageAfterMonthTurn ?? [])} (next month) over ${plan.expected.averageWindows.before.start}..${plan.expected.averageWindows.afterMonthTurn.end}`);
   console.log(`[live-dashboard] repaints: idle ${checks.mutationsWhileIdle ?? "?"} mutation(s), after the write ${checks.mutationsBefore ?? "?"} → ${checks.mutationsAfter ?? "?"}`);
   console.log(`[live-dashboard] failures: ${errors.length === 0 ? "none" : errors.join("; ")}`);
 

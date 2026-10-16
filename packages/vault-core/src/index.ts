@@ -249,6 +249,8 @@ export {
   TIME_BUCKETS,
   FILTER_OPS,
   MEASURES,
+  PERIODS,
+  periodsInWindow,
   MAX_VIEW_BLOCKS,
   VIEW_ID_PATTERN,
   type SavedView,

@@ -6,10 +6,12 @@
  * talk to. This script builds that world and then spawns Electron once:
  *
  *  - a throwaway VAULT (`createVault` + the finance kit), seeded with two
- *    expenses dated yesterday and three saved cards: the operator's own
- *    "Recent transactions" listing, the repaired "Today's expenses" (a live
- *    `today` window), and a deliberately FROZEN card whose date is written into
- *    a filter — the shape the operator's stuck card had;
+ *    expenses dated yesterday, one expense in each of the four whole months
+ *    before this one, and four saved cards: the operator's own "Recent
+ *    transactions" listing, the repaired "Today's expenses" (a live `today`
+ *    window), a deliberately FROZEN card whose date is written into a filter —
+ *    the shape the operator's stuck card had — and "Average monthly spend", a
+ *    period average over the previous four whole months;
  *  - a throwaway `userData` (`LIFEQUEST_E2E`), so the operator's own profile,
  *    recent list, and pairing secrets are never read or written. No `recent.json`
  *    is seeded: the rig opens the vault explicitly, which is deterministic rather
@@ -56,6 +58,20 @@ function localIso(date) {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+/**
+ * The whole calendar months BEFORE the month `fromIso` is in — the window
+ * `{"kind":"previous-months","months":n}` names, computed here in plain month
+ * arithmetic so the numbers this rig asserts are the fixture's own and not the
+ * engine's answer read back to it.
+ */
+function previousMonthsWindow(months, fromIso) {
+  const [y, m] = fromIso.split("-").map(Number);
+  const first = new Date(y, m - 1 - months, 1);
+  // Day 0 of this month is the last day of the month before it.
+  const last = new Date(y, m - 1, 0);
+  return { start: localIso(first), end: localIso(last) };
 }
 
 /** A port nothing is listening on, asked by binding it rather than guessing. */
@@ -159,13 +175,28 @@ async function main() {
 
   const today = localIso(new Date());
   const yesterday = localIso(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  // The first of NEXT month, as a local day: the instant the month turns, which
+  // is the only moment a `previous-months` window changes. The rig moves the
+  // clock here for its last leg, so "every month it gets recalculated" is a
+  // claim about the calendar and not about a write.
+  const [thisYear, thisMonth] = today.split("-").map(Number);
+  const nextMonthStart = localIso(new Date(thisYear, thisMonth, 1));
+
+  /**
+   * Every row this run writes into the ledger, so the expected averages below
+   * are computed from the fixture's own dates and amounts rather than from the
+   * engine under test.
+   */
+  const ledger = [];
 
   // Two expenses dated YESTERDAY, so a card anchored on today starts empty and a
-  // card frozen on yesterday has something to hold still. Distinct amounts keep
-  // the two apart: 11 + 12 = 23, and the capture this run makes is 25.
+  // card frozen on yesterday has something to hold still. Both are -12 so that
+  // they divide cleanly by four when they land inside a four-month window (a
+  // month-boundary run puts yesterday in the month before today's, which is
+  // inside the window the average card reads).
   const seeded = [];
   for (const [amount, payee] of [
-    [11, "Coffee"],
+    [12, "Coffee"],
     [12, "Bus fare"],
   ]) {
     const row = await upsertRow(vaultDir, "financial", ids.transactions, {
@@ -179,6 +210,31 @@ async function main() {
     });
     if (!row.ok) throw new Error(`seed row failed: ${row.error}`);
     seeded.push({ amount: -amount, payee, date: yesterday });
+    ledger.push({ date: yesterday, amount: -amount });
+  }
+
+  // And one expense in each of the four whole months before this one, dated the
+  // 10th: the previous-months window is always June..September on a day in
+  // October, so these four rows are always inside it and this month's rows are
+  // always outside it.
+  for (const [monthsBack, amount] of [
+    [4, -400],
+    [3, -300],
+    [2, -200],
+    [1, -100],
+  ]) {
+    const date = localIso(new Date(thisYear, thisMonth - 1 - monthsBack, 10));
+    const row = await upsertRow(vaultDir, "financial", ids.transactions, {
+      cells: {
+        [ids.txnDate]: date,
+        [ids.txnAmount]: amount,
+        [ids.txnAccount]: accountId,
+        [ids.txnCategory]: category.value.id,
+        [ids.txnPayee]: `${monthsBack} months back`,
+      },
+    });
+    if (!row.ok) throw new Error(`month seed row failed: ${row.error}`);
+    ledger.push({ date, amount });
   }
 
   const sumAmount = { measure: "sum", measureColumnId: ids.txnAmount };
@@ -239,6 +295,60 @@ async function main() {
   });
   if (!frozenView.ok) throw new Error(`frozen view failed: ${frozenView.error}`);
 
+  // D. The average the operator asked for: "the average spend per month, based
+  //    on the previous 4 months (not including current one)". One metric, one
+  //    period, one live window — the whole spec is the query, and the card
+  //    recalculates when the month turns with nothing written.
+  const averageView = await saveView(vaultDir, "financial", {
+    databaseId: ids.transactions,
+    title: "Average monthly spend",
+    presentation: "metric",
+    measure: "avg-per",
+    per: "month",
+    measureColumnId: ids.txnAmount,
+    groupBy: null,
+    timeBucket: null,
+    timeColumnId: ids.txnDate,
+    timeWindow: { kind: "previous-months", months: 4 },
+    filters: [],
+    limit: 12,
+  });
+  if (!averageView.ok) throw new Error(`average view failed: ${averageView.error}`);
+
+  /**
+   * What the average card must read, from the fixture's own rows and month
+   * boundaries. The divisor is the WINDOW's months — four, whether or not a
+   * month holds rows — which is what makes a quiet month a month of R0.
+   */
+  const averageIn = (window, extra = []) => {
+    const inside = [...ledger, ...extra].filter(
+      (row) => row.date >= window.start && row.date <= window.end,
+    );
+    return inside.reduce((total, row) => total + row.amount, 0) / 4;
+  };
+  const beforeWindow = previousMonthsWindow(4, today);
+  const afterWindow = previousMonthsWindow(4, nextMonthStart);
+  // The two writes the rig itself makes, both dated today: the agent's captured
+  // expense and the operator's typed one.
+  const captured = { date: today, amount: -25 };
+  const typed = { date: today, amount: -7 };
+  const averages = {
+    before: averageIn(beforeWindow),
+    afterCapture: averageIn(beforeWindow, [captured]),
+    afterEdit: averageIn(beforeWindow, [captured, typed]),
+    afterMonthTurn: averageIn(afterWindow, [captured, typed]),
+  };
+  for (const [name, value] of Object.entries(averages)) {
+    if (!Number.isInteger(value)) {
+      throw new Error(`the fixture's ${name} average is ${value}, not a whole number to assert`);
+    }
+  }
+  // The whole claim of the window is that this month's spending is not in it, so
+  // a fixture where the month turn changed nothing would prove nothing.
+  if (averages.afterEdit === averages.afterMonthTurn) {
+    throw new Error("the fixture cannot tell the previous-months window from the next one");
+  }
+
   const plan = {
     vault: vaultDir,
     profile: profileDir,
@@ -246,6 +356,12 @@ async function main() {
     today,
     yesterday,
     captureText: "Bought lunch for R25 today",
+    /**
+     * The instant the month turns, in the local day the app's windows use. The
+     * rig's last leg moves both clocks here: the renderer's day check and the
+     * engine's window, so the average card recalculates with no write at all.
+     */
+    nextMonthStart,
     /** What a second, renderer-side write needs: the ids the row is built from. */
     ids: {
       transactions: ids.transactions,
@@ -261,20 +377,36 @@ async function main() {
       { key: "card-list", title: "Recent transactions", viewId: listView.value.id },
       { key: "card-today", title: "Today's expenses", viewId: todayView.value.id },
       { key: "card-frozen", title: "Yesterday (frozen date)", viewId: frozenView.value.id },
+      { key: "card-average", title: "Average monthly spend", viewId: averageView.value.id },
     ],
     expected: {
-      listRowsBefore: 2,
-      listRowsAfter: 3,
+      /**
+       * The listing draws every row of the ledger, and the fixture now holds six
+       * before the run writes anything: two dated yesterday and one in each of
+       * the four whole months before this one.
+       */
+      listRowsBefore: 6,
+      listRowsAfter: 7,
       todayBefore: 0,
       todayAfter: -25,
-      frozenBefore: -23,
-      frozenAfter: -23,
+      frozenBefore: -24,
+      frozenAfter: -24,
       /** The operator's own edit, written from the renderer over the IPC bridge. */
       editedAmount: -7,
-      listRowsEdited: 4,
+      listRowsEdited: 8,
       todayEdited: -32,
-      /** And the number the day itself moves the card to, with no write at all. */
+      /**
+       * And the number the day itself moves the card to, with no write at all.
+       * The month turn is a day turn too, so a `today` window falls to 0 on the
+       * first of next month exactly as it would tomorrow morning.
+       */
       todayNextDay: 0,
+      /** The period average, and the one thing a write inside this month cannot move. */
+      averageBefore: averages.before,
+      averageAfter: averages.afterCapture,
+      averageAfterEdit: averages.afterEdit,
+      averageAfterMonthTurn: averages.afterMonthTurn,
+      averageWindows: { before: beforeWindow, afterMonthTurn: afterWindow },
     },
   };
   const planPath = path.join(workDir, "plan.json");

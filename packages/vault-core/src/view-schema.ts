@@ -28,7 +28,8 @@ import type { DatabaseMeta } from "./types.ts";
 
 const BUCKETS = ["day", "week", "month"];
 const PRESENTATIONS = ["table", "bar", "line", "metric", "list"];
-const MEASURES = ["sum", "count", "last", "avg"];
+const MEASURES = ["sum", "count", "last", "avg", "avg-per"];
+const PERIODS = ["day", "week", "month"];
 const WINDOWS = ["all", "today", "this-week", "this-month", "last-30-days", "this-year"];
 
 /**
@@ -40,16 +41,39 @@ const WINDOWS = ["all", "today", "this-week", "this-month", "last-30-days", "thi
  * card recomputes correctly forever and never changes, which is how the operator
  * came to report "the Today's Expense value hasn't changed in days". The rule
  * against freezing a date is stated here, where the model reads the field.
+ *
+ * The two month objects are here for the same kind of reason. "The average spend
+ * per month over the PREVIOUS 4 months" has no week count that says it honestly
+ * — 16 weeks is not 4 months — and a `custom` window would freeze the card on
+ * four literal months. A model with no word for "the previous 4 months" answers
+ * with the closest thing it has, which is the wrong number said confidently.
  */
 const TIME_WINDOW_DESCRIPTION =
   "The window the rows are read from: 'all' (default), 'today', 'this-week' (Monday " +
   "through today), 'this-month', 'last-30-days', 'this-year'. For a trailing week count pass an " +
   'object instead: {"kind":"last-weeks","weeks":8} — 8 Monday-start weeks ending with today\'s. ' +
+  'For trailing CALENDAR months, the current one included, pass {"kind":"last-months","months":6}. ' +
+  'For the whole months BEFORE the current one — "the previous 4 months, not including this one" ' +
+  '— pass {"kind":"previous-months","months":4}; that is the window a monthly average wants, and ' +
+  'it moves to the next four months on its own when the month turns. ' +
   'For explicit dates pass {"kind":"custom","start":"2026-01-01","end":"2026-03-31"}. ' +
   "The named windows are LIVE: they are recomputed from the current date every time the card is " +
   "drawn, so 'today' means today and tomorrow it means tomorrow. NEVER write a date into a " +
   "`filters` entry to mean 'today', 'yesterday', or 'this week' — that freezes the card on one " +
   "day forever. Use a filter with a literal date only when the operator names that specific date.";
+
+/**
+ * What every `measure` description says, in one place: the distinction between
+ * the average ROW and the average PERIOD is the whole reason `avg-per` exists,
+ * and it is the one a model conflates.
+ */
+const MEASURE_DESCRIPTION =
+  "'sum' (default), 'count', 'avg' (the average ROW — total divided by how many rows), 'last' " +
+  "(the newest row's value), or 'avg-per' (the average PERIOD — the window's total divided by " +
+  "the days, weeks or months that window spans). Use 'avg-per' for \"the average spend per " +
+  "week/month\": it takes `per` ('day' | 'week' | 'month'), needs a bounded timeWindow, and is a " +
+  "metric (presentation 'metric', no groupBy). 'avg' is NOT that — it divides by the number of " +
+  "transactions.";
 
 /**
  * The columns a listing prints. Only a `list` uses this: an aggregate's two
@@ -99,11 +123,22 @@ const VIEW_BLOCK_SCHEMA = {
     measure: {
       type: "string",
       enum: MEASURES,
-      description: "'sum' (default), 'count', 'avg', or 'last' (the newest row's value).",
+      description: MEASURE_DESCRIPTION,
     },
     measureColumnId: {
       type: "string",
-      description: "The number column to measure, e.g. 'amount'. Omit only for a count measure.",
+      description:
+        "The number column to measure, e.g. 'amount'. Omit for a count measure, or for an " +
+        "'avg-per' that averages the NUMBER OF ROWS per period rather than an amount.",
+    },
+    per: {
+      type: "string",
+      enum: PERIODS,
+      description:
+        "The period an 'avg-per' measure divides the window's total by: 'day', 'week' or " +
+        "'month'. Required by 'avg-per' (e.g. per 'month' with timeWindow " +
+        '{"kind":"previous-months","months":4} gives the average spend per month over the ' +
+        "previous 4 months) and refused on every other measure.",
     },
     groupBy: {
       type: "string",
@@ -211,11 +246,22 @@ export const VIEW_SPEC_SCHEMA = {
     measure: {
       type: "string",
       enum: MEASURES,
-      description: "'sum' (default), 'count', 'avg', or 'last' (the newest row's value).",
+      description: MEASURE_DESCRIPTION,
     },
     measureColumnId: {
       type: "string",
-      description: "The number column to measure, e.g. 'amount'. Omit only for a count measure.",
+      description:
+        "The number column to measure, e.g. 'amount'. Omit for a count measure, or for an " +
+        "'avg-per' that averages the NUMBER OF ROWS per period rather than an amount.",
+    },
+    per: {
+      type: "string",
+      enum: PERIODS,
+      description:
+        "The period an 'avg-per' measure divides the window's total by: 'day', 'week' or " +
+        "'month'. Required by 'avg-per' (e.g. per 'month' with timeWindow " +
+        '{"kind":"previous-months","months":4} gives the average spend per month over the ' +
+        "previous 4 months) and refused on every other measure.",
     },
     groupBy: {
       type: "string",
@@ -265,8 +311,16 @@ export const VIEW_SPEC_SCHEMA = {
 export const VIEW_VOCABULARY = {
   presentation: PRESENTATIONS,
   measure: MEASURES,
+  /** The `per` of an `avg-per` measure: how long the period being averaged is. */
+  per: PERIODS,
   timeBucket: BUCKETS,
-  timeWindow: [...WINDOWS, { kind: "last-weeks", weeks: 8 }, { kind: "custom", start: "YYYY-MM-DD", end: "YYYY-MM-DD" }],
+  timeWindow: [
+    ...WINDOWS,
+    { kind: "last-weeks", weeks: 8 },
+    { kind: "last-months", months: 6 },
+    { kind: "previous-months", months: 4 },
+    { kind: "custom", start: "YYYY-MM-DD", end: "YYYY-MM-DD" },
+  ],
 } as const;
 
 /**
@@ -283,6 +337,8 @@ export function viewSpecTemplate(db: DatabaseMeta): {
   table: Record<string, unknown>;
   list: Record<string, unknown>;
   today: Record<string, unknown> | null;
+  averagePerWeek: Record<string, unknown> | null;
+  averagePerMonth: Record<string, unknown> | null;
   dateColumnId: string | null;
   numberColumnId: string | null;
 } {
@@ -355,11 +411,40 @@ export function viewSpecTemplate(db: DatabaseMeta): {
       }
     : null;
 
+  // The two shapes the reported limitations needed, and the reason they are shown
+  // beside the others: a model that has never seen "avg-per" or
+  // "previous-months" in this vocabulary cannot build the card the operator
+  // asked for, and will answer with the nearest thing it has — `avg` (the average
+  // transaction) over `this-year`, which is a different number said confidently.
+  //
+  // The week example takes an explicit `last-weeks` window rather than a month,
+  // and the month example takes `previous-months` so the current, partial month
+  // is not averaged in. Both are needed: a per-period average is only as honest
+  // as the window it divides by.
+  const periodAverage = (per: "week" | "month"): Record<string, unknown> | null =>
+    date
+      ? {
+          databaseId: db.id,
+          title: per === "week" ? "Average per week" : "Average per month",
+          presentation: "metric",
+          measure: "avg-per",
+          per,
+          ...(number ? { measureColumnId: number.id } : {}),
+          timeColumnId: date.id,
+          timeWindow:
+            per === "week"
+              ? { kind: "last-weeks", weeks: 4 }
+              : { kind: "previous-months", months: 4 },
+        }
+      : null;
+
   return {
     metric,
     table,
     list,
     today,
+    averagePerWeek: periodAverage("week"),
+    averagePerMonth: periodAverage("month"),
     dateColumnId: date?.id ?? null,
     numberColumnId: number?.id ?? null,
   };

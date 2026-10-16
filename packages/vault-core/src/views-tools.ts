@@ -122,7 +122,13 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
       "column it grouped by, and a `list` names its own `columns` — and a number's format follows " +
       "the theme. Keep a table under about 12 rows and a chart under about 20 points, which is all " +
       "a card has room for; a `list` shows up to 50 rows of the database as they stand, newest " +
-      "first, which is what \"the recent transactions\" means.",
+      "first, which is what \"the recent transactions\" means.\n\n" +
+      "AN AVERAGE HAS TWO MEANINGS and the spec says which. measure 'avg' is the average ROW — a " +
+      "total divided by how many rows there were. \"The average spend per week\" or \"per month\" is " +
+      "the average PERIOD: measure 'avg-per' with `per` ('day' | 'week' | 'month') and a bounded " +
+      'window — per "month" over {"kind":"previous-months","months":4} for the previous four whole ' +
+      'months excluding the current one, or per "week" over {"kind":"last-weeks","weeks":4}. It is ' +
+      'a metric: no groupBy, and never timeWindow "all".',
     parameters: {
       type: "object",
       properties: {
@@ -626,6 +632,8 @@ function specFix(db: DatabaseMeta, domainSlug: string): Record<string, unknown> 
       table: template.table,
       list: template.list,
       ...(template.today ? { today: template.today } : {}),
+      ...(template.averagePerWeek ? { averagePerWeek: template.averagePerWeek } : {}),
+      ...(template.averagePerMonth ? { averagePerMonth: template.averagePerMonth } : {}),
     },
     rules: [
       "presentation 'metric' takes no groupBy; 'table' and 'bar' require one.",
@@ -636,10 +644,20 @@ function specFix(db: DatabaseMeta, domainSlug: string): Record<string, unknown> 
       "timeBucket only applies to a date groupBy. 'week' labels rows like 2026-W41, 'month' like 2026-10.",
       "A timeWindow needs timeColumnId on the same block, or it is refused rather than ignored.",
       "A named timeWindow is LIVE and recomputed from the current date on every draw: \"today\", " +
-        "\"this-week\", \"this-month\", \"this-year\", \"last-30-days\". NEVER put a date in `filters` " +
-        "to mean today or this week — that freezes the card on one day forever, which is what " +
-        "workingSpecs.today exists to replace.",
-      "measureColumnId must name a number column of this database; a 'count' measure takes none.",
+        "\"this-week\", \"this-month\", \"this-year\", \"last-30-days\", {\"kind\":\"last-weeks\",\"weeks\":4}, " +
+        "{\"kind\":\"last-months\",\"months\":6} (trailing months, this one included), and " +
+        "{\"kind\":\"previous-months\",\"months\":4} (the whole months BEFORE this one). NEVER put a date " +
+        "in `filters` to mean today or this week — that freezes the card on one day forever, which is " +
+        "what workingSpecs.today exists to replace.",
+      "measure 'avg' is the average ROW (total divided by how many rows); it is NOT an average per " +
+        "week or per month. For \"the average spend per month over the previous 4 months\" use " +
+        "measure 'avg-per' with per 'month' and timeWindow {\"kind\":\"previous-months\",\"months\":4} " +
+        "(see workingSpecs.averagePerMonth), and for a per-week average per 'week' with " +
+        "{\"kind\":\"last-weeks\",\"weeks\":4} (workingSpecs.averagePerWeek). An 'avg-per' measure is a " +
+        "metric: no groupBy, and a bounded window — never \"all\".",
+      "`per` is required by 'avg-per' and refused on every other measure.",
+      "measureColumnId must name a number column of this database; a 'count' measure takes none, and " +
+        "an 'avg-per' may omit it to average the NUMBER OF ROWS per period instead of an amount.",
       "Pass `spec` as a JSON object, not as a string.",
     ],
   };

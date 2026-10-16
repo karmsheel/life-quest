@@ -18,6 +18,7 @@ import {
   type ViewBlockSpec,
   type ViewListCell,
   type ViewMeasure,
+  type ViewPeriod,
   type ViewPresentation,
   type ViewQuerySpec,
   type ViewSpec,
@@ -62,10 +63,17 @@ export const TIME_WINDOWS = [
 ] as const;
 export const TIME_BUCKETS = ["day", "week", "month"] as const;
 export const FILTER_OPS = ["eq", "neq", "gt", "gte", "lt", "lte", "in"] as const;
-export const MEASURES: readonly ViewMeasure[] = ["sum", "count", "last", "avg"];
+export const MEASURES: readonly ViewMeasure[] = ["sum", "count", "last", "avg", "avg-per"];
+/**
+ * The periods an `avg-per` measure can divide a window by. One vocabulary with
+ * `timeBucket` on purpose: "per week" and a week bucket mean the same week.
+ */
+export const PERIODS: readonly ViewPeriod[] = ["day", "week", "month"];
 
 const DEFAULT_VIEW_LIMIT = 12;
 const MAX_VIEW_LIMIT = 50;
+/** Ten years of months is already more history than a vault holds. */
+const MAX_WINDOW_MONTHS = 120;
 /** A composed view is a card, not a report: eight panels is already a lot. */
 export const MAX_VIEW_BLOCKS = 8;
 /**
@@ -79,6 +87,7 @@ type RawSpec = {
   presentation?: unknown;
   measure?: unknown;
   measureColumnId?: unknown;
+  per?: unknown;
   groupBy?: unknown;
   timeBucket?: unknown;
   timeColumnId?: unknown;
@@ -98,9 +107,17 @@ function validWindow(w: unknown): boolean {
   if (w == null) return true;
   if (typeof w === "string") return (TIME_WINDOWS as readonly string[]).includes(w);
   if (typeof w !== "object") return false;
-  const o = w as { kind?: unknown; start?: unknown; end?: unknown; weeks?: unknown };
+  const o = w as { kind?: unknown; start?: unknown; end?: unknown; weeks?: unknown; months?: unknown };
   if (o.kind === "last-weeks") {
     return typeof o.weeks === "number" && Number.isFinite(o.weeks) && o.weeks >= 1 && o.weeks <= 260;
+  }
+  if (o.kind === "last-months" || o.kind === "previous-months") {
+    return (
+      typeof o.months === "number" &&
+      Number.isFinite(o.months) &&
+      o.months >= 1 &&
+      o.months <= MAX_WINDOW_MONTHS
+    );
   }
   return o.kind === "custom" && isDateString(o.start) && isDateString(o.end);
 }
@@ -207,6 +224,51 @@ function validateBlock(block: ViewBlockSpec & { databaseId: string }, db: Databa
   // has no grouping to make, no measure to take, and no period to collapse time
   // into — and what it does need is the columns it prints, named in order.
   const isList = presentation === "list";
+
+  // The period average, and the three things it has to be told. Each refusal
+  // names the shape that would pass rather than the rule alone, because this is
+  // the measure an agent reaches for when an operator asks for "the average
+  // spend per month" and the one it will otherwise get wrong by writing `avg`.
+  if (!isList && measure === "avg-per") {
+    if (presentation !== "metric") {
+      return {
+        ok: false,
+        error:
+          `${at}An 'avg-per' measure is a metric: one number for the whole window, the total ` +
+          'divided by the periods that window spans. Set presentation: "metric". For a table ' +
+          "OF periods use measure 'sum' with a date groupBy and a timeBucket.",
+      };
+    }
+    if (!(PERIODS as readonly string[]).includes(String(v.per))) {
+      return {
+        ok: false,
+        error:
+          `${at}An 'avg-per' measure needs per: 'day', 'week' or 'month' — the period the ` +
+          'window\'s total is divided by. E.g. {"presentation":"metric","measure":"avg-per",' +
+          '"per":"month","measureColumnId":"<amount>","timeColumnId":"<date>",' +
+          '"timeWindow":{"kind":"previous-months","months":4}}.',
+      };
+    }
+    if (v.timeWindow == null || v.timeWindow === "all") {
+      return {
+        ok: false,
+        error:
+          `${at}An 'avg-per' measure divides by the periods the window spans, so it needs a ` +
+          'bounded timeWindow — "this-month", {"kind":"last-weeks","weeks":4}, ' +
+          '{"kind":"previous-months","months":4} — never "all", which spans no known number ' +
+          "of periods.",
+      };
+    }
+  } else if (!isList && v.per != null) {
+    return {
+      ok: false,
+      error:
+        `${at}per belongs to the 'avg-per' measure: it names the period that measure divides ` +
+        "the window's total by. Set measure to 'avg-per' with per 'day' | 'week' | 'month', or " +
+        "drop per.",
+    };
+  }
+
   if (isList) {
     if (groupCol) {
       return { ok: false, error: `${at}A list view is one row per database row and must not group` };
@@ -296,6 +358,18 @@ function validateBlock(block: ViewBlockSpec & { databaseId: string }, db: Databa
       if (v.measureColumnId != null) {
         return { ok: false, error: `${at}A count measure takes no measureColumnId` };
       }
+    } else if (measure === "avg-per") {
+      // The column is optional HERE, and that is the one place this measure
+      // differs from the rest: with a number column it is the average AMOUNT per
+      // period, without one the average NUMBER OF ROWS per period. Both are real
+      // questions, and naming no column is how the second one is asked.
+      const mCol = v.measureColumnId != null ? col(v.measureColumnId) : null;
+      if (v.measureColumnId != null && !mCol) {
+        return { ok: false, error: `${at}An avg-per measure needs an existing measureColumnId` };
+      }
+      if (mCol && mCol.type !== "number") {
+        return { ok: false, error: `${at}Measure column ${mCol.name} must be a number column` };
+      }
     } else {
       const mCol = v.measureColumnId != null ? col(v.measureColumnId) : null;
       if (!mCol) {
@@ -373,6 +447,92 @@ function lastWeeksBounds(
   return { start: d.toISOString().slice(0, 10), end: today };
 }
 
+/** A month as a whole number of months since year 0, so months can be counted. */
+function monthIndex(iso: string): number {
+  return Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7)) - 1;
+}
+
+/** The `YYYY-MM` a month index names. */
+function monthOf(index: number): string {
+  const year = Math.floor(index / 12);
+  const month = index - year * 12; // 0..11, and non-negative for any index
+  return `${String(year).padStart(4, "0")}-${String(month + 1).padStart(2, "0")}`;
+}
+
+/** The last calendar day of a `YYYY-MM` month. */
+function monthEnd(month: string): string {
+  const year = Number(month.slice(0, 4));
+  const m = Number(month.slice(5, 7));
+  // Day 0 of the NEXT month is the last day of this one.
+  const day = new Date(Date.UTC(year, m, 0)).getUTCDate();
+  return `${month}-${String(day).padStart(2, "0")}`;
+}
+
+function clampMonths(months: number): number {
+  return Math.min(MAX_WINDOW_MONTHS, Math.max(1, Math.floor(months)));
+}
+
+/**
+ * The trailing calendar months, today's month among them and partial: `{ months:
+ * 4 }` on 14 October spans 1 July .. 14 October. It ends at TODAY rather than at
+ * the month's last day for the reason `this-month` does — a spend that has not
+ * happened yet is not a spend.
+ */
+function lastMonthsBounds(months: number, today: string): { start: string; end: string } {
+  const n = clampMonths(months);
+  return { start: `${monthOf(monthIndex(today) - (n - 1))}-01`, end: today };
+}
+
+/**
+ * The whole calendar months BEFORE today's month: `{ months: 4 }` on any day of
+ * October spans 1 June .. 30 September, and on the first day of November it
+ * spans 1 July .. 31 October with no write and nothing remembered.
+ *
+ * This is the window an operator means by "the previous 4 months, not including
+ * the current one", and it is the shape a monthly average has to divide by: the
+ * current month is partial, so a period average that included it would read low
+ * on the 1st and climb all month.
+ */
+function previousMonthsBounds(months: number, today: string): { start: string; end: string } {
+  const n = clampMonths(months);
+  const last = monthOf(monthIndex(today) - 1);
+  const first = monthOf(monthIndex(today) - n);
+  return { start: `${first}-01`, end: monthEnd(last) };
+}
+
+/**
+ * How many `period`-long buckets a window touches, both ends inclusive.
+ *
+ * This is the divisor an `avg-per` measure uses, and it is deliberately the
+ * number of CALENDAR periods rather than the number of periods that happen to
+ * hold rows: "average spend per month over the previous 4 months" divides by 4
+ * even when one of those months was quiet, because a quiet month is a month of
+ * R0 rather than a month that did not happen. It is also exactly the number of
+ * rows a table over the same window and the same `timeBucket` would draw, so a
+ * period average can never disagree with the table printed beside it.
+ *
+ * The bucket that CONTAINS the start is counted whole, as is the one containing
+ * the end, so a partial month counts as a month. That is the same rule the
+ * `timeBucket` fold uses when it labels a row by its month or week.
+ */
+export function periodsInWindow(start: string, end: string, period: ViewPeriod): number {
+  const a = Date.parse(`${start}T00:00:00Z`);
+  const b = Date.parse(`${end}T00:00:00Z`);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 1;
+  if (period === "day") return Math.max(1, Math.round((b - a) / 86400000) + 1);
+  if (period === "week") {
+    // The Monday that opens each date's own week, counted in whole days.
+    const monday = (ms: number): number => {
+      const d = new Date(ms);
+      const dayNum = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() - (dayNum - 1));
+      return d.getTime();
+    };
+    return Math.max(1, Math.round((monday(b) - monday(a)) / 86400000 / 7) + 1);
+  }
+  return Math.max(1, monthIndex(end) - monthIndex(start) + 1);
+}
+
 /**
  * Fill the query fields a proposal may omit, so every block's query is complete
  * and a stored file can never hold a half-specified panel.
@@ -387,6 +547,10 @@ function fillBlockDefaults(block: ViewBlock): Omit<ViewBlock, "id" | "title" | "
     presentation: block.presentation,
     measure,
     measureColumnId: measure === "count" ? null : (block.measureColumnId ?? null),
+    // Kept as written rather than cleared for the other measures: `per` on a
+    // `sum` is a spec that meant `avg-per`, and validation says so instead of
+    // drawing a total the author did not ask for.
+    per: block.per ?? null,
     groupBy: block.groupBy ?? null,
     timeBucket: block.timeBucket ?? null,
     timeColumnId: block.timeColumnId ?? null,
@@ -428,7 +592,7 @@ function asBlock(raw: Record<string, unknown>): ViewBlock {
     id: typeof raw.id === "string" ? raw.id : "",
     title: typeof raw.title === "string" ? raw.title : "",
   };
-  for (const key of ["groupBy", "timeBucket", "timeColumnId", "measureColumnId"]) {
+  for (const key of ["groupBy", "timeBucket", "timeColumnId", "measureColumnId", "per"]) {
     if (raw[key] !== undefined) out[key] = raw[key];
   }
   // The rest carry only their own type; `null` is not a value a writer means.
@@ -461,6 +625,10 @@ function resolveBlock(parent: ViewBlock, raw: ViewBlock): ViewBlock {
   const layered: ViewBlock = { ...parent, ...raw, id: raw.id, title: raw.title } as ViewBlock;
   layered.measure = raw.measure ?? "sum";
   layered.measureColumnId = raw.measureColumnId ?? null;
+  // `per` rides with the measure pair rather than with the inherited query
+  // fields: a period average is one panel's own shape, and a sibling table must
+  // not be handed a divisor it never asked for.
+  layered.per = raw.per ?? null;
   if (layered.presentation === "list") {
     layered.groupBy = null;
     layered.timeBucket = null;
@@ -541,6 +709,10 @@ export function windowBounds(
 ): { start: string | null; end: string | null } {
   if (typeof w === "object" && w.kind === "custom") return { start: w.start, end: w.end };
   if (typeof w === "object" && w.kind === "last-weeks") return lastWeeksBounds(w, today);
+  if (typeof w === "object" && w.kind === "last-months") return lastMonthsBounds(w.months, today);
+  if (typeof w === "object" && w.kind === "previous-months") {
+    return previousMonthsBounds(w.months, today);
+  }
   switch (w) {
     case "today":
       return { start: today, end: today };
@@ -875,6 +1047,16 @@ async function runBlock(
 
   const timeColId = spec.timeColumnId ?? null;
   const { start, end } = windowBounds(spec.timeWindow, today);
+  /**
+   * The period average's divisor, computed from the WINDOW and not from the
+   * rows: it is the number of calendar periods the window spans, so a month with
+   * no spending still counts as a month of zero. Validation has already refused
+   * an `avg-per` with no `per` or no bounded window, so both are present here.
+   */
+  const per = spec.measure === "avg-per" ? spec.per : null;
+  const periods = per && start && end ? periodsInWindow(start, end, per) : 0;
+  /** A `count` of rows, taken either way: by the measure or by the average of one. */
+  const countsRows = spec.measure === "count" || (spec.measure === "avg-per" && spec.measureColumnId == null);
 
   let rawRows: Array<{ id: string; cells: string }> = [];
   let sqliteMissing = false;
@@ -970,7 +1152,7 @@ async function runBlock(
 
     let value: number | null = null;
     let rowCurrency: string | null = null;
-    if (spec.measure === "count") {
+    if (countsRows) {
       value = 1;
     } else if (isFinanceAmount && accountColId) {
       const resolved = financeAmount(cells, measureCol!.id, accountColId, accountCurrency, usdZarRate);
@@ -1037,6 +1219,16 @@ async function runBlock(
       g.value = g.value / count;
     }
   }
+  // A period average divides by the CALENDAR, not by the rows: the window's
+  // total over the periods it spans. `avg` above answers "what does a row
+  // usually look like"; this answers "what does a week usually cost", and
+  // pressing one into the other is what made "the average spend per week across
+  // the last 4 weeks" come back as the average transaction.
+  if (per && periods > 0) {
+    for (const g of groups.values()) {
+      g.value = g.value / periods;
+    }
+  }
 
   // seenCurrencies is post-conversion: a converted USD row counts as ZAR, so
   // a surviving USD entry is one the rate could not reach — no rate set, or
@@ -1080,15 +1272,17 @@ async function runBlock(
   //
   // This is what makes a "today" card usable: a day with no spending is the
   // normal case, and it must read 0 rather than "no rows" — the same thing a
-  // spreadsheet says for SUM over nothing. Only the two measures for which zero
-  // is the true answer qualify: a count of no rows IS 0, and a sum of no rows IS
-  // 0. An `avg` of no rows is undefined and a `last` of no rows does not exist,
-  // so those keep drawing nothing, which is the honest answer.
+  // spreadsheet says for SUM over nothing. Only the measures for which zero is
+  // the true answer qualify: a count of no rows IS 0, a sum of no rows IS 0, and
+  // a period average of no rows is 0 per period for the same reason (R0 spread
+  // over four months is R0 a month, not an unknown). An `avg` of no rows is
+  // undefined and a `last` of no rows does not exist, so those keep drawing
+  // nothing, which is the honest answer for them.
   const isEmptyMetric =
     spec.presentation === "metric" &&
     spec.groupBy == null &&
     shown.length === 0 &&
-    (spec.measure === "sum" || spec.measure === "count");
+    (spec.measure === "sum" || spec.measure === "count" || spec.measure === "avg-per");
   const rows: Array<[string, number]> = isEmptyMetric
     ? [["value", 0]]
     : shown.map((e) => [e.label, e.value]);

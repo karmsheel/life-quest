@@ -40,6 +40,11 @@ const MAIN_BUNDLE = path.join(desktopRoot, "dist-electron/main.js");
  *  - A third card spells its date in a filter and must NOT move. If the rig could
  *    pass with every card moving, it would be proving that something repaints
  *    everything rather than that a live window is what moved.
+ *  - A fourth card is a PERIOD AVERAGE over the previous four whole months. It
+ *    must NOT move when the agent's expense — or the operator's — is written,
+ *    because both are dated inside the current month; and it MUST move when the
+ *    last leg turns the month over. A window that leaked this month fails the
+ *    first claim, and a card that is never asked again fails the second.
  *
  * It needs the Vite dev server (the harness page) and the built `dist-electron`
  * bundle (the real main process). With either missing the test skips and says
@@ -116,6 +121,11 @@ type Report = {
     todayAfter: (number | null)[];
     todayPanelRows: string[][];
     frozenAfter: (number | null)[];
+    averageBefore: (number | null)[];
+    averageAfter: (number | null)[];
+    averageAfterEdit: (number | null)[];
+    averageBeforeMonthTurn: (number | null)[];
+    averageAfterMonthTurn: (number | null)[];
     todayAfterRollover: (number | null)[];
     clockMovedInRenderer: { from: string; to: string } | null;
     clockMovedInMain: string | null;
@@ -203,6 +213,28 @@ describe("live dashboard ui e2e", () => {
       "a card with a literal date moved when a different day was written",
     );
 
+    // ── the period average, drawn ───────────────────────────────────────────
+    // The operator's own ask: "the average spend per month, based on the
+    // previous 4 months (not including current one)". It is on the board as a
+    // figure, and the figure is the four whole months over four.
+    assert.deepEqual(
+      report.checks.averageBefore,
+      [expected.averageBefore],
+      "the average-month card did not draw the previous four months' average",
+    );
+    // And the write that followed was INSIDE the current month, which this card
+    // does not read: a window that leaked it would have moved here.
+    assert.deepEqual(
+      report.checks.averageAfter,
+      [expected.averageBefore],
+      "the average-month card moved when an expense in the current month was written",
+    );
+    assert.deepEqual(
+      report.checks.averageAfterEdit,
+      [expected.averageBefore],
+      "the average-month card moved when the operator's own current-month row was written",
+    );
+
     // ── the operator's own write, over IPC ──────────────────────────────────
     // The agent's door is one of the app's two write doors. The other is IPC, and
     // an edit made in the app has to reach the board by the same route.
@@ -229,9 +261,31 @@ describe("live dashboard ui e2e", () => {
       [expected.todayNextDay],
       "a card anchored on today did not roll over when the day changed",
     );
+    // ── and the month, with no write either ────────────────────────────────
+    // The clock is moved to the first of the next month, so the SAME card's
+    // `previous-months` window steps forward on its own: the month that just
+    // ended comes in and the oldest one drops out. This is "Every month it gets
+    // recalculated", observed rather than argued — and the average card is what
+    // makes the leg discriminating, because a card that was never asked again
+    // would still be showing the old month's number.
+    assert.notEqual(
+      expected.averageAfterMonthTurn,
+      expected.averageBefore,
+      "this run's fixture cannot tell one month's window from the next, so the leg proves nothing",
+    );
+    assert.deepEqual(
+      report.checks.averageBeforeMonthTurn,
+      [expected.averageBefore],
+      "the average moved before the month turned",
+    );
+    assert.deepEqual(
+      report.checks.averageAfterMonthTurn,
+      [expected.averageAfterMonthTurn],
+      "the average did not recalculate when the month turned, with no write anywhere",
+    );
 
     // And it is the app's own card, drawn in the app's own skin.
-    for (const key of ["card-list", "card-today", "card-frozen"]) {
+    for (const key of ["card-list", "card-today", "card-frozen", "card-average"]) {
       assert.equal(after.cards[key].painted, 1, `${key} did not draw exactly one view card`);
       assert.deepEqual(after.cards[key].errors, [], `${key} drew an error`);
       assert.notEqual(after.cards[key].shell?.background, "rgba(0, 0, 0, 0)", `${key} drew no shell`);

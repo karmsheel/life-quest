@@ -1018,9 +1018,31 @@ export type ViewTimeWindow =
   // The trailing window the weekly tables ask for: count back from today's
   // week (Monday start), inclusive. weeks: 1..260.
   | { kind: "last-weeks"; weeks: number }
+  // Trailing CALENDAR months, the month today is in among them and partial:
+  // `{ months: 4 }` on 14 October spans 1 July .. 14 October. months: 1..120.
+  | { kind: "last-months"; months: number }
+  // The whole calendar months BEFORE the month today is in — the current month
+  // is never one of them. `{ months: 4 }` on 14 October spans 1 June .. 30
+  // September, and on 1 November it spans 1 July .. 31 October with no write
+  // and nothing to remember. This is the shape "the previous 4 months, not
+  // including the current one" asks for, and it is why it exists: `last-weeks`
+  // can only approximate a month, and a `custom` window would freeze.
+  | { kind: "previous-months"; months: number }
   | { kind: "custom"; start: string; end: string };
 
-export type ViewMeasure = "sum" | "count" | "last" | "avg";
+/** The period an `avg-per` measure divides a window's total by. */
+export type ViewPeriod = "day" | "week" | "month";
+
+/**
+ * How a measure folds the rows it matched.
+ *
+ * `avg` is the average ROW (add every amount, divide by how many there were) and
+ * `avg-per` is the average PERIOD (add every amount in the window, divide by how
+ * many days, weeks or months that window spans). They are different numbers, and
+ * conflating them is exactly what left "the average spend per week across the
+ * last 4 weeks" unanswerable: `avg` divides by the number of transactions.
+ */
+export type ViewMeasure = "sum" | "count" | "last" | "avg" | "avg-per";
 
 export type ViewSort = { by: "label" | "value"; dir: "asc" | "desc" };
 
@@ -1040,6 +1062,16 @@ export type ViewBlock = {
   filters: ViewFilter[];
   measure: ViewMeasure;
   measureColumnId: string | null;
+  /**
+   * The period an `avg-per` measure divides by: "day" | "week" | "month".
+   *
+   * Required exactly when `measure` is "avg-per", and refused on any other
+   * measure rather than ignored — a spec that says `per` and gets a plain sum
+   * back would be a card quietly showing a different number than the one asked
+   * for. It is the block's own field, like the measure pair: a composed card's
+   * table panel does not inherit its metric panel's period.
+   */
+  per: ViewPeriod | null;
   sort: ViewSort;
   limit: number;
   convertToZar: boolean;
@@ -1080,8 +1112,10 @@ export type ViewSpec = {
   timeWindow: ViewTimeWindow;
   filters: ViewFilter[];
   measure: ViewMeasure;
-  /** null for a count measure. */
+  /** null for a count measure, and for an `avg-per` that counts rows per period. */
   measureColumnId: string | null;
+  /** The period an `avg-per` measure divides by; null on every other measure. */
+  per: ViewPeriod | null;
   sort: ViewSort;
   /** 1..50; default 12. */
   limit: number;
@@ -1105,6 +1139,8 @@ export type ViewBlockSpec = {
   filters: ViewFilter[];
   measure: ViewMeasure;
   measureColumnId: string | null;
+  /** The period an `avg-per` measure divides by; null on every other measure. */
+  per: ViewPeriod | null;
   sort: ViewSort;
   limit: number;
   convertToZar: boolean;

@@ -233,6 +233,10 @@ function ViewBody({ body }: { body: Record<string, unknown> }) {
           <span>Measure</span>
           <p className="muted">
             {typeof spec.measure === "string" ? spec.measure : "?"}
+            {/* "avg-per" is the one measure whose name does not say what it
+                divides by, and on a locked board this line is the operator's
+                only description of the card they are approving. */}
+            {typeof spec.per === "string" && spec.per ? ` per ${spec.per}` : ""}
             {typeof spec.measureColumnId === "string" && spec.measureColumnId
               ? ` of ${spec.measureColumnId}`
               : ""}
