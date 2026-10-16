@@ -39,6 +39,88 @@ export function boardLabel(domainSlug: string | null): string {
 }
 
 /**
+ * Where a view's pin goes on a board, which for a card that is already there is
+ * exactly where it already is.
+ *
+ * THE FAULT THIS REPAIRS (reported, then measured):
+ *
+ *   "I edited a card on the dashboard. After the change, the card moved to the
+ *    bottom of the dashboard — though it told me it had stayed in place."
+ *
+ * The write was never wrong: the view file kept its id, its `createdAt` and its
+ * contents, and the card the companion named is the card that changed. What was
+ * wrong was the BOARD. The pin list was rebuilt as "every pin except this one,
+ * then this one" — a filter followed by an append — which is a fine way to put a
+ * NEW card on the end of a board and a wrong way to change one that is already
+ * on it. The card left its slot, the grid closed the gap behind it and opened one
+ * at the bottom, and the operator's dashboard rearranged itself around an edit
+ * they had been told was in place.
+ *
+ * So the rule is stated once, here, and both write paths call it: **a card that
+ * is already pinned keeps its index in the array, because a pin's index in the
+ * array is its place on the board.** Only a pin the board does not already carry
+ * is appended.
+ *
+ * There are two write paths and they must not drift: `writeViewAndPin` in
+ * `views-tools.ts`, which applies an unlocked `save_view` at once, and
+ * `applyViewDecision` in `decisions.ts`, which applies the same change when the
+ * operator approves the Decision a locked board filed. Both used to spell the
+ * filter-then-append out for themselves; the second is the one a fix to the
+ * first would have left behind, sending the card to the bottom on approval only.
+ *
+ * A duplicate is dropped rather than replaced in place. Two pins for one view on
+ * one board is a state nothing is supposed to produce — but a board that has one
+ * (hand-edited, or written before this rule existed) must not be left with a
+ * third after an edit, and the FIRST occurrence is the one the operator has been
+ * looking at.
+ *
+ * `width.spanNamed` is whether the caller asked for a width at all. A missing
+ * span means one cell for a card being CREATED — that is the grid's normal cell
+ * and a caller saying nothing is not asking for anything unusual. It does not
+ * mean one cell for a card being CHANGED: a full-row card edited without naming
+ * a width would silently shrink to half the board, which is the card leaving its
+ * place by a second route. On an edit the card's own width stands unless the
+ * caller names a different one.
+ */
+export function placeViewPin(
+  pins: Pin[],
+  domainSlug: string,
+  viewId: string,
+  width: { span: 1 | 2; spanNamed: boolean },
+): { pins: Pin[]; existed: boolean; position: number; span: 1 | 2 } {
+  const isTheCard = (pin: Pin) =>
+    pin.kind === "view" && pin.domainSlug === domainSlug && pin.viewId === viewId;
+  const position = pins.findIndex(isTheCard);
+  if (position < 0) {
+    const pin: Pin = {
+      id: `view:${domainSlug}:${viewId}`,
+      kind: "view",
+      domainSlug,
+      viewId,
+      span: width.span,
+    };
+    return { pins: [...pins, pin], existed: false, position: pins.length, span: pin.span };
+  }
+  const existing = pins[position] as Extract<Pin, { kind: "view" }>;
+  const span = width.spanNamed ? width.span : existing.span;
+  const pin: Pin = { id: `view:${domainSlug}:${viewId}`, kind: "view", domainSlug, viewId, span };
+  const next: Pin[] = [];
+  let replaced = false;
+  let at = position;
+  for (const candidate of pins) {
+    if (!isTheCard(candidate)) {
+      next.push(candidate);
+      continue;
+    }
+    if (replaced) continue;
+    at = next.length;
+    next.push(pin);
+    replaced = true;
+  }
+  return { pins: next, existed: true, position: at, span };
+}
+
+/**
  * The board file as it stands, lock flag included, with no validation of the
  * pins themselves. Callers that are about to write need exactly this: the lock
  * is a property of the stored file, not of the pins the read path kept, so a

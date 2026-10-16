@@ -14,6 +14,7 @@ import {
   boardLabel,
   isPinBoardLocked,
   listPinBoard,
+  placeViewPin,
   setPins,
 } from "./pins.ts";
 import { getPage } from "./pages.ts";
@@ -114,8 +115,10 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
       "wants.\n\n" +
       "To CHANGE a card that already exists — including how one of its blocks is displayed — read it " +
       "with get_view, change the field you mean to change, and call save_view again with the same " +
-      "`viewId`. That updates the card in place and keeps its position on the board. Omitting " +
-      "`viewId` creates a new card.\n\n" +
+      "`viewId`. That updates the card in place, keeps its position on the board, and keeps its " +
+      "width unless you name a `span`. So an edit needs no `span` at all: send the whole spec back " +
+      "and the card changes where it stands. Omitting `viewId` creates a new card, and a new card " +
+      "is pinned at the END of the board.\n\n" +
       "The CARD draws itself in the app's design system, so a spec carries data and never looks: " +
       "no currency symbols, thousands separators, markdown, or prose in a title. Its table headers " +
       "come from the query — a timeBucket names the label column (Month, Week), a groupBy names the " +
@@ -145,7 +148,10 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
         spec: VIEW_SPEC_SCHEMA,
         span: {
           type: "number",
-          description: "1 = one grid cell (default), 2 = the full row. A composed card is usually 2.",
+          description:
+            "How wide the card is: 1 = one grid cell (the default for a NEW card), 2 = the full " +
+            "row. A composed card is usually 2. On an EDIT, omitting span leaves the card as wide " +
+            "as it already is — so a change to a card's contents never re-shapes the board.",
         },
         viewId: {
           type: "string",
@@ -309,8 +315,18 @@ export async function executeViewTool(
       // that describes the CARD rather than the query — so a caller that puts it
       // there is following the schema, and reading it from the spec as well as
       // from the argument is what makes that true.
-      const spanRes = parseSpan(args.span ?? (spec as { span?: unknown }).span);
+      const rawSpan = args.span ?? (spec as { span?: unknown }).span;
+      const spanRes = parseSpan(rawSpan);
       if (!spanRes.ok) return toolError(spanRes.error);
+      // Whether a width was actually NAMED, which is not the same question as what
+      // it resolves to. A missing span means one cell for a card being created —
+      // that is the grid's normal cell and a caller saying nothing is not asking
+      // for anything unusual. It does NOT mean one cell for a card being CHANGED:
+      // a full-row card edited without naming a width would silently shrink to
+      // half the board, which is the card leaving its place by a second route and
+      // one the operator never asked for. On an edit the card's own width stands
+      // unless the caller names a different one.
+      const spanNamed = rawSpan !== undefined && rawSpan !== null && rawSpan !== "";
       const viewId = typeof args.viewId === "string" && args.viewId.trim() ? args.viewId.trim() : null;
       if (viewId) {
         // An edit names a card that has to be here: a typo must not silently
@@ -336,7 +352,7 @@ export async function executeViewTool(
         return toolError(run.error, specFix(check.db, slug));
       }
       const preview = previewShape(run.value);
-      return writeViewAndPin(root, actor, slug, spec, boardSlug, spanRes.value, preview, viewId);
+      return writeViewAndPin(root, actor, slug, spec, boardSlug, { span: spanRes.value, spanNamed }, preview, viewId);
     }
 
     case "get_view": {
@@ -428,7 +444,7 @@ async function writeViewAndPin(
   domainSlug: string,
   spec: ViewSpec,
   boardSlug: string | null,
-  span: 1 | 2,
+  width: { span: 1 | 2; spanNamed: boolean },
   preview: unknown,
   viewId: string | null,
 ): Promise<unknown> {
@@ -444,7 +460,16 @@ async function writeViewAndPin(
       target: { type: "view", domainSlug, viewId: viewId ?? "" },
       proposedTitle: title,
       proposedBodyMarkdown: JSON.stringify(
-        { op: "save-view", domainSlug, spec, preview, boardSlug, span, viewId },
+        {
+          op: "save-view",
+          domainSlug,
+          spec,
+          preview,
+          boardSlug,
+          span: width.span,
+          spanNamed: width.spanNamed,
+          viewId,
+        },
         null,
         2,
       ),
@@ -469,16 +494,10 @@ async function writeViewAndPin(
   });
   if (!saved.ok) return toolError(saved.error);
   const savedId = saved.value.id;
-  const pin: Pin = { id: `view:${domainSlug}:${savedId}`, kind: "view", domainSlug, viewId: savedId, span };
   const board = await listPinBoard(root, boardSlug);
   if (!board.ok) return toolError(board.error);
-  const pins = [
-    ...board.value.pins.filter(
-      (p) => !(p.kind === "view" && p.domainSlug === domainSlug && p.viewId === savedId),
-    ),
-    pin,
-  ];
-  const written = await setPins(root, boardSlug, pins, actor);
+  const placed = placeViewPin(board.value.pins, domainSlug, savedId, width);
+  const written = await setPins(root, boardSlug, placed.pins, actor);
   if (!written.ok) return toolError(written.error);
   if (!written.value.applied) {
     // Cannot happen — the lock was read a moment ago and `setPins` only gates on
@@ -504,7 +523,18 @@ async function writeViewAndPin(
     updated: viewId !== null,
     viewId: savedId,
     boardSlug,
-    span,
+    span: placed.span,
+    /**
+     * Whether the card was already on this board and stayed exactly where it was.
+     *
+     * It is in the reply because the companion talks to the operator in the
+     * operator's own words, and "it's still where it was" is a claim about the
+     * board rather than about the file. Before this field existed the note said
+     * the card had stayed in place whether or not it had.
+     */
+    cardKeptItsPlace: placed.existed,
+    /** Where the card sits on the board now, 1-based, as the operator counts it. */
+    cardPosition: placed.position + 1,
     // The numbers the card will show, so the caller can name them in its reply
     // without a second preview round trip. This is the whole speed argument for
     // the one-call path: the model already has what it needs to talk.
@@ -513,7 +543,11 @@ async function writeViewAndPin(
     ...(twin ? { existingViewId: twin.viewId, existingTitle: twin.title } : {}),
     note:
       (viewId !== null
-        ? `"${saved.value.title}" was updated in place and stays pinned on ${boardLabel(boardSlug)}.`
+        ? placed.existed
+          ? `"${saved.value.title}" was updated in place and stays where it was on ` +
+            `${boardLabel(boardSlug)} — card ${placed.position + 1} of ${placed.pins.length}.`
+          : `"${saved.value.title}" was updated, and pinned on ${boardLabel(boardSlug)} for the ` +
+            `first time — card ${placed.position + 1} of ${placed.pins.length}.`
         : `"${saved.value.title}" is saved and pinned on ${boardLabel(boardSlug)}.`) +
       (twin
         ? ` Another card on this board is also titled "${twin.title}" (viewId: ${twin.viewId}) — to ` +
@@ -522,6 +556,13 @@ async function writeViewAndPin(
       " Do not call arrange_dashboard for it.",
   };
 }
+
+/**
+ * Where a view's pin goes is `placeViewPin`'s business, in `pins.ts`: the same
+ * rule is needed by the Decision-approval path in `decisions.ts`, and a rule
+ * spelled twice is a rule that drifts — the second copy is the one a fix to the
+ * first leaves behind.
+ */
 
 /** Another view pin on the same board whose card carries the same title. */
 async function findSameTitledCard(

@@ -743,7 +743,7 @@ async function applyViewDecision(
   // Parse and validate here, then delegate the file write to saveView. The
   // schemaVersion the propose-time copy carried is stripped: the file-level
   // invariant belongs to the runner, not to a decision body frozen earlier.
-  let body: { op?: unknown; spec?: unknown; boardSlug?: unknown; span?: unknown };
+  let body: { op?: unknown; spec?: unknown; boardSlug?: unknown; span?: unknown; spanNamed?: unknown };
   try {
     body = JSON.parse(decision.proposedBodyMarkdown) as typeof body;
   } catch {
@@ -777,29 +777,26 @@ async function applyViewDecision(
     return { ok: true, value: { viewId: save.value.id, boardSlug: null } };
   }
   const span: 1 | 2 = body.span === 2 ? 2 : 1;
-  const { listPinBoard, setPins } = await import("./pins.ts");
+  // A body frozen before `spanNamed` existed carries no word on whether a width
+  // was asked for. It is read as "not named" rather than as "one cell": the only
+  // bodies that can predate the field are ones filed by an edit, and an edit that
+  // said nothing about width meant to leave the card as wide as it was. A card
+  // being created along this path carries an explicit `span` from the tool.
+  const spanNamed = body.spanNamed === true;
+  const { listPinBoard, placeViewPin, setPins } = await import("./pins.ts");
   const { USER_ACTOR } = await import("./types.ts");
   const board = await listPinBoard(rootPath, boardSlug);
   if (!board.ok) return { ok: false, error: board.error, terminal: false };
-  const pin = {
-    id: `view:${decision.target.domainSlug}:${save.value.id}`,
-    kind: "view" as const,
-    domainSlug: decision.target.domainSlug,
-    viewId: save.value.id,
+  // The approval is the same edit the unlocked board applies at once, so it goes
+  // through the same placement rule: a card the operator approves a change to
+  // must not slide to the bottom of their board on the way in.
+  const placed = placeViewPin(board.value.pins, decision.target.domainSlug, save.value.id, {
     span,
-  };
-  const pins = [
-    ...board.value.pins.filter(
-      (p) =>
-        !(
-          p.kind === "view" &&
-          p.domainSlug === decision.target.domainSlug &&
-          p.viewId === save.value.id
-        ),
-    ),
-    pin,
-  ];
-  const pinned = await setPins(rootPath, boardSlug, pins, USER_ACTOR, { approvedChange: true });
+    spanNamed,
+  });
+  const pinned = await setPins(rootPath, boardSlug, placed.pins, USER_ACTOR, {
+    approvedChange: true,
+  });
   if (!pinned.ok) return { ok: false, error: pinned.error, terminal: false };
   return { ok: true, value: { viewId: save.value.id, boardSlug } };
 }
