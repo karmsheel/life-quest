@@ -696,7 +696,8 @@ export type Pin =
   | { id: string; kind: "system"; system: SystemPinKind }
   | { id: string; kind: "page"; domainSlug: string; pageId: string }
   // Agent-built dashboard views (plan.md design, 2026-09-30): a saved view
-  // pinned on a board. span 1 is one grid cell, span 2 the full row.
+  // pinned on a board. span 2 is the full row; span 1 is the board's own choice
+  // — it measures the card and gives it as many cells as its content needs.
   | { id: string; kind: "view"; domainSlug: string; viewId: string; span: 1 | 2 };
 
 /**

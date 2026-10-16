@@ -28,6 +28,7 @@ import {
   type BoardHold,
 } from "@/components/home/board-hold";
 import { usePinArrange, type CommitOutcome } from "@/components/home/usePinArrange";
+import { useTileSpans } from "@/components/home/useTileSpans";
 import { ViewCard } from "@/components/ui/ViewCard";
 import type { SavedView } from "@lifequest/vault-core";
 
@@ -136,6 +137,29 @@ export default function HomePage() {
     locked,
     busy: boardBusy,
     onCommit: (next) => persistPins(next),
+  });
+
+  /**
+   * The board's tiles: every card as wide as its content needs, and the board
+   * never narrower than its widest card.
+   *
+   * A card is a live query, and the reported fault was the one thing a grid of
+   * fixed cells cannot know: the "Recent transactions" pin is stored one cell
+   * wide while its table is four nowrap columns, so the table painted over the
+   * card's own frame. The rule and its arithmetic are in `useTileSpans` and
+   * `tile-span.ts`; what this page contributes is the two facts the hook cannot
+   * read for itself — the board's order, and the vault revision that redraws
+   * every card on it.
+   *
+   * It runs before the hold below, because the hold's whole job is to keep the
+   * operator's place while the board reflows, and a span decided after the
+   * correction would be a reflow the operator sees.
+   */
+  useTileSpans({
+    gridRef: arrange.gridRef,
+    pins,
+    live,
+    arranging: arrange.isArranging,
   });
 
   /**
@@ -532,23 +556,20 @@ export default function HomePage() {
           return null;
       }
     }
-    // A view pin renders ViewCard, the design's single drawing path. Span 2
-    // marks the wrapper so the grid gives the card the full row. A locked board
-    // hands the card `editable: false`: the board's page lock governs the cards
-    // on it, for the operator as much as for the companion.
+    // A view pin renders ViewCard, the design's single drawing path. A locked
+    // board hands the card `editable: false`: the board's page lock governs the
+    // cards on it, for the operator as much as for the companion.
     //
-    // This wrapper carries the span marker and NOTHING else. `ViewCard` already
-    // draws `section.view-card`, so giving the wrapper that class too nested two
-    // card shells and the pin showed a frame inside its frame — two borders,
-    // two radii, two shadows, and the card's own padding twice over. The marker
-    // is an unstyled hook (`global.css`: `.home-pin:has(.view-card--span2)`), so
-    // the wrapper is only ever the grid's business, never the card's.
+    // The card is the pin's own child, with no wrapper of ours around it. There
+    // used to be one, carrying a span marker, and it earned its removal twice
+    // over: `ViewCard` already draws `section.view-card`, so a wrapper wearing
+    // that class nested two card shells and the pin showed a frame inside its
+    // frame — two borders, two radii, two shadows, and the card's own padding
+    // twice over — and the width it marked is no longer a class's business at
+    // all. `useTileSpans` measures the card and writes its span; the operator's
+    // own "fill the row" is carried on the pin below, where the sheet paints it.
     if (pin.kind === "view") {
-      return (
-        <div className={pin.span === 2 ? "view-card--span2" : undefined}>
-          <ViewCard domainSlug={pin.domainSlug} viewId={pin.viewId} editable={!locked} />
-        </div>
-      );
+      return <ViewCard domainSlug={pin.domainSlug} viewId={pin.viewId} editable={!locked} />;
     }
     const domainName =
       snapshot?.domains.find((d) => d.slug === pin.domainSlug)?.meta.name ??
@@ -708,6 +729,14 @@ export default function HomePage() {
             aria-describedby={locked ? undefined : "pin-arrange-hint"}
             className={[
               "home-pin",
+              /*
+                The operator's own width choice, carried as a class because it is
+                the sheet's business rather than the hook's: `home-pin--span2` is
+                painted `1 / -1` — the whole row — and it is also what tells
+                `useTileSpans` to leave this card's width alone. A card stored one
+                cell wide is measured and sized from what it holds; a card stored
+                two cells wide is drawn exactly as wide as the operator asked.
+              */
               pin.kind === "view" && pin.span === 2 ? "home-pin--span2" : "",
               arrange.isLifted(pin.id) ? "is-lifted" : "",
               livePinId === pin.id ? "is-live" : "",

@@ -2854,9 +2854,20 @@ a {
   transition: width 0.25s ease;
 }
 
+/* The board's tiles.
+   `--home-tile-rem` is the one cell's floor, and it is written down exactly once:
+   the tracks below are sized from it, and `useTileSpans` reads the same variable
+   back to decide how many cells a card's content needs. A card gets as many cells
+   as it needs — so one row can hold two wide cards and the next three narrow ones
+   — and the board's own `min-width` (also written by that hook) is the width of
+   its widest card, so a window too small for those cells scrolls the sheet
+   sideways instead of squeezing a card until its table spills over the frame.
+   The `min-width` is deliberately NOT a fixed number of cells here: it is the
+   measurement, and only the measurement can be right about a four-column listing. */
 .home-dashboard__grid {
+  --home-tile-rem: 17;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--home-tile-rem) * 1rem), 1fr));
   gap: 0.85rem;
   /* The containing block for a lifted card: it leaves grid flow and is placed in
      the grid's own coordinates, so the board's auto-placement closes the gap. */
@@ -3291,8 +3302,14 @@ a.home-mini-list__link:hover {
    clears them instead of running underneath. The reserve follows the row rather
    than the chrome, because the chat control is the one button that is still there
    when the chrome is not — and it shrank with the grip: 1.55rem a button, 0.2rem
-   between them, 0.5rem of inset. */
+   between them, 0.5rem of inset.
+   A view card's title is in this rule too, and for two reasons that are the same
+   reason: its heading is as long as any card's, so without the reserve the chrome
+   sat on top of it — and since `useTileSpans` sizes a card by its min-content
+   width, a title that ignored the corner row would be a title the measurement did
+   not know about. */
 .home-pin:has(.home-pin__tools) .home-card__title,
+.home-pin:has(.home-pin__tools) .view-card__title,
 .home-pin:has(.home-pin__tools) .home-dashboard__progress {
   padding-right: 5.65rem;
 }
@@ -6324,9 +6341,15 @@ button.chat-panel__activity-line:hover {
   fill: var(--accent);
 }
 
-/* A span-2 view pin is the design's whole layout model: one cell or the row. */
+/* A span-2 view pin is the design's whole layout model: one cell or the row.
+   This is the OPERATOR's width — the pin's stored span, the "Fill the row"
+   control, and the width a card being created gets. A card stored one cell wide
+   is not left at one cell: `useTileSpans` measures it and gives it as many cells
+   as its content needs, which is the half of this rule that used to be missing
+   (a four-column listing in one cell painted outside its own frame). These two
+   selectors are what that hook checks to know which cards are none of its
+   business. */
 .home-pin--span2,
-.home-pin:has(.view-card--span2),
 .page-block--view-span2 {
   grid-column: 1 / -1;
 }

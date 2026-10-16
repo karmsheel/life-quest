@@ -75,12 +75,12 @@ export function boardLabel(domainSlug: string | null): string {
  * looking at.
  *
  * `width.spanNamed` is whether the caller asked for a width at all. A missing
- * span means one cell for a card being CREATED — that is the grid's normal cell
- * and a caller saying nothing is not asking for anything unusual. It does not
- * mean one cell for a card being CHANGED: a full-row card edited without naming
- * a width would silently shrink to half the board, which is the card leaving its
- * place by a second route. On an edit the card's own width stands unless the
- * caller names a different one.
+ * span means 1 for a card being CREATED — the width that lets the board size the
+ * card to its own content, which is what a caller saying nothing is asking for.
+ * It does not mean 1 for a card being CHANGED: a full-row card edited without
+ * naming a width would silently shrink to the board's own choice, which is the
+ * card leaving its place by a second route. On an edit the card's own width
+ * stands unless the caller names a different one.
  */
 export function placeViewPin(
   pins: Pin[],

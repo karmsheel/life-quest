@@ -200,7 +200,9 @@ const VIEW_BLOCK_SCHEMA = {
     },
     span: {
       type: "number",
-      description: "1 = one grid cell, 2 = the card's full width. Omit unless the card needs the full row.",
+      description:
+        "1 = the board sizes the card to its content, 2 = the card's full width. Omit unless the " +
+        "card needs the full row.",
     },
   },
 };

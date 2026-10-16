@@ -6,7 +6,7 @@ import type { Pin } from "@lifequest/vault-core";
  *
  * Two controls at most, icon-only, in the order the board reads left to right:
  *
- *   width        — view pins only: one cell, or the whole row
+ *   width        — view pins only: the board's own choice, or the whole row
  *   menu (3-dot) — the card's own actions: Archive, and Delete where there is
  *                  something behind the card to delete
  *
@@ -65,7 +65,17 @@ export function PinChrome({
   onCycleSpan: () => void;
 }) {
   const widen = pin.kind === "view" && pin.span !== 2;
-  const spanLabel = pin.kind === "view" && pin.span === 2 ? "Shrink to one cell" : "Widen to full row";
+  /**
+   * The two widths a card can be asked for, in the operator's own words.
+   *
+   * They are not "one cell" and "two cells" any more, and the words have to say
+   * what actually happens: a card stored one cell wide is MEASURED — the board
+   * gives it as many cells as its content needs, which is how a four-column
+   * listing stopped painting outside its own frame — while a card stored two
+   * cells wide is drawn across the whole row, exactly as asked, whatever it
+   * holds. "Shrink to one cell" would be a promise the board no longer keeps.
+   */
+  const spanLabel = widen ? "Fill the row" : "Size to the content";
 
   return (
     <div className="home-pin__chrome">

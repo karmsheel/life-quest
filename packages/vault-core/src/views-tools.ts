@@ -112,7 +112,9 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
       "that domain's board. They differ legitimately — a financial weekly summary belongs on " +
       "Overview, so domainSlug: \"financial\" with boardSlug: null. A domain board only accepts its " +
       "own domain's view. `span` 2 makes the card the full row, which a composed view usually " +
-      "wants.\n\n" +
+      "wants. Omitting `span` leaves the card its own width: the board measures what the card " +
+      "holds and draws it in as many cells as its content needs, so a listing with six columns " +
+      "is never squeezed into one cell.\n\n" +
       "To CHANGE a card that already exists — including how one of its blocks is displayed — read it " +
       "with get_view, change the field you mean to change, and call save_view again with the same " +
       "`viewId`. That updates the card in place, keeps its position on the board, and keeps its " +
@@ -149,9 +151,12 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
         span: {
           type: "number",
           description:
-            "How wide the card is: 1 = one grid cell (the default for a NEW card), 2 = the full " +
-            "row. A composed card is usually 2. On an EDIT, omitting span leaves the card as wide " +
-            "as it already is — so a change to a card's contents never re-shapes the board.",
+            "How wide the card is: 1 = the board's own choice (the default for a NEW card) — it " +
+            "measures the card's content and gives it as many cells as it needs, so one row can " +
+            "hold two wide cards and the next three narrow ones — or 2 = the full row, whatever " +
+            "the card holds. A composed card usually wants 2. On an EDIT, omitting span leaves the " +
+            "card as wide as it already is — so a change to a card's contents never re-shapes the " +
+            "board.",
         },
         viewId: {
           type: "string",
@@ -182,7 +187,8 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
   {
     name: "arrange_dashboard",
     description:
-      "Set one dashboard's pins: reorder, add a saved view pin (span 1 = one cell, 2 = full row), " +
+      "Set one dashboard's pins: reorder, add a saved view pin (span 1 = the board sizes the card " +
+      "to its content, 2 = full row), " +
       "or unpin by leaving a pin out. The array is the COMPLETE board, so keep every pin you do " +
       "not change and keep their order meaningful. Read get_dashboard first and send back the full " +
       "board with your changes.\n\n" +
@@ -705,16 +711,16 @@ function specFix(db: DatabaseMeta, domainSlug: string): Record<string, unknown> 
 }
 
 /**
- * A card's width: 1 = one grid cell, 2 = the full row. Absent means 1, because
- * that is the grid's normal cell and a caller that says nothing is not asking
- * for anything unusual.
+ * A card's width: 1 = the board sizes the card to its content, 2 = the full row.
+ * Absent means 1, because that is the card that lets the board give it what it
+ * needs — a caller that says nothing is not asking for anything unusual.
  */
 function parseSpan(raw: unknown): Result<1 | 2> {
   if (raw === undefined || raw === null || raw === "") return { ok: true, value: 1 };
   if (raw === 1 || raw === 2) return { ok: true, value: raw };
   // A model that read the schema as text sends the number as a string.
   if (raw === "1" || raw === "2") return { ok: true, value: raw === "2" ? 2 : 1 };
-  return { ok: false, error: "span must be 1 (one cell) or 2 (full row)" };
+  return { ok: false, error: "span must be 1 (the board sizes it) or 2 (full row)" };
 }
 
 function toolError(
