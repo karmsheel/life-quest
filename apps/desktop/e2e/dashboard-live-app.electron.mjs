@@ -24,17 +24,24 @@
  * reason the screenshot is: everything else here reads, and a run that writes to
  * a real vault should be a decision rather than a default.
  *
- * The drag uses the **grip**, not a hold. This window is hidden, and Chromium
- * throttles timers in a window nobody is looking at — a 220 ms hold that never
- * fires would make "a press on a locked board does nothing" pass for the wrong
- * reason. The grip is armed on movement and needs no timer, so the leg proves the
- * channel rather than the frame rate.
+ * The drag is a HOLD, because there is no grip any more: the card is its own
+ * handle. This window is hidden, and Chromium throttles timers in a window nobody
+ * is looking at — a 220 ms hold that fired a second late would be cancelled by the
+ * first pointer move, so the leg does not sleep and hope: it polls for the card to
+ * actually be lifted before it moves, and asks the app not to throttle timers
+ * while it does.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app } from "electron";
+
+// The drag leg holds a card, and the hold is a timer. A hidden window's timers are
+// aligned to a second at best, which would make this leg a claim about throttling
+// rather than about the channel. Every other rig here does not need this switch
+// because none of them waits on a timer inside the app.
+app.commandLine.appendSwitch("disable-background-timer-throttling");
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.join(here, "..");
@@ -329,7 +336,7 @@ async function main() {
   // ── arranging the operator's own board, over the real IPC channel ─────────
   //
   // The harness rig proves the gesture against a stubbed bridge. This is the only
-  // place the whole chain is real at once: grip → pointer capture → the slot rule
+  // place the whole chain is real at once: hold → pointer capture → the slot rule
   // → `pins:set` → the board file on disk → the renderer reading it back.
   if (process.env.LIFEQUEST_E2E_DRAG) {
     const before = await win.webContents.executeJavaScript(ORDER);
@@ -338,16 +345,27 @@ async function main() {
       failure(`the live board has ${before.length} pin(s); there is nothing to arrange`);
     } else {
       const [first, second] = before;
-      /** Drag the grip of `id` onto a fraction across the card `ontoId`. */
+      /**
+       * Drag `id` onto a fraction across the card `ontoId`.
+       *
+       * The card is its own handle: the press goes on the card's heading — never
+       * its centre, because every home card ends in a link and a press on an
+       * interactive element is deliberately not a drag — and it is HELD until the
+       * board says the card is off it. Moving before the hold fires is a cancelled
+       * press by design, so waiting for the lift is what makes this a drag.
+       */
       const drag = async (id, ontoId, across) => {
-        const grip = await pointAt(win, `[data-pin-id="${id}"] [data-testid="pin-grip"]`);
-        mouse(win, "mouseDown", grip.x, grip.y);
-        mouse(win, "mouseMove", grip.x + 8, grip.y);
-        await sleep(120);
+        const from = await pointAt(win, `[data-pin-id="${id}"] .home-card__title, [data-pin-id="${id}"] .view-card__title`);
+        mouse(win, "mouseDown", from.x, from.y);
+        await waitFor(
+          win,
+          `document.querySelectorAll('[data-pin-id="${id}"].is-lifted').length === 1`,
+          `the hold on ${id} to lift the card`,
+        );
         const onto = await pointAt(win, `[data-pin-id="${ontoId}"]`);
         const target = { x: onto.left + onto.width * across, y: onto.top + 24 };
         for (let step = 1; step <= 3; step += 1) {
-          mouse(win, "mouseMove", grip.x + ((target.x - grip.x) * step) / 3, grip.y + ((target.y - grip.y) * step) / 3);
+          mouse(win, "mouseMove", from.x + ((target.x - from.x) * step) / 3, from.y + ((target.y - from.y) * step) / 3);
           await sleep(60);
         }
         mouse(win, "mouseUp", target.x, target.y);
@@ -404,7 +422,7 @@ async function main() {
         order: afterLockedGesture,
       };
       if (lockedChrome !== 0) {
-        failure(`the locked live board drew ${lockedChrome} chrome bar(s), so there was a grip to drag with`);
+        failure(`the locked live board drew ${lockedChrome} chrome bar(s), so there was chrome to press`);
       }
       if (lockedLifted !== 0) {
         failure("a gesture on the locked live board lifted a card");

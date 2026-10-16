@@ -14,17 +14,20 @@
  *  1. `skin`           — the harness painted in the app's own skin. A rig on
  *                        base tokens judges a palette nobody runs.
  *  2. `chrome-identity` — every card's chrome is icon-only, and the icon is the
- *                        named one: `lucide-grip-vertical` for move,
- *                        `lucide-ellipsis-vertical` for the card's own menu,
- *                        `lucide-maximize-2` / `lucide-minimize-2` for the card's
- *                        width. The rig reads the class lucide-react stamps on
- *                        the `<svg>`, so the claim is "this exact icon" rather
+ *                        named one: `lucide-ellipsis-vertical` for the card's own
+ *                        menu, `lucide-maximize-2` / `lucide-minimize-2` for the
+ *                        card's width. The rig reads the class lucide-react stamps
+ *                        on the `<svg>`, so the claim is "this exact icon" rather
  *                        than "some svg". No glyph character (`✕ ↑ ↓ ◧ ♭`)
  *                        survives anywhere in the chrome, which is what a
  *                        half-migrated chrome fails. The chrome is read inside
  *                        the card's own tool row, which also holds the chat
  *                        control: that control is not chrome, and this fixture is
  *                        what keeps the two apart.
+ *                        The list of expected controls per kind is EXACT, which is
+ *                        what says the grip is gone for good: the card is its own
+ *                        handle now, and a chrome button offering the same gesture
+ *                        again would fail here by name.
  *                        The pin-off glyph that used to be the unpin control is
  *                        gone: removal lives in the 3-dot menu now, as Archive
  *                        and Delete, and `dashboard-card-context` claims what
@@ -478,7 +481,11 @@ async function scrollBoardToEnd(win) {
 }
 
 /**
- * Pick a card up by its heading or its grip and put it down on a point.
+ * Pick a card up by its heading and put it down on a point.
+ *
+ * There is one way to start a drag — hold the card — because the grip that used
+ * to start it on movement is gone. `waitForLift` is therefore the hold, and it is
+ * what the press is waiting for before anything is aimed at.
  *
  * The pointer travels in steps rather than jumping: the slot resolver runs on
  * every move, so a single jump would only prove the last position was read. The
@@ -492,15 +499,9 @@ async function scrollBoardToEnd(win) {
  * board has reflowed, which is also what an operator does — they watch the board
  * shift and then put the card where the card now is.
  */
-async function dragCard(win, pinId, aim, options = {}) {
-  const source = await pointOn(
-    win,
-    options.via === "grip" ? `[data-pin-id="${pinId}"] [data-testid="pin-grip"]` : headingOf(pinId),
-  );
+async function dragCard(win, pinId, aim) {
+  const source = await pointOn(win, headingOf(pinId));
   mouse(win, "mouseDown", source.x, source.y);
-  // A grip needs no hold but it does need movement: it is armed to drag, not to
-  // lift on the press itself.
-  if (options.via === "grip") mouse(win, "mouseMove", source.x + 6, source.y);
   const lifted = await waitForLift(win, pinId);
   if (!lifted.includes(pinId)) {
     mouse(win, "mouseUp", source.x, source.y);
@@ -563,7 +564,7 @@ async function waitForLift(win, pinId, timeoutMs = 3000) {
 function expectedIcons(pin) {
   // `MoreVertical` is lucide's alias for `ellipsis-vertical`, and the class the
   // svg carries is the icon's own name, not the component's.
-  const expected = { "pin-grip": "lucide-grip-vertical", "pin-menu-toggle": "lucide-ellipsis-vertical" };
+  const expected = { "pin-menu-toggle": "lucide-ellipsis-vertical" };
   if (pin.kind === "view") {
     expected["pin-span"] = pin.span === 2 ? "lucide-minimize-2" : "lucide-maximize-2";
   }
@@ -687,23 +688,7 @@ async function checkActivation(win) {
     `a hold lifted ${JSON.stringify(lifted)} with ${arranging} arranging grid(s)`,
   );
 
-  // 4. The grip needs no hold: it is the affordance, so movement is enough.
-  step("grip-lifts-at-once");
-  await beginScenario(win);
-  const grip = await pointOn(win, `[data-pin-id="view:financial:v-weekly"] [data-testid="pin-grip"]`);
-  mouse(win, "mouseDown", grip.x, grip.y);
-  await sleep(30);
-  mouse(win, "mouseMove", grip.x + 6, grip.y);
-  const gripLifted = await waitForLift(win, "view:financial:v-weekly", 1000);
-  mouse(win, "mouseUp", grip.x + 6, grip.y);
-  await sleep(80);
-  check(
-    "grip-lifts-at-once",
-    gripLifted.length === 1 && gripLifted[0] === "view:financial:v-weekly",
-    `the grip lifted ${JSON.stringify(gripLifted)} after 6 px and no hold`,
-  );
-
-  // 5. A press on a card's link is the link's, hold or no hold.
+  // 4. A press on a card's link is the link's, hold or no hold.
   step("press-on-a-link-is-not-a-drag");
   await beginScenario(win);
   const link = await pointOn(win, '[data-pin-id="page:financial:ledger"] a.home-card__more');
@@ -714,7 +699,7 @@ async function checkActivation(win) {
     "a hold on a card's link lifted the card",
   );
 
-  // 6. A hold does not move the board, and a drag moves the *room* for the card
+  // 5. A hold does not move the board, and a drag moves the *room* for the card
   //    into the slot it will land in. `sys:goal-progress` is the board's first
   //    card and a full-row one, so this is the strongest version of the claim:
   //    the whole row it left is what the cards below move up into.
@@ -761,10 +746,21 @@ async function checkActivation(win) {
       `the board now ${JSON.stringify(gapOrder)}`,
   );
 
-  // 7. A locked board is inert — no chrome, no lift, no write.
+  // 6. A locked board is inert — no chrome, no lift, no tab stop, no write.
   step("locked-is-inert");
   await beginScenario(win, { locked: true });
   const lockedPoint = await pointOn(win, headingOf("view:financial:v-weekly"));
+  // A locked card is not a handle either: the lock takes the whole gesture, and
+  // a card that could still be tabbed to and lifted from the keyboard would be a
+  // second, hidden way to propose what the Lock button says is not editable.
+  const lockedTabStop = await win.webContents.executeJavaScript(
+    `(() => {
+       const card = document.querySelector('[data-pin-id="view:financial:v-weekly"]');
+       if (!card) return null;
+       card.focus();
+       return { tabIndex: card.tabIndex, focused: document.activeElement === card };
+     })()`,
+  );
   mouse(win, "mouseDown", lockedPoint.x, lockedPoint.y);
   await sleep(400);
   const lockedLifted = await liftedIds(win);
@@ -774,8 +770,14 @@ async function checkActivation(win) {
   const lockedWrites = (await pinWrites(win)).length;
   check(
     "locked-is-inert",
-    lockedLifted.length === 0 && lockedChrome === 0 && lockedWrites === 0,
-    `a locked board drew ${lockedChrome} chrome bar(s), lifted ${JSON.stringify(lockedLifted)}, and wrote ${lockedWrites} time(s)`,
+    lockedLifted.length === 0 &&
+      lockedChrome === 0 &&
+      lockedWrites === 0 &&
+      lockedTabStop !== null &&
+      lockedTabStop.tabIndex < 0 &&
+      lockedTabStop.focused === false,
+    `a locked board drew ${lockedChrome} chrome bar(s), lifted ${JSON.stringify(lockedLifted)}, ` +
+      `wrote ${lockedWrites} time(s), and its card was ${JSON.stringify(lockedTabStop)}`,
   );
 
   await beginScenario(win);
@@ -923,21 +925,20 @@ async function checkOrdering(win) {
     `a hold and release gave ${JSON.stringify(stillOrder)} for ${(await pinWrites(win)).length} write(s)`,
   );
 
-  // 6. The grip is the same gesture: it drags, and it writes once.
-  step("grip-drags-and-writes-once");
+  // 6. A drag backwards — onto the left half of the card before it — is one
+  //    write, and lands where it was aimed rather than where it started.
+  step("hold-drag-writes-once");
   await beginScenario(win);
-  await dragCard(win, "page:financial:ledger", () => pointIn(win, "view:financial:v-weekly", 0.2), {
-    via: "grip",
-  });
-  const gripOrder = await restingOrder(win);
-  const gripWrites = writesOf(await pinWrites(win));
+  await dragCard(win, "page:financial:ledger", () => pointIn(win, "view:financial:v-weekly", 0.2));
+  const dragOrder = await restingOrder(win);
+  const dragWrites = writesOf(await pinWrites(win));
   check(
-    "grip-drags-and-writes-once",
-    gripOrder[0] === "sys:goal-progress" &&
-      gripOrder[1] === "page:financial:ledger" &&
-      gripOrder[2] === "view:financial:v-weekly" &&
-      gripWrites.length === 1,
-    `the grip drag gave ${JSON.stringify(gripOrder)} for ${gripWrites.length} write(s)`,
+    "hold-drag-writes-once",
+    dragOrder[0] === "sys:goal-progress" &&
+      dragOrder[1] === "page:financial:ledger" &&
+      dragOrder[2] === "view:financial:v-weekly" &&
+      dragWrites.length === 1,
+    `the drag gave ${JSON.stringify(dragOrder)} for ${dragWrites.length} write(s)`,
   );
 }
 
@@ -1090,10 +1091,13 @@ async function checkCancelAndRefusal(win) {
 }
 
 /**
- * Arranging from the keyboard: the same board, the same one write per drop, and
- * the same announcements. This leg is what makes removing the `↑` / `↓` buttons
- * a trade rather than a loss — they were the only non-pointer path, and this is
- * the one that replaces them.
+ * Arranging from the keyboard, which is the one thing the removed grip was
+ * uniquely able to do. The card is the handle now: an unlocked card is a tab
+ * stop, Enter lifts it, the arrows place it, Enter drops it.
+ *
+ * The first claim is the replacement itself — the grip is gone, the card is the
+ * tab stop — because every claim after it is only worth making if the thing
+ * being focused is the thing the operator would reach with Tab.
  */
 async function checkKeyboard(win) {
   const base = [
@@ -1106,21 +1110,53 @@ async function checkKeyboard(win) {
     "sys:recent-log",
   ];
 
-  /** Put the keyboard's focus on a card's grip, the way Tab would. */
-  const focusGrip = (pinId) =>
+  /**
+   * Put the keyboard's focus on a card, the way Tab would.
+   *
+   * `focus()` rather than a synthetic Tab: what is being claimed is that the card
+   * IS a tab stop — `tabIndex` is read in the same expression, so a card that
+   * took focus without being reachable would fail here rather than pass quietly.
+   */
+  const focusCard = (pinId) =>
     win.webContents.executeJavaScript(
       `(() => {
-         const grip = document.querySelector('[data-pin-id="${pinId}"] [data-testid="pin-grip"]');
-         if (!grip) return false;
-         grip.focus();
-         return document.activeElement === grip;
+         const card = document.querySelector('[data-pin-id="${pinId}"]');
+         if (!card) return { found: false };
+         card.focus();
+         return {
+           found: true,
+           tabIndex: card.tabIndex,
+           focused: document.activeElement === card,
+         };
        })()`,
     );
+
+  // 0. The card is the handle: no grip anywhere, and the card is a tab stop.
+  step("card-is-the-handle");
+  await beginScenario(win);
+  const handle = await focusCard("sys:today-week");
+  const grips = await win.webContents.executeJavaScript(
+    `({
+       gripAttr: document.querySelectorAll("[data-pin-grip]").length,
+       gripClass: document.querySelectorAll(".home-pin__grip").length,
+       gripTestId: document.querySelectorAll('[data-testid="pin-grip"]').length,
+     })`,
+  );
+  check(
+    "card-is-the-handle",
+    handle.found === true &&
+      handle.tabIndex === 0 &&
+      handle.focused === true &&
+      grips.gripAttr === 0 &&
+      grips.gripClass === 0 &&
+      grips.gripTestId === 0,
+    `the card was ${JSON.stringify(handle)} and the board still drew ${JSON.stringify(grips)}`,
+  );
 
   // 1. Enter lifts, arrows move, Enter drops: one write, and the exact order.
   step("keyboard-moves-and-writes");
   await beginScenario(win);
-  const focused = await focusGrip("sys:today-week");
+  const focused = (await focusCard("sys:today-week")).focused;
   await pressKey(win, "Return");
   await pressKey(win, "Left");
   await pressKey(win, "Left");
@@ -1150,7 +1186,7 @@ async function checkKeyboard(win) {
   step("keyboard-down-moves-a-row");
   await beginScenario(win);
   const tracks = await columns(win);
-  await focusGrip("sys:pending-decisions");
+  await focusCard("sys:pending-decisions");
   await pressKey(win, "Return");
   await pressKey(win, "Up");
   await pressKey(win, "Return");
@@ -1169,7 +1205,7 @@ async function checkKeyboard(win) {
   // 3. Escape puts it back and writes nothing.
   step("keyboard-escape-writes-nothing");
   await beginScenario(win);
-  await focusGrip("sys:today-week");
+  await focusCard("sys:today-week");
   await pressKey(win, "Return");
   await pressKey(win, "Right");
   await pressKey(win, "Escape");
@@ -1185,7 +1221,7 @@ async function checkKeyboard(win) {
   // 4. The moves are spoken, and so is the outcome.
   step("keyboard-is-announced");
   await beginScenario(win);
-  await focusGrip("sys:today-week");
+  await focusCard("sys:today-week");
   await pressKey(win, "Return");
   const movingStatus = await statusText(win);
   await pressKey(win, "Left");
@@ -1201,11 +1237,11 @@ async function checkKeyboard(win) {
     `the live region said ${JSON.stringify([movingStatus, movedStatus, savedStatus])}`,
   );
 
-  // 5. Focus comes back to the grip of the card that moved, so the operator can
-  //    keep arranging without hunting for where they were.
-  step("focus-returns-to-the-grip");
+  // 5. Focus comes back to the card that moved, so the operator can keep
+  //    arranging without hunting for where they were.
+  step("focus-returns-to-the-card");
   await beginScenario(win);
-  await focusGrip("sys:today-week");
+  await focusCard("sys:today-week");
   await pressKey(win, "Return");
   await pressKey(win, "Left");
   await pressKey(win, "Return");
@@ -1215,14 +1251,14 @@ async function checkKeyboard(win) {
        const el = document.activeElement;
        const card = el && el.closest ? el.closest("[data-pin-id]") : null;
        return {
-         isGrip: Boolean(el && el.dataset && el.dataset.testid === "pin-grip"),
+         isCard: Boolean(el && el.dataset && el.dataset.pinId),
          pinId: card ? card.dataset.pinId : null,
        };
      })()`,
   );
   check(
-    "focus-returns-to-the-grip",
-    focusBack.isGrip === true && focusBack.pinId === "sys:today-week",
+    "focus-returns-to-the-card",
+    focusBack.isCard === true && focusBack.pinId === "sys:today-week",
     `after the drop, focus was on ${JSON.stringify(focusBack)}`,
   );
 }

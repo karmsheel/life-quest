@@ -102,6 +102,7 @@ async function readReport(
 describe("dashboard card context e2e", () => {
   it("moves the pin board behind a header toggle and puts a card's chat control on every card", async (t) => {
     const report = await readReport(t, "dashboard-card-context", [
+      "the-header-drops-the-doctrine-line",
       "add-toggle-is-closed-on-landing",
       "add-toggle-opens-and-closes",
       "pin-board-sits-above-the-grid",

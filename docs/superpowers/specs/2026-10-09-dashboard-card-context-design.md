@@ -1,6 +1,6 @@
 # Dashboard card context: the pin board on top, and a card handed to the chat
 
-**Status:** design
+**Status:** design — amended 2026-10-16: the chrome no longer draws a grip. Every card's chrome is the width control (view pins) and the 3-dot menu, and an unlocked card is itself a tab stop so the keyboard arrange path (LAWS/DASHBOARD.md) survives the removal.
 **Date:** 2026-10-09
 **Touches:** `apps/desktop/src/pages/HomePage.tsx`, `apps/desktop/src/state/ChatDockProvider.tsx`,
 `apps/desktop/src/components/hermes/ChatPanel.tsx`, `apps/desktop/src/components/home/*`,

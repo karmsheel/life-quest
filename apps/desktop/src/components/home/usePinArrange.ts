@@ -70,11 +70,12 @@ function layoutBox(card: HTMLElement): SlotRect {
  * list and one DOM order:
  *
  * - **Arming.** One delegated `pointerdown` on the grid. A press that starts on
- *   a link, a button, or a field is that control's and is left alone. A press
- *   that starts on the grip is armed to drag on 4 px of movement; a press
- *   anywhere else on the card is armed to drag on a 220 ms hold, and any drift
- *   over 8 px before then cancels it — so a short press is still a press, and a
- *   drag across a card's text is still a text selection.
+ *   a link, a button, or a field is that control's and is left alone. Any other
+ *   press on a card is armed to drag on a 220 ms hold, and any drift over 8 px
+ *   before then cancels it — so a short press is still a press, and a drag across
+ *   a card's text is still a text selection. The card is the board's whole
+ *   handle: the grip that used to start a drag on 4 px of movement is gone, and
+ *   with it the second, faster way to begin the same gesture.
  * - **Lifting.** The card is marked lifted the moment the hold fires, but it
  *   stays *in* its grid cell until the pointer actually moves. Taking it out of
  *   flow at the hold would reflow the board under a hand that has not moved yet,
@@ -98,8 +99,6 @@ function layoutBox(card: HTMLElement): SlotRect {
 export const HOLD_MS = 220;
 /** How far a press may drift before the hold is cancelled and it stays a press. */
 export const HOLD_CANCEL_PX = 8;
-/** How far a press on the grip must move to begin a drag — a grip needs no hold. */
-export const GRIP_ACTIVATE_PX = 4;
 
 /**
  * What the board's one write path did with a new order.
@@ -120,7 +119,6 @@ function announceOutcome(outcome: CommitOutcome): string {
 type Arm = {
   pinId: string;
   pointerId: number;
-  mode: "grip" | "hold";
   startX: number;
   startY: number;
   timer: number | null;
@@ -409,10 +407,16 @@ export function usePinArrange(input: {
     endLift();
   }, [disarm, endLift]);
 
-  /** Put the grip's focus back after the board has re-rendered around it. */
-  const refocusGrip = useCallback((pinId: string) => {
+  /**
+   * Put the keyboard's focus back on the card that moved, once the board has
+   * re-rendered around it. The card is the handle, so it is the card that has to
+   * keep the focus: a reorder moves it through the DOM, and a moved node can lose
+   * focus — an operator arranging three cards in a row should not have to hunt
+   * for where they were between each one.
+   */
+  const refocusCard = useCallback((pinId: string) => {
     requestAnimationFrame(() => {
-      cardIn(gridRef.current, pinId)?.querySelector<HTMLElement>("[data-pin-grip]")?.focus();
+      cardIn(gridRef.current, pinId)?.focus();
     });
   }, []);
 
@@ -432,16 +436,16 @@ export function usePinArrange(input: {
       const pinId = current.pinId;
       endLift();
       if (from < 0 || to === from) {
-        if (options.focus) refocusGrip(pinId);
+        if (options.focus) refocusCard(pinId);
         return;
       }
       const next = movePin(pins, from, to);
       void onCommit(next).then((outcome) => {
         setAnnounce(announceOutcome(outcome));
-        if (options.focus) refocusGrip(pinId);
+        if (options.focus) refocusCard(pinId);
       });
     },
-    [endLift, onCommit, pins, refocusGrip],
+    [endLift, onCommit, pins, refocusCard],
   );
 
   /** Take the card out of the board's flow, frozen where it stood. */
@@ -492,28 +496,24 @@ export function usePinArrange(input: {
       const pinId = card?.dataset.pinId;
       if (!card || !pinId) return;
       // A press on a control inside the card is that control's, not the board's.
-      if (target.closest('a, input, select, textarea, [role="button"], button:not([data-pin-grip])')) {
+      if (target.closest('a, input, select, textarea, [role="button"], button')) {
         return;
       }
-      const mode: Arm["mode"] = target.closest("[data-pin-grip]") ? "grip" : "hold";
       const arm: Arm = {
         pinId,
         pointerId: event.pointerId,
-        mode,
         startX: event.clientX,
         startY: event.clientY,
         timer: null,
       };
-      if (mode === "hold") {
-        // The hold fires where the press began: by definition the pointer has not
-        // moved more than the cancel threshold, so there is no later point to use.
-        arm.timer = window.setTimeout(() => {
-          const current = armRef.current;
-          if (current && current.pointerId === arm.pointerId) {
-            liftCard(current, { x: current.startX, y: current.startY });
-          }
-        }, HOLD_MS);
-      }
+      // The hold fires where the press began: by definition the pointer has not
+      // moved more than the cancel threshold, so there is no later point to use.
+      arm.timer = window.setTimeout(() => {
+        const current = armRef.current;
+        if (current && current.pointerId === arm.pointerId) {
+          liftCard(current, { x: current.startX, y: current.startY });
+        }
+      }, HOLD_MS);
       armRef.current = arm;
     },
     [busy, liftCard, locked, pins.length],
@@ -524,11 +524,7 @@ export function usePinArrange(input: {
       const arm = armRef.current;
       if (arm && arm.pointerId === event.pointerId) {
         const drift = Math.hypot(event.clientX - arm.startX, event.clientY - arm.startY);
-        if (arm.mode === "grip") {
-          if (drift >= GRIP_ACTIVATE_PX) liftCard(arm, { x: event.clientX, y: event.clientY });
-        } else if (drift > HOLD_CANCEL_PX) {
-          disarm();
-        }
+        if (drift > HOLD_CANCEL_PX) disarm();
         return;
       }
       const current = liftRef.current;
@@ -547,7 +543,7 @@ export function usePinArrange(input: {
       }
       startAutoScroll();
     },
-    [captureRects, disarm, followPointer, liftCard, slots, startAutoScroll],
+    [captureRects, disarm, followPointer, slots, startAutoScroll],
   );
 
   const onPointerUp = useCallback(
@@ -593,13 +589,19 @@ export function usePinArrange(input: {
 
   /**
    * Arranging from the keyboard, which is not a fallback but a second way to do
-   * the same thing: the grip is a real button, so Enter lifts the card it belongs
-   * to, the arrows move it, and Enter drops it.
+   * the same thing: a card is a tab stop, so Enter lifts the card, the arrows
+   * move it, and Enter drops it.
+   *
+   * The card itself is the handle — the grip that used to hold this gesture for
+   * the keyboard is gone — and that is why the start is gated on the event
+   * landing *on* the card and not on something inside it: Enter on the card's own
+   * chat button or 3-dot menu is that control's key, and the card is a container
+   * full of them.
    *
    * The listener is on the window rather than on the grid because a reorder moves
-   * the focused grip through the DOM, and a moved node can lose focus — a keydown
+   * the focused card through the DOM, and a moved node can lose focus — a keydown
    * that then went to the body would never reach a grid handler. Only the *start*
-   * needs the grip under the event, and after that the gesture is the page's.
+   * needs the card under the event, and after that the gesture is the page's.
    */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -611,7 +613,7 @@ export function usePinArrange(input: {
         if (!target || typeof target.closest !== "function") return;
         const card = target.closest<HTMLElement>("[data-pin-id]");
         const pinId = card?.dataset.pinId;
-        if (!pinId || !target.closest("[data-pin-grip]")) return;
+        if (!card || !pinId || target !== card) return;
         event.preventDefault();
         const from = pins.findIndex((candidate) => candidate.id === pinId);
         if (from < 0) return;

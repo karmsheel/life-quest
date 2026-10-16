@@ -569,9 +569,6 @@ export default function HomePage() {
               {locked ? "Locked" : "Unlocked"}
             </span>
           </h1>
-          <p className="home-dashboard__subtitle">
-            Premise → Vision → Purpose → Strategy (How)
-          </p>
           <p className="home-dashboard__lock-hint muted" data-testid="board-lock-hint">
             {locked
               ? "This dashboard is locked. Unlock to add, move, or remove cards; the companion's changes wait in Decisions."
@@ -659,6 +656,20 @@ export default function HomePage() {
           <div
             key={pin.id}
             data-pin-id={pin.id}
+            /*
+              The card is its own arrange handle.
+
+              The grip that used to sit in the chrome is gone: holding a card
+              already picks it up, so a second control for the same gesture was
+              chrome for chrome's sake — and a small one the operator had to find
+              before the board would move. What the grip alone could do is keep
+              the gesture reachable without a pointer, and that is what this
+              `tabIndex` carries: an unlocked card is a tab stop, Enter lifts it,
+              the arrows place it, and Enter drops it. A locked card is not a tab
+              stop, because there is nothing to be done to it.
+            */
+            tabIndex={locked ? undefined : 0}
+            aria-describedby={locked ? undefined : "pin-arrange-hint"}
             className={[
               "home-pin",
               pin.kind === "view" && pin.span === 2 ? "home-pin--span2" : "",
@@ -675,7 +686,7 @@ export default function HomePage() {
               board-editing chrome, and the lock takes it away. Asking the
               companion about a card is not changing it, so the chat control
               survives the lock — which is exactly why it is a sibling of the
-              chrome rather than the fourth button inside it.
+              chrome rather than a button inside it.
             */}
             <div className="home-pin__tools">
               <button
@@ -735,6 +746,17 @@ export default function HomePage() {
           </Button>
         </section>
         ) : null}
+
+      {/* How a keyboard operator learns that the card they landed on can be
+          moved at all. The grip used to say so by existing; with it gone, the
+          card names its own keys. It is a description rather than a label,
+          because a card's name is its own heading and a label here would
+          replace it. */}
+      {locked ? null : (
+        <p className="visually-hidden" id="pin-arrange-hint">
+          Press Enter to move this card: the arrow keys place it, Enter drops it, Escape cancels.
+        </p>
+      )}
 
       {/* Arranging is a gesture, so its outcome is not visible in the chrome the
           way a button's is: this line is how a keyboard or screen-reader

@@ -22,7 +22,6 @@ const SCENARIOS = [
   "short-press-is-not-a-drag",
   "movement-cancels-the-hold",
   "hold-lifts",
-  "grip-lifts-at-once",
   "press-on-a-link-is-not-a-drag",
   "lift-leaves-a-gap",
   "locked-is-inert",
@@ -31,16 +30,17 @@ const SCENARIOS = [
   "wide-card-left-and-right",
   "drop-on-the-agents-card",
   "hold-then-release-writes-nothing",
-  "grip-drags-and-writes-once",
+  "hold-drag-writes-once",
   "escape-cancels",
   "blur-cancels",
   "refusal-reverts",
   "refusal-is-announced",
+  "card-is-the-handle",
   "keyboard-moves-and-writes",
   "keyboard-down-moves-a-row",
   "keyboard-escape-writes-nothing",
   "keyboard-is-announced",
-  "focus-returns-to-the-grip",
+  "focus-returns-to-the-card",
   "siblings-animate",
   "auto-scroll-follows-the-pointer",
   "reduced-motion-is-still",
@@ -96,11 +96,12 @@ type Report = {
 
 /**
  * Arranging the Dashboard: the chrome draws the standard icon for each control,
- * and — as this rig grows — a card lifts, moves, and lands where it was aimed,
- * writing once and reverting when the vault refuses.
+ * and — as this rig grows — a card lifts on a hold, moves, and lands where it was
+ * aimed, writing once and reverting when the vault refuses. The card is its own
+ * handle, from the pointer and from the keyboard both.
  */
 describe("dashboard arrange e2e", () => {
-  it("lifts a card on a hold or the grip, and draws standard chrome icons", async (t) => {
+  it("lifts a card on a hold, and draws standard chrome icons", async (t) => {
     if (!(await devServerUp())) {
       t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
       return;

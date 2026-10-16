@@ -10,6 +10,13 @@ Supersedes:
 - The `↑` / `↓` pin-chrome buttons in `pages/HomePage.tsx` and their `onMoveUp` / `onMoveDown` handlers.
 - The text-glyph chrome (`✕`, `↑`, `↓`, `◧`, `♭`) as the board's control vocabulary.
 
+Amended 2026-10-16 — **the grip is removed.** Every grip claim below is history:
+
+- `PinChrome` draws no Move card button: `[data-pin-grip]`, `.home-pin__grip` and `GRIP_ACTIVATE_PX` are gone, and `data-pin-id="pin-grip"` must not come back.
+- The card is the board's whole handle. The 220 ms hold is the *only* pointer path to a lift — there is no 4 px path any more.
+- The keyboard path survives the grip: `HomePage` makes an unlocked card a tab stop (`tabIndex={0}`, and no tab stop while locked), and `usePinArrange` lifts it on Enter, places it with the arrows, drops it on Enter, and returns focus to the card.
+- `dashboard-arrange.electron.mjs` claims it by name: `card-is-the-handle`, `hold-drag-writes-once`, `focus-returns-to-the-card`, and a locked card that is not a tab stop.
+
 ---
 
 ## 1. Purpose

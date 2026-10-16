@@ -2719,16 +2719,6 @@ a {
   line-height: 1.45;
 }
 
-.home-dashboard__subtitle {
-  display: block;
-  max-width: 40rem;
-  margin: 0.25rem 0 0;
-  font-weight: 400;
-  font-size: 0.9rem;
-  line-height: 1.45;
-  color: var(--muted-foreground);
-}
-
 .home-dashboard__progress {
   display: flex;
   align-items: center;
@@ -3005,6 +2995,18 @@ a.home-mini-list__link:hover {
   box-shadow: var(--shadow-sm);
 }
 
+/* The card is its own arrange handle, so the card is what wears the focus ring:
+   the grip that used to carry it is gone. Same ring, same vocabulary as the
+   lifted state — landing on a card with the keyboard and lifting it with the
+   hand are the same card being addressed. `:focus-visible` and not `:focus`,
+   because the card is also focused by the pointer press that starts a drag, and
+   a ring under a moving hand is noise. */
+.home-pin:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--home-radius);
+}
+
 /* The card the companion is working on.
    A turn is not a write: it opens before the first tool call and closes after the
    last, and for that whole window the card the operator handed to the chat is
@@ -3129,10 +3131,6 @@ a.home-mini-list__link:hover {
   inset: -0.25rem;
 }
 
-.home-pin__grip {
-  cursor: grab;
-}
-
 .home-pin__btn:hover:not(:disabled) {
   border-color: var(--accent);
   background: var(--accent-tint);
@@ -3152,13 +3150,14 @@ a.home-mini-list__link:hover {
   outline-offset: 1px;
 }
 
-/* Four icon buttons wide (chat, move, width, unpin) plus the row's own inset:
-   the title clears them instead of running underneath. The reserve follows the
-   row rather than the chrome, because the chat control is the one button that is
-   still there when the chrome is not. */
+/* Three icon buttons wide (chat, width, menu) plus the row's own inset: the title
+   clears them instead of running underneath. The reserve follows the row rather
+   than the chrome, because the chat control is the one button that is still there
+   when the chrome is not — and it shrank with the grip: 1.55rem a button, 0.2rem
+   between them, 0.5rem of inset. */
 .home-pin:has(.home-pin__tools) .home-card__title,
 .home-pin:has(.home-pin__tools) .home-dashboard__progress {
-  padding-right: 7.4rem;
+  padding-right: 5.65rem;
 }
 
 /* The deadline banner is not a card: it has no padded shell for a corner row to

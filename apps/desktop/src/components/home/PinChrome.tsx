@@ -1,16 +1,24 @@
-import { GripVertical, Maximize2, Minimize2, MoreVertical } from "lucide-react";
+import { Maximize2, Minimize2, MoreVertical } from "lucide-react";
 import type { Pin } from "@lifequest/vault-core";
 
 /**
  * The chrome a pin wears, in the app's own icon vocabulary.
  *
- * Four controls at most, icon-only, in the order the board reads left to right:
+ * Two controls at most, icon-only, in the order the board reads left to right:
  *
- *   move (grip)  — picks the card up, and is a real button so the keyboard can
- *                  arrange the board too (Enter lifts, arrows move, Enter drops)
  *   width        — view pins only: one cell, or the whole row
  *   menu (3-dot) — the card's own actions: Archive, and Delete where there is
  *                  something behind the card to delete
+ *
+ * THE GRIP IS GONE, and it is not a loss. It was the chrome's drag handle: it
+ * picked a card up on four pixels of movement instead of on the hold the rest of
+ * the card asks for, so the board offered two ways to start one gesture — one of
+ * them a 1.55rem box the operator had to find before the board would move at
+ * all. Holding the card does all of it now, anywhere on the card. What the grip
+ * alone could do is keep the gesture reachable without a pointer, and that is
+ * kept: the card itself is the handle. `HomePage` makes an unlocked card a tab
+ * stop, and `usePinArrange` lifts it on Enter, places it with the arrows and
+ * drops it on Enter again.
  *
  * The glyphs these replace (`✕ ↑ ↓ ◧ ♭`) were the board's whole control
  * vocabulary and none of them said what they did: a `✕` reads as *close*, and
@@ -28,14 +36,11 @@ import type { Pin } from "@lifequest/vault-core";
  * 1.55rem square icon well is not. They keep the board's own `.home-pin__btn`,
  * which is also what the dashboard rigs count.
  *
- * The grip is deliberately the *first* control and the only one with no
- * `onClick`: a drag that starts and ends on it fires a trailing click, and a
- * handler there would make a drop do a second, invisible thing.
- *
  * This whole component is board-editing chrome, and the page lock takes it away:
- * a locked board draws no grip, no width control and no menu. The chat control is
- * the page's, not this component's, which is why asking about a card survives the
- * lock while changing one does not.
+ * a locked board draws no width control and no menu — and no tab stop on the
+ * cards either, so the lock takes the whole gesture and not just its buttons. The
+ * chat control is the page's, not this component's, which is why asking about a
+ * card survives the lock while changing one does not.
  */
 export function PinChrome({
   pin,
@@ -64,18 +69,6 @@ export function PinChrome({
 
   return (
     <div className="home-pin__chrome">
-      <button
-        type="button"
-        className="home-pin__btn home-pin__grip"
-        data-pin-grip=""
-        data-testid="pin-grip"
-        aria-label="Move card"
-        title="Move card"
-        disabled={busy}
-      >
-        <GripVertical size={14} aria-hidden />
-      </button>
-
       {pin.kind === "view" ? (
         <button
           type="button"

@@ -9,6 +9,28 @@
       .fake-chat { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card); }
     </style>
   </head>
+  <!--
+    A still of the Dashboard, for eyeballing the stylesheet without booting the
+    app. Nothing references this file: it is only worth anything while it matches
+    what HomePage actually renders, so it is kept in step with the page by hand.
+
+    What it draws, and what it therefore has to keep drawing:
+
+      - The header is the eyebrow, the title with its lock badge, the lock hint
+        and the page's two controls. There is no doctrine line under the title.
+      - Every card's corner row is the tools row: the chat control (which survives
+        the page lock) and, when the board is unlocked, the chrome — `PinChrome`,
+        whose width control a view pin wears and whose 3-dot menu opens Archive
+        and Delete. NO GRIP: the card is its own arrange handle, so a mock that
+        draws a fourth little box is drawing a control the board does not have.
+      - The pin board sits above the grid it adds to, and the deadline banner is
+        wrapped in a pin of its own, because that is what the layout rules key on
+        (`.home-pin:has(.deadline-banner)`).
+    The icons are lucide-react's own path data, at the size the app renders them
+    (14px in a card's chrome, 13px on the pin board's toggle, 12px on its
+    heading), so the mock shows the product's iconography rather than a
+    stand-in for it.
+  -->
   <body>
     <div class="shell">
       <nav class="nav-rail"></nav>
@@ -18,23 +40,57 @@
             <header class="home-dashboard__header">
               <div>
                 <p class="home-dashboard__eyebrow">Dashboard</p>
-                <h1 class="home-dashboard__title">Overview</h1>
-                <p class="home-dashboard__subtitle">Premise → Vision → Purpose → Strategy (How)</p>
+                <h1 class="home-dashboard__title">
+                  Overview
+                  <span class="doc-status-badge doc-status-badge--unlocked" data-locked="false">Unlocked</span>
+                </h1>
+                <p class="home-dashboard__lock-hint muted" data-testid="board-lock-hint">
+                  This dashboard is unlocked. You and the companion change it in place.
+                </p>
+              </div>
+              <div class="home-dashboard__controls">
+                <button class="btn btn-secondary" aria-expanded="false">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pin" aria-hidden="true">
+                    <path d="M12 17v5" />
+                    <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+                  </svg>
+                  Pin board
+                </button>
+                <button class="btn btn-secondary">Lock</button>
               </div>
             </header>
-            <div class="deadline-banner" role="status">
-              <div class="deadline-banner__content">
-                <span class="deadline-banner__label muted">Deadline pressure</span>
-                <span class="deadline-banner__text">Ship the ledger and 1 other</span>
+
+            <section class="home-card home-pin-add" data-testid="board-add-pin">
+              <h2 class="home-card__title">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pin" aria-hidden="true">
+                  <path d="M12 17v5" />
+                  <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+                </svg>
+                Add pin
+              </h2>
+              <div class="home-pin-add__row">
+                <button class="home-pin-add__btn">deadline</button>
+                <button class="home-pin-add__btn">recent-log</button>
               </div>
-              <button class="deadline-banner__dismiss">Dismiss</button>
-            </div>
+            </section>
+
             <div class="home-dashboard__grid">
-              <div class="home-pin">
-                <div class="home-pin__chrome">
-                  <button class="home-pin__btn">✕</button>
-                  <button class="home-pin__btn">↑</button>
-                  <button class="home-pin__btn">↓</button>
+              <div class="home-pin" data-pin-id="sys:goal-progress">
+                <div class="home-pin__tools">
+                  <button class="home-pin__btn home-pin__chat" data-testid="pin-chat" aria-label="Ask the companion about this card" title="Ask the companion about this card">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-square" aria-hidden="true">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </button>
+                  <div class="home-pin__chrome">
+                    <button class="home-pin__btn" data-testid="pin-menu-toggle" aria-label="Card actions" title="Card actions" aria-haspopup="menu" aria-expanded="false">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-ellipsis-vertical" aria-hidden="true">
+                        <circle cx="12" cy="12" r="1" />
+                        <circle cx="12" cy="5" r="1" />
+                        <circle cx="12" cy="19" r="1" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
                 <section class="home-card home-card--wide">
                   <h2 class="home-card__title">Goals <span class="home-card__count">2</span></h2>
@@ -45,11 +101,49 @@
                   <a class="home-card__more" href="#">Open Goals →</a>
                 </section>
               </div>
-              <div class="home-pin">
-                <div class="home-pin__chrome">
-                  <button class="home-pin__btn">✕</button>
-                  <button class="home-pin__btn">↑</button>
-                  <button class="home-pin__btn">↓</button>
+
+              <div class="home-pin" data-pin-id="sys:deadline">
+                <div class="home-pin__tools">
+                  <button class="home-pin__btn home-pin__chat" data-testid="pin-chat" aria-label="Ask the companion about this card" title="Ask the companion about this card">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-square" aria-hidden="true">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </button>
+                  <div class="home-pin__chrome">
+                    <button class="home-pin__btn" data-testid="pin-menu-toggle" aria-label="Card actions" title="Card actions" aria-haspopup="menu" aria-expanded="false">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-ellipsis-vertical" aria-hidden="true">
+                        <circle cx="12" cy="12" r="1" />
+                        <circle cx="12" cy="5" r="1" />
+                        <circle cx="12" cy="19" r="1" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="deadline-banner" role="status">
+                  <div class="deadline-banner__content">
+                    <span class="deadline-banner__label muted">Deadline pressure</span>
+                    <span class="deadline-banner__text">Ship the ledger and 1 other</span>
+                  </div>
+                  <button class="deadline-banner__dismiss">Dismiss</button>
+                </div>
+              </div>
+
+              <div class="home-pin" data-pin-id="sys:pending-decisions">
+                <div class="home-pin__tools">
+                  <button class="home-pin__btn home-pin__chat" data-testid="pin-chat" aria-label="Ask the companion about this card" title="Ask the companion about this card">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-square" aria-hidden="true">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </button>
+                  <div class="home-pin__chrome">
+                    <button class="home-pin__btn" data-testid="pin-menu-toggle" aria-label="Card actions" title="Card actions" aria-haspopup="menu" aria-expanded="false">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-ellipsis-vertical" aria-hidden="true">
+                        <circle cx="12" cy="12" r="1" />
+                        <circle cx="12" cy="5" r="1" />
+                        <circle cx="12" cy="19" r="1" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
                 <section class="home-card">
                   <h2 class="home-card__title">Pending decisions <span class="home-card__count">1</span></h2>
@@ -59,6 +153,42 @@
                   <a class="home-card__more" href="#">Open inbox →</a>
                 </section>
               </div>
+
+              <div class="home-pin" data-pin-id="view:financial:v-weekly">
+                <div class="home-pin__tools">
+                  <button class="home-pin__btn home-pin__chat" data-testid="pin-chat" aria-label="Ask the companion about this card" title="Ask the companion about this card">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-square" aria-hidden="true">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </button>
+                  <div class="home-pin__chrome">
+                    <button class="home-pin__btn" data-testid="pin-span" aria-label="Widen to full row" title="Widen to full row">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-maximize-2" aria-hidden="true">
+                        <path d="M15 3h6v6" />
+                        <path d="m21 3-7 7" />
+                        <path d="m3 21 7-7" />
+                        <path d="M9 21H3v-6" />
+                      </svg>
+                    </button>
+                    <button class="home-pin__btn" data-testid="pin-menu-toggle" aria-label="Card actions" title="Card actions" aria-haspopup="menu" aria-expanded="false">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-ellipsis-vertical" aria-hidden="true">
+                        <circle cx="12" cy="12" r="1" />
+                        <circle cx="12" cy="5" r="1" />
+                        <circle cx="12" cy="19" r="1" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <section class="home-card">
+                  <h2 class="home-card__title">Weekly expenses</h2>
+                  <ul class="home-mini-list">
+                    <li class="home-mini-list__item"><span class="home-mini-list__link">2026-W40</span><span class="muted home-mini-list__meta">2 390,34</span></li>
+                    <li class="home-mini-list__item"><span class="home-mini-list__link">2026-W39</span><span class="muted home-mini-list__meta">1 265</span></li>
+                  </ul>
+                  <a class="home-card__more" href="#">Open view →</a>
+                </section>
+              </div>
+
               <div class="home-pin">
                 <section class="home-card">
                   <h2 class="home-card__title">Active agents <span class="home-card__count">1</span></h2>
@@ -69,13 +199,6 @@
                 </section>
               </div>
             </div>
-            <section class="home-card home-pin-add">
-              <h2 class="home-card__title">Add pin</h2>
-              <div class="home-pin-add__row">
-                <button class="home-pin-add__btn">deadline</button>
-                <button class="home-pin-add__btn">recent-log</button>
-              </div>
-            </section>
           </div>
         </div>
       </div>

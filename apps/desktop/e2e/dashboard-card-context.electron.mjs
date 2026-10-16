@@ -12,39 +12,46 @@
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
- *  1. `add-toggle-is-closed-on-landing` — the pin board is not furniture. The
+ *  1. `the-header-drops-the-doctrine-line` — the Dashboard's header says what the
+ *     page is, what it is called and whether it is editable, and nothing else.
+ *     The `Premise → Vision → Purpose → Strategy (How)` line under the title is
+ *     gone, and the claim is made twice: no `.home-dashboard__subtitle` anywhere
+ *     in the header, and the header's only paragraphs are the eyebrow and the
+ *     lock hint. A doctrine line that came back — under a new class, even —
+ *     fails the second half.
+ *  2. `add-toggle-is-closed-on-landing` — the pin board is not furniture. The
  *     row is absent and the control says it is closed. A page that still renders
  *     the row permanently fails on the sample, not on a glance.
- *  2. `add-toggle-opens-and-closes` — it is a control, not a one-way door: the
+ *  3. `add-toggle-opens-and-closes` — it is a control, not a one-way door: the
  *     row appears with the board's own add buttons, and disappears again.
- *  3. `pin-board-sits-above-the-grid` — proven with `compareDocumentPosition`,
+ *  4. `pin-board-sits-above-the-grid` — proven with `compareDocumentPosition`,
  *     so "at the top" is a fact about the document and not about a screenshot.
- *  4. `locked-board-has-no-add-path` — a locked board has no toggle, no row and
+ *  5. `locked-board-has-no-add-path` — a locked board has no toggle, no row and
  *     no add button anywhere. This is the claim the lock's whole meaning rests
  *     on: no second, hidden way to propose what Lock says is not editable.
- *  5. `add-pin-still-writes` — the moved row still does its job: one `pinsSet`,
+ *  6. `add-pin-still-writes` — the moved row still does its job: one `pinsSet`,
  *     carrying the board plus exactly the pin that was asked for.
- *  6. `every-card-offers-the-chat-control` — every pinned card, of every kind,
+ *  7. `every-card-offers-the-chat-control` — every pinned card, of every kind,
  *     carries exactly one chat control that draws one icon, has no text, and has
  *     both an accessible name and a tooltip. A card that quietly lost the
  *     control fails by id.
- *  7. `the-chat-control-is-not-editing-chrome` — it is not inside
+ *  8. `the-chat-control-is-not-editing-chrome` — it is not inside
  *     `.home-pin__chrome`, and the chrome's own buttons are unchanged. This is
  *     what keeps "chrome" meaning *editing chrome*, which `dashboard-lock-ui`
  *     counts on.
- *  8. `chat-control-hands-over-the-card` — clicking hands that exact pin, with
+ *  9. `chat-control-hands-over-the-card` — clicking hands that exact pin, with
  *     the board slug, to the dock, and opens the dock. A control that set nothing
  *     fails on the probe's own report.
- *  9. `the-name-comes-off-the-heading` — the handed-over name is read off the
+ * 10. `the-name-comes-off-the-heading` — the handed-over name is read off the
  *     rendered card: "Weekly expenses" for the view, "Ledger" for the page,
  *     "Today & this week" for the built-in, and "Goals" — never "Goals1" — for
  *     the card that paints a count badge inside its own heading.
- * 10. `a-locked-board-still-offers-it` — asking about a card is not changing it,
+ * 11. `a-locked-board-still-offers-it` — asking about a card is not changing it,
  *     so the control survives the lock while every editing control is gone, and
  *     using it writes nothing.
- * 11. `the-chat-control-does-not-lift-the-card` — a 400 ms hold on it neither
- *     lifts the card nor writes; the arrange gesture's press guard still refuses
- *     a button that is not the grip.
+ * 12. `the-chat-control-does-not-lift-the-card` — a 400 ms hold on it neither
+ *     lifts the card nor writes; the arrange gesture's press guard refuses a
+ *     press that starts on a control rather than on the card itself.
  *
  * The bridge is a stub (a dev-server page has no preload), so claim 5 ends at
  * the recorded call. That a pin write reaches the vault is `dashboard-lock-e2e`'s
@@ -92,13 +99,13 @@ const NAMES = [
 
 /** The chrome each card must still offer, by kind. Unlocked only. */
 const CHROME = {
-  "sys:goal-progress": ["pin-grip", "pin-menu-toggle"],
-  "view:financial:v-weekly": ["pin-grip", "pin-menu-toggle", "pin-span"],
-  "page:financial:ledger": ["pin-grip", "pin-menu-toggle"],
-  "sys:today-week": ["pin-grip", "pin-menu-toggle"],
-  "view:financial:v-summary": ["pin-grip", "pin-menu-toggle", "pin-span"],
-  "sys:pending-decisions": ["pin-grip", "pin-menu-toggle"],
-  "sys:recent-log": ["pin-grip", "pin-menu-toggle"],
+  "sys:goal-progress": ["pin-menu-toggle"],
+  "view:financial:v-weekly": ["pin-menu-toggle", "pin-span"],
+  "page:financial:ledger": ["pin-menu-toggle"],
+  "sys:today-week": ["pin-menu-toggle"],
+  "view:financial:v-summary": ["pin-menu-toggle", "pin-span"],
+  "sys:pending-decisions": ["pin-menu-toggle"],
+  "sys:recent-log": ["pin-menu-toggle"],
 };
 
 /**
@@ -137,6 +144,33 @@ const SAMPLE = `(() => {
     return svg ? [...svg.classList].join(' ') : null;
   };
   return {
+    header: (() => {
+      const header = document.querySelector('.home-dashboard__header');
+      if (!header) return null;
+      const title = header.querySelector('.home-dashboard__title');
+      const badge = header.querySelector('[data-testid="board-lock-badge"]');
+      return {
+        eyebrow: (header.querySelector('.home-dashboard__eyebrow') || {}).textContent?.trim() ?? null,
+        // The title's own words, without the lock badge it also carries: the
+        // badge is a sibling span, so a text-node read is the honest one.
+        title: title
+          ? [...title.childNodes]
+              .filter((node) => node.nodeType === 3)
+              .map((node) => (node.textContent || '').trim())
+              .join('')
+          : null,
+        badge: badge ? (badge.textContent || '').trim() : null,
+        hint: Boolean(header.querySelector('[data-testid="board-lock-hint"]')),
+        // The doctrine line that used to sit under the title. Both halves are
+        // read: a subtitle element that came back fails by name, and any other
+        // paragraph under the title fails as a paragraph.
+        subtitles: header.querySelectorAll('.home-dashboard__subtitle').length,
+        paragraphs: [...header.querySelectorAll('p')].map((p) => ({
+          cls: p.className,
+          text: (p.textContent || '').trim(),
+        })),
+      };
+    })(),
     toggle: toggle
       ? {
           label: (toggle.textContent || '').trim(),
@@ -454,9 +488,28 @@ async function main() {
     failure(`the harness did not paint in the app's skin: ${JSON.stringify(checks.skin)}`);
   }
 
-  // ── 1. closed on landing ──────────────────────────────────────────────────
+  // ── 0. the header says what the page is, and what it is called ────────────
   await render(win, false);
   const landing = await sample(win);
+  checks.header = landing.header;
+  check(
+    "the-header-drops-the-doctrine-line",
+    landing.header !== null &&
+      landing.header.eyebrow === "Dashboard" &&
+      landing.header.title === "Overview" &&
+      landing.header.badge === "Unlocked" &&
+      landing.header.hint === true &&
+      landing.header.subtitles === 0 &&
+      // The header's only paragraphs are the eyebrow and the lock hint, so a
+      // doctrine line that came back — under any class — fails here.
+      landing.header.paragraphs.length === 2 &&
+      landing.header.paragraphs[0].cls === "home-dashboard__eyebrow" &&
+      landing.header.paragraphs[1].cls.includes("home-dashboard__lock-hint") &&
+      /unlocked/i.test(landing.header.paragraphs[1].text),
+    `the header read ${JSON.stringify(landing.header)}`,
+  );
+
+  // ── 1. closed on landing ──────────────────────────────────────────────────
   checks.landing = landing;
   check(
     "add-toggle-is-closed-on-landing",
