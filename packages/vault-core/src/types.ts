@@ -697,8 +697,23 @@ export type Pin =
   | { id: string; kind: "page"; domainSlug: string; pageId: string }
   // Agent-built dashboard views (plan.md design, 2026-09-30): a saved view
   // pinned on a board. span 2 is the full row; span 1 is the board's own choice
-  // — it measures the card and gives it as many cells as its content needs.
-  | { id: string; kind: "view"; domainSlug: string; viewId: string; span: 1 | 2 };
+  // — it measures the card and gives it as many units as its content needs —
+  // unless `width` says otherwise.
+  //
+  // `width` is the operator's own hand on the card: the width in rem they dragged
+  // its right edge to (2026-10-16). It is absent for a card the board sizes, and
+  // it is never allowed to be narrower than what the card's content needs — the
+  // renderer takes the larger of the two — so a card cannot be dragged into the
+  // spill that `span: 1` used to mean. Naming a `span` replaces it: a caller that
+  // says how wide a card is has said what this field says.
+  | {
+      id: string;
+      kind: "view";
+      domainSlug: string;
+      viewId: string;
+      span: 1 | 2;
+      width?: number;
+    };
 
 /**
  * A dashboard: the home pin board for one lens, plus the operator's page lock.

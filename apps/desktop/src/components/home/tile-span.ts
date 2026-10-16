@@ -158,6 +158,27 @@ export function boardUnitsNeeded(cells: readonly number[], minUnits: number): nu
   return Math.max(floor, ...cells);
 }
 
+/**
+ * How many units a card the operator dragged to `width` pixels should be.
+ *
+ * `unitsNeeded` rounds UP, because a card that guessed low would spill. A dragged
+ * width is a different question: it is a target the operator aimed at and can see,
+ * so it takes the NEAREST whole number of units — the width they dragged to, not
+ * the next one along. Spilling is still impossible, because the caller takes the
+ * larger of this and the content's own floor.
+ */
+export function unitsForWidth(width: number, step: number, gap: number, minUnits: number): number {
+  const floor = Math.max(1, minUnits);
+  if (!Number.isFinite(step) || step <= 0) return floor;
+  const wanted = Math.round((Math.max(0, width) + gap) / (step + gap));
+  return Number.isFinite(wanted) ? Math.max(floor, wanted) : floor;
+}
+
+/** The width, in pixels, of a card of `units` units and the gutters inside it. */
+export function widthForUnits(units: number, step: number, gap: number): number {
+  return Math.max(0, units) * (step + gap) - gap;
+}
+
 /** The width, in pixels, of a board of `units` units and the gutters between them. */
 export function boardWidth(units: number, step: number, gap: number): number {
   return Math.max(0, units) * (step + gap) - gap;

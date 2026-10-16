@@ -81,6 +81,13 @@ export function boardLabel(domainSlug: string | null): string {
  * naming a width would silently shrink to the board's own choice, which is the
  * card leaving its place by a second route. On an edit the card's own width
  * stands unless the caller names a different one.
+ *
+ * THE OPERATOR'S OWN WIDTH RIDES ALONG, and this is the other half of "names a
+ * different one". A card the operator dragged an edge to carries a `width` in rem
+ * (2026-10-16); a caller that names no span is editing the card's contents and
+ * must not lose it, and a caller that DOES name a span has said how wide the card
+ * should be — so the dragged width goes, because two answers to one question is
+ * how a board ends up disagreeing with itself.
  */
 export function placeViewPin(
   pins: Pin[],
@@ -103,7 +110,15 @@ export function placeViewPin(
   }
   const existing = pins[position] as Extract<Pin, { kind: "view" }>;
   const span = width.spanNamed ? width.span : existing.span;
-  const pin: Pin = { id: `view:${domainSlug}:${viewId}`, kind: "view", domainSlug, viewId, span };
+  const dragged = width.spanNamed ? undefined : existing.width;
+  const pin: Pin = {
+    id: `view:${domainSlug}:${viewId}`,
+    kind: "view",
+    domainSlug,
+    viewId,
+    span,
+    ...(dragged === undefined ? {} : { width: dragged }),
+  };
   const next: Pin[] = [];
   let replaced = false;
   let at = position;

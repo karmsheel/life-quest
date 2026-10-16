@@ -212,7 +212,10 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
           type: "array",
           description:
             "The complete new pin list for that board. Copy each pin object from get_dashboard " +
-            "exactly as it came back and reorder, add, or drop entries.",
+            "exactly as it came back and reorder, add, or drop entries. A view pin may carry a " +
+            "`width` — the width in rem the operator dragged that card to — and it must be copied " +
+            "back as it came: dropping it resizes a card the operator sized by hand. Naming a " +
+            "`span` replaces that width, because a span IS a width.",
         },
       },
       required: ["domainSlug", "pins"],
@@ -755,6 +758,9 @@ async function describePin(root: string, pin: Pin): Promise<Record<string, unkno
     label: view.ok ? view.value.title : pin.viewId,
     presentation: view.ok ? view.value.presentation : null,
     span: pin.span,
+    // The operator's own width, when they dragged the card's edge: it travels
+    // with the pin so that "copy each pin back exactly as it came" keeps it.
+    ...(pin.width === undefined ? {} : { width: pin.width }),
   };
 }
 
@@ -847,7 +853,25 @@ function parsePins(raw: unknown): Result<Pin[]> {
       if (pin.span !== 1 && pin.span !== 2) {
         return { ok: false, error: `pin ${out.length}: span must be 1 or 2` };
       }
-      out.push({ id: String(pin.id), kind: "view", domainSlug: pin.domainSlug, viewId: pin.viewId, span: pin.span as 1 | 2 });
+      // `width` is the operator's own hand on the card — the rem width they
+      // dragged its edge to. It is optional and it is carried through untouched,
+      // because a reorder that dropped it would silently resize a card the
+      // operator had sized by hand.
+      let width: number | undefined;
+      if (pin.width !== undefined && pin.width !== null) {
+        if (typeof pin.width !== "number" || !Number.isFinite(pin.width) || pin.width <= 0) {
+          return { ok: false, error: `pin ${out.length}: width must be a positive number of rem` };
+        }
+        width = pin.width;
+      }
+      out.push({
+        id: String(pin.id),
+        kind: "view",
+        domainSlug: pin.domainSlug,
+        viewId: pin.viewId,
+        span: pin.span as 1 | 2,
+        ...(width === undefined ? {} : { width }),
+      });
     } else if (pin.kind === "page") {
       if (typeof pin.domainSlug !== "string" || !pin.domainSlug) {
         return { ok: false, error: `pin ${out.length}: page pin requires domainSlug` };

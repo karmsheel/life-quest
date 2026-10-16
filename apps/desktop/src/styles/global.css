@@ -3301,6 +3301,68 @@ a.home-mini-list__link:hover {
   outline-offset: 1px;
 }
 
+/* The card's width handle, on its right edge.
+   INSIDE the card's own box, never overhanging it: the board's promise is that
+   nothing is drawn outside a card's frame, and a handle that hung off the edge
+   would be the one thing on the board breaking it. 0.4rem keeps it clear of the
+   chrome's buttons, which are inset 0.5rem, so the right edge is the handle's and
+   the corner row stays the buttons'.
+   Invisible until it is wanted — the card is a surface for reading, and a grip
+   drawn on all twenty of them would be furniture — and then a 2px accent bar, the
+   same mark the board uses for every other "this one is being addressed" state. */
+.home-pin__resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 0.4rem;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  border-radius: var(--home-radius);
+}
+
+.home-pin__resize::after {
+  content: "";
+  position: absolute;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  right: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.home-pin:hover > .home-pin__resize::after,
+.home-pin__resize:hover::after,
+.home-pin__resize:focus-visible::after,
+.home-pin.is-resizing > .home-pin__resize::after {
+  opacity: 1;
+}
+
+.home-pin__resize:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* The board while a width is being dragged: the hand owns the pointer, so nothing
+   in the card is a target and no text is selectable under it. */
+.home-dashboard__grid:has(.home-pin.is-resizing),
+.home-dashboard__grid:has(.home-pin.is-resizing) * {
+  cursor: col-resize;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-pin__resize::after {
+    transition: none;
+  }
+}
+
 /* Three icon buttons wide (chat, width, menu) plus the row's own inset: the title
    clears them instead of running underneath. The reserve follows the row rather
    than the chrome, because the chat control is the one button that is still there

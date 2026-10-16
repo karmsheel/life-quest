@@ -29,6 +29,7 @@ import {
 } from "@/components/home/board-hold";
 import { usePinArrange, type CommitOutcome } from "@/components/home/usePinArrange";
 import { useTileSpans } from "@/components/home/useTileSpans";
+import { useCardResize } from "@/components/home/useCardResize";
 import { ViewCard } from "@/components/ui/ViewCard";
 import type { SavedView } from "@lifequest/vault-core";
 
@@ -118,6 +119,16 @@ export default function HomePage() {
    */
   const [boardBusy, setBoardBusy] = useState(false);
   const [installedKits, setInstalledKits] = useState<string[] | null>(null);
+  /**
+   * Whether a gesture owns the board's geometry right now — a card in the air, or
+   * a width being dragged.
+   *
+   * One flag for both, because they are one thing to the measurement pass that
+   * reads it: while either is running, the card under the hand is the truth about
+   * its own width, and a pass that measured and re-wrote every card's span would
+   * be the page arguing with the pointer.
+   */
+  const [resizing, setResizing] = useState(false);
 
   /** A page pin's card names the page the board lists. */
   const pageTitleOf = useCallback(
@@ -125,6 +136,18 @@ export default function HomePage() {
       pages.find((entry) => entry.domainSlug === pin.domainSlug && entry.page.id === pin.pageId)
         ?.page.title ?? pin.pageId,
     [pages],
+  );
+
+  /**
+   * A view pin's card names the view it draws — read off the saved views the page
+   * already has, rather than off the DOM, because this names the card for a screen
+   * reader at render time and the card may not have drawn its heading yet.
+   */
+  const viewTitleOf = useCallback(
+    (pin: Extract<Pin, { kind: "view" }>) =>
+      views.find((view) => view.domainSlug === pin.domainSlug && view.id === pin.viewId)?.title ??
+      pin.viewId,
+    [views],
   );
 
   /**
@@ -155,11 +178,33 @@ export default function HomePage() {
    * operator's place while the board reflows, and a span decided after the
    * correction would be a reflow the operator sees.
    */
-  useTileSpans({
+  const tiles = useTileSpans({
     gridRef: arrange.gridRef,
     pins,
     live,
-    arranging: arrange.isArranging,
+    // A width being dragged owns the geometry of the card under it, exactly as a
+    // card in the air does: the measurement pass writes `width` on every card, and
+    // a pass landing mid-drag would fight the hand. The board is re-measured the
+    // moment either gesture ends.
+    arranging: arrange.isArranging || resizing,
+  });
+
+  /**
+   * The operator's own hand on a card's width: drag a card's right edge.
+   *
+   * The range is [what the card's content needs, the whole row] — never narrower,
+   * because that is the spill this board was reported for — and the far end of it
+   * means "fill the row", which is the same state the chrome's width control
+   * names. One drop is one write, and a drag that ends where it started writes
+   * nothing at all.
+   */
+  const resize = useCardResize({
+    gridRef: arrange.gridRef,
+    tiles,
+    locked,
+    busy: boardBusy,
+    onGesture: setResizing,
+    onCommit: (pinId, units, maxUnits) => onResizeCommit(pinId, units, maxUnits),
   });
 
   /**
@@ -537,6 +582,39 @@ export default function HomePage() {
     await persistPins([...pins, newPin]);
   }
 
+  /**
+   * Save the width a drag chose.
+   *
+   * The far end of the handle's range is the row itself, and it is stored as the
+   * row — `span: 2` — rather than as a very wide card, so a drag to the edge and a
+   * press of the chrome's "Fill the row" leave the board in one state instead of
+   * two that look alike and behave differently when the window moves.
+   *
+   * Everything else is stored as the width the operator saw, in rem: a card is
+   * 398.9px wide and stays 398.9px wide whatever the window, which is what picking
+   * a width by hand means. The board is never narrower than its content, so a save
+   * that arrives after the content grew is still drawn at the content's floor.
+   */
+  async function onResizeCommit(
+    pinId: string,
+    units: number,
+    maxUnits: number,
+  ): Promise<CommitOutcome> {
+    const next = pins.map((pin) => {
+      if (pin.id !== pinId || pin.kind !== "view") return pin;
+      const base = {
+        id: pin.id,
+        kind: "view" as const,
+        domainSlug: pin.domainSlug,
+        viewId: pin.viewId,
+      };
+      if (units >= maxUnits) return { ...base, span: 2 as const };
+      const width = Math.round((tiles.widthOf(units) / tiles.rootFontSize()) * 100) / 100;
+      return { ...base, span: 1 as const, width };
+    });
+    return persistPins(next);
+  }
+
   const renderPin = (pin: Pin) => {
     if (pin.kind === "system") {
       switch (pin.system) {
@@ -741,6 +819,7 @@ export default function HomePage() {
               arrange.isLifted(pin.id) ? "is-lifted" : "",
               livePinId === pin.id ? "is-live" : "",
               chatHolds(pin.id) ? "is-in-context" : "",
+              resize.resizingPinId === pin.id ? "is-resizing" : "",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -791,6 +870,36 @@ export default function HomePage() {
               )}
             </div>
             {renderPin(pin)}
+            {/*
+              The operator's own hand on the width, on the card's right edge.
+
+              A VIEW pin only, and only on an unlocked board: the width lives on
+              the pin, so a locked board — which files every change as a Decision
+              instead of making it — has no business offering a drag that writes
+              straight through. (The chrome's width button is gone there too, for
+              the same reason.)
+
+              It is a `separator` rather than a button, because that is what a
+              resizable edge is: a value between a minimum and a maximum, which is
+              what a screen reader reads out — and the arrows step it, one unit per
+              press.
+
+              It names the card it belongs to in its own attribute rather than in
+              `data-pin-id`: every card lookup on this board — the drag geometry,
+              the scroll hold, the arrange gesture — is a `[data-pin-id]` query, and
+              a handle wearing that attribute would be read as a card.
+            */}
+            {locked || pin.kind !== "view" ? null : (
+              <div
+                className="home-pin__resize"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label={`Width of ${viewTitleOf(pin)}`}
+                tabIndex={0}
+                title="Drag to set this card's width — the arrow keys step it"
+                {...resize.handleProps(pin.id)}
+              />
+            )}
           </div>
         ))}
 
@@ -841,6 +950,17 @@ export default function HomePage() {
         data-testid="pin-arrange-status"
       >
         {arrange.announce}
+      </p>
+
+      {/* The same for a width: a drag has no button to come back to, and the
+          handle's own value is only read when it has focus. */}
+      <p
+        className="visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-testid="pin-resize-status"
+      >
+        {resize.announce}
       </p>
 
       {/* The board's own yes/no question, drawn over the window it was asked

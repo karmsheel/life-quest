@@ -1,16 +1,21 @@
-# A dashboard card is as wide as the data it holds
+# A dashboard card is as wide as the data it holds — and as wide as the operator says
 
 **Status:** design
 **Date:** 2026-10-16
 **Touches:** `apps/desktop/src/components/home/tile-span.ts` (new),
 `apps/desktop/src/components/home/useTileSpans.ts` (new),
+`apps/desktop/src/components/home/useCardResize.ts` (new),
 `apps/desktop/src/pages/HomePage.tsx`, `apps/desktop/src/styles/global.css`,
 `apps/desktop/src/components/home/PinChrome.tsx`,
+`apps/desktop/src/components/home/pin-order.ts`,
+`apps/desktop/src/components/home/usePinArrange.ts`,
 `apps/desktop/e2e/dashboard-tile.{html,tsx,electron.mjs}` (new),
 `apps/desktop/tests/dashboard-tile-e2e.test.ts` (new),
-`packages/vault-core/src/{views-tools,view-schema,pins,types}.ts` (wording only)
+`apps/desktop/e2e/dashboard-arrange.electron.mjs`, `apps/desktop/tests/dashboard-arrange-e2e.test.ts`,
+`apps/desktop/e2e/dashboard-card-slot.electron.mjs`, `apps/desktop/tests/dashboard-card-slot-e2e.test.ts`,
+`packages/vault-core/src/{views-tools,view-schema,pins,types}.ts`
 
-## 1. The problem, as reported
+## 1. The three reports, in the operator's words
 
 > On the Dashboard the tables can change size but when made smaller, they often
 > compress beyond the data they hold causing it to spill over. I want there to be
@@ -19,147 +24,220 @@
 > it to be like a Tile styled arrangement. Right now the Recent Transactions card
 > is showing that spillover effect.
 
-## 2. What was actually wrong — measured in the operator's own vault
+Fixed first — the spill. Then:
 
-Two files in `C:\Users\karms\Downloads\Life-Quest-Vault` disagree about how wide
-that card is, and the disagreement is the whole bug:
+> Some tables are still showing lots of empty space — "Recent Transactions" as an
+> example — the space between the Category and Amount columns are too much. Is
+> there a way to give the user more control over the width of the tables/cards?
 
-| Read from | Value |
-|---|---|
-| `domains/financial/pins.json` → the Recent-transactions pin | **`span: 1`** |
-| `domains/financial/views/4e864d44-….json` → the view itself | **`span: 2`** |
-| Its content | a four-column listing: `date · payee · category · amount` |
-| The sheet | `grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr))`, every listing cell `white-space: nowrap` |
+Fixed second — the empty space, and the control. Then, when asked what the control
+should be, the operator chose **dragging a card's right edge** over a stepper, and
+chose that a card's automatic width should **land close to its content**.
 
-The pin wins, so the card was given ONE cell of 17rem (272px) and asked to draw a
-table that cannot shrink below its own min-content width. A table does not shrink
-below min-content, and a `width: 100%` table keeps its *box* where it was told —
-what leaves the frame is its cells. Nothing in the sheet said they could not.
+## 2. What was wrong — measured, in the operator's own vault
 
-**The number, from the new rig on the pre-fix build.** The rig pins both the
-operator's card and a controlled one — the same four columns with payees that are
-single long words, so the fault does not depend on their data being wide — and
-walks every descendant of every card at four window widths:
+`domains/financial/pins.json` said the Recent-transactions pin was **one cell
+wide** (17rem ≈ 272px) while the view file it pointed at said `span: 2`. The card's
+content is a four-column listing — `date · payee · category · amount` — and every
+listing cell is `white-space: nowrap`. A table does not shrink below its own
+min-content width, and nothing in the sheet stopped it painting outside the frame.
+
+**The spill, from the new rig on the pre-fix build:**
 
 ```
 no-spill: FAIL — wide: view:financial:v-real ("Recent transactions") draws 29
-element(s) outside its frame — worst td.view-card__cell--num by 15.6px; …
-       wide: view:financial:v-listing ("Last two weeks") draws 17 element(s)
-outside its frame — worst td.view-card__cell--num by 86px
-operator-card: FAIL — wide: the operator's four-column card was drawn in 1 track
-(295.8px) — the reported fault
-board-floors: FAIL — at 520px wide: board 464px in a 512px scrollport, tracks
-[464] against a 272px cell
+element(s) outside its frame — worst td.view-card__cell--num by 15.6px
+             wide: view:financial:v-listing draws 17 element(s) outside its frame
+             — worst td.view-card__cell--num by 86px
 ```
 
-Their own card, with their own rows, hangs **29 elements** outside its frame and
-pushes the amount column past the card's edge by 15.6px; the controlled card,
-chosen to be wide in any font, by 86px. The subtle number is the operator's
-report exactly — a money column bleeding a few pixels over the border rather than
-a table falling off the card — which is why the claim is counted in elements
-outside the frame and not in "does this look wrong".
+Their own card, their own rows: 29 elements outside the frame, the money column
+15.6px past the card's border. A controlled card with the same four columns and
+payees that cannot wrap: 86px.
 
-## 3. The rule
+Once the sizing was in, the second report was measurable too, and it was the same
+fault from the other side — the card was sized in WHOLE cells:
 
-**A card is as wide as the data it holds, and the board is as wide as its widest
-card.**
+| | before | after |
+|---|---|---|
+| The operator's card | 605px | **398.9px** |
+| What its table needs | 347.7px | 347.7px |
+| The table as drawn | 573px (stretched to fill) | **347.7px** |
+| Empty space spread between the columns | **225px** | **19px, as margin at the card's right** |
 
-Three numbers, each a measurement rather than a policy:
+The 225px was not the card being wide: it was a table told to be `100%`, sharing
+the difference between its columns. A table's own `auto` means "fill the
+containing block" too, so "leave it alone" was not an option.
+
+## 3. The rule, in three parts
+
+### 3a. A card is as wide as its content, in fine steps
+
+Three numbers, all measurements rather than policies:
 
 - **need** — the width below which a card's own content would overflow it. It is
   the card's `min-content` width: the browser already knows it, and the app reads
   it off the real card instead of modelling the query behind it.
-- **cell** — the design's one-cell floor, `--home-tile-rem: 17` on the board.
-- **gap** — the board's own gutter, from the same computed style.
+- **step** — the track the board is actually drawing, `minmax(unit, 1fr)` resolved.
+  The unit is `--home-tile-unit-rem: 4.25` — **a quarter of the 17rem cell this
+  board used to be built from**, so every width the old grid could draw is still
+  drawable, and a card that needs 398px asks for five tracks of 68.9px instead of
+  six of a coarser grid.
+- **floor** — `--home-tile-min-units: 4`: the narrowest a card may be, so a metric
+  does not collapse to a sliver.
 
 ```
-cells  = ceil((need + gap) / (cell + gap))            // how many cells this card needs
-board  = max(2, every card's cells)                   // how narrow the board may be
-width  = board * (cell + gap) - gap                   // …in pixels, as the board's min-width
+units = max(floor, ceil((need + gap) / (step + gap)))     // how many tracks this card needs
+board = max(2 × floor, every card's units)                // how narrow the board may be
 ```
 
-- `HomePage` renders the cards; `useTileSpans` measures them and writes each auto
-  card's `grid-column: span N` and the board's `min-width`, straight to the DOM,
-  in a layout effect — the same way the arrange gesture writes its own geometry,
-  and for the same reason: a width is geometry, and a re-render between the
-  measurement and the write is a frame drawn at the wrong size.
-- The operator's own `span: 2` is untouched: it is painted `1 / -1` by the sheet,
-  as it always was, and the hook deliberately skips it. `span: 1` is what changed
-  meaning — it is no longer "exactly one cell" but "the board's choice", which is
-  the half that was broken.
-- A window too small for the board's cells gets a board that is wider than it is:
-  `.shell__content` is already `overflow: auto`, so the sheet scrolls sideways.
-  No card scrolls internally, nothing is clipped, and no column is dropped. This
-  is the operator's own answer to the question, chosen over a per-card scrollbar.
+`HomePage` renders the cards; `useTileSpans` measures them and writes each card's
+`grid-column` and the board's `min-width`, straight to the DOM, in a layout
+effect — the same way the arrange gesture writes its own geometry, and for the
+same reason: a width is geometry, and a re-render between the measurement and the
+write is a frame drawn at the wrong size. A window too small for the board's units
+gets a board that is wider than it is: `.shell__content` is already `overflow:
+auto`, so the sheet scrolls sideways.
 
-**Why the arithmetic never oscillates.** A span decided from the width the card
-happens to have would grow the tracks, which would shrink the span, which would
-shrink the tracks — for ever, on some windows. Every input above is either a
-measurement of CONTENT or a constant of the design, so a card's width never
-depends on its neighbours or on the window, and a second measurement is the first
-one again.
+**Why it does not oscillate.** A span decided from the width the card happens to
+have would grow the tracks, which would shrink the span, for ever. A track's width
+does not depend on any one card: it is chosen by the window and the board's floor,
+and its count is chosen to fit as many whole units as the width allows, so a track
+lands in `[unit, unit + (unit + gap) / count]` — feeding that back reproduces the
+same count. `boardWidth` is written as the exact inverse of the layout, and the
+rig's `stable` claim holds the two together at four widths.
 
-**Why it re-runs.** A card is a live query: it draws "Loading…" and then a table,
-so the span cannot be decided once at mount. Three signals bring the hook back —
-the page's own commit (order, vault revision), a card's box changing
-(`ResizeObserver` on the cards), and a card's insides being replaced *inside a box
-that does not change* (`MutationObserver`) — which is the case that matters most,
-because a card stretched by a taller neighbour in its row can receive twelve new
-rows without its own box moving a pixel. Both observers are coalesced to one
-measurement per frame, and every pass is idempotent: a board that is already right
-writes nothing and produces no further callbacks.
+**Why it re-runs.** A card is a live query: it draws "Loading…" and then a table.
+Three signals bring the hook back — the page's own commit (order, vault revision),
+a card's box changing (`ResizeObserver`), and a card's insides being replaced
+*inside a box that does not change* (`MutationObserver`: a card stretched by a
+taller neighbour can receive twelve rows without its own box moving a pixel). Both
+observers coalesce to one measurement per frame, and every pass is idempotent.
 
-**What this gives the operator, in their own words.** On the rig's board, which is
-their own card among cards of known width, the lines at 1280px hold **3 · 2 · 2**
-cards and at 700px **2**, with each two-cell card taking a line of its own on the
-narrow board. The number of cards on a line is an answer about the cards, not a
-constant — which is what they asked for.
+### 3b. A listing keeps its own width; an aggregate still fills its card
+
+```css
+.view-card__table--list { width: max-content; max-width: 100%; }
+```
+
+`max-content` is the table's own answer: the width at which every column is drawn
+at the size its content wants, none stretched and none squeezed. `max-width:
+100%` is the floor under it — a table is never wider than the card that holds it,
+and because the card is never narrower than the table's min-content, that clamp
+never has to squeeze a nowrap cell out of the frame. The leftover, when there is
+any, stays at the card's right edge as ordinary margin.
+
+The **aggregate** table (label + total) deliberately keeps filling its card: its
+second column is a total, and a total belongs against the right edge the way a
+statement reads.
+
+### 3c. The operator's own hand: drag a card's right edge
+
+The board sizes a card from what it holds; the operator asked for more control, and
+the right edge of every view card on an unlocked board is now a handle.
+
+- **The range is `[what the card's content needs, the whole row]`.** A drag can
+  make a card wider than its table needs and can never make it narrower — because
+  a card narrower than its table is the spill this board was reported for, and
+  rebuilding that fault as a gesture would be absurd.
+- **The far end of the range is the row**, stored as `span: 2` rather than as a
+  very wide card, so a drag to the edge and a press of the chrome's "Fill the row"
+  leave the board in one state instead of two that look alike and behave
+  differently when the window moves.
+- **Everything else is stored as the width in rem** (`Pin.width`), the number the
+  operator saw: 35.01rem stays 35.01rem whatever the window or the layout unit
+  does. The renderer draws `max(content, that width)` in units, so a stored width
+  can never be honoured into a spill.
+- **The preview is geometry, the drop is the write.** While the pointer is down the
+  card's `grid-column` is written straight onto the element; nothing reaches the
+  vault until the pointer comes up, and a drag that ends where it started writes
+  nothing at all.
+- **The keyboard's half.** The handle is a `separator` and a tab stop: the arrows
+  step one unit per press and each press is saved, and the live region says what
+  the width now is. A screen reader's owner resizes a column the same way.
+- **`aria-valuenow` is written by the measurement pass, not rendered.** The
+  measurement happens after React has rendered, so attributes rendered from it
+  would be a value behind — and a separator saying zero is worse than saying
+  nothing. This is the same reason the span is written straight to the element.
+
+Two mechanics are worth naming because they were measured, not chosen:
+
+- **The drag's moves and its drop are on the window, not on the handle.** The
+  handle is six pixels wide and the pointer leaves it on the first move; a drag
+  that only heard the pointer while it was over the handle would stop the moment it
+  began. `setPointerCapture` is asked for as well, but capture is a convenience
+  here and never the mechanism — the rig proved that the hard way, when injected
+  input retargeted every move to the card behind the handle.
+- **The gesture is not the arrange gesture.** A press on a handle is skipped by
+  `usePinArrange` (`[data-pin-handle]` joins the buttons and links it already
+  ignores), and the handle carries its pin in its own attribute rather than in
+  `data-pin-id`: every card lookup on this board — the drop geometry, the scroll
+  hold, the arrange gesture — is a `[data-pin-id]` query, and a handle wearing it
+  would be read as a card.
+
+### 3d. Naming a span replaces the width
+
+`Pin.width` is the operator's; `span` is how wide a card is. A caller that names a
+span has said what the width is, so the dragged width goes — two answers to one
+question is how a board ends up disagreeing with itself. A caller that names
+nothing is editing the card's contents and must not lose it: `placeViewPin` keeps
+it, `get_dashboard` returns it, and `arrange_dashboard` carries it through, because
+the companion's own instructions are to copy each pin back exactly as it came.
 
 ## 4. What this is NOT
 
-- **Not a change to what `span` means in the vault.** The schema, the pin file and
-  the tool arguments are untouched; `span: 2` still means the full row, and an
-  edit that names no span still leaves a card's width alone. Only three
-  *descriptions* changed, to say what the board now does with `span: 1`.
 - **Not a masonry layout.** Cards still sit on one track grid with equal-height
-  rows; what varies is how many tracks a card holds. Column-major packing
-  (`columns: 3`) and dense back-filling were both rejected: the board's order is
-  its layout — a drop resolves against the cards' own rects — and a visual order
-  that disagreed with the array would make arranging lie.
+  rows; what varies is how many tracks a card holds. Column-major packing and
+  dense back-filling were both rejected: the board's order is its layout — a drop
+  resolves against the cards' own rects — and a visual order that disagreed with
+  the array would make arranging lie.
 - **Not a per-card scroller and not a clip.** The operator chose the board
   scrolling sideways over a scrollbar inside a table, and hiding a column would be
   hiding data.
-- **Not a change to the arrange gesture.** The drag still reads rects and the
-  grid's track count; nothing in `usePinArrange` moved.
 - **Not a rewrite of `ViewCard`.** A card does not report its own width; it is
   measured, so a card the app has never seen — a companion-composed one, a page
   card, the Active-agents card — is sized by the same rule.
+- **Not a change to what `span` means.** `span: 2` still means the full row and an
+  edit that names no span still leaves a card's width alone. `width` is additive
+  and absent on every pin that existed before this change.
+- **Not a wider arrange gesture.** The drag still reads rects; the only thing the
+  finer grid broke was the keyboard's "one row", which used to be the grid's track
+  count.
 
 ## 5. How it is falsified
 
-`tests/dashboard-tile-e2e.test.ts` reads `e2e/artifacts/dashboard-tile.json`, and
-`e2e/dashboard-tile.electron.mjs` writes it by driving the real `HomePage` in a real
-window at four widths (1280, 700, 520, and 1280 again). The harness reproduces the
-operator's card exactly: the view file says `span: 2`, the pin says `span: 1`.
+`tests/dashboard-tile-e2e.test.ts` reads `e2e/artifacts/dashboard-tile.json`, which
+`e2e/dashboard-tile.electron.mjs` writes by driving the real `HomePage` in a real
+window at four widths (1280, 700, 520, and 1280 again), on a board that pins the
+operator's own card — their rows, their columns, their view file's `span: 2` on a
+pin that says `span: 1` — among cards of known width.
 
 | Leg | Claim |
 |---|---|
-| `no-spill` | No descendant of any card is drawn outside that card's frame, at every width — the reported fault as a measurement. **Red on the pre-fix build: the operator's own card, 29 elements, worst 15.6px; the controlled listing, 86px.** |
-| `operator-card` | The operator's real card — their twelve rows, their four columns, their view file's `span: 2` on a pin that says `span: 1` — is two tracks wide and holds its cells. **Red pre-fix: one track, 295.8px, 29 elements outside the frame.** |
-| `card-asks-for-its-cells` | The controlled four-column listing occupies two tracks and the one-number metric exactly one, at every width. **Red pre-fix: both one track, both 297.8px.** |
+| `no-spill` | No descendant of any card is drawn outside that card's frame, at every width. **Red pre-fix: their card, 29 elements, worst 15.6px; a controlled listing, 86px.** |
+| `card-fits-its-table` | A listing draws at the width its columns need and the card around it is within one step of that width; the one-number metric stays at the minimum card. **Red pre-fix: both cards one cell, 297.8px, with 84px spread between the columns.** |
+| `operator-card` | Their real card holds its cells and is wider than the metric beside it. **Red pre-fix: one cell, 29 elements outside the frame.** |
 | `rows-mix` | Across the widths some line holds three cards and some line holds two, and no width draws every card alone on its own line. **Red pre-fix** (at 520px every card is alone). |
-| `row-card` | The card the operator stored two cells wide is drawn across the whole row, at every width. Green pre-fix — the control that stops "everything is now content-sized" from passing. |
-| `board-floors` | At 520px the board is wider than its scroller, the scroller can move sideways, and every track is at least the cell floor. **Red pre-fix: 464px board in a 512px scrollport, one 464px track.** |
-| `stable` | A content-sized card holds the same number of cells at every width, and the round trip back to 1280px reproduces the board exactly. Green pre-fix, and the claim that says the fix did not introduce an oscillation. |
+| `row-card` | A card the operator stored across the row is drawn across the whole row, at every width. Green pre-fix — the control that stops "everything is content-sized" from passing. |
+| `board-floors` | At 520px the board is wider than its scroller, the scroller can move sideways, no track is below one unit and no card below one minimum card. **Red pre-fix: a 464px board in a 512px scrollport, one 464px track.** |
+| `stable` | A content-sized card draws in the same number of units at every width, and the round trip back to 1280px reproduces the board exactly. Green pre-fix, and the claim that says the finer grid did not introduce an oscillation. |
 | `no-write` | Sizing the board never asks the vault for anything. |
-| `width-control` | The width control names the two widths it offers ("Fill the row" / "Size to the content"). **Red pre-fix**, which is how the copy change is covered. |
+| `width-control` | The width control names the two widths it offers. **Red pre-fix**, which is how the copy change is covered. |
+| `resize-handles` | Every view pin draws a well-formed width handle, and a locked board draws none. **Red against the code before this change: the handle does not exist.** |
+| `resize-drag-widens` | A drag aimed two units wider leaves the card exactly two units wider, in one write whose stored rem width is the width on screen. |
+| `resize-survives-a-reload` | A fresh render of the same board draws the card at the width the drag chose — the difference between "the card is wide" and "the card is that wide". |
+| `resize-drag-floor-is-the-content` | Widened first and then dragged hard in, the card stops at what its content needs, writes that width, and holds every cell. |
+| `resize-drag-row` | A drag to the board's right edge stores `span: 2` with no width — the row, not a very wide card. |
+| `resize-keys-step` | One ArrowRight steps exactly one unit, writes once, and says so in the live region. |
+| `resize-is-not-arrange` | A 420 ms press on the handle starts a resize, lifts nothing, and writes nothing. |
 
-Six of the rig's twelve legs are red on the pre-fix build and green after it. The
-other six are green on both, deliberately, because they are the controls: a board
-that never had to choose, a metric that must not be widened along with its
-neighbour, a row card that must keep its row, a card that must not oscillate, the
-absence of a vault write, and the page's cleanliness.
+And `tests/dashboard-card-slot-e2e.test.ts`, through the app's own MCP door: a
+`width` on a pin **survives** `arrange_dashboard` (twice, the second time with the
+pins exactly as the board returned them) and **survives** a `save_view` edit that
+names no span, and is **replaced** when a span is named — span 2, no width.
 
-The artifact is `e2e/artifacts/dashboard-tile.json`, with
-`e2e/artifacts/dashboard-tile.png` beside it: the reported case at 520px, where the
-listing keeps all four columns and the sheet scrolls sideways.
+The artifacts are `e2e/artifacts/dashboard-tile.json` with
+`dashboard-tile-wide.png` (the board the operator works on) and
+`dashboard-tile.png` (the narrow window, where the sheet scrolls sideways rather
+than a listing pouring over its own frame): same command, same numbers, no
+eyeballing the app.

@@ -807,6 +807,90 @@ async function main() {
       `window.lifequest.pinsSetLocked(${JSON.stringify(plan.boardSlug)}, false)`,
     );
 
+    // ── the operator's own width, through the companion's door ─────────────
+    //
+    // A card the operator dragged an edge to carries a `width` in rem. The
+    // companion never sets one — it has no argument for it — but it REORDERS the
+    // board and EDITS cards, and both calls rewrite the pin list. So the rule has
+    // to be measured the way the companion would trip over it: a width must
+    // survive a reorder and an edit that names no span, and it must go when a span
+    // is named, because a span IS a width and two answers to one question is how a
+    // board ends up disagreeing with itself.
+    const dragged = 24.5;
+    const boardNow = await mcpCall(port, token, "get_dashboard", { domainSlug: plan.boardSlug });
+    const draggedPins = (boardNow.value?.pins ?? []).map((pin) =>
+      pin.id === plan.editPinId ? { ...pin, width: dragged } : pin,
+    );
+    await mcpCall(port, token, "arrange_dashboard", {
+      domainSlug: plan.boardSlug,
+      pins: draggedPins,
+    });
+    const afterArrange = await mcpCall(port, token, "get_dashboard", {
+      domainSlug: plan.boardSlug,
+    });
+    checks.widthAfterArrange =
+      (afterArrange.value?.pins ?? []).find((pin) => pin.id === plan.editPinId)?.width ?? null;
+
+    // The same call again, with the pins exactly as the board returned them: a
+    // reorder that dropped a field it was handed would take the width with it.
+    await mcpCall(port, token, "arrange_dashboard", {
+      domainSlug: plan.boardSlug,
+      pins: afterArrange.value?.pins ?? [],
+    });
+    const afterSecondArrange = await mcpCall(port, token, "get_dashboard", {
+      domainSlug: plan.boardSlug,
+    });
+    checks.widthAfterSecondArrange =
+      (afterSecondArrange.value?.pins ?? []).find((pin) => pin.id === plan.editPinId)?.width ?? null;
+    if (checks.widthAfterArrange !== dragged || checks.widthAfterSecondArrange !== dragged) {
+      failure(
+        `a reorder lost the operator's width: ${JSON.stringify(checks.widthAfterArrange)} then ` +
+          `${JSON.stringify(checks.widthAfterSecondArrange)}, expected ${dragged}`,
+      );
+    }
+
+    // An edit that names no span leaves it alone.
+    const readForWidth = await mcpCall(port, token, "get_view", {
+      domainSlug: plan.domainSlug,
+      viewId: plan.editViewId,
+    });
+    await mcpCall(port, token, "save_view", {
+      domainSlug: plan.domainSlug,
+      boardSlug: plan.boardSlug,
+      viewId: plan.editViewId,
+      spec: editedSpecFrom(readForWidth.value?.spec ?? {}),
+    });
+    const afterEdit = await mcpCall(port, token, "get_dashboard", { domainSlug: plan.boardSlug });
+    checks.widthAfterEdit =
+      (afterEdit.value?.pins ?? []).find((pin) => pin.id === plan.editPinId)?.width ?? null;
+
+    // And naming a span replaces it — the card is the row, so it has no width of
+    // its own to come back to.
+    const reSized = await mcpCall(port, token, "save_view", {
+      domainSlug: plan.domainSlug,
+      boardSlug: plan.boardSlug,
+      viewId: plan.editViewId,
+      span: 2,
+      spec: editedSpecFrom(readForWidth.value?.spec ?? {}),
+    });
+    checks.resizedReply = reSized.value;
+    const afterSpan = await mcpCall(port, token, "get_dashboard", { domainSlug: plan.boardSlug });
+    const namedSpanPin = (afterSpan.value?.pins ?? []).find((pin) => pin.id === plan.editPinId);
+    checks.spanAfterNamedSpan = namedSpanPin?.span ?? null;
+    checks.widthAfterNamedSpan = namedSpanPin?.width ?? null;
+    if (checks.widthAfterEdit !== dragged) {
+      failure(
+        `an edit that named no span lost the operator's width: ` +
+          `${JSON.stringify(checks.widthAfterEdit)}`,
+      );
+    }
+    if (checks.spanAfterNamedSpan !== 2 || checks.widthAfterNamedSpan !== null) {
+      failure(
+        `naming a span did not replace the width: span ${JSON.stringify(checks.spanAfterNamedSpan)}, ` +
+          `width ${JSON.stringify(checks.widthAfterNamedSpan)}`,
+      );
+    }
+
     if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
   } catch (error) {
     failure(error instanceof Error ? error.stack ?? error.message : String(error));

@@ -90,6 +90,7 @@ type HarnessWindow = Window & {
   dashboardTileCalls?: string[];
   dashboardTileUnexpectedCalls?: string[];
   dashboardTilePinWrites?: Pin[][];
+  dashboardTileSetBoard?: (pins: Pin[], locked: boolean) => boolean;
   dashboardTileRender?: (generation: number) => boolean;
 };
 
@@ -452,6 +453,20 @@ function Harness({ generation }: { generation: number }) {
 }
 
 const root = createRoot(document.getElementById("root")!);
+
+/**
+ * Install a board before the page reads it, and re-render.
+ *
+ * The locked leg needs the same board read-only — a locked dashboard draws no
+ * width handle, because the width lives on the pin and a locked board makes no
+ * pin writes — and that can only be asked for by handing the page a locked board,
+ * which is what this is for.
+ */
+harness.dashboardTileSetBoard = (pins, locked) => {
+  state.pins = pins;
+  state.locked = locked;
+  return true;
+};
 
 harness.dashboardTileRender = (generation) => {
   root.render(

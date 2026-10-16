@@ -493,7 +493,10 @@ export function usePinArrange(input: {
       const pinId = card?.dataset.pinId;
       if (!card || !pinId) return;
       // A press on a control inside the card is that control's, not the board's.
-      if (target.closest('a, input, select, textarea, [role="button"], button')) {
+      // A card's width handle is one of those controls: it is a `separator`, not a
+      // button, so it has to be named here — and naming it is what keeps one press
+      // from being two gestures (a resize and a lift) at once.
+      if (target.closest('a, input, select, textarea, [role="button"], button, [data-pin-handle]')) {
         return;
       }
       const arm: Arm = {

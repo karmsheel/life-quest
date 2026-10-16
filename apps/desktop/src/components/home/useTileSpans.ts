@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import type { Pin } from "@lifequest/vault-core";
 import {
@@ -6,7 +6,9 @@ import {
   boardWidth,
   minTileUnits,
   tileStep,
+  unitsForWidth,
   unitsNeeded,
+  widthForUnits,
 } from "@/components/home/tile-span";
 
 /**
@@ -68,13 +70,32 @@ export function useTileSpans(input: {
   pins: Pin[];
   /** The vault's live revision: what makes a card re-run and take a new shape. */
   live: number;
-  /** True while a card is lifted: the gesture owns the geometry and this stands down. */
+  /** True while a gesture owns the geometry: the board stands down and re-measures after. */
   arranging: boolean;
-}): void {
+}): TileBoard {
   const { gridRef, pins, live, arranging } = input;
   const frameRef = useRef<number | null>(null);
   const arrangingRef = useRef(arranging);
   arrangingRef.current = arranging;
+
+  /**
+   * What the last measurement found, for the card that is about to be dragged.
+   *
+   * The resize gesture has to know the same three things this pass does — what a
+   * card's content needs, how wide one unit is, and how many units the board has
+   * room for — and it must know them as live numbers rather than as the values
+   * React last rendered with. So the measurement is written here, in a ref, and
+   * read back through the accessors below.
+   */
+  const measured = useRef({
+    need: new Map<string, number>(),
+    units: new Map<string, number>(),
+    step: 0,
+    gap: 0,
+    minUnits: 1,
+    tracks: 0,
+    root: 16,
+  });
 
   /**
    * Size the board, once.
@@ -91,12 +112,26 @@ export function useTileSpans(input: {
     if (cards.length === 0) return;
 
     const boardStyle = getComputedStyle(grid);
-    const step = tileStep(
-      boardStyle,
-      Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
-    );
+    const root = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const step = tileStep(boardStyle, root);
     const gap = Number.parseFloat(boardStyle.columnGap) || 0;
     const minUnits = minTileUnits(boardStyle);
+    const tracks = boardStyle.gridTemplateColumns.trim().split(/\s+/).filter(Boolean).length;
+
+    /**
+     * The operator's own hand on a card: a width in rem, which a card is never
+     * drawn narrower than its content to honour.
+     *
+     * `max(need, dragged)` is the whole of the safety here. The dragged width is
+     * taken as the nearest whole number of units — it is a target the operator
+     * aimed at and can see — while the content's floor is rounded up, because a
+     * card that guessed low would spill. The larger wins, so dragging a card's
+     * edge can make it wider than its table needs and can never make it narrower.
+     */
+    const dragged = new Map<string, number>();
+    for (const pin of pins) {
+      if (pin.kind === "view" && pin.width !== undefined) dragged.set(pin.id, pin.width * root);
+    }
 
     // Write all, read all, restore all. Interleaving would make the browser
     // lay the board out once per card; this is one layout for the measurements
@@ -105,7 +140,15 @@ export function useTileSpans(input: {
     const needs = cards.map((card) => card.getBoundingClientRect().width);
     for (const card of cards) card.style.removeProperty("width");
 
-    const units = needs.map((need) => unitsNeeded(need, step, gap, minUnits));
+    const units = cards.map((card, index) => {
+      const need = needs[index] ?? 0;
+      const floor = unitsNeeded(need, step, gap, minUnits);
+      const id = card.dataset.pinId;
+      const target = id === undefined ? undefined : dragged.get(id);
+      return target === undefined
+        ? floor
+        : Math.max(floor, unitsForWidth(target, step, gap, minUnits));
+    });
 
     // The board's floor first: it decides how many tracks there are, and a span
     // wider than the track count would create an implicit track instead — a
@@ -118,8 +161,47 @@ export function useTileSpans(input: {
       const count = units[index];
       const span = widthFollowsContent(card) ? `span ${count}` : "";
       if (card.style.gridColumn !== span) card.style.gridColumn = span;
+
+      /**
+       * The card's width handle, told what it is holding.
+       *
+       * Written here rather than rendered, for the same reason the span is: the
+       * measurement happens after React has rendered, so attributes rendered from
+       * it would be a value behind — and `aria-valuenow` saying zero until the next
+       * unrelated re-render is worse than saying nothing. This runs in a layout
+       * effect, so the first painted frame already carries the right numbers.
+       */
+      const handle = card.querySelector<HTMLElement>("[data-pin-handle]");
+      if (!handle) return;
+      const max = Math.max(1, tracks);
+      const floor = Math.max(1, unitsNeeded(needs[index] ?? 0, step, gap, minUnits));
+      const value = count ?? floor;
+      const wanted: Array<[string, string]> = [
+        ["aria-valuemin", String(Math.min(max, floor))],
+        ["aria-valuemax", String(max)],
+        ["aria-valuenow", String(value)],
+        ["aria-valuetext", `${value} of ${max} columns`],
+      ];
+      for (const [name, text] of wanted) {
+        if (handle.getAttribute(name) !== text) handle.setAttribute(name, text);
+      }
     });
-  }, [gridRef]);
+
+    const found = measured.current;
+    found.need.clear();
+    found.units.clear();
+    cards.forEach((card, index) => {
+      const id = card.dataset.pinId;
+      if (!id) return;
+      found.need.set(id, needs[index] ?? 0);
+      found.units.set(id, units[index] ?? minUnits);
+    });
+    found.step = step;
+    found.gap = gap;
+    found.minUnits = minUnits;
+    found.tracks = tracks;
+    found.root = root;
+  }, [gridRef, pins]);
 
   /**
    * One measurement per frame, at most.
@@ -172,7 +254,65 @@ export function useTileSpans(input: {
       frameRef.current = null;
     };
   }, [gridRef, schedule]);
+
+  /**
+   * What this pass measured, for the gesture that resizes a card by hand.
+   *
+   * Accessors rather than values, and memoized once, because the resize gesture's
+   * handlers must not be re-created every time a card's content changes — they are
+   * attached to elements that are re-rendered on the board's own schedule, and a
+   * handler that changed identity under a drag in progress would be a drag that
+   * stops mid-gesture.
+   */
+  return useMemo<TileBoard>(
+    () => ({
+      needOf: (pinId) => measured.current.need.get(pinId) ?? 0,
+      unitsOf: (pinId) => measured.current.units.get(pinId) ?? 0,
+      minUnitsFor: (pinId) => {
+        const found = measured.current;
+        return unitsNeeded(found.need.get(pinId) ?? 0, found.step, found.gap, found.minUnits);
+      },
+      step: () => measured.current.step,
+      gap: () => measured.current.gap,
+      minUnits: () => measured.current.minUnits,
+      trackCount: () => measured.current.tracks,
+      rootFontSize: () => measured.current.root,
+      widthOf: (units) => {
+        const found = measured.current;
+        return widthForUnits(units, found.step, found.gap);
+      },
+    }),
+    [],
+  );
 }
+
+/**
+ * What the board measured, as the rest of the page reads it.
+ *
+ * A card's own width is decided here and nowhere else, so a gesture that wants to
+ * change it — the drag on a card's right edge — asks this rather than measuring a
+ * second time and risking a second answer.
+ */
+export type TileBoard = {
+  /** What this card's content needs, in pixels, as of the last measurement. */
+  needOf: (pinId: string) => number;
+  /** What this card is drawn at, in units, as of the last measurement. */
+  unitsOf: (pinId: string) => number;
+  /** The fewest units this card may have: its own content's floor. */
+  minUnitsFor: (pinId: string) => number;
+  /** One layout unit, in pixels. */
+  step: () => number;
+  /** The board's gutter, in pixels. */
+  gap: () => number;
+  /** The design's floor for any card, in units. */
+  minUnits: () => number;
+  /** How many units the board is drawing across: the whole row. */
+  trackCount: () => number;
+  /** The root font size, for turning a width in rem into pixels. */
+  rootFontSize: () => number;
+  /** The drawn width, in pixels, of a card of `units` units. */
+  widthOf: (units: number) => number;
+};
 
 /**
  * Whether the board decides this card's width, or the card already owns the row.

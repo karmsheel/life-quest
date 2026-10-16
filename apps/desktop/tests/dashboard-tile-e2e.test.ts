@@ -28,6 +28,13 @@ const SCENARIOS = [
   "width-control",
   "no-write",
   "clean",
+  "resize-handles",
+  "resize-drag-widens",
+  "resize-survives-a-reload",
+  "resize-drag-floor-is-the-content",
+  "resize-drag-row",
+  "resize-keys-step",
+  "resize-is-not-arrange",
 ];
 
 /**
@@ -76,11 +83,14 @@ type CardSample = {
   gridColumnEnd: string;
   rowCard: boolean;
   widthControl: string | null;
+  need: number;
   table: {
     width: number;
     preferred: number;
+    min: number;
     content: number;
     columns: { header: string; width: number }[];
+    maxColumns: { header: string; width: number }[];
   } | null;
   spills: { tag: string; cls: string; past: number }[];
 };
@@ -105,6 +115,37 @@ type WidthSample = {
   cards: CardSample[];
 };
 
+/** What the width gesture's legs measured, leg by leg. */
+type ResizeSummary = {
+  handles: { count: number; viewPins: number; locked: number; wellFormed: boolean };
+  widen: {
+    from: number;
+    wanted: number;
+    units: number;
+    width: number;
+    storedWidthRem: number | null;
+    writes: number;
+    reloadedUnits: number;
+  };
+  floor: {
+    contentUnits: number;
+    unitsBefore: number;
+    stoppedAt: number;
+    width: number;
+    storedWidthRem: number | null;
+    writes: number;
+  };
+  row: {
+    pinSpan: number | null;
+    storedWidthRem: number | null;
+    width: number;
+    board: number;
+    writes: number;
+  };
+  keys: { from: number; to: number; writes: number; spoken: string | null };
+  noop: { lifted: number; writes: number; heldAsResize: number };
+};
+
 type Report = {
   pass: boolean;
   failures: string[];
@@ -113,6 +154,7 @@ type Report = {
     scenarios: Scenario[];
     widths: WidthSample[];
     pinWrites: number;
+    resizes: ResizeSummary;
     unexpectedBridgeCalls: string[];
     consoleErrors: string[];
   };
@@ -269,5 +311,35 @@ describe("dashboard tile e2e", () => {
     assert.equal(report.checks.pinWrites, 0, "sizing the board wrote to the vault");
     assert.deepEqual(report.checks.unexpectedBridgeCalls, []);
     assert.deepEqual(report.checks.consoleErrors, []);
+
+    // ── the operator's own hand on the width ───────────────────────────────────
+    // A handle per view pin, none on a locked board; a drag that widens the card by
+    // exactly the units it was aimed at and stores that width on the pin; a floor
+    // that stops at the content however hard the pointer pulls; the row stored as
+    // the row; and a press that is neither an arrange nor a write.
+    const { handles, widen, floor, row, keys, noop } = report.checks.resizes;
+    assert.equal(handles.count, handles.viewPins, "not every view pin drew a width handle");
+    assert.equal(handles.wellFormed, true, "a handle's aria values are not a width range");
+    assert.equal(handles.locked, 0, "a locked board offered a width handle");
+    assert.equal(widen.units, widen.wanted, `the drag gave ${widen.units} units, wanted ${widen.wanted}`);
+    assert.equal(widen.writes, 1, `the drag wrote ${widen.writes} times`);
+    assert.ok(widen.storedWidthRem !== null, "the drag stored no width on the pin");
+    assert.equal(
+      widen.reloadedUnits,
+      widen.wanted,
+      "the width did not survive a fresh render of the board",
+    );
+    // The floor: widened first, then dragged in, it stops where the table stops.
+    assert.ok(floor.unitsBefore > floor.contentUnits, "the floor leg never widened the card first");
+    assert.equal(floor.stoppedAt, floor.contentUnits, "the drag went below what the card's content needs");
+    assert.equal(floor.writes, 2, `the floor leg wrote ${floor.writes} times, expected two drags`);
+    assert.equal(row.pinSpan, 2, "a drag to the board's edge did not store the row");
+    assert.equal(row.storedWidthRem, null, "the row was stored with a width as well as a span");
+    assert.ok(Math.abs(row.width - row.board) <= 1, "the row card does not fill the board");
+    assert.equal(keys.to, keys.from + 1, "one ArrowRight did not step exactly one unit");
+    assert.equal(keys.writes, 1, "one ArrowRight did not write exactly once");
+    assert.equal(noop.lifted, 0, "a press on the width handle lifted the card");
+    assert.equal(noop.writes, 0, "a press on the width handle wrote to the vault");
+    assert.equal(noop.heldAsResize, 1, "a press on the width handle did not start a resize");
   });
 });

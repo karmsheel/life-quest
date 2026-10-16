@@ -120,6 +120,27 @@ const ROW_CARD = "view:financial:v-row";
 /** The operator's own card: their rows, their columns, their pin's span 1. */
 const OPERATOR = "view:financial:v-real";
 
+/**
+ * The same board the harness seeds, restated as pin objects.
+ *
+ * The driver installs it again for each leg — the resize legs each start from a
+ * board nobody has dragged yet, and the locked leg needs the same board read-only
+ * — so it needs the pins themselves rather than only their ids.
+ */
+const SEED_PINS = [
+  { id: "sys:goal-progress", kind: "system", system: "goal-progress" },
+  { id: LISTING, kind: "view", domainSlug: "financial", viewId: "v-listing", span: 1 },
+  { id: METRIC, kind: "view", domainSlug: "financial", viewId: "v-metric", span: 1 },
+  { id: "page:financial:ledger", kind: "page", domainSlug: "financial", pageId: "ledger" },
+  { id: ROW_CARD, kind: "view", domainSlug: "financial", viewId: "v-row", span: 2 },
+  { id: "view:financial:v-ledger", kind: "view", domainSlug: "financial", viewId: "v-ledger", span: 1 },
+  { id: "sys:pending-decisions", kind: "system", system: "pending-decisions" },
+  { id: OPERATOR, kind: "view", domainSlug: "financial", viewId: "v-real", span: 1 },
+];
+
+/** How many times the page has been rendered: a fresh board per leg. */
+let generation = 0;
+
 const errors = [];
 const scenarios = [];
 
@@ -349,8 +370,12 @@ const SETTLED = `(() => {
  })()`;
 
 /** Draw the board and wait for it to be the thing under test. */
-async function drawBoard(win) {
-  await win.webContents.executeJavaScript("window.dashboardTileRender(1); true");
+async function drawBoard(win, { locked = false } = {}) {
+  generation += 1;
+  await win.webContents.executeJavaScript(
+    `window.dashboardTileSetBoard(${JSON.stringify(SEED_PINS)}, ${locked ? "true" : "false"}); ` +
+      `window.dashboardTileRender(${generation}); true`,
+  );
   await waitFor(
     win,
     `document.querySelectorAll(".home-dashboard__grid > .home-pin").length === ${SEED.length + 1}`,
@@ -362,6 +387,9 @@ async function drawBoard(win) {
   // tick it arrived.
   await settleFrames(win);
   await sleep(120);
+  // Every leg starts from a board nobody has touched and an empty write log, so
+  // "one write" is a claim about the gesture rather than about the run.
+  await win.webContents.executeJavaScript("window.dashboardTilePinWrites.length = 0; true");
 }
 
 async function sample(win, name) {
@@ -654,6 +682,460 @@ function checkNoWrite(writes) {
   );
 }
 
+/** Real input, through the browser's own pipeline. */
+function mouse(win, type, x, y) {
+  win.webContents.sendInputEvent({
+    type,
+    x: Math.round(x),
+    y: Math.round(y),
+    button: "left",
+    clickCount: 1,
+  });
+}
+
+/** A real key press, through the browser's own input pipeline. */
+async function pressKey(win, keyCode) {
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode });
+  win.webContents.sendInputEvent({ type: "char", keyCode });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode });
+  await sleep(80);
+}
+
+/** The board's own geometry: the step, the gutter, and where the board starts. */
+function geometry(win) {
+  return win.webContents.executeJavaScript(
+    `(() => {
+       const grid = document.querySelector(".home-dashboard__grid");
+       const style = getComputedStyle(grid);
+       const box = grid.getBoundingClientRect();
+       const tracks = style.gridTemplateColumns.trim().split(/\\s+/);
+       const root = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+       return {
+         step: parseFloat(tracks[0]),
+         gap: parseFloat(style.columnGap) || 0,
+         tracks: tracks.length,
+         minUnits: parseInt(style.getPropertyValue("--home-tile-min-units"), 10) || 4,
+         left: box.left,
+         width: box.width,
+         root,
+       };
+     })()`,
+  );
+}
+
+/** One card's box, rounded. */
+function cardBox(win, pinId) {
+  return win.webContents.executeJavaScript(
+    `(() => {
+       const el = document.querySelector('[data-pin-id="${pinId}"]');
+       if (!el) return null;
+       const r = el.getBoundingClientRect();
+       return { left: r.left, right: r.right, width: r.width, top: r.top };
+     })()`,
+  );
+}
+
+/** The handle of one card, and whether a point on it really lands on it. */
+function handleOf(win, pinId) {
+  return win.webContents.executeJavaScript(
+    `(() => {
+       const el = document.querySelector('[data-pin-handle="${pinId}"]');
+       if (!el) return null;
+       const r = el.getBoundingClientRect();
+       const x = r.left + r.width / 2;
+       const y = r.top + r.height / 2;
+       const hit = document.elementFromPoint(x, y);
+       return {
+         x, y, width: r.width, height: r.height,
+         role: el.getAttribute("role"),
+         valueNow: el.getAttribute("aria-valuenow"),
+         valueMin: el.getAttribute("aria-valuemin"),
+         valueMax: el.getAttribute("aria-valuemax"),
+         lands: Boolean(hit && (hit === el || el.contains(hit))),
+       };
+     })()`,
+  );
+}
+
+/** The pin list the page last asked the vault to write, and the card's pin in it. */
+async function lastWrite(win, pinId) {
+  const writes = await win.webContents.executeJavaScript("window.dashboardTilePinWrites");
+  const last = writes.length ? writes[writes.length - 1] : null;
+  return {
+    count: writes.length,
+    pin: last ? (last.find((candidate) => candidate.id === pinId) ?? null) : null,
+  };
+}
+
+const pinWrites = (win) =>
+  win.webContents.executeJavaScript("window.dashboardTilePinWrites");
+
+const liftedIds = (win) =>
+  win.webContents.executeJavaScript(
+    `[...document.querySelectorAll(".home-pin.is-lifted")].map((el) => el.dataset.pinId)`,
+  );
+
+const resizeStatus = (win) =>
+  win.webContents.executeJavaScript(
+    `(() => {
+       const el = document.querySelector('[data-testid="pin-resize-status"]');
+       return el ? (el.textContent || "").trim() : null;
+     })()`,
+  );
+
+const spillCount = (win, pinId) =>
+  win.webContents.executeJavaScript(
+    `(() => {
+       const card = document.querySelector('[data-pin-id="${pinId}"]');
+       if (!card) return -1;
+       const shell = card.querySelector(".view-card, .home-card, .deadline-banner") || card;
+       const frame = shell.getBoundingClientRect();
+       let out = 0;
+       for (const el of card.querySelectorAll("*")) {
+         const r = el.getBoundingClientRect();
+         if (r.width === 0 && r.height === 0) continue;
+         if (Math.max(r.right - frame.right, frame.left - r.left) > 2) out += 1;
+       }
+       return out;
+     })()`,
+  );
+
+/**
+ * Drag a card's width handle to a point, in the browser's own input pipeline.
+ *
+ * The pointer travels in steps rather than jumping, because the drag resolves the
+ * width on every move — a single jump would only prove the last position was read.
+ *
+ * BOTH POINTS HAVE TO BE INSIDE THE WINDOW, and that is checked rather than
+ * trusted: `sendInputEvent` injects at a coordinate, and a coordinate outside the
+ * viewport is an event the renderer never sees. A rig whose aim left the window
+ * would be a rig reporting "the drag did nothing" about a drag that never
+ * happened — which is exactly what it did before this check existed.
+ */
+async function dragHandle(win, pinId, targetX) {
+  const handle = await handleOf(win, pinId);
+  if (!handle) throw new Error(`${pinId} draws no width handle`);
+  if (!handle.lands) throw new Error(`the handle of ${pinId} is not hit-testable`);
+  const width = await win.webContents.executeJavaScript("window.innerWidth");
+  const inside = (x) => x >= 4 && x <= width - 4;
+  if (!inside(handle.x) || !inside(targetX)) {
+    throw new Error(
+      `the drag of ${pinId} aims outside the ${width}px window: from ${Math.round(handle.x)} ` +
+        `to ${Math.round(targetX)}`,
+    );
+  }
+  /**
+   * Record what the input pipeline actually delivers.
+   *
+   * A drag that does nothing has two very different causes — the events never
+   * arrived, or they arrived and the gesture ignored them — and a rig that cannot
+   * tell them apart reports the wrong one. The recorder is what makes the
+   * difference a number in the claim rather than a guess.
+   */
+  await win.webContents.executeJavaScript(
+    `(() => {
+       window.__tilePointers = [];
+       window.__tileRecorder = (event) => {
+         const target = event.target;
+         const name = typeof target.className === "string" && target.className ? target.className : target.tagName;
+         window.__tilePointers.push(
+           event.type + "@" + Math.round(event.clientX) + "/p" + event.pointerId +
+             "→" + String(name).split(" ")[0],
+         );
+       };
+       for (const type of ["pointerdown", "pointermove", "pointerup"]) {
+         document.addEventListener(type, window.__tileRecorder, true);
+       }
+       return true;
+     })()`,
+  );
+  mouse(win, "mouseDown", handle.x, handle.y);
+  await sleep(60);
+  const steps = 4;
+  for (let step = 1; step <= steps; step += 1) {
+    mouse(win, "mouseMove", handle.x + ((targetX - handle.x) * step) / steps, handle.y);
+    await sleep(40);
+  }
+  await settleFrames(win);
+  mouse(win, "mouseUp", targetX, handle.y);
+  await sleep(220);
+  return win.webContents.executeJavaScript(
+    `(() => {
+       for (const type of ["pointerdown", "pointermove", "pointerup"]) {
+         document.removeEventListener(type, window.__tileRecorder, true);
+       }
+       return window.__tilePointers;
+     })()`,
+  );
+}
+
+/**
+ * The width the operator can set by hand — stage two of the reported story.
+ *
+ * The board sizes a card from what it holds; the operator asked for more control
+ * than that, and the right edge of every card is now a handle. These legs are the
+ * gesture, the range it may move in, and the two ways it can end without a write.
+ *
+ * The claim that matters most is the ceiling and the floor: a drag can make a card
+ * wider than its table needs, and it can never make it narrower — the reported
+ * spill, rebuilt as a gesture, would be absurd — and a drag that fills the row is
+ * stored as the row rather than as a very wide card, so the handle and the
+ * chrome's width button leave the board in one state.
+ */
+async function checkResize(win) {
+  const summary = {};
+  /**
+   * The resize legs run on a WIDER window than the sizing claims, and they have
+   * to: a drag names a width by the pointer's own x, so widening a card that
+   * already ends near the window's edge would aim outside the viewport — where an
+   * injected event is never delivered. A roomy window is what makes "drag it
+   * wider" a gesture this rig can actually perform.
+   */
+  win.setContentSize(1600, 1100);
+  await settleFrames(win);
+  await sleep(200);
+
+  // 0. Every view pin draws a handle that says what it is; a locked board draws
+  //    none, because the width lives on the pin.
+  step("resize-handles");
+  await drawBoard(win);
+  const handles = await win.webContents.executeJavaScript(
+    `[...document.querySelectorAll("[data-pin-handle]")].map((el) => ({
+       pinId: el.getAttribute("data-pin-handle"),
+       role: el.getAttribute("role"),
+       min: Number(el.getAttribute("aria-valuemin")),
+       max: Number(el.getAttribute("aria-valuemax")),
+       now: Number(el.getAttribute("aria-valuenow")),
+       name: el.getAttribute("aria-label"),
+     }))`,
+  );
+  const viewPins = SEED_PINS.filter((pin) => pin.kind === "view").map((pin) => pin.id);
+  const covered = handles.map((handle) => handle.pinId).sort();
+  const wellFormed = handles.every(
+    (handle) =>
+      handle.role === "separator" &&
+      Number.isFinite(handle.min) &&
+      Number.isFinite(handle.max) &&
+      Number.isFinite(handle.now) &&
+      handle.now >= handle.min &&
+      handle.now <= handle.max &&
+      Boolean(handle.name),
+  );
+  await drawBoard(win, { locked: true });
+  const lockedHandles = await win.webContents.executeJavaScript(
+    `document.querySelectorAll("[data-pin-handle]").length`,
+  );
+  await drawBoard(win);
+  check(
+    "resize-handles",
+    covered.join(",") === [...viewPins].sort().join(",") && wellFormed && lockedHandles === 0,
+    `${handles.length} handle(s) for ${viewPins.length} view pin(s), well-formed: ${wellFormed}; ` +
+      `a locked board drew ${lockedHandles}`,
+  );
+  summary.handles = { count: handles.length, viewPins: viewPins.length, locked: lockedHandles, wellFormed };
+
+  // 1. A drag right by whole units widens the card to exactly that, in one write.
+  step("resize-drag-widens");
+  const geo = await geometry(win);
+  const before = await cardBox(win, OPERATOR);
+  const unitsBefore = Math.round((before.width + geo.gap) / (geo.step + geo.gap));
+  const wanted = unitsBefore + 2;
+  // Aim at the width of `wanted` units: the pointer names it exactly.
+  const targetX = before.left + wanted * (geo.step + geo.gap) - geo.gap;
+  const delivered = await dragHandle(win, OPERATOR, targetX);
+  const widened = await cardBox(win, OPERATOR);
+  const widenedUnits = Math.round((widened.width + geo.gap) / (geo.step + geo.gap));
+  const widenWrite = await lastWrite(win, OPERATOR);
+  const spills = await spillCount(win, OPERATOR);
+  check(
+    "resize-drag-widens",
+    widenedUnits === wanted &&
+      widenWrite.count === 1 &&
+      widenWrite.pin?.span === 1 &&
+      typeof widenWrite.pin?.width === "number" &&
+      Math.abs(widenWrite.pin.width * geo.root - widened.width) <= 2 &&
+      spills === 0,
+    `dragging to ${Math.round(targetX)}px gave ${widenedUnits} unit(s) at ${Math.round(widened.width)}px ` +
+      `(wanted ${wanted}), ${widenWrite.count} write(s) storing ` +
+      `span=${widenWrite.pin?.span} width=${widenWrite.pin?.width}rem, ${spills} element(s) outside the card; ` +
+      `the pipeline delivered ${JSON.stringify(delivered)} with ` +
+      `${await win.webContents.executeJavaScript('document.querySelectorAll(".home-pin.is-resizing").length')} ` +
+      `card(s) mid-drag; the board said ${JSON.stringify(await resizeStatus(win))}`,
+  );
+  // The width is on the PIN, so a fresh render of the same board reads it back:
+  // this is the difference between "the card is wide right now" and "the card is
+  // that wide", and it is the whole point of storing the number.
+  generation += 1;
+  await win.webContents.executeJavaScript(`window.dashboardTileRender(${generation}); true`);
+  await settleFrames(win);
+  await sleep(200);
+  const reloaded = await cardBox(win, OPERATOR);
+  const reloadedUnits = Math.round((reloaded.width + geo.gap) / (geo.step + geo.gap));
+  summary.widen = {
+    from: unitsBefore,
+    wanted,
+    units: widenedUnits,
+    width: Math.round(widened.width),
+    storedWidthRem: widenWrite.pin?.width ?? null,
+    writes: widenWrite.count,
+    reloadedUnits,
+  };
+  check(
+    "resize-survives-a-reload",
+    reloadedUnits === wanted && Math.abs(reloaded.width - widened.width) <= 1,
+    `after a fresh render of the same board the card is ${reloadedUnits} unit(s) at ` +
+      `${Math.round(reloaded.width)}px, against ${widenedUnits} at ${Math.round(widened.width)}px ` +
+      `when the drag ended`,
+  );
+
+  // 2. The floor is the content, never the pointer — and it is a floor a drag can
+  //    come back DOWN to, not only one it cannot pass. So the card is widened
+  //    first, and then dragged hard in: it stops where its table stops, writes the
+  //    width it stopped at, and nothing leaves the frame.
+  step("resize-drag-floor-is-the-content");
+  await drawBoard(win);
+  const floorGeo = await geometry(win);
+  const need = await win.webContents.executeJavaScript(
+    `(() => {
+       const card = document.querySelector('[data-pin-id="${OPERATOR}"]');
+       card.style.width = "min-content";
+       const width = card.getBoundingClientRect().width;
+       card.style.removeProperty("width");
+       return width;
+     })()`,
+  );
+  const floorUnits = Math.max(
+    floorGeo.minUnits,
+    Math.ceil((need + floorGeo.gap) / (floorGeo.step + floorGeo.gap)),
+  );
+  // Widen it three units past that floor to begin with.
+  const floorStart = await cardBox(win, OPERATOR);
+  const wideTarget =
+    floorStart.left + (floorUnits + 3) * (floorGeo.step + floorGeo.gap) - floorGeo.gap;
+  await dragHandle(win, OPERATOR, wideTarget);
+  const widenedForFloor = await cardBox(win, OPERATOR);
+  const floorWidenedUnits = Math.round(
+    (widenedForFloor.width + floorGeo.gap) / (floorGeo.step + floorGeo.gap),
+  );
+  // Now pull it in, far past where its content begins.
+  const floorTarget = Math.max(12, widenedForFloor.left - 260);
+  await dragHandle(win, OPERATOR, floorTarget);
+  const floored = await cardBox(win, OPERATOR);
+  const flooredUnits = Math.round((floored.width + floorGeo.gap) / (floorGeo.step + floorGeo.gap));
+  const floorWrite = await lastWrite(win, OPERATOR);
+  const floorSpills = await spillCount(win, OPERATOR);
+  check(
+    "resize-drag-floor-is-the-content",
+    floorWidenedUnits === floorUnits + 3 &&
+      flooredUnits === floorUnits &&
+      floorWrite.count === 2 &&
+      floorWrite.pin?.span === 1 &&
+      typeof floorWrite.pin?.width === "number" &&
+      Math.abs(floorWrite.pin.width * floorGeo.root - floored.width) <= 3 &&
+      floorSpills === 0,
+    `widening to ${floorUnits + 3} units gave ${floorWidenedUnits}, then dragging to ` +
+      `${Math.round(floorTarget)}px stopped at ${flooredUnits} unit(s) at ${Math.round(floored.width)}px; ` +
+      `the card's content needs ${floorUnits} at ${Math.round(need)}px, ${floorWrite.count} write(s) ` +
+      `storing span=${floorWrite.pin?.span} width=${floorWrite.pin?.width}rem, ${floorSpills} element(s) ` +
+      `outside the card`,
+  );
+  summary.floor = {
+    contentUnits: floorUnits,
+    unitsBefore: floorWidenedUnits,
+    stoppedAt: flooredUnits,
+    width: Math.round(floored.width),
+    storedWidthRem: floorWrite.pin?.width ?? null,
+    writes: floorWrite.count,
+  };
+
+  // 3. The ceiling is the row, and it is stored as the row. The card dragged here
+  //    is the one standing at the board's own left edge, because a drag to the
+  //    row's far end is only inside the window for a card that starts at its near
+  //    end — see the note on the window size above.
+  step("resize-drag-row");
+  await drawBoard(win);
+  const rowGeo = await geometry(win);
+  const rowBox = await cardBox(win, LISTING);
+  const rowTarget = rowGeo.left + rowGeo.width;
+  await dragHandle(win, LISTING, rowTarget);
+  const filled = await cardBox(win, LISTING);
+  const rowWrite = await lastWrite(win, LISTING);
+  const rowSpills = await spillCount(win, LISTING);
+  check(
+    "resize-drag-row",
+    rowWrite.count === 1 &&
+      rowWrite.pin?.span === 2 &&
+      rowWrite.pin?.width === undefined &&
+      Math.abs(filled.width - rowGeo.width) <= 1 &&
+      rowSpills === 0,
+    `dragging ${Math.round(rowTarget)}px (the board's right edge) stored span=${rowWrite.pin?.span} ` +
+      `width=${rowWrite.pin?.width} for ${Math.round(filled.width)}px against the board's ` +
+      `${Math.round(rowGeo.width)}px, from a card at ${Math.round(rowBox.left)}px, ` +
+      `${rowWrite.count} write(s), ${rowSpills} element(s) outside`,
+  );
+  summary.row = {
+    pinSpan: rowWrite.pin?.span ?? null,
+    storedWidthRem: rowWrite.pin?.width ?? null,
+    width: Math.round(filled.width),
+    board: Math.round(rowGeo.width),
+    writes: rowWrite.count,
+  };
+
+  // 4. The keyboard's half: one unit per press, written as it is pressed.
+  step("resize-keys-step");
+  await drawBoard(win);
+  const keyGeo = await geometry(win);
+  const keyBefore = await cardBox(win, OPERATOR);
+  const keyUnits = Math.round((keyBefore.width + keyGeo.gap) / (keyGeo.step + keyGeo.gap));
+  const focused = await win.webContents.executeJavaScript(
+    `(() => {
+       const el = document.querySelector('[data-pin-handle="${OPERATOR}"]');
+       el.focus();
+       return document.activeElement === el;
+     })()`,
+  );
+  await pressKey(win, "Right");
+  await sleep(260);
+  const afterKey = await cardBox(win, OPERATOR);
+  const afterKeyUnits = Math.round((afterKey.width + keyGeo.gap) / (keyGeo.step + keyGeo.gap));
+  const keyWrite = await lastWrite(win, OPERATOR);
+  const spoken = await resizeStatus(win);
+  check(
+    "resize-keys-step",
+    focused === true &&
+      afterKeyUnits === keyUnits + 1 &&
+      keyWrite.count === 1 &&
+      keyWrite.pin?.span === 1 &&
+      /width set to/i.test(spoken ?? ""),
+    `one ArrowRight from ${keyUnits} unit(s) gave ${afterKeyUnits} for ${keyWrite.count} write(s), ` +
+      `the live region saying ${JSON.stringify(spoken)}`,
+  );
+  summary.keys = { from: keyUnits, to: afterKeyUnits, writes: keyWrite.count, spoken };
+
+  // 5. A press on the handle is not the board's arrange gesture, and a drag that
+  //    ends where it started is not a width.
+  step("resize-is-not-arrange");
+  await drawBoard(win);
+  const still = await handleOf(win, OPERATOR);
+  mouse(win, "mouseDown", still.x, still.y);
+  await sleep(420);
+  const liftedDuring = await liftedIds(win);
+  const heldAs = await win.webContents.executeJavaScript(
+    'document.querySelectorAll(".home-pin.is-resizing").length',
+  );
+  mouse(win, "mouseUp", still.x, still.y);
+  await sleep(220);
+  const noopWrites = await pinWrites(win);
+  check(
+    "resize-is-not-arrange",
+    liftedDuring.length === 0 && noopWrites.length === 0,
+    `a 420 ms press on the handle lifted ${JSON.stringify(liftedDuring)} and wrote ` +
+      `${noopWrites.length} time(s)`,
+  );
+  summary.noop = { lifted: liftedDuring.length, writes: noopWrites.length, heldAsResize: heldAs };
+  return summary;
+}
+
 /** 8. The width control names the two widths it offers. */
 function checkWidthControl(board) {
   const problems = [];
@@ -759,6 +1241,10 @@ async function main() {
   const writes = await win.webContents.executeJavaScript("window.dashboardTilePinWrites");
   checkNoWrite(writes);
 
+  // The operator's own width control, on a board nobody has dragged: the legs
+  // below write pins, so they run after every claim that reads the board at rest.
+  const resizes = await checkResize(win);
+
   const unexpectedBridgeCalls = await win.webContents.executeJavaScript(
     "window.dashboardTileUnexpectedCalls",
   );
@@ -776,6 +1262,10 @@ async function main() {
   // than a listing poured over its own frame. Same command, same picture, on any
   // machine.
   step("artifact");
+  // The board the screenshots show is the seeded one, freshly drawn: the resize
+  // legs above leave a card as wide as the rig dragged it, and the artifact is
+  // the board the operator works on rather than the rig's last experiment.
+  await drawBoard(win);
   fs.mkdirSync(artifactsDir, { recursive: true });
   const shots = [
     { name: "dashboard-tile-wide.png", size: WIDTHS[0] },
@@ -832,6 +1322,8 @@ async function main() {
         })),
       })),
       pinWrites: writes.length,
+      /** The operator's width gesture: what each leg measured, for the test to hold to. */
+      resizes,
       unexpectedBridgeCalls,
       consoleErrors,
     },

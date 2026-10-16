@@ -139,6 +139,12 @@ type Report = {
     before: Board;
     after: Board;
     beforeLocked: { order: string[]; editIndex: number | null };
+    widthAfterArrange: number | null;
+    widthAfterSecondArrange: number | null;
+    widthAfterEdit: number | null;
+    spanAfterNamedSpan: number | null;
+    widthAfterNamedSpan: number | null;
+    resizedReply: { applied?: boolean; span?: number } | null;
     afterNewCard: {
       order: string[];
       last: string | null;
@@ -293,6 +299,33 @@ describe("dashboard card slot e2e", () => {
       report.checks.approvedLast,
       report.editPinId,
       "the card reached the bottom of the board by way of the Decision path",
+    );
+
+    // ── the operator's own width, through the companion's door ─────────────
+    // The companion has no argument for a card's width, but it reorders the board
+    // and edits cards — and both calls rewrite the pin list. So the width the
+    // operator dragged has to survive what the companion does, and go when the
+    // companion names a span, because a span IS a width.
+    assert.equal(report.checks.widthAfterArrange, 24.5, "a reorder dropped the operator's width");
+    assert.equal(
+      report.checks.widthAfterSecondArrange,
+      24.5,
+      "reordering with the pins the board returned dropped the operator's width",
+    );
+    assert.equal(
+      report.checks.widthAfterEdit,
+      24.5,
+      "an edit that named no span dropped the operator's width",
+    );
+    assert.equal(
+      report.checks.spanAfterNamedSpan,
+      2,
+      "naming a span did not widen the card to the row",
+    );
+    assert.equal(
+      report.checks.widthAfterNamedSpan,
+      null,
+      "naming a span left the old dragged width on the pin",
     );
 
     assert.deepEqual(report.consoleErrors, []);
