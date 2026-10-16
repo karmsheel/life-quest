@@ -1,4 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   actorDisplayName,
   DOCUMENT_KIND_LABELS,
@@ -8,9 +13,23 @@ import type { DecisionRecord } from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
+import { useLiveData } from "@/state/LiveDataProvider";
 import { DecisionBody } from "./DecisionBody";
 
 type Tab = "pending" | "history";
+
+/**
+ * A Decision this page had never drawn, and the moment it found it.
+ *
+ * `ids` is wider than the cards on screen on purpose: a proposal filed for another
+ * lens is still one this page had never seen, and a tab switch must not turn a
+ * whole inbox into "New" chips. `at` is a tick rather than a boolean so a second
+ * filing restarts the mark instead of inheriting a class that was already there.
+ */
+type Arrival = { ids: string[]; actor: string; at: number };
+
+/** How long a card that just arrived wears the mark. */
+const ARRIVAL_MS = 6_000;
 
 function formatWhen(iso: string): string {
   try {
@@ -70,10 +89,52 @@ function kindLabel(target: DecisionRecord["target"]): string {
   }
 }
 
+/**
+ * The inbox, live.
+ *
+ * THE FAULT THIS REPAIRS (reported, not imagined):
+ *
+ *   "When I'm already on the Decisions page and a new decision is filed, it does
+ *    not pop up on the screen. I have to click elsewhere and then come back for
+ *    it to show."
+ *
+ * The page read the list once, on mount, and on nothing else. Every other reader
+ * of the same data had already been made live — the dashboard's own "Pending
+ * decisions" card re-reads on the vault's revision — so this was the one surface
+ * still asking nobody, and the only way to make it ask was to unmount and remount
+ * it by navigating away.
+ *
+ * It listens to `useLiveData` now, which is the main process's own announcement
+ * that something a card reads has been written: the companion filing a Decision,
+ * an approve landing one, another window resolving one. The re-read is SILENT —
+ * what is on screen stays on screen, and the new card is added to it. A spinner
+ * where a list used to be is the same defect wearing a different hat: the
+ * operator's place is a place, and a refresh is not a reason to take it.
+ *
+ * An arrival is then something the page says out loud: the card wears the app's
+ * one "this changed" mark — the same accent aura a view card wears when the
+ * companion edits it — a `New` chip, and one quiet line above the list naming who
+ * filed it. The mark is a pulse rather than a flag that stays, because a badge
+ * that never clears stops meaning "new" and starts meaning "some decision".
+ *
+ * WHAT IT DELIBERATELY DOES NOT DO
+ *
+ * It does not move the page. A prepend at the start of a list is where the
+ * operator's eye already is, so with the list's beginning on screen the new card
+ * takes the place the previous newest card held and is read where they are
+ * looking — no scrolling, because none is needed. And an operator who has scrolled
+ * INTO the list keeps their place exactly: the browser's own scroll anchoring
+ * absorbs the prepend, which the rig measures to the pixel in both directions. A
+ * page that threw itself to the top on every filing would be taking the operator's
+ * place to show them something they did not ask for, and the card is marked either
+ * way.
+ */
 export function DecisionsInbox() {
   const { snapshot, refresh } = useVault();
   const lens = useDomainLens();
   const domains = snapshot?.domains ?? [];
+  /** The vault's revision: it moves on any write, in this window or the agent's. */
+  const live = useLiveData();
 
   const [tab, setTab] = useState<Tab>("pending");
   const [items, setItems] = useState<DecisionRecord[]>([]);
@@ -81,50 +142,136 @@ export function DecisionsInbox() {
   const [error, setError] = useState<string | null>(null);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [arrival, setArrival] = useState<Arrival | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api().decisionList();
-      if (!result.ok) {
-        setError(result.error);
-        setItems([]);
-        return;
-      }
-      let list = result.value.slice();
-      if (tab === "pending") {
-        list = list.filter((d) => d.status === "pending");
-      } else {
-        list = list.filter((d) => d.status !== "pending");
-      }
-      // KAR-70: a pairing Decision belongs to no domain, so the lens
-      // filter would hide the very card the operator has to act on. Every
-      // pairing Decision stays visible under every lens.
-      list = list.filter(
-        (d) =>
-          d.target.type === "agent-pairing" ||
-          recordVisibleMulti(lens, d.domainSlugs),
-      );
-      // Newest first
-      list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      setItems(list);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load decisions");
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [tab, lens]);
+  /**
+   * Every decision id this page has drawn, so "just arrived" is decidable.
+   *
+   * A set that only grows, and never "what is on screen": switching to History
+   * takes every pending card off the screen, and a page that compared against the
+   * screen would greet the operator's return to Pending with a whole inbox of
+   * "New" chips. Only a decision this page has never held is new.
+   */
+  const drawnRef = useRef<Set<string>>(new Set());
+  /** False until something has been drawn: a first load has no arrivals. */
+  const seededRef = useRef(false);
+  /** The revision this page has already answered, so a re-render is not a write. */
+  const revisionRef = useRef(live);
+  /**
+   * The newest read, so a slower earlier one cannot land on top of it.
+   *
+   * A read takes a round trip, and the tab or the lens can move inside it — a
+   * live refresh started on Pending, then History clicked, would otherwise draw
+   * the pending list under the History tab until something asked again. Only the
+   * last read owns the screen; a discarded one changes nothing, not even the ids
+   * this page counts as drawn.
+   */
+  const readSeqRef = useRef(0);
 
+  /**
+   * Read the inbox.
+   *
+   *  - `view` — a first load, a tab switch, a lens change. These are answers to
+   *    something the operator did, so they may replace what is on screen.
+   *  - `live` — a vault revision moved. Nobody asked; a card that arrived has to
+   *    be added to what the operator is already reading, not swapped in for it.
+   *
+   * Arrival is judged against every decision the vault holds rather than against
+   * this tab's filtered list, because a filing is a filing whatever is on screen.
+   */
+  const load = useCallback(
+    async (mode: "view" | "live" = "view") => {
+      const seq = readSeqRef.current + 1;
+      readSeqRef.current = seq;
+      if (mode === "view" && !seededRef.current) setLoading(true);
+      setError(null);
+      try {
+        const result = await api().decisionList();
+        if (readSeqRef.current !== seq) return;
+        if (!result.ok) {
+          setError(result.error);
+          // A live read that failed leaves what is already on screen alone: those
+          // cards are still what the vault held a moment ago, and a transient
+          // error is not news worth clearing the page for.
+          if (mode === "view") setItems([]);
+          return;
+        }
+        const fresh = seededRef.current
+          ? result.value.filter(
+              (d) => d.status === "pending" && !drawnRef.current.has(d.id),
+            )
+          : [];
+        for (const d of result.value) drawnRef.current.add(d.id);
+        seededRef.current = true;
+
+        let list = result.value.slice();
+        if (tab === "pending") {
+          list = list.filter((d) => d.status === "pending");
+        } else {
+          list = list.filter((d) => d.status !== "pending");
+        }
+        // KAR-70: a pairing Decision belongs to no domain, so the lens
+        // filter would hide the very card the operator has to act on. Every
+        // pairing Decision stays visible under every lens.
+        list = list.filter(
+          (d) =>
+            d.target.type === "agent-pairing" ||
+            recordVisibleMulti(lens, d.domainSlugs),
+        );
+        // Newest first
+        list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+        setItems(list);
+        if (fresh.length > 0) {
+          const newest = fresh
+            .slice()
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]!;
+          setArrival({
+            ids: fresh.map((d) => d.id),
+            actor: actorDisplayName(newest.actor),
+            at: Date.now(),
+          });
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load decisions");
+        if (mode === "view") setItems([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [tab, lens],
+  );
+
+  // The operator's own moves: the first paint, a tab, the domain lens.
   useEffect(() => {
-    void load();
+    void load("view");
   }, [load]);
+
+  // A write. The revision is monotonic, so a re-run of this effect for any other
+  // reason — `load` changing identity when the tab moves — is not a write.
+  useEffect(() => {
+    if (revisionRef.current === live) return;
+    revisionRef.current = live;
+    void load("live");
+  }, [live, load]);
+
+  /**
+   * The mark is one animation long, cleared on a timer rather than left on the
+   * card: a `New` chip that outlives the moment reads as part of the card.
+   */
+  useEffect(() => {
+    if (!arrival) return;
+    const timer = window.setTimeout(() => setArrival(null), ARRIVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [arrival]);
 
   async function resolve(id: string, resolution: "approved" | "rejected") {
     setResolvingId(id);
     setActionMessage(null);
     setError(null);
+    // The arrival mark is about a card the operator is being asked to act on, and
+    // the answer they just gave is the end of that moment.
+    setArrival(null);
     try {
       const result = await api().decisionResolve(id, resolution);
       if (!result.ok) {
@@ -145,6 +292,18 @@ export function DecisionsInbox() {
       setResolvingId(null);
     }
   }
+
+  /**
+   * The arrivals this tab is actually showing.
+   *
+   * The mark is worn by the cards on screen, and the line above the list counts
+   * those same cards: a proposal filed under another lens is not something this
+   * page can point at, and a count the operator cannot reach is a worse lie than
+   * silence.
+   */
+  const arrivedIds = new Set(arrival?.ids ?? []);
+  const arrivedOnScreen = items.filter((d) => arrivedIds.has(d.id));
+  const newMark = arrival ? `is-new decision-card--new-${arrival.at}` : "";
 
   return (
     <div className="decisions-inbox">
@@ -203,6 +362,21 @@ export function DecisionsInbox() {
           {actionMessage}
         </p>
       ) : null}
+      {/* One line, above the list, for as long as the mark is on a card: the
+          operator looking at the page is told what happened to it, and a screen
+          reader is told the same thing in the same order. */}
+      {arrivedOnScreen.length > 0 ? (
+        <p
+          className="decisions-inbox__arrival"
+          role="status"
+          data-testid="decisions-arrival"
+        >
+          <span className="decisions-inbox__arrival-dot" aria-hidden="true" />
+          {arrivedOnScreen.length === 1
+            ? `New decision filed by ${arrival?.actor ?? "the agent"}.`
+            : `${arrivedOnScreen.length} new decisions filed.`}
+        </p>
+      ) : null}
 
       {loading ? (
         <p className="muted">Loading decisions…</p>
@@ -224,10 +398,23 @@ export function DecisionsInbox() {
             const statusClass = d.reason
               ? "decision-status--stale"
               : `decision-status--${d.status}`;
+            const isNew = arrivedIds.has(d.id);
             return (
-              <li key={d.id} className="decision-card">
+              <li
+                key={d.id}
+                // Named for the page's own reveal, which finds the card the
+                // arrival line is about by this id.
+                data-decision-id={d.id}
+                data-arrived={isNew ? "true" : undefined}
+                className={["decision-card", isNew ? newMark : ""]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
                 <div className="decision-card__kicker">
-                  <span className="decision-kind">{kindLabel(d.target)}</span>
+                  <span className="decision-card__kicker-left">
+                    <span className="decision-kind">{kindLabel(d.target)}</span>
+                    {isNew ? <span className="decision-new">New</span> : null}
+                  </span>
                   <span className={`decision-status ${statusClass}`}>{statusLabel}</span>
                 </div>
                 <div>

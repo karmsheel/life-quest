@@ -187,6 +187,7 @@ import {
   hermesTest,
 } from "./hermes-proxy.js";
 import { runPlannerLoop } from "./map-tools.js";
+import { noteDataChanged } from "./data-revision.js";
 import {
   startMcp,
   stopMcp,
@@ -1522,8 +1523,22 @@ export async function companionChatStreamWithPack(
         completedToolNames,
       });
       if (verdict.change) {
-        // Filing never approves; the operator still has to approve the Decision.
-        await fileImpliedChange(currentRoot, verdict.change);
+        try {
+          // Filing never approves; the operator still has to approve the Decision.
+          await fileImpliedChange(currentRoot, verdict.change);
+        } finally {
+          // And the window hears about the ATTEMPT, not about the result. This is
+          // the one door that files a Decision without passing a registrar that
+          // already announces a write — `decision:create` and every MCP tool go
+          // through `data-revision.ts`'s own lists, and this is a function call
+          // inside the chat handler — and the result is not the question, because
+          // `createDecision` writes the Decision file BEFORE it writes the life
+          // log: a log that fails returns not-ok with the Decision already on
+          // disk. Announcing a filing that wrote nothing costs one repaint; not
+          // announcing one that wrote is the operator watching an inbox that
+          // never hears about the proposal the companion just said it filed.
+          noteDataChanged();
+        }
       }
     } catch {
       // A filing failure must not fail the chat.
