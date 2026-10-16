@@ -32,6 +32,10 @@
  *     and takes the caret, and the turn that follows carries that card. Every
  *     other claim here starts from a card the probe installed; this one starts
  *     from the operator's own click.
+ *  8. `pressing-the-card-control-again-takes-it-off-the-chat` — the other half of
+ *     that click, on the same control: the card wearing the ring, the pill, and
+ *     the card on the next turn all go together. A control that only ever added
+ *     would pass claim 7 and fail here.
  *
  * The bridge is a stub (a dev-server page has no preload), so this rig ends at
  * the recorded payload. What the companion *does* with the line is the agent's,
@@ -363,20 +367,74 @@ async function main() {
     `clicking the card's chat control left ${JSON.stringify(checks.fromTheCard)}`,
   );
 
+  // ── 8. and the same control takes it off again ────────────────────────────
+  // Claim 7 starts the card in the chat; this is the operator taking it back out
+  // on the same door. The ring the Dashboard draws is read here too, before and
+  // after, because "the card is in the chat" is one fact and both ends of the
+  // page have to be showing it.
+  const CARD_STATE = `(() => {
+    const card = document.querySelector('[data-pin-id="view:financial:v-weekly"]');
+    const button = card ? card.querySelector('[data-testid="pin-chat"]') : null;
+    if (!card) return null;
+    const style = getComputedStyle(card);
+    return {
+      inContext: card.classList.contains('is-in-context'),
+      pressed: button ? button.getAttribute('aria-pressed') : null,
+      outline: { style: style.outlineStyle, width: style.outlineWidth },
+    };
+  })()`;
+  const cardState = () => win.webContents.executeJavaScript(CARD_STATE);
+  const ringedBefore = await cardState();
+  await win.webContents.executeJavaScript(
+    `document.querySelector('[data-pin-id="view:financial:v-weekly"] [data-testid="pin-chat"]').click()`,
+  );
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="chat-context-pill"]')`,
+    "the pill to go on the second press",
+  );
+  const ringedAfter = await cardState();
+  const letGo = await dock(win);
+  const afterLetGo = await send(win, "Never mind the card then");
+  const letGoContext = afterLetGo?.instructionsContext ?? {};
+  checks.tookItBack = {
+    before: ringedBefore,
+    after: ringedAfter,
+    dock: letGo,
+    focusedCard: Object.prototype.hasOwnProperty.call(letGoContext, "focusedCard")
+      ? letGoContext.focusedCard
+      : "<absent>",
+  };
+  check(
+    "pressing-the-card-control-again-takes-it-off-the-chat",
+    ringedBefore?.inContext === true &&
+      ringedBefore?.pressed === "true" &&
+      ringedBefore?.outline?.style === "solid" &&
+      parseFloat(ringedBefore?.outline?.width ?? "0") >= 1 &&
+      ringedAfter?.inContext === false &&
+      ringedAfter?.pressed === "false" &&
+      ringedAfter?.outline?.style === "none" &&
+      letGo?.contextCard === null &&
+      !Object.prototype.hasOwnProperty.call(letGoContext, "focusedCard"),
+    `the second press read ${JSON.stringify(checks.tookItBack)}`,
+  );
+
   // ── nothing unexpected, nothing on fire ───────────────────────────────────
-  // Five turns: one with no card, two with it, one after it was taken off, and
-  // one sent from a card the operator clicked. A run that sent fewer never
-  // exercised the claim that names them.
+  // Six turns: one with no card, two with it, one after it was taken off, one
+  // sent from a card the operator clicked, and one after the operator took that
+  // card back out. A run that sent fewer never exercised the claim that names
+  // them.
   const turnCount = (await calls(win)).length;
   checks.turnsSent = turnCount;
-  if (turnCount !== 5) {
-    failure(`the rig sent ${turnCount} turn(s), expected 5 — a claim above may be vacuous`);
+  if (turnCount !== 6) {
+    failure(`the rig sent ${turnCount} turn(s), expected 6 — a claim above may be vacuous`);
   }
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
 
   // The artifact screenshot is the panel holding a card: the state the feature
-  // is about, so that is what a reader should see.
+  // is about, so that is what a reader should see. The Dashboard is on the same
+  // page, so the card the pill names is wearing its ring in the same frame.
   await setContext(win, VIEW_CARD);
   await win.webContents.executeJavaScript(
     `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,

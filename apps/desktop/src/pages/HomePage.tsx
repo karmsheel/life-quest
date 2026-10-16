@@ -39,6 +39,18 @@ import type { SavedView } from "@lifequest/vault-core";
  */
 type BoardView = SavedView & { domainSlug: string };
 
+/**
+ * What a card's chat control says it does, in its two states.
+ *
+ * The control is a toggle: unpressed it hands the card to the chat, pressed it
+ * takes that card back off. The board draws the same fact as a ring around the
+ * card, so these words say again what the picture already says — which is what
+ * an accessible name is for, and why the pressed state is not left to the ring
+ * alone.
+ */
+const CHAT_ASK = "Ask the companion about this card";
+const CHAT_TAKE_OFF = "Take this card out of the chat";
+
 export default function HomePage() {
   const { snapshot, reloadGeneration, refresh } = useVault();
   /**
@@ -49,7 +61,8 @@ export default function HomePage() {
    * watches must move the ledger table AND the log line that says it happened.
    */
   const live = useLiveData();
-  const { setContextCard, setOpen: setChatOpen, livePinId } = useChatDock();
+  const { contextCard, setContextCard, setOpen: setChatOpen, livePinId } =
+    useChatDock();
   const lens = useDomainLens();
   const title =
     lens.kind === "domain"
@@ -456,15 +469,27 @@ export default function HomePage() {
   }
 
   /**
-   * Hand one card to the chat.
+   * Hand one card to the chat — or take back the one this control already handed
+   * over.
    *
    * The name travels with the pin, and it is read off the card the control sits
    * in rather than rebuilt from the pin: the heading is what the operator is
    * looking at, and the companion has to be told about the card in front of
    * them. The dock opens on the way — a card in context that the operator cannot
    * see the pill for is a click that appears to do nothing.
+   *
+   * The press is a toggle, and only on this card's own door: pressing the
+   * control of the card the chat is already holding takes that card off it —
+   * that is the same operator changing their mind, from the card rather than
+   * from the pill — while pressing any other card's control puts THAT card in
+   * context. Nothing else is undone on the way out: the chat stays open, on the
+   * same conversation, minus one card.
    */
   function onChatAbout(pin: Pin, control: HTMLElement) {
+    if (contextCard?.pin.id === pin.id) {
+      setContextCard(null);
+      return;
+    }
     setContextCard({
       pin,
       label: cardNameIn(control.closest(".home-pin")) || pin.id,
@@ -542,6 +567,17 @@ export default function HomePage() {
   const availableKinds = availableSystemKinds();
   const addablePages = availablePagePins();
   const addableViews = availableViewPins();
+
+  /**
+   * Whether the chat is holding this card.
+   *
+   * It is asked of the dock's own context card rather than kept in a second piece
+   * of board state: the card is ringed while it is the one the chat is about, and
+   * the ring goes the moment it is not — whether the operator took it off with
+   * this control or with the pill's own ✕. There is nothing to keep in step, and
+   * so nothing that can disagree with the chat.
+   */
+  const chatHolds = (pinId: string) => contextCard?.pin.id === pinId;
   /**
    * Whether there is an add path at all.
    *
@@ -675,6 +711,7 @@ export default function HomePage() {
               pin.kind === "view" && pin.span === 2 ? "home-pin--span2" : "",
               arrange.isLifted(pin.id) ? "is-lifted" : "",
               livePinId === pin.id ? "is-live" : "",
+              chatHolds(pin.id) ? "is-in-context" : "",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -687,14 +724,19 @@ export default function HomePage() {
               companion about a card is not changing it, so the chat control
               survives the lock — which is exactly why it is a sibling of the
               chrome rather than a button inside it.
+
+              It stays a toggle on a locked board too: taking a card back out of
+              the chat is not an edit of the board either. `aria-pressed` carries
+              the state, and the card's ring draws it.
             */}
             <div className="home-pin__tools">
               <button
                 type="button"
                 className="home-pin__btn home-pin__chat"
                 data-testid="pin-chat"
-                aria-label="Ask the companion about this card"
-                title="Ask the companion about this card"
+                aria-pressed={chatHolds(pin.id)}
+                aria-label={chatHolds(pin.id) ? CHAT_TAKE_OFF : CHAT_ASK}
+                title={chatHolds(pin.id) ? CHAT_TAKE_OFF : CHAT_ASK}
                 onClick={(e) => onChatAbout(pin, e.currentTarget)}
               >
                 <MessageSquare size={14} aria-hidden />

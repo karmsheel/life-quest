@@ -112,6 +112,9 @@ describe("dashboard card context e2e", () => {
       "the-chat-control-is-not-editing-chrome",
       "chat-control-hands-over-the-card",
       "the-name-comes-off-the-heading",
+      "the-card-in-context-wears-a-highlight",
+      "the-highlight-follows-the-card-the-chat-is-about",
+      "pressing-the-control-again-takes-the-card-off-the-chat",
       "a-locked-board-still-offers-it",
       "the-chat-control-does-not-lift-the-card",
       "every-card-offers-the-menu",
@@ -256,6 +259,7 @@ describe("dashboard card context e2e", () => {
       "the-pill-survives-the-turn",
       "removing-the-pill-clears-the-context",
       "the-card-control-puts-it-in-the-chat",
+      "pressing-the-card-control-again-takes-it-off-the-chat",
     ]);
 
     // The turn is the whole point: the card's ids have to reach the companion.
@@ -297,7 +301,24 @@ describe("dashboard card context e2e", () => {
       viewId: "v-weekly",
     });
 
-    assert.equal(report.checks.turnsSent, 5, "the rig did not send every turn it claims about");
+    // The operator's own second press on the same control: the ring the card
+    // was wearing, the pill, and the card on the next turn all go together.
+    const tookItBack = report.checks.tookItBack as {
+      before: { inContext: boolean; pressed: string | null; outline: { style: string } } | null;
+      after: { inContext: boolean; pressed: string | null; outline: { style: string } } | null;
+      dock: { contextCard: unknown };
+      focusedCard: unknown;
+    };
+    assert.equal(tookItBack.before?.inContext, true, "the card the click handed over wore no ring");
+    assert.equal(tookItBack.before?.pressed, "true", "the card's control did not read as pressed");
+    assert.equal(tookItBack.before?.outline.style, "solid", "the ring was a class and not a line");
+    assert.equal(tookItBack.after?.inContext, false, "the second press left the ring on the card");
+    assert.equal(tookItBack.after?.pressed, "false");
+    assert.equal(tookItBack.after?.outline.style, "none", "the ring outlived the card's context");
+    assert.equal(tookItBack.dock.contextCard, null, "the second press left the card in the dock");
+    assert.equal(tookItBack.focusedCard, "<absent>", "the turn after the second press still carried a card");
+
+    assert.equal(report.checks.turnsSent, 6, "the rig did not send every turn it claims about");
     assert.deepEqual(report.checks.consoleErrors, []);
   });
 });

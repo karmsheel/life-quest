@@ -52,6 +52,14 @@
  * 12. `the-chat-control-does-not-lift-the-card` — a 400 ms hold on it neither
  *     lifts the card nor writes; the arrange gesture's press guard refuses a
  *     press that starts on a control rather than on the card itself.
+ * 13. `the-card-in-context-wears-a-highlight` / `the-highlight-follows-the-card-
+ *     the-chat-is-about` / `pressing-the-control-again-takes-the-card-off-the-
+ *     chat` — the card the chat holds is marked on the board, and the control is
+ *     a toggle. The ring is read as the browser paints it, so a class that draws
+ *     nothing fails: no card wears one before the press, exactly the pressed
+ *     card wears one after it, the ring moves rather than accumulating when
+ *     another card's control is pressed, and the second press on the same
+ *     control empties the dock, clears the ring, and writes nothing.
  *
  * The bridge is a stub (a dev-server page has no preload), so claim 5 ends at
  * the recorded call. That a pin write reaches the vault is `dashboard-lock-e2e`'s
@@ -215,12 +223,21 @@ const SAMPLE = `(() => {
       };
     })(),
     chatControls: document.querySelectorAll('[data-testid="pin-chat"]').length,
+    // The cards the chat is holding, by id, and the line each one draws. The
+    // outline is read as the browser paints it: a class that lands on the
+    // element but draws no line is not a highlight, and only this half can tell.
+    inContextCards: [...document.querySelectorAll('.home-dashboard__grid > .home-pin.is-in-context')]
+      .map((card) => card.dataset.pinId ?? null),
     lifted: document.querySelectorAll('.home-pin.is-lifted').length,
     cards: cards.map((card) => {
       const chat = card.querySelector(':scope > .home-pin__tools > [data-testid="pin-chat"]');
+      const style = getComputedStyle(card);
       return {
         id: card.dataset.pinId,
         heading: heading(card),
+        inContext: card.classList.contains('is-in-context'),
+        chatPressed: chat ? chat.getAttribute('aria-pressed') : null,
+        outline: { style: style.outlineStyle, width: style.outlineWidth },
         tools: card.querySelectorAll(':scope > .home-pin__tools').length,
         chat: card.querySelectorAll(':scope > .home-pin__tools > [data-testid="pin-chat"]').length,
         chatInChrome: card.querySelectorAll('.home-pin__chrome [data-testid="pin-chat"]').length,
@@ -426,6 +443,24 @@ const pinWrites = (win) =>
   win.webContents.executeJavaScript("window.dashboardCardContextPinWrites ?? []");
 const deletes = (win) =>
   win.webContents.executeJavaScript("window.dashboardCardContextDeletes ?? []");
+
+/**
+ * Whether a card, as the sample read it, draws a ring.
+ *
+ * The browser's own answer, not the class name: a mark that lands on the element
+ * but paints no line is not a highlight, and this is the half of that claim a
+ * class-name check cannot make. The un-ringed half is written as the negation of
+ * this, so a browser reporting a default width for `outline-style: none` cannot
+ * quietly turn "no ring anywhere" into a pass. The width is read as at least a
+ * hairline rather than as the 2px the rule asks for, because the rig renders
+ * under the window's own scale factor and the claim is "a line is drawn", not
+ * "the line is exactly two CSS pixels".
+ */
+const drawnRing = (card) =>
+  card?.outline?.style === "solid" && parseFloat(card.outline.width ?? "0") >= 1;
+
+/** Whether the control says, in ARIA, that the chat is holding this card. */
+const chatReadsPressed = (card) => card?.inContext === true && card?.chatPressed === "true";
 
 /** Open one card's 3-dot menu and wait for the popup. */
 async function openMenu(win, pinId) {
@@ -681,6 +716,100 @@ async function main() {
     )}`,
   );
 
+  // ── 17. the card in context wears a ring, and the control toggles it ───────
+  // The dock's card is the dock's own state and it outlives a re-render of the
+  // board, so this section does not assume it starts empty: whatever the name
+  // sweep above left in the chat is read first, and then taken off through the
+  // operator's own door. A rig that began from an empty dock it had arranged
+  // itself would be claiming about its own bookkeeping.
+  await render(win, false);
+  const heldBeforeRing = (await dock(win)).contextCard?.pin?.id ?? null;
+  if (heldBeforeRing) {
+    await click(win, `[data-pin-id="${heldBeforeRing}"] [data-testid="pin-chat"]`);
+    await waitFor(
+      win,
+      `!((window.dashboardCardContextDock ?? {}).contextCard)`,
+      "the dock to let its card go",
+    );
+  }
+  const unringed = await sample(win);
+  await click(win, '[data-pin-id="view:financial:v-weekly"] [data-testid="pin-chat"]');
+  await waitFor(
+    win,
+    `document.querySelector('[data-pin-id="view:financial:v-weekly"]').classList.contains('is-in-context')`,
+    "the ring on the card the chat took",
+  );
+  const ringed = await sample(win);
+  const ringedCard = ringed.cards.find((c) => c.id === "view:financial:v-weekly");
+  const otherCards = ringed.cards.filter((c) => c.id !== "view:financial:v-weekly");
+  checks.ring = {
+    before: unringed.cards.map((c) => ({ id: c.id, ring: drawnRing(c), pressed: c.chatPressed })),
+    after: ringed.inContextCards,
+    card: ringedCard,
+  };
+  check(
+    "the-card-in-context-wears-a-highlight",
+    unringed.inContextCards.length === 0 &&
+      unringed.cards.every((c) => !c.inContext && !drawnRing(c) && c.chatPressed === "false") &&
+      JSON.stringify(ringed.inContextCards) === JSON.stringify(["view:financial:v-weekly"]) &&
+      chatReadsPressed(ringedCard) &&
+      drawnRing(ringedCard) &&
+      otherCards.every((c) => !c.inContext && !drawnRing(c) && c.chatPressed === "false"),
+    `the board read ${JSON.stringify(checks.ring)}`,
+  );
+
+  // Another card's control moves the ring rather than growing a second one: the
+  // chat holds one card, and the board must draw exactly one.
+  await click(win, '[data-pin-id="sys:today-week"] [data-testid="pin-chat"]');
+  await waitFor(
+    win,
+    `document.querySelector('[data-pin-id="sys:today-week"]').classList.contains('is-in-context') && ` +
+      `!document.querySelector('[data-pin-id="view:financial:v-weekly"]').classList.contains('is-in-context')`,
+    "the ring to move to the second card",
+  );
+  const moved = await sample(win);
+  const movedCard = moved.cards.find((c) => c.id === "sys:today-week");
+  const vacated = moved.cards.find((c) => c.id === "view:financial:v-weekly");
+  checks.ringMoved = { cards: moved.inContextCards, card: movedCard, vacated };
+  check(
+    "the-highlight-follows-the-card-the-chat-is-about",
+    JSON.stringify(moved.inContextCards) === JSON.stringify(["sys:today-week"]) &&
+      chatReadsPressed(movedCard) &&
+      drawnRing(movedCard) &&
+      !vacated?.inContext &&
+      vacated?.chatPressed === "false" &&
+      !drawnRing(vacated) &&
+      (await dock(win)).contextCard?.pin?.id === "sys:today-week",
+    `after pressing the second card's control the board read ${JSON.stringify(checks.ringMoved)}`,
+  );
+
+  // And the second press on the same control takes it off. Nothing is closed and
+  // nothing is written: the board is not what the context lives in.
+  const writesBeforeToggleOff = (await pinWrites(win)).length;
+  await click(win, '[data-pin-id="sys:today-week"] [data-testid="pin-chat"]');
+  await waitFor(
+    win,
+    `!((window.dashboardCardContextDock ?? {}).contextCard)`,
+    "the dock to let the card go on the second press",
+  );
+  const toggledOff = await sample(win);
+  const afterToggleOff = await dock(win);
+  checks.ringToggledOff = {
+    cards: toggledOff.inContextCards,
+    pressed: toggledOff.cards.map((c) => c.chatPressed),
+    dock: afterToggleOff,
+  };
+  check(
+    "pressing-the-control-again-takes-the-card-off-the-chat",
+    toggledOff.inContextCards.length === 0 &&
+      toggledOff.cards.every((c) => !c.inContext && !drawnRing(c) && c.chatPressed === "false") &&
+      afterToggleOff.contextCard === null &&
+      afterToggleOff.open === true &&
+      (await pinWrites(win)).length === writesBeforeToggleOff,
+    `the second press left ${JSON.stringify(checks.ringToggledOff)} and ` +
+      `${(await pinWrites(win)).length - writesBeforeToggleOff} write(s)`,
+  );
+
   // ── 10. a locked board still lets the card be asked about ─────────────────
   await render(win, true);
   const lockedRead = await sample(win);
@@ -691,9 +820,14 @@ async function main() {
     `(window.dashboardCardContextDock ?? {}).contextCard?.pin?.id === "sys:today-week"`,
     "the locked board's chat control to hand the card over",
   );
+  const lockedRinged = await sample(win);
   const lockedHanded = await dock(win);
   checks.lockedRead = lockedRead;
   checks.lockedHanded = lockedHanded;
+  checks.lockedRing = {
+    cards: lockedRinged.inContextCards,
+    card: lockedRinged.cards.find((c) => c.id === "sys:today-week"),
+  };
   check(
     "a-locked-board-still-offers-it",
     lockedRead.chromeBars === 0 &&
@@ -701,12 +835,18 @@ async function main() {
       lockedRead.chatControls === SEED.length &&
       lockedRead.cards.every((c) => c.chat === 1) &&
       lockedHanded.contextCard?.label === "Today & this week" &&
+      // The ring is not an edit either: a locked board marks the card the chat
+      // took exactly as an unlocked one does, and still writes nothing.
+      JSON.stringify(lockedRinged.inContextCards) === JSON.stringify(["sys:today-week"]) &&
+      chatReadsPressed(checks.lockedRing.card) &&
+      drawnRing(checks.lockedRing.card) &&
       (await pinWrites(win)).length === lockedWritesBefore,
     `the locked board read ${JSON.stringify({
       chromeBars: lockedRead.chromeBars,
       chromeButtons: lockedRead.chromeButtons,
       chatControls: lockedRead.chatControls,
-    })} and handed ${JSON.stringify(lockedHanded.contextCard)}`,
+    })} and handed ${JSON.stringify(lockedHanded.contextCard)} with ring ` +
+      `${JSON.stringify(checks.lockedRing)}`,
   );
 
   // ── 11. asking about a card is not picking one up ─────────────────────────
@@ -1026,13 +1166,19 @@ async function main() {
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
 
-  // The artifact screenshot is the board with the pin board open and a card's
-  // menu open: both of this page's subjects in one frame, so that is what a
-  // reader should see. The card is the surviving view — the two this run deleted
-  // are really gone from the harness's vault, so the board draws six cards, which
-  // is what the app would draw too.
+  // The artifact screenshot is the board with the pin board open, a card's menu
+  // open, and a card in the chat's context: the page's subjects in one frame, so
+  // that is what a reader should see. The card is the surviving view — the two
+  // this run deleted are really gone from the harness's vault, so the board draws
+  // six cards, which is what the app would draw too.
   await render(win, false);
   await openPinBoard(win);
+  await click(win, '[data-pin-id="view:financial:v-summary"] [data-testid="pin-chat"]');
+  await waitFor(
+    win,
+    `document.querySelector('[data-pin-id="view:financial:v-summary"]').classList.contains('is-in-context')`,
+    "the ring on the card the screenshot hands to the chat",
+  );
   await openMenu(win, "view:financial:v-summary");
   await win.webContents.executeJavaScript(
     `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,

@@ -20,6 +20,10 @@ Every pinned card on a Dashboard MUST be addable to the companion chat as contex
 
 A card in context MUST be named in the companion chat before the turn is sent.
 
+A card in the companion chat's context MUST be marked as such on the Dashboard.
+
+Pressing the chat control on a card already in the companion chat's context MUST take that card out of the context.
+
 Deleting what a Dashboard card draws MUST be confirmed by the operator first.
 
 Taking a card off a Dashboard MUST NOT delete what the card draws.

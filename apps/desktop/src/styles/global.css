@@ -2175,6 +2175,75 @@ a {
   gap: 0.75rem;
 }
 
+/* The kind chip and, when it applies, the arrival chip: one group on the left so
+   the status pill keeps the right edge to itself. */
+.decision-card__kicker-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* A Decision that arrived while the operator was on this page. Nothing about the
+   card is different — it is the newest one, and the page says so once. */
+.decision-card.is-new {
+  animation: decision-arrived 1400ms var(--ease-out);
+}
+
+@keyframes decision-arrived {
+  0% {
+    box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm);
+  }
+  55% {
+    box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-xs);
+  }
+  100% {
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .decision-card.is-new {
+    animation: none;
+  }
+}
+
+.decision-new {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.55rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* The line the arrival speaks through. It sits above the list, where the newest
+   card lands, so the sentence and the card it is about are read together. */
+.decisions-inbox__arrival {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--accent-soft);
+  border-radius: var(--radius-xs);
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.decisions-inbox__arrival-dot {
+  flex: 0 0 auto;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
 .decision-kind {
   display: inline-flex;
   align-items: center;
@@ -3060,6 +3129,22 @@ a.home-mini-list__link:hover {
   border-radius: var(--home-radius);
 }
 
+/* The card the chat is holding.
+   A card handed to the companion is in the conversation until the operator takes
+   it off, and the pill that says so is in the other pane — possibly behind a
+   collapsed dock. The card wears the same ring for the same reason, in the same
+   vocabulary as the lifted card and the card being worked on: this ring always
+   means "this one is the chat's", whether it is waiting to be asked about or
+   being re-read by a turn. A card that is both keeps one ring, because the two
+   facts are about the same card and a second outline would draw nothing.
+   `--accent` and not a fill: the ring is a mark on the board, not a selection
+   surface, and the card inside keeps the paper it had. */
+.home-pin.is-in-context {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--home-radius);
+}
+
 /* The card's control row, in the corner. It is the positioned box, and the
    chrome is a row inside it, because the row now holds two different kinds of
    control: the board-editing chrome (`PinChrome`, which the lock takes away) and
@@ -3174,6 +3259,19 @@ a.home-mini-list__link:hover {
   border-color: var(--accent);
   background: var(--accent-tint);
   color: var(--foreground);
+}
+
+/* A card control that is a toggle, in its on state: the chat control while the
+   chat is holding this card. It keeps the hover treatment's edge, so the button
+   that took the card is visibly the one that gives it back — the second press
+   is the same press, and the control must not read as "nothing happened" for
+   the operator whose next click takes the card off. Both selectors carry the
+   same declarations because a toggle that is merely hovered is still on. */
+.home-pin__btn[aria-pressed="true"],
+.home-pin__btn[aria-pressed="true"]:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .home-pin__btn:disabled {
