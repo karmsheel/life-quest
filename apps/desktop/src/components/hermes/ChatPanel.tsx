@@ -21,6 +21,7 @@ import {
   ImagePlus,
   MessageSquare,
   MoreVertical,
+  PanelLeftOpen,
   PanelRightOpen,
   Pencil,
   Pin,
@@ -198,6 +199,10 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     setLivePinId,
     pageContext,
     setPageContextOn,
+    // The dock's side is the shell's business — it is the shell that swaps the
+    // two panes — but the collapsed tab's own arrow opens toward the page it
+    // expands into, so it reads the side too.
+    side: dockSide,
   } = useChatDock();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessions, setSessions] = useState<HermesSession[]>([]);
@@ -2138,7 +2143,11 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
           aria-label="Open Hermes chat"
           title="Open Hermes chat"
         >
-          <PanelRightOpen size={16} />
+          {dockSide === "left" ? (
+            <PanelLeftOpen size={16} />
+          ) : (
+            <PanelRightOpen size={16} />
+          )}
           <span>Chat</span>
         </button>
       )}

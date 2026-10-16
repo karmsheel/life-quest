@@ -28,11 +28,34 @@ export type ChatCardContext = {
   boardSlug: string | null;
 };
 
+/**
+ * Which side of the workspace the dock sits on.
+ *
+ * `right` is the shipped arrangement — rail, sheet, dock, one pane abutting the
+ * next. `left` is the same three panes with the last two swapped: the dock takes
+ * the middle column and the sheet becomes the trailing one. The rail does not
+ * move, because it is not a pane of this tray — it is the window's chrome, and
+ * it stays flush to the window's leading edge either way.
+ *
+ * Like the rail's own collapse, this is session state rather than a stored
+ * preference: it is a way of looking at the workspace for a moment, and the
+ * titlebar control that flips it is one click away.
+ */
+export type ChatDockSide = "left" | "right";
+
 type ChatDockContextValue = {
   open: boolean;
   setOpen: (open: boolean) => void;
   present: boolean;
   setPresent: (present: boolean) => void;
+  side: ChatDockSide;
+  /**
+   * The titlebar's one control over it: the two panes trade places. There is no
+   * setter beside it — nothing else in the app has an opinion about which side
+   * the dock is on, and a side the operator cannot see is not worth a second
+   * entry point.
+   */
+  swapSide: () => void;
   requestedSessionId: string | null;
   requestedKickoff: string | null;
   requestSession: (id: string, kickoff?: string) => void;
@@ -78,6 +101,7 @@ const ChatDockContext = createContext<ChatDockContextValue | null>(null);
 export function ChatDockProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(true);
   const [present, setPresent] = useState(false);
+  const [side, setSide] = useState<ChatDockSide>("right");
   const [requestedSessionId, setRequestedSessionId] = useState<string | null>(
     null,
   );
@@ -103,6 +127,10 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
     setRequestedKickoff(null);
   }, []);
 
+  const swapSide = useCallback(() => {
+    setSide((current) => (current === "left" ? "right" : "left"));
+  }, []);
+
   const pageLabel = useMemo(() => pageLabelFor(pathname), [pathname]);
 
   const value = useMemo(
@@ -111,6 +139,8 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       setOpen,
       present,
       setPresent,
+      side,
+      swapSide,
       requestedSessionId,
       requestedKickoff,
       requestSession,
@@ -125,6 +155,8 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
     [
       open,
       present,
+      side,
+      swapSide,
       requestedSessionId,
       requestedKickoff,
       requestSession,

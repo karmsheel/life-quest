@@ -13,6 +13,7 @@ export function AppShell() {
     open: chatOpen,
     setOpen: setChatOpen,
     setPresent: setChatPresent,
+    side: chatSide,
   } = useChatDock();
   const {
     collapsed: navCollapsed,
@@ -38,6 +39,10 @@ export function AppShell() {
           className={[
             "shell",
             chatOpen ? "shell--chat-open" : "shell--chat-collapsed",
+            // Which of the two trailing panes the dock takes: the last column,
+            // or the one beside the rail with the sheet pushed out to the
+            // window's own trailing edge. The rail holds its column either way.
+            chatSide === "left" ? "shell--chat-left" : "shell--chat-right",
             navCollapsed ? "shell--nav-collapsed" : "",
           ]
             .filter(Boolean)

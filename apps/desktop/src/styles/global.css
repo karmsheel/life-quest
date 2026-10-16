@@ -538,6 +538,15 @@ a {
   --chat-column: 2.75rem;
 }
 
+/* Chat beside the rail: the dock takes the middle column and the sheet moves out
+   to the trailing one, so the two panes trade places and the rail holds its
+   column. Written as its own track list rather than an `order` swap: the tracks
+   are what the two panes' widths are built from, and auto-placement would
+   otherwise hand the dock's column to the sheet. */
+.shell--chat-left {
+  grid-template-columns: var(--nav-column) var(--chat-column) 1fr;
+}
+
 /* Collapsed rail: its column goes back to the workspace sheet and the re-open
    toggle moves to the titlebar's leading edge. With no gap in the tray the sheet
    then starts at zero, flush to the window's own left edge — the same edge the
@@ -552,17 +561,34 @@ a {
 
 /* Explicit tracks: the rail leaves the grid entirely when collapsed, and
    auto-placed items would otherwise slide one track left — handing the sidebar's
-   column to the chat panel. */
+   column to the chat panel. The row is pinned to the first one for the same
+   reason read the other way round: the three panes are placed by column, so in
+   the swapped arrangement the dock's column is behind the cursor the sparse
+   auto-placement left in the sheet's, and it would be pushed onto a second row. */
 .shell > .nav-rail {
   grid-column: 1;
+  grid-row: 1;
 }
 
 .shell > .shell__main {
   grid-column: 2;
+  grid-row: 1;
 }
 
 .shell > .chat-panel {
   grid-column: 3;
+  grid-row: 1;
+}
+
+/* Swapped: the sheet is the trailing pane now, so it takes the last column and
+   the dock the one beside the rail. Both rules sit after the pair above on
+   purpose — same specificity, so the later one is the one that wins. */
+.shell--chat-left > .shell__main {
+  grid-column: 3;
+}
+
+.shell--chat-left > .chat-panel {
+  grid-column: 2;
 }
 
 /* Square, and wearing a single hairline: the one on its trailing edge, the seam
@@ -593,6 +619,19 @@ a {
   border-top-left-radius: var(--radius-sm);
   box-shadow: var(--shadow-sm);
   height: calc(100% + var(--shell-frame));
+}
+
+/* Swapped, the sheet stops being the middle pane and becomes the trailing one:
+   the seam with the dock is on its leading edge now, and it carries the right
+   frame's slack out to the window's own trailing edge — the escape the dock
+   makes from the other side of the swap. The one rounded corner stays where it
+   is, on the leading top: that corner opens onto the pane gap and the pane
+   beside it either way, and the corner now sitting on the window's edge is no
+   place for a notch. */
+.shell--chat-left > .shell__main {
+  border-right: 0;
+  border-left: 1px solid var(--border);
+  width: calc(100% + var(--shell-frame));
 }
 
 .shell__content {
@@ -3750,6 +3789,13 @@ a.home-mini-list__link:hover {
   height: calc(100% + var(--shell-frame));
   z-index: 20;
   overflow: hidden;
+}
+
+/* Swapped, the dock is no longer the pane on the window's trailing edge, so it
+   asks for its own column and nothing more: the sheet holds the slack now, and a
+   dock that reached past its track would run over the sheet instead of the mat. */
+.shell--chat-left > .chat-panel {
+  width: var(--chat-column);
 }
 
 .chat-panel--collapsed {
