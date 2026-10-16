@@ -17,21 +17,24 @@
  *  2. The page lands on the wrong day — not the local today — so the note is
  *     written under a date the operator did not mean.
  *  3. The editor opens dirty: a freshly loaded day must not claim unsaved
- *     changes, or Save lights up before anything was typed.
- *  4. Save writes the wrong day, the wrong body, or more than once.
- *  5. The page keeps the pre-save draft after the write, so the editor disagrees
+ *     changes, or the page starts writing a day nobody touched.
+ *  4. The autosave writes the wrong day, the wrong body, or writes the same prose
+ *     over and over with nothing typed in between.
+ *  5. The page keeps the pre-write draft after the write, so the editor disagrees
  *     with the file that was just written.
  *  6. An existing day does not load: the operator opens yesterday and sees an
  *     empty editor, which reads as "I wrote nothing" about a day they wrote.
- *  7. An empty day writes a file. "Write something first" is the rule; a blank
- *     save must reach no write at all.
+ *  7. An empty day writes a file. "Write something first" is the rule; a draft
+ *     typed and cleared before the page writes must reach no write at all.
  *  8. The future is reachable: Next day enabled on today, or a future-dated file
  *     offered in the journal strip, so a note can be written for a day that has
  *     not happened.
  *  9. A day that names no real date is offered as a link, so clicking it lands on
  *     an error instead of being reported as unreadable where it sits.
  * 10. A refused write loses the operator's draft — the one outcome that must
- *     never happen — or refuses silently.
+ *     never happen — or refuses silently, or is retried at the vault forever. A
+ *     write that *fails* instead of being refused is treated as if it had landed,
+ *     so the day is left with prose nobody can vouch for.
  * 11. The strip of earlier notes is empty after a write, so the day just written
  *     is invisible.
  * 12. The note is more than one box: a split grid or a preview pane comes back,
@@ -41,6 +44,11 @@
  *     its own source. Both are the live preview being wrong in opposite ways.
  * 14. A bridge call this rig does not model, or a console error, passes
  *     unnoticed.
+ * 15. A save control comes back, so the day is written only when the operator
+ *     remembers to press something.
+ * 16. The page's chrome is the engine's: the earlier-notes rows paint the
+ *     platform's own button fill and keep the list's bullets, or the page's
+ *     buttons are pills around a page of prose.
  *
  * The driver waits on `dailyNoteReady`, set after the rail and the editor have
  * painted, so it never samples a half-rendered page.
@@ -73,7 +81,7 @@ type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 const ok = <T,>(value: T): Result<T> => ({ ok: true, value });
 const fail = (error: string): Result<never> => ({ ok: false, error });
 
-type WriteCall = { date: string; body: string };
+type WriteCall = { date: string; body: string; shown: string | null };
 
 type HarnessWindow = Window & {
   dailyNoteReady?: boolean;
@@ -88,6 +96,8 @@ type HarnessWindow = Window & {
   dailyNoteGets?: string[];
   /** When true, the next write is refused, to prove a draft survives a failure. */
   dailyNoteFailWrite?: boolean;
+  /** When true, the next write rejects the way a dropped bridge does. */
+  dailyNoteThrowWrite?: boolean;
   /** When true, a window read answers with an empty journal. */
   dailyNoteEmptyWindow?: boolean;
   /** Every window read the page made, so a driver can compute what to expect. */
@@ -95,7 +105,13 @@ type HarnessWindow = Window & {
   dailyNoteSeed?: (date: string, body: string) => void;
   dailyNoteToday?: string;
   dailyNoteYesterday?: string;
+  /** The day before yesterday: the rig's own empty day. */
+  dailyNoteTwoBack?: string;
+  /** On disk but in the future: the strip must never offer it. */
+  dailyNoteTomorrow?: string;
   dailyNoteFarDay?: string;
+  /** The year the far day's note was stamped with, for the last-edited column. */
+  dailyNoteFarDayYear?: string;
   /** Move the harness router, so one rig can cover the page and the panel. */
   dailyNoteGoto?: (path: string) => void;
 };
@@ -107,6 +123,7 @@ harness.dailyNoteUnexpectedCalls = [];
 harness.dailyNoteWrites = [];
 harness.dailyNoteGets = [];
 harness.dailyNoteFailWrite = false;
+harness.dailyNoteThrowWrite = false;
 harness.dailyNoteUnreadable = ["2026-02-31"];
 
 const journal = new Map<string, DailyNote>();
@@ -131,13 +148,22 @@ function shift(date: string, days: number): string {
 
 const today = localToday();
 const yesterday = shift(today, -1);
+const twoBack = shift(today, -2);
 const tomorrow = shift(today, 1);
 // Ten weeks back: always another week AND another month, so the panel can prove
 // it shows the period and not the journal.
 const farDay = shift(today, -70);
+// The far day's note is stamped from another year, so the strip's last-edited
+// column can be read back against the journal by its year alone — a value no page
+// could arrive at from today's clock, and one no locale renders differently.
+const farDayStamp = "2019-03-04T05:06:00.000Z";
+const farDayYear = "2019";
 harness.dailyNoteToday = today;
 harness.dailyNoteYesterday = yesterday;
+harness.dailyNoteTwoBack = twoBack;
+harness.dailyNoteTomorrow = tomorrow;
 harness.dailyNoteFarDay = farDay;
+harness.dailyNoteFarDayYear = farDayYear;
 harness.dailyNoteWindowCalls = [];
 harness.dailyNoteEmptyWindow = false;
 
@@ -146,8 +172,8 @@ harness.dailyNoteEmptyWindow = false;
  * is what makes "an existing day loads" and "an empty day is empty" two different
  * observations rather than one.
  */
-function seed(date: string, body: string): void {
-  const stamp = new Date().toISOString();
+function seed(date: string, body: string, updatedAt?: string): void {
+  const stamp = updatedAt ?? new Date().toISOString();
   journal.set(date, {
     date,
     createdAt: stamp,
@@ -160,8 +186,13 @@ seed(yesterday, "Yesterday: a walk, then the rig.");
 // as unreadable and never offer the second.
 seed(tomorrow, "Tomorrow: written by hand on disk.");
 // A day the current period cannot contain, for the panel's window claim. Its
-// second line is what makes "the body is rendered when opened" falsifiable.
-seed(farDay, "Ten weeks ago: outside every current period.\n\nOnly visible if the window is wrong.");
+// second line is what makes "the body is rendered when opened" falsifiable, and
+// its stamp is what makes the strip's last-edited column falsifiable.
+seed(
+  farDay,
+  "Ten weeks ago: outside every current period.\n\nOnly visible if the window is wrong.",
+  farDayStamp,
+);
 
 harness.dailyNoteSeed = seed;
 
@@ -233,7 +264,19 @@ const bridge: Record<string, unknown> = {
   },
   dailyNoteWrite: (date: string, body: string) => {
     harness.dailyNoteCalls?.push(`dailyNoteWrite:${date}`);
-    harness.dailyNoteWrites?.push({ date, body });
+    // The day the page was *showing* when it asked for the write, read off the
+    // page's own day label. A write to a day the operator is not on is the one
+    // way autosave can put prose on the wrong date, so it is recorded here.
+    const shown =
+      document
+        .querySelector('[data-testid="daily-note-day"]')
+        ?.getAttribute("data-date") ?? null;
+    harness.dailyNoteWrites?.push({ date, body, shown });
+    // A bridge that drops the call instead of answering: the write neither landed
+    // nor was refused, which is the one outcome the page cannot reason about.
+    if (harness.dailyNoteThrowWrite) {
+      return Promise.reject(new Error("The bridge dropped the write"));
+    }
     if (harness.dailyNoteFailWrite) {
       return Promise.resolve(fail("The vault refused the write"));
     }

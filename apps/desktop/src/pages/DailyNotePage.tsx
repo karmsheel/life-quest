@@ -5,7 +5,11 @@ import {
   shiftLocalIsoDate,
 } from "@lifequest/vault-core/pure";
 import { Button } from "@/components/ui/Button";
-import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
+import {
+  LiveMarkdownEditor,
+  parseBlocks,
+  serializeBlocks,
+} from "@/components/documents/LiveMarkdownEditor";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import type { DailyNoteIndexEntry } from "@lifequest/vault-core";
@@ -20,11 +24,59 @@ const WEEKDAYS = [
   "Saturday",
 ] as const;
 
+/** How long the page waits after the last keystroke before it writes the day. */
+const AUTOSAVE_DELAY_MS = 700;
+
+/**
+ * What a write came to.
+ *
+ * `refused` and `failed` are not the same thing, and the difference is whether
+ * the operator may walk away from the day. The vault refusing a body is an
+ * *answer* — it will never store this one, and the day's file is untouched — so
+ * there is nothing left on screen worth holding the operator for. A write that
+ * failed is not an answer: nobody knows what is on disk, so the day is held.
+ */
+type WriteOutcome = "saved" | "refused" | "failed";
+
+/**
+ * The one form a body is held in on this page: the editor's own.
+ *
+ * The vault stores a note as its prose plus exactly one newline, and the editor
+ * emits its prose alone. Every body the page holds — the day it loaded, the draft
+ * the operator is typing, the file's answer to a write — goes through here first.
+ * Without it a day and its own untouched draft would not compare equal, and the
+ * page would write every day it merely opened, and re-cut the paragraph under the
+ * caret every time a write landed.
+ */
+function asHeld(markdown: string): string {
+  return serializeBlocks(parseBlocks(markdown));
+}
+
 /** The weekday of a local ISO date, or null when the string is not a date. */
 function weekdayOf(date: string): string | null {
   const parsed = new Date(`${date}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return null;
   return WEEKDAYS[parsed.getDay()] ?? null;
+}
+
+/**
+ * When a note was last written, for the strip's own column.
+ *
+ * The stamp is read at the moment the page asks for the journal, so a day's row
+ * moves the instant its own write lands — which is what makes the column worth
+ * having next to the date the note is *for*.
+ */
+function formatEditedAt(updatedAt: string | null): string {
+  if (!updatedAt) return "—";
+  const parsed = new Date(updatedAt);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /**
@@ -37,9 +89,30 @@ function weekdayOf(date: string): string | null {
  * is written, not scheduled, and a review must never read a day that has not
  * happened yet.
  *
- * The vault is the source of truth, so a load overwrites the draft and a save
+ * There is no save control. The page writes the day on its own: shortly after the
+ * operator stops typing, when the pointer leaves the box, and when the day is
+ * left. Ctrl/Cmd+S is the same write, for the operator who asks anyway. So the
+ * status line is the whole of the page's contract — "Saving…", then "Saved", or
+ * the vault's own reason when it refuses.
+ *
+ * The vault is the source of truth, so a load overwrites the draft and a write
  * takes the file's own normalized body back. A day with no note is an empty
- * editor, not an error.
+ * editor, not an error — and the page prints nothing in it. An empty day is an
+ * invitation because the caret is already there, not because the box is labelled;
+ * a blank paragraph is a blank line, and a note with several of them is not a page
+ * of repeated instructions.
+ *
+ * Under the box is the journal itself: one row per day, newest first, each row the
+ * date the note is *for*, that date's weekday, and the moment the note was last
+ * written. A future-dated file is on disk but is not offered — a note is written,
+ * not scheduled — and a file that names no usable day is reported as unreadable
+ * where it sits, in the same three columns, rather than as a link.
+ *
+ * Leaving a day is gated on that day's own write *completing*. A write that fails
+ * keeps the operator on the day they were writing, with the draft intact, because
+ * nobody knows what reached the disk; a body the vault refuses does not, because
+ * that is an answer rather than a loss — the day's file is untouched and the
+ * refusal is on screen.
  *
  * The note is written in one box: `LiveMarkdownEditor` renders the day as prose
  * and opens the paragraph under the caret as its own markdown. There is no
@@ -55,13 +128,23 @@ export default function DailyNotePage() {
   const [savedBody, setSavedBody] = useState("");
   const [exists, setExists] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
+  /** The day whose body is in `draft`; null while a day is still on its way in. */
+  const [loadedDate, setLoadedDate] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  /** The last body the vault refused, so the page stops asking by itself. */
+  const [refused, setRefused] = useState<{ date: string; body: string } | null>(null);
   const [history, setHistory] = useState<DailyNoteIndexEntry[]>([]);
 
   // A load for a day the operator has already left must not land in the editor.
   const loadToken = useRef(0);
+  // Writes go through here one at a time, in the order the page asked for them,
+  // so a day is never read before the write that belongs to it has landed.
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  // The newest draft that still has to reach the vault, tagged with its day.
+  // Held in a ref rather than in state because a blur or an unmount flushes it
+  // outside any render.
+  const unsaved = useRef<{ date: string; body: string } | null>(null);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -76,13 +159,13 @@ export default function DailyNotePage() {
     const token = ++loadToken.current;
     setLoading(true);
     setError(null);
-    setNotice(null);
     try {
       const result = await api().dailyNoteGet(target);
       if (token !== loadToken.current) return;
       if (result.ok) {
-        setDraft(result.value.bodyMarkdown);
-        setSavedBody(result.value.bodyMarkdown);
+        const body = asHeld(result.value.bodyMarkdown);
+        setDraft(body);
+        setSavedBody(body);
         setExists(true);
       } else if (/not found/i.test(result.error)) {
         setDraft("");
@@ -91,9 +174,11 @@ export default function DailyNotePage() {
       } else {
         setError(result.error);
       }
+      setLoadedDate(target);
     } catch (err) {
       if (token !== loadToken.current) return;
       setError(err instanceof Error ? err.message : String(err));
+      setLoadedDate(target);
     } finally {
       if (token === loadToken.current) setLoading(false);
     }
@@ -107,55 +192,149 @@ export default function DailyNotePage() {
     void loadHistory();
   }, [loadHistory]);
 
+  /**
+   * Write one day. Answers `saved` when the vault holds the body, `refused` when
+   * the vault declined it, and `failed` when the write did not complete — the
+   * caller decides whether it may move on.
+   */
+  const writeDay = useCallback(
+    async (target: string, body: string): Promise<WriteOutcome> => {
+      const run = async (): Promise<WriteOutcome> => {
+        setSaving(true);
+        try {
+          const result = await api().dailyNoteWrite(target, body);
+          if (!result.ok) {
+            setError(result.error);
+            setRefused({ date: target, body });
+            return "refused";
+          }
+          setError(null);
+          setRefused(null);
+          setExists(true);
+          // The file is the truth: the box takes back the body the vault actually
+          // holds, and only when that differs from what was written — so a write
+          // that normalizes nothing never re-cuts the paragraph under the caret.
+          const written = asHeld(result.value.bodyMarkdown);
+          setSavedBody(written);
+          setDraft((current) => (current === body ? written : current));
+          await loadHistory();
+          return "saved";
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+          setRefused({ date: target, body });
+          return "failed";
+        } finally {
+          setSaving(false);
+        }
+      };
+      const next = queue.current.then(run, run);
+      queue.current = next.then(
+        () => undefined,
+        () => undefined,
+      );
+      return next;
+    },
+    [loadHistory],
+  );
+
+  /**
+   * Write whatever is pending right now. The debounce, the blur, Ctrl+S and a day
+   * change all land here, and a body the vault refused stays pending so the
+   * operator can ask again rather than lose it.
+   */
+  const flush = useCallback(async (): Promise<WriteOutcome> => {
+    // Whatever was asked for before is settled first, so this day's file is not
+    // read while a write to it is still in the air.
+    await queue.current;
+    const job = unsaved.current;
+    if (!job) return "saved";
+    unsaved.current = null;
+    const outcome = await writeDay(job.date, job.body);
+    if (outcome !== "saved") unsaved.current = job;
+    return outcome;
+  }, [writeDay]);
+
+  const onDraftChange = useCallback(
+    (next: string) => {
+      setDraft(next);
+      setError(null);
+      // Recorded here rather than in the effect below, so a blur that beats the
+      // next paint still finds the draft it has to save.
+      unsaved.current =
+        loadedDate === date && next !== savedBody ? { date, body: next } : null;
+    },
+    [date, loadedDate, savedBody],
+  );
+
+  /**
+   * The autosave itself: the day is written a beat after the operator stops
+   * typing. A body the vault has already refused is left pending but not
+   * rescheduled — the page does not hammer the vault with an answer it has.
+   */
+  useEffect(() => {
+    // Only the day whose body is on screen is written. While another day is
+    // loading, `draft` still holds the day before it.
+    if (loadedDate !== date) return;
+    if (draft === savedBody) {
+      unsaved.current = null;
+      return;
+    }
+    unsaved.current = { date, body: draft };
+    if (refused && refused.date === date && refused.body === draft) return;
+    if (saving) return;
+    const timer = window.setTimeout(() => {
+      void flush();
+    }, AUTOSAVE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [date, draft, savedBody, loadedDate, refused, saving, flush]);
+
+  // The page itself can go away with a draft still pending: a closed window is
+  // the one exit that is not gated on the write.
+  useEffect(() => () => void flush(), [flush]);
+
+  const goToDay = useCallback(
+    async (target: string) => {
+      if (target === date) return;
+      // The day being left is written first, so prose never lands on another
+      // date. A refusal does not hold the operator here — the vault has answered,
+      // and the day's file is what it was — but a write that *failed* does: the
+      // one thing an autosave must never do is drop a draft nobody can vouch for.
+      if ((await flush()) === "failed") return;
+      setDate(target);
+    },
+    [date, flush],
+  );
+
+  // Ctrl/Cmd+S writes the day, as it does in every other editor in the studio.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void flush();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [flush]);
+
   const dirty = draft !== savedBody;
   const nextDate = useMemo(() => shiftLocalIsoDate(date, 1), [date]);
   const prevDate = useMemo(() => shiftLocalIsoDate(date, -1), [date]);
   const atToday = date >= today;
   const label = formatLocalIsoDate(date);
   const weekday = weekdayOf(date);
+  const heldBack =
+    refused !== null && refused.date === date && refused.body === draft;
 
-  const onSave = useCallback(async () => {
-    // An empty day with nothing typed is not dirty, so Save is inert. Clearing a
-    // day that has a note *is* dirty, and the vault refuses it with a reason —
-    // which the page shows, keeping the operator's draft.
-    if (!dirty) return;
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const result = await api().dailyNoteWrite(date, draft);
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      // The file is the truth: take back the body it actually holds.
-      setDraft(result.value.bodyMarkdown);
-      setSavedBody(result.value.bodyMarkdown);
-      setExists(true);
-      setNotice(`Saved ${label}.`);
-      await loadHistory();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }, [date, dirty, label, loadHistory, draft]);
-
-  // Ctrl/Cmd+S saves, as it does in every other editor in the studio.
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        void onSave();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onSave]);
-
-  if (!snapshot) {
-    return <p className="muted">No vault open.</p>;
-  }
+  const status = saving
+    ? "Saving…"
+    : dirty
+      ? heldBack
+        ? "Not saved"
+        : "Saving…"
+      : exists
+        ? "Saved"
+        : "No note for this day yet";
 
   // The journal's own strip: days up to today, newest first. A file dated in the
   // future is on disk but is not offered — a note is written, not scheduled —
@@ -166,6 +345,10 @@ export default function DailyNotePage() {
     .reverse();
   const todayHasNote = history.some((entry) => entry.date === today);
 
+  if (!snapshot) {
+    return <p className="muted">No vault open.</p>;
+  }
+
   return (
     <div className="daily-note">
       <header className="daily-note__header">
@@ -174,12 +357,18 @@ export default function DailyNotePage() {
           <Button
             variant="outline"
             data-testid="daily-note-prev"
-            onClick={() => prevDate && setDate(prevDate)}
+            onClick={() => {
+              if (prevDate) void goToDay(prevDate);
+            }}
             disabled={!prevDate}
           >
             ‹ Prev day
           </Button>
-          <span className="daily-note__date" data-testid="daily-note-day">
+          <span
+            className="daily-note__date"
+            data-testid="daily-note-day"
+            data-date={date}
+          >
             {date === today ? "Today · " : ""}
             {weekday ? `${weekday}, ` : ""}
             {label}
@@ -187,13 +376,19 @@ export default function DailyNotePage() {
           <Button
             variant="outline"
             data-testid="daily-note-next"
-            onClick={() => nextDate && setDate(nextDate)}
+            onClick={() => {
+              if (nextDate) void goToDay(nextDate);
+            }}
             disabled={!nextDate || atToday}
           >
             Next day ›
           </Button>
           {date !== today ? (
-            <Button variant="ghost" data-testid="daily-note-today" onClick={() => setDate(today)}>
+            <Button
+              variant="ghost"
+              data-testid="daily-note-today"
+              onClick={() => void goToDay(today)}
+            >
               Today
             </Button>
           ) : null}
@@ -210,45 +405,33 @@ export default function DailyNotePage() {
         <p className="muted">Loading the day…</p>
       ) : (
         <>
-          <LiveMarkdownEditor
-            testId="daily-note-editor"
-            value={draft}
-            onChange={(next) => {
-              setDraft(next);
-              setNotice(null);
+          <div
+            className="daily-note__editor"
+            // The pointer leaving the box — for another pane, another app — is the
+            // operator stepping away, so the day is written then rather than at
+            // the end of the debounce. Moving between paragraphs stays inside.
+            onBlur={(event) => {
+              if (event.currentTarget.contains(event.relatedTarget)) return;
+              void flush();
             }}
-            slug={`daily-note-${date}`}
-            ariaLabel={`Daily note for ${label}`}
-            placeholder="How did the day go?"
-            autoFocusEmpty
-          />
-
-          <div className="daily-note__actions">
-            <Button
-              variant="primary"
-              data-testid="daily-note-save"
-              onClick={onSave}
-              disabled={busy || !dirty}
-            >
-              Save
-            </Button>
-            <span
-              className="daily-note__status muted"
-              data-testid="daily-note-status"
-              role="status"
-            >
-              {/* The notice wins over "Unsaved changes": a refused save (the
-                  vault rejects a note with no prose in it) leaves the draft
-                  dirty, and the operator needs the reason, not the dirty flag.
-                  Typing clears it. */}
-              {notice ??
-                (dirty
-                  ? "Unsaved changes"
-                  : exists
-                    ? "Saved"
-                    : "No note for this day yet")}
-            </span>
+          >
+            <LiveMarkdownEditor
+              testId="daily-note-editor"
+              value={draft}
+              onChange={onDraftChange}
+              slug={`daily-note-${date}`}
+              ariaLabel={`Daily note for ${label}`}
+              autoFocusEmpty
+            />
           </div>
+
+          <p
+            className="daily-note__status muted"
+            data-testid="daily-note-status"
+            role="status"
+          >
+            {status}
+          </p>
         </>
       )}
 
@@ -261,39 +444,56 @@ export default function DailyNotePage() {
               : "No notes yet. Today's page is the first one."}
           </p>
         ) : (
-          <ul className="daily-note__history-list">
-            {newestFirst.map((entry) =>
-              entry.error ? (
-                <li key={entry.date} className="daily-note__history-row">
-                  <span className="muted">
-                    {entry.date} · unreadable
-                  </span>
-                </li>
-              ) : (
-                <li key={entry.date} className="daily-note__history-row">
-                  <button
-                    type="button"
-                    className="daily-note__history-day"
-                    aria-current={entry.date === date ? "true" : undefined}
-                    onClick={() => setDate(entry.date)}
+          <>
+            {/* The strip is one small table: the day written *about*, its weekday,
+                and when it was last written. The header is decoration — every row
+                is a button whose own cells say the same thing — so it is hidden
+                from the reading order rather than announced twice. */}
+            <div className="daily-note__history-head" aria-hidden="true">
+              <span>Date</span>
+              <span>Day</span>
+              <span>Last edited</span>
+            </div>
+            <ul className="daily-note__history-list">
+              {newestFirst.map((entry) =>
+                entry.error ? (
+                  <li
+                    key={entry.date}
+                    className="daily-note__history-row daily-note__history-unreadable"
+                    data-date={entry.date}
                   >
-                    <span>
-                      {entry.date === today ? "Today · " : ""}
-                      {formatLocalIsoDate(entry.date)}
-                    </span>
-                    {/* Only when the note was written after its own day: a day
-                        written on the day is the ordinary case, and saying so on
-                        every row is noise. */}
-                    <span className="muted">
-                      {entry.updatedAt && entry.updatedAt.slice(0, 10) !== entry.date
-                        ? `written ${new Date(entry.updatedAt).toLocaleDateString()}`
-                        : ""}
-                    </span>
-                  </button>
-                </li>
-              ),
-            )}
-          </ul>
+                    <span className="daily-note__history-date">{entry.date}</span>
+                    <span className="daily-note__history-weekday">—</span>
+                    <span className="daily-note__history-edited">unreadable</span>
+                  </li>
+                ) : (
+                  <li
+                    key={entry.date}
+                    className="daily-note__history-row"
+                    data-date={entry.date}
+                  >
+                    <button
+                      type="button"
+                      className="daily-note__history-day"
+                      aria-current={entry.date === date ? "true" : undefined}
+                      onClick={() => void goToDay(entry.date)}
+                    >
+                      <span className="daily-note__history-date">
+                        {entry.date === today ? "Today · " : ""}
+                        {formatLocalIsoDate(entry.date)}
+                      </span>
+                      <span className="daily-note__history-weekday">
+                        {weekdayOf(entry.date) ?? "—"}
+                      </span>
+                      <span className="daily-note__history-edited">
+                        {formatEditedAt(entry.updatedAt)}
+                      </span>
+                    </button>
+                  </li>
+                ),
+              )}
+            </ul>
+          </>
         )}
       </section>
     </div>

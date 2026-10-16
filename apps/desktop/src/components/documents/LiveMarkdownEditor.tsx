@@ -179,6 +179,11 @@ export type LiveMarkdownEditorProps = {
   /** Media inside a block resolves against this slug. */
   slug: string;
   ariaLabel: string;
+  /**
+   * What an empty paragraph says. A page that passes nothing prints nothing: a
+   * blank line in the note is a blank line on the page, and a placeholder on an
+   * empty page is printed once, not once per blank paragraph.
+   */
   placeholder?: string;
   testId?: string;
   /** Open the caret on an empty note: an empty page is an invitation to write. */
@@ -548,7 +553,12 @@ export function LiveMarkdownEditor({
               onKeyDown={onBlockKeyDown(index)}
             >
               {block.trim() === "" ? (
-                <p className="note-live__placeholder">{placeholder}</p>
+                // An empty paragraph with nothing to print is an empty line. A page
+                // that carries no placeholder prints none, rather than printing an
+                // empty one on every blank paragraph the operator opens.
+                placeholder ? (
+                  <p className="note-live__placeholder">{placeholder}</p>
+                ) : null
               ) : (
                 <MarkdownView markdown={block} slug={slug} />
               )}

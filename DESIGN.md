@@ -37,6 +37,8 @@ ThemeProvider may apply a named skin and light/dark/system. It must not generate
 
 `Button`: `primary` | `outline` | `ghost`, plus `destructive` (maps to `.btn-danger`). Pill radius via `.btn`. Links via `to`. No Radix.
 
+**Named exception — the journal's own page.** `Daily Note` (`.daily-note`) wears `.btn` at `--radius-xs` rather than the pill, the same way `.data-studio` and `.pages-studio` already square theirs. The day's page is a page of prose with a pager above it and a strip of days below, and a row of pills around a paragraph reads as chips rather than as the page's own controls. The step is the Calm Scale's own smallest, so the primitive is worn at a different step rather than restyled, and the override lives in `notes.css` with the page's other chrome. Every other wing keeps the pill.
+
 `SettingsSection` / `SettingsRow` own settings heading and row chrome. Settings cards use `--radius-sm`.
 
 `LiveMarkdownEditor` (`.note-live`) is the studio's one markdown surface. Every editor that writes markdown — a daily note, a doctrine document, a review — is this box: the file reads as prose and the paragraph under the caret is its raw markdown, in place. A locked document renders the same box read-only, with no writing line at all. There is no split editor and no preview pane beside it.
