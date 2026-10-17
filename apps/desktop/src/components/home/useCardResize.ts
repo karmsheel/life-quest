@@ -97,6 +97,14 @@ export function useCardResize(input: {
   tiles: TileBoard;
   /** Locked boards have no handle at all; this is the second gate. */
   locked: boolean;
+  /**
+   * Whether the feature is switched on at all — Settings → Developer's card width
+   * handle flag. It needs saying here as well as on the board, because the handle
+   * is only one of the ways a press can arrive: a tab stop left behind, a stale
+   * render, or a rig reaching for `[data-pin-handle]` all have to find a gesture
+   * that refuses to start.
+   */
+  enabled: boolean;
   /** A board write in flight: a drag must not start or continue. */
   busy: boolean;
   /** Told when a width gesture starts and ends, so the board can stand down. */
@@ -104,7 +112,7 @@ export function useCardResize(input: {
   /** The board's one write path, told what the operator chose. */
   onCommit: (pinId: string, units: number, maxUnits: number) => Promise<unknown>;
 }): CardResize {
-  const { gridRef, tiles, locked, busy, onGesture, onCommit } = input;
+  const { gridRef, tiles, locked, busy, enabled, onGesture, onCommit } = input;
   const dragRef = useRef<Drag | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [announce, setAnnounce] = useState("");
@@ -135,7 +143,7 @@ export function useCardResize(input: {
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
-      if (event.button !== 0 || locked || busy || dragRef.current) return;
+      if (event.button !== 0 || !enabled || locked || busy || dragRef.current) return;
       const pinId = event.currentTarget.dataset.pinHandle;
       const card = pinId ? cardIn(pinId) : null;
       if (!pinId || !card) return;
@@ -169,7 +177,7 @@ export function useCardResize(input: {
       setDrag(current);
       onGesture(true);
     },
-    [busy, cardIn, locked, onGesture, tiles],
+    [busy, cardIn, enabled, locked, onGesture, tiles],
   );
 
   /**
@@ -285,7 +293,7 @@ export function useCardResize(input: {
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLElement>) => {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-      if (locked || busy || dragRef.current) return;
+      if (!enabled || locked || busy || dragRef.current) return;
       const pinId = event.currentTarget.dataset.pinHandle;
       if (!pinId) return;
       event.preventDefault();
@@ -320,7 +328,7 @@ export function useCardResize(input: {
       setAnnounce(`Card width set to ${units} of ${maxUnits} columns.`);
       void onCommit(pinId, units, maxUnits);
     },
-    [busy, locked, onCommit, preview, tiles],
+    [busy, enabled, locked, onCommit, preview, tiles],
   );
 
   /** Escape and a lost window end a drag the way the arrange gesture ends one. */

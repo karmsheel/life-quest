@@ -184,6 +184,40 @@ nothing is editing the card's contents and must not lose it: `placeViewPin` keep
 it, `get_dashboard` returns it, and `arrange_dashboard` carries it through, because
 the companion's own instructions are to copy each pin back exactly as it came.
 
+### 3e. The gesture ships gated, behind Settings → Developer
+
+The operator asked for the resize gesture to be gated, and it is: **off by
+default**, switched on in Settings → Developer → *Card width handle*.
+
+Off means the board does not draw the edge, does not offer its tab stop, and does
+not answer a press where it would have been. On means the same element, the same
+gesture, and the same stored width as everything above describes — the gate is a
+gate, not a second implementation.
+
+Three decisions inside that are worth naming:
+
+- **It is a store, not a context provider.** The first cut was a provider, and it
+  was wrong in a way only a rig caught: a mount that forgot the provider fell back
+  to the default value, whose `setFlag` still wrote storage but had no state to
+  re-render — so the Developer switch wrote the flag and the page kept drawing
+  itself off. `developer-flags.ts` is a `useSyncExternalStore` store instead: the
+  switch, the board, and a harness that mounts one page on its own all read one key
+  and all hear one change, and there is no tree to be missing from. It also listens
+  for the DOM's own `storage` event, so a flag changed in another window is a flag
+  this one follows.
+- **It lives in `localStorage`, not in the vault.** A developer flag is a fact
+  about this install and this person, not about the vault: two people opening the
+  same vault are not agreeing to run an unfinished gesture, and `settings.json` is
+  a file the vault's own tools describe as the operator's settings.
+- **The gesture refuses to start when the flag is off**, and not only because the
+  handle is absent. A tab stop left behind, a stale render, or a rig reaching for
+  `[data-pin-handle]` all have to find a hook that will not begin — an edge that is
+  gone from the eye but still listening is a feature nobody can switch off.
+
+The update preview's switch is deliberately not part of this store even though it
+is drawn on the same page: it is not a preference about the app, it is a stand-in
+for a feed, and it belongs to the provider that owns the feed.
+
 ## 4. What this is NOT
 
 - **Not a masonry layout.** Cards still sit on one track grid with equal-height
@@ -223,6 +257,7 @@ pin that says `span: 1` — among cards of known width.
 | `stable` | A content-sized card draws in the same number of units at every width, and the round trip back to 1280px reproduces the board exactly. Green pre-fix, and the claim that says the finer grid did not introduce an oscillation. |
 | `no-write` | Sizing the board never asks the vault for anything. |
 | `width-control` | The width control names the two widths it offers. **Red pre-fix**, which is how the copy change is covered. |
+| `resize-gated-off` | With the Developer flag off the board draws no width handle, a press where the edge would have been starts no resize and writes nothing, and the card keeps the span its content asked for; with the flag on the same board draws one handle per view pin. **Red against the code before this change** (no gate existed) and red against a build that drew the edge while gated, which is what the first cut of the provider did. |
 | `resize-handles` | Every view pin draws a well-formed width handle, and a locked board draws none. **Red against the code before this change: the handle does not exist.** |
 | `resize-drag-widens` | A drag aimed two units wider leaves the card exactly two units wider, in one write whose stored rem width is the width on screen. |
 | `resize-survives-a-reload` | A fresh render of the same board draws the card at the width the drag chose — the difference between "the card is wide" and "the card is that wide". |
@@ -235,6 +270,14 @@ And `tests/dashboard-card-slot-e2e.test.ts`, through the app's own MCP door: a
 `width` on a pin **survives** `arrange_dashboard` (twice, the second time with the
 pins exactly as the board returned them) and **survives** a `save_view` edit that
 names no span, and is **replaced** when a span is named — span 2, no width.
+
+The gate has a second rig, because the switch lives on a different surface:
+`tests/update-badge-e2e.test.ts` already drives Settings → Developer, and it now
+holds the card width handle to its contract there — the row exists, it comes up off
+with nothing stored, and turning it on writes the key the board reads. That rig's
+harness mounts the settings page **without** any developer provider, which is not a
+coincidence: the store is what makes that mount work, and it is the failure the
+first cut shipped.
 
 The artifacts are `e2e/artifacts/dashboard-tile.json` with
 `dashboard-tile-wide.png` (the board the operator works on) and

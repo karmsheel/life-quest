@@ -370,8 +370,16 @@ const SETTLED = `(() => {
  })()`;
 
 /** Draw the board and wait for it to be the thing under test. */
-async function drawBoard(win, { locked = false } = {}) {
+async function drawBoard(win, { locked = false, handle = null } = {}) {
   generation += 1;
+  // The developer flag is written before the render, because the provider reads
+  // storage when it mounts: `handle: true` is "Settings → Developer turned the
+  // width handle on", `handle: false` is the shipped default.
+  if (handle !== null) {
+    await win.webContents.executeJavaScript(
+      `window.dashboardTileSetFlag(${handle ? "true" : "false"}); true`,
+    );
+  }
   await win.webContents.executeJavaScript(
     `window.dashboardTileSetBoard(${JSON.stringify(SEED_PINS)}, ${locked ? "true" : "false"}); ` +
       `window.dashboardTileRender(${generation}); true`,
@@ -895,10 +903,58 @@ async function checkResize(win) {
   await settleFrames(win);
   await sleep(200);
 
-  // 0. Every view pin draws a handle that says what it is; a locked board draws
+  /**
+   * 0. THE GATE, and it comes first: the feature ships off, so the board a fresh
+   *    install draws has no edge to drag and nothing to discover by accident.
+   *
+   *    A press where the edge would have been is still a press on the card — the
+   *    arrange gesture may lift it, which is the card behaving normally — so the
+   *    claim is the two things the gate is FOR: no handle exists, and no width
+   *    gesture starts or is written.
+   */
+  step("resize-gated-off");
+  await drawBoard(win, { handle: false });
+  const gatedHandles = await win.webContents.executeJavaScript(
+    `document.querySelectorAll("[data-pin-handle]").length`,
+  );
+  const gateBox = await cardBox(win, OPERATOR);
+  const gateSpan = await win.webContents.executeJavaScript(
+    `getComputedStyle(document.querySelector('[data-pin-id="${OPERATOR}"]')).gridColumnStart`,
+  );
+  const gatePoint = { x: gateBox.right - 3, y: gateBox.top + 60 };
+  mouse(win, "mouseDown", gatePoint.x, gatePoint.y);
+  await sleep(420);
+  const gateHeld = await win.webContents.executeJavaScript(
+    `document.querySelectorAll(".home-pin.is-resizing").length`,
+  );
+  mouse(win, "mouseUp", gatePoint.x, gatePoint.y);
+  await sleep(220);
+  const gateWrites = await pinWrites(win);
+  const gateSpanAfter = await win.webContents.executeJavaScript(
+    `getComputedStyle(document.querySelector('[data-pin-id="${OPERATOR}"]')).gridColumnStart`,
+  );
+  await drawBoard(win, { handle: true });
+  const armedHandles = await win.webContents.executeJavaScript(
+    `document.querySelectorAll("[data-pin-handle]").length`,
+  );
+  check(
+    "resize-gated-off",
+    gatedHandles === 0 &&
+      armedHandles === 5 &&
+      gateHeld === 0 &&
+      gateWrites.length === 0 &&
+      gateSpanAfter === gateSpan,
+    `with the developer flag off the board drew ${gatedHandles} handle(s), a 420 ms press on the ` +
+      `card's right edge started ${gateHeld} resize(s), wrote ${gateWrites.length} time(s), and left ` +
+      `the card at ${JSON.stringify(gateSpanAfter)} against ${JSON.stringify(gateSpan)}; with the ` +
+      `flag on the same board drew ${armedHandles}`,
+  );
+  summary.handles = { count: armedHandles, gated: gatedHandles, viewPins: 0, locked: 0, wellFormed: false };
+
+  // 1. Every view pin draws a handle that says what it is; a locked board draws
   //    none, because the width lives on the pin.
   step("resize-handles");
-  await drawBoard(win);
+  await drawBoard(win, { handle: true });
   const handles = await win.webContents.executeJavaScript(
     `[...document.querySelectorAll("[data-pin-handle]")].map((el) => ({
        pinId: el.getAttribute("data-pin-handle"),
@@ -921,18 +977,24 @@ async function checkResize(win) {
       handle.now <= handle.max &&
       Boolean(handle.name),
   );
-  await drawBoard(win, { locked: true });
+  await drawBoard(win, { locked: true, handle: true });
   const lockedHandles = await win.webContents.executeJavaScript(
     `document.querySelectorAll("[data-pin-handle]").length`,
   );
-  await drawBoard(win);
+  await drawBoard(win, { handle: true });
   check(
     "resize-handles",
     covered.join(",") === [...viewPins].sort().join(",") && wellFormed && lockedHandles === 0,
     `${handles.length} handle(s) for ${viewPins.length} view pin(s), well-formed: ${wellFormed}; ` +
       `a locked board drew ${lockedHandles}`,
   );
-  summary.handles = { count: handles.length, viewPins: viewPins.length, locked: lockedHandles, wellFormed };
+  summary.handles = {
+    count: handles.length,
+    gated: gatedHandles,
+    viewPins: viewPins.length,
+    locked: lockedHandles,
+    wellFormed,
+  };
 
   // 1. A drag right by whole units widens the card to exactly that, in one write.
   step("resize-drag-widens");
@@ -993,7 +1055,7 @@ async function checkResize(win) {
   //    first, and then dragged hard in: it stops where its table stops, writes the
   //    width it stopped at, and nothing leaves the frame.
   step("resize-drag-floor-is-the-content");
-  await drawBoard(win);
+  await drawBoard(win, { handle: true });
   const floorGeo = await geometry(win);
   const need = await win.webContents.executeJavaScript(
     `(() => {
@@ -1053,7 +1115,7 @@ async function checkResize(win) {
   //    row's far end is only inside the window for a card that starts at its near
   //    end — see the note on the window size above.
   step("resize-drag-row");
-  await drawBoard(win);
+  await drawBoard(win, { handle: true });
   const rowGeo = await geometry(win);
   const rowBox = await cardBox(win, LISTING);
   const rowTarget = rowGeo.left + rowGeo.width;
@@ -1083,7 +1145,7 @@ async function checkResize(win) {
 
   // 4. The keyboard's half: one unit per press, written as it is pressed.
   step("resize-keys-step");
-  await drawBoard(win);
+  await drawBoard(win, { handle: true });
   const keyGeo = await geometry(win);
   const keyBefore = await cardBox(win, OPERATOR);
   const keyUnits = Math.round((keyBefore.width + keyGeo.gap) / (keyGeo.step + keyGeo.gap));
@@ -1115,7 +1177,7 @@ async function checkResize(win) {
   // 5. A press on the handle is not the board's arrange gesture, and a drag that
   //    ends where it started is not a width.
   step("resize-is-not-arrange");
-  await drawBoard(win);
+  await drawBoard(win, { handle: true });
   const still = await handleOf(win, OPERATOR);
   mouse(win, "mouseDown", still.x, still.y);
   await sleep(420);

@@ -103,6 +103,10 @@ type State = {
     previewState: string | null;
     previewNote: string | null;
     storedPreview: string | null;
+    cardResizeChecked: boolean | null;
+    cardResizeState: string | null;
+    cardResizeNote: string | null;
+    storedCardResize: string | null;
     buttons: { label: string | null; disabled: boolean }[];
     message: string | null;
     error: string | null;
@@ -440,8 +444,17 @@ describe("auto-update badge", () => {
 
     // Settings → Developer: the switch that makes the badge glow on demand. It is
     // the only way to look at the upgrade affordance without cutting a release.
-    const { developer, previewOn, previewRail, previewDialog, shadowed, shadowedDialog, developerOn, developerOff } =
-      report.states;
+    const {
+      developer,
+      previewOn,
+      handleOn,
+      previewRail,
+      previewDialog,
+      shadowed,
+      shadowedDialog,
+      developerOn,
+      developerOff,
+    } = report.states;
     assert.equal(
       developer.settings?.previewChecked,
       false,
@@ -466,6 +479,41 @@ describe("auto-update badge", () => {
       previewOn.settings?.previewState,
       "previewing",
       `the page misreported what the rail is showing: ${previewOn.settings?.previewState}`,
+    );
+
+    // And the page's other switch: the card width handle, a developer flag for the
+    // dashboard's resize gesture. It ships off — a flag that defaults on is not
+    // gated — and flipping it writes the key the board reads. What it does to the
+    // board is the dashboard-tile rig's claim; this is the surface.
+    assert.equal(
+      previewOn.settings?.cardResizeChecked,
+      false,
+      "the card width handle came up already on",
+    );
+    assert.equal(
+      previewOn.settings?.cardResizeState,
+      "off",
+      `the page did not report the card width handle as off: ${previewOn.settings?.cardResizeState}`,
+    );
+    assert.equal(
+      previewOn.settings?.storedCardResize,
+      null,
+      "a developer flag was stored before anybody turned it on",
+    );
+    assert.equal(
+      handleOn.settings?.cardResizeChecked,
+      true,
+      "the card width handle did not come up checked when it was turned on",
+    );
+    assert.equal(
+      handleOn.settings?.cardResizeState,
+      "on",
+      `the page misreported the card width handle: ${handleOn.settings?.cardResizeState}`,
+    );
+    assert.equal(
+      handleOn.settings?.storedCardResize,
+      "1",
+      "turning the card width handle on did not write the flag the board reads",
     );
 
     // And the rail really glows from it, with the feed offering nothing.

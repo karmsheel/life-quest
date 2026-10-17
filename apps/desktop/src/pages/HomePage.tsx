@@ -30,6 +30,7 @@ import {
 import { usePinArrange, type CommitOutcome } from "@/components/home/usePinArrange";
 import { useTileSpans } from "@/components/home/useTileSpans";
 import { useCardResize } from "@/components/home/useCardResize";
+import { useDeveloperFlag } from "@/state/developer-flags";
 import { ViewCard } from "@/components/ui/ViewCard";
 import type { SavedView } from "@lifequest/vault-core";
 
@@ -66,6 +67,16 @@ export default function HomePage() {
   const { contextCard, setContextCard, setOpen: setChatOpen, livePinId } =
     useChatDock();
   const lens = useDomainLens();
+  /**
+   * The operator's width handle, which ships gated.
+   *
+   * Settings → Developer turns it on, and the flag is read here rather than only
+   * inside the gesture: with it off the board must not draw the edge, offer the
+   * tab stop, or answer a press on it. The hook refuses to start a gesture as
+   * well — an edge that is gone from the eye but still listening would be a
+   * feature nobody could switch off.
+   */
+  const cardWidthHandle = useDeveloperFlag("cardWidthHandle");
   const title =
     lens.kind === "domain"
       ? (snapshot?.domains.find((d) => d.slug === lens.slug)?.meta.name ?? "Overview")
@@ -203,6 +214,9 @@ export default function HomePage() {
     tiles,
     locked,
     busy: boardBusy,
+    // Gated: with the developer switch off, the gesture does not exist even if a
+    // press somehow reaches where the edge would have been.
+    enabled: cardWidthHandle,
     onGesture: setResizing,
     onCommit: (pinId, units, maxUnits) => onResizeCommit(pinId, units, maxUnits),
   });
@@ -889,7 +903,7 @@ export default function HomePage() {
               the scroll hold, the arrange gesture — is a `[data-pin-id]` query, and
               a handle wearing that attribute would be read as a card.
             */}
-            {locked || pin.kind !== "view" ? null : (
+            {!cardWidthHandle || locked || pin.kind !== "view" ? null : (
               <div
                 className="home-pin__resize"
                 role="separator"

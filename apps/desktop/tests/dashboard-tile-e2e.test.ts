@@ -28,6 +28,7 @@ const SCENARIOS = [
   "width-control",
   "no-write",
   "clean",
+  "resize-gated-off",
   "resize-handles",
   "resize-drag-widens",
   "resize-survives-a-reload",
@@ -117,7 +118,7 @@ type WidthSample = {
 
 /** What the width gesture's legs measured, leg by leg. */
 type ResizeSummary = {
-  handles: { count: number; viewPins: number; locked: number; wellFormed: boolean };
+  handles: { count: number; gated: number; viewPins: number; locked: number; wellFormed: boolean };
   widen: {
     from: number;
     wanted: number;
@@ -312,12 +313,14 @@ describe("dashboard tile e2e", () => {
     assert.deepEqual(report.checks.unexpectedBridgeCalls, []);
     assert.deepEqual(report.checks.consoleErrors, []);
 
-    // ── the operator's own hand on the width ───────────────────────────────────
-    // A handle per view pin, none on a locked board; a drag that widens the card by
-    // exactly the units it was aimed at and stores that width on the pin; a floor
-    // that stops at the content however hard the pointer pulls; the row stored as
-    // the row; and a press that is neither an arrange nor a write.
+    // ── the operator's own hand on the width, behind its developer flag ────────
+    // The feature ships off: no edge on the board, nothing to discover by accident.
+    // Once Settings → Developer turns it on, a handle per view pin; a drag that
+    // widens the card by exactly the units it was aimed at and stores that width on
+    // the pin; a floor that stops at the content however hard the pointer pulls; the
+    // row stored as the row; and a press that is neither an arrange nor a write.
     const { handles, widen, floor, row, keys, noop } = report.checks.resizes;
+    assert.equal(handles.gated, 0, "the board drew a width handle with the developer flag off");
     assert.equal(handles.count, handles.viewPins, "not every view pin drew a width handle");
     assert.equal(handles.wellFormed, true, "a handle's aria values are not a width range");
     assert.equal(handles.locked, 0, "a locked board offered a width handle");
