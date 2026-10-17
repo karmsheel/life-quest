@@ -11,6 +11,7 @@ import {
   ensureMcpServer,
   ensureEagerToolSearch,
   ensureRootCompanionHeader,
+  hasRootCompanionEntry,
   modelsUrlFromConfig,
   seedModelFromRoot,
   hermesRoot,
@@ -174,9 +175,22 @@ export async function writeCompanionMcpProfile(
   // running read its config when it started, so a header written now is invisible
   // to it until it restarts. This is the flag that says so, and it is the reason
   // a profile seeded before today can have no lifequest tools at all.
+  //
+  // The root file only counts when it actually lists our server. `ensureRootCompanionHeader`
+  // never adds the entry to a root that has none — it only fills in a header on
+  // an entry that is already there — so demanding a header from a root without
+  // one asked a question that could never be answered yes. It answered no on
+  // every launch, on every machine whose root config lists no `lifequest`, which
+  // is the default: `credentialChanged` stayed true forever, `ensureCompanion`
+  // took the `hostMustReRead` path forever, and every launch paid for two
+  // `hermes config set` invocations and a `hermes gateway restart` — restarting
+  // a host that was already serving the profile, on the splash, before the first
+  // paint. Measured: 56s of a 57s cold start.
+  const rootCarriesCompanion =
+    rootYaml !== null && hasRootCompanionEntry(rootYaml);
   const hadCredential =
     hasCompanionHeader(current, authorization) &&
-    (rootYaml === null || hasCompanionHeader(rootYaml, authorization));
+    (!rootCarriesCompanion || hasCompanionHeader(rootYaml, authorization));
   let next = ensureMcpServer(current, PROFILE_NAME, io.mcpUrl?.() ?? MCP_URL, {
     Authorization: authorization,
   });

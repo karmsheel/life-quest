@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { useCompanion } from "@/state/CompanionProvider";
 import { useVault } from "@/state/VaultProvider";
 import { shouldHoldSplash } from "./splashHold.ts";
 
@@ -7,7 +6,6 @@ const FADE_MS = 200;
 
 export function SplashGate() {
   const { booting } = useVault();
-  const { status, ensuring } = useCompanion();
   const dismissed = useRef(false);
 
   useEffect(() => {
@@ -30,13 +28,9 @@ export function SplashGate() {
     };
 
     const tick = () => {
-      const hold = shouldHoldSplash({
-        elapsedMs: performance.now() - t0,
-        booting,
-        ensuring,
-        kind: status?.kind,
-      });
-      if (!hold) dismiss();
+      if (!shouldHoldSplash({ elapsedMs: performance.now() - t0, booting })) {
+        dismiss();
+      }
     };
 
     poll = setInterval(tick, 50);
@@ -52,7 +46,7 @@ export function SplashGate() {
         el.classList.add("splash--done");
       }
     };
-  }, [booting, ensuring, status?.kind]);
+  }, [booting]);
 
   return null;
 }

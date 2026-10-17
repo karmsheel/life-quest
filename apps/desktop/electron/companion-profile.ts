@@ -587,6 +587,43 @@ export function seedModelFromRoot(profileYaml: string, rootYaml: string): string
 }
 
 /**
+ * The `mcp_servers.lifequest` entry in a root config, as a line range, or null
+ * when the root does not list this app's server at all.
+ *
+ * Both the writer and the reader below have to agree on this question. The
+ * writer only ever ADDS the header to an entry that is already there; the reader
+ * (see `hadCredential` in `companion-lifecycle.ts`) must therefore not ask a root
+ * with no entry whether it carries the credential — it never can, and treating
+ * that silence as "stale" restarted the Hermes host on every single launch.
+ */
+function rootCompanionBlock(
+  lines: string[],
+): { start: number; end: number } | null {
+  const start = lines.findIndex((line, index) => {
+    if (!/^ {2}lifequest:[ \t]*$/.test(line)) return false;
+    for (let earlier = index - 1; earlier >= 0; earlier -= 1) {
+      if ((lines[earlier] ?? "").trim() === "") continue;
+      return /^mcp_servers:[ \t]*$/.test(lines[earlier] ?? "");
+    }
+    return false;
+  });
+  if (start < 0) return null;
+  let end = start + 1;
+  while (end < lines.length) {
+    const line = lines[end] ?? "";
+    if (line.trim() !== "" && !/^[ \t]/.test(line)) break;
+    if (/^ {2}\S/.test(line)) break;
+    end += 1;
+  }
+  return { start, end };
+}
+
+/** Whether a root config lists this app's companion server at all. */
+export function hasRootCompanionEntry(rootYaml: string): boolean {
+  return rootCompanionBlock(rootYaml.split(/\r?\n/)) !== null;
+}
+
+/**
  * Write the companion Authorization onto a root config that already lists
  * `mcp_servers.lifequest`. A root config with no such server is left untouched,
  * and an entry that already has Authorization is left untouched.
@@ -599,22 +636,10 @@ export function ensureRootCompanionHeader(
   authorization: string,
 ): string {
   const lines = rootYaml.split(/\r?\n/);
-  const start = lines.findIndex((line, index) => {
-    if (!/^ {2}lifequest:[ \t]*$/.test(line)) return false;
-    for (let earlier = index - 1; earlier >= 0; earlier -= 1) {
-      if ((lines[earlier] ?? "").trim() === "") continue;
-      return /^mcp_servers:[ \t]*$/.test(lines[earlier] ?? "");
-    }
-    return false;
-  });
-  if (start < 0) return rootYaml;
-  let end = start + 1;
-  while (end < lines.length) {
-    const line = lines[end] ?? "";
-    if (line.trim() !== "" && !/^[ \t]/.test(line)) break;
-    if (/^ {2}\S/.test(line)) break;
-    end += 1;
-  }
+  const found = rootCompanionBlock(lines);
+  if (!found) return rootYaml;
+  const { start } = found;
+  const { end } = found;
   const block = lines.slice(start, end);
   if (block.some((line) => /^\s*Authorization:/.test(line))) return rootYaml;
   let insertAt = end;

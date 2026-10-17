@@ -25,6 +25,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 | [Daily Note](docs/superpowers/specs/2026-10-14-daily-note-design.md) | One journal note per day, and the review pack that reads it |
 | [Auto-update](docs/superpowers/specs/2026-10-12-auto-update-design.md) | The glowing build number, and the upgrade it offers |
 | [Rust rewrite decision](docs/superpowers/specs/2026-10-15-rust-rewrite-decision.md) | Decision memo: stay TypeScript; where native Rust is defensible |
+| [Cold start](docs/superpowers/specs/2026-10-17-cold-start-does-not-wait-on-the-companion-design.md) | What held the splash for 57s, and what the splash is allowed to wait on |
 
 ## Prerequisites
 
@@ -92,7 +93,7 @@ Windows SmartScreen may warn on first launch (unsigned private build). Choose **
 | `npm run dev` / `npm run dev:desktop` | Electron + Vite desktop app (develop) |
 | `npm run package` | Windows portable folder at `apps/desktop/release/win-unpacked/LifeQuest.exe` (dev build) |
 | `npm run release` | Windows installer `.exe` + portable `.zip` under `apps/desktop/release/` (ship) |
-| `npm test` | The desktop E2E rigs — each skips unless `npm run dev` is listening on 5173 |
+| `npm test` | The desktop E2E rigs — each skips unless `npm run dev` is listening on 5173, except the cold-start rig, which serves the built `dist/` itself and skips unless `npm run build` has run |
 | `npm run build` | Production Vite build + Electron main bundle (produces no artifact by itself) |
 | `npm run typecheck` | Typecheck desktop renderer + main |
 
