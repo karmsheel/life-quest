@@ -1,6 +1,6 @@
 {
   "name": "@lifequest/desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "Local-first life-management studio for the desktop.",
