@@ -24,6 +24,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 | [Dashboard page lock](docs/superpowers/specs/2026-10-08-dashboard-page-lock-design.md) | The home pin board's lock, and one call that saves and pins a card |
 | [Daily Note](docs/superpowers/specs/2026-10-14-daily-note-design.md) | One journal note per day, and the review pack that reads it |
 | [Auto-update](docs/superpowers/specs/2026-10-12-auto-update-design.md) | The glowing build number, and the upgrade it offers |
+| [Rust rewrite decision](docs/superpowers/specs/2026-10-15-rust-rewrite-decision.md) | Decision memo: stay TypeScript; where native Rust is defensible |
 
 ## Prerequisites
 
