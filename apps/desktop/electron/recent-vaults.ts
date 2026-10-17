@@ -65,6 +65,15 @@ export async function loadPrefs(): Promise<UserPrefs> {
         typeof parsed.deadlineNotifiedOnByVaultId === "object"
           ? parsed.deadlineNotifiedOnByVaultId
           : {},
+      // Every field this reader drops is a field `savePrefs` will erase on the
+      // next write, and the profile choice is the one that hurts: the picker's
+      // choice was written on switch and then read back as absent, so a relaunch
+      // silently reverted the companion to `lifequest` — and any later write to
+      // the same file (an active domain, a dismissed deadline) dropped it for
+      // good. Read it, keep it.
+      ...(typeof parsed.companionProfile === "string"
+        ? { companionProfile: parsed.companionProfile }
+        : {}),
     };
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") {
