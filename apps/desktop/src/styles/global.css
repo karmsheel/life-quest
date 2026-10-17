@@ -258,6 +258,20 @@ a {
   line-height: 1.5;
 }
 
+/*
+  The Hermes CLI's own words, which arrive as the lines it printed: one refusal
+  per command, each already wrapped by the CLI. Collapsing those newlines turns a
+  two-command diagnosis into one run-on paragraph, which is the shape that made
+  the old "hermes gateway start exited 1" so hard to act on.
+*/
+.welcome-detail {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .welcome-actions {
   display: flex;
   flex-wrap: wrap;

@@ -30,9 +30,12 @@ export function CompanionSetupScreen() {
     body = `Something else is on port ${status && "port" in status ? status.port : ""}. Recheck after freeing the Hermes host gateway port.`;
   } else if (!ensuring && kind === "gateway_exited") {
     title = "Hermes gateway exited";
+    // What the CLI itself said. Hermes prints its refusals on stdout and exits
+    // non-zero with stderr empty, so this is the sentence that names the failure —
+    // the app used to show only the exit code it fell back to.
     body =
-      status && "stderr" in status
-        ? status.stderr
+      status && "detail" in status
+        ? status.detail
         : `The host Hermes gateway did not serve the ${profileName} profile.`;
   } else if (!ensuring && kind === "hermes_too_old") {
     title = "Hermes is too old";
@@ -51,7 +54,7 @@ export function CompanionSetupScreen() {
       <div className="welcome-card">
         <h1>LifeQuest companion</h1>
         <p className="muted welcome-lead">{title}</p>
-        {body ? <p className="muted">{body}</p> : null}
+        {body ? <p className="muted welcome-detail">{body}</p> : null}
 
         {/*
           The way out of a stuck connect. Every profile this Hermes install

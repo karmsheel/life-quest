@@ -165,13 +165,52 @@ function killTree(pid: number | undefined): void {
  */
 const HERMES_TIMEOUT_MS = 45_000;
 
+/** What one `hermes` run said, so a caller can report it on a success too. */
+type HermesRun = { stdout: string; stderr: string };
+
+/**
+ * How much of one stream is kept. A wedged gateway can print without bound, and
+ * the sentence that names the failure is at the end; the top of a wall of plugin
+ * chatter is not worth holding in the main process.
+ */
+const HERMES_OUTPUT_LIMIT = 8_000;
+
+function tail(text: string, limit = HERMES_OUTPUT_LIMIT): string {
+  const trimmed = text.trim();
+  return trimmed.length <= limit ? trimmed : `…${trimmed.slice(trimmed.length - limit)}`;
+}
+
+/**
+ * The message for a `hermes` command that exited non-zero.
+ *
+ * BOTH streams are read, and that is the whole point of this function. Hermes
+ * prints every user-facing refusal through `print()` / `print_error()`, which is
+ * STDOUT (`hermes_cli/cli_output.py`) — "Gateway service restart failed.",
+ * "Running the gateway as a background service is not available on this
+ * platform (no systemd, launchd or Scheduled Tasks).", "A gateway is already
+ * running (PID n)" — and then exits non-zero with stderr EMPTY. Reading stderr
+ * alone turned every one of those into the bare `hermes gateway start exited 1`
+ * that an operator reported on 2026-10-12 while the actual sentence sat unread
+ * in a pipe the app had opened and never drained.
+ *
+ * stderr still comes first when it has anything, because a traceback names the
+ * bug; stdout is what carries the explanation.
+ */
+function hermesFailure(args: string[], code: number | null, run: HermesRun): Error {
+  const detail = [run.stderr, run.stdout]
+    .map((stream) => tail(stream))
+    .filter(Boolean)
+    .join("\n");
+  return new Error(detail || `hermes ${args.join(" ")} exited ${code ?? "unknown"}`);
+}
+
 async function runHermes(
   cli: string,
   args: string[],
   extraEnv: Record<string, string>,
-): Promise<void> {
+): Promise<HermesRun> {
   const spec = hermesSpawnSpec(process.platform, cli, args, extraEnv);
-  await new Promise<void>((resolve, reject) => {
+  return new Promise<HermesRun>((resolve, reject) => {
     let spawned: ChildProcess;
     try {
       spawned = spawn(spec.file, spec.args, spec.options);
@@ -179,7 +218,10 @@ async function runHermes(
       reject(spawnError(cli, err));
       return;
     }
-    let stderr = "";
+    // Both pipes are read to the end. Reading is not only how the failure text
+    // is found: an undrained pipe fills at ~64KB and blocks the child, so a
+    // chatty `hermes` would wedge here until the timeout killed it.
+    const run: HermesRun = { stdout: "", stderr: "" };
     let settled = false;
     const settle = (finish: () => void) => {
       if (settled) return;
@@ -193,26 +235,22 @@ async function runHermes(
         reject(
           new Error(
             `hermes ${args.join(" ")} did not exit within ${HERMES_TIMEOUT_MS / 1000}s and was killed.` +
-              (stderr.trim() ? `\n${stderr.trim()}` : ""),
+              (tail(run.stderr) ? `\n${tail(run.stderr)}` : "") +
+              (tail(run.stdout) ? `\n${tail(run.stdout)}` : ""),
           ),
         ),
       );
     }, HERMES_TIMEOUT_MS);
+    spawned.stdout?.on("data", (chunk) => {
+      run.stdout += String(chunk);
+    });
     spawned.stderr?.on("data", (chunk) => {
-      stderr += String(chunk);
+      run.stderr += String(chunk);
     });
     spawned.once("error", (err) => settle(() => reject(spawnError(cli, err))));
     spawned.once("close", (code) => {
-      if (code === 0) settle(resolve);
-      else {
-        settle(() =>
-          reject(
-            new Error(
-              stderr.trim() || `hermes ${args.join(" ")} exited ${code ?? "unknown"}`,
-            ),
-          ),
-        );
-      }
+      if (code === 0) settle(() => resolve(run));
+      else settle(() => reject(hermesFailure(args, code, run)));
     });
   });
 }
@@ -289,17 +327,45 @@ async function ensureHostGateway(
   // which only a restart clears, because the parked adapter is never retried
   // in-process. `start` is the fallback for an install with no service
   // manager at all.
+  //
+  // BOTH failures are kept. The old form dropped the restart's message on the
+  // floor (`catch {}`) and let `start`'s speak alone, so the operator got one
+  // bare exit code from the second of two commands and nothing about the first —
+  // and the first is the informative one, because `restart` is the command that
+  // covers an installed service as well as a bare spawn.
+  let restart: HermesRun | null = null;
+  let restartFailure: string | null = null;
+  let start: HermesRun | null = null;
   try {
-    await runHermes(cli, ["gateway", "restart"], extraEnv);
-  } catch {
-    await runHermes(cli, ["gateway", "start"], extraEnv);
+    restart = await runHermes(cli, ["gateway", "restart"], extraEnv);
+  } catch (e) {
+    restartFailure = e instanceof Error ? e.message : String(e);
+    try {
+      start = await runHermes(cli, ["gateway", "start"], extraEnv);
+    } catch (e2) {
+      const startFailure = e2 instanceof Error ? e2.message : String(e2);
+      throw new Error(
+        `hermes gateway restart failed: ${restartFailure}\n` +
+          `hermes gateway start failed: ${startFailure}`,
+      );
+    }
   }
   if (await waitForHealth(prefix, 180, 500)) return;
-  throw new Error(
+  // The CLI exited 0 and nothing is serving. An exit code is not evidence that
+  // the gateway came up: Hermes reports "✗ Gateway start via direct spawn FAILED
+  // — no stable gateway process detected" on STDOUT and then exits 0
+  // (`gateway_windows.py::_report_gateway_start`), so a dead gateway and a live
+  // one are the same exit code and the same empty stderr. Its own words are the
+  // only thing that tells them apart, so they ride along with the verdict.
+  const said = [restartFailure, start?.stdout, start?.stderr, restart?.stdout, restart?.stderr]
+    .map((part) => tail(part ?? ""))
+    .filter(Boolean)
+    .join("\n");
+  const verdict =
     profileName === "default"
       ? "Host gateway did not serve the default profile."
-      : `Host gateway did not serve /p/${profileName}.`,
-  );
+      : `Host gateway did not serve /p/${profileName}.`;
+  throw new Error(said ? `${verdict}\n${said}` : verdict);
 }
 
 function realIo(): CompanionIo {

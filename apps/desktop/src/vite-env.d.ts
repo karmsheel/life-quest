@@ -89,7 +89,12 @@ type CompanionStatus =
   | { kind: "needs_install" }
   | { kind: "profile_error"; message: string; path?: string }
   | { kind: "port_busy"; port: number }
-  | { kind: "gateway_exited"; stderr: string }
+  /**
+   * What the Hermes CLI said when the gateway could not be brought up. Whichever
+   * stream carried it — Hermes prints its refusals on stdout — plus the exit-code
+   * fallback when it said nothing at all.
+   */
+  | { kind: "gateway_exited"; detail: string }
   | { kind: "disconnected" }
   | { kind: "hermes_too_old"; version?: string }
   | { kind: "auth_error" };

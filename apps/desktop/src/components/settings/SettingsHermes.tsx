@@ -19,7 +19,7 @@ function statusSummary(status: CompanionStatus | null, ensuring: boolean): strin
   if (status.kind === "needs_install") return "Hermes CLI not found on PATH.";
   if (status.kind === "profile_error") return status.message;
   if (status.kind === "port_busy") return `Port ${status.port} is busy.`;
-  if (status.kind === "gateway_exited") return status.stderr || "Gateway exited.";
+  if (status.kind === "gateway_exited") return status.detail || "Gateway exited.";
   if (status.kind === "hermes_too_old") return "Hermes is too old for the Sessions API.";
   if (status.kind === "auth_error") return "Companion API key was rejected.";
   return "Companion disconnected.";

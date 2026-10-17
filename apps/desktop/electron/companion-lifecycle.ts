@@ -47,7 +47,13 @@ export type CompanionStatus =
   | { kind: "needs_install" }
   | { kind: "profile_error"; message: string; path?: string }
   | { kind: "port_busy"; port: number }
-  | { kind: "gateway_exited"; stderr: string }
+  /**
+   * What the Hermes CLI said when the gateway could not be brought up. Not a
+   * stderr tail: Hermes prints its refusals on STDOUT (`hermes_cli/cli_output.py`)
+   * and exits non-zero with an empty stderr, so this carries whichever stream had
+   * the explanation — usually both, labelled by the command that produced them.
+   */
+  | { kind: "gateway_exited"; detail: string }
   | { kind: "disconnected" }
   | { kind: "hermes_too_old"; version?: string }
   | { kind: "auth_error" };
@@ -613,7 +619,7 @@ export async function ensureCompanion(
     if (attached) return attached;
     return {
       kind: "gateway_exited",
-      stderr: e instanceof Error ? e.message : String(e),
+      detail: e instanceof Error ? e.message : String(e),
     };
   }
 
@@ -622,7 +628,7 @@ export async function ensureCompanion(
   if (attached) return attached;
   return {
     kind: "gateway_exited",
-    stderr:
+    detail:
       profileName === "default"
         ? "Host gateway did not serve the default profile."
         : `Host gateway did not serve /p/${profileName}.`,

@@ -132,7 +132,7 @@ function statusFor(kind: EnsureKind): CompanionStatus {
   if (kind === "auth_error") return { kind: "auth_error" };
   return {
     kind: "gateway_exited",
-    stderr: "Host gateway did not serve /p/coder.",
+    detail: "Host gateway did not serve /p/coder.",
   };
 }
 
