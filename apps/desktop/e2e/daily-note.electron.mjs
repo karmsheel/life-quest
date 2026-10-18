@@ -7,10 +7,11 @@
  *   node e2e/daily-note.electron.mjs
  *
  * Exit code 0 = every invariant held. The JSON report is the repeatable artifact:
- * same command, same claims, no eyeballing the app required. It ships with three
+ * same command, same claims, no eyeballing the app required. It ships with four
  * pictures of the same run: the day's page holding a written note
  * (`daily-note.png`), the box with one paragraph open as its own markdown
- * (`daily-note-editing.png`), and the Review panel (`daily-note-panel.png`).
+ * (`daily-note-editing.png`), the writing line a save landed in without touching
+ * it (`daily-note-midsentence.png`), and the Review panel (`daily-note-panel.png`).
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
@@ -51,21 +52,26 @@
  *     so the swap is in place rather than a pane appearing beside it.
  *  9. The write settles: the editor then holds the file's own canonical body, the
  *     status reads "Saved", and the day appears in the journal strip.
- * 10. An existing day loads: Prev day reads that date from the bridge and shows
+ * 10. A save that lands mid-sentence does not disturb the writing line. The
+ *     operator paused, so the day was written under their hands: the line is
+ *     still the line — open, holding the keystroke they left in it, caret and
+ *     all — while the file holds the vault's own trimmed body and the page
+ *     writes nothing more until they type again.
+ * 11. An existing day loads: Prev day reads that date from the bridge and shows
  *     the seeded body, as prose rather than as an open writing line.
- * 11. A draft typed and cleared before the page writes leaves the day exactly as
+ * 12. A draft typed and cleared before the page writes leaves the day exactly as
  *     it was: no write at all reaches the bridge.
- * 12. Clearing a day that has a note is refused by the vault with a reason, the
+ * 13. Clearing a day that has a note is refused by the vault with a reason, the
  *     operator's draft is kept and the file is untouched — and the refusal is an
  *     *answer*, not a loss, so it does not hold the operator on the day.
- * 13. A write that *fails* is the other thing entirely. Nobody knows what reached
+ * 14. A write that *fails* is the other thing entirely. Nobody knows what reached
  *     the disk, so the page keeps the operator on the day they were writing until
  *     it lands, and Ctrl+S is the write that releases them.
- * 14. A refused write keeps the operator's draft — all of it — and says so; the
+ * 15. A refused write keeps the operator's draft — all of it — and says so; the
  *     page then stops asking the vault by itself, and Ctrl+S is what retries it.
- * 15. A future-dated file is never offered in the strip, and a file that names no
+ * 16. A future-dated file is never offered in the strip, and a file that names no
  *     real day is reported as unreadable where it sits rather than as a link.
- * 16. No bridge call this rig does not model, and no console error.
+ * 17. No bridge call this rig does not model, and no console error.
  *
  * NOT covered here: that the note reaches disk as `notes/daily/{date}.md`, that a
  * second write edits one file, and that a review's period pack reads the window
@@ -214,6 +220,10 @@ const SAMPLE = `(() => {
     editing: Boolean(input),
     inputValue: input ? input.value : null,
     inputPlaceholder: input ? input.placeholder : null,
+    // Where the caret is, which is the whole of what a save must not take. An
+    // unfocused window still sets document.activeElement on a focused node, so
+    // this is a real reading rather than a proxy for one.
+    caretInBox: input ? document.activeElement === input : false,
     // An empty paragraph prints the page's placeholder, or nothing at all.
     placeholders: document.querySelectorAll(".note-live__placeholder").length,
     strong: text(".note-live .md-view strong"),
@@ -322,6 +332,25 @@ async function type(win, value) {
     setter.call(el, ${JSON.stringify(value)});
     el.dispatchEvent(new Event("input", { bubbles: true }));
     return el.value;
+  })()`);
+}
+
+/**
+ * Type into the writing line with the caret in it, the way a person does when
+ * they pause mid-sentence: `type` above writes the value without ever focusing
+ * the box, which is right for the claims about what the vault receives and wrong
+ * for this one — a save can only take a caret that is there to take.
+ */
+async function typeWithCaret(win, value) {
+  return win.webContents.executeJavaScript(`(() => {
+    const el = document.querySelector('${INPUT}');
+    if (!el) return null;
+    el.focus();
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+    setter.call(el, ${JSON.stringify(value)});
+    el.setSelectionRange(el.value.length, el.value.length);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    return { value: el.value, focused: document.activeElement === el };
   })()`);
 }
 
@@ -851,6 +880,92 @@ async function main() {
   if (idleAfter !== idleBefore) {
     failure(`an untouched page wrote ${idleAfter - idleBefore} more time(s) on its own`);
   }
+
+  // ── 3e. a save landing mid-sentence leaves the writing line alone ────────
+  // The debounce fires because the operator paused, and the ordinary pause is
+  // mid-sentence: the line under the caret ends in a space that is not a typo,
+  // it is the next word not being typed yet. The vault trims the end of a body —
+  // that is the vault's business — and the page must not hand that trim back to
+  // the box. A body the box did not emit is a body it re-cuts: the paragraph
+  // closes, the prose renders, and the caret is gone in the middle of a sentence.
+  //
+  // The caret is read as `document.activeElement`, so the field is focused first:
+  // this is the one claim in the rig that is about the writing line itself rather
+  // than about what reached the vault.
+  await openBlock(win, 2);
+  const midSentence = "Mid-sentence: the day was written before the word was.";
+  const typedMid = `${midSentence} `;
+  const beforeMid = (await writesOf(win)).length;
+  const midCaret = await typeWithCaret(win, typedMid);
+  checks.midSentenceTyping = midCaret;
+  if (!midCaret?.focused) {
+    failure("the writing line never took the caret, so this step would prove nothing");
+  }
+  if (midCaret?.value !== typedMid) {
+    failure(
+      `the writing line did not take what was typed: ${JSON.stringify(midCaret?.value)}`,
+    );
+  }
+  const midWrites = await waitForWrite(win, beforeMid, "the mid-sentence save to land");
+  checks.midSentenceWrites = midWrites;
+  if (midWrites.length !== beforeMid + 1) {
+    failure(
+      `a pause mid-sentence made ${midWrites.length - beforeMid} write(s), expected 1`,
+    );
+  }
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="daily-note-status"]').textContent.trim() === "Saved"`,
+    "the mid-sentence save to be reported",
+  );
+  const midSaved = await sample(win);
+  checks.midSentenceAfterSave = midSaved;
+  if (!midSaved.editing) {
+    failure("a save landing mid-sentence closed the writing line the operator was in");
+  }
+  if (midSaved.inputValue !== typedMid) {
+    failure(
+      `a save landing mid-sentence rewrote the operator's line: ${JSON.stringify(midSaved.inputValue)}`,
+    );
+  }
+  if (!midSaved.caretInBox) {
+    failure("a save landing mid-sentence took the caret out of the box");
+  }
+  // The file still holds the note in the vault's own form: the trailing space is
+  // trimmed out of the *file*, which is the vault's answer, while the box keeps
+  // the keystroke that is still being typed on.
+  const midOnDisk = await win.webContents.executeJavaScript(
+    `(window.dailyNoteJournal.get(${JSON.stringify(today)}) ?? {}).bodyMarkdown ?? null`,
+  );
+  checks.midSentenceOnDisk = midOnDisk;
+  const midExpected = `${firstParagraph}\n\n${secondSource}\n\n${midSentence}\n`;
+  if (midOnDisk !== midExpected) {
+    failure(
+      `the mid-sentence save wrote ${JSON.stringify(midOnDisk)}, expected ${JSON.stringify(midExpected)}`,
+    );
+  }
+  // And the trim the vault applied is not a change the page owes it back: a box
+  // left "dirty" by a trailing space would write the same day again every
+  // `AUTOSAVE_DELAY_MS` for as long as the operator thought about the next word.
+  const midQuietBefore = (await writesOf(win)).length;
+  await idle(win, AUTOSAVE_SETTLE_MS);
+  const midQuietAfter = (await writesOf(win)).length;
+  checks.midSentenceQuiet = { before: midQuietBefore, after: midQuietAfter };
+  if (midQuietAfter !== midQuietBefore) {
+    failure(
+      `a line the vault trimmed was written ${midQuietAfter - midQuietBefore} more time(s) on its own`,
+    );
+  }
+  // The moment on camera: the writing line still open with the operator's own
+  // keystroke in it and the caret in it, over a status line that already reads
+  // "Saved" — the day written without the box being touched.
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const midShot = await win.webContents.capturePage();
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(path.join(artifactsDir, "daily-note-midsentence.png"), midShot.toPNG());
+  await leaveTheLine(win);
 
   // ── 4. an existing day loads, as prose ──────────────────────────────────
   await click(win, "daily-note-prev");

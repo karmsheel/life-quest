@@ -52,6 +52,24 @@ function asHeld(markdown: string): string {
   return serializeBlocks(parseBlocks(markdown));
 }
 
+/**
+ * Two spellings of one note: is this the same thing written down?
+ *
+ * The box holds a note in its own form and the vault holds it in its own — the
+ * file carries exactly one closing newline, and both sides drop the whitespace at
+ * the end of the body. So the draft an operator left mid-sentence ("the next word
+ * is not typed yet " — a space, not a typo) and the body the vault wrote from it
+ * are *one note*, and comparing them as strings calls that a change. Everywhere
+ * this page asks "is the day different from the file?" it has to ask it this way
+ * instead: a page that answers with `!==` sees a difference where there is none,
+ * and the answer it then gives the box — the file's body — is a body the box did
+ * not emit, which re-cuts the paragraph under the caret and closes the line the
+ * operator is writing in.
+ */
+function sameNote(a: string, b: string): boolean {
+  return asHeld(a) === asHeld(b);
+}
+
 /** The weekday of a local ISO date, or null when the string is not a date. */
 function weekdayOf(date: string): string | null {
   const parsed = new Date(`${date}T00:00:00`);
@@ -96,11 +114,18 @@ function formatEditedAt(updatedAt: string | null): string {
  * the vault's own reason when it refuses.
  *
  * The vault is the source of truth, so a load overwrites the draft and a write
- * takes the file's own normalized body back. A day with no note is an empty
- * editor, not an error — and the page prints nothing in it. An empty day is an
- * invitation because the caret is already there, not because the box is labelled;
- * a blank paragraph is a blank line, and a note with several of them is not a page
- * of repeated instructions.
+ * takes the file's own normalized body back — and *that* is only ever a different
+ * note: the vault trims the whitespace at the end of a body, the box's own form
+ * has already dropped it, and so the ordinary write answers with the note it was
+ * sent. The page compares the two as notes rather than as strings for exactly that
+ * reason: an autosave is not allowed to reach into the box while the operator is
+ * paused mid-sentence, re-cut the paragraph under the caret, close the writing line
+ * and take the caret with it (`sameNote`).
+ *
+ * A day with no note is an empty editor, not an error — and the page prints
+ * nothing in it. An empty day is an invitation because the caret is already
+ * there, not because the box is labelled; a blank paragraph is a blank line, and
+ * a note with several of them is not a page of repeated instructions.
  *
  * Under the box is the journal itself: one row per day, newest first, each row the
  * date the note is *for*, that date's weekday, and the moment the note was last
@@ -211,12 +236,21 @@ export default function DailyNotePage() {
           setError(null);
           setRefused(null);
           setExists(true);
-          // The file is the truth: the box takes back the body the vault actually
-          // holds, and only when that differs from what was written — so a write
-          // that normalizes nothing never re-cuts the paragraph under the caret.
+          // The file is the truth, and the box takes the body the vault actually
+          // holds back only when the two really are different notes. They are the
+          // same one after every ordinary write — the vault trims what `asHeld`
+          // has already dropped — and handing that answer back to the box is not a
+          // no-op: the box re-cuts a body it did not emit, so the paragraph under
+          // the caret re-renders as prose, the writing line closes, and the caret
+          // goes with it, mid-sentence, because the operator paused to think.
           const written = asHeld(result.value.bodyMarkdown);
           setSavedBody(written);
-          setDraft((current) => (current === body ? written : current));
+          setDraft((current) => {
+            // A draft the operator has typed on since is theirs, not this write's
+            // to overwrite — this write never saw those keystrokes.
+            if (!sameNote(current, body)) return current;
+            return sameNote(current, written) ? current : written;
+          });
           await loadHistory();
           return "saved";
         } catch (err) {
@@ -259,9 +293,11 @@ export default function DailyNotePage() {
       setDraft(next);
       setError(null);
       // Recorded here rather than in the effect below, so a blur that beats the
-      // next paint still finds the draft it has to save.
+      // next paint still finds the draft it has to save. The draft and the file
+      // are compared as notes rather than as strings: a keystroke the vault will
+      // trim out of the file — the space after a word — is not a change to it.
       unsaved.current =
-        loadedDate === date && next !== savedBody ? { date, body: next } : null;
+        loadedDate === date && !sameNote(next, savedBody) ? { date, body: next } : null;
     },
     [date, loadedDate, savedBody],
   );
@@ -275,7 +311,10 @@ export default function DailyNotePage() {
     // Only the day whose body is on screen is written. While another day is
     // loading, `draft` still holds the day before it.
     if (loadedDate !== date) return;
-    if (draft === savedBody) {
+    // Read as notes, so the whitespace the vault trims at the end of a body is
+    // not a difference the page owes it back: a draft that differs from the file
+    // only there would otherwise be written again on every pause.
+    if (sameNote(draft, savedBody)) {
       unsaved.current = null;
       return;
     }
@@ -317,7 +356,10 @@ export default function DailyNotePage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [flush]);
 
-  const dirty = draft !== savedBody;
+  // Dirty as notes, not as strings: the status line and the autosave both hang off
+  // this, and the vault's own trim — a space typed between two words, not yet a
+  // change to the file — must not keep the day "Saving…" after it has been saved.
+  const dirty = !sameNote(draft, savedBody);
   const nextDate = useMemo(() => shiftLocalIsoDate(date, 1), [date]);
   const prevDate = useMemo(() => shiftLocalIsoDate(date, -1), [date]);
   const atToday = date >= today;

@@ -36,6 +36,10 @@ const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/daily-note.json");
 const SHOT = path.join(desktopRoot, "e2e/artifacts/daily-note.png");
 const EDITING_SHOT = path.join(desktopRoot, "e2e/artifacts/daily-note-editing.png");
+const MIDSENTENCE_SHOT = path.join(
+  desktopRoot,
+  "e2e/artifacts/daily-note-midsentence.png",
+);
 const PANEL_SHOT = path.join(desktopRoot, "e2e/artifacts/daily-note-panel.png");
 
 function devServerUp(): Promise<boolean> {
@@ -137,6 +141,7 @@ type Sample = {
   editing: boolean;
   inputValue: string | null;
   inputPlaceholder: string | null;
+  caretInBox: boolean;
   placeholders: number;
   strong: string | null;
   renderedText: string | null;
@@ -166,6 +171,11 @@ type Report = {
     afterEnter: Sample;
     afterThirdParagraph: Sample;
     afterSave: Sample;
+    midSentenceTyping: { value: string; focused: boolean } | null;
+    midSentenceWrites: Write[];
+    midSentenceAfterSave: Sample;
+    midSentenceOnDisk: string | null;
+    midSentenceQuiet: { before: number; after: number };
     idleWrites: { before: number; after: number };
     previousDay: Sample;
     emptyDay: Sample;
@@ -205,6 +215,7 @@ describe("daily note ui e2e", () => {
     fs.rmSync(REPORT, { force: true });
     fs.rmSync(SHOT, { force: true });
     fs.rmSync(EDITING_SHOT, { force: true });
+    fs.rmSync(MIDSENTENCE_SHOT, { force: true });
     fs.rmSync(PANEL_SHOT, { force: true });
     const exitCode = await runDriver();
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
@@ -433,6 +444,78 @@ describe("daily note ui e2e", () => {
       "the day just written is missing from the journal strip",
     );
 
+    // ── a save that lands mid-sentence leaves the writing line alone ────────
+    // The operator pauses, the day is written under their hands, and they carry
+    // on typing: the line is still the line, the caret is still in it, and the
+    // keystroke they left in it is still there. The vault trims the end of a
+    // body, and the page must not hand that trim back to the box — a body the
+    // box did not emit is a body it re-cuts, which closes the paragraph and
+    // takes the caret with it.
+    // The trailing space is the whole test: that is what a pause mid-sentence
+    // leaves in the box, and what the vault trims out of the file it writes.
+    const midSentence = "Mid-sentence: the day was written before the word was.";
+    const typedMid = `${midSentence} `;
+    assert.equal(
+      report.checks.midSentenceTyping?.focused,
+      true,
+      "the writing line never took the caret, so this claim proved nothing",
+    );
+    assert.equal(
+      report.checks.midSentenceTyping?.value,
+      typedMid,
+      "the writing line did not take what was typed",
+    );
+    // This step begins exactly where the idle step left the ledger, and it writes
+    // the day exactly once: one pause, one write.
+    assert.equal(
+      report.checks.midSentenceWrites.length,
+      report.checks.idleWrites.before + 1,
+      "a pause mid-sentence did not write the day exactly once",
+    );
+    const midSaved = report.checks.midSentenceAfterSave;
+    assert.equal(
+      midSaved.editing,
+      true,
+      "a save landing mid-sentence closed the writing line the operator was in",
+    );
+    assert.equal(
+      midSaved.inputValue,
+      typedMid,
+      "a save landing mid-sentence rewrote the operator's line",
+    );
+    assert.equal(
+      midSaved.caretInBox,
+      true,
+      "a save landing mid-sentence took the caret out of the box",
+    );
+    assert.equal(
+      midSaved.status,
+      "Saved",
+      "the day a mid-sentence save landed on did not report itself as saved",
+    );
+    // The file holds the vault's own body — the trailing space is trimmed out of
+    // the *file* — while the box keeps the keystroke being typed on. One note,
+    // two readings, and neither is lost to the other.
+    assert.equal(
+      report.checks.midSentenceOnDisk,
+      "Rig day: wrote the note, and the review read it back.\n\n**Live preview**: the box renders as it is written.\n\nMid-sentence: the day was written before the word was.\n",
+      "the mid-sentence save did not reach the day's file in the vault's own form",
+    );
+    // And nothing more is written until the operator types: the trim the vault
+    // applied is not a change the page owes the file back, or a pause would
+    // rewrite the same day every `AUTOSAVE_DELAY_MS` for as long as they thought
+    // about the next word.
+    assert.deepEqual(
+      report.checks.midSentenceQuiet,
+      {
+        before: report.checks.midSentenceQuiet.before,
+        after: report.checks.midSentenceQuiet.before,
+      },
+      `a line the vault trimmed was written ${
+        report.checks.midSentenceQuiet.after - report.checks.midSentenceQuiet.before
+      } more time(s) on its own`,
+    );
+
     // ── a day that already has a note loads it ─────────────────────────────
     const previous = report.checks.previousDay;
     assert.equal(previous.dayDate, yesterday, "Prev day did not open yesterday");
@@ -639,6 +722,11 @@ describe("daily note ui e2e", () => {
       fs.existsSync(EDITING_SHOT),
       true,
       "driver captured no screenshot of the box with a paragraph open",
+    );
+    assert.equal(
+      fs.existsSync(MIDSENTENCE_SHOT),
+      true,
+      "driver captured no screenshot of the writing line a save landed in",
     );
     assert.equal(
       fs.existsSync(PANEL_SHOT),
