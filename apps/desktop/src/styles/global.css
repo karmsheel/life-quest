@@ -778,6 +778,34 @@ a {
   white-space: nowrap;
 }
 
+/* The words that come with the glow: `Update available`, above the build number
+   and only while there is something to install. A rail 4.25rem wide holds the
+   phrase on two balanced lines, which is why it is set small and uppercase —
+   as a state caption rather than as prose in a column of one-word rows.
+
+   It wears the state ink for the same reason the pill does: this is not
+   decoration, it is "there is something for you to do". Nothing is tabbable
+   here; the pill below is the control, and the words are its reason. */
+.nav-rail__update-label {
+  margin: 0.3rem 0 0;
+  padding: 0 0.15rem;
+  color: var(--accent);
+  font-size: 0.55rem;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.03em;
+  text-align: center;
+  text-transform: uppercase;
+  text-wrap: balance;
+  flex-shrink: 0;
+}
+
+/* Caption and pill are one block, not two: the pill's own top margin is what
+   separates the foot from the Log row above, so it closes up here. */
+.nav-rail__update-label + .nav-rail__version {
+  margin-top: 0.2rem;
+}
+
 .nav-rail__version {
   margin: 0.45rem 0 0.15rem;
   padding: 0 0.15rem;

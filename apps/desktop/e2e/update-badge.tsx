@@ -29,6 +29,10 @@
  *     call it.
  * 12. The glow makes the rail taller than its own column, so the build number
  *     scrolls the rail's topband away.
+ * 13. The glow arrives without a sentence: a pill reading `v0.1.4` and nothing
+ *     else leaves the operator to guess. The words must sit above it, stay a
+ *     paragraph rather than a second focus stop, leave the Log row above
+ *     themselves, and be gone again when there is nothing to install.
  *
  * The bridge is stubbed (there is no Electron preload on the dev-server page);
  * everything else — the real `UpdateProvider`, the real `NavRail`, the real

@@ -76,6 +76,8 @@ const SAMPLE = `(() => {
   };
   const root = getComputedStyle(document.documentElement);
   const chip = document.querySelector(".nav-rail__version");
+  const label = document.querySelector(".nav-rail__update-label");
+  const logRow = document.querySelector('.nav-rail__link[href="/log"]');
   const rail = document.querySelector(".nav-rail");
   const dialog = document.querySelector(".update-dialog");
   const progressBar = document.querySelector(".update-dialog__bar[role=progressbar]");
@@ -178,6 +180,32 @@ const SAMPLE = `(() => {
           background: getComputedStyle(rail).backgroundColor
         }
       : null,
+    // The words that come with the glow. Read as a paragraph, not as a control:
+    // what makes this line safe in a column of nav rows is that it is not one.
+    label: label
+      ? {
+          tag: label.tagName.toLowerCase(),
+          text: (label.textContent || "").trim(),
+          dataLabel: label.getAttribute("data-update-label"),
+          box: box(label),
+          color: getComputedStyle(label).color,
+          fontSize: getComputedStyle(label).fontSize,
+          lineHeight: getComputedStyle(label).lineHeight,
+          textTransform: getComputedStyle(label).textTransform,
+          letterSpacing: getComputedStyle(label).letterSpacing,
+          tabIndex: label.getAttribute("tabindex"),
+          role: label.getAttribute("role"),
+          cursor: getComputedStyle(label).cursor,
+          html: label.outerHTML.slice(0, 200),
+          overflow: {
+            scrollWidth: label.scrollWidth,
+            clientWidth: label.clientWidth
+          }
+        }
+      : null,
+    // The row directly above the foot. The caption takes its height out of this
+    // column, so what it must NOT do is land on top of the Log row.
+    logRow: logRow ? { box: box(logRow), text: (logRow.textContent || "").trim() } : null,
     dialog: dialog
       ? {
           box: box(dialog),
@@ -504,12 +532,15 @@ async function main() {
 
   const shootRailFoot = async (name) => {
     const chip = await run(SAMPLE);
-    const y = Math.max(0, (chip.rail?.box.bottom ?? DEFAULT_SIZE.height) - 150);
+    // Tall enough for the whole foot: the Log row, the caption, and the pill —
+    // the crop is what the operator would call "the bottom of the sidebar".
+    const height = 200;
+    const y = Math.max(0, (chip.rail?.box.bottom ?? DEFAULT_SIZE.height) - height);
     const image = await win.webContents.capturePage({
       x: 0,
       y,
       width: Math.max(240, chip.rail?.box.width ?? 240),
-      height: 150,
+      height,
     });
     const file = path.join(artifactsDir, name);
     fs.writeFileSync(file, image.toPNG());
@@ -582,6 +613,47 @@ async function main() {
       "the chip is a pill, not a pane",
       resting.chip.borderRadius !== "0px" && resting.chip.borderRadius !== "",
       `radius ${resting.chip.borderRadius}`,
+    );
+
+    // ── the words above the pill ────────────────────────────────────────────
+    // A glowing `v0.1.4` is a state without a sentence. The words have to say
+    // what it means, sit above it, leave the Log row above themselves, and stay
+    // a paragraph — a second focus stop in the rail with nothing to do would be
+    // worse than the glow alone.
+    const labelInk = resting.chip.tokens.resolved.accent;
+    check(
+      "the glow is explained in words",
+      resting.label?.tag === "p" && resting.label?.text === "Update available",
+      `caption ${JSON.stringify(resting.label?.text)} as <${resting.label?.tag}>`,
+    );
+    check(
+      "the caption sits above the build number, not below it",
+      Boolean(resting.label?.box && resting.chip.box) &&
+        resting.label.box.bottom <= resting.chip.box.top,
+      `caption ${JSON.stringify(resting.label?.box)} vs chip ${JSON.stringify(resting.chip.box)}`,
+    );
+    check(
+      "the Log row stayed above the caption",
+      Boolean(resting.logRow?.box && resting.label?.box) &&
+        resting.logRow.box.bottom <= resting.label.box.top,
+      `log ${JSON.stringify(resting.logRow?.box)} vs caption ${JSON.stringify(resting.label?.box)}`,
+    );
+    check(
+      "the caption is text, not a second control",
+      resting.label?.tag === "p" &&
+        resting.label?.tabIndex === null &&
+        resting.label?.role === null,
+      `tag ${resting.label?.tag}, tabindex ${JSON.stringify(resting.label?.tabIndex)}, role ${JSON.stringify(resting.label?.role)}`,
+    );
+    check(
+      "the caption wears the state ink",
+      resting.label?.color === parseColor(labelInk)?.rgb,
+      `color ${resting.label?.color} vs --accent ${labelInk}`,
+    );
+    check(
+      "the caption fits the rail's width",
+      (resting.label?.overflow?.scrollWidth ?? 0) <= (resting.label?.overflow?.clientWidth ?? 0),
+      `scrollWidth ${resting.label?.overflow?.scrollWidth} vs clientWidth ${resting.label?.overflow?.clientWidth}`,
     );
 
     // ── the glow ────────────────────────────────────────────────────────────
@@ -829,6 +901,21 @@ async function main() {
       upToDate.chip?.ariaHaspopup === null && upToDate.chip?.dataVersion === null,
       `haspopup ${upToDate.chip?.ariaHaspopup}, data ${upToDate.chip?.dataVersion}`,
     );
+    // The words are a claim about this launch, so a rail with nothing to install
+    // must not carry them: they would be chrome that is always there, saying
+    // something that is never true.
+    check(
+      "an up-to-date build says nothing about an update",
+      upToDate.label === null,
+      `caption ${JSON.stringify(upToDate.label)}, rail foot ${JSON.stringify(upToDate.chip?.text)}`,
+    );
+    check(
+      "an up-to-date build keeps its Log row where it was",
+      Boolean(upToDate.logRow?.box) &&
+        Boolean(upToDate.chip?.box) &&
+        upToDate.logRow.box.bottom <= upToDate.chip.box.top,
+      `log ${JSON.stringify(upToDate.logRow?.box)} vs chip ${JSON.stringify(upToDate.chip?.box)}`,
+    );
     check(
       "an up-to-date build still asks the feed once",
       upToDate.calls?.check === 1,
@@ -862,6 +949,11 @@ async function main() {
       "the provider did subscribe to the progress channel",
       junk.listenerAttached === true,
       `listenerAttached ${junk.listenerAttached}`,
+    );
+    check(
+      "an unreadable answer never says an update is available",
+      junk.label === null,
+      `caption ${JSON.stringify(junk.label)}`,
     );
     // The one failure no amount of clicking can reach: the subscription's
     // *cleanup*. A handle that is not a function must be left alone rather than
@@ -1018,6 +1110,17 @@ async function main() {
       parseShadowLayers(previewRail.chip?.halo?.boxShadow ?? "").length === 2,
       `halo ${JSON.stringify(previewRail.chip?.halo?.boxShadow)}`,
     );
+    // The preview exists to show the whole affordance, words included: a preview
+    // missing the caption would let a layout bug through the very surface built
+    // to catch it.
+    check(
+      "the preview shows the caption too, and marks it as a preview",
+      previewRail.label?.text === "Update available" &&
+        previewRail.label?.dataLabel === "preview" &&
+        previewRail.label?.box != null &&
+        previewRail.label.box.bottom <= (previewRail.chip?.box?.top ?? 0),
+      `caption ${JSON.stringify(previewRail.label?.text)} (${previewRail.label?.dataLabel}), box ${JSON.stringify(previewRail.label?.box)}, chip ${JSON.stringify(previewRail.chip?.box)}`,
+    );
     check(
       "the preview glow keeps the feed's answer quiet",
       previewRail.calls?.check === 1,
@@ -1065,6 +1168,12 @@ async function main() {
       shadowed.chip?.dataVersion === OFFERED &&
         shadowed.chip?.dataPreview === "false",
       `offering ${shadowed.chip?.dataVersion}, preview ${shadowed.chip?.dataPreview}`,
+    );
+    check(
+      "and its caption is the release's, not the preview's",
+      shadowed.label?.text === "Update available" &&
+        shadowed.label?.dataLabel === "available",
+      `caption ${JSON.stringify(shadowed.label?.text)} (${shadowed.label?.dataLabel})`,
     );
     await click(".nav-rail__version");
     const shadowedDialog = await settle();
@@ -1189,11 +1298,12 @@ async function main() {
   fs.writeFileSync(reportFile, `${JSON.stringify(report, null, 2)}\n`);
 
   const rows = [
-    ["state", "chip", "class", "halo", "dialog", "actions", "progress"],
+    ["state", "chip", "class", "caption", "halo", "dialog", "actions", "progress"],
     [
       "available",
       report.states?.available?.chip?.tag ?? "—",
       String(report.states?.available?.chip?.className ?? "—"),
+      report.states?.available?.label?.text ?? "none",
       report.glow?.halo ? `${report.glow.reach.toFixed(1)}px <= ${report.glow.room}px` : "—",
       "closed",
       "—",
@@ -1202,6 +1312,7 @@ async function main() {
     [
       "opened",
       report.states?.opened?.chip?.tag ?? "—",
+      "—",
       "—",
       "—",
       report.states?.opened?.dialog?.title ?? "—",
@@ -1213,6 +1324,7 @@ async function main() {
       "—",
       "—",
       "—",
+      "—",
       report.states?.installing?.dialog?.title ?? "—",
       String((report.states?.installing?.dialog?.buttons ?? []).length),
       report.states?.halfway?.dialog?.progressNow ?? "—",
@@ -1221,6 +1333,7 @@ async function main() {
       "up to date",
       report.states?.upToDate?.chip?.tag ?? "—",
       String(report.states?.upToDate?.chip?.className ?? "—"),
+      report.states?.upToDate?.label?.text ?? "none",
       String(report.states?.upToDate?.chip?.boxShadow ?? "—"),
       "closed",
       "—",
@@ -1230,6 +1343,7 @@ async function main() {
       "junk bridge",
       report.states?.junk?.chip?.tag ?? "—",
       String(report.states?.junk?.chip?.className ?? "—"),
+      report.states?.junk?.label?.text ?? "none",
       String(report.states?.junk?.chip?.boxShadow ?? "—"),
       "closed",
       "—",

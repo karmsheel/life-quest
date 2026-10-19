@@ -69,7 +69,14 @@ type State = {
     background: string;
     borderRadius: string;
     animationName: string;
-    box: { left: number; right: number };
+    box: {
+      left: number;
+      right: number;
+      top: number;
+      bottom: number;
+      width: number;
+      height: number;
+    };
     halo: {
       boxShadow: string;
       opacity: number;
@@ -83,6 +90,22 @@ type State = {
       accentFill: string;
       resolved: { accent: string; accentFill: string };
     };
+  } | null;
+  label: {
+    tag: string;
+    text: string;
+    dataLabel: string | null;
+    box: { left: number; right: number; top: number; bottom: number } | null;
+    color: string;
+    fontSize: string;
+    textTransform: string;
+    tabIndex: string | null;
+    role: string | null;
+    overflow: { scrollWidth: number; clientWidth: number };
+  } | null;
+  logRow: {
+    box: { left: number; right: number; top: number; bottom: number } | null;
+    text: string;
   } | null;
   rail: {
     box: { left: number; right: number };
@@ -225,6 +248,11 @@ describe("auto-update badge", () => {
       null,
       "an up-to-date build named a release it is not offering",
     );
+    assert.equal(
+      upToDate.label,
+      null,
+      `an up-to-date build says an update is available: ${JSON.stringify(upToDate.label?.text)}`,
+    );
 
     // The glow, restated here so the suite — not only the driver — asserts the
     // halves of the claim: a halo paints, it paints the palette's own inks, and it
@@ -239,6 +267,40 @@ describe("auto-update badge", () => {
       available.chip?.text,
       `v${APP_VERSION}`,
       "the build number stopped reading the running version",
+    );
+
+    // The caption: a glowing pill is a state without a sentence, so the rail says
+    // what it means — above the pill, only while it is true, and never as a
+    // second focus stop in a column of nav rows.
+    assert.equal(
+      available.label?.text,
+      "Update available",
+      `the glow is unexplained: ${JSON.stringify(available.label?.text)}`,
+    );
+    assert.equal(available.label?.tag, "p", "the caption is not a paragraph");
+    assert.equal(
+      available.label?.tabIndex,
+      null,
+      "the caption became a focus stop with nothing to do",
+    );
+    assert.equal(available.label?.role, null, "the caption claims a role it does not have");
+    assert.ok(
+      (available.label?.box?.bottom ?? Infinity) <= (available.chip?.box?.top ?? -Infinity),
+      `the caption is not above the build number: ${JSON.stringify(available.label?.box)} vs ${JSON.stringify(available.chip?.box)}`,
+    );
+    assert.ok(
+      (available.logRow?.box?.bottom ?? Infinity) <= (available.label?.box?.top ?? -Infinity),
+      `the caption landed on the Log row: ${JSON.stringify(available.logRow?.box)} vs ${JSON.stringify(available.label?.box)}`,
+    );
+    assert.ok(
+      (available.label?.overflow.scrollWidth ?? Infinity) <=
+        (available.label?.overflow.clientWidth ?? 0),
+      `the caption bleeds out of the rail: ${JSON.stringify(available.label?.overflow)}`,
+    );
+    assert.equal(
+      rgbKey(available.label?.color ?? ""),
+      rgbKey(report.glow.resolved.accent),
+      `the caption is not wearing the state ink: ${available.label?.color}`,
     );
     assert.equal(
       available.chip?.boxShadow,
@@ -387,6 +449,11 @@ describe("auto-update badge", () => {
     assert.equal(junk.chip?.boxShadow, "none", "a junk answer produced a glow");
     assert.equal(junk.dialog, null, "a junk answer opened the popup");
     assert.equal(
+      junk.label,
+      null,
+      `a junk answer claimed an update was available: ${JSON.stringify(junk.label?.text)}`,
+    );
+    assert.equal(
       junk.listenerAttached,
       true,
       "the provider never subscribed to the progress channel",
@@ -527,6 +594,18 @@ describe("auto-update badge", () => {
       "true",
       "the glowing chip does not say it is a preview",
     );
+    // The preview is the surface built to catch a broken affordance before a
+    // release, so it has to show the caption the release will.
+    assert.equal(
+      previewRail.label?.dataLabel,
+      "preview",
+      `the preview does not say the caption is a preview: ${JSON.stringify(previewRail.label)}`,
+    );
+    assert.equal(
+      previewRail.label?.text,
+      "Update available",
+      `the preview dropped the caption: ${JSON.stringify(previewRail.label?.text)}`,
+    );
     assert.equal(
       report.glow.layers.length,
       2,
@@ -566,6 +645,11 @@ describe("auto-update badge", () => {
       shadowed.chip?.dataPreview,
       "false",
       "the chip claims to be a preview while showing a real release",
+    );
+    assert.equal(
+      shadowed.label?.dataLabel,
+      "available",
+      `a real release kept the preview's caption: ${JSON.stringify(shadowed.label)}`,
     );
     assert.equal(
       shadowedDialog.dialog?.kickerKind,
