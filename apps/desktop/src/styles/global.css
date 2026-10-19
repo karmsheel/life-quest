@@ -1557,6 +1557,32 @@ a {
   border-radius: var(--radius-xs);
 }
 
+/* The rhythm between blocks.
+   A block IS a paragraph, so the gap between two of them cannot come from
+   inside it: every block's first and last child is the same element, and the
+   rules above zero those margins so a box never starts or ends with dead space.
+   That left two paragraphs touching and a heading flush against the line above
+   it, which is why a note read as one undifferentiated wall unless the operator
+   inserted blank lines to force it apart. The spacing lives here now, on the
+   boundary, where it belongs. */
+.note-live__prose > .note-live__block + .note-live__block {
+  margin-top: 0.85rem;
+}
+
+/* A heading opens a section: air above it, and only the paragraph rhythm below,
+   which the next block's own margin supplies. */
+.note-live__prose
+  > .note-live__block:not(:first-child):has(
+    > .md-view > h1,
+    > .md-view > h2,
+    > .md-view > h3,
+    > .md-view > h4,
+    > .md-view > h5,
+    > .md-view > h6
+  ) {
+  margin-top: 1.3rem;
+}
+
 /* The writing line: the same type as the prose it sits among, and no chrome of
    its own, because the box already draws the frame. */
 .note-live__input {
@@ -1578,6 +1604,15 @@ a {
 .note-live__placeholder {
   margin: 0;
   color: var(--muted);
+}
+
+/* A blank line the operator typed. It is one line of the note's own leading, so
+   two blank lines between two paragraphs are visibly two — the file holds them
+   and the page has to show what it holds, or pressing Enter twice looks like it
+   did nothing. */
+.note-live__blank {
+  margin: 0;
+  min-height: 1.7em;
 }
 
 .note-live .md-view > :first-child {
@@ -1673,10 +1708,65 @@ a {
   font-weight: 650;
 }
 
+/* The three inline marks that have no rule of their own: underline arrives as
+   `<u>` because markdown has no syntax for it, and a strikethrough is `~~`. */
+.note-live .md-view u {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.note-live .md-view del,
+.note-live .md-view s {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
 .md-view img {
   max-width: 100%;
   height: auto;
   border-radius: 0.35rem;
+}
+
+/* The same two marks everywhere a rendered note appears, not only in the box:
+   a review preview and a doctrine page draw through the same renderer. */
+.md-view u {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.md-view del,
+.md-view s {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/* A pipe table, drawn as a table.
+   The figures the app fills into a review are tables, so a rendered note has to
+   draw one: pipes and dashes as a paragraph is worse than no table at all. */
+.md-view table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.94rem;
+}
+
+.md-view th,
+.md-view td {
+  padding: 0.32rem 0.55rem;
+  border-bottom: 1px solid var(--border-soft);
+  text-align: left;
+  vertical-align: baseline;
+}
+
+.md-view th {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.md-view tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .field textarea {

@@ -2,6 +2,7 @@ import {
   ensurePlanningStub,
   ensureReview,
   getPeriodPack,
+  getReviewSkill,
   openVault,
   periodTitle,
   setPlanningSessionId,
@@ -29,6 +30,13 @@ export type BoundSessionResult = {
 };
 
 export type CompanionSessionFns = {
+  /**
+   * Bring the agent up, or name why it cannot be. Absent in a test that has no
+   * gateway to reach; present in the app, where a session cannot be created
+   * without one and the failure has to read like something the operator can act
+   * on rather than like `fetch failed`.
+   */
+  open?: () => Promise<{ ok: true } | { ok: false; error: string }>;
   list: () => Promise<
     { ok: true; value: Array<{ id: string }> } | { ok: false; error: string }
   >;
@@ -101,7 +109,7 @@ export function boundKickoff(input: {
   const title = periodTitle(input.cadence, input.period, input.weekStartDay);
   const suffix = scopeSuffix(input.scope, input.domainName);
   if (input.kind === "review") {
-    return `Let's assemble the ${title}${suffix}. Interview me through look-back, keep, change, and next-period intent. Use get_period_pack and get_review. When the report is ready, propose marking this review complete.`;
+    return `Let's assemble the ${title}${suffix}. Interview me through look-back, keep, change, and next-period intent. Read the review file with get_review first — the app has already filled in the figures this cadence's skill asks for, inside \`<!-- lifequest:snapshot -->\` markers, so work from those numbers rather than fetching them again. Use get_period_pack for the period's own days. When the report is ready, propose marking this review complete.`;
   }
   return `Let's plan ${title}${suffix}. Previous period's review is in your instructions (or noted missing/draft). Ask what to focus on. Do not write a plan file yet.`;
 }
@@ -137,14 +145,40 @@ export function findBoundSession(
   return null;
 }
 
+/**
+ * What a bound session is told before its first turn.
+ *
+ * The cadence's own skill file is carried verbatim and ahead of everything else,
+ * because it is the operator's standing instruction for this kind of session
+ * rather than data about it: the period pack is what the period held, and this
+ * is what to do with it. A session that has to rediscover "always ask about
+ * sleep" every week is a session that will not ask.
+ */
 export function formatReviewContext(input: {
   kind: BoundSessionKind;
   pack: Result<PeriodPack>;
+  skill?: { markdown: string; problems: string[] } | null;
 }): string {
-  const lines = [
-    `Bound session kind: ${input.kind}`,
+  const lines = [`Bound session kind: ${input.kind}`];
+  if (input.kind === "review" && input.skill) {
+    lines.push(
+      "Standing rules for this cadence, written by the operator. Follow them; they outrank your own habits:",
+      "--- REVIEW SKILL (the operator's own standing rules) ---",
+      input.skill.markdown.trim(),
+      "--- END REVIEW SKILL ---",
+    );
+    if (input.skill.problems.length > 0) {
+      lines.push(
+        `Snapshot rules that did not parse and were NOT run: ${input.skill.problems.join("; ")}`,
+      );
+    }
+    lines.push(
+      "Figures the app already filled in sit inside `<!-- lifequest:snapshot -->` markers in the review file. Refresh them rather than duplicating them, and leave the markers in place: they are how the next Start finds the block.",
+    );
+  }
+  lines.push(
     "Skeleton rules: overall uses ## Look-back / ## Keep / ## Change / ## Next-period intent; domain sections use the same four ### headings.",
-  ];
+  );
   if (input.kind === "review") {
     lines.push("When the report is ready, propose mark_review_done.");
   } else {
@@ -192,6 +226,13 @@ async function startOrResumeBoundSession(
       ? await ensureReview(root, input)
       : await ensurePlanningStub(root, input);
   if (!ensured.ok) return ensured;
+
+  // The document exists before the agent is asked for anything, so a gateway
+  // that is down cannot take the review file down with it.
+  if (companion.open) {
+    const opened = await companion.open();
+    if (!opened.ok) return opened;
+  }
 
   const { weekStartDay, domainName } = await resolveDomainName(root, input.scope);
   const title = boundSessionTitle({
@@ -270,5 +311,15 @@ export async function buildBoundReviewContext(
     period: bound.period,
     scope: bound.scope,
   });
-  return formatReviewContext({ kind: bound.kind, pack });
+  if (bound.kind !== "review") {
+    return formatReviewContext({ kind: bound.kind, pack });
+  }
+  const skill = await getReviewSkill(root, bound.cadence);
+  return formatReviewContext({
+    kind: bound.kind,
+    pack,
+    skill: skill.ok
+      ? { markdown: skill.value.markdown, problems: skill.value.problems }
+      : null,
+  });
 }

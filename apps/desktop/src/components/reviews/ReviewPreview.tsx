@@ -9,6 +9,17 @@ type Props = {
   domainName: string | null;
   liveDomains: { slug: string; meta: { name: string } }[];
   onSetActiveSlug: (slug: string) => void;
+  /**
+   * Only the Domains list, without re-drawing the body.
+   *
+   * The Review page's Preview already renders the whole file, because a preview
+   * that showed an extract of it is what made the page ignore headings the
+   * operator wrote. What the extract was still good for is the one thing the
+   * document itself cannot say: which domains this review covers and which of
+   * them are finished. So this is the Domains list alone, and the body is drawn
+   * once.
+   */
+  domainsOnly?: boolean;
 };
 
 type SectionHeading = {
@@ -74,6 +85,7 @@ export function ReviewPreview({
   domainName,
   liveDomains,
   onSetActiveSlug,
+  domainsOnly = false,
 }: Props) {
   const sections = useMemo(
     () => (record ? splitSections(record.bodyMarkdown) : []),
@@ -103,20 +115,22 @@ export function ReviewPreview({
 
     return (
       <div className="review-preview">
-        {OVERALL_H2.map((h) => {
-          const content = extractH2Block(record.bodyMarkdown, h);
-          const body = content && content.trim().length > 0 ? content.trim() : null;
-          return (
-            <section key={h} className="review-preview__section">
-              <h2 className="review-preview__heading">{h}</h2>
-              {body ? (
-                <MarkdownView markdown={body} slug={`review-${record.cadence}-${record.period}`} />
-              ) : (
-                <p className="muted review-preview__empty">—</p>
-              )}
-            </section>
-          );
-        })}
+        {domainsOnly
+          ? null
+          : OVERALL_H2.map((h) => {
+              const content = extractH2Block(record.bodyMarkdown, h);
+              const body = content && content.trim().length > 0 ? content.trim() : null;
+              return (
+                <section key={h} className="review-preview__section">
+                  <h2 className="review-preview__heading">{h}</h2>
+                  {body ? (
+                    <MarkdownView markdown={body} slug={`review-${record.cadence}-${record.period}`} />
+                  ) : (
+                    <p className="muted review-preview__empty">—</p>
+                  )}
+                </section>
+              );
+            })}
 
         <section className="review-preview__domains">
           <h2 className="review-preview__heading">Domains</h2>
@@ -167,7 +181,10 @@ export function ReviewPreview({
     );
   }
 
-  // Domain scope
+  // Domain scope. The whole file is already drawn above this in Preview, so the
+  // domain view has nothing left to say and stays out of the way.
+  if (domainsOnly) return null;
+
   const targetName = domainName ?? scope;
   const scopeState = record.scopes[scope];
   const h2Sections = sections.filter((s) => s.level === 2 && s.text === targetName);

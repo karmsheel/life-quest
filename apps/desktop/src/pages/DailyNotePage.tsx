@@ -5,11 +5,8 @@ import {
   shiftLocalIsoDate,
 } from "@lifequest/vault-core/pure";
 import { Button } from "@/components/ui/Button";
-import {
-  LiveMarkdownEditor,
-  parseBlocks,
-  serializeBlocks,
-} from "@/components/documents/LiveMarkdownEditor";
+import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
+import { asHeld, sameNote } from "@/lib/note-body";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import type { DailyNoteIndexEntry } from "@lifequest/vault-core";
@@ -39,38 +36,7 @@ const AUTOSAVE_DELAY_MS = 700;
 type WriteOutcome = "saved" | "refused" | "failed";
 
 /**
- * The one form a body is held in on this page: the editor's own.
- *
- * The vault stores a note as its prose plus exactly one newline, and the editor
- * emits its prose alone. Every body the page holds — the day it loaded, the draft
- * the operator is typing, the file's answer to a write — goes through here first.
- * Without it a day and its own untouched draft would not compare equal, and the
- * page would write every day it merely opened, and re-cut the paragraph under the
- * caret every time a write landed.
- */
-function asHeld(markdown: string): string {
-  return serializeBlocks(parseBlocks(markdown));
-}
-
-/**
- * Two spellings of one note: is this the same thing written down?
- *
- * The box holds a note in its own form and the vault holds it in its own — the
- * file carries exactly one closing newline, and both sides drop the whitespace at
- * the end of the body. So the draft an operator left mid-sentence ("the next word
- * is not typed yet " — a space, not a typo) and the body the vault wrote from it
- * are *one note*, and comparing them as strings calls that a change. Everywhere
- * this page asks "is the day different from the file?" it has to ask it this way
- * instead: a page that answers with `!==` sees a difference where there is none,
- * and the answer it then gives the box — the file's body — is a body the box did
- * not emit, which re-cuts the paragraph under the caret and closes the line the
- * operator is writing in.
- */
-function sameNote(a: string, b: string): boolean {
-  return asHeld(a) === asHeld(b);
-}
-
-/** The weekday of a local ISO date, or null when the string is not a date. */
+ * The weekday of a local ISO date, or null when the string is not a date. */
 function weekdayOf(date: string): string | null {
   const parsed = new Date(`${date}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return null;

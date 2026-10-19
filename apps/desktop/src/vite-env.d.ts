@@ -39,7 +39,9 @@ import type {
   PlanningStub,
   Result,
   ReviewCadence,
+  ReviewPrepopulateResult,
   ReviewRecord,
+  ReviewSkill,
   ScriptApplyResult,
   ScriptRunResult,
   SavedView,
@@ -423,6 +425,21 @@ type LifequestApi = {
     period: string,
     scope: "overall" | string,
   ) => Promise<Result<PeriodPack>>;
+  /** The cadence's standing rules; the shipped default when no file exists. */
+  reviewSkillGet: (cadence: ReviewCadence) => Promise<Result<ReviewSkill>>;
+  reviewSkillWrite: (
+    cadence: ReviewCadence,
+    markdown: string,
+  ) => Promise<Result<ReviewSkill>>;
+  /**
+   * Fill a review from its cadence's skill. Runs before the agent is asked for
+   * anything, so the figures are there whether or not a gateway is up.
+   */
+  reviewPrepopulate: (
+    cadence: ReviewCadence,
+    period: string,
+    scope: "overall" | string,
+  ) => Promise<Result<ReviewPrepopulateResult>>;
   planningEnsure: (
     cadence: ReviewCadence,
     period: string,

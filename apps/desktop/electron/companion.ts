@@ -693,6 +693,78 @@ async function hermesFetch(
   return fetch(`${base}${pathname}`, { ...init, headers });
 }
 
+/**
+ * A gateway that stopped answering, said in words the operator can act on.
+ *
+ * The app attaches to a Hermes host once, at start, and holds the address it
+ * found. Nothing tells it when that host later stops — so the next call is a
+ * `fetch` against a closed port, and undici's own words for that are "fetch
+ * failed". That string was the whole of a reported failure: the operator pressed
+ * Start on a review, got "fetch failed" in the page's error slot, and had no way
+ * to know that a review had nothing to do with it and that the agent was not
+ * running.
+ *
+ * So a transport failure is named for what it is, the remembered status is
+ * dropped so the next `companionEnsure` re-probes and can bring the host back,
+ * and the message names the one control that retries it.
+ */
+const TRANSPORT_FAILURE =
+  /fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket hang up|other side closed|network|UND_ERR/i;
+
+function isTransportFailure(e: unknown): boolean {
+  if (e instanceof Error) {
+    if (e.name === "TypeError" && /fetch/i.test(e.message)) return true;
+    if (TRANSPORT_FAILURE.test(e.message)) return true;
+    const cause = (e as { cause?: unknown }).cause;
+    if (cause) {
+      const text = cause instanceof Error ? `${cause.name} ${cause.message}` : String(cause);
+      if (TRANSPORT_FAILURE.test(text)) return true;
+    }
+    return false;
+  }
+  return TRANSPORT_FAILURE.test(String(e));
+}
+
+/** Forget a host that did not answer, so the next ensure looks for one again. */
+function noteGatewaySilent(): void {
+  if (current.kind === "ready") current = { kind: "disconnected" };
+}
+
+export function agentUnreachableMessage(what: string): string {
+  return `${what}: the agent is not answering. Open Settings › Hermes and press Recheck, then try again — the review itself is unaffected.`;
+}
+
+/**
+ * Run one gateway call, naming a silent gateway rather than echoing undici.
+ *
+ * Every session call goes through this, so "the agent is not running" reads the
+ * same wherever it is hit, and a failure never leaves a dead address cached as a
+ * healthy one.
+ */
+const NOT_READY = "Companion is not ready";
+
+async function gatewayCall<T>(
+  what: string,
+  run: () => Promise<T>,
+): Promise<T | { __unreachable: string }> {
+  try {
+    return await run();
+  } catch (e) {
+    if (isTransportFailure(e) || (e instanceof Error && e.message === NOT_READY)) {
+      noteGatewaySilent();
+      return { __unreachable: agentUnreachableMessage(what) };
+    }
+    throw e;
+  }
+}
+
+function unreachableOf(value: unknown): string | null {
+  if (value && typeof value === "object" && "__unreachable" in value) {
+    return String((value as { __unreachable: unknown }).__unreachable);
+  }
+  return null;
+}
+
 async function errorDetail(res: Response, fallback: string): Promise<string> {
   try {
     const body = (await res.json()) as { error?: { message?: unknown } | string; message?: unknown };
@@ -716,9 +788,14 @@ export async function companionSessionsList(): Promise<
   { ok: true; value: HermesSession[] } | { ok: false; error: string }
 > {
   try {
-    const res = await hermesFetch("/api/sessions?limit=200");
-    if (!res.ok) return { ok: false, error: `Sessions list failed (${res.status})` };
-    return { ok: true, value: sessionsFromPayload(await res.json()) };
+    const res = await gatewayCall("Listing chats", () =>
+      hermesFetch("/api/sessions?limit=200"),
+    );
+    const unreachable = unreachableOf(res);
+    if (unreachable) return { ok: false, error: unreachable };
+    const response = res as Response;
+    if (!response.ok) return { ok: false, error: `Sessions list failed (${response.status})` };
+    return { ok: true, value: sessionsFromPayload(await response.json()) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -729,18 +806,73 @@ export async function companionSessionCreate(
 ): Promise<{ ok: true; value: HermesSession } | { ok: false; error: string }> {
   try {
     const trimmed = title.trim();
-    const res = await hermesFetch("/api/sessions", {
-      method: "POST",
-      body: JSON.stringify(trimmed ? { title: trimmed } : {}),
-    });
-    if (!res.ok) {
-      return { ok: false, error: await errorDetail(res, `Create session failed (${res.status})`) };
+    const res = await gatewayCall("Starting a chat", () =>
+      hermesFetch("/api/sessions", {
+        method: "POST",
+        body: JSON.stringify(trimmed ? { title: trimmed } : {}),
+      }),
+    );
+    const unreachable = unreachableOf(res);
+    if (unreachable) return { ok: false, error: unreachable };
+    const response = res as Response;
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: await errorDetail(response, `Create session failed (${response.status})`),
+      };
     }
-    const created = createdSessionFromPayload(await res.json(), trimmed);
+    const created = createdSessionFromPayload(await response.json(), trimmed);
     if (!created) return { ok: false, error: "Create session missing id" };
     return { ok: true, value: created };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * The door a page must come through before it promises the operator a chat.
+ *
+ * A review's Start creates or reuses a session, and until this existed it went
+ * straight at a gateway the app had attached to at start-up and never checked
+ * again — so a host that had since stopped produced "fetch failed" on a page
+ * that had nothing to do with it. Here the status is re-established first: a
+ * non-ready companion is brought up (or its reason named), and only then is a
+ * session asked for.
+ */
+export async function companionSessionsOpen(): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  if (current.kind === "ready") return { ok: true };
+  let status: PublicCompanionStatus;
+  try {
+    status = await companionEnsure();
+  } catch (e) {
+    return {
+      ok: false,
+      error: `${agentUnreachableMessage("Starting the agent")} (${e instanceof Error ? e.message : String(e)})`,
+    };
+  }
+  if (status.kind === "ready") return { ok: true };
+  return { ok: false, error: companionStatusMessage(status) };
+}
+
+/** One status as a sentence for a page that is not the setup screen. */
+export function companionStatusMessage(status: PublicCompanionStatus): string {
+  switch (status.kind) {
+    case "needs_install":
+      return "The agent needs the Hermes CLI on your PATH. Install Hermes, then press Recheck in Settings › Hermes.";
+    case "hermes_too_old":
+      return "This Hermes build does not expose the Sessions API. Update Hermes, then press Recheck in Settings › Hermes.";
+    case "port_busy":
+      return `Something else is on port ${status.port}. Free the Hermes host gateway port, then press Recheck in Settings › Hermes.`;
+    case "auth_error":
+      return "The Hermes profile key was rejected. Fix the profile .env, then press Recheck in Settings › Hermes.";
+    case "profile_error":
+      return `The agent's Hermes profile could not be prepared: ${status.message}`;
+    case "gateway_exited":
+      return `The agent stopped: ${status.detail}. Press Recheck in Settings › Hermes.`;
+    default:
+      return agentUnreachableMessage("Starting the agent");
   }
 }
 

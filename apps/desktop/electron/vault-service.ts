@@ -79,6 +79,11 @@ import {
   USER_ACTOR,
   vaultPaths,
   writeReview,
+  // The cadence's standing review rules, and the snapshot pass that fills the
+  // review from them before an interview starts.
+  getReviewSkill,
+  writeReviewSkill,
+  prepopulateReview,
   addDatabaseColumn,
   withDecisionDisplayLabels,
   exportDomainBooks,
@@ -144,7 +149,9 @@ import {
   type PlanningStub,
   type Result,
   type ReviewCadence,
+  type ReviewPrepopulateResult,
   type ReviewRecord,
+  type ReviewSkill,
   type SignalChainListResult,
   type SignalCreateInput,
   type SignalRecord,
@@ -1421,6 +1428,37 @@ export async function dailyNoteWindow(
   return withVault((root) => dailyNotesInWindow(root, { start, end }));
 }
 
+/** A cadence's standing review rules, defaulted when the file is not there. */
+export async function reviewSkillGet(
+  cadence: ReviewCadence,
+): Promise<Result<ReviewSkill>> {
+  return withVault((root) => getReviewSkill(root, cadence));
+}
+
+export async function reviewSkillWrite(
+  cadence: ReviewCadence,
+  markdown: string,
+): Promise<Result<ReviewSkill>> {
+  return withVault((root) => writeReviewSkill(root, cadence, markdown));
+}
+
+/**
+ * Fill a review from its cadence's skill before the interview starts.
+ *
+ * Reads only from the operator's own databases, and writes only inside the
+ * marker pairs it owns — the operator's prose in the same section is never
+ * touched. A locked review is reported as locked and left alone.
+ */
+export async function reviewPrepopulate(
+  cadence: ReviewCadence,
+  period: string,
+  scope: "overall" | string,
+): Promise<Result<ReviewPrepopulateResult>> {
+  return withVault((root) =>
+    prepopulateReview(root, { cadence, period, scope, actor: USER_ACTOR }),
+  );
+}
+
 export async function planningEnsure(
   cadence: ReviewCadence,
   period: string,
@@ -1432,6 +1470,7 @@ export async function planningEnsure(
 }
 
 const companionSessionFns = {
+  open: () => companion.companionSessionsOpen(),
   list: () => companion.companionSessionsList(),
   create: (title: string) => companion.companionSessionCreate(title),
 };

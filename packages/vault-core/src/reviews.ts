@@ -83,6 +83,25 @@ function extractHeadings(body: string): Array<{ level: number; text: string; idx
   return result;
 }
 
+/**
+ * A section's own prose, without the blank lines the emitter supplies itself.
+ *
+ * Every section is written as heading, one blank line, content — so blank lines
+ * captured at the edges of that content are the emitter's, not the operator's,
+ * and keeping them makes the writer grow its own file. It did: writing the same
+ * body twice turned one blank line per heading into four and then into seven,
+ * because each pass captured the previous pass's separators as content and then
+ * added its own. Blank lines INSIDE a section are the operator's and stay, which
+ * is what a paragraph break between two thoughts looks like in the file.
+ */
+function trimBlankEdges(lines: string[]): string[] {
+  let start = 0;
+  let end = lines.length;
+  while (start < end && lines[start]!.trim() === "") start += 1;
+  while (end > start && lines[end - 1]!.trim() === "") end -= 1;
+  return lines.slice(start, end);
+}
+
 function isValidReviewFile(filePath: string): boolean {
   return /^\d{4}-\d{2}-\d{2}\.md$/.test(filePath) || /^\d{4}-\d{2}\.md$/.test(filePath) || /^\d{4}-Q[1-4]\.md$/.test(filePath) || /^\d{4}\.md$/.test(filePath);
 }
@@ -163,37 +182,41 @@ function canonicalizeBody(
   const contentMap = new Map<string, string[]>();
   for (const section of sections) {
     if (section.level === 2) {
-      contentMap.set(section.text, section.content);
+      contentMap.set(section.text, trimBlankEdges(section.content));
     } else if (section.level >= 3 && section.parentH2 !== null) {
       // Only map under a domain H2, not the overall H2s
       const isOverallH2 = DOMAIN_HEADINGS.includes(section.parentH2 as (typeof DOMAIN_HEADINGS)[number]);
       if (!isOverallH2) {
-        contentMap.set(section.parentH2 + "\u0000" + section.text, section.content);
+        contentMap.set(
+          section.parentH2 + "\u0000" + section.text,
+          trimBlankEdges(section.content),
+        );
       }
     }
   }
 
-  // Build required sections
-  const out: string[] = [];
-  out.push(`# ${record.title}`);
+  // Build the file as blocks joined by one blank line, which is the same shape
+  // the skeleton is written in — so a review planted by `ensureReview` and a
+  // review rewritten by this function are the same file, and the writer is a
+  // fixed point on its own output rather than growing one blank line per save.
+  const blocks: string[] = [`# ${record.title}`];
+  const withContent = (heading: string, content: string[]): string =>
+    content.length > 0 ? `${heading}\n\n${content.join("\n")}` : heading;
 
   // Overall required H2s — preserve existing content
   for (const h of DOMAIN_HEADINGS) {
-    out.push("", `## ${h}`, "");
-    const content = contentMap.get(h);
-    if (content && content.length > 0) out.push(...content);
+    blocks.push(withContent(`## ${h}`, contentMap.get(h) ?? []));
   }
 
   // Domain sections (from frontmatter scopes, excluding overall)
   const domainSlugs = Object.keys(record.scopes).filter((s) => s !== OVERALL);
   for (const slug of domainSlugs) {
     const name = domainNames.get(slug) ?? slug;
-    out.push("", `## ${name}`, "");
+    const sub: string[] = [`## ${name}`];
     for (const h of DOMAIN_HEADINGS) {
-      out.push(`### ${h}`, "");
-      const subContent = contentMap.get(name + "\u0000" + h);
-      if (subContent && subContent.length > 0) out.push(...subContent);
+      sub.push(withContent(`### ${h}`, contentMap.get(name + "\u0000" + h) ?? []));
     }
+    blocks.push(sub.join("\n\n"));
   }
 
   // Extra headings (not required) — preserve after required blocks
@@ -208,10 +231,15 @@ function canonicalizeBody(
   for (const section of sections) {
     if (section.level === 1) continue; // H1 handled
     if (requiredTexts.has(section.text)) continue;
-    out.push("", `${"#".repeat(section.level)} ${section.text}`, ...section.content);
+    blocks.push(
+      withContent(
+        `${"#".repeat(section.level)} ${section.text}`,
+        trimBlankEdges(section.content),
+      ),
+    );
   }
 
-  return out.join("\n");
+  return blocks.join("\n\n");
 }
 
 function requireOk<T>(r: Result<T>, msg: string): asserts r is { ok: true; value: T } {
@@ -376,7 +404,12 @@ export async function writeReview(
       record.bodyMarkdown,
     );
     await atomicWriteFile(filePath, md);
-    return { ok: true, value: record };
+    // The file is the truth, and it is handed back as the file holds it. A body
+    // returned as this function built it rather than as it was written differs
+    // from the next read by the file's own trailing newline — which is the whole
+    // distance between "the review changed" and "the review did not", and the
+    // review page compares exactly those two strings after every autosave.
+    return parseReviewFile(rootPath, input.cadence, input.period);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

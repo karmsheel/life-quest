@@ -155,6 +155,8 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   "review:write",
   "review:markDone",
   "review:unlock",
+  "review:prepopulate",
+  "review:skillWrite",
   "note:write",
   "planning:ensure",
   // settings carry the currency and the FX rate
@@ -197,6 +199,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "get_review",
   "list_reviews",
   "get_period_pack",
+  "get_review_skill",
   "list_projects",
   "get_project",
   "library_list",

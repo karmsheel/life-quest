@@ -10,6 +10,7 @@ import {
   unlockReview,
   writeReview,
 } from "./reviews.ts";
+import { getReviewSkill, writeReviewSkill } from "./review-skills.ts";
 
 export const REVIEW_TOOL_DEFS: MapToolDef[] = [
   {
@@ -72,6 +73,29 @@ export const REVIEW_TOOL_DEFS: MapToolDef[] = [
         scope: { type: "string" },
       },
       required: ["cadence", "period"],
+    },
+  },
+  {
+    name: "get_review_skill",
+    description:
+      "Read a cadence's standing review rules — the file handed to every review session of that cadence",
+    parameters: {
+      type: "object",
+      properties: { cadence: { type: "string" } },
+      required: ["cadence"],
+    },
+  },
+  {
+    name: "write_review_skill",
+    description:
+      "Replace a cadence's standing review rules. Add a rule here when the operator asks for something every review of that cadence should do. A ```lifequest-snapshot fence holding one JSON directive makes the app itself fill that figure in before the session starts: {id, domain, section, title, window: \"period\"|\"all\", spec: <view spec>}. Keep every fence you are not replacing.",
+    parameters: {
+      type: "object",
+      properties: {
+        cadence: { type: "string" },
+        markdown: { type: "string" },
+      },
+      required: ["cadence", "markdown"],
     },
   },
 ];
@@ -198,6 +222,58 @@ export async function executeReviewTool(
       });
       if (!result.ok) return vaultError(result.error);
       return { pack: result.value };
+    }
+
+    case "get_review_skill": {
+      const cadence = args.cadence;
+      if (typeof cadence !== "string" || !isReviewCadence(cadence)) {
+        return { error: { code: "MALFORMED", message: `Invalid cadence: ${String(cadence)}` } };
+      }
+      const skill = await getReviewSkill(root, cadence);
+      if (!skill.ok) return vaultError(skill.error);
+      return {
+        skill: {
+          cadence: skill.value.cadence,
+          markdown: skill.value.markdown,
+          snapshots: skill.value.snapshots.map((d) => ({
+            id: d.id,
+            domain: d.domain,
+            section: d.section,
+            title: d.title,
+            window: d.window,
+          })),
+          problems: skill.value.problems,
+          fileWritten: skill.value.exists,
+        },
+      };
+    }
+
+    case "write_review_skill": {
+      const cadence = args.cadence;
+      if (typeof cadence !== "string" || !isReviewCadence(cadence)) {
+        return { error: { code: "MALFORMED", message: `Invalid cadence: ${String(cadence)}` } };
+      }
+      const markdown = args.markdown;
+      if (typeof markdown !== "string" || !markdown.trim()) {
+        return { error: { code: "MALFORMED", message: "markdown is required" } };
+      }
+      const written = await writeReviewSkill(root, cadence, markdown);
+      if (!written.ok) return vaultError(written.error);
+      return {
+        skill: {
+          cadence: written.value.cadence,
+          markdown: written.value.markdown,
+          snapshots: written.value.snapshots.map((d) => ({
+            id: d.id,
+            domain: d.domain,
+            section: d.section,
+            title: d.title,
+            window: d.window,
+          })),
+          problems: written.value.problems,
+          fileWritten: true,
+        },
+      };
     }
 
     default:

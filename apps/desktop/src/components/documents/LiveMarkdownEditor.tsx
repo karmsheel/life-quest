@@ -23,22 +23,52 @@ import { MarkdownView } from "./MarkdownView";
  * operator cannot open, and no byte of the file is invented by the renderer — the
  * box and the file agree by construction.
  *
- * The unit is the blank-line-separated block, because that is the unit the
- * markdown renderer (`doctrineMarkdownToHtml`) has: paragraphs, headings, lists
- * and fenced code. Blocks are joined with exactly one blank line, so a new block
- * *is* a paragraph break and Enter never leaves the file in a shape the operator
- * cannot see.
+ * The unit is the block, and the separator between two blocks is exactly one
+ * blank line, because that is the unit the markdown renderer
+ * (`doctrineMarkdownToHtml`) has: paragraphs, headings, lists and fenced code.
+ * Blocks are joined with exactly one blank line, so a new block *is* a paragraph
+ * break and Enter never leaves the file in a shape the operator cannot see.
+ *
+ * BLANK LINES ARE THE OPERATOR'S. A block of its own that holds nothing is a
+ * blank line in the file, and the file keeps it: two blank lines between two
+ * paragraphs stay two. This was untrue in both directions — the parser split on
+ * *two or more* newlines, so the writer's own separator swallowed the empty block
+ * on the way back in and the blank line vanished the moment the caret moved —
+ * which is what "I cannot place empty lines between paragraphs" was. The parser
+ * now splits on exactly the separator it joins with, which makes the two
+ * inverses: no keystroke can lose a block or invent one.
  */
 
-/** The note as the blocks that render in it. A note with no prose is one empty block. */
+/**
+ * The note as the blocks that render in it. A note with no prose is one empty block.
+ *
+ * Splitting on exactly `\n\n` is what makes this the inverse of
+ * `serializeBlocks`: `"A\n\n\n\nB"` is `["A", "", "B"]` — a blank paragraph the
+ * operator typed — and not the `["A", "B"]` that splitting on `\n{2,}` produces.
+ *
+ * A fenced code block is one block, so a blank line inside a fence is the code's
+ * own text rather than a break: the fence state is counted as the parts are
+ * walked, and a part read while a fence is open is appended to the block the
+ * fence opened in.
+ */
 export function parseBlocks(markdown: string): string[] {
   // The vault stores a note as its prose and exactly one newline; that newline is
   // the file's, not the last paragraph's, so it is not part of a block.
   const normalized = markdown.replace(/\r\n/g, "\n").replace(/\s+$/, "");
   if (normalized === "") return [""];
-  const parts = normalized.split(/\n{2,}/);
-  while (parts.length > 1 && parts[parts.length - 1]!.trim() === "") parts.pop();
-  return parts;
+  const blocks: string[] = [];
+  let inFence = false;
+  for (const part of normalized.split("\n\n")) {
+    if (inFence && blocks.length > 0) {
+      blocks[blocks.length - 1] = `${blocks[blocks.length - 1]!}\n\n${part}`;
+    } else {
+      blocks.push(part);
+    }
+    const fences = part.match(/^\s*```/gm)?.length ?? 0;
+    if (fences % 2 === 1) inFence = !inFence;
+  }
+  while (blocks.length > 1 && blocks[blocks.length - 1]!.trim() === "") blocks.pop();
+  return blocks;
 }
 
 /** The blocks as the markdown file holds them. A trailing empty block is not prose. */
@@ -58,6 +88,21 @@ const LIST_ITEM = /^(\s*)([-*+]|\d+\.)\s+(.*)$/;
 const LINE_PREFIX = /^(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+\.\s+|```[^\n]*)/;
 const INLINE_MARKER = /^(?:\*\*|__|\*|_|`)/;
 const LINK = /^\[([^\]]*)\]\([^)]*\)/;
+const HEADING_PREFIX = /^#{1,6}\s+/;
+
+/**
+ * The marks a keyboard shortcut writes, in the order the file will hold them.
+ *
+ * Underline is the one mark markdown has no syntax for, so it is the one tag the
+ * renderer passes through: `<u>`. That is also what Obsidian produces, which is
+ * the point — the file stays portable to any other markdown tool rather than
+ * picking up a private convention this app alone understands.
+ */
+const MARKS = {
+  b: { open: "**", close: "**" },
+  i: { open: "*", close: "*" },
+  u: { open: "<u>", close: "</u>" },
+} as const;
 
 /** True while the caret sits inside an unclosed fence, where Enter is a newline. */
 function insideFence(text: string, index: number): boolean {
@@ -81,6 +126,86 @@ function onFirstLine(text: string, index: number): boolean {
 
 function onLastLine(text: string, index: number): boolean {
   return !text.slice(index).includes("\n");
+}
+
+/**
+ * Write one inline mark around the selection, or take it off again.
+ *
+ * Every case the operator can be in is answered rather than only the easy one:
+ * a selection already wrapped in the mark is unwrapped (so the shortcut toggles,
+ * as it does in Obsidian), a selection that carries the marks inside it has those
+ * stripped, and an empty selection gets the marks with the caret left between
+ * them, ready to type into. A `setRangeText` writes the DOM without firing an
+ * event, so the `input` is dispatched by hand — that is what tells React the
+ * controlled value moved.
+ */
+function applyMark(
+  el: HTMLTextAreaElement,
+  mark: { open: string; close: string },
+): void {
+  const { open, close } = mark;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  const text = el.value;
+  const selected = text.slice(start, end);
+  let caretStart = start;
+  let caretEnd = end;
+
+  if (
+    start >= open.length &&
+    text.slice(start - open.length, start) === open &&
+    text.slice(end, end + close.length) === close
+  ) {
+    // Wrapped from the outside: take the marks off and select the prose again.
+    el.setRangeText(close, end, end + close.length, "preserve");
+    el.setRangeText("", start - open.length, start, "preserve");
+    caretStart = start - open.length;
+    caretEnd = end - open.length;
+  } else if (
+    selected.length >= open.length + close.length &&
+    selected.startsWith(open) &&
+    selected.endsWith(close)
+  ) {
+    // Wrapped inside the selection: strip its own marks.
+    const bare = selected.slice(open.length, selected.length - close.length);
+    el.setRangeText(bare, start, end, "preserve");
+    caretStart = start;
+    caretEnd = start + bare.length;
+  } else if (selected.length === 0) {
+    el.setRangeText(`${open}${close}`, start, end, "preserve");
+    caretStart = start + open.length;
+    caretEnd = caretStart;
+  } else {
+    el.setRangeText(`${open}${selected}${close}`, start, end, "preserve");
+    caretStart = start + open.length;
+    caretEnd = end + open.length;
+  }
+
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.focus();
+  el.setSelectionRange(caretStart, caretEnd);
+}
+
+/**
+ * Make the caret's own line a heading of this level, or prose again at level 0.
+ *
+ * Any heading the line already carries is replaced rather than stacked, so
+ * pressing `Ctrl+2` on an `# H1` gives the H2 the operator asked for.
+ */
+function applyHeading(el: HTMLTextAreaElement, level: number): void {
+  const text = el.value;
+  const line = lineAround(text, el.selectionStart);
+  const bare = line.text.replace(HEADING_PREFIX, "");
+  const wrapped = level === 0 ? bare : `${"#".repeat(level)} ${bare}`;
+  const caret = Math.max(
+    0,
+    el.selectionStart - line.start + (wrapped.length - line.text.length),
+  );
+  el.setRangeText(wrapped, line.start, line.end, "preserve");
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.focus();
+  const at = line.start + Math.min(caret, wrapped.length);
+  el.setSelectionRange(at, at);
 }
 
 /**
@@ -353,6 +478,26 @@ export function LiveMarkdownEditor({
     const text = el.value;
     const index = editing;
 
+    // The formatting keys, which are the ones an operator arrives with from
+    // Obsidian: Ctrl/Cmd+B, I and U for the inline marks, and Ctrl/Cmd+1..6 for
+    // a heading on the caret's own line (0 puts it back to prose). They only
+    // claim the keystroke when nothing else is held, so Ctrl+Shift+... stays
+    // whatever the platform means by it.
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) {
+      const key = event.key.toLowerCase();
+      const mark = key === "b" ? MARKS.b : key === "i" ? MARKS.i : key === "u" ? MARKS.u : null;
+      if (mark) {
+        event.preventDefault();
+        applyMark(el, mark);
+        return;
+      }
+      if (/^[0-6]$/.test(event.key)) {
+        event.preventDefault();
+        applyHeading(el, Number.parseInt(event.key, 10));
+        return;
+      }
+    }
+
     if (
       event.key === "Enter" &&
       !event.shiftKey &&
@@ -553,12 +698,19 @@ export function LiveMarkdownEditor({
               onKeyDown={onBlockKeyDown(index)}
             >
               {block.trim() === "" ? (
-                // An empty paragraph with nothing to print is an empty line. A page
-                // that carries no placeholder prints none, rather than printing an
-                // empty one on every blank paragraph the operator opens.
-                placeholder ? (
-                  <p className="note-live__placeholder">{placeholder}</p>
-                ) : null
+                // An empty paragraph is a blank line, and it draws as one: the
+                // operator typed it, the file holds it, and it has to be visible
+                // or the thing they just did looks like it did nothing. The LAST
+                // block is the exception — it is the empty line under the note
+                // waiting to be written, and a trailing blank line is not prose,
+                // so it prints the placeholder or nothing at all.
+                index === blocks.length - 1 ? (
+                  placeholder ? (
+                    <p className="note-live__placeholder">{placeholder}</p>
+                  ) : null
+                ) : (
+                  <p className="note-live__blank" aria-hidden="true" />
+                )
               ) : (
                 <MarkdownView markdown={block} slug={slug} />
               )}

@@ -208,6 +208,84 @@ export type ReviewIndexEntry = {
   error?: string;
 };
 
+/**
+ * One standing rule that fills part of a review before the interview starts.
+ *
+ * A directive is the machine half of a review skill: the operator's prose in
+ * `.lifequest/reviews/<cadence>.md` says what the session should do, and a
+ * `lifequest-snapshot` fence in that same file says what the app should go and
+ * read. It names a domain and one of its four sub-headings, and carries an
+ * ordinary view spec — the same vocabulary the dashboard cards use — so a
+ * snapshot is never a second query language to keep in step.
+ */
+export type ReviewSnapshotDirective = {
+  /** Stable across rewrite: this is what the written block is found by. */
+  id: string;
+  /** The domain slug whose section the block belongs in, e.g. "financial". */
+  domain: string;
+  /** The `###` heading inside that domain, e.g. "Look-back". */
+  section: string;
+  /** The block's own caption, printed bold above its table. */
+  title: string;
+  /**
+   * `period` rewrites the spec's window to the exact bounds of the review
+   * being read, which is what makes a weekly snapshot the week's own numbers.
+   * `all` leaves the spec's window as it was written.
+   */
+  window: "period" | "all";
+  spec: Omit<ViewSpec, "schemaVersion">;
+};
+
+/** How one directive ended up, named so the operator is told what happened. */
+export type ReviewSnapshotOutcome = {
+  id: string;
+  domain: string;
+  section: string;
+  title: string;
+  status: "written" | "unchanged" | "skipped" | "failed";
+  /** Why it was skipped or how it failed. Absent on `written`/`unchanged`. */
+  reason?: string;
+  /** How many groups the block drew. Absent when nothing ran. */
+  groups?: number;
+};
+
+/**
+ * A cadence's review skill: the operator's standing rules for that cadence,
+ * plus the snapshot directives the app executes on their behalf.
+ *
+ * Stored at `.lifequest/reviews/<cadence>.md`. `exists` is false when the file
+ * has never been written and the value is the shipped default — reading a
+ * skill never creates a file, so the default can be improved by a release.
+ */
+export type ReviewSkill = {
+  cadence: ReviewCadence;
+  markdown: string;
+  snapshots: ReviewSnapshotDirective[];
+  /** Directives a fence failed to yield, each with the reason it did not. */
+  problems: string[];
+  exists: boolean;
+};
+
+/** What one pre-population pass did to a review, and why for each part. */
+export type ReviewPrepopulateResult = {
+  cadence: ReviewCadence;
+  period: string;
+  scope: string;
+  outcomes: ReviewSnapshotOutcome[];
+  /** How many directives ended up written or refreshed. */
+  applied: number;
+  /**
+   * Domain sections the pass had to plant because a rule named them and the
+   * review had none. Named so the operator is told the review grew a section
+   * rather than finding one they did not expect.
+   */
+  planted: string[];
+  /** True when the review is locked, so nothing was touched. */
+  locked: boolean;
+  /** The review body after the pass — the file's own, unchanged when locked. */
+  bodyMarkdown: string;
+};
+
 export type PlanningStub = {
   cadence: ReviewCadence;
   period: string;

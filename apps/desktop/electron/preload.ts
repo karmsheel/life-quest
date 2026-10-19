@@ -423,6 +423,16 @@ const lifequest = {
     ipcRenderer.invoke("review:periodPack", cadence, period, scope) as Promise<
       Result<unknown>
     >,
+  reviewSkillGet: (cadence: string) =>
+    ipcRenderer.invoke("review:skillGet", cadence) as Promise<Result<unknown>>,
+  reviewSkillWrite: (cadence: string, markdown: string) =>
+    ipcRenderer.invoke("review:skillWrite", cadence, markdown) as Promise<
+      Result<unknown>
+    >,
+  reviewPrepopulate: (cadence: string, period: string, scope: string) =>
+    ipcRenderer.invoke("review:prepopulate", cadence, period, scope) as Promise<
+      Result<unknown>
+    >,
   planningEnsure: (cadence: string, period: string, scope: string) =>
     ipcRenderer.invoke("planning:ensure", cadence, period, scope) as Promise<
       Result<unknown>

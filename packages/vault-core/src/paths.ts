@@ -39,6 +39,12 @@ export function vaultPaths(root: string) {
       safeJoin(rootPath, "reviews", cadence),
     reviewMd: (cadence: string, period: string) =>
       safeJoin(rootPath, "reviews", cadence, `${period}.md`),
+    // The cadence's standing rules for a review session. It lives under
+    // `.lifequest` rather than beside the periods so that a directory scan of
+    // `reviews/<cadence>/` still finds review files and nothing else.
+    reviewSkillsDir: path.join(rootPath, ".lifequest", "reviews"),
+    reviewSkillMd: (cadence: string) =>
+      safeJoin(rootPath, ".lifequest", "reviews", `${cadence}.md`),
     planningDir: path.join(rootPath, "planning"),
     planningCadenceDir: (cadence: string) =>
       safeJoin(rootPath, "planning", cadence),

@@ -421,10 +421,12 @@ async function main() {
   fs.writeFileSync(path.join(artifactsDir, "live-editor-locked.png"), lockedShot.toPNG());
 
   // ── 6. the review editor is the same box ────────────────────────────────
+  // The review page IS the document now: the box is there on arrival, with no
+  // Edit control to press first, and it writes itself rather than waiting for a
+  // Save. Both of those are the change being checked, so neither is a step here.
   await win.webContents.executeJavaScript("window.liveEditorLocked = false");
   await win.webContents.executeJavaScript(`window.liveEditorGoto("/review/weekly")`);
   await waitFor(win, `Boolean(document.querySelector(".review-page__actions"))`, "the review page");
-  await clickLabel(win, ".review-page__actions", "Edit");
   await waitFor(win, `Boolean(document.querySelector(".note-live"))`, "the review editor");
   const review = await sample(win);
   checks.review = review;
@@ -440,6 +442,13 @@ async function main() {
   }
   if (!(review.body ?? "").includes("Two walks, and one late night.")) {
     failure(`the rendered review read ${JSON.stringify(review.body)}`);
+  }
+  const reviewActions = await win.webContents.executeJavaScript(
+    `[...document.querySelectorAll(".review-page__actions button")].map((b) => b.textContent?.trim())`,
+  );
+  checks.reviewActions = reviewActions;
+  if (reviewActions.includes("Edit") || reviewActions.includes("Save")) {
+    failure(`the review page still offers an Edit/Save pair: ${JSON.stringify(reviewActions)}`);
   }
   await openBlock(win, 2);
   const reviewOpened = await sample(win);
@@ -461,7 +470,8 @@ async function main() {
   const expectedReview = "# Week of 12 Oct 2026\n\n## Health\n\n" + reviewNext;
   await type(win, reviewNext);
   await leaveTheLine(win);
-  await clickLabel(win, ".review-page__actions", "Save");
+  // No Save control: the page writes itself a beat after the typing stops, and
+  // leaving the line settles it. The ledger is what is waited on, not a clock.
   await waitFor(
     win,
     "(window.liveEditorReviewWrites ?? []).length > 0",
@@ -475,6 +485,15 @@ async function main() {
     failure(
       `the review write carried ${JSON.stringify(writes[0]?.body)}, expected ${JSON.stringify(expectedReview)}`,
     );
+  }
+  // A second beat changes nothing: the page is not writing the review it just
+  // wrote. Without this the autosave could loop and the check above would still
+  // pass on its first write.
+  await new Promise((resolve) => setTimeout(resolve, 1_200));
+  const settled = await win.webContents.executeJavaScript("window.liveEditorReviewWrites");
+  checks.reviewWritesSettled = settled.length;
+  if (settled.length !== 1) {
+    failure(`the review was written ${settled.length} times for one edit`);
   }
 
   // ── 7. nothing unexpected, nothing on fire ──────────────────────────────

@@ -752,6 +752,30 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("note:window", (_e, start: string, end: string) =>
     vault.dailyNoteWindow(start, end),
   );
+  // A cadence's standing review rules, and the snapshot pass the review page
+  // runs before it asks the agent for anything.
+  ipcMain.handle(
+    "review:skillGet",
+    (_e, cadence: Parameters<typeof vault.reviewSkillGet>[0]) =>
+      vault.reviewSkillGet(cadence),
+  );
+  ipcMain.handle(
+    "review:skillWrite",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewSkillWrite>[0],
+      markdown: string,
+    ) => vault.reviewSkillWrite(cadence, markdown),
+  );
+  ipcMain.handle(
+    "review:prepopulate",
+    (
+      _e,
+      cadence: Parameters<typeof vault.reviewPrepopulate>[0],
+      period: string,
+      scope: Parameters<typeof vault.reviewPrepopulate>[2],
+    ) => vault.reviewPrepopulate(cadence, period, scope),
+  );
   ipcMain.handle(
     "planning:ensure",
     (

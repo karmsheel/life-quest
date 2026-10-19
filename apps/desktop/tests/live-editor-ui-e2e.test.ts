@@ -104,7 +104,9 @@ type Report = {
     lockedAfterClick: Box;
     review: Box;
     reviewOpened: Box;
+    reviewActions: string[];
     reviewWrites: ReviewWrite[];
+    reviewWritesSettled: number;
     unexpectedBridgeCalls: string[];
     consoleErrors: string[];
   };
@@ -196,6 +198,19 @@ describe("live editor ui e2e", () => {
     assert.equal(review.blockCount, 3, "the review did not render its own file");
     assert.equal(review.showsMarkers, false, "raw markdown is painted in the review box");
     assert.match(String(review.body), /Two walks, and one late night\./);
+    // The review document is the page: no Edit/Save pair gates it any more, and
+    // these two names appearing again would mean the document went back behind a
+    // mode the operator has to enter.
+    assert.equal(
+      report.checks.reviewActions.includes("Edit"),
+      false,
+      "the review page offers an Edit control again",
+    );
+    assert.equal(
+      report.checks.reviewActions.includes("Save"),
+      false,
+      "the review page offers a Save control again",
+    );
     assert.equal(
       report.checks.reviewOpened.inputValue,
       "Two walks, and **one** late night.",
@@ -207,6 +222,11 @@ describe("live editor ui e2e", () => {
       report.checks.reviewWrites[0]!.body.trimEnd(),
       "# Week of 12 Oct 2026\n\n## Health\n\nTwo walks, and three late nights.",
       "the review file did not get the note the box held",
+    );
+    assert.equal(
+      report.checks.reviewWritesSettled,
+      1,
+      "the review page kept writing a review it had already written",
     );
 
     // Nothing reached the bridge that this rig does not model, and the pages
