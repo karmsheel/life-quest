@@ -8,11 +8,20 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, Monitor, Moon, Palette, Settings, Sun } from "lucide-react";
+import {
+  ChevronRight,
+  Monitor,
+  Moon,
+  Palette,
+  Settings,
+  Sun,
+} from "lucide-react";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import type { ThemePreference } from "@/lib/theme";
-import { filterSkinsForPreference, resolveSkinPalette } from "@/lib/themes/presets";
+import { filterSkinsForPreference } from "@/lib/themes/presets";
+import type { ForgeSkin } from "@/lib/themes/types.ts";
+import { SkinTile } from "./SkinTile";
 
 const THEME_OPTIONS = [
   {
@@ -42,8 +51,15 @@ export function SettingsMenu({
   placement?: "bottom-end" | "right-end";
 }) {
   const navigate = useNavigate();
-  const { preference, setPreference, resolved, skinName, setSkin, availableSkins } =
-    useTheme();
+  const {
+    preference,
+    setPreference,
+    resolved,
+    skinName,
+    setSkin,
+    availableSkins,
+    favoriteSkins,
+  } = useTheme();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
@@ -54,6 +70,17 @@ export function SettingsMenu({
   const skins = useMemo(
     () => filterSkinsForPreference(availableSkins, preference),
     [availableSkins, preference],
+  );
+
+  /*
+   * The quick menu IS the starred list: nothing else is offered here, and an
+   * uncurated install has every theme starred, so the menu opens on the full set
+   * until the operator starts narrowing it in Appearance. Registry order, not
+   * starred order, so the menu and the Appearance grid never disagree.
+   */
+  const quickSkins = useMemo<ForgeSkin[]>(
+    () => skins.filter((skin) => favoriteSkins.includes(skin.name)),
+    [favoriteSkins, skins],
   );
 
   const skinHint =
@@ -156,35 +183,46 @@ export function SettingsMenu({
             <span>Skin</span>
           </div>
           <p className="settings-menu__skin-hint">{skinHint}</p>
-          <div className="settings-menu__skin-grid" role="group" aria-label="Built-in skins">
-            {skins.map((skin) => {
-              const active = skinName === skin.name;
-              const palette = resolveSkinPalette(skin, resolved);
-              return (
-                <button
+
+          {quickSkins.length > 0 ? (
+            <div
+              className="settings-menu__skin-grid"
+              role="group"
+              aria-label="Starred themes"
+            >
+              {quickSkins.map((skin) => (
+                <SkinTile
                   key={skin.name}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  aria-label={skin.label}
-                  title={`${skin.label} — ${skin.description}`}
-                  className={`settings-menu__skin-option${active ? " is-active" : ""}`}
-                  onClick={() => setSkin(skin.name)}
-                >
-                  <span
-                    className="settings-menu__skin-swatch"
-                    style={
-                      {
-                        "--skin-bg": palette.background,
-                        "--skin-primary": palette.primary,
-                      } as CSSProperties
-                    }
-                  />
-                  <span className="settings-menu__skin-label">{skin.label}</span>
-                </button>
-              );
-            })}
-          </div>
+                  skin={skin}
+                  active={skinName === skin.name}
+                  mode={resolved}
+                  onSelect={() => setSkin(skin.name)}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="settings-menu__quick-empty" role="status">
+              {favoriteSkins.length === 0 ? (
+                <>
+                  No starred themes. Star the ones you want here in{" "}
+                  <button
+                    type="button"
+                    className="settings-menu__quick-empty-link"
+                    onClick={() => {
+                      navigate("/settings?tab=appearance");
+                      setOpen(false);
+                    }}
+                  >
+                    Appearance
+                  </button>
+                  .
+                </>
+              ) : (
+                "None of your starred themes fits this colour mode."
+              )}
+            </p>
+          )}
+
           <div className="settings-menu__mode-switcher">
             <SegmentedControl
               value={preference}

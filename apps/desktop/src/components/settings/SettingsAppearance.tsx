@@ -36,7 +36,7 @@ export function SettingsAppearance() {
       <SettingsRow
         className="settings-card__row--theme"
         label="Theme"
-        description="Pick a built-in skin. System shows themes with both day and night palettes; Light and Dark show only matching skins."
+        description="Pick a theme; star the ones you want in the quick settings menu. System shows themes with both day and night palettes; Light and Dark show only matching skins."
         action={
           <SegmentedControl
             value={preference}

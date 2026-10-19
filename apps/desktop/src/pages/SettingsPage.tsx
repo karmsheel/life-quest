@@ -1,21 +1,46 @@
-import { useSearchParams } from "react-router-dom";
-import { SettingsContent } from "@/components/settings/SettingsContent";
+import { useCallback } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { SettingsOverlay } from "@/components/settings/SettingsOverlay";
 import {
   resolveSettingsView,
   type SettingsViewId,
 } from "@/lib/settings-views";
 
+/**
+ * The settings sheet, as the router sees it.
+ *
+ * The tab lives in the query string so a link can open one page of it
+ * (`/settings?tab=domains`, which the old `/domains` route redirects to), and
+ * closing goes *back* to the page the sheet was opened over rather than to a
+ * fixed route: the sheet is a surface on top of the app, so leaving it should
+ * put the operator back where they were. A cold start that opens `/settings`
+ * directly has nowhere to go back to, so it falls through to the dashboard.
+ */
 export default function SettingsPage() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const activeView = resolveSettingsView(params.get("tab"));
 
-  function onViewChange(view: SettingsViewId) {
-    setParams({ tab: view }, { replace: true });
-  }
+  const onViewChange = useCallback(
+    (view: SettingsViewId) => {
+      setParams({ tab: view }, { replace: true });
+    },
+    [setParams],
+  );
+
+  const onClose = useCallback(() => {
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate("/home", { replace: true });
+  }, [navigate]);
 
   return (
-    <div className="settings-page-shell">
-      <SettingsContent activeView={activeView} onViewChange={onViewChange} />
-    </div>
+    <SettingsOverlay
+      activeView={activeView}
+      onViewChange={onViewChange}
+      onClose={onClose}
+    />
   );
 }

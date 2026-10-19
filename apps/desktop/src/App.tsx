@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   HashRouter,
   Navigate,
@@ -34,6 +34,7 @@ import ReviewPage from "@/pages/ReviewPage";
 import WelcomePage from "@/pages/WelcomePage";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
+import { useSettingsBackground } from "@/components/settings/useSettingsBackground";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
@@ -59,6 +60,12 @@ function RequireVault({ children }: { children: ReactNode }) {
 function AppRoutes() {
   const { snapshot, booting } = useVault();
   const { status, ensuring } = useCompanion();
+  /*
+   * Settings is a sheet over the app, not a page of it (see `SettingsOverlay`),
+   * so the routes keep rendering the page the operator was on while `/settings`
+   * is in the address bar, and the sheet is painted above it.
+   */
+  const { background, sheetOverBackground } = useSettingsBackground();
 
   if (ensuring || !status || status.kind !== "ready") {
     return <CompanionSetupScreen />;
@@ -69,62 +76,65 @@ function AppRoutes() {
   }
 
   return (
-    <Routes>
-      <Route path="/welcome" element={<WelcomePage />} />
-      <Route
-        element={
-          <RequireVault>
-            <AppShell />
-          </RequireVault>
-        }
-      >
-        <Route path="/home" element={<HomePage />} />
-        <Route path="/data" element={<DataPage />} />
-        <Route path="/data/:slug/:dbId" element={<DatabasePage />} />
-        <Route path="/pages" element={<PagesPage />} />
-        <Route path="/pages/:slug/:pageId" element={<PageCanvasPage />} />
+    <>
+      <Routes location={background}>
+        <Route path="/welcome" element={<WelcomePage />} />
         <Route
-          path="/domains"
-          element={<Navigate to="/settings?tab=domains" replace />}
-        />
-        <Route path="/chain" element={<ChainPage />} />
-        <Route path="/dream" element={<DreamPage />} />
+          element={
+            <RequireVault>
+              <AppShell />
+            </RequireVault>
+          }
+        >
+          <Route path="/home" element={<HomePage />} />
+          <Route path="/data" element={<DataPage />} />
+          <Route path="/data/:slug/:dbId" element={<DatabasePage />} />
+          <Route path="/pages" element={<PagesPage />} />
+          <Route path="/pages/:slug/:pageId" element={<PageCanvasPage />} />
+          <Route
+            path="/domains"
+            element={<Navigate to="/settings?tab=domains" replace />}
+          />
+          <Route path="/chain" element={<ChainPage />} />
+          <Route path="/dream" element={<DreamPage />} />
+          <Route
+            path="/dream/:slug/:kind"
+            element={<DoctrineEditorPage backTo="/dream" />}
+          />
+          <Route path="/vision" element={<VisionPage />} />
+          <Route
+            path="/vision/:slug/:kind"
+            element={<DoctrineEditorPage backTo="/vision" />}
+          />
+          <Route path="/goals" element={<GoalsPage />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/chart" element={<ChartPage />} />
+          <Route path="/track" element={<ArchitecturePage />} />
+          <Route
+            path="/track/:slug/:kind"
+            element={<DoctrineEditorPage backTo="/track" />}
+          />
+          <Route path="/act" element={<ActPage />} />
+          <Route path="/notes" element={<DailyNotePage />} />
+          <Route path="/daily" element={<DailySchedulePage />} />
+          <Route path="/review/:cadence" element={<ReviewPage />} />
+          <Route path="/documents" element={<DocumentsPage />} />
+          <Route path="/decisions" element={<DecisionsPage />} />
+          <Route path="/log" element={<LogPage />} />
+          <Route path="/personnel" element={<PersonnelPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Route>
         <Route
-          path="/dream/:slug/:kind"
-          element={<DoctrineEditorPage backTo="/dream" />}
+          path="/"
+          element={<Navigate to={snapshot ? "/home" : "/welcome"} replace />}
         />
-        <Route path="/vision" element={<VisionPage />} />
         <Route
-          path="/vision/:slug/:kind"
-          element={<DoctrineEditorPage backTo="/vision" />}
+          path="*"
+          element={<Navigate to={snapshot ? "/home" : "/welcome"} replace />}
         />
-        <Route path="/goals" element={<GoalsPage />} />
-        <Route path="/projects" element={<ProjectsPage />} />
-        <Route path="/chart" element={<ChartPage />} />
-        <Route path="/track" element={<ArchitecturePage />} />
-        <Route
-          path="/track/:slug/:kind"
-          element={<DoctrineEditorPage backTo="/track" />}
-        />
-        <Route path="/act" element={<ActPage />} />
-        <Route path="/notes" element={<DailyNotePage />} />
-        <Route path="/daily" element={<DailySchedulePage />} />
-        <Route path="/review/:cadence" element={<ReviewPage />} />
-        <Route path="/documents" element={<DocumentsPage />} />
-        <Route path="/decisions" element={<DecisionsPage />} />
-        <Route path="/log" element={<LogPage />} />
-        <Route path="/personnel" element={<PersonnelPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-      </Route>
-      <Route
-        path="/"
-        element={<Navigate to={snapshot ? "/home" : "/welcome"} replace />}
-      />
-      <Route
-        path="*"
-        element={<Navigate to={snapshot ? "/home" : "/welcome"} replace />}
-      />
-    </Routes>
+      </Routes>
+      {sheetOverBackground ? <SettingsPage /> : null}
+    </>
   );
 }
 

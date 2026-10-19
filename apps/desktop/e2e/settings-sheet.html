@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>LifeQuest settings sheet harness</title>
+    <style>
+      /* Rig chrome only. Everything inside the sheet is the app's own CSS. */
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+
+      .rig-chrome {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        height: 3rem;
+        padding: 0 0.75rem;
+        border-bottom: 1px solid var(--border-soft);
+        background: var(--canvas-base);
+      }
+
+      .rig-chrome__spacer {
+        flex: 1 1 auto;
+      }
+
+      .rig-link {
+        padding: 0.25rem 0.5rem;
+        border: 0;
+        border-radius: var(--radius-xs);
+        background: transparent;
+        color: var(--text-muted);
+        font: inherit;
+        font-size: 0.75rem;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      .rig-link:hover {
+        background: var(--bg-subtle);
+        color: var(--text);
+      }
+
+      .rig-background {
+        padding: 1.5rem;
+        color: var(--text);
+      }
+
+      .rig-background h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.5rem;
+      }
+
+      .rig-background p {
+        margin: 0;
+        max-width: 34rem;
+        color: var(--text-muted);
+        font-size: 0.875rem;
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./settings-sheet.tsx"></script>
+  </body>
+</html>

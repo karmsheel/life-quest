@@ -3478,24 +3478,181 @@ a.home-mini-list__link:hover {
   font-size: 0.875rem;
 }
 
-/* —— Settings (Hermes Forge layout) —— */
+/* —— Settings sheet (Hermes Desktop's full-page overlay) —— */
+/* Settings are a surface over the page you were on, not a page of their own:
+   the window dims and blurs, and a panel takes ~90% of it. Three ways out — the
+   cross at the top right, a press on the scrim, Escape — and one search bar
+   beside it that narrows the section list in place. */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  /* Above the studio's chrome (the rail paints at 20) and deliberately BELOW the
+     app's own questions (`.confirm-dialog-backdrop` at 60, the update dialog at
+     70): a settings action that asks — deleting a domain — must ask over the
+     sheet, not behind it. */
+  z-index: 50;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  /* 5vmin a side leaves the panel at ~90% of the window's shorter axis. The
+     clamp floors it on a small window, where a percentage of a percentage
+     would leave no sheet to read. */
+  padding: clamp(1.25rem, 5vmin, 3.5rem);
+  background: color-mix(in srgb, var(--canvas-base) 38%, transparent);
+  -webkit-backdrop-filter: blur(7px) saturate(0.94);
+  backdrop-filter: blur(7px) saturate(0.94);
+}
+
+.settings-overlay__panel {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-overlay__chrome {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+
+/* The cross sits at the sheet's trailing edge, the corner a hand reaches for
+   when the frame has no title bar of its own to close from. */
+.settings-overlay__close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out);
+}
+
+.settings-overlay__close:hover {
+  border-color: var(--border-soft);
+  background: var(--bg-subtle);
+  color: var(--text-strong);
+}
+
+.settings-overlay__close:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.settings-overlay__search {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.4rem;
+  height: 1.875rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-soft);
+  transition:
+    border-color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+
+.settings-overlay__search:focus-within {
+  border-color: var(--accent);
+  background: var(--bg-elevated);
+  color: var(--accent);
+}
+
+.settings-overlay__search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.2;
+  outline: none;
+  appearance: none;
+}
+
+.settings-overlay__search-input::placeholder {
+  color: var(--text-soft);
+}
+
+/* One clear affordance, the app's own; not the platform's × on top of it. */
+.settings-overlay__search-input::-webkit-search-cancel-button,
+.settings-overlay__search-input::-webkit-search-decoration {
+  display: none;
+  appearance: none;
+}
+
+.settings-overlay__search-clear {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.settings-overlay__search-clear:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+/*
+ * The update rig (`e2e/update-settings.tsx`) renders the panels inside this
+ * wrapper, outside the sheet, so it keeps a full-height column of its own. The
+ * sheet no longer uses it: the overlay owns the frame.
+ */
 .settings-page-shell {
-  margin: -1.25rem -1.5rem -1.5rem;
-  min-height: calc(100% + 2.75rem);
-  height: calc(100% + 2.75rem);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   background: var(--bg-elevated);
 }
 
 .settings-overlay__layout {
   display: flex;
-  min-height: 100%;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
 }
 
 .settings-overlay__layout--split {
   display: grid;
   grid-template-columns: 13rem minmax(0, 1fr);
+  min-height: 0;
 }
 
 .settings-overlay__nav {
@@ -3557,6 +3714,43 @@ a.home-mini-list__link:hover {
   background: var(--accent-tint);
   color: var(--accent);
   font-weight: 500;
+}
+
+.settings-nav-item > svg {
+  flex: 0 0 auto;
+}
+
+.settings-nav-item__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What the search landed on, when it was not the row's own label: "ember"
+   appearing under Appearance is the difference between a filter that looks
+   arbitrary and one the operator can read. */
+.settings-nav-item__match {
+  margin-left: auto;
+  padding-left: 0.5rem;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-nav-item.is-active .settings-nav-item__match {
+  color: var(--accent);
+  opacity: 0.75;
+}
+
+.settings-overlay__nav-empty {
+  margin: 0.25rem 0.5rem;
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  line-height: 1.45;
 }
 
 .settings-overlay__mobile-nav {
@@ -3655,6 +3849,180 @@ a.home-mini-list__link:hover {
 
 .settings-appearance__skins .settings-menu__skin-grid {
   grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+}
+
+.settings-appearance__skin-starred {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.6rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.6875rem;
+}
+
+.settings-appearance__skin-starred svg {
+  flex: 0 0 auto;
+}
+
+/* —— Install a theme / the installed list —— */
+/* Below the grid, ruled off from it: the grid is what the app wears, this is what
+   was brought in and can be taken away again. */
+.settings-theme-install {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-theme-install__copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings-theme-install__label {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.settings-theme-install__hint {
+  margin: 0.15rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.settings-theme-install__button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.settings-theme-install__message {
+  margin: 0.5rem 0 0;
+}
+
+.settings-theme-installed {
+  margin-top: 0.85rem;
+}
+
+.settings-theme-installed__list {
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.settings-theme-installed__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  font-size: 0.75rem;
+}
+
+.settings-theme-installed__name {
+  color: var(--text);
+}
+
+.settings-theme-installed__id {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-theme-installed__remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+
+.settings-theme-installed__remove:hover {
+  border-color: var(--red-border);
+  color: var(--red);
+}
+
+/* —— Theme tile, with its star —— */
+/* The picker's tile is a radio; its star is a sibling button rather than a
+   child, and it sits at the tile's trailing edge on the one line the tile has. */
+.skin-tile {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.skin-tile > .settings-menu__skin-option {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.skin-tile--starrable > .settings-menu__skin-option {
+  padding-right: 1.45rem;
+}
+
+.skin-tile__star {
+  position: absolute;
+  top: 50%;
+  right: 0.1875rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition:
+    color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out);
+}
+
+.skin-tile__star:hover {
+  background: var(--bg-muted);
+  color: var(--accent);
+}
+
+.skin-tile__star:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.skin-tile__star.is-on {
+  color: var(--accent);
+}
+
+.skin-tile__star.is-on svg {
+  fill: currentColor;
+}
+
+.skin-tile__star svg {
+  fill: none;
 }
 
 .settings-vault {
@@ -5750,6 +6118,32 @@ button.chat-panel__activity-line:hover {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 0.375rem;
+}
+
+/*
+ * The quick menu shows the starred themes and nothing else, so the only other
+ * state it can be in is empty. That state has to say what to do about it rather
+ * than leave a hole where the grid was.
+ */
+.settings-menu__quick-empty {
+  margin: 0;
+  padding: 0.5rem 0.4rem;
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--radius-sm);
+  color: var(--text-soft);
+  font-size: 0.6875rem;
+  line-height: 1.45;
+}
+
+.settings-menu__quick-empty-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }
 
 .settings-menu__skin-option {

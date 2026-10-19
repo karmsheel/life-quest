@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useState,
@@ -15,8 +16,20 @@ import {
   type ThemePreference,
 } from "@/lib/theme";
 import { applySkin } from "@/lib/themes/apply-skin";
+import {
+  getStoredSkinFavorites,
+  persistSkinFavorites,
+  toggleSkinFavorite,
+  withoutSkinFavorite,
+} from "@/lib/themes/favorites";
+import { DEFAULT_SKIN_NAME, isBuiltinSkinName } from "@/lib/themes/presets";
 import { listAllSkins, resolveSkin } from "@/lib/themes/registry";
 import { getStoredSkinName, persistSkinName } from "@/lib/themes/storage";
+import {
+  installTheme,
+  uninstallTheme,
+  type InstallResult,
+} from "@/lib/themes/user-themes";
 import type { ForgeSkin } from "@/lib/themes/types";
 
 interface ThemeContextValue {
@@ -26,7 +39,21 @@ interface ThemeContextValue {
   skin: ForgeSkin;
   skinName: string;
   setSkin: (skinName: string) => void;
+  /** Every theme this window can wear: the shipped ones, then the installed ones. */
   availableSkins: ForgeSkin[];
+  /** The themes the operator brought in, in install order. */
+  installedSkins: ForgeSkin[];
+  /**
+   * The starred names — the quick settings menu's whole list. Never empty by
+   * default: an install that has never curated anything has every theme starred.
+   */
+  favoriteSkins: string[];
+  isSkinFavorite: (skinName: string) => boolean;
+  toggleSkinFavorite: (skinName: string) => void;
+  /** Prove a parsed theme JSON and add it to what this window can wear. */
+  installSkin: (raw: unknown) => InstallResult;
+  /** Take an installed theme back out, unstarring it and leaving it if it is worn. */
+  uninstallSkin: (skinName: string) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -55,8 +82,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     resolveThemePreference(getStoredTheme()),
   );
   const [skinName, setSkinNameState] = useState(getStoredSkinName);
+  /*
+   * `null` means the operator has never curated: every theme is starred, which is
+   * what puts the full set in the quick settings menu on a fresh install. The
+   * first star they clear or add persists an explicit list (see `favoriteSkins`).
+   */
+  const [storedFavorites, setStoredFavorites] = useState<string[] | null>(
+    getStoredSkinFavorites,
+  );
+  const [availableSkins, setAvailableSkins] = useState<ForgeSkin[]>(listAllSkins);
 
-  const availableSkins = useMemo(() => listAllSkins(), []);
+  const installedSkins = useMemo(
+    () => availableSkins.filter((skin) => !isBuiltinSkinName(skin.name)),
+    [availableSkins],
+  );
+
+  const favoriteSkins = useMemo(
+    () => storedFavorites ?? availableSkins.map((skin) => skin.name),
+    [availableSkins, storedFavorites],
+  );
 
   const applyCurrentSkin = useCallback((name: string, mode: "light" | "dark") => {
     applySkin(resolveSkin(name), mode);
@@ -108,6 +152,80 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const skin = useMemo(() => resolveSkin(skinName), [skinName]);
 
+  /**
+   * What the curated list is before the operator has curated anything: every
+   * theme this window can wear. Passed into the state updater rather than read
+   * from the render's `favoriteSkins`, so two presses that arrive in the same tick
+   * compose — the second one sees the list the first one left behind.
+   */
+  const baseFavorites = availableSkins.map((available) => available.name);
+
+  /** Star or unstar one theme; the first press materialises the default list. */
+  const toggleFavoriteSkin = useCallback(
+    (name: string) => {
+      setStoredFavorites((current) => toggleSkinFavorite(current ?? baseFavorites, name));
+    },
+    // `baseFavorites` is rebuilt every render; keyed on the skins it is made of.
+    [availableSkins],
+  );
+
+  const isSkinFavorite = useCallback(
+    (name: string) => favoriteSkins.includes(name),
+    [favoriteSkins],
+  );
+
+  /**
+   * Installing wants the theme visible straight away, so it joins the starred
+   * list as it lands — a theme you cannot reach from the quick menu reads as one
+   * that did not install. Unstarring it is one press, in the same grid.
+   */
+  const installSkin = useCallback(
+    (raw: unknown): InstallResult => {
+      const result = installTheme(raw);
+      if (!result.ok) return result;
+      const worn = listAllSkins();
+      setAvailableSkins(worn);
+      setStoredFavorites((current) => {
+        const base = current ?? availableSkins.map((available) => available.name);
+        return base.includes(result.skin.name)
+          ? base
+          : [...base, result.skin.name];
+      });
+      return result;
+    },
+    [availableSkins],
+  );
+
+  /**
+   * Removing a theme has to leave the window wearable: an explicit starred list
+   * loses the name, and a theme being worn hands the window back to the default
+   * rather than to a skin that no longer exists.
+   */
+  const uninstallSkin = useCallback(
+    (name: string) => {
+      uninstallTheme(name);
+      setAvailableSkins(listAllSkins());
+      setStoredFavorites((current) =>
+        current ? withoutSkinFavorite(current, name) : current,
+      );
+      if (skinName === name) {
+        setSkinNameState(DEFAULT_SKIN_NAME);
+        persistSkinName(DEFAULT_SKIN_NAME);
+        applyCurrentSkin(DEFAULT_SKIN_NAME, resolved);
+      }
+    },
+    [applyCurrentSkin, resolved, skinName],
+  );
+
+  /*
+   * The star list is written from the state it settles on, never from inside the
+   * updater: React may run an updater twice, and a write in there would be a
+   * second one.
+   */
+  useEffect(() => {
+    if (storedFavorites) persistSkinFavorites(storedFavorites);
+  }, [storedFavorites]);
+
   const value = useMemo(
     () => ({
       preference,
@@ -117,8 +235,28 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       skinName,
       setSkin,
       availableSkins,
+      installedSkins,
+      favoriteSkins,
+      isSkinFavorite,
+      toggleSkinFavorite: toggleFavoriteSkin,
+      installSkin,
+      uninstallSkin,
     }),
-    [availableSkins, preference, resolved, setPreference, setSkin, skin, skinName],
+    [
+      availableSkins,
+      favoriteSkins,
+      installSkin,
+      installedSkins,
+      isSkinFavorite,
+      preference,
+      resolved,
+      setPreference,
+      setSkin,
+      skin,
+      skinName,
+      toggleFavoriteSkin,
+      uninstallSkin,
+    ],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
