@@ -26,6 +26,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 | [Auto-update](docs/superpowers/specs/2026-10-12-auto-update-design.md) | The glowing build number, and the upgrade it offers |
 | [Rust rewrite decision](docs/superpowers/specs/2026-10-15-rust-rewrite-decision.md) | Decision memo: stay TypeScript; where native Rust is defensible |
 | [Cold start](docs/superpowers/specs/2026-10-17-cold-start-does-not-wait-on-the-companion-design.md) | What held the splash for 57s, and what the splash is allowed to wait on |
+| [Walrus integration report](docs/research/2026-10-19-walrus-integration-report.md) | What Walrus does and does not buy a vault, and the four integrations worth the work |
 
 ## Prerequisites
 
