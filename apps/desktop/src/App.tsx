@@ -34,7 +34,7 @@ import ReviewPage from "@/pages/ReviewPage";
 import WelcomePage from "@/pages/WelcomePage";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
-import { useSettingsBackground } from "@/components/settings/useSettingsBackground";
+import { useSheetBackground } from "@/components/shell/useSheetBackground";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
@@ -61,11 +61,11 @@ function AppRoutes() {
   const { snapshot, booting } = useVault();
   const { status, ensuring } = useCompanion();
   /*
-   * Settings is a sheet over the app, not a page of it (see `SettingsOverlay`),
-   * so the routes keep rendering the page the operator was on while `/settings`
-   * is in the address bar, and the sheet is painted above it.
+   * Settings and Decisions are sheets over the app, not pages of it (see
+   * `SheetOverlay`), so the routes keep rendering the page the operator was on
+   * while a sheet path is in the address bar, and the sheet is painted above it.
    */
-  const { background, sheetOverBackground } = useSettingsBackground();
+  const { background, sheet, sheetOverBackground } = useSheetBackground();
 
   if (ensuring || !status || status.kind !== "ready") {
     return <CompanionSetupScreen />;
@@ -133,7 +133,8 @@ function AppRoutes() {
           element={<Navigate to={snapshot ? "/home" : "/welcome"} replace />}
         />
       </Routes>
-      {sheetOverBackground ? <SettingsPage /> : null}
+      {sheetOverBackground && sheet === "settings" ? <SettingsPage /> : null}
+      {sheetOverBackground && sheet === "decisions" ? <DecisionsPage /> : null}
     </>
   );
 }

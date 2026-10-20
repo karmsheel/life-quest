@@ -129,7 +129,7 @@ function kindLabel(target: DecisionRecord["target"]): string {
  * place to show them something they did not ask for, and the card is marked either
  * way.
  */
-export function DecisionsInbox() {
+export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) {
   const { snapshot, refresh } = useVault();
   const lens = useDomainLens();
   const domains = snapshot?.domains ?? [];
@@ -307,13 +307,18 @@ export function DecisionsInbox() {
 
   return (
     <div className="decisions-inbox">
-      <header className="decisions-inbox__header">
-        <p className="decisions-inbox__eyebrow">Inbox</p>
-        <h1 className="stub-page__title">Decisions</h1>
-        <p className="stub-page__desc muted">
-          Approve a proposal to write it into the vault. Reject it to leave the vault as it is.
-        </p>
-      </header>
+      {/* The sheet's chrome already says "Decisions" and what the page is for,
+          so the inbox drops its own title when it is worn as a surface. The
+          standalone shape stays for the rigs that draw the component alone. */}
+      {showHeader ? (
+        <header className="decisions-inbox__header">
+          <p className="decisions-inbox__eyebrow">Inbox</p>
+          <h1 className="stub-page__title">Decisions</h1>
+          <p className="stub-page__desc muted">
+            Approve a proposal to write it into the vault. Reject it to leave the vault as it is.
+          </p>
+        </header>
+      ) : null}
 
       <div className="decisions-inbox__tabs" role="tablist">
         <button

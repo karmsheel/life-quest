@@ -1,5 +1,6 @@
 import { useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
+import { useSheetClose } from "@/components/shell/useSheetBackground";
 import { SettingsOverlay } from "@/components/settings/SettingsOverlay";
 import {
   resolveSettingsView,
@@ -18,8 +19,8 @@ import {
  */
 export default function SettingsPage() {
   const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
   const activeView = resolveSettingsView(params.get("tab"));
+  const onClose = useSheetClose();
 
   const onViewChange = useCallback(
     (view: SettingsViewId) => {
@@ -27,14 +28,6 @@ export default function SettingsPage() {
     },
     [setParams],
   );
-
-  const onClose = useCallback(() => {
-    if (window.history.length > 1) {
-      navigate(-1);
-      return;
-    }
-    navigate("/home", { replace: true });
-  }, [navigate]);
 
   return (
     <SettingsOverlay

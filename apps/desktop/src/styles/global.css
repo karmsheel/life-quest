@@ -2236,6 +2236,16 @@ a {
   gap: 0.9rem;
 }
 
+/* The inbox as a sheet: the frame scrolls, the column inside it is the same
+   52rem reading width the page always had, centred in the wider surface. */
+.decisions-sheet__body {
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.decisions-sheet__body .decisions-inbox {
+  margin: 0 auto;
+}
+
 .decisions-inbox__header {
   margin-bottom: 0.15rem;
 }
@@ -3596,18 +3606,17 @@ a.home-mini-list__link:hover {
   font-size: 0.875rem;
 }
 
-/* —— Settings sheet (Hermes Desktop's full-page overlay) —— */
-/* Settings are a surface over the page you were on, not a page of their own:
-   the window dims and blurs, and a panel takes ~90% of it. Three ways out — the
-   cross at the top right, a press on the scrim, Escape — and one search bar
-   beside it that narrows the section list in place. */
-.settings-overlay {
+/* —— The app's sheets (Settings, Decisions) —— */
+/* A sheet is a surface over the page you were on, not a page of its own: the
+   window dims and blurs, and a panel takes ~90% of it. Settings and the
+   decisions inbox share this frame; each supplies its own chrome and body. */
+.sheet-overlay {
   position: fixed;
   inset: 0;
   /* Above the studio's chrome (the rail paints at 20) and deliberately BELOW the
      app's own questions (`.confirm-dialog-backdrop` at 60, the update dialog at
-     70): a settings action that asks — deleting a domain — must ask over the
-     sheet, not behind it. */
+     70): an action taken in a sheet that asks — deleting a domain, rejecting a
+     Decision — must ask over the sheet, not behind it. */
   z-index: 50;
   display: flex;
   align-items: stretch;
@@ -3621,7 +3630,7 @@ a.home-mini-list__link:hover {
   backdrop-filter: blur(7px) saturate(0.94);
 }
 
-.settings-overlay__panel {
+.sheet-overlay__panel {
   position: relative;
   display: flex;
   flex: 1 1 auto;
@@ -3636,7 +3645,14 @@ a.home-mini-list__link:hover {
   box-shadow: var(--shadow-sm);
 }
 
-.settings-overlay__chrome {
+/* The panel takes the caret when a sheet opens without a field of its own.
+   That is a landing place, not a control: it must not paint a ring around the
+   whole frame. */
+.sheet-overlay__panel:focus {
+  outline: none;
+}
+
+.sheet-overlay__chrome {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -3646,9 +3662,48 @@ a.home-mini-list__link:hover {
   background: var(--bg-elevated);
 }
 
+.sheet-overlay__heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.sheet-overlay__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.sheet-overlay__subtitle {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-overlay__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* A sheet whose body is the scroller: decisions. Settings gives the body to its
+   own two-column layout, which owns its scrolling panes. */
+.sheet-overlay__body--scroll {
+  display: block;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 /* The cross sits at the sheet's trailing edge, the corner a hand reaches for
    when the frame has no title bar of its own to close from. */
-.settings-overlay__close {
+.sheet-overlay__close {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -3668,13 +3723,13 @@ a.home-mini-list__link:hover {
     border-color var(--dur-quick) var(--ease-out);
 }
 
-.settings-overlay__close:hover {
+.sheet-overlay__close:hover {
   border-color: var(--border-soft);
   background: var(--bg-subtle);
   color: var(--text-strong);
 }
 
-.settings-overlay__close:focus-visible {
+.sheet-overlay__close:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 1px;
 }
