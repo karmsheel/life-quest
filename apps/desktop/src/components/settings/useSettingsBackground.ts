@@ -16,7 +16,7 @@
  * falls back to the request itself, so the settings route renders inside the
  * shell, over the pane it is drawn from, instead of a backdrop of nothing.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, type Location } from "react-router-dom";
 
 /**
@@ -31,13 +31,16 @@ export function useSettingsBackground(): {
   sheetOverBackground: boolean;
 } {
   const location = useLocation();
-  const backgroundRef = useRef<Location>(location);
+  // State, not a ref: the background IS what the routes render against, so a
+  // new one has to paint. As a ref the update was invisible to React, and a
+  // cold start kept rendering `<Routes location="/">` — whose only match is the
+  // redirect to `/welcome` — so the window opened with a titlebar and an empty
+  // body until some unrelated state change happened to re-render.
+  const [background, setBackground] = useState<Location>(location);
 
   useEffect(() => {
-    if (!NON_PAGE_PATHS.has(location.pathname)) backgroundRef.current = location;
+    if (!NON_PAGE_PATHS.has(location.pathname)) setBackground(location);
   }, [location]);
-
-  const background = backgroundRef.current;
   return {
     background,
     sheetOverBackground:
