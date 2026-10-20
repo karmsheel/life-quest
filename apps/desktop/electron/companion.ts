@@ -14,7 +14,6 @@ import {
   portFromBaseUrl,
   profileDir,
   readEnv,
-  checkPinnedModel,
   resolveHermesCli,
   type HermesProfileInfo,
 } from "./companion-profile.ts";
@@ -49,9 +48,12 @@ import {
 import {
   ensureCompanion,
   hostMissedDoors,
+  modelVerdict,
+  modelWarningFor,
   shutdownCompanion,
   writeCompanionMcpProfile,
   type CompanionIo,
+  type CompanionReady,
   type CompanionStatus,
 } from "./companion-lifecycle.ts";
 
@@ -73,6 +75,96 @@ export function publicStatus(status: CompanionStatus): PublicCompanionStatus {
 }
 
 let current: CompanionStatus = { kind: "needs_install" };
+
+/**
+ * Everyone who wants to hear that the companion's status moved.
+ *
+ * The status can now change AFTER it is first reported: the model probe lands
+ * once the host has answered for its catalog, which is ~0.6s behind the ready
+ * status. Before this, `current` was written once per ensure and the renderer
+ * only ever saw the value its own `companion:ensure` call returned — so a fact
+ * discovered a moment later had no way to reach the screen that shows it.
+ *
+ * A listener that throws is caught, exactly as `data-revision.ts` does it: this
+ * is called from inside an ensure's success path, and a broken consumer must
+ * not be able to turn a working companion into a failed one.
+ */
+const statusListeners = new Set<(status: PublicCompanionStatus) => void>();
+
+/** Listen for status changes. Returns the unsubscribe. */
+export function onCompanionStatusChanged(
+  listener: (status: PublicCompanionStatus) => void,
+): () => void {
+  statusListeners.add(listener);
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
+
+/** Store the status and tell everyone. Returns the wire shape (no API key). */
+function publish(status: CompanionStatus): PublicCompanionStatus {
+  current = status;
+  const next = publicStatus(status);
+  for (const listener of [...statusListeners]) {
+    try {
+      listener(next);
+    } catch {
+      // The consumer's failure is its own; the status it heard about is still true.
+    }
+  }
+  return next;
+}
+
+/**
+ * Is the pinned model one this profile can still route? Asked after the app is
+ * already on screen, never before.
+ *
+ * The answer is a loopback GET the host answers in a few hundred milliseconds —
+ * measured at 579ms on a profile with 52 providers — and it is the difference
+ * between a chat that works and one that 404s on the first call. It rides on the
+ * ready status (`modelWarning`) rather than blocking it, because a slow or dead
+ * host must not be able to hold the splash: see the cold-start spec
+ * (2026-10-17), where exactly that cost 57 seconds.
+ *
+ * Best-effort in every direction: no catalog, no verdict, no warning.
+ */
+let modelProbeInFlight = false;
+/**
+ * The status a probe could not be started for, because one was already running.
+ *
+ * A profile switch is the case this exists for: `companionUseProfile` awaits a
+ * fresh ensure in ~100ms while the previous probe is still waiting on the host,
+ * so without this the new profile would never be asked about at all — its first
+ * probe would be swallowed by the old profile's.
+ */
+let modelProbeQueued: CompanionReady | null = null;
+
+async function probePinnedModel(status: CompanionReady): Promise<void> {
+  if (modelProbeInFlight) {
+    modelProbeQueued = status;
+    return;
+  }
+  modelProbeInFlight = true;
+  try {
+    const answer = await companionModelOptions();
+    // The companion moved on while the host was thinking (a profile switch, a
+    // vault open, a retry). Its new status owns the screen; this answer is
+    // about a host we are no longer talking to.
+    if (current !== status) return;
+    const warning = modelWarningFor(modelVerdict(answer.ok ? answer.value : null));
+    if (!warning || status.modelWarning === warning) return;
+    publish({ ...status, modelWarning: warning });
+  } catch {
+    // Silence is not a verdict: an unreadable catalog never retires a model.
+  } finally {
+    modelProbeInFlight = false;
+    const queued = modelProbeQueued;
+    modelProbeQueued = null;
+    if (queued && queued !== status && current === queued) {
+      void probePinnedModel(queued);
+    }
+  }
+}
 
 function spawnError(cli: string, err: unknown): Error {
   const code =
@@ -511,7 +603,6 @@ function realIo(): CompanionIo {
       /* Host multiplexer is not LifeQuest-owned. */
     },
     listeningPid: async () => null,
-    checkModel: checkPinnedModel,
   };
 }
 
@@ -556,8 +647,12 @@ let ensureInFlight: Promise<PublicCompanionStatus> | null = null;
 
 export async function companionEnsure(): Promise<PublicCompanionStatus> {
   const run = ensureCompanion(realIo(), await activeProfileName()).then((status) => {
-    current = status;
-    return publicStatus(status);
+    const published = publish(status);
+    // Deliberately not awaited: every launch calls this, and the probe is a
+    // round-trip to a host that may be slow, absent, or restarting. It answers
+    // onto the status when it lands (see `probePinnedModel`).
+    if (status.kind === "ready") void probePinnedModel(status);
+    return published;
   });
   ensureInFlight = run.finally(() => {
     ensureInFlight = null;

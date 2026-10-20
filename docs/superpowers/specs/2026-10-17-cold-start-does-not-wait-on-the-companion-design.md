@@ -133,7 +133,12 @@ Found while measuring, and **not fixed here** because it is not on the boot path
 fourth, `fetchImpl`. It is called with `fetchImpl === undefined`, throws inside
 its own `try`, and reports `unreachable` — so the "your model was retired"
 warning can never fire, and the probe also never costs the 8 s it is budgeted.
-Fixing it adds a network round-trip to the ready path and wants its own change.
+
+Fixed on 2026-10-20 in [the model-probe change](2026-10-20-model-probe-asks-the-host-design.md).
+That change also moved the probe off the provider's endpoint — it asks the host
+for its own catalog, with the key this app actually holds — and publishes the
+verdict after the ready status, so the round-trip this spec kept off the splash
+is still off it.
 
 ## 6. The rig
 

@@ -85,7 +85,11 @@ type CompanionStatus =
       profilePath: string;
       cliPath: string;
       childPid: number | null;
-      /** Set when the startup probe found the pinned model retired. */
+      /**
+       * Set when the model probe found the pinned model missing from this
+       * profile's catalog. Arrives AFTER the first ready status, on
+       * `onCompanionStatusChanged`, so the splash never waits for it.
+       */
       modelWarning?: string;
     }
   | { kind: "needs_install" }
@@ -630,6 +634,11 @@ type LifequestApi = {
    * moves forward, so a listener can ignore a value it has already seen.
    */
   onVaultDataChanged: (cb: (revision: number) => void) => () => void;
+  /**
+   * The companion's status moved after it was first reported — the model probe
+   * answers after the ready status, so a late verdict reaches the screen here.
+   */
+  onCompanionStatusChanged: (cb: (status: CompanionStatus) => void) => () => void;
   windowChrome: {
     get: () => Promise<{ overlay: boolean; platform: string }>;
     setTitleBarOverlay: (opts: {

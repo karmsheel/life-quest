@@ -89,6 +89,21 @@ export function CompanionProvider({ children }: { children: ReactNode }) {
     void retry();
   }, [retry]);
 
+  /**
+   * The status can move after it was first reported: the model probe answers a
+   * round-trip after the ready status, so a retired model's warning lands here
+   * rather than being lost. Subscribing for the life of the app is enough —
+   * `setStatus` is the same value every consumer reads.
+   */
+  useEffect(() => {
+    try {
+      return api().onCompanionStatusChanged((next) => setStatus(next));
+    } catch {
+      // No bridge (a harness page): nothing to subscribe to.
+      return undefined;
+    }
+  }, []);
+
   const value = useMemo(
     () => ({ status, ensuring, retry, profiles, profile, useProfile }),
     [status, ensuring, retry, profiles, profile, useProfile],

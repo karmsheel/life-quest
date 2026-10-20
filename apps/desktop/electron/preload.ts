@@ -316,6 +316,20 @@ const lifequest = {
 
   companionEnsure: () => ipcRenderer.invoke("companion:ensure"),
   companionStatus: () => ipcRenderer.invoke("companion:status"),
+  /**
+   * The companion's status moved after it was first reported — today that is the
+   * model probe, which answers a round-trip after the ready status so it cannot
+   * hold the splash. Returns the unsubscribe.
+   */
+  onCompanionStatusChanged: (cb: (status: unknown) => void) => {
+    const listener = (_event: unknown, status: unknown) => {
+      cb(status);
+    };
+    ipcRenderer.on("companion:statusChanged", listener);
+    return () => {
+      ipcRenderer.removeListener("companion:statusChanged", listener);
+    };
+  },
   // The profile picker (see CompanionSetupScreen): every installed Hermes
   // profile plus the active one, and the switch that moves the companion onto
   // one — or creates the app's own `lifequest`.

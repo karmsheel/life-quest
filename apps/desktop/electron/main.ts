@@ -292,6 +292,27 @@ function startDataChangeBroadcast(): void {
   });
 }
 
+/**
+ * The companion's status, pushed to whatever window is open when it moves.
+ *
+ * The status is not a launch-time constant any more: the model probe answers a
+ * round-trip after the ready status is published, so "is this profile's model
+ * still routable?" arrives late by design. Without this the renderer would keep
+ * the first answer forever — which is exactly how the warning became
+ * unreachable in the first place: the probe was broken, and even fixed, nothing
+ * would have carried its verdict to the settings surface.
+ *
+ * Every window, because the status is the app's, not one window's: a second
+ * window opened later reads `companion:status` for itself on mount.
+ */
+function startCompanionStatusBroadcast(): void {
+  companion.onCompanionStatusChanged((status) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send("companion:statusChanged", status);
+    }
+  });
+}
+
 function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: string, name?: string) =>
     vault.vaultCreate(rootPath, name),
   );
@@ -1079,6 +1100,10 @@ app.whenReady().then(() => {
   // windows are open at the moment a change is noted, so a window opened later
   // is covered without re-subscribing.
   startDataChangeBroadcast();
+  // Armed with it, and for the same reason: the probe's verdict is published
+  // ~0.6s after the ready status, and a window that opened first must still
+  // hear it.
+  startCompanionStatusBroadcast();
   // Published before it is awaited, so a rig that calls `bootForE2e` while the
   // product's own boot is still loading joins that window instead of opening a
   // second one.

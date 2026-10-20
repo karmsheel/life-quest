@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import {
-  checkPinnedModel,
   COMPANION_SOUL,
   DEFAULT_API_PORT,
   MCP_URL,
@@ -12,7 +11,6 @@ import {
   ensureEagerToolSearch,
   ensureRootCompanionHeader,
   hasRootCompanionEntry,
-  modelsUrlFromConfig,
   seedModelFromRoot,
   hermesRoot,
   portFromBaseUrl,
@@ -21,7 +19,6 @@ import {
   shouldSeedSoul,
   upsertEnv,
 } from "./companion-profile.ts";
-import type { ModelCheck } from "./companion-profile.ts";
 
 const RESERVED = new Set<number>(RESERVED_PORTS);
 
@@ -35,10 +32,14 @@ export type CompanionReady = {
   apiKey: string;
   childPid: number | null;
   /**
-   * Set when the startup model probe found the pinned model retired: the
-   * gateway runs, but every chat will 404 until the operator picks a live
-   * model. Absent when the probe passed, was skipped, or could not reach
-   * the catalog (an unreachable catalog is not a verdict).
+   * Set by the model probe AFTER the ready status is published, never before.
+   *
+   * The gateway is up but the profile's pinned model is not in its catalog, so
+   * every chat would end before finishing with no visible reason. It rides on
+   * the status rather than on a separate channel because the status is already
+   * what the settings surface reads, and it is added late because asking the
+   * host for its catalog takes ~0.6s — time the splash must not spend (§ the
+   * cold-start spec, 2026-10-17).
    */
   modelWarning?: string;
 };
@@ -115,16 +116,6 @@ export type CompanionIo = {
    * token; a test may pass its own.
    */
   companionToken?: () => Promise<string | null>;
-  /**
-   * The startup model probe: is the profile's pinned model still live?
-   * Injected so tests can stub the catalog. Absent (older callers) skips
-   * the check rather than failing it.
-   */
-  checkModel?: (
-    configYaml: string,
-    modelsUrl: string | null,
-    apiKey: string,
-  ) => Promise<ModelCheck>;
 };
 
 /**
@@ -583,38 +574,10 @@ export async function ensureCompanion(
         cliPath: cli,
         apiKey,
         childPid: null,
-        ...await modelProbe(apiKey),
       };
     }
     return null;
   };
-
-  /**
-   * The pinned model, checked against its provider's live catalog. A retired
-   * id turns into a warning that rides on the ready status — the gateway is
-   * up, but every chat would 404 until the operator picks a live model. The
-   * probe is best-effort: an error or an unreachable catalog is silence, not
-   * a warning, and never blocks attach.
-   */
-  async function modelProbe(apiKey: string): Promise<{ modelWarning?: string }> {
-    if (!io.checkModel) return {};
-    try {
-      const configYaml = (await io.readFile(configPath)) ?? "";
-      const verdict: ModelCheck = await io.checkModel(
-        configYaml,
-        modelsUrlFromConfig(configYaml),
-        apiKey,
-      );
-      if (verdict.kind === "retired") {
-        return {
-          modelWarning: `The companion's model "${verdict.model}" no longer exists at its provider — chats will fail until you pick a new model.`,
-        };
-      }
-    } catch {
-      // The probe must never block attach; a skipped check is the old status.
-    }
-    return {};
-  }
 
   const doors = (await io.doorsState?.()) ?? null;
   const forceRefresh = hostMustReRead({ credentialChanged, doors, now: Date.now() });
@@ -665,3 +628,66 @@ export async function shutdownCompanion(
   }
   if (status.childPid != null) await io.stopPid(status.childPid);
 }
+
+/**
+ * Is the profile's pinned model still one the gateway can route?
+ *
+ * WHY THIS ASKS THE HOST AND NOT THE PROVIDER
+ *
+ * The check used to GET the provider's own `/models` endpoint with a bearer key
+ * taken from the profile's `.env` — which is `API_SERVER_KEY`, the credential
+ * this app mints for the host's loopback API server. It is not the provider's
+ * key and nothing in the app has ever held one: the provider credentials live
+ * with the host, which is what every chat goes through. So the check either
+ * leaked a local credential to a third party or, for a provider that wants a
+ * key, answered 401 and reported "unreachable" — a verdict of silence. It also
+ * meant the "model was retired" warning could never fire at all.
+ *
+ * `GET /api/model/options` on the host is the same inventory the composer's
+ * model menu is built from, authorized with the key this app does hold, so the
+ * list a warning is judged against is exactly the list the operator can pick
+ * from. If the pinned id is missing from a provider the host has authenticated,
+ * the chat cannot route it.
+ *
+ * Silence is not a verdict, and it has two shapes here: no catalog at all, and
+ * a pinned provider the catalog does not describe (unknown slug, or no credential
+ * configured on the host). Neither may retire a model.
+ */
+export type ModelCheck =
+  | { kind: "ok" }
+  | { kind: "unknown" }
+  | { kind: "retired"; model: string; provider: string };
+
+/** The part of `CompanionModelCatalog` a verdict needs, so this module stays IO-free. */
+export type ModelCatalogView = {
+  current: { model: string; provider: string };
+  providers: Array<{
+    slug: string;
+    authenticated: boolean;
+    models: Array<{ id: string }>;
+  }>;
+};
+
+export function modelVerdict(catalog: ModelCatalogView | null): ModelCheck {
+  if (!catalog) return { kind: "unknown" };
+  const model = catalog.current.model.trim();
+  const provider = catalog.current.provider.trim();
+  if (!model || !provider) return { kind: "unknown" };
+  const row = catalog.providers.find((entry) => entry.slug === provider);
+  // A provider the host does not describe, or one it has no credential for, is
+  // a list we cannot judge against — and a wrong "retired" would tell the
+  // operator to replace a model that works.
+  if (!row || !row.authenticated || row.models.length === 0) {
+    return { kind: "unknown" };
+  }
+  return row.models.some((choice) => choice.id === model)
+    ? { kind: "ok" }
+    : { kind: "retired", model, provider };
+}
+
+/** The sentence the settings surface shows for a retired model, or null. */
+export function modelWarningFor(verdict: ModelCheck): string | null {
+  if (verdict.kind !== "retired") return null;
+  return `The companion's model "${verdict.model}" is not in this profile's model catalog any more — every chat will fail until you pick a live model in the chat composer.`;
+}
+
