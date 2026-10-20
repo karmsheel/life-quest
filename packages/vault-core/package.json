@@ -10,7 +10,7 @@
     "./map": "./src/map/public.ts"
   },
   "devDependencies": {
-    "@types/node": "^20.19.0",
+    "@types/node": "^24.19.2",
     "typescript": "^5.8.0"
   }
 }

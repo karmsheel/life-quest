@@ -159,6 +159,8 @@ import {
   type VaultSettings,
   type VaultSnapshot,
   type AdapterKind,
+  type AdapterSecretStore,
+  type AssumptionDelta,
   type SyncResult,
   type SyncConflict,
 } from "@lifequest/vault-core";
@@ -254,6 +256,31 @@ function withVault<T>(fn: (root: string) => Promise<Result<T>>): Promise<Result<
     if (!currentRoot) return noVaultError<T>();
     return fn(currentRoot);
   });
+}
+
+/**
+ * The adapter secret store vault-core takes, built once.
+ *
+ * `AdapterSecretStore` answers `put`/`delete` with a plain promise, while the
+ * Keystore under it answers with a `Result`. A refusal has to become something
+ * the callers can see: `put` throws (every link path already sits in a try that
+ * turns a throw into a failed Result), and a refused delete is swallowed the
+ * way the adapters' own `.catch(() => undefined)` would.
+ *
+ * One definition, six callers: it used to be six copies of the same literal,
+ * which is why the mismatch went unnoticed.
+ */
+function adapterSecretStore(): AdapterSecretStore {
+  return {
+    get: (bindingId) => getAdapterSecret(bindingId),
+    put: async (bindingId, secret) => {
+      const stored = await setAdapterSecret(bindingId, secret);
+      if (!stored.ok) throw new Error(stored.error);
+    },
+    delete: async (bindingId) => {
+      await clearAdapterSecret(bindingId).catch(() => undefined);
+    },
+  };
 }
 
 /** Snapshot mtimes for all doctrine markdown files under the vault. */
@@ -553,11 +580,7 @@ export async function vaultOpen(
     await rememberOpen(res.value);
     // KAR-59: sync linked adapters on open (try/catch — sync failure must not block open)
     try {
-      const secretStore = {
-        get: (bindingId: string) => getAdapterSecret(bindingId),
-        put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
-        delete: (bindingId: string) => clearAdapterSecret(bindingId),
-      };
+      const secretStore = adapterSecretStore();
       await syncLinkedDatabases(res.value.rootPath, null, {
         secrets: secretStore,
         transport: adapterTransport,
@@ -675,11 +698,7 @@ export async function ingestAccept(slug: string, batchId: string, rowIds?: strin
     // KAR-59: sync that database after accept. A sync failure does not roll back posted rows.
     if (res.ok && databaseId) {
       try {
-        const secretStore = {
-          get: (bindingId: string) => getAdapterSecret(bindingId),
-          put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
-          delete: (bindingId: string) => clearAdapterSecret(bindingId),
-        };
+        const secretStore = adapterSecretStore();
         await syncDatabase(root, slug, databaseId, {
           secrets: secretStore,
           transport: adapterTransport,
@@ -1038,7 +1057,7 @@ export async function financeSaveAssumptionSet(input: {
   rowId: string;
   name: string;
   horizonMonths: number;
-  deltas: unknown[];
+  deltas: AssumptionDelta[];
 }): Promise<Result<unknown>> {
   return withVault((root) => saveAssumptionSet(root, { ...input, actor: USER_ACTOR }));
 }
@@ -1613,33 +1632,23 @@ export async function dbLinkAdapter(
   },
 ): Promise<Result<unknown>> {
   return withVault(async (root) => {
-    const secretStore = {
-      get: (bindingId: string) => getAdapterSecret(bindingId),
-      put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
-      delete: (bindingId: string) => clearAdapterSecret(bindingId),
-    };
+    const secretStore = adapterSecretStore();
     return linkDatabaseAdapter(root, slug, dbId, { ...input, actor: USER_ACTOR }, { secrets: secretStore });
   });
 }
 
 export async function dbUnlinkAdapter(slug: string, dbId: string): Promise<Result<unknown>> {
   return withVault(async (root) => {
-    const secretStore = {
-      get: (bindingId: string) => getAdapterSecret(bindingId),
-      put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
-      delete: (bindingId: string) => clearAdapterSecret(bindingId),
-    };
+    const secretStore = adapterSecretStore();
     return unlinkDatabaseAdapter(root, slug, dbId, { secrets: secretStore }, USER_ACTOR);
   });
 }
 
 export async function dbSync(slug: string, dbId?: string): Promise<Result<SyncResult | SyncResult[]>> {
-  return withVault(async (root) => {
-    const secretStore = {
-      get: (bindingId: string) => getAdapterSecret(bindingId),
-      put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
-      delete: (bindingId: string) => clearAdapterSecret(bindingId),
-    };
+  // Two shapes answer this one: one database's result, or every linked one's.
+  // The type argument is what tells `withVault` they are the same Result.
+  return withVault<SyncResult | SyncResult[]>(async (root) => {
+    const secretStore = adapterSecretStore();
     if (dbId) {
       return syncDatabase(root, slug, dbId, {
         secrets: secretStore,
@@ -1665,11 +1674,7 @@ export async function dbResolveConflict(
   choice: "keep-local" | "keep-remote" | "skip",
 ): Promise<Result<SyncConflict | null>> {
   return withVault(async (root) => {
-    const secretStore = {
-      get: (bindingId: string) => getAdapterSecret(bindingId),
-      put: (bindingId: string, secret: string) => setAdapterSecret(bindingId, secret),
-      delete: (bindingId: string) => clearAdapterSecret(bindingId),
-    };
+    const secretStore = adapterSecretStore();
     return resolveSyncConflict(root, slug, conflictId, choice, {
       secrets: secretStore,
       transport: adapterTransport,

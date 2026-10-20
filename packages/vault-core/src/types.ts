@@ -5,6 +5,11 @@ import type {
   MapEvent,
 } from "./map/types.ts";
 
+// The map's own record types are part of this module's surface: the consumers
+// that read a period pack (pairing-grant, period-pack) name them here rather
+// than reaching into `map/types.ts` for a shape this file already carries.
+export type { Task, LiveDay, MapEvent };
+
 export const SCHEMA_VERSION = 1 as const;
 export const DOCUMENT_KINDS = ["why", "what", "how", "premise"] as const;
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];

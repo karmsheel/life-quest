@@ -30,7 +30,13 @@ function isAdapterKind(v: string): v is AdapterKind {
 interface SyncIndexEntry {
   externalId: string;
   rowId: string;
-  lastSyncedRemote: Record<string, string>;
+  /**
+   * The remote side as it was last synced. It is `unknown` per cell, not
+   * `string`: a sheet sends text, but `convertCell` turns a pull's values into
+   * the column's own type before they are stored, and this baseline is what a
+   * later pull is compared against.
+   */
+  lastSyncedRemote: Record<string, unknown>;
   lastSyncedLocal: Record<string, unknown>;
   updatedAt: string;
 }
@@ -110,8 +116,10 @@ export async function linkDatabaseAdapter(
       return { ok: false, error: "Adapter links are operator-only" };
     }
 
-    // Validate sotMode
-    if (input.sotMode === "local-only") {
+    // Validate sotMode. The field is typed as the two linked modes, but the
+    // value arrives over the IPC bridge as a plain string, and the retired
+    // "local-only" one must still be refused rather than linked.
+    if ((input.sotMode as string) === "local-only") {
       return { ok: false, error: "Cannot link with local-only SoT mode" };
     }
 
@@ -224,6 +232,12 @@ export async function unlinkDatabaseAdapter(
     }
 
     const oldBinding = existing.adapter;
+    // The registry was re-read after the secret was cleared, so this is a
+    // second chance to see a binding the earlier read had; a database with no
+    // adapter on it has nothing to unlink.
+    if (!oldBinding) {
+      return { ok: false, error: "Database is not linked" };
+    }
     const now = new Date().toISOString();
 
     existing.adapter = null;
@@ -527,9 +541,9 @@ export async function syncDatabase(
           const conflictFields: string[] = [];
           for (const colId of Object.keys(remoteCells)) {
             const remoteVal = remoteCells[colId];
-            const lastRemoteVal = (lastRemote as Record<string, string>)[colId];
+            const lastRemoteVal = lastRemote[colId];
             const localVal = localCells[colId];
-            const lastLocalVal = (lastLocal as Record<string, unknown>)[colId];
+            const lastLocalVal = lastLocal[colId];
             // Conflict only if both changed AND values differ
             if (remoteVal !== lastRemoteVal && localVal !== lastLocalVal && remoteVal !== localVal) {
               conflictFields.push(colId);

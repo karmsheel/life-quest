@@ -478,9 +478,12 @@ const lifequest = {
   deadlineDismiss: () =>
     ipcRenderer.invoke("deadline:dismiss") as Promise<Result<true>>,
 
+  // The handler answers `{ ok: true, value: <iso date> | null }` — one Result,
+  // whose value is the date. Declaring a Result *of that object* made the
+  // renderer unwrap a level that is not there.
   deadlineGetDismissed: () =>
     ipcRenderer.invoke("deadline:getDismissed") as Promise<
-      Result<{ ok: true; value: string | null }>
+      Result<string | null>
     >,
 
   deadlineMaybeNotify: () =>

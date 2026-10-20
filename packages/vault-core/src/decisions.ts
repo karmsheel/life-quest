@@ -19,6 +19,7 @@ import {
   type DocumentTarget,
   type GoalsCommand,
   type Result,
+  type ReviewCadence,
 } from "./types.ts";
 import type { Command as MapCommand } from "./map/types.ts";
 import { getDatabase, isDomainLive, readRegistry } from "./domain-databases.ts";
@@ -70,7 +71,13 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
   ) {
     const t = explicitTarget as Record<string, unknown>;
     if (t.type === "review") {
-      target = { type: "review", cadence: String(t.cadence), period: String(t.period) };
+      // `isReviewExplicitTarget` already refused anything but a known cadence;
+      // the cast states that ruling to the compiler, the way `kind` below does.
+      target = {
+        type: "review",
+        cadence: String(t.cadence) as ReviewCadence,
+        period: String(t.period),
+      };
     } else if (t.type === "doctrine") {
       target = {
         type: "doctrine",

@@ -16,16 +16,19 @@ import {
   type Result,
 } from "./types.ts";
 
-function isPageBlockKind(kind: string): kind is PageBlockKind {
-  return (PAGE_BLOCK_KINDS as readonly string[]).includes(kind);
+// The three predicates below read a block field that arrives as `unknown` —
+// a page's blocks are operator/agent-authored JSON — so each one takes the raw
+// value and answers both "is this one of ours" and "what type is it" at once.
+function isPageBlockKind(kind: unknown): kind is PageBlockKind {
+  return typeof kind === "string" && (PAGE_BLOCK_KINDS as readonly string[]).includes(kind);
 }
 
-function isMetricAgg(agg: string): agg is "sum" | "count" | "last" {
-  return (METRIC_AGGS as readonly string[]).includes(agg);
+function isMetricAgg(agg: unknown): agg is "sum" | "count" | "last" {
+  return typeof agg === "string" && (METRIC_AGGS as readonly string[]).includes(agg);
 }
 
-function isChartType(t: string): t is "bar" | "line" {
-  return (CHART_TYPES as readonly string[]).includes(t);
+function isChartType(t: unknown): t is "bar" | "line" {
+  return typeof t === "string" && (CHART_TYPES as readonly string[]).includes(t);
 }
 
 function isValidDate(s: string | null): boolean {

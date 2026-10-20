@@ -87,15 +87,22 @@ function localIsoDate(): string {
   return `${y}-${m}-${d}`;
 }
 
+/**
+ * The open goals whose deadline falls in the next week.
+ *
+ * The return type says what the filter already guarantees — every goal in the
+ * list has a deadline — so a caller that sorts or labels by `deadline` does not
+ * have to re-narrow a field this function just proved non-null.
+ */
 export function deadlinePressureGoals<T extends {
   status: string;
   deadline: string | null;
 }>(
   goals: T[],
   todayIso?: string,
-): T[] {
+): Array<T & { deadline: string }> {
   const now = todayIso ?? localIsoDate();
-  return goals.filter((goal) => {
+  return goals.filter((goal): goal is T & { deadline: string } => {
     if (goal.status !== "open") return false;
     if (!goal.deadline) return false;
     const days = daysUntilDeadline(goal.deadline, now);

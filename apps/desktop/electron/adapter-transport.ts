@@ -381,12 +381,18 @@ async function pullUrl(url: string): Promise<Result<RemotePull>> {
         };
       });
       const fx = obj.fx as { usdZarRate?: number; asOf?: string } | undefined;
+      // Rebuilt field by field: the guard proves both values are present, but
+      // the object they came from still carries them as optional.
+      const rate =
+        fx && typeof fx.usdZarRate === "number" && fx.asOf
+          ? { usdZarRate: fx.usdZarRate, asOf: fx.asOf }
+          : null;
       return {
         ok: true,
         value: {
           columns,
           rows,
-          fx: fx && typeof fx.usdZarRate === "number" && fx.asOf ? fx : null,
+          fx: rate,
         },
       };
     }

@@ -24,6 +24,7 @@ import {
   type ViewSpec,
   type ViewRunResult,
 } from "./types.ts";
+import { toSqlBindable, type SqlBindable } from "./sql-bind.ts";
 
 /**
  * Agent-built dashboard views (plan.md design, 2026-09-30). Slice 1: the view
@@ -759,9 +760,9 @@ export function buildReadSql(
   timeColId: string | null,
   windowStart: string | null,
   windowEnd: string | null,
-): { sql: string; params: unknown[] } {
+): { sql: string; params: SqlBindable[] } {
   const conds: string[] = ["database_id = ?"];
-  const params: unknown[] = [spec.databaseId];
+  const params: SqlBindable[] = [spec.databaseId];
 
   const opSql: Record<string, string> = {
     eq: "json_extract(cells, ?) = ?",
@@ -775,12 +776,12 @@ export function buildReadSql(
     if (f.op === "in") {
       const placeholders = (f.value as unknown[]).map(() => "?").join(",");
       conds.push(`json_extract(cells, ?) IN (${placeholders})`);
-      params.push(`$.${f.columnId}`, ...(f.value as unknown[]));
+      params.push(`$.${f.columnId}`, ...(f.value as unknown[]).map(toSqlBindable));
     } else {
       // Comparisons CAST to REAL so a number filter compares number-wise even
       // though json_extract may return text; eq/neq keep JSON's own type rules.
       conds.push(opSql[f.op]);
-      params.push(`$.${f.columnId}`, f.value);
+      params.push(`$.${f.columnId}`, toSqlBindable(f.value));
     }
   }
 

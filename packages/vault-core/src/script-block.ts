@@ -6,6 +6,7 @@ import { appendLog } from "./log.ts";
 import { getPage } from "./pages.ts";
 import { vaultPaths } from "./paths.ts";
 import { isDomainLive } from "./domain-databases.ts";
+import { toSqlBindable } from "./sql-bind.ts";
 import type {
   Actor,
   PageBlock,
@@ -196,7 +197,11 @@ async function runQueries(
     for (const q of queries) {
       const stmt = db.prepare(q.sql);
       const columns = stmt.columns().map((c: { name: string }) => c.name);
-      const all = stmt.all(...q.params) as Array<Record<string, unknown>>;
+      // Bind through `toSqlBindable`: a script may write `true` for a flag, and
+      // node:sqlite refuses a boolean at bind time (see `sql-bind.ts`).
+      const all = stmt.all(...q.params.map(toSqlBindable)) as Array<
+        Record<string, unknown>
+      >;
       const rows = all
         .slice(0, MAX_ROWS)
         .map((r) => columns.map((c: string) => r[c] ?? null));

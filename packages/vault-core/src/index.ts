@@ -236,6 +236,7 @@ export {
   saveAssumptionSet,
   round2,
 } from "./finance-plan.ts";
+export type { AssumptionDelta } from "./types.ts";
 export {
   CAPTURE_TOOL_DEFS,
   executeCaptureTool,

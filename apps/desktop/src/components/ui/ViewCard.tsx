@@ -241,7 +241,9 @@ export function ViewCard({
   const specOf = (blockId: string): ViewBlock | undefined => {
     const blocks = view.blocks;
     if (blocks && blocks.length > 0) return blocks.find((b) => b.id === blockId);
-    return { id: blockId, ...view } as ViewBlock;
+    // The block's own id wins over the view's: a one-aggregate view's file has
+    // no `id` for its block, and `save_view` addresses the block by this one.
+    return { ...view, id: blockId } as ViewBlock;
   };
   const blocks: DrawnBlock[] = result.blocks.map((b) => ({
     ...b,

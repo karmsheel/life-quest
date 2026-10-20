@@ -469,8 +469,7 @@ type LifequestApi = {
   dailyNoteList: () => Promise<Result<DailyNoteIndexEntry[]>>;
   dailyNoteWindow: (start: string, end: string) => Promise<Result<DailyNote[]>>;
   deadlineDismiss: () => Promise<Result<true>>;
-  deadlineGetDismissed: () =>
-    Promise<Result<{ ok: true; value: string | null }>>;
+  deadlineGetDismissed: () => Promise<Result<string | null>>;
   deadlineMaybeNotify: () => Promise<
     Result<{ ok: true; notified: boolean; title: string; body: string }>
   >;

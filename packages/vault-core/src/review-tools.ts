@@ -100,18 +100,25 @@ export const REVIEW_TOOL_DEFS: MapToolDef[] = [
   },
 ];
 
-type ReviewToolResult =
-  | Record<string, unknown>
-  | { error: { code: string; message: string } };
+/**
+ * The refusal half of every tool answer.
+ *
+ * It is its own type, not a member of `Record<string, unknown>`, so that a
+ * successful answer and a refused one can be told apart by `"error" in result`
+ * — the shape `requireCadencePeriod` relies on to hand back one or the other.
+ */
+type ReviewToolError = { error: { code: string; message: string } };
 
-function vaultError(error: string): ReviewToolResult {
+type ReviewToolResult = Record<string, unknown> | ReviewToolError;
+
+function vaultError(error: string): ReviewToolError {
   const code = /not found/i.test(error) ? "NOT_FOUND" : "MALFORMED";
   return { error: { code, message: error } };
 }
 
 function requireCadencePeriod(
   args: Record<string, unknown>,
-): { cadence: ReviewCadence; period: string } | ReviewToolResult {
+): { cadence: ReviewCadence; period: string } | ReviewToolError {
   const cadence = args.cadence;
   const period = args.period;
   if (typeof cadence !== "string" || !cadence) {

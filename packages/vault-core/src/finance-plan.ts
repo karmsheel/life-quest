@@ -65,7 +65,12 @@ async function ensureFinanceTransferColumn(root: string): Promise<void> {
   );
 }
 
-function isCurrency(c: string): c is FinanceCurrency {
+/**
+ * A cell's currency, when it names one. The argument is `unknown`-adjacent on
+ * purpose: a database cell is untyped JSON, so "not ZAR or USD" and "not there
+ * at all" are the same verdict and both call sites have to be able to ask.
+ */
+function isCurrency(c: string | undefined): c is FinanceCurrency {
   return c === "ZAR" || c === "USD";
 }
 

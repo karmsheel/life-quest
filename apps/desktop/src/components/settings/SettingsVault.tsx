@@ -177,7 +177,7 @@ export function SettingsVault() {
                   </label>
                   <Button
                     type="button"
-                    variant="destructive"
+                    destructive
                     disabled={!restoreConfirm[domain.slug]}
                     onClick={() => void onRestoreBooks(domain.slug)}
                   >

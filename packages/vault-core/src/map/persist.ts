@@ -80,6 +80,20 @@ function isLiveSource(value: unknown): value is LiveSource {
   return false;
 }
 
+/**
+ * The source a leftover row may carry.
+ *
+ * `LiveLeftoverItem` excludes task sources by type — a task-sourced row is a
+ * block on the day, not something left over — but the file on disk is still a
+ * shape this loader has to police, and `isLiveSource` alone accepts all three.
+ * Narrowing here keeps the filter reading like the type it produces.
+ */
+function isLeftoverSource(
+  value: unknown,
+): value is Exclude<LiveSource, { type: "task" }> {
+  return isLiveSource(value) && value.type !== "task";
+}
+
 function normalizeLiveDays(raw: unknown): Record<string, LiveDay> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const out: Record<string, LiveDay> = {};
@@ -98,8 +112,7 @@ function normalizeLiveDays(raw: unknown): Record<string, LiveDay> {
           typeof r.id === "string" &&
           typeof r.text === "string" &&
           typeof r.done === "boolean" &&
-          isLiveSource(r.source) &&
-          r.source.type !== "task"
+          isLeftoverSource(r.source)
         );
       }),
       blocks: blocks.filter((row) => {

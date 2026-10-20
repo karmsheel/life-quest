@@ -371,7 +371,7 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("db:list", (_e, domainSlug: string | null) => vault.dbList(domainSlug));
   ipcMain.handle("db:get", (_e, slug: string, dbId: string) => vault.dbGet(slug, dbId));
   ipcMain.handle("db:create", (_e, slug: string, input: { name: string }) => vault.dbCreate(slug, input));
-  ipcMain.handle("db:addColumn", (_e, slug: string, dbId: string, input: { name: string; type: string; options?: string[]; relationDatabaseId?: string }) => vault.dbAddColumn(slug, dbId, input));
+  ipcMain.handle("db:addColumn", (_e, slug: string, dbId: string, input: Parameters<typeof vault.dbAddColumn>[2]) => vault.dbAddColumn(slug, dbId, input));
   ipcMain.handle("db:listRows", (_e, slug: string, dbId: string) => vault.dbListRows(slug, dbId));
   ipcMain.handle("db:getRow", (_e, slug: string, dbId: string, rowId: string) => vault.dbGetRow(slug, dbId, rowId));
   ipcMain.handle("db:upsertRow", (_e, slug: string, dbId: string, input: { id?: string; cells: Record<string, unknown> }) => vault.dbUpsertRow(slug, dbId, input));
@@ -390,7 +390,7 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("db:restoreBooks", (_e, slug: string, options: { confirm: boolean }) => vault.dbRestoreBooks(slug, options));
 
   // KAR-59 adapter IPC
-  ipcMain.handle("db:linkAdapter", (_e, slug: string, dbId: string, input: { kind: string; bindingId?: string; secret: string; sotMode: string }) => vault.dbLinkAdapter(slug, dbId, input));
+  ipcMain.handle("db:linkAdapter", (_e, slug: string, dbId: string, input: Parameters<typeof vault.dbLinkAdapter>[2]) => vault.dbLinkAdapter(slug, dbId, input));
   ipcMain.handle("db:unlinkAdapter", (_e, slug: string, dbId: string) => vault.dbUnlinkAdapter(slug, dbId));
   ipcMain.handle("db:sync", (_e, slug: string, dbId?: string) => vault.dbSync(slug, dbId));
   ipcMain.handle("db:listConflicts", (_e, slug: string, dbId?: string) => vault.dbListConflicts(slug, dbId));
@@ -421,7 +421,7 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
 
   // KAR-53 ingest
   ipcMain.handle("ingest:file", (_e, slug: string, input: { databaseId: string; bytes: Uint8Array; mime: string; name: string; extractedRows?: Record<string, string>[] }) => vault.ingestFile(slug, input));
-  ipcMain.handle("ingest:proposeMapping", (_e, slug: string, input: { mappingId?: string; databaseId: string; fingerprint: string; sourceKind: string; columns: Array<{ source: string; columnId: string }> }) => vault.ingestProposeMapping(slug, input));
+  ipcMain.handle("ingest:proposeMapping", (_e, slug: string, input: Parameters<typeof vault.ingestProposeMapping>[1]) => vault.ingestProposeMapping(slug, input));
   ipcMain.handle("ingest:listMappings", (_e, slug: string, databaseId?: string) => vault.ingestListMappings(slug, databaseId));
   ipcMain.handle("ingest:listBatches", (_e, slug: string, databaseId?: string) => vault.ingestListBatches(slug, databaseId));
   ipcMain.handle("ingest:listRows", (_e, slug: string, batchId: string) => vault.ingestListRows(slug, batchId));
@@ -491,7 +491,7 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("finance:budgetVsActual", (_e, asOf: string) => vault.financeBudgetVsActual(asOf));
   ipcMain.handle("finance:netWorth", (_e, asOf: string) => vault.financeNetWorth(asOf));
   ipcMain.handle("finance:scenarioCompare", (_e, input: { asOf: string; assumptionSetId: string; compareSetId?: string | null }) => vault.financeScenarioCompare(input));
-  ipcMain.handle("finance:saveAssumptionSet", (_e, input: { rowId: string; name: string; horizonMonths: number; deltas: unknown[] }) => vault.financeSaveAssumptionSet(input));
+  ipcMain.handle("finance:saveAssumptionSet", (_e, input: Parameters<typeof vault.financeSaveAssumptionSet>[0]) => vault.financeSaveAssumptionSet(input));
 
   ipcMain.handle("decision:list", () => vault.decisionList());
   ipcMain.handle(

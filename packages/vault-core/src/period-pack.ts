@@ -175,7 +175,10 @@ export async function getPeriodPack(
 
   // Domain-scoped tasks: fail-closed if goals didn't load
   if (!isOverall) {
-    if (!goalsLoaded) {
+    // `goalsRes.ok` is repeated here because `goalsLoaded` is a boolean the
+    // compiler cannot follow back to the result it was read from, and the
+    // malformed-goals shape is not a `Result` at all.
+    if (!goalsLoaded || !goalsRes.ok) {
       tasks = [];
     } else if (mapRes.ok) {
       const goalDomainMap = new Map<string, string | null>();

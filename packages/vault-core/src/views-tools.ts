@@ -580,9 +580,10 @@ async function findSameTitledCard(
   domainSlug: string,
   savedId: string,
 ): Promise<{ viewId: string; title: string } | null> {
-  const title = (await getView(root, domainSlug, savedId)).ok
-    ? (await getView(root, domainSlug, savedId)).value.title
-    : null;
+  // One read, one narrowing: `getView` answers a Result, and asking it twice
+  // (once for `.ok`, once for `.value`) is how the guard lost the value.
+  const saved = await getView(root, domainSlug, savedId);
+  const title = saved.ok ? saved.value.title : null;
   if (!title) return null;
   for (const pin of pins) {
     if (pin.kind !== "view" || pin.viewId === savedId) continue;
