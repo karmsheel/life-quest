@@ -1,11 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useNavDock } from "@/state/NavDockProvider";
+import { ChatDivider } from "./ChatDivider";
 import { NavRail } from "./NavRail";
 import { TopBar } from "./TopBar";
 import { WingProvider } from "./WingProvider";
+import { useChatColumn } from "./useChatColumn";
 import { MapYearProvider } from "@/state/MapYearProvider";
 
 export function AppShell() {
@@ -21,6 +23,10 @@ export function AppShell() {
   } = useNavDock();
   const { pathname } = useLocation();
   const chartBleed = pathname === "/chart";
+  // The tray itself: the frame the dock's column is solved in, and the element a
+  // dragged width is written to.
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const chatColumn = useChatColumn(shellRef);
 
   useEffect(() => {
     setChatPresent(true);
@@ -36,6 +42,14 @@ export function AppShell() {
     <MapYearProvider>
       <WingProvider>
         <div
+          ref={shellRef}
+          style={chatColumn.shellStyle}
+          /*
+            While the hand owns the seam every other cursor in the tray is the
+            resize cursor, so the operator can see the gesture running even when
+            the pointer has run off the handle it started on.
+          */
+          data-divider-dragging={chatColumn.dragging || undefined}
           className={[
             "shell",
             chatOpen ? "shell--chat-open" : "shell--chat-collapsed",
@@ -70,6 +84,21 @@ export function AppShell() {
             </div>
           </div>
           <ChatPanel open={chatOpen} onOpenChange={setChatOpen} />
+          {/* The handle on the seam, drawn only while there is a column to drag:
+              a collapsed dock is a tab, not a pane. */}
+          {chatOpen ? (
+            <ChatDivider side={chatSide} props={chatColumn.dividerProps} />
+          ) : null}
+          {/* What the gesture says out loud. A drag has no button to come back
+              to, and the handle's own value is only read while it has focus. */}
+          <p
+            className="visually-hidden"
+            role="status"
+            aria-live="polite"
+            data-testid="chat-divider-status"
+          >
+            {chatColumn.announce}
+          </p>
         </div>
       </WingProvider>
     </MapYearProvider>

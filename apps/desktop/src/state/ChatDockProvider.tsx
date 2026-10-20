@@ -56,6 +56,19 @@ type ChatDockContextValue = {
    * entry point.
    */
   swapSide: () => void;
+  /**
+   * How wide the operator has dragged the dock's column, in px, or null while it
+   * is still the width the tokens ask for.
+   *
+   * The drag writes here rather than into a store on purpose. It is session state
+   * exactly as `side` is — a way of looking at the workspace for a moment, set by
+   * a handle one gesture away — and the number is a *request*, not the width on
+   * screen: the shell clamps it against the frame the dock is standing in when it
+   * draws, so a window that shrinks under a wide dock re-caps the pane instead of
+   * carrying the old width off the edge. The divider is the one writer.
+   */
+  width: number | null;
+  setWidth: (px: number) => void;
   requestedSessionId: string | null;
   requestedKickoff: string | null;
   requestSession: (id: string, kickoff?: string) => void;
@@ -102,6 +115,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(true);
   const [present, setPresent] = useState(false);
   const [side, setSide] = useState<ChatDockSide>("right");
+  const [width, setWidth] = useState<number | null>(null);
   const [requestedSessionId, setRequestedSessionId] = useState<string | null>(
     null,
   );
@@ -141,6 +155,8 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       setPresent,
       side,
       swapSide,
+      width,
+      setWidth,
       requestedSessionId,
       requestedKickoff,
       requestSession,
@@ -157,6 +173,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       present,
       side,
       swapSide,
+      width,
       requestedSessionId,
       requestedKickoff,
       requestSession,

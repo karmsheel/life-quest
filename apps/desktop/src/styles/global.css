@@ -537,7 +537,16 @@ a {
   /* Track widths as vars so the two collapse variants compose instead of each
      overwriting the other's grid-template-columns. */
   --nav-column: var(--shell-nav-width);
-  --chat-column: var(--chatbar-width);
+  /* The dock's column, and the range the seam's handle may move it through. The
+     tokens say how wide the dock wants to be, these two bounds say how wide the
+     frame will let it be, and `clamp` is the one place the two are reconciled —
+     so a window too narrow for the token still gets a page, before and without
+     any drag. `useChatColumn` writes the bounds onto this element as it measures
+     the frame; the fallbacks below only stand for the frame before the layout
+     effect's own measurement, and are deliberately permissive. */
+  --chat-min: 0px;
+  --chat-max: 100vw;
+  --chat-column: clamp(var(--chat-min), var(--chatbar-width), var(--chat-max));
   display: grid;
   grid-template-columns: var(--nav-column) 1fr var(--chat-column);
   height: 100%;
@@ -546,6 +555,9 @@ a {
      is not this tray's business any more — the only one that survives is the
      strip under the titlebar, and that comes from the body's own padding. */
   gap: 0;
+  /* The seam's handle is positioned against this tray, and the tracks above are
+     exactly the geometry it is placed from. */
+  position: relative;
 }
 
 .shell--chat-collapsed {
@@ -658,6 +670,90 @@ a {
 .shell__content--bleed {
   padding: 0;
   overflow: hidden;
+}
+
+/* —— The seam's handle —— */
+/* The line between the page and the dock is the sheet's own hairline; this is
+   only the offer to move it. At rest an invisible strip straddling the seam, and
+   no second line anywhere: the divider is where the pane boundary is, not a thing
+   drawn on top of it.
+
+   It is deliberately not centred on the seam: two pixels of the leading pane and
+   ten of the trailing one. Whichever pane leads scrolls at its own trailing edge
+   — the page when the dock trails it, the dock's transcript when it leads — and a
+   handle centred on an eight-pixel scrollbar would eat the one thing the operator
+   aims at to scroll.
+
+   The bar it grows when addressed is the same 2px accent a card's width handle
+   wears, and it lands exactly on the seam it moves. `--chat-column` is the track
+   the dock stands in, so the handle is placed from the same two numbers the grid
+   is built from and cannot drift off the line it belongs to. */
+.chat-divider {
+  position: absolute;
+  top: 0;
+  /* The panes escape the tray along the bottom — both carry the pane gap into
+     their own height — so the seam runs past the shell's box to the window's own
+     edge, and the handle has to run with it. */
+  bottom: calc(-1 * var(--shell-frame));
+  width: 0.75rem;
+  margin-left: -0.125rem;
+  z-index: 30;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+/* Trailing dock: the last track, and the pane gap it carries is outside the
+   shell's own box — so the seam is one column in from the tray's trailing edge. */
+.shell--chat-right > .chat-divider {
+  left: calc(100% - var(--chat-column));
+}
+
+/* Leading dock: the rail's column, then the dock's. */
+.shell--chat-left > .chat-divider {
+  left: calc(var(--nav-column) + var(--chat-column));
+}
+
+.chat-divider::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* The handle's box starts two pixels before the seam, and the seam's own
+     hairline is the pixel just inside the sheet — so the bar starts one pixel in
+     and covers the line it moves rather than sitting beside it. */
+  left: 1px;
+  width: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.chat-divider:hover::after,
+.chat-divider:focus-visible::after,
+.chat-divider[data-dragging]::after {
+  opacity: 1;
+}
+
+.chat-divider:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* The hand owns the pointer while the column is being dragged: nothing in the
+   tray is a target and no text is selectable under it. */
+.shell[data-divider-dragging],
+.shell[data-divider-dragging] * {
+  cursor: col-resize;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-divider::after {
+    transition: none;
+  }
 }
 
 /* —— Nav rail —— */
