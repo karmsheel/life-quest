@@ -106,6 +106,40 @@ export function buildTurnInput(
   ];
 }
 
+/**
+ * What the host says when it has stopped answering a conversation for good.
+ *
+ * Hermes pauses a conversation whose FIFO head it cannot account for — the shape
+ * a turn takes when the app is killed mid-run — and every later turn on it is
+ * committed and never executed. The wire carries the runtime's own token,
+ * `unknown_execution`, as the message of an `error` frame; on 2026-10-19 that
+ * token reached the dock verbatim, so an operator watching a chat that would
+ * never answer again read `unknown_execution` and had nothing to act on.
+ */
+const PAUSED_CONVERSATION_MARKER = /unknown_execution/i;
+
+/**
+ * The operator-facing sentence for that state. It names the cause (a turn was
+ * interrupted), the consequence (this conversation is paused), and the one
+ * control that gets a working chat back — the dock's new-chat button, because a
+ * paused conversation cannot be revived from the app at all.
+ */
+export const PAUSED_CONVERSATION_MESSAGE =
+  "This conversation is paused because a turn was interrupted — start a new chat.";
+
+/**
+ * Host error vocabulary to the app's, in one place.
+ *
+ * Every other frame is the host's to word; this one is a token, and a token is
+ * never a sentence an operator can use. Anything that is not the pause marker is
+ * passed through untouched, so a real failure still says what it said.
+ */
+function operatorFacingStreamError(message: string): string {
+  return PAUSED_CONVERSATION_MARKER.test(message)
+    ? PAUSED_CONVERSATION_MESSAGE
+    : message;
+}
+
 export type ChatStreamEvent =
   | { type: "run.started"; runId: string }
   | { type: "assistant.delta"; text: string }
@@ -670,7 +704,10 @@ export function parseSseBlock(raw: string): ChatStreamEvent | null {
       if (parsed && typeof parsed === "object") data = parsed as Record<string, unknown>;
     } catch {
       if (eventName === "error" || dataRaw) {
-        return { type: "error", message: dataRaw || "Invalid stream payload" };
+        return {
+          type: "error",
+          message: operatorFacingStreamError(dataRaw || "Invalid stream payload"),
+        };
       }
       return null;
     }
@@ -736,7 +773,9 @@ export function mapStreamEvent(
     case "error":
       return {
         type: "error",
-        message: String(data.message ?? data.error ?? "Stream error"),
+        message: operatorFacingStreamError(
+          String(data.message ?? data.error ?? "Stream error"),
+        ),
       };
     default:
       return null;
