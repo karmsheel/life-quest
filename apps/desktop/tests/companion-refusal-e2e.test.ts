@@ -10,12 +10,13 @@ import { describe, it } from "node:test";
  * The companion refusal, end to end, against the real application.
  *
  * `e2e/companion-refusal.mjs` builds a throwaway world — a temp `HERMES_HOME`, a
- * fake `hermes` first on PATH that refuses `gateway restart` and `gateway start`
- * the way the real CLI refuses (the message on STDOUT, an empty stderr, exit 1),
- * an app prefs file that puts the companion on a profile no host on this machine
- * serves — and runs `e2e/companion-refusal.electron.mjs` inside Electron. This
- * file only decides whether the artifact says what the fix claims: that the
- * operator reads the CLI's own sentence, not the exit code it fell back to.
+ * fake `hermes` first on PATH that refuses `gateway ensure` (and every other
+ * `gateway` verb) the way the real CLI refuses (the message on STDOUT, an empty
+ * stderr, exit 1), an app prefs file that puts the companion on a profile no host
+ * on this machine serves — and runs `e2e/companion-refusal.electron.mjs` inside
+ * Electron. This file only decides whether the artifact says what the fix
+ * claims: that the operator reads the CLI's own sentence, not the exit code it
+ * fell back to, and that no gateway was restarted to get there.
  *
  * WHY THIS RIG EXISTS
  *
@@ -34,6 +35,11 @@ import { describe, it } from "node:test";
  * thrown away, and the first of the two commands' failures never even reached the
  * second command's fallback (`catch {}`).
  *
+ * The same path also used to reach for `hermes gateway restart`, which restarts
+ * the ONE host multiplexer serving every profile on the machine. That is why
+ * this rig now refuses `ensure` instead: the app may start the runtime that
+ * serves the selected profile, and may not stop or restart anything else.
+ *
  * THE WAYS THIS COULD FAIL, WRITTEN DOWN BEFORE THE CODE
  *
  * The assertions below are about a run that really happened, and each of these
@@ -41,9 +47,9 @@ import { describe, it } from "node:test";
  *
  *   1. THE RECORDER IS SILENT: the fake CLI only writes markers when the launcher
  *      points it at this run's directory, and a silent recorder makes "the app
- *      asked Hermes to start the gateway" true of every run, including one where
+ *      asked Hermes to ensure the gateway" true of every run, including one where
  *      the app never called anything. So the artifact must show the `config set`
- *      the app always runs before any gateway verb, and both gateway verbs.
+ *      the app always runs before any gateway verb, and the `ensure` verb.
  *   2. THE APP RAN THE OPERATOR'S REAL HERMES: which would falsify the run and
  *      touch a Hermes this rig must never touch. `where hermes` is recorded and
  *      must name this run's shim.
@@ -57,10 +63,13 @@ import { describe, it } from "node:test";
  *      host is up, and fail this run.
  *   4. THE MESSAGE REACHED THE STATUS AND NOT THE SCREEN: the operator reads the
  *      setup screen. The artifact's `screen.body` is read out of the real window,
- *      and it must carry both sentences too.
+ *      and it must carry the CLI's sentence too.
  *   5. THE FIX IS MEASURED BY ACCIDENT: the body must not be an exit-code
  *      fallback, which is the exact string the unfixed app produced. That
  *      assertion is what fails when this rig is run against the old bundle.
+ *   6. THE HOST IS RESTARTED: the app may not reach for `gateway restart` or
+ *      `gateway start` against a host it did not start. The artifact's CLI log
+ *      must show exactly one `ensure` and neither of those verbs.
  *
  * Runs under `npm test` (`node --experimental-strip-types --test`). It skips when
  * the Vite dev server is not listening on 5173, because the app is started from
@@ -143,10 +152,8 @@ const subOf = (call: CliCall): string => call.argv[1] ?? "";
 const isCall = (call: CliCall, verb: string, sub: string): boolean =>
   verbOf(call) === verb && subOf(call) === sub;
 
-/** The sentence Hermes prints for a failed restart, on stdout, before exit 1. */
-const RESTART_SENTENCE = "Gateway service restart failed.";
-/** The sentence Hermes prints when the platform has no service manager at all. */
-const START_SENTENCE = "is not available on this platform";
+/** The sentence Hermes prints for a failed gateway ensure, on stdout, before exit 1. */
+const ENSURE_SENTENCE = "Gateway runtime did not become ready.";
 /** The whole diagnosis the app had before this fix. */
 const BARE_FALLBACK = /^hermes [^\n]* exited \d+$/;
 
@@ -192,13 +199,19 @@ describe("companion refusal e2e", () => {
     assert.equal(report.result.ran, true, "the driver never reported");
 
     // ── the refusal path is the one that ran ─────────────────────────────────
+    //
+    // `ensure` is the only gateway verb that starts anything now. A run that
+    // reaches for `restart` — the shared host's restart, which took every other
+    // profile down — fails here even if the screen looks right.
+    const ensures = report.cliLog.filter((call) => isCall(call, "gateway", "ensure"));
     const restarts = report.cliLog.filter((call) => isCall(call, "gateway", "restart"));
     const starts = report.cliLog.filter((call) => isCall(call, "gateway", "start"));
-    assert.equal(restarts.length, 1, `the app ran \`gateway restart\` ${restarts.length} times, not once`);
+    assert.equal(ensures.length, 1, `the app ran \`gateway ensure\` ${ensures.length} times, not once`);
+    assert.equal(restarts.length, 0, `the app restarted the shared host gateway ${restarts.length} times`);
     assert.equal(
       starts.length,
-      1,
-      "the app did not fall back to `gateway start` after the restart refused",
+      0,
+      "the app started a gateway that was already running",
     );
     assert.equal(
       report.result.kind,
@@ -206,18 +219,12 @@ describe("companion refusal e2e", () => {
       `the app reported ${report.result.kind} instead of the refusal; it attached where it should have started a gateway`,
     );
 
-    // ── the operator gets the CLI's own words, from BOTH commands ────────────
+    // ── the operator gets the CLI's own words ────────────────────────────────
     //
-    // The restart's message is the one the old `catch {}` dropped; the start's is
-    // the one that lived on a stdout pipe nobody read. Both must be here, or the
-    // operator is back to reading an exit code.
+    // The refusal is printed on stdout, which the app used to leave unread.
     assert.ok(
-      report.result.detail.includes(RESTART_SENTENCE),
-      `the restart refusal the app used to swallow is missing: ${JSON.stringify(report.result.detail)}`,
-    );
-    assert.ok(
-      report.result.detail.includes(START_SENTENCE),
-      `the start refusal that lived on stdout is missing: ${JSON.stringify(report.result.detail)}`,
+      report.result.detail.includes(ENSURE_SENTENCE),
+      `the ensure refusal the app used to swallow is missing: ${JSON.stringify(report.result.detail)}`,
     );
     assert.doesNotMatch(
       report.result.detail.trim(),
@@ -237,12 +244,8 @@ describe("companion refusal e2e", () => {
       `the setup screen's lead line changed: ${JSON.stringify(report.result.screen.lead)}`,
     );
     assert.ok(
-      (report.result.screen.body ?? "").includes(RESTART_SENTENCE),
-      `the setup screen did not show Hermes' restart refusal: ${JSON.stringify(report.result.screen.body)}`,
-    );
-    assert.ok(
-      (report.result.screen.body ?? "").includes(START_SENTENCE),
-      `the setup screen did not show Hermes' start refusal: ${JSON.stringify(report.result.screen.body)}`,
+      (report.result.screen.body ?? "").includes(ENSURE_SENTENCE),
+      `the setup screen did not show Hermes' ensure refusal: ${JSON.stringify(report.result.screen.body)}`,
     );
     assert.notEqual(
       report.result.screen.body,

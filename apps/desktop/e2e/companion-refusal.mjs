@@ -97,25 +97,19 @@ const INVITE_PORT = 18_846;
 const PROFILE = "refusal-e2e";
 
 /**
- * The two refusals, verbatim from Hermes 2026-10 (`hermes_cli/gateway.py`
- * `_NO_BACKEND_MESSAGES[("start","unsupported")]` and the Windows restart
- * failure at `gateway.py:5601-5607`), reduced to the sentences this rig asserts
- * on. Both are printed by `print()` — STDOUT — before `sys.exit(1)`.
+ * The refusal, verbatim in shape from Hermes 2026-10 (`hermes_cli/gateway.py`):
+ * the message on STDOUT, an empty stderr, exit 1. `gateway ensure` is the only
+ * gateway verb the app runs at startup now; `restart` and `start` are refused
+ * too, so a regression that reaches for either one leaves its own sentence in
+ * the artifact.
  */
-const RESTART_REFUSAL = [
-  "✗ Gateway service restart failed.",
-  "  The service definition exists, but the service manager did not recover it.",
-  "  Fix the service, then retry: hermes gateway start",
+const ENSURE_REFUSAL = [
+  "✗ Gateway runtime did not become ready.",
+  "  The host gateway process exited during startup.",
+  "  Run `hermes gateway status` for details.",
   "",
 ];
-const START_REFUSAL = [
-  "Running the gateway as a background service is not available on this platform",
-  "(no systemd, launchd or Scheduled Tasks).",
-  "Run it directly with: hermes gateway run",
-  "",
-];
-const RESTART_SENTENCE = "Gateway service restart failed.";
-const START_SENTENCE = "is not available on this platform";
+const ENSURE_SENTENCE = "Gateway runtime did not become ready.";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lq-refusal-"));
 const notes = [];
@@ -157,9 +151,9 @@ function portIsFree(port) {
 /**
  * The fake `hermes`, first on PATH.
  *
- * `gateway restart` and `gateway start` refuse the way the real CLI refuses: the
- * text on STDOUT, nothing on stderr, exit 1. Every other invocation — the two
- * `config set`s the app runs first — exits 0.
+ * `gateway ensure` — the only gateway verb the app starts anything with — refuses
+ * the way the real CLI refuses: the text on STDOUT, nothing on stderr, exit 1.
+ * Every other invocation (the two `config set`s the app runs first) exits 0.
  *
  * The refusal text is emitted with `type` from a UTF-8 file rather than `echo`:
  * a `✗` through `echo` is written in the console code page and arrives at the
@@ -168,7 +162,7 @@ function portIsFree(port) {
  *
  * Each invocation also writes a marker file whose name carries the two verb
  * atoms the judge reads (`%COMPUTERNAME%.%RANDOM%-%RANDOM%.p%1-%2`), because a
- * log that cannot tell `gateway restart` from `gateway start` cannot state the
+ * log that cannot tell `gateway ensure` from `gateway restart` cannot state the
  * claim. TWO randoms, not one: the app runs `hermes config set` twice in a row
  * with identical argv, and one `%RANDOM%` collides often enough to make the
  * second invocation overwrite the first — which is how this rig's first run
@@ -178,10 +172,8 @@ function portIsFree(port) {
  */
 function writeHermesShim(cliDir) {
   fs.mkdirSync(cliDir, { recursive: true });
-  const restartText = path.join(cliDir, "refuse-restart.txt");
-  const startText = path.join(cliDir, "refuse-start.txt");
-  fs.writeFileSync(restartText, `${RESTART_REFUSAL.join("\r\n")}`, "utf8");
-  fs.writeFileSync(startText, `${START_REFUSAL.join("\r\n")}`, "utf8");
+  const ensureText = path.join(cliDir, "refuse-ensure.txt");
+  fs.writeFileSync(ensureText, `${ENSURE_REFUSAL.join("\r\n")}`, "utf8");
 
   const shim = path.join(cliDir, "hermes.cmd");
   const script = [
@@ -191,12 +183,8 @@ function writeHermesShim(cliDir) {
     "if defined REFUSAL_CALLS (",
     '  >"%REFUSAL_CALLS%\\%COMPUTERNAME%.%RANDOM%-%RANDOM%.p%1-%2" echo %1 %2',
     ")",
-    'if "%1"=="gateway" if "%2"=="restart" (',
-    `  type "${restartText}"`,
-    "  exit /b 1",
-    ")",
-    'if "%1"=="gateway" if "%2"=="start" (',
-    `  type "${startText}"`,
+    'if "%1"=="gateway" (',
+    `  type "${ensureText}"`,
     "  exit /b 1",
     ")",
     "exit /b 0",
@@ -212,8 +200,7 @@ function writeHermesShim(cliDir) {
       [
         "#!/bin/sh",
         'if [ -n "$REFUSAL_CALLS" ]; then : > "$REFUSAL_CALLS/$(hostname).$$.p$1-$2"; fi',
-        'if [ "$1" = "gateway" ] && [ "$2" = "restart" ]; then cat "$(dirname "$0")/refuse-restart.txt"; exit 1; fi',
-        'if [ "$1" = "gateway" ] && [ "$2" = "start" ]; then cat "$(dirname "$0")/refuse-start.txt"; exit 1; fi',
+        'if [ "$1" = "gateway" ]; then cat "$(dirname "$0")/refuse-ensure.txt"; exit 1; fi',
         "exit 0",
         "",
       ].join("\n"),
@@ -221,7 +208,7 @@ function writeHermesShim(cliDir) {
     );
     fs.chmodSync(posix, 0o755);
   }
-  return { shim, restartText, startText };
+  return { shim, ensureText };
 }
 
 /** The two verb atoms a marker file's name carries, or null for a foreign name. */
@@ -370,8 +357,8 @@ async function main() {
   record = {
     pass: false,
     failures: [],
-    what: "the real LifeQuest app against a Hermes CLI that refuses to start the host gateway the way the real one refuses: the message on stdout, an empty stderr, exit 1. Does the setup screen carry the CLI's own words?",
-    why: "a fresh install stopped at the companion stage showing 'Hermes gateway exited / hermes gateway start exited 1' — the app read stderr only, Hermes prints refusals on stdout, and the first command's failure was swallowed by a bare catch",
+    what: "the real LifeQuest app against a Hermes CLI that refuses `gateway ensure` the way the real one refuses: the message on stdout, an empty stderr, exit 1. Does the setup screen carry the CLI's own words, without restarting any gateway?",
+    why: "a fresh install stopped at the companion stage showing 'Hermes gateway exited / hermes gateway start exited 1' — the app read stderr only, Hermes prints refusals on stdout, and the first command's failure was swallowed by a bare catch; it also restarted the shared host gateway to fix one profile",
     profile: PROFILE,
     fakeCli: shim,
     ports: { local: LOCAL_PORT, invite: INVITE_PORT, host: hostPort },
@@ -422,8 +409,9 @@ function judge(run) {
     JSON.stringify(configCalls.map((c) => c.argv)),
   );
   add(
-    "the app asked the CLI to restart the gateway, then to start it",
-    run.cliLog.some((c) => is(c, "restart")) && run.cliLog.some((c) => is(c, "start")),
+    "the app asked the CLI to ensure the gateway, and never to restart or start it",
+    gatewayCalls.some((c) => is(c, "ensure")) &&
+      !gatewayCalls.some((c) => is(c, "restart") || is(c, "start")),
     JSON.stringify(gatewayCalls.map((c) => c.argv)),
   );
   add(
@@ -432,13 +420,8 @@ function judge(run) {
     JSON.stringify({ kind: res.kind ?? null, detail: detail.slice(0, 400) }),
   );
   add(
-    "the reported detail carries the RESTART refusal the app used to swallow",
-    detail.includes(RESTART_SENTENCE),
-    JSON.stringify(detail.slice(0, 600)),
-  );
-  add(
-    "the reported detail carries the START refusal that lived on stdout",
-    detail.includes(START_SENTENCE),
+    "the reported detail carries the ensure refusal the app used to swallow",
+    detail.includes(ENSURE_SENTENCE),
     JSON.stringify(detail.slice(0, 600)),
   );
   add(
@@ -453,12 +436,7 @@ function judge(run) {
   );
   add(
     "the setup screen body shows the CLI's own sentence",
-    typeof screen.body === "string" && screen.body.includes("Gateway service restart failed."),
-    JSON.stringify((screen.body ?? "").slice(0, 400)),
-  );
-  add(
-    "the setup screen body shows the second command's refusal too",
-    typeof screen.body === "string" && screen.body.includes(START_SENTENCE),
+    typeof screen.body === "string" && screen.body.includes(ENSURE_SENTENCE),
     JSON.stringify((screen.body ?? "").slice(0, 400)),
   );
 

@@ -362,9 +362,11 @@ async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
   // `mcp_servers` when it started — and a host that was already running when
   // these doors bound has parked on them, which leaves every session on the
   // profile without lifequest tools until Hermes probes it again 300s later.
-  // Ask after the handshake window and restart the host if the companion never
-  // arrived. Deliberately not awaited: the vault is open, the answer is a
-  // restart that takes seconds, and neither a slow host nor a failed one may
+  // Ask after the handshake window and, if the companion never arrived, cycle
+  // THIS profile's served runtime through the host's control socket. Never
+  // restart the host: it is the one multiplexer every profile on this machine
+  // shares. Deliberately not awaited: the vault is open, the answer is a scoped
+  // refresh that takes seconds, and neither a slow host nor a failed one may
   // hold the open — or the vault queue this runs on — while it is decided.
   void companion.companionConfirmDoors().catch(() => {
     /* the companion's own status is where a failure to reach it is reported */

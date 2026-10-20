@@ -4,10 +4,10 @@
  * The real app runs here — `dist-electron/main.js`, the real preload, the real
  * renderer, booted through `bootForE2e` — against the world
  * `companion-refusal.mjs` built: a temp `HERMES_HOME`, a fake `hermes` first on
- * PATH that refuses `gateway restart` and `gateway start` the way the real CLI
- * refuses (the message on STDOUT, an empty stderr, exit 1), and an app prefs file
- * that puts the companion on a profile no host on this machine serves. Nothing
- * the operator owns is read or written.
+ * PATH that refuses `gateway ensure` (and every other `gateway` verb) the way
+ * the real CLI refuses (the message on STDOUT, an empty stderr, exit 1), and an
+ * app prefs file that puts the companion on a profile no host on this machine
+ * serves. Nothing the operator owns is read or written.
  *
  * WHAT IT DOES
  *

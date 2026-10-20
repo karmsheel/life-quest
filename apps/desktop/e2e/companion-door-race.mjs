@@ -21,16 +21,20 @@
  *  - a profile whose `mcp_servers.lifequest` already carries the credential the
  *    app will mint, and a secrets file that already holds that token, so
  *    `credentialChanged` is false and `ensureCompanion` cannot be the thing that
- *    restarts the host. Whatever restarts it is the post-bind door check.
+ *    cycles it. Whatever cycles it is the post-bind door check.
+ *  - a fake host control socket on the pipe name the temp home derives, so the
+ *    profile-scoped refresh has somewhere to go and every verb it sends is
+ *    recorded. A real host would be the operator's; this rig never touches it.
  *
  * Two phases, one artifact:
  *
  *   parked     the host started BEFORE the doors and never contacted them: the
- *              reported failure, and the fix must restart the host inside the
- *              short (5 s) window and only there.
+ *              reported failure, and the fix must cycle ONLY the selected
+ *              profile through the host's control socket, inside the short (5 s)
+ *              window, without restarting the host.
  *   connected  the same world, but the host reaches the local door seconds after
- *              it binds: no restart at all, which is what makes the first phase
- *              a decision rather than a habit.
+ *              it binds: no restart and no profile cycle at all, which is what
+ *              makes the first phase a decision rather than a habit.
  *
  * Usage, from `apps/desktop`, with the Vite dev server up:
  *
@@ -40,7 +44,7 @@
  * `e2e/artifacts/companion-door-race.json`.
  */
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
@@ -233,6 +237,137 @@ function startFakeHost(port) {
   });
 }
 
+/**
+ * The fake Hermes gateway control socket, for the profile-scoped refresh.
+ *
+ * The app now answers a parked profile by asking the RUNNING host to re-read
+ * THAT profile (`unserve-profile` / `serve-profile`) instead of restarting the
+ * host every profile shares. The host is not part of this rig — a real one would
+ * be the operator's — so this server speaks the same one-line JSON protocol the
+ * real `gateway.control_socket` does, on the exact per-home pipe name Hermes
+ * derives, and records every verb the app sends.
+ *
+ * It answers `identify` with the same two profiles the real host would list:
+ * the root (`default`, the host's own launch profile) and this phase's
+ * `profiles/lifequest`. `unserve-profile` and `serve-profile` answer the way the
+ * host answers, and `rescan-profiles` is a no-op that keeps the profile served.
+ */
+function controlAddress(home) {
+  if (process.platform !== "win32") return path.join(home, "gateway.sock");
+  const hash = createHash("sha256")
+    .update(path.resolve(home).toLowerCase())
+    .digest("hex")
+    .slice(0, 16);
+  return `\\\\.\\pipe\\hermes-gateway-${hash}`;
+}
+
+function startFakeControl(home, logFile) {
+  const profileHome = path.join(home, "profiles", "lifequest");
+  const served = () => [
+    { profile_id: home, home },
+    { profile_id: profileHome, home: profileHome },
+  ];
+  const server = net.createServer((socket) => {
+    let buffer = "";
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk) => {
+      buffer += chunk;
+      let newline;
+      while ((newline = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        if (!line.trim()) continue;
+        let request;
+        try {
+          request = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        const params =
+          request && typeof request.params === "object" ? request.params : null;
+        const entry = { at: Date.now(), verb: String(request?.verb ?? ""), params };
+        fs.appendFileSync(logFile, `${JSON.stringify(entry)}\n`);
+        let result;
+        switch (entry.verb) {
+          case "identify":
+            result = {
+              protocol: 1,
+              kind: "hermes-gateway",
+              pid: 4242,
+              profile: "default",
+              hermes_home: home,
+              served_profiles: served(),
+              instance_id: "door-race",
+              runtime_protocol: 1,
+              authority_epoch: 1,
+              state: "ready",
+              capabilities: ["session-authority-v1"],
+            };
+            break;
+          case "unserve-profile":
+            result = {
+              unserved: String(params?.name ?? ""),
+              served_profiles: [{ profile_id: home, home }],
+            };
+            break;
+          case "serve-profile":
+            result = {
+              served: String(params?.name ?? ""),
+              served_profiles: served(),
+            };
+            break;
+          case "rescan-profiles":
+            result = { multiplex: true, served_profiles: served() };
+            break;
+          default:
+            result = { error: `unknown verb: ${entry.verb}` };
+        }
+        socket.write(
+          `${JSON.stringify({ ok: true, protocol: 1, id: request?.id ?? 1, result })}\n`,
+        );
+      }
+    });
+    socket.on("error", () => {
+      /* the app closed first; nothing to answer */
+    });
+  });
+  const address = controlAddress(home);
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(address, () => {
+      server.unref();
+      resolve({
+        address,
+        close: () =>
+          new Promise((done) => {
+            server.close(() => done());
+          }),
+      });
+    });
+  });
+}
+
+/** The control verbs the app sent, in order, from the fake host's JSONL log. */
+function readControlLog(file) {
+  let text = "";
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return [];
+  }
+  const calls = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      calls.push(JSON.parse(line));
+    } catch {
+      /* a partial final line while the app is still writing: skip it */
+    }
+  }
+  return calls;
+}
+
+
 /** An authenticated MCP call, answered as the door answers. */
 async function doorCall(port, token, method, params = {}) {
   const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
@@ -274,11 +409,12 @@ function bootFor(phase) {
   const userData = path.join(dir, "userdata");
   const callsDir = path.join(dir, "hermes-calls");
   const coordFile = path.join(dir, "doors.json");
+  const controlLog = path.join(dir, "gateway-control.jsonl");
   const resultFile = path.join(dir, "result.json");
   for (const p of [hermesHome, path.join(hermesHome, "profiles", "lifequest"), userData, callsDir]) {
     fs.mkdirSync(p, { recursive: true });
   }
-  return { dir, hermesHome, userData, callsDir, coordFile, resultFile };
+  return { dir, hermesHome, userData, callsDir, coordFile, controlLog, resultFile };
 }
 
 /** `<HERMES_HOME>/gateway.pid` with an mtime in the past, or none at all. */
@@ -385,6 +521,7 @@ async function setupPhase(phase, { hostPort, token }) {
     hermesHome: paths.hermesHome,
     callsDir: paths.callsDir,
     coordFile: paths.coordFile,
+    controlLog: paths.controlLog,
     resultFile: paths.resultFile,
     vaultRoot: path.join(paths.dir, "vault"),
     vaultId,
@@ -426,6 +563,10 @@ async function setupPhase(phase, { hostPort, token }) {
   env.DOOR_RACE_CALLS = paths.callsDir;
 
   let host = await startFakeHost(hostPort);
+  // The host's control socket, on the pipe name this phase's HERMES_HOME
+  // derives. This is the only way the app can refresh a profile without a
+  // restart, and recording its verbs is how the artifact proves the app used it.
+  const control = await startFakeControl(paths.hermesHome, paths.controlLog);
 
   const record = {
     case: phase.case,
@@ -438,10 +579,12 @@ async function setupPhase(phase, { hostPort, token }) {
     hostContactExpected: spec.hostContactExpected,
     watchMs: spec.watchMs,
     hostLog: [],
+    /** The control verbs the app sent to the fake host, with their arrival times. */
+    controlLog: [],
     /**
      * The fake CLI's invocation log, filled in by the DRIVER while the app is
-     * still running: the restart this rig watches for is a marker file appearing
-     * while the app holds the door, so it cannot be read after the fact without
+     * still running: the commands this rig watches for are marker files appearing
+     * while the app holds the door, so they cannot be read after the fact without
      * also losing the "when" that the whole assertion rests on.
      */
     cliLog: [],
@@ -494,11 +637,13 @@ async function setupPhase(phase, { hostPort, token }) {
 
   await contact;
   await host.close();
+  await control.close();
   children.delete(child);
 
   record.exit = outcome;
   record.hostLog = [...host.requests];
   record.cliLog = fs.existsSync(paths.callsDir) ? readInvocationLog(paths.callsDir) : [];
+  record.controlLog = readControlLog(paths.controlLog);
   if (fs.existsSync(paths.resultFile)) {
     try {
       record.result = JSON.parse(fs.readFileSync(paths.resultFile, "utf8"));
@@ -555,16 +700,38 @@ function judge(record) {
 
   if (record.case === "parked") {
     add(
-      "no `gateway restart` before the door's 5s window",
-      restarts.every((e) => e.at - doorUpAt >= 4_000),
+      "no `gateway restart` at all",
+      restarts.length === 0,
       JSON.stringify(restarts.map(relative)),
     );
     add(
-      "exactly one `gateway restart` inside the window",
-      restarts.length === 1 && restarts[0].at - doorUpAt <= 25_000,
-      JSON.stringify(restarts.map(relative)),
+      "no `gateway start` either: the host was already running",
+      starts.length === 0,
+      JSON.stringify(starts.map(relative)),
     );
-    add("the restart is a restart, not a start", starts.length === 0, JSON.stringify(starts.map(relative)));
+    // The fix: the app asks the RUNNING host to re-read ONLY this profile.
+    // `unserve-profile` then `serve-profile` is the scoped cycle; neither stops
+    // the host process or any other profile.
+    const cycles = record.controlLog.filter(
+      (call) => call.verb === "unserve-profile" || call.verb === "serve-profile",
+    );
+    const forLifequest = cycles.filter((call) => call.params?.name === "lifequest");
+    add(
+      "the app asked the running host to cycle the selected profile",
+      forLifequest.filter((c) => c.verb === "unserve-profile").length === 1 &&
+        forLifequest.filter((c) => c.verb === "serve-profile").length === 1,
+      JSON.stringify(cycles),
+    );
+    add(
+      "the profile cycle waited for the door's 5s window",
+      forLifequest.length > 0 && forLifequest[0].at - doorUpAt >= 4_000,
+      JSON.stringify(forLifequest.map((c) => ({ verb: c.verb, rel: c.at - doorUpAt }))),
+    );
+    add(
+      "the profile cycle landed inside the window",
+      forLifequest.length > 0 && forLifequest[0].at - doorUpAt <= 25_000,
+      JSON.stringify(forLifequest.map((c) => ({ verb: c.verb, rel: c.at - doorUpAt }))),
+    );
     add(
       "the door serves real LifeQuest tools after it",
       (res.toolsAfterRestart ?? []).includes("get_dashboard") &&
@@ -572,12 +739,19 @@ function judge(record) {
       JSON.stringify((res.toolsAfterRestart ?? []).slice(0, 12)),
     );
     add(
-      "the door refused every caller before the restart",
+      "the door refused every caller before the refresh",
       res.doorRefusalAtBind?.status === 401,
       JSON.stringify(res.doorRefusalAtBind ?? null),
     );
   } else {
     add("no `gateway restart` at all", restarts.length === 0, JSON.stringify(restarts.map(relative)));
+    add(
+      "the connected host's profile was never cycled",
+      record.controlLog.every(
+        (call) => call.verb !== "unserve-profile" && call.verb !== "serve-profile",
+      ),
+      JSON.stringify(record.controlLog),
+    );
     add("the host's contact was accepted by the door", record.hostContact?.ok === true, JSON.stringify(record.hostContact));
     add(
       "the door serves the companion in the control too",
@@ -599,8 +773,8 @@ function writeReport() {
   const report = {
     pass: failures.length === 0,
     failures,
-    what: "the real LifeQuest app against a Hermes host that was already running when its MCP doors bound: the parked host is restarted once inside the door's window, the connected host is never restarted",
-    why: "the 2026-10-08 report — a companion session with no mcp__lifequest__* tools — was a host that tried a door before it existed and parked on it; the app's one-shot startup check found no door and did nothing",
+    what: "the real LifeQuest app against a Hermes host that was already running when its MCP doors bound: the parked profile is cycled through the host's own control socket, the connected profile is left alone, and the host gateway is never restarted",
+    why: "the 2026-10-08 report — a companion session with no mcp__lifequest__* tools — was a host that tried a door before it existed and parked on it; restarting that host to fix it took every other profile on the machine down with it",
     notes,
     runs,
     generatedAt: new Date().toISOString(),
@@ -618,7 +792,7 @@ function writeReport() {
  * is what a host that was already running when the app started looks like. The
  * parked phase is then the 2026-10-08 report reproduced exactly; the connected
  * phase feeds that same world a host that reaches the door, and demands no
- * restart at all.
+ * restart and no profile cycle at all.
  */
 const PHASES = [
   {
@@ -656,7 +830,7 @@ async function main() {
     runs[phase.id] = record;
     for (const message of verdict.failures) failures.push(message);
     console.error(
-      `[door-race] phase ${phase.id}: ${record.verdict} — cli calls ${record.cliLog.length}, restarts ${record.cliLog.filter((e) => e.argv?.[0] === "gateway" && e.argv?.[1] === "restart").length}`,
+      `[door-race] phase ${phase.id}: ${record.verdict} — cli calls ${record.cliLog.length}, restarts ${record.cliLog.filter((e) => e.argv?.[0] === "gateway" && e.argv?.[1] === "restart").length}, profile cycles ${record.controlLog.filter((e) => e.verb === "unserve-profile").length}`,
     );
   }
   return writeReport();

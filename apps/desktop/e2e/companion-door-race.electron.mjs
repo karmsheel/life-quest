@@ -26,22 +26,24 @@
  *
  *   parked     the host's own record (`<HERMES_HOME>/gateway.pid`) predates the
  *              doors and the host never contacts them: exactly the report. The
- *              app must restart the host once, after the short window and not
- *              before it, and the door must then serve an authenticated
- *              `tools/list` naming real LifeQuest tools — which is what proves
- *              the door was always fine and the restart was what the host needed.
+ *              app must ask the RUNNING host to cycle only this profile through
+ *              its control socket, after the short window and not before it, and
+ *              the door must then serve an authenticated `tools/list` naming real
+ *              LifeQuest tools. It must not restart the host, which serves every
+ *              other profile on the machine.
  *   connected  the same world, but the host reaches the local door seconds after
- *              it binds. The app must NOT restart anything. Without this case a
- *              rig that always restarts would pass the first one.
+ *              it binds. The app must do neither a restart nor a profile cycle.
+ *              Without this case a rig that always cycles would pass the first.
  *
  * HOW THE RUN IS READ
  *
  * Every `hermes` the app runs is recorded as a marker file in the fake CLI's
  * directory (`{hostname}.{random}.p{argv[0]}` — see the launcher for why the
- * argv is an atom rather than a quoted command line). The driver polls that
- * directory LIVE, while the app is still running, because the claim is not "a
- * restart happened" but "a restart happened in this window": the file's creation
- * stamp against the door's own bind instant is the whole assertion.
+ * argv is an atom rather than a quoted command line). Every control verb the app
+ * sends is appended to the fake host's JSONL log. The driver polls BOTH LIVE,
+ * while the app is still running, because the claim is not "a command happened"
+ * but "it happened in this window": the file's creation stamp against the
+ * door's own bind instant is the whole assertion.
  *
  * The artifact is `e2e/artifacts/companion-door-race.json`, written by the
  * launcher from these observations plus its own outside-the-app ones.
@@ -172,22 +174,52 @@ function invocations(dir) {
 
 const isRestart = (call) => call.argv[0] === "gateway" && call.argv[1] === "restart";
 
+/** The control verbs the app sent, read from the fake host's JSONL log. */
+function controlInvocations(file) {
+  let text = "";
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return [];
+  }
+  const calls = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      calls.push(JSON.parse(line));
+    } catch {
+      /* a partial final line while the fake host is still writing it */
+    }
+  }
+  return calls;
+}
+
 /**
- * Watch the CLI's marker directory until a `gateway` invocation lands, or until
- * the deadline. It is polled LIVE on purpose: the assertion is about when the
- * app acted, not about whether the log has an entry by the time everything is
+ * Watch the CLI's marker directory and the fake host's control log UNTIL the
+ * app asks the host to cycle the profile (parked) or the deadline passes
+ * (connected). It is polled LIVE on purpose: the assertion is about when the
+ * app acted, not about whether the logs have an entry by the time everything is
  * over.
  */
-async function watchForRestart(dir, deadline, { onCall } = {}) {
+async function watchForActions(dir, controlFile, deadline, { onCall, onControl } = {}) {
   const seen = [];
+  const seenControl = [];
   for (;;) {
     for (const call of invocations(dir)) {
       if (seen.some((s) => s.raw === call.raw)) continue;
       seen.push(call);
       if (onCall) onCall(call);
     }
-    if (seen.some((call) => isRestart(call))) return seen;
-    if (Date.now() > deadline) return seen;
+    for (const call of controlInvocations(controlFile)) {
+      if (seenControl.some((s) => s.at === call.at && s.verb === call.verb)) continue;
+      seenControl.push(call);
+      if (onControl) onControl(call);
+    }
+    if (seen.some((call) => isRestart(call))) return { calls: seen, control: seenControl };
+    if (seenControl.some((call) => call.verb === "serve-profile")) {
+      return { calls: seen, control: seenControl };
+    }
+    if (Date.now() > deadline) return { calls: seen, control: seenControl };
     await sleep(250);
   }
 }
@@ -241,15 +273,33 @@ async function run() {
   // against the door's own instant, never against a stopwatch started here.
   const deadline = doorUpAt + SPEC.watchMs;
   const firstCallAt = { value: null };
-  const calls = await watchForRestart(SPEC.callsDir, deadline, {
-    onCall: (call) => {
-      if (firstCallAt.value === null) firstCallAt.value = call.at;
-      note(`hermes invocation: ${call.raw} at ${call.at} (door +${call.at - doorUpAt}ms)`);
+  const firstControlAt = { value: null };
+  const watched = await watchForActions(
+    SPEC.callsDir,
+    SPEC.controlLog,
+    deadline,
+    {
+      onCall: (call) => {
+        if (firstCallAt.value === null) firstCallAt.value = call.at;
+        note(`hermes invocation: ${call.raw} at ${call.at} (door +${call.at - doorUpAt}ms)`);
+      },
+      onControl: (call) => {
+        if (firstControlAt.value === null) firstControlAt.value = call.at;
+        note(
+          `gateway control: ${call.verb} ${JSON.stringify(call.params ?? null)} at ${call.at} (door +${call.at - doorUpAt}ms)`,
+        );
+      },
     },
-  });
+  );
   const watchedMs = Date.now() - doorUpAt;
 
+  const calls = watched.calls;
+  const controlCalls = watched.control;
   const restarts = calls.filter(isRestart);
+  const cycles = controlCalls.filter(
+    (call) => call.verb === "unserve-profile" || call.verb === "serve-profile",
+  );
+  const forLifequest = cycles.filter((call) => call.params?.name === "lifequest");
 
   const result = {
     id: SPEC.id,
@@ -261,6 +311,7 @@ async function run() {
     cliPath: hermes.path,
     cliLookupError: hermes.error,
     cliLog: calls,
+    controlLog: controlCalls,
     doorsAtBind: { localBound: true, inviteBound: true },
     inviteDoor: { port: SPEC.invitePort, status: inviteRes.status, refusal: "AUTH_REQUIRED" },
     doorRefusalAtBind: { status: doorReply.status, body: doorReply.raw.slice(0, 200) },
@@ -285,18 +336,33 @@ async function run() {
 
   // ── the assertions this process can make from inside the app ───────────────
   if (SPEC.case === "parked") {
-    if (restarts.length === 0) {
-      fail(`no gateway restart arrived within ${SPEC.watchMs / 1000}s of the door binding`);
+    // The fix is NOT a restart. The host serves every profile on this machine;
+    // restarting it for one profile is the disruption this rig exists to prevent.
+    if (restarts.length > 0) {
+      fail(
+        `the app restarted the host ${restarts.length} time(s) instead of cycling the profile: ${JSON.stringify(restarts)}`,
+      );
+    }
+    if (calls.some((call) => call.argv[0] === "gateway" && call.argv[1] === "start")) {
+      fail("the app started a gateway while the host was already running");
+    }
+    const unserves = forLifequest.filter((call) => call.verb === "unserve-profile");
+    const serves = forLifequest.filter((call) => call.verb === "serve-profile");
+    if (unserves.length !== 1 || serves.length !== 1) {
+      fail(
+        `the app did not cycle exactly once through the host's control socket: ${JSON.stringify(cycles)}`,
+      );
     } else {
-      const first = restarts[0];
-      if (first.at - doorUpAt < 4_000) {
-        fail(`a gateway restart landed ${first.at - doorUpAt}ms after the door bound, inside the 5s window`);
+      const first = Math.min(unserves[0].at, serves[0].at);
+      if (first - doorUpAt < 4_000) {
+        fail(
+          `the profile cycle landed ${first - doorUpAt}ms after the door bound, inside the 5s window`,
+        );
       }
-      if (first.at - doorUpAt > 25_000) {
-        fail(`the only gateway restart landed ${first.at - doorUpAt}ms after the door bound, long after the 5s window`);
-      }
-      if (restarts.length > 1) {
-        fail(`the app restarted the host ${restarts.length} times for one binding`);
+      if (first - doorUpAt > 25_000) {
+        fail(
+          `the profile cycle landed ${first - doorUpAt}ms after the door bound, long after the 5s window`,
+        );
       }
     }
     // The door is proven fine by asking it, and the tool list is the artifact
@@ -306,12 +372,15 @@ async function run() {
     result.toolsAfterRestart = tools;
     result.toolsAfterRestartStatus = served.status;
     if (!tools.includes("get_dashboard") || !tools.includes("preview_view")) {
-      fail(`the door served ${tools.length} tools after the restart and not the LifeQuest ones: ${JSON.stringify(tools.slice(0, 8))}`);
+      fail(`the door served ${tools.length} tools after the refresh and not the LifeQuest ones: ${JSON.stringify(tools.slice(0, 8))}`);
     }
   } else {
     // The control: the host reached the door, so the app has nothing to fix.
     if (restarts.length > 0) {
       fail(`the app restarted a host that had already reached the door: ${JSON.stringify(restarts)}`);
+    }
+    if (cycles.length > 0) {
+      fail(`the app cycled the profile of a host that had already reached the door: ${JSON.stringify(cycles)}`);
     }
     if (watchedMs < 10_000) {
       fail(`the control watched only ${watchedMs}ms, which is not long enough to call "no restart" a decision`);

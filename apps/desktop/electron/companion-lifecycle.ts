@@ -72,6 +72,11 @@ export type CompanionIo = {
   ensureHostGateway: (
     cli: string,
     hermesHome: string,
+    /**
+     * Ask a running host to re-read this profile's config (a credential that was
+     * just written, or a profile that parked on a door). The refresh cycles only
+     * this profile's served runtime; it never restarts the shared host gateway.
+     */
     force?: boolean,
     /**
      * The profile whose `/p/<name>` prefix the host must serve. Absent means
@@ -531,7 +536,7 @@ export async function ensureCompanion(
 
   // Set by the profile writer below when it had to write a credential the files
   // did not already carry. A running host cannot see that write, so it forces
-  // the refresh that makes it visible.
+  // the refresh that makes it visible (scoped to this profile, never the host).
   let credentialChanged = false;
   try {
     envText = upsertEnv(envText, { API_SERVER_KEY: apiKey });

@@ -431,8 +431,9 @@ async function main() {
     // vault's token already; the root config exists and lists no lifequest
     // server, and never will. Asking the root for the header anyway made every
     // launch look like a fresh credential, so every launch ran two
-    // `hermes config set`s and a `hermes gateway restart` — restarting a host
-    // that was already serving, before the first paint.
+    // `hermes config set`s and a gateway restart — restarting a host that was
+    // already serving, before the first paint. The startup path now attaches
+    // first and only calls `gateway ensure` when nothing is serving.
     check(
       "an ensure against an already-credentialed profile spawns no hermes",
       handAsked.invocations.length === 0,

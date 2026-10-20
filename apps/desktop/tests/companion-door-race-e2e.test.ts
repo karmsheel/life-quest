@@ -26,8 +26,9 @@ import { describe, it } from "node:test";
  * door, and concluded nothing; the parked server only revived at 17:42:44, after
  * the operator's turn had already been answered without tools. The fix is a
  * post-bind check on the vault-open path, and this rig is the proof that it
- * fires when the host was already running and stays out of the way when it was
- * not.
+ * cycles only the selected profile through the host's control socket when the
+ * host was already running, and leaves both the host and the profile alone when
+ * the companion reached the door by itself.
  *
  * THE WAYS THIS COULD FAIL, WRITTEN DOWN BEFORE THE CODE
  *
@@ -42,35 +43,36 @@ import { describe, it } from "node:test";
  *      which CLI the app resolved and the test fails if it is not this run's
  *      shim. Ports 8642/8643/8646 are never bound and never used as a fallback,
  *      because the fake host answers the configured port first.
- *   3. `credentialChanged` is true, so the restart the rig observes is
+ *   3. `credentialChanged` is true, so the profile cycle the rig observes is
  *      `ensureCompanion`'s own and says nothing about the door check — it lands
  *      ~80ms after the vault opens, long before any window. The PROFILE config,
  *      the ROOT config and the secrets file are all pre-seeded with the exact
  *      credential the app will mint: the app reads the profile and the root
  *      together for that decision, so seeding only the profile file reproduces
  *      this trap exactly (it did, in this rig's first version), and the parked
- *      run then fails on "no restart before the window" rather than passing on
- *      the wrong one. The control run — same world, no restart — is the second
- *      thing that fails if the seeding is wrong.
- *   4. The restart is real but LATE: a host left tool-less for minutes is the
- *      bug, not a smaller version of the fix. The parked run fails if the first
- *      `gateway restart` lands more than 25 s after the door bound.
- *   5. The restart is real but EARLY: a host whose startup overlaps the binding
- *      gets killed mid-discovery and the boot that was about to succeed is
- *      thrown away. The parked run fails if any restart lands inside the 5 s
+ *      run then fails on "no cycle inside the window" rather than passing on the
+ *      wrong one. The control run — same world, no cycle — is the second thing
+ *      that fails if the seeding is wrong.
+ *   4. The cycle is real but LATE: a host left tool-less for minutes is the bug,
+ *      not a smaller version of the fix. The parked run fails if the first
+ *      control verb lands more than 25 s after the door bound.
+ *   5. The cycle is real but EARLY: a host whose startup overlaps the binding
+ *      gets cycled mid-discovery and the boot that was about to succeed is
+ *      thrown away. The parked run fails if any cycle lands inside the 5 s
  *      parked window, and the `gateway.pid` stamp is what makes that the window
  *      the app must choose.
- *   6. The app restarts the host EVERY time, including when the companion has
- *      already reached the door. The connected control fails if any restart
+ *   6. The app cycles the profile EVERY time, including when the companion has
+ *      already reached the door. The connected control fails if any cycle
  *      happens at all, so the parked case cannot be passed by a habit.
  *   7. The door itself is broken, so "the host parked" is the wrong diagnosis
- *      and a restart could not help. The driver asks the door for an
+ *      and a cycle could not help. The driver asks the door for an
  *      authenticated `tools/list` and the test requires real LifeQuest tool
  *      names — `get_dashboard` and `preview_view` — from the real tool table.
- *   8. The restart is a `gateway start`, which does not make an already-running
- *      host re-read its config. Only `gateway restart` appears in the log, or
- *      the parked run fails.
- *   9. The rig watches for too short a window, so "no restart" is read from a
+ *   8. THE HOST IS RESTARTED. `hermes gateway restart` is the one lever this
+ *      change removes: it stops the ONE multiplexer that serves every profile on
+ *      the machine. The test fails if any `gateway restart` or `gateway start`
+ *      appears in the CLI log during either run.
+ *   9. The rig watches for too short a window, so "no cycle" is read from a
  *      window that closed before the app could have acted. The control waits
  *      past 10 s — longer than the whole parked decision — and the test asserts
  *      that it did.
@@ -80,13 +82,10 @@ import { describe, it } from "node:test";
  *      Electron is killed on every exit path.
  *  11. THE RECORDER IS SILENT, so "the app ran no `gateway restart`" is true of
  *      every run, including the ones where it did — the one failure here that
- *      looks exactly like success, and the one this rig first shipped with. The
- *      shim only records when the launcher wires `DOOR_RACE_CALLS` into the
- *      app's environment, and the app is none the wiser when it is missing: the
- *      fake CLI still exits 0. So the parked run now proves the recorder was live
- *      first — the app always runs `hermes config set` immediately before any
- *      restart, and the test fails if that call is absent from the log — and only
- *      then reads the restart counts.
+ *      looks exactly like success. The fake host's control log is the recorder:
+ *      a silent server means no `unserve-profile` / `serve-profile` verbs, and
+ *      the parked run fails on the cycle assertions rather than passing on an
+ *      empty restart count.
  *  12. The log cannot tell a restart from a start. `hermes gateway restart` and
  *      `hermes gateway start` differ in the second token only, so a marker named
  *      after the first token made "the restart is a restart, not a start"
@@ -97,11 +96,11 @@ import { describe, it } from "node:test";
  *
  * The rig is only worth its runtime if it can fail. With the post-bind call in
  * `vault-service.ts`'s `rememberOpen` commented out and the bundle rebuilt, the
- * parked run goes red with exactly one check failing — "exactly one `gateway
- * restart` inside the window", zero invocations across a 40 s watch — while the
- * doors, the shim resolution, the profile write, the attach probes and the whole
- * connected control still pass. Restoring the call turns it green again. That is
- * the evidence that the parked assertion measures the fix and not the rig.
+ * parked run goes red on the cycle assertions — zero control verbs across a 40 s
+ * watch — while the doors, the CLI resolution, the profile write, the attach
+ * probes and the whole connected control still pass. Restoring the call turns it
+ * green again. That is the evidence that the parked assertion measures the fix
+ * and not the rig.
  *
  * Runs under `npm test` (`node --experimental-strip-types --test`). It skips
  * when the Vite dev server is not listening on 5173, because the app is started
@@ -119,6 +118,8 @@ const LOCAL_PORT = 18_643;
 
 /** One recorded `hermes` invocation: the two verb atoms, and the marker's name. */
 type CliCall = { at: number; argv: string[]; raw?: string };
+/** One control verb the app sent to the fake host. */
+type ControlCall = { at: number; verb: string; params: { name?: string } | null };
 type Check = { name: string; pass: boolean; detail: string | null };
 type Run = {
   case: "parked" | "connected";
@@ -128,6 +129,7 @@ type Run = {
   hostLog: { at: number; method: string; path: string }[];
   hostContact: { ok?: boolean; tools?: number; status?: number; error?: string } | null;
   cliLog: CliCall[];
+  controlLog: ControlCall[];
   checks: Check[];
   verdict: "pass" | "fail";
   exit: { code: number | null; signal: string | null };
@@ -195,7 +197,7 @@ const isCall = (call: CliCall, verb: string, sub: string): boolean =>
   verbOf(call) === verb && subOf(call) === sub;
 
 describe("companion door race e2e", () => {
-  it("restarts a parked host inside the door's window, and never a connected one", async (t) => {
+  it("cycles a parked profile inside the door's window, and never restarts the host", async (t) => {
     if (!(await devServerUp())) {
       t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
       return;
@@ -234,37 +236,57 @@ describe("companion door race e2e", () => {
       );
     }
 
-    // ── the parked host: exactly one restart, inside the window, never before
-    //    it. The window is measured from the door's own bind, and the raw log is
-    //    re-read here so the launcher cannot have talked itself into a pass. ──
+    // ── the parked host: ONE profile cycle, inside the window, never before it,
+    //    and never a host restart. The window is measured from the door's own
+    //    bind, and the raw logs are re-read here so the launcher cannot have
+    //    talked itself into a pass. ────────────────────────────────────────────
     //
-    // The recorder is proved live first. The shim is silent unless the launcher
-    // wired DOOR_RACE_CALLS into the app's environment, and a silent shim makes
-    // every count below zero — so "no restart" would pass by construction. The
-    // app always runs `config set` before it restarts anything, so its presence
-    // is what turns the counts that follow into evidence.
-    assert.ok(
-      parked.result.cliLog.some((call) => isCall(call, "config", "set")),
-      `the rig's CLI recorder never fired: the app's own \`config set\` is missing from ${JSON.stringify(parked.result.cliLog.map((c) => c.raw))}`,
+    // The recorder is the fake host's control log. A silent fake host makes the
+    // cycle assertions below fail (there would be no verbs at all), so "no
+    // restart" cannot pass by construction: the app has to have asked the host
+    // to cycle exactly this profile.
+    const parkedCycles = parked.controlLog.filter(
+      (call) => call.verb === "unserve-profile" || call.verb === "serve-profile",
     );
-    const parkedRestarts = parked.result.cliLog.filter((call) => isCall(call, "gateway", "restart"));
-    const parkedStarts = parked.result.cliLog.filter((call) => isCall(call, "gateway", "start"));
-    assert.equal(parkedRestarts.length, 1, `the parked run invoked hermes ${parkedRestarts.length} times, not once`);
-    assert.equal(parkedStarts.length, 0, "the app ran `gateway start` at a host that was already running");
-    const restartRel = parkedRestarts[0]!.at - parked.result.doorUpAt;
+    const parkedForLifequest = parkedCycles.filter(
+      (call) => call.params?.name === "lifequest",
+    );
+    assert.equal(
+      parkedForLifequest.filter((call) => call.verb === "unserve-profile").length,
+      1,
+      `the app did not ask the host to unserved lifequest exactly once: ${JSON.stringify(parkedCycles)}`,
+    );
+    assert.equal(
+      parkedForLifequest.filter((call) => call.verb === "serve-profile").length,
+      1,
+      `the app did not ask the host to serve lifequest exactly once: ${JSON.stringify(parkedCycles)}`,
+    );
+    const parkedRestarts = parked.cliLog.filter((call) => isCall(call, "gateway", "restart"));
+    const parkedStarts = parked.cliLog.filter((call) => isCall(call, "gateway", "start"));
+    assert.deepEqual(
+      parkedRestarts,
+      [],
+      `the app restarted the host instead of cycling the profile: ${JSON.stringify(parkedRestarts)}`,
+    );
+    assert.deepEqual(
+      parkedStarts,
+      [],
+      "the app started a gateway at a host that was already running",
+    );
+    const firstCycleRel =
+      Math.min(...parkedForLifequest.map((call) => call.at)) - parked.result.doorUpAt;
     assert.ok(
-      restartRel >= 4_000,
-      `the restart landed ${restartRel}ms after the door bound, inside the 5s window a parked host must not be restarted in`,
+      firstCycleRel >= 4_000,
+      `the profile cycle landed ${firstCycleRel}ms after the door bound, inside the 5s window a parked host must not be cycled in`,
     );
     assert.ok(
-      restartRel <= 25_000,
-      `the restart landed ${restartRel}ms after the door bound; a host left tool-less for that long is the bug`,
+      firstCycleRel <= 25_000,
+      `the profile cycle landed ${firstCycleRel}ms after the door bound; a host left tool-less for that long is the bug`,
     );
 
-    // The door is not the problem, and the restart is what the host needed: the
-    // same door that was refused an unauthenticated caller a second earlier
-    // serves the companion's real tool list once the host has been made to
-    // re-read it.
+    // The door is not the problem: the same door that was refused an
+    // unauthenticated caller a second earlier serves the companion's real tool
+    // list once the host has been made to re-read it.
     assert.equal(parked.result.doorRefusalAtBind?.status ?? 401, 401);
     assert.ok(
       (parked.result.toolsAfterRestart ?? []).includes("get_dashboard"),
@@ -276,12 +298,21 @@ describe("companion door race e2e", () => {
     );
 
     // ── the connected host: the same world, a host that reached the door, and
-    //    NOT ONE restart. This is what makes the parked run a decision. ───────
-    const connectedRestarts = connected.result.cliLog.filter((call) => isCall(call, "gateway", "restart"));
+    //    NOT ONE restart and NOT ONE profile cycle. This is what makes the
+    //    parked run a decision. ────────────────────────────────────────────────
+    const connectedRestarts = connected.cliLog.filter((call) => isCall(call, "gateway", "restart"));
     assert.deepEqual(
       connectedRestarts,
       [],
       `the app restarted a host that had already reached the door: ${JSON.stringify(connectedRestarts)}`,
+    );
+    const connectedCycles = connected.controlLog.filter(
+      (call) => call.verb === "unserve-profile" || call.verb === "serve-profile",
+    );
+    assert.deepEqual(
+      connectedCycles,
+      [],
+      `the app cycled the profile of a host that had already reached the door: ${JSON.stringify(connectedCycles)}`,
     );
     assert.equal(connected.hostContact?.ok, true, `the control's host contact failed: ${JSON.stringify(connected.hostContact)}`);
     assert.ok((connected.hostContact?.tools ?? 0) > 0, "the control's host contact was served no tools");

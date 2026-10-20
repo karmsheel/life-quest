@@ -13,7 +13,7 @@ export type SplashHoldInput = {
  *
  * `companionEnsure` spawns the Hermes CLI and, on the path where the host
  * gateway is not already serving the profile, runs `hermes config set` twice and
- * a `gateway restart` (45s per command) before polling for health for up to 90
+ * a `gateway ensure` (45s per command) before polling for health for up to 90
  * seconds. Holding the splash for that made the splash's exit unbounded: the
  * renderer was painted and interactive at ~0.5s while the logo stayed up for the
  * whole 56s the companion took. The companion's own boot surface reports that

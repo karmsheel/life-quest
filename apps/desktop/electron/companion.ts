@@ -19,6 +19,7 @@ import {
   type HermesProfileInfo,
 } from "./companion-profile.ts";
 import { hermesSpawnSpec } from "./companion-spawn.ts";
+import { refreshServedProfile } from "./hermes-control.ts";
 import { getFileUnsolicited } from "./companion-filing.ts";
 import {
   getCompanionProfile,
@@ -274,15 +275,80 @@ async function waitForHealth(url: string, attempts: number, delayMs: number): Pr
   return false;
 }
 
+function failureText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 /**
- * Make the host serve `/p/{profile}`.
+ * Ask Hermes to make sure a gateway runtime exists for `profileHome`.
  *
- * `force` skips the "already healthy" shortcut. It exists for one case: this run
- * rewrote the companion credential, and a host that is already up read its
- * `mcp_servers` at start and keeps that connection for its lifetime — so the
- * repaired header only reaches its sessions after a restart. Without the force,
- * the host looks healthy, the app attaches, and every session on the profile
- * silently has no lifequest tools.
+ * `hermes gateway ensure` is the idempotent verb: it answers with the live owner
+ * as ready and starts one only when none answers. It never replaces a running
+ * gateway, which is exactly the difference from `gateway restart`.
+ *
+ * Older Hermes has no `ensure` verb. There the fallback is `gateway start` from
+ * the ROOT home: under multiplexing a named profile may not own a gateway of its
+ * own, so starting from the profile home would be refused with exit 78.
+ */
+async function ensureGatewayRuntime(
+  cli: string,
+  profileHome: string,
+  rootEnv: Record<string, string>,
+): Promise<void> {
+  try {
+    await runHermes(cli, ["gateway", "ensure", "--json", "--timeout", "30"], {
+      ...rootEnv,
+      HERMES_HOME: profileHome,
+    });
+    return;
+  } catch (e) {
+    if (
+      !/invalid choice|unknown command|unrecognized arguments/i.test(
+        failureText(e),
+      )
+    ) {
+      throw e;
+    }
+  }
+  await runHermes(cli, ["gateway", "start"], rootEnv);
+}
+
+/**
+ * Whether an `ensure` failure is still a gateway on its way up, rather than a
+ * verdict. Hermes exits 5 with `state: "starting"` / `reason_code: "deadline"`
+ * when the process exists but has not answered yet; that is worth polling for.
+ * A refusal ("did not become ready", a missing platform service, a malformed
+ * invocation) is not, and waiting the full window on it would hold the setup
+ * screen for 90 seconds to report something already known.
+ */
+function ensureMayStillStart(text: string): boolean {
+  return /"state"\s*:\s*"starting"|"reason_code"\s*:\s*"deadline"|did not exit within|timed out/i.test(
+    text,
+  );
+}
+
+/**
+ * Make the host serve `/p/{profile}` — without restarting anything that is
+ * already running.
+ *
+ * This function used to answer every unhealthy probe with `hermes gateway
+ * restart`. On this machine that restarts the ONE host multiplexer, which serves
+ * every profile at once: the operator's Telegram and Discord bots, their open
+ * Hermes Desktop, and every other profile went down with it. It happened on
+ * launch whenever the app did not see `/p/lifequest` quickly enough — the exact
+ * disruption this function must not cause.
+ *
+ * The narrower contract:
+ *   - host serving the profile         -> attach, do nothing;
+ *   - host running, profile not served -> hot-serve that profile through
+ *                                         Hermes' own control socket, or leave
+ *                                         the host running and say so;
+ *   - host not running                 -> `gateway ensure` starts the one
+ *                                         runtime that serves the profile.
+ *
+ * `force` means a running host must re-read THIS profile's configuration (a
+ * credential was just written, or the profile parked on a door). It is answered
+ * by cycling only that profile's served runtime, never the host.
  */
 async function ensureHostGateway(
   cli: string,
@@ -294,70 +360,79 @@ async function ensureHostGateway(
     HERMES_HOME: hermesHome,
     GATEWAY_MULTIPLEX_PROFILES: "true",
   };
+  const profileHome = profileDir(hermesHome, profileName);
   const port = await hostPort(hermesHome);
   const hostBase = `http://127.0.0.1:${port}`;
   // The default profile hangs off the bare base; every other one off `/p/<name>`.
   const prefix =
     profileName === "default" ? hostBase : `${hostBase}/p/${profileName}`;
   const hostUp = await health(hostBase);
-  if (!force && hostUp && (await waitForHealth(prefix, 40, 500))) return;
+  const serving =
+    hostUp && (force ? await health(prefix) : await waitForHealth(prefix, 40, 500));
 
-  await runHermes(
-    cli,
-    ["config", "set", "gateway.multiplex_profiles", "true"],
-    extraEnv,
-  );
+  if (serving) {
+    if (force) {
+      // The host is up and serving this profile; make it re-read the profile's
+      // config by cycling that profile alone. A host that predates the control
+      // verbs is left running — Hermes reconciles MCP servers from config on its
+      // own housekeeping tick, and a gateway someone else is using is not ours
+      // to restart.
+      await refreshServedProfile(hermesHome, profileName).catch(() => false);
+    }
+    return;
+  }
+
+  if (hostUp) {
+    // The host is up but this profile is not being served. Ask Hermes to serve
+    // it, then wait. NEVER restart the host here: that would take every other
+    // profile down to fix one.
+    const served = await refreshServedProfile(hermesHome, profileName).catch(
+      () => false,
+    );
+    if (await waitForHealth(prefix, served ? 40 : 20, 500)) return;
+    throw new Error(
+      `The Hermes host gateway is already running, but it does not serve ${prefix}. ` +
+        `It was left running; no other gateway on this machine was stopped or restarted.`,
+    );
+  }
+
+  // The host is down, so this is the only path that starts anything.
+  //
   // The API server is the platform the companion talks to — `/health`,
   // `/v1/capabilities`, `/api/sessions` — and Hermes ships every platform
   // DISABLED (`PlatformConfig.enabled` defaults to False). A machine that has
-  // never opened its API server therefore never listens on 8642, and no
-  // amount of gateway restarting changes that: the app would probe forever
-  // and report "Host gateway did not serve /p/<profile>". LifeQuest is the
-  // one thing on this machine that needs it, so it turns it on — the same
-  // way it already turns multiplexing on. The listener is 127.0.0.1 only and
-  // still demands the profile's API_SERVER_KEY.
-  await runHermes(
-    cli,
-    ["config", "set", "gateway.api_server.enabled", "true"],
-    extraEnv,
-  );
-  // A restart covers both shapes this function is called for: a host that is
-  // down (the service manager starts it) and one that is up with a PARKED
-  // api_server — the degraded state a missing API_SERVER_KEY leaves behind,
-  // which only a restart clears, because the parked adapter is never retried
-  // in-process. `start` is the fallback for an install with no service
-  // manager at all.
-  //
-  // BOTH failures are kept. The old form dropped the restart's message on the
-  // floor (`catch {}`) and let `start`'s speak alone, so the operator got one
-  // bare exit code from the second of two commands and nothing about the first —
-  // and the first is the informative one, because `restart` is the command that
-  // covers an installed service as well as a bare spawn.
-  let restart: HermesRun | null = null;
-  let restartFailure: string | null = null;
-  let start: HermesRun | null = null;
-  try {
-    restart = await runHermes(cli, ["gateway", "restart"], extraEnv);
-  } catch (e) {
-    restartFailure = e instanceof Error ? e.message : String(e);
+  // never opened its API server therefore never listens on 8642. LifeQuest is
+  // the one thing on this machine that needs it, so it turns it on, the same way
+  // it turns multiplexing on. The listener is 127.0.0.1 only and still demands
+  // the profile's API_SERVER_KEY. These are written ONLY while nothing is
+  // running: changing them under a live host would have no effect until its
+  // next start and is not a reason to stop it.
+  const configFailures: string[] = [];
+  for (const [key, value] of [
+    ["gateway.multiplex_profiles", "true"],
+    ["gateway.api_server.enabled", "true"],
+  ]) {
     try {
-      start = await runHermes(cli, ["gateway", "start"], extraEnv);
-    } catch (e2) {
-      const startFailure = e2 instanceof Error ? e2.message : String(e2);
-      throw new Error(
-        `hermes gateway restart failed: ${restartFailure}\n` +
-          `hermes gateway start failed: ${startFailure}`,
-      );
+      await runHermes(cli, ["config", "set", key, value], extraEnv);
+    } catch (e) {
+      configFailures.push(failureText(e));
     }
   }
-  if (await waitForHealth(prefix, 180, 500)) return;
+
+  let startFailure: string | null = null;
+  try {
+    await ensureGatewayRuntime(cli, profileHome, extraEnv);
+  } catch (e) {
+    startFailure = failureText(e);
+  }
+
   // The CLI exited 0 and nothing is serving. An exit code is not evidence that
   // the gateway came up: Hermes reports "✗ Gateway start via direct spawn FAILED
   // — no stable gateway process detected" on STDOUT and then exits 0
   // (`gateway_windows.py::_report_gateway_start`), so a dead gateway and a live
   // one are the same exit code and the same empty stderr. Its own words are the
   // only thing that tells them apart, so they ride along with the verdict.
-  const said = [restartFailure, start?.stdout, start?.stderr, restart?.stdout, restart?.stderr]
+  const said = [...configFailures, startFailure]
     .map((part) => tail(part ?? ""))
     .filter(Boolean)
     .join("\n");
@@ -365,6 +440,14 @@ async function ensureHostGateway(
     profileName === "default"
       ? "Host gateway did not serve the default profile."
       : `Host gateway did not serve /p/${profileName}.`;
+
+  // A refusal is a verdict, not something to wait out. Polling for 90 seconds on
+  // "Gateway runtime did not become ready" only makes the operator wait for the
+  // same sentence.
+  if (startFailure && !ensureMayStillStart(startFailure)) {
+    throw new Error(said ? `${verdict}\n${said}` : verdict);
+  }
+  if (await waitForHealth(prefix, 180, 500)) return;
   throw new Error(said ? `${verdict}\n${said}` : verdict);
 }
 
@@ -463,11 +546,11 @@ async function activeProfileName(): Promise<string> {
 /**
  * The `ensure` that is running right now, if one is.
  *
- * The post-bind door check must not run its own `gateway restart` while an
- * ensure is starting that same host: two lifecycle commands racing over one
- * gateway is noise at best. Waiting for the ensure to settle costs nothing —
- * the check re-reads the doors afterwards, and a host the app has just started
- * is a host whose startup covers the binding.
+ * The post-bind door check must not cycle the profile while an ensure is
+ * starting that same host: two lifecycle operations racing over one gateway is
+ * noise at best. Waiting for the ensure to settle costs nothing — the check
+ * re-reads the doors afterwards, and a host the app has just started is a host
+ * whose startup covers the binding.
  */
 let ensureInFlight: Promise<PublicCompanionStatus> | null = null;
 
@@ -526,9 +609,9 @@ export async function companionUseProfile(name: string): Promise<PublicCompanion
  * What a post-bind door check found, for the caller and for the rigs.
  *
  * `seen` and `repeat` are healthy; `no-door` means there was nothing to check
- * (no vault open, or the local door could not bind); `unavailable` means the
- * host could not be asked to re-read, which is reported and not retried in a
- * loop.
+ * (no vault open, or the local door could not bind); `refreshed` means the host
+ * was asked to re-read this profile; `unavailable` means the host could not be
+ * asked, which is reported and not retried in a loop.
  */
 export type CompanionDoorCheck =
   | { kind: "no-door" }
@@ -538,7 +621,7 @@ export type CompanionDoorCheck =
   | { kind: "unavailable"; error: string };
 
 let doorCheck: Promise<CompanionDoorCheck> | null = null;
-/** The binding this run has already restarted the host for. */
+/** The binding this run has already asked the host to refresh the profile for. */
 let refreshedBind: number | null = null;
 
 /**
@@ -556,12 +639,14 @@ let refreshedBind: number | null = null;
  * So the vault-open path calls this after the doors bind. It waits the binding's
  * window out (see `hostMissedDoors`: seconds for a host that was already
  * running, the long one for a host still starting) and, if the companion never
- * arrived, restarts the host so it re-reads a config that now points at a live
- * door. That is the same lever `ensureCompanion` pulls when it writes a
- * credential a running host cannot see, and it is the only one the app owns: the
- * host's own reconnect lives behind a chat slash command, not an endpoint.
+ * arrived, asks the host to re-read this profile. That request cycles ONLY the
+ * selected profile's served runtime (Hermes' `unserve-profile` / `serve-profile`
+ * control verbs); it does not restart the host, because the host is the one
+ * multiplexer for every profile on this machine. An older Hermes without those
+ * verbs is left running: it reconciles MCP servers from config on its own
+ * housekeeping tick, and the operator's other gateways stay up either way.
  *
- * One restart per binding. A vault switch rebinds the doors and resets the
+ * One refresh per binding. A vault switch rebinds the doors and resets the
  * question, so the new binding is checked on its own; re-opening the same vault
  * asks again about a binding already answered and gets `repeat`.
  */
@@ -578,7 +663,7 @@ async function confirmDoorsOnce(): Promise<CompanionDoorCheck> {
   const { getMcpDoors, getMcpDoorState } = await import("./mcp-server.ts");
   // A local door that failed to bind — 8643 held by another process — has
   // nothing for the companion to reach. That failure is Settings' to report, and
-  // restarting the host over it would be motion without cause.
+  // cycling the profile's runtime over it would be motion without cause.
   if (!getMcpDoors().localUrl || !getMcpDoorState()) return { kind: "no-door" };
 
   // An ensure that is starting the host right now owns that host's lifecycle:
@@ -601,7 +686,9 @@ async function confirmDoorsOnce(): Promise<CompanionDoorCheck> {
   const root = hermesRoot(process.env, os.homedir());
   try {
     // `force` skips the "already healthy" shortcut: the host is healthy and that
-    // is exactly the problem — it is serving without this door.
+    // is exactly the problem — it is serving without this door. The ensure then
+    // cycles this profile's served runtime through Hermes' control socket; it
+    // does not restart the host every profile shares.
     await ensureHostGateway(cli, root, true, await activeProfileName());
   } catch (e) {
     return { kind: "unavailable", error: e instanceof Error ? e.message : String(e) };
