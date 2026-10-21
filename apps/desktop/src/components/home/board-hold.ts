@@ -104,12 +104,14 @@ export function boardFrame(grid: HTMLElement | null): BoardFrame | null {
 }
 
 /**
- * The card the operator is reading: the last one whose top edge has reached the
- * fold.
+ * The card the operator is reading: the one nearest the fold whose top edge has
+ * reached it.
  *
- * "Last whose top is above the fold" rather than "first whose box straddles it",
- * because a card scrolled clean off the top is still the card the operator scrolled
- * past to get where they are — and if it grows, the board has to absorb that too.
+ * "Top at or above the fold" rather than "first whose box straddles it", because
+ * a card scrolled clean off the top is still the card the operator scrolled past
+ * to get where they are — and if it grows, the board has to absorb that too. The
+ * board is a grid, so "nearest" matters: every card on the row above the fold has
+ * a top at or above zero, and the hold is the one whose top is closest to it.
  * The lifted card is skipped: it is following a hand, not a slot.
  */
 export function anchorOf(frame: BoardFrame): BoardHold | null {
@@ -119,7 +121,17 @@ export function anchorOf(frame: BoardFrame): BoardHold | null {
     const pinId = card.dataset.pinId;
     if (!pinId || card.classList.contains("is-lifted")) continue;
     const top = card.getBoundingClientRect().top - fold;
-    if (top <= 0) anchor = { pinId, viewportOffset: top };
+    // The card NEAREST the fold whose top has reached it — not the last in DOM
+    // order. The board is a grid, so a row can hold several cards: every card on
+    // the row above the fold has a top at or above zero, and the last one in the
+    // DOM is the rightmost card of that row, not the one the operator is reading.
+    // Taking it would hold a card that is nowhere near the top edge, and the next
+    // reflow would move the board by that card's distance to the fold instead of
+    // by the one the operator was looking at. Ties keep the later card, which is
+    // the previous behaviour on a one-card row and is stable across renders.
+    if (top <= 0 && (anchor === null || top >= anchor.viewportOffset)) {
+      anchor = { pinId, viewportOffset: top };
+    }
   }
   return anchor;
 }

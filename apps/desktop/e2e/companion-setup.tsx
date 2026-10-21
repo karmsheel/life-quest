@@ -137,6 +137,10 @@ function statusFor(kind: EnsureKind): CompanionStatus {
 }
 
 const bridge: Record<string, unknown> = {
+  // A subscription, not a request: the real preload answers with an unsubscribe
+  // function, and returning the generic fallback's Promise would make React call
+  // a Promise on unmount ("destroy is not a function").
+  onCompanionStatusChanged: () => () => {},
   companionEnsure: async () => {
     harness.__lqEnsureCalls = (harness.__lqEnsureCalls ?? 0) + 1;
     const delay = harness.__lqEnsureDelay ?? 0;

@@ -1070,10 +1070,24 @@ async function checkResize(win) {
     floorGeo.minUnits,
     Math.ceil((need + floorGeo.gap) / (floorGeo.step + floorGeo.gap)),
   );
-  // Widen it three units past that floor to begin with.
+  // Widen it past that floor to begin with. Three units is the aim, but the
+  // card can sit in the window's last column: a pointer cannot leave the
+  // viewport, so ask for as many of those units as the window actually has
+  // room for, and state the number the drag was given.
   const floorStart = await cardBox(win, OPERATOR);
+  const viewportWidth = await win.webContents.executeJavaScript("window.innerWidth");
+  const roomUnits = Math.floor(
+    (viewportWidth - 8 - floorStart.left + floorGeo.gap) / (floorGeo.step + floorGeo.gap),
+  );
+  const growUnits = Math.min(3, Math.max(0, roomUnits - floorUnits));
+  if (growUnits < 1) {
+    throw new Error(
+      `the operator card already fills ${floorUnits} unit(s) to ${Math.round(floorStart.left + floorStart.width)}px ` +
+        `in a ${viewportWidth}px window: there is no room to widen it`,
+    );
+  }
   const wideTarget =
-    floorStart.left + (floorUnits + 3) * (floorGeo.step + floorGeo.gap) - floorGeo.gap;
+    floorStart.left + (floorUnits + growUnits) * (floorGeo.step + floorGeo.gap) - floorGeo.gap;
   await dragHandle(win, OPERATOR, wideTarget);
   const widenedForFloor = await cardBox(win, OPERATOR);
   const floorWidenedUnits = Math.round(
@@ -1088,14 +1102,14 @@ async function checkResize(win) {
   const floorSpills = await spillCount(win, OPERATOR);
   check(
     "resize-drag-floor-is-the-content",
-    floorWidenedUnits === floorUnits + 3 &&
+    floorWidenedUnits === floorUnits + growUnits &&
       flooredUnits === floorUnits &&
       floorWrite.count === 2 &&
       floorWrite.pin?.span === 1 &&
       typeof floorWrite.pin?.width === "number" &&
       Math.abs(floorWrite.pin.width * floorGeo.root - floored.width) <= 3 &&
       floorSpills === 0,
-    `widening to ${floorUnits + 3} units gave ${floorWidenedUnits}, then dragging to ` +
+    `widening to ${floorUnits + growUnits} units gave ${floorWidenedUnits}, then dragging to ` +
       `${Math.round(floorTarget)}px stopped at ${flooredUnits} unit(s) at ${Math.round(floored.width)}px; ` +
       `the card's content needs ${floorUnits} at ${Math.round(need)}px, ${floorWrite.count} write(s) ` +
       `storing span=${floorWrite.pin?.span} width=${floorWrite.pin?.width}rem, ${floorSpills} element(s) ` +

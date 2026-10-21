@@ -206,7 +206,16 @@ describe("companion refusal e2e", () => {
     const ensures = report.cliLog.filter((call) => isCall(call, "gateway", "ensure"));
     const restarts = report.cliLog.filter((call) => isCall(call, "gateway", "restart"));
     const starts = report.cliLog.filter((call) => isCall(call, "gateway", "start"));
-    assert.equal(ensures.length, 1, `the app ran \`gateway ensure\` ${ensures.length} times, not once`);
+    // Exactly one, even though this rig runs the DEV renderer, where React's
+    // StrictMode mounts `CompanionProvider` twice: the second mount joins the
+    // ensure already in flight instead of starting a second, concurrent run.
+    // That is not a tidiness claim — two overlapping runs rewrite the same
+    // `.env` and can lose the API port between them.
+    assert.equal(
+      ensures.length,
+      1,
+      `the app ran \`gateway ensure\` ${ensures.length} times, not once`,
+    );
     assert.equal(restarts.length, 0, `the app restarted the shared host gateway ${restarts.length} times`);
     assert.equal(
       starts.length,
