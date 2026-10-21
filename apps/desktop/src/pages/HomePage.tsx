@@ -29,8 +29,7 @@ import {
 } from "@/components/home/board-hold";
 import { usePinArrange, type CommitOutcome } from "@/components/home/usePinArrange";
 import { useTileSpans } from "@/components/home/useTileSpans";
-import { useCardResize } from "@/components/home/useCardResize";
-import { useDeveloperFlag } from "@/state/developer-flags";
+import { useCardResize, type CardSizePatch } from "@/components/home/useCardResize";
 import { ViewCard } from "@/components/ui/ViewCard";
 import type { SavedView } from "@lifequest/vault-core";
 
@@ -67,16 +66,6 @@ export default function HomePage() {
   const { contextCard, setContextCard, setOpen: setChatOpen, livePinId } =
     useChatDock();
   const lens = useDomainLens();
-  /**
-   * The operator's width handle, which ships gated.
-   *
-   * Settings → Developer turns it on, and the flag is read here rather than only
-   * inside the gesture: with it off the board must not draw the edge, offer the
-   * tab stop, or answer a press on it. The hook refuses to start a gesture as
-   * well — an edge that is gone from the eye but still listening would be a
-   * feature nobody could switch off.
-   */
-  const cardWidthHandle = useDeveloperFlag("cardWidthHandle");
   const title =
     lens.kind === "domain"
       ? (snapshot?.domains.find((d) => d.slug === lens.slug)?.meta.name ?? "Overview")
@@ -118,6 +107,16 @@ export default function HomePage() {
    * outside the menu, and when either item is chosen.
    */
   const [menuPinId, setMenuPinId] = useState<string | null>(null);
+  /**
+   * Which card is in Edit mode, if any.
+   *
+   * One at a time: Edit mode is the operator holding one card's borders, and a
+   * second card's handles would make the board a page of grips. Entered from the
+   * card's menu, left by a press anywhere outside the card or by Escape — and the
+   * state is the only thing that decides whether the handles exist, so a stale
+   * render cannot leave an invisible edge listening.
+   */
+  const [editingPinId, setEditingPinId] = useState<string | null>(null);
   const [pages, setPages] = useState<PageListEntry[]>([]);
   const [views, setViews] = useState<BoardView[]>([]);
   /**
@@ -132,11 +131,11 @@ export default function HomePage() {
   const [installedKits, setInstalledKits] = useState<string[] | null>(null);
   /**
    * Whether a gesture owns the board's geometry right now — a card in the air, or
-   * a width being dragged.
+   * a card's size being dragged.
    *
    * One flag for both, because they are one thing to the measurement pass that
    * reads it: while either is running, the card under the hand is the truth about
-   * its own width, and a pass that measured and re-wrote every card's span would
+   * its own size, and a pass that measured and re-wrote every card's width would
    * be the page arguing with the pointer.
    */
   const [resizing, setResizing] = useState(false);
@@ -160,6 +159,34 @@ export default function HomePage() {
       pin.viewId,
     [views],
   );
+
+  /**
+   * A card's name, for the two resize handles' accessible labels.
+   *
+   * The cards themselves draw their own headings; this is the render-time name
+   * beside them, so the handle can say "Width of Recent transactions" instead of
+   * "Width of this card". It follows the same words the headings use.
+   */
+  const cardLabelOf = (pin: Pin): string => {
+    if (pin.kind === "view") return viewTitleOf(pin);
+    if (pin.kind === "page") return pageTitleOf(pin);
+    switch (pin.system) {
+      case "goal-progress":
+        return "Goals";
+      case "deadline":
+        return "Deadline";
+      case "doctrine-progress":
+        return "Doctrine";
+      case "pending-decisions":
+        return "Pending decisions";
+      case "today-week":
+        return "Today & this week";
+      case "recent-log":
+        return "Recent activity";
+      default:
+        return "This card";
+    }
+  };
 
   /**
    * The board's own gesture: hold a card to lift it, drag it, drop it. The hook
@@ -201,24 +228,26 @@ export default function HomePage() {
   });
 
   /**
-   * The operator's own hand on a card's width: drag a card's right edge.
+   * The operator's own hand on a card's size, while Edit mode is on.
    *
-   * The range is [what the card's content needs, the whole row] — never narrower,
-   * because that is the spill this board was reported for — and the far end of it
-   * means "fill the row", which is the same state the chrome's width control
-   * names. One drop is one write, and a drag that ends where it started writes
-   * nothing at all.
+   * Width's range is [what the card's content needs, the whole row] — never
+   * narrower, because that is the spill this board was reported for — and the far
+   * end of it means "fill the row". Height's range starts at what the content
+   * needs and has no practical ceiling: it is a floor on the card, not a box the
+   * content is squeezed into. One drop is one write, and a drag that ends where it
+   * started writes nothing at all.
    */
   const resize = useCardResize({
     gridRef: arrange.gridRef,
     tiles,
     locked,
     busy: boardBusy,
-    // Gated: with the developer switch off, the gesture does not exist even if a
-    // press somehow reaches where the edge would have been.
-    enabled: cardWidthHandle,
+    // Enabled by Edit mode and by nothing else: the handles only exist on the
+    // card whose menu opened it, and the hook refuses a press that arrives after
+    // a stale render has taken them away.
+    enabled: editingPinId !== null,
     onGesture: setResizing,
-    onCommit: (pinId, units, maxUnits) => onResizeCommit(pinId, units, maxUnits),
+    onCommit: (pinId, patch) => onResizeCommit(pinId, patch),
   });
 
   /**
@@ -382,6 +411,50 @@ export default function HomePage() {
     };
   }, [menuPinId]);
 
+  /**
+   * Edit mode ends when the operator's attention leaves the card.
+   *
+   * A press anywhere outside the card is the operator moving on — another card,
+   * the board's header, the chat dock — and the borders go back to being borders.
+   * The test is the card's own `[data-pin-id]` box rather than a list of handles,
+   * so a press on the card's content, its chrome or its menu keeps the mode: the
+   * card is still the thing being edited.
+   *
+   * Escape is the keyboard's way out, and the lock's own effect below means a
+   * board that becomes read-only never keeps a pair of live handles.
+   */
+  useEffect(() => {
+    if (!editingPinId) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      if (target?.closest(`[data-pin-id="${CSS.escape(editingPinId)}"]`)) return;
+      setEditingPinId(null);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEditingPinId(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [editingPinId]);
+
+  // A locked board has no Edit card in its chrome; a lock that lands while one
+  // card is still in Edit mode takes the handles with it.
+  useEffect(() => {
+    if (locked) setEditingPinId(null);
+  }, [locked]);
+
+  // A card that leaves the board — archived, deleted, or dropped by the read path
+  // because its view is gone — cannot stay in Edit mode.
+  useEffect(() => {
+    if (editingPinId && !pins.some((pin) => pin.id === editingPinId)) {
+      setEditingPinId(null);
+    }
+  }, [editingPinId, pins]);
+
   const boardSlug = lens.kind === "domain" ? lens.slug : null;
   const financialLive = (snapshot?.domains ?? []).some(
     (d) => d.slug === "financial" && !d.meta.archivedAt,
@@ -433,17 +506,6 @@ export default function HomePage() {
       span: 1,
     };
     await persistPins([...pins, newPin]);
-  }
-
-  async function onCycleSpan(pinId: string) {
-    const target = pins.find((p) => p.id === pinId);
-    if (!target || target.kind !== "view" || boardBusy) return;
-    const next = pins.map((p) =>
-      p.id === pinId && p.kind === "view"
-        ? ({ ...p, span: p.span === 2 ? 1 : 2 } as Pin)
-        : p,
-    );
-    await persistPins(next);
   }
 
   /**
@@ -597,34 +659,32 @@ export default function HomePage() {
   }
 
   /**
-   * Save the width a drag chose.
+   * Save the size a drag chose.
    *
-   * The far end of the handle's range is the row itself, and it is stored as the
-   * row — `span: 2` — rather than as a very wide card, so a drag to the edge and a
-   * press of the chrome's "Fill the row" leave the board in one state instead of
-   * two that look alike and behave differently when the window moves.
+   * The far end of the width handle's range is the row itself, and it is stored as
+   * the row — `span: 2` — rather than as a very wide card, so a drag to the edge
+   * leaves the board in one responsive state instead of one that only looked right
+   * at this window size. Naming the row drops any hand-set width, because a span
+   * IS a width and two answers to one question is how a board disagrees with
+   * itself.
    *
-   * Everything else is stored as the width the operator saw, in rem: a card is
-   * 398.9px wide and stays 398.9px wide whatever the window, which is what picking
-   * a width by hand means. The board is never narrower than its content, so a save
-   * that arrives after the content grew is still drawn at the content's floor.
+   * Every other width and every height is stored in rem: a card 398.9px wide stays
+   * 398.9px wide whatever the window, which is what picking a size by hand means.
+   * Height is drawn as a minimum on the card, and the board is never narrower than
+   * its content, so a save that arrives after the content grew is still drawn at
+   * the content's floor.
    */
   async function onResizeCommit(
     pinId: string,
-    units: number,
-    maxUnits: number,
+    patch: CardSizePatch,
   ): Promise<CommitOutcome> {
     const next = pins.map((pin) => {
-      if (pin.id !== pinId || pin.kind !== "view") return pin;
-      const base = {
-        id: pin.id,
-        kind: "view" as const,
-        domainSlug: pin.domainSlug,
-        viewId: pin.viewId,
-      };
-      if (units >= maxUnits) return { ...base, span: 2 as const };
-      const width = Math.round((tiles.widthOf(units) / tiles.rootFontSize()) * 100) / 100;
-      return { ...base, span: 1 as const, width };
+      if (pin.id !== pinId) return pin;
+      if (patch.span === 2) {
+        const { width: _width, ...withoutWidth } = pin;
+        return { ...withoutWidth, span: 2 as const } as Pin;
+      }
+      return { ...pin, ...patch } as Pin;
     });
     return persistPins(next);
   }
@@ -806,6 +866,13 @@ export default function HomePage() {
             key={pin.id}
             data-pin-id={pin.id}
             /*
+              The card's hand-set height, as a floor. React owns the inline value
+              outside a drag, so the height survives a remeasure and a reload; the
+              drag preview writes the same property directly and restores this
+              value on a cancel.
+            */
+            style={pin.height === undefined ? undefined : { minHeight: `${pin.height}rem` }}
+            /*
               The card is its own arrange handle.
 
               The grip that used to sit in the chrome is gone: holding a card
@@ -825,15 +892,23 @@ export default function HomePage() {
                 The operator's own width choice, carried as a class because it is
                 the sheet's business rather than the hook's: `home-pin--span2` is
                 painted `1 / -1` — the whole row — and it is also what tells
-                `useTileSpans` to leave this card's width alone. A card stored one
-                cell wide is measured and sized from what it holds; a card stored
-                two cells wide is drawn exactly as wide as the operator asked.
+                `useTileSpans` to leave this card's width alone. `home-pin--sized`
+                marks a card whose width came from a hand-drag; it lets Edit card
+                size a built-in banner that would otherwise own the row.
               */
-              pin.kind === "view" && pin.span === 2 ? "home-pin--span2" : "",
+              pin.span === 2 ? "home-pin--span2" : "",
+              pin.span !== 2 && pin.width !== undefined ? "home-pin--sized" : "",
+              editingPinId === pin.id ? "is-editing" : "",
               arrange.isLifted(pin.id) ? "is-lifted" : "",
               livePinId === pin.id ? "is-live" : "",
               chatHolds(pin.id) ? "is-in-context" : "",
               resize.resizingPinId === pin.id ? "is-resizing" : "",
+              resize.resizingPinId === pin.id && resize.resizingAxis === "width"
+                ? "is-resizing-width"
+                : "",
+              resize.resizingPinId === pin.id && resize.resizingAxis === "height"
+                ? "is-resizing-height"
+                : "",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -865,12 +940,15 @@ export default function HomePage() {
               </button>
               {locked ? null : (
                 <PinChrome
-                  pin={pin}
                   busy={boardBusy}
                   menuOpen={menuPinId === pin.id}
                   onToggleMenu={() =>
                     setMenuPinId((openId) => (openId === pin.id ? null : pin.id))
                   }
+                  onEdit={() => {
+                    setMenuPinId(null);
+                    setEditingPinId(pin.id);
+                  }}
                   onArchive={() => void onArchive(pin.id)}
                   onDelete={
                     // A built-in card is app furniture, not a record: there is
@@ -879,40 +957,47 @@ export default function HomePage() {
                       ? undefined
                       : (control) => onDeleteRequest(pin, control)
                   }
-                  onCycleSpan={() => void onCycleSpan(pin.id)}
                 />
               )}
             </div>
             {renderPin(pin)}
             {/*
-              The operator's own hand on the width, on the card's right edge.
+              Edit mode's two borders, on an unlocked card and no other.
 
-              A VIEW pin only, and only on an unlocked board: the width lives on
-              the pin, so a locked board — which files every change as a Decision
-              instead of making it — has no business offering a drag that writes
-              straight through. (The chrome's width button is gone there too, for
-              the same reason.)
+              The width handle is the right border and the height handle is the
+              bottom border: the whole edge is the target, because "the borders
+              become draggable" is the gesture, not a pair of 6px grips hidden in
+              the corners. Both are `separator`s rather than buttons, because that
+              is what a resizable edge is — a value between a minimum and a
+              maximum, which is what a screen reader reads out — and the arrows
+              step it.
 
-              It is a `separator` rather than a button, because that is what a
-              resizable edge is: a value between a minimum and a maximum, which is
-              what a screen reader reads out — and the arrows step it, one unit per
-              press.
-
-              It names the card it belongs to in its own attribute rather than in
-              `data-pin-id`: every card lookup on this board — the drag geometry,
-              the scroll hold, the arrange gesture — is a `[data-pin-id]` query, and
-              a handle wearing that attribute would be read as a card.
+              They name the card they belong to in their own attribute rather than
+              in `data-pin-id`: every card lookup on this board — the drag
+              geometry, the scroll hold, the arrange gesture — is a `[data-pin-id]`
+              query, and a handle wearing that attribute would be read as a card.
             */}
-            {!cardWidthHandle || locked || pin.kind !== "view" ? null : (
-              <div
-                className="home-pin__resize"
-                role="separator"
-                aria-orientation="vertical"
-                aria-label={`Width of ${viewTitleOf(pin)}`}
-                tabIndex={0}
-                title="Drag to set this card's width — the arrow keys step it"
-                {...resize.handleProps(pin.id)}
-              />
+            {locked || editingPinId !== pin.id ? null : (
+              <>
+                <div
+                  className="home-pin__resize home-pin__resize--width"
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label={`Width of ${cardLabelOf(pin)}`}
+                  tabIndex={0}
+                  title="Drag to set this card's width — the arrow keys step it"
+                  {...resize.handleProps(pin.id, "width")}
+                />
+                <div
+                  className="home-pin__resize home-pin__resize--height"
+                  role="separator"
+                  aria-orientation="horizontal"
+                  aria-label={`Height of ${cardLabelOf(pin)}`}
+                  tabIndex={0}
+                  title="Drag to set this card's height — the arrow keys step it"
+                  {...resize.handleProps(pin.id, "height")}
+                />
+              </>
             )}
           </div>
         ))}
@@ -966,7 +1051,7 @@ export default function HomePage() {
         {arrange.announce}
       </p>
 
-      {/* The same for a width: a drag has no button to come back to, and the
+      {/* The same for a size: a drag has no button to come back to, and a
           handle's own value is only read when it has focus. */}
       <p
         className="visually-hidden"

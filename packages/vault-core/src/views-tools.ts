@@ -19,7 +19,7 @@ import {
 } from "./pins.ts";
 import { getPage } from "./pages.ts";
 import { SYSTEM_PIN_KINDS } from "./types.ts";
-import type { ComposedViewRunResult, Pin, Result, ViewSpec } from "./types.ts";
+import type { ComposedViewRunResult, Pin, PinSize, Result, ViewSpec } from "./types.ts";
 
 /**
  * Agent-built dashboard views (plan.md design). The Dashboard is the home pin
@@ -212,10 +212,12 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
           type: "array",
           description:
             "The complete new pin list for that board. Copy each pin object from get_dashboard " +
-            "exactly as it came back and reorder, add, or drop entries. A view pin may carry a " +
-            "`width` — the width in rem the operator dragged that card to — and it must be copied " +
-            "back as it came: dropping it resizes a card the operator sized by hand. Naming a " +
-            "`span` replaces that width, because a span IS a width.",
+            "exactly as it came back and reorder, add, or drop entries. Any pin may carry the " +
+            "operator's own `width` (rem, dragged right border), `height` (rem, dragged bottom " +
+            "border) and `span` (1 = board sizes it, 2 = full row); copy every one back as it came, " +
+            "because dropping one resizes a card the operator sized by hand. Naming a `span` " +
+            "replaces a `width`, because a span IS a width; a `height` is a separate measurement " +
+            "and always travels with the pin.",
         },
       },
       required: ["domainSlug", "pins"],
@@ -734,10 +736,26 @@ function toolError(
   return { error: fix === undefined ? { code: "FAILED", message } : { code: "FAILED", message, fix } };
 }
 
+/**
+ * The operator's own size on a pin, as the companion sees it.
+ *
+ * A card the operator edited carries a span, a hand-dragged width and/or a
+ * hand-dragged height. They travel together and are copied back untouched by
+ * `arrange_dashboard`: a reorder that dropped one would silently resize a card
+ * the operator had sized by hand.
+ */
+function pinSizeFields(pin: Pin): Record<string, unknown> {
+  return {
+    ...(pin.span === undefined ? {} : { span: pin.span }),
+    ...(pin.width === undefined ? {} : { width: pin.width }),
+    ...(pin.height === undefined ? {} : { height: pin.height }),
+  };
+}
+
 /** One board entry as the agent sees it: kind + a human label. */
 async function describePin(root: string, pin: Pin): Promise<Record<string, unknown>> {
   if (pin.kind === "system") {
-    return { kind: "system", system: pin.system, label: pin.system, id: pin.id };
+    return { kind: "system", system: pin.system, label: pin.system, id: pin.id, ...pinSizeFields(pin) };
   }
   if (pin.kind === "page") {
     const page = await getPage(root, pin.domainSlug, pin.pageId);
@@ -747,7 +765,10 @@ async function describePin(root: string, pin: Pin): Promise<Record<string, unkno
       domainSlug: pin.domainSlug,
       pageId: pin.pageId,
       label: page.ok ? page.value.title : pin.pageId,
-      span: 1,
+      // A page pin has no stored span unless the operator edited its size; the
+      // board measures it, which is the same thing span 1 means for a view.
+      ...(pin.span === undefined && pin.width === undefined ? { span: 1 } : {}),
+      ...pinSizeFields(pin),
     };
   }
   const view = await getView(root, pin.domainSlug, pin.viewId);
@@ -758,10 +779,7 @@ async function describePin(root: string, pin: Pin): Promise<Record<string, unkno
     viewId: pin.viewId,
     label: view.ok ? view.value.title : pin.viewId,
     presentation: view.ok ? view.value.presentation : null,
-    span: pin.span,
-    // The operator's own width, when they dragged the card's edge: it travels
-    // with the pin so that "copy each pin back exactly as it came" keeps it.
-    ...(pin.width === undefined ? {} : { width: pin.width }),
+    ...pinSizeFields(pin),
   };
 }
 
@@ -820,6 +838,36 @@ function parseSpec(raw: unknown): Result<ViewSpec> {
 }
 
 /**
+ * One pin's operator-set size, or the reason it is not a size.
+ *
+ * Every field is optional here — a view's required span is checked by its own
+ * branch — and a null is treated as absent, because that is how a JSON round trip
+ * spells "unset". A width or height must be a positive number of rem: the board
+ * writes those from a drag, and a zero or a negative is a card that could not be
+ * drawn at all.
+ */
+function parsePinSize(pin: Record<string, unknown>, index: number): Result<PinSize> {
+  const size: PinSize = {};
+  if (pin.span !== undefined && pin.span !== null) {
+    if (pin.span !== 1 && pin.span !== 2) {
+      return { ok: false, error: `pin ${index}: span must be 1 or 2` };
+    }
+    size.span = pin.span;
+  }
+  for (const [field, value] of [
+    ["width", pin.width],
+    ["height", pin.height],
+  ] as const) {
+    if (value === undefined || value === null) continue;
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      return { ok: false, error: `pin ${index}: ${field} must be a positive number of rem` };
+    }
+    size[field] = value;
+  }
+  return { ok: true, value: size };
+}
+
+/**
  * The pin list, and the one habitual mistake: an array sent as a JSON string.
  * `get_dashboard` hands back an array, and a model echoing it back sometimes
  * serialises the whole thing; refusing that would cost a turn for nothing.
@@ -844,6 +892,12 @@ function parsePins(raw: unknown): Result<Pin[]> {
     if (pin.id === undefined || pin.id === null) {
       return { ok: false, error: `pin ${out.length}: id is required` };
     }
+    // The operator's size, carried through on every kind of card. A view is the
+    // one kind whose span is required, because that is the shape its tools have
+    // always spoken; a page or a system card carries a size only if Edit card
+    // gave it one.
+    const size = parsePinSize(pin, out.length);
+    if (!size.ok) return size;
     if (pin.kind === "view") {
       if (typeof pin.domainSlug !== "string" || !pin.domainSlug) {
         return { ok: false, error: `pin ${out.length}: view pin requires domainSlug` };
@@ -854,24 +908,13 @@ function parsePins(raw: unknown): Result<Pin[]> {
       if (pin.span !== 1 && pin.span !== 2) {
         return { ok: false, error: `pin ${out.length}: span must be 1 or 2` };
       }
-      // `width` is the operator's own hand on the card — the rem width they
-      // dragged its edge to. It is optional and it is carried through untouched,
-      // because a reorder that dropped it would silently resize a card the
-      // operator had sized by hand.
-      let width: number | undefined;
-      if (pin.width !== undefined && pin.width !== null) {
-        if (typeof pin.width !== "number" || !Number.isFinite(pin.width) || pin.width <= 0) {
-          return { ok: false, error: `pin ${out.length}: width must be a positive number of rem` };
-        }
-        width = pin.width;
-      }
       out.push({
         id: String(pin.id),
         kind: "view",
         domainSlug: pin.domainSlug,
         viewId: pin.viewId,
+        ...size.value,
         span: pin.span as 1 | 2,
-        ...(width === undefined ? {} : { width }),
       });
     } else if (pin.kind === "page") {
       if (typeof pin.domainSlug !== "string" || !pin.domainSlug) {
@@ -880,12 +923,18 @@ function parsePins(raw: unknown): Result<Pin[]> {
       if (typeof pin.pageId !== "string" || !pin.pageId) {
         return { ok: false, error: `pin ${out.length}: page pin requires pageId` };
       }
-      out.push({ id: String(pin.id), kind: "page", domainSlug: pin.domainSlug, pageId: pin.pageId });
+      out.push({
+        id: String(pin.id),
+        kind: "page",
+        domainSlug: pin.domainSlug,
+        pageId: pin.pageId,
+        ...size.value,
+      });
     } else if (pin.kind === "system") {
       if (typeof pin.system !== "string" || !knownSystems.includes(pin.system)) {
         return { ok: false, error: `pin ${out.length}: unknown system pin kind ${String(pin.system)}` };
       }
-      out.push({ id: String(pin.id), kind: "system", system: pin.system as never });
+      out.push({ id: String(pin.id), kind: "system", system: pin.system as never, ...size.value });
     } else {
       return { ok: false, error: `pin ${out.length}: unknown pin kind ${String(pin.kind)}` };
     }

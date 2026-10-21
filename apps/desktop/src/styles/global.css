@@ -3310,6 +3310,21 @@ a.home-mini-list__link:hover {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  /* A card's height is its own content (or the operator's floor), not the height
+     of the tallest card sharing its row. Without this a card stretched by a
+     neighbour would make the next height drag look like it resized the row. */
+  align-self: start;
+}
+
+/* Edit mode's height is a floor on the wrapper. The card inside has to take the
+   extra room, or the operator would drag the bottom border and watch a gap open
+   under a card whose frame never moved. The growth is zero unless the wrapper is
+   taller than the content, so an untouched card is laid out exactly as before. */
+.home-pin > .view-card,
+.home-pin > .home-card,
+.home-pin > .home-doctrine-pin,
+.home-pin > .deadline-banner {
+  flex: 1 1 auto;
 }
 
 /* While a card is being arranged the board is a surface, not a page of links:
@@ -3543,43 +3558,67 @@ a.home-mini-list__link:hover {
   outline-offset: 1px;
 }
 
-/* The card's width handle, on its right edge.
+/* The card's size handles, on its right and bottom borders, while Edit mode is on.
    INSIDE the card's own box, never overhanging it: the board's promise is that
    nothing is drawn outside a card's frame, and a handle that hung off the edge
-   would be the one thing on the board breaking it. 0.4rem keeps it clear of the
-   chrome's buttons, which are inset 0.5rem, so the right edge is the handle's and
-   the corner row stays the buttons'.
-   Invisible until it is wanted — the card is a surface for reading, and a grip
-   drawn on all twenty of them would be furniture — and then a 2px accent bar, the
-   same mark the board uses for every other "this one is being addressed" state. */
+   would be the one thing on the board breaking it. The handles stop short of each
+   other at the corner so the width and the height are separate targets, and they
+   stop clear of the chrome's buttons so the corner row stays the buttons'.
+   Invisible in every other mode — the card is a surface for reading, and grips on
+   all twenty of them would be furniture. In Edit mode each is a 2px accent bar on
+   the border the operator can drag, the same mark the board uses for every other
+   "this one is being addressed" state. */
 .home-pin__resize {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 0;
-  width: 0.4rem;
-  cursor: col-resize;
+  z-index: 1;
   touch-action: none;
   background: transparent;
   border: 0;
   padding: 0;
+}
+
+.home-pin__resize--width {
+  top: 0;
+  bottom: 0.45rem;
+  right: 0;
+  width: 0.45rem;
+  cursor: col-resize;
+  border-radius: var(--home-radius);
+}
+
+.home-pin__resize--height {
+  left: 0.45rem;
+  right: 0.45rem;
+  bottom: 0;
+  height: 0.45rem;
+  cursor: row-resize;
   border-radius: var(--home-radius);
 }
 
 .home-pin__resize::after {
   content: "";
   position: absolute;
-  top: 0.35rem;
-  bottom: 0.35rem;
-  right: 0;
-  width: 2px;
   border-radius: 2px;
   background: var(--accent);
   opacity: 0;
   transition: opacity 120ms ease;
 }
 
-.home-pin:hover > .home-pin__resize::after,
+.home-pin__resize--width::after {
+  top: 0.35rem;
+  bottom: 0.35rem;
+  right: 0;
+  width: 2px;
+}
+
+.home-pin__resize--height::after {
+  left: 0.35rem;
+  right: 0.35rem;
+  bottom: 0;
+  height: 2px;
+}
+
+.home-pin.is-editing > .home-pin__resize::after,
 .home-pin__resize:hover::after,
 .home-pin__resize:focus-visible::after,
 .home-pin.is-resizing > .home-pin__resize::after {
@@ -3591,12 +3630,32 @@ a.home-mini-list__link:hover {
   outline-offset: -2px;
 }
 
-/* The board while a width is being dragged: the hand owns the pointer, so nothing
-   in the card is a target and no text is selectable under it. */
+/* Edit mode is drawn as a ring around the card and the two accent borders on the
+   handles above. The same vocabulary as the lifted and in-context cards — this one
+   is being addressed — but solid rather than the ring's usual 2px, because the
+   borders themselves are the thing to grab. */
+.home-pin.is-editing {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--home-radius);
+}
+
+/* The board while a size is being dragged: the hand owns the pointer, so nothing
+   in the card is a target and no text is selectable under it. Which cursor the
+   board wears is the axis under the hand. */
 .home-dashboard__grid:has(.home-pin.is-resizing),
 .home-dashboard__grid:has(.home-pin.is-resizing) * {
-  cursor: col-resize;
   user-select: none;
+}
+
+.home-dashboard__grid:has(.home-pin.is-resizing-width),
+.home-dashboard__grid:has(.home-pin.is-resizing-width) * {
+  cursor: col-resize;
+}
+
+.home-dashboard__grid:has(.home-pin.is-resizing-height),
+.home-dashboard__grid:has(.home-pin.is-resizing-height) * {
+  cursor: row-resize;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3605,11 +3664,10 @@ a.home-mini-list__link:hover {
   }
 }
 
-/* Three icon buttons wide (chat, width, menu) plus the row's own inset: the title
-   clears them instead of running underneath. The reserve follows the row rather
-   than the chrome, because the chat control is the one button that is still there
-   when the chrome is not — and it shrank with the grip: 1.55rem a button, 0.2rem
-   between them, 0.5rem of inset.
+/* Two icon buttons wide (chat, menu) plus the row's own inset: the title clears
+   them instead of running underneath. The reserve follows the row rather than the
+   chrome, because the chat control is the one button that is still there when the
+   chrome is not — 1.55rem a button, 0.2rem between them, 0.5rem of inset.
    A view card's title is in this rule too, and for two reasons that are the same
    reason: its heading is as long as any card's, so without the reserve the chrome
    sat on top of it — and since `useTileSpans` sizes a card by its min-content
@@ -3618,7 +3676,7 @@ a.home-mini-list__link:hover {
 .home-pin:has(.home-pin__tools) .home-card__title,
 .home-pin:has(.home-pin__tools) .view-card__title,
 .home-pin:has(.home-pin__tools) .home-dashboard__progress {
-  padding-right: 5.65rem;
+  padding-right: 3.85rem;
 }
 
 /* The deadline banner is not a card: it has no padded shell for a corner row to

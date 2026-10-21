@@ -90,6 +90,7 @@ export function useTileSpans(input: {
   const measured = useRef({
     need: new Map<string, number>(),
     units: new Map<string, number>(),
+    contentHeight: new Map<string, number>(),
     step: 0,
     gap: 0,
     minUnits: 1,
@@ -130,15 +131,33 @@ export function useTileSpans(input: {
      */
     const dragged = new Map<string, number>();
     for (const pin of pins) {
-      if (pin.kind === "view" && pin.width !== undefined) dragged.set(pin.id, pin.width * root);
+      if (pin.width !== undefined) dragged.set(pin.id, pin.width * root);
     }
 
     // Write all, read all, restore all. Interleaving would make the browser
     // lay the board out once per card; this is one layout for the measurements
     // and one for the restore.
+    const saved = cards.map((card) => ({
+      width: card.style.width,
+      minHeight: card.style.minHeight,
+    }));
     for (const card of cards) card.style.width = "min-content";
     const needs = cards.map((card) => card.getBoundingClientRect().width);
-    for (const card of cards) card.style.removeProperty("width");
+    for (const [index, card] of cards.entries()) card.style.width = saved[index]?.width ?? "";
+    /**
+     * What each card's CONTENT is tall when the operator's own height is taken
+     * off it.
+     *
+     * A stored height is a floor on the card, so measuring the card as it stands
+     * would report the floor back as the content's height and the bottom-edge drag
+     * could never come back down. `minHeight: 0` for one read gives the content's
+     * own answer; the inline value is restored afterwards because React owns it.
+     */
+    for (const card of cards) card.style.minHeight = "0px";
+    const contentHeights = cards.map((card) => card.getBoundingClientRect().height);
+    for (const [index, card] of cards.entries()) {
+      card.style.minHeight = saved[index]?.minHeight ?? "";
+    }
 
     const units = cards.map((card, index) => {
       const need = needs[index] ?? 0;
@@ -163,38 +182,59 @@ export function useTileSpans(input: {
       if (card.style.gridColumn !== span) card.style.gridColumn = span;
 
       /**
-       * The card's width handle, told what it is holding.
+       * The card's handles, told what they are holding.
        *
        * Written here rather than rendered, for the same reason the span is: the
        * measurement happens after React has rendered, so attributes rendered from
        * it would be a value behind — and `aria-valuenow` saying zero until the next
        * unrelated re-render is worse than saying nothing. This runs in a layout
        * effect, so the first painted frame already carries the right numbers.
+       *
+       * Both axes are separators with a range: width in layout units, height in
+       * rem. The height range's minimum is the content's own height, because that
+       * is the floor the bottom-edge drag stops at.
        */
-      const handle = card.querySelector<HTMLElement>("[data-pin-handle]");
-      if (!handle) return;
       const max = Math.max(1, tracks);
       const floor = Math.max(1, unitsNeeded(needs[index] ?? 0, step, gap, minUnits));
       const value = count ?? floor;
-      const wanted: Array<[string, string]> = [
-        ["aria-valuemin", String(Math.min(max, floor))],
-        ["aria-valuemax", String(max)],
-        ["aria-valuenow", String(value)],
-        ["aria-valuetext", `${value} of ${max} columns`],
-      ];
-      for (const [name, text] of wanted) {
-        if (handle.getAttribute(name) !== text) handle.setAttribute(name, text);
+      const widthHandle = card.querySelector<HTMLElement>('[data-pin-handle-axis="width"]');
+      if (widthHandle) {
+        const wanted: Array<[string, string]> = [
+          ["aria-valuemin", String(Math.min(max, floor))],
+          ["aria-valuemax", String(max)],
+          ["aria-valuenow", String(value)],
+          ["aria-valuetext", `${value} of ${max} columns`],
+        ];
+        for (const [name, text] of wanted) {
+          if (widthHandle.getAttribute(name) !== text) widthHandle.setAttribute(name, text);
+        }
+      }
+      const heightHandle = card.querySelector<HTMLElement>('[data-pin-handle-axis="height"]');
+      if (heightHandle) {
+        const floorRem = Math.round(((contentHeights[index] ?? 0) / root) * 100) / 100;
+        const nowRem = Math.round((card.getBoundingClientRect().height / root) * 100) / 100;
+        const wanted: Array<[string, string]> = [
+          ["aria-valuemin", String(floorRem)],
+          ["aria-valuemax", String(Math.round(4000 / root))],
+          ["aria-valuenow", String(nowRem)],
+          ["aria-valuetext", `${nowRem} of at least ${floorRem} rem`],
+        ];
+        for (const [name, text] of wanted) {
+          if (heightHandle.getAttribute(name) !== text) heightHandle.setAttribute(name, text);
+        }
       }
     });
 
     const found = measured.current;
     found.need.clear();
     found.units.clear();
+    found.contentHeight.clear();
     cards.forEach((card, index) => {
       const id = card.dataset.pinId;
       if (!id) return;
       found.need.set(id, needs[index] ?? 0);
       found.units.set(id, units[index] ?? minUnits);
+      found.contentHeight.set(id, contentHeights[index] ?? 0);
     });
     found.step = step;
     found.gap = gap;
@@ -268,6 +308,7 @@ export function useTileSpans(input: {
     () => ({
       needOf: (pinId) => measured.current.need.get(pinId) ?? 0,
       unitsOf: (pinId) => measured.current.units.get(pinId) ?? 0,
+      contentHeightOf: (pinId) => measured.current.contentHeight.get(pinId) ?? 0,
       minUnitsFor: (pinId) => {
         const found = measured.current;
         return unitsNeeded(found.need.get(pinId) ?? 0, found.step, found.gap, found.minUnits);
@@ -298,6 +339,11 @@ export type TileBoard = {
   needOf: (pinId: string) => number;
   /** What this card is drawn at, in units, as of the last measurement. */
   unitsOf: (pinId: string) => number;
+  /**
+   * What this card's content is tall, in pixels, with the operator's own height
+   * floor taken off. The bottom-edge drag stops here.
+   */
+  contentHeightOf: (pinId: string) => number;
   /** The fewest units this card may have: its own content's floor. */
   minUnitsFor: (pinId: string) => number;
   /** One layout unit, in pixels. */
@@ -323,10 +369,17 @@ export type TileBoard = {
  * Both are read off the card the sheet is actually painting from, so the rule and
  * the markup cannot drift: a card that says it wants the row is not measured, and
  * its inline span is cleared so that the sheet's own `1 / -1` stands.
+ *
+ * `home-pin--sized` is the exception that makes Edit card work on those furniture
+ * cards: once the operator has actually dragged a width onto one, their hand
+ * outranks the sheet's default, and the card takes the measured span like every
+ * other. The class is only present when a pin carries a `width`, so an untouched
+ * banner is still drawn across the row.
  */
 function widthFollowsContent(card: HTMLElement): boolean {
   return (
     !card.classList.contains("home-pin--span2") &&
-    card.querySelector(".home-card--wide, .deadline-banner") === null
+    (card.classList.contains("home-pin--sized") ||
+      card.querySelector(".home-card--wide, .deadline-banner") === null)
   );
 }

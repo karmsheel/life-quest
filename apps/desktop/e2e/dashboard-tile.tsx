@@ -52,7 +52,6 @@ import type {
 } from "@lifequest/vault-core";
 import HomePage from "@/pages/HomePage";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
-import { setDeveloperFlag } from "@/state/developer-flags";
 import { VaultProvider } from "@/state/VaultProvider";
 import { applyAppSkin } from "./apply-app-skin";
 import "@/styles/global.css";
@@ -92,7 +91,6 @@ type HarnessWindow = Window & {
   dashboardTileUnexpectedCalls?: string[];
   dashboardTilePinWrites?: Pin[][];
   dashboardTileSetBoard?: (pins: Pin[], locked: boolean) => boolean;
-  dashboardTileSetFlag?: (on: boolean) => boolean;
   dashboardTileRender?: (generation: number) => boolean;
 };
 
@@ -444,9 +442,7 @@ function Harness({ generation }: { generation: number }) {
       <MemoryRouter initialEntries={["/"]}>
         <VaultProvider>
           {/* The page's cards hand a card to the chat dock, so the dock has to be
-              up: `useChatDock` throws without it. The developer flags need no
-              provider — they are a store, so a page mounted on its own reads and
-              hears them exactly as the app's board does. */}
+              up: `useChatDock` throws without it. */}
           <ChatDockProvider>
             <HomePage key={generation} />
           </ChatDockProvider>
@@ -462,27 +458,13 @@ const root = createRoot(document.getElementById("root")!);
  * Install a board before the page reads it, and re-render.
  *
  * The locked leg needs the same board read-only — a locked dashboard draws no
- * width handle, because the width lives on the pin and a locked board makes no
- * pin writes — and that can only be asked for by handing the page a locked board,
+ * Edit card, because a size lives on the pin and a locked board makes no pin
+ * writes — and that can only be asked for by handing the page a locked board,
  * which is what this is for.
  */
 harness.dashboardTileSetBoard = (pins, locked) => {
   state.pins = pins;
   state.locked = locked;
-  return true;
-};
-
-/**
- * Turn the card width handle on or off, the way Settings → Developer does.
- *
- * Through the app's OWN writer rather than by poking a key: the flag's storage name
- * is derived in one place (`developerFlagKey`), and a rig that spelled the key out
- * for itself would pass while the settings page wrote somewhere else. The store
- * announces the change, so the board in the window follows this call the same way
- * it follows the switch.
- */
-harness.dashboardTileSetFlag = (on) => {
-  setDeveloperFlag("cardWidthHandle", on);
   return true;
 };
 
