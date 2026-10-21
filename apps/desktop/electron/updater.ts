@@ -33,7 +33,8 @@
  *     operator with no app at all.
  * 12. The check is asked for again in the same session — the session's answer is
  *     kept, because the product asks once, at launch. `force` is the operator
- *     asking by hand, and only Settings does that.
+ *     asking by hand — the rail's build number and Settings → Updates — and only
+ *     those do that.
  */
 import { app, shell } from "electron";
 import fs from "node:fs/promises";

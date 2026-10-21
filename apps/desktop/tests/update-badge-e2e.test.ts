@@ -38,6 +38,7 @@ type ShadowLayer = {
 type Dialog = {
   role: string | null;
   ariaModal: string | null;
+  view: string | null;
   title: string;
   kicker: string;
   kickerKind: string | null;
@@ -53,7 +54,12 @@ type Dialog = {
 
 type State = {
   reducedMotion: boolean;
-  calls: { check: number; install: number; installAsset: { name: string } | null } | null;
+  calls: {
+    check: number;
+    checkOptions?: ({ force?: boolean } | null)[];
+    install: number;
+    installAsset: { name: string } | null;
+  } | null;
   chip: {
     tag: string;
     className: string;
@@ -115,6 +121,7 @@ type State = {
   } | null;
   dialog: Dialog | null;
   backdropPresent: boolean;
+  chipFocused: boolean | null;
   listenerAttached: boolean | null;
   dom: { hasRail: boolean; hasChip: boolean; errors: string[] | null };
   settings: {
@@ -210,7 +217,7 @@ function runDriver(): Promise<number> {
 }
 
 describe("auto-update badge", () => {
-  it("glows when a newer release exists, opens the upgrade, and stays quiet otherwise", async (t) => {
+  it("checks when asked at any time, glows when a newer release exists, and opens the upgrade", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
@@ -227,12 +234,32 @@ describe("auto-update badge", () => {
     assert.equal(exitCode, 0, "driver exited non-zero");
     assert.equal(report.pass, true);
 
-    const { available, opened, notesOpen, installing, halfway, installFailed, upToDate, junk, afterRemount } =
-      report.states;
+    const {
+      available,
+      opened,
+      notesOpen,
+      installing,
+      halfway,
+      installFailed,
+      manualRest,
+      asking,
+      manual,
+      upToDate,
+      afterClick,
+      checkedAgain,
+      junk,
+      junkClicked,
+      afterRemount,
+    } = report.states;
 
-    // The version line at rest: the same paragraph it has always been, so a rail
-    // with nothing to install gains no control and no focus stop.
-    assert.equal(upToDate.chip?.tag, "p", "an up-to-date build made the version a control");
+    // The version line is the operator's manual way in, so it is a control in
+    // every state — but a quiet one: no glow, no caption, no release named until
+    // the feed has one.
+    assert.equal(
+      upToDate.chip?.tag,
+      "button",
+      "an up-to-date build left the operator no way to ask for an update",
+    );
     assert.equal(
       upToDate.chip?.boxShadow,
       "none",
@@ -249,9 +276,114 @@ describe("auto-update badge", () => {
       "an up-to-date build named a release it is not offering",
     );
     assert.equal(
+      upToDate.chip?.ariaHaspopup,
+      "dialog",
+      "the quiet build number is not a popup trigger",
+    );
+    assert.ok(
+      upToDate.chip?.ariaLabel?.includes("Check for updates"),
+      `the quiet build number does not say what it does: ${JSON.stringify(upToDate.chip?.ariaLabel)}`,
+    );
+    assert.equal(
       upToDate.label,
       null,
       `an up-to-date build says an update is available: ${JSON.stringify(upToDate.label?.text)}`,
+    );
+
+    // The manual check at rest: one launch check, then the operator's click
+    // forces the feed, and the popup answers rather than opening into nothing.
+    assert.equal(
+      manualRest.calls?.check,
+      1,
+      `the launch asked the feed ${manualRest.calls?.check} times`,
+    );
+    assert.equal(
+      manualRest.chip?.tag,
+      "button",
+      "a build with nothing to install offered no manual check",
+    );
+    assert.equal(
+      asking.calls?.check,
+      2,
+      `the operator's click did not reach the feed: ${JSON.stringify(asking.calls?.checkOptions)}`,
+    );
+    assert.equal(
+      asking.calls?.checkOptions?.[1]?.force,
+      true,
+      `the manual check did not force the feed: ${JSON.stringify(asking.calls?.checkOptions)}`,
+    );
+    assert.equal(
+      asking.dialog?.view,
+      "checking",
+      `a manual check in flight did not say so: ${JSON.stringify(asking.dialog?.view)}`,
+    );
+    assert.equal(
+      (asking.dialog?.buttons ?? []).some(
+        (button) => button.label === "Download and install",
+      ),
+      false,
+      "a check that has not answered offered an install",
+    );
+    assert.equal(
+      manual.dialog?.view,
+      "offer",
+      `the manual check's release did not become the offer: ${JSON.stringify(manual.dialog?.view)}`,
+    );
+    assert.equal(
+      manual.dialog?.dataVersion,
+      OFFERED,
+      `the manual check's popup named ${manual.dialog?.dataVersion}`,
+    );
+    assert.ok(
+      (manual.dialog?.buttons ?? []).some(
+        (button) => button.label === "Download and install" && !button.disabled,
+      ),
+      "the manual check found a release with no way to install it",
+    );
+
+    // An up-to-date click answers in the same panel, with no install on offer —
+    // and lets the operator ask again.
+    assert.equal(
+      afterClick.calls?.check,
+      2,
+      `clicking the quiet build number did not reach the feed: ${JSON.stringify(afterClick.calls?.checkOptions)}`,
+    );
+    assert.equal(
+      afterClick.calls?.checkOptions?.[1]?.force,
+      true,
+      "the quiet build number replayed the session instead of forcing the feed",
+    );
+    assert.equal(
+      afterClick.dialog?.view,
+      "up-to-date",
+      `an up-to-date click answered with ${JSON.stringify(afterClick.dialog?.view)}`,
+    );
+    assert.ok(
+      (afterClick.dialog?.versionsText ?? "").includes(`v${APP_VERSION}`) &&
+        (afterClick.dialog?.versionsText ?? "").includes("newest release"),
+      `the up-to-date answer does not say it: ${afterClick.dialog?.versionsText}`,
+    );
+    assert.equal(
+      (afterClick.dialog?.buttons ?? []).some(
+        (button) => button.label === "Download and install",
+      ),
+      false,
+      "an up-to-date answer offered an install",
+    );
+    assert.equal(
+      checkedAgain.calls?.check,
+      3,
+      `the popup's own check did not reach the feed: ${JSON.stringify(checkedAgain.calls?.checkOptions)}`,
+    );
+    assert.equal(
+      checkedAgain.calls?.checkOptions?.[2]?.force,
+      true,
+      "the popup's own check replayed the session",
+    );
+    assert.equal(
+      report.states.currentClosed?.chipFocused,
+      true,
+      "dismissing the popup dropped the keyboard on the page instead of the build number",
     );
 
     // The glow, restated here so the suite — not only the driver — asserts the
@@ -445,13 +577,36 @@ describe("auto-update badge", () => {
     );
 
     // A bridge that does not know this channel must not glow, and must not throw.
-    assert.equal(junk.chip?.tag, "p", "a junk answer turned the version into a control");
+    assert.equal(
+      junk.chip?.tag,
+      "button",
+      "a junk answer left the operator no way to ask again",
+    );
     assert.equal(junk.chip?.boxShadow, "none", "a junk answer produced a glow");
-    assert.equal(junk.dialog, null, "a junk answer opened the popup");
+    assert.equal(junk.dialog, null, "a junk answer opened the popup unasked");
     assert.equal(
       junk.label,
       null,
       `a junk answer claimed an update was available: ${JSON.stringify(junk.label?.text)}`,
+    );
+    // Asking anyway is answered: a failed check is reported, not swallowed.
+    assert.equal(
+      junkClicked.dialog?.view,
+      "error",
+      `a failed check opened ${JSON.stringify(junkClicked.dialog?.view)}`,
+    );
+    assert.ok(
+      (junkClicked.dialog?.versionsText ?? "").includes("could not reach"),
+      `a failed check says nothing about why: ${junkClicked.dialog?.versionsText}`,
+    );
+    assert.ok(
+      (junkClicked.dialog?.buttons ?? []).some(
+        (button) => button.label === "Try the update check again",
+      ) &&
+        (junkClicked.dialog?.buttons ?? []).some(
+          (button) => button.label === "Close",
+        ),
+      `a failed check offers ${JSON.stringify(junkClicked.dialog?.buttons)}`,
     );
     assert.equal(
       junk.listenerAttached,
@@ -468,7 +623,7 @@ describe("auto-update badge", () => {
       `unmounting with a junk progress handle threw: ${JSON.stringify(afterRemount.dom.errors)}`,
     );
     assert.equal(
-      afterRemount.rail !== null && afterRemount.chip?.tag === "p",
+      afterRemount.rail !== null && afterRemount.chip?.tag === "button",
       true,
       "the rail did not survive the provider's remount",
     );

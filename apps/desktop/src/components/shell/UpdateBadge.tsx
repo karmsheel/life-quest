@@ -1,70 +1,93 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useUpdate } from "@/state/UpdateProvider";
 import { UpdateDialog } from "./UpdateDialog";
 
 /**
- * The build number at the foot of the rail.
+ * The build number at the foot of the rail, and the app's one manual update
+ * affordance.
  *
- * At rest it is what it has always been: one line of text in the rail's own
- * muted ink, not a control — nothing to click, nothing to tab into, no focus
- * ring in a column of nav rows. It becomes a *button* only when the feed named a
- * newer version, and then it carries the glow: the one affordance in the rail
- * that appears out of nowhere, which is the point.
+ * It is a control at all times, so the operator can always ask. What it opens
+ * depends on what is already known:
  *
- * The glow is a state, so it wears the state ink (`--accent`) rather than a
- * decoration colour, and it is the only thing about the rail that moves.
+ *  · a release is being offered (or the Developer preview is on) — the popup is
+ *    that offer, and no request is made: the answer is already in hand;
+ *  · nothing is being offered — the popup opens on "checking", the feed is read
+ *    with `force`, and the popup becomes whichever answer came back: the offer,
+ *    "you're up to date", or why the check could not answer.
  *
- * A glowing pill says "something is here" but not what it is, so the state also
- * gets said in words, above the pill and only while it is true. The rail's foot
- * is pinned to the bottom, so the line cannot push anything below it: it takes
- * its height out of the column above, which is what moves the Log row up out of
- * the way. At rest the words are gone again and the foot is one line, as before.
+ * At rest it stays the quiet line it has always been — the rail's muted ink, no
+ * fill, no halo. It gains the glow (and the words above it) only when there is
+ * something to install, because the glow is a state, not a button style. The one
+ * thing it gains from being a control everywhere is the affordance a control
+ * needs: hover ink, a focus ring, and a pointer.
  */
 export function UpdateBadge() {
-  const { current, available, phase, shown, previewing } = useUpdate();
+  const { current, available, phase, shown, previewing, refresh } = useUpdate();
   const [open, setOpen] = useState(false);
-
-  if (!available) {
-    return (
-      <p className="nav-rail__version" data-update-state={phase}>
-        v{current}
-      </p>
-    );
-  }
+  const trigger = useRef<HTMLButtonElement>(null);
 
   const latest = shown?.state === "available" ? shown.latest : null;
 
+  function openPanel() {
+    setOpen(true);
+    // An offer in hand is the answer: showing it costs nothing and re-reading the
+    // feed under an open popup would only replace it while the operator reads.
+    if (shown?.state === "available") return;
+    // Everything else is a question the operator just asked. `force` reaches the
+    // network rather than replaying the session's cached answer, and a request
+    // already in flight (the launch's own check) is joined rather than doubled.
+    void refresh({ force: true });
+  }
+
+  function closePanel() {
+    setOpen(false);
+    // The popup takes the focus when it opens, so dismissing it comes back to the
+    // control that opened it rather than dropping the keyboard on the page.
+    trigger.current?.focus();
+  }
+
   return (
     <>
-      <p
-        className="nav-rail__update-label"
-        data-update-label={previewing ? "preview" : "available"}
-      >
-        Update available
-      </p>
+      {available ? (
+        <p
+          className="nav-rail__update-label"
+          data-update-label={previewing ? "preview" : "available"}
+        >
+          Update available
+        </p>
+      ) : null}
       <button
         type="button"
-        className="nav-rail__version nav-rail__version--available"
-        data-update-state="available"
-        data-update-version={latest ?? ""}
+        ref={trigger}
+        className={
+          available
+            ? "nav-rail__version nav-rail__version--available"
+            : "nav-rail__version"
+        }
+        data-update-state={available ? "available" : phase}
+        {...(latest === null ? {} : { "data-update-version": latest })}
         data-update-preview={previewing ? "true" : "false"}
         aria-label={
           previewing
             ? `Version ${current}. Previewing the update badge — no release is being offered.`
-            : `Version ${current}. LifeQuest ${latest} is available to download.`
+            : available
+              ? `Version ${current}. LifeQuest ${latest} is available to download.`
+              : `Version ${current}. Check for updates.`
         }
         aria-haspopup="dialog"
         aria-expanded={open}
         title={
           previewing
             ? "Preview of the update badge"
-            : `LifeQuest ${latest} is available`
+            : available
+              ? `LifeQuest ${latest} is available`
+              : "Check for updates"
         }
-        onClick={() => setOpen(true)}
+        onClick={openPanel}
       >
         v{current}
       </button>
-      <UpdateDialog open={open} onClose={() => setOpen(false)} />
+      <UpdateDialog open={open} onClose={closePanel} />
     </>
   );
 }

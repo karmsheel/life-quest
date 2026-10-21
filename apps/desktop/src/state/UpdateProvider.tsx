@@ -1,6 +1,7 @@
 /**
  * The app's own view of the update feed: one check at launch, and the operator's
- * download-and-install when they ask for it.
+ * manual check from the rail's build number (or Settings → Updates) whenever they
+ * ask for one.
  *
  * This is a system-in-isolation rig's worth of work done in the renderer, so the
  * ways it can fail are written down before the code:
@@ -16,7 +17,11 @@
  *  4. React's StrictMode running the mount effect twice — the launch's check
  *     must go out once, not twice. The ref survives the simulated remount.
  *  5. A failed check (no token, offline, refused) — the reason is kept for
- *     Settings, and the rail stays quiet. The badge never nags.
+ *     Settings and the panel, and the rail stays quiet. The badge never nags.
+ *  6. A manual check asked for while one is already in flight — the second
+ *     request joins the first. Two answers racing would let an older one land
+ *     last and overwrite a newer one, and the operator's click must not cost a
+ *     second read of the feed for an answer that is already on its way.
  */
 import {
   createContext,
@@ -141,45 +146,61 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   // must find the first request already made rather than make its own.
   const checked = useRef(false);
 
-  const refresh = useCallback(async (options: { force?: boolean } = {}) => {
-    let bridge: ReturnType<typeof api> | null = null;
-    try {
-      bridge = api();
-    } catch {
-      bridge = null;
-    }
-    if (!bridge) {
-      setPhase("failed");
-      setError(null);
-      setDecision(null);
-      return;
-    }
-    setPhase("checking");
-    try {
-      const result = await bridge.updateCheck(options);
-      if (!result || result.ok !== true) {
-        setDecision(null);
-        setError(
-          result && typeof result.error === "string" ? result.error : null,
-        );
-        setPhase("failed");
-        return;
+  // The request currently on its way, if any. A manual check that arrives while
+  // the launch's own check is still running joins it instead of starting a second
+  // read: the answer is the same answer, and two flights could land out of order.
+  const inFlight = useRef<Promise<void> | null>(null);
+
+  const refresh = useCallback((options: { force?: boolean } = {}): Promise<void> => {
+    const pending = inFlight.current;
+    if (pending) return pending;
+
+    const run = (async (): Promise<void> => {
+      let bridge: ReturnType<typeof api> | null = null;
+      try {
+        bridge = api();
+      } catch {
+        bridge = null;
       }
-      const parsed = readDecision(result.decision);
-      if (!parsed) {
-        setDecision(null);
+      if (!bridge) {
+        setPhase("failed");
         setError(null);
-        setPhase("failed");
+        setDecision(null);
         return;
       }
-      setDecision(parsed);
-      setError(null);
-      setPhase("ready");
-    } catch (err) {
-      setDecision(null);
-      setError(err instanceof Error ? err.message : String(err));
-      setPhase("failed");
-    }
+      setPhase("checking");
+      try {
+        const result = await bridge.updateCheck(options);
+        if (!result || result.ok !== true) {
+          setDecision(null);
+          setError(
+            result && typeof result.error === "string" ? result.error : null,
+          );
+          setPhase("failed");
+          return;
+        }
+        const parsed = readDecision(result.decision);
+        if (!parsed) {
+          setDecision(null);
+          setError(null);
+          setPhase("failed");
+          return;
+        }
+        setDecision(parsed);
+        setError(null);
+        setPhase("ready");
+      } catch (err) {
+        setDecision(null);
+        setError(err instanceof Error ? err.message : String(err));
+        setPhase("failed");
+      }
+    })();
+
+    const tracked: Promise<void> = run.finally(() => {
+      if (inFlight.current === tracked) inFlight.current = null;
+    });
+    inFlight.current = tracked;
+    return tracked;
   }, []);
 
   useEffect(() => {

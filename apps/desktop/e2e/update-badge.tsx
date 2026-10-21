@@ -5,34 +5,42 @@
  * This is a system-in-isolation rig, so the ways it can fail are written down
  * before the assertions:
  *
- *  1. The version line is a control when there is nothing to install — a focus
- *     stop and a click target in a column of quiet nav rows, for no reason. At
- *     rest it must be the same paragraph it has always been.
- *  2. The glow is missing when a newer release exists, so the operator never
+ *  1. The version line is not a control when there is nothing to install — the
+ *     operator cannot ask for an update by hand, which is the whole point of the
+ *     version number being clickable at all times.
+ *  2. A click at rest does not force the feed, so the operator's manual check is
+ *     answered from the session's cache instead of from GitHub.
+ *  3. A click at rest has no visible answer — it opens nothing, or a popup that
+ *     never resolves out of "checking" — a dead end dressed as a control.
+ *  4. A manual check that finds a newer release never becomes the offer, so the
+ *     operator can check but not update.
+ *  5. The glow is missing when a newer release exists, so the operator never
  *     learns about it.
- *  3. The glow is drawn as something other than the state ink, or with no alpha
+ *  6. The glow is drawn as something other than the state ink, or with no alpha
  *     at all: a `box-shadow: none`, or a shadow on a colour the theme does not
  *     hand out. It must be a real, accent-tinted halo.
- *  4. Clicking the glowing number opens nothing.
- *  5. The popup does not name both versions, so the operator cannot tell what
+ *  7. Clicking the glowing number opens nothing.
+ *  8. The popup does not name both versions, so the operator cannot tell what
  *     they are being asked to move from and to.
- *  6. The popup cannot be dismissed — a modal with no way out but the installer.
- *  7. Clicking "Download and install" never reaches the bridge, or reaches it
+ *  9. The popup cannot be dismissed — a modal with no way out but the installer.
+ * 10. Clicking "Download and install" never reaches the bridge, or reaches it
  *     more than once.
- *  8. The download's progress never appears, so a long install looks hung.
- *  9. A failed install is reported as nothing, leaving the popup looking like it
+ * 11. The download's progress never appears, so a long install looks hung.
+ * 12. A failed install is reported as nothing, leaving the popup looking like it
  *     is still working.
- * 10. An update-check answer the bridge does not recognise (`{ ok: true,
+ * 13. An update-check answer the bridge does not recognise (`{ ok: true,
  *     value: null }`, from a stub that never heard of this channel) is treated as
  *     an available update, or throws and takes the whole rail down with it.
- * 11. An `onUpdateProgress` handle that is not a function — the cleanup must not
+ * 14. An `onUpdateProgress` handle that is not a function — the cleanup must not
  *     call it.
- * 12. The glow makes the rail taller than its own column, so the build number
+ * 15. The glow makes the rail taller than its own column, so the build number
  *     scrolls the rail's topband away.
- * 13. The glow arrives without a sentence: a pill reading `v0.1.4` and nothing
+ * 16. The glow arrives without a sentence: a pill reading `v0.1.4` and nothing
  *     else leaves the operator to guess. The words must sit above it, stay a
  *     paragraph rather than a second focus stop, leave the Log row above
  *     themselves, and be gone again when there is nothing to install.
+ * 17. The up-to-date and failed answers offer the install control, or open a
+ *     popup the operator cannot dismiss.
  *
  * The bridge is stubbed (there is no Electron preload on the dev-server page);
  * everything else — the real `UpdateProvider`, the real `NavRail`, the real
@@ -58,7 +66,7 @@ const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value });
 
 const VAULT_NAME = "Harness Vault";
 
-type Scenario = "available" | "current" | "junk" | "install-fails";
+type Scenario = "available" | "current" | "slow" | "junk" | "install-fails";
 
 /**
  * Which answer the stub feed gives, off the page's own query string.
@@ -70,7 +78,10 @@ type Scenario = "available" | "current" | "junk" | "install-fails";
  */
 const scenario = ((): Scenario => {
   const asked = new URLSearchParams(window.location.search).get("scenario");
-  return asked === "current" || asked === "junk" || asked === "install-fails"
+  return asked === "current" ||
+    asked === "slow" ||
+    asked === "junk" ||
+    asked === "install-fails"
     ? asked
     : "available";
 })();
@@ -152,6 +163,12 @@ const calls: {
 let progressListener: ((progress: { downloaded: number; total: number }) => void) | null =
   null;
 
+/**
+ * The manual check the `slow` scenario holds open, so the driver can look at the
+ * popup *while* the feed is being read and then decide what the answer is.
+ */
+let answerSlowCheck: ((which: "available" | "current") => void) | null = null;
+
 const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
@@ -170,13 +187,30 @@ const bridge: Record<string, unknown> = {
     // A stub that has never heard of this channel answers junk. That is the
     // answer the whole renderer has to survive.
     if (scenario === "junk") return Promise.resolve(null);
+    // `slow` answers the launch's own check at once — "up to date" — and leaves
+    // the operator's forced check pending until the driver says what it found.
+    // That is the only way to look at the popup in its checking state.
+    if (scenario === "slow" && options?.force === true) {
+      return new Promise((resolve) => {
+        answerSlowCheck = (which) => {
+          answerSlowCheck = null;
+          resolve({
+            ok: true as const,
+            decision: which === "available" ? AVAILABLE : CURRENT,
+          });
+        };
+      });
+    }
     // The real bridge's own shape: `{ ok, decision }`, not the generic
     // `{ ok, value }` the rest of this proxy hands out. Main's `checkForUpdate`
     // is what decides that, and a harness that got it wrong would be testing a
-    // shape no product code produces.
+    // shape no product code produces. `slow`'s launch check is "up to date"; the
+    // other scenarios answer with the release, including `install-fails`, whose
+    // popup has to exist before its installer can fail.
     return Promise.resolve({
       ok: true as const,
-      decision: scenario === "current" ? CURRENT : AVAILABLE,
+      decision:
+        scenario === "current" || scenario === "slow" ? CURRENT : AVAILABLE,
     });
   },
   updateInstall: (asset: unknown) => {
@@ -304,6 +338,12 @@ const harness = {
   push: (downloaded: number, total: number) => {
     if (!progressListener) return false;
     progressListener({ downloaded, total });
+    return true;
+  },
+  /** Answer the manual check the `slow` scenario is holding open. */
+  answer: (which: "available" | "current") => {
+    if (!answerSlowCheck) return false;
+    answerSlowCheck(which);
     return true;
   },
   listenerAttached: () => typeof progressListener === "function",

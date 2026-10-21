@@ -870,8 +870,9 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   });
 
   // —— auto-update ——————————————————————————————————————————————————————————
-  // `update:check` is the launch's one call; `force` is Settings asking by hand.
-  // Progress is pushed, not polled: a download reports itself as it arrives.
+  // `update:check` is the launch's one call; `force` is the operator asking by
+  // hand — the rail's build number, or Settings → Updates. Progress is pushed,
+  // not polled: a download reports itself as it arrives.
   ipcMain.handle(
     "update:check",
     (_e, options?: { force?: boolean }) =>

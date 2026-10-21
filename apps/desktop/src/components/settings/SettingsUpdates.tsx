@@ -74,8 +74,8 @@ export function SettingsUpdates() {
 
       <p className="settings-card__desc">
         The release feed is public, so this check holds no token and nothing is
-        stored for it. The app asks once per launch; <em>Check now</em> is you
-        asking by hand.
+        stored for it. The app asks once per launch; <em>Check now</em> — like
+        the version number at the foot of the rail — is you asking by hand.
       </p>
     </SettingsSection>
   );

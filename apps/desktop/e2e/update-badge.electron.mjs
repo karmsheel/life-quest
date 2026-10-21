@@ -13,6 +13,12 @@
  * "the build number glows when a newer release exists" is a set of numbers in a
  * file rather than a screenshot to squint at.
  *
+ * It also drives the click that makes the glow unnecessary to wait for: the build
+ * number is a control at launch, so the operator can force the feed themselves.
+ * The `slow` scenario holds that forced check open so the popup's checking state
+ * is measured too, and then answers it with the release the operator can install
+ * the usual way.
+ *
  * NOT covered here: whether the download really happens, whether the bytes are
  * the release's, and whether Windows is handed the file. This rig stubs the
  * bridge, so all three are out of its reach by construction —
@@ -212,6 +218,7 @@ const SAMPLE = `(() => {
           role: dialog.getAttribute("role"),
           ariaModal: dialog.getAttribute("aria-modal"),
           ariaLabelledby: dialog.getAttribute("aria-labelledby"),
+          view: dialog.getAttribute("data-update-view"),
           dataVersion: dialog.getAttribute("data-update-dialog"),
           kicker: (dialog.querySelector(".update-dialog__kicker")?.textContent || "").trim(),
           kickerKind: (() => {
@@ -220,7 +227,7 @@ const SAMPLE = `(() => {
           })(),
           title: (dialog.querySelector(".update-dialog__title")?.textContent || "").trim(),
           versionsText: (
-            dialog.querySelector('[data-update-body="versions"]')?.textContent || ""
+            dialog.querySelector('[data-update-body]')?.textContent || ""
           )
             .replace(/\\s+/g, " ")
             .trim(),
@@ -241,6 +248,7 @@ const SAMPLE = `(() => {
         }
       : null,
     backdropPresent: Boolean(document.querySelector(".update-dialog-backdrop")),
+    chipFocused: chip ? document.activeElement === chip : null,
     settings: (() => {
       const summary = document.querySelector("[data-update-summary]");
       const token = document.querySelector("[data-update-token]");
@@ -555,6 +563,15 @@ async function main() {
   }, 120_000);
 
   try {
+    // A run starts from the state a fresh profile has. This rig leaves the
+    // Developer page's card-width flag on at the end of its own developer leg,
+    // and a preference inherited from the last run would make "off by default"
+    // fail on the second run — a test that passes once and then lies.
+    await win.webContents.session.clearStorageData({
+      origin: new URL(url).origin,
+      storages: ["localstorage"],
+    });
+
     // The fixture has to still mean what the assertions below say it means: an
     // offered release this build already matched would turn every one of them into
     // a test of the "up to date" branch, and pass for the wrong reason.
@@ -794,6 +811,11 @@ async function main() {
       opened.chip?.ariaExpanded === "true",
       `aria-expanded ${opened.chip?.ariaExpanded}`,
     );
+    check(
+      "showing a release already in hand costs no second check",
+      opened.calls?.check === 1 && opened.dialog?.view === "offer",
+      `update:check called ${opened.calls?.check} times, view ${opened.dialog?.view}`,
+    );
 
     // The release notes sit behind a disclosure; opening it shows the body as
     // written, never parsed into the app.
@@ -882,13 +904,103 @@ async function main() {
       "Escape left the popup on screen after a failed install",
     );
 
-    // ── 5 — up to date: no glow, and no control at all ──────────────────────
+    // ── 5 — the operator's manual check: quiet at launch, offered after a click
+    // The flow the version number exists for. The launch's check finds nothing,
+    // so the rail is quiet — and still a control. The click forces the feed, the
+    // popup says it is asking, and the answer that comes back is the usual offer.
+    await loadScenario("slow");
+    const manualRest = await settle();
+    if (
+      !check(
+        "a build with nothing to install still has a control",
+        manualRest.chip?.tag === "button" && manualRest.chip?.type === "button",
+        `no clickable build number: tag ${manualRest.chip?.tag} type ${manualRest.chip?.type}`,
+      )
+    ) {
+      console.error(`[update-badge] dom: ${JSON.stringify(manualRest.dom, null, 2)}`);
+      throw new Error("the quiet build number is not a control");
+    }
+    check(
+      "the quiet control looks quiet and says what it does",
+      manualRest.chip?.dataVersion === null &&
+        manualRest.chip?.ariaHaspopup === "dialog" &&
+        manualRest.chip?.ariaExpanded === "false" &&
+        (manualRest.chip?.ariaLabel ?? "").includes("Check for updates") &&
+        manualRest.chip?.title === "Check for updates" &&
+        manualRest.chip?.boxShadow === "none" &&
+        !(manualRest.chip?.className ?? "").includes("--available") &&
+        manualRest.label === null,
+      `data ${JSON.stringify(manualRest.chip?.dataVersion)}, haspopup ${manualRest.chip?.ariaHaspopup}, ` +
+        `expanded ${manualRest.chip?.ariaExpanded}, label ${JSON.stringify(manualRest.chip?.ariaLabel)}, ` +
+        `title ${JSON.stringify(manualRest.chip?.title)}, halo ${JSON.stringify(manualRest.chip?.halo?.boxShadow)}, ` +
+        `class ${manualRest.chip?.className}, caption ${JSON.stringify(manualRest.label)}`,
+    );
+    check(
+      "the launch still asks the feed exactly once",
+      manualRest.calls?.check === 1,
+      `update:check called ${manualRest.calls?.check} times`,
+    );
+
+    await click(".nav-rail__version");
+    const asking = await settle(320);
+    check(
+      "clicking the build number checks the feed by hand",
+      asking.calls?.check === 2 && asking.calls?.checkOptions?.[1]?.force === true,
+      `checks ${JSON.stringify(asking.calls?.checkOptions)}`,
+    );
+    check(
+      "the popup says the check is still running",
+      asking.dialog?.view === "checking" &&
+        (asking.dialog?.versionsText ?? "").includes("Asking GitHub"),
+      `view ${asking.dialog?.view}, body ${JSON.stringify(asking.dialog?.versionsText)}`,
+    );
+    check(
+      "a running check offers no install and a way out",
+      !(asking.dialog?.buttons ?? []).some(
+        (button) => button.label === "Download and install",
+      ) &&
+        (asking.dialog?.buttons ?? []).some((button) => button.label === "Close"),
+      `buttons ${JSON.stringify(asking.dialog?.buttons)}`,
+    );
+    screenshots.push(await shoot("update-badge-checking.png"));
+
+    // The answer arrives while the popup is open: the same panel becomes the
+    // offer, with the usual install action — the operator asked, and got a release.
+    const answered = await run(`window.updateHarness.answer("available")`);
+    check("the held check can be answered", answered === true, "no pending check to answer");
+    const manual = await settle(360);
+    check(
+      "the manual check's answer becomes the offer in place",
+      manual.dialog?.view === "offer" &&
+        manual.dialog?.dataVersion === OFFERED &&
+        manual.chip?.dataVersion === OFFERED,
+      `view ${manual.dialog?.view}, release ${JSON.stringify(manual.dialog?.dataVersion)}, chip ${JSON.stringify(manual.chip?.dataVersion)}`,
+    );
+    check(
+      "the offer carries the usual install",
+      (manual.dialog?.buttons ?? []).some(
+        (button) => button.label === "Download and install" && !button.disabled,
+      ),
+      `buttons ${JSON.stringify(manual.dialog?.buttons)}`,
+    );
+    screenshots.push(await shoot("update-badge-manual.png"));
+    await pressEscape();
+    const manualClosed = await settle();
+    check(
+      "the manual check's popup can be dismissed",
+      manualClosed.dialog === null,
+      "Escape left the popup open after a manual check",
+    );
+
+    // ── 6 — up to date: no glow, but the operator still gets a clean answer ─
     await loadScenario("current");
     const upToDate = await settle();
     check(
-      "an up-to-date build keeps its quiet paragraph",
-      upToDate.chip?.tag === "p",
-      `tag ${upToDate.chip?.tag}`,
+      "an up-to-date build keeps its quiet control",
+      upToDate.chip?.tag === "button" &&
+        upToDate.chip?.ariaHaspopup === "dialog" &&
+        Boolean(upToDate.chip?.ariaLabel?.includes("Check for updates")),
+      `tag ${upToDate.chip?.tag}, haspopup ${upToDate.chip?.ariaHaspopup}, label ${JSON.stringify(upToDate.chip?.ariaLabel)}`,
     );
     check(
       "an up-to-date build has no glow",
@@ -897,9 +1009,9 @@ async function main() {
       `box-shadow ${JSON.stringify(upToDate.chip?.boxShadow)}, class ${upToDate.chip?.className}`,
     );
     check(
-      "an up-to-date build offers no popup trigger",
-      upToDate.chip?.ariaHaspopup === null && upToDate.chip?.dataVersion === null,
-      `haspopup ${upToDate.chip?.ariaHaspopup}, data ${upToDate.chip?.dataVersion}`,
+      "an up-to-date build names no release it is not offering",
+      upToDate.chip?.dataVersion === null,
+      `data ${JSON.stringify(upToDate.chip?.dataVersion)}`,
     );
     // The words are a claim about this launch, so a rail with nothing to install
     // must not carry them: they would be chrome that is always there, saying
@@ -921,21 +1033,61 @@ async function main() {
       upToDate.calls?.check === 1,
       `update:check called ${upToDate.calls?.check} times`,
     );
+
     await click(".nav-rail__version");
-    const afterClick = await settle();
+    const afterClick = await settle(360);
     check(
-      "clicking a quiet build number opens nothing",
-      afterClick.dialog === null && afterClick.backdropPresent === false,
-      `dialog ${JSON.stringify(afterClick.dialog)}`,
+      "clicking a quiet build number checks the feed again",
+      afterClick.calls?.check === 2 && afterClick.calls?.checkOptions?.[1]?.force === true,
+      `checks ${JSON.stringify(afterClick.calls?.checkOptions)}`,
+    );
+    check(
+      "and answers that the build is up to date",
+      afterClick.dialog?.view === "up-to-date" &&
+        (afterClick.dialog?.versionsText ?? "").includes(`v${APP_VERSION}`) &&
+        (afterClick.dialog?.versionsText ?? "").includes("newest release"),
+      `view ${afterClick.dialog?.view}, body ${JSON.stringify(afterClick.dialog?.versionsText)}`,
+    );
+    check(
+      "an up-to-date answer offers no install, but a way to ask again",
+      !(afterClick.dialog?.buttons ?? []).some(
+        (button) => button.label === "Download and install",
+      ) &&
+        (afterClick.dialog?.buttons ?? []).some(
+          (button) => button.label === "Check for updates again",
+        ) &&
+        (afterClick.dialog?.buttons ?? []).some((button) => button.label === "Close"),
+      `buttons ${JSON.stringify(afterClick.dialog?.buttons)}`,
     );
     screenshots.push(await shoot("update-badge-current.png"));
 
-    // ── 6 — a bridge that does not know this channel ────────────────────────
+    await click('.update-dialog button[aria-label="Check for updates again"]');
+    const checkedAgain = await settle(360);
+    check(
+      "the up-to-date popup can ask again",
+      checkedAgain.calls?.check === 3 &&
+        checkedAgain.calls?.checkOptions?.[2]?.force === true,
+      `checks ${JSON.stringify(checkedAgain.calls?.checkOptions)}`,
+    );
+    await pressEscape();
+    const currentClosed = await settle();
+    check(
+      "the up-to-date popup can be dismissed",
+      currentClosed.dialog === null,
+      "Escape left the up-to-date popup on screen",
+    );
+    check(
+      "dismissing the popup returns the keyboard to the build number",
+      currentClosed.chipFocused === true,
+      `focus landed on ${JSON.stringify(currentClosed.chipFocused)}`,
+    );
+
+    // ── 7 — a bridge that does not know this channel ────────────────────────
     await loadScenario("junk");
     const junk = await settle();
     check(
       "an unreadable answer leaves the rail standing",
-      Boolean(junk.rail) && junk.chip?.tag === "p",
+      Boolean(junk.rail) && junk.chip?.tag === "button",
       `rail ${JSON.stringify(junk.rail?.box)}, chip ${junk.chip?.tag}`,
     );
     check(
@@ -955,6 +1107,39 @@ async function main() {
       junk.label === null,
       `caption ${JSON.stringify(junk.label)}`,
     );
+
+    // The operator can still ask, and still gets an answer: a failed check is
+    // reported in the same panel, with a way to try again and a way out.
+    await click(".nav-rail__version");
+    const junkClicked = await settle(360);
+    check(
+      "a failed launch check can be asked again by hand",
+      junkClicked.calls?.check === 2 &&
+        junkClicked.calls?.checkOptions?.[1]?.force === true,
+      `checks ${JSON.stringify(junkClicked.calls?.checkOptions)}`,
+    );
+    check(
+      "a check that cannot answer says so",
+      junkClicked.dialog?.view === "error" &&
+        (junkClicked.dialog?.versionsText ?? "").includes("could not reach"),
+      `view ${junkClicked.dialog?.view}, body ${JSON.stringify(junkClicked.dialog?.versionsText)}`,
+    );
+    check(
+      "a failed check offers a retry and a way out",
+      (junkClicked.dialog?.buttons ?? []).some(
+        (button) => button.label === "Try the update check again",
+      ) &&
+        (junkClicked.dialog?.buttons ?? []).some((button) => button.label === "Close"),
+      `buttons ${JSON.stringify(junkClicked.dialog?.buttons)}`,
+    );
+    await pressEscape();
+    const junkClosed = await settle();
+    check(
+      "the failed check popup can be dismissed",
+      junkClosed.dialog === null,
+      "Escape left the failed check popup on screen",
+    );
+
     // The one failure no amount of clicking can reach: the subscription's
     // *cleanup*. A handle that is not a function must be left alone rather than
     // called, so unmounting the provider has to be survivable at all.
@@ -968,12 +1153,12 @@ async function main() {
     );
     check(
       "the rail survives the remount",
-      Boolean(afterRemount.rail) && afterRemount.chip?.tag === "p",
+      Boolean(afterRemount.rail) && afterRemount.chip?.tag === "button",
       `rail ${Boolean(afterRemount.rail)}, chip ${afterRemount.chip?.tag}`,
     );
     screenshots.push(await shoot("update-badge-junk.png"));
 
-    // ── 7 — Settings → Updates: what the feed said, and asking by hand ──────
+    // ── 8 — Settings → Updates: what the feed said, and asking by hand ──────
     await loadScenario("available", "settings");
     const settings = await settle();
     check(
@@ -1028,7 +1213,7 @@ async function main() {
 
     screenshots.push(await shoot("update-badge-settings.png"));
 
-    // ── 8 — Settings → Developer: the preview switch ────────────────────────
+    // ── 9 — Settings → Developer: the preview switch ────────────────────────
     await loadScenario("current", "developer", false);
     const developer = await settle();
     check(
@@ -1094,7 +1279,7 @@ async function main() {
     );
     screenshots.push(await shoot("update-badge-developer.png"));
 
-    // ── 9 — and the rail really glows from it ──────────────────────────────
+    // ── 10 — and the rail really glows from it ─────────────────────────────
     // The feed says "up to date"; the only reason for a glow is the switch.
     await loadScenario("current", "rail", true);
     const previewRail = await settle();
@@ -1135,6 +1320,11 @@ async function main() {
       `dialog ${JSON.stringify(previewDialog.dialog)}`,
     );
     check(
+      "the preview answers the click from its own stand-in",
+      previewDialog.calls?.check === 1,
+      `update:check called ${previewDialog.calls?.check} times`,
+    );
+    check(
       "the popup says it is a preview",
       previewDialog.dialog?.kickerKind === "preview" &&
         (previewDialog.dialog?.kicker ?? "").includes("Preview"),
@@ -1157,7 +1347,7 @@ async function main() {
     );
     screenshots.push(await shoot("update-badge-preview.png"));
 
-    // ── 10 — a real release outranks the preview ───────────────────────────
+    // ── 11 — a real release outranks the preview ───────────────────────────
     // The switch on, and the feed offering something: the popup must be the
     // release, not the preview. A switch that could hide an upgrade would be
     // worse than no switch.
@@ -1219,8 +1409,17 @@ async function main() {
       notesOpen,
       installing,
       installFailed: failed,
+      manualRest,
+      asking,
+      manual,
+      manualClosed,
       upToDate,
+      afterClick,
+      checkedAgain,
+      currentClosed,
       junk,
+      junkClicked,
+      junkClosed,
       afterRemount,
       settings,
       checked,
@@ -1248,8 +1447,17 @@ async function main() {
         installing,
         halfway,
         installFailed: failed,
+        manualRest,
+        asking,
+        manual,
+        manualClosed,
         upToDate,
+        afterClick,
+        checkedAgain,
+        currentClosed,
         junk,
+        junkClicked,
+        junkClosed,
         afterRemount,
         settings,
         checked,
@@ -1330,13 +1538,33 @@ async function main() {
       report.states?.halfway?.dialog?.progressNow ?? "—",
     ],
     [
+      "checking",
+      report.states?.asking?.chip?.tag ?? "—",
+      "—",
+      "—",
+      "—",
+      report.states?.asking?.dialog?.view ?? "—",
+      String((report.states?.asking?.dialog?.buttons ?? []).length),
+      "—",
+    ],
+    [
+      "manual offer",
+      report.states?.manual?.chip?.tag ?? "—",
+      "—",
+      "—",
+      "—",
+      report.states?.manual?.dialog?.view ?? "—",
+      String((report.states?.manual?.dialog?.buttons ?? []).length),
+      "—",
+    ],
+    [
       "up to date",
       report.states?.upToDate?.chip?.tag ?? "—",
       String(report.states?.upToDate?.chip?.className ?? "—"),
       report.states?.upToDate?.label?.text ?? "none",
       String(report.states?.upToDate?.chip?.boxShadow ?? "—"),
-      "closed",
-      "—",
+      report.states?.afterClick?.dialog?.view ?? "—",
+      String((report.states?.afterClick?.dialog?.buttons ?? []).length),
       "—",
     ],
     [
@@ -1345,8 +1573,8 @@ async function main() {
       String(report.states?.junk?.chip?.className ?? "—"),
       report.states?.junk?.label?.text ?? "none",
       String(report.states?.junk?.chip?.boxShadow ?? "—"),
-      "closed",
-      "—",
+      report.states?.junkClicked?.dialog?.view ?? "—",
+      String((report.states?.junkClicked?.dialog?.buttons ?? []).length),
       "—",
     ],
   ];
