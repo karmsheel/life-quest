@@ -12,3 +12,9 @@
 
 \- If a feature change only takes effect after a restart - a rebuilt main process, a changed preload or IPC channel, a dev server serving stale bundles - do the restart yourself at the end of the work, then verify the feature against the restarted process. In `apps/desktop`, `npm run dev` rebundles main and preload and relaunches the app, so that is the whole restart. Alerting the operator is not doing it, and a feature checked against a stale process is not checked. Restart only what the change needs; ask before stopping a process that is the operator's rather than one you started.
 
+## Worktrees
+
+- If this thread will modify files and the `create_worktree` tool is available, start it in its own worktree from the primary checkout before editing, with a task-named branch (for example `feat/<slug>`). Do all edits there.
+- If the session is already inside a worktree, do not create another; work in the current checkout.
+- New worktrees start at committed HEAD; staged, unstaged, and untracked files stay in the source checkout. Commit anything the new thread must inherit.
+
