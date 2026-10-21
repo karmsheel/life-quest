@@ -57,6 +57,7 @@ type Sample = {
   close: { box: Box; label: string | null; title: string | null } | null;
   title: string | null;
   subtitle: string | null;
+  cardBox: Box | null;
   cards: CardRow[];
   actionMessage: string | null;
   bodyOverflow: string;
@@ -201,7 +202,9 @@ describe("the decisions sheet over the app", () => {
     );
     assert.equal(opened.bodyOverflow, "hidden", "the page behind the sheet still scrolls");
 
-    // 4 — 90% of the window, centred, over a blurred and dimmed app.
+    // 4 — a 56rem reading frame, centred, over a blurred and dimmed app. The
+    //     decisions sheet is deliberately narrower than Settings: it stops at
+    //     the inbox's own measure instead of claiming 90% of a wide window.
     const widthShare = panel.box.width / opened.overlay!.box.width;
     const heightShare = panel.box.height / report.window.height;
     assert.ok(
@@ -209,8 +212,22 @@ describe("the decisions sheet over the app", () => {
       `the panel is ${(heightShare * 100).toFixed(1)}% of the window's height, not ~90%`,
     );
     assert.ok(
-      widthShare >= 0.88 && widthShare <= 0.96,
-      `the panel is ${(widthShare * 100).toFixed(1)}% of the window's width, not ~90%`,
+      panel.box.width <= 56 * 16 + 2,
+      `the panel is ${panel.box.width}px wide, wider than the 56rem reading frame`,
+    );
+    assert.ok(
+      widthShare >= 0.68 && widthShare <= 0.72,
+      `the panel is ${(widthShare * 100).toFixed(1)}% of the 1280px window, not ~70% at the 56rem measure`,
+    );
+    assert.ok(
+      opened.cardBox,
+      "no card was measured, so the frame's side gutters are unknown",
+    );
+    const leftGutter = opened.cardBox!.left - panel.box.left;
+    const rightGutter = panel.box.right - opened.cardBox!.right;
+    assert.ok(
+      leftGutter <= 40 && rightGutter <= 40,
+      `the cards still float in empty panel: ${leftGutter}px left and ${rightGutter}px right`,
     );
     const viewport = opened.overlay!.box;
     assert.ok(

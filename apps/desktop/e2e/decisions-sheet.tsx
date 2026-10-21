@@ -268,6 +268,8 @@ type Screen = {
   close: { box: Box; label: string | null; title: string | null } | null;
   title: string | null;
   subtitle: string | null;
+  /** The newest card, so the driver can measure the frame's side gutters. */
+  cardBox: Box | null;
   cards: {
     id: string;
     title: string;
@@ -324,6 +326,7 @@ function screen(): Screen {
   const panel = document.querySelector(".sheet-overlay__panel--decisions");
   const chrome = document.querySelector(".sheet-overlay__chrome");
   const close = document.querySelector(".decisions-overlay__close");
+  const firstCard = document.querySelector(".decision-card");
   const overlayStyle = overlay ? getComputedStyle(overlay) : null;
   const panelStyle = panel ? getComputedStyle(panel) : null;
   const port = scroller();
@@ -364,6 +367,7 @@ function screen(): Screen {
       : null,
     title: text(document.querySelector(".sheet-overlay__title")) || null,
     subtitle: text(document.querySelector(".sheet-overlay__subtitle")) || null,
+    cardBox: box(firstCard),
     cards: Array.from(document.querySelectorAll(".decision-card")).map((card) => ({
       id: card.getAttribute("data-decision-id") ?? "",
       title: text(card.querySelector(".decision-card__title")),
