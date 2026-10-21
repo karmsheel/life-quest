@@ -361,7 +361,9 @@ type LifequestApi = {
   companionSessionCreate: (title: string) => Promise<Result<HermesSession>>;
   companionSessionMessages: (
     id: string,
-  ) => Promise<Result<{ role: "user" | "assistant"; content: string }[]>>;
+  ) => Promise<
+    Result<{ role: "user" | "assistant"; content: string; at?: number }[]>
+  >;
   companionSessionPatch: (
     id: string,
     patch: { title?: string; pinned?: boolean; archived?: boolean },

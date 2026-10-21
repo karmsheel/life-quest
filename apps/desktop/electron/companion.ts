@@ -43,6 +43,7 @@ import {
   type CompanionModelCatalog,
   type CompanionRuntimeOverride,
   type HermesSession,
+  type TranscriptMessage,
   type TurnAttachment,
 } from "./companion-client.ts";
 import {
@@ -1061,7 +1062,7 @@ export function companionStatusMessage(status: PublicCompanionStatus): string {
 export async function companionSessionMessages(
   id: string,
 ): Promise<
-  | { ok: true; value: { role: "user" | "assistant"; content: string }[] }
+  | { ok: true; value: TranscriptMessage[] }
   | { ok: false; error: string }
 > {
   try {

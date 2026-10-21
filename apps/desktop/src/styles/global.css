@@ -5202,8 +5202,18 @@ a.home-mini-list__link:hover {
 .chat-panel__message {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  align-self: flex-start;
   gap: 0.2rem;
-  max-width: 100%;
+  max-width: 88%;
+}
+
+/* The operator's own turn sits left; the companion answers from the right.
+   The role label and the stamp ride the bubble's edge, so the side is read at
+   a glance without a second alignment rule for each child. */
+.chat-panel__message--assistant {
+  align-items: flex-end;
+  align-self: flex-end;
 }
 
 .chat-panel__message-role {
@@ -5215,20 +5225,91 @@ a.home-mini-list__link:hover {
 }
 
 .chat-panel__message-content {
+  max-width: 100%;
   font-size: 0.8125rem;
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
   padding: 0.55rem 0.7rem;
-  border-radius: 0.4rem;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--selected) 55%, transparent);
+  border-radius: 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--fg);
 }
 
+/* The colour schemes trade places: the operator's turn is the striking one and
+   Hermes's reply rests on the quieter fill. */
 .chat-panel__message--user .chat-panel__message-content {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--selected) 55%, transparent);
+  border-color: var(--border);
+  border-bottom-left-radius: 0.15rem;
+}
+
+.chat-panel__message--assistant .chat-panel__message-content {
+  border-bottom-right-radius: 0.15rem;
+}
+
+/* The stamp and its copy control, under the bubble. Both are quiet: the copy
+   icon is always present so the shortcut is discoverable, and it comes up to
+   full ink on hover or focus rather than appearing from nowhere. */
+.chat-panel__message-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 1.05rem;
+  padding: 0 0.15rem;
+  font-size: 0.625rem;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.chat-panel__message-time {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.chat-panel__message-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  opacity: 0.65;
+  cursor: pointer;
+  transition:
+    opacity var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out);
+}
+
+.chat-panel__message:hover .chat-panel__message-copy,
+.chat-panel__message-copy:focus-visible,
+.chat-panel__message-copy[data-copy-state="copied"],
+.chat-panel__message-copy[data-copy-state="failed"] {
+  opacity: 1;
+}
+
+.chat-panel__message-copy:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
+.chat-panel__message-copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.chat-panel__message-copy[data-copy-state="copied"] {
+  color: var(--green);
+}
+
+.chat-panel__message-copy[data-copy-state="failed"] {
+  color: var(--destructive);
 }
 
 .chat-panel__thinking {

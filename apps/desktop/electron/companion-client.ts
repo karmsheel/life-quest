@@ -430,19 +430,71 @@ export function formatSessionWhen(lastActive: number | null, nowMs = Date.now())
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export function messagesFromPayload(
-  payload: unknown,
-): { role: "user" | "assistant"; content: string }[] {
-  const value: { role: "user" | "assistant"; content: string }[] = [];
+/** One transcript row, with the time it was sent when the gateway knows it. */
+export type TranscriptMessage = {
+  role: "user" | "assistant";
+  content: string;
+  /** Creation time as epoch milliseconds. */
+  at?: number;
+};
+
+/**
+ * The gateway stamps `timestamp` in epoch seconds (a float). Some surfaces
+ * answer an ISO string instead, so both are accepted; an unreadable time is
+ * dropped rather than guessed at.
+ */
+function messageAt(row: { timestamp?: unknown }): number | undefined {
+  const raw = row.timestamp;
+  const numeric =
+    typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() ? Number(raw) : NaN;
+  if (Number.isFinite(numeric)) {
+    return Math.round(numeric > 1e12 ? numeric : numeric * 1000);
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const parsed = Date.parse(raw);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+export function messagesFromPayload(payload: unknown): TranscriptMessage[] {
+  const value: TranscriptMessage[] = [];
   for (const row of rowsOf(payload, ["data", "messages", "items"])) {
     if (!row || typeof row !== "object") continue;
-    const r = row as { role?: unknown; content?: unknown };
+    const r = row as { role?: unknown; content?: unknown; timestamp?: unknown };
     if (r.role !== "user" && r.role !== "assistant") continue;
     const content = messageText(r.content);
     if (!content.trim()) continue;
-    value.push({ role: r.role, content });
+    const at = messageAt(r);
+    value.push(at == null ? { role: r.role, content } : { role: r.role, content, at });
   }
   return value;
+}
+
+/**
+ * The stamp under a bubble. The clock is what the operator reads first; the day
+ * is named only when it is not today, and a date carries older messages so a
+ * transcript spanning weeks still reads in order.
+ */
+export function formatMessageWhen(atMs: number | undefined, nowMs = Date.now()): string {
+  if (atMs == null || !Number.isFinite(atMs)) return "";
+  const date = new Date(atMs);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date(nowMs);
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayDiff = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (dayDiff <= 0) return time;
+  if (dayDiff === 1) return `Yesterday, ${time}`;
+  if (dayDiff < 7) {
+    return `${date.toLocaleDateString(undefined, { weekday: "short" })}, ${time}`;
+  }
+  const day = date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" as const }),
+  });
+  return `${day}, ${time}`;
 }
 
 /**
