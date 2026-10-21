@@ -191,18 +191,25 @@ describe("dashboard card context e2e", () => {
     // Asking about a card is not picking one up — and the hold still works.
     assert.deepEqual(report.checks.heldOnChatControl, { lifted: 0, liftedByTheHold: 1 });
 
-    // The card's own menu: Archive everywhere, Delete only where there is
-    // something behind the card, and Delete is the destructive one.
+    // The card's own menu: Edit card everywhere, Archive everywhere, Delete only
+    // where there is something behind the card, and Delete is the destructive one.
     const menus = report.checks.menus as Record<
       string,
       { role: string | null; items: string[]; testids: (string | null)[]; danger: boolean[] } | undefined
     >;
-    assert.equal(menus["sys:goal-progress"]?.items.join(","), "Archive");
-    assert.equal(menus["sys:goal-progress"]?.danger[0], false, "Archive wore the destructive token");
+    assert.deepEqual(menus["sys:goal-progress"]?.items, ["Edit card", "Archive"]);
+    assert.equal(menus["sys:goal-progress"]?.danger[0], false, "Edit card wore the destructive token");
+    assert.equal(menus["sys:goal-progress"]?.danger[1], false, "Archive wore the destructive token");
     for (const id of ["view:financial:v-weekly", "page:financial:ledger"]) {
-      assert.deepEqual(menus[id]?.items, ["Archive", "Delete"], `${id}'s menu is not Archive + Delete`);
-      assert.equal(menus[id]?.danger[1], true, `${id}'s Delete is not marked destructive`);
-      assert.equal(menus[id]?.testids[1], "pin-delete");
+      assert.deepEqual(
+        menus[id]?.items,
+        ["Edit card", "Archive", "Delete"],
+        `${id}'s menu is not Edit card + Archive + Delete`,
+      );
+      assert.equal(menus[id]?.danger[0], false, `${id}'s Edit card is marked destructive`);
+      assert.equal(menus[id]?.danger[1], false, `${id}'s Archive is marked destructive`);
+      assert.equal(menus[id]?.danger[2], true, `${id}'s Delete is not marked destructive`);
+      assert.equal(menus[id]?.testids[2], "pin-delete");
     }
 
     // Archive is the old unpin: one pin write, the card gone, no question asked.

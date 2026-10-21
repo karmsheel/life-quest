@@ -118,6 +118,10 @@ export function placeViewPin(
     viewId,
     span,
     ...(dragged === undefined ? {} : { width: dragged }),
+    // A height is not a width: naming a span says how WIDE the card is, and the
+    // operator's bottom-edge drag is a different measurement that no span speaks
+    // for. It rides along through every edit, like the card's contents.
+    ...(existing.height === undefined ? {} : { height: existing.height }),
   };
   const next: Pin[] = [];
   let replaced = false;

@@ -775,20 +775,44 @@ export const SYSTEM_PIN_KINDS = [
 ] as const;
 export type SystemPinKind = (typeof SYSTEM_PIN_KINDS)[number];
 
+/**
+ * The size the operator gave a card by hand, if any.
+ *
+ * A board card is measured from what it holds unless the operator says
+ * otherwise, and Edit card is how they say it: drag the right border to set the
+ * width, the bottom border to set the height. Both are stored in rem so the card
+ * keeps the size the operator saw whatever the window or the layout unit does.
+ *
+ * `span` is the board's own coarse answer and the one the companion speaks: 1 is
+ * "measure the card's content", 2 is "the whole row". `width` is the fine answer
+ * a hand-drag produces; a card whose drag reached the row is stored as `span: 2`
+ * and has no `width`, because a span IS a width. `height` is a floor rather than
+ * a fixed box: a card is never drawn shorter than its own content, so a stored
+ * height that content has outgrown simply stops growing the card — it can never
+ * make the card spill.
+ *
+ * These are optional on every kind of card. A built-in card is app furniture, but
+ * it is still a card on the operator's board, and Edit card is offered on it
+ * exactly as it is on a view or a page.
+ */
+export type PinSize = {
+  span?: 1 | 2;
+  width?: number;
+  height?: number;
+};
+
 export type Pin =
-  | { id: string; kind: "system"; system: SystemPinKind }
-  | { id: string; kind: "page"; domainSlug: string; pageId: string }
+  | ({ id: string; kind: "system"; system: SystemPinKind } & PinSize)
+  | ({ id: string; kind: "page"; domainSlug: string; pageId: string } & PinSize)
   // Agent-built dashboard views (plan.md design, 2026-09-30): a saved view
   // pinned on a board. span 2 is the full row; span 1 is the board's own choice
   // — it measures the card and gives it as many units as its content needs —
   // unless `width` says otherwise.
   //
-  // `width` is the operator's own hand on the card: the width in rem they dragged
-  // its right edge to (2026-10-16). It is absent for a card the board sizes, and
-  // it is never allowed to be narrower than what the card's content needs — the
-  // renderer takes the larger of the two — so a card cannot be dragged into the
-  // spill that `span: 1` used to mean. Naming a `span` replaces it: a caller that
-  // says how wide a card is has said what this field says.
+  // A view pin requires a span because every view card has always had one, and
+  // the companion's tools speak that shape. The operator's Edit card gesture is
+  // the same for every kind of card: it writes the span/width/height described
+  // by `PinSize` above.
   | {
       id: string;
       kind: "view";
@@ -796,6 +820,7 @@ export type Pin =
       viewId: string;
       span: 1 | 2;
       width?: number;
+      height?: number;
     };
 
 /**

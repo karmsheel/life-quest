@@ -25,17 +25,22 @@ const SCENARIOS = [
   "row-card",
   "board-floors",
   "stable",
-  "width-control",
   "no-write",
   "clean",
-  "resize-gated-off",
-  "resize-handles",
-  "resize-drag-widens",
-  "resize-survives-a-reload",
-  "resize-drag-floor-is-the-content",
-  "resize-drag-row",
-  "resize-keys-step",
-  "resize-is-not-arrange",
+  "edit-no-icon",
+  "edit-menu",
+  "edit-handles",
+  "edit-width-drag",
+  "edit-width-survives-a-reload",
+  "edit-height-drag",
+  "edit-height-survives-a-reload",
+  "edit-width-floor-is-the-content",
+  "edit-drag-row",
+  "edit-keys-step",
+  "edit-outside-exits",
+  "edit-escape-exits",
+  "edit-is-not-arrange",
+  "edit-locked",
 ];
 
 /**
@@ -83,7 +88,6 @@ type CardSample = {
   gridColumnStart: string;
   gridColumnEnd: string;
   rowCard: boolean;
-  widthControl: string | null;
   need: number;
   table: {
     width: number;
@@ -116,10 +120,32 @@ type WidthSample = {
   cards: CardSample[];
 };
 
-/** What the width gesture's legs measured, leg by leg. */
-type ResizeSummary = {
-  handles: { count: number; gated: number; viewPins: number; locked: number; wellFormed: boolean };
-  widen: {
+/** What each Edit card leg measured, leg by leg. */
+type EditSummary = {
+  chrome: { spanIcons: number; menus: number; cards: number; chromeButtons: (string | null)[] };
+  menu: { items: string[]; testIds: string[] };
+  handles: {
+    editing: boolean;
+    ids: string[];
+    handles: { pinId: string; axis: string; role: string; orientation: string; label: string }[];
+    width: {
+      role: string;
+      orientation: string;
+      label: string;
+      valueNow: string;
+      valueMin: string;
+      valueMax: string;
+    } | null;
+    height: {
+      role: string;
+      orientation: string;
+      label: string;
+      valueNow: string;
+      valueMin: string;
+      valueMax: string;
+    } | null;
+  };
+  width: {
     from: number;
     wanted: number;
     units: number;
@@ -127,6 +153,13 @@ type ResizeSummary = {
     storedWidthRem: number | null;
     writes: number;
     reloadedUnits: number;
+  };
+  height: {
+    from: number;
+    height: number;
+    storedHeightRem: number | null;
+    writes: number;
+    reloadedHeight: number;
   };
   floor: {
     contentUnits: number;
@@ -143,8 +176,18 @@ type ResizeSummary = {
     board: number;
     writes: number;
   };
-  keys: { from: number; to: number; writes: number; spoken: string | null };
+  keys: {
+    widthFrom: number;
+    widthTo: number;
+    heightFrom: number;
+    heightTo: number;
+    writes: number;
+    spoken: string | null;
+  };
+  outside: { insideEditing: boolean; outsideEditing: boolean; handlesAfter: number };
+  escape: { editing: boolean; handles: number };
   noop: { lifted: number; writes: number; heldAsResize: number };
+  locked: { menus: number; handles: number; editing: number };
 };
 
 type Report = {
@@ -155,7 +198,7 @@ type Report = {
     scenarios: Scenario[];
     widths: WidthSample[];
     pinWrites: number;
-    resizes: ResizeSummary;
+    edits: EditSummary;
     unexpectedBridgeCalls: string[];
     consoleErrors: string[];
   };
@@ -313,24 +356,47 @@ describe("dashboard tile e2e", () => {
     assert.deepEqual(report.checks.unexpectedBridgeCalls, []);
     assert.deepEqual(report.checks.consoleErrors, []);
 
-    // ── the operator's own hand on the width, behind its developer flag ────────
-    // The feature ships off: no edge on the board, nothing to discover by accident.
-    // Once Settings → Developer turns it on, a handle per view pin; a drag that
-    // widens the card by exactly the units it was aimed at and stores that width on
-    // the pin; a floor that stops at the content however hard the pointer pulls; the
-    // row stored as the row; and a press that is neither an arrange nor a write.
-    const { handles, widen, floor, row, keys, noop } = report.checks.resizes;
-    assert.equal(handles.gated, 0, "the board drew a width handle with the developer flag off");
-    assert.equal(handles.count, handles.viewPins, "not every view pin drew a width handle");
-    assert.equal(handles.wellFormed, true, "a handle's aria values are not a width range");
-    assert.equal(handles.locked, 0, "a locked board offered a width handle");
-    assert.equal(widen.units, widen.wanted, `the drag gave ${widen.units} units, wanted ${widen.wanted}`);
-    assert.equal(widen.writes, 1, `the drag wrote ${widen.writes} times`);
-    assert.ok(widen.storedWidthRem !== null, "the drag stored no width on the pin");
+    // ── Edit card: the menu, the two draggable borders, and the way out ────────
+    // The operator's words were literal: the Fill-the-row icon goes, Edit card
+    // joins the 3-dot menu, and the right and bottom borders drag a size onto the
+    // pin. Every assertion below is a clause of that sentence.
+    const { chrome, menu, handles, width, height, floor, row, keys, outside, escape, noop, locked } =
+      report.checks.edits;
+    assert.equal(chrome.spanIcons, 0, "the Fill-the-row icon is still on the board");
+    // One card on the board is the Active-agents panel, which is page furniture
+    // rather than a pin: every pin has its menu, and the helper has none.
+    assert.equal(chrome.menus, chrome.cards - 1, "not every pin offers its 3-dot menu");
+    assert.deepEqual(
+      chrome.chromeButtons,
+      Array(chrome.menus).fill("pin-menu-toggle"),
+      "the chrome grew a control beside the 3-dot again",
+    );
+    assert.deepEqual(menu.items, ["Edit card", "Archive", "Delete"], "the menu items moved");
+    assert.deepEqual(menu.testIds, ["pin-edit", "pin-archive", "pin-delete"], "the menu testids moved");
+    assert.equal(handles.editing, true, "Edit card did not put the card in Edit mode");
+    assert.deepEqual(handles.ids, ["view:financial:v-real"], "more than one card entered Edit mode");
+    assert.equal(handles.handles.length, 2, "Edit mode did not draw two border handles");
+    assert.deepEqual(
+      handles.handles.map((handle) => handle.axis).sort(),
+      ["height", "width"],
+      "the handles are not the right and bottom borders",
+    );
+    assert.equal(handles.width?.orientation, "vertical", "the width handle is not the right border");
+    assert.equal(handles.height?.orientation, "horizontal", "the height handle is not the bottom border");
+    assert.equal(width.units, width.wanted, `the drag gave ${width.units} units, wanted ${width.wanted}`);
+    assert.equal(width.writes, 1, `the width drag wrote ${width.writes} times`);
+    assert.ok(width.storedWidthRem !== null, "the width drag stored no width on the pin");
     assert.equal(
-      widen.reloadedUnits,
-      widen.wanted,
+      width.reloadedUnits,
+      width.wanted,
       "the width did not survive a fresh render of the board",
+    );
+    assert.ok(height.height >= height.from + 60, `the height drag only reached ${height.height}px`);
+    assert.equal(height.writes, 1, `the height drag wrote ${height.writes} times`);
+    assert.ok(height.storedHeightRem !== null, "the height drag stored no height on the pin");
+    assert.ok(
+      Math.abs(height.reloadedHeight - height.height) <= 2,
+      "the height did not survive a fresh render of the board",
     );
     // The floor: widened first, then dragged in, it stops where the table stops.
     assert.ok(floor.unitsBefore > floor.contentUnits, "the floor leg never widened the card first");
@@ -339,10 +405,22 @@ describe("dashboard tile e2e", () => {
     assert.equal(row.pinSpan, 2, "a drag to the board's edge did not store the row");
     assert.equal(row.storedWidthRem, null, "the row was stored with a width as well as a span");
     assert.ok(Math.abs(row.width - row.board) <= 1, "the row card does not fill the board");
-    assert.equal(keys.to, keys.from + 1, "one ArrowRight did not step exactly one unit");
-    assert.equal(keys.writes, 1, "one ArrowRight did not write exactly once");
-    assert.equal(noop.lifted, 0, "a press on the width handle lifted the card");
-    assert.equal(noop.writes, 0, "a press on the width handle wrote to the vault");
-    assert.equal(noop.heldAsResize, 1, "a press on the width handle did not start a resize");
+    assert.equal(keys.widthTo, keys.widthFrom + 1, "one ArrowRight did not step exactly one unit");
+    assert.ok(
+      keys.heightTo >= keys.heightFrom + 12,
+      `one ArrowDown did not step the height: ${keys.heightFrom} → ${keys.heightTo}`,
+    );
+    assert.equal(keys.writes, 2, "the two keyboard steps did not write exactly twice");
+    assert.equal(outside.insideEditing, true, "a press inside the card left Edit mode");
+    assert.equal(outside.outsideEditing, false, "a press outside the card did not leave Edit mode");
+    assert.equal(outside.handlesAfter, 0, "the handles outlived Edit mode");
+    assert.equal(escape.editing, false, "Escape did not leave Edit mode");
+    assert.equal(escape.handles, 0, "the handles outlived Escape");
+    assert.equal(noop.lifted, 0, "a press on the width border lifted the card");
+    assert.equal(noop.writes, 0, "a press on the width border wrote to the vault");
+    assert.equal(noop.heldAsResize, 1, "a press on the width border did not start a resize");
+    assert.equal(locked.menus, 0, "a locked board offered a card menu");
+    assert.equal(locked.handles, 0, "a locked board offered a resize handle");
+    assert.equal(locked.editing, 0, "a locked board was in Edit mode");
   });
 });

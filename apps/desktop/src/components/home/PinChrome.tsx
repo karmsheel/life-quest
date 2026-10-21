@@ -1,14 +1,19 @@
-import { Maximize2, Minimize2, MoreVertical } from "lucide-react";
-import type { Pin } from "@lifequest/vault-core";
+import { MoreVertical } from "lucide-react";
 
 /**
  * The chrome a pin wears, in the app's own icon vocabulary.
  *
- * Two controls at most, icon-only, in the order the board reads left to right:
+ * ONE control: the 3-dot that opens the card's own menu. The menu holds Edit
+ * card, Archive, and Delete where there is something behind the card to delete.
  *
- *   width        — view pins only: the board's own choice, or the whole row
- *   menu (3-dot) — the card's own actions: Archive, and Delete where there is
- *                  something behind the card to delete
+ * THE WIDTH BUTTON IS GONE, and Edit card is why. It offered two named widths —
+ * "Fill the row" and "Size to the content" — which was the board's coarse
+ * vocabulary, not the operator's: the request was to extend a card by hand, in
+ * both directions, so a button that could only toggle one axis was the wrong
+ * instrument beside a menu that can open the real one. Edit card puts the card in
+ * Edit mode, where the right and bottom borders are drag handles; the old button's
+ * "fill the row" survives as the far end of the right-edge drag, so the same
+ * board state is still reachable, and by a gesture that says what it does.
  *
  * THE GRIP IS GONE, and it is not a loss. It was the chrome's drag handle: it
  * picked a card up on four pixels of movement instead of on the hold the rest of
@@ -32,29 +37,29 @@ import type { Pin } from "@lifequest/vault-core";
  * an operator most needs to find was the one thing it was hardest to read. Both
  * removals live in the menu now, named.
  *
- * These are not `Button`s: that primitive is a pill with a text label, and a
- * 1.55rem square icon well is not. They keep the board's own `.home-pin__btn`,
+ * This is not a `Button`: that primitive is a pill with a text label, and a
+ * 1.55rem square icon well is not. It keeps the board's own `.home-pin__btn`,
  * which is also what the dashboard rigs count.
  *
  * This whole component is board-editing chrome, and the page lock takes it away:
- * a locked board draws no width control and no menu — and no tab stop on the
- * cards either, so the lock takes the whole gesture and not just its buttons. The
- * chat control is the page's, not this component's, which is why asking about a
- * card survives the lock while changing one does not.
+ * a locked board draws no menu — and no tab stop on the cards either, so the lock
+ * takes the whole gesture and not just its buttons. The chat control is the
+ * page's, not this component's, which is why asking about a card survives the
+ * lock while changing one does not.
  */
 export function PinChrome({
-  pin,
   busy,
   menuOpen,
   onToggleMenu,
+  onEdit,
   onArchive,
   onDelete,
-  onCycleSpan,
 }: {
-  pin: Pin;
   busy: boolean;
   menuOpen: boolean;
   onToggleMenu: () => void;
+  /** Put this card in Edit mode: its borders become drag handles. */
+  onEdit: () => void;
   onArchive: () => void;
   /**
    * Absent for a built-in card. A system card is app furniture, not a record, so
@@ -62,37 +67,9 @@ export function PinChrome({
    * it, rather than by offering an action that cannot work.
    */
   onDelete?: (control: HTMLElement) => void;
-  onCycleSpan: () => void;
 }) {
-  const widen = pin.kind === "view" && pin.span !== 2;
-  /**
-   * The two widths a card can be asked for, in the operator's own words.
-   *
-   * They are not "one cell" and "two cells" any more, and the words have to say
-   * what actually happens: a card stored one cell wide is MEASURED — the board
-   * gives it as many cells as its content needs, which is how a four-column
-   * listing stopped painting outside its own frame — while a card stored two
-   * cells wide is drawn across the whole row, exactly as asked, whatever it
-   * holds. "Shrink to one cell" would be a promise the board no longer keeps.
-   */
-  const spanLabel = widen ? "Fill the row" : "Size to the content";
-
   return (
     <div className="home-pin__chrome">
-      {pin.kind === "view" ? (
-        <button
-          type="button"
-          className="home-pin__btn"
-          data-testid="pin-span"
-          aria-label={spanLabel}
-          title={spanLabel}
-          disabled={busy}
-          onClick={onCycleSpan}
-        >
-          {widen ? <Maximize2 size={14} aria-hidden /> : <Minimize2 size={14} aria-hidden />}
-        </button>
-      ) : null}
-
       <button
         type="button"
         className="home-pin__btn"
@@ -116,6 +93,16 @@ export function PinChrome({
       */}
       {menuOpen ? (
         <div className="home-pin__menu" role="menu" data-testid="pin-menu">
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="pin-edit"
+            title="Resize this card with its right and bottom borders"
+            disabled={busy}
+            onClick={onEdit}
+          >
+            Edit card
+          </button>
           <button
             type="button"
             role="menuitem"

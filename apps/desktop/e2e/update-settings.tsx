@@ -67,20 +67,6 @@ const CURRENT = {
   latest: appVersion,
 };
 
-/**
- * A harness shares the Electron profile — and therefore `localStorage` — with
- * every other rig. The card width handle is a developer flag that defaults OFF,
- * but a previous run (or the operator's own build) may have left it on. Clear it
- * before mounting, so "off by default" is measured from the default rather than
- * from whatever the last run chose. The update preview beside it is seeded from
- * the query string for the same reason.
- */
-try {
-  window.localStorage.removeItem("lifequest-dev-card-width-handle");
-} catch {
-  // No storage: the flag reads off, which is the state this page is about.
-}
-
 /** Which answer the stub feed gives, off the page's own query string. */
 const scenario = new URLSearchParams(window.location.search).get("scenario");
 

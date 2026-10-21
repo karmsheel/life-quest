@@ -108,10 +108,10 @@ const NAMES = [
 /** The chrome each card must still offer, by kind. Unlocked only. */
 const CHROME = {
   "sys:goal-progress": ["pin-menu-toggle"],
-  "view:financial:v-weekly": ["pin-menu-toggle", "pin-span"],
+  "view:financial:v-weekly": ["pin-menu-toggle"],
   "page:financial:ledger": ["pin-menu-toggle"],
   "sys:today-week": ["pin-menu-toggle"],
-  "view:financial:v-summary": ["pin-menu-toggle", "pin-span"],
+  "view:financial:v-summary": ["pin-menu-toggle"],
   "sys:pending-decisions": ["pin-menu-toggle"],
   "sys:recent-log": ["pin-menu-toggle"],
 };
@@ -119,15 +119,16 @@ const CHROME = {
 /**
  * What each card's menu must hold, by kind.
  *
- * A built-in card is app furniture, not a record, so its menu offers Archive
- * alone; a view and a page each have something behind them, so Delete is there
- * too. The list is exact and ordered, so a menu that grew an item nobody asked
- * for fails by name.
+ * Edit card comes first on every card, because sizing is the one action every
+ * kind of card shares. A built-in card is app furniture, not a record, so it has
+ * no Delete; a view and a page each have something behind them, so Delete is
+ * there too. The list is exact and ordered, so a menu that grew an item nobody
+ * asked for fails by name.
  */
 const MENU = {
-  "sys:goal-progress": ["Archive"],
-  "view:financial:v-weekly": ["Archive", "Delete"],
-  "page:financial:ledger": ["Archive", "Delete"],
+  "sys:goal-progress": ["Edit card", "Archive"],
+  "view:financial:v-weekly": ["Edit card", "Archive", "Delete"],
+  "page:financial:ledger": ["Edit card", "Archive", "Delete"],
 };
 
 /**
@@ -923,13 +924,15 @@ async function main() {
     if (JSON.stringify(got?.items) !== JSON.stringify(expected)) {
       problems.push(`${pinId} holds ${JSON.stringify(got?.items)}, expected ${JSON.stringify(expected)}`);
     }
-    // Delete is the destructive one; Archive never is.
-    if (got?.danger?.[0] !== false) problems.push(`${pinId} Archive wore the destructive token`);
-    if (expected.includes("Delete") && got?.danger?.[1] !== true) {
+    // Delete is the destructive one; Edit card and Archive never are.
+    if (got?.danger?.[0] !== false) problems.push(`${pinId} Edit card wore the destructive token`);
+    if (got?.danger?.[1] !== false) problems.push(`${pinId} Archive wore the destructive token`);
+    const deleteAt = expected.indexOf("Delete");
+    if (deleteAt >= 0 && got?.danger?.[deleteAt] !== true) {
       problems.push(`${pinId} Delete did not wear the destructive token`);
     }
-    if (expected.includes("Delete") && got?.testids?.[1] !== "pin-delete") {
-      problems.push(`${pinId} Delete item was ${JSON.stringify(got?.testids?.[1])}`);
+    if (deleteAt >= 0 && got?.testids?.[deleteAt] !== "pin-delete") {
+      problems.push(`${pinId} Delete item was ${JSON.stringify(got?.testids?.[deleteAt])}`);
     }
     return problems;
   });

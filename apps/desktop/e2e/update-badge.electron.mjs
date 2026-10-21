@@ -247,9 +247,7 @@ const SAMPLE = `(() => {
       const input = document.querySelector(".settings-updates__token input");
       const previewToggle = document.querySelector("[data-developer-preview]");
       const previewState = document.querySelector("[data-developer-state]");
-      const cardResizeToggle = document.querySelector("[data-developer-card-resize]");
-      const cardResizeState = document.querySelector("[data-developer-card-resize-state]");
-      if (!summary && !token && !previewToggle && !cardResizeToggle) return null;
+      if (!summary && !token && !previewToggle) return null;
       const text = (sel) => {
         const el = document.querySelector(sel);
         return el ? (el.textContent || "").trim() : null;
@@ -257,21 +255,6 @@ const SAMPLE = `(() => {
       const stored = (() => {
         try {
           return window.localStorage.getItem("lifequest-update-preview");
-        } catch {
-          return "unavailable";
-        }
-      })();
-      /**
-       * The other Developer switch, read from where the app keeps it.
-       *
-       * The storage key is spelled out here ON PURPOSE, and it is the one place in
-       * this rig that is: the claim is that the switch on this page writes the key
-       * the board reads, so deriving the key from the app's own module would make
-       * the claim circular.
-       */
-      const storedCardResize = (() => {
-        try {
-          return window.localStorage.getItem("lifequest-dev-card-width-handle");
         } catch {
           return "unavailable";
         }
@@ -286,12 +269,6 @@ const SAMPLE = `(() => {
         previewState: previewState ? previewState.getAttribute("data-developer-state") : null,
         previewNote: previewState ? (previewState.textContent || "").trim() : null,
         storedPreview: stored,
-        cardResizeChecked: cardResizeToggle ? cardResizeToggle.checked : null,
-        cardResizeState: cardResizeState
-          ? cardResizeState.getAttribute("data-developer-card-resize-state")
-          : null,
-        cardResizeNote: cardResizeState ? (cardResizeState.textContent || "").trim() : null,
-        storedCardResize,
         buttons: Array.from(
           document.querySelectorAll(".settings-page-shell button[aria-label]")
         ).map((el) => ({
@@ -1062,36 +1039,6 @@ async function main() {
       `note ${JSON.stringify(previewOn.settings?.previewNote)}`,
     );
 
-    /**
-     * The page's OTHER switch, and the one thing about it worth a claim here: it
-     * is a DEVELOPER flag, so it ships off and it is remembered outside the vault.
-     * What the flag does to the board is `dashboard-tile`'s claim — that rig draws
-     * the handle with the flag on and finds none with it off — so this leg is only
-     * about the surface: the row exists, it starts off, and flipping it writes the
-     * key the board reads.
-     */
-    check(
-      "the Developer page offers the card width handle, off by default",
-      previewOn.settings?.cardResizeChecked === false &&
-        previewOn.settings?.cardResizeState === "off" &&
-        previewOn.settings?.storedCardResize === null,
-      `checked ${JSON.stringify(previewOn.settings?.cardResizeChecked)}, ` +
-        `state ${JSON.stringify(previewOn.settings?.cardResizeState)}, ` +
-        `stored ${JSON.stringify(previewOn.settings?.storedCardResize)}`,
-    );
-    await click('input[aria-label="Card width handle"]');
-    const handleOn = await settle(320);
-    check(
-      "turning the card width handle on writes the flag the board reads",
-      handleOn.settings?.cardResizeChecked === true &&
-        handleOn.settings?.cardResizeState === "on" &&
-        handleOn.settings?.storedCardResize === "1" &&
-        (handleOn.settings?.cardResizeNote ?? "").includes("draggable right edge"),
-      `checked ${JSON.stringify(handleOn.settings?.cardResizeChecked)}, ` +
-        `state ${JSON.stringify(handleOn.settings?.cardResizeState)}, ` +
-        `stored ${JSON.stringify(handleOn.settings?.storedCardResize)}, ` +
-        `note ${JSON.stringify(handleOn.settings?.cardResizeNote)}`,
-    );
     screenshots.push(await shoot("update-badge-developer.png"));
 
     // ── 9 — and the rail really glows from it ──────────────────────────────
@@ -1255,7 +1202,6 @@ async function main() {
         checked,
         developer,
         previewOn,
-        handleOn,
         previewRail,
         previewDialog,
         shadowed,

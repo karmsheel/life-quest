@@ -580,15 +580,13 @@ async function waitForLift(win, pinId, timeoutMs = 3000) {
   }
 }
 
-/** The named icon each control must draw, per card kind. */
-function expectedIcons(pin) {
+/** The named icon each control must draw. */
+function expectedIcons() {
   // `MoreVertical` is lucide's alias for `ellipsis-vertical`, and the class the
-  // svg carries is the icon's own name, not the component's.
-  const expected = { "pin-menu-toggle": "lucide-ellipsis-vertical" };
-  if (pin.kind === "view") {
-    expected["pin-span"] = pin.span === 2 ? "lucide-minimize-2" : "lucide-maximize-2";
-  }
-  return expected;
+  // svg carries is the icon's own name, not the component's. The chrome is the
+  // 3-dot alone now: Edit card lives in the menu, and the Fill-the-row icon that
+  // used to sit beside it was the button Edit card replaced.
+  return { "pin-menu-toggle": "lucide-ellipsis-vertical" };
 }
 
 /** The chrome, as one falsifiable claim. */
@@ -609,7 +607,7 @@ function checkChromeIdentity(sample) {
       problems.push(`${pin.id} wears ${card.chrome} chrome bars, expected 1`);
       continue;
     }
-    const expected = expectedIcons(pin);
+    const expected = expectedIcons();
     const got = card.buttons.map((b) => b.testid).sort();
     const want = Object.keys(expected).sort();
     if (got.join(",") !== want.join(",")) {
