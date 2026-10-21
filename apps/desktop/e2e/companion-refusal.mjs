@@ -128,6 +128,7 @@ function fail(message) {
   console.error(`[refusal] FAIL ${message}`);
 }
 
+/** A port nothing is listening on, asked by binding it rather than guessing. */
 function freePort() {
   return new Promise((resolve, reject) => {
     const probe = net.createServer();
@@ -193,7 +194,8 @@ function writeHermesShim(cliDir) {
   fs.writeFileSync(shim, script, "ascii");
 
   if (process.platform !== "win32") {
-    // The same contract for a rig ever run off Windows.
+    // The same contract for a rig ever run off Windows. `which` resolves this
+    // extensionless file, not the .cmd beside it.
     const posix = path.join(cliDir, "hermes");
     fs.writeFileSync(
       posix,
@@ -207,6 +209,7 @@ function writeHermesShim(cliDir) {
       "utf8",
     );
     fs.chmodSync(posix, 0o755);
+    return { shim: posix, ensureText };
   }
   return { shim, ensureText };
 }

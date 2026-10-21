@@ -646,14 +646,36 @@ async function activeProfileName(): Promise<string> {
 let ensureInFlight: Promise<PublicCompanionStatus> | null = null;
 
 export async function companionEnsure(): Promise<PublicCompanionStatus> {
-  const run = ensureCompanion(realIo(), await activeProfileName()).then((status) => {
+  /**
+   * One ensure at a time.
+   *
+   * Two overlapping runs do more than duplicate work: each reads and rewrites
+   * the same `HERMES_HOME/.env` (an ordinary read-then-write, not an atomic
+   * one), so one can read the file while the other has it half-written and lose
+   * `API_SERVER_PORT` — after which the app probes Hermes' default 8642 and
+   * talks to a host that has nothing to do with this run. React's StrictMode in
+   * development mounts the provider twice and makes exactly that overlap, and a
+   * second window or a Recheck can produce it in production.
+   *
+   * A profile switch is the one caller with a new answer to ask for: it waits
+   * for the run already in flight and then starts its own (see
+   * `companionUseProfile`), so deduplicating here cannot pin it to the profile
+   * it is leaving.
+   */
+  if (ensureInFlight) return ensureInFlight;
+  // The profile is looked up INSIDE the shared promise, before the first
+  // suspension: `await activeProfileName()` in the caller's own frame would let a
+  // second call slip past the guard while the first was still reading prefs,
+  // and that is precisely the overlap this is here to stop.
+  const run = (async () => {
+    const status = await ensureCompanion(realIo(), await activeProfileName());
     const published = publish(status);
     // Deliberately not awaited: every launch calls this, and the probe is a
     // round-trip to a host that may be slow, absent, or restarting. It answers
     // onto the status when it lands (see `probePinnedModel`).
     if (status.kind === "ready") void probePinnedModel(status);
     return published;
-  });
+  })();
   ensureInFlight = run.finally(() => {
     ensureInFlight = null;
   });
@@ -696,6 +718,16 @@ export async function companionUseProfile(name: string): Promise<PublicCompanion
     await setCompanionProfile(trimmed);
   } catch {
     // A prefs write that fails costs the choice its memory, not this session.
+  }
+  // The ensure already in flight belongs to the profile being left. Let it
+  // settle before asking for the new one; starting both would race their writes
+  // to the same files (see `companionEnsure`).
+  if (ensureInFlight) {
+    try {
+      await ensureInFlight;
+    } catch {
+      /* the old profile's failure is not this switch's verdict */
+    }
   }
   return companionEnsure();
 }

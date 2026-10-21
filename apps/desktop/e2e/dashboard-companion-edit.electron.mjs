@@ -256,11 +256,23 @@ async function main() {
 
   try {
     await win.loadURL(`${url}?v=${Date.now()}`);
+    // Paint the window: a hidden renderer defers passive effects, and the
+    // board's scroll listener — the half of the hold that hears the operator —
+    // is one of them. Without a painted frame nobody ever hears a scroll, and
+    // the leg measures a hold that was never re-taken. `showInactive` keeps the
+    // focus where the operator left it.
+    win.showInactive();
     await waitFor(win, "Boolean(window.dashboardCompanionEditReady)", "the harness page to mount");
     await waitFor(
       win,
       `document.querySelectorAll(".home-dashboard__grid > .home-pin").length > 0`,
       "the board to draw its pins",
+    );
+    // Two painted frames, so React's passive effects have run: the board's
+    // scroll listener is one, and it is what makes an operator's scroll (or the
+    // rig's programmatic one) update the hold.
+    await win.webContents.executeJavaScript(
+      `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
     );
     await waitFor(
       win,

@@ -1115,13 +1115,22 @@ async function main() {
     // palette that is on. Measured here in daylight, where a wrong ink is a dark
     // smudge on a white sheet rather than a subtlety.
     at("scroll-chrome: at rest");
+    // The X server parks the pointer over the middle of the window, which is over
+    // the sheet — so `:hover` is genuinely true before this read and the sheet's
+    // bar is drawn in its hovered strength. Park the pointer on the rail's header
+    // (no scroller there) and let a frame pass, so "at rest" is measured at rest.
+    win.webContents.sendInputEvent({ type: "mouseMove", x: 2, y: 2 });
+    await new Promise((resolve) => setTimeout(resolve, 120));
     const dayScroll = await run(SCROLL_CHROME);
     checkScrollChrome("day", dayScroll);
+    check(
+      "day: the resting read is taken with nothing hovered",
+      dayScroll.sheet?.hovered === false && dayScroll.transcript?.hovered === false,
+      `sheet hovered ${dayScroll.sheet?.hovered}, transcript hovered ${dayScroll.transcript?.hovered}`,
+    );
 
-    // Nothing is hovered yet, and in this rig nothing can be: a hidden window
-    // never establishes `:hover` from a synthetic pointer — measured, not assumed,
-    // via `el.matches(":hover")` in the sample above. So this read IS the resting
-    // state, and the hovered one is produced below by the only device that can.
+    // This read IS the resting state now; the hovered one is produced below by
+    // the only device that can force it on a hidden window.
     const scrollRest = {
       sheet: dayScroll.sheet?.thumbBackground ?? null,
       transcript: dayScroll.transcript?.thumbBackground ?? null,

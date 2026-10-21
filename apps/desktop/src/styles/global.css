@@ -884,7 +884,11 @@ a {
    here; the pill below is the control, and the words are its reason. */
 .nav-rail__update-label {
   margin: 0.3rem 0 0;
-  padding: 0 0.15rem;
+  /* No inner side padding: the rail's own 0.35rem is the margin, and this leaves
+     the caption the whole width of the column it is setting `Update available`
+     into. On a narrow rail the longest word is within a pixel of the old box; a
+     line that overflows is clipped by the rail, not wrapped. */
+  padding: 0;
   color: var(--accent);
   font-size: 0.55rem;
   font-weight: 600;
@@ -952,7 +956,7 @@ a {
   pointer-events: none;
   box-shadow:
     0 0 0 1px var(--accent),
-    0 0 0.55rem 0.06rem var(--accent-fill);
+    0 0 0.5rem 0.05rem var(--accent-fill);
   animation: nav-rail-version-breathe 4s ease-in-out infinite;
 }
 

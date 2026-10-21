@@ -550,7 +550,15 @@ harness.dashboardCompanionEditScrollToCard = (pinId) => {
   const port = scrollport();
   const card = document.querySelector<HTMLElement>(`[data-pin-id="${CSS.escape(pinId)}"]`);
   if (!port || !card) return false;
-  scrollBoardTo(port, port.scrollTop + card.getBoundingClientRect().top - port.getBoundingClientRect().top);
+  // Park the card's top a little ABOVE the fold, not exactly on it. "Exactly on
+  // it" is a rounding coin-toss: a fractional layout can leave the top at +0.4,
+  // and the page's hold only counts a card whose top has reached the fold — so
+  // it would hold the card before this one. Twelve pixels of extra scroll moves
+  // the card's top to -12, unambiguous on both sides of the rule.
+  scrollBoardTo(
+    port,
+    port.scrollTop + card.getBoundingClientRect().top - port.getBoundingClientRect().top + 12,
+  );
   return true;
 };
 

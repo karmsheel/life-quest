@@ -538,7 +538,11 @@ async function dragCard(win, pinId, aim) {
     await sleep(40);
   }
   await settleFrames(win);
-  mouse(win, "mouseUp", target.x, target.y);
+  // The target can move while the hand travels: the drag preview reorders the
+  // board, so a card that was under the aim can shift by a row before release.
+  // Aim once more, at the live box, and let go there.
+  const release = await aim();
+  mouse(win, "mouseUp", release.x, release.y);
   await sleep(140);
 }
 
@@ -893,16 +897,23 @@ async function checkOrdering(win) {
   step("drop-on-the-agents-card");
   await beginScenario(win);
   await scrollBoardToEnd(win);
-  const agents = await win.webContents.executeJavaScript(
-    `(() => {
-       const el = [...document.querySelectorAll(".home-dashboard__grid > .home-pin")].find((c) => !c.dataset.pinId);
-       if (!el) return null;
-       const r = el.getBoundingClientRect();
-       return { x: r.left + 40, y: r.top + 20 };
-     })()`,
-  );
-  if (!agents) throw new Error("the board has no Active-agents card");
-  await dragCard(win, "sys:pending-decisions", () => agents);
+  // Aimed after the lift, not before it: the lifted card leaves the board's
+  // flow, so the agents card moves up. A point measured beforehand would be
+  // below the grid by the time the hand lets go — and a mouseUp outside the
+  // grid never reaches the grid's own handler.
+  const agentsPoint = async () => {
+    const point = await win.webContents.executeJavaScript(
+      `(() => {
+         const el = [...document.querySelectorAll(".home-dashboard__grid > .home-pin")].find((c) => !c.dataset.pinId);
+         if (!el) return null;
+         const r = el.getBoundingClientRect();
+         return { x: r.left + 40, y: r.top + 20 };
+       })()`,
+    );
+    if (!point) throw new Error("the board has no Active-agents card");
+    return point;
+  };
+  await dragCard(win, "sys:pending-decisions", agentsPoint);
   const ended = await restingOrder(win);
   const endedWrites = writesOf(await pinWrites(win));
   const lastChildIsAgents = await win.webContents.executeJavaScript(

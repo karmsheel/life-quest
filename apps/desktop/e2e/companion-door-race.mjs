@@ -143,7 +143,8 @@ function writeHermesShim(cliDir) {
   ].join("\r\n");
   fs.writeFileSync(shim, `${script}\r\n`, "ascii");
   if (process.platform !== "win32") {
-    // Same contract, for a rig that is ever run off Windows.
+    // Same contract, for a rig that is ever run off Windows. `which` resolves
+    // this extensionless file, not the .cmd beside it.
     const posix = path.join(cliDir, "hermes");
     fs.writeFileSync(
       posix,
@@ -151,6 +152,7 @@ function writeHermesShim(cliDir) {
       "utf8",
     );
     fs.chmodSync(posix, 0o755);
+    return posix;
   }
   return shim;
 }
