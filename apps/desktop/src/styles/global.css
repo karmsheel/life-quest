@@ -906,14 +906,46 @@ a {
   margin-top: 0.2rem;
 }
 
+/* The build number, which is also the app's one manual way to ask GitHub whether
+   there is something newer. It is a control in every state — that is what makes
+   the check reachable at any time, not only at launch — but it is dressed as the
+   quiet text it has always been: no fill, no border, the rail's muted ink. Only
+   the affordances a control needs are added: a pointer, an ink change on hover,
+   and a focus ring for the keyboard. */
 .nav-rail__version {
+  appearance: none;
+  border: 0;
+  position: relative;
+  align-self: center;
+  width: fit-content;
   margin: 0.45rem 0 0.15rem;
-  padding: 0 0.15rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-pill);
+  background: transparent;
   color: var(--muted);
+  font: inherit;
   font-size: 0.6rem;
+  font-weight: 400;
   line-height: 1.1;
   text-align: center;
+  cursor: pointer;
   flex-shrink: 0;
+}
+
+.nav-rail__version:hover {
+  background: var(--accent-fill);
+  color: var(--accent);
+}
+
+.nav-rail__version:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+/* A check is on its way: the pointer says the click was heard while the popup
+   carries the progress, so the rail's foot does not have to grow a spinner. */
+.nav-rail__version[data-update-state="checking"] {
+  cursor: progress;
 }
 
 /* The build number once the feed has named a newer release. It is the one thing
@@ -927,19 +959,9 @@ a {
    sides. Centred, the halo has the rail's own padding to bloom into, and the
    rig measures that room against the halo's reach. */
 .nav-rail__version--available {
-  appearance: none;
-  border: 0;
-  cursor: pointer;
-  position: relative;
-  align-self: center;
-  width: fit-content;
-  border-radius: var(--radius-pill);
   background: var(--accent-fill);
   color: var(--accent);
-  font: inherit;
-  font-size: 0.6rem;
   font-weight: 600;
-  padding: 0.2rem 0.5rem;
 }
 
 /* The halo is its own layer rather than a shadow on the chip, for two reasons.
@@ -962,11 +984,6 @@ a {
 
 .nav-rail__version--available:hover {
   background: var(--accent-soft);
-}
-
-.nav-rail__version--available:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  outline-offset: 2px;
 }
 
 /* A slow, shallow breath: enough that the eye finds it in a column of quiet rows,

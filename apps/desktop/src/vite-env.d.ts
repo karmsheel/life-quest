@@ -477,9 +477,10 @@ type LifequestApi = {
   >;
   /**
    * Auto-update. `updateCheck` without `force` answers with the session's one
-   * answer — the launch's check; `force` re-reads the feed, and only Settings
-   * does that. `updateInstall` downloads the release's installer, hands it to
-   * Windows, and quits the app so the installer can replace it.
+   * answer — the launch's check; `force` re-reads the feed, which is what the
+   * rail's build number and Settings do when the operator asks by hand.
+   * `updateInstall` downloads the release's installer, hands it to Windows, and
+   * quits the app so the installer can replace it.
    */
   updateCheck: (
     options?: { force?: boolean },

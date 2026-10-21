@@ -67,8 +67,9 @@ export function NavRail() {
       <div className="nav-rail__section nav-rail__section--bottom">
         <div className="nav-rail__divider" role="separator" />
         <div className="nav-rail__section">{bottomPinned.map(renderItem)}</div>
-        {/* The build number. Quiet text until the feed names something newer,
-            and then a glowing button that opens the upgrade. */}
+        {/* The build number, and the app's manual update check. Quiet text until
+            the feed names something newer, when it also carries the glow; a
+            click always opens the update panel. */}
         <UpdateBadge />
       </div>
     </nav>
