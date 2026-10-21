@@ -37,7 +37,10 @@ import { VaultProvider } from "@/state/VaultProvider";
 import "@/styles/global.css";
 // The real SSE decoder main uses, so a rig can feed a wire frame through the
 // same function the stream does instead of hand-building the event object.
-import { parseSseBlock } from "../electron/companion-client.ts";
+import {
+  messagesFromPayload,
+  parseSseBlock,
+} from "../electron/companion-client.ts";
 
 const SESSION = {
   id: "harness-session",
@@ -152,17 +155,22 @@ const bridge: Record<string, unknown> = {
       ? Promise.resolve({ ok: false as const, error: "no catalog" })
       : ok(MODEL_CATALOG),
   companionSessionCreate: () => ok(SESSION),
+  // The shipping parser is what turns the gateway's epoch-seconds `timestamp`
+  // into the transcript's own time, so the harness sends wire rows through it.
   companionSessionMessages: (id: string) =>
     ok(
-      id === OTHER_SESSION.id
-        ? [
-            { role: "user" as const, content: "Second chat" },
-            { role: "assistant" as const, content: "Loaded the other chat." },
-          ]
-        : [
-            { role: "user" as const, content: "Composer harness" },
-            { role: "assistant" as const, content: "Ready." },
-          ],
+      messagesFromPayload({
+        data:
+          id === OTHER_SESSION.id
+            ? [
+                { role: "user", content: "Second chat", timestamp: 1_700_000_100 },
+                { role: "assistant", content: "Loaded the other chat.", timestamp: 1_700_000_101 },
+              ]
+            : [
+                { role: "user", content: "Composer harness", timestamp: 1_700_000_000 },
+                { role: "assistant", content: "Ready.", timestamp: 1_700_000_002 },
+              ],
+      }),
     ),
   // Recorded so a rig can prove the inline control really submits, and held
   // open long enough to observe the streaming state.

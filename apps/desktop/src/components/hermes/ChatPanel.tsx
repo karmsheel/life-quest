@@ -15,6 +15,7 @@ import {
   ArrowUp,
   Check,
   ChevronRight,
+  Copy,
   Eye,
   EyeOff,
   History,
@@ -32,6 +33,7 @@ import {
   X,
 } from "lucide-react";
 import type { SignalRecord } from "@lifequest/vault-core/pure";
+import { copyText } from "@/lib/clipboard";
 import { api } from "@/lib/ipc";
 import { readPageContext } from "@/lib/page-context";
 import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
@@ -49,6 +51,7 @@ import type {
   HermesSession,
 } from "@/vite-env";
 import {
+  formatMessageWhen,
   formatSessionWhen,
   sessionLabel,
   type FocusedCardContext,
@@ -58,6 +61,8 @@ export type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  /** When the message was sent or received, as epoch milliseconds. */
+  at?: number;
   /** The receipt this turn carried, as the thread remembers it after sending. */
   receipt?: { name: string; size: number };
 };
@@ -225,6 +230,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const receiptInputRef = useRef<HTMLInputElement | null>(null);
   /** The live thumbnail URL, held in a ref so it can always be released. */
   const receiptPreviewRef = useRef<string | null>(null);
+  /**
+   * The bubble whose text was last copied, and whether the clipboard took it.
+   * `ok: false` is shown for a moment too: a copy control that silently does
+   * nothing is worse than one that admits it failed.
+   */
+  const [copied, setCopied] = useState<{ id: string; ok: boolean } | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /** Replace (or drop) the pending receipt, releasing the old thumbnail. */
   const putReceipt = useCallback(
@@ -242,8 +254,20 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   useEffect(() => {
     return () => {
       if (receiptPreviewRef.current) URL.revokeObjectURL(receiptPreviewRef.current);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
   }, []);
+
+  /**
+   * Copy one bubble's text as the operator sees it. A receipt-only turn has no
+   * typed text, so the attached file's name is the content there.
+   */
+  async function copyMessage(m: ChatMessage) {
+    const ok = await copyText(m.content || m.receipt?.name || "");
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    setCopied({ id: m.id, ok });
+    copyTimerRef.current = setTimeout(() => setCopied(null), 1600);
+  }
 
   /**
    * Take one image from the composer. Main stores the original and answers with
@@ -501,11 +525,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     setTurnNote(null);
     setApproval(null);
     setRunId(null);
+    setCopied(null);
     setMessages(
       result.value.map((m) => ({
         id: nextId(),
         role: m.role,
         content: m.content,
+        at: m.at,
       })),
     );
     const firstUser = result.value.find((m) => m.role === "user" && m.content.trim());
@@ -696,10 +722,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       if (evt.type === "assistant.delta") {
         const id = assistantId.current ?? nextId();
         assistantId.current = id;
+        // Stamped before the updater: the first delta is when the reply began,
+        // and an updater that reads the clock is not pure under StrictMode.
+        const startedAt = Date.now();
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.id === id);
           if (idx === -1) {
-            return [...prev, { id, role: "assistant", content: evt.text }];
+            return [...prev, { id, role: "assistant", content: evt.text, at: startedAt }];
           }
           const copy = prev.slice();
           const cur = copy[idx]!;
@@ -828,12 +857,14 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       ? readPageContext(pageContext.route)
       : null;
 
+    const sentAt = Date.now();
     setMessages((prev) => [
       ...prev,
       {
         id: nextId(),
         role: "user",
         content,
+        at: sentAt,
         ...(attached ? { receipt: { name: attached.name, size: attached.size } } : {}),
       },
     ]);
@@ -1728,28 +1759,67 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               </div>
             ) : (
               <div className="chat-panel__messages" aria-live="polite">
-                {messages.map((m) => (
-                  <div
-                    key={m.id}
-                    className={`chat-panel__message chat-panel__message--${m.role}`}
-                  >
-                    <span className="chat-panel__message-role">
-                      {m.role === "user" ? "You" : "Hermes"}
-                    </span>
-                    <div className="chat-panel__message-content">
-                      {m.receipt ? (
-                        <span className="chat-panel__message-receipt">
-                          <ImagePlus size={12} aria-hidden />
-                          {m.receipt.name}
-                          <span className="chat-panel__receipt-size">
-                            {formatReceiptSize(m.receipt.size)}
+                {messages.map((m) => {
+                  const copyOk = copied?.id === m.id && copied.ok;
+                  const copyFailed = copied?.id === m.id && !copied.ok;
+                  const copyLabel = copyOk
+                    ? "Copied"
+                    : copyFailed
+                      ? "Copy failed"
+                      : "Copy message";
+                  const atDate = m.at ? new Date(m.at) : null;
+                  const validAt =
+                    atDate && !Number.isNaN(atDate.getTime()) ? atDate : null;
+                  return (
+                    <div
+                      key={m.id}
+                      className={`chat-panel__message chat-panel__message--${m.role}`}
+                    >
+                      <span className="chat-panel__message-role">
+                        {m.role === "user" ? "You" : "Hermes"}
+                      </span>
+                      <div className="chat-panel__message-content">
+                        {m.receipt ? (
+                          <span className="chat-panel__message-receipt">
+                            <ImagePlus size={12} aria-hidden />
+                            {m.receipt.name}
+                            <span className="chat-panel__receipt-size">
+                              {formatReceiptSize(m.receipt.size)}
+                            </span>
                           </span>
-                        </span>
-                      ) : null}
-                      {m.content}
+                        ) : null}
+                        {m.content}
+                      </div>
+                      <div className="chat-panel__message-meta">
+                        {validAt ? (
+                          <time
+                            className="chat-panel__message-time"
+                            dateTime={validAt.toISOString()}
+                            title={validAt.toLocaleString()}
+                          >
+                            {formatMessageWhen(m.at)}
+                          </time>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="chat-panel__message-copy"
+                          data-copy-state={copyOk ? "copied" : copyFailed ? "failed" : "idle"}
+                          aria-label={
+                            m.role === "user" ? `${copyLabel} (your message)` : `${copyLabel} (Hermes)`
+                          }
+                          title={copyLabel}
+                          onClick={() => void copyMessage(m)}
+                        >
+                          {copyOk ? (
+                            <Check size={11} aria-hidden />
+                          ) : (
+                            <Copy size={11} aria-hidden />
+                          )}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {sending && tools.length === 0 ? (
                   <div className="chat-panel__message chat-panel__message--assistant">
                     <span className="chat-panel__message-role">Hermes</span>
