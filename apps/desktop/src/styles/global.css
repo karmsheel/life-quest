@@ -3652,6 +3652,20 @@ a.home-mini-list__link:hover {
   outline: none;
 }
 
+/* Decisions is a reading column, not a settings workbench. The frame stops at
+   the inbox's own measure instead of taking 90% of a wide window and padding
+   either side of the cards with empty panel. It still shrinks to the window on
+   a narrow screen, where 56rem cannot fit. */
+.sheet-overlay--decisions {
+  justify-content: center;
+}
+
+.sheet-overlay__panel--decisions {
+  flex: 0 1 56rem;
+  width: 56rem;
+  max-width: 100%;
+}
+
 .sheet-overlay__chrome {
   display: flex;
   flex: 0 0 auto;
