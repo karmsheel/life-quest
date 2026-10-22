@@ -28,10 +28,26 @@ This machine is headless. The app runs on a virtual X display and the human watc
 - There is exactly one bench: do not start a second `npm run dev` or bind 5173 by hand. Vite runs with `strictPort`, and a second app would also fight the profile and the companion's MCP doors.
 - Moving the bench restarts the app and reopens its vault. Say so before moving it if the human may be looking, and put the primary checkout back (`lifequest-dev /root/projects/life-quest`) when you are done unless they asked you to leave your branch on it.
 
-## Testing a branch on the bench
+## Running E2E against your checkout
 
 1. Work in your worktree and run `npm ci` there once. Do not symlink the primary checkout's `node_modules`: workspace links then resolve `@lifequest/vault-core` to the primary tree and the worktree silently runs the wrong engine.
-2. Run the worktree's e2e rigs, or `lifequest-dev <worktree>` when the change needs a human look. Hand over the noVNC URL and wait.
-3. The bench uses the operator's real profile and vault, so a branch that migrates storage changes real data on open. If the branch touches the vault schema, point it at a copy (or a throwaway `LIFEQUEST_E2E` profile) before opening it.
-4. Merge and push only after an explicit go-ahead from the human. The merge happens in the primary checkout (`git merge --no-ff <branch>`), then push. Never merge or push on your own initiative, and never move the bench back before the human has finished looking.
+2. Run E2E through `/root/.local/bin/lifequest-e2e <worktree> [tests/<name>.test.ts ...]`. It holds a lock, puts that checkout's dev server on 5173 under a throwaway profile, runs the tests, and restores the previous bench even when they fail. A bare `npm test` can test another branch's code — the rigs load whatever is on 5173 — or pass by skipping every rig when no server is up.
+3. A skipped rig is evidence of nothing. Count only a run whose report artifact exists and whose picture shows the shipped screen.
+
+## Handing a change over for testing
+
+The operator runs several branches at once and does QC in batches. Do not expect them to watch, and do not put a branch on the bench until they ask.
+
+When the work is done and its E2E has passed, declare it in this shape and then stop:
+
+    READY FOR TESTING — <feature in one line>
+    branch: <branch> at <short sha>
+    artifact: <path> — <what it shows>
+    try: <the interaction that proves it>
+
+"Ready" means all four are true: the relevant rig ran against THIS checkout, the report artifact exists, the picture or video shows the shipped UI rather than a mock, and you have presented it (`present`) so the operator can open it later. Pictures come from the rig's own `capturePage`; use `/root/.local/bin/lifequest-record [out.mp4] [seconds]` only for motion a still cannot show — it records the bench, so put your branch on it first and restore afterwards.
+
+Then wait. "Ready" is a statement, not a request to start: do not move the bench, merge, or push. The bench moves only when the operator says "let's test this" or names the branch — then run `lifequest-dev <worktree>`, reply with the VNC URL, and leave the app alone. Merge (`--no-ff` in the primary checkout) and push only after they say the branch is good. If they report a defect, fix it in the same worktree and hand over again with a new artifact and a new "ready".
+
+For the human test the bench opens the operator's real profile and vault, so a branch that migrates storage changes real data when it is put there. Say so before the handover and test that branch against a copy.
 
