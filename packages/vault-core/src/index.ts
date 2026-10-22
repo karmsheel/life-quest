@@ -100,6 +100,9 @@ export {
   isValidLocalIsoDate,
   shiftLocalIsoDate,
   formatLocalIsoDate,
+  formatLocalIsoDayMonth,
+  isoWeekOf,
+  type IsoWeek,
 } from "./period.ts";
 export {
   ensureReview,

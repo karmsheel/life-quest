@@ -10,18 +10,28 @@
    the scale's own `--radius-xs` step, so the primitive is worn at a different
    step here rather than restyled — nothing new is introduced. */
 
+/* The page is its own container: the two columns below are a question about how
+   much room the page has, and the page has that room only after the rail and the
+   dock have taken theirs. A media query would answer about the window instead. */
 .daily-note {
+  container-type: inline-size;
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  max-width: 60rem;
 }
 
 .daily-note .btn {
   border-radius: var(--radius-xs);
 }
 
+/* The header, the box and the strip all centre on the page rather than hug its
+   leading edge, and they share one column width so the page reads as one
+   column of prose with chrome above and below it. */
 .daily-note__header {
+  width: 100%;
+  max-width: 48rem;
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -47,11 +57,46 @@
   color: var(--fg);
 }
 
+/* The box and the strip are one workspace: a column while the page is narrow,
+   two columns once it is wide enough to hold them side by side. */
+.daily-note__workspace {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.daily-note__compose {
+  width: 100%;
+  max-width: 48rem;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.daily-note__editor {
+  width: 100%;
+}
+
+/* The day's box is twice the height of every other note box in the studio. A
+   journal entry is written for longer than a note about a document, and the page
+   is the editor: the box has to open with room for a day's prose rather than at
+   the height of a title field. The ceiling grows with it, or a tall day would
+   scroll a 16rem window inside a 32rem frame. */
+.daily-note__editor .note-live {
+  min-height: 32rem;
+  max-height: min(80vh, 68rem);
+  margin-inline: auto;
+}
+
 /* The autosave line. There is no Save control: this one quiet line is the whole
    of what the page says about the day reaching the vault. */
 .daily-note__status {
   margin: 0;
   min-height: 1.1rem;
+  width: 100%;
   font-size: 0.85rem;
 }
 
@@ -72,7 +117,9 @@
   border-top: 1px solid var(--border);
   /* As wide as the box above it, so the strip reads as the note's own footer
      rather than as a second, wider table. */
+  width: 100%;
   max-width: 48rem;
+  margin-inline: auto;
 }
 
 /* A step under the page's own title, and a step over the rows it heads. */
@@ -145,6 +192,130 @@
 .daily-note__history-edited {
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+/* A previous week, folded under its own label. The toggle is a row in the same
+   shape as a day's, so the strip keeps one leading edge; only the caret and the
+   count mark it as a group rather than a day. */
+.daily-note__week {
+  display: flex;
+  flex-direction: column;
+}
+
+.daily-note__week + .daily-note__week {
+  margin-top: 0.15rem;
+}
+
+.daily-note__week-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.daily-note__week-toggle:hover {
+  background: var(--muted-surface);
+}
+
+.daily-note__week-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.daily-note__week-caret {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.daily-note__week-toggle[aria-expanded="true"] .daily-note__week-caret {
+  transform: rotate(90deg);
+}
+
+.daily-note__week-label {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.daily-note__week-count {
+  margin-left: auto;
+  font-size: 0.8rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .daily-note__week-caret {
+    transition: none;
+  }
+}
+
+/* Wide enough for both at once: the box keeps the column it was written for and
+   the strip stands beside it, and the pair stay centred on the page. The strip
+   takes the edge away from the dock — one side of the page when the chat is on
+   the other — so the note stays between the operator's prose and the companion,
+   and the journal does not sit under the dock's shadow. */
+@container (min-width: 78rem) {
+  .daily-note__header {
+    max-width: 78rem;
+  }
+
+  .daily-note__workspace {
+    display: grid;
+    /* The strip leads and keeps its narrow column; the box trails at the width
+       it is written for. The tracks follow the order set below, so a side swap
+       moves the widths with the panes rather than handing the strip the box's
+       column. */
+    grid-template-columns: minmax(0, 30rem) minmax(0, 46rem);
+    align-items: start;
+    justify-content: center;
+    gap: 2rem;
+  }
+
+  .daily-note__compose {
+    max-width: none;
+    margin: 0;
+    order: 2;
+  }
+
+  .daily-note__history {
+    max-width: none;
+    margin: 0;
+    padding-top: 0;
+    border-top: 0;
+    order: 1;
+  }
+
+  /* The side column is narrower than the box's page-width strip, so the three
+     cells lean on the date and the stamp a little harder: the date is still
+     whole, the weekday is a word, and the stamp gets the room it needs rather
+     than wrapping to two lines in a column read at a glance. */
+  .daily-note__history-head,
+  .daily-note__history-day,
+  .daily-note__history-unreadable {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.7fr) minmax(0, 1.35fr);
+    gap: 0.5rem;
+  }
+
+  /* Chat on the left: the strip moves to the page's trailing edge, past the
+     box. Chat on the right is the default above (strip leading, box trailing). */
+  .shell--chat-left .daily-note__workspace {
+    grid-template-columns: minmax(0, 46rem) minmax(0, 30rem);
+  }
+
+  .shell--chat-left .daily-note__compose {
+    order: 1;
+  }
+
+  .shell--chat-left .daily-note__history {
+    order: 2;
+  }
 }
 
 /* Review — one period's document and the interview that fills it.

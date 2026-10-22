@@ -41,6 +41,14 @@ const MIDSENTENCE_SHOT = path.join(
   "e2e/artifacts/daily-note-midsentence.png",
 );
 const PANEL_SHOT = path.join(desktopRoot, "e2e/artifacts/daily-note-panel.png");
+const SPLIT_RIGHT_SHOT = path.join(
+  desktopRoot,
+  "e2e/artifacts/daily-note-split-right.png",
+);
+const SPLIT_LEFT_SHOT = path.join(
+  desktopRoot,
+  "e2e/artifacts/daily-note-split-left.png",
+);
 
 function devServerUp(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -91,6 +99,7 @@ type Chrome = {
   step: number;
   pager: Corners[];
   history: Corners[];
+  weekToggles: Corners[];
   historyListStyle: string | null;
   historyHead: string[];
   historyHeadingSize: number | null;
@@ -101,6 +110,25 @@ type Box = {
   top: number;
   width: number;
   height: number;
+};
+/** One folded week: the label it wears and the rows it is showing right now. */
+type WeekRow = {
+  start: string | null;
+  label: string | null;
+  count: string | null;
+  expanded: string | null;
+  rows: number;
+};
+/** Where the page's own boxes landed, in viewport pixels. */
+type Layout = {
+  shellClass: string | null;
+  content:
+    | (Box & { clientWidth: number; centerX: number })
+    | null;
+  page: Box | null;
+  workspace: Box | null;
+  editor: Box | null;
+  history: Box | null;
 };
 type PanelRow = {
   testId: string | null;
@@ -132,6 +160,9 @@ type Sample = {
   todayButton: boolean;
   error: string | null;
   rows: Row[];
+  weeks: WeekRow[];
+  layout: Layout;
+  editorMinHeight: number | null;
   boxes: number;
   splits: number;
   previews: number;
@@ -163,6 +194,25 @@ type Report = {
     farDayYear: string;
     rail: Link[];
     landing: Sample;
+    centering: {
+      contentCenter: number | null;
+      editorCentre: number | null;
+      historyCentre: number | null;
+      editorOffBy: number | null;
+      historyOffBy: number | null;
+    };
+    editorMinHeight: number | null;
+    weekGroups: WeekRow[];
+    farWeek: {
+      start: string;
+      label: string | null;
+      count: string | null;
+      openedRows: number | null;
+      row: Row | null;
+      closedRows: number | null;
+    } | null;
+    wideRight: Layout;
+    wideLeft: Layout;
     emptyParagraphs: Sample;
     box: { boxes: number; splits: number; previews: number; writingLines: number };
     afterTyping: Sample;
@@ -217,6 +267,8 @@ describe("daily note ui e2e", () => {
     fs.rmSync(EDITING_SHOT, { force: true });
     fs.rmSync(MIDSENTENCE_SHOT, { force: true });
     fs.rmSync(PANEL_SHOT, { force: true });
+    fs.rmSync(SPLIT_RIGHT_SHOT, { force: true });
+    fs.rmSync(SPLIT_LEFT_SHOT, { force: true });
     const exitCode = await runDriver();
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
 
@@ -253,7 +305,10 @@ describe("daily note ui e2e", () => {
     assert.equal(chrome.statusLine, true, "the page draws no autosave status line");
     assert.ok(chrome.step > 0, "the design's --radius-xs step could not be read");
     assert.ok(chrome.pager.length > 0, "the day pager drew no buttons to measure");
-    assert.ok(chrome.history.length > 0, "the strip of earlier notes drew no day to measure");
+    assert.ok(
+      chrome.history.length > 0 || chrome.weekToggles.length > 0,
+      "the strip of earlier notes drew no day and no weekly toggle to measure",
+    );
     for (const button of [...chrome.pager, ...chrome.history]) {
       assert.ok(
         button.radius <= chrome.step,
@@ -307,15 +362,37 @@ describe("daily note ui e2e", () => {
         `the row for ${row.isoDate} names the wrong weekday`,
       );
     }
-    // The last-edited column is the note's own stamp, not a date the page made up:
-    // the far day was seeded from another year, which today's clock cannot reach.
-    const farRow = strip.find((row) => row.isoDate === farDay);
-    assert.ok(farRow, `the far day (${farDay}) is missing from the strip`);
+    // ── previous weeks fold under a weekly label ────────────────────────────
+    // The far day was seeded ten weeks back, so it is a claim about a folded
+    // week rather than about this week's own list: the label names the ISO week
+    // and the days it covers, and the day itself is not drawn until asked for.
+    const farWeek = report.checks.farWeek;
+    assert.ok(farWeek, `the far day (${farDay}) has no weekly toggle to fold into`);
     assert.match(
-      String(farRow!.edited),
-      new RegExp(farDayYear),
-      `the last-edited column reads ${JSON.stringify(farRow!.edited)} for a note stamped ${farDayYear}`,
+      String(farWeek!.label),
+      /^W\d{1,2} \(\d{1,2} \w{3} - \d{1,2} \w{3}\)$/,
+      `the weekly toggle is labelled ${JSON.stringify(farWeek!.label)}`,
     );
+    assert.equal(farWeek!.count, "1 note", "the weekly toggle does not count its day");
+    assert.equal(farWeek!.openedRows, 1, "opening the far week did not draw its day");
+    assert.equal(farWeek!.row?.isoDate, farDay, "the opened week drew a day other than the far day");
+    assert.match(
+      String(farWeek!.row?.edited),
+      new RegExp(farDayYear),
+      `the last-edited column reads ${JSON.stringify(farWeek!.row?.edited)} for a note stamped ${farDayYear}`,
+    );
+    assert.equal(farWeek!.closedRows, 0, "folding the week left its rows on screen");
+    assert.ok(
+      !strip.some((row) => row.isoDate === farDay),
+      "the far day was drawn while its week was folded",
+    );
+    const weekGroups = report.checks.weekGroups ?? [];
+    assert.ok(weekGroups.length > 0, "the strip drew no weekly toggle at all");
+    for (const week of weekGroups) {
+      assert.ok(week.start, "a weekly toggle names no week");
+      assert.equal(week.expanded, "false", `the week ${week.start} opened without being asked`);
+      assert.equal(week.rows, 0, `the folded week ${week.start} drew rows`);
+    }
 
     // ── landing: today, empty, and nothing written ──────────────────────────
     const landing = report.checks.landing;
@@ -326,6 +403,35 @@ describe("daily note ui e2e", () => {
     assert.equal(landing.writes, 0, "landing on a day wrote it without anything being typed");
     assert.equal(landing.nextDisabled, true, "the future is reachable from today");
     assert.equal(landing.prevDisabled, false);
+
+    // ── the two sections are centred, and the box is twice its old height ───
+    // Centred on the content column, not the window: the rail and the dock have
+    // already taken their tracks, and a page centred in the window would sit
+    // under one of them.
+    const centering = report.checks.centering;
+    assert.ok(
+      Math.abs(centering.editorOffBy ?? 999) <= 2,
+      `the text box sits ${centering.editorOffBy}px off the page's centre`,
+    );
+    assert.ok(
+      Math.abs(centering.historyOffBy ?? 999) <= 2,
+      `the earlier-notes strip sits ${centering.historyOffBy}px off the page's centre`,
+    );
+    assert.ok(
+      (report.checks.editorMinHeight ?? 0) >= 512,
+      `the day's box sets a ${report.checks.editorMinHeight}px floor, not the doubled 32rem`,
+    );
+    assert.ok(
+      (landing.boxRect?.height ?? 0) >= 500,
+      `an empty day's box stands ${JSON.stringify(landing.boxRect?.height)}px tall, not the doubled height`,
+    );
+    assert.ok(landing.layout.editor, "the text box's own box could not be measured");
+    assert.ok(landing.layout.history, "the earlier-notes strip's box could not be measured");
+    assert.ok(
+      landing.layout.history!.top >=
+        landing.layout.editor!.top + landing.layout.editor!.height,
+      "at the default width the strip did not sit under the box",
+    );
 
     // One box. Not a split editor with a preview beside it, not two surfaces:
     // one editor, no second column, and one writing line open at a time.
@@ -712,6 +818,51 @@ describe("daily note ui e2e", () => {
       "the empty panel offered no way to the day's page",
     );
 
+    // ── wide page: the strip takes the edge away from the dock ─────────────
+    // At the default width the page is one column. A window wide enough for two
+    // puts the strip beside the box, and the side it takes is the one away from
+    // the chat: right-of-box when the chat is on the left, left-of-box when it
+    // is on the right. Both arrangements stay centred on the page.
+    const wideRight = report.checks.wideRight;
+    const wideLeft = report.checks.wideLeft;
+    assert.match(
+      String(wideRight.shellClass),
+      /shell--chat-right/,
+      "the wide page was not measured with the chat on its shipped side",
+    );
+    assert.match(
+      String(wideLeft.shellClass),
+      /shell--chat-left/,
+      "the wide page was not measured with the chat on the leading side",
+    );
+    for (const [when, layout] of [
+      ["chat right", wideRight],
+      ["chat left", wideLeft],
+    ] as const) {
+      assert.ok(layout.editor, `${when}: the wide page drew no text box`);
+      assert.ok(layout.history, `${when}: the wide page drew no earlier-notes strip`);
+      assert.ok(layout.workspace, `${when}: the wide page drew no workspace to place`);
+      assert.ok(
+        Math.abs(layout.history!.top - layout.editor!.top) <= 4,
+        `${when}: the strip and the box did not share a top edge`,
+      );
+      const centre = layout.content?.centerX ?? null;
+      const workspaceCentre = layout.workspace!.left + layout.workspace!.width / 2;
+      assert.ok(centre !== null, `${when}: the page's centre could not be read`);
+      assert.ok(
+        Math.abs(workspaceCentre - centre!) <= 2,
+        `${when}: the two-column workspace sits ${workspaceCentre - centre!}px off the page's centre`,
+      );
+    }
+    assert.ok(
+      wideRight.history!.left + wideRight.history!.width <= wideRight.editor!.left,
+      "with the chat on the right the strip is not left of the box",
+    );
+    assert.ok(
+      wideLeft.history!.left >= wideLeft.editor!.left + wideLeft.editor!.width,
+      "with the chat on the left the strip is not right of the box",
+    );
+
     // Nothing reached the bridge that this rig does not model, and the page
     // logged nothing while the note was being written.
     assert.deepEqual(report.checks.unexpectedBridgeCalls, []);
@@ -732,6 +883,16 @@ describe("daily note ui e2e", () => {
       fs.existsSync(PANEL_SHOT),
       true,
       "driver captured no screenshot of the review panel",
+    );
+    assert.equal(
+      fs.existsSync(SPLIT_RIGHT_SHOT),
+      true,
+      "driver captured no screenshot of the wide page with the chat on the right",
+    );
+    assert.equal(
+      fs.existsSync(SPLIT_LEFT_SHOT),
+      true,
+      "driver captured no screenshot of the wide page with the chat on the left",
     );
   });
 });
