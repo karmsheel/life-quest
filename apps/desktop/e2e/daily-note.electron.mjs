@@ -7,11 +7,13 @@
  *   node e2e/daily-note.electron.mjs
  *
  * Exit code 0 = every invariant held. The JSON report is the repeatable artifact:
- * same command, same claims, no eyeballing the app required. It ships with four
+ * same command, same claims, no eyeballing the app required. It ships with six
  * pictures of the same run: the day's page holding a written note
  * (`daily-note.png`), the box with one paragraph open as its own markdown
  * (`daily-note-editing.png`), the writing line a save landed in without touching
- * it (`daily-note-midsentence.png`), and the Review panel (`daily-note-panel.png`).
+ * it (`daily-note-midsentence.png`), the Review panel (`daily-note-panel.png`),
+ * and the wide page twice — strip beside the box with the dock on its shipped
+ * side (`daily-note-split-right.png`) and swapped (`daily-note-split-left.png`).
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
@@ -72,6 +74,17 @@
  * 16. A future-dated file is never offered in the strip, and a file that names no
  *     real day is reported as unreadable where it sits rather than as a link.
  * 17. No bridge call this rig does not model, and no console error.
+ * 18. The box and the strip centre on the page's own content column, not the
+ *     window's: the rail and the dock have already taken their tracks, and a page
+ *     centred in the window would sit under one of them.
+ * 19. The box opens at twice the old 16rem floor — 32rem on an empty day — and
+ *     its ceiling grew with it, because a day is written at length.
+ * 20. The days before this week fold under a `W36 (31 Aug - 6 Sep)` label: the
+ *     current week stays open, a folded week mounts no rows, and opening a week
+ *     draws its days — including the far day's last-edited stamp.
+ * 21. A page wide enough for two columns puts the strip beside the box, on the
+ *     edge away from the chat dock; the pair stays centred, and swapping the dock
+ *     swaps the strip's side with it.
  *
  * NOT covered here: that the note reaches disk as `notes/daily/{date}.md`, that a
  * second write edits one file, and that a review's period pack reads the window
@@ -150,7 +163,11 @@ const SAMPLE = `(() => {
   const status = document.querySelector('[data-testid="daily-note-status"]');
   const historyList = document.querySelector(".daily-note__history-list");
   const historyHeading = document.querySelector(".daily-note__history h2");
-  const historyDay = document.querySelector(".daily-note__history-day");
+  // The font row size is read from a day or, on a Monday with no note written
+  // since, from the weekly toggle that is standing in for those days.
+  const historyDay = document.querySelector(
+    ".daily-note__history-day, .daily-note__week-toggle",
+  );
   const cell = (el, sel) => {
     const found = el.querySelector(sel);
     return found ? (found.textContent || "").trim() : null;
@@ -174,6 +191,25 @@ const SAMPLE = `(() => {
       current: el.querySelector('[aria-current="true"]') !== null,
     };
   });
+  const weeks = Array.from(document.querySelectorAll(".daily-note__week")).map((el) => {
+    const toggle = el.querySelector(".daily-note__week-toggle");
+    return {
+      start: el.getAttribute("data-week"),
+      label: toggle
+        ? (toggle.querySelector(".daily-note__week-label")?.textContent || "").trim()
+        : null,
+      count: toggle
+        ? (toggle.querySelector(".daily-note__week-count")?.textContent || "").trim()
+        : null,
+      expanded: toggle ? toggle.getAttribute("aria-expanded") : null,
+      rows: el.querySelectorAll(".daily-note__history-row").length,
+    };
+  });
+  const content = document.querySelector(".shell__content");
+  const page = document.querySelector(".daily-note");
+  const workspace = document.querySelector(".daily-note__workspace");
+  const history = document.querySelector(".daily-note__history");
+  const shell = document.querySelector(".shell");
   return {
     links,
     heading: text(".daily-note__header h1"),
@@ -193,6 +229,7 @@ const SAMPLE = `(() => {
       ),
       pager: Array.from(document.querySelectorAll(".daily-note__pager .btn")).map(corners),
       history: Array.from(document.querySelectorAll(".daily-note__history-day")).map(corners),
+      weekToggles: Array.from(document.querySelectorAll(".daily-note__week-toggle")).map(corners),
       historyListStyle: historyList ? getComputedStyle(historyList).listStyleType : null,
       historyHead: Array.from(
         document.querySelectorAll(".daily-note__history-head > *"),
@@ -210,6 +247,27 @@ const SAMPLE = `(() => {
     todayButton: Boolean(document.querySelector('[data-testid="daily-note-today"]')),
     error: text(".form-error"),
     rows,
+    // The weekly fold: one entry per earlier week, with the label it wears and
+    // the rows it is showing right now. A collapsed week mounts no rows at all.
+    weeks,
+    // How the page is standing: one column or two, and which edge the strip took.
+    // The centre is solved from the content box's client width rather than its
+    // border box, so a vertical scrollbar does not read as an off-centre page.
+    layout: {
+      shellClass: shell ? shell.className : null,
+      content: content
+        ? {
+            ...rect(content),
+            clientWidth: content.clientWidth,
+            centerX: rect(content).left + content.clientWidth / 2,
+          }
+        : null,
+      page: page ? rect(page) : null,
+      workspace: workspace ? rect(workspace) : null,
+      editor: box ? rect(box) : null,
+      history: history ? rect(history) : null,
+    },
+    editorMinHeight: box ? px(getComputedStyle(box).minHeight) : null,
     // The box: one editor, one writing line, and no second surface anywhere.
     boxes: document.querySelectorAll(".note-live").length,
     splits: document.querySelectorAll(".doc-editor__split").length,
@@ -438,7 +496,7 @@ function assertChrome(chrome, when) {
     failure(`${when}: the design's --radius-xs step could not be read`);
     return;
   }
-  const buttons = [...chrome.pager, ...chrome.history];
+  const buttons = [...chrome.pager, ...chrome.history, ...(chrome.weekToggles ?? [])];
   if (buttons.length === 0) failure(`${when}: the page drew no buttons to measure`);
   for (const button of buttons) {
     if (button.radius > chrome.step) {
@@ -467,6 +525,60 @@ const WEEKDAYS = [
   "Friday",
   "Saturday",
 ];
+
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function addIsoDays(date, days) {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The ISO week the page claims a day belongs to, solved again here rather than
+ * read back from the page: a label that came from the page's own helper could
+ * agree with itself while both were wrong.
+ */
+function isoWeekFor(date) {
+  const d = new Date(`${date}T00:00:00Z`);
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() - (day - 1));
+  const start = d.toISOString().slice(0, 10);
+  const end = addIsoDays(start, 6);
+  const thursday = new Date(`${start}T00:00:00Z`);
+  thursday.setUTCDate(thursday.getUTCDate() + 3);
+  const year = thursday.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(year, 0, 1));
+  const week = Math.ceil(
+    ((thursday.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7,
+  );
+  return { start, end, year, week };
+}
+
+function dayMonth(date) {
+  const [, month, day] = date.split("-").map(Number);
+  return `${day} ${MONTHS[month - 1]}`;
+}
+
+/** The label a weekly toggle must wear for the week holding `date`. */
+function weekLabelFor(date, currentYear) {
+  const week = isoWeekFor(date);
+  const year = week.year === currentYear ? "" : ` ${week.year}`;
+  return `W${week.week} (${dayMonth(week.start)} - ${dayMonth(week.end)}${year})`;
+}
 
 /**
  * The strip's own table, read as one claim about every row in it.
@@ -615,17 +727,131 @@ async function main() {
     );
   }
   assertRows(landing.rows, today, "at landing");
-  // The last-edited column is the note's own stamp rather than a date the page
-  // made up: the far day was seeded from 2019, which no page could invent from
-  // today's clock.
-  const farRow = landing.rows.find((row) => row.isoDate === farDay);
-  if (!farRow) {
-    failure(`the far day (${farDay}) is missing from the strip`);
-  } else if (!(farRow.edited ?? "").includes(farDayYear)) {
+
+  // ── 2a. the page is centred, and the box is twice its old height ─────────
+  // Both sections hang off the content box's own centre, not the window's: the
+  // rail and the dock have already taken their columns, and a page centred in
+  // the window would sit under one of them.
+  const contentCenter = landing.layout.content?.centerX ?? null;
+  const centreOf = (box) => (box ? box.left + box.width / 2 : null);
+  const editorCentre = centreOf(landing.layout.editor);
+  const historyCentre = centreOf(landing.layout.history);
+  checks.centering = {
+    contentCenter,
+    editorCentre,
+    historyCentre,
+    editorOffBy: editorCentre === null || contentCenter === null ? null : editorCentre - contentCenter,
+    historyOffBy: historyCentre === null || contentCenter === null ? null : historyCentre - contentCenter,
+  };
+  if (contentCenter === null || editorCentre === null || historyCentre === null) {
+    failure("the page's own layout boxes could not be read");
+  } else {
+    if (Math.abs(editorCentre - contentCenter) > 2) {
+      failure(
+        `the text box is centred at ${editorCentre}, ${editorCentre - contentCenter}px from the page's ${contentCenter}`,
+      );
+    }
+    if (Math.abs(historyCentre - contentCenter) > 2) {
+      failure(
+        `the earlier-notes strip is centred at ${historyCentre}, ${historyCentre - contentCenter}px from the page's ${contentCenter}`,
+      );
+    }
+  }
+  // The old box was 16rem tall; the day's page opens at 32rem, and an empty day
+  // is exactly the case that reads the floor rather than the prose's own height.
+  checks.editorMinHeight = landing.editorMinHeight;
+  if (!(landing.editorMinHeight >= 512)) {
+    failure(`the day's box sets a ${landing.editorMinHeight}px floor, not the doubled 32rem`);
+  }
+  if (!(landing.boxRect && landing.boxRect.height >= 500)) {
     failure(
-      `the last-edited column reads ${JSON.stringify(farRow.edited)} for a note stamped ${farDayYear}`,
+      `an empty day's box stands ${JSON.stringify(landing.boxRect?.height)}px tall, not the doubled height`,
     );
   }
+
+  // ── 2b. previous weeks fold, and only the week asked for opens ───────────
+  // This week's days stay in the list; every earlier week is a label with no
+  // rows mounted until it is opened. The far day is ten weeks back, so it is a
+  // claim about a folded week rather than about today's own list.
+  const thisWeekStart = isoWeekFor(today).start;
+  for (const week of landing.weeks) {
+    if (!week.start) {
+      failure("a weekly toggle carries no week to stand for");
+      continue;
+    }
+    if (week.start >= thisWeekStart) {
+      failure(`the current week (${week.start}) was folded under a toggle`);
+    }
+    if (week.expanded !== "false") {
+      failure(`the week ${week.start} opened without being asked`);
+    }
+    if (week.rows !== 0) {
+      failure(`the folded week ${week.start} drew ${week.rows} row(s)`);
+    }
+  }
+  const farWeek = landing.weeks.find(
+    (week) => week.start && farDay >= week.start && farDay <= addIsoDays(week.start, 6),
+  );
+  if (!farWeek) {
+    failure(`the far day (${farDay}) has no weekly toggle to fold into`);
+  } else {
+    const expectedLabel = weekLabelFor(farDay, Number(today.slice(0, 4)));
+    if (farWeek.label !== expectedLabel) {
+      failure(
+        `the week holding ${farDay} is labelled ${JSON.stringify(farWeek.label)}, expected ${JSON.stringify(expectedLabel)}`,
+      );
+    }
+    if (farWeek.count !== "1 note") {
+      failure(`the week holding ${farDay} is counted as ${JSON.stringify(farWeek.count)}`);
+    }
+    if (landing.rows.some((row) => row.isoDate === farDay)) {
+      failure(`the far day (${farDay}) was drawn while its week was folded`);
+    }
+    await click(win, `daily-note-week-${farWeek.start}`);
+    await waitFor(
+      win,
+      `document.querySelector('[data-testid="daily-note-week-${farWeek.start}"]').getAttribute("aria-expanded") === "true"`,
+      "the far week to open",
+    );
+    const openedWeek = await sample(win);
+    const openedFarWeek = openedWeek.weeks.find((week) => week.start === farWeek.start);
+    const farRow = openedWeek.rows.find((row) => row.isoDate === farDay);
+    // The last-edited column is the note's own stamp rather than a date the page
+    // made up: the far day was seeded from 2019, which no page could invent from
+    // today's clock.
+    if (!farRow) {
+      failure(`the far day (${farDay}) is missing after opening its week`);
+    } else if (!(farRow.edited ?? "").includes(farDayYear)) {
+      failure(
+        `the last-edited column reads ${JSON.stringify(farRow.edited)} for a note stamped ${farDayYear}`,
+      );
+    }
+    if (openedFarWeek?.rows !== 1) {
+      failure(`the opened week shows ${JSON.stringify(openedFarWeek?.rows)} row(s), expected 1`);
+    }
+    assertRows(openedWeek.rows, today, "with a previous week open");
+    await click(win, `daily-note-week-${farWeek.start}`);
+    await waitFor(
+      win,
+      `document.querySelector('[data-testid="daily-note-week-${farWeek.start}"]').getAttribute("aria-expanded") === "false"`,
+      "the far week to fold again",
+    );
+    const closedWeek = await sample(win);
+    const closedFarWeek = closedWeek.weeks.find((week) => week.start === farWeek.start);
+    if (closedFarWeek?.rows !== 0) {
+      failure(`the week folded again but still drew ${JSON.stringify(closedFarWeek?.rows)} row(s)`);
+    }
+    checks.farWeek = {
+      start: farWeek.start,
+      label: farWeek.label,
+      count: farWeek.count,
+      openedRows: openedFarWeek?.rows ?? null,
+      row: farRow ?? null,
+      closedRows: closedFarWeek?.rows ?? null,
+    };
+  }
+  checks.weekGroups = landing.weeks;
+
   if (landing.writes !== 0) {
     failure(`the page wrote ${landing.writes} time(s) before anything was typed`);
   }
@@ -1399,6 +1625,123 @@ async function main() {
     win,
     `Boolean(document.querySelector(".note-live"))`,
     "the day's page to come back",
+  );
+
+  // ── 8c. wide page: the strip takes the edge away from the dock ───────────
+  // At the default 1280px window the page is one column: read that first, so the
+  // wide claim below is a change and not a layout that was always two columns.
+  if (
+    !landing.layout.editor ||
+    !landing.layout.history ||
+    !(landing.layout.history.top >= landing.layout.editor.top + landing.layout.editor.height)
+  ) {
+    failure(
+      `at the default width the strip did not sit under the box: ${JSON.stringify(landing.layout)}`,
+    );
+  }
+
+  const layoutCentre = (layout) => layout.content?.centerX ?? null;
+  const workspaceCentre = (layout) =>
+    layout.workspace ? layout.workspace.left + layout.workspace.width / 2 : null;
+  const twoColumns = (layout, when) => {
+    if (!layout.editor || !layout.history) {
+      failure(`${when}: the page drew no box or no strip to place`);
+      return;
+    }
+    if (Math.abs(layout.history.top - layout.editor.top) > 4) {
+      failure(
+        `${when}: the strip (top ${layout.history.top}) did not share a top edge with the box (top ${layout.editor.top})`,
+      );
+    }
+    const centre = layoutCentre(layout);
+    if (centre === null || workspaceCentre(layout) === null) {
+      failure(`${when}: the two-column workspace could not be measured`);
+    } else if (Math.abs(workspaceCentre(layout) - centre) > 2) {
+      failure(
+        `${when}: the two-column workspace is centred at ${workspaceCentre(layout)}, ${workspaceCentre(layout) - centre}px from the page's ${centre}`,
+      );
+    }
+  };
+
+  win.setContentSize(1800, 1040);
+  await waitFor(
+    win,
+    `window.innerWidth >= 1790 && Boolean(document.querySelector(".shell"))`,
+    "the wide window",
+  );
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const wideRight = await sample(win);
+  checks.wideRight = wideRight.layout;
+  if (!(wideRight.layout.shellClass ?? "").includes("shell--chat-right")) {
+    failure(`the wide page was not in the shipped dock arrangement: ${wideRight.layout.shellClass}`);
+  }
+  twoColumns(wideRight.layout, "with the chat on the right");
+  if (
+    wideRight.layout.editor &&
+    wideRight.layout.history &&
+    !(wideRight.layout.history.left + wideRight.layout.history.width <= wideRight.layout.editor.left)
+  ) {
+    failure(
+      `with the chat on the right the strip sits at ${wideRight.layout.history.left}, not left of the box at ${wideRight.layout.editor.left}`,
+    );
+  }
+  const wideRightShot = await win.webContents.capturePage();
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(artifactsDir, "daily-note-split-right.png"),
+    wideRightShot.toPNG(),
+  );
+
+  // Swap the dock to the leading edge: the strip changes sides with it, so the
+  // box stays between the companion and the journal rather than under it.
+  await win.webContents.executeJavaScript(
+    `document.querySelector(".window-titlebar__side-switch").click()`,
+  );
+  await waitFor(
+    win,
+    `document.querySelector(".shell").classList.contains("shell--chat-left")`,
+    "the chat dock to swap sides",
+  );
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const wideLeft = await sample(win);
+  checks.wideLeft = wideLeft.layout;
+  twoColumns(wideLeft.layout, "with the chat on the left");
+  if (
+    wideLeft.layout.editor &&
+    wideLeft.layout.history &&
+    !(wideLeft.layout.history.left >= wideLeft.layout.editor.left + wideLeft.layout.editor.width)
+  ) {
+    failure(
+      `with the chat on the left the strip sits at ${wideLeft.layout.history.left}, not right of the box at ${wideLeft.layout.editor.left}`,
+    );
+  }
+  const wideLeftShot = await win.webContents.capturePage();
+  fs.writeFileSync(
+    path.join(artifactsDir, "daily-note-split-left.png"),
+    wideLeftShot.toPNG(),
+  );
+
+  // Put the workspace back the way the rest of the run found it.
+  await win.webContents.executeJavaScript(
+    `document.querySelector(".window-titlebar__side-switch").click()`,
+  );
+  await waitFor(
+    win,
+    `document.querySelector(".shell").classList.contains("shell--chat-right")`,
+    "the chat dock to return to the trailing edge",
+  );
+  win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
+  await waitFor(
+    win,
+    `window.innerWidth <= ${DEFAULT_SIZE.width + 10}`,
+    "the window to return to its default size",
+  );
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
   );
 
   // ── 9. nothing unexpected, nothing on fire ───────────────────────────────

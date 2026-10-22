@@ -103,6 +103,53 @@ export function formatLocalIsoDate(date: string): string {
   return formatDay(date);
 }
 
+/** The compact label for a local date, e.g. `11 Feb`. */
+export function formatLocalIsoDayMonth(date: string): string {
+  const dt = utc(date);
+  if (!dt) return date;
+  return `${dt.getUTCDate()} ${MONTH_SHORT[dt.getUTCMonth()]}`;
+}
+
+/**
+ * The ISO-8601 week a local date falls in.
+ *
+ * The week starts on Monday and belongs to the year of its Thursday, which is
+ * what makes `W01` the week that holds 1 January rather than the week that holds
+ * the last days of December. The start and end are the file-date strings the
+ * journal groups by.
+ */
+export type IsoWeek = {
+  /** The Monday the week opens on. */
+  start: string;
+  /** The Sunday it closes on. */
+  end: string;
+  /** The week-numbering year — the year of the week's Thursday. */
+  year: number;
+  /** ISO-8601 week number, 1–53. */
+  week: number;
+};
+
+/** The ISO week containing `date`, or null when `date` is not a real date. */
+export function isoWeekOf(date: string): IsoWeek | null {
+  const dt = utc(date);
+  if (!dt) return null;
+  const dow = dt.getUTCDay() || 7;
+  dt.setUTCDate(dt.getUTCDate() - (dow - 1));
+  const start = toIso(dt);
+  const end = addDays(start, 6);
+  if (!end) return null;
+  // The Thursday decides both the week's year and its number: a week that
+  // straddles New Year belongs to whichever year owns its Thursday.
+  const thursday = new Date(dt.getTime());
+  thursday.setUTCDate(thursday.getUTCDate() + 3);
+  const year = thursday.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(year, 0, 1));
+  const week = Math.ceil(
+    ((thursday.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7,
+  );
+  return { start, end, year, week };
+}
+
 export function weekStartOnOrBefore(
   date: string,
   weekStartDay: WeekStartDay,

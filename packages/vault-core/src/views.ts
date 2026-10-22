@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { appendLog } from "./log.ts";
 import { mondayOnOrBefore, todayLocalIso } from "./map/dates.ts";
+import { isoWeekOf } from "./period.ts";
 import { vaultPaths } from "./paths.ts";
 import { isDomainLive, getDatabase, rowDisplayLabel, readRegistry } from "./domain-databases.ts";
 import {
@@ -735,12 +736,9 @@ export function windowBounds(
 
 /** ISO-8601 week label for a YYYY-MM-DD date, e.g. 2026-W09. */
 export function isoWeekLabel(date: string): string {
-  const d = new Date(date + "T00:00:00Z");
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+  const week = isoWeekOf(date);
+  if (!week) return date;
+  return `${week.year}-W${String(week.week).padStart(2, "0")}`;
 }
 
 function labelForValue(value: unknown): string {
