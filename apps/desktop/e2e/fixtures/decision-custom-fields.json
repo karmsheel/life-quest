@@ -1,0 +1,119 @@
+{
+  "_comment": [
+    "A row write and a batch insert into an operator-created database, in the shape",
+    "the propose path files them (`raw`) and the shape the read path hands the card",
+    "(`resolved`). The key difference from the finance fixtures is the column ids:",
+    "every column added through add_column mints a uuid, so a cell map key is",
+    "`0a1b2c3d…` and the card's Field column used to read back that truncated id.",
+    "The read path resolves the names at display time; the stored payload keeps",
+    "the ids the apply path needs. Values are neutral stand-ins; the shape is not."
+  ],
+  "target": {
+    "type": "database-row",
+    "domainSlug": "financial",
+    "databaseId": "bottles-db",
+    "rowId": "1f0e2d3c-4b5a-4968-8776-655443322110"
+  },
+  "ids": {
+    "bottle": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+    "volume": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+    "opened": "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f"
+  },
+  "raw": {
+    "op": "upsert",
+    "databaseName": "Bottles",
+    "rowLabel": null,
+    "previousCells": {
+      "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d": "Kleintjie",
+      "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e": 750,
+      "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f": "2026-10-01"
+    },
+    "cells": {
+      "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d": "Kleintjie",
+      "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e": 1000,
+      "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f": "2026-10-01"
+    },
+    "expectedUpdatedAt": "2026-10-22T08:00:00.000Z"
+  },
+  "resolved": {
+    "op": "upsert",
+    "databaseName": "Bottles",
+    "rowLabel": null,
+    "previousCells": {
+      "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d": "Kleintjie",
+      "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e": 750,
+      "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f": "2026-10-01"
+    },
+    "cells": {
+      "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d": "Kleintjie",
+      "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e": 1000,
+      "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f": "2026-10-01"
+    },
+    "expectedUpdatedAt": "2026-10-22T08:00:00.000Z",
+    "columnNames": {
+      "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d": "Bottle",
+      "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e": "Volume",
+      "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f": "Opened On"
+    }
+  },
+  "batch": {
+    "target": {
+      "type": "database-batch",
+      "domainSlug": "financial",
+      "databaseId": "bottles-db"
+    },
+    "body": {
+      "op": "insert-rows",
+      "databaseName": "Bottles",
+      "rows": [
+        {
+          "id": "2a41f7c9-58d3-4a1e-9c7b-6f2d8e04b391",
+          "rowLabel": "Kleintjie",
+          "cells": {
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d": "Kleintjie",
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e": 750,
+            "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f": "2026-10-01"
+          }
+        },
+        {
+          "id": "7b9c0e12-3d64-4f58-8a02-15c7e9b3467d",
+          "rowLabel": null,
+          "cells": {
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d": "Wine",
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e": 1500,
+            "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f": "2026-10-02"
+          }
+        }
+      ]
+    },
+    "resolved": {
+      "op": "insert-rows",
+      "databaseName": "Bottles",
+      "rows": [
+        {
+          "id": "2a41f7c9-58d3-4a1e-9c7b-6f2d8e04b391",
+          "rowLabel": "Kleintjie",
+          "cells": {
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d": "Kleintjie",
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e": 750,
+            "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f": "2026-10-01"
+          }
+        },
+        {
+          "id": "7b9c0e12-3d64-4f58-8a02-15c7e9b3467d",
+          "rowLabel": null,
+          "cells": {
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d": "Wine",
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e": 1500,
+            "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f": "2026-10-02"
+          }
+        }
+      ],
+      "columnNames": {
+        "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d": "Bottle",
+        "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e": "Volume",
+        "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f": "Opened On"
+      }
+    }
+  }
+}

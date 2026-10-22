@@ -42,6 +42,8 @@ type ChangeRow = {
   before: unknown;
   after: unknown;
   changed: boolean;
+  /** The field key's readable name (a column name); the raw id stays as the tooltip. */
+  keyLabel?: string | null;
   /** A relation cell's readable face; the raw id stays as the tooltip. */
   beforeLabel?: string | null;
   afterLabel?: string | null;
@@ -49,6 +51,8 @@ type ChangeRow = {
 
 /** Column id to display label, as resolved for this Decision when it was read. */
 type CellLabelMap = Record<string, string> | null;
+/** Column id to column name, read for this Decision's field keys. */
+type ColumnNameMap = Record<string, string> | null;
 
 export function DecisionBody({
   target,
@@ -133,6 +137,7 @@ function BatchBody({
   }
   const databaseName =
     typeof body.databaseName === "string" && body.databaseName ? body.databaseName : "database";
+  const columnNames = stringMap(body.columnNames);
   const rows = body.rows.filter(isRecord);
   return (
     <>
@@ -148,7 +153,7 @@ function BatchBody({
           <ChangeTable
             key={typeof row.id === "string" ? row.id : `row-${index}`}
             lead={label}
-            rows={rowsFrom(null, cells, "after", { after: cellLabels })}
+            rows={rowsFrom(null, cells, "after", { after: cellLabels, columns: columnNames })}
             mode="after"
             lookups={lookups}
           />
@@ -217,6 +222,20 @@ function ViewBody({ body }: { body: Record<string, unknown> }) {
       : typeof body.boardSlug === "string"
         ? `the ${body.boardSlug} dashboard`
         : "";
+  const measureColumn =
+    typeof spec.measureColumnId === "string" && spec.measureColumnId
+      ? labelForName(
+          spec.measureColumnId,
+          typeof spec.measureColumnName === "string" ? spec.measureColumnName : null,
+        )
+      : "";
+  const groupBy =
+    typeof spec.groupBy === "string" && spec.groupBy
+      ? labelForName(
+          spec.groupBy,
+          typeof spec.groupByName === "string" ? spec.groupByName : null,
+        )
+      : "";
   return (
     <div className="decision-proposal">
       <p className="decision-lead">
@@ -237,16 +256,14 @@ function ViewBody({ body }: { body: Record<string, unknown> }) {
                 divides by, and on a locked board this line is the operator's
                 only description of the card they are approving. */}
             {typeof spec.per === "string" && spec.per ? ` per ${spec.per}` : ""}
-            {typeof spec.measureColumnId === "string" && spec.measureColumnId
-              ? ` of ${spec.measureColumnId}`
-              : ""}
+            {measureColumn ? ` of ${measureColumn}` : ""}
           </p>
         </div>
         <div className="settings-field">
           <span>Group by</span>
           <p className="muted">
-            {typeof spec.groupBy === "string" && spec.groupBy
-              ? spec.groupBy
+            {groupBy
+              ? groupBy
               : typeof spec.timeBucket === "string" && spec.timeBucket
                 ? `time (${spec.timeBucket})`
                 : "everything in the window"}
@@ -283,6 +300,7 @@ function DatabaseBody({
   const op = typeof body.op === "string" ? body.op : "";
   const cellLabels = stringMap(body.cellLabels);
   const previousCellLabels = stringMap(body.previousCellLabels);
+  const columnNames = stringMap(body.columnNames);
   const databaseName =
     typeof body.databaseName === "string" && body.databaseName
       ? body.databaseName
@@ -332,7 +350,10 @@ function DatabaseBody({
     (isRecord(previousParsed) && !("op" in previousParsed) ? previousParsed : null);
 
   if (op === "delete") {
-    const rows = rowsFrom(before, null, "before", { before: previousCellLabels });
+    const rows = rowsFrom(before, null, "before", {
+      before: previousCellLabels,
+      columns: columnNames,
+    });
     return (
       <ChangeTable
         lead={`Delete this row from ${databaseName}.`}
@@ -348,7 +369,7 @@ function DatabaseBody({
     return (
       <ChangeTable
         lead={`Add a row to ${databaseName}.`}
-        rows={rowsFrom(null, after, "after", { after: cellLabels })}
+        rows={rowsFrom(null, after, "after", { after: cellLabels, columns: columnNames })}
         mode="after"
         lookups={lookups}
       />
@@ -358,7 +379,11 @@ function DatabaseBody({
   return (
     <ChangeTable
       lead={`Update a row in ${databaseName}.`}
-      rows={rowsFrom(before, after, "diff", { before: previousCellLabels, after: cellLabels })}
+      rows={rowsFrom(before, after, "diff", {
+        before: previousCellLabels,
+        after: cellLabels,
+        columns: columnNames,
+      })}
       mode="diff"
       lookups={lookups}
     />
@@ -645,6 +670,7 @@ function GenericBody({
     "cells",
     "previousCellLabels",
     "cellLabels",
+    "columnNames",
   ]);
   const rows = rowsFrom(priorRec, body, priorRec ? "diff" : "after").filter(
     (row) => !hidden.has(row.key),
@@ -731,8 +757,12 @@ function ChangeRowView({
 }) {
   return (
     <tr className={mode === "diff" && row.changed ? "decision-row--changed" : undefined}>
-      <th scope="row" className="decision-fields__name">
-        {FIELD_LABELS[row.key] ?? labelize(row.key)}
+      <th
+        scope="row"
+        className="decision-fields__name"
+        title={row.keyLabel && row.keyLabel !== row.key ? row.key : undefined}
+      >
+        {FIELD_LABELS[row.key] ?? labelForName(row.key, row.keyLabel)}
       </th>
       {mode !== "after" ? (
         <td className={mode === "diff" && row.changed ? "decision-value--was" : undefined}>
@@ -911,7 +941,7 @@ function rowsFrom(
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null,
   mode: "diff" | "after" | "before",
-  labels?: { before?: CellLabelMap; after?: CellLabelMap },
+  labels?: { before?: CellLabelMap; after?: CellLabelMap; columns?: ColumnNameMap },
 ): ChangeRow[] {
   const keys: string[] = [];
   const seen = new Set<string>();
@@ -941,6 +971,7 @@ function rowsFrom(
       before: beforeValue,
       after: afterValue,
       changed,
+      keyLabel: labels?.columns?.[key] ?? null,
       beforeLabel: labels?.before?.[key] ?? null,
       afterLabel: labels?.after?.[key] ?? null,
     };
@@ -1024,6 +1055,20 @@ function formatIso(value: string): string {
   if (Number.isNaN(date.getTime())) return value;
   if (value.length <= 10) return date.toLocaleDateString(undefined, { dateStyle: "medium" });
   return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+/**
+ * A field key's human face. The read path supplies the column's own name beside
+ * the id; a name written in ordinary lower-case prose ("date", "due_date") is
+ * labelized the way an id would be, while a name the operator already cased
+ * ("iPhone", "Due Date") is left exactly as written. Without a name, the key is
+ * the best we have — an id, and the card labels it as one.
+ */
+function labelForName(key: string, name?: string | null): string {
+  const trimmed = name?.trim();
+  if (!trimmed || trimmed === key) return labelize(key);
+  if (/^[a-z0-9][a-z0-9 _-]*$/.test(trimmed)) return labelize(trimmed);
+  return trimmed;
 }
 
 function labelize(key: string): string {
