@@ -35,6 +35,8 @@
  * 13. A second line — the handle paints a border or a fill of its own, so the one
  *     hairline between the panes becomes two.
  * 14. The page or the dock spills sideways once the column is at either end.
+ * 15. Hover is dressed as a second control — an accent bar under a passing
+ *     pointer, where the resize cursor alone is the whole offer.
  *
  * The width is session state on the dock provider, like the dock's side, so this
  * page reloads into the shipped arrangement every time: the rig never has to

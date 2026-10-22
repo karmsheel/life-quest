@@ -145,6 +145,7 @@ const SAMPLE = `(() => {
           background: dividerStyle.backgroundColor,
           cursor: dividerStyle.cursor,
           focused: document.activeElement === divider,
+          hovered: divider.matches(":hover"),
           bar: { left: num(bar.left), width: num(bar.width), opacity: num(bar.opacity) }
         }
       : { found: false },
@@ -546,6 +547,42 @@ async function main() {
     );
     screenshots.push(await shot("chat-divider-shipped.png"));
 
+    // ── 1b. The hover: the cursor is the offer, and nothing is drawn ───────
+    at("hovering the seam");
+    const hoverPoint = await handleCentre();
+    mouse("mouseMove", hoverPoint.x, hoverPoint.y);
+    // The bar has no hover state to settle into; this only lets the pointer's
+    // own :hover land, so the sample below is not reading the frame before it.
+    await sleep(220);
+    const hover = await settled(0);
+    hover.vaultName = vaultName;
+    checkArrangement("hover", hover, "right");
+    check(
+      "hover: the pointer is really on the handle",
+      hover.divider.hovered === true,
+      `handle :hover ${hover.divider.hovered}`,
+    );
+    check(
+      "hover: the handle still offers the column-resize cursor",
+      hover.divider.cursor === "col-resize",
+      `cursor ${JSON.stringify(hover.divider.cursor)}`,
+    );
+    check(
+      "hover: the handle draws no accent bar",
+      hover.divider.bar.opacity === 0,
+      `bar opacity ${hover.divider.bar.opacity}`,
+    );
+    screenshots.push(
+      await shot("chat-divider-hover.png", {
+        x: Math.max(0, shipped.seam - 60),
+        y: Math.max(0, shipped.tokens.frame + 60),
+        width: 120,
+        height: 160,
+      }),
+    );
+    await park();
+    await sleep(80);
+
     // ── 2. The drag: the seam follows the hand, 1:1 and the right way round ─
     at("drag the trailing dock narrower");
     const narrower = await dragBy(40, {
@@ -904,6 +941,7 @@ async function main() {
       vaultName,
       tokens: shipped.tokens,
       shipped,
+      hover,
       narrower,
       afterNarrower,
       floor,

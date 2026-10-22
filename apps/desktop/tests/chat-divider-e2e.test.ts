@@ -69,6 +69,7 @@ type State = {
     background?: string;
     cursor?: string;
     focused?: boolean;
+    hovered?: boolean;
     bar?: { left: number; width: number; opacity: number };
   };
   seam: number;
@@ -89,6 +90,7 @@ type Report = {
   vaultName: string;
   tokens: State["tokens"];
   shipped: State;
+  hover: State;
   narrower: { from: number; to: number; travelled: number };
   afterNarrower: State;
   floor: State;
@@ -318,6 +320,7 @@ describe("chat dock divider", () => {
 
     const {
       shipped,
+      hover,
       afterNarrower,
       floor,
       ceiling,
@@ -350,6 +353,25 @@ describe("chat dock divider", () => {
       shipped.divider.bar!.opacity,
       0,
       "the handle's bar is drawn at rest",
+    );
+
+    // The hover is the offer, not a light show: the resize cursor says the seam
+    // moves, and the accent bar stays out of the way until the hand is on it.
+    assertArrangement("hover", hover, "right");
+    assert.equal(
+      hover.divider.hovered,
+      true,
+      "the pointer never landed on the handle, so the hover claim proves nothing",
+    );
+    assert.equal(
+      hover.divider.cursor,
+      "col-resize",
+      "the handle does not offer the column-resize cursor on hover",
+    );
+    assert.equal(
+      hover.divider.bar!.opacity,
+      0,
+      "the handle's bar glows on hover",
     );
 
     // The contract itself, recomputed from the frame the report measured.

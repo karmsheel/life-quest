@@ -7,8 +7,9 @@ import type { ChatColumnDividerProps } from "./useChatColumn";
  * The studio's panes abut, and the only line between them is the sheet's own
  * hairline — so the handle is deliberately not a second line: at rest it is an
  * invisible strip straddling the seam, and the seam itself is what the operator
- * sees. It steps up to an accent bar on hover, on focus and under the hand, the
- * same mark the board uses for a card's width, because it is the same offer.
+ * sees. The column-resize cursor is the offer to drag it; an accent bar appears
+ * only on focus and under the hand, the same mark the board uses for a card's
+ * width, because it is the same offer. Hover alone draws nothing.
  *
  * It is drawn a little to the page's side of the seam rather than centred on it.
  * Whichever pane sits to the left of the seam scrolls there — the page's own
