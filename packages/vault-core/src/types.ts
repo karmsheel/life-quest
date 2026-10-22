@@ -116,6 +116,13 @@ export type DatabaseDecisionBody = {
   cellLabels?: Record<string, string>;
   /** Same, for `previousCells`. */
   previousCellLabels?: Record<string, string>;
+  /**
+   * Read-time column names for the field keys this body carries, keyed by
+   * column id. A cell map is keyed by id, and an id minted by add_column is a
+   * uuid: without this the card's "Field" column reads `8f3d2b41…` instead of
+   * the column's name. Not a write payload, like the two above.
+   */
+  columnNames?: Record<string, string>;
   /** add-column only, resolved on read: the relation target's name. */
   relationDatabaseName?: string;
 };
@@ -131,6 +138,8 @@ export type DatabaseBatchDecisionBody = {
     /** Read-time relation labels for `cells`, keyed by column id. Not a write payload. */
     cellLabels?: Record<string, string>;
   }>;
+  /** Read-time column names for the field keys the rows carry, keyed by id. */
+  columnNames?: Record<string, string>;
 };
 
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;

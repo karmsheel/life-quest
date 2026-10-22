@@ -30,6 +30,14 @@
  *     Mileage", "Line · Distance", "Scenario 1", and the mapping's "Mileage".
  *  8. The ids are neither hidden nor lost: each block row and mapped-column cell
  *     keeps its raw id in its tooltip, and the exact payload is unchanged.
+ *  9. An operator-created database names its FIELDS by id too: every column added
+ *     through add_column is a uuid, and as filed the card's Field column reads
+ *     `0a1b2c3d…`. The read path's `columnNames` makes it read "Bottle",
+ *     "Volume", "Opened On", with the uuid kept as the field's tooltip — on a
+ *     single-row write and on every table of a batch insert alike.
+ * 10. A dashboard-view Decision names the columns in its Measure and Group by
+ *     rows the same way: as filed it reads "sum of 1b2c3d4e…", as read
+ *     "sum of Volume", and the stored spec keeps the ids.
  *
  * NOT covered here: that the main process resolves those names in the first
  * place (the vault-core suites that did that over a real vault went with the
@@ -62,6 +70,13 @@ const targets = JSON.parse(
 const batch = JSON.parse(
   fs.readFileSync(path.join(here, "fixtures/decision-batch.json"), "utf8"),
 );
+// An operator-created database: every column id is a uuid, so the cell map's
+// keys — the card's Field labels — are uuid strings rather than the finance
+// kit's readable ids. This is the reported "fields show their ID" case.
+const custom = JSON.parse(
+  fs.readFileSync(path.join(here, "fixtures/decision-custom-fields.json"), "utf8"),
+);
+const view = JSON.parse(fs.readFileSync(path.join(here, "fixtures/decision-view.json"), "utf8"));
 
 /** Everything an operator can read, minus the collapsed "Exact proposal". */
 const READABLE = `(() => {
@@ -80,13 +95,17 @@ const READABLE = `(() => {
 const SAMPLE = `(() => {
   const text = (el) => ((el && el.textContent) || "").trim();
   const read = ${READABLE};
-  const rows = Array.from(document.querySelectorAll(".decision-fields tr")).map((tr) => ({
-    field: text(tr.querySelector("th")),
-    cells: Array.from(tr.querySelectorAll("td")).map((td) => ({
-      text: text(td),
-      title: td.querySelector("[title]") ? td.querySelector("[title]").getAttribute("title") : null
-    }))
-  }));
+  const rows = Array.from(document.querySelectorAll(".decision-fields tbody tr")).map((tr) => {
+    const th = tr.querySelector("th");
+    return {
+      field: text(th),
+      fieldTitle: th ? th.getAttribute("title") : null,
+      cells: Array.from(tr.querySelectorAll("td")).map((td) => ({
+        text: text(td),
+        title: td.querySelector("[title]") ? td.querySelector("[title]").getAttribute("title") : null
+      }))
+    };
+  });
   const inbox = document.querySelector(".decisions-inbox");
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -150,13 +169,17 @@ const SAMPLE_BATCH = `(() => {
   const sections = Array.from(document.querySelectorAll(".decision-section")).map((section) => ({
     lead: text(section.querySelector(".decision-lead")),
     columns: Array.from(section.querySelectorAll("table.decision-fields thead th")).map((th) => text(th)),
-    rows: Array.from(section.querySelectorAll("table.decision-fields tbody tr")).map((tr) => ({
-      field: text(tr.querySelector("th")),
-      cells: Array.from(tr.querySelectorAll("td")).map((td) => ({
-        text: text(td),
-        title: td.querySelector("[title]") ? td.querySelector("[title]").getAttribute("title") : null
-      }))
-    }))
+    rows: Array.from(section.querySelectorAll("table.decision-fields tbody tr")).map((tr) => {
+      const th = tr.querySelector("th");
+      return {
+        field: text(th),
+        fieldTitle: th ? th.getAttribute("title") : null,
+        cells: Array.from(tr.querySelectorAll("td")).map((td) => ({
+          text: text(td),
+          title: td.querySelector("[title]") ? td.querySelector("[title]").getAttribute("title") : null
+        }))
+      };
+    })
   }));
   const inbox = document.querySelector(".decisions-inbox");
   return {
@@ -164,6 +187,22 @@ const SAMPLE_BATCH = `(() => {
     inboxWidth: inbox ? Math.round(inbox.getBoundingClientRect().width) : null,
     lead: text(document.querySelector(".decision-proposal .decision-lead")),
     sections,
+    readable: read.readable,
+    exactPayload: read.exactPayload
+  };
+})()`;
+
+/** A dashboard-view card: the Measure and Group by rows are its only prose. */
+const SAMPLE_VIEW = `(() => {
+  const text = (el) => ((el && el.textContent) || "").trim();
+  const read = ${READABLE};
+  const fields = Array.from(document.querySelectorAll(".settings-field")).map((row) => ({
+    label: text(row.querySelector("span")),
+    value: text(row.querySelector("p"))
+  }));
+  return {
+    lead: text(document.querySelector(".decision-lead")),
+    fields,
     readable: read.readable,
     exactPayload: read.exactPayload
   };
@@ -234,6 +273,11 @@ const SHORT_ID = /[0-9a-f]{8}…/;
 const SLUG_ID = /\b[a-z]+-[a-z-]{4,}\b/;
 
 const rowFor = (sample, field) => sample.rows.find((row) => row.field === field);
+
+/** Two field→name maps are equal regardless of the order the card printed them. */
+const sameNameMap = (actual, expected) =>
+  Object.keys(actual).length === Object.keys(expected).length &&
+  Object.entries(expected).every(([key, value]) => actual[key] === value);
 
 async function main() {
   // The rig opens a real window on the operator's desktop: paint it in the
@@ -544,6 +588,172 @@ async function main() {
     failure("the batch card rewrote the body it was handed");
   }
 
+  // ── an operator database: the Field label is a uuid column id ────────────
+  // The finance kit's column ids are words ("amount", "category"), so the table
+  // above never showed this defect. Every column added through add_column mints
+  // a uuid, and the cell map key — the Field label — is that uuid.
+  const customRaw = await render(
+    win,
+    custom.target,
+    custom.raw,
+    custom.raw.previousCells,
+    SAMPLE,
+    "custom row (as filed)",
+  );
+  checks.customRawFields = customRaw.rows.map((row) => row.field);
+  checks.customRawShowsShortId = customRaw.rows.some((row) => SHORT_ID.test(row.field));
+  if (!checks.customRawShowsShortId) {
+    failure("the operator database as filed no longer shows a field id — the before state is gone");
+  }
+
+  const customResolved = await render(
+    win,
+    custom.target,
+    custom.resolved,
+    custom.resolved.previousCells,
+    SAMPLE,
+    "custom row (as read)",
+  );
+  checks.customFieldNames = customResolved.rows.map((row) => row.field);
+  checks.customFieldTitles = customResolved.rows.map((row) => row.fieldTitle);
+  const wantCustomFields = ["Bottle", "Volume", "Opened On"];
+  // A diff card prints the changed rows first and the unchanged ones under a
+  // disclosure, so the field order is the card's, not the payload's. The claim
+  // is which fields are named, not the order they were printed in.
+  if (
+    JSON.stringify([...checks.customFieldNames].sort()) !==
+    JSON.stringify([...wantCustomFields].sort())
+  ) {
+    failure(
+      `the operator database fields read ${JSON.stringify(checks.customFieldNames)}, expected ${JSON.stringify(wantCustomFields)}`,
+    );
+  }
+  // The ids are not gone, they are the field label's tooltip, so the operator
+  // can still check the proposal against the column the vault will write.
+  const wantCustomIds = {
+    Bottle: custom.ids.bottle,
+    Volume: custom.ids.volume,
+    "Opened On": custom.ids.opened,
+  };
+  const customTitles = Object.fromEntries(
+    customResolved.rows.map((row) => [row.field, row.fieldTitle]),
+  );
+  if (!sameNameMap(customTitles, wantCustomIds)) {
+    failure(
+      `the operator database field tooltips are ${JSON.stringify(customTitles)}, expected ${JSON.stringify(wantCustomIds)}`,
+    );
+  }
+  checks.customReadableHoldsNoShortId = !SHORT_ID.test(customResolved.readable);
+  if (!checks.customReadableHoldsNoShortId) {
+    failure(`the operator database card still shows a field id: ${customResolved.readable.slice(0, 240)}`);
+  }
+  checks.customExactPayloadUnchanged =
+    JSON.stringify(
+      customResolved.exactPayload ? JSON.parse(customResolved.exactPayload) : null,
+    ) === JSON.stringify(custom.resolved);
+  if (!checks.customExactPayloadUnchanged) {
+    failure("the operator database card rewrote the body it was handed");
+  }
+
+  const customBatchRaw = await render(
+    win,
+    custom.batch.target,
+    custom.batch.body,
+    null,
+    SAMPLE_BATCH,
+    "custom batch (as filed)",
+  );
+  checks.customBatchRawFields = customBatchRaw.sections.flatMap((section) =>
+    section.rows.map((row) => row.field),
+  );
+  checks.customBatchRawShowsShortId = checks.customBatchRawFields.some((field) =>
+    SHORT_ID.test(field),
+  );
+  if (!checks.customBatchRawShowsShortId) {
+    failure("the operator batch as filed no longer shows a field id — the before state is gone");
+  }
+
+  const customBatch = await render(
+    win,
+    custom.batch.target,
+    custom.batch.resolved,
+    null,
+    SAMPLE_BATCH,
+    "custom batch (as read)",
+  );
+  checks.customBatchFields = customBatch.sections.map((section) =>
+    section.rows.map((row) => row.field),
+  );
+  checks.customBatchFieldTitles = customBatch.sections.map((section) =>
+    section.rows.map((row) => row.fieldTitle),
+  );
+  customBatch.sections.forEach((section, index) => {
+    if (JSON.stringify(section.rows.map((row) => row.field)) !== JSON.stringify(wantCustomFields)) {
+      failure(
+        `custom batch row ${index + 1} fields read ${JSON.stringify(section.rows.map((row) => row.field))}, expected ${JSON.stringify(wantCustomFields)}`,
+      );
+    }
+    const titles = Object.fromEntries(
+      section.rows.map((row) => [row.field, row.fieldTitle]),
+    );
+    if (!sameNameMap(titles, wantCustomIds)) {
+      failure(`custom batch row ${index + 1} field tooltips do not hold the raw column ids`);
+    }
+  });
+  checks.customBatchReadableHoldsNoShortId = !SHORT_ID.test(customBatch.readable);
+  if (!checks.customBatchReadableHoldsNoShortId) {
+    failure(`the operator batch card still shows a field id: ${customBatch.readable.slice(0, 240)}`);
+  }
+  checks.customBatchExactPayloadUnchanged =
+    JSON.stringify(
+      customBatch.exactPayload ? JSON.parse(customBatch.exactPayload) : null,
+    ) === JSON.stringify(custom.batch.resolved);
+  if (!checks.customBatchExactPayloadUnchanged) {
+    failure("the operator batch card rewrote the body it was handed");
+  }
+
+  // ── a dashboard view: Measure and Group by name columns too ──────────────
+  const viewRaw = await render(
+    win,
+    view.target,
+    view.raw,
+    null,
+    SAMPLE_VIEW,
+    "view (as filed)",
+  );
+  checks.viewRawFields = viewRaw.fields;
+  checks.viewRawShowsShortId = SHORT_ID.test(viewRaw.readable);
+  if (!checks.viewRawShowsShortId) {
+    failure("the view as filed no longer shows a column id — the before state is gone");
+  }
+
+  const viewResolved = await render(
+    win,
+    view.target,
+    view.resolved,
+    null,
+    SAMPLE_VIEW,
+    "view (as read)",
+  );
+  checks.viewFields = viewResolved.fields;
+  const viewField = (label) => viewResolved.fields.find((field) => field.label === label)?.value;
+  checks.viewMeasure = viewField("Measure") ?? null;
+  checks.viewGroupBy = viewField("Group by") ?? null;
+  if (checks.viewMeasure !== "sum of Volume") {
+    failure(`the view's Measure read ${JSON.stringify(checks.viewMeasure)}, expected "sum of Volume"`);
+  }
+  if (checks.viewGroupBy !== "Bottle") {
+    failure(`the view's Group by read ${JSON.stringify(checks.viewGroupBy)}, expected "Bottle"`);
+  }
+  checks.viewReadableHoldsNoShortId = !SHORT_ID.test(viewResolved.readable);
+  if (!checks.viewReadableHoldsNoShortId) {
+    failure(`the view card still shows a column id: ${viewResolved.readable.slice(0, 240)}`);
+  }
+  checks.viewExactPayloadUnchanged =
+    JSON.stringify(viewResolved.exactPayload ? JSON.parse(viewResolved.exactPayload) : null) ===
+    JSON.stringify(view.resolved);
+  if (!checks.viewExactPayloadUnchanged) failure("the view card rewrote the body it was handed");
+
   checks.consoleErrors = consoleErrors;
 
   const report = {
@@ -553,6 +763,8 @@ async function main() {
       "fixtures/decision-row.json",
       "fixtures/decision-page-mapping.json",
       "fixtures/decision-batch.json",
+      "fixtures/decision-custom-fields.json",
+      "fixtures/decision-view.json",
     ],
     viewport: resolved.viewport,
     checks,
@@ -564,6 +776,12 @@ async function main() {
     mapping,
     batchRaw,
     batchResolved,
+    customRaw,
+    customResolved,
+    customBatchRaw,
+    customBatch,
+    viewRaw,
+    viewResolved,
   };
 
   fs.mkdirSync(artifactsDir, { recursive: true });
@@ -593,6 +811,12 @@ async function main() {
   console.log(
     `batch as read:  [${checks.batchResolvedRelations.map((cell) => `${cell.field}=${cell.text}`).join("  |  ")}]`,
   );
+  console.log(`fields as filed: ${JSON.stringify(checks.customRawFields)}`);
+  console.log(`fields as read:  ${JSON.stringify(checks.customFieldNames)}`);
+  console.log(`batch fields as filed: ${JSON.stringify(checks.customBatchRawFields)}`);
+  console.log(`batch fields as read:  ${JSON.stringify(checks.customBatchFields)}`);
+  console.log(`view as filed:  ${viewRaw.fields.map((f) => `${f.label}=${f.value}`).join("  |  ")}`);
+  console.log(`view as read:   ${viewResolved.fields.map((f) => `${f.label}=${f.value}`).join("  |  ")}`);
   console.log(`failures: ${errors.length === 0 ? "none" : errors.join("; ")}`);
 
   win.destroy();

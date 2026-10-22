@@ -19,6 +19,14 @@ const TARGETS = JSON.parse(
   page: { ids: { databaseId: string; mileageColumnId: string; distanceColumnId: string; assumptionSetId: string } };
   mapping: { target: { mappingId: string } };
 };
+const CUSTOM = JSON.parse(
+  fs.readFileSync(path.join(desktopRoot, "e2e/fixtures/decision-custom-fields.json"), "utf8"),
+) as {
+  ids: { bottle: string; volume: string; opened: string };
+  raw: unknown;
+  resolved: unknown;
+  batch: { body: unknown; resolved: unknown };
+};
 
 /**
  * The rig renders the real DecisionBody in a real layout engine, so it needs the
@@ -63,7 +71,7 @@ type Sample = {
   lead: string;
   readable: string;
   exactPayload: string | null;
-  rows: { field: string; cells: Cell[] }[];
+  rows: { field: string; fieldTitle: string | null; cells: Cell[] }[];
 };
 
 type BatchSample = {
@@ -72,7 +80,7 @@ type BatchSample = {
   sections: {
     lead: string;
     columns: string[];
-    rows: { field: string; cells: Cell[] }[];
+    rows: { field: string; fieldTitle: string | null; cells: Cell[] }[];
   }[];
   readable: string;
   exactPayload: string | null;
@@ -99,6 +107,25 @@ type Report = {
     batchResolvedRelations: { field: string; text: string; title: string | null }[];
     batchReadableHoldsNoShortId: boolean;
     batchResolvedExactPayloadUnchanged: boolean;
+    customRawFields: string[];
+    customRawShowsShortId: boolean;
+    customFieldNames: string[];
+    customFieldTitles: (string | null)[];
+    customReadableHoldsNoShortId: boolean;
+    customExactPayloadUnchanged: boolean;
+    customBatchRawFields: string[];
+    customBatchRawShowsShortId: boolean;
+    customBatchFields: string[][];
+    customBatchFieldTitles: (string | null)[][];
+    customBatchReadableHoldsNoShortId: boolean;
+    customBatchExactPayloadUnchanged: boolean;
+    viewRawFields: { label: string; value: string }[];
+    viewRawShowsShortId: boolean;
+    viewFields: { label: string; value: string }[];
+    viewMeasure: string | null;
+    viewGroupBy: string | null;
+    viewReadableHoldsNoShortId: boolean;
+    viewExactPayloadUnchanged: boolean;
   };
   raw: Sample;
   resolved: Sample;
@@ -108,6 +135,12 @@ type Report = {
   mapping: { lead: string; rows: MappingRow[]; readable: string };
   batchRaw: BatchSample;
   batchResolved: BatchSample;
+  customRaw: Sample;
+  customResolved: Sample;
+  customBatchRaw: BatchSample;
+  customBatch: BatchSample;
+  viewRaw: { fields: { label: string; value: string }[]; readable: string; exactPayload: string | null };
+  viewResolved: { fields: { label: string; value: string }[]; readable: string; exactPayload: string | null };
 };
 
 /** "47083ecb…" — the shortId the card falls back to for a raw id. */
@@ -284,5 +317,131 @@ describe("decision body labels", () => {
       batch.body,
       "the exact payload is not the filed body",
     );
+  });
+
+  it("names an operator database's fields by their column names, not their ids", async (t) => {
+    if (!(await devServerUp())) {
+      t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
+      return;
+    }
+
+    assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
+    const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
+    const wantFields = ["Bottle", "Volume", "Opened On"];
+    const wantTitles = {
+      Bottle: CUSTOM.ids.bottle,
+      Volume: CUSTOM.ids.volume,
+      "Opened On": CUSTOM.ids.opened,
+    };
+
+    // The reproduced defect: as filed, the Field column is the column id. This
+    // is a uuid the add_column path minted, not the finance kit's readable id.
+    assert.equal(
+      report.checks.customRawShowsShortId,
+      true,
+      "the filed operator database shows no field id to fix",
+    );
+    assert.deepEqual(
+      report.checks.customRawFields.map((field) => SHORT_ID.test(field)),
+      [true, true, true],
+      "the filed field labels are not the raw column ids",
+    );
+
+    // As read, each row's field is the column name, and the id it stands for is
+    // still reachable in that header's tooltip. A diff card prints its changed
+    // row first, so the card's order is not the payload's: compare the set.
+    assert.deepEqual(
+      [...report.customResolved.rows.map((row) => row.field)].sort(),
+      [...wantFields].sort(),
+    );
+    assert.deepEqual(
+      Object.fromEntries(report.customResolved.rows.map((row) => [row.field, row.fieldTitle])),
+      wantTitles,
+      "the field labels do not keep the raw column ids",
+    );
+    assert.doesNotMatch(
+      report.customResolved.readable,
+      SHORT_ID,
+      "an operator database field id is still on screen",
+    );
+    assert.equal(
+      report.checks.customExactPayloadUnchanged,
+      true,
+      "the row card rewrote the body it was handed",
+    );
+    assert.deepEqual(JSON.parse(report.customResolved.exactPayload ?? "null"), CUSTOM.resolved);
+
+    // A batch insert keys every row's cells the same way; each of its tables
+    // must show the same field names, not the ids.
+    assert.equal(
+      report.checks.customBatchRawShowsShortId,
+      true,
+      "the filed operator batch shows no field id to fix",
+    );
+    report.customBatch.sections.forEach((section, index) => {
+      assert.deepEqual(
+        section.rows.map((row) => row.field),
+        wantFields,
+        `batch row ${index + 1} is not labelled by column name`,
+      );
+      assert.deepEqual(
+        Object.fromEntries(section.rows.map((row) => [row.field, row.fieldTitle])),
+        wantTitles,
+        `batch row ${index + 1} lost its raw column ids`,
+      );
+    });
+    assert.doesNotMatch(
+      report.customBatch.readable,
+      SHORT_ID,
+      "an operator batch field id is still on screen",
+    );
+    assert.equal(
+      report.checks.customBatchExactPayloadUnchanged,
+      true,
+      "the batch card rewrote the body it was handed",
+    );
+    assert.deepEqual(
+      JSON.parse(report.customBatch.exactPayload ?? "null"),
+      CUSTOM.batch.resolved,
+    );
+  });
+
+  it("names the columns a dashboard view measures and groups by", async (t) => {
+    if (!(await devServerUp())) {
+      t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
+      return;
+    }
+
+    assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
+    const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
+    const VIEW = JSON.parse(
+      fs.readFileSync(path.join(desktopRoot, "e2e/fixtures/decision-view.json"), "utf8"),
+    ) as { ids: { bottle: string; volume: string }; resolved: unknown };
+
+    // As filed, both rows print the column id; the card has no other prose to
+    // tell the operator what the card reads.
+    assert.equal(
+      report.checks.viewRawShowsShortId,
+      true,
+      "the filed view shows no column id to fix",
+    );
+    const rawMeasure = report.viewRaw.fields.find((field) => field.label === "Measure")?.value;
+    const rawGroupBy = report.viewRaw.fields.find((field) => field.label === "Group by")?.value;
+    assert.match(rawMeasure ?? "", SHORT_ID, "the filed Measure no longer shows the column id");
+    assert.match(rawGroupBy ?? "", SHORT_ID, "the filed Group by no longer shows the column id");
+
+    // As read, the names the read path added stand where the ids stood.
+    assert.equal(report.checks.viewMeasure, "sum of Volume");
+    assert.equal(report.checks.viewGroupBy, "Bottle");
+    assert.doesNotMatch(report.viewResolved.readable, SHORT_ID, "a view column id is still on screen");
+    assert.equal(
+      report.checks.viewExactPayloadUnchanged,
+      true,
+      "the view card rewrote the spec it was handed",
+    );
+    assert.deepEqual(JSON.parse(report.viewResolved.exactPayload ?? "null"), VIEW.resolved);
+    // The resolved spec keeps both ids the approve path will save.
+    assert.match(JSON.stringify(VIEW.resolved), new RegExp(VIEW.ids.volume));
+    assert.match(JSON.stringify(VIEW.resolved), new RegExp(VIEW.ids.bottle));
   });
 });

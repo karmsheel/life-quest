@@ -1,0 +1,89 @@
+{
+  "_comment": [
+    "A dashboard-view Decision for a locked board, in the shape the propose path",
+    "files it (`raw`) and the shape the read path hands the card (`resolved`).",
+    "The spec names the number column it sums and the column it groups by; both",
+    "are uuids of an operator-created database, so the card's Measure and Group by",
+    "rows used to read `of 1b2c3d4e…` and `1b2c3d4e…`. The read path adds the",
+    "column names as siblings inside the spec; the stored spec keeps the ids."
+  ],
+  "target": {
+    "type": "view",
+    "domainSlug": "financial",
+    "viewId": ""
+  },
+  "ids": {
+    "bottle": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+    "volume": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+  },
+  "raw": {
+    "op": "save-view",
+    "domainSlug": "financial",
+    "spec": {
+      "schemaVersion": 1,
+      "databaseId": "bottles-db",
+      "title": "Bottles",
+      "presentation": "table",
+      "groupBy": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "timeBucket": null,
+      "timeColumnId": null,
+      "timeWindow": "all",
+      "filters": [],
+      "measure": "sum",
+      "measureColumnId": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+      "per": null,
+      "sort": { "by": "label", "dir": "asc" },
+      "limit": 12,
+      "convertToZar": false,
+      "columns": []
+    },
+    "preview": {
+      "rows": [
+        { "label": "Kleintjie", "value": 1000 },
+        { "label": "Wine", "value": 1500 }
+      ]
+    },
+    "boardSlug": null,
+    "span": 2,
+    "spanNamed": true,
+    "viewId": null
+  },
+  "resolved": {
+    "op": "save-view",
+    "domainSlug": "financial",
+    "spec": {
+      "schemaVersion": 1,
+      "databaseId": "bottles-db",
+      "title": "Bottles",
+      "presentation": "table",
+      "groupBy": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "timeBucket": null,
+      "timeColumnId": null,
+      "timeWindow": "all",
+      "filters": [],
+      "measure": "sum",
+      "measureColumnId": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+      "per": null,
+      "sort": { "by": "label", "dir": "asc" },
+      "limit": 12,
+      "convertToZar": false,
+      "columns": [],
+      "measureColumnName": "Volume",
+      "groupByName": "Bottle",
+      "columnNames": {
+        "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d": "Bottle",
+        "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e": "Volume"
+      }
+    },
+    "preview": {
+      "rows": [
+        { "label": "Kleintjie", "value": 1000 },
+        { "label": "Wine", "value": 1500 }
+      ]
+    },
+    "boardSlug": null,
+    "span": 2,
+    "spanNamed": true,
+    "viewId": null
+  }
+}
