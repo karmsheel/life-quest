@@ -1288,14 +1288,19 @@ a {
 }
 
 /* —— Act page —— */
+/* The page is fluid; each band caps itself. The header and the board share the
+   board's 90rem ceiling so their right edges line up, and the prose sections
+   below stay a reading measure. That is what lets the columns keep widening with
+   the sheet while the page itself does not turn into an endless line. */
 .act-page {
-  max-width: 40rem;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  min-width: 0;
 }
 
 .act-page__section {
+  max-width: 56rem;
   border: 1px solid var(--border);
   border-radius: 0.65rem;
   padding: 0.9rem 1rem;
@@ -1357,6 +1362,7 @@ a {
 }
 
 .act-page__header {
+  max-width: 90rem;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -1573,6 +1579,32 @@ a {
 
 .act-activity-row__summary {
   line-height: 1.4;
+}
+
+/* A project's name opens its editor. It is the row's own control, so it reads as
+   the row's text rather than as a button dropped into the list. */
+.project-row__open {
+  appearance: none;
+  flex: 1;
+  min-width: 6rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-row__open:hover {
+  color: var(--accent);
+}
+
+.project-row__open:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  border-radius: 3px;
 }
 
 .spin {

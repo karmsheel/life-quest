@@ -217,18 +217,6 @@ function ActContent() {
 
   return (
     <div className="act-page">
-      {snapshot?.map ? (
-        <TaskBoard
-          state={snapshot.map}
-          goals={snapshot.goals}
-          projects={projects}
-          onCommand={(c) => void onMapCommand(c)}
-          initialOpenId={taskParam}
-        />
-      ) : snapshot?.mapError ? (
-        <p className="form-error" role="alert">{snapshot.mapError}</p>
-      ) : null}
-
       <header className="act-page__header">
         <div>
           <p className="act-page__eyebrow muted">Act</p>
@@ -247,6 +235,18 @@ function ActContent() {
           </span>
         )}
       </header>
+
+      {snapshot?.map ? (
+        <TaskBoard
+          state={snapshot.map}
+          goals={snapshot.goals}
+          projects={projects}
+          onCommand={(c) => void onMapCommand(c)}
+          initialOpenId={taskParam}
+        />
+      ) : snapshot?.mapError ? (
+        <p className="form-error" role="alert">{snapshot.mapError}</p>
+      ) : null}
 
       <section className="act-page__section">
         <h2 className="act-page__section-title">Execution brief</h2>

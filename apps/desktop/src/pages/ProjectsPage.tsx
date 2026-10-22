@@ -335,7 +335,7 @@ export default function ProjectsPage() {
               <li key={project.id} className="act-activity-row">
                 <button
                   type="button"
-                  className="task-card-title"
+                  className="project-row__open"
                   onClick={() => openEdit(project)}
                 >
                   {project.title}
