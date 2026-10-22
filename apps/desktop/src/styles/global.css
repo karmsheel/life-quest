@@ -684,10 +684,13 @@ a {
    handle centred on an eight-pixel scrollbar would eat the one thing the operator
    aims at to scroll.
 
-   The bar it grows when addressed is the same 2px accent a card's width handle
-   wears, and it lands exactly on the seam it moves. `--chat-column` is the track
-   the dock stands in, so the handle is placed from the same two numbers the grid
-   is built from and cannot drift off the line it belongs to. */
+   The bar it grows while the keyboard holds it or a drag is under way is the
+   same 2px accent a card's width handle wears, and it lands exactly on the seam
+   it moves. It is deliberately not drawn for a hover: the column-resize cursor
+   is the whole offer there, and an accent line under a passing pointer is more
+   motion than the seam needs. `--chat-column` is the track the dock stands in,
+   so the handle is placed from the same two numbers the grid is built from and
+   cannot drift off the line it belongs to. */
 .chat-divider {
   position: absolute;
   top: 0;
@@ -731,7 +734,6 @@ a {
   transition: opacity 120ms ease;
 }
 
-.chat-divider:hover::after,
 .chat-divider:focus-visible::after,
 .chat-divider[data-dragging]::after {
   opacity: 1;
