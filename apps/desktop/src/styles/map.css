@@ -670,58 +670,176 @@
 }
 
 /* —— Task board (Act route) —— */
-.task-board h2,
-.task-board .about-page h2 {
-  margin: 0 0 0.75rem;
+/* The board is the Act page's working surface, so it reads in the same material
+   as the rest of the studio: undefined column wells, cards one step above them,
+   and the app's own hairlines and radii rather than a second visual language.
+   It is also the widest thing on the page: the columns are fluid, so widening the
+   sheet widens every column with it, up to the board's own ceiling. */
+.task-board {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
 }
 
-.task-create,
-.task-card-head,
-.task-week-item {
+.task-board__head {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 0.4rem;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+}
+
+.task-board__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.task-board h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.task-board__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .task-create {
-  margin-bottom: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 22rem;
+  max-width: 30rem;
+  margin-left: auto;
 }
 
-.task-create label,
-.task-card-head label,
-.task-editor label,
-.task-week-item label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  font-size: 0.8rem;
+.task-create input {
+  flex: 1;
+  min-width: 8rem;
+  height: 2.15rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--fg);
+  font-size: 0.875rem;
+}
+
+.task-create input::placeholder {
+  color: var(--text-soft);
+}
+
+.task-create input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  border-color: var(--ring);
+}
+
+.task-create__add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
 }
 
 .task-columns {
   display: grid;
-  grid-template-columns: repeat(4, minmax(12rem, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.7rem;
   align-items: start;
+  min-width: 0;
+  /* Up to a point: a column is a reading measure, not a stretch target. Past
+     this the board stops growing and the extra sheet stays empty. */
+  max-width: 90rem;
 }
 
 .task-column {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.65rem;
+  --task-column-dot: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
   min-width: 0;
+  padding: 0.55rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
 }
 
-.task-column h3 {
-  margin: 0 0 0.5rem;
-  font-size: 0.95rem;
+/* State colors mean state: the dot is the column's stage, never decoration. */
+.task-column[data-column="backlog"] {
+  --task-column-dot: var(--text-soft);
 }
 
-.task-empty {
+.task-column[data-column="this-week"] {
+  --task-column-dot: var(--blue);
+}
+
+.task-column[data-column="today"] {
+  --task-column-dot: var(--accent);
+}
+
+.task-column[data-column="done"] {
+  --task-column-dot: var(--success);
+}
+
+.task-column__head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.1rem 0.15rem 0;
+}
+
+.task-column__dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  background: var(--task-column-dot);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--task-column-dot) 14%, transparent);
+}
+
+.task-column__title {
   margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-column__count {
+  margin-left: auto;
+  min-width: 1.2rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--bg-fill-tertiary);
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .task-list {
@@ -731,62 +849,296 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  min-width: 0;
+}
+
+.task-list > li {
+  min-width: 0;
+}
+
+.task-empty {
+  margin: 0;
+  padding: 0.85rem 0.5rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  text-align: center;
 }
 
 .task-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.6rem 0.65rem 0.65rem;
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.45rem;
-  background: var(--bg-elevated);
+  border-radius: var(--radius-xs);
+  background: var(--card);
+  box-shadow: var(--shadow-xs);
+  transition:
+    border-color var(--dur-quick) ease,
+    box-shadow var(--dur-quick) ease;
 }
 
+.task-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  box-shadow: var(--shadow-sm);
+}
+
+.task-card:focus-within,
 .task-card.is-open {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  box-shadow: var(--shadow-sm);
 }
 
-.task-card-title {
+/* The popup has to paint over the cards below its own column. */
+.task-card.is-menu-open {
+  z-index: 3;
+}
+
+.task-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.task-card__title {
   flex: 1;
-  min-width: 6rem;
-  text-align: left;
-  background: transparent;
-  border: none;
-  padding: 0.15rem 0;
-  cursor: pointer;
+  min-width: 0;
+  padding: 0.05rem 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.86rem;
   font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
 }
 
-.task-missing {
-  margin: 0.3rem 0 0;
+.task-card__title:hover {
+  color: var(--accent);
+}
+
+.task-card__title:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+.task-card__actions {
+  position: relative;
+  flex: 0 0 auto;
+  margin: -0.15rem -0.15rem 0 0;
+}
+
+.task-card__menu-btn {
+  appearance: none;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+/* A small glyph is still a target: the hit area is a quarter-rem larger on
+   every side than the box that draws it. */
+.task-card__menu-btn::after {
+  content: "";
+  position: absolute;
+  inset: -0.22rem;
+}
+
+.task-card__menu-btn:hover,
+.task-card__menu-btn[aria-expanded="true"] {
+  border-color: var(--border);
+  background: var(--bg-subtle);
+  color: var(--fg);
+}
+
+.task-card__menu-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.task-card__menu {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 8.5rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.task-card__menu button {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.42rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-card__menu button:hover {
+  background: var(--selected-soft);
+}
+
+.task-card__menu button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -1px;
+}
+
+/* Delete is the one action the board cannot undo, so it wears the state ink. */
+.task-card__menu button.task-card__menu-danger {
   color: var(--danger);
-  font-size: 0.8rem;
+}
+
+.task-card__menu button.task-card__menu-danger:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.task-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.task-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.14rem 0.4rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.task-chip__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-chip--danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.task-card__notes {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 .task-editor {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.6rem 0.55rem;
+  min-width: 0;
+  margin-top: 0.15rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.task-editor__field {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  margin-top: 0.5rem;
-  padding-top: 0.45rem;
-  border-top: 1px solid var(--border);
+  gap: 0.22rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.task-editor__field--wide {
+  grid-column: 1 / -1;
+}
+
+.task-editor select,
+.task-editor input,
+.task-editor textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 0.32rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+.task-editor select:focus-visible,
+.task-editor input:focus-visible,
+.task-editor textarea:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  border-color: var(--ring);
 }
 
 .task-editor textarea {
-  min-height: 5.5rem;
+  min-height: 4.5rem;
   resize: vertical;
-  font: inherit;
-  font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 .task-week-item {
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.4rem 0.5rem 0.5rem;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: 0.45rem;
+  min-width: 0;
   margin: 0;
+  padding: 0.5rem 0.55rem 0.6rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xs);
 }
 
 .task-week-item legend {
-  font-size: 0.8rem;
   padding: 0 0.2rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 /* —— Home Today / This week cards —— */
