@@ -45,6 +45,8 @@ type Arrangement = {
   };
   vaultText: string;
   vaultName?: string;
+  accentBackground: string;
+  paperBackground: string;
   shell: { className: string; gridTemplateColumns: string; box: Box } | null;
   rail: { box: Box; display: string; background: string } | null;
   main: {
@@ -121,6 +123,9 @@ type Report = {
   right: Arrangement;
   left: Arrangement;
   dockCollapsed: Arrangement;
+  dockCollapsedHover: Arrangement;
+  dockCollapsedLight: Arrangement;
+  dockCollapsedDarkAgain: Arrangement;
   railCollapsed: Arrangement;
   dockReopened: Arrangement;
   railRestored: Arrangement;
@@ -195,6 +200,9 @@ describe("chat dock side switch", () => {
       right,
       left,
       dockCollapsed,
+      dockCollapsedHover,
+      dockCollapsedLight,
+      dockCollapsedDarkAgain,
       railCollapsed,
       restored,
       barCollapsed,
@@ -491,6 +499,41 @@ describe("chat dock side switch", () => {
       dockCollapsed.chatToggle?.label,
       "Expand chat",
       "the titlebar lost its second way back into the dock",
+    );
+    assert.notEqual(
+      dockCollapsed.launcher?.background,
+      dockCollapsed.accentBackground,
+      "the night launcher still wears the full accent at rest",
+    );
+    assert.equal(
+      dockCollapsedHover.launcher?.background,
+      dockCollapsed.accentBackground,
+      `the night hover is not the accent the button used to wear (${dockCollapsedHover.launcher?.background} vs ${dockCollapsed.accentBackground})`,
+    );
+    assert.equal(
+      dockCollapsedLight.launcher?.color,
+      dockCollapsedLight.paperBackground,
+      `the day mark is not the paper ink (${dockCollapsedLight.launcher?.color} vs ${dockCollapsedLight.paperBackground})`,
+    );
+    assert.notEqual(
+      dockCollapsedLight.launcher?.color,
+      dockCollapsed.launcher?.color,
+      "the launcher ink did not change with the theme",
+    );
+    assert.equal(
+      dockCollapsedLight.launcher?.background,
+      dockCollapsedLight.accentBackground,
+      `the day launcher is not wearing the accent at rest (${dockCollapsedLight.launcher?.background} vs ${dockCollapsedLight.accentBackground})`,
+    );
+    assert.equal(
+      dockCollapsedDarkAgain.launcher?.background,
+      dockCollapsed.launcher?.background,
+      "returning to the night theme did not restore the lowered fill",
+    );
+    assert.equal(
+      dockCollapsedDarkAgain.launcher?.color,
+      dockCollapsed.launcher?.color,
+      "returning to the night theme did not restore the gray mark",
     );
     assert.deepEqual(
       report.dockReopened.main.box,

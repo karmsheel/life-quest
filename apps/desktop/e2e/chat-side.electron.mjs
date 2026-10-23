@@ -73,6 +73,20 @@ const SAMPLE = `(() => {
   const chatTrack = probe.offsetWidth;
   probe.remove();
 
+  // The accent as the browser resolved it, so the launcher's resting and hover
+  // fills can be compared against the same colour the rest of the app wears.
+  const accentProbe = document.createElement("div");
+  accentProbe.style.background = "var(--accent)";
+  document.body.appendChild(accentProbe);
+  const accentBackground = getComputedStyle(accentProbe).backgroundColor;
+  accentProbe.remove();
+
+  const paperProbe = document.createElement("div");
+  paperProbe.style.background = "var(--background)";
+  document.body.appendChild(paperProbe);
+  const paperBackground = getComputedStyle(paperProbe).backgroundColor;
+  paperProbe.remove();
+
   const rail = document.querySelector(".nav-rail");
   const main = document.querySelector(".shell__main");
   const chat = document.querySelector(".chat-panel");
@@ -126,6 +140,8 @@ const SAMPLE = `(() => {
       skin: document.documentElement.getAttribute("data-skin")
     },
     vaultText: (vault?.textContent || "").trim(),
+    accentBackground,
+    paperBackground,
     shell: shell
       ? {
           className: shell.className,
@@ -614,6 +630,28 @@ async function main() {
     if (!clicked) throw new Error(`no element for ${selector}`);
   };
 
+  /** Real pointer motion, so the bubble's own :hover is what is measured. */
+  const hover = async (selector) => {
+    const point = await run(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return {
+        x: Math.round(r.left + r.width / 2),
+        y: Math.round(r.top + r.height / 2)
+      };
+    })()`);
+    if (!point) throw new Error(`no element for ${selector}`);
+    win.webContents.sendInputEvent({
+      type: "mouseMove",
+      x: point.x,
+      y: point.y,
+    });
+  };
+
+  const parkPointer = () =>
+    win.webContents.sendInputEvent({ type: "mouseMove", x: 2, y: 2 });
+
   let report;
   const timeout = setTimeout(() => {
     console.error("chat-side: timed out after 90s");
@@ -761,6 +799,52 @@ async function main() {
       "left/collapsed dock: the titlebar control still names the way in",
       dockCollapsed.chatToggle?.label === "Expand chat",
       `titlebar control ${JSON.stringify(dockCollapsed.chatToggle?.label)}`,
+    );
+
+    // 3b — the resting and hover fills, read in night mode: the dark theme's
+    // accent is a little too bright at rest, so the button steps it down; the
+    // hover puts that same accent back, which is the highlight the operator knew.
+    at("collapsed launcher hover");
+    await hover(".chat-launcher");
+    const dockCollapsedHover = await settled();
+    const hoverShot = await shot("chat-side-launcher-hover.png");
+    check(
+      "left/collapsed dock: the resting fill is lowered from the accent",
+      dockCollapsed.launcher.background !== dockCollapsed.accentBackground,
+      `resting ${dockCollapsed.launcher.background} vs accent ${dockCollapsed.accentBackground}`,
+    );
+    check(
+      "left/collapsed dock: hover is exactly the accent the button used to wear",
+      dockCollapsedHover.launcher.background === dockCollapsed.accentBackground,
+      `hover ${dockCollapsedHover.launcher.background} vs accent ${dockCollapsed.accentBackground}`,
+    );
+    await parkPointer();
+    await settled();
+
+    // 3c — the same mark in day mode: the ink changes with the theme rather than
+    // staying the night gray, and the day button keeps the accent at rest.
+    at("collapsed launcher light theme");
+    await click(".theme-mode-toggle");
+    const dockCollapsedLight = await settled();
+    const lightShot = await shot("chat-side-launcher-light.png");
+    check(
+      "left/collapsed dock: the day theme changes the mark's ink",
+      dockCollapsedLight.launcher.color !== dockCollapsed.launcher.color &&
+        dockCollapsedLight.launcher.color === dockCollapsedLight.paperBackground,
+      `day ink ${dockCollapsedLight.launcher.color} vs night ${dockCollapsed.launcher.color}, day paper ${dockCollapsedLight.paperBackground}`,
+    );
+    check(
+      "left/collapsed dock: the day fill is the accent itself",
+      dockCollapsedLight.launcher.background === dockCollapsedLight.accentBackground,
+      `day fill ${dockCollapsedLight.launcher.background} vs accent ${dockCollapsedLight.accentBackground}`,
+    );
+    await click(".theme-mode-toggle");
+    const dockCollapsedDarkAgain = await settled();
+    check(
+      "left/collapsed dock: returning to night restores the lowered fill and gray mark",
+      dockCollapsedDarkAgain.launcher.background === dockCollapsed.launcher.background &&
+        dockCollapsedDarkAgain.launcher.color === dockCollapsed.launcher.color,
+      `night ${dockCollapsedDarkAgain.launcher.background}/${dockCollapsedDarkAgain.launcher.color} vs ${dockCollapsed.launcher.background}/${dockCollapsed.launcher.color}`,
     );
 
     at("reopened dock");
@@ -922,6 +1006,9 @@ async function main() {
       right,
       left,
       dockCollapsed,
+      dockCollapsedHover,
+      dockCollapsedLight,
+      dockCollapsedDarkAgain,
       railCollapsed,
       dockReopened,
       railRestored,
@@ -934,6 +1021,8 @@ async function main() {
         leftShot,
         leftSeamShot,
         collapsedShot,
+        hoverShot,
+        lightShot,
         restoredShot,
         barCollapsedShot,
       ],

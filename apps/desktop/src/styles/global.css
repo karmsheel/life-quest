@@ -4787,10 +4787,21 @@ a.home-mini-list__link:hover {
 /* The collapsed dock, as one floating mark instead of a vertical strip: the
    agent's own art in the bottom-right corner of the window, over the sheet it
    gave its column back to. The circle is the whole control; the mask is the Nous
-   girl. The mark keeps a fixed dark gray rather than the palette's foreground:
-   on the orange button in the dark theme that foreground is white, and a white
-   face on orange is the one combination the mark should never wear. */
+   girl.
+
+   The two colours are a pair per theme. Day mode wears the accent as its resting
+   fill and a paper-white mark, because a dark face is lost on the lighter day
+   accent. Night mode steps the resting fill down from the accent — the dark
+   palette's accent is a little too bright to sit still on a dark page — and then
+   lights it back up to that accent on hover, so the highlight is exactly the
+   colour the button used to wear at rest. The mark is the fixed dark gray the
+   night face needs; the palette's own foreground would turn it white on orange. */
 .chat-launcher {
+  --chat-launcher-surface: var(--accent);
+  --chat-launcher-surface-hover: var(--accent-hover);
+  /* Day mode's ink is the page's paper: warm, and clearly lighter than the
+     accent it sits on. Night mode overrides it below. */
+  --chat-launcher-ink: var(--background);
   position: fixed;
   right: calc(var(--shell-frame) + 1rem);
   bottom: calc(var(--shell-frame) + 1rem);
@@ -4802,8 +4813,8 @@ a.home-mini-list__link:hover {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: var(--accent);
-  color: #333333;
+  background: var(--chat-launcher-surface);
+  color: var(--chat-launcher-ink);
   box-shadow: var(--shadow-md);
   cursor: pointer;
   transition:
@@ -4812,8 +4823,22 @@ a.home-mini-list__link:hover {
     box-shadow var(--dur-quick) var(--ease-out);
 }
 
+[data-theme="dark"] .chat-launcher {
+  --chat-launcher-surface: color-mix(in srgb, var(--accent) 82%, #000);
+  --chat-launcher-surface-hover: var(--accent);
+  --chat-launcher-ink: #333333;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) .chat-launcher {
+    --chat-launcher-surface: color-mix(in srgb, var(--accent) 82%, #000);
+    --chat-launcher-surface-hover: var(--accent);
+    --chat-launcher-ink: #333333;
+  }
+}
+
 .chat-launcher:hover {
-  background: var(--accent-hover);
+  background: var(--chat-launcher-surface-hover);
   transform: translateY(-2px);
   box-shadow:
     var(--shadow-md),
