@@ -477,8 +477,8 @@ describe("chat dock side switch", () => {
     );
     assert.equal(
       dockCollapsed.launcher?.color,
-      "rgb(51, 51, 51)",
-      `the mark is not dark gray on the orange button (${dockCollapsed.launcher?.color})`,
+      "rgb(0, 0, 0)",
+      `the night mark is not black on the orange button (${dockCollapsed.launcher?.color})`,
     );
     assert.equal(
       dockCollapsed.launcher?.box.left !== undefined &&
@@ -514,8 +514,13 @@ describe("chat dock side switch", () => {
     );
     assert.equal(
       dockCollapsedLight.launcher?.color,
+      "rgb(51, 51, 51)",
+      `the day mark is not the dark gray the paper field needs (${dockCollapsedLight.launcher?.color})`,
+    );
+    assert.notEqual(
+      dockCollapsedLight.launcher?.color,
       dockCollapsed.launcher?.color,
-      `the day mark changed ink instead of keeping the night gray (${dockCollapsedLight.launcher?.color} vs ${dockCollapsed.launcher?.color})`,
+      "the launcher ink did not follow the theme",
     );
     assert.equal(
       dockCollapsedLight.launcher?.background,
@@ -545,7 +550,7 @@ describe("chat dock side switch", () => {
     assert.equal(
       dockCollapsedDarkAgain.launcher?.color,
       dockCollapsed.launcher?.color,
-      "returning to the night theme did not restore the gray mark",
+      "returning to the night theme did not restore the black mark",
     );
     assert.deepEqual(
       report.dockReopened.main.box,

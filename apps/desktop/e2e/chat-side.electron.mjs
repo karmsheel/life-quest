@@ -784,6 +784,11 @@ async function main() {
       `launcher ${JSON.stringify(dockCollapsed.launcher)} in ${JSON.stringify(dockCollapsed.viewport)}`,
     );
     check(
+      "left/collapsed dock: the night mark is black on the orange button",
+      dockCollapsed.launcher?.color === "rgb(0, 0, 0)",
+      `night ink ${JSON.stringify(dockCollapsed.launcher?.color)}`,
+    );
+    check(
       "left/collapsed dock: the floating mark is the Nous girl",
       Boolean(dockCollapsed.launcher?.mark) &&
         dockCollapsed.launcher.markWidth > 0 &&
@@ -823,15 +828,15 @@ async function main() {
     await parkPointer();
     await settled();
 
-    // 3c — the same mark in day mode: the ink changes with the theme rather than
-    // staying the night gray, and the day button keeps the accent at rest.
+    // 3c — the same mark in day mode: it keeps the dark gray the paper field
+    // needs rather than night's black, and the day button keeps the accent at rest.
     at("collapsed launcher light theme");
     await click(".theme-mode-toggle");
     const dockCollapsedLight = await settled();
     const lightShot = await shot("chat-side-launcher-light.png");
     check(
-      "left/collapsed dock: the day theme keeps the night gray mark",
-      dockCollapsedLight.launcher.color === dockCollapsed.launcher.color &&
+      "left/collapsed dock: the day theme switches the mark to dark gray",
+      dockCollapsedLight.launcher.color !== dockCollapsed.launcher.color &&
         dockCollapsedLight.launcher.color === "rgb(51, 51, 51)",
       `day ink ${dockCollapsedLight.launcher.color} vs night ${dockCollapsed.launcher.color}`,
     );
@@ -846,7 +851,7 @@ async function main() {
     await click(".theme-mode-toggle");
     const dockCollapsedDarkAgain = await settled();
     check(
-      "left/collapsed dock: returning to night restores the lowered fill and gray mark",
+      "left/collapsed dock: returning to night restores the lowered fill and black mark",
       dockCollapsedDarkAgain.launcher.background === dockCollapsed.launcher.background &&
         dockCollapsedDarkAgain.launcher.color === dockCollapsed.launcher.color,
       `night ${dockCollapsedDarkAgain.launcher.background}/${dockCollapsedDarkAgain.launcher.color} vs ${dockCollapsed.launcher.background}/${dockCollapsed.launcher.color}`,
