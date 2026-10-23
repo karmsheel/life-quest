@@ -1,4 +1,5 @@
 import type { GoalStatus, GoalsCommand } from "../types.ts";
+import { TASK_COLUMNS } from "./tasks.ts";
 import type {
   ChecklistItem,
   ColorId,
@@ -29,7 +30,7 @@ const NUMBER = { type: "number" };
 const WEEKDAY_ENUM = { type: "number", enum: [0, 1, 2, 3, 4, 5, 6] };
 const TASK_COLUMN_ENUM = {
   type: "string",
-  enum: ["backlog", "this-week", "today", "done"],
+  enum: [...TASK_COLUMNS],
 };
 const PRIORITY_ENUM = {
   type: "string",
@@ -348,6 +349,20 @@ export const MAP_TOOL_DEFS: MapToolDef[] = [
     },
   },
   {
+    name: "move_task",
+    description:
+      "Move a task to a column, optionally directly before another task in that column",
+    parameters: {
+      type: "object",
+      properties: {
+        id: STRING,
+        column: TASK_COLUMN_ENUM,
+        beforeId: STRING,
+      },
+      required: ["id", "column"],
+    },
+  },
+  {
     name: "delete_task",
     description: "Delete a task",
     parameters: {
@@ -550,6 +565,14 @@ export function commandForTool(
         notes: args.notes as string | undefined,
         column: args.column as TaskColumn | undefined,
         links: args.links as TaskLinks | undefined,
+      };
+      break;
+    case "move_task":
+      command = {
+        type: "moveTask",
+        id: args.id as string,
+        column: args.column as TaskColumn,
+        beforeId: args.beforeId as string | undefined,
       };
       break;
     case "delete_task":

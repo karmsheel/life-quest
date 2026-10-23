@@ -12,7 +12,11 @@ import { describe, it } from "node:test";
  * engine. The claims live in `e2e/task-board.electron.mjs`; this file runs that
  * driver and refuses a report that does not hold.
  *
- * The request this rig is about has three clauses, and each is measured:
+ * The request this rig is about has five clauses, and each is measured:
+ *
+ *   the board is a modern Kanban — six columns through This quarter and This
+ *   month, a card can be dragged across columns or reordered in place, a column
+ *   can add its own card, and a cancelled drag writes nothing;
  *
  *   "the design is not consistent with the rest of the app" — card and column
  *   radii are read as computed pixels, not class names;
@@ -23,7 +27,9 @@ import { describe, it } from "node:test";
  *
  *   "if the width of the page expands, the columns should also increase in width
  *   (up to a point)" — four sheet widths are sampled, the columns must widen
- *   together, and past the board's ceiling they must stop.
+ *   together, and past the board's ceiling they must stop;
+ *
+ *   the Strategy badge and the Execution brief section are gone from the page.
  *
  * The rig needs the Vite dev server. With the server down the test skips;
  * `npm run dev` in another terminal brings it up. `LIFEQUEST_DEV_PORT` lets the
@@ -47,6 +53,7 @@ const SHOTS = [
   path.join(desktopRoot, "e2e/artifacts/task-board-standard.png"),
   path.join(desktopRoot, "e2e/artifacts/task-board-menu.png"),
   path.join(desktopRoot, "e2e/artifacts/task-board-editor.png"),
+  path.join(desktopRoot, "e2e/artifacts/task-board-drag.png"),
   path.join(desktopRoot, "e2e/artifacts/task-board-light.png"),
 ];
 
@@ -54,6 +61,7 @@ const SHOTS = [
 const SCENARIOS = [
   "skin",
   "page-order",
+  "page-trimmed",
   "columns",
   "card-anatomy",
   "menu",
@@ -63,6 +71,11 @@ const SCENARIOS = [
   "edit-open",
   "edit-move",
   "create",
+  "drag-across",
+  "drag-reorder",
+  "drag-cancel",
+  "column-add",
+  "drag-scroll",
   "width-growth",
   "width-cap",
   "no-overflow",
@@ -89,6 +102,13 @@ type WidthSample = {
   columns: Column[];
   total: string;
   scrollport: { client: number; scroll: number; overflowX: string } | null;
+  viewport: {
+    width: number;
+    client: number;
+    scroll: number;
+    scrollLeft: number;
+    overflowX: string;
+  } | null;
 };
 
 type Scenario = { name: string; pass: boolean; detail: string | null };
@@ -143,6 +163,9 @@ function runDriver(): Promise<number> {
       {
         cwd: desktopRoot,
         timeout: 180_000,
+        // The driver's own log names the step it reached; inheriting stdio keeps
+        // a crash legible instead of reducing it to a bare exit code.
+        stdio: "inherit",
         env: {
           ...process.env,
           LIFEQUEST_E2E_URL: `http://127.0.0.1:${DEV_PORT}/e2e/task-board.html`,
@@ -197,7 +220,7 @@ describe("Act task board e2e", () => {
       ["header", "board"],
       "the Act page draws its board before its header",
     );
-    assert.equal(report.checks.dom.cardCount, 9, "the fixture's nine cards are not on the board");
+    assert.equal(report.checks.dom.cardCount, 11, "the fixture's eleven cards are not on the board");
     assert.deepEqual(
       [...new Set(report.checks.dom.cardRadii)],
       [6],
@@ -246,10 +269,10 @@ describe("Act task board e2e", () => {
     const [standard, expanded, wide, capped] = report.checks.widths;
 
     for (const entry of report.checks.widths) {
-      assert.equal(entry.columns.length, 4, `not four columns at ${entry.name}`);
+      assert.equal(entry.columns.length, 6, `not six columns at ${entry.name}`);
       assert.deepEqual(
         entry.columns.map((column) => column.id),
-        ["backlog", "this-week", "today", "done"],
+        ["backlog", "this-quarter", "this-month", "this-week", "today", "done"],
         `the column order moved at ${entry.name}`,
       );
       const widths = columnWidths(entry);
@@ -258,7 +281,10 @@ describe("Act task board e2e", () => {
         `columns are unequal at ${entry.name}: ${JSON.stringify(widths)}`,
       );
       for (const width of widths) {
-        assert.ok(width > 100, `a column is ${width}px at ${entry.name}`);
+        assert.ok(
+          width >= 167,
+          `a column fell below the readable 10.5rem floor at ${entry.name}: ${width}px`,
+        );
       }
     }
 
@@ -269,7 +295,7 @@ describe("Act task board e2e", () => {
       `the page did not expand: ${standard.pageWidth} → ${expanded.pageWidth}`,
     );
     assert.ok(
-      columnWidths(expanded)[0] > columnWidths(standard)[0] + 50,
+      columnWidths(expanded)[0] > columnWidths(standard)[0] + 5,
       `columns did not widen: ${JSON.stringify(columnWidths(standard))} → ` +
         `${JSON.stringify(columnWidths(expanded))}`,
     );
@@ -293,19 +319,38 @@ describe("Act task board e2e", () => {
       `a column grew past its ceiling: ${columnWidths(capped)[0]}px`,
     );
 
-    // Nothing paints past the sheet at any width.
+    // Nothing paints past the sheet at any width. At the standard sheet the
+    // board's own viewport is what scrolls; the page itself never does.
     for (const entry of report.checks.widths) {
       const scroller = entry.scrollport;
       assert.ok(scroller, `no scrollport at ${entry.name}`);
       assert.ok(
         (scroller?.scroll ?? 0) <= (scroller?.client ?? 0) + 1,
-        `the board overflows sideways at ${entry.name}: ${scroller?.scroll} in ${scroller?.client}`,
+        `the page overflows sideways at ${entry.name}: ${scroller?.scroll} in ${scroller?.client}`,
       );
       assert.ok(
         entry.boardWidth <= entry.pageWidth + 1,
         `the board (${entry.boardWidth}px) is wider than its page (${entry.pageWidth}px) at ${entry.name}`,
       );
+      assert.ok(
+        entry.viewport && entry.viewport.width <= entry.pageWidth + 1,
+        `the board viewport overflows the page at ${entry.name}`,
+      );
+      assert.ok(
+        (entry.viewport?.overflowX ?? "") === "auto" ||
+          (entry.viewport?.overflowX ?? "") === "scroll",
+        `the board viewport does not scroll at ${entry.name}`,
+      );
     }
+
+    assert.ok(
+      (standard.viewport?.scroll ?? 0) > (standard.viewport?.client ?? 0) + 20,
+      `the standard sheet does not scroll the six columns: ${JSON.stringify(standard.viewport)}`,
+    );
+    assert.ok(
+      (expanded.viewport?.scroll ?? 0) <= (expanded.viewport?.client ?? 0) + 1,
+      `the expanded sheet still scrolls: ${JSON.stringify(expanded.viewport)}`,
+    );
 
     // ── The artifact ──────────────────────────────────────────────────────────
     for (const shot of SHOTS) {

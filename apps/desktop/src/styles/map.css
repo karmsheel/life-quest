@@ -760,10 +760,26 @@
   white-space: nowrap;
 }
 
+/* The board's own horizontal scrollport.
+   Six horizons at the app's standard sheet do not fit at a readable width, and
+   squeezing them did what squeezed card titles always do: one letter per line.
+   The board scrolls sideways instead, while the page, header and sections stay
+   put — the way a kanban board behaves on a desk that is not wide enough for
+   every list. Once there is room the scroller is simply still. */
+.task-board__viewport {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.3rem;
+}
+
 .task-columns {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.7rem;
+  grid-template-columns: repeat(6, minmax(10.5rem, 1fr));
+  gap: 0.62rem;
+  /* Content-sized, not stretched to the tallest column: an open card's editor
+     can make one column twice as tall, and the Add control of a short column
+     must stay beside that column's cards rather than at the bottom of the page. */
   align-items: start;
   min-width: 0;
   /* Up to a point: a column is a reading measure, not a stretch target. Past
@@ -777,15 +793,36 @@
   flex-direction: column;
   gap: 0.55rem;
   min-width: 0;
+  min-height: 9rem;
   padding: 0.55rem;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   background: var(--bg-subtle);
+  transition:
+    border-color var(--dur-quick) ease,
+    background var(--dur-quick) ease,
+    box-shadow var(--dur-quick) ease;
+}
+
+/* The column under the hand says so: the accent is the board's "this is where
+   it lands" ink, and a well that lights up is clearer than a cursor alone. */
+.task-column.is-drop-target {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-subtle));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 /* State colors mean state: the dot is the column's stage, never decoration. */
 .task-column[data-column="backlog"] {
   --task-column-dot: var(--text-soft);
+}
+
+.task-column[data-column="this-quarter"] {
+  --task-column-dot: var(--map-purple);
+}
+
+.task-column[data-column="this-month"] {
+  --task-column-dot: var(--map-teal);
 }
 
 .task-column[data-column="this-week"] {
@@ -819,13 +856,16 @@
 
 .task-column__title {
   margin: 0;
+  min-width: 0;
   font-size: 0.82rem;
   font-weight: 600;
   letter-spacing: -0.005em;
+  line-height: 1.2;
   color: var(--fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Six columns on a standard sheet are narrow. "This quarter" wraps to two
+     lines rather than becoming "This q…", which is the label's information. */
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .task-column__count {
@@ -856,6 +896,37 @@
   min-width: 0;
 }
 
+/* Where the card will land. The line sits in the gap above the card it will
+   precede, so the board does not change height while the hand is deciding. */
+.task-list > li.is-drop-before {
+  position: relative;
+}
+
+.task-list > li.is-drop-before::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  left: -0.18rem;
+  right: -0.18rem;
+  top: -0.34rem;
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+  pointer-events: none;
+}
+
+/* Dropping below the last card is the same line, drawn under the list. */
+.task-list.is-drop-end::after {
+  content: "";
+  height: 2px;
+  margin-top: 0.1rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+  pointer-events: none;
+}
+
 .task-empty {
   margin: 0;
   padding: 0.85rem 0.5rem;
@@ -864,6 +935,112 @@
   color: var(--text-soft);
   font-size: 0.78rem;
   text-align: center;
+  transition:
+    border-color var(--dur-quick) ease,
+    color var(--dur-quick) ease,
+    background var(--dur-quick) ease;
+}
+
+.task-empty--drop {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
+}
+
+/* The foot of every column: a card can be started where it belongs, without
+   going back to the board's one entry point at the top. */
+.task-column__add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  width: 100%;
+  margin-top: auto;
+  padding: 0.4rem 0.35rem;
+  border: 1px dashed transparent;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-quick) ease,
+    background var(--dur-quick) ease,
+    color var(--dur-quick) ease;
+}
+
+.task-column__add:hover {
+  border-color: var(--border);
+  background: var(--bg-fill-tertiary);
+  color: var(--fg);
+}
+
+.task-column__add:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.task-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: auto;
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--card);
+}
+
+.task-composer input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.35rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--background);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.task-composer input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  border-color: var(--ring);
+}
+
+.task-composer__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.task-composer__add {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.75rem;
+}
+
+.task-composer__cancel {
+  padding: 0.3rem 0.35rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.task-composer__cancel:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+.task-composer__cancel:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 
 .task-card {
@@ -872,11 +1049,15 @@
   flex-direction: column;
   gap: 0.4rem;
   min-width: 0;
-  padding: 0.6rem 0.65rem 0.65rem;
+  padding: 0.6rem 0.55rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-xs);
   background: var(--card);
   box-shadow: var(--shadow-xs);
+  /* The card is a handle. Plain text selection would fight the drag on the
+     first few pixels; the editor's fields below opt back in. */
+  cursor: grab;
+  user-select: none;
   transition:
     border-color var(--dur-quick) ease,
     box-shadow var(--dur-quick) ease;
@@ -898,6 +1079,40 @@
   z-index: 3;
 }
 
+/* The card is the handle; the grip is the invitation, not a second target.
+   It sits outside the title button so both a click and a drag can start there. */
+.task-card__grip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 0.85rem;
+  margin: 0.05rem 0 0 -0.2rem;
+  color: var(--text-soft);
+  opacity: 0.55;
+  transition: opacity var(--dur-quick) ease;
+  cursor: grab;
+}
+
+.task-card:hover .task-card__grip,
+.task-card:focus-within .task-card__grip {
+  opacity: 1;
+}
+
+/* While the hand owns one card, the rest of the board is a set of targets. */
+.task-card.is-dragging {
+  opacity: 0.32;
+  border-style: dashed;
+  box-shadow: none;
+  cursor: grabbing;
+  pointer-events: none;
+}
+
+body.is-task-dragging,
+body.is-task-dragging * {
+  cursor: grabbing !important;
+}
+
 .task-card__head {
   display: flex;
   align-items: flex-start;
@@ -917,7 +1132,10 @@
   font-weight: 600;
   line-height: 1.35;
   text-align: left;
-  overflow-wrap: anywhere;
+  /* Break only a word that is genuinely wider than the card; ordinary words
+     wrap whole. `anywhere` broke "operating" into "ope rat ing" in a narrow
+     column, which is a title you have to reassemble. */
+  overflow-wrap: break-word;
   cursor: pointer;
 }
 
@@ -1066,7 +1284,66 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+
+/* The card under the hand. Fixed and pointer-transparent so it can cross every
+   column without stealing the hit-test from the target underneath. The
+   position is written by the pointer controller as a transform, never as a
+   React prop: a render for a new drop target must not reset it. */
+.task-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+  min-width: 12rem;
+  max-width: 21rem;
+  padding: 0.6rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 52%, var(--border));
+  border-radius: var(--radius-xs);
+  background: var(--card);
+  box-shadow: var(--shadow-md);
+  color: var(--fg);
+  pointer-events: none;
+  will-change: transform;
+  opacity: 0.97;
+}
+
+.task-drag-ghost__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.task-drag-ghost__grip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.task-drag-ghost__title {
+  min-width: 0;
+  flex: 1;
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: break-word;
+}
+
+.task-drag-ghost__column {
+  align-self: flex-start;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--radius-pill);
+  color: var(--accent);
+  font-size: 0.65rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .task-editor {
@@ -1091,6 +1368,11 @@
 
 .task-editor__field--wide {
   grid-column: 1 / -1;
+}
+
+.task-editor input,
+.task-editor textarea {
+  user-select: text;
 }
 
 .task-editor select,

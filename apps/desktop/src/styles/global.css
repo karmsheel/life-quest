@@ -1401,86 +1401,19 @@ a {
   font-weight: 800;
 }
 
-.act-page__alignment-badge {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--success);
-  border: 1px solid var(--success);
-  border-radius: 999px;
-  padding: 0.2rem 0.6rem;
-  white-space: nowrap;
-}
-
-.act-page__alignment-badge--warn {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-
-.act-page__section-sub {
-  margin: 0;
-  font-size: 0.85rem;
-  line-height: 1.4;
-}
-
-.act-brief {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.act-brief__row {
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  padding: 0.6rem 0.7rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.act-brief__head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.act-brief__label {
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-
-.act-brief__room {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.act-brief__room:hover {
-  text-decoration: underline;
-}
-
-.act-brief__body {
-  margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 12rem;
-  overflow: auto;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  padding: 0.5rem 0.6rem;
-}
-
 .act-run__agent-field,
 .act-run__prompt-field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+/* The dispatch button's gate, said in one line. The page no longer carries the
+   doctrine brief that used to explain why the button was disabled. */
+.act-run__gate {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .act-run__agent-select {

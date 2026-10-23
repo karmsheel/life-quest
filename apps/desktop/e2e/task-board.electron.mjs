@@ -14,8 +14,23 @@
  *  1. `page-order`   — the page's header comes before the board. The board is the
  *                      page's working surface, not a thing above the page's name;
  *                      reading `.act-page`'s children in DOM order is the claim.
- *  2. `columns`      — four columns, in board order, each with its own dot, title
- *                      and count: Backlog 4, This week 2, Today 2, Done 1.
+ *  2. `columns`      — six columns, in board order, each with its own dot, title
+ *                      and count: Backlog 4, This quarter 1, This month 1,
+ *                      This week 2, Today 2, Done 1.
+ *  2b. `page-trimmed` — the Strategy badge and the Execution brief section are
+ *                      gone from the page, while the agent and activity sections
+ *                      remain.
+ *  7b. `drag-across`  — a real pointer drag carries a card from Backlog to This
+ *                      month, shows the ghost and the target column while it is
+ *                      in the air, and releases exactly one `moveTask`.
+ *  7c. `drag-reorder` — a drag within a column places the card before another
+ *                      card and sends its id as `beforeId`.
+ *  7d. `drag-cancel`  — Escape during a drag leaves the board untouched.
+ *  7e. `column-add`   — a column's own Add control creates a card in that column,
+ *                      not in Backlog.
+ *  7f. `drag-scroll`  — at the standard sheet, where the last columns sit off
+ *                      screen, holding a drag at the board's right edge scrolls
+ *                      the board under the hand.
  *  3. `card-anatomy` — every card is a title, a 3-dot menu and its own metadata;
  *                      no card carries a bare Column select or a bare Delete on its
  *                      face, and the dangling goal says "Missing goal" in the
@@ -32,7 +47,7 @@
  *                      the card moves to that column.
  *  7. `create`       — typing a title and pressing Add task creates exactly one
  *                      backlog task and shows it on the board.
- *  8. `width-growth` — at every wider sheet the four columns get wider together,
+ *  8. `width-growth` — at every wider sheet the six columns get wider together,
  *                      and they stay equal. This is the reported "narrow at its
  *                      standard size" case, measured.
  *  9. `width-cap`    — past the board's own ceiling the columns stop growing even
@@ -76,9 +91,23 @@ const WIDTHS = [
   { name: "capped-sheet", width: 2000, height: 1000 },
 ];
 
-const COLUMN_ORDER = ["backlog", "this-week", "today", "done"];
-const COLUMN_LABELS = ["Backlog", "This week", "Today", "Done"];
-const COLUMN_COUNTS = ["4", "2", "2", "1"];
+const COLUMN_ORDER = [
+  "backlog",
+  "this-quarter",
+  "this-month",
+  "this-week",
+  "today",
+  "done",
+];
+const COLUMN_LABELS = [
+  "Backlog",
+  "This quarter",
+  "This month",
+  "This week",
+  "Today",
+  "Done",
+];
+const COLUMN_COUNTS = ["4", "1", "1", "2", "2", "1"];
 
 const errors = [];
 const scenarios = [];
@@ -115,6 +144,7 @@ const SAMPLE = `(() => {
   const page = document.querySelector(".act-page");
   const board = document.querySelector(".task-board");
   const grid = document.querySelector(".task-columns");
+  const viewport = document.querySelector(".task-board__viewport");
   const gridStyle = grid ? getComputedStyle(grid) : null;
   const cards = [...document.querySelectorAll(".task-card")];
 
@@ -142,9 +172,28 @@ const SAMPLE = `(() => {
           return el.tagName.toLowerCase();
         })
       : [],
+    alignmentBadge: Boolean(document.querySelector(".act-page__alignment-badge")),
+    briefSection: Boolean(document.querySelector(".act-brief")),
+    sectionTitles: [...document.querySelectorAll(".act-page__section-title")].map(text),
+    taskPageText: page ? (page.textContent || "").includes("Execution brief") : false,
+    dragGhost: Boolean(document.querySelector(".task-drag-ghost")),
+    dropTargetColumn:
+      document.querySelector(".task-column.is-drop-target")?.dataset.column ?? null,
+    draggingIds: [...document.querySelectorAll(".task-card.is-dragging")].map(
+      (card) => card.dataset.taskId ?? null,
+    ),
     page: rect(page),
     board: rect(board),
     grid: rect(grid),
+    viewport: viewport
+      ? {
+          ...rect(viewport),
+          client: viewport.clientWidth,
+          scroll: viewport.scrollWidth,
+          scrollLeft: round(viewport.scrollLeft),
+          overflowX: getComputedStyle(viewport).overflowX,
+        }
+      : null,
     tracks: gridStyle ? gridStyle.gridTemplateColumns.trim().split(/\\s+/).map(px) : [],
     total: text(document.querySelector(".task-board__count")),
     heading: text(document.querySelector(".act-page__title")),
@@ -252,6 +301,14 @@ function step(name) {
 
 /** A real pointer press at the centre of a selector, after proving it is hit-testable. */
 async function clickSelector(win, selector) {
+  // The board scrolls sideways at the standard sheet, so a control in a far
+  // column may exist but be off-viewport. A person scrolls it into reach; the
+  // rig does the same before it measures the point.
+  await win.webContents.executeJavaScript(
+    `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({ block: "nearest", inline: "nearest" })`,
+  );
+  await settleFrames(win);
+  await sleep(60);
   const point = await win.webContents.executeJavaScript(
     `(() => {
        const el = document.querySelector(${JSON.stringify(selector)});
@@ -278,6 +335,119 @@ async function pressKey(win, keyCode) {
   await sleep(100);
 }
 
+function mouse(win, type, x, y) {
+  win.webContents.sendInputEvent({
+    type,
+    x: Math.round(x),
+    y: Math.round(y),
+    button: "left",
+    clickCount: 1,
+  });
+}
+
+/** A point on an element that really is on top at that point. */
+async function pointOn(win, selector, across = 0.5, down = 0.5) {
+  await win.webContents.executeJavaScript(
+    `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({ block: "nearest", inline: "nearest" })`,
+  );
+  await settleFrames(win);
+  await sleep(60);
+  const point = await win.webContents.executeJavaScript(
+    `(() => {
+       const el = document.querySelector(${JSON.stringify(selector)});
+       if (!el) return { error: "no element" };
+       const r = el.getBoundingClientRect();
+       const x = r.left + r.width * ${across};
+       const y = r.top + r.height * ${down};
+       const hit = document.elementFromPoint(x, y);
+       return { x, y, lands: Boolean(hit && (hit === el || el.contains(hit))) };
+     })()`,
+  );
+  if (!point || point.error) throw new Error(`no element for ${selector}`);
+  if (!point.lands) throw new Error(`${selector} is not hit-testable at its centre`);
+  return point;
+}
+
+/** A point inside a column: above a named card, or below its last card. */
+async function dropPoint(win, column, beforeId = null) {
+  const point = await win.webContents.executeJavaScript(
+    `(() => {
+       const col = document.querySelector('[data-column="${column}"]');
+       if (!col) return { error: "no column" };
+       const box = col.getBoundingClientRect();
+       const x = box.left + box.width / 2;
+       const cards = [...col.querySelectorAll(".task-list > li > .task-card")];
+       if (${JSON.stringify(beforeId)} != null) {
+         const card = document.querySelector('[data-task-id="${beforeId}"]');
+         if (!card) return { error: "no before card" };
+         const r = card.getBoundingClientRect();
+         return { x, y: r.top + 2 };
+       }
+       const last = cards.length ? cards[cards.length - 1].getBoundingClientRect() : null;
+       const y = last
+         ? Math.min(last.bottom + 12, box.top + box.height - 10)
+         : box.top + Math.min(70, box.height - 10);
+       return { x, y };
+     })()`,
+  );
+  if (!point || point.error) throw new Error(`no drop point in ${column}: ${point?.error}`);
+  return point;
+}
+
+/** Press a card and move far enough that the board lifts it. */
+async function beginDrag(win, taskId) {
+  const source = await pointOn(win, `[data-task-id="${taskId}"] .task-card__title`);
+  mouse(win, "mouseDown", source.x, source.y);
+  mouse(win, "mouseMove", source.x + 12, source.y + 12);
+  await waitFor(
+    win,
+    `document.querySelector('[data-task-id="${taskId}"]')?.classList.contains("is-dragging")`,
+    `${taskId} to lift`,
+  );
+  await settleFrames(win);
+  return source;
+}
+
+/** Carry the lifted card to a point in steps, the way a hand travels. */
+async function moveDrag(win, source, target, steps = 4) {
+  const from = { x: source.x + 12, y: source.y + 12 };
+  for (let step = 1; step <= steps; step += 1) {
+    mouse(
+      win,
+      "mouseMove",
+      from.x + ((target.x - from.x) * step) / steps,
+      from.y + ((target.y - from.y) * step) / steps,
+    );
+    await sleep(35);
+  }
+  await settleFrames(win);
+}
+
+/** Release a drag and return the commands it produced. */
+async function dropDrag(win, taskId, target) {
+  const before = await win.webContents.executeJavaScript(
+    "window.taskBoardCommands.length",
+  );
+  mouse(win, "mouseUp", target.x, target.y);
+  await waitFor(
+    win,
+    `!document.querySelector('[data-task-id="${taskId}"]')?.classList.contains("is-dragging")`,
+    "the drag to end",
+  );
+  await sleep(160);
+  return (
+    await win.webContents.executeJavaScript("window.taskBoardCommands")
+  ).slice(before);
+}
+
+async function dragTask(win, taskId, column, beforeId = null) {
+  const source = await beginDrag(win, taskId);
+  const target = await dropPoint(win, column, beforeId);
+  await moveDrag(win, source, target);
+  const commands = await dropDrag(win, taskId, target);
+  return { source, target, commands };
+}
+
 function sample(win, name) {
   return win.webContents.executeJavaScript(SAMPLE).then((value) => {
     if (!value) throw new Error(`${name}: no sample`);
@@ -297,12 +467,12 @@ async function loadPage(win, query = "") {
   await waitFor(win, "Boolean(window.taskBoardReady)", "taskBoardReady");
   await waitFor(
     win,
-    `document.querySelectorAll(".task-card").length === 9`,
-    "the board to render its nine cards",
+    `document.querySelectorAll(".task-card").length === 11`,
+    "the board to render its eleven cards",
   );
   await waitFor(
     win,
-    `document.querySelector(".task-board__count")?.textContent.trim() === "9"`,
+    `document.querySelector(".task-board__count")?.textContent.trim() === "11"`,
     "the board's count to settle",
   );
   await settleFrames(win);
@@ -369,6 +539,17 @@ async function main() {
   );
 
   check(
+    "page-trimmed",
+    !standard.alignmentBadge &&
+      !standard.briefSection &&
+      !standard.taskPageText &&
+      JSON.stringify(standard.sectionTitles) ===
+        JSON.stringify(["Run an agent", "Recent activity"]),
+    `badge=${standard.alignmentBadge}, brief=${standard.briefSection}, ` +
+      `text=${standard.taskPageText}, sections=${JSON.stringify(standard.sectionTitles)}`,
+  );
+
+  check(
     "columns",
     JSON.stringify(standard.columns.map((column) => column.id)) === JSON.stringify(COLUMN_ORDER) &&
       JSON.stringify(standard.columns.map((column) => column.label)) ===
@@ -376,8 +557,8 @@ async function main() {
       JSON.stringify(standard.columns.map((column) => column.headerCount)) ===
         JSON.stringify(COLUMN_COUNTS) &&
       JSON.stringify(standard.columns.map((column) => column.cardCount)) ===
-        JSON.stringify([4, 2, 2, 1]) &&
-      standard.total === "9",
+        JSON.stringify([4, 1, 1, 2, 2, 1]) &&
+      standard.total === "11",
     `columns are ${JSON.stringify(
       standard.columns.map((column) => [column.id, column.label, column.headerCount, column.cardCount]),
     )} with total ${standard.total}`,
@@ -394,7 +575,7 @@ async function main() {
   const designRadii = radii(standard);
   check(
     "card-anatomy",
-    standard.cards.length === 9 &&
+    standard.cards.length === 11 &&
       standard.cards.every(
         (card) =>
           card.title &&
@@ -466,7 +647,7 @@ async function main() {
   );
   await waitFor(
     win,
-    `document.querySelector(".task-board__count")?.textContent.trim() === "8"`,
+    `document.querySelector(".task-board__count")?.textContent.trim() === "10"`,
     "the board's count to fall after delete",
   );
   const afterDelete = await sample(win, "delete");
@@ -478,7 +659,7 @@ async function main() {
     deleteCommands.length === 1 &&
       deleteCommands[0]?.type === "deleteTask" &&
       deleteCommands[0]?.id === "t-savings" &&
-      afterDelete.total === "8" &&
+      afterDelete.total === "10" &&
       columnOf(afterDelete, "done")?.headerCount === "0" &&
       columnOf(afterDelete, "done")?.cardCount === 0,
     `delete sent ${JSON.stringify(deleteCommands)}; Done is now ` +
@@ -558,10 +739,199 @@ async function main() {
     createCommands.length === 1 &&
       createCommands[0]?.type === "createTask" &&
       createCommands[0]?.title === "Write the Friday note" &&
-      afterCreate.total === "9" &&
+      afterCreate.total === "11" &&
       columnOf(afterCreate, "backlog")?.headerCount === "4",
     `create sent ${JSON.stringify(createCommands)}; total=${afterCreate.total}, ` +
       `Backlog=${columnOf(afterCreate, "backlog")?.headerCount}`,
+  );
+
+  // ── The drag: across two columns, within one, and one cancelled mid-air ────
+  // The sheet is expanded first: six columns need the room, and a drag across
+  // two of them should not be judged at the narrowest width the board supports.
+  win.setContentSize(WIDTHS[1].width, WIDTHS[1].height);
+  await settleFrames(win);
+  await sleep(180);
+
+  step("drag-across");
+  const source = await beginDrag(win, "t-brief");
+  const monthTarget = await dropPoint(win, "this-month", "t-month");
+  await moveDrag(win, source, monthTarget);
+  const inFlight = await sample(win, "drag-in-flight");
+  try {
+    const image = await win.webContents.capturePage();
+    fs.mkdirSync(artifactsDir, { recursive: true });
+    fs.writeFileSync(path.join(artifactsDir, "task-board-drag.png"), image.toPNG());
+  } catch (error) {
+    console.log(`[task-board-drag.png skipped] ${error}`);
+  }
+  const acrossCommands = await dropDrag(win, "t-brief", monthTarget);
+  await waitFor(
+    win,
+    `document.querySelector('[data-column="this-month"] [data-task-id="t-brief"]') !== null`,
+    "the dragged card to land in This month",
+  );
+  const across = await sample(win, "drag-across");
+  check(
+    "drag-across",
+    inFlight.dragGhost === true &&
+      inFlight.dropTargetColumn === "this-month" &&
+      JSON.stringify(inFlight.draggingIds) === JSON.stringify(["t-brief"]) &&
+      acrossCommands.length === 1 &&
+      acrossCommands[0]?.type === "moveTask" &&
+      acrossCommands[0]?.id === "t-brief" &&
+      acrossCommands[0]?.column === "this-month" &&
+      acrossCommands[0]?.beforeId === "t-month" &&
+      JSON.stringify(columnOf(across, "this-month")?.cards) ===
+        JSON.stringify(["t-brief", "t-month"]) &&
+      columnOf(across, "this-month")?.headerCount === "2" &&
+      columnOf(across, "backlog")?.headerCount === "3",
+    `flight ${JSON.stringify({
+      ghost: inFlight.dragGhost,
+      target: inFlight.dropTargetColumn,
+      dragging: inFlight.draggingIds,
+    })}; ` +
+      `commands ${JSON.stringify(acrossCommands)}; ` +
+      `month ${JSON.stringify(columnOf(across, "this-month"))}; ` +
+      `backlog ${columnOf(across, "backlog")?.headerCount}`,
+  );
+
+  step("drag-reorder");
+  const reorderSource = await beginDrag(win, "t-legacy");
+  const reorderTarget = await dropPoint(win, "backlog", "t-banking");
+  await moveDrag(win, reorderSource, reorderTarget);
+  const reorderCommands = await dropDrag(win, "t-legacy", reorderTarget);
+  await waitFor(
+    win,
+    `document.querySelector('[data-column="backlog"] .task-list > li:first-child [data-task-id="t-legacy"]') !== null`,
+    "the reordered card to lead Backlog",
+  );
+  const reordered = await sample(win, "drag-reorder");
+  check(
+    "drag-reorder",
+    reorderCommands.length === 1 &&
+      reorderCommands[0]?.type === "moveTask" &&
+      reorderCommands[0]?.id === "t-legacy" &&
+      reorderCommands[0]?.column === "backlog" &&
+      reorderCommands[0]?.beforeId === "t-banking" &&
+      JSON.stringify(columnOf(reordered, "backlog")?.cards) ===
+        JSON.stringify(["t-legacy", "t-banking", "t-new-1"]),
+    `commands ${JSON.stringify(reorderCommands)}; ` +
+      `backlog order ${JSON.stringify(columnOf(reordered, "backlog")?.cards)}`,
+  );
+
+  step("drag-cancel");
+  const beforeCancel = await win.webContents.executeJavaScript(
+    "window.taskBoardCommands.length",
+  );
+  const cancelSource = await beginDrag(win, "t-landlord");
+  const cancelTarget = await dropPoint(win, "today");
+  await moveDrag(win, cancelSource, cancelTarget);
+  await pressKey(win, "Escape");
+  await waitFor(
+    win,
+    `document.querySelector('[data-task-id="t-landlord"]')?.classList.contains("is-dragging") !== true`,
+    "Escape to end the drag",
+  );
+  mouse(win, "mouseUp", cancelTarget.x, cancelTarget.y);
+  await sleep(160);
+  const cancelCommands = (
+    await win.webContents.executeJavaScript("window.taskBoardCommands")
+  ).slice(beforeCancel);
+  const cancelled = await sample(win, "drag-cancel");
+  check(
+    "drag-cancel",
+    cancelCommands.length === 0 &&
+      !cancelled.dragGhost &&
+      JSON.stringify(columnOf(cancelled, "this-week")?.cards) ===
+        JSON.stringify(["t-ship", "t-landlord"]),
+    `cancel commands ${JSON.stringify(cancelCommands)}; ` +
+      `week ${JSON.stringify(columnOf(cancelled, "this-week")?.cards)}`,
+  );
+
+  // ── A column's own Add control creates in that column, not in Backlog ──────
+  step("column-add");
+  const beforeColumnAdd = await win.webContents.executeJavaScript(
+    "window.taskBoardCommands.length",
+  );
+  await clickSelector(win, '[data-column="this-month"] .task-column__add');
+  await waitFor(
+    win,
+    `document.querySelector('[data-column="this-month"] .task-composer input') !== null`,
+    "This month's composer to open",
+  );
+  await clickSelector(win, '[data-column="this-month"] .task-composer input');
+  await win.webContents.insertText("Book the accountant");
+  await clickSelector(win, '[data-column="this-month"] .task-composer__add');
+  await waitFor(
+    win,
+    `[...document.querySelectorAll('[data-column="this-month"] .task-card__title')].some((el) => el.textContent.trim() === "Book the accountant")`,
+    "the column-created card to appear in This month",
+  );
+  const added = await sample(win, "column-add");
+  const columnAddCommands = (
+    await win.webContents.executeJavaScript("window.taskBoardCommands")
+  ).slice(beforeColumnAdd);
+  check(
+    "column-add",
+    columnAddCommands.length === 1 &&
+      columnAddCommands[0]?.type === "createTask" &&
+      columnAddCommands[0]?.title === "Book the accountant" &&
+      columnAddCommands[0]?.column === "this-month" &&
+      columnOf(added, "this-month")?.headerCount === "3" &&
+      columnOf(added, "backlog")?.headerCount === "3",
+    `column add sent ${JSON.stringify(columnAddCommands)}; ` +
+      `month=${columnOf(added, "this-month")?.headerCount}, ` +
+      `backlog=${columnOf(added, "backlog")?.headerCount}`,
+  );
+
+  // ── The standard sheet scrolls the board under a drag at its edge ──────────
+  step("drag-scroll");
+  win.setContentSize(WIDTHS[0].width, WIDTHS[0].height);
+  await settleFrames(win);
+  await sleep(180);
+  const beforeScroll = await win.webContents.executeJavaScript(
+    "window.taskBoardCommands.length",
+  );
+  const scrollViewport = await win.webContents.executeJavaScript(
+    `(() => {
+       const el = document.querySelector(".task-board__viewport");
+       if (!el) return null;
+       const r = el.getBoundingClientRect();
+       return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, scrollLeft: el.scrollLeft };
+     })()`,
+  );
+  if (!scrollViewport) throw new Error("the board has no scroll viewport");
+  const scrollSource = await beginDrag(win, "t-brief");
+  await moveDrag(win, scrollSource, {
+    x: scrollViewport.right - 8,
+    y: scrollViewport.top + 120,
+  });
+  // The hand now holds still at the edge: only the auto-scroll loop can move
+  // the board, which is exactly the claim.
+  await sleep(420);
+  const scrolled = await win.webContents.executeJavaScript(
+    `(() => {
+       const el = document.querySelector(".task-board__viewport");
+       return el ? { scrollLeft: el.scrollLeft, scroll: el.scrollWidth, client: el.clientWidth } : null;
+     })()`,
+  );
+  await pressKey(win, "Escape");
+  await waitFor(
+    win,
+    `document.querySelector('[data-task-id="t-brief"]')?.classList.contains("is-dragging") !== true`,
+    "Escape to end the auto-scroll drag",
+  );
+  mouse(win, "mouseUp", scrollViewport.right - 8, scrollViewport.top + 120);
+  await sleep(160);
+  const scrollCommands = (
+    await win.webContents.executeJavaScript("window.taskBoardCommands")
+  ).slice(beforeScroll);
+  check(
+    "drag-scroll",
+    (scrolled?.scrollLeft ?? 0) > 20 &&
+      (scrolled?.scroll ?? 0) > (scrolled?.client ?? 0) &&
+      scrollCommands.length === 0,
+    `board ${JSON.stringify(scrolled)}; commands ${JSON.stringify(scrollCommands)}`,
   );
 
   // ── Width: the columns grow with the page, then stop at the board's ceiling ─
@@ -585,7 +955,7 @@ async function main() {
   check(
     "width-growth",
     expandedBoard.page.width > standardBoard.page.width + 200 &&
-      expandedBoard.columns[0].width > standardBoard.columns[0].width + 50 &&
+      expandedBoard.columns[0].width > standardBoard.columns[0].width + 5 &&
       spread(columnWidths(standardBoard)) <= 1 &&
       spread(columnWidths(expandedBoard)) <= 1,
     `page ${standardBoard.page.width}→${expandedBoard.page.width}px; ` +
@@ -606,21 +976,37 @@ async function main() {
       `${JSON.stringify(columnWidths(cappedBoard))}`,
   );
 
+  // The page itself never scrolls sideways; the board's own viewport carries
+  // the overflow at the standard sheet, and is still once the sheet is wide
+  // enough for all six readable columns.
   const spills = boards.flatMap((entry) => {
     const scroller = entry.board.scrollport;
     return scroller && scroller.scroll > scroller.client + 1
       ? [{ name: entry.name, scroll: scroller.scroll, client: scroller.client }]
       : [];
   });
+  const standardViewport = standardBoard.viewport;
+  const expandedViewport = expandedBoard.viewport;
   check(
     "no-overflow",
     spills.length === 0 &&
-      boards.every(
-        (entry) =>
+      boards.every((entry) => {
+        const viewport = entry.board.viewport;
+        return (
+          viewport &&
           entry.board.board.width <= entry.board.page.width + 1 &&
-          entry.board.grid.width <= entry.board.page.width + 1,
-      ),
-    `overflowing widths: ${JSON.stringify(spills)}`,
+          viewport.width <= entry.board.page.width + 1 &&
+          viewport.scroll >= viewport.client
+        );
+      }) &&
+      Boolean(standardViewport) &&
+      (standardViewport?.scroll ?? 0) > (standardViewport?.client ?? 0) + 20 &&
+      (standardViewport?.overflowX === "auto" || standardViewport?.overflowX === "scroll") &&
+      Boolean(expandedViewport) &&
+      (expandedViewport?.scroll ?? 0) <= (expandedViewport?.client ?? 0) + 1,
+    `page spills: ${JSON.stringify(spills)}; ` +
+      `standard board ${JSON.stringify(standardViewport)}; ` +
+      `expanded board ${JSON.stringify(expandedViewport)}`,
   );
 
   // ── Artifact: the board as the operator sees it, and its menu ──────────────
@@ -702,9 +1088,10 @@ async function main() {
     pass: errors.length === 0,
     failures: errors,
     what:
-      "the Act page's task board: header before board, four titled and counted columns, cards whose " +
-      "destructive action sits one deliberate step behind a 3-dot menu, and columns that widen with " +
-      "the sheet up to the board's own ceiling",
+      "the Act page's task board: header before board, six titled and counted columns through This " +
+      "quarter and This month, cards that can be dragged across columns or reordered in place, columns " +
+      "that widen with the sheet up to the board's own ceiling, and a page without the Strategy badge " +
+      "or Execution brief",
     skin,
     checks: {
       scenarios,
@@ -718,6 +1105,7 @@ async function main() {
         columns: entry.board.columns,
         total: entry.board.total,
         scrollport: entry.board.scrollport,
+        viewport: entry.board.viewport,
       })),
       dom: {
         pageChildren: standard.pageChildren,

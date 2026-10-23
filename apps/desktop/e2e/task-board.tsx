@@ -14,10 +14,12 @@
  * `taskBoardUnexpectedCalls` and answered `{ ok: false }`. Nothing here writes a
  * real vault.
  *
- * The fixture is deliberately uneven: four cards in Backlog, two in This week,
- * two in Today, one in Done, with links (goal, project, date, week item), one
- * dangling goal link, and notes long enough to need the card's line clamp. A
- * board of identical cards proves nothing about the card's own hierarchy.
+ * The fixture is deliberately uneven: four cards in Backlog, one in This
+ * quarter, one in This month, two in This week, two in Today, one in Done, with
+ * links (goal, project, date, week item), one dangling goal link, and notes long
+ * enough to need the card's line clamp. A board of identical cards proves
+ * nothing about the card's own hierarchy, and an empty horizon would not prove
+ * that its column reads at all.
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -86,6 +88,20 @@ const SEED_TASKS: Task[] = [
     column: "backlog",
     // A dangling goal: the card has to say so rather than painting an empty chip.
     links: { goalId: "g-retired" },
+  },
+  {
+    id: "t-quarter",
+    title: "Close out the Q4 vendor contracts",
+    notes: "Renewals, seat counts, and the two clauses legal flagged.",
+    column: "this-quarter",
+    links: { goalId: "g-brief", projectId: "p-act" },
+  },
+  {
+    id: "t-month",
+    title: "Renew the domain and TLS certificates",
+    notes: "",
+    column: "this-month",
+    links: { date: "2026-10-30" },
   },
   {
     id: "t-ship",
@@ -290,6 +306,36 @@ function applyMapCommand(state: StoreState, command: MapCommand): StoreState {
             : task,
         ),
       };
+    case "moveTask": {
+      // The board's drag write, applied with the same rule the vault-core
+      // command uses: remove, then insert before the named card in the target
+      // column, or append after that column's last card.
+      const moved = state.tasks.find((task) => task.id === command.id);
+      if (!moved) return state;
+      const without = state.tasks.filter((task) => task.id !== command.id);
+      let insertAt = -1;
+      if (command.beforeId && command.beforeId !== command.id) {
+        insertAt = without.findIndex(
+          (task) =>
+            task.id === command.beforeId && task.column === command.column,
+        );
+      }
+      if (insertAt < 0) {
+        let last = -1;
+        without.forEach((task, index) => {
+          if (task.column === command.column) last = index;
+        });
+        insertAt = last >= 0 ? last + 1 : without.length;
+      }
+      return {
+        ...state,
+        tasks: [
+          ...without.slice(0, insertAt),
+          { ...moved, column: command.column },
+          ...without.slice(insertAt),
+        ],
+      };
+    }
     default:
       return state;
   }

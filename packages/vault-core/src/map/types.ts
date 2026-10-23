@@ -105,7 +105,19 @@ export type YearRecord = {
   snapshot?: YearSnapshot;
 };
 
-export type TaskColumn = "backlog" | "this-week" | "today" | "done";
+/**
+ * A task's place on the Act board, in board order: when the work is due.
+ *
+ * `backlog` is unscheduled, the three horizons narrow toward now, and `done`
+ * closes the row. The order is also the order the columns are drawn in.
+ */
+export type TaskColumn =
+  | "backlog"
+  | "this-quarter"
+  | "this-month"
+  | "this-week"
+  | "today"
+  | "done";
 
 export type TaskLinks = {
   goalId?: string;
@@ -260,6 +272,18 @@ export type Command =
       notes?: string;
       column?: TaskColumn;
       links?: TaskLinks;
+    }
+  /**
+   * Move a task to `column`, placing it immediately before `beforeId` when that
+   * card is in the target column and omitting it to append. This is the board's
+   * drag/drop write: unlike `updateTask` it also chooses the task's position in
+   * its new column, and it is a no-op when the task is already there.
+   */
+  | {
+      type: "moveTask";
+      id: string;
+      column: TaskColumn;
+      beforeId?: string | null;
     }
   | { type: "deleteTask"; id: string }
   | { type: "setAboutMe"; text: string }
