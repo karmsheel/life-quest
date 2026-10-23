@@ -7,6 +7,7 @@ import {
   CalendarRange,
   ClipboardList,
   Clock,
+  Compass,
   Database,
   FileStack,
   FileText,
@@ -35,7 +36,7 @@ export type NavItem = {
   pin?: "top" | "bottom";
 };
 
-/** Top: Life-Chain, Decisions, Daily Note. Home: Dashboard, Data, Pages, Documents, Personnel. Define: Dream, Vision. Plan: Goals, Projects, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
+/** Top: Life-Chain, Decisions, Daily Note. Home: Dashboard, Data, Pages, Documents, Personnel. Define: Dream, Vision, Ideal State. Plan: Goals, Projects, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -116,6 +117,16 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/vision",
     label: "Vision",
     icon: Telescope,
+    section: "main",
+    wing: "define",
+  },
+  {
+    // Not doctrine: the operator's own titled documents, as many as they think
+    // of. Beside Dream and Vision because that is where the future is defined.
+    id: "ideal-state",
+    href: "/ideal-state",
+    label: "Ideal State",
+    icon: Compass,
     section: "main",
     wing: "define",
   },

@@ -145,6 +145,15 @@ export {
   writeDailyNote,
 } from "./daily-notes.ts";
 export {
+  IDEAL_STATE_FILE,
+  IDEAL_STATE_TITLE_MAX,
+  createIdealState,
+  deleteIdealState,
+  getIdealState,
+  listIdealStates,
+  updateIdealState,
+} from "./ideal-state.ts";
+export {
   DAILY_NOTE_TOOL_DEFS,
   executeDailyNoteTool,
 } from "./daily-note-tools.ts";
