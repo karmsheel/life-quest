@@ -463,8 +463,8 @@ export default function DailyNotePage() {
           onClick={() => void goToDay(entry.date)}
         >
           <span className="daily-note__history-date">
-            {entry.date === today ? "Today · " : ""}
             {formatLocalIsoDate(entry.date)}
+            {entry.date === today ? " (Today)" : ""}
           </span>
           <span className="daily-note__history-weekday">
             {weekdayOf(entry.date) ?? "—"}

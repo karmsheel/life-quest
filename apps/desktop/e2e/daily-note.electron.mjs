@@ -1049,8 +1049,15 @@ async function main() {
   );
   const saved = await sample(win);
   checks.afterSave = saved;
-  if (!saved.rows.some((row) => row.text.startsWith("Today"))) {
+  // The latest row is today's note, and it reads date first with "(Today)" as
+  // the parenthetical — the same way the heading above the box reads it.
+  const savedTodayRow = saved.rows.find((row) => row.isoDate === today);
+  if (!savedTodayRow) {
     failure(`the journal strip does not list the day just written: ${JSON.stringify(saved.rows)}`);
+  } else if (!/^\d{1,2} \w{3} \d{4} \(Today\)$/.test(savedTodayRow.date ?? "")) {
+    failure(
+      `today's journal row reads ${JSON.stringify(savedTodayRow.date)}, not its date first with "(Today)"`,
+    );
   }
 
   // The operator leaves the line, and the note settles into the paragraphs the

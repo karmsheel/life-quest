@@ -588,9 +588,12 @@ describe("daily note ui e2e", () => {
     // The write settles: the file's own body is in the editor and the day is
     // listed, so the page never disagrees with the file it just wrote.
     assert.equal(report.checks.afterSave.status, "Saved");
-    assert.ok(
-      report.checks.afterSave.rows.some((row) => row.text.startsWith("Today")),
-      "the day just written is missing from the journal strip",
+    const savedTodayRow = report.checks.afterSave.rows.find((row) => row.isoDate === today);
+    assert.ok(savedTodayRow, "the day just written is missing from the journal strip");
+    assert.match(
+      String(savedTodayRow!.date),
+      /^\d{1,2} \w{3} \d{4} \(Today\)$/,
+      `today's journal row reads ${JSON.stringify(savedTodayRow!.date)}, not its date first with "(Today)"`,
     );
 
     // ── a save that lands mid-sentence leaves the writing line alone ────────
