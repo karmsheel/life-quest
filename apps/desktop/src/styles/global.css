@@ -4789,19 +4789,21 @@ a.home-mini-list__link:hover {
    gave its column back to. The circle is the whole control; the mask is the Nous
    girl.
 
-   The two colours are a pair per theme. Day mode wears the accent as its resting
-   fill and a paper-white mark, because a dark face is lost on the lighter day
-   accent. Night mode steps the resting fill down from the accent — the dark
-   palette's accent is a little too bright to sit still on a dark page — and then
-   lights it back up to that accent on hover, so the highlight is exactly the
-   colour the button used to wear at rest. The mark is the fixed dark gray the
-   night face needs; the palette's own foreground would turn it white on orange. */
+   The colours are a pair per theme, but the mark is the same dark gray in both:
+   on the paper field of day it reads as the mark, and on the orange field of
+   night it is the only ink that keeps its face. Day mode wears the page's paper
+   as its resting fill and the accent as a visible hairline around it, so the
+   standout colour outlines the button instead of flooding it. Hover warms the
+   fill to the accent tint while the outline stays put. Night mode steps the
+   resting fill down from the accent — the dark palette's accent is a little too
+   bright to sit still on a dark page — and then lights it back up to that accent
+   on hover, so the highlight is exactly the colour the button used to wear at
+   rest. */
 .chat-launcher {
-  --chat-launcher-surface: var(--accent);
-  --chat-launcher-surface-hover: var(--accent-hover);
-  /* Day mode's ink is the page's paper: warm, and clearly lighter than the
-     accent it sits on. Night mode overrides it below. */
-  --chat-launcher-ink: var(--background);
+  --chat-launcher-surface: var(--background);
+  --chat-launcher-surface-hover: var(--accent-tint);
+  --chat-launcher-outline: var(--accent);
+  --chat-launcher-ink: #333333;
   position: fixed;
   right: calc(var(--shell-frame) + 1rem);
   bottom: calc(var(--shell-frame) + 1rem);
@@ -4811,7 +4813,7 @@ a.home-mini-list__link:hover {
   width: 3.25rem;
   height: 3.25rem;
   padding: 0;
-  border: 0;
+  border: 1px solid var(--chat-launcher-outline);
   border-radius: 50%;
   background: var(--chat-launcher-surface);
   color: var(--chat-launcher-ink);
@@ -4826,6 +4828,7 @@ a.home-mini-list__link:hover {
 [data-theme="dark"] .chat-launcher {
   --chat-launcher-surface: color-mix(in srgb, var(--accent) 82%, #000);
   --chat-launcher-surface-hover: var(--accent);
+  --chat-launcher-outline: transparent;
   --chat-launcher-ink: #333333;
 }
 
@@ -4833,6 +4836,7 @@ a.home-mini-list__link:hover {
   html:not([data-theme]) .chat-launcher {
     --chat-launcher-surface: color-mix(in srgb, var(--accent) 82%, #000);
     --chat-launcher-surface-hover: var(--accent);
+    --chat-launcher-outline: transparent;
     --chat-launcher-ink: #333333;
   }
 }

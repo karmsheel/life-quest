@@ -190,6 +190,8 @@ const SAMPLE = `(() => {
           borderRadius: launcherStyle.borderRadius,
           background: launcherStyle.backgroundColor,
           color: launcherStyle.color,
+          borderColor: launcherStyle.borderTopColor,
+          borderWidth: launcherStyle.borderTopWidth,
           mark: Boolean(launcherMark),
           markMask: launcherMarkStyle
             ? launcherMarkStyle.maskImage || launcherMarkStyle.webkitMaskImage
@@ -828,15 +830,18 @@ async function main() {
     const dockCollapsedLight = await settled();
     const lightShot = await shot("chat-side-launcher-light.png");
     check(
-      "left/collapsed dock: the day theme changes the mark's ink",
-      dockCollapsedLight.launcher.color !== dockCollapsed.launcher.color &&
-        dockCollapsedLight.launcher.color === dockCollapsedLight.paperBackground,
-      `day ink ${dockCollapsedLight.launcher.color} vs night ${dockCollapsed.launcher.color}, day paper ${dockCollapsedLight.paperBackground}`,
+      "left/collapsed dock: the day theme keeps the night gray mark",
+      dockCollapsedLight.launcher.color === dockCollapsed.launcher.color &&
+        dockCollapsedLight.launcher.color === "rgb(51, 51, 51)",
+      `day ink ${dockCollapsedLight.launcher.color} vs night ${dockCollapsed.launcher.color}`,
     );
     check(
-      "left/collapsed dock: the day fill is the accent itself",
-      dockCollapsedLight.launcher.background === dockCollapsedLight.accentBackground,
-      `day fill ${dockCollapsedLight.launcher.background} vs accent ${dockCollapsedLight.accentBackground}`,
+      "left/collapsed dock: the day fill is paper, outlined in the accent",
+      dockCollapsedLight.launcher.background === dockCollapsedLight.paperBackground &&
+        dockCollapsedLight.launcher.background !== dockCollapsedLight.accentBackground &&
+        dockCollapsedLight.launcher.borderColor === dockCollapsedLight.accentBackground &&
+        parseFloat(dockCollapsedLight.launcher.borderWidth) >= 1,
+      `day fill ${dockCollapsedLight.launcher.background} vs paper ${dockCollapsedLight.paperBackground}, outline ${dockCollapsedLight.launcher.borderWidth} ${dockCollapsedLight.launcher.borderColor} vs accent ${dockCollapsedLight.accentBackground}`,
     );
     await click(".theme-mode-toggle");
     const dockCollapsedDarkAgain = await settled();

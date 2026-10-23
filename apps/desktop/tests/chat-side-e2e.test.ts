@@ -78,6 +78,8 @@ type Arrangement = {
     borderRadius: string;
     background: string;
     color: string;
+    borderColor: string;
+    borderWidth: string;
     mark: boolean;
     markMask: string | null;
     markWidth: number | null;
@@ -512,18 +514,28 @@ describe("chat dock side switch", () => {
     );
     assert.equal(
       dockCollapsedLight.launcher?.color,
-      dockCollapsedLight.paperBackground,
-      `the day mark is not the paper ink (${dockCollapsedLight.launcher?.color} vs ${dockCollapsedLight.paperBackground})`,
-    );
-    assert.notEqual(
-      dockCollapsedLight.launcher?.color,
       dockCollapsed.launcher?.color,
-      "the launcher ink did not change with the theme",
+      `the day mark changed ink instead of keeping the night gray (${dockCollapsedLight.launcher?.color} vs ${dockCollapsed.launcher?.color})`,
     );
     assert.equal(
       dockCollapsedLight.launcher?.background,
+      dockCollapsedLight.paperBackground,
+      `the day launcher is not on the paper fill (${dockCollapsedLight.launcher?.background} vs ${dockCollapsedLight.paperBackground})`,
+    );
+    assert.notEqual(
+      dockCollapsedLight.launcher?.background,
       dockCollapsedLight.accentBackground,
-      `the day launcher is not wearing the accent at rest (${dockCollapsedLight.launcher?.background} vs ${dockCollapsedLight.accentBackground})`,
+      "the day launcher is still flooded with the standout colour",
+    );
+    assert.equal(
+      dockCollapsedLight.launcher?.borderColor,
+      dockCollapsedLight.accentBackground,
+      `the day launcher has no accent outline (${dockCollapsedLight.launcher?.borderColor} vs ${dockCollapsedLight.accentBackground})`,
+    );
+    assert.equal(
+      parseFloat(dockCollapsedLight.launcher?.borderWidth ?? "0") >= 1,
+      true,
+      `the day launcher's outline is not visible (${dockCollapsedLight.launcher?.borderWidth})`,
     );
     assert.equal(
       dockCollapsedDarkAgain.launcher?.background,
