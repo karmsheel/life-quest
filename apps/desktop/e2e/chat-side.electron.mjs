@@ -173,6 +173,7 @@ const SAMPLE = `(() => {
           position: launcherStyle.position,
           borderRadius: launcherStyle.borderRadius,
           background: launcherStyle.backgroundColor,
+          color: launcherStyle.color,
           mark: Boolean(launcherMark),
           markMask: launcherMarkStyle
             ? launcherMarkStyle.maskImage || launcherMarkStyle.webkitMaskImage
@@ -181,7 +182,16 @@ const SAMPLE = `(() => {
           markHeight: launcherMarkStyle ? px(launcherMarkStyle.height) : null
         }
       : null,
-    actions: actions ? { box: box(actions) } : null,
+    actions: actions
+      ? {
+          box: box(actions),
+          controls: Array.from(actions.querySelectorAll("button")).map((el) => ({
+            label: el.getAttribute("aria-label"),
+            icon: iconClass(el),
+            disabled: el.disabled
+          }))
+        }
+      : null,
     collapseAction: collapseAction
       ? {
           label: collapseAction.getAttribute("aria-label"),

@@ -75,12 +75,16 @@ type Arrangement = {
     position: string;
     borderRadius: string;
     background: string;
+    color: string;
     mark: boolean;
     markMask: string | null;
     markWidth: number | null;
     markHeight: number | null;
   } | null;
-  actions: { box: Box } | null;
+  actions: {
+    box: Box;
+    controls: { label: string | null; icon: string | null; disabled: boolean }[];
+  } | null;
   collapseAction: {
     label: string | null;
     title: string | null;
@@ -462,6 +466,11 @@ describe("chat dock side switch", () => {
       `the floating mark is not the Nous girl (${dockCollapsed.launcher?.mark}, ${dockCollapsed.launcher?.markMask})`,
     );
     assert.equal(
+      dockCollapsed.launcher?.color,
+      "rgb(51, 51, 51)",
+      `the mark is not dark gray on the orange button (${dockCollapsed.launcher?.color})`,
+    );
+    assert.equal(
       dockCollapsed.launcher?.box.left !== undefined &&
         dockCollapsed.launcher.box.left > dockCollapsed.viewport.width / 2 &&
         dockCollapsed.launcher.box.top > dockCollapsed.viewport.height / 2,
@@ -546,6 +555,11 @@ describe("chat dock side switch", () => {
       restored.collapseAction?.icon,
       "lucide-panel-right-close",
       `the bottom bar's collapse arrow does not point at the trailing dock (${restored.collapseAction?.icon})`,
+    );
+    assert.deepEqual(
+      restored.actions?.controls.map((control) => control.label),
+      ["Chat history", "New chat", "Life-Chain", "Collapse chat"],
+      `the bottom bar still carries an unassigned action: ${JSON.stringify(restored.actions?.controls)}`,
     );
     assert.ok(bar && collapseBox, "the bottom bar or its collapse control was not found");
     assert.equal(

@@ -28,7 +28,6 @@ import {
   Pin,
   PinOff,
   Radio,
-  Search,
   SquarePen,
   X,
 } from "lucide-react";
@@ -2182,10 +2181,9 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
           {/*
             The dock's own actions, pinned to the bottom of the bar and shared by
             all three surfaces: the list is where most navigation happens, so its
-            entry point cannot live inside the thread it replaces. Slot three is
-            still reserved — disabled rather than absent, so the row keeps the
-            shape it will end up as — and slot four is the chain: the dock's
-            second way into the Life-Chain, alongside the rail's.
+            entry point cannot live inside the thread it replaces. The chain is
+            the dock's second way into the Life-Chain, alongside the rail's, and
+            the collapse control trails the group at the bar's far right.
           */}
           <nav className="chat-panel__actions" aria-label="Chat and chain actions">
             <button
@@ -2207,15 +2205,6 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               onClick={() => void newSession()}
             >
               <SquarePen size={20} aria-hidden />
-            </button>
-            <button
-              type="button"
-              className="chat-panel__icon-btn chat-panel__action"
-              aria-label="Search chats (coming soon)"
-              title="Search chats — coming soon"
-              disabled
-            >
-              <Search size={20} aria-hidden />
             </button>
             <button
               type="button"

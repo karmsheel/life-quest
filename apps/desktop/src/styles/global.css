@@ -4787,7 +4787,9 @@ a.home-mini-list__link:hover {
 /* The collapsed dock, as one floating mark instead of a vertical strip: the
    agent's own art in the bottom-right corner of the window, over the sheet it
    gave its column back to. The circle is the whole control; the mask is the Nous
-   girl, so the logo follows the palette rather than carrying its own ink. */
+   girl. The mark keeps a fixed dark gray rather than the palette's foreground:
+   on the orange button in the dark theme that foreground is white, and a white
+   face on orange is the one combination the mark should never wear. */
 .chat-launcher {
   position: fixed;
   right: calc(var(--shell-frame) + 1rem);
@@ -4801,19 +4803,17 @@ a.home-mini-list__link:hover {
   border: 0;
   border-radius: 50%;
   background: var(--accent);
-  color: var(--accent-fg);
+  color: #333333;
   box-shadow: var(--shadow-md);
   cursor: pointer;
   transition:
     background-color var(--dur-quick) var(--ease-out),
-    color var(--dur-quick) var(--ease-out),
     transform var(--dur-quick) var(--ease-out),
     box-shadow var(--dur-quick) var(--ease-out);
 }
 
 .chat-launcher:hover {
   background: var(--accent-hover);
-  color: var(--accent-hover-fg);
   transform: translateY(-2px);
   box-shadow:
     var(--shadow-md),
@@ -5612,8 +5612,9 @@ button.chat-panel__activity-line:hover {
 }
 
 /* The way out sits at the trailing end of the bar rather than on its own row:
-   the four surfaces stay one group on the left, and the collapse control holds
-   the bottom-right corner beside the icon that brings the dock back. */
+   the three surface controls stay one group on the left, and the collapse
+   control holds the bottom-right corner beside the icon that brings the dock
+   back. */
 .chat-panel__action--collapse {
   margin-left: auto;
 }
