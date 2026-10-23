@@ -126,10 +126,17 @@ function weekTitle(week: IsoWeek): string {
  * columns, rather than as a link.
  *
  * The page centres its one column on the workspace, and the box opens at twice
- * the height of the studio's other note boxes: a day is written at length. A page
- * with room for both puts the strip beside the box, taking the edge away from the
- * chat dock — the strip goes left when the dock is right, and right when it is
- * left — so the note never sits under the companion's shadow.
+ * the height of the studio's other note boxes: a day is written at length. The
+ * pager wears the box's own edges — Prev day on its leading edge, Next day on its
+ * trailing edge — and the date sits centred between them, the day first and
+ * "(Today)" as its parenthetical.
+ *
+ * A page with room for both puts the strip at the page's edge away from the chat
+ * dock — left when the dock is right, right when it is left — and the box at the
+ * other, so the journal's weight answers the companion across the page and the
+ * spread between them grows with the window. The header rides the box's column,
+ * not the strip's: the title, the pager and the date all sit over the day being
+ * written, while the strip keeps its own heading.
  *
  * Leaving a day is gated on that day's own write *completing*. A write that fails
  * keeps the operator on the day they were writing, with the draft intact, because
@@ -475,171 +482,176 @@ export default function DailyNotePage() {
 
   return (
     <div className="daily-note">
-      <header className="daily-note__header">
-        <h1>Daily Note</h1>
-        <div className="daily-note__pager">
-          <Button
-            variant="outline"
-            data-testid="daily-note-prev"
-            onClick={() => {
-              if (prevDate) void goToDay(prevDate);
-            }}
-            disabled={!prevDate}
-          >
-            ‹ Prev day
-          </Button>
-          <span
-            className="daily-note__date"
-            data-testid="daily-note-day"
-            data-date={date}
-          >
-            {date === today ? "Today · " : ""}
-            {weekday ? `${weekday}, ` : ""}
-            {label}
-          </span>
-          <Button
-            variant="outline"
-            data-testid="daily-note-next"
-            onClick={() => {
-              if (nextDate) void goToDay(nextDate);
-            }}
-            disabled={!nextDate || atToday}
-          >
-            Next day ›
-          </Button>
-          {date !== today ? (
-            <Button
-              variant="ghost"
-              data-testid="daily-note-today"
-              onClick={() => void goToDay(today)}
-            >
-              Today
-            </Button>
-          ) : null}
-        </div>
-      </header>
-
-      {error ? (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      <div className="daily-note__workspace">
-        {loading ? (
-          <p className="muted daily-note__loading">Loading the day…</p>
-        ) : (
-          <div className="daily-note__compose">
-            <div
-              className="daily-note__editor"
-              // The pointer leaving the box — for another pane, another app — is
-              // the operator stepping away, so the day is written then rather than
-              // at the end of the debounce. Moving between paragraphs stays inside.
-              onBlur={(event) => {
-                if (event.currentTarget.contains(event.relatedTarget)) return;
-                void flush();
-              }}
-            >
-              <LiveMarkdownEditor
-                testId="daily-note-editor"
-                value={draft}
-                onChange={onDraftChange}
-                slug={`daily-note-${date}`}
-                ariaLabel={`Daily note for ${label}`}
-                autoFocusEmpty
-              />
+      <div className="daily-note__layout">
+        <header className="daily-note__header">
+          <h1>Daily Note</h1>
+          <div className="daily-note__pager">
+            <div className="daily-note__pager-start">
+              <Button
+                variant="outline"
+                data-testid="daily-note-prev"
+                onClick={() => {
+                  if (prevDate) void goToDay(prevDate);
+                }}
+                disabled={!prevDate}
+              >
+                ‹ Prev day
+              </Button>
+              {date !== today ? (
+                <Button
+                  variant="ghost"
+                  data-testid="daily-note-today"
+                  onClick={() => void goToDay(today)}
+                >
+                  Today
+                </Button>
+              ) : null}
             </div>
-
-            <p
-              className="daily-note__status muted"
-              data-testid="daily-note-status"
-              role="status"
+            <span
+              className="daily-note__date"
+              data-testid="daily-note-day"
+              data-date={date}
             >
-              {status}
-            </p>
+              {weekday ? `${weekday}, ` : ""}
+              {label}
+              {date === today ? " (Today)" : ""}
+            </span>
+            <Button
+              variant="outline"
+              className="daily-note__pager-next"
+              data-testid="daily-note-next"
+              onClick={() => {
+                if (nextDate) void goToDay(nextDate);
+              }}
+              disabled={!nextDate || atToday}
+            >
+              Next day ›
+            </Button>
           </div>
-        )}
+        </header>
 
-        <section className="daily-note__history">
-          <h2>Earlier notes</h2>
-          {newestFirst.length === 0 ? (
-            <p className="muted">
-              {todayHasNote
-                ? "Nothing yet."
-                : "No notes yet. Today's page is the first one."}
-            </p>
+        {error ? (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="daily-note__workspace">
+          {loading ? (
+            <p className="muted daily-note__loading">Loading the day…</p>
           ) : (
-            <>
-              {/* The strip is one small table: the day written *about*, its weekday,
-                  and when it was last written. The header is decoration — every row
-                  is a button whose own cells say the same thing — so it is hidden
-                  from the reading order rather than announced twice. */}
-              <div className="daily-note__history-head" aria-hidden="true">
-                <span>Date</span>
-                <span>Day</span>
-                <span>Last edited</span>
+            <div className="daily-note__compose">
+              <div
+                className="daily-note__editor"
+                // The pointer leaving the box — for another pane, another app — is
+                // the operator stepping away, so the day is written then rather than
+                // at the end of the debounce. Moving between paragraphs stays inside.
+                onBlur={(event) => {
+                  if (event.currentTarget.contains(event.relatedTarget)) return;
+                  void flush();
+                }}
+              >
+                <LiveMarkdownEditor
+                  testId="daily-note-editor"
+                  value={draft}
+                  onChange={onDraftChange}
+                  slug={`daily-note-${date}`}
+                  ariaLabel={`Daily note for ${label}`}
+                  autoFocusEmpty
+                />
               </div>
 
-              {/* This week stays open: the days after today are what "Earlier
-                  notes" means right now, and folding them under a click would
-                  hide the one week the operator is living in. */}
-              {weeks.current.length > 0 ? (
-                <ul className="daily-note__history-list" data-week="current">
-                  {weeks.current.map(historyRow)}
-                </ul>
-              ) : null}
-
-              {/* Every week before this one folds under its own toggle. The list
-                  is mounted only while the week is open, so a year of folded
-                  weeks is a year of labels rather than a year of rows. */}
-              {weeks.previous.map((week) => {
-                const open = openWeeks.includes(week.start);
-                const daysId = `daily-note-week-${week.start}-days`;
-                return (
-                  <div
-                    className="daily-note__week"
-                    key={week.start}
-                    data-week={week.start}
-                  >
-                    <button
-                      type="button"
-                      className="daily-note__week-toggle"
-                      data-testid={`daily-note-week-${week.start}`}
-                      aria-expanded={open}
-                      aria-controls={open ? daysId : undefined}
-                      title={weekTitle(week)}
-                      onClick={() => toggleWeek(week.start)}
-                    >
-                      <span className="daily-note__week-caret" aria-hidden="true">
-                        ›
-                      </span>
-                      <span className="daily-note__week-label">
-                        {weekLabel(week, currentYear)}
-                      </span>
-                      <span className="daily-note__week-count muted">
-                        {week.entries.length}{" "}
-                        {week.entries.length === 1 ? "note" : "notes"}
-                      </span>
-                    </button>
-                    {open ? (
-                      <ul className="daily-note__history-list" id={daysId}>
-                        {week.entries.map(historyRow)}
-                      </ul>
-                    ) : null}
-                  </div>
-                );
-              })}
-
-              {/* A file that names no usable day belongs to no week, so it is
-                  reported where it sits rather than silently dropped. */}
-              {weeks.unreadable.length > 0 ? (
-                <ul className="daily-note__history-list">
-                  {weeks.unreadable.map(historyRow)}
-                </ul>
-              ) : null}
-            </>
+              <p
+                className="daily-note__status muted"
+                data-testid="daily-note-status"
+                role="status"
+              >
+                {status}
+              </p>
+            </div>
           )}
-        </section>
+
+          <section className="daily-note__history">
+            <h2>Earlier notes</h2>
+            {newestFirst.length === 0 ? (
+              <p className="muted">
+                {todayHasNote
+                  ? "Nothing yet."
+                  : "No notes yet. Today's page is the first one."}
+              </p>
+            ) : (
+              <>
+                {/* The strip is one small table: the day written *about*, its weekday,
+                    and when it was last written. The header is decoration — every row
+                    is a button whose own cells say the same thing — so it is hidden
+                    from the reading order rather than announced twice. */}
+                <div className="daily-note__history-head" aria-hidden="true">
+                  <span>Date</span>
+                  <span>Day</span>
+                  <span>Last edited</span>
+                </div>
+
+                {/* This week stays open: the days after today are what "Earlier
+                    notes" means right now, and folding them under a click would
+                    hide the one week the operator is living in. */}
+                {weeks.current.length > 0 ? (
+                  <ul className="daily-note__history-list" data-week="current">
+                    {weeks.current.map(historyRow)}
+                  </ul>
+                ) : null}
+
+                {/* Every week before this one folds under its own toggle. The list
+                    is mounted only while the week is open, so a year of folded
+                    weeks is a year of labels rather than a year of rows. */}
+                {weeks.previous.map((week) => {
+                  const open = openWeeks.includes(week.start);
+                  const daysId = `daily-note-week-${week.start}-days`;
+                  return (
+                    <div
+                      className="daily-note__week"
+                      key={week.start}
+                      data-week={week.start}
+                    >
+                      <button
+                        type="button"
+                        className="daily-note__week-toggle"
+                        data-testid={`daily-note-week-${week.start}`}
+                        aria-expanded={open}
+                        aria-controls={open ? daysId : undefined}
+                        title={weekTitle(week)}
+                        onClick={() => toggleWeek(week.start)}
+                      >
+                        <span className="daily-note__week-caret" aria-hidden="true">
+                          ›
+                        </span>
+                        <span className="daily-note__week-label">
+                          {weekLabel(week, currentYear)}
+                        </span>
+                        <span className="daily-note__week-count muted">
+                          {week.entries.length}{" "}
+                          {week.entries.length === 1 ? "note" : "notes"}
+                        </span>
+                      </button>
+                      {open ? (
+                        <ul className="daily-note__history-list" id={daysId}>
+                          {week.entries.map(historyRow)}
+                        </ul>
+                      ) : null}
+                    </div>
+                  );
+                })}
+
+                {/* A file that names no usable day belongs to no week, so it is
+                    reported where it sits rather than silently dropped. */}
+                {weeks.unreadable.length > 0 ? (
+                  <ul className="daily-note__history-list">
+                    {weeks.unreadable.map(historyRow)}
+                  </ul>
+                ) : null}
+              </>
+            )}
+          </section>
+        </div>
       </div>
     </div>
   );
