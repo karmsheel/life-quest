@@ -3,6 +3,7 @@ import {
   Building2,
   FlaskConical,
   Layers,
+  MessageCircleQuestion,
   Palette,
   RefreshCw,
   ScrollText,
@@ -16,6 +17,7 @@ export type SettingsViewId =
   | "vault"
   | "hermes"
   | "agent"
+  | "questions"
   | "updates"
   | "about"
   | "developer";
@@ -92,6 +94,24 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "companion",
       "persona",
       "instruction",
+    ],
+  },
+  {
+    id: "questions",
+    label: "Questions",
+    icon: MessageCircleQuestion,
+    keywords: [
+      "question",
+      "questions",
+      "prompt",
+      "prompts",
+      "starter",
+      "starters",
+      "saved",
+      "new chat",
+      "chat",
+      "ask",
+      "suggested",
     ],
   },
   {

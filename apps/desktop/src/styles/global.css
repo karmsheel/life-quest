@@ -4526,6 +4526,113 @@ a.home-mini-list__link:hover {
   color: var(--danger);
 }
 
+/* —— Settings · Questions: prompts saved for the chat composer —— */
+/* The form and the list share one card because they are one thing: the list is
+   what the form has written so far. The rule between them is the seam. */
+.settings-questions__intro {
+  max-width: 36rem;
+  margin-bottom: 1rem;
+}
+
+.settings-questions__add {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.settings-questions__scope-field {
+  max-width: 22rem;
+}
+
+.settings-questions__input {
+  width: 100%;
+  min-height: 4.5rem;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font: inherit;
+  line-height: 1.45;
+}
+
+.settings-questions__input:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+}
+
+.settings-questions__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.settings-questions__list-wrap {
+  padding-top: 1rem;
+}
+
+.settings-questions__list {
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-question {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.settings-question__text {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.settings-question__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+}
+
+.settings-question__scope {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}
+
+.settings-question__actions {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.settings-question__edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.settings-questions__empty {
+  margin: 0.5rem 0 0;
+}
+
 /* —— Settings · Agent: the prompts and skills the companion is given —— */
 .settings-prompt {
   display: flex;
@@ -5267,6 +5374,94 @@ a.home-mini-list__link:hover {
 
 .chat-panel__cta {
   margin-top: 0.35rem;
+}
+
+/**
+ * Saved questions in the empty thread.
+ *
+ * The empty state is centred; the list is not. A prompt is a line of prose the
+ * operator has to read before choosing it, so it stays left-aligned at a
+ * readable measure while the orb and the greeting keep the middle.
+ */
+.chat-panel__starters {
+  width: 100%;
+  max-width: 18.5rem;
+  margin-top: 0.35rem;
+  text-align: left;
+}
+
+.chat-panel__starters-title {
+  margin: 0 0 0.4rem;
+  color: var(--text-soft);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chat-panel__starters-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-panel__starter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 0.5rem;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out);
+}
+
+.chat-panel__starter:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+}
+
+.chat-panel__starter:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.chat-panel__starter:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.chat-panel__starter svg {
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+  color: var(--accent);
+}
+
+.chat-panel__starter-text {
+  flex: 1 1 10rem;
+  min-width: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.chat-panel__starter-scope {
+  flex-basis: 100%;
+  padding-left: 1.15rem;
+  color: var(--text-soft);
+  font-size: 0.625rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 /* —— Companion profile picker (setup screen + Settings → Hermes) ——
