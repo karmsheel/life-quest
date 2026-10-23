@@ -85,7 +85,7 @@ export function AppShell() {
           </div>
           <ChatPanel open={chatOpen} onOpenChange={setChatOpen} />
           {/* The handle on the seam, drawn only while there is a column to drag:
-              a collapsed dock is a tab, not a pane. */}
+              a collapsed dock is one floating mark, not a pane. */}
           {chatOpen ? (
             <ChatDivider side={chatSide} props={chatColumn.dividerProps} />
           ) : null}

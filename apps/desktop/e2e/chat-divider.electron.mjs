@@ -65,12 +65,15 @@ const SAMPLE = `(() => {
   const rail = document.querySelector(".shell > .nav-rail");
   const main = document.querySelector(".shell__main");
   const dock = document.querySelector(".chat-panel");
+  const launcher = document.querySelector(".chat-launcher");
   const divider = document.querySelector(".chat-divider");
   const shellStyle = shell ? getComputedStyle(shell) : null;
   const dividerStyle = divider ? getComputedStyle(divider) : null;
   const bar = divider ? getComputedStyle(divider, "::after") : null;
   const mainStyle = main ? getComputedStyle(main) : null;
   const dockStyle = dock ? getComputedStyle(dock) : null;
+  const launcherStyle = launcher ? getComputedStyle(launcher) : null;
+  const launcherMark = launcher?.querySelector(".chat-launcher__mark") ?? null;
   const railStyle = rail ? getComputedStyle(rail) : null;
   const tracks = shellStyle ? shellStyle.gridTemplateColumns.trim().split(/\\s+/) : [];
   const side = divider ? divider.dataset.side : null;
@@ -83,6 +86,7 @@ const SAMPLE = `(() => {
     if (!el) return null;
     if (divider && (el === divider || divider.contains(el))) return "divider";
     if (rail && rail.contains(el)) return "rail";
+    if (launcher && launcher.contains(el)) return "launcher";
     if (main && main.contains(el)) return "sheet";
     if (dock && dock.contains(el)) return "dock";
     return "other";
@@ -129,6 +133,14 @@ const SAMPLE = `(() => {
         }
       : null,
     dock: dock ? { box: dockBox, border: border(dockStyle), className: dock.className } : null,
+    launcher: launcher
+      ? {
+          box: box(launcher),
+          label: launcher.getAttribute("aria-label"),
+          position: launcherStyle.position,
+          mark: Boolean(launcherMark)
+        }
+      : null,
     divider: divider
       ? {
           found: true,
@@ -772,12 +784,12 @@ async function main() {
     const collapsed = await settled();
     collapsed.vaultName = vaultName;
     check(
-      "collapsed: the dock is the narrow tab",
-      collapsed.dock.box.width === 44,
-      `dock width ${collapsed.dock.box.width}px`,
+      "collapsed: the dock is no longer a pane in the grid",
+      collapsed.dock === null && collapsed.shell.chatColumn === "0px",
+      `dock ${JSON.stringify(collapsed.dock)}, chat column ${JSON.stringify(collapsed.shell.chatColumn)}`,
     );
     check(
-      "collapsed: there is no handle on a tab",
+      "collapsed: there is no handle without a seam",
       collapsed.divider.found === false,
       `handle ${JSON.stringify(collapsed.divider)}`,
     );
@@ -786,10 +798,20 @@ async function main() {
       collapsed.shell.inlineChatbarWidth === `${swapFloor.dockTrack}px`,
       `inline --chatbar-width ${JSON.stringify(collapsed.shell.inlineChatbarWidth)} vs ${swapFloor.dockTrack}px`,
     );
+    check(
+      "collapsed: the agent is one floating mark at the bottom right",
+      Boolean(collapsed.launcher) &&
+        collapsed.launcher.position === "fixed" &&
+        collapsed.launcher.mark === true &&
+        collapsed.launcher.label === "Open Hermes chat" &&
+        collapsed.launcher.box.left > collapsed.viewport.width / 2 &&
+        collapsed.launcher.box.top > collapsed.viewport.height / 2,
+      `launcher ${JSON.stringify(collapsed.launcher)}`,
+    );
     screenshots.push(await shot("chat-divider-collapsed.png"));
 
     at("reopened dock");
-    await click(".window-titlebar__chat-toggle");
+    await click(".chat-launcher");
     const reopened = await settled();
     reopened.vaultName = vaultName;
     checkArrangement("reopened", reopened, "left");
