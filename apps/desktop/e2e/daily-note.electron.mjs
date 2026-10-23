@@ -33,7 +33,10 @@
  *     is what makes "the day saves itself" falsifiable.
  *  4. The page lands on the local today, and an empty day opens its writing line
  *     with an invitation in it: blank body, "No note for this day yet", Next day
- *     inert (the future is closed) and Prev day live.
+ *     inert (the future is closed) and Prev day live. The day reads as its date
+ *     first, with "(Today)" as a parenthetical, and the pager puts Prev day on
+ *     the box's leading edge, Next day on its trailing edge and the date on the
+ *     box's centre.
  *  5. The day's chrome is the page's own, not the engine's: the earlier-notes
  *     rows paint no fill at rest, carry no bullets, and every button on the page
  *     wears the design's `--radius-xs` step rather than a pill. Reading the
@@ -74,17 +77,20 @@
  * 16. A future-dated file is never offered in the strip, and a file that names no
  *     real day is reported as unreadable where it sits rather than as a link.
  * 17. No bridge call this rig does not model, and no console error.
- * 18. The box and the strip centre on the page's own content column, not the
- *     window's: the rail and the dock have already taken their tracks, and a page
- *     centred in the window would sit under one of them.
+ * 18. At the default one-column width the box and the strip centre on the page's
+ *     own content column, not the window's: the rail and the dock have already
+ *     taken their tracks, and a page centred in the window would sit under one of
+ *     them. In the two-column layout the header, pager and date ride the box's
+ *     column, not the strip's.
  * 19. The box opens at twice the old 16rem floor — 32rem on an empty day — and
  *     its ceiling grew with it, because a day is written at length.
  * 20. The days before this week fold under a `W36 (31 Aug - 6 Sep)` label: the
  *     current week stays open, a folded week mounts no rows, and opening a week
  *     draws its days — including the far day's last-edited stamp.
- * 21. A page wide enough for two columns puts the strip beside the box, on the
- *     edge away from the chat dock; the pair stays centred, and swapping the dock
- *     swaps the strip's side with it.
+ * 21. A page wide enough for two columns puts the strip at the page's edge away
+ *     from the chat dock and the box at the other, with a spread between them that
+ *     answers the dock's width across the page; swapping the dock swaps the strip's
+ *     side with it. The box and the header keep their own column.
  *
  * NOT covered here: that the note reaches disk as `notes/daily/{date}.md`, that a
  * second write edits one file, and that a review's period pack reads the window
@@ -207,6 +213,8 @@ const SAMPLE = `(() => {
   });
   const content = document.querySelector(".shell__content");
   const page = document.querySelector(".daily-note");
+  const header = document.querySelector(".daily-note__header");
+  const pager = document.querySelector(".daily-note__pager");
   const workspace = document.querySelector(".daily-note__workspace");
   const history = document.querySelector(".daily-note__history");
   const shell = document.querySelector(".shell");
@@ -263,6 +271,11 @@ const SAMPLE = `(() => {
           }
         : null,
       page: page ? rect(page) : null,
+      header: header ? rect(header) : null,
+      pager: pager ? rect(pager) : null,
+      prev: prev ? rect(prev) : null,
+      next: next ? rect(next) : null,
+      dayLabel: day ? rect(day) : null,
       workspace: workspace ? rect(workspace) : null,
       editor: box ? rect(box) : null,
       history: history ? rect(history) : null,
@@ -620,6 +633,47 @@ function assertRows(rows, today, when) {
   return undefined;
 }
 
+/**
+ * The page's chrome stands on the box's own edges: the title and the pager share
+ * the box's column, Prev day opens on the box's leading edge, Next day closes on
+ * its trailing edge, and the date is centred over the prose in between.
+ *
+ * Reading the boxes rather than the computed styles is what makes this a layout
+ * claim: a pager that merely reads in the right order can still sit over the
+ * journal when the page widens, and this is the reading that catches that.
+ */
+function assertPagerOnBox(layout, when) {
+  const { editor, header, prev, next, dayLabel } = layout;
+  if (!editor || !header || !prev || !next || !dayLabel) {
+    return failure(`${when}: the box, header or pager could not be measured`);
+  }
+  if (Math.abs(header.left - editor.left) > 2 || Math.abs(header.width - editor.width) > 2) {
+    failure(
+      `${when}: the header spans ${header.left}…${header.left + header.width}, not the box's ${editor.left}…${editor.left + editor.width}`,
+    );
+  }
+  if (Math.abs(prev.left - editor.left) > 2) {
+    failure(
+      `${when}: Prev day opens at ${prev.left}, not on the box's leading edge ${editor.left}`,
+    );
+  }
+  const nextRight = next.left + next.width;
+  const editorRight = editor.left + editor.width;
+  if (Math.abs(nextRight - editorRight) > 2) {
+    failure(
+      `${when}: Next day closes at ${nextRight}, not on the box's trailing edge ${editorRight}`,
+    );
+  }
+  const dateCentre = dayLabel.left + dayLabel.width / 2;
+  const editorCentre = editor.left + editor.width / 2;
+  if (Math.abs(dateCentre - editorCentre) > 2) {
+    failure(
+      `${when}: the date is centred at ${dateCentre}, ${dateCentre - editorCentre}px from the box's ${editorCentre}`,
+    );
+  }
+  return undefined;
+}
+
 async function main() {
   const sessionPartition = `daily-note-${Date.now()}`;
   nativeTheme.themeSource = "dark";
@@ -698,7 +752,9 @@ async function main() {
   if (landing.heading !== "Daily Note") {
     failure(`the page heading read ${JSON.stringify(landing.heading)}`);
   }
-  if (!/^Today · \w+day, \d{1,2} \w{3} \d{4}$/.test(landing.day ?? "")) {
+  // The date is the label; "Today" is a parenthetical on the end, not a prefix
+  // that pushes the date off the centre of the box.
+  if (!/^\w+day, \d{1,2} \w{3} \d{4} \(Today\)$/.test(landing.day ?? "")) {
     failure(`the day label read ${JSON.stringify(landing.day)}`);
   }
   if (landing.dayDate !== today) {
@@ -757,6 +813,8 @@ async function main() {
       );
     }
   }
+  assertPagerOnBox(landing.layout, "on the default page");
+
   // The old box was 16rem tall; the day's page opens at 32rem, and an empty day
   // is exactly the case that reads the floor rather than the prose's own height.
   checks.editorMinHeight = landing.editorMinHeight;
@@ -991,8 +1049,15 @@ async function main() {
   );
   const saved = await sample(win);
   checks.afterSave = saved;
-  if (!saved.rows.some((row) => row.text.startsWith("Today"))) {
+  // The latest row is today's note, and it reads date first with "(Today)" as
+  // the parenthetical — the same way the heading above the box reads it.
+  const savedTodayRow = saved.rows.find((row) => row.isoDate === today);
+  if (!savedTodayRow) {
     failure(`the journal strip does not list the day just written: ${JSON.stringify(saved.rows)}`);
+  } else if (!/^\d{1,2} \w{3} \d{4} \(Today\)$/.test(savedTodayRow.date ?? "")) {
+    failure(
+      `today's journal row reads ${JSON.stringify(savedTodayRow.date)}, not its date first with "(Today)"`,
+    );
   }
 
   // The operator leaves the line, and the note settles into the paragraphs the
@@ -1217,6 +1282,12 @@ async function main() {
   if (previous.editing) {
     failure("a day with a note opened its writing line instead of reading as prose");
   }
+  // The extra Today shortcut joins the leading side without moving the date off
+  // the box's centre.
+  if (!previous.todayButton) {
+    failure("a past day drew no shortcut back to today");
+  }
+  assertPagerOnBox(previous.layout, "on a past day");
 
   // ── 5. a draft typed and cleared leaves the day exactly as it was ────────
   // Autosave is a timer, not a keystroke: prose that is gone before the timer
@@ -1640,12 +1711,9 @@ async function main() {
     );
   }
 
-  const layoutCentre = (layout) => layout.content?.centerX ?? null;
-  const workspaceCentre = (layout) =>
-    layout.workspace ? layout.workspace.left + layout.workspace.width / 2 : null;
   const twoColumns = (layout, when) => {
-    if (!layout.editor || !layout.history) {
-      failure(`${when}: the page drew no box or no strip to place`);
+    if (!layout.editor || !layout.history || !layout.page) {
+      failure(`${when}: the page drew no box, no strip or no page to place them on`);
       return;
     }
     if (Math.abs(layout.history.top - layout.editor.top) > 4) {
@@ -1653,12 +1721,42 @@ async function main() {
         `${when}: the strip (top ${layout.history.top}) did not share a top edge with the box (top ${layout.editor.top})`,
       );
     }
-    const centre = layoutCentre(layout);
-    if (centre === null || workspaceCentre(layout) === null) {
-      failure(`${when}: the two-column workspace could not be measured`);
-    } else if (Math.abs(workspaceCentre(layout) - centre) > 2) {
+    // The header and pager belong over the box, not over the strip.
+    assertPagerOnBox(layout, when);
+    const chatLeft = (layout.shellClass ?? "").includes("shell--chat-left");
+    const boxRight = layout.editor.left + layout.editor.width;
+    const stripRight = layout.history.left + layout.history.width;
+    const pageRight = layout.page.left + layout.page.width;
+    const gap = chatLeft ? layout.history.left - boxRight : layout.editor.left - stripRight;
+    // The strip stands at the page's own edge, away from the dock, and the box
+    // stands at the other. The space between them is the point: it grows with
+    // the page rather than staying a single gutter beside the prose.
+    if (chatLeft) {
+      if (Math.abs(stripRight - pageRight) > 2) {
+        failure(
+          `${when}: the strip ends at ${stripRight}, not at the page's trailing edge ${pageRight}`,
+        );
+      }
+      if (Math.abs(layout.editor.left - layout.page.left) > 2) {
+        failure(
+          `${when}: the box opens at ${layout.editor.left}, not at the page's leading edge ${layout.page.left}`,
+        );
+      }
+    } else {
+      if (Math.abs(layout.history.left - layout.page.left) > 2) {
+        failure(
+          `${when}: the strip opens at ${layout.history.left}, not at the page's leading edge ${layout.page.left}`,
+        );
+      }
+      if (Math.abs(boxRight - pageRight) > 2) {
+        failure(
+          `${when}: the box ends at ${boxRight}, not at the page's trailing edge ${pageRight}`,
+        );
+      }
+    }
+    if (gap < 88) {
       failure(
-        `${when}: the two-column workspace is centred at ${workspaceCentre(layout)}, ${workspaceCentre(layout) - centre}px from the page's ${centre}`,
+        `${when}: the strip stands ${gap}px from the box, not far enough apart to answer the dock`,
       );
     }
   };
