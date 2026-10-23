@@ -35,7 +35,7 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
 
 /** The theme the driver stars, and the query that finds its page. */
 const STARRED_SKIN = "Ember";
-const SECTION_COUNT = 8;
+const SECTION_COUNT = 9;
 
 /**
  * A theme in the shape the app installs: the Forge palette, hex only, every
