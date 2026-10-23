@@ -15,8 +15,8 @@
  *                      page's working surface, not a thing above the page's name;
  *                      reading `.act-page`'s children in DOM order is the claim.
  *  2. `columns`      — six columns, in board order, each with its own dot, title
- *                      and count: Backlog 4, This quarter 1, This month 1,
- *                      This week 2, Today 2, Done 1.
+ *                      and count: Done 1, Today 2, This week 2, This month 1,
+ *                      This quarter 1, Backlog 4.
  *  2b. `page-trimmed` — the Strategy badge and the Execution brief section are
  *                      gone from the page, while the agent and activity sections
  *                      remain.
@@ -92,22 +92,22 @@ const WIDTHS = [
 ];
 
 const COLUMN_ORDER = [
-  "backlog",
-  "this-quarter",
-  "this-month",
-  "this-week",
-  "today",
   "done",
+  "today",
+  "this-week",
+  "this-month",
+  "this-quarter",
+  "backlog",
 ];
 const COLUMN_LABELS = [
-  "Backlog",
-  "This quarter",
-  "This month",
-  "This week",
-  "Today",
   "Done",
+  "Today",
+  "This week",
+  "This month",
+  "This quarter",
+  "Backlog",
 ];
-const COLUMN_COUNTS = ["4", "1", "1", "2", "2", "1"];
+const COLUMN_COUNTS = ["1", "2", "2", "1", "1", "4"];
 
 const errors = [];
 const scenarios = [];
@@ -557,7 +557,7 @@ async function main() {
       JSON.stringify(standard.columns.map((column) => column.headerCount)) ===
         JSON.stringify(COLUMN_COUNTS) &&
       JSON.stringify(standard.columns.map((column) => column.cardCount)) ===
-        JSON.stringify([4, 1, 1, 2, 2, 1]) &&
+        JSON.stringify([1, 2, 2, 1, 1, 4]) &&
       standard.total === "11",
     `columns are ${JSON.stringify(
       standard.columns.map((column) => [column.id, column.label, column.headerCount, column.cardCount]),
@@ -901,7 +901,17 @@ async function main() {
      })()`,
   );
   if (!scrollViewport) throw new Error("the board has no scroll viewport");
-  const scrollSource = await beginDrag(win, "t-brief");
+  // Start at the left edge, where Done and Today are visible. A card from one
+  // of those columns can then be carried to the right edge, and only the
+  // auto-scroll loop can move the board toward the off-screen backlog.
+  await win.webContents.executeJavaScript(
+    `document.querySelector(".task-board__viewport").scrollLeft = 0`,
+  );
+  await settleFrames(win);
+  const scrollSource = await beginDrag(win, "t-tax");
+  const startScroll = await win.webContents.executeJavaScript(
+    `document.querySelector(".task-board__viewport").scrollLeft`,
+  );
   await moveDrag(win, scrollSource, {
     x: scrollViewport.right - 8,
     y: scrollViewport.top + 120,
@@ -918,7 +928,7 @@ async function main() {
   await pressKey(win, "Escape");
   await waitFor(
     win,
-    `document.querySelector('[data-task-id="t-brief"]')?.classList.contains("is-dragging") !== true`,
+    `document.querySelector('[data-task-id="t-tax"]')?.classList.contains("is-dragging") !== true`,
     "Escape to end the auto-scroll drag",
   );
   mouse(win, "mouseUp", scrollViewport.right - 8, scrollViewport.top + 120);
@@ -928,10 +938,11 @@ async function main() {
   ).slice(beforeScroll);
   check(
     "drag-scroll",
-    (scrolled?.scrollLeft ?? 0) > 20 &&
+    (scrolled?.scrollLeft ?? 0) > startScroll + 20 &&
       (scrolled?.scroll ?? 0) > (scrolled?.client ?? 0) &&
       scrollCommands.length === 0,
-    `board ${JSON.stringify(scrolled)}; commands ${JSON.stringify(scrollCommands)}`,
+    `board ${JSON.stringify(scrolled)} from ${startScroll}; ` +
+      `commands ${JSON.stringify(scrollCommands)}`,
   );
 
   // ── Width: the columns grow with the page, then stop at the board's ceiling ─

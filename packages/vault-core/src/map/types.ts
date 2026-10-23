@@ -108,16 +108,17 @@ export type YearRecord = {
 /**
  * A task's place on the Act board, in board order: when the work is due.
  *
- * `backlog` is unscheduled, the three horizons narrow toward now, and `done`
- * closes the row. The order is also the order the columns are drawn in.
+ * `done` closes the row on the left, the three horizons widen away from today,
+ * and `backlog` is the unscheduled far end. The order is also the order the
+ * columns are drawn in.
  */
 export type TaskColumn =
-  | "backlog"
-  | "this-quarter"
-  | "this-month"
-  | "this-week"
+  | "done"
   | "today"
-  | "done";
+  | "this-week"
+  | "this-month"
+  | "this-quarter"
+  | "backlog";
 
 export type TaskLinks = {
   goalId?: string;

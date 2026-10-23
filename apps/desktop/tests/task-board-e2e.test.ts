@@ -272,7 +272,7 @@ describe("Act task board e2e", () => {
       assert.equal(entry.columns.length, 6, `not six columns at ${entry.name}`);
       assert.deepEqual(
         entry.columns.map((column) => column.id),
-        ["backlog", "this-quarter", "this-month", "this-week", "today", "done"],
+        ["done", "today", "this-week", "this-month", "this-quarter", "backlog"],
         `the column order moved at ${entry.name}`,
       );
       const widths = columnWidths(entry);

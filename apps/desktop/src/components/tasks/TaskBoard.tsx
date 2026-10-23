@@ -35,23 +35,24 @@ type Props = {
 };
 
 /**
- * The board's columns, in reading order: unscheduled first, then the horizons
- * narrowing toward now, then what is finished.
+ * The board's columns, in reading order: finished work on the left, then the
+ * horizons widening away from today, then the unscheduled backlog at the far
+ * end.
  *
  * The labels are also the drag announcements and the quick-add placeholders, so
  * they live beside the ids rather than in three places that could drift.
  */
 const COLUMNS: { id: TaskColumn; label: string; hint: string }[] = [
-  { id: "backlog", label: "Backlog", hint: "Unscheduled work" },
+  { id: "done", label: "Done", hint: "Finished work" },
+  { id: "today", label: "Today", hint: "Work for today" },
+  { id: "this-week", label: "This week", hint: "Work to finish this week" },
+  { id: "this-month", label: "This month", hint: "Work to finish this month" },
   {
     id: "this-quarter",
     label: "This quarter",
     hint: "Work to finish this quarter",
   },
-  { id: "this-month", label: "This month", hint: "Work to finish this month" },
-  { id: "this-week", label: "This week", hint: "Work to finish this week" },
-  { id: "today", label: "Today", hint: "Work for today" },
-  { id: "done", label: "Done", hint: "Finished work" },
+  { id: "backlog", label: "Backlog", hint: "Unscheduled work" },
 ];
 
 const COLUMN_LABELS = Object.fromEntries(
@@ -176,6 +177,8 @@ export function TaskBoard({
     column: TaskColumn;
     title: string;
   } | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const revealBacklogRef = useRef(false);
 
   const drag = useTaskDrag({
     tasks: state.tasks,
@@ -200,9 +203,20 @@ export function TaskBoard({
   function create() {
     const trimmed = title.trim();
     if (!trimmed) return;
+    // Backlog is the far end of the board now, so a card created from the top
+    // form would otherwise land off-screen. Reveal it when the vault answers.
+    revealBacklogRef.current = true;
     onCommand({ type: "createTask", title: trimmed });
     setTitle("");
   }
+
+  useEffect(() => {
+    if (!revealBacklogRef.current) return;
+    revealBacklogRef.current = false;
+    viewportRef.current
+      ?.querySelector<HTMLElement>('[data-column="backlog"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [state.tasks.length]);
 
   function createInColumn(column: TaskColumn) {
     if (!composer) return;
@@ -263,7 +277,7 @@ export function TaskBoard({
         Edit details to change its column with the keyboard.
       </p>
 
-      <div className="task-board__viewport">
+      <div className="task-board__viewport" ref={viewportRef}>
         <div
           className="task-columns"
           onPointerDown={drag.onPointerDown}

@@ -10,12 +10,12 @@ import type {
 
 /** Every task column, in board order. The one list validation reads. */
 export const TASK_COLUMNS = [
-  "backlog",
-  "this-quarter",
-  "this-month",
-  "this-week",
-  "today",
   "done",
+  "today",
+  "this-week",
+  "this-month",
+  "this-quarter",
+  "backlog",
 ] as const satisfies readonly TaskColumn[];
 
 export function isTaskColumn(value: unknown): value is TaskColumn {
