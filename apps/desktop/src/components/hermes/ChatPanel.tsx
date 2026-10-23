@@ -20,6 +20,7 @@ import {
   EyeOff,
   History,
   ImagePlus,
+  MessageCircleQuestion,
   MessageSquare,
   MoreVertical,
   PanelLeftOpen,
@@ -32,10 +33,16 @@ import {
   SquarePen,
   X,
 } from "lucide-react";
-import type { SignalRecord } from "@lifequest/vault-core/pure";
+import {
+  matchingChatQuestions,
+  type ChatQuestion,
+  type DomainRecord,
+  type SignalRecord,
+} from "@lifequest/vault-core/pure";
 import { copyText } from "@/lib/clipboard";
 import { api } from "@/lib/ipc";
-import { readPageContext } from "@/lib/page-context";
+import { pageLabelFor, readPageContext } from "@/lib/page-context";
+import { WING_LABELS, wingForPath } from "@/components/shell/wing";
 import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
 import { summarizeToolRun, toolRowLabel, type ToolCall } from "@/lib/tool-run";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
@@ -97,6 +104,28 @@ function formatReceiptSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Where a saved question belongs, in the words the settings page uses for it.
+ * The dock shows the chip because the same thread can offer questions from two
+ * scopes at once — a domain prompt and one written for this page — and the
+ * operator should be able to tell which is which without opening Settings.
+ */
+function starterScopeLabel(
+  question: ChatQuestion,
+  domains: readonly DomainRecord[],
+): string {
+  if (question.scope === "everywhere") return "Everywhere";
+  if (question.scope === "wing") {
+    const wing = question.value ?? "";
+    return `${WING_LABELS[wing as keyof typeof WING_LABELS] ?? wing} wing`;
+  }
+  if (question.scope === "domain") {
+    const domain = domains.find((row) => row.slug === question.value);
+    return domain ? domain.meta.name : (question.value ?? "Domain");
+  }
+  return `${pageLabelFor(question.value ?? "/")} page`;
 }
 
 type ChatPanelProps = {
@@ -459,6 +488,23 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       slug: d.slug,
       name: d.meta.name,
     }));
+  /**
+   * The saved questions that belong on the screen in front of the operator.
+   *
+   * Read live from the vault snapshot, so a question added in Settings is in
+   * the dock the moment the sheet closes — no reload, no second list to keep in
+   * step. The scope is matched here rather than filtered by the page: the dock
+   * is the one place that knows the wing, the domain lens and the route at once.
+   */
+  const starters = useMemo(
+    () =>
+      matchingChatQuestions(snapshot?.settings.chatQuestions ?? [], {
+        wing: wingForPath(pageContext.route),
+        domainSlug: activeDomain?.slug ?? null,
+        route: pageContext.route,
+      }),
+    [snapshot, activeDomain, pageContext.route],
+  );
 
   /**
    * Grow the composer with its text, then scroll inside it once it reaches half
@@ -1279,7 +1325,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     }
   }
 
-  async function newSession() {
+  /**
+   * The id of the blank chat the "New chat" slot lands on, or null when the
+   * gateway refused to make one. Returning the id is what lets a saved question
+   * be sent in the same gesture: the state setter would not be visible to the
+   * caller until the next render.
+   */
+  async function newSession(): Promise<string | null> {
     // A chat that was created and never written in is already a "New chat"
     // row: an empty transcript, no preview. Clicking the slot again is
     // navigation to it, not a second empty chat — that is what kept the
@@ -1288,16 +1340,33 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     const blank = listed?.find((s) => !s.preview?.trim());
     if (blank) {
       await openSession(blank.id);
-      return;
+      return blank.id;
     }
 
     const created = await api().companionSessionCreate("");
     if (!created.ok) {
       setError(created.error);
-      return;
+      return null;
     }
     setSessions((prev) => [created.value, ...prev.filter((s) => s.id !== created.value.id)]);
     await openSession(created.value.id);
+    return created.value.id;
+  }
+
+  /**
+   * One-click start: send a saved question as the first turn of the blank chat
+   * the operator is looking at. If the dock is on the thread with no session
+   * yet — a card handover, or a list view that lost its chat — the chat is made
+   * first, so the button never looks like it did nothing.
+   */
+  async function askStarter(question: ChatQuestion): Promise<void> {
+    if (sending) return;
+    let target = sessionId;
+    if (!target) {
+      target = await newSession();
+      if (!target) return;
+    }
+    await sendMessage(question.text, target);
   }
 
   /**
@@ -1753,6 +1822,40 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                   This is your LifeQuest companion on the lifequest Hermes
                   profile. Active domain: {domainName}.
                 </p>
+                {/*
+                  The saved questions that fit this screen. One click sends the
+                  question as the first turn, so a new chat can start from a
+                  thought the operator has already phrased well. The chip names
+                  the scope because a domain prompt and a page prompt can sit
+                  side by side here.
+                */}
+                {starters.length > 0 ? (
+                  <div className="chat-panel__starters" data-testid="chat-starters">
+                    <p className="chat-panel__starters-title">Start with a question</p>
+                    <ul className="chat-panel__starters-list">
+                      {starters.map((question) => (
+                        <li key={question.id}>
+                          <button
+                            type="button"
+                            className="chat-panel__starter"
+                            data-testid="chat-starter"
+                            data-question-id={question.id}
+                            disabled={sending}
+                            onClick={() => void askStarter(question)}
+                          >
+                            <MessageCircleQuestion size={14} aria-hidden />
+                            <span className="chat-panel__starter-text">
+                              {question.text}
+                            </span>
+                            <span className="chat-panel__starter-scope">
+                              {starterScopeLabel(question, snapshot?.domains ?? [])}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 <Link to="/settings" className="chat-panel__link chat-panel__cta">
                   Companion status
                 </Link>

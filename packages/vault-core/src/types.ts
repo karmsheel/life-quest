@@ -192,11 +192,31 @@ export type AutoApproveInsert = {
   databaseId: string;
 };
 
+/**
+ * Where a saved chat question is offered.
+ *
+ * One scope per question, because the operator writes a question for one place:
+ * a prompt that only makes sense on the Review board should not clutter the
+ * composer on the Dashboard. `value` carries the target for everything except
+ * `everywhere` — a wing id, a domain slug, or a page route.
+ */
+export type ChatQuestionScope = "everywhere" | "wing" | "domain" | "page";
+
+export type ChatQuestion = {
+  id: string;
+  text: string;
+  scope: ChatQuestionScope;
+  value: string | null;
+  createdAt: string;
+};
+
 export type VaultSettings = {
   hermesBaseUrl: string;
   theme: "system" | "light" | "dark";
   weekStartDay: WeekStartDay;
   autoApproveInserts: AutoApproveInsert[];
+  /** Saved questions the chat composer offers, in the operator's own order. */
+  chatQuestions: ChatQuestion[];
 };
 
 export type ReviewScopeStatus = "missing" | "draft" | "done";

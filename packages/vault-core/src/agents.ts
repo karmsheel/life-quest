@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
+import { chatQuestionsFromUnknown, parseChatQuestionsPatch } from "./chat-questions.ts";
 import { vaultPaths } from "./paths.ts";
 import { isWeekStartDay } from "./period.ts";
-import type { AgentHire, AutoApproveInsert, Result, VaultSettings, WeekStartDay } from "./types.ts";
+import type { AgentHire, AutoApproveInsert, ChatQuestion, Result, VaultSettings, WeekStartDay } from "./types.ts";
 
 type AgentsFile = { hires: AgentHire[] };
 
@@ -194,12 +195,16 @@ export async function updateSettings(
         ? current.weekStartDay
         : "monday";
     const currentInserts = autoApproveInsertsFromUnknown(current.autoApproveInserts);
+    const currentQuestions: ChatQuestion[] = chatQuestionsFromUnknown(
+      current.chatQuestions,
+    );
     const next: VaultSettings = {
       hermesBaseUrl:
         patch.hermesBaseUrl !== undefined ? patch.hermesBaseUrl : current.hermesBaseUrl,
       theme: patch.theme !== undefined ? patch.theme : current.theme,
       weekStartDay: currentWeekStart,
       autoApproveInserts: currentInserts,
+      chatQuestions: currentQuestions,
     };
 
     if (patch.hermesBaseUrl !== undefined) {
@@ -242,6 +247,12 @@ export async function updateSettings(
       const parsedInserts = parseAutoApprovePatch(patch.autoApproveInserts);
       if (!parsedInserts.ok) return parsedInserts;
       next.autoApproveInserts = parsedInserts.value;
+    }
+
+    if (patch.chatQuestions !== undefined) {
+      const parsedQuestions = parseChatQuestionsPatch(patch.chatQuestions);
+      if (!parsedQuestions.ok) return parsedQuestions;
+      next.chatQuestions = parsedQuestions.value;
     }
 
     await atomicWriteFile(paths.settingsJson, `${JSON.stringify(next, null, 2)}\n`);
