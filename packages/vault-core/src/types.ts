@@ -354,6 +354,39 @@ export type DailyNoteIndexEntry = {
   error?: string;
 };
 
+/**
+ * One title-bearing freeform document in the Ideal State page.
+ *
+ * Unlike a daily note, the date is not the identity — the operator may write as
+ * many as they think of. The id is the filename and the title is the operator's
+ * own, stored in the frontmatter so renaming never moves a file.
+ */
+export type IdealStateDocument = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  bodyMarkdown: string;
+};
+
+/** An index row: one titled document and when it was last written. */
+export type IdealStateIndexEntry = {
+  id: string;
+  title: string | null;
+  updatedAt: string | null;
+  error?: string;
+};
+
+export type IdealStateCreateInput = {
+  title: string;
+  bodyMarkdown?: string;
+};
+
+export type IdealStateUpdatePatch = {
+  title?: string;
+  bodyMarkdown?: string;
+};
+
 export type AgentHire = {
   id: string;
   hermesAgentId: string;

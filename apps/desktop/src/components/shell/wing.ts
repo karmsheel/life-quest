@@ -34,6 +34,7 @@ const PATH_WING: Record<string, WingId> = {
   "/personnel": "home",
   "/dream": "define",
   "/vision": "define",
+  "/ideal-state": "define",
   "/goals": "plan",
   "/projects": "plan",
   "/chart": "plan",
@@ -67,6 +68,7 @@ export function wingForPath(pathname: string): WingId | null {
   if (PATH_WING[pathname]) return PATH_WING[pathname];
   if (pathname.startsWith("/dream/")) return "define";
   if (pathname.startsWith("/vision/")) return "define";
+  if (pathname.startsWith("/ideal-state/")) return "define";
   if (pathname.startsWith("/track/")) return "plan";
   if (pathname.startsWith("/data/")) return "home";
   if (pathname.startsWith("/pages/")) return "home";

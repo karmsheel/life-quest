@@ -475,6 +475,17 @@ const lifequest = {
   dailyNoteWindow: (start: string, end: string) =>
     ipcRenderer.invoke("note:window", start, end) as Promise<Result<unknown>>,
 
+  idealStateList: () =>
+    ipcRenderer.invoke("ideal-state:list") as Promise<Result<unknown>>,
+  idealStateGet: (id: string) =>
+    ipcRenderer.invoke("ideal-state:get", id) as Promise<Result<unknown>>,
+  idealStateCreate: (input: unknown) =>
+    ipcRenderer.invoke("ideal-state:create", input) as Promise<Result<unknown>>,
+  idealStateUpdate: (id: string, patch: unknown) =>
+    ipcRenderer.invoke("ideal-state:update", id, patch) as Promise<Result<unknown>>,
+  idealStateDelete: (id: string) =>
+    ipcRenderer.invoke("ideal-state:delete", id) as Promise<Result<unknown>>,
+
   deadlineDismiss: () =>
     ipcRenderer.invoke("deadline:dismiss") as Promise<Result<true>>,
 
