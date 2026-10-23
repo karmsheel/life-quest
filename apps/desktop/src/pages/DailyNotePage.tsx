@@ -7,10 +7,17 @@ import {
   shiftLocalIsoDate,
   type IsoWeek,
 } from "@lifequest/vault-core/pure";
+import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
+import {
+  dailyNoteAnalyzeContext,
+  dailyNoteAnalyzePrompt,
+  dailyNoteAnalyzeTitle,
+} from "@/lib/automations";
 import { asHeld, sameNote } from "@/lib/note-body";
 import { api } from "@/lib/ipc";
+import { useChatDock } from "@/state/ChatDockProvider";
 import { useVault } from "@/state/VaultProvider";
 import type { DailyNoteIndexEntry } from "@lifequest/vault-core";
 
@@ -144,6 +151,7 @@ function weekTitle(week: IsoWeek): string {
  */
 export default function DailyNotePage() {
   const { snapshot } = useVault();
+  const chatDock = useChatDock();
   const today = periodTodayLocalIso();
 
   const [date, setDate] = useState(today);
@@ -154,6 +162,8 @@ export default function DailyNotePage() {
   /** The day whose body is in `draft`; null while a day is still on its way in. */
   const [loadedDate, setLoadedDate] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  /** The analyze automation is opening its chat. */
+  const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** The last body the vault refused, so the page stops asking by itself. */
   const [refused, setRefused] = useState<{ date: string; body: string } | null>(null);
@@ -378,6 +388,52 @@ export default function DailyNotePage() {
         ? "Saved"
         : "No note for this day yet";
 
+  /**
+   * Run the day's automation.
+   *
+   * The note is written first: the chat's context is the note the vault holds,
+   * not a draft the operator may never save. A write that failed or was refused
+   * stops the run — the agent should never be asked to break down prose nobody
+   * can vouch for. The chat is new every time: the automation is a fresh read of
+   * the day, not a thread the operator has to keep clear.
+   */
+  const onAnalyze = useCallback(async () => {
+    if (analyzing) return;
+    setAnalyzing(true);
+    setError(null);
+    try {
+      if ((await flush()) !== "saved") return;
+      const read = await api().dailyNoteGet(date);
+      const body = asHeld(read.ok ? read.value.bodyMarkdown : draft);
+      if (!body.trim()) {
+        setError("Write something in the note before analyzing it.");
+        return;
+      }
+      const created = await api().companionSessionCreate(
+        dailyNoteAnalyzeTitle(label),
+      );
+      if (!created.ok) {
+        setError(created.error);
+        return;
+      }
+      chatDock.requestSession(
+        created.value.id,
+        dailyNoteAnalyzePrompt(label),
+        dailyNoteAnalyzeContext({ date, dateLabel: label, body }),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [analyzing, chatDock, date, draft, flush, label]);
+
+  const canAnalyze =
+    !loading &&
+    loadedDate === date &&
+    !analyzing &&
+    draft.trim().length > 0;
+
   // The journal's own strip: days up to today, newest first. A file dated in the
   // future is on disk but is not offered — a note is written, not scheduled —
   // and a file that names no usable day is shown as unreadable, not as a link.
@@ -516,6 +572,17 @@ export default function DailyNotePage() {
               Today
             </Button>
           ) : null}
+          <Button
+            variant="outline"
+            className="daily-note__analyze"
+            data-testid="daily-note-analyze"
+            onClick={() => void onAnalyze()}
+            disabled={!canAnalyze}
+            title="Open a new chat that breaks this note into tasks, goals and details"
+          >
+            <Sparkles size={14} aria-hidden />
+            {analyzing ? "Opening chat…" : "Analyze note"}
+          </Button>
         </div>
       </header>
 

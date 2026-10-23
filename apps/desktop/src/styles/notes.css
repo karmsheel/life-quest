@@ -57,6 +57,16 @@
   color: var(--fg);
 }
 
+/* The page's one action that is not navigation: it sits at the trailing end of
+   the pager row, where the eye lands after the day it would read. It is a
+   button of the page's own square step, like every other control here. */
+.daily-note__analyze {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
 /* The box and the strip are one workspace: a column while the page is narrow,
    two columns once it is wide enough to hold them side by side. */
 .daily-note__workspace {

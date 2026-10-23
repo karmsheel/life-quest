@@ -11,6 +11,7 @@ import { SplashGate } from "@/components/shell/SplashGate";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import { DoctrineEditorPage } from "@/components/doctrine/DoctrineEditorPage";
 import ActPage from "@/pages/ActPage";
+import AutomationsPage from "@/pages/AutomationsPage";
 import DailyNotePage from "@/pages/DailyNotePage";
 import DailySchedulePage from "@/pages/DailySchedulePage";
 import ArchitecturePage from "@/pages/ArchitecturePage";
@@ -116,6 +117,7 @@ function AppRoutes() {
           />
           <Route path="/act" element={<ActPage />} />
           <Route path="/notes" element={<DailyNotePage />} />
+          <Route path="/automations" element={<AutomationsPage />} />
           <Route path="/daily" element={<DailySchedulePage />} />
           <Route path="/review/:cadence" element={<ReviewPage />} />
           <Route path="/documents" element={<DocumentsPage />} />

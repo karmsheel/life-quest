@@ -5,6 +5,7 @@
 @import "./notes.css";
 @import "./data.css";
 @import "./pages.css";
+@import "./automations.css";
 
 * {
   box-sizing: border-box;

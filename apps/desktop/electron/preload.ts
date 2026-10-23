@@ -371,6 +371,7 @@ const lifequest = {
         label: string;
         body: string;
       } | null;
+      automationContext?: string;
       aboutMe: string;
       locked: boolean;
       vaultOpen: boolean;

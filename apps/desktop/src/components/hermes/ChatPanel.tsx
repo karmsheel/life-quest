@@ -198,6 +198,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const {
     requestedSessionId,
     requestedKickoff,
+    requestedAutomationContext,
     clearRequestedSession,
     contextCard,
     setContextCard,
@@ -408,6 +409,16 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
    */
   const contextCardRef = useRef<ChatCardContext | null>(null);
   contextCardRef.current = contextCard;
+  /**
+   * The page material automation chats carry, by session id.
+   *
+   * It lives here rather than in the composer because it belongs to the chat,
+   * not to the field: an automation opens a new chat with the page already
+   * quoted, and every turn taken in that chat should still be able to read it.
+   * The map is session state — a relaunched app still has the chat's transcript,
+   * but not this context, which is the same trade the live tool rows make.
+   */
+  const automationContextBySession = useRef(new Map<string, string>());
   /** Bottom for the composer: the box height it rests at with an empty draft. */
   const restingHeightRef = useRef(0);
 
@@ -856,6 +867,10 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     const page = pageContext.on
       ? readPageContext(pageContext.route)
       : null;
+    // The page material this chat was opened with, if it was opened by an
+    // automation. It rides every turn of that chat, not only the first, so a
+    // follow-up about "the note" still has the note in front of the agent.
+    const automationContext = automationContextBySession.current.get(activeId);
 
     const sentAt = Date.now();
     setMessages((prev) => [
@@ -915,6 +930,10 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
           // attach control says it is in context. Absent when it is off, which
           // is the turn the composer sent before this existed.
           ...(page ? { pageContext: page } : {}),
+          // What an automation read for this chat: the note itself, fenced and
+          // named as the operator's own data, plus what to do with it. Absent on
+          // every ordinary chat, which is the turn it always was.
+          ...(automationContext ? { automationContext } : {}),
           aboutMe: snapshot?.map?.aboutMe ?? "",
           locked: false,
           vaultOpen: Boolean(snapshot),
@@ -943,6 +962,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     let cancelled = false;
     const targetId = requestedSessionId;
     const kickoff = requestedKickoff;
+    const automationContext = requestedAutomationContext;
     (async () => {
       onOpenChange(true);
       const listed = await loadSessions();
@@ -950,10 +970,20 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       if (listed) setSessionsLoaded(true);
       await openSession(targetId);
       if (cancelled) return;
-      clearRequestedSession();
+      // Bind the automation's context before the kickoff is sent, so the first
+      // turn carries the same material every later turn in this chat will.
+      if (automationContext?.trim()) {
+        automationContextBySession.current.set(targetId, automationContext);
+      }
+      // The kickoff goes first and the request is cleared after it: clearing
+      // re-arms the landing effect, and a landing pass that reloads the session
+      // while its first turn is still in the air can replace the prompt bubble
+      // with a transcript the gateway has not written yet.
       if (kickoff?.trim()) {
         await sendMessage(kickoff, targetId);
       }
+      if (cancelled) return;
+      clearRequestedSession();
     })();
     return () => {
       cancelled = true;
@@ -1261,6 +1291,8 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       return;
     }
     setSessions((prev) => prev.filter((s) => s.id !== id));
+    // The page material belonged to the chat: a deleted chat takes it with it.
+    automationContextBySession.current.delete(id);
     // The pin belonged to the chat: a deleted chat takes its pin with it.
     setRuntimePins((prev) => {
       if (!(id in prev)) return prev;

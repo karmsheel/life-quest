@@ -25,6 +25,7 @@ export function NavRail() {
   const topPinned = NAV_ITEMS.filter((item) => item.pin === "top");
   const wingItems = NAV_ITEMS.filter((item) => item.wing === active);
   const bottomPinned = NAV_ITEMS.filter((item) => item.pin === "bottom");
+  const footerPinned = NAV_ITEMS.filter((item) => item.pin === "footer");
 
   function renderItem(item: NavItem) {
     const Icon = item.icon;
@@ -61,12 +62,39 @@ export function NavRail() {
       <div className="nav-rail__header">
         <NavCollapseButton />
       </div>
-      <div className="nav-rail__section">{topPinned.map(renderItem)}</div>
-      <div className="nav-rail__divider" role="separator" />
-      <div className="nav-rail__section">{wingItems.map(renderItem)}</div>
+      {topPinned.length > 0 ? (
+        <>
+          <div className="nav-rail__section">{topPinned.map(renderItem)}</div>
+          <div className="nav-rail__divider" role="separator" />
+        </>
+      ) : null}
+      <div className="nav-rail__section" data-nav-group="wing">
+        {wingItems.map(renderItem)}
+      </div>
+      {/*
+        The governed shelf and the Log are two groups, not one list. The rail
+        draws a divider above the shelf and another between the shelf and the
+        Log, so the four pages that belong to no wing read as their own cordoned
+        section at the foot of the sidebar — with the Log closing the rail just
+        below them.
+      */}
       <div className="nav-rail__section nav-rail__section--bottom">
-        <div className="nav-rail__divider" role="separator" />
-        <div className="nav-rail__section">{bottomPinned.map(renderItem)}</div>
+        {bottomPinned.length > 0 ? (
+          <>
+            <div className="nav-rail__divider" role="separator" />
+            <div className="nav-rail__section" data-nav-group="governance">
+              {bottomPinned.map(renderItem)}
+            </div>
+          </>
+        ) : null}
+        {footerPinned.length > 0 ? (
+          <>
+            <div className="nav-rail__divider" role="separator" />
+            <div className="nav-rail__section" data-nav-group="footer">
+              {footerPinned.map(renderItem)}
+            </div>
+          </>
+        ) : null}
         {/* The build number, and the app's manual update check. Quiet text until
             the feed names something newer, when it also carries the glow; a
             click always opens the update panel. */}

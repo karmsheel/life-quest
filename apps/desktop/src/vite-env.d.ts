@@ -144,6 +144,8 @@ type CompanionInstructionsContext = {
   locked: boolean;
   vaultOpen: boolean;
   reviewContext?: string;
+  /** The page material an automation opened this chat with, already fenced. */
+  automationContext?: string;
   fileUnsolicited?: boolean;
 };
 

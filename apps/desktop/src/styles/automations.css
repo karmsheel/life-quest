@@ -1,0 +1,92 @@
+/* Automations — the shelf of one-click jobs.
+   One quiet list, grouped by the page that owns each trigger. The row is a line
+   of copy with its own way back to that page; the trigger itself lives on the
+   page, beside the material the automation reads. */
+.automations-page {
+  width: 100%;
+  max-width: 48rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  container-type: inline-size;
+}
+
+.automations-page__header {
+  display: flex;
+  flex-direction: column;
+}
+
+.automations-page__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.automations-page__group-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.automations-page__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.automation-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.automation-row__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-fill);
+  color: var(--accent);
+}
+
+.automation-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  flex: 1;
+  min-width: 12rem;
+}
+
+.automation-row__name {
+  color: var(--foreground);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.automation-row__desc {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.automation-row__open {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+@container (max-width: 34rem) {
+  .automation-row__open {
+    margin-left: 2.5rem;
+  }
+}
