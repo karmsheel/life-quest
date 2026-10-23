@@ -38,8 +38,8 @@ type Arrangement = {
   tokens: {
     track: number;
     chatTrack: number;
-    collapsedTrack: number;
     frame: number;
+    rootFontSize: number;
     titlebarHeight: number;
     radiusSm: string;
   };
@@ -66,8 +66,26 @@ type Arrangement = {
     background: string;
     backdropFilter: string;
     boxShadow: string;
-    expandIcon: string | null;
     heading: string;
+  } | null;
+  launcher: {
+    box: Box;
+    label: string | null;
+    title: string | null;
+    position: string;
+    borderRadius: string;
+    background: string;
+    mark: boolean;
+    markMask: string | null;
+    markWidth: number | null;
+    markHeight: number | null;
+  } | null;
+  actions: { box: Box } | null;
+  collapseAction: {
+    label: string | null;
+    title: string | null;
+    icon: string | null;
+    box: Box;
   } | null;
   trailing: {
     box: Box;
@@ -103,6 +121,8 @@ type Report = {
   dockReopened: Arrangement;
   railRestored: Arrangement;
   restored: Arrangement;
+  barCollapsed: Arrangement;
+  barReopened: Arrangement;
   screenshots: string[];
 };
 
@@ -167,14 +187,22 @@ describe("chat dock side switch", () => {
 
     // Restated here so the numbers are asserted by the suite, not only inside the
     // driver — and so a regression names the geometry it broke.
-    const { right, left, dockCollapsed, railCollapsed, restored } = report;
-    const { track, chatTrack, collapsedTrack, frame, titlebarHeight, radiusSm } =
+    const {
+      right,
+      left,
+      dockCollapsed,
+      railCollapsed,
+      restored,
+      barCollapsed,
+      barReopened,
+    } = report;
+    const { track, chatTrack, frame, rootFontSize, titlebarHeight, radiusSm } =
       report.tokens;
 
     assert.ok(track > 0 && chatTrack > track && frame > 0, "tokens were not read");
     assert.ok(
-      titlebarHeight > 0 && parseFloat(radiusSm) > 0,
-      "the strip or the radius token was not read",
+      titlebarHeight > 0 && rootFontSize > 0 && parseFloat(radiusSm) > 0,
+      "the strip, the root type size or the radius token was not read",
     );
 
     // —— The shipped arrangement: rail, sheet, dock. ——
@@ -386,32 +414,84 @@ describe("chat dock side switch", () => {
       "lucide-panel-left-close",
       `the collapse arrow does not follow the dock to the left (${left.chatToggle?.icon})`,
     );
+    assert.equal(
+      left.collapseAction?.icon,
+      "lucide-panel-left-close",
+      `the bottom-bar collapse arrow does not follow the dock to the left (${left.collapseAction?.icon})`,
+    );
 
     // —— The compositions: a collapsed dock, a collapsed rail. ——
     assert.equal(
-      dockCollapsed.chat.box.width,
-      collapsedTrack,
-      `the collapsed dock is not the narrow column (${dockCollapsed.chat.box.width}px vs ${collapsedTrack}px)`,
+      dockCollapsed.chat,
+      null,
+      "the collapsed dock is still a pane: the vertical strip should be gone",
     );
     assert.equal(
-      dockCollapsed.chat.box.right,
-      dockCollapsed.main.box.left,
-      "the collapsed dock opened a gap to the sheet",
+      parseFloat((dockCollapsed.shell?.gridTemplateColumns.split(" ")[1] ?? "NaN")),
+      0,
+      `the collapsed shell still reserves a dock column (${dockCollapsed.shell?.gridTemplateColumns})`,
     );
     assert.equal(
-      dockCollapsed.main.box.right,
+      dockCollapsed.main?.box.left,
+      track,
+      `the collapsed sheet left the rail's trailing edge (${dockCollapsed.main?.box.left}px vs ${track}px)`,
+    );
+    assert.equal(
+      dockCollapsed.main?.box.right,
       dockCollapsed.viewport.width,
       "the collapsed dock pushed the sheet off the window's trailing edge",
     );
     assert.equal(
-      dockCollapsed.chat.expandIcon,
-      "lucide-panel-left-open",
-      `the collapsed tab's arrow does not open toward the page (${dockCollapsed.chat.expandIcon})`,
+      isZero(dockCollapsed.main?.border.left) && isZero(dockCollapsed.main?.border.right),
+      true,
+      `the collapsed sheet still draws a seam to a dock that is gone (${dockCollapsed.main?.border.left}/${dockCollapsed.main?.border.right})`,
+    );
+    assert.equal(
+      dockCollapsed.launcher?.position,
+      "fixed",
+      "the collapsed dock did not become a floating mark",
+    );
+    assert.equal(
+      dockCollapsed.launcher?.label,
+      "Open Hermes chat",
+      `the floating mark names the wrong move: ${dockCollapsed.launcher?.label}`,
+    );
+    assert.equal(
+      dockCollapsed.launcher?.mark && String(dockCollapsed.launcher?.markMask).includes("girl_steampunk"),
+      true,
+      `the floating mark is not the Nous girl (${dockCollapsed.launcher?.mark}, ${dockCollapsed.launcher?.markMask})`,
+    );
+    assert.equal(
+      dockCollapsed.launcher?.box.left !== undefined &&
+        dockCollapsed.launcher.box.left > dockCollapsed.viewport.width / 2 &&
+        dockCollapsed.launcher.box.top > dockCollapsed.viewport.height / 2,
+      true,
+      `the floating mark is not in the bottom-right half: ${JSON.stringify(dockCollapsed.launcher?.box)}`,
+    );
+    assert.equal(
+      dockCollapsed.viewport.width - (dockCollapsed.launcher?.box.right ?? 0),
+      frame + rootFontSize,
+      `the floating mark lost its trailing inset (${dockCollapsed.launcher?.box.right}px of ${dockCollapsed.viewport.width}px)`,
+    );
+    assert.equal(
+      dockCollapsed.viewport.height - (dockCollapsed.launcher?.box.bottom ?? 0),
+      frame + rootFontSize,
+      `the floating mark lost its bottom inset (${dockCollapsed.launcher?.box.bottom}px of ${dockCollapsed.viewport.height}px)`,
+    );
+    assert.equal(
+      dockCollapsed.chatToggle?.label,
+      "Expand chat",
+      "the titlebar lost its second way back into the dock",
     );
     assert.deepEqual(
       report.dockReopened.main.box,
       left.main.box,
       "reopening the dock did not restore the swapped sheet",
+    );
+    assert.equal(
+      report.dockReopened.launcher,
+      null,
+      "the floating mark survived the dock opening",
     );
     assert.equal(
       railCollapsed.chat.box.left,
@@ -452,6 +532,61 @@ describe("chat dock side switch", () => {
       restored.chatToggle?.icon,
       right.chatToggle?.icon,
       "the collapse arrow did not come back",
+    );
+
+    // —— The dock's own way out, in the bottom bar's trailing corner. ——
+    const bar = restored.actions?.box;
+    const collapseBox = restored.collapseAction?.box;
+    assert.equal(
+      restored.collapseAction?.label,
+      "Collapse chat",
+      `the bottom bar's collapse control names the wrong move (${restored.collapseAction?.label})`,
+    );
+    assert.equal(
+      restored.collapseAction?.icon,
+      "lucide-panel-right-close",
+      `the bottom bar's collapse arrow does not point at the trailing dock (${restored.collapseAction?.icon})`,
+    );
+    assert.ok(bar && collapseBox, "the bottom bar or its collapse control was not found");
+    assert.equal(
+      collapseBox.left > bar.left + bar.width / 2 &&
+        collapseBox.right <= bar.right &&
+        bar.right - collapseBox.right <= 10 &&
+        collapseBox.top >= bar.top &&
+        collapseBox.bottom <= bar.bottom,
+      true,
+      `the collapse control is not the bottom-right action (${JSON.stringify(collapseBox)} in ${JSON.stringify(bar)})`,
+    );
+    assert.equal(
+      barCollapsed.chat,
+      null,
+      "the bottom bar's collapse left the dock in the grid",
+    );
+    assert.ok(barCollapsed.launcher, "the bottom bar's collapse did not return the floating mark");
+    assert.equal(
+      barCollapsed.launcher.position,
+      "fixed",
+      "the returned mark is not floating",
+    );
+    assert.equal(
+      barCollapsed.main?.box.right,
+      barCollapsed.viewport.width,
+      "the bottom bar's collapse did not give the sheet the window's trailing edge",
+    );
+    assert.deepEqual(
+      barReopened.main.box,
+      restored.main.box,
+      "the floating mark did not restore the sheet the bottom bar collapsed",
+    );
+    assert.deepEqual(
+      barReopened.chat?.box,
+      restored.chat?.box,
+      "the floating mark did not restore the dock the bottom bar collapsed",
+    );
+    assert.equal(
+      barReopened.launcher,
+      null,
+      "the floating mark survived the second reopen",
     );
 
     // Nothing spills sideways in either arrangement.

@@ -19,7 +19,7 @@ import type { ChatColumnDividerProps } from "./useChatColumn";
  *
  * The width, the range and the gesture all arrive through `props`; this component
  * is the element they are worn by. It is only rendered while the dock is open:
- * a collapsed dock is a tab, and there is no column in it to drag.
+ * a collapsed dock is one floating mark, and there is no column to drag.
  */
 export function ChatDivider({
   side,

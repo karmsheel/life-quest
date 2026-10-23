@@ -71,13 +71,14 @@ const SAMPLE = `(() => {
   const track = probe.offsetWidth;
   probe.style.width = "var(--chatbar-width)";
   const chatTrack = probe.offsetWidth;
-  probe.style.width = "2.75rem";
-  const collapsedTrack = probe.offsetWidth;
   probe.remove();
 
   const rail = document.querySelector(".nav-rail");
   const main = document.querySelector(".shell__main");
   const chat = document.querySelector(".chat-panel");
+  const launcher = document.querySelector(".chat-launcher");
+  const actions = document.querySelector(".chat-panel__actions");
+  const collapseAction = document.querySelector(".chat-panel__action--collapse");
   const shell = document.querySelector(".shell");
   const titlebar = document.querySelector(".window-titlebar");
   const vault = document.querySelector(".window-titlebar__vault");
@@ -86,11 +87,15 @@ const SAMPLE = `(() => {
   const chatToggle = document.querySelector(".window-titlebar__chat-toggle");
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
   const frame = px(root.getPropertyValue("--shell-frame"));
+  const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
   const mainStyle = main ? getComputedStyle(main) : null;
   const chatStyle = chat ? getComputedStyle(chat) : null;
+  const launcherStyle = launcher ? getComputedStyle(launcher) : null;
+  const launcherMark = launcher?.querySelector(".chat-launcher__mark") ?? null;
+  const launcherMarkStyle = launcherMark ? getComputedStyle(launcherMark) : null;
 
   // Which pane owns a point on the window. The panes' boxes can be right while
   // the wrong one is actually painted there — a dock left at \`z-index: 20\` over
@@ -99,6 +104,7 @@ const SAMPLE = `(() => {
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
     if (rail && rail.contains(el)) return "rail";
+    if (launcher && launcher.contains(el)) return "launcher";
     if (main && main.contains(el)) return "sheet";
     if (chat && chat.contains(el)) return "dock";
     if (titlebar && titlebar.contains(el)) return "titlebar";
@@ -110,8 +116,8 @@ const SAMPLE = `(() => {
     tokens: {
       track,
       chatTrack,
-      collapsedTrack,
       frame,
+      rootFontSize,
       titlebarHeight,
       radiusSm: root.getPropertyValue("--radius-sm").trim()
     },
@@ -156,8 +162,32 @@ const SAMPLE = `(() => {
           background: chatStyle.backgroundColor,
           backdropFilter: chatStyle.backdropFilter,
           boxShadow: chatStyle.boxShadow,
-          expandIcon: iconClass(document.querySelector(".chat-panel__expand")),
           heading: (document.querySelector(".chat-panel__heading")?.textContent || "").trim()
+        }
+      : null,
+    launcher: launcher
+      ? {
+          box: box(launcher),
+          label: launcher.getAttribute("aria-label"),
+          title: launcher.getAttribute("title"),
+          position: launcherStyle.position,
+          borderRadius: launcherStyle.borderRadius,
+          background: launcherStyle.backgroundColor,
+          mark: Boolean(launcherMark),
+          markMask: launcherMarkStyle
+            ? launcherMarkStyle.maskImage || launcherMarkStyle.webkitMaskImage
+            : null,
+          markWidth: launcherMarkStyle ? px(launcherMarkStyle.width) : null,
+          markHeight: launcherMarkStyle ? px(launcherMarkStyle.height) : null
+        }
+      : null,
+    actions: actions ? { box: box(actions) } : null,
+    collapseAction: collapseAction
+      ? {
+          label: collapseAction.getAttribute("aria-label"),
+          title: collapseAction.getAttribute("title"),
+          icon: iconClass(collapseAction),
+          box: box(collapseAction)
         }
       : null,
     titlebar: titlebar
@@ -639,6 +669,12 @@ async function main() {
       same(left.rail?.box, right.rail?.box),
       `rail ${JSON.stringify(left.rail?.box)} vs ${JSON.stringify(right.rail?.box)}`,
     );
+    check(
+      "left: the bottom-bar collapse arrow follows the dock",
+      left.collapseAction?.label === "Collapse chat" &&
+        left.collapseAction?.icon === "lucide-panel-left-close",
+      `label ${JSON.stringify(left.collapseAction?.label)}, icon ${JSON.stringify(left.collapseAction?.icon)}`,
+    );
 
     // The track list, read out as well as the boxes: the tracks carry the column
     // widths the panes are built from, and the swap has to move the dock's own
@@ -655,56 +691,77 @@ async function main() {
       `right tracks ${rightTracks.join(" ")}, left tracks ${leftTracks.join(" ")}`,
     );
 
-    // 3 — a collapsed dock composes with the swap: its own narrow column beside
-    // the rail, the sheet still reaching the window. Only the claims that mean
-    // something for a collapsed dock are read here; the full arrangement's width
-    // arithmetic is for the two whole panes above.
+    // 3 — collapsed, the dock leaves the grid entirely: no strip at the window's
+    // edge, one floating mark in the bottom-right corner, and the sheet takes the
+    // column and the seam back. The launcher is the way in; the titlebar control
+    // is still the second one.
     at("collapsed dock");
     await click(".window-titlebar__chat-toggle");
     const dockCollapsed = await settled();
     const collapsedShot = await shot("chat-side-left-collapsed.png");
     check(
-      "left/collapsed dock: the dock is the narrow column",
-      dockCollapsed.chat.box.width === dockCollapsed.tokens.collapsedTrack,
-      `dock width ${dockCollapsed.chat.box.width}px vs ${dockCollapsed.tokens.collapsedTrack}px`,
+      "left/collapsed dock: the panel leaves the layout",
+      dockCollapsed.chat === null,
+      `dock ${JSON.stringify(dockCollapsed.chat)}`,
     );
     check(
-      "left/collapsed dock: the dock holds the column beside the rail",
-      dockCollapsed.chat.box.left === dockCollapsed.tokens.track &&
-        dockCollapsed.chat.box.top ===
-          dockCollapsed.tokens.titlebarHeight + dockCollapsed.tokens.frame,
-      `dock ${JSON.stringify(dockCollapsed.chat.box)}`,
+      "left/collapsed dock: its grid column goes to zero",
+      parseFloat((dockCollapsed.shell.gridTemplateColumns.split(" ")[1] ?? "NaN")) === 0,
+      `tracks ${dockCollapsed.shell.gridTemplateColumns}`,
     );
     check(
-      "left/collapsed dock: the panes still abut",
-      dockCollapsed.chat.box.right === dockCollapsed.main.box.left,
-      `dock right ${dockCollapsed.chat.box.right}px vs sheet left ${dockCollapsed.main.box.left}px`,
+      "left/collapsed dock: the sheet takes the whole frame back",
+      dockCollapsed.main.box.left === dockCollapsed.tokens.track &&
+        dockCollapsed.main.box.right === dockCollapsed.viewport.width,
+      `sheet ${JSON.stringify(dockCollapsed.main.box)} in a ${dockCollapsed.viewport.width}px window, rail ends at ${dockCollapsed.tokens.track}px`,
     );
     check(
-      "left/collapsed dock: the sheet still reaches the window",
-      dockCollapsed.main.box.right === dockCollapsed.viewport.width,
-      `sheet right ${dockCollapsed.main.box.right}px vs window ${dockCollapsed.viewport.width}px`,
-    );
-    check(
-      "left/collapsed dock: the sheet keeps the seam on its leading edge",
-      isHairline(dockCollapsed.main.border.left) &&
+      "left/collapsed dock: the sheet draws no seam to a dock that is gone",
+      isZero(dockCollapsed.main.border.left) &&
         isZero(dockCollapsed.main.border.right),
       `sheet borders left ${dockCollapsed.main.border.left}, right ${dockCollapsed.main.border.right}`,
     );
     check(
-      "left/collapsed dock: the dock's own tab opens toward the page",
-      dockCollapsed.chat.expandIcon === "lucide-panel-left-open",
-      `expand icon ${JSON.stringify(dockCollapsed.chat.expandIcon)}`,
+      "left/collapsed dock: the agent floats at the bottom right",
+      Boolean(dockCollapsed.launcher) &&
+        dockCollapsed.launcher.position === "fixed" &&
+        dockCollapsed.launcher.box.left > dockCollapsed.viewport.width / 2 &&
+        dockCollapsed.launcher.box.top > dockCollapsed.viewport.height / 2 &&
+        dockCollapsed.viewport.width - dockCollapsed.launcher.box.right ===
+          dockCollapsed.tokens.frame + dockCollapsed.tokens.rootFontSize &&
+        dockCollapsed.viewport.height - dockCollapsed.launcher.box.bottom ===
+          dockCollapsed.tokens.frame + dockCollapsed.tokens.rootFontSize,
+      `launcher ${JSON.stringify(dockCollapsed.launcher)} in ${JSON.stringify(dockCollapsed.viewport)}`,
+    );
+    check(
+      "left/collapsed dock: the floating mark is the Nous girl",
+      Boolean(dockCollapsed.launcher?.mark) &&
+        dockCollapsed.launcher.markWidth > 0 &&
+        dockCollapsed.launcher.markHeight > 0 &&
+        String(dockCollapsed.launcher.markMask).includes("girl_steampunk"),
+      `mark ${JSON.stringify(dockCollapsed.launcher?.mark)}, ${dockCollapsed.launcher?.markWidth}x${dockCollapsed.launcher?.markHeight}, mask ${JSON.stringify(dockCollapsed.launcher?.markMask)}`,
+    );
+    check(
+      "left/collapsed dock: the floating mark names the dock it opens",
+      dockCollapsed.launcher?.label === "Open Hermes chat" &&
+        dockCollapsed.launcher?.title === "Open Hermes chat",
+      `label ${JSON.stringify(dockCollapsed.launcher?.label)}, title ${JSON.stringify(dockCollapsed.launcher?.title)}`,
+    );
+    check(
+      "left/collapsed dock: the titlebar control still names the way in",
+      dockCollapsed.chatToggle?.label === "Expand chat",
+      `titlebar control ${JSON.stringify(dockCollapsed.chatToggle?.label)}`,
     );
 
     at("reopened dock");
-    await click(".window-titlebar__chat-toggle");
+    await click(".chat-launcher");
     const dockReopened = await settled();
     check(
-      "reopening the dock lands back on the swapped geometry",
+      "reopening from the floating mark lands back on the swapped geometry",
       same(dockReopened.main.box, left.main.box) &&
-        same(dockReopened.chat.box, left.chat.box),
-      `sheet ${JSON.stringify(dockReopened.main.box)} vs ${JSON.stringify(left.main.box)}, dock ${JSON.stringify(dockReopened.chat.box)} vs ${JSON.stringify(left.chat.box)}`,
+        same(dockReopened.chat.box, left.chat.box) &&
+        dockReopened.launcher === null,
+      `sheet ${JSON.stringify(dockReopened.main.box)} vs ${JSON.stringify(left.main.box)}, dock ${JSON.stringify(dockReopened.chat.box)} vs ${JSON.stringify(left.chat.box)}, launcher ${JSON.stringify(dockReopened.launcher)}`,
     );
 
     // 4 — and with the rail gone the dock inherits the window's leading edge, so
@@ -788,6 +845,63 @@ async function main() {
     );
     const restoredShot = await shot("chat-side-restored.png");
 
+    // 6 — the dock's own way out: the trailing action of the bottom bar. It has
+    // to be in the bottom-right corner, wear the arrow that points out of the
+    // side the dock is on, and do exactly what the titlebar control does.
+    at("bottom bar collapse");
+    const barBox = restored.actions?.box;
+    const collapseBox = restored.collapseAction?.box;
+    check(
+      "restored: the bottom bar carries a collapse control",
+      Boolean(restored.collapseAction),
+      `collapse action ${JSON.stringify(restored.collapseAction)}`,
+    );
+    check(
+      "restored: the collapse control is the bar's trailing action",
+      Boolean(barBox && collapseBox) &&
+        collapseBox.left > barBox.left + barBox.width / 2 &&
+        collapseBox.right <= barBox.right &&
+        barBox.right - collapseBox.right <= 10 &&
+        collapseBox.top >= barBox.top &&
+        collapseBox.bottom <= barBox.bottom,
+      `action ${JSON.stringify(collapseBox)} in bar ${JSON.stringify(barBox)}`,
+    );
+    check(
+      "restored: the bottom-bar collapse names its move and its side",
+      restored.collapseAction?.label === "Collapse chat" &&
+        restored.collapseAction?.icon === "lucide-panel-right-close",
+      `label ${JSON.stringify(restored.collapseAction?.label)}, icon ${JSON.stringify(restored.collapseAction?.icon)}`,
+    );
+
+    await click(".chat-panel__action--collapse");
+    const barCollapsed = await settled();
+    const barCollapsedShot = await shot("chat-side-launcher-right.png");
+    check(
+      "bottom bar collapse: the panel leaves and the floating mark returns",
+      barCollapsed.chat === null &&
+        Boolean(barCollapsed.launcher) &&
+        barCollapsed.launcher.position === "fixed",
+      `dock ${JSON.stringify(barCollapsed.chat)}, launcher ${JSON.stringify(barCollapsed.launcher)}`,
+    );
+    check(
+      "bottom bar collapse: the sheet reclaims the dock's side of the window",
+      barCollapsed.main.box.right === barCollapsed.viewport.width &&
+        isZero(barCollapsed.main.border.left) &&
+        isZero(barCollapsed.main.border.right),
+      `sheet ${JSON.stringify(barCollapsed.main.box)} in ${barCollapsed.viewport.width}px, borders ${barCollapsed.main.border.left}/${barCollapsed.main.border.right}`,
+    );
+
+    at("bottom bar reopen");
+    await click(".chat-launcher");
+    const barReopened = await settled();
+    check(
+      "bottom bar collapse: the floating mark opens the same dock back",
+      same(barReopened.main.box, restored.main.box) &&
+        same(barReopened.chat.box, restored.chat.box) &&
+        barReopened.launcher === null,
+      `sheet ${JSON.stringify(barReopened.main.box)} vs ${JSON.stringify(restored.main.box)}, dock ${JSON.stringify(barReopened.chat.box)} vs ${JSON.stringify(restored.chat.box)}`,
+    );
+
     report = {
       url,
       ranAt: new Date().toISOString(),
@@ -802,6 +916,8 @@ async function main() {
       dockReopened,
       railRestored,
       restored,
+      barCollapsed,
+      barReopened,
       screenshots: [
         rightShot,
         rightSeamShot,
@@ -809,6 +925,7 @@ async function main() {
         leftSeamShot,
         collapsedShot,
         restoredShot,
+        barCollapsedShot,
       ],
       failures,
       pass: failures.length === 0,
@@ -837,14 +954,15 @@ async function main() {
     ["left/collapsed dock", report.dockCollapsed],
     ["left/collapsed rail", report.railCollapsed],
     ["round trip", report.restored],
+    ["bottom bar collapsed", report.barCollapsed],
   ]) {
     if (!state?.main) continue;
     rows.push([
       label,
       state.rail ? `${state.rail.box.left}/${state.rail.box.right}` : "none",
       `${state.main.box.left}/${state.main.box.right}`,
-      `${state.chat.box.left}/${state.chat.box.right}`,
-      String(state.chat.box.width),
+      state.chat ? `${state.chat.box.left}/${state.chat.box.right}` : "—",
+      state.chat ? String(state.chat.box.width) : "—",
       String(state.owners?.bottomRight ?? "—"),
     ]);
   }

@@ -22,8 +22,8 @@ import {
   ImagePlus,
   MessageSquare,
   MoreVertical,
-  PanelLeftOpen,
-  PanelRightOpen,
+  PanelLeftClose,
+  PanelRightClose,
   Pencil,
   Pin,
   PinOff,
@@ -205,8 +205,8 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     pageContext,
     setPageContextOn,
     // The dock's side is the shell's business — it is the shell that swaps the
-    // two panes — but the collapsed tab's own arrow opens toward the page it
-    // expands into, so it reads the side too.
+    // two panes — but the bottom bar's collapse arrow points out of the side it
+    // collapses toward, so it reads the side too.
     side: dockSide,
   } = useChatDock();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1565,17 +1565,41 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     </div>
   ) : null;
 
+  /*
+    Collapsed, the dock is not a narrow pane: it leaves the grid entirely and
+    becomes one floating mark on the page it gave its column back to. The mark is
+    the agent's own — the Nous girl — and the button is the way back in; the
+    dock's bottom action bar carries the matching way out. Keeping the component
+    mounted here is deliberate: the thread, the draft and the pending receipt
+    survive the collapse, because only the chip's paint changes, not its state.
+  */
+  if (!open) {
+    return (
+      <>
+        <button
+          type="button"
+          className="chat-launcher"
+          data-testid="chat-launcher"
+          onClick={() => onOpenChange(true)}
+          aria-label="Open Hermes chat"
+          title="Open Hermes chat"
+        >
+          <span className="chat-launcher__mark" aria-hidden />
+        </button>
+        {/* The dock's own confirmation, rendered beside the launcher so a
+            question already asked is not stranded by a collapse. */}
+        {dialog}
+      </>
+    );
+  }
+
   return (
     <aside
       ref={panelRef}
-      className={[
-        "chat-panel",
-        open ? "chat-panel--open" : "chat-panel--collapsed",
-      ].join(" ")}
+      className="chat-panel"
       role="complementary"
       aria-label="Hermes chat"
     >
-      {open ? (
         <div className="chat-panel__open">
           {view === "list" ? (
             <>
@@ -2203,24 +2227,28 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
             >
               <Radio size={20} aria-hidden />
             </button>
+            {/*
+              The way out, at the trailing end of the bar. It is the same move as
+              the titlebar's collapse control, put where the operator's hand
+              already is when they are done with the dock: the bottom-right
+              corner, one click from the icon that brings it back.
+            */}
+            <button
+              type="button"
+              className="chat-panel__icon-btn chat-panel__action chat-panel__action--collapse"
+              data-testid="chat-collapse"
+              aria-label="Collapse chat"
+              title="Collapse chat"
+              onClick={() => onOpenChange(false)}
+            >
+              {dockSide === "left" ? (
+                <PanelLeftClose size={20} aria-hidden />
+              ) : (
+                <PanelRightClose size={20} aria-hidden />
+              )}
+            </button>
           </nav>
         </div>
-      ) : (
-        <button
-          type="button"
-          className="chat-panel__expand"
-          onClick={() => onOpenChange(true)}
-          aria-label="Open Hermes chat"
-          title="Open Hermes chat"
-        >
-          {dockSide === "left" ? (
-            <PanelLeftOpen size={16} />
-          ) : (
-            <PanelRightOpen size={16} />
-          )}
-          <span>Chat</span>
-        </button>
-      )}
 
       {/* The dock's own confirmation. It is drawn over the window, not the panel:
           the question is about a chat, and a platform dialog would put it on the
