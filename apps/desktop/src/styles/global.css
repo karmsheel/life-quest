@@ -811,6 +811,14 @@ a {
   gap: 0.15rem;
 }
 
+/* The wing's rows begin under the top bar's bottom hairline rather than level
+   with the Home/Define selector. The rail's header is the titlebar row; this is
+   the top bar's own band, so Dashboard starts on the first line of the page's
+   content instead of sitting beside the selector. */
+.nav-rail__section--wing {
+  padding-top: 3.15rem;
+}
+
 .nav-rail__section--bottom {
   margin-top: auto;
 }

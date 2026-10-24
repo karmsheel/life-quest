@@ -717,6 +717,23 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("goals:apply", (_e, command: Parameters<typeof vault.goalsApply>[0]) =>
     vault.goalsApply(command),
   );
+  ipcMain.handle("automation:list", () => vault.automationList());
+  ipcMain.handle("automation:create", (_e, input: unknown) =>
+    vault.automationCreate(input),
+  );
+  ipcMain.handle(
+    "automation:update",
+    (_e, id: string, input: unknown) =>
+      vault.automationUpdate(typeof id === "string" ? id : "", input),
+  );
+  ipcMain.handle("automation:delete", (_e, id: string) =>
+    vault.automationDelete(typeof id === "string" ? id : ""),
+  );
+  ipcMain.handle(
+    "automation:markRun",
+    (_e, id: string, patch: Parameters<typeof vault.automationMarkRun>[1]) =>
+      vault.automationMarkRun(typeof id === "string" ? id : "", patch),
+  );
 
   ipcMain.handle(
     "review:get",

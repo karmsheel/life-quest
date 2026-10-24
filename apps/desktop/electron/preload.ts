@@ -415,6 +415,19 @@ const lifequest = {
     ipcRenderer.invoke("map:apply", command) as Promise<Result<unknown>>,
   goalsApply: (command: unknown) =>
     ipcRenderer.invoke("goals:apply", command) as Promise<Result<unknown>>,
+  automationList: () =>
+    ipcRenderer.invoke("automation:list") as Promise<Result<unknown>>,
+  automationCreate: (input: unknown) =>
+    ipcRenderer.invoke("automation:create", input) as Promise<Result<unknown>>,
+  automationUpdate: (id: string, input: unknown) =>
+    ipcRenderer.invoke("automation:update", id, input) as Promise<Result<unknown>>,
+  automationDelete: (id: string) =>
+    ipcRenderer.invoke("automation:delete", id) as Promise<Result<unknown>>,
+  automationMarkRun: (
+    id: string,
+    patch: { status: string; sessionId?: string | null; at?: string; error?: string | null },
+  ) =>
+    ipcRenderer.invoke("automation:markRun", id, patch) as Promise<Result<unknown>>,
 
   reviewGet: (cadence: string, period: string) =>
     ipcRenderer.invoke("review:get", cadence, period) as Promise<Result<unknown>>,

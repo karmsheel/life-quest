@@ -68,7 +68,7 @@ export function NavRail() {
           <div className="nav-rail__divider" role="separator" />
         </>
       ) : null}
-      <div className="nav-rail__section" data-nav-group="wing">
+      <div className="nav-rail__section nav-rail__section--wing" data-nav-group="wing">
         {wingItems.map(renderItem)}
       </div>
       {/*

@@ -41,12 +41,18 @@ import type {
   DailyNoteIndexEntry,
   VaultSnapshot,
 } from "@lifequest/vault-core";
+import {
+  DEFAULT_ANALYZE_AUTOMATION,
+  type AutomationInput,
+  type AutomationRecord,
+} from "@lifequest/vault-core/pure";
 import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import AutomationsPage from "@/pages/AutomationsPage";
 import DailyNotePage from "@/pages/DailyNotePage";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
+import { AutomationScheduler } from "@/state/AutomationScheduler";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import { applyAppSkin } from "./apply-app-skin";
@@ -81,12 +87,55 @@ type HarnessWindow = Window & {
   automationSessionCalls?: SessionCall[];
   automationChatCalls?: ChatCall[];
   automationUnexpectedCalls?: string[];
+  /** What the page sent to the automation store. */
+  automationCreateCalls?: AutomationInput[];
+  automationUpdateCalls?: { id: string; input: AutomationInput }[];
+  automationDeleteCalls?: string[];
+  automationMarkCalls?: { id: string; patch: Record<string, unknown> }[];
+  /** Add a scheduled record that is already due, then let the scheduler see it. */
+  automationSeedScheduled?: () => void;
 };
 
 const harness = window as HarnessWindow;
 harness.automationSessionCalls = [];
 harness.automationChatCalls = [];
 harness.automationUnexpectedCalls = [];
+harness.automationCreateCalls = [];
+harness.automationUpdateCalls = [];
+harness.automationDeleteCalls = [];
+harness.automationMarkCalls = [];
+
+/** The shelf the bridge serves. The built-in is the one every vault starts with. */
+let automations: AutomationRecord[] = [{ ...DEFAULT_ANALYZE_AUTOMATION }];
+let automationCounter = 0;
+
+harness.automationSeedScheduled = () => {
+  const now = Date.now();
+  const createdAt = new Date(now - 7 * 86_400_000).toISOString();
+  automations = [
+    ...automations,
+    {
+      ...DEFAULT_ANALYZE_AUTOMATION,
+      id: "scheduled-sweep",
+      name: "Scheduled sweep",
+      description: "Reads today's note when the day starts.",
+      prompt: "Sweep {{dateLabel}} and name the three things I should do next.",
+      trigger: {
+        type: "schedule",
+        frequency: "daily",
+        time: "00:01",
+        weekday: null,
+      },
+      createdAt,
+      updatedAt: createdAt,
+      lastRunAt: null,
+      lastRunStatus: null,
+      lastRunSessionId: null,
+      lastError: null,
+    },
+  ];
+  window.dispatchEvent(new Event("lifequest:automations-changed"));
+};
 
 function localToday(): string {
   const now = new Date();
@@ -216,8 +265,59 @@ const bridge: Record<string, unknown> = {
     onMaximizeChange: () => () => {},
   },
   pinsList: () => ok({ pins: [], locked: false }),
+  companionStatus: () => Promise.resolve({ kind: "ready" }),
   companionModelOptions: () =>
     ok({ providers: [], current: { model: "harness", provider: "harness" } }),
+  automationList: () => ok(automations),
+  automationCreate: (input: AutomationInput) => {
+    harness.automationCreateCalls?.push(input);
+    const now = new Date().toISOString();
+    const record: AutomationRecord = {
+      id: `automation-created-${++automationCounter}`,
+      ...input,
+      createdAt: now,
+      updatedAt: now,
+      lastRunAt: null,
+      lastRunStatus: null,
+      lastRunSessionId: null,
+      lastError: null,
+    };
+    automations = [...automations, record];
+    return ok(automations);
+  },
+  automationUpdate: (id: string, input: AutomationInput) => {
+    harness.automationUpdateCalls?.push({ id, input });
+    automations = automations.map((record) =>
+      record.id === id
+        ? { ...record, ...input, updatedAt: new Date().toISOString() }
+        : record,
+    );
+    return ok(automations);
+  },
+  automationDelete: (id: string) => {
+    harness.automationDeleteCalls?.push(id);
+    automations = automations.filter((record) => record.id !== id);
+    return ok(automations);
+  },
+  automationMarkRun: (id: string, patch: Record<string, unknown>) => {
+    harness.automationMarkCalls?.push({ id, patch });
+    automations = automations.map((record) =>
+      record.id === id
+        ? {
+            ...record,
+            lastRunAt:
+              typeof patch.at === "string" ? patch.at : new Date().toISOString(),
+            lastRunStatus:
+              (patch.status as AutomationRecord["lastRunStatus"]) ?? null,
+            lastRunSessionId:
+              typeof patch.sessionId === "string" ? patch.sessionId : null,
+            lastError: typeof patch.error === "string" ? patch.error : null,
+            updatedAt: new Date().toISOString(),
+          }
+        : record,
+    );
+    return ok(automations);
+  },
   companionSessionsList: () => ok(sessions),
   companionSessionCreate: (title: string) => {
     sessionCounter += 1;
@@ -312,6 +412,7 @@ createRoot(root).render(
       <RouterControl />
       <ThemeProvider>
         <VaultProvider>
+          <AutomationScheduler />
           <ChatDockProvider>
             <NavDockProvider>
               <div className="app-root">

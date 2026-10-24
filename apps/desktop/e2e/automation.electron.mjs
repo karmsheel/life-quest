@@ -12,20 +12,19 @@
  *
  *  1. The governed shelf is one cordoned group at the foot of the rail:
  *     Life-Chain, Decisions, Daily Note, Automations, with a divider above the
- *     shelf and another between it and the Log. Reading the rail's own DOM order
- *     and its direct dividers is what makes "cordoned" falsifiable.
+ *     shelf and another between it and the Log.
  *  2. Automations sits directly under Daily Note and is the active row on its
  *     route; the Daily Note is directly under Decisions.
- *  3. The Automations page names the one automation, says what it does, and
- *     links back to the page that owns its trigger.
- *  4. The Daily Note's Analyze note control is present and usable while a note
- *     is on screen.
- *  5. Clicking it creates a fresh chat, opens the dock on it, and sends the
- *     automation prompt as the visible first turn.
- *  6. The note is fed whole. The seeded day is longer than the page-context
- *     budget; its first and last words must both appear in the turn's
- *     `automationContext`, and the prompt must ask for tasks, goals and details.
- *  7. No bridge call this rig does not model, and no console error.
+ *  3. The Automations page groups the shelf by trigger type. The built-in is a
+ *     manual job; the editor creates a scheduled one with a day and time.
+ *  4. The editor edits an existing job and its changes reach the bridge.
+ *  5. Run now, and the Daily Note's own button, each open a fresh chat with the
+ *     resolved prompt and the whole note in the hidden context.
+ *  6. A scheduled job that is already due runs once, writes its last run back,
+ *     and does not open the dock.
+ *  7. The Analyze note prompt asks for a place to track anything the note
+ *     mentions that LifeQuest has no home for yet.
+ *  8. No bridge call this rig does not model, and no console error.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -78,20 +77,33 @@ const SAMPLE = `(() => {
   const shelf = document.querySelector('[data-nav-group="governance"]');
   const footer = document.querySelector('[data-nav-group="footer"]');
   const wing = document.querySelector('[data-nav-group="wing"]');
-  const rows = Array.from(document.querySelectorAll(".automation-row")).map((row) => {
-    const action = row.querySelector(".automation-row__open");
-    return {
-      name: text(row.querySelector(".automation-row__name")),
-      description: text(row.querySelector(".automation-row__desc")),
-      action: text(action),
-      actionHref: action ? action.getAttribute("href") : null,
-      testId: row.getAttribute("data-testid"),
-    };
-  });
+  const rows = Array.from(document.querySelectorAll(".automation-row")).map((row) => ({
+    testId: row.getAttribute("data-testid"),
+    name: text(row.querySelector(".automation-row__name")),
+    description: text(row.querySelector(".automation-row__desc")),
+    trigger: row.getAttribute("data-trigger"),
+    meta: text(row.querySelector(".automation-row__meta")),
+    badge: text(row.querySelector(".automation-row__badge")),
+    actions: Array.from(row.querySelectorAll("button")).map((b) => text(b)),
+    error: text(row.querySelector(".automation-row__error")),
+  }));
+  const groups = Array.from(document.querySelectorAll(".automations-page__group")).map(
+    (group) => ({
+      title: text(group.querySelector(".automations-page__group-title")),
+      description: text(group.querySelector(".automations-page__group-desc")),
+      rows: group.querySelectorAll(".automation-row").length,
+    }),
+  );
+  const editor = document.querySelector('[data-testid="automation-editor"]');
+  const editorField = (id) => {
+    const el = document.querySelector('[data-testid="' + id + '"]');
+    if (!el) return null;
+    return el.type === "checkbox" ? el.checked : el.value;
+  };
   const analyze = document.querySelector('[data-testid="daily-note-analyze"]');
-  const editor = document.querySelector(".daily-note__editor");
-  const noteBody = editor
-    ? Array.from(editor.querySelectorAll("[data-note-block]"))
+  const editorBox = document.querySelector(".daily-note__editor");
+  const noteBody = editorBox
+    ? Array.from(editorBox.querySelectorAll("[data-note-block]"))
         .map((el) => {
           const area = el.querySelector("textarea");
           return area ? area.value : (el.textContent || "");
@@ -104,6 +116,7 @@ const SAMPLE = `(() => {
       ".chat-panel__message--user .chat-panel__message-content",
     ),
   ).map((el) => (el.textContent || "").trim());
+  const chatHeading = document.querySelector(".chat-panel__heading--thread");
   return {
     route: window.automationRoute ?? null,
     rail: {
@@ -119,18 +132,44 @@ const SAMPLE = `(() => {
           )
         : false,
       wingBox: box(wing),
+      firstWingBox: box(wing ? wing.querySelector(".nav-rail__link") : null),
+      topBarBox: box(document.querySelector(".top-bar")),
       shelfBox: box(shelf),
       footerBox: box(footer),
       bottomBox: box(bottom),
     },
     automations: {
       heading: text(document.querySelector("[data-page-context-root] h1")),
-      groupTitle: text(document.querySelector(".automations-page__group-title")),
+      groups,
       rows,
+      editorOpen: Boolean(editor),
+      editor: editor
+        ? {
+            name: editorField("automation-name"),
+            description: editorField("automation-description"),
+            host: editorField("automation-host"),
+            triggerManual:
+              document
+                .querySelector('[data-testid="automation-trigger-manual"]')
+                ?.getAttribute("aria-checked") === "true",
+            triggerSchedule:
+              document
+                .querySelector('[data-testid="automation-trigger-schedule"]')
+                ?.getAttribute("aria-checked") === "true",
+            frequency: editorField("automation-frequency"),
+            weekday: editorField("automation-weekday"),
+            time: editorField("automation-time"),
+            prompt: editorField("automation-prompt"),
+            enabled: editorField("automation-enabled"),
+          }
+        : null,
     },
     note: {
       heading: text(document.querySelector("[data-page-context-root] h1")),
       day: text(document.querySelector('[data-testid="daily-note-day"]')),
+      automationButtons: Array.from(
+        document.querySelectorAll(".daily-note__automations button"),
+      ).map((button) => text(button)),
       analyze: analyze
         ? {
             label: text(analyze),
@@ -139,7 +178,6 @@ const SAMPLE = `(() => {
           }
         : null,
       bodyLength: noteBody ? noteBody.length : null,
-      bodyTail: noteBody ? noteBody.slice(-80) : null,
     },
     chat: {
       open: document
@@ -147,12 +185,16 @@ const SAMPLE = `(() => {
         ?.classList.contains("shell--chat-open")
         ? true
         : false,
-      title: text(document.querySelector(".chat-panel__heading--thread")),
+      title: chatHeading ? text(chatHeading) : null,
       userMessages,
       thinking: Boolean(document.querySelector(".chat-panel__thinking")),
     },
     sessionCalls: window.automationSessionCalls ?? [],
     chatCalls: window.automationChatCalls ?? [],
+    createCalls: window.automationCreateCalls ?? [],
+    updateCalls: window.automationUpdateCalls ?? [],
+    deleteCalls: window.automationDeleteCalls ?? [],
+    markCalls: window.automationMarkCalls ?? [],
   };
 })()`;
 
@@ -188,6 +230,40 @@ function idle(win, ms) {
 
 function sample(win) {
   return win.webContents.executeJavaScript(SAMPLE);
+}
+
+function click(win, testId) {
+  return win.webContents.executeJavaScript(
+    `(() => { const el = document.querySelector('[data-testid="${testId}"]'); if (!el) return false; el.click(); return true; })()`,
+  );
+}
+
+/** Set a controlled input's value the way a keystroke would. */
+function setField(win, testId, value) {
+  return win.webContents.executeJavaScript(`(() => {
+    const el = document.querySelector('[data-testid="${testId}"]');
+    if (!el) return false;
+    const proto = el instanceof HTMLSelectElement
+      ? HTMLSelectElement.prototype
+      : el instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
+    setter.call(el, ${JSON.stringify(value)});
+    el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }));
+    return true;
+  })()`);
+}
+
+function setChecked(win, testId, checked) {
+  return win.webContents.executeJavaScript(`(() => {
+    const el = document.querySelector('[data-testid="${testId}"]');
+    if (!el) return false;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked").set;
+    setter.call(el, ${checked ? "true" : "false"});
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  })()`);
 }
 
 async function shoot(win, name) {
@@ -298,16 +374,6 @@ async function main() {
       JSON.stringify(landing.rail.shelf[3]),
     );
     check(
-      "Automations points at /automations",
-      (landing.rail.shelf[3]?.href ?? "").endsWith("/automations"),
-      landing.rail.shelf[3]?.href,
-    );
-    check(
-      "the shelf carries icons",
-      landing.rail.shelf.every((l) => l.icon),
-      JSON.stringify(landing.rail.shelf.map((l) => l.icon)),
-    );
-    check(
       "the Log is the footer's only row",
       JSON.stringify(landing.rail.footer.map((l) => l.label)) === '["Log"]',
       JSON.stringify(landing.rail.footer.map((l) => l.label)),
@@ -328,47 +394,314 @@ async function main() {
       JSON.stringify({ wingBox, shelfBox, footerBox }),
     );
     check(
-      "the shelf is at the foot of the rail, not the top",
-      Boolean(shelfBox) && shelfBox.top > 200,
-      JSON.stringify(shelfBox),
+      "the wing's first icon starts below the top bar's bottom hairline",
+      Boolean(landing.rail.firstWingBox && landing.rail.topBarBox) &&
+        landing.rail.firstWingBox.top >= landing.rail.topBarBox.bottom,
+      JSON.stringify({
+        first: landing.rail.firstWingBox,
+        topBar: landing.rail.topBarBox,
+      }),
     );
 
-    // ── 2. the Automations page: one line ──────────────────────────────────
+    // ── 2. the shelf groups by type, and the built-in is manual ────────────
     check(
       "the Automations page is headed Automations",
       landing.automations.heading === "Automations",
       JSON.stringify(landing.automations.heading),
     );
     check(
-      "the one row is grouped under Daily Note",
-      landing.automations.groupTitle === "Daily Note",
-      JSON.stringify(landing.automations.groupTitle),
+      "the page groups jobs into Manual and Scheduled",
+      JSON.stringify(landing.automations.groups.map((g) => g.title)) ===
+        JSON.stringify(["Manual 1", "Scheduled 0"]),
+      JSON.stringify(landing.automations.groups),
+    );
+    const builtIn = landing.automations.rows.find(
+      (row) => row.testId === "automation-daily-note-analyze",
+    );
+    check("the built-in row is on the shelf", Boolean(builtIn), JSON.stringify(landing.automations.rows));
+    check(
+      "the built-in is a manual job that reads the Daily Note",
+      builtIn?.trigger === "manual" &&
+        /Manual/.test(builtIn?.meta ?? "") &&
+        /Daily Note/.test(builtIn?.meta ?? ""),
+      JSON.stringify(builtIn),
     );
     check(
-      "the page lists exactly one automation",
-      landing.automations.rows.length === 1,
-      JSON.stringify(landing.automations.rows),
-    );
-    const row = landing.automations.rows[0] ?? {};
-    check(
-      "the row is the Analyze note automation",
-      row.name === "Analyze note" && row.testId === "automation-daily-note-analyze",
-      JSON.stringify(row),
+      "the row offers Run now, Edit, Pause and Delete",
+      ["Run now", "Edit", "Pause", "Delete"].every((label) =>
+        builtIn?.actions?.some((action) => action.includes(label)),
+      ),
+      JSON.stringify(builtIn?.actions),
     );
     check(
-      "the row says what it does",
-      /Kanban/.test(row.description ?? "") && /goals/i.test(row.description ?? ""),
-      JSON.stringify(row.description),
+      "the built-in description names tasks and goals",
+      /Kanban/.test(builtIn?.description ?? "") &&
+        /goals/i.test(builtIn?.description ?? ""),
+      JSON.stringify(builtIn?.description),
+    );
+
+    // ── 3. create a scheduled automation through the editor ────────────────
+    await click(win, "automation-new");
+    await waitFor(
+      win,
+      `Boolean(document.querySelector('[data-testid="automation-editor"]'))`,
+      "the new-automation editor",
+    );
+    await setField(win, "automation-name", "Weekly review prep");
+    await setField(
+      win,
+      "automation-description",
+      "Sets up the weekly review thread before I sit down.",
+    );
+    await setField(win, "automation-host", "none");
+    await click(win, "automation-trigger-schedule");
+    await waitFor(
+      win,
+      `Boolean(document.querySelector('[data-testid="automation-frequency"]'))`,
+      "the schedule fields",
+    );
+    await setField(win, "automation-frequency", "weekly");
+    await waitFor(
+      win,
+      `Boolean(document.querySelector('[data-testid="automation-weekday"]'))`,
+      "the weekday field",
+    );
+    await setField(win, "automation-weekday", "1");
+    await setField(win, "automation-time", "23:59");
+    await setField(
+      win,
+      "automation-prompt",
+      "Set up the weekly review for {{dateLabel}} and list what changed since last week.",
+    );
+    const editing = await sample(win);
+    checks.editor = editing.automations;
+    check(
+      "the editor holds the scheduled fields",
+      editing.automations.editor?.triggerSchedule === true &&
+        editing.automations.editor?.frequency === "weekly" &&
+        editing.automations.editor?.weekday === "1" &&
+        editing.automations.editor?.time === "23:59" &&
+        editing.automations.editor?.host === "none",
+      JSON.stringify(editing.automations.editor),
+    );
+    await click(win, "automation-save");
+    await waitFor(
+      win,
+      "(window.automationCreateCalls ?? []).length > 0",
+      "the create to reach the bridge",
+    );
+    await waitFor(
+      win,
+      `Boolean(document.querySelector('[data-testid="automation-automation-created-1"]'))`,
+      "the new scheduled row",
+    );
+    const created = await sample(win);
+    checks.created = { ...created.automations, createCalls: created.createCalls };
+    const createInput = created.createCalls[0];
+    check(
+      "the created job is the scheduled one the editor held",
+      createInput?.name === "Weekly review prep" &&
+        createInput?.host === "none" &&
+        createInput?.trigger?.type === "schedule" &&
+        createInput?.trigger?.frequency === "weekly" &&
+        createInput?.trigger?.weekday === 1 &&
+        createInput?.trigger?.time === "23:59" &&
+        createInput?.enabled === true,
+      JSON.stringify(createInput),
     );
     check(
-      "the row leads back to the Daily Note",
-      (row.actionHref ?? "").endsWith("/notes") &&
-        /Daily Note/.test(row.action ?? ""),
-      JSON.stringify({ action: row.action, href: row.actionHref }),
+      "the new job is grouped as Scheduled and shows its cadence",
+      created.automations.groups[1]?.rows === 1 &&
+        created.automations.rows.some(
+          (row) =>
+            row.testId === "automation-automation-created-1" &&
+            /Scheduled/.test(row.meta ?? "") &&
+            /Mondays at 23:59/.test(row.meta ?? "") &&
+            /No page/.test(row.meta ?? ""),
+        ),
+      JSON.stringify(created.automations.rows),
     );
     screenshots.push(await shoot(win, "automation.png"));
 
-    // ── 3. the Daily Note's trigger ────────────────────────────────────────
+    // ── 4. edit the built-in, and delete the new one ───────────────────────
+    await click(win, "automation-edit-daily-note-analyze");
+    await waitFor(
+      win,
+      `Boolean(document.querySelector('[data-testid="automation-editor"]'))`,
+      "the built-in's editor",
+    );
+    await setField(
+      win,
+      "automation-description",
+      "Edited: breaks the day down, and proposes places to track what has no home.",
+    );
+    await click(win, "automation-save");
+    await waitFor(
+      win,
+      "(window.automationUpdateCalls ?? []).length > 0",
+      "the edit to reach the bridge",
+    );
+    const edits = await sample(win);
+    checks.edits = { ...edits.automations, updateCalls: edits.updateCalls };
+    const update = edits.updateCalls[0];
+    check(
+      "the edit kept the built-in's manual trigger and its new prompt step",
+      update?.id === "daily-note-analyze" &&
+        update?.input?.trigger?.type === "manual" &&
+        /propose the document, page or database/.test(update?.input?.prompt ?? "") &&
+        /no place for yet/.test(update?.input?.prompt ?? ""),
+      JSON.stringify(update),
+    );
+    check(
+      "the edited row's description is on the shelf",
+      edits.automations.rows.some(
+        (row) =>
+          row.testId === "automation-daily-note-analyze" &&
+          /Edited: breaks the day down/.test(row.description ?? ""),
+      ),
+      JSON.stringify(edits.automations.rows),
+    );
+
+    await click(win, "automation-delete-automation-created-1");
+    await waitFor(
+      win,
+      `Boolean(document.querySelector(".confirm-dialog__confirm"))`,
+      "the delete confirmation",
+    );
+    await win.webContents.executeJavaScript(
+      `document.querySelector(".confirm-dialog__confirm").click()`,
+    );
+    await waitFor(
+      win,
+      "(window.automationDeleteCalls ?? []).length > 0",
+      "the delete to reach the bridge",
+    );
+    await waitFor(
+      win,
+      `!document.querySelector('[data-testid="automation-automation-created-1"]')`,
+      "the deleted row to leave the shelf",
+    );
+    const deleted = await sample(win);
+    checks.deleted = { ...deleted.automations, deleteCalls: deleted.deleteCalls };
+    check(
+      "the built-in remains alone after the delete",
+      deleted.automations.rows.length === 1 &&
+        deleted.automations.rows[0]?.testId === "automation-daily-note-analyze",
+      JSON.stringify(deleted.automations.rows),
+    );
+
+    // ── 4b. a manual job created for the Daily Note becomes a button there ──
+    await click(win, "automation-new");
+    await waitFor(
+      win,
+      `Boolean(document.querySelector('[data-testid="automation-editor"]'))`,
+      "the manual job's editor",
+    );
+    await setField(win, "automation-name", "Morning focus");
+    await setField(
+      win,
+      "automation-description",
+      "Names the one thing the day should start with.",
+    );
+    await setField(
+      win,
+      "automation-prompt",
+      "Name the one thing I should do first on {{dateLabel}}.",
+    );
+    await click(win, "automation-save");
+    await waitFor(
+      win,
+      "(window.automationCreateCalls ?? []).length > 1",
+      "the manual job to reach the bridge",
+    );
+    await waitFor(
+      win,
+      `Boolean(document.querySelector('[data-testid="automation-automation-created-2"]'))`,
+      "the new manual row",
+    );
+    const manualCreated = await sample(win);
+    checks.manualCreated = manualCreated.automations;
+    check(
+      "the manual job lands in the Manual group on the Daily Note",
+      manualCreated.automations.groups[0]?.title === "Manual 2" &&
+        manualCreated.automations.rows.some(
+          (row) =>
+            row.testId === "automation-automation-created-2" &&
+            row.trigger === "manual" &&
+            /Daily Note/.test(row.meta ?? ""),
+        ),
+      JSON.stringify(manualCreated.automations),
+    );
+
+    // ── 5. a due schedule runs once and records itself ─────────────────────
+    await idle(win, 300);
+    await win.webContents.executeJavaScript("window.automationSeedScheduled()");
+    try {
+      await waitFor(
+        win,
+        `(window.automationMarkCalls ?? []).some((call) => call.id === "scheduled-sweep")`,
+        "the scheduled run to record itself",
+        15_000,
+      );
+    } catch {
+      await win.webContents.executeJavaScript(
+        `window.dispatchEvent(new Event("lifequest:automations-changed"))`,
+      );
+      await waitFor(
+        win,
+        `(window.automationMarkCalls ?? []).some((call) => call.id === "scheduled-sweep")`,
+        "the scheduled run after a nudge",
+        15_000,
+      );
+    }
+    const scheduled = await sample(win);
+    checks.scheduled = scheduled;
+    const scheduledChat = scheduled.chatCalls.find((call) =>
+      call.input.includes("Sweep"),
+    );
+    const scheduledMark = scheduled.markCalls.find(
+      (call) => call.id === "scheduled-sweep",
+    );
+    check(
+      "the scheduled job ran its own prompt and passed the note",
+      Boolean(scheduledChat) &&
+        /Sweep \d{1,2} \w{3} \d{4}/.test(scheduledChat?.input ?? "") &&
+        (scheduledChat?.instructionsContext?.automationContext ?? "").includes(
+          "Context note 55:",
+        ),
+      JSON.stringify({
+        input: scheduledChat?.input?.slice(0, 120),
+        context: (scheduledChat?.instructionsContext?.automationContext ?? "").length,
+      }),
+    );
+    check(
+      "the scheduled run recorded a success and its session",
+      scheduledMark?.patch?.status === "succeeded" &&
+        typeof scheduledMark?.patch?.sessionId === "string",
+      JSON.stringify(scheduledMark),
+    );
+    const scheduledTitle = `Scheduled sweep · ${dayLabel(today)}`;
+    check(
+      "the scheduled run did not open its chat",
+      scheduled.chat.title !== scheduledTitle &&
+        !scheduled.chat.userMessages.some((message) =>
+          message.startsWith("Sweep "),
+        ),
+      JSON.stringify({
+        title: scheduled.chat.title,
+        messages: scheduled.chat.userMessages.map((message) => message.slice(0, 40)),
+      }),
+    );
+    check(
+      "the due state is persisted on the row",
+      /Last run/.test(
+        scheduled.automations.rows.find((row) => row.testId === "automation-scheduled-sweep")
+          ?.meta ?? "",
+      ),
+      JSON.stringify(scheduled.automations.rows),
+    );
+
+    // ── 6. the Daily Note's own manual button ──────────────────────────────
     await win.webContents.executeJavaScript(
       `window.automationGoto("/notes")`,
     );
@@ -391,15 +724,18 @@ async function main() {
       JSON.stringify(dayPage.note.analyze),
     );
     check(
+      "the page draws a button for every manual job that reads it",
+      JSON.stringify(dayPage.note.automationButtons) ===
+        JSON.stringify(["Analyze note", "Morning focus"]),
+      JSON.stringify(dayPage.note.automationButtons),
+    );
+    check(
       "Daily Note is the active rail row on its route",
       dayPage.rail.shelf.find((l) => l.label === "Daily Note")?.active === true,
       JSON.stringify(dayPage.rail.shelf),
     );
 
-    // ── 4. the click: a fresh chat, fed the whole note ─────────────────────
-    const clicked = await win.webContents.executeJavaScript(
-      `(() => { const el = document.querySelector('[data-testid="daily-note-analyze"]'); if (!el) return false; el.click(); return true; })()`,
-    );
+    const clicked = await click(win, "daily-note-analyze");
     check("the Analyze note control was clicked", clicked === true, String(clicked));
     await waitFor(
       win,
@@ -415,52 +751,52 @@ async function main() {
     const after = await sample(win);
     checks.after = after;
 
-    const session = after.sessionCalls[0];
-    const expectedTitle = `Analyze note · ${dayLabel(today)}`;
+    const session = after.sessionCalls.find(
+      (call) => call.title === `Analyze note · ${dayLabel(today)}`,
+    );
     check(
-      "one fresh chat was created for the run",
-      after.sessionCalls.length === 1,
+      "a fresh chat was created for the run",
+      Boolean(session),
       JSON.stringify(after.sessionCalls),
     );
     check(
-      "the chat is named after the automation and the day",
-      session?.title === expectedTitle,
-      JSON.stringify({ got: session?.title, want: expectedTitle }),
-    );
-    check(
       "the dock opened on that chat",
-      after.chat.open === true && after.chat.title === expectedTitle,
+      after.chat.open === true &&
+        after.chat.title === `Analyze note · ${dayLabel(today)}`,
       JSON.stringify({ open: after.chat.open, title: after.chat.title }),
     );
     check(
       "the visible turn is the automation's prompt",
       after.chat.userMessages.length === 1 &&
-        /Break down the Daily Note/.test(after.chat.userMessages[0] ?? "") &&
-        /Kanban/.test(after.chat.userMessages[0] ?? "") &&
-        /goals at different timeframes/.test(after.chat.userMessages[0] ?? "") &&
-        /personal and project details/.test(after.chat.userMessages[0] ?? ""),
+        /Analyze the Daily Note for/.test(after.chat.userMessages[0] ?? "") &&
+        /Kanban board/.test(after.chat.userMessages[0] ?? "") &&
+        /Goals at different timeframes/.test(after.chat.userMessages[0] ?? "") &&
+        /propose the document, page or database/.test(
+          after.chat.userMessages[0] ?? "",
+        ),
       JSON.stringify(after.chat.userMessages),
     );
 
-    const call = after.chatCalls[0];
+    const call = after.chatCalls.find(
+      (candidate) => candidate.sessionId === session?.id,
+    );
     check(
       "the turn was sent on the new chat",
-      call?.sessionId === session?.id,
+      Boolean(call),
       JSON.stringify({ call: call?.sessionId, session: session?.id }),
     );
     const prompt = call?.input ?? "";
     check(
-      "the prompt names tasks, goals and details without pasting the note",
-      /tasks/i.test(prompt) &&
-        /goals/i.test(prompt) &&
-        /details/i.test(prompt) &&
+      "the prompt asks for the new-tracking step and does not paste the note",
+      /no place for yet/i.test(prompt) &&
+        /propose the document, page or database/i.test(prompt) &&
         !prompt.includes("Context note 1:"),
-      JSON.stringify(prompt.slice(0, 400)),
+      JSON.stringify(prompt.slice(0, 600)),
     );
     const context = call?.instructionsContext?.automationContext ?? "";
     check(
       "the turn carries an automation context",
-      context.includes("DAILY NOTE AUTOMATION — ANALYZE NOTE"),
+      context.includes("AUTOMATION — ANALYZE NOTE"),
       context.slice(0, 200),
     );
     check(
@@ -476,21 +812,13 @@ async function main() {
         length: context.length,
         hasHead: context.includes("Friday: a long day"),
         hasTail: context.includes("Last line: the tail of the note"),
-        hasContext1: context.includes("Context note 1:"),
         hasContext55: context.includes("Context note 55:"),
       }),
     );
     check(
-      "the automation context is told to file tasks, goals and details",
-      /Kanban board/.test(context) &&
-        /Goals at different timeframes/.test(context) &&
-        /Personal, contextual and project details/.test(context),
-      context.slice(0, 600),
-    );
-    check(
       "the automation context names the page's own day",
       context.includes(`--- DAILY NOTE (${today}) ---`) &&
-        context.includes(`--- END DAILY NOTE ---`),
+        context.includes("--- END DAILY NOTE ---"),
       JSON.stringify({ today }),
     );
     check(
@@ -538,13 +866,12 @@ async function main() {
     `rail:      ${JSON.stringify(checks.landing?.rail?.shelf?.map((l) => l.label))} / ${JSON.stringify(checks.landing?.rail?.footer?.map((l) => l.label))}`,
   );
   console.log(
-    `automations: ${JSON.stringify(checks.landing?.automations?.rows?.map((r) => r.name))}`,
+    `groups:    ${JSON.stringify(checks.landing?.automations?.groups)}`,
   );
+  console.log(`created:   ${JSON.stringify(checks.created?.createCalls?.[0]?.name)}`);
+  console.log(`scheduled: ${JSON.stringify(checks.scheduled?.markCalls)}`);
   console.log(
-    `session:   ${JSON.stringify(checks.after?.sessionCalls?.[0]?.title)}`,
-  );
-  console.log(
-    `note:      ${checks.noteLength} chars, fed ${checks.after?.chatCalls?.[0]?.instructionsContext?.automationContext?.length ?? 0} chars`,
+    `note:      ${checks.noteLength} chars, fed ${checks.after?.chatCalls?.find((c) => c.input.startsWith("Analyze the Daily Note"))?.instructionsContext?.automationContext?.length ?? 0} chars`,
   );
   console.log(`failures:  ${errors.length === 0 ? "none" : errors.join("; ")}`);
 

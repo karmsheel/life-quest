@@ -1,34 +1,56 @@
-/* Automations — the shelf of one-click jobs.
-   One quiet list, grouped by the page that owns each trigger. The row is a line
-   of copy with its own way back to that page; the trigger itself lives on the
-   page, beside the material the automation reads. */
+/* Automations — the shelf of manual and scheduled jobs.
+   A row is one job with its trigger type, the page it reads and its actions;
+   the editor is the same row expanded into a form. */
 .automations-page {
   width: 100%;
-  max-width: 48rem;
+  max-width: 56rem;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.35rem;
   container-type: inline-size;
 }
 
 .automations-page__header {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem 1rem;
+}
+
+.automations-page__header > div {
+  min-width: 0;
+}
+
+.automations-page__new {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .automations-page__group {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
 .automations-page__group-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
   margin: 0;
-  color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.95rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: -0.01em;
+}
+
+.automations-page__group-title span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.automations-page__group-desc {
+  margin: 0 0 0.15rem;
+  font-size: 0.82rem;
 }
 
 .automations-page__list {
@@ -42,9 +64,9 @@
 
 .automation-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.75rem;
-  padding: 0.65rem 0.75rem;
+  padding: 0.7rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
@@ -63,9 +85,16 @@
 .automation-row__body {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: 0.15rem;
   flex: 1;
-  min-width: 12rem;
+  min-width: 14rem;
+}
+
+.automation-row__title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
 }
 
 .automation-row__name {
@@ -74,19 +103,179 @@
   font-weight: 600;
 }
 
+.automation-row__badge {
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--muted-surface);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 .automation-row__desc {
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.4;
 }
 
-.automation-row__open {
+.automation-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.automation-row__error {
+  color: var(--danger);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.automation-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
   flex: 0 0 auto;
   margin-left: auto;
 }
 
-@container (max-width: 34rem) {
-  .automation-row__open {
+.automation-row__actions .btn {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.76rem;
+}
+
+/* —— The inline editor —— */
+.automation-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.automation-editor__head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.automation-editor__head p {
+  margin: 0.15rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.automation-editor__row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 0.65rem;
+}
+
+.automation-editor__trigger {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.automation-editor__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.automation-editor__schedule {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: flex-end;
+}
+
+.automation-editor__schedule .field {
+  min-width: 8rem;
+}
+
+.automation-editor__hint {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.automation-editor__foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.automation-editor__enabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.automation-editor__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.automations-page__empty {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1.25rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+
+.automations-page__load-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.automations-page__load-error .form-error {
+  margin: 0;
+}
+
+.automations-page__empty p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+@container (max-width: 44rem) {
+  .automations-page__header {
+    grid-template-columns: 1fr;
+  }
+
+  .automations-page__new {
+    justify-self: start;
+    margin-left: 0;
+  }
+
+  .automation-row {
+    flex-wrap: wrap;
+  }
+
+  .automation-row__actions {
+    width: 100%;
+    justify-content: flex-start;
     margin-left: 2.5rem;
+  }
+
+  .automation-editor__row {
+    grid-template-columns: 1fr;
   }
 }

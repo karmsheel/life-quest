@@ -37,6 +37,7 @@ import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
 import { useSheetBackground } from "@/components/shell/useSheetBackground";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
+import { AutomationScheduler } from "@/state/AutomationScheduler";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
 import { LiveDataProvider } from "@/state/LiveDataProvider";
@@ -157,6 +158,7 @@ export default function App() {
                   function of the vault and the clock, and this is the one place
                   both are watched for the whole app. */}
               <LiveDataProvider>
+                <AutomationScheduler />
                 <SplashGate />
                 <ChatDockProvider>
                   <NavDockProvider>

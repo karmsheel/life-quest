@@ -89,6 +89,11 @@ import {
   exportDomainBooks,
   restoreDomainBooks,
   applyGoalsCommand,
+  createAutomation,
+  deleteAutomation,
+  loadAutomations,
+  markAutomationRun,
+  updateAutomation,
   applyMapCommand,
   installFinanceKit,
   refreshFxRate,
@@ -116,6 +121,8 @@ import {
   listSyncConflicts,
   resolveSyncConflict,
   type AgentHire,
+  type AutomationRecord,
+  type AutomationRunPatch,
   type ConnectedAgent,
   type DailyNote,
   type DailyNoteIndexEntry,
@@ -1368,6 +1375,41 @@ export async function goalsApply(
     if (!applied.ok) return applied;
     return openVault(root);
   });
+}
+
+/** The vault's automation shelf, defaults included when the store is absent. */
+export async function automationList(): Promise<Result<AutomationRecord[]>> {
+  return withVault((root) => loadAutomations(root));
+}
+
+export async function automationCreate(
+  input: unknown,
+): Promise<Result<AutomationRecord[]>> {
+  return withVault((root) => createAutomation(root, input));
+}
+
+export async function automationUpdate(
+  id: string,
+  input: unknown,
+): Promise<Result<AutomationRecord[]>> {
+  return withVault((root) => updateAutomation(root, id, input));
+}
+
+export async function automationDelete(
+  id: string,
+): Promise<Result<AutomationRecord[]>> {
+  return withVault((root) => deleteAutomation(root, id));
+}
+
+/**
+ * What a scheduled run came to. The scheduler writes this after the turn has
+ * started or failed, so the next due check does not replay the same occurrence.
+ */
+export async function automationMarkRun(
+  id: string,
+  patch: AutomationRunPatch,
+): Promise<Result<AutomationRecord[]>> {
+  return withVault((root) => markAutomationRun(root, id, patch));
 }
 
 export async function reviewGet(

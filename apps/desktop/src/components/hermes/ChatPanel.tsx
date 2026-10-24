@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import type { SignalRecord } from "@lifequest/vault-core/pure";
 import { copyText } from "@/lib/clipboard";
+import { AUTOMATIONS_CHANGED_EVENT } from "@/lib/automations";
 import { api } from "@/lib/ipc";
 import { readPageContext } from "@/lib/page-context";
 import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
@@ -566,6 +567,16 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     setSessions(listed.value);
     return listed.value;
   }, []);
+
+  // A scheduled automation opens its chat outside the dock. The run writes the
+  // automation store and fires the shelf's change event; the list then picks up
+  // the thread the run started, so it is waiting there next time the operator
+  // opens the dock rather than invisible until a restart.
+  useEffect(() => {
+    const refresh = () => void loadSessions();
+    window.addEventListener(AUTOMATIONS_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(AUTOMATIONS_CHANGED_EVENT, refresh);
+  }, [loadSessions]);
 
   /** Open one chat: the thread takes the panel over from the list. */
   const openSession = useCallback(
