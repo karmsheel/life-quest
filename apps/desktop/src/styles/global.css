@@ -561,8 +561,12 @@ a {
   position: relative;
 }
 
+/* A collapsed dock is not a pane at all: it has left the grid for one floating
+   button in the bottom-right corner, so its column goes to zero rather than to a
+   strip of chrome. The sheet takes the whole frame back, as it would if the dock
+   had never been mounted. */
 .shell--chat-collapsed {
-  --chat-column: 2.75rem;
+  --chat-column: 0px;
 }
 
 /* Chat beside the rail: the dock takes the middle column and the sheet moves out
@@ -658,6 +662,20 @@ a {
 .shell--chat-left > .shell__main {
   border-right: 0;
   border-left: 1px solid var(--border);
+  width: calc(100% + var(--shell-frame));
+}
+
+/* Collapsed, the sheet has no neighbour on either side and no seam to draw: it
+   reclaims the dock's column, and on the trailing arrangement it carries the
+   right frame's slack out to the window's own edge exactly as the dock did.
+   Both rules sit after the swap above on purpose — same specificity, so the
+   collapsed state has the last word on the sheet's own edge. */
+.shell--chat-collapsed > .shell__main {
+  border-right: 0;
+  border-left: 0;
+}
+
+.shell--chat-collapsed.shell--chat-right > .shell__main {
   width: calc(100% + var(--shell-frame));
 }
 
@@ -1392,86 +1410,19 @@ a {
   font-weight: 800;
 }
 
-.act-page__alignment-badge {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--success);
-  border: 1px solid var(--success);
-  border-radius: 999px;
-  padding: 0.2rem 0.6rem;
-  white-space: nowrap;
-}
-
-.act-page__alignment-badge--warn {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-
-.act-page__section-sub {
-  margin: 0;
-  font-size: 0.85rem;
-  line-height: 1.4;
-}
-
-.act-brief {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.act-brief__row {
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  padding: 0.6rem 0.7rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.act-brief__head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.act-brief__label {
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-
-.act-brief__room {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.act-brief__room:hover {
-  text-decoration: underline;
-}
-
-.act-brief__body {
-  margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 12rem;
-  overflow: auto;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  padding: 0.5rem 0.6rem;
-}
-
 .act-run__agent-field,
 .act-run__prompt-field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+/* The dispatch button's gate, said in one line. The page no longer carries the
+   doctrine brief that used to explain why the button was disabled. */
+.act-run__gate {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .act-run__agent-select {
@@ -4517,6 +4468,113 @@ a.home-mini-list__link:hover {
   color: var(--danger);
 }
 
+/* —— Settings · Questions: prompts saved for the chat composer —— */
+/* The form and the list share one card because they are one thing: the list is
+   what the form has written so far. The rule between them is the seam. */
+.settings-questions__intro {
+  max-width: 36rem;
+  margin-bottom: 1rem;
+}
+
+.settings-questions__add {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.settings-questions__scope-field {
+  max-width: 22rem;
+}
+
+.settings-questions__input {
+  width: 100%;
+  min-height: 4.5rem;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font: inherit;
+  line-height: 1.45;
+}
+
+.settings-questions__input:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+}
+
+.settings-questions__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.settings-questions__list-wrap {
+  padding-top: 1rem;
+}
+
+.settings-questions__list {
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-question {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.settings-question__text {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.settings-question__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+}
+
+.settings-question__scope {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}
+
+.settings-question__actions {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.settings-question__edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.settings-questions__empty {
+  margin: 0.5rem 0 0;
+}
+
 /* —— Settings · Agent: the prompts and skills the companion is given —— */
 .settings-prompt {
   display: flex;
@@ -4765,11 +4823,6 @@ a.home-mini-list__link:hover {
   width: var(--chat-column);
 }
 
-.chat-panel--collapsed {
-  align-items: stretch;
-  justify-content: stretch;
-}
-
 /* Open content wrapper: fill aside height so body/footer layout still works. */
 .chat-panel__open {
   display: flex;
@@ -4780,28 +4833,112 @@ a.home-mini-list__link:hover {
   height: 100%;
 }
 
-.chat-panel__expand {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  width: 100%;
-  height: 100%;
-  border: none;
-  background: transparent;
-  color: var(--muted);
+/* The collapsed dock, as one floating mark instead of a vertical strip: the
+   agent's own art in the window's bottom corner on the side the dock stands on —
+   beside the sheet's trailing edge when the dock trails, beside the rail when it
+   leads — over the sheet it gave its column back to. The mark follows the dock
+   because the dock's side is what the shell announces, not a corner of its own.
+   The circle is the whole control; the mask is the Nous girl.
+
+   The colours are a pair per theme. Day mode wears the page's paper
+   as its resting fill and the accent as a visible hairline around it, so the
+   standout colour outlines the button instead of flooding it. Hover warms the
+   fill to the accent tint while the outline stays put. Night mode steps the
+   resting fill down from the accent — the dark palette's accent is a little too
+   bright to sit still on a dark page — and then lights it back up to that accent
+   on hover, so the highlight is exactly the colour the button used to wear at
+   rest. The mark itself follows the field under it: black against night's orange,
+   dark gray against day's paper, so the face keeps its edge without the whole
+   button turning into a bright badge. */
+.chat-launcher {
+  --chat-launcher-surface: var(--background);
+  --chat-launcher-surface-hover: var(--accent-tint);
+  --chat-launcher-outline: var(--accent);
+  --chat-launcher-ink: #333333;
+  position: fixed;
+  right: calc(var(--shell-frame) + 1rem);
+  bottom: calc(var(--shell-frame) + 1rem);
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  padding: 0;
+  border: 1px solid var(--chat-launcher-outline);
+  border-radius: 50%;
+  background: var(--chat-launcher-surface);
+  color: var(--chat-launcher-ink);
+  box-shadow: var(--shadow-md);
   cursor: pointer;
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 0.5rem 0.25rem;
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
 }
 
-.chat-panel__expand:hover {
-  background: var(--selected-soft);
-  color: var(--fg);
+/* Swapped, the mark moves with the dock it opens: the same inset on the other
+   edge, measured from the column the collapsed dock vacated. That column starts
+   at the rail's trailing edge — and at zero once the rail is collapsed, which is
+   why the token carries it rather than a constant here — so the mark sits on the
+   page beside the rail instead of over the rail's own controls. `right` has to be
+   cleared, or the two insets would stretch the circle across the window. */
+.shell--chat-left > .chat-launcher {
+  right: auto;
+  left: calc(var(--nav-column) + 1rem);
+}
+
+[data-theme="dark"] .chat-launcher {
+  --chat-launcher-surface: color-mix(in srgb, var(--accent) 82%, #000);
+  --chat-launcher-surface-hover: var(--accent);
+  --chat-launcher-outline: transparent;
+  --chat-launcher-ink: #000000;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) .chat-launcher {
+    --chat-launcher-surface: color-mix(in srgb, var(--accent) 82%, #000);
+    --chat-launcher-surface-hover: var(--accent);
+    --chat-launcher-outline: transparent;
+    --chat-launcher-ink: #000000;
+  }
+}
+
+.chat-launcher:hover {
+  background: var(--chat-launcher-surface-hover);
+  transform: translateY(-2px);
+  box-shadow:
+    var(--shadow-md),
+    0 8px 20px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.chat-launcher:active {
+  transform: translateY(0);
+}
+
+.chat-launcher:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.chat-launcher__mark {
+  width: 2.35rem;
+  height: 2.35rem;
+  background-color: currentColor;
+  -webkit-mask-image: url("../assets/girl_steampunk.svg");
+  mask-image: url("../assets/girl_steampunk.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-launcher {
+    transition: none;
+  }
 }
 
 /* The dock's own band, one height with the sheet's top bar: both wear
@@ -5190,8 +5327,109 @@ a.home-mini-list__link:hover {
   color: var(--muted);
 }
 
-.chat-panel__cta {
+.chat-panel__empty-questions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 18rem;
   margin-top: 0.35rem;
+}
+
+.chat-panel__empty-questions-title {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/**
+ * Saved questions in the empty thread.
+ *
+ * The empty state is centred; the list is not. A prompt is a line of prose the
+ * operator has to read before choosing it, so it stays left-aligned at a
+ * readable measure while the orb and the greeting keep the middle.
+ */
+.chat-panel__starters {
+  width: 100%;
+  max-width: 18.5rem;
+  margin-top: 0.35rem;
+  text-align: left;
+}
+
+.chat-panel__starters-title {
+  margin: 0 0 0.4rem;
+  color: var(--text-soft);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chat-panel__starters-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-panel__starter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 0.5rem;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out);
+}
+
+.chat-panel__starter:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+}
+
+.chat-panel__starter:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.chat-panel__starter:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.chat-panel__starter svg {
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+  color: var(--accent);
+}
+
+.chat-panel__starter-text {
+  flex: 1 1 10rem;
+  min-width: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.chat-panel__starter-scope {
+  flex-basis: 100%;
+  padding-left: 1.15rem;
+  color: var(--text-soft);
+  font-size: 0.625rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 /* —— Companion profile picker (setup screen + Settings → Hermes) ——
@@ -5563,6 +5801,14 @@ button.chat-panel__activity-line:hover {
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 0.45rem;
+}
+
+/* The way out sits at the trailing end of the bar rather than on its own row:
+   the three surface controls stay one group on the left, and the collapse
+   control holds the bottom-right corner beside the icon that brings the dock
+   back. */
+.chat-panel__action--collapse {
+  margin-left: auto;
 }
 
 .chat-panel__action[aria-pressed="true"] {

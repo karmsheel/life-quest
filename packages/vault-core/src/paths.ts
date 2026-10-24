@@ -56,6 +56,12 @@ export function vaultPaths(root: string) {
     dailyNotesDir: path.join(rootPath, "notes", "daily"),
     dailyNoteMd: (date: string) =>
       safeJoin(rootPath, "notes", "daily", `${date}.md`),
+    // Ideal State — any number of titled, freeform markdown documents. The id is
+    // the filename; the operator's title lives in the frontmatter, so renaming a
+    // document never moves a file.
+    idealStateDir: path.join(rootPath, "notes", "ideal-state"),
+    idealStateMd: (id: string) =>
+      safeJoin(rootPath, "notes", "ideal-state", `${id}.md`),
     // KAR-55 domain database paths
     domainDataDir: (slug: string) => safeJoin(rootPath, "domains", slug, "data"),
     domainSqlite: (slug: string) =>

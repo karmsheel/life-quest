@@ -35,6 +35,10 @@ import type {
   PageWriteResult,
   DailyNote,
   DailyNoteIndexEntry,
+  IdealStateCreateInput,
+  IdealStateDocument,
+  IdealStateIndexEntry,
+  IdealStateUpdatePatch,
   PeriodPack,
   Pin,
   PinBoardRead,
@@ -486,6 +490,20 @@ type LifequestApi = {
   dailyNoteWrite: (date: string, body: string) => Promise<Result<DailyNote>>;
   dailyNoteList: () => Promise<Result<DailyNoteIndexEntry[]>>;
   dailyNoteWindow: (start: string, end: string) => Promise<Result<DailyNote[]>>;
+  /**
+   * Ideal State: any number of titled, freeform markdown documents in the
+   * Define wing. The operator is the only author.
+   */
+  idealStateList: () => Promise<Result<IdealStateIndexEntry[]>>;
+  idealStateGet: (id: string) => Promise<Result<IdealStateDocument>>;
+  idealStateCreate: (
+    input: IdealStateCreateInput,
+  ) => Promise<Result<IdealStateDocument>>;
+  idealStateUpdate: (
+    id: string,
+    patch: IdealStateUpdatePatch,
+  ) => Promise<Result<IdealStateDocument>>;
+  idealStateDelete: (id: string) => Promise<Result<IdealStateDocument>>;
   deadlineDismiss: () => Promise<Result<true>>;
   deadlineGetDismissed: () => Promise<Result<string | null>>;
   deadlineMaybeNotify: () => Promise<

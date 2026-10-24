@@ -16,6 +16,13 @@
 .daily-note {
   container-type: inline-size;
   width: 100%;
+}
+
+/* The page's own layout. It is a separate element from the query container
+   above because a container cannot style itself: the two-column rule below has
+   to land on an inner box so the header can take the box's column. */
+.daily-note__layout {
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -27,7 +34,9 @@
 
 /* The header, the box and the strip all centre on the page rather than hug its
    leading edge, and they share one column width so the page reads as one
-   column of prose with chrome above and below it. */
+   column of prose with chrome above and below it. A page with room for two
+   columns moves the header onto the box's own column instead, so the title and
+   the pager always sit over the prose they belong to. */
 .daily-note__header {
   width: 100%;
   max-width: 48rem;
@@ -44,27 +53,46 @@
   letter-spacing: -0.02em;
 }
 
+/* The pager is two edges and a centre. The box's own leading and trailing edges
+   are the buttons' edges — Prev day opens the row, Next day closes it — and the
+   day's date sits in the middle column, over the prose the box holds. The two
+   outer tracks are equal, so the date stays on the box's centre even while one
+   side carries the extra Today shortcut. */
 .daily-note__pager {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 0.75rem;
+}
+
+.daily-note__pager-start {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+  justify-self: start;
+  min-width: 0;
+}
+
+.daily-note__pager-next {
+  justify-self: end;
 }
 
 .daily-note__date {
+  text-align: center;
   font-size: 0.95rem;
   font-weight: 500;
   color: var(--fg);
 }
 
 /* The page's actions that are not navigation: the manual automations this day
-   owns, at the trailing end of the pager row. Each is a button of the page's own
-   square step, like every other control here. */
+   owns, under the pager on the box's own column. Each is a button of the page's
+   own square step, like every other control here. */
 .daily-note__automations {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.5rem;
-  margin-left: auto;
 }
 
 .daily-note__analyze {
@@ -273,39 +301,70 @@
 }
 
 /* Wide enough for both at once: the box keeps the column it was written for and
-   the strip stands beside it, and the pair stay centred on the page. The strip
-   takes the edge away from the dock — one side of the page when the chat is on
-   the other — so the note stays between the operator's prose and the companion,
-   and the journal does not sit under the dock's shadow. */
+   the strip stands beside it, at the page's own edge. The two columns are
+   spread apart rather than centred as a pair: the strip takes the edge away
+   from the dock — the left when the chat is on the right, the right when it is
+   on the left — so its weight answers the dock across the page, and the gap
+   between the journal and the prose widens with the window.
+
+   The header rides the box's column, not the whole two-column width: the title
+   and the pager belong over the day being written, while the strip has its own
+   heading. The outer grid repeats the workspace's tracks so the header and the
+   error line land on exactly the same x as the box below them. */
 @container (min-width: 78rem) {
+  .daily-note__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 30rem) minmax(0, 46rem);
+    justify-content: space-between;
+    align-items: start;
+    column-gap: 2rem;
+    row-gap: 1rem;
+  }
+
   .daily-note__header {
-    max-width: 78rem;
+    grid-column: 2;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+  }
+
+  .daily-note__layout > .form-error {
+    grid-column: 2;
   }
 
   .daily-note__workspace {
+    grid-column: 1 / -1;
     display: grid;
-    /* The strip leads and keeps its narrow column; the box trails at the width
-       it is written for. The tracks follow the order set below, so a side swap
-       moves the widths with the panes rather than handing the strip the box's
-       column. */
+    /* The strip is a narrow column at the page's edge; the box keeps the width
+       it is written for at the other. `space-between` is what makes the gap
+       between them grow with the page instead of staying one gutter wide. */
     grid-template-columns: minmax(0, 30rem) minmax(0, 46rem);
+    justify-content: space-between;
     align-items: start;
-    justify-content: center;
-    gap: 2rem;
+    column-gap: 2rem;
+    row-gap: 1rem;
   }
 
   .daily-note__compose {
+    grid-column: 2;
+    grid-row: 1;
     max-width: none;
     margin: 0;
-    order: 2;
   }
 
   .daily-note__history {
+    grid-column: 1;
+    grid-row: 1;
     max-width: none;
     margin: 0;
     padding-top: 0;
     border-top: 0;
-    order: 1;
+  }
+
+  /* The strip's own column, while a day is still on its way in. */
+  .daily-note__loading {
+    grid-column: 2;
+    grid-row: 1;
   }
 
   /* The side column is narrower than the box's page-width strip, so the three
@@ -320,16 +379,274 @@
   }
 
   /* Chat on the left: the strip moves to the page's trailing edge, past the
-     box. Chat on the right is the default above (strip leading, box trailing). */
+     box, and the header follows the box to the leading one. Chat on the right
+     is the default above. */
+  .shell--chat-left .daily-note__layout {
+    grid-template-columns: minmax(0, 46rem) minmax(0, 30rem);
+  }
+
+  .shell--chat-left .daily-note__header,
+  .shell--chat-left .daily-note__layout > .form-error {
+    grid-column: 1;
+  }
+
   .shell--chat-left .daily-note__workspace {
     grid-template-columns: minmax(0, 46rem) minmax(0, 30rem);
   }
 
-  .shell--chat-left .daily-note__compose {
-    order: 1;
+  .shell--chat-left .daily-note__compose,
+  .shell--chat-left .daily-note__loading {
+    grid-column: 1;
   }
 
   .shell--chat-left .daily-note__history {
+    grid-column: 2;
+  }
+}
+
+/* Ideal State — the operator's titled documents about the life they are
+   reaching for. Laid out like the Daily Note: one column of prose, a quiet
+   autosave line, and a strip of what has been written. The identity is the
+   title rather than a date, so the title is a field above the box and the strip
+   lists documents by name. */
+
+.ideal-state {
+  container-type: inline-size;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ideal-state .btn {
+  border-radius: var(--radius-xs);
+}
+
+.ideal-state__header,
+.ideal-state__compose,
+.ideal-state__history {
+  width: 100%;
+  max-width: 48rem;
+  margin-inline: auto;
+}
+
+.ideal-state__header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ideal-state__header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.ideal-state__workspace {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.ideal-state__compose {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ideal-state__title-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+/* The document's name is the page's own heading at rest and its title field in
+   use, so the field is set at heading scale rather than as another form input. */
+.ideal-state__title-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ideal-state__title {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.ideal-state__title:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.ideal-state__editor {
+  width: 100%;
+}
+
+/* The same box as the journal's, a touch shorter: an ideal state is written at
+   length, but it is one document among several rather than the day itself. */
+.ideal-state__editor .note-live {
+  min-height: 28rem;
+  max-height: min(76vh, 60rem);
+  margin-inline: auto;
+}
+
+.ideal-state__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 1.8rem;
+}
+
+.ideal-state__status {
+  flex: 1 1 auto;
+  margin: 0;
+  min-height: 1.1rem;
+  font-size: 0.85rem;
+}
+
+/* The strip of documents: one small two-column table. The rows are buttons, and
+   nothing in `global.css` resets the platform's own button fill — without a rule
+   here they paint the engine's grey chip and carry the list's bullets. */
+.ideal-state__history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.ideal-state__history h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ideal-state__history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.ideal-state__history-head,
+.ideal-state__history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid transparent;
+}
+
+.ideal-state__history-head {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ideal-state__history-row {
+  width: 100%;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ideal-state__history-row:hover {
+  background: var(--muted-surface);
+}
+
+.ideal-state__history-row[aria-current="true"] {
+  border-color: var(--border);
+  background: var(--card);
+}
+
+.ideal-state__history-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.ideal-state__history-edited {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.ideal-state__history-unreadable {
+  cursor: default;
+  color: var(--muted);
+}
+
+.ideal-state__history-unreadable .ideal-state__history-title {
+  font-weight: 400;
+  font-style: italic;
+}
+
+/* Wide enough for both at once: the document keeps the column it was written
+   for and the strip stands beside it, and the pair stay centred. The strip takes
+   the edge away from the dock — left when the chat is right, right when it is
+   left — so the prose never sits under the companion's shadow. */
+@container (min-width: 78rem) {
+  .ideal-state__header {
+    max-width: 78rem;
+  }
+
+  .ideal-state__workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 30rem) minmax(0, 46rem);
+    align-items: start;
+    justify-content: center;
+    gap: 2rem;
+  }
+
+  .ideal-state__compose {
+    max-width: none;
+    margin: 0;
+    order: 2;
+  }
+
+  .ideal-state__history {
+    max-width: none;
+    margin: 0;
+    padding-top: 0;
+    border-top: 0;
+    order: 1;
+  }
+
+  .shell--chat-left .ideal-state__workspace {
+    grid-template-columns: minmax(0, 46rem) minmax(0, 30rem);
+  }
+
+  .shell--chat-left .ideal-state__compose {
+    order: 1;
+  }
+
+  .shell--chat-left .ideal-state__history {
     order: 2;
   }
 }

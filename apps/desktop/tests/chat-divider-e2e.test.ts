@@ -39,7 +39,12 @@ type Borders = { top: string; right: string; bottom: string; left: string };
 type State = {
   viewport: { width: number; height: number };
   doc: { scrollWidth: number; clientWidth: number };
-  tokens: { rootChatbarWidth: string; frame: number; navWidth: number };
+  tokens: {
+    rootChatbarWidth: string;
+    frame: number;
+    navWidth: number;
+    rootFontSize: number;
+  };
   shell: {
     box: Box;
     className: string;
@@ -54,6 +59,12 @@ type State = {
   rail: { box: Box; display: string } | null;
   main: { box: Box; border: Borders; radiusTopLeft: string } | null;
   dock: { box: Box; border: Borders; className: string } | null;
+  launcher: {
+    box: Box;
+    label: string | null;
+    position: string;
+    mark: boolean;
+  } | null;
   divider: {
     found: boolean;
     box?: Box;
@@ -509,13 +520,50 @@ describe("chat dock divider", () => {
     assert.equal(swapCeiling.dockTrack, swapCeiling.shell.chatMax, "the leading dock passed the ceiling");
     assert.equal(swapFloor.dockTrack, swapFloor.shell.chatMin, "the leading dock passed the floor");
 
-    // ── the collapse: a tab is not a pane, and it keeps the width ──────────
+    // ── the collapse: the strip becomes one floating mark, and keeps the width ─
+    assert.equal(
+      collapsed.dock,
+      null,
+      "a collapsed dock is still a pane: the vertical strip should be gone",
+    );
+    assert.equal(
+      collapsed.shell.chatColumn,
+      "0px",
+      `the collapsed shell still reserves a dock column (${collapsed.shell.chatColumn})`,
+    );
     assert.equal(
       collapsed.divider.found,
       false,
       "a collapsed dock still offers a handle to drag",
     );
     assert.equal(collapsed.shell.inlineChatbarWidth, `${swapFloor.dockTrack}px`);
+    assert.ok(collapsed.launcher, "the collapsed dock has no floating mark");
+    assert.equal(
+      collapsed.launcher.position,
+      "fixed",
+      `the collapsed mark is not floating (${collapsed.launcher.position})`,
+    );
+    assert.equal(
+      collapsed.launcher.mark,
+      true,
+      "the floating mark has no agent logo",
+    );
+    assert.equal(
+      collapsed.launcher.label,
+      "Open Hermes chat",
+      `the floating mark names the wrong move (${collapsed.launcher.label})`,
+    );
+    assert.equal(
+      collapsed.launcher.box.left < collapsed.viewport.width / 2 &&
+        collapsed.launcher.box.top > collapsed.viewport.height / 2,
+      true,
+      `the floating mark did not follow the swapped dock to the bottom-left half (${JSON.stringify(collapsed.launcher.box)})`,
+    );
+    assert.equal(
+      collapsed.launcher.box.left,
+      collapsed.tokens.navWidth + collapsed.tokens.rootFontSize,
+      `the floating mark is not beside the rail the swapped dock led against (${collapsed.launcher.box.left}px vs ${collapsed.tokens.navWidth}px + ${collapsed.tokens.rootFontSize}px)`,
+    );
     assertArrangement("reopened", reopened, "left");
     assert.equal(
       reopened.dockTrack,

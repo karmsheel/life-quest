@@ -4,13 +4,15 @@ import {
   applyScriptBlock,
   archiveDomain,
   createDatabase,
-  deleteDomain,
   createDecision,
   createDomain,
+  createIdealState,
   createPage,
   createSignal,
   createVault,
   dailyNotesInWindow,
+  deleteDomain,
+  deleteIdealState,
   deletePage,
   deleteRow,
   deleteSignal,
@@ -22,6 +24,7 @@ import {
   getDailyNote,
   getDatabase,
   getDocument,
+  getIdealState,
   getPage,
   getPeriodPack,
   getReview,
@@ -37,6 +40,7 @@ import {
   listDatabases,
   listDailyNotes,
   listDecisions,
+  listIdealStates,
   listPages,
   listPinBoard,
   listRows,
@@ -64,6 +68,7 @@ import {
   unlockReview,
   updateConnectedAgent,
   updateDomain,
+  updateIdealState,
   updatePage,
   writeDailyNote,
   // Agent-built dashboard views (plan.md design)
@@ -128,6 +133,10 @@ import {
   type DailyNoteIndexEntry,
   type DatabaseColumnType,
   type GoalsCommand,
+  type IdealStateCreateInput,
+  type IdealStateDocument,
+  type IdealStateIndexEntry,
+  type IdealStateUpdatePatch,
   type IngestBatch,
   type IngestFileResult,
   type IngestMapping,
@@ -1489,6 +1498,40 @@ export async function dailyNoteWindow(
   end: string,
 ): Promise<Result<DailyNote[]>> {
   return withVault((root) => dailyNotesInWindow(root, { start, end }));
+}
+
+/** One titled Ideal State document. Missing is `Ideal state document not found`. */
+export async function idealStateGet(
+  id: string,
+): Promise<Result<IdealStateDocument>> {
+  return withVault((root) => getIdealState(root, id));
+}
+
+/** Every titled Ideal State document, newest first. */
+export async function idealStateList(): Promise<Result<IdealStateIndexEntry[]>> {
+  return withVault((root) => listIdealStates(root));
+}
+
+/** Create a titled document. The operator names it; the vault mints the id. */
+export async function idealStateCreate(
+  input: IdealStateCreateInput,
+): Promise<Result<IdealStateDocument>> {
+  return withVault((root) => createIdealState(root, input));
+}
+
+/** Rewrite a document's title and/or body. */
+export async function idealStateUpdate(
+  id: string,
+  patch: IdealStateUpdatePatch,
+): Promise<Result<IdealStateDocument>> {
+  return withVault((root) => updateIdealState(root, id, patch));
+}
+
+/** Remove a document from the page and from the vault. */
+export async function idealStateDelete(
+  id: string,
+): Promise<Result<IdealStateDocument>> {
+  return withVault((root) => deleteIdealState(root, id));
 }
 
 /** A cadence's standing review rules, defaulted when the file is not there. */

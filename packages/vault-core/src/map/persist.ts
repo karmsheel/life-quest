@@ -9,13 +9,34 @@ import type { Result } from "../types.ts";
 import { USER_ACTOR, type Actor } from "../types.ts";
 import { applyCommand } from "./commands.ts";
 import { emptyState } from "./empty.ts";
+import { isTaskColumn } from "./tasks.ts";
 import { isMapEvent } from "./events.ts";
 import { mapLogEvent } from "./log-event.ts";
 import { isIsoDate, todayLocalIso } from "./dates.ts";
-import type { Actor as MapActor, Command, IsoDate, LiveBlock, LiveDay, LiveLeftoverItem, LiveSource, StoreState, Task, YearRecord } from "./types.ts";
+import type { Actor as MapActor, Command, IsoDate, LiveBlock, LiveDay, LiveLeftoverItem, LiveSource, StoreState, Task, TaskColumn, YearRecord } from "./types.ts";
 import { ensureCurrentYear, rollover } from "./years.ts";
 
 type MapFile = Omit<StoreState, "aboutMe">;
+
+/**
+ * Column names the board has retired.
+ *
+ * Renaming a column id is a data change, not a label change: a task left under
+ * the old id would fall through to Backlog. The two here move to the columns
+ * that replaced them, and the normalized map is written back on open.
+ */
+const LEGACY_TASK_COLUMNS: Record<string, TaskColumn> = {
+  "this-month": "next-30-days",
+  "this-quarter": "in-progress",
+};
+
+function normalizeTaskColumn(value: unknown): TaskColumn {
+  if (isTaskColumn(value)) return value;
+  if (typeof value === "string" && value in LEGACY_TASK_COLUMNS) {
+    return LEGACY_TASK_COLUMNS[value];
+  }
+  return "backlog";
+}
 
 function toFile(state: StoreState): MapFile {
   return {
@@ -63,7 +84,9 @@ function fromFile(file: MapFile, aboutMe: string): StoreState {
       id: t.id,
       title: t.title,
       notes: t.notes,
-      column: t.column,
+      // A renamed, newer, or hand-edited column must land somewhere the board
+      // draws, rather than making its column key undefined.
+      column: normalizeTaskColumn(t.column),
       links: normalizeLinks(t.links as unknown as Record<string, unknown>),
     })),
     liveDays: normalizeLiveDays(file.liveDays),

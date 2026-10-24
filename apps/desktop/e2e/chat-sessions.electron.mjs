@@ -31,12 +31,12 @@ const url =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/chat-sessions.html";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
-/** The bottom action bar's slots, in order: three live, one still reserved. */
+/** The bottom action bar's four live slots, in order. */
 const ACTION_SLOTS = [
   "Chat history",
   "New chat",
-  "Search chats (coming soon)",
   "Life-Chain",
+  "Collapse chat",
 ];
 
 const SAMPLE = `(() => {
@@ -494,9 +494,9 @@ async function main() {
       `bar starts at ${landing.actionsBar?.top}px, composer ends at ${landing.footer?.box.bottom}px`,
     );
     check(
-      "the last two slots are live and the search slot is still reserved",
+      "every action slot is live",
       JSON.stringify(landing.actions.map((slot) => slot.disabled)) ===
-        JSON.stringify([false, false, true, false]),
+        JSON.stringify([false, false, false, false]),
       `disabled flags ${JSON.stringify(landing.actions.map((slot) => slot.disabled))}`,
     );
     check(
@@ -505,11 +505,8 @@ async function main() {
       `icons ${JSON.stringify(landing.actions.map((slot) => slot.icon))}`,
     );
     check(
-      "the reserved slot is dimmed, not just inert",
-      landing.actions[0]?.opacity === 1 &&
-        landing.actions[1]?.opacity === 1 &&
-        (landing.actions[2]?.opacity ?? 1) < 1 &&
-        landing.actions[3]?.opacity === 1,
+      "no action slot is dimmed",
+      landing.actions.every((slot) => slot.opacity === 1),
       `opacities ${JSON.stringify(landing.actions.map((slot) => slot.opacity))}`,
     );
     check(
@@ -818,22 +815,9 @@ async function main() {
     );
     screenshots.push(await shot("archived"));
 
-    // 8 — the reserved slot holds its place and does nothing; the new-chat slot
-    // creates one chat through the bridge and opens its (empty) thread. The
-    // chain slot is live now and swaps the panel, so it is not clicked here —
-    // `chat-chain.electron.mjs` owns that.
-    const beforeReserved = archived.patchCalls.length + archived.createCalls.length;
-    await run(
-      `(document.querySelector('[aria-label="Search chats (coming soon)"]').click(), true)`,
-    );
-    const reserved = await settle();
-    check(
-      "the reserved slot does nothing",
-      reserved.patchCalls.length + reserved.createCalls.length === beforeReserved &&
-        reserved.list !== null,
-      `calls ${reserved.patchCalls.length + reserved.createCalls.length} vs ${beforeReserved}, view ${reserved.list ? "list" : "thread"}`,
-    );
-
+    // 8 — the new-chat slot creates one chat through the bridge and opens its
+    // (empty) thread. The chain slot swaps the panel and `chat-chain.electron.mjs`
+    // owns that; the collapse slot closes the dock and the side rig owns that.
     const newClicked = await pressAria("New chat");
     const created = await settle();
     check("clicked New chat", newClicked, "no New chat slot in the action bar");
@@ -1257,7 +1241,6 @@ async function main() {
         renamed,
         renamedList,
         archived,
-        reserved,
         created,
         reused,
         again,

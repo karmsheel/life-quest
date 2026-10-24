@@ -8,9 +8,9 @@
  *
  * Exit code 0 = every invariant held. The JSON report is the repeatable
  * artifact: same command, same geometry, no eyeballing the app required. It
- * carries both arrangements — dock right and dock left — plus the two
- * compositions the swap has to survive (a collapsed dock, a collapsed rail) and
- * the round trip back to where it started.
+ * carries both arrangements — dock right and dock left — plus the compositions
+ * the swap has to survive (a collapsed dock on either side, a collapsed rail, and
+ * both at once) and the round trip back to where it started.
  *
  * NOT covered here: whether Windows lets the click through the titlebar's drag
  * band. Synthetic DOM clicks bypass the OS hit test, so the `-webkit-app-region:
@@ -71,13 +71,28 @@ const SAMPLE = `(() => {
   const track = probe.offsetWidth;
   probe.style.width = "var(--chatbar-width)";
   const chatTrack = probe.offsetWidth;
-  probe.style.width = "2.75rem";
-  const collapsedTrack = probe.offsetWidth;
   probe.remove();
+
+  // The accent as the browser resolved it, so the launcher's resting and hover
+  // fills can be compared against the same colour the rest of the app wears.
+  const accentProbe = document.createElement("div");
+  accentProbe.style.background = "var(--accent)";
+  document.body.appendChild(accentProbe);
+  const accentBackground = getComputedStyle(accentProbe).backgroundColor;
+  accentProbe.remove();
+
+  const paperProbe = document.createElement("div");
+  paperProbe.style.background = "var(--background)";
+  document.body.appendChild(paperProbe);
+  const paperBackground = getComputedStyle(paperProbe).backgroundColor;
+  paperProbe.remove();
 
   const rail = document.querySelector(".nav-rail");
   const main = document.querySelector(".shell__main");
   const chat = document.querySelector(".chat-panel");
+  const launcher = document.querySelector(".chat-launcher");
+  const actions = document.querySelector(".chat-panel__actions");
+  const collapseAction = document.querySelector(".chat-panel__action--collapse");
   const shell = document.querySelector(".shell");
   const titlebar = document.querySelector(".window-titlebar");
   const vault = document.querySelector(".window-titlebar__vault");
@@ -86,11 +101,15 @@ const SAMPLE = `(() => {
   const chatToggle = document.querySelector(".window-titlebar__chat-toggle");
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
   const frame = px(root.getPropertyValue("--shell-frame"));
+  const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
   const mainStyle = main ? getComputedStyle(main) : null;
   const chatStyle = chat ? getComputedStyle(chat) : null;
+  const launcherStyle = launcher ? getComputedStyle(launcher) : null;
+  const launcherMark = launcher?.querySelector(".chat-launcher__mark") ?? null;
+  const launcherMarkStyle = launcherMark ? getComputedStyle(launcherMark) : null;
 
   // Which pane owns a point on the window. The panes' boxes can be right while
   // the wrong one is actually painted there — a dock left at \`z-index: 20\` over
@@ -99,6 +118,7 @@ const SAMPLE = `(() => {
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
     if (rail && rail.contains(el)) return "rail";
+    if (launcher && launcher.contains(el)) return "launcher";
     if (main && main.contains(el)) return "sheet";
     if (chat && chat.contains(el)) return "dock";
     if (titlebar && titlebar.contains(el)) return "titlebar";
@@ -110,8 +130,8 @@ const SAMPLE = `(() => {
     tokens: {
       track,
       chatTrack,
-      collapsedTrack,
       frame,
+      rootFontSize,
       titlebarHeight,
       radiusSm: root.getPropertyValue("--radius-sm").trim()
     },
@@ -120,6 +140,8 @@ const SAMPLE = `(() => {
       skin: document.documentElement.getAttribute("data-skin")
     },
     vaultText: (vault?.textContent || "").trim(),
+    accentBackground,
+    paperBackground,
     shell: shell
       ? {
           className: shell.className,
@@ -156,8 +178,44 @@ const SAMPLE = `(() => {
           background: chatStyle.backgroundColor,
           backdropFilter: chatStyle.backdropFilter,
           boxShadow: chatStyle.boxShadow,
-          expandIcon: iconClass(document.querySelector(".chat-panel__expand")),
           heading: (document.querySelector(".chat-panel__heading")?.textContent || "").trim()
+        }
+      : null,
+    launcher: launcher
+      ? {
+          box: box(launcher),
+          label: launcher.getAttribute("aria-label"),
+          title: launcher.getAttribute("title"),
+          position: launcherStyle.position,
+          borderRadius: launcherStyle.borderRadius,
+          background: launcherStyle.backgroundColor,
+          color: launcherStyle.color,
+          borderColor: launcherStyle.borderTopColor,
+          borderWidth: launcherStyle.borderTopWidth,
+          mark: Boolean(launcherMark),
+          markMask: launcherMarkStyle
+            ? launcherMarkStyle.maskImage || launcherMarkStyle.webkitMaskImage
+            : null,
+          markWidth: launcherMarkStyle ? px(launcherMarkStyle.width) : null,
+          markHeight: launcherMarkStyle ? px(launcherMarkStyle.height) : null
+        }
+      : null,
+    actions: actions
+      ? {
+          box: box(actions),
+          controls: Array.from(actions.querySelectorAll("button")).map((el) => ({
+            label: el.getAttribute("aria-label"),
+            icon: iconClass(el),
+            disabled: el.disabled
+          }))
+        }
+      : null,
+    collapseAction: collapseAction
+      ? {
+          label: collapseAction.getAttribute("aria-label"),
+          title: collapseAction.getAttribute("title"),
+          icon: iconClass(collapseAction),
+          box: box(collapseAction)
         }
       : null,
     titlebar: titlebar
@@ -574,6 +632,28 @@ async function main() {
     if (!clicked) throw new Error(`no element for ${selector}`);
   };
 
+  /** Real pointer motion, so the bubble's own :hover is what is measured. */
+  const hover = async (selector) => {
+    const point = await run(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return {
+        x: Math.round(r.left + r.width / 2),
+        y: Math.round(r.top + r.height / 2)
+      };
+    })()`);
+    if (!point) throw new Error(`no element for ${selector}`);
+    win.webContents.sendInputEvent({
+      type: "mouseMove",
+      x: point.x,
+      y: point.y,
+    });
+  };
+
+  const parkPointer = () =>
+    win.webContents.sendInputEvent({ type: "mouseMove", x: 2, y: 2 });
+
   let report;
   const timeout = setTimeout(() => {
     console.error("chat-side: timed out after 90s");
@@ -639,6 +719,12 @@ async function main() {
       same(left.rail?.box, right.rail?.box),
       `rail ${JSON.stringify(left.rail?.box)} vs ${JSON.stringify(right.rail?.box)}`,
     );
+    check(
+      "left: the bottom-bar collapse arrow follows the dock",
+      left.collapseAction?.label === "Collapse chat" &&
+        left.collapseAction?.icon === "lucide-panel-left-close",
+      `label ${JSON.stringify(left.collapseAction?.label)}, icon ${JSON.stringify(left.collapseAction?.icon)}`,
+    );
 
     // The track list, read out as well as the boxes: the tracks carry the column
     // widths the panes are built from, and the swap has to move the dock's own
@@ -655,56 +741,135 @@ async function main() {
       `right tracks ${rightTracks.join(" ")}, left tracks ${leftTracks.join(" ")}`,
     );
 
-    // 3 — a collapsed dock composes with the swap: its own narrow column beside
-    // the rail, the sheet still reaching the window. Only the claims that mean
-    // something for a collapsed dock are read here; the full arrangement's width
-    // arithmetic is for the two whole panes above.
+    // 3 — collapsed, the dock leaves the grid entirely: no strip at the window's
+    // edge, one floating mark in the corner its side asks for, and the sheet takes
+    // the column and the seam back. With the dock on the leading side the mark is
+    // at the window's bottom left, on the page beside the rail — the rail keeps
+    // the corner itself, so the inset is measured from its trailing edge. The
+    // launcher is the way in; the titlebar control is still the second one.
     at("collapsed dock");
     await click(".window-titlebar__chat-toggle");
     const dockCollapsed = await settled();
     const collapsedShot = await shot("chat-side-left-collapsed.png");
     check(
-      "left/collapsed dock: the dock is the narrow column",
-      dockCollapsed.chat.box.width === dockCollapsed.tokens.collapsedTrack,
-      `dock width ${dockCollapsed.chat.box.width}px vs ${dockCollapsed.tokens.collapsedTrack}px`,
+      "left/collapsed dock: the panel leaves the layout",
+      dockCollapsed.chat === null,
+      `dock ${JSON.stringify(dockCollapsed.chat)}`,
     );
     check(
-      "left/collapsed dock: the dock holds the column beside the rail",
-      dockCollapsed.chat.box.left === dockCollapsed.tokens.track &&
-        dockCollapsed.chat.box.top ===
-          dockCollapsed.tokens.titlebarHeight + dockCollapsed.tokens.frame,
-      `dock ${JSON.stringify(dockCollapsed.chat.box)}`,
+      "left/collapsed dock: its grid column goes to zero",
+      parseFloat((dockCollapsed.shell.gridTemplateColumns.split(" ")[1] ?? "NaN")) === 0,
+      `tracks ${dockCollapsed.shell.gridTemplateColumns}`,
     );
     check(
-      "left/collapsed dock: the panes still abut",
-      dockCollapsed.chat.box.right === dockCollapsed.main.box.left,
-      `dock right ${dockCollapsed.chat.box.right}px vs sheet left ${dockCollapsed.main.box.left}px`,
+      "left/collapsed dock: the sheet takes the whole frame back",
+      dockCollapsed.main.box.left === dockCollapsed.tokens.track &&
+        dockCollapsed.main.box.right === dockCollapsed.viewport.width,
+      `sheet ${JSON.stringify(dockCollapsed.main.box)} in a ${dockCollapsed.viewport.width}px window, rail ends at ${dockCollapsed.tokens.track}px`,
     );
     check(
-      "left/collapsed dock: the sheet still reaches the window",
-      dockCollapsed.main.box.right === dockCollapsed.viewport.width,
-      `sheet right ${dockCollapsed.main.box.right}px vs window ${dockCollapsed.viewport.width}px`,
-    );
-    check(
-      "left/collapsed dock: the sheet keeps the seam on its leading edge",
-      isHairline(dockCollapsed.main.border.left) &&
+      "left/collapsed dock: the sheet draws no seam to a dock that is gone",
+      isZero(dockCollapsed.main.border.left) &&
         isZero(dockCollapsed.main.border.right),
       `sheet borders left ${dockCollapsed.main.border.left}, right ${dockCollapsed.main.border.right}`,
     );
     check(
-      "left/collapsed dock: the dock's own tab opens toward the page",
-      dockCollapsed.chat.expandIcon === "lucide-panel-left-open",
-      `expand icon ${JSON.stringify(dockCollapsed.chat.expandIcon)}`,
+      "left/collapsed dock: the agent floats at the bottom left, beside the rail",
+      Boolean(dockCollapsed.launcher) &&
+        dockCollapsed.launcher.position === "fixed" &&
+        dockCollapsed.launcher.box.left < dockCollapsed.viewport.width / 2 &&
+        dockCollapsed.launcher.box.top > dockCollapsed.viewport.height / 2 &&
+        // The dock's vacated column starts at the rail's trailing edge, and the
+        // mark wears the same one-rem inset the trailing arrangement wears.
+        dockCollapsed.launcher.box.left ===
+          dockCollapsed.tokens.track + dockCollapsed.tokens.rootFontSize &&
+        dockCollapsed.viewport.height - dockCollapsed.launcher.box.bottom ===
+          dockCollapsed.tokens.frame + dockCollapsed.tokens.rootFontSize,
+      `launcher ${JSON.stringify(dockCollapsed.launcher)} in ${JSON.stringify(dockCollapsed.viewport)}`,
+    );
+    check(
+      "left/collapsed dock: the night mark is black on the orange button",
+      dockCollapsed.launcher?.color === "rgb(0, 0, 0)",
+      `night ink ${JSON.stringify(dockCollapsed.launcher?.color)}`,
+    );
+    check(
+      "left/collapsed dock: the floating mark is the Nous girl",
+      Boolean(dockCollapsed.launcher?.mark) &&
+        dockCollapsed.launcher.markWidth > 0 &&
+        dockCollapsed.launcher.markHeight > 0 &&
+        String(dockCollapsed.launcher.markMask).includes("girl_steampunk"),
+      `mark ${JSON.stringify(dockCollapsed.launcher?.mark)}, ${dockCollapsed.launcher?.markWidth}x${dockCollapsed.launcher?.markHeight}, mask ${JSON.stringify(dockCollapsed.launcher?.markMask)}`,
+    );
+    check(
+      "left/collapsed dock: the floating mark names the dock it opens",
+      dockCollapsed.launcher?.label === "Open Hermes chat" &&
+        dockCollapsed.launcher?.title === "Open Hermes chat",
+      `label ${JSON.stringify(dockCollapsed.launcher?.label)}, title ${JSON.stringify(dockCollapsed.launcher?.title)}`,
+    );
+    check(
+      "left/collapsed dock: the titlebar control still names the way in",
+      dockCollapsed.chatToggle?.label === "Expand chat",
+      `titlebar control ${JSON.stringify(dockCollapsed.chatToggle?.label)}`,
+    );
+
+    // 3b — the resting and hover fills, read in night mode: the dark theme's
+    // accent is a little too bright at rest, so the button steps it down; the
+    // hover puts that same accent back, which is the highlight the operator knew.
+    at("collapsed launcher hover");
+    await hover(".chat-launcher");
+    const dockCollapsedHover = await settled();
+    const hoverShot = await shot("chat-side-launcher-hover.png");
+    check(
+      "left/collapsed dock: the resting fill is lowered from the accent",
+      dockCollapsed.launcher.background !== dockCollapsed.accentBackground,
+      `resting ${dockCollapsed.launcher.background} vs accent ${dockCollapsed.accentBackground}`,
+    );
+    check(
+      "left/collapsed dock: hover is exactly the accent the button used to wear",
+      dockCollapsedHover.launcher.background === dockCollapsed.accentBackground,
+      `hover ${dockCollapsedHover.launcher.background} vs accent ${dockCollapsed.accentBackground}`,
+    );
+    await parkPointer();
+    await settled();
+
+    // 3c — the same mark in day mode: it keeps the dark gray the paper field
+    // needs rather than night's black, and the day button keeps the accent at rest.
+    at("collapsed launcher light theme");
+    await click(".theme-mode-toggle");
+    const dockCollapsedLight = await settled();
+    const lightShot = await shot("chat-side-launcher-light.png");
+    check(
+      "left/collapsed dock: the day theme switches the mark to dark gray",
+      dockCollapsedLight.launcher.color !== dockCollapsed.launcher.color &&
+        dockCollapsedLight.launcher.color === "rgb(51, 51, 51)",
+      `day ink ${dockCollapsedLight.launcher.color} vs night ${dockCollapsed.launcher.color}`,
+    );
+    check(
+      "left/collapsed dock: the day fill is paper, outlined in the accent",
+      dockCollapsedLight.launcher.background === dockCollapsedLight.paperBackground &&
+        dockCollapsedLight.launcher.background !== dockCollapsedLight.accentBackground &&
+        dockCollapsedLight.launcher.borderColor === dockCollapsedLight.accentBackground &&
+        parseFloat(dockCollapsedLight.launcher.borderWidth) >= 1,
+      `day fill ${dockCollapsedLight.launcher.background} vs paper ${dockCollapsedLight.paperBackground}, outline ${dockCollapsedLight.launcher.borderWidth} ${dockCollapsedLight.launcher.borderColor} vs accent ${dockCollapsedLight.accentBackground}`,
+    );
+    await click(".theme-mode-toggle");
+    const dockCollapsedDarkAgain = await settled();
+    check(
+      "left/collapsed dock: returning to night restores the lowered fill and black mark",
+      dockCollapsedDarkAgain.launcher.background === dockCollapsed.launcher.background &&
+        dockCollapsedDarkAgain.launcher.color === dockCollapsed.launcher.color,
+      `night ${dockCollapsedDarkAgain.launcher.background}/${dockCollapsedDarkAgain.launcher.color} vs ${dockCollapsed.launcher.background}/${dockCollapsed.launcher.color}`,
     );
 
     at("reopened dock");
-    await click(".window-titlebar__chat-toggle");
+    await click(".chat-launcher");
     const dockReopened = await settled();
     check(
-      "reopening the dock lands back on the swapped geometry",
+      "reopening from the floating mark lands back on the swapped geometry",
       same(dockReopened.main.box, left.main.box) &&
-        same(dockReopened.chat.box, left.chat.box),
-      `sheet ${JSON.stringify(dockReopened.main.box)} vs ${JSON.stringify(left.main.box)}, dock ${JSON.stringify(dockReopened.chat.box)} vs ${JSON.stringify(left.chat.box)}`,
+        same(dockReopened.chat.box, left.chat.box) &&
+        dockReopened.launcher === null,
+      `sheet ${JSON.stringify(dockReopened.main.box)} vs ${JSON.stringify(left.main.box)}, dock ${JSON.stringify(dockReopened.chat.box)} vs ${JSON.stringify(left.chat.box)}, launcher ${JSON.stringify(dockReopened.launcher)}`,
     );
 
     // 4 — and with the rail gone the dock inherits the window's leading edge, so
@@ -736,6 +901,37 @@ async function main() {
       "left/collapsed rail: the dock is still the narrow-ish chat column",
       railCollapsed.chat.box.width === railCollapsed.tokens.chatTrack,
       `dock width ${railCollapsed.chat.box.width}px vs ${railCollapsed.tokens.chatTrack}px`,
+    );
+
+    // 4b — both gone: the mark still follows the dock's column, and that column
+    // now starts at the window's own leading edge. This is the case a constant
+    // inset would get wrong: the rail's width has left the sum.
+    at("collapsed rail and dock");
+    await click(".window-titlebar__chat-toggle");
+    const railAndDockCollapsed = await settled();
+    const bothCollapsedShot = await shot("chat-side-collapsed-both.png");
+    check(
+      "left/collapsed rail + dock: the mark takes the window's leading edge",
+      Boolean(railAndDockCollapsed.launcher) &&
+        railAndDockCollapsed.launcher.box.left ===
+          railAndDockCollapsed.tokens.rootFontSize &&
+        railAndDockCollapsed.launcher.box.top >
+          railAndDockCollapsed.viewport.height / 2 &&
+        railAndDockCollapsed.viewport.height -
+          railAndDockCollapsed.launcher.box.bottom ===
+          railAndDockCollapsed.tokens.frame +
+            railAndDockCollapsed.tokens.rootFontSize,
+      `launcher ${JSON.stringify(railAndDockCollapsed.launcher)} with the rail ${JSON.stringify(railAndDockCollapsed.rail)}`,
+    );
+    at("reopened dock under a collapsed rail");
+    await click(".chat-launcher");
+    const dockBackUnderCollapsedRail = await settled();
+    check(
+      "reopening under a collapsed rail lands back on the leading geometry",
+      same(dockBackUnderCollapsedRail.chat.box, railCollapsed.chat.box) &&
+        same(dockBackUnderCollapsedRail.main.box, railCollapsed.main.box) &&
+        dockBackUnderCollapsedRail.launcher === null,
+      `dock ${JSON.stringify(dockBackUnderCollapsedRail.chat.box)} vs ${JSON.stringify(railCollapsed.chat.box)}, sheet ${JSON.stringify(dockBackUnderCollapsedRail.main.box)} vs ${JSON.stringify(railCollapsed.main.box)}`,
     );
 
     at("restored rail");
@@ -788,6 +984,109 @@ async function main() {
     );
     const restoredShot = await shot("chat-side-restored.png");
 
+    // 6 — the dock's own way out: the trailing action of the bottom bar. It has
+    // to be in the bottom-right corner, wear the arrow that points out of the
+    // side the dock is on, and do exactly what the titlebar control does.
+    at("bottom bar collapse");
+    const barBox = restored.actions?.box;
+    const collapseBox = restored.collapseAction?.box;
+    check(
+      "restored: the bottom bar carries a collapse control",
+      Boolean(restored.collapseAction),
+      `collapse action ${JSON.stringify(restored.collapseAction)}`,
+    );
+    check(
+      "restored: the collapse control is the bar's trailing action",
+      Boolean(barBox && collapseBox) &&
+        collapseBox.left > barBox.left + barBox.width / 2 &&
+        collapseBox.right <= barBox.right &&
+        barBox.right - collapseBox.right <= 10 &&
+        collapseBox.top >= barBox.top &&
+        collapseBox.bottom <= barBox.bottom,
+      `action ${JSON.stringify(collapseBox)} in bar ${JSON.stringify(barBox)}`,
+    );
+    check(
+      "restored: the bottom-bar collapse names its move and its side",
+      restored.collapseAction?.label === "Collapse chat" &&
+        restored.collapseAction?.icon === "lucide-panel-right-close",
+      `label ${JSON.stringify(restored.collapseAction?.label)}, icon ${JSON.stringify(restored.collapseAction?.icon)}`,
+    );
+
+    await click(".chat-panel__action--collapse");
+    const barCollapsed = await settled();
+    const barCollapsedShot = await shot("chat-side-launcher-right.png");
+    check(
+      "bottom bar collapse: the panel leaves and the floating mark returns",
+      barCollapsed.chat === null &&
+        Boolean(barCollapsed.launcher) &&
+        barCollapsed.launcher.position === "fixed",
+      `dock ${JSON.stringify(barCollapsed.chat)}, launcher ${JSON.stringify(barCollapsed.launcher)}`,
+    );
+    check(
+      "bottom bar collapse: the sheet reclaims the dock's side of the window",
+      barCollapsed.main.box.right === barCollapsed.viewport.width &&
+        isZero(barCollapsed.main.border.left) &&
+        isZero(barCollapsed.main.border.right),
+      `sheet ${JSON.stringify(barCollapsed.main.box)} in ${barCollapsed.viewport.width}px, borders ${barCollapsed.main.border.left}/${barCollapsed.main.border.right}`,
+    );
+    check(
+      "bottom bar collapse: the mark keeps the trailing corner for a trailing dock",
+      Boolean(barCollapsed.launcher) &&
+        barCollapsed.launcher.box.left > barCollapsed.viewport.width / 2 &&
+        barCollapsed.launcher.box.top > barCollapsed.viewport.height / 2 &&
+        barCollapsed.viewport.width - barCollapsed.launcher.box.right ===
+          barCollapsed.tokens.frame + barCollapsed.tokens.rootFontSize &&
+        barCollapsed.viewport.height - barCollapsed.launcher.box.bottom ===
+          barCollapsed.tokens.frame + barCollapsed.tokens.rootFontSize,
+      `launcher ${JSON.stringify(barCollapsed.launcher)} in ${JSON.stringify(barCollapsed.viewport)}`,
+    );
+
+    // 6b — the reported gesture: the side is swapped while the dock is already
+    // collapsed. There is no dock to watch, so the mark is the only thing on
+    // screen that can say which side the chat is on; it has to move with it, and
+    // move back, without the dock being reopened in between.
+    at("swapped side while collapsed");
+    await click(".window-titlebar__side-switch");
+    const collapsedSwapped = await settled();
+    const collapsedSwappedShot = await shot("chat-side-collapsed-swapped.png");
+    check(
+      "collapsed swap: the mark follows the dock to the leading edge",
+      Boolean(collapsedSwapped.launcher) &&
+        collapsedSwapped.launcher.position === "fixed" &&
+        collapsedSwapped.launcher.box.left ===
+          collapsedSwapped.tokens.track + collapsedSwapped.tokens.rootFontSize &&
+        collapsedSwapped.launcher.box.top >
+          collapsedSwapped.viewport.height / 2,
+      `launcher ${JSON.stringify(collapsedSwapped.launcher)} with ${JSON.stringify(collapsedSwapped.shell?.className)}`,
+    );
+    check(
+      "collapsed swap: the dock is on the leading side and still collapsed",
+      collapsedSwapped.chat === null &&
+        collapsedSwapped.shell?.className?.includes("shell--chat-left") === true,
+      `dock ${JSON.stringify(collapsedSwapped.chat)}, shell ${JSON.stringify(collapsedSwapped.shell?.className)}`,
+    );
+    at("swapped back while collapsed");
+    await click(".window-titlebar__side-switch");
+    const collapsedSwappedBack = await settled();
+    check(
+      "collapsed swap back: the mark returns to the trailing corner",
+      Boolean(collapsedSwappedBack.launcher) &&
+        same(collapsedSwappedBack.launcher.box, barCollapsed.launcher.box) &&
+        collapsedSwappedBack.chat === null,
+      `launcher ${JSON.stringify(collapsedSwappedBack.launcher?.box)} vs ${JSON.stringify(barCollapsed.launcher.box)}`,
+    );
+
+    at("bottom bar reopen");
+    await click(".chat-launcher");
+    const barReopened = await settled();
+    check(
+      "bottom bar collapse: the floating mark opens the same dock back",
+      same(barReopened.main.box, restored.main.box) &&
+        same(barReopened.chat.box, restored.chat.box) &&
+        barReopened.launcher === null,
+      `sheet ${JSON.stringify(barReopened.main.box)} vs ${JSON.stringify(restored.main.box)}, dock ${JSON.stringify(barReopened.chat.box)} vs ${JSON.stringify(restored.chat.box)}`,
+    );
+
     report = {
       url,
       ranAt: new Date().toISOString(),
@@ -798,17 +1097,31 @@ async function main() {
       right,
       left,
       dockCollapsed,
+      dockCollapsedHover,
+      dockCollapsedLight,
+      dockCollapsedDarkAgain,
       railCollapsed,
       dockReopened,
+      railAndDockCollapsed,
+      dockBackUnderCollapsedRail,
       railRestored,
       restored,
+      barCollapsed,
+      collapsedSwapped,
+      collapsedSwappedBack,
+      barReopened,
       screenshots: [
         rightShot,
         rightSeamShot,
         leftShot,
         leftSeamShot,
         collapsedShot,
+        hoverShot,
+        lightShot,
+        bothCollapsedShot,
         restoredShot,
+        barCollapsedShot,
+        collapsedSwappedShot,
       ],
       failures,
       pass: failures.length === 0,
@@ -837,14 +1150,15 @@ async function main() {
     ["left/collapsed dock", report.dockCollapsed],
     ["left/collapsed rail", report.railCollapsed],
     ["round trip", report.restored],
+    ["bottom bar collapsed", report.barCollapsed],
   ]) {
     if (!state?.main) continue;
     rows.push([
       label,
       state.rail ? `${state.rail.box.left}/${state.rail.box.right}` : "none",
       `${state.main.box.left}/${state.main.box.right}`,
-      `${state.chat.box.left}/${state.chat.box.right}`,
-      String(state.chat.box.width),
+      state.chat ? `${state.chat.box.left}/${state.chat.box.right}` : "—",
+      state.chat ? String(state.chat.box.width) : "—",
       String(state.owners?.bottomRight ?? "—"),
     ]);
   }

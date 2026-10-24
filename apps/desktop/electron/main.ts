@@ -790,6 +790,24 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("note:window", (_e, start: string, end: string) =>
     vault.dailyNoteWindow(start, end),
   );
+  // Ideal State: any number of titled, freeform documents under Define.
+  ipcMain.handle("ideal-state:list", () => vault.idealStateList());
+  ipcMain.handle("ideal-state:get", (_e, id: string) =>
+    vault.idealStateGet(id),
+  );
+  ipcMain.handle(
+    "ideal-state:create",
+    (_e, input: Parameters<typeof vault.idealStateCreate>[0]) =>
+      vault.idealStateCreate(input),
+  );
+  ipcMain.handle(
+    "ideal-state:update",
+    (_e, id: string, patch: Parameters<typeof vault.idealStateUpdate>[1]) =>
+      vault.idealStateUpdate(id, patch),
+  );
+  ipcMain.handle("ideal-state:delete", (_e, id: string) =>
+    vault.idealStateDelete(id),
+  );
   // A cadence's standing review rules, and the snapshot pass the review page
   // runs before it asks the agent for anything.
   ipcMain.handle(

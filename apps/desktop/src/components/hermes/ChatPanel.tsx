@@ -20,23 +20,29 @@ import {
   EyeOff,
   History,
   ImagePlus,
+  MessageCircleQuestion,
   MessageSquare,
   MoreVertical,
-  PanelLeftOpen,
-  PanelRightOpen,
+  PanelLeftClose,
+  PanelRightClose,
   Pencil,
   Pin,
   PinOff,
   Radio,
-  Search,
   SquarePen,
   X,
 } from "lucide-react";
-import type { SignalRecord } from "@lifequest/vault-core/pure";
+import {
+  matchingChatQuestions,
+  type ChatQuestion,
+  type DomainRecord,
+  type SignalRecord,
+} from "@lifequest/vault-core/pure";
 import { copyText } from "@/lib/clipboard";
 import { AUTOMATIONS_CHANGED_EVENT } from "@/lib/automations";
 import { api } from "@/lib/ipc";
-import { readPageContext } from "@/lib/page-context";
+import { pageLabelFor, readPageContext } from "@/lib/page-context";
+import { WING_LABELS, wingForPath } from "@/components/shell/wing";
 import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
 import { summarizeToolRun, toolRowLabel, type ToolCall } from "@/lib/tool-run";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
@@ -98,6 +104,28 @@ function formatReceiptSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Where a saved question belongs, in the words the settings page uses for it.
+ * The dock shows the chip because the same thread can offer questions from two
+ * scopes at once — a domain prompt and one written for this page — and the
+ * operator should be able to tell which is which without opening Settings.
+ */
+function starterScopeLabel(
+  question: ChatQuestion,
+  domains: readonly DomainRecord[],
+): string {
+  if (question.scope === "everywhere") return "Everywhere";
+  if (question.scope === "wing") {
+    const wing = question.value ?? "";
+    return `${WING_LABELS[wing as keyof typeof WING_LABELS] ?? wing} wing`;
+  }
+  if (question.scope === "domain") {
+    const domain = domains.find((row) => row.slug === question.value);
+    return domain ? domain.meta.name : (question.value ?? "Domain");
+  }
+  return `${pageLabelFor(question.value ?? "/")} page`;
 }
 
 type ChatPanelProps = {
@@ -207,8 +235,8 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     pageContext,
     setPageContextOn,
     // The dock's side is the shell's business — it is the shell that swaps the
-    // two panes — but the collapsed tab's own arrow opens toward the page it
-    // expands into, so it reads the side too.
+    // two panes — but the bottom bar's collapse arrow points out of the side it
+    // collapses toward, so it reads the side too.
     side: dockSide,
   } = useChatDock();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -471,6 +499,23 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       slug: d.slug,
       name: d.meta.name,
     }));
+  /**
+   * The saved questions that belong on the screen in front of the operator.
+   *
+   * Read live from the vault snapshot, so a question added in Settings is in
+   * the dock the moment the sheet closes — no reload, no second list to keep in
+   * step. The scope is matched here rather than filtered by the page: the dock
+   * is the one place that knows the wing, the domain lens and the route at once.
+   */
+  const starters = useMemo(
+    () =>
+      matchingChatQuestions(snapshot?.settings.chatQuestions ?? [], {
+        wing: wingForPath(pageContext.route),
+        domainSlug: activeDomain?.slug ?? null,
+        route: pageContext.route,
+      }),
+    [snapshot, activeDomain, pageContext.route],
+  );
 
   /**
    * Grow the composer with its text, then scroll inside it once it reaches half
@@ -1322,7 +1367,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     }
   }
 
-  async function newSession() {
+  /**
+   * The id of the blank chat the "New chat" slot lands on, or null when the
+   * gateway refused to make one. Returning the id is what lets a saved question
+   * be sent in the same gesture: the state setter would not be visible to the
+   * caller until the next render.
+   */
+  async function newSession(): Promise<string | null> {
     // A chat that was created and never written in is already a "New chat"
     // row: an empty transcript, no preview. Clicking the slot again is
     // navigation to it, not a second empty chat — that is what kept the
@@ -1331,16 +1382,33 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     const blank = listed?.find((s) => !s.preview?.trim());
     if (blank) {
       await openSession(blank.id);
-      return;
+      return blank.id;
     }
 
     const created = await api().companionSessionCreate("");
     if (!created.ok) {
       setError(created.error);
-      return;
+      return null;
     }
     setSessions((prev) => [created.value, ...prev.filter((s) => s.id !== created.value.id)]);
     await openSession(created.value.id);
+    return created.value.id;
+  }
+
+  /**
+   * One-click start: send a saved question as the first turn of the blank chat
+   * the operator is looking at. If the dock is on the thread with no session
+   * yet — a card handover, or a list view that lost its chat — the chat is made
+   * first, so the button never looks like it did nothing.
+   */
+  async function askStarter(question: ChatQuestion): Promise<void> {
+    if (sending) return;
+    let target = sessionId;
+    if (!target) {
+      target = await newSession();
+      if (!target) return;
+    }
+    await sendMessage(question.text, target);
   }
 
   /**
@@ -1608,17 +1676,41 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     </div>
   ) : null;
 
+  /*
+    Collapsed, the dock is not a narrow pane: it leaves the grid entirely and
+    becomes one floating mark on the page it gave its column back to. The mark is
+    the agent's own — the Nous girl — and the button is the way back in; the
+    dock's bottom action bar carries the matching way out. Keeping the component
+    mounted here is deliberate: the thread, the draft and the pending receipt
+    survive the collapse, because only the chip's paint changes, not its state.
+  */
+  if (!open) {
+    return (
+      <>
+        <button
+          type="button"
+          className="chat-launcher"
+          data-testid="chat-launcher"
+          onClick={() => onOpenChange(true)}
+          aria-label="Open Hermes chat"
+          title="Open Hermes chat"
+        >
+          <span className="chat-launcher__mark" aria-hidden />
+        </button>
+        {/* The dock's own confirmation, rendered beside the launcher so a
+            question already asked is not stranded by a collapse. */}
+        {dialog}
+      </>
+    );
+  }
+
   return (
     <aside
       ref={panelRef}
-      className={[
-        "chat-panel",
-        open ? "chat-panel--open" : "chat-panel--collapsed",
-      ].join(" ")}
+      className="chat-panel"
       role="complementary"
       aria-label="Hermes chat"
     >
-      {open ? (
         <div className="chat-panel__open">
           {view === "list" ? (
             <>
@@ -1796,9 +1888,68 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                   This is your LifeQuest companion on the lifequest Hermes
                   profile. Active domain: {domainName}.
                 </p>
-                <Link to="/settings" className="chat-panel__link chat-panel__cta">
-                  Companion status
-                </Link>
+                {/*
+                  The saved questions that fit this screen. One click sends the
+                  question as the first turn, so a new chat can start from a
+                  thought the operator has already phrased well. The chip names
+                  the scope because a domain prompt and a page prompt can sit
+                  side by side here.
+                */}
+                {starters.length > 0 ? (
+                  <div className="chat-panel__starters" data-testid="chat-starters">
+                    <p className="chat-panel__starters-title">Start with a question</p>
+                    <ul className="chat-panel__starters-list">
+                      {starters.map((question) => (
+                        <li key={question.id}>
+                          <button
+                            type="button"
+                            className="chat-panel__starter"
+                            data-testid="chat-starter"
+                            data-question-id={question.id}
+                            disabled={sending}
+                            onClick={() => void askStarter(question)}
+                          >
+                            <MessageCircleQuestion size={14} aria-hidden />
+                            <span className="chat-panel__starter-text">
+                              {question.text}
+                            </span>
+                            <span className="chat-panel__starter-scope">
+                              {starterScopeLabel(question, snapshot?.domains ?? [])}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {/*
+                  No saved question fits this screen. The way out is the page
+                  that writes them, linked where the operator is already
+                  looking — not the settings root, which opens Appearance and
+                  says nothing about questions.
+                */}
+                {starters.length === 0 ? (
+                  <div
+                    className="chat-panel__empty-questions"
+                    data-testid="chat-empty-questions"
+                  >
+                    <p className="chat-panel__empty-questions-title">
+                      No questions set
+                    </p>
+                    <p className="chat-panel__empty-copy">
+                      You can set your custom questions{" "}
+                      <Link
+                        to="/settings?tab=questions"
+                        className="chat-panel__link"
+                        data-testid="chat-empty-questions-link"
+                        aria-label="Set your custom questions in Settings"
+                      >
+                        here
+                      </Link>
+                      .
+                    </p>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="chat-panel__messages" aria-live="polite">
@@ -2201,10 +2352,9 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
           {/*
             The dock's own actions, pinned to the bottom of the bar and shared by
             all three surfaces: the list is where most navigation happens, so its
-            entry point cannot live inside the thread it replaces. Slot three is
-            still reserved — disabled rather than absent, so the row keeps the
-            shape it will end up as — and slot four is the chain: the dock's
-            second way into the Life-Chain, alongside the rail's.
+            entry point cannot live inside the thread it replaces. The chain is
+            the dock's second way into the Life-Chain, alongside the rail's, and
+            the collapse control trails the group at the bar's far right.
           */}
           <nav className="chat-panel__actions" aria-label="Chat and chain actions">
             <button
@@ -2230,15 +2380,6 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
             <button
               type="button"
               className="chat-panel__icon-btn chat-panel__action"
-              aria-label="Search chats (coming soon)"
-              title="Search chats — coming soon"
-              disabled
-            >
-              <Search size={20} aria-hidden />
-            </button>
-            <button
-              type="button"
-              className="chat-panel__icon-btn chat-panel__action"
               aria-label="Life-Chain"
               title="Life-Chain"
               aria-pressed={view === "chain"}
@@ -2246,24 +2387,28 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
             >
               <Radio size={20} aria-hidden />
             </button>
+            {/*
+              The way out, at the trailing end of the bar. It is the same move as
+              the titlebar's collapse control, put where the operator's hand
+              already is when they are done with the dock: the bottom-right
+              corner, one click from the icon that brings it back.
+            */}
+            <button
+              type="button"
+              className="chat-panel__icon-btn chat-panel__action chat-panel__action--collapse"
+              data-testid="chat-collapse"
+              aria-label="Collapse chat"
+              title="Collapse chat"
+              onClick={() => onOpenChange(false)}
+            >
+              {dockSide === "left" ? (
+                <PanelLeftClose size={20} aria-hidden />
+              ) : (
+                <PanelRightClose size={20} aria-hidden />
+              )}
+            </button>
           </nav>
         </div>
-      ) : (
-        <button
-          type="button"
-          className="chat-panel__expand"
-          onClick={() => onOpenChange(true)}
-          aria-label="Open Hermes chat"
-          title="Open Hermes chat"
-        >
-          {dockSide === "left" ? (
-            <PanelLeftOpen size={16} />
-          ) : (
-            <PanelRightOpen size={16} />
-          )}
-          <span>Chat</span>
-        </button>
-      )}
 
       {/* The dock's own confirmation. It is drawn over the window, not the panel:
           the question is about a chat, and a platform dialog would put it on the

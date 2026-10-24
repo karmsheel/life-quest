@@ -1,4 +1,5 @@
 export * from "./types.ts";
+export * from "./chat-questions.ts";
 export type { AutoApproveInsert } from "./types.ts";
 export * from "./frontmatter.ts";
 export * from "./documents.ts";
@@ -60,6 +61,8 @@ export {
   findYear,
   liveYears,
   resolveWeek,
+  TASK_COLUMNS,
+  isTaskColumn,
 } from "./map/public.ts";
 export { applyMapCommand, ensureMapOnOpen, loadMapState } from "./map/persist.ts";
 export {
@@ -145,6 +148,15 @@ export {
   listDailyNotes,
   writeDailyNote,
 } from "./daily-notes.ts";
+export {
+  IDEAL_STATE_FILE,
+  IDEAL_STATE_TITLE_MAX,
+  createIdealState,
+  deleteIdealState,
+  getIdealState,
+  listIdealStates,
+  updateIdealState,
+} from "./ideal-state.ts";
 export {
   DAILY_NOTE_TOOL_DEFS,
   executeDailyNoteTool,

@@ -126,6 +126,11 @@ type Layout = {
     | (Box & { clientWidth: number; centerX: number })
     | null;
   page: Box | null;
+  header: Box | null;
+  pager: Box | null;
+  prev: Box | null;
+  next: Box | null;
+  dayLabel: Box | null;
   workspace: Box | null;
   editor: Box | null;
   history: Box | null;
@@ -401,7 +406,9 @@ describe("daily note ui e2e", () => {
 
     // ── landing: today, empty, and nothing written ──────────────────────────
     const landing = report.checks.landing;
-    assert.match(String(landing.day), /^Today · \w+day, \d{1,2} \w{3} \d{4}$/);
+    // The date is the label and "(Today)" is its parenthetical: the day itself
+    // must not be pushed off the centre of the box by a prefix.
+    assert.match(String(landing.day), /^\w+day, \d{1,2} \w{3} \d{4} \(Today\)$/);
     assert.equal(landing.dayDate, today, "the page did not land on today");
     assert.equal(landing.body, "", "today's editor did not open empty");
     assert.equal(landing.status, "No note for this day yet");
@@ -421,6 +428,42 @@ describe("daily note ui e2e", () => {
     assert.ok(
       Math.abs(centering.historyOffBy ?? 999) <= 2,
       `the earlier-notes strip sits ${centering.historyOffBy}px off the page's centre`,
+    );
+    // The pager is the box's own width: Prev day opens on its leading edge, Next
+    // day closes on its trailing edge, and the date sits over the middle of the
+    // prose rather than over the journal beside it.
+    const landingLayout = landing.layout;
+    assert.ok(landingLayout.header, "the header's own box could not be measured");
+    assert.ok(landingLayout.prev, "Prev day's box could not be measured");
+    assert.ok(landingLayout.next, "Next day's box could not be measured");
+    assert.ok(landingLayout.dayLabel, "the date's own box could not be measured");
+    assert.ok(
+      Math.abs(landingLayout.header!.left - landingLayout.editor!.left) <= 2,
+      "the header does not share the text box's leading edge",
+    );
+    assert.ok(
+      Math.abs(landingLayout.header!.width - landingLayout.editor!.width) <= 2,
+      "the header is not as wide as the text box",
+    );
+    assert.ok(
+      Math.abs(landingLayout.prev!.left - landingLayout.editor!.left) <= 2,
+      "Prev day does not open on the text box's leading edge",
+    );
+    assert.ok(
+      Math.abs(
+        landingLayout.next!.left +
+          landingLayout.next!.width -
+          (landingLayout.editor!.left + landingLayout.editor!.width),
+      ) <= 2,
+      "Next day does not close on the text box's trailing edge",
+    );
+    assert.ok(
+      Math.abs(
+        landingLayout.dayLabel!.left +
+          landingLayout.dayLabel!.width / 2 -
+          (landingLayout.editor!.left + landingLayout.editor!.width / 2),
+      ) <= 2,
+      "the date is not centred over the text box",
     );
     assert.ok(
       (report.checks.editorMinHeight ?? 0) >= 512,
@@ -550,9 +593,12 @@ describe("daily note ui e2e", () => {
     // The write settles: the file's own body is in the editor and the day is
     // listed, so the page never disagrees with the file it just wrote.
     assert.equal(report.checks.afterSave.status, "Saved");
-    assert.ok(
-      report.checks.afterSave.rows.some((row) => row.text.startsWith("Today")),
-      "the day just written is missing from the journal strip",
+    const savedTodayRow = report.checks.afterSave.rows.find((row) => row.isoDate === today);
+    assert.ok(savedTodayRow, "the day just written is missing from the journal strip");
+    assert.match(
+      String(savedTodayRow!.date),
+      /^\d{1,2} \w{3} \d{4} \(Today\)$/,
+      `today's journal row reads ${JSON.stringify(savedTodayRow!.date)}, not its date first with "(Today)"`,
     );
 
     // ── a save that lands mid-sentence leaves the writing line alone ────────
@@ -823,11 +869,12 @@ describe("daily note ui e2e", () => {
       "the empty panel offered no way to the day's page",
     );
 
-    // ── wide page: the strip takes the edge away from the dock ─────────────
+    // ── wide page: the strip answers the dock from the far edge ────────────
     // At the default width the page is one column. A window wide enough for two
-    // puts the strip beside the box, and the side it takes is the one away from
-    // the chat: right-of-box when the chat is on the left, left-of-box when it
-    // is on the right. Both arrangements stay centred on the page.
+    // puts the strip at the page's edge away from the chat — left when the chat
+    // is right, right when the chat is left — and the box at the other edge, so
+    // the journal's weight balances the dock across the page instead of pressing
+    // against the prose. The header and its pager ride the box's column.
     const wideRight = report.checks.wideRight;
     const wideLeft = report.checks.wideLeft;
     assert.match(
@@ -846,27 +893,75 @@ describe("daily note ui e2e", () => {
     ] as const) {
       assert.ok(layout.editor, `${when}: the wide page drew no text box`);
       assert.ok(layout.history, `${when}: the wide page drew no earlier-notes strip`);
-      assert.ok(layout.workspace, `${when}: the wide page drew no workspace to place`);
+      assert.ok(layout.header, `${when}: the wide page drew no header`);
+      assert.ok(layout.page, `${when}: the wide page's own box could not be read`);
+      assert.ok(layout.prev, `${when}: Prev day's box could not be measured`);
+      assert.ok(layout.next, `${when}: Next day's box could not be measured`);
+      assert.ok(layout.dayLabel, `${when}: the date's box could not be measured`);
       assert.ok(
         Math.abs(layout.history!.top - layout.editor!.top) <= 4,
         `${when}: the strip and the box did not share a top edge`,
       );
-      const centre = layout.content?.centerX ?? null;
-      const workspaceCentre = layout.workspace!.left + layout.workspace!.width / 2;
-      assert.ok(centre !== null, `${when}: the page's centre could not be read`);
+      // The header sits over the box, not over the strip.
       assert.ok(
-        Math.abs(workspaceCentre - centre!) <= 2,
-        `${when}: the two-column workspace sits ${workspaceCentre - centre!}px off the page's centre`,
+        Math.abs(layout.header!.left - layout.editor!.left) <= 2 &&
+          Math.abs(layout.header!.width - layout.editor!.width) <= 2,
+        `${when}: the header does not ride the text box's column`,
       );
+      // The pager wears the box's own edges, and the date its centre.
+      assert.ok(
+        Math.abs(layout.prev!.left - layout.editor!.left) <= 2,
+        `${when}: Prev day does not open on the box's leading edge`,
+      );
+      assert.ok(
+        Math.abs(
+          layout.next!.left +
+            layout.next!.width -
+            (layout.editor!.left + layout.editor!.width),
+        ) <= 2,
+        `${when}: Next day does not close on the box's trailing edge`,
+      );
+      assert.ok(
+        Math.abs(
+          layout.dayLabel!.left +
+            layout.dayLabel!.width / 2 -
+            (layout.editor!.left + layout.editor!.width / 2),
+        ) <= 2,
+        `${when}: the date is not centred over the box`,
+      );
+      // The strip stands at the far edge and the box at the other, with the
+      // spread between them growing with the page.
+      const chatLeft = String(layout.shellClass).includes("shell--chat-left");
+      const boxRight = layout.editor!.left + layout.editor!.width;
+      const stripRight = layout.history!.left + layout.history!.width;
+      const pageRight = layout.page!.left + layout.page!.width;
+      const gap = chatLeft
+        ? layout.history!.left - boxRight
+        : layout.editor!.left - stripRight;
+      assert.ok(
+        gap >= 88,
+        `${when}: the strip stands ${gap}px from the box, not far enough apart to answer the dock`,
+      );
+      if (chatLeft) {
+        assert.ok(
+          Math.abs(stripRight - pageRight) <= 2,
+          `${when}: the strip does not end at the page's trailing edge`,
+        );
+        assert.ok(
+          Math.abs(layout.editor!.left - layout.page!.left) <= 2,
+          `${when}: the box does not open at the page's leading edge`,
+        );
+      } else {
+        assert.ok(
+          Math.abs(layout.history!.left - layout.page!.left) <= 2,
+          `${when}: the strip does not open at the page's leading edge`,
+        );
+        assert.ok(
+          Math.abs(boxRight - pageRight) <= 2,
+          `${when}: the box does not end at the page's trailing edge`,
+        );
+      }
     }
-    assert.ok(
-      wideRight.history!.left + wideRight.history!.width <= wideRight.editor!.left,
-      "with the chat on the right the strip is not left of the box",
-    );
-    assert.ok(
-      wideLeft.history!.left >= wideLeft.editor!.left + wideLeft.editor!.width,
-      "with the chat on the left the strip is not right of the box",
-    );
 
     // Nothing reached the bridge that this rig does not model, and the page
     // logged nothing while the note was being written.

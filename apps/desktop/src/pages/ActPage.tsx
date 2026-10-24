@@ -12,8 +12,8 @@ import {
   DOCUMENT_KIND_LABELS,
   DOCTRINE_ORDER,
   recordVisible,
-  type DocumentKind,
 } from "@lifequest/vault-core/pure";
+import type { MapCommand } from "@lifequest/vault-core/map";
 import { api } from "@/lib/ipc";
 import {
   documentsToUnlockDocs,
@@ -22,20 +22,15 @@ import {
 } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
-import { DocumentLockBadge } from "@/components/documents/DocumentLockBadge";
 
-/** Which wing page owns each document, so the brief links where it reads. */
-const KIND_ROOM: Record<DocumentKind, { room: string; to: string }> = {
-  premise: { room: "Dream", to: "/dream" },
-  what: { room: "Vision", to: "/vision" },
-  why: { room: "Dream", to: "/dream" },
-  how: { room: "Track", to: "/track" },
-};
-
+/**
+ * The doctrine headings the agent prompt carries. The page no longer renders
+ * this brief, but a dispatched agent still needs the domain's premise, vision,
+ * purpose and strategy as context.
+ */
 const BRIEF_KINDS = DOCTRINE_ORDER.map((kind) => ({
   kind,
   label: DOCUMENT_KIND_LABELS[kind],
-  ...KIND_ROOM[kind],
 }));
 
 type AgentRun = {
@@ -97,12 +92,10 @@ function ActContent() {
 
   const [recentEvents, setRecentEvents] = useState<LifeEvent[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [brief, setBrief] = useState("");
 
   const title = activeDomain?.meta.name ?? "Overview";
 
   useEffect(() => {
-    setBrief(buildBrief(activeDomain, liveDomains));
     void (async () => {
       try {
         const result = await api().logList();
@@ -129,7 +122,7 @@ function ActContent() {
         setProjects([]);
       }
     })();
-  }, [activeDomain, liveDomains, lens, reloadGeneration]);
+  }, [lens, reloadGeneration]);
 
   // Default the selected agent once the roster loads.
   useEffect(() => {
@@ -148,11 +141,12 @@ function ActContent() {
       const head = `You are acting as "${agent.name}"${
         agent.roleLabel ? ` (${agent.roleLabel})` : ""
       } for the domain "${title}".`;
+      const brief = buildBrief(activeDomain, liveDomains);
       return `${head}\n\nExecute against this doctrine — stay aligned with Premise → Vision → Purpose → Strategy (How):\n\n${brief}\n\nTask: ${
         promptDraft.trim() || "Propose the next concrete action for this domain."
       }`;
     },
-    [brief, promptDraft, title],
+    [activeDomain, liveDomains, promptDraft, title],
   );
 
   async function runAgent(agent: AgentHire) {
@@ -199,18 +193,13 @@ function ActContent() {
     }
   }
 
-  const howLocked = activeDomain
-    ? activeDomain.documents.how?.locked
-    : liveDomains.some((d) => d.documents.how?.locked);
   const canDispatch = activeDomain
     ? canDispatchAgent(documentsToUnlockDocs(activeDomain.documents))
     : liveDomains.some((d) =>
         canDispatchAgent(documentsToUnlockDocs(d.documents)),
       );
 
-  const briefDomains = activeDomain ? [activeDomain] : liveDomains;
-
-  async function onMapCommand(command: import("@lifequest/vault-core/map").MapCommand) {
+  async function onMapCommand(command: MapCommand) {
     const result = await api().mapApply(command);
     if (result.ok) await refresh();
   }
@@ -222,18 +211,6 @@ function ActContent() {
           <p className="act-page__eyebrow muted">Act</p>
           <h1 className="act-page__title">{title}</h1>
         </div>
-        {howLocked ? (
-          <span className="act-page__alignment-badge" title="Strategy (How) is locked — execution is doctrine-aligned">
-            Aligned
-          </span>
-        ) : (
-          <span
-            className="act-page__alignment-badge act-page__alignment-badge--warn"
-            title="Lock the Strategy (How) to align execution to doctrine"
-          >
-            Strategy (How) not locked
-          </span>
-        )}
       </header>
 
       {snapshot?.map ? (
@@ -247,45 +224,6 @@ function ActContent() {
       ) : snapshot?.mapError ? (
         <p className="form-error" role="alert">{snapshot.mapError}</p>
       ) : null}
-
-      <section className="act-page__section">
-        <h2 className="act-page__section-title">Execution brief</h2>
-        <p className="muted act-page__section-sub">
-          Read-only Premise → Vision → Purpose → Strategy (How) for this
-          domain. Lock the Strategy (How) to align execution.
-        </p>
-        <div className="act-brief">
-          {briefDomains.length === 0 ? (
-            <p className="muted">No live domains yet.</p>
-          ) : (
-            briefDomains.map((domain) => (
-              <div key={domain.slug}>
-                {briefDomains.length > 1 ? (
-                  <p className="act-brief__label">{domain.meta.name}</p>
-                ) : null}
-                {BRIEF_KINDS.map(({ kind, label, room, to }) => {
-                  const doc = domain.documents[kind];
-                  const body = doc?.bodyMarkdown.trim() ?? "";
-                  return (
-                    <div key={kind} className="act-brief__row">
-                      <div className="act-brief__head">
-                        <span className="act-brief__label">{label}</span>
-                        <Link to={to} className="act-brief__room">
-                          {room}
-                        </Link>
-                        <DocumentLockBadge locked={doc?.locked ?? false} />
-                      </div>
-                      <pre className="act-brief__body">
-                        {body || "(empty)"}
-                      </pre>
-                    </div>
-                  );
-                })}
-              </div>
-            ))
-          )}
-        </div>
-      </section>
 
       <section className="act-page__section">
         <div className="act-page__section-head">
@@ -351,6 +289,12 @@ function ActContent() {
                 </>
               )}
             </button>
+
+            {!canDispatch ? (
+              <p className="muted act-run__gate">
+                Add a Strategy (How) in Track to enable dispatch.
+              </p>
+            ) : null}
 
             {error ? (
               <p className="form-error" role="alert">

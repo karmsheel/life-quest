@@ -26,7 +26,7 @@ import {
   unplaceLiveBlock,
   updateLiveBlock,
 } from "./live-days.ts";
-import { createTask, deleteTask, updateTask } from "./tasks.ts";
+import { createTask, deleteTask, moveTask, updateTask } from "./tasks.ts";
 import type {
   ApplyContext,
   Command,
@@ -160,6 +160,8 @@ export function applyCommand(
       if (command.links !== undefined) patch.links = command.links;
       return updateTask(state, command.id, patch);
     }
+    case "moveTask":
+      return moveTask(state, command.id, command.column, command.beforeId);
     case "deleteTask":
       return deleteTask(state, command.id);
     case "setAboutMe":

@@ -415,8 +415,8 @@ async function main() {
     );
     check(
       "the chain slot is live on landing, and not marked active",
-      landing.actions[3]?.disabled === false && landing.actions[3]?.pressed === false,
-      `slot ${JSON.stringify(landing.actions[3])}`,
+      landing.actions[2]?.disabled === false && landing.actions[2]?.pressed === false,
+      `slot ${JSON.stringify(landing.actions[2])}`,
     );
 
     // 2 — the slot swaps the panel to the chain and reads it.
@@ -433,7 +433,7 @@ async function main() {
     );
     check(
       "the chain slot is marked active, and history is not",
-      chain.actions[3]?.pressed === true && chain.actions[0]?.pressed === false,
+      chain.actions[2]?.pressed === true && chain.actions[0]?.pressed === false,
       `slots ${JSON.stringify(chain.actions.map((slot) => [slot.label, slot.pressed]))}`,
     );
     check(

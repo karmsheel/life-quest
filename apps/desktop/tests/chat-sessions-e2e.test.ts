@@ -226,9 +226,9 @@ describe("chat sessions rigs", { concurrency: true }, () => {
       const created = report.states.created;
       const live = report.fixture.rows;
 
-      // The bottom action bar: three live slots, one still reserved, and it rides
-      // the bottom edge in both views.
-      const slots = ["Chat history", "New chat", "Search chats (coming soon)", "Life-Chain"];
+      // The bottom action bar: four live slots, and it rides the bottom edge in
+      // both views.
+      const slots = ["Chat history", "New chat", "Life-Chain", "Collapse chat"];
       assert.deepEqual(
         landing.actions.map((slot) => slot.label),
         slots,
@@ -236,8 +236,8 @@ describe("chat sessions rigs", { concurrency: true }, () => {
       );
       assert.deepEqual(
         landing.actions.map((slot) => slot.disabled),
-        [false, false, true, false],
-        "the reserved slot is not reserved, or the chain slot is inert",
+        [false, false, false, false],
+        "an action slot is inert",
       );
       assert.equal(
         new Set(landing.actions.map((slot) => slot.icon)).size,
@@ -261,8 +261,8 @@ describe("chat sessions rigs", { concurrency: true }, () => {
       assert.equal(landing.actions[0]?.pressed, false, "history is marked active on a thread");
       assert.deepEqual(
         landing.actions.map((slot) => slot.opacity < 1),
-        [false, false, true, false],
-        "the reserved slot is not dimmed, or the chain slot is dimmed",
+        [false, false, false, false],
+        "an action slot is dimmed",
       );
       assert.equal(
         new Set(landing.actions.map((slot) => slot.iconSize)).size,
@@ -833,11 +833,11 @@ describe("chat sessions rigs", { concurrency: true }, () => {
 
       assert.equal(landing.chainBody?.hidden, true, "the chain painted on landing");
       assert.equal(landing.signalListCalls, 0, "the chain was read before it was asked for");
-      assert.equal(landing.actions[3]?.label, "Life-Chain", "the last slot is not the chain");
-      assert.equal(landing.actions[3]?.pressed, false, "the chain slot starts active");
+      assert.equal(landing.actions[2]?.label, "Life-Chain", "the chain slot is not the third slot");
+      assert.equal(landing.actions[2]?.pressed, false, "the chain slot starts active");
 
       assert.equal(chain.heading, "Life-Chain", "the chain header names the wrong surface");
-      assert.equal(chain.actions[3]?.pressed, true, "the chain slot is not marked active");
+      assert.equal(chain.actions[2]?.pressed, true, "the chain slot is not marked active");
       assert.equal(chain.chatField.present, false, "both composers are mounted at once");
       assert.equal(chain.transcript.length, 0, "the chat transcript paints behind the chain");
       assert.equal(chain.items.length, total, `listed ${chain.items.length} of ${total} signals`);

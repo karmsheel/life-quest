@@ -65,12 +65,15 @@ const SAMPLE = `(() => {
   const rail = document.querySelector(".shell > .nav-rail");
   const main = document.querySelector(".shell__main");
   const dock = document.querySelector(".chat-panel");
+  const launcher = document.querySelector(".chat-launcher");
   const divider = document.querySelector(".chat-divider");
   const shellStyle = shell ? getComputedStyle(shell) : null;
   const dividerStyle = divider ? getComputedStyle(divider) : null;
   const bar = divider ? getComputedStyle(divider, "::after") : null;
   const mainStyle = main ? getComputedStyle(main) : null;
   const dockStyle = dock ? getComputedStyle(dock) : null;
+  const launcherStyle = launcher ? getComputedStyle(launcher) : null;
+  const launcherMark = launcher?.querySelector(".chat-launcher__mark") ?? null;
   const railStyle = rail ? getComputedStyle(rail) : null;
   const tracks = shellStyle ? shellStyle.gridTemplateColumns.trim().split(/\\s+/) : [];
   const side = divider ? divider.dataset.side : null;
@@ -83,6 +86,7 @@ const SAMPLE = `(() => {
     if (!el) return null;
     if (divider && (el === divider || divider.contains(el))) return "divider";
     if (rail && rail.contains(el)) return "rail";
+    if (launcher && launcher.contains(el)) return "launcher";
     if (main && main.contains(el)) return "sheet";
     if (dock && dock.contains(el)) return "dock";
     return "other";
@@ -91,6 +95,16 @@ const SAMPLE = `(() => {
   const midY = dividerBox ? Math.round((dividerBox.top + dividerBox.bottom) / 2) : 0;
   const mainBox = box(main);
   const dockBox = box(dock);
+
+  // The rail's column in pixels. The token is a rem value — reading it off the
+  // root returns the string "4.25rem", not a width — so measuring it through a
+  // probe is what lets an inset assertion compare geometry to geometry.
+  const navProbe = document.createElement("div");
+  navProbe.style.cssText =
+    "position:absolute;left:-9999px;top:0;height:0;width:var(--shell-nav-width)";
+  document.body.appendChild(navProbe);
+  const navWidth = navProbe.offsetWidth;
+  navProbe.remove();
 
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -103,9 +117,10 @@ const SAMPLE = `(() => {
         .getPropertyValue("--chatbar-width")
         .trim(),
       frame: num(getComputedStyle(document.documentElement).getPropertyValue("--shell-frame")),
-      navWidth: num(
-        getComputedStyle(document.documentElement).getPropertyValue("--shell-nav-width")
-      )
+      navWidth,
+      // The launcher's one-rem inset, so a side assertion compares two measured
+      // numbers instead of hard-coding the root type size in the rig.
+      rootFontSize: parseFloat(getComputedStyle(document.documentElement).fontSize)
     },
     shell: shell
       ? {
@@ -129,6 +144,14 @@ const SAMPLE = `(() => {
         }
       : null,
     dock: dock ? { box: dockBox, border: border(dockStyle), className: dock.className } : null,
+    launcher: launcher
+      ? {
+          box: box(launcher),
+          label: launcher.getAttribute("aria-label"),
+          position: launcherStyle.position,
+          mark: Boolean(launcherMark)
+        }
+      : null,
     divider: divider
       ? {
           found: true,
@@ -772,12 +795,12 @@ async function main() {
     const collapsed = await settled();
     collapsed.vaultName = vaultName;
     check(
-      "collapsed: the dock is the narrow tab",
-      collapsed.dock.box.width === 44,
-      `dock width ${collapsed.dock.box.width}px`,
+      "collapsed: the dock is no longer a pane in the grid",
+      collapsed.dock === null && collapsed.shell.chatColumn === "0px",
+      `dock ${JSON.stringify(collapsed.dock)}, chat column ${JSON.stringify(collapsed.shell.chatColumn)}`,
     );
     check(
-      "collapsed: there is no handle on a tab",
+      "collapsed: there is no handle without a seam",
       collapsed.divider.found === false,
       `handle ${JSON.stringify(collapsed.divider)}`,
     );
@@ -786,10 +809,24 @@ async function main() {
       collapsed.shell.inlineChatbarWidth === `${swapFloor.dockTrack}px`,
       `inline --chatbar-width ${JSON.stringify(collapsed.shell.inlineChatbarWidth)} vs ${swapFloor.dockTrack}px`,
     );
+    check(
+      "collapsed: the agent is one floating mark at the dock's own bottom-left",
+      Boolean(collapsed.launcher) &&
+        collapsed.launcher.position === "fixed" &&
+        collapsed.launcher.mark === true &&
+        collapsed.launcher.label === "Open Hermes chat" &&
+        collapsed.launcher.box.left < collapsed.viewport.width / 2 &&
+        collapsed.launcher.box.top > collapsed.viewport.height / 2 &&
+        // The swapped dock led against the rail, so its mark keeps that inset on
+        // the leading side rather than staying on the trailing corner.
+        collapsed.launcher.box.left ===
+          collapsed.tokens.navWidth + collapsed.tokens.rootFontSize,
+      `launcher ${JSON.stringify(collapsed.launcher)} in ${JSON.stringify(collapsed.viewport)}, rail ${collapsed.tokens.navWidth}px`,
+    );
     screenshots.push(await shot("chat-divider-collapsed.png"));
 
     at("reopened dock");
-    await click(".window-titlebar__chat-toggle");
+    await click(".chat-launcher");
     const reopened = await settled();
     reopened.vaultName = vaultName;
     checkArrangement("reopened", reopened, "left");
