@@ -33,6 +33,8 @@ const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/chat-questions.json");
 const SCREENSHOTS = [
   "chat-questions-settings-empty.png",
+  "chat-questions-empty-questions.png",
+  "chat-questions-empty-questions-link.png",
   "chat-questions-settings-list.png",
   "chat-questions-starters-home.png",
   "chat-questions-sent.png",
@@ -65,6 +67,13 @@ type Starter = {
   box: { width: number; height: number } | null;
 };
 
+type EmptyQuestions = {
+  title: string;
+  copy: string;
+  linkText: string;
+  linkHref: string | null;
+};
+
 type Call = {
   sessionId: string;
   input: string;
@@ -86,6 +95,8 @@ type State = {
   starters: Starter[];
   messages: { role: string; text: string }[];
   emptyTitle: string | null;
+  emptyQuestions: EmptyQuestions | null;
+  companionStatusLinks: number;
   panel: { left: number; right: number; width: number; height: number } | null;
   composer: { width: number; height: number } | null;
   windowOverflow: { scrollWidth: number; clientWidth: number };
@@ -163,14 +174,49 @@ describe("saved chat questions", () => {
       "the driver's own checks did not all hold",
     );
 
-    const { landing, added, afterEdit, home, sent, review, goals, second } =
-      report.states;
+    const {
+      landing,
+      empty,
+      emptyLink,
+      added,
+      afterEdit,
+      home,
+      sent,
+      review,
+      goals,
+      second,
+    } = report.states;
 
     // ── the settings section ────────────────────────────────────────────────
     assert.equal(landing.settingsView, "questions", "the Questions panel did not open");
     assert.equal(landing.settingsTitle, "Chat questions");
     assert.equal(landing.activeNav, "Questions");
     assert.ok(landing.navCount >= 9, `only ${landing.navCount} settings sections`);
+
+    // ── the blank thread with nothing saved ─────────────────────────────────
+    assert.equal(
+      empty.companionStatusLinks,
+      0,
+      "the broken Companion status link is still in the empty chat",
+    );
+    assert.equal(empty.emptyQuestions?.title, "No questions set");
+    assert.equal(
+      empty.emptyQuestions?.copy,
+      "You can set your custom questions here.",
+      "the empty chat does not tell the operator where to set questions",
+    );
+    assert.equal(
+      empty.emptyQuestions?.linkHref,
+      "/settings?tab=questions",
+      "the empty chat link does not target the Questions settings page",
+    );
+    assert.equal(empty.emptyQuestions?.linkText, "here");
+    assert.equal(
+      emptyLink.settingsView,
+      "questions",
+      "the empty chat link did not open the Questions panel",
+    );
+    assert.equal(emptyLink.activeNav, "Questions");
 
     // ── add: text, scope, and the stored order ──────────────────────────────
     assert.deepEqual(

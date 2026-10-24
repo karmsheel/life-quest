@@ -1879,9 +1879,34 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                     </ul>
                   </div>
                 ) : null}
-                <Link to="/settings" className="chat-panel__link chat-panel__cta">
-                  Companion status
-                </Link>
+                {/*
+                  No saved question fits this screen. The way out is the page
+                  that writes them, linked where the operator is already
+                  looking — not the settings root, which opens Appearance and
+                  says nothing about questions.
+                */}
+                {starters.length === 0 ? (
+                  <div
+                    className="chat-panel__empty-questions"
+                    data-testid="chat-empty-questions"
+                  >
+                    <p className="chat-panel__empty-questions-title">
+                      No questions set
+                    </p>
+                    <p className="chat-panel__empty-copy">
+                      You can set your custom questions{" "}
+                      <Link
+                        to="/settings?tab=questions"
+                        className="chat-panel__link"
+                        data-testid="chat-empty-questions-link"
+                        aria-label="Set your custom questions in Settings"
+                      >
+                        here
+                      </Link>
+                      .
+                    </p>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="chat-panel__messages" aria-live="polite">
