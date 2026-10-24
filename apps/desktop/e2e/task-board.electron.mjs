@@ -15,14 +15,14 @@
  *                      page's working surface, not a thing above the page's name;
  *                      reading `.act-page`'s children in DOM order is the claim.
  *  2. `columns`      — six columns, in board order, each with its own dot, title
- *                      and count: Done 1, Today 2, This week 2, This month 1,
- *                      This quarter 1, Backlog 4.
+ *                      and count: Done 1, In-progress 1, Today 2, This week 2,
+ *                      Next 30 days 1, Backlog 4.
  *  2b. `page-trimmed` — the Strategy badge and the Execution brief section are
  *                      gone from the page, while the agent and activity sections
  *                      remain.
- *  7b. `drag-across`  — a real pointer drag carries a card from Backlog to This
- *                      month, shows the ghost and the target column while it is
- *                      in the air, and releases exactly one `moveTask`.
+ *  7b. `drag-across`  — a real pointer drag carries a card from Backlog to Next
+ *                      30 days, shows the ghost and the target column while it
+ *                      is in the air, and releases exactly one `moveTask`.
  *  7c. `drag-reorder` — a drag within a column places the card before another
  *                      card and sends its id as `beforeId`.
  *  7d. `drag-cancel`  — Escape during a drag leaves the board untouched.
@@ -93,21 +93,21 @@ const WIDTHS = [
 
 const COLUMN_ORDER = [
   "done",
+  "in-progress",
   "today",
   "this-week",
-  "this-month",
-  "this-quarter",
+  "next-30-days",
   "backlog",
 ];
 const COLUMN_LABELS = [
   "Done",
+  "In-progress",
   "Today",
   "This week",
-  "This month",
-  "This quarter",
+  "Next 30 days",
   "Backlog",
 ];
-const COLUMN_COUNTS = ["1", "2", "2", "1", "1", "4"];
+const COLUMN_COUNTS = ["1", "1", "2", "2", "1", "4"];
 
 const errors = [];
 const scenarios = [];
@@ -557,7 +557,7 @@ async function main() {
       JSON.stringify(standard.columns.map((column) => column.headerCount)) ===
         JSON.stringify(COLUMN_COUNTS) &&
       JSON.stringify(standard.columns.map((column) => column.cardCount)) ===
-        JSON.stringify([1, 2, 2, 1, 1, 4]) &&
+        JSON.stringify([1, 1, 2, 2, 1, 4]) &&
       standard.total === "11",
     `columns are ${JSON.stringify(
       standard.columns.map((column) => [column.id, column.label, column.headerCount, column.cardCount]),
@@ -754,7 +754,7 @@ async function main() {
 
   step("drag-across");
   const source = await beginDrag(win, "t-brief");
-  const monthTarget = await dropPoint(win, "this-month", "t-month");
+  const monthTarget = await dropPoint(win, "next-30-days", "t-month");
   await moveDrag(win, source, monthTarget);
   const inFlight = await sample(win, "drag-in-flight");
   try {
@@ -767,23 +767,23 @@ async function main() {
   const acrossCommands = await dropDrag(win, "t-brief", monthTarget);
   await waitFor(
     win,
-    `document.querySelector('[data-column="this-month"] [data-task-id="t-brief"]') !== null`,
-    "the dragged card to land in This month",
+    `document.querySelector('[data-column="next-30-days"] [data-task-id="t-brief"]') !== null`,
+    "the dragged card to land in Next 30 days",
   );
   const across = await sample(win, "drag-across");
   check(
     "drag-across",
     inFlight.dragGhost === true &&
-      inFlight.dropTargetColumn === "this-month" &&
+      inFlight.dropTargetColumn === "next-30-days" &&
       JSON.stringify(inFlight.draggingIds) === JSON.stringify(["t-brief"]) &&
       acrossCommands.length === 1 &&
       acrossCommands[0]?.type === "moveTask" &&
       acrossCommands[0]?.id === "t-brief" &&
-      acrossCommands[0]?.column === "this-month" &&
+      acrossCommands[0]?.column === "next-30-days" &&
       acrossCommands[0]?.beforeId === "t-month" &&
-      JSON.stringify(columnOf(across, "this-month")?.cards) ===
+      JSON.stringify(columnOf(across, "next-30-days")?.cards) ===
         JSON.stringify(["t-brief", "t-month"]) &&
-      columnOf(across, "this-month")?.headerCount === "2" &&
+      columnOf(across, "next-30-days")?.headerCount === "2" &&
       columnOf(across, "backlog")?.headerCount === "3",
     `flight ${JSON.stringify({
       ghost: inFlight.dragGhost,
@@ -791,7 +791,7 @@ async function main() {
       dragging: inFlight.draggingIds,
     })}; ` +
       `commands ${JSON.stringify(acrossCommands)}; ` +
-      `month ${JSON.stringify(columnOf(across, "this-month"))}; ` +
+      `month ${JSON.stringify(columnOf(across, "next-30-days"))}; ` +
       `backlog ${columnOf(across, "backlog")?.headerCount}`,
   );
 
@@ -853,19 +853,19 @@ async function main() {
   const beforeColumnAdd = await win.webContents.executeJavaScript(
     "window.taskBoardCommands.length",
   );
-  await clickSelector(win, '[data-column="this-month"] .task-column__add');
+  await clickSelector(win, '[data-column="next-30-days"] .task-column__add');
   await waitFor(
     win,
-    `document.querySelector('[data-column="this-month"] .task-composer input') !== null`,
-    "This month's composer to open",
+    `document.querySelector('[data-column="next-30-days"] .task-composer input') !== null`,
+    "the Next 30 days composer to open",
   );
-  await clickSelector(win, '[data-column="this-month"] .task-composer input');
+  await clickSelector(win, '[data-column="next-30-days"] .task-composer input');
   await win.webContents.insertText("Book the accountant");
-  await clickSelector(win, '[data-column="this-month"] .task-composer__add');
+  await clickSelector(win, '[data-column="next-30-days"] .task-composer__add');
   await waitFor(
     win,
-    `[...document.querySelectorAll('[data-column="this-month"] .task-card__title')].some((el) => el.textContent.trim() === "Book the accountant")`,
-    "the column-created card to appear in This month",
+    `[...document.querySelectorAll('[data-column="next-30-days"] .task-card__title')].some((el) => el.textContent.trim() === "Book the accountant")`,
+    "the column-created card to appear in Next 30 days",
   );
   const added = await sample(win, "column-add");
   const columnAddCommands = (
@@ -876,11 +876,11 @@ async function main() {
     columnAddCommands.length === 1 &&
       columnAddCommands[0]?.type === "createTask" &&
       columnAddCommands[0]?.title === "Book the accountant" &&
-      columnAddCommands[0]?.column === "this-month" &&
-      columnOf(added, "this-month")?.headerCount === "3" &&
+      columnAddCommands[0]?.column === "next-30-days" &&
+      columnOf(added, "next-30-days")?.headerCount === "3" &&
       columnOf(added, "backlog")?.headerCount === "3",
     `column add sent ${JSON.stringify(columnAddCommands)}; ` +
-      `month=${columnOf(added, "this-month")?.headerCount}, ` +
+      `month=${columnOf(added, "next-30-days")?.headerCount}, ` +
       `backlog=${columnOf(added, "backlog")?.headerCount}`,
   );
 
@@ -1099,8 +1099,8 @@ async function main() {
     pass: errors.length === 0,
     failures: errors,
     what:
-      "the Act page's task board: header before board, six titled and counted columns through This " +
-      "quarter and This month, cards that can be dragged across columns or reordered in place, columns " +
+      "the Act page's task board: header before board, six titled and counted columns through " +
+      "In-progress and Next 30 days, cards that can be dragged across columns or reordered in place, columns " +
       "that widen with the sheet up to the board's own ceiling, and a page without the Strategy badge " +
       "or Execution brief",
     skin,

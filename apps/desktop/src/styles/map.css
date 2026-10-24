@@ -817,11 +817,11 @@
   --task-column-dot: var(--text-soft);
 }
 
-.task-column[data-column="this-quarter"] {
+.task-column[data-column="in-progress"] {
   --task-column-dot: var(--map-purple);
 }
 
-.task-column[data-column="this-month"] {
+.task-column[data-column="next-30-days"] {
   --task-column-dot: var(--map-teal);
 }
 
@@ -862,8 +862,8 @@
   letter-spacing: -0.005em;
   line-height: 1.2;
   color: var(--fg);
-  /* Six columns on a standard sheet are narrow. "This quarter" wraps to two
-     lines rather than becoming "This q…", which is the label's information. */
+  /* Six columns on a standard sheet are narrow. "Next 30 days" wraps to two
+     lines rather than becoming "Next 3…", which is the label's information. */
   white-space: normal;
   overflow-wrap: break-word;
 }

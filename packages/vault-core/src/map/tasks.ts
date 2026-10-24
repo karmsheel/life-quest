@@ -11,10 +11,10 @@ import type {
 /** Every task column, in board order. The one list validation reads. */
 export const TASK_COLUMNS = [
   "done",
+  "in-progress",
   "today",
   "this-week",
-  "this-month",
-  "this-quarter",
+  "next-30-days",
   "backlog",
 ] as const satisfies readonly TaskColumn[];
 

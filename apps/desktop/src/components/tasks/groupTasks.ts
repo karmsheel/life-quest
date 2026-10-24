@@ -1,4 +1,4 @@
-import { TASK_COLUMNS } from "@lifequest/vault-core/map";
+import { isTaskColumn, TASK_COLUMNS } from "@lifequest/vault-core/map";
 import type { Task, TaskColumn } from "@lifequest/vault-core/map";
 
 /**
@@ -10,6 +10,11 @@ export function groupTasks(tasks: Task[]): Record<TaskColumn, Task[]> {
   const g = Object.fromEntries(
     TASK_COLUMNS.map((column) => [column, [] as Task[]]),
   ) as Record<TaskColumn, Task[]>;
-  for (const task of tasks) g[task.column].push(task);
+  for (const task of tasks) {
+    // The main process owns the migration of retired column ids; this guard
+    // keeps a renderer that reloads a beat earlier from dropping a card.
+    const column = isTaskColumn(task.column) ? task.column : "backlog";
+    g[column].push(task);
+  }
   return g;
 }

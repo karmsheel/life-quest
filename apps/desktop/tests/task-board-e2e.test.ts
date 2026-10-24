@@ -14,8 +14,8 @@ import { describe, it } from "node:test";
  *
  * The request this rig is about has five clauses, and each is measured:
  *
- *   the board is a modern Kanban — six columns through This quarter and This
- *   month, a card can be dragged across columns or reordered in place, a column
+ *   the board is a modern Kanban — six columns through In-progress and Next 30
+ *   days, a card can be dragged across columns or reordered in place, a column
  *   can add its own card, and a cancelled drag writes nothing;
  *
  *   "the design is not consistent with the rest of the app" — card and column
@@ -272,7 +272,7 @@ describe("Act task board e2e", () => {
       assert.equal(entry.columns.length, 6, `not six columns at ${entry.name}`);
       assert.deepEqual(
         entry.columns.map((column) => column.id),
-        ["done", "today", "this-week", "this-month", "this-quarter", "backlog"],
+        ["done", "in-progress", "today", "this-week", "next-30-days", "backlog"],
         `the column order moved at ${entry.name}`,
       );
       const widths = columnWidths(entry);

@@ -14,8 +14,8 @@
  * `taskBoardUnexpectedCalls` and answered `{ ok: false }`. Nothing here writes a
  * real vault.
  *
- * The fixture is deliberately uneven: four cards in Backlog, one in This
- * quarter, one in This month, two in This week, two in Today, one in Done, with
+ * The fixture is deliberately uneven: four cards in Backlog, one in Next
+ * 30 days, one in In-progress, two in This week, two in Today, one in Done, with
  * links (goal, project, date, week item), one dangling goal link, and notes long
  * enough to need the card's line clamp. A board of identical cards proves
  * nothing about the card's own hierarchy, and an empty horizon would not prove
@@ -93,14 +93,14 @@ const SEED_TASKS: Task[] = [
     id: "t-quarter",
     title: "Close out the Q4 vendor contracts",
     notes: "Renewals, seat counts, and the two clauses legal flagged.",
-    column: "this-quarter",
+    column: "in-progress",
     links: { goalId: "g-brief", projectId: "p-act" },
   },
   {
     id: "t-month",
     title: "Renew the domain and TLS certificates",
     notes: "",
-    column: "this-month",
+    column: "next-30-days",
     links: { date: "2026-10-30" },
   },
   {

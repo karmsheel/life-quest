@@ -35,22 +35,26 @@ type Props = {
 };
 
 /**
- * The board's columns, in reading order: finished work on the left, then the
- * horizons widening away from today, then the unscheduled backlog at the far
- * end.
+ * The board's columns, in reading order: finished and active work on the left,
+ * then the working horizons widening away from today, then the unscheduled
+ * backlog at the far end.
  *
  * The labels are also the drag announcements and the quick-add placeholders, so
  * they live beside the ids rather than in three places that could drift.
  */
 const COLUMNS: { id: TaskColumn; label: string; hint: string }[] = [
   { id: "done", label: "Done", hint: "Finished work" },
+  {
+    id: "in-progress",
+    label: "In-progress",
+    hint: "Work actively underway",
+  },
   { id: "today", label: "Today", hint: "Work for today" },
   { id: "this-week", label: "This week", hint: "Work to finish this week" },
-  { id: "this-month", label: "This month", hint: "Work to finish this month" },
   {
-    id: "this-quarter",
-    label: "This quarter",
-    hint: "Work to finish this quarter",
+    id: "next-30-days",
+    label: "Next 30 days",
+    hint: "Rolling 30-day horizon",
   },
   { id: "backlog", label: "Backlog", hint: "Unscheduled work" },
 ];
