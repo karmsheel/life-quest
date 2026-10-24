@@ -96,6 +96,16 @@ const SAMPLE = `(() => {
   const mainBox = box(main);
   const dockBox = box(dock);
 
+  // The rail's column in pixels. The token is a rem value — reading it off the
+  // root returns the string "4.25rem", not a width — so measuring it through a
+  // probe is what lets an inset assertion compare geometry to geometry.
+  const navProbe = document.createElement("div");
+  navProbe.style.cssText =
+    "position:absolute;left:-9999px;top:0;height:0;width:var(--shell-nav-width)";
+  document.body.appendChild(navProbe);
+  const navWidth = navProbe.offsetWidth;
+  navProbe.remove();
+
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
     doc: {
@@ -107,9 +117,10 @@ const SAMPLE = `(() => {
         .getPropertyValue("--chatbar-width")
         .trim(),
       frame: num(getComputedStyle(document.documentElement).getPropertyValue("--shell-frame")),
-      navWidth: num(
-        getComputedStyle(document.documentElement).getPropertyValue("--shell-nav-width")
-      )
+      navWidth,
+      // The launcher's one-rem inset, so a side assertion compares two measured
+      // numbers instead of hard-coding the root type size in the rig.
+      rootFontSize: parseFloat(getComputedStyle(document.documentElement).fontSize)
     },
     shell: shell
       ? {
@@ -799,14 +810,18 @@ async function main() {
       `inline --chatbar-width ${JSON.stringify(collapsed.shell.inlineChatbarWidth)} vs ${swapFloor.dockTrack}px`,
     );
     check(
-      "collapsed: the agent is one floating mark at the bottom right",
+      "collapsed: the agent is one floating mark at the dock's own bottom-left",
       Boolean(collapsed.launcher) &&
         collapsed.launcher.position === "fixed" &&
         collapsed.launcher.mark === true &&
         collapsed.launcher.label === "Open Hermes chat" &&
-        collapsed.launcher.box.left > collapsed.viewport.width / 2 &&
-        collapsed.launcher.box.top > collapsed.viewport.height / 2,
-      `launcher ${JSON.stringify(collapsed.launcher)}`,
+        collapsed.launcher.box.left < collapsed.viewport.width / 2 &&
+        collapsed.launcher.box.top > collapsed.viewport.height / 2 &&
+        // The swapped dock led against the rail, so its mark keeps that inset on
+        // the leading side rather than staying on the trailing corner.
+        collapsed.launcher.box.left ===
+          collapsed.tokens.navWidth + collapsed.tokens.rootFontSize,
+      `launcher ${JSON.stringify(collapsed.launcher)} in ${JSON.stringify(collapsed.viewport)}, rail ${collapsed.tokens.navWidth}px`,
     );
     screenshots.push(await shot("chat-divider-collapsed.png"));
 

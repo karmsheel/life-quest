@@ -32,7 +32,11 @@
  *     the column its side asks for, with the sheet flush to the window.
  * 13. The swap fights the collapsed rail — with no rail the dock takes the
  *     window's leading edge and the sheet still reaches the trailing one.
- * 14. Bridge stubs masking real calls — anything the shell reaches for that is
+ * 14. The collapsed mark stays on the trailing corner — swapping the dock's side
+ *     (even while it is collapsed, where the mark is the only control on screen)
+ *     or collapsing the rail has to carry the floating launcher with it, or it
+ *     points at a corner the dock no longer holds.
+ * 15. Bridge stubs masking real calls — anything the shell reaches for that is
  *     not named here must not throw.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server

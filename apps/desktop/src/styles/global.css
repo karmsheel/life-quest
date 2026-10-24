@@ -4892,9 +4892,11 @@ a.home-mini-list__link:hover {
 }
 
 /* The collapsed dock, as one floating mark instead of a vertical strip: the
-   agent's own art in the bottom-right corner of the window, over the sheet it
-   gave its column back to. The circle is the whole control; the mask is the Nous
-   girl.
+   agent's own art in the window's bottom corner on the side the dock stands on —
+   beside the sheet's trailing edge when the dock trails, beside the rail when it
+   leads — over the sheet it gave its column back to. The mark follows the dock
+   because the dock's side is what the shell announces, not a corner of its own.
+   The circle is the whole control; the mask is the Nous girl.
 
    The colours are a pair per theme. Day mode wears the page's paper
    as its resting fill and the accent as a visible hairline around it, so the
@@ -4930,6 +4932,17 @@ a.home-mini-list__link:hover {
     background-color var(--dur-quick) var(--ease-out),
     transform var(--dur-quick) var(--ease-out),
     box-shadow var(--dur-quick) var(--ease-out);
+}
+
+/* Swapped, the mark moves with the dock it opens: the same inset on the other
+   edge, measured from the column the collapsed dock vacated. That column starts
+   at the rail's trailing edge — and at zero once the rail is collapsed, which is
+   why the token carries it rather than a constant here — so the mark sits on the
+   page beside the rail instead of over the rail's own controls. `right` has to be
+   cleared, or the two insets would stretch the circle across the window. */
+.shell--chat-left > .chat-launcher {
+  right: auto;
+  left: calc(var(--nav-column) + 1rem);
 }
 
 [data-theme="dark"] .chat-launcher {

@@ -8,9 +8,9 @@
  *
  * Exit code 0 = every invariant held. The JSON report is the repeatable
  * artifact: same command, same geometry, no eyeballing the app required. It
- * carries both arrangements — dock right and dock left — plus the two
- * compositions the swap has to survive (a collapsed dock, a collapsed rail) and
- * the round trip back to where it started.
+ * carries both arrangements — dock right and dock left — plus the compositions
+ * the swap has to survive (a collapsed dock on either side, a collapsed rail, and
+ * both at once) and the round trip back to where it started.
  *
  * NOT covered here: whether Windows lets the click through the titlebar's drag
  * band. Synthetic DOM clicks bypass the OS hit test, so the `-webkit-app-region:
@@ -742,9 +742,11 @@ async function main() {
     );
 
     // 3 — collapsed, the dock leaves the grid entirely: no strip at the window's
-    // edge, one floating mark in the bottom-right corner, and the sheet takes the
-    // column and the seam back. The launcher is the way in; the titlebar control
-    // is still the second one.
+    // edge, one floating mark in the corner its side asks for, and the sheet takes
+    // the column and the seam back. With the dock on the leading side the mark is
+    // at the window's bottom left, on the page beside the rail — the rail keeps
+    // the corner itself, so the inset is measured from its trailing edge. The
+    // launcher is the way in; the titlebar control is still the second one.
     at("collapsed dock");
     await click(".window-titlebar__chat-toggle");
     const dockCollapsed = await settled();
@@ -772,13 +774,15 @@ async function main() {
       `sheet borders left ${dockCollapsed.main.border.left}, right ${dockCollapsed.main.border.right}`,
     );
     check(
-      "left/collapsed dock: the agent floats at the bottom right",
+      "left/collapsed dock: the agent floats at the bottom left, beside the rail",
       Boolean(dockCollapsed.launcher) &&
         dockCollapsed.launcher.position === "fixed" &&
-        dockCollapsed.launcher.box.left > dockCollapsed.viewport.width / 2 &&
+        dockCollapsed.launcher.box.left < dockCollapsed.viewport.width / 2 &&
         dockCollapsed.launcher.box.top > dockCollapsed.viewport.height / 2 &&
-        dockCollapsed.viewport.width - dockCollapsed.launcher.box.right ===
-          dockCollapsed.tokens.frame + dockCollapsed.tokens.rootFontSize &&
+        // The dock's vacated column starts at the rail's trailing edge, and the
+        // mark wears the same one-rem inset the trailing arrangement wears.
+        dockCollapsed.launcher.box.left ===
+          dockCollapsed.tokens.track + dockCollapsed.tokens.rootFontSize &&
         dockCollapsed.viewport.height - dockCollapsed.launcher.box.bottom ===
           dockCollapsed.tokens.frame + dockCollapsed.tokens.rootFontSize,
       `launcher ${JSON.stringify(dockCollapsed.launcher)} in ${JSON.stringify(dockCollapsed.viewport)}`,
@@ -899,6 +903,37 @@ async function main() {
       `dock width ${railCollapsed.chat.box.width}px vs ${railCollapsed.tokens.chatTrack}px`,
     );
 
+    // 4b — both gone: the mark still follows the dock's column, and that column
+    // now starts at the window's own leading edge. This is the case a constant
+    // inset would get wrong: the rail's width has left the sum.
+    at("collapsed rail and dock");
+    await click(".window-titlebar__chat-toggle");
+    const railAndDockCollapsed = await settled();
+    const bothCollapsedShot = await shot("chat-side-collapsed-both.png");
+    check(
+      "left/collapsed rail + dock: the mark takes the window's leading edge",
+      Boolean(railAndDockCollapsed.launcher) &&
+        railAndDockCollapsed.launcher.box.left ===
+          railAndDockCollapsed.tokens.rootFontSize &&
+        railAndDockCollapsed.launcher.box.top >
+          railAndDockCollapsed.viewport.height / 2 &&
+        railAndDockCollapsed.viewport.height -
+          railAndDockCollapsed.launcher.box.bottom ===
+          railAndDockCollapsed.tokens.frame +
+            railAndDockCollapsed.tokens.rootFontSize,
+      `launcher ${JSON.stringify(railAndDockCollapsed.launcher)} with the rail ${JSON.stringify(railAndDockCollapsed.rail)}`,
+    );
+    at("reopened dock under a collapsed rail");
+    await click(".chat-launcher");
+    const dockBackUnderCollapsedRail = await settled();
+    check(
+      "reopening under a collapsed rail lands back on the leading geometry",
+      same(dockBackUnderCollapsedRail.chat.box, railCollapsed.chat.box) &&
+        same(dockBackUnderCollapsedRail.main.box, railCollapsed.main.box) &&
+        dockBackUnderCollapsedRail.launcher === null,
+      `dock ${JSON.stringify(dockBackUnderCollapsedRail.chat.box)} vs ${JSON.stringify(railCollapsed.chat.box)}, sheet ${JSON.stringify(dockBackUnderCollapsedRail.main.box)} vs ${JSON.stringify(railCollapsed.main.box)}`,
+    );
+
     at("restored rail");
     await click(".window-titlebar__nav-toggle");
     const railRestored = await settled();
@@ -994,6 +1029,52 @@ async function main() {
         isZero(barCollapsed.main.border.right),
       `sheet ${JSON.stringify(barCollapsed.main.box)} in ${barCollapsed.viewport.width}px, borders ${barCollapsed.main.border.left}/${barCollapsed.main.border.right}`,
     );
+    check(
+      "bottom bar collapse: the mark keeps the trailing corner for a trailing dock",
+      Boolean(barCollapsed.launcher) &&
+        barCollapsed.launcher.box.left > barCollapsed.viewport.width / 2 &&
+        barCollapsed.launcher.box.top > barCollapsed.viewport.height / 2 &&
+        barCollapsed.viewport.width - barCollapsed.launcher.box.right ===
+          barCollapsed.tokens.frame + barCollapsed.tokens.rootFontSize &&
+        barCollapsed.viewport.height - barCollapsed.launcher.box.bottom ===
+          barCollapsed.tokens.frame + barCollapsed.tokens.rootFontSize,
+      `launcher ${JSON.stringify(barCollapsed.launcher)} in ${JSON.stringify(barCollapsed.viewport)}`,
+    );
+
+    // 6b — the reported gesture: the side is swapped while the dock is already
+    // collapsed. There is no dock to watch, so the mark is the only thing on
+    // screen that can say which side the chat is on; it has to move with it, and
+    // move back, without the dock being reopened in between.
+    at("swapped side while collapsed");
+    await click(".window-titlebar__side-switch");
+    const collapsedSwapped = await settled();
+    const collapsedSwappedShot = await shot("chat-side-collapsed-swapped.png");
+    check(
+      "collapsed swap: the mark follows the dock to the leading edge",
+      Boolean(collapsedSwapped.launcher) &&
+        collapsedSwapped.launcher.position === "fixed" &&
+        collapsedSwapped.launcher.box.left ===
+          collapsedSwapped.tokens.track + collapsedSwapped.tokens.rootFontSize &&
+        collapsedSwapped.launcher.box.top >
+          collapsedSwapped.viewport.height / 2,
+      `launcher ${JSON.stringify(collapsedSwapped.launcher)} with ${JSON.stringify(collapsedSwapped.shell?.className)}`,
+    );
+    check(
+      "collapsed swap: the dock is on the leading side and still collapsed",
+      collapsedSwapped.chat === null &&
+        collapsedSwapped.shell?.className?.includes("shell--chat-left") === true,
+      `dock ${JSON.stringify(collapsedSwapped.chat)}, shell ${JSON.stringify(collapsedSwapped.shell?.className)}`,
+    );
+    at("swapped back while collapsed");
+    await click(".window-titlebar__side-switch");
+    const collapsedSwappedBack = await settled();
+    check(
+      "collapsed swap back: the mark returns to the trailing corner",
+      Boolean(collapsedSwappedBack.launcher) &&
+        same(collapsedSwappedBack.launcher.box, barCollapsed.launcher.box) &&
+        collapsedSwappedBack.chat === null,
+      `launcher ${JSON.stringify(collapsedSwappedBack.launcher?.box)} vs ${JSON.stringify(barCollapsed.launcher.box)}`,
+    );
 
     at("bottom bar reopen");
     await click(".chat-launcher");
@@ -1021,9 +1102,13 @@ async function main() {
       dockCollapsedDarkAgain,
       railCollapsed,
       dockReopened,
+      railAndDockCollapsed,
+      dockBackUnderCollapsedRail,
       railRestored,
       restored,
       barCollapsed,
+      collapsedSwapped,
+      collapsedSwappedBack,
       barReopened,
       screenshots: [
         rightShot,
@@ -1033,8 +1118,10 @@ async function main() {
         collapsedShot,
         hoverShot,
         lightShot,
+        bothCollapsedShot,
         restoredShot,
         barCollapsedShot,
+        collapsedSwappedShot,
       ],
       failures,
       pass: failures.length === 0,
