@@ -41,6 +41,8 @@ export {
   PROJECT_TOOL_DEFS,
 } from "./projects.ts";
 export { applyGoalCommand, applyGoalsCommand, loadGoals } from "./goals.ts";
+export * from "./automations.ts";
+export * from "./automation-core.ts";
 export { formatGoalPace, goalPace } from "./goal-progress.ts";
 export type { GoalPace } from "./goal-progress.ts";
 

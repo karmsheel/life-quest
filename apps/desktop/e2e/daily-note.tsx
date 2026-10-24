@@ -62,6 +62,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import type { DailyNote, DailyNoteIndexEntry, VaultSnapshot } from "@lifequest/vault-core";
+import { DEFAULT_ANALYZE_AUTOMATION } from "@lifequest/vault-core/pure";
 import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import DailyNotePage from "@/pages/DailyNotePage";
@@ -256,6 +257,7 @@ const bridge: Record<string, unknown> = {
     isMaximized: () => Promise.resolve(false),
     onMaximizeChange: () => () => {},
   },
+  automationList: () => ok([DEFAULT_ANALYZE_AUTOMATION]),
   dailyNoteGet: (date: string) => {
     harness.dailyNoteCalls?.push(`dailyNoteGet:${date}`);
     harness.dailyNoteGets?.push(date);

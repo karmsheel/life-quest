@@ -71,7 +71,18 @@ type ChatDockContextValue = {
   setWidth: (px: number) => void;
   requestedSessionId: string | null;
   requestedKickoff: string | null;
-  requestSession: (id: string, kickoff?: string) => void;
+  /**
+   * The page material an automation hands its new chat, if this request came
+   * from one. It rides the session request rather than a composer field: it is
+   * the page's own content, not something the operator types, and it belongs to
+   * the first send of that chat.
+   */
+  requestedAutomationContext: string | null;
+  requestSession: (
+    id: string,
+    kickoff?: string,
+    automationContext?: string,
+  ) => void;
   clearRequestedSession: () => void;
   /**
    * The card this chat is about, or null. It is the dock's live state like the
@@ -120,6 +131,9 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
     null,
   );
   const [requestedKickoff, setRequestedKickoff] = useState<string | null>(null);
+  const [requestedAutomationContext, setRequestedAutomationContext] = useState<
+    string | null
+  >(null);
   const [contextCard, setContextCard] = useState<ChatCardContext | null>(null);
   const [livePinId, setLivePinId] = useState<string | null>(null);
   const { pathname } = useLocation();
@@ -131,14 +145,21 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
     setPageContextOn(true);
   }, [pathname]);
 
-  const requestSession = useCallback((id: string, kickoff?: string) => {
-    setRequestedSessionId(id);
-    setRequestedKickoff(kickoff?.trim() ? kickoff : null);
-  }, []);
+  const requestSession = useCallback(
+    (id: string, kickoff?: string, automationContext?: string) => {
+      setRequestedSessionId(id);
+      setRequestedKickoff(kickoff?.trim() ? kickoff : null);
+      setRequestedAutomationContext(
+        automationContext?.trim() ? automationContext : null,
+      );
+    },
+    [],
+  );
 
   const clearRequestedSession = useCallback(() => {
     setRequestedSessionId(null);
     setRequestedKickoff(null);
+    setRequestedAutomationContext(null);
   }, []);
 
   const swapSide = useCallback(() => {
@@ -159,6 +180,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       setWidth,
       requestedSessionId,
       requestedKickoff,
+      requestedAutomationContext,
       requestSession,
       clearRequestedSession,
       contextCard,
@@ -176,6 +198,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       width,
       requestedSessionId,
       requestedKickoff,
+      requestedAutomationContext,
       requestSession,
       clearRequestedSession,
       contextCard,

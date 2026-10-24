@@ -85,6 +85,22 @@
   color: var(--fg);
 }
 
+/* The page's actions that are not navigation: the manual automations this day
+   owns, under the pager on the box's own column. Each is a button of the page's
+   own square step, like every other control here. */
+.daily-note__automations {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.daily-note__analyze {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 /* The box and the strip are one workspace: a column while the page is narrow,
    two columns once it is wide enough to hold them side by side. */
 .daily-note__workspace {

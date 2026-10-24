@@ -17,11 +17,11 @@
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
- *  1. The rail carries Daily Note *directly under Decisions*, in the top group,
- *     with an icon, a label and an href of `#/notes`, and it is the active link
- *     on this route. Reading the rail's own DOM order is what makes "under
- *     Decisions" a fact rather than an intention: move the entry in
- *     `NAV_ITEMS` and the array this rig reads changes.
+ *  1. The rail carries Daily Note *directly under Decisions*, in the governed
+ *     shelf at the foot of the rail, with an icon, a label and an href of
+ *     `#/notes`, and it is the active link on this route. Reading the rail's own
+ *     DOM order is what makes "under Decisions" a fact rather than an intention:
+ *     move the entry in `NAV_ITEMS` and the array this rig reads changes.
  *  2. The note is ONE box. The page draws exactly one editor, no split grid and
  *     no preview pane, and at most one paragraph is open as markdown at a time.
  *     Counting the page's own `.note-live` / `.doc-editor__split` /
@@ -138,9 +138,12 @@ const SAMPLE = `(() => {
       background: style.backgroundColor,
     };
   };
-  const topGroup = document.querySelectorAll(".nav-rail__section")[0] ?? null;
-  const links = topGroup
-    ? Array.from(topGroup.querySelectorAll(".nav-rail__link")).map((el) => ({
+  // The governed shelf: Life-Chain, Decisions, Daily Note, Automations. It is
+  // the group with its own divider above it, at the foot of the rail, not the
+  // wing's list above.
+  const governed = document.querySelector('[data-nav-group="governance"]');
+  const links = governed
+    ? Array.from(governed.querySelectorAll(".nav-rail__link")).map((el) => ({
         label: (el.textContent || "").trim(),
         href: el.getAttribute("href"),
         icon: Boolean(el.querySelector("svg")),
@@ -722,14 +725,17 @@ async function main() {
     failure(`the harness did not paint in the app's skin: ${JSON.stringify(checks.skin)}`);
   }
 
-  // ── 1. the rail: Daily Note, directly under Decisions ─────────────────────
+  // ── 1. the rail: Daily Note, directly under Decisions on the shelf ────────
   const landing = await sample(win);
   checks.rail = landing.links;
   const labels = landing.links.map((entry) => entry.label);
-  if (labels[labels.length - 1] !== "Daily Note") {
-    failure(`the top group does not end with Daily Note: ${JSON.stringify(labels)}`);
+  if (labels[labels.length - 1] !== "Automations") {
+    failure(`the governed shelf does not end with Automations: ${JSON.stringify(labels)}`);
   }
-  if (labels[labels.length - 2] !== "Decisions") {
+  if (labels[labels.length - 2] !== "Daily Note") {
+    failure(`Automations is not directly under Daily Note: ${JSON.stringify(labels)}`);
+  }
+  if (labels[labels.length - 3] !== "Decisions") {
     failure(`Daily Note is not directly under Decisions: ${JSON.stringify(labels)}`);
   }
   const noteLink = landing.links.find((entry) => entry.label === "Daily Note");
@@ -746,6 +752,18 @@ async function main() {
   }
   const decisionsLink = landing.links.find((entry) => entry.label === "Decisions");
   if (decisionsLink && !decisionsLink.icon) failure("the Decisions entry lost its icon");
+  const automationsLink = landing.links.find((entry) => entry.label === "Automations");
+  if (!automationsLink) {
+    failure("the rail carries no Automations entry at all");
+  } else {
+    if (!(automationsLink.href ?? "").endsWith("/automations")) {
+      failure(
+        `the Automations entry points at ${JSON.stringify(automationsLink.href)}, expected the automations route`,
+      );
+    }
+    if (!automationsLink.icon) failure("the Automations entry drew no icon");
+    if (automationsLink.active) failure("Automations is marked active on the Daily Note route");
+  }
 
   // ── 2. the page lands on today, in ONE box, empty, and writes nothing ────
   checks.landing = landing;

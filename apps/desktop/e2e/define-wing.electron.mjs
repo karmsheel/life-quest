@@ -59,7 +59,6 @@ const VISION_CARD = "Vision & Desire";
 const SAMPLE = `(() => {
   const text = (el) => (el && el.textContent ? el.textContent.trim() : null);
   const page = document.querySelector("[data-page-context-root]");
-  const sections = Array.from(document.querySelectorAll(".nav-rail > .nav-rail__section"));
   const links = (root) =>
     Array.from((root ?? document).querySelectorAll(".nav-rail__link")).map((a) => ({
       label: text(a.querySelector(".nav-rail__label")),
@@ -104,9 +103,9 @@ const SAMPLE = `(() => {
     route: window.defineWingRoute ?? null,
     tabs,
     activeTab: (tabs.find((t) => t.selected) ?? {}).label ?? null,
-    rail: links(sections[1] ?? null),
-    pinned: links(sections[0] ?? null),
-    pinnedBottom: links(document.querySelector(".nav-rail__section--bottom")),
+    rail: links(document.querySelector('[data-nav-group="wing"]')),
+    pinned: links(document.querySelector('[data-nav-group="governance"]')),
+    pinnedBottom: links(document.querySelector('[data-nav-group="footer"]')),
     pageHeading: text(page && page.querySelector("h1")),
     pageRootClass: page && page.firstElementChild ? page.firstElementChild.className : null,
     groups,
@@ -270,10 +269,14 @@ async function main() {
       `href ${home.rail.find((l) => l.label === "Documents")?.href}`,
     );
     check(
-      "the pinned rows are untouched",
-      same(home.pinned.map((l) => l.label), ["Life-Chain", "Decisions", "Daily Note"]) &&
-        same(home.pinnedBottom.map((l) => l.label), ["Log"]),
-      `pinned ${JSON.stringify(home.pinned.map((l) => l.label))} bottom ${JSON.stringify(home.pinnedBottom.map((l) => l.label))}`,
+      "the governed shelf and the Log are untouched",
+      same(home.pinned.map((l) => l.label), [
+        "Life-Chain",
+        "Decisions",
+        "Daily Note",
+        "Automations",
+      ]) && same(home.pinnedBottom.map((l) => l.label), ["Log"]),
+      `shelf ${JSON.stringify(home.pinned.map((l) => l.label))} footer ${JSON.stringify(home.pinnedBottom.map((l) => l.label))}`,
     );
     screenshots.push(await shoot("home"));
 

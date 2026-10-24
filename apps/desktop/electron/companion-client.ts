@@ -24,6 +24,12 @@ export type CompanionInstructionsInput = {
    */
   pageContext?: PageContextInput | null;
   reviewContext?: string;
+  /**
+   * The page material an automation fed into this chat, already fenced and
+   * named as the operator's own data by the page that ran it. Absent on every
+   * ordinary turn, and on every chat no automation opened.
+   */
+  automationContext?: string;
   /** Session pref: may this turn file an implied Decision? Omitted means on. */
   fileUnsolicited?: boolean;
   /**
@@ -665,9 +671,16 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     pageContext,
     ...fenceRule,
   ].filter(Boolean).join("\n");
-  const reviewContext = input.reviewContext?.trim();
-  if (!reviewContext) return base;
-  return `${base}\n\n${reviewContext}`;
+  // The page material an automation opened this chat with. It is appended the
+  // same way a review's own context is: after the standing instructions, so the
+  // operator's note is read as the subject of the turn rather than as another
+  // rule about the app.
+  const automationContext = input.automationContext?.trim();
+  const extraContext = [input.reviewContext?.trim(), automationContext]
+    .filter(Boolean)
+    .join("\n\n");
+  if (!extraContext) return base;
+  return `${base}\n\n${extraContext}`;
 }
 
 /**

@@ -11,6 +11,7 @@ import { SplashGate } from "@/components/shell/SplashGate";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import { DoctrineEditorPage } from "@/components/doctrine/DoctrineEditorPage";
 import ActPage from "@/pages/ActPage";
+import AutomationsPage from "@/pages/AutomationsPage";
 import DailyNotePage from "@/pages/DailyNotePage";
 import DailySchedulePage from "@/pages/DailySchedulePage";
 import ArchitecturePage from "@/pages/ArchitecturePage";
@@ -37,6 +38,7 @@ import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
 import { useSheetBackground } from "@/components/shell/useSheetBackground";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
+import { AutomationScheduler } from "@/state/AutomationScheduler";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
 import { LiveDataProvider } from "@/state/LiveDataProvider";
@@ -118,6 +120,7 @@ function AppRoutes() {
           />
           <Route path="/act" element={<ActPage />} />
           <Route path="/notes" element={<DailyNotePage />} />
+          <Route path="/automations" element={<AutomationsPage />} />
           <Route path="/daily" element={<DailySchedulePage />} />
           <Route path="/review/:cadence" element={<ReviewPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
@@ -157,6 +160,7 @@ export default function App() {
                   function of the vault and the clock, and this is the one place
                   both are watched for the whole app. */}
               <LiveDataProvider>
+                <AutomationScheduler />
                 <SplashGate />
                 <ChatDockProvider>
                   <NavDockProvider>

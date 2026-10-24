@@ -26,6 +26,9 @@ import type {
   LifeEvent,
   MapCommand,
   MapStoreState,
+  AutomationInput,
+  AutomationRecord,
+  AutomationRunPatch,
   PageBlock,
   PageListEntry,
   PageRecord,
@@ -148,6 +151,8 @@ type CompanionInstructionsContext = {
   locked: boolean;
   vaultOpen: boolean;
   reviewContext?: string;
+  /** The page material an automation opened this chat with, already fenced. */
+  automationContext?: string;
   fileUnsolicited?: boolean;
 };
 
@@ -407,6 +412,17 @@ type LifequestApi = {
   mapGetState: () => Promise<Result<MapStoreState>>;
   mapApply: (command: MapCommand) => Promise<Result<VaultSnapshot>>;
   goalsApply: (command: GoalsCommand) => Promise<Result<VaultSnapshot>>;
+  automationList: () => Promise<Result<AutomationRecord[]>>;
+  automationCreate: (input: AutomationInput) => Promise<Result<AutomationRecord[]>>;
+  automationUpdate: (
+    id: string,
+    input: AutomationInput,
+  ) => Promise<Result<AutomationRecord[]>>;
+  automationDelete: (id: string) => Promise<Result<AutomationRecord[]>>;
+  automationMarkRun: (
+    id: string,
+    patch: AutomationRunPatch,
+  ) => Promise<Result<AutomationRecord[]>>;
   reviewGet: (
     cadence: ReviewCadence,
     period: string,

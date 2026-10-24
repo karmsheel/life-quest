@@ -7,10 +7,19 @@ import {
   shiftLocalIsoDate,
   type IsoWeek,
 } from "@lifequest/vault-core/pure";
+import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
+import {
+  automationContextFor,
+  dailyNoteAutomationTestId,
+  renderAutomationPrompt,
+  type AutomationRecord,
+} from "@/lib/automations";
 import { asHeld, sameNote } from "@/lib/note-body";
 import { api } from "@/lib/ipc";
+import { useChatDock } from "@/state/ChatDockProvider";
+import { useAutomations } from "@/state/useAutomations";
 import { useVault } from "@/state/VaultProvider";
 import type { DailyNoteIndexEntry } from "@lifequest/vault-core";
 
@@ -151,6 +160,8 @@ function weekTitle(week: IsoWeek): string {
  */
 export default function DailyNotePage() {
   const { snapshot } = useVault();
+  const chatDock = useChatDock();
+  const { automations } = useAutomations();
   const today = periodTodayLocalIso();
 
   const [date, setDate] = useState(today);
@@ -161,6 +172,8 @@ export default function DailyNotePage() {
   /** The day whose body is in `draft`; null while a day is still on its way in. */
   const [loadedDate, setLoadedDate] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  /** The manual automation whose chat is being opened. */
+  const [runningId, setRunningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** The last body the vault refused, so the page stops asking by itself. */
   const [refused, setRefused] = useState<{ date: string; body: string } | null>(null);
@@ -385,6 +398,67 @@ export default function DailyNotePage() {
         ? "Saved"
         : "No note for this day yet";
 
+  /** The manual automations this page owns a button for. */
+  const manualAutomations = useMemo(
+    () =>
+      (automations ?? []).filter(
+        (automation) =>
+          automation.enabled &&
+          automation.trigger.type === "manual" &&
+          automation.host === "daily-note",
+      ),
+    [automations],
+  );
+
+  /**
+   * Run one of the day's automations.
+   *
+   * The note is written first: the chat's context is the note the vault holds,
+   * not a draft the operator may never save. A write that failed or was refused
+   * stops the run — the agent should never be asked to break down prose nobody
+   * can vouch for. The chat is new every time: the automation is a fresh read of
+   * the day, not a thread the operator has to keep clear.
+   */
+  const onRunAutomation = useCallback(
+    async (automation: AutomationRecord) => {
+      if (runningId) return;
+      setRunningId(automation.id);
+      setError(null);
+      try {
+        if ((await flush()) !== "saved") return;
+        const read = await api().dailyNoteGet(date);
+        const body = asHeld(read.ok ? read.value.bodyMarkdown : draft);
+        if (!body.trim()) {
+          setError("Write something in the note before running an automation.");
+          return;
+        }
+        const created = await api().companionSessionCreate(
+          `${automation.name} · ${label}`,
+        );
+        if (!created.ok) {
+          setError(created.error);
+          return;
+        }
+        chatDock.requestSession(
+          created.value.id,
+          renderAutomationPrompt(automation.prompt, { date, dateLabel: label }),
+          automationContextFor(automation, { date, dateLabel: label, body }),
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setRunningId(null);
+      }
+    },
+    [chatDock, date, draft, flush, label, runningId],
+  );
+
+  const canRunAutomation =
+    !loading &&
+    loadedDate === date &&
+    runningId === null &&
+    draft.trim().length > 0;
+
   // The journal's own strip: days up to today, newest first. A file dated in the
   // future is on disk but is not offered — a note is written, not scheduled —
   // and a file that names no usable day is shown as unreadable, not as a link.
@@ -528,6 +602,27 @@ export default function DailyNotePage() {
               Next day ›
             </Button>
           </div>
+          {manualAutomations.length > 0 ? (
+            <div className="daily-note__automations">
+              {manualAutomations.map((automation) => (
+                <Button
+                  key={automation.id}
+                  variant="outline"
+                  className="daily-note__analyze"
+                  data-testid={dailyNoteAutomationTestId(automation.id)}
+                  onClick={() => void onRunAutomation(automation)}
+                  disabled={!canRunAutomation}
+                  title={
+                    automation.description ||
+                    "Open a new chat with this note in context"
+                  }
+                >
+                  <Sparkles size={14} aria-hidden />
+                  {runningId === automation.id ? "Opening chat…" : automation.name}
+                </Button>
+              ))}
+            </div>
+          ) : null}
         </header>
 
         {error ? (

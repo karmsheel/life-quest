@@ -22,6 +22,7 @@ import {
   Target,
   Telescope,
   Users,
+  WandSparkles,
   Zap,
 } from "lucide-react";
 import type { WingId } from "./wing.ts";
@@ -33,10 +34,18 @@ export type NavItem = {
   icon: LucideIcon;
   section?: "main" | "governance";
   wing?: WingId;
-  pin?: "top" | "bottom";
+  /**
+   * Where the row sits on the rail.
+   *
+   * `bottom` is the governed shelf: Life-Chain, Decisions, Daily Note and
+   * Automations, cordoned above the Log. `footer` is the Log itself — the one
+   * row that closes the rail — so the shelf can carry a divider above it without
+   * counting the Log as one of its entries.
+   */
+  pin?: "top" | "bottom" | "footer";
 };
 
-/** Top: Life-Chain, Decisions, Daily Note. Home: Dashboard, Data, Pages, Documents, Personnel. Define: Dream, Vision, Ideal State. Plan: Goals, Projects, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom: Log. */
+/** Home: Dashboard, Data, Pages, Documents, Personnel. Define: Dream, Vision, Ideal State. Plan: Goals, Projects, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom shelf: Life-Chain, Decisions, Daily Note, Automations. Footer: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -44,7 +53,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Life-Chain",
     icon: Radio,
     section: "main",
-    pin: "top",
+    pin: "bottom",
   },
   {
     id: "decisions",
@@ -52,7 +61,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Decisions",
     icon: ClipboardList,
     section: "governance",
-    pin: "top",
+    pin: "bottom",
   },
   {
     // Directly under Decisions: the day's own page, and the journal a review
@@ -62,7 +71,18 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Daily Note",
     icon: NotebookPen,
     section: "governance",
-    pin: "top",
+    pin: "bottom",
+  },
+  {
+    // Directly under Daily Note: the shelf of one-click jobs that read a page
+    // and open a chat with the agent. The Daily Note's "Analyze note" is the
+    // first of them.
+    id: "automations",
+    href: "/automations",
+    label: "Automations",
+    icon: WandSparkles,
+    section: "governance",
+    pin: "bottom",
   },
   {
     id: "dashboard",
@@ -224,6 +244,6 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Log",
     icon: ScrollText,
     section: "governance",
-    pin: "bottom",
+    pin: "footer",
   },
 ];
