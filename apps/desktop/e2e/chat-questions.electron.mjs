@@ -72,6 +72,10 @@ const SAMPLE = `(() => {
     }));
   const panel = document.querySelector(".chat-panel");
   const composer = document.querySelector(".chat-panel__composer-input");
+  const emptyQuestionsBlock = document.querySelector('[data-testid="chat-empty-questions"]');
+  const emptyQuestionsLink = emptyQuestionsBlock
+    ? emptyQuestionsBlock.querySelector('[data-testid="chat-empty-questions-link"]')
+    : null;
   return {
     route: document.body.dataset.rigRoute || null,
     settingsView:
@@ -101,6 +105,19 @@ const SAMPLE = `(() => {
       text: text(m.querySelector(".chat-panel__message-content")),
     })),
     emptyTitle: text(document.querySelector(".chat-panel__empty-title")) || null,
+    emptyQuestions: emptyQuestionsBlock
+      ? {
+          title: text(emptyQuestionsBlock.querySelector(".chat-panel__empty-questions-title")),
+          copy: text(emptyQuestionsBlock.querySelector(".chat-panel__empty-copy")),
+          linkText: text(emptyQuestionsLink),
+          linkHref: emptyQuestionsLink
+            ? emptyQuestionsLink.getAttribute("href")
+            : null,
+        }
+      : null,
+    companionStatusLinks: Array.from(document.querySelectorAll(".chat-panel a")).filter(
+      (link) => text(link) === "Companion status",
+    ).length,
     panel: box(panel),
     composer: box(composer),
     windowOverflow: {
@@ -286,6 +303,59 @@ async function main() {
       `only ${landing.navCount} settings sections rendered`,
     );
     await shot("settings-empty");
+
+    // ── the blank thread, with nothing saved, points at this page ──────────
+    await run("window.__lqNavigate('/home')");
+    await waitFor(
+      "document.body.dataset.rigRoute === '/home' && Boolean(document.querySelector('.chat-panel'))",
+      "the dashboard and the chat dock",
+    );
+    await click('[aria-label="New chat"]');
+    await waitFor(
+      "Boolean(document.querySelector('[data-testid=\"chat-empty-questions\"]'))",
+      "the empty new chat",
+    );
+    const empty = await sample();
+    check(
+      "the empty chat no longer offers Companion status",
+      empty.companionStatusLinks === 0,
+      `${empty.companionStatusLinks} Companion status links still rendered`,
+    );
+    check(
+      "the empty chat says there are no questions",
+      empty.emptyQuestions?.title === "No questions set",
+      `title is "${empty.emptyQuestions?.title}"`,
+    );
+    check(
+      "the empty chat tells the operator where to set them",
+      empty.emptyQuestions?.copy === "You can set your custom questions here.",
+      `copy is "${empty.emptyQuestions?.copy}"`,
+    );
+    check(
+      "the empty chat's link goes to the Questions settings page",
+      empty.emptyQuestions?.linkHref === "/settings?tab=questions",
+      `link goes to "${empty.emptyQuestions?.linkHref}"`,
+    );
+    check(
+      "the empty chat's link reads as the place to set them",
+      empty.emptyQuestions?.linkText === "here",
+      `link text is "${empty.emptyQuestions?.linkText}"`,
+    );
+    await shot("empty-questions");
+
+    await click('[data-testid="chat-empty-questions-link"]');
+    await waitFor(
+      "document.body.dataset.rigRoute === '/settings?tab=questions' && Boolean(document.querySelector('[data-settings-view=\"questions\"]'))",
+      "the Questions page opened from the empty chat",
+    );
+    const emptyLink = await sample();
+    check(
+      "the empty chat's link opens Settings -> Questions",
+      emptyLink.settingsView === "questions" &&
+        emptyLink.activeNav === "Questions",
+      `view is ${emptyLink.settingsView}, nav is "${emptyLink.activeNav}"`,
+    );
+    await shot("empty-questions-link");
 
     // ── 2–4. add, edit, delete — every write goes to settings ──────────────
     await addQuestion(FINANCIAL, "domain:financial", 1);
@@ -572,7 +642,18 @@ async function main() {
     );
     await shot("sent-review");
 
-    report.states = { landing, added, afterEdit, home, sent, review, goals, second };
+    report.states = {
+      landing,
+      empty,
+      emptyLink,
+      added,
+      afterEdit,
+      home,
+      sent,
+      review,
+      goals,
+      second,
+    };
 
     // ── 9. the shipping vault can reopen what the page wrote ───────────────
     const world = fs.mkdtempSync(path.join(os.tmpdir(), "lq-chat-questions-"));
