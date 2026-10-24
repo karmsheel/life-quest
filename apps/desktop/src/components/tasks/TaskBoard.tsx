@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CalendarRange,
   FolderKanban,
+  GripVertical,
   MoreVertical,
   PencilLine,
   Plus,
@@ -23,6 +24,7 @@ import { resolveWeek } from "@lifequest/vault-core/map";
 import type { Goal, Project } from "@lifequest/vault-core/pure";
 import { Button } from "@/components/ui/Button";
 import { groupTasks } from "./groupTasks";
+import { useTaskDrag } from "./useTaskDrag";
 
 type Props = {
   state: StoreState;
@@ -32,12 +34,34 @@ type Props = {
   initialOpenId?: string | null;
 };
 
-const COLUMNS: { id: TaskColumn; label: string }[] = [
-  { id: "backlog", label: "Backlog" },
-  { id: "this-week", label: "This week" },
-  { id: "today", label: "Today" },
-  { id: "done", label: "Done" },
+/**
+ * The board's columns, in reading order: finished and active work on the left,
+ * then the working horizons widening away from today, then the unscheduled
+ * backlog at the far end.
+ *
+ * The labels are also the drag announcements and the quick-add placeholders, so
+ * they live beside the ids rather than in three places that could drift.
+ */
+const COLUMNS: { id: TaskColumn; label: string; hint: string }[] = [
+  { id: "done", label: "Done", hint: "Finished work" },
+  {
+    id: "in-progress",
+    label: "In-progress",
+    hint: "Work actively underway",
+  },
+  { id: "today", label: "Today", hint: "Work for today" },
+  { id: "this-week", label: "This week", hint: "Work to finish this week" },
+  {
+    id: "next-30-days",
+    label: "Next 30 days",
+    hint: "Rolling 30-day horizon",
+  },
+  { id: "backlog", label: "Backlog", hint: "Unscheduled work" },
 ];
+
+const COLUMN_LABELS = Object.fromEntries(
+  COLUMNS.map((column) => [column.id, column.label]),
+) as Record<TaskColumn, string>;
 
 function openGoals(goals: Goal[]): Goal[] {
   return goals.filter((g) => g.status === "open");
@@ -153,6 +177,25 @@ export function TaskBoard({
   const grouped = useMemo(() => groupTasks(state.tasks), [state.tasks]);
   const [title, setTitle] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [composer, setComposer] = useState<{
+    column: TaskColumn;
+    title: string;
+  } | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const revealBacklogRef = useRef(false);
+
+  const drag = useTaskDrag({
+    tasks: state.tasks,
+    labels: COLUMN_LABELS,
+    onMove: (id, column, beforeId) => {
+      onCommand({
+        type: "moveTask",
+        id,
+        column,
+        ...(beforeId ? { beforeId } : {}),
+      });
+    },
+  });
 
   useEffect(() => {
     if (!initialOpenId) return;
@@ -164,14 +207,40 @@ export function TaskBoard({
   function create() {
     const trimmed = title.trim();
     if (!trimmed) return;
+    // Backlog is the far end of the board now, so a card created from the top
+    // form would otherwise land off-screen. Reveal it when the vault answers.
+    revealBacklogRef.current = true;
     onCommand({ type: "createTask", title: trimmed });
     setTitle("");
   }
 
+  useEffect(() => {
+    if (!revealBacklogRef.current) return;
+    revealBacklogRef.current = false;
+    viewportRef.current
+      ?.querySelector<HTMLElement>('[data-column="backlog"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [state.tasks.length]);
+
+  function createInColumn(column: TaskColumn) {
+    if (!composer) return;
+    const trimmed = composer.title.trim();
+    if (!trimmed) return;
+    onCommand({ type: "createTask", title: trimmed, column });
+    // Keep the composer open for the next card: adding three things to one
+    // column should not mean finding its + three times.
+    setComposer({ column, title: "" });
+  }
+
   const total = state.tasks.length;
+  const draggingId = drag.drag?.id ?? null;
+  const drop = drag.drop;
 
   return (
-    <section className="task-board" aria-labelledby="task-board-title">
+    <section
+      className={`task-board${drag.drag ? " is-dragging" : ""}`}
+      aria-labelledby="task-board-title"
+    >
       <div className="task-board__head">
         <div className="task-board__heading">
           <h2 id="task-board-title">Tasks</h2>
@@ -207,14 +276,30 @@ export function TaskBoard({
         </form>
       </div>
 
-      <div className="task-columns">
+      <p className="visually-hidden" id="task-board-drag-hint">
+        Drag a card to move it between columns. Open a card&apos;s menu and choose
+        Edit details to change its column with the keyboard.
+      </p>
+
+      <div className="task-board__viewport" ref={viewportRef}>
+        <div
+          className="task-columns"
+          onPointerDown={drag.onPointerDown}
+          aria-describedby="task-board-drag-hint"
+        >
         {COLUMNS.map((col) => {
           const tasks = grouped[col.id];
+          const isDropTarget = drop?.column === col.id;
+          const isOrigin = drag.drag?.from === col.id;
+          const dropsAtEnd = isDropTarget && drop?.beforeId === null;
           return (
             <section
               key={col.id}
-              className="task-column"
+              className={`task-column${isDropTarget ? " is-drop-target" : ""}${
+                isOrigin ? " is-drag-origin" : ""
+              }`}
               data-column={col.id}
+              title={col.hint}
               aria-label={`${col.label}, ${tasks.length} task${
                 tasks.length === 1 ? "" : "s"
               }`}
@@ -225,14 +310,30 @@ export function TaskBoard({
                 <span className="task-column__count">{tasks.length}</span>
               </header>
               {tasks.length === 0 ? (
-                <p className="task-empty">No tasks</p>
+                <p
+                  className={`task-empty${
+                    isDropTarget ? " task-empty--drop" : ""
+                  }`}
+                >
+                  {isDropTarget ? "Drop here" : "No tasks"}
+                </p>
               ) : (
-                <ul className="task-list">
+                <ul
+                  className={`task-list${dropsAtEnd ? " is-drop-end" : ""}`}
+                >
                   {tasks.map((task) => (
-                    <li key={task.id}>
+                    <li
+                      key={task.id}
+                      className={
+                        isDropTarget && drop?.beforeId === task.id
+                          ? "is-drop-before"
+                          : undefined
+                      }
+                    >
                       <TaskCard
                         task={task}
                         open={openId === task.id}
+                        dragging={draggingId === task.id}
                         goals={goals}
                         projects={projects}
                         missingGoal={
@@ -253,10 +354,87 @@ export function TaskBoard({
                   ))}
                 </ul>
               )}
+
+              {composer?.column === col.id ? (
+                <form
+                  className="task-composer"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    createInColumn(col.id);
+                  }}
+                >
+                  <input
+                    autoFocus
+                    value={composer.title}
+                    onChange={(event) =>
+                      setComposer({ column: col.id, title: event.target.value })
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") setComposer(null);
+                    }}
+                    aria-label={`New task in ${col.label}`}
+                    placeholder={`Add to ${col.label}…`}
+                    autoComplete="off"
+                  />
+                  <div className="task-composer__actions">
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      className="task-composer__add"
+                      disabled={!composer.title.trim()}
+                    >
+                      Add
+                    </Button>
+                    <button
+                      type="button"
+                      className="task-composer__cancel"
+                      onClick={() => setComposer(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  className="task-column__add"
+                  onClick={() => setComposer({ column: col.id, title: "" })}
+                  aria-label={`Add a task to ${col.label}`}
+                  title={`Add a task to ${col.label}`}
+                >
+                  <Plus size={13} aria-hidden /> Add a task
+                </button>
+              )}
             </section>
           );
         })}
+        </div>
       </div>
+
+      {drag.drag ? (
+        <div
+          ref={drag.ghostRef}
+          className="task-drag-ghost"
+          style={{ width: drag.drag.width }}
+          aria-hidden
+        >
+          <div className="task-drag-ghost__row">
+            <span className="task-drag-ghost__grip">
+              <GripVertical size={13} />
+            </span>
+            <span className="task-drag-ghost__title">{drag.drag.title}</span>
+          </div>
+          {drop ? (
+            <span className="task-drag-ghost__column">
+              {COLUMN_LABELS[drop.column]}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      <p className="visually-hidden" role="status" aria-live="polite">
+        {drag.announce}
+      </p>
     </section>
   );
 }
@@ -264,6 +442,7 @@ export function TaskBoard({
 function TaskCard({
   task,
   open,
+  dragging,
   goals,
   projects,
   missingGoal,
@@ -274,6 +453,7 @@ function TaskCard({
 }: {
   task: Task;
   open: boolean;
+  dragging: boolean;
   goals: Goal[];
   projects: Project[];
   missingGoal: boolean;
@@ -299,10 +479,13 @@ function TaskCard({
     <article
       className={`task-card${open ? " is-open" : ""}${
         menuOpen ? " is-menu-open" : ""
-      }`}
+      }${dragging ? " is-dragging" : ""}`}
       data-task-id={task.id}
     >
       <div className="task-card__head">
+        <span className="task-card__grip" aria-hidden title="Drag to move">
+          <GripVertical size={13} />
+        </span>
         <button
           type="button"
           className="task-card__title"

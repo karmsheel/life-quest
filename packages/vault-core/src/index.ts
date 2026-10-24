@@ -59,6 +59,8 @@ export {
   findYear,
   liveYears,
   resolveWeek,
+  TASK_COLUMNS,
+  isTaskColumn,
 } from "./map/public.ts";
 export { applyMapCommand, ensureMapOnOpen, loadMapState } from "./map/persist.ts";
 export {

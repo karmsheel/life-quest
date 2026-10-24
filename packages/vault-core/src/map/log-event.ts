@@ -58,6 +58,16 @@ export function mapLogEvent(command: Command): {
         summary: "Updated task",
         payload: { id: command.id },
       };
+    case "moveTask":
+      return {
+        type: "map.task.moved",
+        summary: `Moved task to ${command.column}`,
+        payload: {
+          id: command.id,
+          column: command.column,
+          beforeId: command.beforeId ?? null,
+        },
+      };
     case "deleteTask":
       return {
         type: "map.task.deleted",

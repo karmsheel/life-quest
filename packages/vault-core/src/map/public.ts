@@ -26,6 +26,7 @@ export type {
   LiveSource,
 } from "./types.ts";
 export { applyCommand as applyMapCommandPure } from "./commands.ts";
+export { TASK_COLUMNS, isTaskColumn } from "./tasks.ts";
 export { dashboardDays, eventsInMonth, eventsOnDate } from "./queries.ts";
 export { PALETTE, COLOR_IDS } from "./palette.ts";
 export { todayLocalIso, yearOf, mondayOnOrBefore, mondaysInYear, daysInMonth, addDays, compareIso, weekdayOf } from "./dates.ts";

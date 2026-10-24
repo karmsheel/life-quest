@@ -102,6 +102,7 @@ export const CONNECTED_SCHEDULE_TOOLS: ReadonlySet<string> = new Set([
   "reset_week",
   "create_task",
   "update_task",
+  "move_task",
   "delete_task",
 ]);
 
