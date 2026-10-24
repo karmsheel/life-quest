@@ -39,7 +39,12 @@ type Borders = { top: string; right: string; bottom: string; left: string };
 type State = {
   viewport: { width: number; height: number };
   doc: { scrollWidth: number; clientWidth: number };
-  tokens: { rootChatbarWidth: string; frame: number; navWidth: number };
+  tokens: {
+    rootChatbarWidth: string;
+    frame: number;
+    navWidth: number;
+    rootFontSize: number;
+  };
   shell: {
     box: Box;
     className: string;
@@ -549,10 +554,15 @@ describe("chat dock divider", () => {
       `the floating mark names the wrong move (${collapsed.launcher.label})`,
     );
     assert.equal(
-      collapsed.launcher.box.left > collapsed.viewport.width / 2 &&
+      collapsed.launcher.box.left < collapsed.viewport.width / 2 &&
         collapsed.launcher.box.top > collapsed.viewport.height / 2,
       true,
-      `the floating mark is not in the bottom-right half (${JSON.stringify(collapsed.launcher.box)})`,
+      `the floating mark did not follow the swapped dock to the bottom-left half (${JSON.stringify(collapsed.launcher.box)})`,
+    );
+    assert.equal(
+      collapsed.launcher.box.left,
+      collapsed.tokens.navWidth + collapsed.tokens.rootFontSize,
+      `the floating mark is not beside the rail the swapped dock led against (${collapsed.launcher.box.left}px vs ${collapsed.tokens.navWidth}px + ${collapsed.tokens.rootFontSize}px)`,
     );
     assertArrangement("reopened", reopened, "left");
     assert.equal(

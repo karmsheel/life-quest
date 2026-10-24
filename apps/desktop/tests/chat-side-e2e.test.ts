@@ -130,9 +130,13 @@ type Report = {
   dockCollapsedDarkAgain: Arrangement;
   railCollapsed: Arrangement;
   dockReopened: Arrangement;
+  railAndDockCollapsed: Arrangement;
+  dockBackUnderCollapsedRail: Arrangement;
   railRestored: Arrangement;
   restored: Arrangement;
   barCollapsed: Arrangement;
+  collapsedSwapped: Arrangement;
+  collapsedSwappedBack: Arrangement;
   barReopened: Arrangement;
   screenshots: string[];
 };
@@ -206,8 +210,11 @@ describe("chat dock side switch", () => {
       dockCollapsedLight,
       dockCollapsedDarkAgain,
       railCollapsed,
+      railAndDockCollapsed,
       restored,
       barCollapsed,
+      collapsedSwapped,
+      collapsedSwappedBack,
       barReopened,
     } = report;
     const { track, chatTrack, frame, rootFontSize, titlebarHeight, radiusSm } =
@@ -482,15 +489,15 @@ describe("chat dock side switch", () => {
     );
     assert.equal(
       dockCollapsed.launcher?.box.left !== undefined &&
-        dockCollapsed.launcher.box.left > dockCollapsed.viewport.width / 2 &&
+        dockCollapsed.launcher.box.left < dockCollapsed.viewport.width / 2 &&
         dockCollapsed.launcher.box.top > dockCollapsed.viewport.height / 2,
       true,
-      `the floating mark is not in the bottom-right half: ${JSON.stringify(dockCollapsed.launcher?.box)}`,
+      `the floating mark did not follow the dock to the bottom-left half: ${JSON.stringify(dockCollapsed.launcher?.box)}`,
     );
     assert.equal(
-      dockCollapsed.viewport.width - (dockCollapsed.launcher?.box.right ?? 0),
-      frame + rootFontSize,
-      `the floating mark lost its trailing inset (${dockCollapsed.launcher?.box.right}px of ${dockCollapsed.viewport.width}px)`,
+      dockCollapsed.launcher?.box.left,
+      track + rootFontSize,
+      `the floating mark is not beside the rail's trailing edge (${dockCollapsed.launcher?.box.left}px vs ${track}px + ${rootFontSize}px)`,
     );
     assert.equal(
       dockCollapsed.viewport.height - (dockCollapsed.launcher?.box.bottom ?? 0),
@@ -572,6 +579,33 @@ describe("chat dock side switch", () => {
       railCollapsed.viewport.width,
       "with the rail and the dock swapped the sheet left the window's trailing edge",
     );
+
+    // —— Both gone: the mark follows the dock's column, which now starts at the
+    // window's own leading edge. ——
+    assert.ok(
+      railAndDockCollapsed.launcher,
+      "collapsing the dock under a collapsed rail left no floating mark",
+    );
+    assert.equal(
+      railAndDockCollapsed.launcher.box.left,
+      rootFontSize,
+      `the floating mark did not take the window's leading edge (${railAndDockCollapsed.launcher.box.left}px vs 1rem = ${rootFontSize}px)`,
+    );
+    assert.equal(
+      railAndDockCollapsed.viewport.height - railAndDockCollapsed.launcher.box.bottom,
+      frame + rootFontSize,
+      `the floating mark lost its bottom inset with the rail gone (${railAndDockCollapsed.launcher.box.bottom}px of ${railAndDockCollapsed.viewport.height}px)`,
+    );
+    assert.deepEqual(
+      report.dockBackUnderCollapsedRail.chat.box,
+      railCollapsed.chat.box,
+      "reopening the dock under a collapsed rail did not restore the leading geometry",
+    );
+    assert.equal(
+      report.dockBackUnderCollapsedRail.launcher,
+      null,
+      "the floating mark survived the reopen under a collapsed rail",
+    );
     assert.deepEqual(
       report.railRestored.main.box,
       left.main.box,
@@ -646,6 +680,54 @@ describe("chat dock side switch", () => {
       barCollapsed.main?.box.right,
       barCollapsed.viewport.width,
       "the bottom bar's collapse did not give the sheet the window's trailing edge",
+    );
+    assert.equal(
+      barCollapsed.launcher.box.left > barCollapsed.viewport.width / 2 &&
+        barCollapsed.launcher.box.top > barCollapsed.viewport.height / 2,
+      true,
+      `a trailing dock's mark left the bottom-right half: ${JSON.stringify(barCollapsed.launcher.box)}`,
+    );
+    assert.equal(
+      barCollapsed.viewport.width - barCollapsed.launcher.box.right,
+      frame + rootFontSize,
+      `a trailing dock's mark lost its trailing inset (${barCollapsed.launcher.box.right}px of ${barCollapsed.viewport.width}px)`,
+    );
+
+    // —— The reported gesture: swap the side while the dock is already
+    // collapsed, so the mark is the only thing on screen that says where the
+    // chat is. It has to move, and move back, with no reopen in between. ——
+    assert.equal(
+      collapsedSwapped.chat,
+      null,
+      "swapping the side while collapsed opened the dock",
+    );
+    assert.equal(
+      collapsedSwapped.shell?.className.includes("shell--chat-left"),
+      true,
+      `the collapsed swap did not put the dock on the leading side: ${collapsedSwapped.shell?.className}`,
+    );
+    assert.equal(
+      collapsedSwapped.launcher?.box.left,
+      track + rootFontSize,
+      `the mark stayed on the trailing corner through a collapsed swap (${collapsedSwapped.launcher?.box.left}px vs ${track}px + ${rootFontSize}px)`,
+    );
+    assert.equal(
+      (collapsedSwapped.launcher?.box.left ?? Infinity) <
+        collapsedSwapped.viewport.width / 2 &&
+        (collapsedSwapped.launcher?.box.top ?? 0) >
+          collapsedSwapped.viewport.height / 2,
+      true,
+      `the mark is not in the bottom-left half after the collapsed swap: ${JSON.stringify(collapsedSwapped.launcher?.box)}`,
+    );
+    assert.deepEqual(
+      collapsedSwappedBack.launcher?.box,
+      barCollapsed.launcher.box,
+      `swapping back did not return the mark to the trailing corner (${JSON.stringify(collapsedSwappedBack.launcher?.box)} vs ${JSON.stringify(barCollapsed.launcher.box)})`,
+    );
+    assert.equal(
+      collapsedSwappedBack.chat,
+      null,
+      "swapping back while collapsed reopened the dock",
     );
     assert.deepEqual(
       barReopened.main.box,
