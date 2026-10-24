@@ -308,6 +308,7 @@ describe("automations e2e", () => {
     assert.deepEqual(update.input.trigger, { type: "manual" });
     assert.match(update.input.prompt, /propose the document, page or database/);
     assert.match(update.input.prompt, /no place for yet/);
+    assert.match(update.input.prompt, /Also name one thing I should stop doing\./);
     assert.ok(
       edits.rows.some(
         (row) =>
@@ -388,6 +389,10 @@ describe("automations e2e", () => {
     assert.match(
       after.chat.userMessages[0]!,
       /propose the document, page or database/,
+    );
+    assert.match(
+      after.chat.userMessages[0]!,
+      /Also name one thing I should stop doing\./,
     );
 
     const call = after.chatCalls.find((candidate) => candidate.sessionId === session.id)!;

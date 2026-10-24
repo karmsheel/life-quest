@@ -530,10 +530,17 @@ async function main() {
       `Boolean(document.querySelector('[data-testid="automation-editor"]'))`,
       "the built-in's editor",
     );
+    const beforeEdit = await sample(win);
+    const promptBefore = beforeEdit.automations.editor?.prompt ?? "";
     await setField(
       win,
       "automation-description",
       "Edited: breaks the day down, and proposes places to track what has no home.",
+    );
+    await setField(
+      win,
+      "automation-prompt",
+      `${promptBefore}\nAlso name one thing I should stop doing.`,
     );
     await click(win, "automation-save");
     await waitFor(
@@ -549,7 +556,10 @@ async function main() {
       update?.id === "daily-note-analyze" &&
         update?.input?.trigger?.type === "manual" &&
         /propose the document, page or database/.test(update?.input?.prompt ?? "") &&
-        /no place for yet/.test(update?.input?.prompt ?? ""),
+        /no place for yet/.test(update?.input?.prompt ?? "") &&
+        /Also name one thing I should stop doing\./.test(
+          update?.input?.prompt ?? "",
+        ),
       JSON.stringify(update),
     );
     check(
@@ -773,6 +783,9 @@ async function main() {
         /Goals at different timeframes/.test(after.chat.userMessages[0] ?? "") &&
         /propose the document, page or database/.test(
           after.chat.userMessages[0] ?? "",
+        ) &&
+        /Also name one thing I should stop doing\./.test(
+          after.chat.userMessages[0] ?? "",
         ),
       JSON.stringify(after.chat.userMessages),
     );
@@ -790,6 +803,7 @@ async function main() {
       "the prompt asks for the new-tracking step and does not paste the note",
       /no place for yet/i.test(prompt) &&
         /propose the document, page or database/i.test(prompt) &&
+        /Also name one thing I should stop doing\./i.test(prompt) &&
         !prompt.includes("Context note 1:"),
       JSON.stringify(prompt.slice(0, 600)),
     );

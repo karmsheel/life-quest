@@ -211,8 +211,9 @@ describe("automation store e2e", () => {
       true,
       "yesterday's 09:00 job was not due on Monday at 10:00",
     );
+    const justAfterOccurrence = new Date(2026, 9, 19, 9, 0, 1).toISOString();
     assert.equal(
-      automationIsDue({ ...older, lastRunAt: "2026-10-19T09:00:01.000Z" }, mondayMorning),
+      automationIsDue({ ...older, lastRunAt: justAfterOccurrence }, mondayMorning),
       false,
       "the same occurrence fired twice",
     );
@@ -232,7 +233,7 @@ describe("automation store e2e", () => {
       createdAfterNine: automationIsDue(createdAfterNine, mondayMorning),
       older: automationIsDue(older, mondayMorning),
       rerun: automationIsDue(
-        { ...older, lastRunAt: "2026-10-19T09:00:01.000Z" },
+        { ...older, lastRunAt: justAfterOccurrence },
         mondayMorning,
       ),
       laterToday: automationIsDue(
