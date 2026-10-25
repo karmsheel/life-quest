@@ -35,8 +35,9 @@
 /* The header, the box and the strip all centre on the page rather than hug its
    leading edge, and they share one column width so the page reads as one
    column of prose with chrome above and below it. A page with room for two
-   columns moves the header onto the box's own column instead, so the title and
-   the pager always sit over the prose they belong to. */
+   columns moves the header onto the box's own column and puts the strip beside
+   the box, the pair centred together as one block — the same block the
+   Documents page makes of its list and its editor. */
 .daily-note__header {
   width: 100%;
   max-width: 48rem;
@@ -301,59 +302,68 @@
 }
 
 /* Wide enough for both at once: the box keeps the column it was written for and
-   the strip stands beside it, at the page's own edge. The two columns are
-   spread apart rather than centred as a pair: the strip takes the edge away
-   from the dock — the left when the chat is on the right, the right when it is
-   on the left — so its weight answers the dock across the page, and the gap
-   between the journal and the prose widens with the window.
+   the strip stands beside it as one block, both together in the middle of the
+   page — the arrangement the Documents page gives its list and its editor.
+
+   The three spaces are written into the track list itself: one before the strip,
+   one between the strip and the box, one after the box, each an equal share of
+   whatever room is left. That is what makes them the same width at every page
+   this layout applies to — a fixed gutter with the leftover banked on either
+   side is equal on one window and wrong on the next, and `space-evenly` around
+   two tracks cannot be mirrored into the nested workspace grid below without
+   the two grids disagreeing about where their tracks are. The strip stays in
+   the column away from the dock — the left when the chat is on the right, the
+   right when it is on the left.
 
    The header rides the box's column, not the whole two-column width: the title
    and the pager belong over the day being written, while the strip has its own
-   heading. The outer grid repeats the workspace's tracks so the header and the
-   error line land on exactly the same x as the box below them. */
+   heading. The outer grid and the workspace repeat the same track list, so the
+   error line, the loading line and the box all land on exactly the same x as
+   the header above them. */
 @container (min-width: 78rem) {
   .daily-note__layout {
     display: grid;
-    grid-template-columns: minmax(0, 30rem) minmax(0, 46rem);
-    justify-content: space-between;
+    grid-template-columns:
+      minmax(0, 1fr) minmax(0, 30rem) minmax(0, 1fr) minmax(0, 46rem)
+      minmax(0, 1fr);
     align-items: start;
-    column-gap: 2rem;
+    /* The three equal tracks are the whole spacing; the base's one-rem gap would
+       add a second, unequal share between them. */
+    column-gap: 0;
     row-gap: 1rem;
   }
 
   .daily-note__header {
-    grid-column: 2;
+    grid-column: 4;
     width: 100%;
     max-width: none;
     margin: 0;
   }
 
   .daily-note__layout > .form-error {
-    grid-column: 2;
+    grid-column: 4;
   }
 
   .daily-note__workspace {
     grid-column: 1 / -1;
     display: grid;
-    /* The strip is a narrow column at the page's edge; the box keeps the width
-       it is written for at the other. `space-between` is what makes the gap
-       between them grow with the page instead of staying one gutter wide. */
-    grid-template-columns: minmax(0, 30rem) minmax(0, 46rem);
-    justify-content: space-between;
+    grid-template-columns:
+      minmax(0, 1fr) minmax(0, 30rem) minmax(0, 1fr) minmax(0, 46rem)
+      minmax(0, 1fr);
     align-items: start;
-    column-gap: 2rem;
+    column-gap: 0;
     row-gap: 1rem;
   }
 
   .daily-note__compose {
-    grid-column: 2;
+    grid-column: 4;
     grid-row: 1;
     max-width: none;
     margin: 0;
   }
 
   .daily-note__history {
-    grid-column: 1;
+    grid-column: 2;
     grid-row: 1;
     max-width: none;
     margin: 0;
@@ -361,16 +371,15 @@
     border-top: 0;
   }
 
-  /* The strip's own column, while a day is still on its way in. */
+  /* The box's own column, while a day is still on its way in. */
   .daily-note__loading {
-    grid-column: 2;
+    grid-column: 4;
     grid-row: 1;
   }
 
-  /* The side column is narrower than the box's page-width strip, so the three
+  /* The strip is narrower beside the box than it is under it, so the three
      cells lean on the date and the stamp a little harder: the date is still
-     whole, the weekday is a word, and the stamp gets the room it needs rather
-     than wrapping to two lines in a column read at a glance. */
+     whole, the weekday is a word, and the stamp keeps its line. */
   .daily-note__history-head,
   .daily-note__history-day,
   .daily-note__history-unreadable {
@@ -378,29 +387,28 @@
     gap: 0.5rem;
   }
 
-  /* Chat on the left: the strip moves to the page's trailing edge, past the
-     box, and the header follows the box to the leading one. Chat on the right
-     is the default above. */
-  .shell--chat-left .daily-note__layout {
-    grid-template-columns: minmax(0, 46rem) minmax(0, 30rem);
+  /* Chat on the left: the strip changes ends with the dock — the box leads and
+     the journal trails — and the three spaces stay the same shares of the page.
+     Chat on the right is the default above. */
+  .shell--chat-left .daily-note__layout,
+  .shell--chat-left .daily-note__workspace {
+    grid-template-columns:
+      minmax(0, 1fr) minmax(0, 46rem) minmax(0, 1fr) minmax(0, 30rem)
+      minmax(0, 1fr);
   }
 
   .shell--chat-left .daily-note__header,
   .shell--chat-left .daily-note__layout > .form-error {
-    grid-column: 1;
-  }
-
-  .shell--chat-left .daily-note__workspace {
-    grid-template-columns: minmax(0, 46rem) minmax(0, 30rem);
+    grid-column: 2;
   }
 
   .shell--chat-left .daily-note__compose,
   .shell--chat-left .daily-note__loading {
-    grid-column: 1;
+    grid-column: 2;
   }
 
   .shell--chat-left .daily-note__history {
-    grid-column: 2;
+    grid-column: 4;
   }
 }
 
