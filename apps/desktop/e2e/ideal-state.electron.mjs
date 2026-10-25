@@ -25,8 +25,15 @@
  *  8. An idle page writes nothing.
  *  9. A refused write keeps the draft, says why, does not retry by itself, and
  *     Ctrl+S is what releases it.
- * 10. Delete asks first, removes that document and moves the page to another.
- * 11. No save control, one editor box, no unmodelled bridge call, no console
+ * 10. Delete lives in a row's 3-dot menu, asks first, removes the row's own
+ *     document, leaves the editor alone when another row's document goes, and
+ *     moves the page to another when the document on screen is the one removed.
+ * 11. "+ New document" lives beside the Documents heading rather than over the
+ *     box, and the title field carries no "Title" eyebrow.
+ * 12. With room for two columns the strip takes the page's leading edge — the
+ *     one away from the chat — and the gap between it and the box grows with the
+ *     window; moving the chat to the left swaps the pair.
+ * 13. No save control, one editor box, no unmodelled bridge call, no console
  *     error.
  */
 import fs from "node:fs";
@@ -117,10 +124,29 @@ const SAMPLE = `(() => {
     ).length,
     layout: {
       shellClass: document.querySelector(".shell")?.className ?? null,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
       compose: rect(document.querySelector(".ideal-state__compose")),
       editor: rect(document.querySelector(".ideal-state__editor")),
       history: rect(document.querySelector(".ideal-state__history")),
       workspace: rect(document.querySelector(".ideal-state__workspace")),
+      newControl: rect(document.querySelector('[data-testid="ideal-state-new"]')),
+      historyHeading: rect(document.querySelector(".ideal-state__history-heading h2")),
+      pageHeading: rect(document.querySelector(".ideal-state__header h1")),
+      titleLabel: document.querySelectorAll(".ideal-state__title-label").length,
+      deleteUnderEditor: document.querySelectorAll(
+        '.ideal-state__compose [data-testid="ideal-state-delete"]',
+      ).length,
+      rowMenus: Array.from(document.querySelectorAll(".ideal-state__history-item")).map(
+        (item) => ({
+          row: rect(item.querySelector(".ideal-state__history-row")),
+          menu: rect(item.querySelector(".ideal-state__row-menu-btn")),
+        }),
+      ),
+      openMenus: document.querySelectorAll(".ideal-state__row-menu").length,
+      openMenuBox: rect(document.querySelector(".ideal-state__row-menu")),
+      openMenuItems: Array.from(
+        document.querySelectorAll('.ideal-state__row-menu [role="menuitem"]'),
+      ).map((el) => text(el)),
     },
     writes: (window.idealStateWrites ?? []).slice(),
     calls: (window.idealStateCalls ?? []).slice(),
@@ -357,6 +383,53 @@ async function run() {
     check("there is no split editor", landing.splits === 0, `splits ${landing.splits}`);
     check("there is no preview pane", landing.previews === 0, `previews ${landing.previews}`);
     check("there is no save control", landing.saveControls === 0, `save controls ${landing.saveControls}`);
+    check(
+      "the title field carries no eyebrow",
+      landing.layout.titleLabel === 0,
+      `eyebrow labels ${landing.layout.titleLabel}`,
+    );
+    check(
+      "no Delete control sits under the editor",
+      landing.layout.deleteUnderEditor === 0,
+      `delete controls in the compose column ${landing.layout.deleteUnderEditor}`,
+    );
+    check(
+      "no row menu is open until asked",
+      landing.layout.openMenus === 0,
+      `open menus ${landing.layout.openMenus}`,
+    );
+    check(
+      "the page draws both the box and the strip",
+      Boolean(landing.layout.history && landing.layout.compose),
+      JSON.stringify(landing.layout),
+    );
+    if (landing.layout.history && landing.layout.newControl && landing.layout.historyHeading) {
+      const { history, newControl, historyHeading } = landing.layout;
+      check(
+        "+ New document sits in the strip, on the Documents heading line",
+        newControl.left >= history.left &&
+          newControl.left + newControl.width <= history.left + history.width + 1 &&
+          Math.abs(
+            newControl.top + newControl.height / 2 -
+              (historyHeading.top + historyHeading.height / 2),
+          ) <= 6,
+        `new ${JSON.stringify(newControl)}, heading ${JSON.stringify(historyHeading)}`,
+      );
+    }
+    for (const { row, menu } of landing.layout.rowMenus) {
+      if (!row || !menu) {
+        check("every row has a 3-dot", false, JSON.stringify({ row, menu }));
+        continue;
+      }
+      check(
+        "each 3-dot sits at the end of its row",
+        menu.left >= row.left &&
+          menu.left + menu.width <= row.left + row.width &&
+          row.left + row.width - (menu.left + menu.width) <= 12 &&
+          Math.abs(menu.top + menu.height / 2 - (row.top + row.height / 2)) <= 6,
+        `row ${JSON.stringify(row)}, menu ${JSON.stringify(menu)}`,
+      );
+    }
     check("landing wrote nothing", landing.writes.length === 0, `writes ${JSON.stringify(landing.writes)}`);
     check("no error at landing", !landing.error, `error ${JSON.stringify(landing.error)}`);
     check(
@@ -613,19 +686,96 @@ async function run() {
       `wrote ${idleAfter - idleBefore} more time(s)`,
     );
 
-    // ── 8. delete asks, removes that document, and moves the page ────────────
-    const deleteId = recovered.selectedId;
-    const createdIds = recovered.rows.map((row) => row.id);
-    check("Delete clicked", await click("ideal-state-delete"), "no Delete control");
-    await waitFor(
-      `Boolean(document.querySelector(".confirm-dialog__confirm"))`,
-      "the delete question",
+    // ── 8. delete lives in the row's own menu, not under the editor ──────────
+    const beforeDelete = recovered;
+    const deleteId = beforeDelete.selectedId;
+    const victim = beforeDelete.rows.find((row) => row.id !== deleteId);
+    check(
+      "there is a second row to delete from its menu",
+      Boolean(victim),
+      `rows ${JSON.stringify(beforeDelete.rows)}`,
     );
-    await clickSelector(".confirm-dialog__confirm");
-    await waitFor(
-      `document.querySelectorAll(".ideal-state__history-row").length === ${createdIds.length - 1}`,
-      "the document to leave the strip",
-    );
+
+    const openRowMenu = async (id) => {
+      check(
+        `the row menu for ${id} opened`,
+        await click(`ideal-state-doc-menu-${id}`),
+        "no row menu control",
+      );
+      await waitFor(
+        `document.querySelectorAll('.ideal-state__row-menu [role="menuitem"]').length === 1`,
+        "the row menu",
+      );
+    };
+    const askToDelete = async () => {
+      await waitFor(
+        `Boolean(document.querySelector(".confirm-dialog__confirm"))`,
+        "the delete question",
+      );
+    };
+    const confirmTheDelete = async (expectedRows) => {
+      await clickSelector(".confirm-dialog__confirm");
+      await waitFor(
+        `document.querySelectorAll(".ideal-state__history-row").length === ${expectedRows}`,
+        "the document to leave the strip",
+      );
+    };
+
+    if (victim) {
+      await openRowMenu(victim.id);
+      const rowMenu = await sample();
+      check(
+        "the row menu offers Delete and nothing else",
+        JSON.stringify(rowMenu.layout.openMenuItems) === '["Delete"]',
+        `items ${JSON.stringify(rowMenu.layout.openMenuItems)}`,
+      );
+      screenshots.push(await shoot("row-menu"));
+      check(
+        "the open menu is fully inside the window",
+        Boolean(rowMenu.layout.openMenuBox) &&
+          Boolean(rowMenu.layout.viewport) &&
+          rowMenu.layout.openMenuBox.top >= 0 &&
+          rowMenu.layout.openMenuBox.top +
+            rowMenu.layout.openMenuBox.height <=
+            rowMenu.layout.viewport.height,
+        `menu ${JSON.stringify(rowMenu.layout.openMenuBox)}, viewport ${JSON.stringify(rowMenu.layout.viewport)}`,
+      );
+      check(
+        "Delete is inside the row menu",
+        await click("ideal-state-delete"),
+        "no Delete menu item",
+      );
+      await askToDelete();
+      const asked = await js(
+        `document.querySelector(".confirm-dialog")?.textContent.includes(${JSON.stringify(victim.title ?? "Untitled")}) === true`,
+      );
+      check("the question names the row's document", asked, `victim ${JSON.stringify(victim)}`);
+      await confirmTheDelete(beforeDelete.rows.length - 1);
+      const afterOtherDelete = await sample();
+      checks.afterOtherDelete = afterOtherDelete;
+      check(
+        "the row's own document is the one deleted",
+        !(victim.id in afterOtherDelete.store),
+        `store ${JSON.stringify(Object.keys(afterOtherDelete.store))}`,
+      );
+      check(
+        "deleting another row left the editor alone",
+        afterOtherDelete.selectedId === deleteId &&
+          afterOtherDelete.titleValue === beforeDelete.titleValue,
+        `selected ${afterOtherDelete.selectedId}, title ${JSON.stringify(afterOtherDelete.titleValue)}`,
+      );
+      check(
+        "the other row's delete was recorded once",
+        afterOtherDelete.writes.filter((write) => write.op === "delete").length === 1,
+        `writes ${JSON.stringify(afterOtherDelete.writes)}`,
+      );
+    }
+
+    // Deleting the document on screen still moves the page to another one.
+    await openRowMenu(deleteId);
+    check("Delete clicked", await click("ideal-state-delete"), "no Delete menu item");
+    await askToDelete();
+    await confirmTheDelete(beforeDelete.rows.length - 2);
     const afterDelete = await sample();
     checks.afterDelete = afterDelete;
     check(
@@ -639,12 +789,42 @@ async function run() {
       `selected ${afterDelete.selectedId}`,
     );
     check(
-      "the delete was recorded once",
-      afterDelete.writes.filter((write) => write.op === "delete").length === 1,
+      "the deletes were recorded twice",
+      afterDelete.writes.filter((write) => write.op === "delete").length === 2,
       `writes ${JSON.stringify(afterDelete.writes)}`,
     );
 
-    // ── 9. the wide page keeps the box and the strip side by side ────────────
+    // The strip's own button still starts a document, so the round trip ends with
+    // a library of three for the wide-page pictures.
+    await waitFor(
+      `!document.querySelector('[data-testid="ideal-state-new"]')?.disabled`,
+      "the New document control to be ready",
+    );
+    check(
+      "New document clicked from the strip",
+      await click("ideal-state-new"),
+      "no New document control",
+    );
+    await waitFor(
+      `document.querySelector('[data-testid="ideal-state-title"]')?.value === ""`,
+      "the new draft",
+    );
+    await setTitle("A garden in the evening");
+    await waitForSaved();
+    await leaveTheLine();
+    await waitFor(
+      `document.querySelectorAll(".ideal-state__history-row").length === 3`,
+      "three documents after the deletes",
+    );
+    const restored = await sample();
+    checks.restored = restored;
+    check(
+      "the strip's button made a document",
+      restored.rows.length === 3 && restored.rows[0]?.title === "A garden in the evening",
+      `rows ${JSON.stringify(restored.rows)}`,
+    );
+
+    // ── 9. the wide page spreads the strip and the box apart ─────────────────
     win.setContentSize(1800, 1040);
     await waitFor(
       `window.innerWidth >= 1790`,
@@ -655,7 +835,8 @@ async function run() {
     );
     const wide = await sample();
     checks.wide = wide.layout;
-    const { compose, editor, history } = wide.layout;
+    const { compose, editor, history, newControl, historyHeading, pageHeading } =
+      wide.layout;
     if (!compose || !editor || !history) {
       check("the wide page has a box and a strip", false, JSON.stringify(wide.layout));
     } else {
@@ -669,8 +850,144 @@ async function run() {
         history.left + history.width <= compose.left,
         `strip ${history.left}+${history.width}, compose ${compose.left}`,
       );
+      const gap = compose.left - (history.left + history.width);
+      // The journal's own spread at this width is ~94px. The old paired layout
+      // left 32px here; the claim is that the library stands at the page's edge
+      // rather than beside the box, so the gap is the journal's, not a gutter.
+      check(
+        "the strip is spread to the page's edge",
+        gap >= 90,
+        `gap ${gap}px between strip and box`,
+      );
+      check(
+        "the page title rides the box's column",
+        Boolean(pageHeading) && Math.abs(pageHeading.left - compose.left) <= 2,
+        `title ${JSON.stringify(pageHeading)}, box ${JSON.stringify(compose)}`,
+      );
+      check(
+        "the strip's New control sits inside the strip",
+        Boolean(newControl) &&
+          newControl.left >= history.left &&
+          newControl.left + newControl.width <= history.left + history.width + 1,
+        `new ${JSON.stringify(newControl)}, strip ${JSON.stringify(history)}`,
+      );
+      check(
+        "New and Documents share a line",
+        Boolean(newControl) &&
+          Boolean(historyHeading) &&
+          Math.abs(
+            newControl.top +
+              newControl.height / 2 -
+              (historyHeading.top + historyHeading.height / 2),
+          ) <= 6,
+        `new ${JSON.stringify(newControl)}, heading ${JSON.stringify(historyHeading)}`,
+      );
     }
     screenshots.push(await shoot("wide"));
+
+    // The same menu on the wide page, where the strip is not at the window's
+    // edge: there is room below the row, so it opens downward.
+    const wideMenuRow = wide.rows[0]?.id;
+    if (wideMenuRow) {
+      check(
+        "the wide row menu opened",
+        await click(`ideal-state-doc-menu-${wideMenuRow}`),
+        "no row menu control",
+      );
+      await waitFor(
+        `document.querySelectorAll(".ideal-state__row-menu").length === 1`,
+        "the wide row menu",
+      );
+      const wideMenu = await sample();
+      const menuBox = wideMenu.layout.openMenuBox;
+      const viewport = wideMenu.layout.viewport;
+      check(
+        "the wide menu is fully inside the window",
+        Boolean(menuBox) &&
+          Boolean(viewport) &&
+          menuBox.top >= 0 &&
+          menuBox.top + menuBox.height <= viewport.height,
+        `menu ${JSON.stringify(menuBox)}, viewport ${JSON.stringify(viewport)}`,
+      );
+      check(
+        "the wide menu opens below its row",
+        Boolean(menuBox) &&
+          Boolean(wideMenu.layout.rowMenus[0]?.row) &&
+          menuBox.top >=
+            (wideMenu.layout.rowMenus[0]?.row?.top ?? Infinity),
+        `menu ${JSON.stringify(menuBox)}, row ${JSON.stringify(wideMenu.layout.rowMenus[0]?.row)}`,
+      );
+      screenshots.push(await shoot("wide-menu"));
+      check(
+        "the wide row menu closed",
+        await click(`ideal-state-doc-menu-${wideMenuRow}`),
+        "no row menu control",
+      );
+      await waitFor(
+        `document.querySelectorAll(".ideal-state__row-menu").length === 0`,
+        "the wide row menu to close",
+      );
+    }
+
+    // Chat on the left swaps the pair: the strip goes to the page's trailing
+    // edge, past the box, and the header follows the box to the leading one.
+    check(
+      "the chat-side switch clicked",
+      await clickSelector(".window-titlebar__side-switch"),
+      "no chat-side switch",
+    );
+    await waitFor(
+      `document.querySelector(".shell")?.classList.contains("shell--chat-left") === true`,
+      "the chat to move to the left",
+    );
+    await js(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    );
+    const wideLeft = await sample();
+    checks.wideLeft = wideLeft.layout;
+    const flipped = wideLeft.layout;
+    if (!flipped.compose || !flipped.history) {
+      check("the flipped page has a box and a strip", false, JSON.stringify(flipped));
+    } else {
+      check(
+        "with the chat on the left, the box leads",
+        flipped.compose.left + flipped.compose.width <= flipped.history.left,
+        `box ${flipped.compose.left}+${flipped.compose.width}, strip ${flipped.history.left}`,
+      );
+      const flippedGap =
+        flipped.history.left - (flipped.compose.left + flipped.compose.width);
+      check(
+        "the flipped strip is spread to the other edge",
+        flippedGap >= 90,
+        `gap ${flippedGap}px between box and strip`,
+      );
+      check(
+        "the flipped page title follows the box",
+        Boolean(flipped.pageHeading) &&
+          Math.abs(flipped.pageHeading.left - flipped.compose.left) <= 2,
+        `title ${JSON.stringify(flipped.pageHeading)}, box ${JSON.stringify(flipped.compose)}`,
+      );
+      check(
+        "the flipped strip still holds New",
+        Boolean(flipped.newControl) &&
+          flipped.newControl.left >= flipped.history.left &&
+          flipped.newControl.left + flipped.newControl.width <=
+            flipped.history.left + flipped.history.width + 1,
+        `new ${JSON.stringify(flipped.newControl)}, strip ${JSON.stringify(flipped.history)}`,
+      );
+    }
+    screenshots.push(await shoot("wide-left"));
+
+    // Put the dock back where it started for the rest of the run.
+    check(
+      "the chat-side switch restored the dock",
+      await clickSelector(".window-titlebar__side-switch"),
+      "no chat-side switch",
+    );
+    await waitFor(
+      `document.querySelector(".shell")?.classList.contains("shell--chat-right") === true`,
+      "the chat to move back to the right",
+    );
     win.setContentSize(SIZE.width, SIZE.height);
     await waitFor(`window.innerWidth <= ${SIZE.width + 10}`, "the default window");
 
