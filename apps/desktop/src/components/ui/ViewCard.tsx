@@ -40,14 +40,16 @@ import {
  * can create a table but must never invent its look. Everything here comes from
  * tokens, so a skin repaint reaches a saved view automatically.
  *
- * Editing (2026-10-08, second pass): each block carries a quiet row of four
- * presentation controls, so "show me this as a bar chart instead" is a click
- * rather than a request to the companion. The switch retargets the block's query
- * through `view-block-edit.ts` — a metric drops its grouping, a line takes a date
- * and a bucket — and saves the same card in place, so the operator's edit and the
- * companion's edit go through one writer (`view:save` with the view's own id) and
- * cannot drift. `editable` is false on a locked dashboard: the board's page lock
- * governs the cards on it, for the operator as much as for the agent.
+ * Editing (2026-10-08, second pass; made non-destructive 2026-10-26): each
+ * object carries a quiet row of presentation controls, so "show me this as a bar
+ * chart instead" is a click rather than a request to the companion. The switch
+ * changes ONLY `presentation` through `view-block-edit.ts` and saves the same
+ * card in place, so the operator's edit and the companion's edit go through one
+ * writer (`view:save` with the view's own id) and cannot drift. It must not
+ * retarget the query: doing that is how a one-number "Spending by month" object
+ * became one bar per transaction date and then a table of plain transactions.
+ * `editable` is false on a locked dashboard: the board's page lock governs the
+ * cards on it, for the operator as much as for the agent.
  */
 
 type RunState =
@@ -322,10 +324,11 @@ function BlockPresentationControls({
   onPick: (target: ViewPresentation) => void;
 }) {
   const available = availablePresentations(block.spec as ViewBlock, db);
-  const aggregates: ViewPresentation[] = ["metric", "table", "bar", "line"];
-  const shapes = aggregates.includes(block.presentation)
-    ? aggregates
-    : [block.presentation, ...aggregates];
+  // Only the shapes this object's DATA can actually take. A row object offers
+  // list and table because those are the same rows; it does not offer a chart,
+  // because a chart of rows is an aggregate the object does not have — and a
+  // button that cannot work is a button the operator reports as a bug.
+  const shapes = available;
   return (
     <div
       className="view-card__tools"
@@ -334,7 +337,6 @@ function BlockPresentationControls({
     >
       {shapes.map((p) => {
         const active = block.presentation === p;
-        const enabled = active || available.includes(p);
         return (
           <button
             key={p}
@@ -343,13 +345,11 @@ function BlockPresentationControls({
             aria-pressed={active}
             data-testid="view-block-tool"
             data-presentation={p}
-            disabled={busy || active || !enabled}
+            disabled={busy || active}
             title={
               active
                 ? `${block.title} is drawn as a ${presentationLabel(p).toLowerCase()}`
-                : enabled
-                  ? `Show ${block.title} as a ${presentationLabel(p).toLowerCase()}`
-                  : `This database cannot draw a ${presentationLabel(p).toLowerCase()} here`
+                : `Show ${block.title} as a ${presentationLabel(p).toLowerCase()} — the data does not change`
             }
             onClick={() => onPick(p)}
           >
@@ -361,33 +361,65 @@ function BlockPresentationControls({
   );
 }
 
-/** One block's drawing: the single place a presentation maps to markup. */
+/** One object's drawing: the single place a presentation maps to markup. */
 function ViewBlockBody({ block }: { block: DrawnBlock }) {
   const { result, presentation } = block;
-  // A listing carries its rows in `listRows`, and an aggregate in `rows`, so the
-  // emptiness of one says nothing about the other. Asking the wrong one is how a
-  // card that has twelve lines of ledger draws "No rows in this window."
-  if (presentation === "list") {
-    const rows = result.listRows ?? [];
+  // A row object carries its rows in `listRows`; an aggregate in `rows`. Asking
+  // the wrong one is how a card with twelve lines of ledger drew "No rows".
+  if (result.listRows !== undefined) {
+    const rows = result.listRows;
     if (rows.length === 0) {
       return <p className="muted view-card__empty">No rows in this window.</p>;
     }
     return <ViewList result={result} rows={rows} />;
   }
+  const summary = summaryOf(result);
+  if (presentation === "metric") {
+    if (!summary) return <p className="muted view-card__empty">No rows in this window.</p>;
+    return <ViewMetric result={result} summary={summary} />;
+  }
   if (result.rows.length === 0) {
     return <p className="muted view-card__empty">No rows in this window.</p>;
   }
-  if (presentation === "metric") return <ViewMetric result={result} />;
   if (presentation === "table") return <ViewTable result={result} spec={block.spec} />;
-  return <ViewChart result={result} presentation={presentation} spec={block.spec} />;
+  if (presentation === "bar" || presentation === "line") {
+    return <ViewChart result={result} presentation={presentation} spec={block.spec} />;
+  }
+  // A `list` with no rows in `listRows` cannot happen through validation; the
+  // guard keeps the renderer honest rather than drawing a chart from nothing.
+  return <p className="muted view-card__empty">No rows in this window.</p>;
+}
+
+/**
+ * The number a metric draws.
+ *
+ * The engine computes it from the whole dataset, so a metric never has to
+ * choose a row itself: an object grouped by month can be shown as a table and
+ * as its total without either shape changing the query.
+ */
+function summaryOf(result: ViewRunResult): { label: string; value: number } | null {
+  if (result.summary) return result.summary;
+  const first = result.rows[0];
+  return first ? { label: first[0], value: first[1] } : null;
 }
 
 function fmtNumber(n: number): string {
   return new Intl.NumberFormat("en-ZA", { maximumFractionDigits: 2 }).format(n);
 }
 
-function ViewMetric({ result }: { result: ViewRunResult }) {
-  const [label, value] = result.rows[0] ?? ["value", 0];
+/** A compact number for an axis tick, where a full amount would collide. */
+function fmtAxis(n: number): string {
+  return new Intl.NumberFormat("en-ZA", { notation: "compact", maximumFractionDigits: 1 }).format(n);
+}
+
+function ViewMetric({
+  result,
+  summary,
+}: {
+  result: ViewRunResult;
+  summary: { label: string; value: number };
+}) {
+  const [label, value] = [summary.label, summary.value];
   return (
     <p className="view-card__metric">
       {fmtNumber(value)}
@@ -412,12 +444,11 @@ function humanizeId(id: string): string {
 }
 
 /**
- * What the two columns actually hold.
+ * What the columns actually hold.
  *
  * The run returns `[label, value]` and nothing else, so a header can only be as
- * honest as the spec behind it: a bucketed block is a period, a grouped block is
- * the column it grouped by, and an aggregate over everything is just a total.
- * Guessing "Group" is what made a month-by-month table read as a spreadsheet.
+ * honest as the spec behind it: a bucketed object is a period, a grouped object
+ * is the column it grouped by, and an ungrouped total is just a total.
  */
 function tableHeaders(spec?: ViewBlock): { label: string; value: string } {
   if (spec?.timeBucket) {
@@ -432,6 +463,55 @@ function ViewTable({ result, spec }: { result: ViewRunResult; spec?: ViewBlock }
   const headers = tableHeaders(spec);
   const unit =
     result.currency && result.currency !== "mixed" ? ` (${result.currency})` : "";
+  const series = result.series ?? [];
+  // A series table is one column per series plus the row total, so the reader can
+  // compare both the split and the whole. A missing pair is an em dash, not a
+  // zero: "this category has no spend here" is not the same as "spend of 0".
+  if (series.length > 0 && result.seriesRows) {
+    const cells = new Map<string, number>();
+    for (const [label, name, value] of result.seriesRows) {
+      cells.set(`${label}\u0000${name}`, value);
+    }
+    return (
+      <table className="view-card__table view-card__table--series">
+        <thead>
+          <tr>
+            <th scope="col">{headers.label}</th>
+            {series.map((name) => (
+              <th key={name} scope="col" className="view-card__cell--num">
+                {name}
+                {series.length === 1 ? unit : ""}
+              </th>
+            ))}
+            {series.length > 1 ? (
+              <th scope="col" className="view-card__cell--num">
+                {headers.value}
+                {unit}
+              </th>
+            ) : null}
+          </tr>
+        </thead>
+        <tbody>
+          {result.rows.map(([label, total]) => (
+            <tr key={label}>
+              <td>{label}</td>
+              {series.map((name) => {
+                const value = cells.get(`${label}\u0000${name}`);
+                return (
+                  <td key={name} className="view-card__cell--num">
+                    {value === undefined ? "—" : fmtNumber(value)}
+                  </td>
+                );
+              })}
+              {series.length > 1 ? (
+                <td className="view-card__cell--num">{fmtNumber(total)}</td>
+              ) : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
   return (
     <table className="view-card__table">
       <thead>
@@ -456,14 +536,14 @@ function ViewTable({ result, spec }: { result: ViewRunResult; spec?: ViewBlock }
 }
 
 /**
- * A listing: the database's own rows, one line each, under the same chrome an
+ * A row object: the database's own rows, one line each, under the same chrome an
  * aggregate table wears — because it is a table, and a card that changed its
  * hairlines when its shape changed would read as a different object.
  *
  * One thing does differ. An aggregate has exactly one number in it, so the
  * table's CSS can right-align everything after the first cell and be right every
- * time. A listing holds whatever columns the operator asked for, so each cell is
- * aligned by what it holds: text keeps the left edge, a number takes the right
+ * time. A row object holds whatever columns the operator asked for, so each cell
+ * is aligned by what it holds: text keeps the left edge, a number takes the right
  * one in tabular figures, and the money column carries the currency unit when
  * every row shares one.
  */
@@ -516,14 +596,36 @@ function ViewList({
   );
 }
 
+/** The six colour slots a series maps to, in theme tokens (see global.css). */
+function seriesColor(index: number): string {
+  return `var(--chart-${(index % 6) + 1})`;
+}
+
+/** Chart geometry, in viewBox units. */
+const CHART = {
+  width: 480,
+  height: 220,
+  left: 48,
+  right: 10,
+  /** Room above the plot for a value label on the tallest mark. */
+  top: 24,
+  axisBottom: 184,
+  tickY: 200,
+  xLabelY: 215,
+};
+
 /**
- * Bar and line over the same aggregate. Theme colors through CSS variables so
- * a skin repaint is automatic; the SVG carries no palette of its own.
+ * Bar and line over the same aggregate.
  *
- * The drawing is deliberately plain: one baseline, area bars or a line with
- * dots, and a tick per row. Bars are scaled from a zero baseline on a fixed
- * canvas so a two-row card and a twelve-row card look like the same object, and
- * every label is truncated to the tick pitch rather than to a character guess.
+ * The drawing answers the questions a spreadsheet chart answers and a bare
+ * sparkline does not: a zero baseline with negative values below it, a y-axis
+ * with readable ticks, optional axis captions, an optional value on each mark,
+ * and one colour per series with a legend. Colours come from theme tokens, so a
+ * skin repaint recolours a saved chart without touching its file.
+ *
+ * The canvas is fixed and its aspect preserved: the card scales the whole
+ * drawing, so a tick stays the size it was designed at instead of stretching
+ * with the card's width and letterboxing its text.
  */
 function ViewChart({
   result,
@@ -534,73 +636,224 @@ function ViewChart({
   presentation: "bar" | "line";
   spec?: ViewBlock;
 }) {
-  // A fixed canvas with its aspect preserved: the card scales the whole drawing,
-  // so a tick stays the size it was designed at instead of stretching with the
-  // card's width. `preserveAspectRatio="none"` letterboxes text; this does not.
-  const W = 480;
-  const H = 180;
-  const padX = 6;
-  const padTop = 12;
-  const axisY = H - 22;
-  const data = result.rows.map(([label, value]) => ({ label, value }));
-  const maxY = Math.max(...data.map((d) => Math.abs(d.value)), 1);
-  const bw = (W - padX * 2) / data.length;
-  // A tick may be as wide as its slot minus a hair, so labels fill the axis
-  // instead of colliding; ~5.5 viewBox units per character at this font size.
-  const maxTickChars = Math.max(4, Math.floor((bw - 4) / 5.5));
+  const display = spec?.display ?? {};
+  const labels = result.rows.map(([label]) => label);
+  const seriesNames = result.series && result.series.length > 0 ? result.series : ["Value"];
+  const multi = seriesNames.length > 1;
+  const values = result.rows.map(([, value]) => value);
+  const seriesValues = new Map<string, number>();
+  for (const [label, name, value] of result.seriesRows ?? []) {
+    seriesValues.set(`${label}\u0000${name}`, value);
+  }
+  const allValues = result.seriesRows
+    ? [...seriesValues.values(), ...values]
+    : values;
+  const rawMax = Math.max(0, ...allValues);
+  const rawMin = Math.min(0, ...allValues);
+  const maxY = rawMin === 0 ? rawMax || 1 : rawMax;
+  const minY = rawMin === 0 ? 0 : rawMin;
+  const plotH = CHART.axisBottom - CHART.top;
+  const plotW = CHART.width - CHART.left - CHART.right;
+  const yOf = (value: number): number =>
+    CHART.axisBottom - ((value - minY) / (maxY - minY || 1)) * plotH;
+  const zeroY = yOf(0);
+  const slot = plotW / Math.max(1, labels.length);
+  const cluster = multi ? slot * 0.8 : slot * 0.62;
+  const barW = cluster / seriesNames.length;
+  const maxTickChars = Math.max(4, Math.floor((slot - 4) / 5.5));
   const tick = (label: string) =>
     label.length > maxTickChars ? `${label.slice(0, Math.max(1, maxTickChars - 1))}…` : label;
-  const pts = data.map((d, i) => {
-    const x = padX + i * bw + bw / 2;
-    const y = axisY - (Math.abs(d.value) / maxY) * (axisY - padTop);
-    return { x, y };
-  });
+  const tickCount = 4;
+  const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => minY + ((maxY - minY) * i) / tickCount);
+  const showLegend = display.legend ?? multi;
+  const unit =
+    result.currency && result.currency !== "mixed" ? ` ${result.currency}` : "";
+  const palette = display.palette ?? "accent";
+
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      className="view-card__chart"
-      role="img"
-      aria-label={`${spec?.title ?? ""} ${presentation === "bar" ? "bar chart" : "line chart"}`.trim()}
-    >
-      <line className="view-card__axis" x1={padX} y1={axisY} x2={W - padX} y2={axisY} />
-      {data.map((d, i) => (
-        <text key={`l${i}`} x={pts[i].x} y={H - 6} textAnchor="middle" fontSize="11" className="view-card__tick">
-          {tick(d.label)}
-        </text>
-      ))}
-      {presentation === "bar"
-        ? data.map((d, i) => (
-            <rect
-              key={`b${i}`}
-              className="view-card__bar"
-              x={pts[i].x - bw * 0.32}
-              y={pts[i].y}
-              width={bw * 0.64}
-              height={axisY - pts[i].y}
-              rx="1.5"
+    <div className={`view-card__chart-wrap view-card__chart-wrap--${palette}`}>
+      <svg
+        viewBox={`0 0 ${CHART.width} ${CHART.height}`}
+        className={`view-card__chart view-card__chart--${presentation} view-card__chart--palette-${palette}`}
+        role="img"
+        aria-label={`${spec?.title ?? ""} ${presentation === "bar" ? "bar chart" : "line chart"}`.trim()}
+      >
+        {yTicks.map((value, index) => (
+          <g key={`grid${index}`}>
+            <line
+              className="view-card__grid"
+              x1={CHART.left}
+              y1={yOf(value)}
+              x2={CHART.width - CHART.right}
+              y2={yOf(value)}
+            />
+            <text
+              x={CHART.left - 6}
+              y={yOf(value) + 4}
+              textAnchor="end"
+              fontSize="10"
+              className="view-card__axis-label"
             >
-              <title>{`${d.label}: ${fmtNumber(d.value)}${result.currency && result.currency !== "mixed" ? ` ${result.currency}` : ""}`}</title>
-            </rect>
-          ))
-        : data.map((d, i) =>
-            i === 0 ? null : (
-              <line
-                key={`ln${i}`}
-                className="view-card__line"
-                x1={pts[i - 1].x}
-                y1={pts[i - 1].y}
-                x2={pts[i].x}
-                y2={pts[i].y}
+              {fmtAxis(value)}
+            </text>
+          </g>
+        ))}
+        <line
+          className="view-card__axis"
+          x1={CHART.left}
+          y1={CHART.axisBottom}
+          x2={CHART.width - CHART.right}
+          y2={CHART.axisBottom}
+        />
+        {minY < 0 && maxY > 0 ? (
+          <line
+            className="view-card__zero"
+            x1={CHART.left}
+            y1={zeroY}
+            x2={CHART.width - CHART.right}
+            y2={zeroY}
+          />
+        ) : null}
+
+        {labels.map((label, index) => (
+          <text
+            key={`label${index}`}
+            x={CHART.left + slot * (index + 0.5)}
+            y={CHART.tickY}
+            textAnchor="middle"
+            fontSize="10"
+            className="view-card__tick"
+          >
+            {tick(label)}
+          </text>
+        ))}
+
+        {presentation === "bar"
+          ? labels.flatMap((label, index) =>
+              seriesNames.map((name, sIndex) => {
+                const value = multi
+                  ? (seriesValues.get(`${label}\u0000${name}`) ?? 0)
+                  : (result.rows[index]?.[1] ?? 0);
+                const center = CHART.left + slot * (index + 0.5);
+                const x = center - cluster / 2 + sIndex * barW;
+                const y = yOf(Math.max(0, value));
+                const height = Math.abs(yOf(value) - zeroY);
+                return (
+                  <g key={`bar${index}-${sIndex}`}>
+                    <rect
+                      className="view-card__bar"
+                      x={x}
+                      y={value >= 0 ? y : zeroY}
+                      width={Math.max(1, barW - 1)}
+                      height={Math.max(1, height)}
+                      rx="1.5"
+                      style={{ fill: seriesColor(sIndex) }}
+                    >
+                      <title>{`${label}${multi ? ` · ${name}` : ""}: ${fmtNumber(value)}${unit}`}</title>
+                    </rect>
+                    {display.valueLabels ? (
+                      <text
+                        x={x + Math.max(1, barW - 1) / 2}
+                        y={value >= 0 ? y - 3 : zeroY + height + 10}
+                        textAnchor="middle"
+                        fontSize="9"
+                        className="view-card__value-label"
+                      >
+                        {fmtNumber(value)}
+                      </text>
+                    ) : null}
+                  </g>
+                );
+              }),
+            )
+          : seriesNames.map((name, sIndex) => {
+              const points = labels
+                .map((label, index) => {
+                  const value = multi
+                    ? seriesValues.get(`${label}\u0000${name}`)
+                    : result.rows[index]?.[1];
+                  if (value === undefined) return null;
+                  return {
+                    x: CHART.left + slot * (index + 0.5),
+                    y: yOf(value),
+                    value,
+                    label,
+                  };
+                })
+                .filter((p): p is { x: number; y: number; value: number; label: string } => p !== null);
+              if (points.length === 0) return null;
+              return (
+                <g key={`series${sIndex}`}>
+                  <polyline
+                    className="view-card__line"
+                    points={points.map((p) => `${p.x},${p.y}`).join(" ")}
+                    fill="none"
+                    style={{ stroke: seriesColor(sIndex) }}
+                  />
+                  {points.map((p, i) => (
+                    <g key={`dot${sIndex}-${i}`}>
+                      <circle
+                        className="view-card__dot"
+                        cx={p.x}
+                        cy={p.y}
+                        r="3"
+                        style={{ fill: seriesColor(sIndex) }}
+                      >
+                        <title>{`${p.label}${multi ? ` · ${name}` : ""}: ${fmtNumber(p.value)}${unit}`}</title>
+                      </circle>
+                      {display.valueLabels ? (
+                        <text
+                          x={p.x}
+                          y={p.y - 7}
+                          textAnchor="middle"
+                          fontSize="9"
+                          className="view-card__value-label"
+                        >
+                          {fmtNumber(p.value)}
+                        </text>
+                      ) : null}
+                    </g>
+                  ))}
+                </g>
+              );
+            })}
+
+        {display.xLabel ? (
+          <text
+            x={CHART.left + plotW / 2}
+            y={CHART.xLabelY}
+            textAnchor="middle"
+            fontSize="10"
+            className="view-card__axis-caption"
+          >
+            {display.xLabel}
+          </text>
+        ) : null}
+        {display.yLabel ? (
+          <text
+            transform={`translate(12 ${CHART.top + plotH / 2}) rotate(-90)`}
+            textAnchor="middle"
+            fontSize="10"
+            className="view-card__axis-caption"
+          >
+            {display.yLabel}
+          </text>
+        ) : null}
+      </svg>
+      {showLegend ? (
+        <ul className="view-card__legend" aria-label="Legend">
+          {seriesNames.map((name, index) => (
+            <li key={name} className="view-card__legend-item">
+              <span
+                className="view-card__legend-swatch"
+                style={{ background: seriesColor(index) }}
+                aria-hidden="true"
               />
-            ),
-          )}
-      {presentation === "line"
-        ? data.map((d, i) => (
-            <circle key={`c${i}`} className="view-card__dot" cx={pts[i].x} cy={pts[i].y} r="3">
-              <title>{`${d.label}: ${fmtNumber(d.value)}`}</title>
-            </circle>
-          ))
-        : null}
-    </svg>
+              <span>{name}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }

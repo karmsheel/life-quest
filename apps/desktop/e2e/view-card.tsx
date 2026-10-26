@@ -59,10 +59,10 @@ harness.viewCardCalls = [];
 const fixtures = (harness.viewCardFixtures = {});
 
 /**
- * The schema the card reads to decide which presentation switches are possible.
- * A real one from the finance kit: a date to bucket, a number to measure, and a
- * relation to group by. `retargetBlock` reads the TYPES, so a rig with the wrong
- * types would prove the wrong set of enabled controls.
+ * The database schema the card reads. Since presentations became drawings the
+ * switch no longer depends on column types — a row object offers list/table and
+ * an aggregate offers all four — but the card still reads the database, so the
+ * fixture stays a real one rather than a stub.
  */
 const SCHEMA = {
   id: "finance:transactions",
