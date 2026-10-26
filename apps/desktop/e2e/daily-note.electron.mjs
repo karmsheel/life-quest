@@ -12,8 +12,9 @@
  * (`daily-note.png`), the box with one paragraph open as its own markdown
  * (`daily-note-editing.png`), the writing line a save landed in without touching
  * it (`daily-note-midsentence.png`), the Review panel (`daily-note-panel.png`),
- * and the wide page twice — strip beside the box with the dock on its shipped
- * side (`daily-note-split-right.png`) and swapped (`daily-note-split-left.png`).
+ * and the wide page twice — the strip and the box as one centred block with the
+ * dock on its shipped side (`daily-note-split-right.png`) and swapped
+ * (`daily-note-split-left.png`).
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
@@ -87,10 +88,12 @@
  * 20. The days before this week fold under a `W36 (31 Aug - 6 Sep)` label: the
  *     current week stays open, a folded week mounts no rows, and opening a week
  *     draws its days — including the far day's last-edited stamp.
- * 21. A page wide enough for two columns puts the strip at the page's edge away
- *     from the chat dock and the box at the other, with a spread between them that
- *     answers the dock's width across the page; swapping the dock swaps the strip's
- *     side with it. The box and the header keep their own column.
+ * 21. A page wide enough for two columns makes one block of the strip and the box
+ *     — the Documents page's own arrangement — centred on the page with the strip
+ *     on the side away from the dock: as much room before the strip as after the
+ *     box, and the gutter between the two as wide as the room between the box and
+ *     the dock. Swapping the dock swaps only the strip's side. The header and
+ *     pager keep their place over the box.
  *
  * NOT covered here: that the note reaches disk as `notes/daily/{date}.md`, that a
  * second write edits one file, and that a review's period pack reads the window
@@ -214,6 +217,21 @@ const SAMPLE = `(() => {
       rows: el.querySelectorAll(".daily-note__history-row").length,
     };
   });
+  // Whether the strip's own column holds what it draws. A side column is much
+  // narrower than the page-width strip, and the failure that matters there is a
+  // date ellipsized into a different day or a stamp reaching out under the box.
+  const stripFit = Array.from(
+    document.querySelectorAll(".daily-note__history-row"),
+  ).map((el) => {
+    const dateEl = el.querySelector(".daily-note__history-date");
+    const rowEl = el.querySelector(".daily-note__history-day") || el;
+    return {
+      isoDate: el.getAttribute("data-date"),
+      width: rowEl.clientWidth,
+      overflow: rowEl.scrollWidth - rowEl.clientWidth,
+      dateClipped: Boolean(dateEl && dateEl.scrollWidth > dateEl.clientWidth + 1),
+    };
+  });
   const content = document.querySelector(".shell__content");
   const page = document.querySelector(".daily-note");
   const header = document.querySelector(".daily-note__header");
@@ -261,6 +279,8 @@ const SAMPLE = `(() => {
     // The weekly fold: one entry per earlier week, with the label it wears and
     // the rows it is showing right now. A collapsed week mounts no rows at all.
     weeks,
+    // Every row's fit inside the column it was given.
+    stripFit,
     // How the page is standing: one column or two, and which edge the strip took.
     // The centre is solved from the content box's client width rather than its
     // border box, so a vertical scrollbar does not read as an off-centre page.
@@ -787,8 +807,11 @@ async function main() {
   // A day saves itself: the page offers no control to press, and landing on a
   // day nobody has typed on writes nothing at all.
   assertChrome(landing.chrome, "at landing");
-  if (landing.chrome.history.length === 0) {
-    failure("the strip of earlier notes drew no day to measure");
+  // On a Monday every seeded note but the unreadable file falls into a previous
+  // ISO week, which the strip folds: the rows to measure are then the weekly
+  // toggles rather than the day buttons. Either way the strip drew something.
+  if (landing.chrome.history.length === 0 && landing.chrome.weekToggles.length === 0) {
+    failure("the strip of earlier notes drew no day and no folded week to measure");
   }
   // The strip is a table of three: the date the note is for, that date's weekday,
   // and when it was last written — and its heading stands a step over the rows.
@@ -1716,7 +1739,7 @@ async function main() {
     "the day's page to come back",
   );
 
-  // ── 8c. wide page: the strip takes the edge away from the dock ───────────
+  // ── 8c. wide page: the strip and the box are one centred block ────────────
   // At the default 1280px window the page is one column: read that first, so the
   // wide claim below is a change and not a layout that was always two columns.
   if (
@@ -1729,10 +1752,28 @@ async function main() {
     );
   }
 
-  const twoColumns = (layout, when) => {
+  const twoColumns = (sample, when) => {
+    const layout = sample.layout;
     if (!layout.editor || !layout.history || !layout.page) {
       failure(`${when}: the page drew no box, no strip or no page to place them on`);
       return;
+    }
+    const chatLeft = (layout.shellClass ?? "").includes("shell--chat-left");
+    const boxRight = layout.editor.left + layout.editor.width;
+    const stripRight = layout.history.left + layout.history.width;
+    const pageRight = layout.page.left + layout.page.width;
+    // The strip and the box are one block in the middle of the page — the
+    // Documents page's arrangement — so the room before the strip and the room
+    // past the box are the same. Spread to the page's two edges, those two
+    // numbers would differ by the whole gutter.
+    const before = chatLeft
+      ? layout.editor.left - layout.page.left
+      : layout.history.left - layout.page.left;
+    const after = chatLeft ? pageRight - stripRight : pageRight - boxRight;
+    if (Math.abs(before - after) > 2) {
+      failure(
+        `${when}: the block is not centred — ${before}px before it and ${after}px after it`,
+      );
     }
     if (Math.abs(layout.history.top - layout.editor.top) > 4) {
       failure(
@@ -1741,41 +1782,41 @@ async function main() {
     }
     // The header and pager belong over the box, not over the strip.
     assertPagerOnBox(layout, when);
-    const chatLeft = (layout.shellClass ?? "").includes("shell--chat-left");
-    const boxRight = layout.editor.left + layout.editor.width;
-    const stripRight = layout.history.left + layout.history.width;
-    const pageRight = layout.page.left + layout.page.width;
-    const gap = chatLeft ? layout.history.left - boxRight : layout.editor.left - stripRight;
-    // The strip stands at the page's own edge, away from the dock, and the box
-    // stands at the other. The space between them is the point: it grows with
-    // the page rather than staying a single gutter beside the prose.
-    if (chatLeft) {
-      if (Math.abs(stripRight - pageRight) > 2) {
-        failure(
-          `${when}: the strip ends at ${stripRight}, not at the page's trailing edge ${pageRight}`,
-        );
-      }
-      if (Math.abs(layout.editor.left - layout.page.left) > 2) {
-        failure(
-          `${when}: the box opens at ${layout.editor.left}, not at the page's leading edge ${layout.page.left}`,
-        );
-      }
-    } else {
-      if (Math.abs(layout.history.left - layout.page.left) > 2) {
-        failure(
-          `${when}: the strip opens at ${layout.history.left}, not at the page's leading edge ${layout.page.left}`,
-        );
-      }
-      if (Math.abs(boxRight - pageRight) > 2) {
-        failure(
-          `${when}: the box ends at ${boxRight}, not at the page's trailing edge ${pageRight}`,
-        );
-      }
-    }
-    if (gap < 88) {
+    // A side index, not a second focus: narrower than the box, on the side away
+    // from the dock.
+    if (layout.history.width >= layout.editor.width) {
       failure(
-        `${when}: the strip stands ${gap}px from the box, not far enough apart to answer the dock`,
+        `${when}: the strip is ${layout.history.width}px wide, not narrower than the box's ${layout.editor.width}px`,
       );
+    }
+    const gutter = chatLeft ? layout.history.left - boxRight : layout.editor.left - stripRight;
+    if (gutter < 24) {
+      failure(
+        `${when}: the strip stands ${gutter}px from the box, inside the page's own gutter`,
+      );
+    }
+    // The space between the strip and the box is the space between the box and
+    // the dock: the same share of the page's room, not a fixed gutter beside a
+    // margin that grows with the window.
+    if (Math.abs(gutter - before) > 2) {
+      failure(
+        `${when}: ${gutter}px between the strip and the box, against ${before}px between the box and the dock`,
+      );
+    }
+    // The strip's column holds every row it draws: a date cut short reads as a
+    // different day, and a stamp that overflows reaches under the box.
+    if (sample.stripFit.length === 0) {
+      failure(`${when}: the strip drew no row to measure inside its column`);
+    }
+    for (const row of sample.stripFit) {
+      if (row.dateClipped) {
+        failure(`${when}: the row for ${row.isoDate} clips its date in a ${row.width}px column`);
+      }
+      if (row.overflow > 0) {
+        failure(
+          `${when}: the row for ${row.isoDate} overflows its column by ${row.overflow}px`,
+        );
+      }
     }
   };
 
@@ -1793,16 +1834,7 @@ async function main() {
   if (!(wideRight.layout.shellClass ?? "").includes("shell--chat-right")) {
     failure(`the wide page was not in the shipped dock arrangement: ${wideRight.layout.shellClass}`);
   }
-  twoColumns(wideRight.layout, "with the chat on the right");
-  if (
-    wideRight.layout.editor &&
-    wideRight.layout.history &&
-    !(wideRight.layout.history.left + wideRight.layout.history.width <= wideRight.layout.editor.left)
-  ) {
-    failure(
-      `with the chat on the right the strip sits at ${wideRight.layout.history.left}, not left of the box at ${wideRight.layout.editor.left}`,
-    );
-  }
+  twoColumns(wideRight, "with the chat on the right");
   const wideRightShot = await win.webContents.capturePage();
   fs.mkdirSync(artifactsDir, { recursive: true });
   fs.writeFileSync(
@@ -1825,16 +1857,7 @@ async function main() {
   );
   const wideLeft = await sample(win);
   checks.wideLeft = wideLeft.layout;
-  twoColumns(wideLeft.layout, "with the chat on the left");
-  if (
-    wideLeft.layout.editor &&
-    wideLeft.layout.history &&
-    !(wideLeft.layout.history.left >= wideLeft.layout.editor.left + wideLeft.layout.editor.width)
-  ) {
-    failure(
-      `with the chat on the left the strip sits at ${wideLeft.layout.history.left}, not right of the box at ${wideLeft.layout.editor.left}`,
-    );
-  }
+  twoColumns(wideLeft, "with the chat on the left");
   const wideLeftShot = await win.webContents.capturePage();
   fs.writeFileSync(
     path.join(artifactsDir, "daily-note-split-left.png"),
@@ -1850,6 +1873,7 @@ async function main() {
     `document.querySelector(".shell").classList.contains("shell--chat-right")`,
     "the chat dock to return to the trailing edge",
   );
+
   win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
   await waitFor(
     win,

@@ -869,12 +869,13 @@ describe("daily note ui e2e", () => {
       "the empty panel offered no way to the day's page",
     );
 
-    // ── wide page: the strip answers the dock from the far edge ────────────
+    // ── wide page: strip and box are one centred block ─────────────────────
     // At the default width the page is one column. A window wide enough for two
-    // puts the strip at the page's edge away from the chat — left when the chat
-    // is right, right when the chat is left — and the box at the other edge, so
-    // the journal's weight balances the dock across the page instead of pressing
-    // against the prose. The header and its pager ride the box's column.
+    // makes one block of the strip and the box, as the Documents page does with
+    // its list and its editor: centred on the page with the strip on the side
+    // away from the chat, as much room before the strip as after the box, and
+    // the gutter between the two as wide as the room between the box and the
+    // dock. The header and its pager ride the box's column.
     const wideRight = report.checks.wideRight;
     const wideLeft = report.checks.wideLeft;
     assert.match(
@@ -898,9 +899,30 @@ describe("daily note ui e2e", () => {
       assert.ok(layout.prev, `${when}: Prev day's box could not be measured`);
       assert.ok(layout.next, `${when}: Next day's box could not be measured`);
       assert.ok(layout.dayLabel, `${when}: the date's box could not be measured`);
+      const chatLeft = String(layout.shellClass).includes("shell--chat-left");
+      const editorCentre = layout.editor!.left + layout.editor!.width / 2;
+      const boxRight = layout.editor!.left + layout.editor!.width;
+      const stripRight = layout.history!.left + layout.history!.width;
+      const pageRight = layout.page!.left + layout.page!.width;
+      // The block is centred: the room before the strip and the room past the
+      // box are the same, so the pair is one middle block rather than two
+      // columns spread to the page's edges.
+      const before = chatLeft
+        ? layout.editor!.left - layout.page!.left
+        : layout.history!.left - layout.page!.left;
+      const after = chatLeft ? pageRight - stripRight : pageRight - boxRight;
+      assert.ok(
+        Math.abs(before - after) <= 2,
+        `${when}: the block is not centred — ${before}px before it and ${after}px after it`,
+      );
       assert.ok(
         Math.abs(layout.history!.top - layout.editor!.top) <= 4,
         `${when}: the strip and the box did not share a top edge`,
+      );
+      // A side index, not a second focus: narrower than the box.
+      assert.ok(
+        layout.history!.width < layout.editor!.width,
+        `${when}: the strip is ${layout.history!.width}px wide, not narrower than the box's ${layout.editor!.width}px`,
       );
       // The header sits over the box, not over the strip.
       assert.ok(
@@ -922,44 +944,26 @@ describe("daily note ui e2e", () => {
         `${when}: Next day does not close on the box's trailing edge`,
       );
       assert.ok(
-        Math.abs(
-          layout.dayLabel!.left +
-            layout.dayLabel!.width / 2 -
-            (layout.editor!.left + layout.editor!.width / 2),
-        ) <= 2,
+        Math.abs(layout.dayLabel!.left + layout.dayLabel!.width / 2 - editorCentre) <= 2,
         `${when}: the date is not centred over the box`,
       );
-      // The strip stands at the far edge and the box at the other, with the
-      // spread between them growing with the page.
-      const chatLeft = String(layout.shellClass).includes("shell--chat-left");
-      const boxRight = layout.editor!.left + layout.editor!.width;
-      const stripRight = layout.history!.left + layout.history!.width;
-      const pageRight = layout.page!.left + layout.page!.width;
-      const gap = chatLeft
+      // The strip is on the side away from the dock, and the space between it and
+      // the box is the space between the box and the dock — the page's own gutter.
+      const gutter = chatLeft
         ? layout.history!.left - boxRight
         : layout.editor!.left - stripRight;
       assert.ok(
-        gap >= 88,
-        `${when}: the strip stands ${gap}px from the box, not far enough apart to answer the dock`,
+        gutter >= 24,
+        `${when}: the strip stands ${gutter}px from the box, inside the page's own gutter`,
+      );
+      assert.ok(
+        Math.abs(gutter - before) <= 2,
+        `${when}: ${gutter}px between the strip and the box, against ${before}px between the box and the dock`,
       );
       if (chatLeft) {
-        assert.ok(
-          Math.abs(stripRight - pageRight) <= 2,
-          `${when}: the strip does not end at the page's trailing edge`,
-        );
-        assert.ok(
-          Math.abs(layout.editor!.left - layout.page!.left) <= 2,
-          `${when}: the box does not open at the page's leading edge`,
-        );
+        assert.ok(layout.history!.left >= boxRight, `${when}: the strip opens over the box`);
       } else {
-        assert.ok(
-          Math.abs(layout.history!.left - layout.page!.left) <= 2,
-          `${when}: the strip does not open at the page's leading edge`,
-        );
-        assert.ok(
-          Math.abs(boxRight - pageRight) <= 2,
-          `${when}: the box does not end at the page's trailing edge`,
-        );
+        assert.ok(stripRight <= layout.editor!.left, `${when}: the strip ends over the box`);
       }
     }
 
