@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
 import { useConfirm } from "@/components/ui/useConfirm";
@@ -18,6 +19,13 @@ import type {
 
 /** How long the page waits after the last keystroke before it writes. */
 const AUTOSAVE_DELAY_MS = 700;
+
+/**
+ * Room below a row's 3-dot that a downward menu needs. The menu holds one item
+ * and stands a little over two rems tall; anything less than this and it would
+ * be clipped by the window, so it opens upward instead.
+ */
+const ROW_MENU_SPACE_BELOW = 96;
 
 /**
  * What a write came to.
@@ -76,6 +84,12 @@ function sameTitle(a: string, b: string): boolean {
  * lists titles instead of dates, and a new document is created by giving it a
  * title rather than by choosing a day.
  *
+ * The strip is a library, and it holds the library's two verbs: "+ New document"
+ * sits beside its heading, and each row ends in a 3-dot menu whose Delete asks
+ * before removing that row's document. Nothing under the editor removes
+ * anything, because the thing the editor holds is whatever was opened last, not
+ * necessarily what the operator meant to discard.
+ *
  * There is no save control. The page writes shortly after the operator stops
  * typing, when the pointer leaves the compose area, and when the document is
  * left. Ctrl/Cmd+S is the same write for the operator who asks anyway. The
@@ -114,6 +128,10 @@ export default function IdealStatePage() {
   const [refused, setRefused] = useState<Draft | null>(null);
   /** Bumped when a new draft should take the caret in its title field. */
   const [focusTitleTick, setFocusTitleTick] = useState(0);
+  /** The document whose row menu is open, if any. */
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  /** Whether that menu opens upward to stay inside the window. */
+  const [menuUpward, setMenuUpward] = useState(false);
 
   const titleRef = useRef<HTMLInputElement | null>(null);
   // A read for a document the operator has already left must not land.
@@ -452,43 +470,82 @@ export default function IdealStatePage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [flush]);
 
-  /** Remove the document on screen. The markdown file itself goes with it. */
-  const deleteDocument = useCallback(async () => {
-    const id = active.current.id;
-    if (!id) return;
-    if ((await flush()) === "failed") return;
-    setSaving(true);
-    setError(null);
-    try {
-      const result = await api().idealStateDelete(id);
-      if (!result.ok) {
-        setError(result.error);
+  /**
+   * Remove one document from the strip. The markdown file itself goes with it.
+   *
+   * The row's own menu is what asks, so the target is the document the operator
+   * pointed at rather than whatever the editor happens to hold. Removing the
+   * document on screen moves the page to another; removing any other row leaves
+   * the editor exactly where it is.
+   */
+  const deleteDocument = useCallback(
+    async (id: string) => {
+      if ((await flush()) === "failed") return;
+      const onScreen = active.current.id;
+      setSaving(true);
+      setError(null);
+      try {
+        const result = await api().idealStateDelete(id);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        const listed = await loadDocuments();
+        if (onScreen !== id) return;
+        const next = listed.find((entry) => !entry.error);
+        if (next) await loadDocument(next.id);
+        else openNewDraft();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setSaving(false);
+      }
+    },
+    [flush, loadDocument, loadDocuments, openNewDraft],
+  );
+
+  const confirmDelete = useCallback(
+    (entry: IdealStateIndexEntry) => {
+      setMenuFor(null);
+      ask({
+        title: "Delete document",
+        message: `“${entry.title ?? "Untitled"}” is removed from Ideal State and its markdown file is removed from the vault.`,
+        confirmLabel: "Delete document",
+        destructive: true,
+        run: () => {
+          void deleteDocument(entry.id);
+        },
+      });
+    },
+    [ask, deleteDocument],
+  );
+
+  // A row menu closes on Escape or on any press that is not the menu or a menu
+  // trigger. Pressing a trigger is exempt because its own click decides, and
+  // that is what makes a second press close the menu rather than reopen it.
+  useEffect(() => {
+    if (!menuFor) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (
+        target?.closest(
+          ".ideal-state__row-menu, [data-testid^='ideal-state-doc-menu-']",
+        )
+      ) {
         return;
       }
-      const listed = await loadDocuments();
-      const next = listed.find((entry) => !entry.error);
-      if (next) await loadDocument(next.id);
-      else openNewDraft();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  }, [flush, loadDocument, loadDocuments, openNewDraft]);
-
-  const onDelete = useCallback(() => {
-    if (selectedId === null) return;
-    ask({
-      title: "Delete document",
-      message:
-        "The document is removed from Ideal State and its markdown file is removed from the vault.",
-      confirmLabel: "Delete document",
-      destructive: true,
-      run: () => {
-        void deleteDocument();
-      },
-    });
-  }, [ask, deleteDocument, selectedId]);
+      setMenuFor(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuFor(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuFor]);
 
   const titleBlank = title.trim() === "";
   const titleDirty = !sameTitle(title, savedTitle);
@@ -526,148 +583,214 @@ export default function IdealStatePage() {
 
   return (
     <div className="ideal-state">
-      <header className="ideal-state__header">
-        <div className="ideal-state__header-row">
+      <div className="ideal-state__layout">
+        <header className="ideal-state__header">
           <h1>Ideal State</h1>
-          <Button
-            variant="outline"
-            data-testid="ideal-state-new"
-            onClick={() => void startNew()}
-            disabled={loading || saving}
-          >
-            + New document
-          </Button>
-        </div>
-      </header>
+        </header>
 
-      {error ? (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+        {error ? (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        ) : null}
 
-      <div className="ideal-state__workspace">
-        {loading ? (
-          <p className="muted ideal-state__loading">Loading the document…</p>
-        ) : (
-          <div
-            className="ideal-state__compose"
-            // The pointer leaving the compose area — for the list, another page,
-            // another app — is the operator stepping away, so the document is
-            // written then rather than at the end of the debounce. Moving between
-            // the title and the prose stays inside.
-            onBlur={(event) => {
-              if (event.currentTarget.contains(event.relatedTarget)) return;
-              void flush();
-            }}
-          >
-            <label className="ideal-state__title-field">
-              <span className="ideal-state__title-label">Title</span>
-              <input
-                ref={titleRef}
-                className="ideal-state__title"
-                data-testid="ideal-state-title"
-                value={title}
-                onChange={(event) => onTitleChange(event.target.value)}
-                aria-label="Document title"
-                spellCheck={false}
-              />
-            </label>
-
-            <div className="ideal-state__editor">
-              <LiveMarkdownEditor
-                testId="ideal-state-editor"
-                value={body}
-                onChange={onBodyChange}
-                slug={`ideal-state-${selectedId ?? "new"}`}
-                ariaLabel={
-                  titleBlank ? "Ideal state document" : `Ideal state: ${title}`
-                }
-                autoFocusEmpty={!isNew}
-              />
-            </div>
-
-            <div className="ideal-state__footer">
-              <p
-                className="ideal-state__status muted"
-                data-testid="ideal-state-status"
-                role="status"
-              >
-                {status}
-              </p>
-              {selectedId !== null ? (
-                <Button
-                  destructive
-                  data-testid="ideal-state-delete"
-                  onClick={onDelete}
-                  disabled={saving}
-                >
-                  Delete
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        )}
-
-        <section className="ideal-state__history">
-          <h2>Documents</h2>
-          {documents.length === 0 ? (
-            <p className="muted">
-              No documents yet. Write the first one on the left.
-            </p>
+        <div className="ideal-state__workspace">
+          {loading ? (
+            <p className="muted ideal-state__loading">Loading the document…</p>
           ) : (
-            <>
-              <div className="ideal-state__history-head" aria-hidden="true">
-                <span>Title</span>
-                <span>Last edited</span>
+            <div
+              className="ideal-state__compose"
+              // The pointer leaving the compose area — for the list, another page,
+              // another app — is the operator stepping away, so the document is
+              // written then rather than at the end of the debounce. Moving between
+              // the title and the prose stays inside.
+              onBlur={(event) => {
+                if (event.currentTarget.contains(event.relatedTarget)) return;
+                void flush();
+              }}
+            >
+              <div className="ideal-state__title-field">
+                <input
+                  ref={titleRef}
+                  className="ideal-state__title"
+                  data-testid="ideal-state-title"
+                  value={title}
+                  onChange={(event) => onTitleChange(event.target.value)}
+                  aria-label="Document title"
+                  spellCheck={false}
+                />
               </div>
-              {readable.length > 0 ? (
-                <ul className="ideal-state__history-list">
-                  {readable.map((entry) => (
-                    <li key={entry.id}>
-                      <button
-                        type="button"
-                        className="ideal-state__history-row"
-                        data-testid={`ideal-state-doc-${entry.id}`}
-                        aria-current={
-                          entry.id === selectedId ? "true" : undefined
-                        }
-                        onClick={() => void goToDocument(entry.id)}
-                      >
-                        <span className="ideal-state__history-title">
-                          {entry.title ?? "Untitled"}
-                        </span>
-                        <span className="ideal-state__history-edited">
-                          {formatEditedAt(entry.updatedAt)}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              {unreadable.length > 0 ? (
-                <ul className="ideal-state__history-list">
-                  {unreadable.map((entry) => (
-                    <li key={entry.id}>
-                      <div
-                        className="ideal-state__history-row ideal-state__history-unreadable"
-                        data-testid={`ideal-state-doc-${entry.id}`}
-                        title={entry.error}
-                      >
-                        <span className="ideal-state__history-title">
-                          {entry.id}.md
-                        </span>
-                        <span className="ideal-state__history-edited">
-                          unreadable
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </>
+
+              <div className="ideal-state__editor">
+                <LiveMarkdownEditor
+                  testId="ideal-state-editor"
+                  value={body}
+                  onChange={onBodyChange}
+                  slug={`ideal-state-${selectedId ?? "new"}`}
+                  ariaLabel={
+                    titleBlank ? "Ideal state document" : `Ideal state: ${title}`
+                  }
+                  autoFocusEmpty={!isNew}
+                />
+              </div>
+
+              <div className="ideal-state__footer">
+                <p
+                  className="ideal-state__status muted"
+                  data-testid="ideal-state-status"
+                  role="status"
+                >
+                  {status}
+                </p>
+              </div>
+            </div>
           )}
-        </section>
+
+          <section className="ideal-state__history">
+            {/* The strip's own heading row: the documents it lists, and the one
+                control that starts another. New lives here rather than over the
+                box, because another document is something the library offers
+                rather than something the document being written does. */}
+            <div className="ideal-state__history-heading">
+              <h2>Documents</h2>
+              <Button
+                variant="outline"
+                data-testid="ideal-state-new"
+                onClick={() => void startNew()}
+                disabled={loading || saving}
+              >
+                + New document
+              </Button>
+            </div>
+            {documents.length === 0 ? (
+              <p className="muted">
+                No documents yet. Write the first one in the editor.
+              </p>
+            ) : (
+              <>
+                {/* The strip is one small table: the document's name, when it was
+                    last written, and the row's own menu. The third column is the
+                    space the 3-dot sits over, so the two headings stay over the
+                    cells they name and a row's control never covers its title. */}
+                <div className="ideal-state__history-head" aria-hidden="true">
+                  <span>Title</span>
+                  <span>Last edited</span>
+                  <span />
+                </div>
+                {readable.length > 0 ? (
+                  <ul className="ideal-state__history-list">
+                    {readable.map((entry) => {
+                      const menuOpen = menuFor === entry.id;
+                      return (
+                        <li
+                          key={entry.id}
+                          className={
+                            menuOpen
+                              ? "ideal-state__history-item ideal-state__history-item--menu"
+                              : "ideal-state__history-item"
+                          }
+                        >
+                          <button
+                            type="button"
+                            className="ideal-state__history-row"
+                            data-testid={`ideal-state-doc-${entry.id}`}
+                            aria-current={
+                              entry.id === selectedId ? "true" : undefined
+                            }
+                            onClick={() => void goToDocument(entry.id)}
+                          >
+                            <span className="ideal-state__history-title">
+                              {entry.title ?? "Untitled"}
+                            </span>
+                            <span className="ideal-state__history-edited">
+                              {formatEditedAt(entry.updatedAt)}
+                            </span>
+                          </button>
+                          {/* The only way to remove a document, so removing one is
+                              a gesture about the row it names rather than a
+                              control under the editor that acts on whatever is
+                              open — which is the document the operator may have
+                              just spent an hour writing. */}
+                          <button
+                            type="button"
+                            className="ideal-state__row-menu-btn"
+                            data-testid={`ideal-state-doc-menu-${entry.id}`}
+                            aria-label={`Actions for ${entry.title ?? "Untitled"}`}
+                            title="Document actions"
+                            aria-haspopup="menu"
+                            aria-expanded={menuOpen}
+                            onClick={(event) => {
+                              if (menuOpen) {
+                                setMenuFor(null);
+                                return;
+                              }
+                              // The strip sits under the box, near the window's
+                              // bottom on the one-column page: a menu with no room
+                              // below it opens upward rather than off-screen.
+                              const box =
+                                event.currentTarget.getBoundingClientRect();
+                              setMenuUpward(
+                                window.innerHeight - box.bottom <
+                                  ROW_MENU_SPACE_BELOW,
+                              );
+                              setMenuFor(entry.id);
+                            }}
+                          >
+                            <MoreVertical size={14} aria-hidden />
+                          </button>
+                          {menuOpen ? (
+                            <div
+                              className={
+                                menuUpward
+                                  ? "ideal-state__row-menu ideal-state__row-menu--up"
+                                  : "ideal-state__row-menu"
+                              }
+                              role="menu"
+                              aria-label={`Actions for ${entry.title ?? "Untitled"}`}
+                            >
+                              <button
+                                type="button"
+                                role="menuitem"
+                                data-testid="ideal-state-delete"
+                                className="ideal-state__row-menu-danger"
+                                onClick={() => confirmDelete(entry)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+                {unreadable.length > 0 ? (
+                  <ul className="ideal-state__history-list">
+                    {unreadable.map((entry) => (
+                      <li
+                        key={entry.id}
+                        className="ideal-state__history-item"
+                      >
+                        <div
+                          className="ideal-state__history-row ideal-state__history-unreadable"
+                          data-testid={`ideal-state-doc-${entry.id}`}
+                          title={entry.error}
+                        >
+                          <span className="ideal-state__history-title">
+                            {entry.id}.md
+                          </span>
+                          <span className="ideal-state__history-edited">
+                            unreadable
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </>
+            )}
+          </section>
+        </div>
       </div>
       {dialog}
     </div>

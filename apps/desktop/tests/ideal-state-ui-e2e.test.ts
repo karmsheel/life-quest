@@ -16,8 +16,8 @@ import { describe, it } from "node:test";
  * `lifequest-e2e` puts this checkout's server on 5173 for the run.
  *
  * The artifact is `e2e/artifacts/ideal-state.json` plus the pictures the driver
- * captures — the page holding several documents, the wide two-column layout,
- * and the landing state.
+ * captures — the page holding several documents, a row's open 3-dot menu, the
+ * wide two-column layout on both chat sides, and the landing state.
  */
 
 const desktopRoot = path.resolve(
@@ -45,6 +45,33 @@ type Write = {
   shownTitle: string | null;
   shownId: string | null;
 };
+type Box = { left: number; top: number; width: number; height: number };
+type Layout = {
+  shellClass: string | null;
+  viewport: { width: number; height: number } | null;
+  compose: Box | null;
+  editor: Box | null;
+  history: Box | null;
+  workspace: Box | null;
+  /** The strip's "+ New document", which now lives beside its heading. */
+  newControl: Box | null;
+  historyHeading: Box | null;
+  pageHeading: Box | null;
+  /** How many old-style "Title" eyebrows the page still draws: must be zero. */
+  titleLabel: number;
+  /** Delete controls inside the compose column: must be zero. */
+  deleteUnderEditor: number;
+  rowMenus: { row: Box | null; menu: Box | null }[];
+  openMenus: number;
+  openMenuBox: Box | null;
+  openMenuItems: (string | null)[];
+  chrome: {
+    nav: Box | null;
+    sheet: Box | null;
+    content: Box | null;
+    chat: Box | null;
+  };
+};
 type State = {
   route: string | null;
   rail: { label: string | null; href: string | null; active: boolean }[];
@@ -68,6 +95,7 @@ type State = {
   calls: string[];
   unexpected: string[];
   store: Record<string, { title: string; body: string }>;
+  layout: Layout;
 };
 type Report = {
   pass: boolean;
@@ -81,15 +109,18 @@ type Report = {
     switched: State;
     refused: State;
     recovered: State;
+    afterOtherDelete: State;
     afterDelete: State;
+    restored: State;
     final: State;
     createWrites: Write[];
     idleWrites: { before: number; after: number };
-    wide: {
-      compose: { left: number; top: number; width: number; height: number } | null;
-      editor: { left: number; top: number; width: number; height: number } | null;
-      history: { left: number; top: number; width: number; height: number } | null;
-    };
+    wide: Layout;
+    wideLeft: Layout;
+    wideCollapsed: Layout;
+    wideLeftCollapsed: Layout;
+    narrow: Layout;
+    narrowCollapsed: Layout;
   };
   screenshots: string[];
 };
@@ -150,11 +181,18 @@ describe("ideal state (Define rail, titled documents, one live editor)", () => {
       switched,
       refused,
       recovered,
+      afterOtherDelete,
       afterDelete,
+      restored,
       final,
       createWrites,
       idleWrites,
       wide,
+      wideCollapsed,
+      wideLeft,
+      wideLeftCollapsed,
+      narrow,
+      narrowCollapsed,
     } = report.checks;
 
     // The page belongs to Define, and the rail names it.
@@ -170,6 +208,40 @@ describe("ideal state (Define rail, titled documents, one live editor)", () => {
     assert.equal(landing.splits, 0, "a split editor came back");
     assert.equal(landing.previews, 0, "a preview pane came back");
     assert.equal(landing.saveControls, 0, "a Save control came back");
+
+    // The strip's own furniture: no Title eyebrow over the field, no Delete under
+    // the box, one closed menu per row, and New beside the Documents heading.
+    assert.equal(landing.layout.titleLabel, 0, "the Title eyebrow came back");
+    assert.equal(
+      landing.layout.deleteUnderEditor,
+      0,
+      "a Delete control came back under the editor",
+    );
+    assert.equal(landing.layout.openMenus, 0, "a row menu was open on landing");
+    assert.equal(
+      landing.layout.rowMenus.length,
+      landing.rows.length,
+      "a row is missing its 3-dot menu",
+    );
+    assert.ok(landing.layout.newControl, "the New document control is missing");
+    assert.ok(landing.layout.historyHeading, "the Documents heading is missing");
+    if (landing.layout.newControl && landing.layout.historyHeading && landing.layout.history) {
+      assert.ok(
+        landing.layout.newControl.left >= landing.layout.history.left &&
+          landing.layout.newControl.left + landing.layout.newControl.width <=
+            landing.layout.history.left + landing.layout.history.width + 1,
+        "New document is not inside the documents viewer",
+      );
+      assert.ok(
+        Math.abs(
+          landing.layout.newControl.top +
+            landing.layout.newControl.height / 2 -
+            (landing.layout.historyHeading.top +
+              landing.layout.historyHeading.height / 2),
+        ) <= 6,
+        "New document is not on the Documents heading line",
+      );
+    }
 
     // Landing opens the newest document, prose and all.
     assert.equal(landing.titleValue, "A calm morning");
@@ -241,22 +313,47 @@ describe("ideal state (Define rail, titled documents, one live editor)", () => {
       "Ctrl+S did not release the refused draft",
     );
 
-    // Delete asks, removes, and the page lands on another document.
-    assert.equal(afterDelete.rows.length, 3);
+    // Delete removes the row's own document: first one that is not on screen,
+    // which must leave the editor alone, then the one that is.
+    assert.equal(afterOtherDelete.rows.length, 3);
+    assert.equal(
+      afterOtherDelete.selectedId,
+      recovered.selectedId,
+      "deleting another row moved the editor",
+    );
+    assert.equal(
+      afterOtherDelete.titleValue,
+      recovered.titleValue,
+      "deleting another row changed the title on screen",
+    );
+    assert.equal(
+      afterOtherDelete.writes.filter((write) => write.op === "delete").length,
+      1,
+      "one row's delete was not one delete",
+    );
+
+    assert.equal(afterDelete.rows.length, 2);
     assert.equal(
       afterDelete.writes.filter((write) => write.op === "delete").length,
-      1,
+      2,
+      "the second delete was not recorded",
     );
     assert.notEqual(afterDelete.selectedId, recovered.selectedId);
     assert.equal(
       Object.keys(afterDelete.store).length,
-      3,
+      2,
       "the deleted document is still in the store",
     );
+    assert.equal(restored.rows.length, 3);
+    assert.equal(restored.rows[0]?.title, "A garden in the evening");
 
-    // The wide page puts the strip beside the box, sharing a top edge.
-    assert.ok(wide.compose && wide.history, "the wide layout reported no box or strip");
-    if (wide.compose && wide.history) {
+    // The wide page balances the box between the library and the dock: one gap
+    // on each side, and the two of them the same width.
+    assert.ok(
+      wide.compose && wide.editor && wide.history,
+      "the wide layout reported no box or strip",
+    );
+    if (wide.compose && wide.editor && wide.history) {
       assert.ok(
         Math.abs(wide.history.top - wide.compose.top) <= 4,
         "the strip and the box do not share a top edge",
@@ -264,6 +361,142 @@ describe("ideal state (Define rail, titled documents, one live editor)", () => {
       assert.ok(
         wide.history.left + wide.history.width <= wide.compose.left,
         "the strip does not lead the box with the dock on its shipped side",
+      );
+      assert.ok(wide.chrome.chat, "the wide layout did not measure the dock");
+      if (wide.chrome.chat) {
+        const libraryGap = wide.editor.left - (wide.history.left + wide.history.width);
+        const dockGap = wide.chrome.chat.left - (wide.editor.left + wide.editor.width);
+        assert.ok(
+          Math.abs(libraryGap - dockGap) <= 6,
+          `the box is not balanced: library ${libraryGap}px, dock ${dockGap}px`,
+        );
+        assert.ok(
+          libraryGap >= 40 && dockGap >= 40,
+          `the box's gaps are too tight: library ${libraryGap}px, dock ${dockGap}px`,
+        );
+      }
+      assert.ok(wide.pageHeading, "the page title is missing");
+      if (wide.pageHeading) {
+        assert.ok(
+          Math.abs(wide.pageHeading.left - wide.editor.left) <= 2,
+          "the page title does not ride the box's column",
+        );
+      }
+      assert.ok(wide.newControl && wide.newControl.left >= wide.history.left);
+    }
+
+    // Swapping the chat to the left swaps the strip to the other edge, with the
+    // same balanced gaps around the box.
+    assert.ok(
+      wideLeft.compose && wideLeft.editor && wideLeft.history,
+      "the flipped layout reported no box or strip",
+    );
+    if (wideLeft.compose && wideLeft.editor && wideLeft.history) {
+      assert.ok(
+        wideLeft.compose.left + wideLeft.compose.width <= wideLeft.history.left,
+        "the strip did not move to the right when the chat moved left",
+      );
+      assert.ok(wideLeft.chrome.chat, "the flipped layout did not measure the dock");
+      if (wideLeft.chrome.chat) {
+        const dockGap =
+          wideLeft.editor.left - (wideLeft.chrome.chat.left + wideLeft.chrome.chat.width);
+        const libraryGap =
+          wideLeft.history.left - (wideLeft.editor.left + wideLeft.editor.width);
+        assert.ok(
+          Math.abs(dockGap - libraryGap) <= 6,
+          `the flipped box is not balanced: dock ${dockGap}px, library ${libraryGap}px`,
+        );
+        assert.ok(
+          dockGap >= 40 && libraryGap >= 40,
+          `the flipped box's gaps are too tight: dock ${dockGap}px, library ${libraryGap}px`,
+        );
+      }
+      assert.ok(wideLeft.pageHeading, "the flipped page title is missing");
+      if (wideLeft.pageHeading) {
+        assert.ok(
+          Math.abs(wideLeft.pageHeading.left - wideLeft.editor.left) <= 2,
+          "the flipped page title does not follow the box",
+        );
+      }
+    }
+
+    // Collapsing the dock must not move the page: the width it gives back waits
+    // as empty page past the box.
+    assert.ok(
+      wideCollapsed.compose && wideCollapsed.editor && wideCollapsed.history,
+      "the collapsed layout reported no box or strip",
+    );
+    if (
+      wide.compose &&
+      wide.editor &&
+      wide.history &&
+      wideCollapsed.compose &&
+      wideCollapsed.editor &&
+      wideCollapsed.history
+    ) {
+      assert.ok(
+        Math.abs(wideCollapsed.history.left - wide.history.left) <= 1 &&
+          Math.abs(wideCollapsed.history.top - wide.history.top) <= 1,
+        "collapsing the dock moved the library",
+      );
+      assert.ok(
+        Math.abs(wideCollapsed.editor.left - wide.editor.left) <= 1 &&
+          Math.abs(wideCollapsed.editor.width - wide.editor.width) <= 1,
+        "collapsing the dock moved the box",
+      );
+      assert.ok(
+        wide.pageHeading &&
+          wideCollapsed.pageHeading &&
+          Math.abs(wideCollapsed.pageHeading.left - wide.pageHeading.left) <= 1,
+        "collapsing the dock moved the page title",
+      );
+    }
+
+    // The leading dock's collapse holds the same line.
+    assert.ok(
+      wideLeftCollapsed.editor && wideLeft.editor,
+      "the leading collapse reported no box",
+    );
+    if (wideLeftCollapsed.editor && wideLeft.editor) {
+      assert.ok(
+        Math.abs(wideLeftCollapsed.editor.left - wideLeft.editor.left) <= 1,
+        "collapsing the leading dock moved the box",
+      );
+    }
+    if (
+      wideLeftCollapsed.history &&
+      wideLeft.history &&
+      wideLeftCollapsed.pageHeading &&
+      wideLeft.pageHeading
+    ) {
+      assert.ok(
+        Math.abs(wideLeftCollapsed.history.left - wideLeft.history.left) <= 1,
+        "collapsing the leading dock moved the library",
+      );
+      assert.ok(
+        Math.abs(wideLeftCollapsed.pageHeading.left - wideLeft.pageHeading.left) <= 1,
+        "collapsing the leading dock moved the page title",
+      );
+    }
+
+    // The one-column page keeps its line too.
+    assert.ok(
+      narrow.editor && narrowCollapsed.editor && narrow.history && narrowCollapsed.history,
+      "the narrow collapse reported no box or strip",
+    );
+    if (
+      narrow.editor &&
+      narrowCollapsed.editor &&
+      narrow.history &&
+      narrowCollapsed.history
+    ) {
+      assert.ok(
+        Math.abs(narrowCollapsed.editor.left - narrow.editor.left) <= 1,
+        "collapsing the dock at the narrow size moved the box",
+      );
+      assert.ok(
+        Math.abs(narrowCollapsed.history.left - narrow.history.left) <= 1,
+        "collapsing the dock at the narrow size moved the library",
       );
     }
 

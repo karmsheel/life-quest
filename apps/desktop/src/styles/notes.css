@@ -410,8 +410,36 @@
    title rather than a date, so the title is a field above the box and the strip
    lists documents by name. */
 
+/* The page is its own container, for the same reason the Daily Note is: the
+   two-column rule below is a question about how much room the page has, and the
+   page has that room only after the rail and the dock have taken theirs. The
+   layout is a separate element because a container cannot style itself. */
 .ideal-state {
   container-type: inline-size;
+  width: 100%;
+}
+
+/* A collapsed dock hands its column back to the sheet, and the page does not
+   take it: the same insets the dock stood in are kept here, so the library, the
+   prose and the title stay exactly where they were and the reclaimed width
+   opens as empty page past the box. The insets are the dock's drawn column — the
+   same range clamp the shell's grid uses, not just its requested width — plus
+   the seam the sheet stops drawing; the trailing pane carries the window frame,
+   the leading one does not. */
+.shell--chat-collapsed.shell--chat-right .ideal-state {
+  padding-right: calc(
+    clamp(var(--chat-min), var(--chatbar-width), var(--chat-max)) +
+      var(--shell-frame) + 1px
+  );
+}
+
+.shell--chat-collapsed.shell--chat-left .ideal-state {
+  padding-left: calc(
+    clamp(var(--chat-min), var(--chatbar-width), var(--chat-max)) + 1px
+  );
+}
+
+.ideal-state__layout {
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -428,14 +456,6 @@
   width: 100%;
   max-width: 48rem;
   margin-inline: auto;
-}
-
-.ideal-state__header-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
 }
 
 .ideal-state__header h1 {
@@ -467,14 +487,6 @@
 
 /* The document's name is the page's own heading at rest and its title field in
    use, so the field is set at heading scale rather than as another form input. */
-.ideal-state__title-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
 .ideal-state__title {
   width: 100%;
   padding: 0.55rem 0.7rem;
@@ -520,9 +532,10 @@
   font-size: 0.85rem;
 }
 
-/* The strip of documents: one small two-column table. The rows are buttons, and
-   nothing in `global.css` resets the platform's own button fill — without a rule
-   here they paint the engine's grey chip and carry the list's bullets. */
+/* The strip of documents: one small table and the library's one control. The
+   heading row carries both — "Documents" and "+ New document" — because another
+   document is something the library offers rather than something the document
+   being written does. */
 .ideal-state__history {
   display: flex;
   flex-direction: column;
@@ -530,6 +543,14 @@
   margin-top: 0.5rem;
   padding-top: 1.25rem;
   border-top: 1px solid var(--border);
+}
+
+.ideal-state__history-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .ideal-state__history h2 {
@@ -548,12 +569,17 @@
   gap: 0.1rem;
 }
 
+/* Each row is a button plus the space its 3-dot sits over. The third track is
+   that space: the headings stay over the cells they name, and a row's control
+   never lands on its title. The stamps keep a little more of the strip than the
+   old two-column table gave them, so "Oct 25, 2026, 08:30 AM" stays on one line
+   now that the menu has taken a column of its own. */
 .ideal-state__history-head,
 .ideal-state__history-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) 1.25rem;
   align-items: baseline;
-  gap: 0.75rem;
+  gap: 0.5rem;
   padding: 0.35rem 0.5rem;
   border: 1px solid transparent;
 }
@@ -566,6 +592,13 @@
   color: var(--muted);
 }
 
+.ideal-state__history-item {
+  position: relative;
+}
+
+/* The rows are buttons, and nothing in `global.css` resets the platform's own
+   button fill — without a rule here they paint the engine's grey chip and carry
+   the list's bullets. */
 .ideal-state__history-row {
   width: 100%;
   border-radius: var(--radius-xs);
@@ -583,6 +616,13 @@
 .ideal-state__history-row[aria-current="true"] {
   border-color: var(--border);
   background: var(--card);
+}
+
+/* The row whose menu is open keeps the light on while the menu floats over a
+   neighbour: an upward menu covers the row above it, and the lit row is what
+   says which document its Delete belongs to. */
+.ideal-state__history-item--menu > .ideal-state__history-row {
+  background: var(--muted-surface);
 }
 
 .ideal-state__history-title {
@@ -607,47 +647,228 @@
   font-style: italic;
 }
 
-/* Wide enough for both at once: the document keeps the column it was written
-   for and the strip stands beside it, and the pair stay centred. The strip takes
-   the edge away from the dock — left when the chat is right, right when it is
-   left — so the prose never sits under the companion's shadow. */
+/* The 3-dot control: the only way to remove a document, and the only control on
+   the strip that is not the row it belongs to. It sits at the row's end, over
+   the track the headings leave for it. */
+.ideal-state__row-menu-btn {
+  position: absolute;
+  top: 50%;
+  right: 0.4rem;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.ideal-state__row-menu-btn:hover,
+.ideal-state__row-menu-btn[aria-expanded="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.ideal-state__row-menu-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+/* Hangs under the control that opened it, over the rows below. The strip sits
+   under the box and, on the one-column page, near the bottom of the window, so
+   the page measures the room below before it opens: a row with no room left
+   asks for `--up`, which puts the same menu above its control instead of
+   letting the window's edge cut the Delete item in half. */
+.ideal-state__row-menu {
+  position: absolute;
+  top: calc(100% - 0.2rem);
+  right: 0.35rem;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 6.5rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.ideal-state__row-menu--up {
+  top: auto;
+  bottom: calc(100% - 0.2rem);
+}
+
+/* A small diamond on the edge facing the control ties the menu to its row: an
+   upward menu covers the row above, so the caret points down at the 3-dot that
+   opened it, and a downward menu wears the same point on its top edge. */
+.ideal-state__row-menu::before {
+  content: "";
+  position: absolute;
+  right: 0.7rem;
+  top: -0.28rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  transform: rotate(45deg);
+}
+
+.ideal-state__row-menu--up::before {
+  top: auto;
+  bottom: -0.28rem;
+  border-top: 0;
+  border-left: 0;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.ideal-state__row-menu button {
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ideal-state__row-menu button:hover {
+  background: var(--selected-soft);
+}
+
+/* Delete is the one item here the vault cannot undo — the markdown file goes
+   with the row — so it wears the destructive token while it is still a menu. */
+.ideal-state__row-menu button.ideal-state__row-menu-danger {
+  color: var(--danger);
+}
+
+/* Wide enough for both at once: the strip keeps the page's leading edge and the
+   box takes the flexible column beside it. The box is not flush against the
+   dock, though: its column carries one edge gutter — the page's own padding and
+   the sheet's seam, the space between the content and the dock — and the prose
+   is centred in what remains. The library-to-prose gap and the prose-to-dock gap
+   then come out the same, give or take the gutter, and both grow with the
+   window. The header rides the box's column: "Ideal State" belongs over the
+   document being written, while the strip keeps its own heading and the button
+   that starts another.
+
+   Chat on the left mirrors the pair: the strip moves to the page's trailing
+   edge, past the box, the header follows the box to the leading one, and the
+   edge gutter moves to the box's leading side. */
 @container (min-width: 78rem) {
+  .ideal-state__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 30rem) minmax(0, 1fr);
+    align-items: start;
+    /* The strip keeps the page's edge and the box's own gutter is the edge
+       gutter above; a column gap here would be a second, unbalanced gutter. */
+    column-gap: 0;
+    row-gap: 1rem;
+  }
+
   .ideal-state__header {
-    max-width: 78rem;
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding-left: 1.5rem;
+  }
+
+  .ideal-state__header h1 {
+    width: 100%;
+    max-width: 46rem;
+    margin-inline: auto;
+  }
+
+  .ideal-state__layout > .form-error {
+    grid-column: 2;
+    width: min(100%, 46rem);
+    margin-left: 1.5rem;
+    justify-self: center;
   }
 
   .ideal-state__workspace {
+    grid-column: 1 / -1;
     display: grid;
-    grid-template-columns: minmax(0, 30rem) minmax(0, 46rem);
+    grid-template-columns: minmax(0, 30rem) minmax(0, 1fr);
     align-items: start;
-    justify-content: center;
-    gap: 2rem;
+    column-gap: 0;
+    row-gap: 1rem;
   }
 
   .ideal-state__compose {
+    grid-column: 2;
+    grid-row: 1;
     max-width: none;
     margin: 0;
-    order: 2;
+    padding-left: 1.5rem;
+  }
+
+  /* The title, the box and the status are one prose column, centred in the
+     space left after the edge gutter. */
+  .ideal-state__compose > * {
+    width: 100%;
+    max-width: 46rem;
+    margin-inline: auto;
   }
 
   .ideal-state__history {
+    grid-column: 1;
+    grid-row: 1;
     max-width: none;
     margin: 0;
     padding-top: 0;
     border-top: 0;
-    order: 1;
+  }
+
+  /* The box's own column, while a document is still on its way in. */
+  .ideal-state__loading {
+    grid-column: 2;
+    grid-row: 1;
+    padding-left: 1.5rem;
+  }
+
+  .shell--chat-left .ideal-state__layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 30rem);
+  }
+
+  .shell--chat-left .ideal-state__header {
+    grid-column: 1;
+    padding-left: 0;
+    padding-right: 1.5rem;
+  }
+
+  .shell--chat-left .ideal-state__layout > .form-error {
+    grid-column: 1;
+    margin-left: 0;
+    margin-right: 1.5rem;
   }
 
   .shell--chat-left .ideal-state__workspace {
-    grid-template-columns: minmax(0, 46rem) minmax(0, 30rem);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 30rem);
   }
 
-  .shell--chat-left .ideal-state__compose {
-    order: 1;
+  .shell--chat-left .ideal-state__compose,
+  .shell--chat-left .ideal-state__loading {
+    grid-column: 1;
+    grid-row: 1;
+    padding-left: 0;
+    padding-right: 1.5rem;
   }
 
   .shell--chat-left .ideal-state__history {
-    order: 2;
+    grid-column: 2;
+    grid-row: 1;
   }
 }
 
