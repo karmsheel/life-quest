@@ -419,6 +419,26 @@
   width: 100%;
 }
 
+/* A collapsed dock hands its column back to the sheet, and the page does not
+   take it: the same insets the dock stood in are kept here, so the library, the
+   prose and the title stay exactly where they were and the reclaimed width
+   opens as empty page past the box. The insets are the dock's drawn column — the
+   same range clamp the shell's grid uses, not just its requested width — plus
+   the seam the sheet stops drawing; the trailing pane carries the window frame,
+   the leading one does not. */
+.shell--chat-collapsed.shell--chat-right .ideal-state {
+  padding-right: calc(
+    clamp(var(--chat-min), var(--chatbar-width), var(--chat-max)) +
+      var(--shell-frame) + 1px
+  );
+}
+
+.shell--chat-collapsed.shell--chat-left .ideal-state {
+  padding-left: calc(
+    clamp(var(--chat-min), var(--chatbar-width), var(--chat-max)) + 1px
+  );
+}
+
 .ideal-state__layout {
   width: 100%;
   display: flex;
@@ -731,44 +751,58 @@
   color: var(--danger);
 }
 
-/* Wide enough for both at once: the strip and the box are spread apart rather
-   than centred as a pair. The strip takes the page's leading edge and the box
-   the trailing one, so the gap between the library and the prose grows with the
-   window instead of staying one gutter wide, and the editor keeps the centre of
-   the page rather than sitting under the dock's shadow. The header rides the
-   box's column: "Ideal State" belongs over the document being written, while
-   the strip keeps its own heading and the button that starts another.
+/* Wide enough for both at once: the strip keeps the page's leading edge and the
+   box takes the flexible column beside it. The box is not flush against the
+   dock, though: its column carries one edge gutter — the page's own padding and
+   the sheet's seam, the space between the content and the dock — and the prose
+   is centred in what remains. The library-to-prose gap and the prose-to-dock gap
+   then come out the same, give or take the gutter, and both grow with the
+   window. The header rides the box's column: "Ideal State" belongs over the
+   document being written, while the strip keeps its own heading and the button
+   that starts another.
 
    Chat on the left mirrors the pair: the strip moves to the page's trailing
-   edge, past the box, and the header follows the box to the leading one. */
+   edge, past the box, the header follows the box to the leading one, and the
+   edge gutter moves to the box's leading side. */
 @container (min-width: 78rem) {
   .ideal-state__layout {
     display: grid;
-    grid-template-columns: minmax(0, 30rem) minmax(0, 46rem);
-    justify-content: space-between;
+    grid-template-columns: minmax(0, 30rem) minmax(0, 1fr);
     align-items: start;
-    column-gap: 2rem;
+    /* The strip keeps the page's edge and the box's own gutter is the edge
+       gutter above; a column gap here would be a second, unbalanced gutter. */
+    column-gap: 0;
     row-gap: 1rem;
   }
 
   .ideal-state__header {
     grid-column: 2;
+    grid-row: 1;
     width: 100%;
     max-width: none;
     margin: 0;
+    padding-left: 1.5rem;
+  }
+
+  .ideal-state__header h1 {
+    width: 100%;
+    max-width: 46rem;
+    margin-inline: auto;
   }
 
   .ideal-state__layout > .form-error {
     grid-column: 2;
+    width: min(100%, 46rem);
+    margin-left: 1.5rem;
+    justify-self: center;
   }
 
   .ideal-state__workspace {
     grid-column: 1 / -1;
     display: grid;
-    grid-template-columns: minmax(0, 30rem) minmax(0, 46rem);
-    justify-content: space-between;
+    grid-template-columns: minmax(0, 30rem) minmax(0, 1fr);
     align-items: start;
-    column-gap: 2rem;
+    column-gap: 0;
     row-gap: 1rem;
   }
 
@@ -777,6 +811,15 @@
     grid-row: 1;
     max-width: none;
     margin: 0;
+    padding-left: 1.5rem;
+  }
+
+  /* The title, the box and the status are one prose column, centred in the
+     space left after the edge gutter. */
+  .ideal-state__compose > * {
+    width: 100%;
+    max-width: 46rem;
+    margin-inline: auto;
   }
 
   .ideal-state__history {
@@ -792,25 +835,35 @@
   .ideal-state__loading {
     grid-column: 2;
     grid-row: 1;
+    padding-left: 1.5rem;
   }
 
   .shell--chat-left .ideal-state__layout {
-    grid-template-columns: minmax(0, 46rem) minmax(0, 30rem);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 30rem);
   }
 
-  .shell--chat-left .ideal-state__header,
+  .shell--chat-left .ideal-state__header {
+    grid-column: 1;
+    padding-left: 0;
+    padding-right: 1.5rem;
+  }
+
   .shell--chat-left .ideal-state__layout > .form-error {
     grid-column: 1;
+    margin-left: 0;
+    margin-right: 1.5rem;
   }
 
   .shell--chat-left .ideal-state__workspace {
-    grid-template-columns: minmax(0, 46rem) minmax(0, 30rem);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 30rem);
   }
 
   .shell--chat-left .ideal-state__compose,
   .shell--chat-left .ideal-state__loading {
     grid-column: 1;
     grid-row: 1;
+    padding-left: 0;
+    padding-right: 1.5rem;
   }
 
   .shell--chat-left .ideal-state__history {

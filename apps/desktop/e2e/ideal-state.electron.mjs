@@ -144,6 +144,12 @@ const SAMPLE = `(() => {
       ),
       openMenus: document.querySelectorAll(".ideal-state__row-menu").length,
       openMenuBox: rect(document.querySelector(".ideal-state__row-menu")),
+      chrome: {
+        nav: rect(document.querySelector(".nav-rail")),
+        sheet: rect(document.querySelector(".shell__main")),
+        content: rect(document.querySelector(".shell__content")),
+        chat: rect(document.querySelector(".chat-panel")),
+      },
       openMenuItems: Array.from(
         document.querySelectorAll('.ideal-state__row-menu [role="menuitem"]'),
       ).map((el) => text(el)),
@@ -850,19 +856,30 @@ async function run() {
         history.left + history.width <= compose.left,
         `strip ${history.left}+${history.width}, compose ${compose.left}`,
       );
-      const gap = compose.left - (history.left + history.width);
-      // The journal's own spread at this width is ~94px. The old paired layout
-      // left 32px here; the claim is that the library stands at the page's edge
-      // rather than beside the box, so the gap is the journal's, not a gutter.
+      const chat = wide.layout.chrome.chat;
       check(
-        "the strip is spread to the page's edge",
-        gap >= 90,
-        `gap ${gap}px between strip and box`,
+        "the wide page measured the dock it is balancing against",
+        Boolean(chat),
+        JSON.stringify(wide.layout.chrome),
       );
+      if (chat) {
+        const libraryGap = editor.left - (history.left + history.width);
+        const dockGap = chat.left - (editor.left + editor.width);
+        check(
+          "the library and the dock stand the same distance from the box",
+          Math.abs(libraryGap - dockGap) <= 6,
+          `library ${libraryGap}px, dock ${dockGap}px`,
+        );
+        check(
+          "both of the box's gaps breathe",
+          libraryGap >= 40 && dockGap >= 40,
+          `library ${libraryGap}px, dock ${dockGap}px`,
+        );
+      }
       check(
         "the page title rides the box's column",
-        Boolean(pageHeading) && Math.abs(pageHeading.left - compose.left) <= 2,
-        `title ${JSON.stringify(pageHeading)}, box ${JSON.stringify(compose)}`,
+        Boolean(pageHeading) && Math.abs(pageHeading.left - editor.left) <= 2,
+        `title ${JSON.stringify(pageHeading)}, box ${JSON.stringify(editor)}`,
       );
       check(
         "the strip's New control sits inside the strip",
@@ -929,6 +946,57 @@ async function run() {
       );
     }
 
+    // Collapsing the dock gives its column to the sheet. The page must not move
+    // with it: the documents, the box and the title stay exactly where they were,
+    // and the reclaimed width opens as empty page past the box.
+    check(
+      "the chat toggle collapsed the dock",
+      await clickSelector(".window-titlebar__chat-toggle"),
+      "no chat toggle",
+    );
+    await waitFor(
+      `document.querySelector(".shell")?.classList.contains("shell--chat-collapsed") === true`,
+      "the chat to collapse",
+    );
+    await js(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    );
+    const wideCollapsed = await sample();
+    checks.wideCollapsed = wideCollapsed.layout;
+    if (compose && history && wideCollapsed.layout.compose && wideCollapsed.layout.history) {
+      check(
+        "collapsing the dock leaves the documents where they were",
+        Math.abs(wideCollapsed.layout.history.left - history.left) <= 1 &&
+          Math.abs(wideCollapsed.layout.history.top - history.top) <= 1,
+        `before ${JSON.stringify(history)}, after ${JSON.stringify(wideCollapsed.layout.history)}`,
+      );
+      check(
+        "collapsing the dock leaves the box where it was",
+        Boolean(wideCollapsed.layout.editor) &&
+          Boolean(editor) &&
+          Math.abs(wideCollapsed.layout.editor.left - editor.left) <= 1 &&
+          Math.abs(wideCollapsed.layout.editor.width - editor.width) <= 1,
+        `before ${JSON.stringify(editor)}, after ${JSON.stringify(wideCollapsed.layout.editor)}`,
+      );
+      check(
+        "collapsing the dock leaves the title where it was",
+        Boolean(wideCollapsed.layout.pageHeading) &&
+          Boolean(pageHeading) &&
+          Math.abs(wideCollapsed.layout.pageHeading.left - pageHeading.left) <= 1,
+        `before ${JSON.stringify(pageHeading)}, after ${JSON.stringify(wideCollapsed.layout.pageHeading)}`,
+      );
+    }
+    screenshots.push(await shoot("wide-collapsed"));
+    check(
+      "the chat toggle reopened the dock",
+      await clickSelector(".window-titlebar__chat-toggle"),
+      "no chat toggle",
+    );
+    await waitFor(
+      `document.querySelector(".shell")?.classList.contains("shell--chat-collapsed") === false`,
+      "the chat to reopen",
+    );
+
     // Chat on the left swaps the pair: the strip goes to the page's trailing
     // edge, past the box, and the header follows the box to the leading one.
     check(
@@ -954,18 +1022,32 @@ async function run() {
         flipped.compose.left + flipped.compose.width <= flipped.history.left,
         `box ${flipped.compose.left}+${flipped.compose.width}, strip ${flipped.history.left}`,
       );
-      const flippedGap =
-        flipped.history.left - (flipped.compose.left + flipped.compose.width);
+      const flippedChat = flipped.chrome.chat;
       check(
-        "the flipped strip is spread to the other edge",
-        flippedGap >= 90,
-        `gap ${flippedGap}px between box and strip`,
+        "the flipped page measured the dock it is balancing against",
+        Boolean(flippedChat),
+        JSON.stringify(flipped.chrome),
       );
+      if (flippedChat) {
+        const dockGap = flipped.editor.left - (flippedChat.left + flippedChat.width);
+        const libraryGap =
+          flipped.history.left - (flipped.editor.left + flipped.editor.width);
+        check(
+          "the flipped box stands the same distance from the dock and the library",
+          Math.abs(dockGap - libraryGap) <= 6,
+          `dock ${dockGap}px, library ${libraryGap}px`,
+        );
+        check(
+          "the flipped box's gaps breathe",
+          dockGap >= 40 && libraryGap >= 40,
+          `dock ${dockGap}px, library ${libraryGap}px`,
+        );
+      }
       check(
         "the flipped page title follows the box",
         Boolean(flipped.pageHeading) &&
-          Math.abs(flipped.pageHeading.left - flipped.compose.left) <= 2,
-        `title ${JSON.stringify(flipped.pageHeading)}, box ${JSON.stringify(flipped.compose)}`,
+          Math.abs(flipped.pageHeading.left - flipped.editor.left) <= 2,
+        `title ${JSON.stringify(flipped.pageHeading)}, box ${JSON.stringify(flipped.editor)}`,
       );
       check(
         "the flipped strip still holds New",
@@ -977,6 +1059,52 @@ async function run() {
       );
     }
     screenshots.push(await shoot("wide-left"));
+
+    // The leading dock has its own inset, and collapsing it must hold the page
+    // still on that side too.
+    check(
+      "the leading chat toggle collapsed the dock",
+      await clickSelector(".window-titlebar__chat-toggle"),
+      "no chat toggle",
+    );
+    await waitFor(
+      `document.querySelector(".shell")?.classList.contains("shell--chat-collapsed") === true`,
+      "the leading chat to collapse",
+    );
+    await js(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    );
+    const leftCollapsed = await sample();
+    checks.wideLeftCollapsed = leftCollapsed.layout;
+    if (
+      flipped.editor &&
+      flipped.history &&
+      flipped.pageHeading &&
+      leftCollapsed.layout.editor &&
+      leftCollapsed.layout.history &&
+      leftCollapsed.layout.pageHeading
+    ) {
+      check(
+        "collapsing the leading dock leaves the page where it was",
+        Math.abs(leftCollapsed.layout.editor.left - flipped.editor.left) <= 1 &&
+          Math.abs(leftCollapsed.layout.history.left - flipped.history.left) <= 1 &&
+          Math.abs(leftCollapsed.layout.history.top - flipped.history.top) <= 1 &&
+          Math.abs(
+            leftCollapsed.layout.pageHeading.left - flipped.pageHeading.left,
+          ) <= 1,
+        `box ${flipped.editor.left}→${leftCollapsed.layout.editor.left}, library ${flipped.history.left}→${leftCollapsed.layout.history.left}, title ${flipped.pageHeading.left}→${leftCollapsed.layout.pageHeading.left}`,
+      );
+    }
+    screenshots.push(await shoot("wide-left-collapsed"));
+    check(
+      "the leading chat toggle reopened the dock",
+      await clickSelector(".window-titlebar__chat-toggle"),
+      "no chat toggle",
+    );
+    await waitFor(
+      `document.querySelector(".shell")?.classList.contains("shell--chat-collapsed") === false`,
+      "the leading chat to reopen",
+    );
 
     // Put the dock back where it started for the rest of the run.
     check(
@@ -990,6 +1118,53 @@ async function run() {
     );
     win.setContentSize(SIZE.width, SIZE.height);
     await waitFor(`window.innerWidth <= ${SIZE.width + 10}`, "the default window");
+    await js(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    );
+
+    // The one-column page reserves the dock's column too: collapsing it at the
+    // default size leaves the prose and the strip under it exactly in place.
+    const narrow = await sample();
+    checks.narrow = narrow.layout;
+    check(
+      "the chat toggle collapsed the dock at the narrow size",
+      await clickSelector(".window-titlebar__chat-toggle"),
+      "no chat toggle",
+    );
+    await waitFor(
+      `document.querySelector(".shell")?.classList.contains("shell--chat-collapsed") === true`,
+      "the narrow chat to collapse",
+    );
+    await js(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    );
+    const narrowCollapsed = await sample();
+    checks.narrowCollapsed = narrowCollapsed.layout;
+    if (
+      narrow.editor &&
+      narrow.history &&
+      narrow.pageHeading &&
+      narrowCollapsed.editor &&
+      narrowCollapsed.history &&
+      narrowCollapsed.pageHeading
+    ) {
+      check(
+        "collapsing the dock at the narrow size leaves the page where it was",
+        Math.abs(narrowCollapsed.editor.left - narrow.editor.left) <= 1 &&
+          Math.abs(narrowCollapsed.history.left - narrow.history.left) <= 1 &&
+          Math.abs(narrowCollapsed.pageHeading.left - narrow.pageHeading.left) <= 1,
+        `box ${narrow.editor.left}→${narrowCollapsed.editor.left}, library ${narrow.history.left}→${narrowCollapsed.history.left}, title ${narrow.pageHeading.left}→${narrowCollapsed.pageHeading.left}`,
+      );
+    }
+    check(
+      "the narrow chat toggle reopened the dock",
+      await clickSelector(".window-titlebar__chat-toggle"),
+      "no chat toggle",
+    );
+    await waitFor(
+      `document.querySelector(".shell")?.classList.contains("shell--chat-collapsed") === false`,
+      "the narrow chat to reopen",
+    );
 
     // ── 10. nothing unexpected ───────────────────────────────────────────────
     const final = await sample();

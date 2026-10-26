@@ -65,6 +65,12 @@ type Layout = {
   openMenus: number;
   openMenuBox: Box | null;
   openMenuItems: (string | null)[];
+  chrome: {
+    nav: Box | null;
+    sheet: Box | null;
+    content: Box | null;
+    chat: Box | null;
+  };
 };
 type State = {
   route: string | null;
@@ -111,6 +117,10 @@ type Report = {
     idleWrites: { before: number; after: number };
     wide: Layout;
     wideLeft: Layout;
+    wideCollapsed: Layout;
+    wideLeftCollapsed: Layout;
+    narrow: Layout;
+    narrowCollapsed: Layout;
   };
   screenshots: string[];
 };
@@ -178,7 +188,11 @@ describe("ideal state (Define rail, titled documents, one live editor)", () => {
       createWrites,
       idleWrites,
       wide,
+      wideCollapsed,
       wideLeft,
+      wideLeftCollapsed,
+      narrow,
+      narrowCollapsed,
     } = report.checks;
 
     // The page belongs to Define, and the rail names it.
@@ -333,9 +347,13 @@ describe("ideal state (Define rail, titled documents, one live editor)", () => {
     assert.equal(restored.rows.length, 3);
     assert.equal(restored.rows[0]?.title, "A garden in the evening");
 
-    // The wide page spreads the strip and the box apart, at the page's edges.
-    assert.ok(wide.compose && wide.history, "the wide layout reported no box or strip");
-    if (wide.compose && wide.history) {
+    // The wide page balances the box between the library and the dock: one gap
+    // on each side, and the two of them the same width.
+    assert.ok(
+      wide.compose && wide.editor && wide.history,
+      "the wide layout reported no box or strip",
+    );
+    if (wide.compose && wide.editor && wide.history) {
       assert.ok(
         Math.abs(wide.history.top - wide.compose.top) <= 4,
         "the strip and the box do not share a top edge",
@@ -344,43 +362,142 @@ describe("ideal state (Define rail, titled documents, one live editor)", () => {
         wide.history.left + wide.history.width <= wide.compose.left,
         "the strip does not lead the box with the dock on its shipped side",
       );
-      assert.ok(
-        wide.compose.left - (wide.history.left + wide.history.width) >= 90,
-        "the strip is still sitting too close to the box",
-      );
+      assert.ok(wide.chrome.chat, "the wide layout did not measure the dock");
+      if (wide.chrome.chat) {
+        const libraryGap = wide.editor.left - (wide.history.left + wide.history.width);
+        const dockGap = wide.chrome.chat.left - (wide.editor.left + wide.editor.width);
+        assert.ok(
+          Math.abs(libraryGap - dockGap) <= 6,
+          `the box is not balanced: library ${libraryGap}px, dock ${dockGap}px`,
+        );
+        assert.ok(
+          libraryGap >= 40 && dockGap >= 40,
+          `the box's gaps are too tight: library ${libraryGap}px, dock ${dockGap}px`,
+        );
+      }
       assert.ok(wide.pageHeading, "the page title is missing");
       if (wide.pageHeading) {
         assert.ok(
-          Math.abs(wide.pageHeading.left - wide.compose.left) <= 2,
+          Math.abs(wide.pageHeading.left - wide.editor.left) <= 2,
           "the page title does not ride the box's column",
         );
       }
       assert.ok(wide.newControl && wide.newControl.left >= wide.history.left);
     }
 
-    // Swapping the chat to the left swaps the strip to the other edge.
+    // Swapping the chat to the left swaps the strip to the other edge, with the
+    // same balanced gaps around the box.
     assert.ok(
-      wideLeft.compose && wideLeft.history,
+      wideLeft.compose && wideLeft.editor && wideLeft.history,
       "the flipped layout reported no box or strip",
     );
-    if (wideLeft.compose && wideLeft.history) {
+    if (wideLeft.compose && wideLeft.editor && wideLeft.history) {
       assert.ok(
         wideLeft.compose.left + wideLeft.compose.width <= wideLeft.history.left,
         "the strip did not move to the right when the chat moved left",
       );
-      assert.ok(
-        wideLeft.history.left -
-          (wideLeft.compose.left + wideLeft.compose.width) >=
-          90,
-        "the flipped strip is still sitting too close to the box",
-      );
+      assert.ok(wideLeft.chrome.chat, "the flipped layout did not measure the dock");
+      if (wideLeft.chrome.chat) {
+        const dockGap =
+          wideLeft.editor.left - (wideLeft.chrome.chat.left + wideLeft.chrome.chat.width);
+        const libraryGap =
+          wideLeft.history.left - (wideLeft.editor.left + wideLeft.editor.width);
+        assert.ok(
+          Math.abs(dockGap - libraryGap) <= 6,
+          `the flipped box is not balanced: dock ${dockGap}px, library ${libraryGap}px`,
+        );
+        assert.ok(
+          dockGap >= 40 && libraryGap >= 40,
+          `the flipped box's gaps are too tight: dock ${dockGap}px, library ${libraryGap}px`,
+        );
+      }
       assert.ok(wideLeft.pageHeading, "the flipped page title is missing");
       if (wideLeft.pageHeading) {
         assert.ok(
-          Math.abs(wideLeft.pageHeading.left - wideLeft.compose.left) <= 2,
+          Math.abs(wideLeft.pageHeading.left - wideLeft.editor.left) <= 2,
           "the flipped page title does not follow the box",
         );
       }
+    }
+
+    // Collapsing the dock must not move the page: the width it gives back waits
+    // as empty page past the box.
+    assert.ok(
+      wideCollapsed.compose && wideCollapsed.editor && wideCollapsed.history,
+      "the collapsed layout reported no box or strip",
+    );
+    if (
+      wide.compose &&
+      wide.editor &&
+      wide.history &&
+      wideCollapsed.compose &&
+      wideCollapsed.editor &&
+      wideCollapsed.history
+    ) {
+      assert.ok(
+        Math.abs(wideCollapsed.history.left - wide.history.left) <= 1 &&
+          Math.abs(wideCollapsed.history.top - wide.history.top) <= 1,
+        "collapsing the dock moved the library",
+      );
+      assert.ok(
+        Math.abs(wideCollapsed.editor.left - wide.editor.left) <= 1 &&
+          Math.abs(wideCollapsed.editor.width - wide.editor.width) <= 1,
+        "collapsing the dock moved the box",
+      );
+      assert.ok(
+        wide.pageHeading &&
+          wideCollapsed.pageHeading &&
+          Math.abs(wideCollapsed.pageHeading.left - wide.pageHeading.left) <= 1,
+        "collapsing the dock moved the page title",
+      );
+    }
+
+    // The leading dock's collapse holds the same line.
+    assert.ok(
+      wideLeftCollapsed.editor && wideLeft.editor,
+      "the leading collapse reported no box",
+    );
+    if (wideLeftCollapsed.editor && wideLeft.editor) {
+      assert.ok(
+        Math.abs(wideLeftCollapsed.editor.left - wideLeft.editor.left) <= 1,
+        "collapsing the leading dock moved the box",
+      );
+    }
+    if (
+      wideLeftCollapsed.history &&
+      wideLeft.history &&
+      wideLeftCollapsed.pageHeading &&
+      wideLeft.pageHeading
+    ) {
+      assert.ok(
+        Math.abs(wideLeftCollapsed.history.left - wideLeft.history.left) <= 1,
+        "collapsing the leading dock moved the library",
+      );
+      assert.ok(
+        Math.abs(wideLeftCollapsed.pageHeading.left - wideLeft.pageHeading.left) <= 1,
+        "collapsing the leading dock moved the page title",
+      );
+    }
+
+    // The one-column page keeps its line too.
+    assert.ok(
+      narrow.editor && narrowCollapsed.editor && narrow.history && narrowCollapsed.history,
+      "the narrow collapse reported no box or strip",
+    );
+    if (
+      narrow.editor &&
+      narrowCollapsed.editor &&
+      narrow.history &&
+      narrowCollapsed.history
+    ) {
+      assert.ok(
+        Math.abs(narrowCollapsed.editor.left - narrow.editor.left) <= 1,
+        "collapsing the dock at the narrow size moved the box",
+      );
+      assert.ok(
+        Math.abs(narrowCollapsed.history.left - narrow.history.left) <= 1,
+        "collapsing the dock at the narrow size moved the library",
+      );
     }
 
     assert.deepEqual(final.unexpected, [], "the page called a bridge method the rig does not model");
