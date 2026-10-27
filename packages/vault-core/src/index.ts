@@ -336,3 +336,28 @@ export const ALL_TOOL_DEFS: MapToolDef[] = [
   ...VIEW_TOOL_DEFS,
   ...DAILY_NOTE_TOOL_DEFS,
 ];
+
+// ── Phone client ────────────────────────────────────────────────────────────
+//
+// The wire contract is also its own subpath (`@lifequest/vault-core/phone`),
+// because the phone app must import the browser-safe module without pulling
+// the whole vault barrel into a mobile bundle.
+export * from "./phone.ts";
+export {
+  phonePaths,
+  readPhoneSettings,
+  writePhoneMetric,
+  readPhoneDevices,
+  addPhoneDevice,
+  removePhoneDevice,
+  touchPhoneDevice,
+  readPhoneDraft,
+  listPhoneDrafts,
+  pendingPhoneDraftCount,
+  queuePhoneDraft,
+  withdrawPhoneDraft,
+  resolvePhoneDraft,
+  pruneResolvedPhoneDrafts,
+} from "./phone-queue.ts";
+export type { QueuePhoneDraftInput } from "./phone-queue.ts";
+export { phoneMetric } from "./phone-metric.ts";
