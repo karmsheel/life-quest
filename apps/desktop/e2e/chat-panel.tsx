@@ -64,6 +64,9 @@ type ChatCall = {
   input: string;
   runtime?: unknown;
   receiptRelPath?: string | null;
+  instructionsContext?: {
+    phoneDrafts?: Array<{ clientId: string; text: string; captureDate: string }>;
+  };
 };
 
 /**
@@ -75,6 +78,22 @@ type ChatCall = {
 const ATTACHED_REL_PATH =
   "domains/financial/data/files/11111111-2222-3333-4444-555555555555/receipt.jpg";
 const ATTACH_FAILS = new URLSearchParams(window.location.search).has("attachfail");
+
+/**
+ * What the phone door answers with when the page is loaded with `?phone=1`.
+ * The draft's id is a real UUID because the renderer only forbids nothing —
+ * the point of the leg is that the panel hands the turn the id it was shown.
+ */
+const PHONE_DRAFTS = new URLSearchParams(window.location.search).has("phone")
+  ? [
+      {
+        clientId: "00000000-0000-4000-8000-000000000001",
+        text: "R85 Pick n Pay food",
+        captureDate: "2026-10-25",
+        deviceName: "iPhone",
+      },
+    ]
+  : [];
 
 /**
  * The composer control row's fixture: the shape `GET /api/model/options` answers
@@ -147,6 +166,15 @@ const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(null),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
+  onVaultDataChanged: () => () => {},
+  phone: {
+    // Not `ok(...)`: `phone:queue` answers with the queue itself, unlike the
+    // Result-returning calls around it. A stub that wraps it would hand the
+    // panel `undefined` drafts and prove nothing.
+    queue: () =>
+      Promise.resolve({ drafts: PHONE_DRAFTS, count: PHONE_DRAFTS.length }),
+    onChanged: () => () => {},
+  },
   companionSessionsList: () => ok([SESSION, OTHER_SESSION]),
   // The composer's pills read this. `?nocatalog=1` is the companion-not-up
   // state: the panel must then render no row at all.

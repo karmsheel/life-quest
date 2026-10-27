@@ -47,6 +47,7 @@ import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
 import { summarizeToolRun, toolRowLabel, type ToolCall } from "@/lib/tool-run";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
 import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
+import { PhoneDraftStrip } from "@/components/hermes/PhoneDraftStrip";
 import { useActiveDomain, useDashboardBoard } from "@/components/shell/useActiveDomain";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock, type ChatCardContext } from "@/state/ChatDockProvider";
@@ -56,6 +57,7 @@ import type {
   CompanionModelCatalog,
   CompanionRuntimeOverride,
   HermesSession,
+  PhoneDraftView,
 } from "@/vite-env";
 import {
   formatMessageWhen,
@@ -244,6 +246,12 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  /**
+   * The phone's queue, refreshed by the two signals that can change it: a vault
+   * write (the companion posting or dismissing one) and the door's own
+   * `phone:changed` (a draft arriving while the dock is open).
+   */
+  const [phoneDrafts, setPhoneDrafts] = useState<PhoneDraftView[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -427,6 +435,35 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const chainRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const refreshPhoneDrafts = useCallback(() => {
+    void api()
+      .phone.queue()
+      .then((queue) => setPhoneDrafts(queue.drafts))
+      .catch(() => setPhoneDrafts([]));
+  }, []);
+
+  useEffect(() => {
+    refreshPhoneDrafts();
+    const offData = api().onVaultDataChanged(() => refreshPhoneDrafts());
+    const offPhone = api().phone.onChanged(() => refreshPhoneDrafts());
+    return () => {
+      offData();
+      offPhone();
+    };
+  }, [refreshPhoneDrafts]);
+
+  /**
+   * Put a draft in front of the companion without posting anything. The
+   * operator sends (or edits) the confirmation; the companion's tool is still
+   * the only thing that writes a transaction.
+   */
+  const askPhoneDraft = useCallback((phoneDraft: PhoneDraftView) => {
+    setDraft(
+      `Post the phone draft: “${phoneDraft.text}” (${phoneDraft.captureDate})?`,
+    );
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
   const assistantId = useRef<string | null>(null);
   /**
    * The card in context, readable from a listener that outlives a render.
@@ -986,6 +1023,18 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
           // attach control says it is in context. Absent when it is off, which
           // is the turn the composer sent before this existed.
           ...(page ? { pageContext: page } : {}),
+          // The phone's queue, when one is waiting: the companion is told what
+          // the operator queued and that a draft is not a transaction. Absent
+          // when the queue is empty, which is the turn it always was.
+          ...(phoneDrafts.length > 0
+            ? {
+                phoneDrafts: phoneDrafts.slice(0, 10).map((phoneDraft) => ({
+                  clientId: phoneDraft.clientId,
+                  text: phoneDraft.text,
+                  captureDate: phoneDraft.captureDate,
+                })),
+              }
+            : {}),
           // What an automation read for this chat: the note itself, fenced and
           // named as the operator's own data, plus what to do with it. Absent on
           // every ordinary chat, which is the turn it always was.
@@ -2154,6 +2203,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                   void attachReceipt(file);
                 }}
               >
+                <PhoneDraftStrip drafts={phoneDrafts} onPrefill={askPhoneDraft} />
                 {/*
                   The card this chat is about, above the field.
 

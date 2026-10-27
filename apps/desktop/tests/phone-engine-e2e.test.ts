@@ -52,6 +52,9 @@ const SCENARIOS = [
   "queue_full is a 409",
   "unpair revokes",
   "the door lives with the vault",
+  "instructions omit drafts when there are none",
+  "instructions list drafts and their rule",
+  "instructions cap at ten",
 ];
 
 type Report = {

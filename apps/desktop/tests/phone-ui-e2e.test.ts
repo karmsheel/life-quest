@@ -33,6 +33,8 @@ const SETTINGS_SCENARIOS = [
   "cancel clears the pairing code",
   "metric select writes",
   "forget removes the device",
+  "chat strip shows the phone draft",
+  "chat strip prefill carries the draft",
 ];
 
 type Report = {

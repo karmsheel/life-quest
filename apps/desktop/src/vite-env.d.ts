@@ -153,6 +153,8 @@ type CompanionInstructionsContext = {
   reviewContext?: string;
   /** The page material an automation opened this chat with, already fenced. */
   automationContext?: string;
+  /** Drafts waiting on the operator's phone; absent when the queue is empty. */
+  phoneDrafts?: Array<{ clientId: string; text: string; captureDate: string }>;
   fileUnsolicited?: boolean;
 };
 

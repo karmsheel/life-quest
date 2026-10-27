@@ -86,6 +86,7 @@ async function loadModules() {
         `export * from ${JSON.stringify(path.join(repoRoot, "packages/vault-core/src/index.ts"))};`,
         `export * from ${JSON.stringify(path.join(repoRoot, "apps/desktop/electron/phone-door.ts"))};`,
         `export * from ${JSON.stringify(path.join(repoRoot, "apps/desktop/electron/phone-service.ts"))};`,
+        `export * from ${JSON.stringify(path.join(repoRoot, "apps/desktop/electron/companion-client.ts"))};`,
       ].join("\n"),
       resolveDir: repoRoot,
       sourcefile: "phone-engine.entry.ts",
@@ -971,6 +972,53 @@ async function serviceLeg(mod) {
   );
 }
 
+function instructionsLeg(mod) {
+  const base = {
+    domainName: null,
+    domainSlug: null,
+    aboutMe: "",
+    locked: false,
+    vaultOpen: true,
+  };
+  const none = mod.buildInstructions(base);
+
+  const oneId = randomUUID();
+  const text = 'R85 "food"\nlate';
+  const one = mod.buildInstructions({
+    ...base,
+    phoneDrafts: [{ clientId: oneId, text, captureDate: "2026-10-25" }],
+  });
+
+  const many = mod.buildInstructions({
+    ...base,
+    phoneDrafts: Array.from({ length: 11 }, (_, index) => ({
+      clientId: randomUUID(),
+      text: `draft ${index}`,
+      captureDate: "2026-10-25",
+    })),
+  });
+
+  check(
+    "instructions omit drafts when there are none",
+    !none.includes("## Phone drafts"),
+    `block present ${none.includes("## Phone drafts")}`,
+  );
+  check(
+    "instructions list drafts and their rule",
+    one.includes("## Phone drafts") &&
+      one.includes(`clientId=${oneId}`) &&
+      one.includes(JSON.stringify(text)) &&
+      one.includes("2026-10-25") &&
+      one.includes("Do not post a draft unless the operator confirms it in this chat"),
+    `block ${one.includes("## Phone drafts")} / id ${one.includes(`clientId=${oneId}`)} / text ${one.includes(JSON.stringify(text))}`,
+  );
+  check(
+    "instructions cap at ten",
+    (many.match(/clientId=/g) ?? []).length === 10 && many.includes("and 1 more"),
+    `ids ${(many.match(/clientId=/g) ?? []).length} / more ${many.includes("and 1 more")}`,
+  );
+}
+
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
   pruneOldVaults();
@@ -988,6 +1036,7 @@ async function main() {
     await toolsLeg(mod, queued.root);
     await doorLeg(mod);
     await serviceLeg(mod);
+    instructionsLeg(mod);
     await capLeg(mod);
     await corruptLeg(mod);
     await noKitLeg(mod);

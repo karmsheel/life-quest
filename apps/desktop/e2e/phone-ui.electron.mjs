@@ -320,6 +320,70 @@ async function settingsLeg() {
   }
 }
 
+async function chatStripLeg() {
+  const win = new BrowserWindow({
+    width: 1100,
+    height: 900,
+    show: false,
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+
+  try {
+    win.webContents.setBackgroundThrottling(false);
+    await win.loadURL(`${DEV_URL}/e2e/chat-panel.html?phone=1`);
+    await sample(win, "window.chatPanelHarnessReady");
+    await waitFor(
+      win,
+      `Boolean(document.querySelector('[data-testid="phone-drafts"]'))`,
+      "the phone draft strip",
+    );
+
+    const strip = await sample(
+      win,
+      `(() => {
+        const root = document.querySelector('[data-testid="phone-drafts"]');
+        return {
+          head: root?.querySelector(".phone-drafts__head")?.textContent?.trim() ?? null,
+          text: root?.querySelector(".phone-drafts__body")?.textContent ?? null,
+          meta: root?.querySelector(".phone-drafts__meta")?.textContent ?? null,
+        };
+      })()`,
+    );
+    check(
+      "chat strip shows the phone draft",
+      /1 phone draft/.test(strip.head ?? "") &&
+        strip.text === "R85 Pick n Pay food" &&
+        /iPhone/.test(strip.meta ?? ""),
+      JSON.stringify(strip),
+    );
+
+    await click(win, 'button[aria-label^="Ask the companion about the phone draft"]');
+    await waitFor(
+      win,
+      `document.querySelector('textarea[aria-label="Message Hermes"]')?.value?.includes("Post the phone draft") === true`,
+      "the confirmation prefilled into the composer",
+    );
+    await click(win, 'button[aria-label="Send message"]');
+    await waitFor(
+      win,
+      `Array.isArray(window.__lqChatCalls) && window.__lqChatCalls.length > 0`,
+      "the turn to be sent",
+    );
+    const turn = await sample(win, "window.__lqChatCalls?.[0] ?? null");
+    check(
+      "chat strip prefill carries the draft",
+      turn?.instructionsContext?.phoneDrafts?.[0]?.clientId ===
+        "00000000-0000-4000-8000-000000000001" &&
+        turn?.instructionsContext?.phoneDrafts?.[0]?.captureDate === "2026-10-25",
+      JSON.stringify(turn?.instructionsContext?.phoneDrafts ?? null),
+    );
+    await shot(win, "phone-chat-strip");
+    return win;
+  } finally {
+    if (!win.isDestroyed()) win.destroy();
+  }
+}
+
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
   nativeTheme.themeSource = "dark";
@@ -332,6 +396,7 @@ async function main() {
 
   try {
     await settingsLeg();
+    await chatStripLeg();
     report = {
       ranAt: new Date().toISOString(),
       scenarios,

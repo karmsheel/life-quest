@@ -23,6 +23,16 @@ export type CompanionInstructionsInput = {
    * and the turn is the turn it always was.
    */
   pageContext?: PageContextInput | null;
+  /**
+   * Drafts the operator queued on their phone that are still waiting. A draft
+   * is not a transaction: the block below tells the companion to post one only
+   * after the operator confirms it in this chat. Absent when nothing waits.
+   */
+  phoneDrafts?: Array<{
+    clientId: string;
+    text: string;
+    captureDate: string;
+  }>;
   reviewContext?: string;
   /**
    * The page material an automation fed into this chat, already fenced and
@@ -646,6 +656,29 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
   const pageContext = input.pageContext
     ? pageContextLine(input.pageContext)
     : "";
+  // The phone's queue. One block, only when something waits: an ordinary turn
+  // stays byte-identical to the turn it was. The text is JSON-quoted so a draft
+  // that carries quotes or newlines cannot break the list it sits in.
+  const phoneDrafts = input.phoneDrafts ?? [];
+  const phoneDraftsBlock =
+    phoneDrafts.length === 0
+      ? ""
+      : [
+          "## Phone drafts",
+          "The operator queued these on their phone. A draft is not a transaction.",
+          ...phoneDrafts
+            .slice(0, 10)
+            .map(
+              (draft, index) =>
+                `${index + 1}. clientId=${draft.clientId}, captured ${draft.captureDate}: ${JSON.stringify(draft.text)}`,
+            ),
+          ...(phoneDrafts.length > 10
+            ? [
+                `…and ${phoneDrafts.length - 10} more; call list_phone_drafts for the rest.`,
+              ]
+            : []),
+          "Do not post a draft unless the operator confirms it in this chat. When they do, call post_phone_draft with its clientId, and with the corrected text if they gave one. If they dismiss it, call dismiss_phone_draft. Never invent a clientId or a draft that is not in this list. After posting, report the receipt and the date.",
+        ].join("\n");
   const base = [
     "You are chatting inside the LifeQuest app.",
     `Active domain: ${domain}`,
@@ -669,6 +702,7 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     boardLock,
     focusedCard,
     pageContext,
+    phoneDraftsBlock,
     ...fenceRule,
   ].filter(Boolean).join("\n");
   // The page material an automation opened this chat with. It is appended the
