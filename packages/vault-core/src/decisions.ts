@@ -18,6 +18,7 @@ import {
   type DocumentKind,
   type DocumentTarget,
   type GoalsCommand,
+  type ProjectCommand,
   type Result,
   type ReviewCadence,
 } from "./types.ts";
@@ -108,7 +109,14 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     } else if (t.type === "goal") {
       target = { type: "goal" };
     } else if (t.type === "project") {
-      target = { type: "project" };
+      // The id is set by the propose path for update/close, and by the apply
+      // path for create, so a project's Decisions can be collated back onto the
+      // project file. Decisions filed before the field existed carry none and
+      // still read; a non-string id is treated as absent rather than coerced.
+      target =
+        typeof t.id === "string" && t.id.length > 0
+          ? { type: "project", id: t.id }
+          : { type: "project" };
     } else if (t.type === "day-template") {
       target = { type: "day-template" };
     } else if (t.type === "database-row") {
@@ -982,42 +990,68 @@ async function applyApprovedBody(
       return { ok: true, value: undefined };
     }
     if (decision.target.type === "project") {
-      // Approved project Decision → run the project write path. The command carries
-      // the id allocated at propose time, so approve writes that exact file.
-      const { projectClose, projectCreate } = await import("./projects.ts");
-      // Parsed from JSON on disk, so treat it as untrusted rather than as the union:
-      // the runtime guards below must stay reachable for a body that is not a
-      // createProject/closeProject command.
-      let command: { type?: unknown; [key: string]: unknown };
+      // Approved project Decision → run the project write path. Parsed from JSON
+      // on disk, so treated as untrusted rather than as the union: the runtime
+      // guards below must stay reachable for a body that is not a ProjectCommand.
+      const { projectClose, projectCreate, projectUpdate } = await import("./projects.ts");
+      let command: ProjectCommand;
       try {
-        command = JSON.parse(decision.proposedBodyMarkdown);
+        command = JSON.parse(decision.proposedBodyMarkdown) as ProjectCommand;
       } catch {
         return { ok: false, error: "Project proposedBody must be valid JSON", terminal: false };
       }
-      if (!command || typeof command !== "object" || typeof command.type !== "string") {
-        return { ok: false, error: "Project proposedBody must be a ProjectCommand object", terminal: false };
+      if (
+        !command ||
+        typeof command !== "object" ||
+        typeof command.type !== "string" ||
+        typeof command.id !== "string" ||
+        !command.id.trim()
+      ) {
+        return {
+          ok: false,
+          error: "Project proposedBody must be a ProjectCommand object with an id",
+          terminal: false,
+        };
       }
+
+      // The propose side files the minted project id on the target, and the body
+      // carries the same id. Back-filling it here keeps a Decision filed by an
+      // older path (or with only the body) collatable onto its project: the
+      // resolved record is written back from this same object.
+      if (decision.target.id !== command.id) {
+        decision.target = { type: "project", id: command.id };
+      }
+
+      // Read before the branches below exhaust the union, so the unknown-command
+      // error can still name what it saw.
+      const commandType = command.type;
+
       if (command.type === "createProject") {
-        const res = await projectCreate(rootPath, {
-          id: String(command.id),
-          title: String(command.title),
-          goalId: String(command.goalId),
-          domainSlug:
-            typeof command.domainSlug === "string" && command.domainSlug
-              ? command.domainSlug
-              : null,
-          bodyMarkdown:
-            typeof command.bodyMarkdown === "string" ? command.bodyMarkdown : undefined,
-        }, decision.actor);
+        // The command is the create input: nullable goalId and every rich field
+        // are validated by projectCreate, so approve writes exactly the file the
+        // operator approved while it was pending.
+        const res = await projectCreate(rootPath, command, decision.actor);
+        if (!res.ok) return { ok: false, error: res.error, terminal: false };
+        return { ok: true, value: undefined };
+      }
+      if (command.type === "updateProject") {
+        if (!command.patch || typeof command.patch !== "object" || Array.isArray(command.patch)) {
+          return {
+            ok: false,
+            error: "Project update proposedBody needs a patch object",
+            terminal: false,
+          };
+        }
+        const res = await projectUpdate(rootPath, command.id, command.patch, decision.actor);
         if (!res.ok) return { ok: false, error: res.error, terminal: false };
         return { ok: true, value: undefined };
       }
       if (command.type === "closeProject") {
-        const res = await projectClose(rootPath, String(command.id), decision.actor);
+        const res = await projectClose(rootPath, command.id, decision.actor);
         if (!res.ok) return { ok: false, error: res.error, terminal: false };
         return { ok: true, value: undefined };
       }
-      return { ok: false, error: `Unknown project command: ${String(command.type)}`, terminal: false };
+      return { ok: false, error: `Unknown project command: ${String(commandType)}`, terminal: false };
     }
     if (decision.target.type === "day-template") {
       let command: MapCommand;
@@ -1185,7 +1219,49 @@ async function applyApprovedBody(
           id: databaseId,
         });
         if (!created.ok) {
-          return { ok: false, error: created.error, terminal: created.error === "Database name is required" };
+          // A missing name cannot be fixed by re-approving; neither can a domain
+          // that was archived while the Decision sat pending.
+          const terminal = /^Database name is required|^Domain not found or archived/.test(
+            created.error,
+          );
+          return { ok: false, error: created.error, terminal };
+        }
+        // Columns were validated at propose time, so any failure to add one now
+        // means the vault moved underneath the proposal (the relation target was
+        // deleted, the registry changed). Re-approving cannot repair that, and
+        // the database already exists — retrying would leave a duplicate — so the
+        // half-applied Decision is recorded terminal instead of stranded pending.
+        const columns = Array.isArray(body.columns) ? body.columns : [];
+        for (const spec of columns) {
+          if (
+            !spec ||
+            typeof spec !== "object" ||
+            typeof spec.name !== "string" ||
+            !spec.name.trim() ||
+            typeof spec.type !== "string"
+          ) {
+            return {
+              ok: false,
+              error: "Database column spec is malformed",
+              terminal: true,
+            };
+          }
+          const added = await addDatabaseColumn(rootPath, domainSlug, databaseId, {
+            name: spec.name.trim(),
+            type: spec.type as DatabaseColumnType,
+            options: Array.isArray(spec.options) ? spec.options.map(String) : undefined,
+            relationDatabaseId:
+              typeof spec.relationDatabaseId === "string"
+                ? spec.relationDatabaseId
+                : undefined,
+          });
+          if (!added.ok) {
+            return {
+              ok: false,
+              error: `Column "${spec.name}": ${added.error}`,
+              terminal: true,
+            };
+          }
         }
         return { ok: true, value: undefined };
       }

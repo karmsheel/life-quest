@@ -16,6 +16,7 @@ import {
 import { getDocument, saveDocument } from "./domain-documents.ts";
 import { listDomains } from "./domains.ts";
 import { createDecision } from "./decisions.ts";
+import { projectGet } from "./projects.ts";
 
 export const DOCUMENT_TOOL_DEFS: MapToolDef[] = [
   {
@@ -128,6 +129,21 @@ export async function executeDocumentTool(
       if (typeof id === "string" && id.length > 0) {
         const libResult = await libraryGet(root, id);
         if (!libResult.ok) {
+          // A project id and a library id are both filenames, so a caller that
+          // holds one and reaches for get_document gets "Document not found"
+          // with no way forward. Name the right tool instead: the id is real, it
+          // is just not a document.
+          const project = await projectGet(root, id);
+          if (project.ok) {
+            return {
+              error: {
+                code: "MALFORMED",
+                message:
+                  `${JSON.stringify(project.value.title)} is a Project, not a document. ` +
+                  `Call get_project with id ${id}.`,
+              },
+            };
+          }
           return { error: { code: "MALFORMED", message: libResult.error } };
         }
         return asLibraryRecord(libResult.value);

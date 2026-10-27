@@ -25,7 +25,13 @@ import {
   ALL_TOOL_DEFS,
   DATABASE_TOOL_DEFS,
   executeDatabaseTool,
+  PAGE_TOOL_DEFS,
+  executePageTool,
+  SIGNAL_TOOL_DEFS,
+  executeSignalTool,
   commandForProjectTool,
+  executeProjectReadTool,
+  isProjectReadTool,
   projectGet,
   listDecisions,
   libraryGet,
@@ -226,6 +232,27 @@ async function executeToolInner(
   // never read from args.
   if (DATABASE_TOOL_DEFS.some((t) => t.name === name)) {
     return executeDatabaseTool(root, actor, name, rec);
+  }
+
+  // list_pages, get_page — the operator's page studio, read-only. Page writes
+  // stay on their own Decision-gated path (and are not exposed to the companion
+  // yet); these two tools exist so the companion can see what is already there
+  // before proposing anything that references it.
+  if (PAGE_TOOL_DEFS.some((t) => t.name === name)) {
+    return executePageTool(root, actor, name, rec);
+  }
+
+  // list_signals, get_signal, create_signal — the Life-Chain. Creating a signal
+  // applies at once, exactly like a task write: a signal is a note, not a
+  // document change, and the chain is where the companion files what it noticed.
+  if (SIGNAL_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeSignalTool(root, actor, name, rec);
+  }
+
+  // list_projects, get_project — direct reads of the operator's projects and the
+  // work collated around them. Project writes are Decision-gated below.
+  if (isProjectReadTool(name)) {
+    return executeProjectReadTool(root, name, rec);
   }
 
   if (name === "get_state") return { state: snap.value.map };
@@ -681,6 +708,18 @@ async function connectedWriteRefusal(
     return allow([rec.domainSlug as string | null | undefined]);
   }
 
+  if (name === "update_project") {
+    // Two domains are in play, like an event update: the project's current
+    // domain and any domain the patch moves it to. An unassigned project is
+    // refused outright, exactly as close_project refuses one, so a companion-
+    // owned project cannot be edited into an agent's grant.
+    const id = typeof rec.id === "string" ? rec.id : "";
+    const loaded = id ? await projectGet(root, id) : null;
+    if (!loaded || !loaded.ok) return null;
+    if (!loaded.value.domainSlug) return grantRefusal("FORBIDDEN");
+    return allow([loaded.value.domainSlug, ...namedDomain()]);
+  }
+
   if (name === "close_project") {
     const id = typeof rec.id === "string" ? rec.id : "";
     const loaded = id ? await projectGet(root, id) : null;
@@ -860,11 +899,15 @@ async function proposeProjectDecision(
   const domainSlugs: string[] = [];
 
   if (command.type === "createProject") {
-    // A create that names an already-invalid goal or domain is an error, not a Decision.
-    const goals = await loadGoals(root);
-    if (!goals.ok) return { error: { message: goals.error } };
-    if (!goals.value.some((g) => g.id === command.goalId)) {
-      return { error: { message: `Goal not found: ${command.goalId}` } };
+    // A create that names an already-invalid goal or domain is an error, not a
+    // Decision. Both links are optional now: a project may start before it is
+    // filed under a goal or a domain.
+    if (command.goalId) {
+      const goals = await loadGoals(root);
+      if (!goals.ok) return { error: { message: goals.error } };
+      if (!goals.value.some((g) => g.id === command.goalId)) {
+        return { error: { message: `Goal not found: ${command.goalId}` } };
+      }
     }
     if (command.domainSlug) {
       const domains = await listDomains(root);
@@ -883,16 +926,56 @@ async function proposeProjectDecision(
     }
     proposedTitle = command.title;
   } else {
-    // A close needs the project to exist; file nothing if it does not.
+    // An update or a close needs the project to exist; file nothing if it does
+    // not. The previous record is the card's before/after and the approve path's
+    // only source of truth for what the operator actually saw.
     const loaded = await projectGet(root, command.id);
     if (!loaded.ok) return { error: { message: loaded.error } };
-    proposedTitle = loaded.value.title;
     previousBodyMarkdown = JSON.stringify(loaded.value);
     if (loaded.value.domainSlug) domainSlugs.push(loaded.value.domainSlug);
+
+    if (command.type === "updateProject") {
+      const patch = command.patch;
+      // A move is checked against the target it names; an omitted link keeps the
+      // record where it is, so the existing domain already in `domainSlugs`
+      // stands. The goal is re-checked for the same reason it is on create.
+      if (patch.goalId) {
+        const goals = await loadGoals(root);
+        if (!goals.ok) return { error: { message: goals.error } };
+        if (!goals.value.some((g) => g.id === patch.goalId)) {
+          return { error: { message: `Goal not found: ${patch.goalId}` } };
+        }
+      }
+      if (patch.domainSlug !== undefined && patch.domainSlug !== null) {
+        const domains = await listDomains(root);
+        if (!domains.ok) return { error: { message: domains.error } };
+        const live = domains.value.some(
+          (d) => d.slug === patch.domainSlug && !d.meta.archivedAt,
+        );
+        if (!live) {
+          return {
+            error: {
+              message: `Domain not found or archived: ${patch.domainSlug}`,
+            },
+          };
+        }
+        domainSlugs.length = 0;
+        domainSlugs.push(patch.domainSlug);
+      }
+      proposedTitle =
+        typeof patch.title === "string" && patch.title.trim()
+          ? patch.title.trim()
+          : loaded.value.title;
+    } else {
+      proposedTitle = loaded.value.title;
+    }
   }
 
   const created = await createDecision(root, {
-    target: { type: "project" },
+    // The target carries the project id so the Decisions surface, the project
+    // page, and get_project can collate a proposal onto its project. A create
+    // mints that id here; approve writes the file under it.
+    target: { type: "project", id: command.id },
     proposedTitle,
     proposedBodyMarkdown: JSON.stringify(command),
     previousBodyMarkdown,

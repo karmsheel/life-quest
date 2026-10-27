@@ -17,6 +17,16 @@ const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satur
 const FIELD_LABELS: Record<string, string> = {
   domainSlug: "Domain",
   bodyMarkdown: "Notes",
+  summary: "Summary",
+  stateNote: "State note",
+  title: "Title",
+  status: "Status",
+  priority: "Priority",
+  startDate: "Start date",
+  targetDate: "Target date",
+  progress: "Progress",
+  nextAction: "Next action",
+  addUpdate: "Progress update",
   definitionOfDone: "Definition of done",
   horizonMonths: "Horizon",
   databaseName: "Database",
@@ -440,7 +450,9 @@ function ProjectBody({
   previous: string | null;
   lookups: Lookups;
 }) {
-  if (body.type === "closeProject") {
+  const command = typeof body.type === "string" ? body.type : "";
+
+  if (command === "closeProject") {
     const prior = parseJson(previous ?? "");
     const notes =
       isRecord(prior) && typeof prior.bodyMarkdown === "string" ? prior.bodyMarkdown.trim() : "";
@@ -451,10 +463,24 @@ function ProjectBody({
       </section>
     );
   }
-  if (body.type === "createProject") {
-    const keys = ["title", "goalId", "domainSlug", "bodyMarkdown"].filter(
-      (key) => key in body && !isEmpty(body[key]),
-    );
+
+  if (command === "createProject") {
+    // A project ships rich: the operator should see every attribute the agent
+    // chose, not only the id fields and the body.
+    const keys = [
+      "title",
+      "summary",
+      "stateNote",
+      "goalId",
+      "domainSlug",
+      "status",
+      "priority",
+      "startDate",
+      "targetDate",
+      "progress",
+      "nextAction",
+      "bodyMarkdown",
+    ].filter((key) => key in body && !isEmpty(body[key]));
     return (
       <ChangeTable
         lead="Open this project."
@@ -464,7 +490,31 @@ function ProjectBody({
       />
     );
   }
-  return <GenericBody body={body} previous={null} lookups={lookups} />;
+
+  if (command === "updateProject") {
+    // An agent project update is Decision-gated. The proposal carries the patch
+    // and `previous` is the project as it stands, so the operator reads a diff —
+    // and `addUpdate` is one of the changed fields, not a separate message.
+    const patch = isRecord(body.patch) ? body.patch : {};
+    const prior = parseJson(previous ?? "");
+    const priorRec = isRecord(prior) ? prior : null;
+    const rows: ChangeRow[] = Object.keys(patch).map((key) => ({
+      key,
+      before: priorRec && key in priorRec ? priorRec[key] : undefined,
+      after: patch[key],
+      changed: !(priorRec && key in priorRec && sameValue(priorRec[key], patch[key])),
+    }));
+    return (
+      <ChangeTable
+        lead="Update this project."
+        rows={rows}
+        mode={priorRec ? "diff" : "after"}
+        lookups={lookups}
+      />
+    );
+  }
+
+  return <GenericBody body={body} previous={previous} lookups={lookups} />;
 }
 
 function DayTemplateBody({ body, lookups }: { body: Record<string, unknown>; lookups: Lookups }) {
@@ -808,6 +858,7 @@ function ValueView({
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") {
     if (field === "horizonMonths") return `${value.toLocaleString()} months`;
+    if (field === "progress") return `${value.toLocaleString()}%`;
     return Number.isInteger(value)
       ? value.toLocaleString()
       : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -827,6 +878,20 @@ function ValueView({
     return `${value.length} ${value.length === 1 ? "item" : "items"}`;
   }
   if (isRecord(value)) {
+    // The progress-timeline entry is the one nested patch value an operator
+    // reads as a sentence rather than as a field map.
+    if (field === "addUpdate") {
+      const note = typeof value.note === "string" ? value.note.trim() : "";
+      const progress = typeof value.progress === "number" ? value.progress : null;
+      return (
+        <>
+          {note ? note : <span className="decision-empty">No note</span>}
+          {progress !== null ? (
+            <span className="muted"> · {progress}%</span>
+          ) : null}
+        </>
+      );
+    }
     const entries = Object.entries(value).filter(([, entry]) => !isEmpty(entry));
     if (entries.length === 0) return <span className="decision-empty">—</span>;
     return entries
@@ -981,6 +1046,7 @@ function rowsFrom(
 function textOf(value: string, field: string, lookups: Lookups): string {
   if (field === "goalId") return lookups.goalName(value) ?? shortId(value);
   if (field === "domainSlug" || field === "domain") return lookups.domainName(value);
+  if (field === "status" || field === "priority") return labelize(value);
   if (MAP_COLORS.has(value) && (field === "color" || field === "")) return value;
   if (isIsoDate(value)) return formatIso(value);
   if (isUuid(value)) return shortId(value);

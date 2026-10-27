@@ -68,7 +68,10 @@ export type DocumentTarget =
   | { type: "assumption-set"; rowId: string }
   | { type: "goal" }
   | { type: "day-template" }
-  | { type: "project" }
+  // `id` is set by the propose path (update/close) and by the apply path
+  // (create), so a project's Decisions can be collated back onto it. Decisions
+  // filed before this field existed carry no id and still read.
+  | { type: "project"; id?: string }
   // KAR-64: an agent row write, in any domain, under any sotMode. rowId is null
   // for a create; a `database` target names the database the proposal mutates
   // (for a create_database the id is minted at propose time).
@@ -106,6 +109,12 @@ export type DatabaseDecisionBody = {
   databaseId?: string;
   /** create-database and add-column only. */
   name?: string;
+  /**
+   * create-database only: the columns the new database is born with. One
+   * Decision creates the database and every column here on approve, so opening
+   * a table no longer costs one Decision per column.
+   */
+  columns?: DatabaseColumnSpec[];
   /** add-column only. */
   type?: DatabaseColumnType;
   /** add-column only, required for select. */
@@ -476,38 +485,88 @@ export type LibraryListResult = {
   skipped: number;
 };
 
-// KAR-7: a Project is one markdown file on disk, linked to one Goal.
-export type ProjectStatus = "open" | "closed";
+// A Project is one markdown file on disk — the operator's own project page.
+//
+// It ships with the app: the schema below is fixed and every vault gets it,
+// rather than the operator having to build a database before they can track a
+// project. `goalId` is optional so a project can start before it is filed under
+// a goal; a set value is still checked against the live goals on every write.
+export const PROJECT_STATUSES = [
+  "open",
+  "active",
+  "paused",
+  "blocked",
+  "done",
+  "closed",
+] as const;
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
-export const PROJECT_STATUSES: ProjectStatus[] = ["open", "closed"];
+export const PROJECT_PRIORITIES = ["low", "normal", "high"] as const;
+export type ProjectPriority = (typeof PROJECT_PRIORITIES)[number];
+
+/**
+ * One entry in a project's progress timeline. `progress` is the percent at the
+ * moment the update was logged, or null when only a note was written.
+ */
+export type ProjectUpdate = {
+  id: string;
+  at: string;
+  note: string;
+  progress: number | null;
+  actorName: string | null;
+};
 
 export type Project = {
   id: string;
   title: string;
+  /** One line: what this is. */
+  summary: string;
+  /** The context document (the markdown body of the file). */
   bodyMarkdown: string;
-  goalId: string;
+  /** Where it stands right now, in the operator's own words. */
+  stateNote: string;
+  goalId: string | null;
   /** Frontmatter key is `domain`; the in-memory field mirrors library `domainSlugs`. */
   domainSlug: string | null;
   status: ProjectStatus;
+  priority: ProjectPriority | null;
+  /** `YYYY-MM-DD`. */
+  startDate: string | null;
+  /** `YYYY-MM-DD`. */
+  targetDate: string | null;
+  /** 0–100, integer. */
+  progress: number;
+  nextAction: string | null;
+  updates: ProjectUpdate[];
   createdAt: string;
   updatedAt: string;
 };
 
-export type ProjectCreateInput = {
+/** The fields a project write may carry. Shared by create, update, and the agent command. */
+export type ProjectFields = {
+  title?: string;
+  summary?: string;
+  bodyMarkdown?: string;
+  stateNote?: string;
+  goalId?: string | null;
+  domainSlug?: string | null;
+  status?: ProjectStatus;
+  priority?: ProjectPriority | null;
+  startDate?: string | null;
+  targetDate?: string | null;
+  progress?: number;
+  nextAction?: string | null;
+};
+
+export type ProjectCreateInput = ProjectFields & {
   /** Use an explicit id (the id allocated for an approved Decision) instead of a fresh uuid. */
   id?: string;
   title: string;
-  goalId: string;
-  domainSlug?: string | null;
-  bodyMarkdown?: string;
 };
 
-export type ProjectUpdatePatch = {
-  title?: string;
-  bodyMarkdown?: string;
-  goalId?: string;
-  domainSlug?: string | null;
-  status?: ProjectStatus;
+export type ProjectUpdatePatch = ProjectFields & {
+  /** Append one progress-timeline entry; sets `progress` too when given. */
+  addUpdate?: { note: string; progress?: number | null };
 };
 
 export type ProjectListResult = {
@@ -515,16 +574,42 @@ export type ProjectListResult = {
   skipped: number;
 };
 
-/** Commands an agent create/close Decision carries in its proposedBodyMarkdown. */
+/** The compact shape list_projects answers with (no body, no timeline). */
+export type ProjectListEntry = {
+  id: string;
+  title: string;
+  summary: string;
+  stateNote: string;
+  goalId: string | null;
+  domainSlug: string | null;
+  status: ProjectStatus;
+  priority: ProjectPriority | null;
+  startDate: string | null;
+  targetDate: string | null;
+  progress: number;
+  nextAction: string | null;
+  updatedAt: string;
+};
+
+/** Commands a project Decision carries in its proposedBodyMarkdown. */
 export type ProjectCommand =
   | {
       type: "createProject";
       id: string;
       title: string;
-      goalId: string;
+      goalId: string | null;
       domainSlug: string | null;
       bodyMarkdown?: string;
+      summary?: string;
+      stateNote?: string;
+      status?: ProjectStatus;
+      priority?: ProjectPriority | null;
+      startDate?: string | null;
+      targetDate?: string | null;
+      progress?: number;
+      nextAction?: string | null;
     }
+  | { type: "updateProject"; id: string; patch: ProjectUpdatePatch }
   | { type: "closeProject"; id: string };
 
 export type DecisionRecord = {
@@ -624,6 +709,17 @@ export const DATABASE_COLUMN_TYPES = [
   "file",
 ] as const;
 export type DatabaseColumnType = (typeof DATABASE_COLUMN_TYPES)[number];
+
+/**
+ * A column spec carried by a create_database Decision. The id is not here: the
+ * engine mints it, exactly as add_column does, so a Decision cannot choose one.
+ */
+export type DatabaseColumnSpec = {
+  name: string;
+  type: DatabaseColumnType;
+  options?: string[];
+  relationDatabaseId?: string;
+};
 
 export const DATABASE_SOT_MODES = [
   "local-only",

@@ -5,6 +5,7 @@
 @import "./notes.css";
 @import "./data.css";
 @import "./pages.css";
+@import "./projects.css";
 @import "./automations.css";
 
 * {
@@ -1539,32 +1540,6 @@ a {
 
 .act-activity-row__summary {
   line-height: 1.4;
-}
-
-/* A project's name opens its editor. It is the row's own control, so it reads as
-   the row's text rather than as a button dropped into the list. */
-.project-row__open {
-  appearance: none;
-  flex: 1;
-  min-width: 6rem;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--fg);
-  font: inherit;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-}
-
-.project-row__open:hover {
-  color: var(--accent);
-}
-
-.project-row__open:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
-  border-radius: 3px;
 }
 
 .spin {
