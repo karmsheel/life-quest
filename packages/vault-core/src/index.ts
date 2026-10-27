@@ -78,12 +78,15 @@ export {
 } from "./document-tools.ts";
 export {
   COMPANION_ACTOR,
-  WRITE_TOOL_NAMES,
+  collectImpliedTurn,
   fileImpliedChange,
-  shouldFileImpliedTurn,
+  fileImpliedChanges,
 } from "./implied-decision.ts";
 export type {
   ImpliedChange,
+  ImpliedFilingOutcome,
+  ImpliedTurnFailure,
+  ImpliedTurnFailureReason,
   ImpliedTurnReason,
   ImpliedTurnVerdict,
 } from "./implied-decision.ts";

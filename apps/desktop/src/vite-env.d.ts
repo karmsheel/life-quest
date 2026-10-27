@@ -183,7 +183,11 @@ type ChatStreamEvent =
   | { type: "run.stopped" }
   | { type: "run.incomplete"; reason: string }
   | { type: "run.completed" }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  /** Pending Decisions this turn's fenced proposals became (app-sent). */
+  | { type: "decisions.filed"; ids: string[]; titles: string[] }
+  /** Proposals in this turn's reply that could not be filed, and why (app-sent). */
+  | { type: "decisions.problem"; message: string };
 
 type HermesSession = {
   id: string;

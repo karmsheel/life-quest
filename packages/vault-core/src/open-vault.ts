@@ -75,8 +75,15 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
       const decisionEntries = await fs.readdir(paths.decisionsDir, { withFileTypes: true });
       for (const entry of decisionEntries) {
         if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-        const raw = await fs.readFile(path.join(paths.decisionsDir, entry.name), "utf8");
-        decisions.push(JSON.parse(raw) as DecisionRecord);
+        try {
+          const raw = await fs.readFile(path.join(paths.decisionsDir, entry.name), "utf8");
+          decisions.push(JSON.parse(raw) as DecisionRecord);
+        } catch {
+          // One unparseable Decision file must not fail the whole vault open (the
+          // snapshot answers an error and the app refuses to draw). The inbox's own
+          // read path reports the unreadable file; here it is only skipped, and
+          // left exactly as it is on disk.
+        }
       }
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
