@@ -1,7 +1,7 @@
 # Phone Client — Design Spec
 
 **Date:** 2026-10-26
-**Status:** Draft for review. This document changes no code and adds no tests. Two decisions in §2 are the operator's before any implementation.
+**Status:** Approved — Decisions A and B confirmed by the operator on 2026-10-27. Implementation plan: [Phone client plan](../plans/2026-10-27-phone-client.md). This document changes no code and adds no tests.
 **Product:** LifeQuest — local-first life-management studio
 **Depends on:** [Local vault (Electron)](./2026-07-19-local-vault-electron-design.md) (the vault is the only source of truth), [MCP agent pairing](./2026-10-03-mcp-agent-pairing-design.md) (the door and grant vocabulary this deliberately does *not* reuse), [Receipt images](./2026-10-07-receipt-image-vault-design.md) (the capture path it builds on), [Finance kit](./2026-09-23-domain-databases-finance-kit-prs.md) (the metric it reads)
 **Answers:** What is the phone client, what may leave the vault for it, and how does a draft survive the studio being quit?
@@ -57,7 +57,7 @@ The load-bearing sentence is VISION:79 — *while the studio is quit*. On Window
 | 13 | Lifetime | The door starts with a window and stops when the last window closes, even on macOS where the app stays alive |
 | 14 | Version 1 scope | Text drafts only. No receipt photos, no chat, no history, no notifications, no second metric |
 
-### Decision A — delivery form (recommended: PWA)
+### Decision A — delivery form (PWA; confirmed 2026-10-27)
 
 | | PWA (recommended) | Native shell (Capacitor/React Native) |
 |---|---|---|
@@ -69,7 +69,7 @@ The load-bearing sentence is VISION:79 — *while the studio is quit*. On Window
 
 The PWA wins because the phone surface is four screens, the desktop already controls distribution, and the alternative is a second product before the first one exists. The threshold for revisiting: if the operator loses a queued draft to iOS storage eviction once, wrap the same PWA in a Capacitor shell with SQLite — do not rewrite the UI in React Native.
 
-### Decision B — where a draft lives while the studio is quit (recommended: phone-local)
+### Decision B — where a draft lives while the studio is quit (phone-local; confirmed 2026-10-27)
 
 The alternative is a vault service that outlives the window — a tray app or daemon owning the vault and the phone door. It is rejected:
 
