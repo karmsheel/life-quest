@@ -7,6 +7,9 @@
   --font-display: var(--font-sans);
 
   --shell-nav-width: 4.25rem;
+  /* The chats list beside the rail: wide enough for a chat's name and its 
+     stamp, narrow enough to leave the page the majority of the window. */
+  --shell-chats-width: 15rem;
   --shell-sidebar-width: 16rem;
   --shell-chatbar-height: 3rem;
   --shell-max-width: 80rem;

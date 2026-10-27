@@ -535,9 +535,14 @@ a {
 }
 
 .shell {
-  /* Track widths as vars so the two collapse variants compose instead of each
+  /* Track widths as vars so the collapse variants compose instead of each
      overwriting the other's grid-template-columns. */
   --nav-column: var(--shell-nav-width);
+  /* The chats column, between the rail and the sheet. The list is a pane of the
+     studio, not an overlay: collapsing it gives its width back to the page, and
+     the sheet moves to the rail's edge exactly as it does when the dock is put
+     away. */
+  --chats-column: var(--shell-chats-width);
   /* The dock's column, and the range the seam's handle may move it through. The
      tokens say how wide the dock wants to be, these two bounds say how wide the
      frame will let it be, and `clamp` is the one place the two are reconciled —
@@ -549,7 +554,10 @@ a {
   --chat-max: 100vw;
   --chat-column: clamp(var(--chat-min), var(--chatbar-width), var(--chat-max));
   display: grid;
-  grid-template-columns: var(--nav-column) 1fr var(--chat-column);
+  /* Leading chrome (rail + chats), the sheet, then the dock. Every track is
+     explicit: the panes are placed by column, so a collapsed pane can go to
+     zero without auto-placement sliding the sheet into its neighbour. */
+  grid-template-columns: var(--nav-column) var(--chats-column) 1fr var(--chat-column);
   height: 100%;
   color: var(--fg);
   /* No gap: the panes abut, and each seam is the sheet's own hairline. The mat
@@ -569,13 +577,19 @@ a {
   --chat-column: 0px;
 }
 
+/* The chats list put away: its column goes back to the page, and the sheet
+   slides up to the rail. */
+.shell--chats-closed {
+  --chats-column: 0px;
+}
+
 /* Chat beside the rail: the dock takes the middle column and the sheet moves out
-   to the trailing one, so the two panes trade places and the rail holds its
-   column. Written as its own track list rather than an `order` swap: the tracks
-   are what the two panes' widths are built from, and auto-placement would
-   otherwise hand the dock's column to the sheet. */
+   to the trailing one, so the two panes trade places and the leading chrome
+   holds its columns. Written as its own track list rather than an `order` swap:
+   the tracks are what the two panes' widths are built from, and auto-placement
+   would otherwise hand the dock's column to the sheet. */
 .shell--chat-left {
-  grid-template-columns: var(--nav-column) var(--chat-column) 1fr;
+  grid-template-columns: var(--nav-column) var(--chats-column) var(--chat-column) 1fr;
 }
 
 /* Collapsed rail: its column goes back to the workspace sheet and the re-open
@@ -590,36 +604,40 @@ a {
   display: none;
 }
 
-/* Explicit tracks: the rail leaves the grid entirely when collapsed, and
-   auto-placed items would otherwise slide one track left — handing the sidebar's
-   column to the chat panel. The row is pinned to the first one for the same
-   reason read the other way round: the three panes are placed by column, so in
-   the swapped arrangement the dock's column is behind the cursor the sparse
-   auto-placement left in the sheet's, and it would be pushed onto a second row. */
+/* Explicit tracks: a collapsed pane leaves the grid entirely, and auto-placed
+   items would otherwise slide one track left — handing the sidebar's column to
+   the chat panel. The row is pinned to the first one for the same reason read
+   the other way round: the panes are placed by column, and the swapped
+   arrangement's last two tracks are the reverse of the shipped one. */
 .shell > .nav-rail {
   grid-column: 1;
   grid-row: 1;
 }
 
-.shell > .shell__main {
+.shell > .chats-rail {
   grid-column: 2;
+  grid-row: 1;
+}
+
+.shell > .shell__main {
+  grid-column: 3;
   grid-row: 1;
 }
 
 .shell > .chat-panel {
-  grid-column: 3;
+  grid-column: 4;
   grid-row: 1;
 }
 
 /* Swapped: the sheet is the trailing pane now, so it takes the last column and
-   the dock the one beside the rail. Both rules sit after the pair above on
-   purpose — same specificity, so the later one is the one that wins. */
+   the dock the one before it. Both rules sit after the pair above on purpose —
+   same specificity, so the later one is the one that wins. */
 .shell--chat-left > .shell__main {
-  grid-column: 3;
+  grid-column: 4;
 }
 
 .shell--chat-left > .chat-panel {
-  grid-column: 2;
+  grid-column: 3;
 }
 
 /* Square, and wearing a single hairline: the one on its trailing edge, the seam
@@ -7579,4 +7597,447 @@ button.chat-panel__activity-line:hover {
 .home-pin--span2,
 .page-block--view-span2 {
   grid-column: 1 / -1;
+}
+
+
+/* —— The chats column ——————————————————————————————————————————————
+ *
+ * The conversation list, between the rail and the sheet. It is chrome, not a
+ * page: it wears the rail's fill, paints no line of its own (the sheet draws the
+ * seam), and escapes the bottom frame the way the sheet and the dock do. Its
+ * head is the top-bar band, so the list's first row starts on the same line as
+ * the page's first card.
+ */
+.chats-rail {
+  background: var(--canvas-base);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+  min-width: 0;
+  min-height: 0;
+  width: var(--shell-chats-width);
+  height: calc(100% + var(--shell-frame));
+  margin-bottom: calc(-1 * var(--shell-frame));
+  padding: 0 0.4rem;
+  overflow: hidden;
+  position: relative;
+  z-index: 5;
+}
+
+.chats-rail__header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: var(--shell-topbar-height);
+  flex: 0 0 auto;
+  padding: 0 0.35rem;
+}
+
+.chats-rail__title {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.chats-rail__live-count {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.chats-rail__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.3rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chats-rail__icon-btn:hover {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+/* The one write that starts a chat, at the top of the list the way every chat
+   client puts it: a full-width row, not another icon in the rail. */
+.chats-rail__new {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  margin: 0 0.15rem 0.15rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chats-rail__new:hover {
+  background: var(--selected-soft);
+}
+
+.chats-rail__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.1rem 0 0.5rem;
+}
+
+.chats-rail__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+}
+
+.chats-rail__group {
+  margin: 0.45rem 0.45rem 0.1rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chats-rail__group:first-child {
+  margin-top: 0.15rem;
+}
+
+.chats-rail__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.chats-rail__row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.38rem 0.45rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chats-rail__row-main:hover {
+  background: var(--selected-soft);
+}
+
+.chats-rail__row[data-active] .chats-rail__row-main {
+  background: var(--selected-soft);
+}
+
+/* The row's live state: a turn is streaming here, whether or not this chat is
+   the one on screen. Idle rows keep the dot's footprint so nothing shifts when a
+   turn starts. */
+.chats-rail__dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.chats-rail__row[data-live] .chats-rail__dot {
+  background: var(--accent);
+  animation: chats-rail-pulse 1.4s ease-in-out infinite;
+}
+
+.chats-rail__row[data-approval] .chats-rail__dot {
+  background: var(--accent);
+  animation: none;
+  box-shadow: 0 0 0 2px var(--accent-tint);
+}
+
+@keyframes chats-rail-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.chats-rail__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+}
+
+.chats-rail__when {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.chats-rail__menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.chats-rail__row:hover .chats-rail__menu-btn,
+.chats-rail__menu-btn[aria-expanded="true"],
+.chats-rail__menu-btn:focus-visible {
+  opacity: 1;
+}
+
+.chats-rail__menu-btn:hover,
+.chats-rail__menu-btn[aria-expanded="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+/* Hangs under the control that opened it, over the rows below: the list scrolls,
+   so an inline menu would push the rows under it around instead. */
+.chats-rail__menu {
+  position: absolute;
+  top: 100%;
+  right: 0.1rem;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 7.5rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.chats-rail__menu button {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.73rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chats-rail__menu button:hover {
+  background: var(--selected-soft);
+}
+
+.chats-rail__menu button.chats-rail__menu-danger {
+  color: var(--danger);
+}
+
+.chats-rail__rename {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.1rem;
+}
+
+.chats-rail__rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.chats-rail__text-btn {
+  padding: 0.25rem 0.35rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.chats-rail__text-btn:hover {
+  background: var(--selected-soft);
+}
+
+.chats-rail__empty {
+  margin: 0;
+  padding: 0.7rem 0.5rem;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.chats-rail__error {
+  flex: 0 0 auto;
+  margin: 0 0.15rem 0.2rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  font-size: 0.7rem;
+}
+
+.chats-rail__error p {
+  margin: 0 0 0.25rem;
+}
+
+/* —— The dock's tabs ————————————————————————————————————————————————
+ *
+ * The open chats, one tab each, under the thread's header. The strip only
+ * exists once a second chat is open — with one conversation the header already
+ * names it — so its arrival is itself the signal that a parallel run is in the
+ * air. A live tab's dot pulses; a tab whose run is waiting on an approval keeps
+ * a ring instead, so a background question is findable without reading the log.
+ */
+.chat-panel__tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0.2rem;
+  flex: 0 0 auto;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.chat-panel__tab {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 11rem;
+  flex: 0 1 auto;
+  border-radius: 0.4rem;
+}
+
+.chat-panel__tab:hover {
+  background: var(--selected-soft);
+}
+
+.chat-panel__tab--active {
+  background: var(--selected-soft);
+}
+
+.chat-panel__tab-main {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.3rem 0.15rem 0.3rem 0.45rem;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-panel__tab--active .chat-panel__tab-main {
+  color: var(--fg);
+}
+
+.chat-panel__tab-dot {
+  width: 0.35rem;
+  height: 0.35rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.chat-panel__tab[data-live] .chat-panel__tab-dot {
+  background: var(--accent);
+  animation: chat-tab-pulse 1.4s ease-in-out infinite;
+}
+
+.chat-panel__tab[data-approval] .chat-panel__tab-dot {
+  background: var(--accent);
+  animation: none;
+  box-shadow: 0 0 0 2px var(--accent-tint);
+}
+
+@keyframes chat-tab-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.chat-panel__tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel__tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-right: 0.2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.chat-panel__tab-close:hover,
+.chat-panel__tab-close:focus-visible {
+  background: var(--border);
+  color: var(--fg);
+  opacity: 1;
 }

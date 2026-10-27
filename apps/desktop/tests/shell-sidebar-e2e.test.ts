@@ -74,6 +74,18 @@ type State = {
   legacyBrand: boolean;
   leadingText: string;
   titlebarBackground: string | null;
+  chats: {
+    box: Box;
+    background: string;
+    borderRadius: string;
+    borderTopWidth: string;
+    borderRightWidth: string;
+    borderBottomWidth: string;
+    borderLeftWidth: string;
+    title: string;
+    newChat: boolean;
+    hide: string | null;
+  } | null;
   main: Box | null;
   mainBackground: string | null;
   topBar: {
@@ -379,10 +391,33 @@ describe("shell sidebar (docked rail)", () => {
       titlebarHeight,
       "the chip does not fill the strip",
     );
+    // The chats column sits between the rail and the sheet: the leading chrome
+    // is now two panes, and the sheet starts at the list's trailing edge.
+    assert.ok(expanded.chats, "the shell rendered no chats column");
+    assert.equal(
+      expanded.chats.box.left,
+      track,
+      "the chats column is not flush to the rail's trailing edge",
+    );
+    assert.equal(
+      expanded.chats.title,
+      "Chats",
+      "the chats column has no heading",
+    );
+    assert.equal(
+      expanded.chats.newChat,
+      true,
+      "the chats column offers no New chat",
+    );
+    assert.equal(
+      expanded.chats.hide,
+      "Hide chats",
+      "the chats column has no hide control",
+    );
     assert.equal(
       expanded.main?.left,
-      track,
-      "the sheet is not flush to the rail's trailing edge",
+      expanded.chats.box.right,
+      "the sheet is not flush to the chats list's trailing edge",
     );
     assert.equal(
       expanded.main?.right,
@@ -396,8 +431,8 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.equal(
       expanded.vault?.box.left,
-      expanded.main?.left,
-      "the chip's leading border does not line up with the sheet's",
+      expanded.chats?.box.left,
+      "the chip's leading border does not line up with the chats column's",
     );
 
     // The chrome is one band of mat: the rail that wraps the sheet's leading edge
@@ -543,10 +578,17 @@ describe("shell sidebar (docked rail)", () => {
       collapsed.rail === null || collapsed.railDisplay === "none",
       "collapsing left the rail on screen",
     );
+    // The rail's column is reclaimed; the chats list keeps its own and moves to
+    // the window's leading edge.
+    assert.equal(
+      collapsed.chats?.box.left,
+      0,
+      "the chats list did not take the window's leading edge",
+    );
     assert.equal(
       collapsed.main?.left,
-      0,
-      "the sheet did not reclaim the collapsed column — with no rail it starts on the window's own edge",
+      collapsed.chats?.box.right,
+      "the sheet did not reclaim the collapsed rail's column",
     );
     assert.equal(
       collapsed.titlebarToggle?.label,

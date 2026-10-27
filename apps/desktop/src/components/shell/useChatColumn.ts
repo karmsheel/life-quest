@@ -104,7 +104,7 @@ export function useChatColumn(
   shellRef: RefObject<HTMLDivElement | null>,
 ): ChatColumn {
   const { open, side, width: preferred, setWidth } = useChatDock();
-  const { collapsed: navCollapsed } = useNavDock();
+  const { collapsed: navCollapsed, chatsOpen } = useNavDock();
 
   // Seeded from the window so the very first render has a ceiling that is already
   // in the right country; the layout effect below measures the real frame before
@@ -116,16 +116,23 @@ export function useChatColumn(
   const frameRef = useRef(frame);
   frameRef.current = frame;
 
-  /** The shell's own content width, and the rail's track standing in it. */
+  /**
+   * The shell's own content width, and the leading chrome's tracks standing in
+   * it: the rail's column plus the chats list beside it. Both are measured off
+   * their boxes rather than derived from tokens, because either can be collapsed
+   * to `display: none` and its box is the honest answer for "how much of the
+   * frame is not the page and not the dock".
+   */
   const measureFrame = useCallback((): ChatColumnFrame => {
     const el = shellRef.current;
     if (!el) return frameRef.current;
     const rail = el.querySelector<HTMLElement>(":scope > .nav-rail");
+    const chats = el.querySelector<HTMLElement>(":scope > .chats-rail");
+    const widthOf = (node: HTMLElement | null) =>
+      node ? Math.round(node.getBoundingClientRect().width) : 0;
     return {
       viewport: Math.round(el.clientWidth),
-      // A collapsed rail is `display: none`, so its box is the honest answer for
-      // "how much of the frame is not the page and not the dock".
-      nav: rail ? Math.round(rail.getBoundingClientRect().width) : 0,
+      nav: widthOf(rail) + widthOf(chats),
     };
   }, [shellRef]);
 
@@ -150,7 +157,7 @@ export function useChatColumn(
     const observer = new ResizeObserver(sync);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [measureFrame, navCollapsed, shellRef]);
+  }, [measureFrame, navCollapsed, chatsOpen, shellRef]);
 
   const range = useMemo(() => chatColumnRange(frame), [frame]);
   const width = preferred === null ? null : clampChatColumn(preferred, range);

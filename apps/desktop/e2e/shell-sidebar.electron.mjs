@@ -59,6 +59,7 @@ const SAMPLE = `(() => {
   const vault = document.querySelector(".window-titlebar__vault");
   const railToggle = document.querySelector(".nav-rail .nav-toggle");
   const titlebarToggle = document.querySelector(".window-titlebar__nav-toggle");
+  const chats = document.querySelector(".chats-rail");
   const main = document.querySelector(".shell__main");
   const chat = document.querySelector(".chat-panel");
   const dockActions = document.querySelector(".chat-panel__actions");
@@ -171,6 +172,22 @@ const SAMPLE = `(() => {
     leadingText: (leading?.textContent || "").trim(),
     titlebarBackground: titlebar
       ? getComputedStyle(titlebar).backgroundColor
+      : null,
+    // The chats column beside the rail: the sheet now abuts its trailing edge,
+    // and the titlebar chip sits over its own leading edge.
+    chats: chats
+      ? {
+          box: box(chats),
+          background: getComputedStyle(chats).backgroundColor,
+          borderRadius: getComputedStyle(chats).borderRadius,
+          borderTopWidth: getComputedStyle(chats).borderTopWidth,
+          borderRightWidth: getComputedStyle(chats).borderRightWidth,
+          borderBottomWidth: getComputedStyle(chats).borderBottomWidth,
+          borderLeftWidth: getComputedStyle(chats).borderLeftWidth,
+          title: (chats.querySelector(".chats-rail__title")?.textContent || "").trim(),
+          newChat: Boolean(chats.querySelector(".chats-rail__new")),
+          hide: chats.querySelector(".chats-rail__icon-btn")?.getAttribute("aria-label") ?? null
+        }
       : null,
     main: box(main),
     mainBackground: main ? getComputedStyle(main).backgroundColor : null,
@@ -734,9 +751,32 @@ async function main() {
     // one pane gap only under the strip. The chrome around it is a single band of
     // mat: the rail wears the titlebar's own fill with no frost in between.
     check(
-      "the sheet abuts the rail's trailing edge",
-      expanded.main?.left === track,
-      `sheet left ${expanded.main?.left}px vs rail right ${expanded.rail?.box.right}px`,
+      "the chats list stands between the rail and the sheet",
+      Boolean(expanded.chats) &&
+        expanded.chats.box.left === expanded.rail?.box.right &&
+        expanded.chats.box.width > 0 &&
+        expanded.chats.title === "Chats" &&
+        expanded.chats.newChat &&
+        expanded.chats.hide === "Hide chats",
+      `chats ${JSON.stringify(expanded.chats?.box)} vs rail right ${expanded.rail?.box.right}px, title ${JSON.stringify(expanded.chats?.title)}, new ${expanded.chats?.newChat}, hide ${JSON.stringify(expanded.chats?.hide)}`,
+    );
+    check(
+      "the chats list is chrome: flush, square, no lines of its own",
+      Boolean(expanded.chats) &&
+        expanded.chats.background === expanded.rail?.background &&
+        expanded.chats.background === expanded.titlebarBackground &&
+        expanded.chats.borderRadius === "0px" &&
+        ["borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth"].every(
+          (side) => expanded.chats[side] === "0px"
+        ) &&
+        expanded.chats.box.top === titlebarHeight + frame &&
+        expanded.chats.box.bottom === expanded.viewport.height,
+      `background ${expanded.chats?.background} vs rail ${expanded.rail?.background}, radius ${expanded.chats?.borderRadius}, edges ${expanded.chats?.borderTopWidth}/${expanded.chats?.borderRightWidth}/${expanded.chats?.borderBottomWidth}/${expanded.chats?.borderLeftWidth}, box ${JSON.stringify(expanded.chats?.box)}`,
+    );
+    check(
+      "the sheet abuts the chats list's trailing edge",
+      expanded.main?.left === expanded.chats?.box.right,
+      `sheet left ${expanded.main?.left}px vs chats right ${expanded.chats?.box.right}px`,
     );
     check(
       "the chrome is one band: the rail wears the titlebar's fill, unfrosted",
@@ -852,9 +892,9 @@ async function main() {
       `top bar ${JSON.stringify(expanded.topBar?.box)} vs dock header ${JSON.stringify(expanded.chatHeader?.box)}, header underline ${expanded.chatHeader?.borderBottomWidth}`,
     );
     check(
-      "the chip lines up with the sheet's leading edge",
-      expanded.vault?.box.left === expanded.main?.left,
-      `chip at ${expanded.vault?.box.left}px vs sheet at ${expanded.main?.left}px`,
+      "the chip lines up with the chats list's leading edge",
+      expanded.vault?.box.left === expanded.chats?.box.left,
+      `chip at ${expanded.vault?.box.left}px vs chats at ${expanded.chats?.box.left}px`,
     );
 
     // The night ladder: the studio is a frame around the darkest page. The page
@@ -993,9 +1033,14 @@ async function main() {
       `rail ${collapsed.rail ? `display:${collapsed.railDisplay}` : "kept in the tree"}`,
     );
     check(
-      "collapse gives the column back",
-      collapsed.main?.left === 0,
-      `sheet left ${collapsed.main?.left}px — with no rail the sheet starts on the window's own edge`,
+      "collapse gives the rail's column back",
+      collapsed.main?.left === collapsed.chats?.box.right,
+      `sheet left ${collapsed.main?.left}px — the chats list holds the window's leading edge`,
+    );
+    check(
+      "the chats list takes the window's leading edge when the rail goes",
+      collapsed.chats?.box.left === 0,
+      `chats left ${collapsed.chats?.box.left}px`,
     );
     check(
       "the collapse leaves the sheet flush to the dock",

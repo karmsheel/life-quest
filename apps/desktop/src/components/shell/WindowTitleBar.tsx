@@ -4,6 +4,7 @@ import {
   ArrowLeftRight,
   Copy,
   Minus,
+  PanelLeft,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -28,7 +29,7 @@ export function WindowTitleBar() {
     side: chatSide,
     swapSide,
   } = useChatDock();
-  const { collapsed: navCollapsed, present: navPresent } = useNavDock();
+  const { collapsed: navCollapsed, present: navPresent, chatsOpen, toggleChats } = useNavDock();
   const label = windowTitleLabel(snapshot?.lifequest.name);
   const vaultName = vaultTitleName(snapshot?.lifequest.name);
   const [fallbackControls, setFallbackControls] = useState(false);
@@ -95,6 +96,22 @@ export function WindowTitleBar() {
         <div className="window-titlebar__trailing">
           {chatPresent ? (
             <>
+              {/*
+                The chats column's one control. It is an app-level way of looking
+                at the workspace — the list beside the rail, not a page — so it
+                belongs with the other chrome switches, and it holds its place
+                whether the list is up or put away.
+              */}
+              <button
+                type="button"
+                className="window-titlebar__btn window-titlebar__chats-toggle"
+                aria-label={chatsOpen ? "Hide chats" : "Show chats"}
+                title={chatsOpen ? "Hide chats" : "Show chats"}
+                aria-pressed={chatsOpen}
+                onClick={toggleChats}
+              >
+                <PanelLeft size={14} aria-hidden />
+              </button>
               <NavThemeModeToggle className="window-titlebar__btn" />
               <SettingsMenu
                 className="window-titlebar__settings"
