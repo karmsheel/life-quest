@@ -35,6 +35,12 @@ const SETTINGS_SCENARIOS = [
   "forget removes the device",
   "chat strip shows the phone draft",
   "chat strip prefill carries the draft",
+  "phone pairs and shows the metric",
+  "phone caches its shell",
+  "phone queues a draft and no transaction",
+  "phone opens offline with its queue",
+  "phone syncs its queue to the studio",
+  "the companion's post clears the phone",
 ];
 
 type Report = {
