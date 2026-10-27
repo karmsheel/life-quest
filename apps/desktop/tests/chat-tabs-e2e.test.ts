@@ -128,19 +128,23 @@ describe("chat dock tabs and sidebar chats", () => {
     const {
       landing,
       opened,
-      bravoLive,
-      alphaReady,
+      middleOpened,
+      menuOpened,
+      menuClosed,
+      alphaLive,
+      bravoReady,
       bothLive,
       interleaved,
-      bravoThread,
+      alphaThread,
       finished,
-      closed,
+      alphaAgain,
+      split,
+      splitSettled,
       pinned,
       archived,
       asked,
       declined,
       deleted,
-      charlie,
       background,
       closedLive,
       lateFrame,
@@ -160,47 +164,70 @@ describe("chat dock tabs and sidebar chats", () => {
     assert.equal(landing.tabCount, 0, "one open chat drew a tab strip");
     assert.equal(landing.heading, "Alpha planning", "the dock landed on the wrong chat");
 
-    // A row click loads that chat, and a second chat gives the strip its pair.
+    // A plain click is navigation: the clicked chat takes over the main chat and
+    // no tab is added. The hidden strip is the proof — a second tab would draw
+    // it, and step 3 below shows the count rising only on the middle click.
     assert.equal(opened.heading, "Bravo budget", "the row click loaded the wrong chat");
     assert.equal(
       opened.messageCalls.at(-1),
       "chat-bravo",
       "the row click read a different transcript",
     );
-    assert.deepEqual(
-      opened.tabs.map((tab) => tab.label),
-      ["Alpha planning", "Bravo budget"],
-      "the tab strip does not name both open chats",
-    );
+    assert.equal(opened.tabCount, 0, "a plain click added a tab");
     assert.equal(
-      opened.tabs.find((tab) => tab.label === "Bravo budget")?.active,
+      opened.rows.find((row) => row.label === "Bravo budget")?.active,
       true,
-      "the clicked chat is not the active tab",
+      "the clicked chat is not the active row",
     );
 
-    // Two turns in the air at once — the core of the feature.
-    assert.equal(bravoLive.calls.length, 1, "Bravo's send never reached the bridge");
-    assert.equal(bravoLive.calls[0]?.sessionId, "chat-bravo");
-    assert.equal(
-      bravoLive.tabs.find((tab) => tab.label === "Bravo budget")?.live,
-      true,
-      "Bravo's tab is not marked live",
+    // A middle click keeps the chat in front and gives the clicked chat its own
+    // tab: exactly two now, not three.
+    assert.deepEqual(
+      middleOpened.tabs.map((tab) => tab.label),
+      ["Bravo budget", "Alpha planning"],
+      "the middle click did not open a second tab",
     );
-    assert.equal(bravoLive.rail?.liveCount, "1 running", "the sidebar did not count the run");
+    assert.equal(middleOpened.tabs[1]?.active, true, "the new tab is not the active one");
+    assert.equal(middleOpened.heading, "Alpha planning");
+
+    // The row menu offers the same gesture.
+    assert.deepEqual(
+      menuOpened.tabs.map((tab) => tab.label),
+      ["Bravo budget", "Alpha planning", "Delta automation"],
+      "Open in new tab did not add a tab",
+    );
+    assert.equal(menuOpened.heading, "Delta automation");
+    assert.equal(menuClosed.tabCount, 2, "closing the menu-opened tab left the wrong count");
+    assert.equal(menuClosed.heading, "Alpha planning", "closing a tab did not hand over");
     assert.equal(
-      alphaReady.composer?.disabled,
+      menuClosed.rows.some((row) => row.label === "Delta automation"),
+      true,
+      "closing a tab removed the chat from the sidebar",
+    );
+
+    // Two turns in the air at once, each in its own tab.
+    assert.equal(alphaLive.calls.length, 1, "Alpha's send never reached the bridge");
+    assert.equal(alphaLive.calls[0]?.sessionId, "chat-alpha");
+    assert.equal(
+      alphaLive.tabs.find((tab) => tab.label === "Alpha planning")?.live,
+      true,
+      "Alpha's tab is not marked live",
+    );
+    assert.equal(alphaLive.rail?.liveCount, "1 running", "the sidebar did not count the run");
+    assert.equal(
+      bravoReady.composer?.disabled,
       false,
       "the composer stayed locked while another chat was running",
     );
     assert.equal(
-      alphaReady.tabs.find((tab) => tab.label === "Bravo budget")?.live,
+      bravoReady.tabs.find((tab) => tab.label === "Alpha planning")?.live,
       true,
       "switching tabs dropped the other run's live state",
     );
     assert.equal(bothLive.calls.length, 2, "the second send did not reach the bridge");
     assert.deepEqual(
       bothLive.calls.map((call) => call.sessionId),
-      ["chat-bravo", "chat-alpha"],
+      ["chat-alpha", "chat-bravo"],
       "the two sends were not for two different chats",
     );
     assert.equal(
@@ -217,34 +244,44 @@ describe("chat dock tabs and sidebar chats", () => {
 
     // Frames are routed by session id: a delta for the chat that is not on
     // screen lands in that chat, not in the open one.
-    const alphaText = interleaved.messages.map((m) => m.content).join(" | ");
-    assert.match(alphaText, /ALPHA-ONLY-1/);
-    assert.match(alphaText, /ALPHA-ONLY-2/);
-    assert.doesNotMatch(alphaText, /BRAVO-ONLY/, "Bravo's deltas leaked into Alpha");
-    const bravoText = bravoThread.messages.map((m) => m.content).join(" | ");
+    const bravoText = interleaved.messages.map((m) => m.content).join(" | ");
     assert.match(bravoText, /BRAVO-ONLY-1/);
     assert.match(bravoText, /BRAVO-ONLY-2/);
     assert.match(bravoText, /Plan the bravo budget/);
     assert.doesNotMatch(bravoText, /ALPHA-ONLY/, "Alpha's deltas leaked into Bravo");
+    const alphaText = alphaThread.messages.map((m) => m.content).join(" | ");
+    assert.match(alphaText, /ALPHA-ONLY-1/);
+    assert.match(alphaText, /ALPHA-ONLY-2/);
+    assert.doesNotMatch(alphaText, /BRAVO-ONLY/, "Bravo's deltas leaked into Alpha");
 
     // Settling clears every live mark.
     assert.equal(finished.tabs.every((tab) => !tab.live), true, "a tab stayed live");
     assert.equal(finished.rows.every((row) => !row.live), true, "a row stayed live");
     assert.equal(finished.rail?.liveCount, "", "the running count outlived the runs");
 
-    // Closing a tab lands on a neighbour and keeps the chat listed. One open
-    // chat draws no strip, so the hand-over is read off the thread and the row.
-    assert.equal(closed.tabCount, 0, "one open chat still drew a tab strip");
-    assert.equal(closed.heading, "Bravo budget", "closing a tab did not hand over to its neighbour");
+    // A plain click during a live turn still replaces the main chat, but the
+    // running chat is split into its own tab first rather than hidden.
     assert.equal(
-      closed.rows.find((row) => row.active)?.label,
-      "Bravo budget",
-      "the neighbour is not the active sidebar row",
+      alphaAgain.tabs.find((tab) => tab.label === "Alpha planning")?.live,
+      true,
+      "Alpha's second turn is not live",
+    );
+    assert.equal(split.heading, "Charlie retro", "the mid-turn click did not replace the main chat");
+    assert.equal(split.tabCount, 3, "the mid-turn click did not leave three tabs");
+    assert.equal(
+      split.tabs.find((tab) => tab.label === "Charlie retro")?.active,
+      true,
+      "the clicked chat did not take the active tab",
     );
     assert.equal(
-      closed.rows.some((row) => row.label === "Alpha planning"),
+      split.tabs.find((tab) => tab.label === "Alpha planning")?.live,
       true,
-      "closing a tab removed the chat from the sidebar",
+      "the running chat's tab was lost when the main chat was replaced",
+    );
+    assert.equal(
+      splitSettled.tabs.every((tab) => !tab.live),
+      true,
+      "the split tab stayed live after its run ended",
     );
 
     // Sidebar management reaches the gateway and the list follows.
@@ -266,34 +303,32 @@ describe("chat dock tabs and sidebar chats", () => {
       "the archived chat is still listed",
     );
     assert.equal(archived.rowCount, 4, "archive changed the wrong number of rows");
-    assert.equal(archived.heading, "Bravo budget", "archiving a closed chat moved the open thread");
-    assert.equal(archived.tabCount, 0, "archiving a closed chat drew a tab strip");
+    assert.equal(
+      archived.tabs.some((tab) => tab.label === "Alpha planning"),
+      false,
+      "the archived chat kept its tab",
+    );
+    assert.equal(archived.heading, "Charlie retro", "archiving a background tab moved the open thread");
 
-    // Delete asks in the app's own dialog, writes only on yes, and takes the
-    // open chat's tab with it.
+    // Delete asks in the app's own dialog, writes only on yes, and hands the
+    // dock to a neighbour tab.
     assert.equal(asked.dialog?.title, "Delete chat", "delete did not ask");
     assert.equal(asked.dialog?.confirm, true, "the ask has no confirm control");
     assert.deepEqual(asked.deleteCalls, [], "delete wrote before it was answered");
     assert.deepEqual(declined.deleteCalls, [], "a cancelled delete wrote anyway");
     assert.equal(declined.rowCount, 4, "a cancelled delete lost the row");
-    assert.equal(deleted.deleteCalls.at(-1), "chat-bravo", "the delete hit the wrong chat");
+    assert.equal(deleted.deleteCalls.at(-1), "chat-charlie", "the delete hit the wrong chat");
     assert.equal(
-      deleted.rows.some((row) => row.label === "Bravo budget"),
+      deleted.rows.some((row) => row.label === "Charlie retro"),
       false,
       "the deleted chat is still listed",
     );
     assert.equal(deleted.rowCount, 3, "the delete changed the wrong number of rows");
-    assert.equal(deleted.tabCount, 0, "deleting the open chat left its tab");
-    assert.equal(deleted.list, true, "deleting the open chat did not fall back to the list");
+    assert.equal(deleted.tabCount, 0, "deleting the open chat left a second tab");
+    assert.equal(deleted.heading, "Bravo budget", "deleting the open chat did not hand over");
 
     // A background run — an automation, or any chat nobody opened — appears as
     // a tab without taking the screen.
-    assert.equal(charlie.heading, "Charlie retro", "the sidebar row did not open its chat");
-    assert.equal(
-      charlie.rows.find((row) => row.active)?.label,
-      "Charlie retro",
-      "the opened chat is not the active row",
-    );
     assert.equal(background.tabCount, 2, "the background run did not grow a tab");
     assert.equal(
       background.tabs.find((tab) => tab.label === "Delta automation")?.live,
@@ -301,11 +336,11 @@ describe("chat dock tabs and sidebar chats", () => {
       "the background tab is not marked live",
     );
     assert.equal(
-      background.tabs.find((tab) => tab.label === "Charlie retro")?.active,
+      background.tabs.find((tab) => tab.label === "Bravo budget")?.active,
       true,
       "the background run stole the active chat",
     );
-    assert.equal(background.heading, "Charlie retro", "the background run moved the dock");
+    assert.equal(background.heading, "Bravo budget", "the background run moved the dock");
     assert.equal(
       background.rows.find((row) => row.label === "Delta automation")?.live,
       true,
@@ -320,7 +355,7 @@ describe("chat dock tabs and sidebar chats", () => {
       "closing a live tab did not stop its run",
     );
     assert.equal(lateFrame.tabCount, 0, "a late frame resurrected the closed tab");
-    assert.equal(lateFrame.heading, "Charlie retro", "a late frame moved the dock");
+    assert.equal(lateFrame.heading, "Bravo budget", "a late frame moved the dock");
     assert.equal(
       lateFrame.rows.find((row) => row.label === "Delta automation")?.live,
       true,

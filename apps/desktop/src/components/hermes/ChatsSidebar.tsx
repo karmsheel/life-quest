@@ -6,6 +6,7 @@ import {
   Pin,
   PinOff,
   SquarePen,
+  SquarePlus,
 } from "lucide-react";
 import { useChatSessions } from "@/state/ChatSessionsProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
@@ -31,8 +32,11 @@ function timeValue(lastActive: number | null): string | undefined {
  * The list used to be a page inside the dock, which meant a chat was only
  * reachable once the operator had already opened the dock. Here it is part of
  * the one wide sidebar: one click loads a chat into the dock (opening it first
- * if it was collapsed), and the same row carries the four durable things the
- * operator does to a chat without opening it — pin, rename, archive, delete.
+ * if it was collapsed), and the same row carries the five things the operator
+ * does to a chat without opening it — open in a new tab, pin, rename, archive,
+ * delete. A plain click is navigation and takes over the tab on screen; a
+ * middle click, or the row's "Open in new tab", is the only gesture that adds a
+ * tab.
  *
  * Rows are the same Hermes sessions the dock's tabs are, read from
  * `ChatSessionsProvider`, so a pin from here is a pin in the dock, in Hermes
@@ -56,6 +60,13 @@ export function ChatsSidebar() {
     setMenuId(null);
     if (!dockOpen) setDockOpen(true);
     await chat.openChat(id);
+  }
+
+  /** The gesture that keeps the chat on screen instead of replacing it. */
+  async function openInNewTab(id: string) {
+    setMenuId(null);
+    if (!dockOpen) setDockOpen(true);
+    await chat.openChatInNewTab(id);
   }
 
   async function createChat() {
@@ -153,8 +164,20 @@ export function ChatsSidebar() {
               type="button"
               className="chats-rail__row-main"
               aria-current={active ? "true" : undefined}
-              title={label}
+              title={`${label} — middle-click to open in a new tab`}
               onClick={() => void openChat(s.id)}
+              onAuxClick={(e) => {
+                // Middle click is "keep this one too": the browser gesture the
+                // operator already knows, transplanted to the chat list.
+                if (e.button !== 1) return;
+                e.preventDefault();
+                void openInNewTab(s.id);
+              }}
+              onMouseDown={(e) => {
+                // Without this the middle press starts the platform's autoscroll
+                // cursor and the aux click never lands on the control.
+                if (e.button === 1) e.preventDefault();
+              }}
             >
               <span className="chats-rail__dot" aria-hidden />
               <span className="chats-rail__label">{label}</span>
@@ -177,6 +200,14 @@ export function ChatsSidebar() {
             </button>
             {menuOpen ? (
               <div className="chats-rail__menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  aria-label="Open in new tab"
+                  onClick={() => void openInNewTab(s.id)}
+                >
+                  <SquarePlus size={12} aria-hidden /> New tab
+                </button>
                 <button
                   type="button"
                   role="menuitem"

@@ -173,7 +173,10 @@ type ChatSessionsContextValue = {
   updateRuntimePick: (id: string, pick: CompanionRuntimeOverride) => void;
 
   loadSessions: () => Promise<HermesSession[] | null>;
+  /** Navigate the active tab to a chat, the way a link navigates a browser tab. */
   openChat: (id: string) => Promise<void>;
+  /** Give a chat a tab of its own, keeping the one in front. */
+  openChatInNewTab: (id: string) => Promise<void>;
   resumeLast: () => Promise<void>;
   newChat: () => Promise<string | null>;
   closeTab: (id: string) => void;
@@ -357,17 +360,56 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     [runs, updateRun],
   );
 
+  /**
+   * Open one chat in the dock's working view.
+   *
+   * A plain click is navigation, the way a link is: the chat takes over the tab
+   * the operator is looking at, and a chat that already has a tab is simply
+   * activated. A second tab exists only when it was asked for — a middle click,
+   * the row's "Open in new tab", or a run nobody opened — which is the whole
+   * difference between "look at this chat" and "keep this chat".
+   */
   const openChat = useCallback(
     async (id: string) => {
       closedTabs.current.delete(id);
-      ensureTab(id);
+      setActiveId(id);
+      setSurface("thread");
+      window.localStorage.setItem(LAST_SESSION_KEY, id);
+      setListError(null);
+      const tabs = openTabsRef.current;
+      if (!tabs.includes(id)) {
+        const active = activeIdRef.current;
+        const index = active ? tabs.indexOf(active) : -1;
+        if (index >= 0) {
+          // The clicked chat takes over the tab on screen. If that tab is
+          // mid-turn, the running chat is split into its own tab first: a live
+          // reply is never hidden by navigation, and it is exactly the parallel
+          // session the tab strip exists to show.
+          const next = tabs.slice();
+          if (active && (runs[active]?.sending ?? false)) next.push(active);
+          next[index] = id;
+          setOpenTabs(next);
+        } else {
+          setOpenTabs([...tabs, id]);
+        }
+      }
+      await loadMessages(id);
+    },
+    [loadMessages, runs],
+  );
+
+  /** Give one chat a tab of its own, without disturbing the one in front. */
+  const openChatInNewTab = useCallback(
+    async (id: string) => {
+      closedTabs.current.delete(id);
+      setOpenTabs((prev) => (prev.includes(id) ? prev : [...prev, id]));
       setActiveId(id);
       setSurface("thread");
       window.localStorage.setItem(LAST_SESSION_KEY, id);
       setListError(null);
       await loadMessages(id);
     },
-    [ensureTab, loadMessages],
+    [loadMessages],
   );
 
   /**
@@ -708,6 +750,10 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       const isActive = () => activeIdRef.current === id;
 
       if (evt.type === "run.started") {
+        // A new turn is a new reason to show the chat: a tab the operator closed
+        // after the last run belongs to that run, not to this one. (The marks
+        // exist only to keep the frames still on the wire from resurrecting it.)
+        closedTabs.current.delete(id);
         ensureTab(id);
         updateRun(id, (current) => ({
           ...current,
@@ -873,6 +919,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       updateRuntimePick,
       loadSessions,
       openChat,
+      openChatInNewTab,
       resumeLast,
       newChat,
       closeTab,
@@ -900,6 +947,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       loadSessions,
       newChat,
       openChat,
+      openChatInNewTab,
       openTabs,
       patchSession,
       receiptOf,

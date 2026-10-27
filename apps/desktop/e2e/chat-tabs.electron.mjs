@@ -187,6 +187,20 @@ async function main() {
       return true;
     })()`);
 
+  /** The same row, pressed with the middle button: "open a new tab". */
+  const middleClickSidebarRow = (label) =>
+    run(`(async () => {
+      const row = Array.from(document.querySelectorAll(".chats-rail__row")).find(
+        (li) => (li.querySelector(".chats-rail__label")?.textContent || "").trim() === ${JSON.stringify(label)}
+      );
+      const button = row?.querySelector(".chats-rail__row-main");
+      if (!button) return false;
+      button.dispatchEvent(new MouseEvent("mousedown", { button: 1, bubbles: true, cancelable: true }));
+      button.dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
   const openSidebarMenu = (label) =>
     run(`(async () => {
       const row = Array.from(document.querySelectorAll(".chats-rail__row")).find(
@@ -301,11 +315,7 @@ async function main() {
       landing.heading === "Alpha planning" && landing.thread && !landing.list,
       `heading "${landing.heading}", list ${landing.list}`,
     );
-    check(
-      "one open chat draws no tab strip",
-      landing.tabCount === 0,
-      `${landing.tabCount} tabs`,
-    );
+    check("one open chat draws no tab strip", landing.tabCount === 0, `${landing.tabCount} tabs`);
     check(
       "the composer is ready on landing",
       landing.composer !== null && !landing.composer.disabled,
@@ -313,9 +323,9 @@ async function main() {
     );
     screenshots.push(await shot("landing"));
 
-    // 2 — a row click loads that chat into the dock, and a second open chat
-    // gives the strip its first pair of tabs.
-    check("clicking a sidebar row opened it", await clickSidebarRow("Bravo budget"), "no row button");
+    // 2 — a plain click is navigation: the clicked chat takes over the main chat
+    // and no tab is added.
+    check("clicked Bravo", await clickSidebarRow("Bravo budget"), "no row button");
     const opened = await settle();
     check(
       "the dock shows the chat the row named",
@@ -328,53 +338,97 @@ async function main() {
       JSON.stringify(opened.messageCalls.slice(-3)),
     );
     check(
-      "two open chats now show two tabs",
-      opened.tabCount === 2 &&
-        opened.tabs.map((tab) => tab.label).join("/") === "Alpha planning/Bravo budget",
-      JSON.stringify(opened.tabs),
+      "a plain click added no tab",
+      opened.tabCount === 0,
+      `${opened.tabCount} tabs — the strip should still be hidden with one chat`,
     );
     check(
-      "the clicked chat is the active tab and the active row",
-      opened.tabs.find((tab) => tab.label === "Bravo budget")?.active === true &&
-        opened.rows.find((row) => row.label === "Bravo budget")?.active === true,
-      JSON.stringify({ tabs: opened.tabs, rows: opened.rows }),
+      "the clicked chat is the active row",
+      opened.rows.find((row) => row.label === "Bravo budget")?.active === true,
+      JSON.stringify(opened.rows),
     );
 
-    // 3 — send in Bravo, then switch to Alpha and send there while Bravo is
-    // still in the air. The two turns must not serialise.
-    check("sent in Bravo", (await typeAndSend("Plan the bravo budget")) === "sent", "composer refused");
-    const bravoLive = await settle();
+    // 3 — a middle click keeps the chat in front and gives the clicked chat its
+    // own tab. If step 2 had added a tab instead of replacing, this would draw
+    // three; two is the proof that the plain click navigated.
+    check("middle-clicked Alpha", await middleClickSidebarRow("Alpha planning"), "no row button");
+    const middleOpened = await settle();
     check(
-      "Bravo's turn reached the bridge as Bravo",
-      bravoLive.calls.at(-1)?.sessionId === "chat-bravo",
-      JSON.stringify(bravoLive.calls),
+      "a middle click opens the chat in a new tab",
+      middleOpened.tabCount === 2 &&
+        middleOpened.tabs.map((tab) => tab.label).join("/") === "Bravo budget/Alpha planning" &&
+        middleOpened.tabs[1]?.active === true &&
+        middleOpened.heading === "Alpha planning",
+      JSON.stringify({ tabs: middleOpened.tabs, heading: middleOpened.heading }),
+    );
+
+    // 4 — the row menu offers the same gesture in words.
+    check("opened Delta's menu", await openSidebarMenu("Delta automation"), "no menu control");
+    check(
+      "clicked Open in new tab",
+      await clickSidebarMenuItem("Open in new tab"),
+      "no Open in new tab item",
+    );
+    const menuOpened = await settle();
+    check(
+      "the menu's Open in new tab adds a tab",
+      menuOpened.tabCount === 3 &&
+        menuOpened.tabs.map((tab) => tab.label).join("/") ===
+          "Bravo budget/Alpha planning/Delta automation" &&
+        menuOpened.heading === "Delta automation",
+      JSON.stringify({ tabs: menuOpened.tabs, heading: menuOpened.heading }),
+    );
+
+    // 5 — closing that tab lands on a neighbour and keeps the chat listed.
+    check("closed Delta's tab", await closeTab("Delta automation"), "no close control");
+    const menuClosed = await settle();
+    check(
+      "closing a tab hands over to its neighbour",
+      menuClosed.tabCount === 2 &&
+        menuClosed.tabs.map((tab) => tab.label).join("/") === "Bravo budget/Alpha planning" &&
+        menuClosed.heading === "Alpha planning",
+      JSON.stringify({ tabs: menuClosed.tabs, heading: menuClosed.heading }),
     );
     check(
-      "Bravo's tab and row both show the live turn",
-      bravoLive.tabs.find((tab) => tab.label === "Bravo budget")?.live === true &&
-        bravoLive.rows.find((row) => row.label === "Bravo budget")?.live === true,
-      JSON.stringify({ tabs: bravoLive.tabs, rows: bravoLive.rows }),
+      "the closed chat is still in the sidebar",
+      menuClosed.rows.some((row) => row.label === "Delta automation"),
+      JSON.stringify(menuClosed.rows.map((row) => row.label)),
+    );
+
+    // 6 — send in Alpha, then switch to Bravo and send there while Alpha is
+    // still in the air. The two turns must not serialise.
+    check("sent in Alpha", (await typeAndSend("Plan the alpha launch")) === "sent", "composer refused");
+    const alphaLive = await settle();
+    check(
+      "Alpha's turn reached the bridge as Alpha",
+      alphaLive.calls.at(-1)?.sessionId === "chat-alpha",
+      JSON.stringify(alphaLive.calls),
+    );
+    check(
+      "Alpha's tab and row both show the live turn",
+      alphaLive.tabs.find((tab) => tab.label === "Alpha planning")?.live === true &&
+        alphaLive.rows.find((row) => row.label === "Alpha planning")?.live === true,
+      JSON.stringify({ tabs: alphaLive.tabs, rows: alphaLive.rows }),
     );
     check(
       "the sidebar counts the running chat",
-      bravoLive.rail?.liveCount === "1 running",
-      JSON.stringify(bravoLive.rail?.liveCount),
+      alphaLive.rail?.liveCount === "1 running",
+      JSON.stringify(alphaLive.rail?.liveCount),
     );
 
-    check("switched back to Alpha", await clickTab("Alpha planning"), "no Alpha tab");
-    const alphaReady = await settle();
+    check("switched to Bravo", await clickTab("Bravo budget"), "no Bravo tab");
+    const bravoReady = await settle();
     check(
-      "Alpha's composer is usable while Bravo runs",
-      alphaReady.composer !== null && !alphaReady.composer.disabled,
-      JSON.stringify(alphaReady.composer),
+      "Bravo's composer is usable while Alpha runs",
+      bravoReady.composer !== null && !bravoReady.composer.disabled,
+      JSON.stringify(bravoReady.composer),
     );
     check(
-      "switching did not drop Bravo's live tab",
-      alphaReady.tabs.find((tab) => tab.label === "Bravo budget")?.live === true,
-      JSON.stringify(alphaReady.tabs),
+      "switching did not drop Alpha's live tab",
+      bravoReady.tabs.find((tab) => tab.label === "Alpha planning")?.live === true,
+      JSON.stringify(bravoReady.tabs),
     );
-
-    check("sent in Alpha", (await typeAndSend("Plan the alpha launch")) === "sent", "composer refused");
+    check("sent in Bravo", (await typeAndSend("Plan the bravo budget")) === "sent", "composer refused");
     const bothLive = await settle();
     check(
       "both turns are in the air at once",
@@ -390,14 +444,26 @@ async function main() {
     );
     screenshots.push(await shot("parallel"));
 
-    // 4 — frames land in the chat that owns them, even when it is not on screen.
+    // 7 — frames land in the chat that owns them, even when it is not on screen.
     await emit("chat-bravo", { type: "run.started", runId: "run-bravo" });
     await emit("chat-bravo", { type: "assistant.delta", text: "BRAVO-ONLY-1 " });
     await emit("chat-alpha", { type: "assistant.delta", text: "ALPHA-ONLY-1 " });
     await emit("chat-bravo", { type: "assistant.delta", text: "BRAVO-ONLY-2 " });
     await emit("chat-alpha", { type: "assistant.delta", text: "ALPHA-ONLY-2" });
     const interleaved = await settle();
-    const alphaText = interleaved.messages.map((m) => m.content).join(" | ");
+    const bravoText = interleaved.messages.map((m) => m.content).join(" | ");
+    check(
+      "Bravo's thread holds only Bravo's deltas",
+      bravoText.includes("BRAVO-ONLY-1") &&
+        bravoText.includes("BRAVO-ONLY-2") &&
+        !bravoText.includes("ALPHA-ONLY") &&
+        bravoText.includes("Plan the bravo budget"),
+      bravoText,
+    );
+
+    check("switched to Alpha", await clickTab("Alpha planning"), "no Alpha tab");
+    const alphaThread = await settle();
+    const alphaText = alphaThread.messages.map((m) => m.content).join(" | ");
     check(
       "Alpha's thread holds only Alpha's deltas",
       alphaText.includes("ALPHA-ONLY-1") &&
@@ -406,23 +472,7 @@ async function main() {
       alphaText,
     );
 
-    check("switched to Bravo", await clickTab("Bravo budget"), "no Bravo tab");
-    const bravoThread = await settle();
-    const bravoText = bravoThread.messages.map((m) => m.content).join(" | ");
-    check(
-      "Bravo's thread holds only Bravo's deltas",
-      bravoText.includes("BRAVO-ONLY-1") &&
-        bravoText.includes("BRAVO-ONLY-2") &&
-        !bravoText.includes("ALPHA-ONLY"),
-      bravoText,
-    );
-    check(
-      "the user's own turn is still in Bravo's transcript",
-      bravoText.includes("Plan the bravo budget"),
-      bravoText,
-    );
-
-    // 5 — the turns settle, and the live marks go with them.
+    // 8 — the turns settle, and the live marks go with them.
     await emit("chat-alpha", { type: "run.completed" });
     await emit("chat-bravo", { type: "run.completed" });
     await run("window.__lqFinishChat('chat-alpha')");
@@ -444,25 +494,44 @@ async function main() {
       JSON.stringify(finished.rail?.liveCount),
     );
 
-    // 6 — closing a tab leaves the chat in the sidebar, and lands on a neighbour.
-    check("closed Alpha's tab", await closeTab("Alpha planning"), "no close control");
-    const closed = await settle();
+    // 9 — a plain click mid-turn still replaces the main chat: the running chat
+    // is split into its own tab first, so the reply is never hidden.
+    check("sent in Alpha again", (await typeAndSend("Alpha follow-up")) === "sent", "composer refused");
+    const alphaAgain = await settle();
     check(
-      "closing a tab hands over to its neighbour",
-      // One open chat draws no strip, so the hand-over is read off the thread
-      // and the sidebar's active row rather than off a tab that is now alone.
-      closed.tabCount === 0 &&
-        closed.heading === "Bravo budget" &&
-        closed.rows.find((row) => row.active)?.label === "Bravo budget",
-      JSON.stringify({ tabs: closed.tabs, heading: closed.heading, rows: closed.rows }),
+      "Alpha is live again",
+      alphaAgain.tabs.find((tab) => tab.label === "Alpha planning")?.live === true,
+      JSON.stringify(alphaAgain.tabs),
+    );
+    check("clicked Charlie while Alpha runs", await clickSidebarRow("Charlie retro"), "no row button");
+    const split = await settle();
+    check(
+      "the plain click replaced the main chat",
+      split.heading === "Charlie retro" && split.thread,
+      `heading "${split.heading}"`,
     );
     check(
-      "the closed chat is still in the sidebar",
-      closed.rows.some((row) => row.label === "Alpha planning"),
-      JSON.stringify(closed.rows.map((row) => row.label)),
+      "the running chat was split into its own tab rather than lost",
+      split.tabCount === 3 &&
+        split.tabs.find((tab) => tab.label === "Charlie retro")?.active === true &&
+        split.tabs.find((tab) => tab.label === "Alpha planning")?.live === true,
+      JSON.stringify(split.tabs),
+    );
+    check(
+      "the running chat's tab is still there",
+      split.tabs.some((tab) => tab.label === "Alpha planning"),
+      JSON.stringify(split.tabs),
+    );
+    await emit("chat-alpha", { type: "run.completed" });
+    await run("window.__lqFinishChat('chat-alpha')");
+    const splitSettled = await settle();
+    check(
+      "the split tab settles with its run",
+      splitSettled.tabs.every((tab) => !tab.live),
+      JSON.stringify(splitSettled.tabs),
     );
 
-    // 7 — the sidebar's own management: pin reaches the bridge and moves the row.
+    // 10 — the sidebar's own management: pin reaches the bridge and moves the row.
     check("opened Bravo's menu", await openSidebarMenu("Bravo budget"), "no menu control");
     check("clicked Pin", await clickSidebarMenuItem("Pin chat"), "no Pin item");
     const pinned = await settle();
@@ -478,7 +547,7 @@ async function main() {
       JSON.stringify(pinned.rows.map((row) => [row.group, row.label])),
     );
 
-    // 8 — archive removes the row, keeps the open thread where it is.
+    // 11 — archive removes the row and the tab it had.
     check("opened Alpha's menu", await openSidebarMenu("Alpha planning"), "no menu control");
     check("clicked Archive", await clickSidebarMenuItem("Archive chat"), "no Archive item");
     const archived = await settle();
@@ -490,18 +559,22 @@ async function main() {
     );
     check(
       "the archived chat left the sidebar",
-      !archived.rows.some((row) => row.label === "Alpha planning") &&
-        archived.rowCount === 4,
+      !archived.rows.some((row) => row.label === "Alpha planning") && archived.rowCount === 4,
       JSON.stringify(archived.rows.map((row) => row.label)),
     );
     check(
-      "archiving a closed chat did not move the open thread",
-      archived.heading === "Bravo budget" && archived.tabCount === 0,
-      JSON.stringify({ heading: archived.heading, tabs: archived.tabs }),
+      "the archived chat's tab went with it",
+      archived.tabs.every((tab) => tab.label !== "Alpha planning"),
+      JSON.stringify(archived.tabs),
+    );
+    check(
+      "archiving a background tab did not move the open thread",
+      archived.heading === "Charlie retro",
+      `heading "${archived.heading}"`,
     );
 
-    // 9 — delete asks through the app's own dialog, and only then writes.
-    check("opened Bravo's menu again", await openSidebarMenu("Bravo budget"), "no menu control");
+    // 12 — delete asks through the app's own dialog, and only then writes.
+    check("opened Charlie's menu", await openSidebarMenu("Charlie retro"), "no menu control");
     check("clicked Delete", await clickSidebarMenuItem("Delete chat"), "no Delete item");
     const asked = await settle();
     check(
@@ -515,37 +588,28 @@ async function main() {
     check("a cancelled delete wrote nothing", declined.deleteCalls.length === 0, JSON.stringify(declined.deleteCalls));
     check("a cancelled delete kept the row", declined.rowCount === 4, `${declined.rowCount} rows`);
 
-    check("opened Bravo's menu once more", await openSidebarMenu("Bravo budget"), "no menu control");
+    check("opened Charlie's menu once more", await openSidebarMenu("Charlie retro"), "no menu control");
     check("clicked Delete again", await clickSidebarMenuItem("Delete chat"), "no Delete item");
     check("confirmed the delete", await clickDialog("confirm"), "no confirm control");
     const deleted = await settle();
     check(
-      "the delete reached the bridge for Bravo",
-      deleted.deleteCalls.at(-1) === "chat-bravo",
+      "the delete reached the bridge for Charlie",
+      deleted.deleteCalls.at(-1) === "chat-charlie",
       JSON.stringify(deleted.deleteCalls),
     );
     check(
       "the deleted chat left the sidebar",
-      !deleted.rows.some((row) => row.label === "Bravo budget") && deleted.rowCount === 3,
+      !deleted.rows.some((row) => row.label === "Charlie retro") && deleted.rowCount === 3,
       JSON.stringify(deleted.rows.map((row) => row.label)),
     );
     check(
-      "deleting the open chat closes its tab and shows the list",
-      deleted.tabCount === 0 && deleted.list && deleted.heading === "Chats",
-      JSON.stringify({ tabs: deleted.tabs, list: deleted.list, heading: deleted.heading }),
+      "deleting the open chat hands over to its neighbour tab",
+      deleted.heading === "Bravo budget" && deleted.tabCount === 0,
+      JSON.stringify({ tabs: deleted.tabs, heading: deleted.heading }),
     );
 
-    // 10 — a run for a chat nobody opened appears as a tab without stealing the
+    // 13 — a run for a chat nobody opened appears as a tab without stealing the
     // screen. This is the scheduled-automation case.
-    check("opened Charlie", await clickSidebarRow("Charlie retro"), "no Charlie row");
-    const charlie = await settle();
-    check(
-      "Charlie is the open chat",
-      charlie.heading === "Charlie retro" &&
-        charlie.tabCount === 0 &&
-        charlie.rows.find((row) => row.active)?.label === "Charlie retro",
-      JSON.stringify({ tabs: charlie.tabs, rows: charlie.rows }),
-    );
     await emit("chat-delta", { type: "run.started", runId: "run-delta" });
     await emit("chat-delta", { type: "assistant.delta", text: "DELTA-BACKGROUND" });
     const background = await settle();
@@ -557,8 +621,8 @@ async function main() {
     );
     check(
       "the background run does not steal the active chat",
-      background.heading === "Charlie retro" &&
-        background.tabs.find((tab) => tab.label === "Charlie retro")?.active === true,
+      background.heading === "Bravo budget" &&
+        background.tabs.find((tab) => tab.label === "Bravo budget")?.active === true,
       JSON.stringify({ heading: background.heading, tabs: background.tabs }),
     );
     check(
@@ -568,7 +632,7 @@ async function main() {
     );
     screenshots.push(await shot("background"));
 
-    // 11 — closing a live tab stops its run, and the tab does not come back on
+    // 14 — closing a live tab stops its run, and the tab does not come back on
     // the frames that were already on the wire.
     check("closed the live Delta tab", await closeTab("Delta automation"), "no close control");
     const closedLive = await settle();
@@ -581,7 +645,7 @@ async function main() {
     const lateFrame = await settle();
     check(
       "a late frame does not resurrect the closed tab",
-      lateFrame.tabCount === 0 && lateFrame.heading === "Charlie retro",
+      lateFrame.tabCount === 0 && lateFrame.heading === "Bravo budget",
       JSON.stringify({ tabs: lateFrame.tabs, heading: lateFrame.heading }),
     );
     check(
@@ -598,19 +662,23 @@ async function main() {
       states: {
         landing,
         opened,
-        bravoLive,
-        alphaReady,
+        middleOpened,
+        menuOpened,
+        menuClosed,
+        alphaLive,
+        bravoReady,
         bothLive,
         interleaved,
-        bravoThread,
+        alphaThread,
         finished,
-        closed,
+        alphaAgain,
+        split,
+        splitSettled,
         pinned,
         archived,
         asked,
         declined,
         deleted,
-        charlie,
         background,
         closedLive,
         lateFrame,
@@ -643,9 +711,12 @@ async function main() {
       ["state", "rows", "tabs", "live", "heading", "calls", "patches"],
       ["landing", state.landing.rowCount, state.landing.tabCount, "", state.landing.heading, "", ""],
       ["opened", state.opened.rowCount, state.opened.tabCount, "", state.opened.heading, "", ""],
-      ["bravo live", state.bravoLive.rowCount, state.bravoLive.tabCount, "bravo", state.bravoLive.heading, state.bravoLive.calls.length, ""],
+      ["middle", state.middleOpened.rowCount, state.middleOpened.tabCount, "", state.middleOpened.heading, "", ""],
+      ["menu", state.menuOpened.rowCount, state.menuOpened.tabCount, "", state.menuOpened.heading, "", ""],
+      ["alpha live", state.alphaLive.rowCount, state.alphaLive.tabCount, "alpha", state.alphaLive.heading, state.alphaLive.calls.length, ""],
       ["both live", state.bothLive.rowCount, state.bothLive.tabCount, "alpha + bravo", state.bothLive.heading, state.bothLive.calls.length, ""],
       ["finished", state.finished.rowCount, state.finished.tabCount, "", state.finished.heading, "", ""],
+      ["split", state.split.rowCount, state.split.tabCount, "alpha", state.split.heading, "", ""],
       ["pinned", state.pinned.rowCount, state.pinned.tabCount, "", state.pinned.heading, "", state.pinned.patchCalls.length],
       ["deleted", state.deleted.rowCount, state.deleted.tabCount, "", state.deleted.heading, "", ""],
       ["background", state.background.rowCount, state.background.tabCount, "delta", state.background.heading, "", ""],
