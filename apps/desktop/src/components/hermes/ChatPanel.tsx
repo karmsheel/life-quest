@@ -218,6 +218,43 @@ function sessionTimeValue(lastActive: number | null): string | undefined {
   return date.toISOString();
 }
 
+type PhoneBridge = {
+  queue: () => Promise<{ drafts: PhoneDraftView[]; count: number }>;
+  onChanged: (cb: () => void) => () => void;
+};
+
+/**
+ * The phone bridge, only when it is the real one.
+ *
+ * Harness pages stub `window.lifequest` with a Proxy whose fallback answers any
+ * unknown name with a function returning a Promise. Calling `api().phone.queue`
+ * there is a TypeError, and calling the "unsubscribe" a Promise in a cleanup is
+ * the same crash on unmount. The panel must treat a missing bridge as "no phone
+ * drafts", not as a broken app — the same rule the rest of the harness relies
+ * on. In the product the bridge is always present.
+ */
+function phoneBridge(): PhoneBridge | null {
+  const bridge = (api() as unknown as { phone?: Partial<PhoneBridge> }).phone;
+  if (
+    !bridge ||
+    typeof bridge.queue !== "function" ||
+    typeof bridge.onChanged !== "function"
+  ) {
+    return null;
+  }
+  return bridge as PhoneBridge;
+}
+
+/** Register a listener only when the bridge returns a real unsubscribe. */
+function subscribe(register: () => unknown): (() => void) | null {
+  try {
+    const off = register();
+    return typeof off === "function" ? (off as () => void) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const activeDomain = useActiveDomain();
   const domainName = activeDomain?.meta.name ?? "Overview";
@@ -437,19 +474,27 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const refreshPhoneDrafts = useCallback(() => {
-    void api()
-      .phone.queue()
+    const bridge = phoneBridge();
+    if (!bridge) return;
+    void bridge
+      .queue()
       .then((queue) => setPhoneDrafts(queue.drafts))
       .catch(() => setPhoneDrafts([]));
   }, []);
 
   useEffect(() => {
+    // No phone bridge means this page never had a phone surface (a harness that
+    // models only what it tests). Do not add bridge traffic to it.
+    const bridge = phoneBridge();
+    if (!bridge) return;
     refreshPhoneDrafts();
-    const offData = api().onVaultDataChanged(() => refreshPhoneDrafts());
-    const offPhone = api().phone.onChanged(() => refreshPhoneDrafts());
+    const offData = subscribe(() =>
+      api().onVaultDataChanged(() => refreshPhoneDrafts()),
+    );
+    const offPhone = subscribe(() => bridge.onChanged(() => refreshPhoneDrafts()));
     return () => {
-      offData();
-      offPhone();
+      offData?.();
+      offPhone?.();
     };
   }, [refreshPhoneDrafts]);
 
