@@ -206,7 +206,7 @@ export function ChatsSidebar() {
                   aria-label="Open in new tab"
                   onClick={() => void openInNewTab(s.id)}
                 >
-                  <SquarePlus size={12} aria-hidden /> New tab
+                  <SquarePlus size={12} aria-hidden /> Open in new tab
                 </button>
                 <button
                   type="button"

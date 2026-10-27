@@ -1123,10 +1123,21 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   : "chat-panel__session"
               }
               aria-current={active ? "true" : undefined}
-              title={label}
+              title={`${label} — middle-click to open in a new tab`}
               onClick={() => {
                 if (s.id === sessionId) setView("thread");
                 else void openSession(s.id);
+              }}
+              onAuxClick={(e) => {
+                // The same gesture the sidebar's rows take: keep the chat in
+                // front and give this one its own tab.
+                if (e.button !== 1) return;
+                e.preventDefault();
+                if (!sessionId) return;
+                void chat.openChatInNewTab(s.id);
+              }}
+              onMouseDown={(e) => {
+                if (e.button === 1) e.preventDefault();
               }}
             >
               {s.pinned ? (
