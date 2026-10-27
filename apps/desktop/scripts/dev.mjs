@@ -80,6 +80,11 @@ async function bundleElectron() {
     external: ["electron"],
     sourcemap: true,
     target: "node20",
+    banner: {
+      // The main bundle is ESM, but a bundled CommonJS dependency may still call
+      // require() for a builtin. qrcode, which draws the pairing QR, does.
+      js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+    },
   });
 
   // Preload: CommonJS. Electron's ESM preload loader requires the .mjs

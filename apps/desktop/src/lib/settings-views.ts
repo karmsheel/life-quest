@@ -7,6 +7,7 @@ import {
   Palette,
   RefreshCw,
   ScrollText,
+  Smartphone,
   Sparkles,
   User,
 } from "lucide-react";
@@ -16,6 +17,7 @@ export type SettingsViewId =
   | "domains"
   | "vault"
   | "hermes"
+  | "phone"
   | "agent"
   | "questions"
   | "updates"
@@ -79,6 +81,22 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "port",
       "agent",
       "chat",
+    ],
+  },
+  {
+    id: "phone",
+    label: "Phone",
+    icon: Smartphone,
+    keywords: [
+      "phone",
+      "mobile",
+      "pair",
+      "pairing",
+      "qr",
+      "device",
+      "metric",
+      "tailscale",
+      "door",
     ],
   },
   {

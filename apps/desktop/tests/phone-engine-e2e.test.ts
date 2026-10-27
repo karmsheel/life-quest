@@ -51,6 +51,7 @@ const SCENARIOS = [
   "csrf is refused",
   "queue_full is a 409",
   "unpair revokes",
+  "the door lives with the vault",
 ];
 
 type Report = {

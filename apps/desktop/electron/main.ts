@@ -24,6 +24,7 @@ import type {
   CompanionRuntimeOverride,
 } from "./companion-client.js";
 import * as vault from "./vault-service.js";
+import * as phone from "./phone-service.js";
 import {
   checkForUpdate,
   installUpdate,
@@ -72,6 +73,13 @@ const E2E: {
   userData?: string;
   showWindow: boolean;
   mcpPorts?: { local?: number; invite?: number };
+  /** The phone rig: a throwaway door on a free port, and the built shell. */
+  phone?: {
+    enabled?: boolean;
+    port?: number;
+    publicOrigin?: string;
+    staticDir?: string;
+  };
   /**
    * The update feed and the installer launcher, for the auto-update rig. Both
    * are off unless this object names them: the product always reads GitHub and
@@ -92,6 +100,12 @@ if (E2E_RAW) {
       userData?: unknown;
       showWindow?: unknown;
       mcpPorts?: { local?: unknown; invite?: unknown };
+      phone?: {
+        enabled?: unknown;
+        port?: unknown;
+        publicOrigin?: unknown;
+        staticDir?: unknown;
+      };
       updateFeedUrl?: unknown;
       updateLauncher?: { exe?: unknown; args?: unknown };
       updateTrust?: { hosts?: unknown; allowHttp?: unknown };
@@ -109,6 +123,19 @@ if (E2E_RAW) {
       E2E.mcpPorts = {
         ...(typeof local === "number" ? { local } : {}),
         ...(typeof invite === "number" ? { invite } : {}),
+      };
+    }
+    if (parsed.phone && typeof parsed.phone === "object") {
+      const raw = parsed.phone;
+      E2E.phone = {
+        ...(raw.enabled === true || raw.enabled === false ? { enabled: raw.enabled } : {}),
+        ...(typeof raw.port === "number" ? { port: raw.port } : {}),
+        ...(typeof raw.publicOrigin === "string" && raw.publicOrigin.trim()
+          ? { publicOrigin: raw.publicOrigin.trim() }
+          : {}),
+        ...(typeof raw.staticDir === "string" && raw.staticDir.trim()
+          ? { staticDir: raw.staticDir.trim() }
+          : {}),
       };
     }
     if (typeof parsed.updateFeedUrl === "string" && parsed.updateFeedUrl.trim()) {
@@ -152,6 +179,10 @@ if (E2E.userData) {
 if (E2E.mcpPorts) {
   // Before any window or vault: a door binds with whatever is set here.
   setMcpPorts(E2E.mcpPorts);
+}
+if (E2E.phone) {
+  // Same reason: the phone door reads its port and address at vault open.
+  phone.configurePhoneFromE2e(E2E.phone);
 }
 if (E2E.updateFeedUrl) {
   setUpdateFeedUrl(E2E.updateFeedUrl);
@@ -576,6 +607,27 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     (_e, patch: Parameters<typeof vault.settingsUpdate>[0]) =>
       vault.settingsUpdate(patch),
   );
+
+  // The phone door. It lives with the vault and dies with the window; these
+  // handlers are the renderer's whole view of it.
+  ipcMain.handle("phone:state", () => phone.getPhoneState());
+  ipcMain.handle("phone:setEnabled", (_e, enabled: boolean) =>
+    phone.setPhoneEnabled(enabled),
+  );
+  ipcMain.handle("phone:setPublicOrigin", (_e, origin: string) =>
+    phone.setPhonePublicOrigin(origin),
+  );
+  ipcMain.handle(
+    "phone:setMetric",
+    (_e, metric: Parameters<typeof phone.setPhoneMetric>[0]) =>
+      phone.setPhoneMetric(metric),
+  );
+  ipcMain.handle("phone:pairingStart", () => phone.pairingStart());
+  ipcMain.handle("phone:pairingCancel", () => phone.pairingCancel());
+  ipcMain.handle("phone:revokeDevice", (_e, id: string) =>
+    phone.revokePhoneDevice(id),
+  );
+  ipcMain.handle("phone:queue", () => phone.phoneQueue());
 
   ipcMain.handle("secrets:hasHermesKey", () => vault.secretsHasHermesKey());
   ipcMain.handle("secrets:setHermesKey", (_e, key: string) =>
@@ -1151,6 +1203,10 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
+  // The door must not outlive the window. On Windows quit() would stop it in
+  // before-quit anyway; on macOS the app stays alive with no window, and a
+  // listener nobody can see is exactly the state this avoids.
+  void phone.stopPhone();
   if (process.platform !== "darwin") app.quit();
 });
 
@@ -1159,6 +1215,7 @@ app.on("before-quit", (event) => {
   void companion
     .companionShutdown()
     .finally(() => stopMcp())
+    .finally(() => phone.stopPhone())
     .finally(() => app.exit(0));
 });
 

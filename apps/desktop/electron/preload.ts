@@ -264,6 +264,28 @@ const lifequest = {
   settingsUpdate: (patch: Record<string, unknown>) =>
     ipcRenderer.invoke("settings:update", patch) as Promise<Result<unknown>>,
 
+  phone: {
+    state: () => ipcRenderer.invoke("phone:state"),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke("phone:setEnabled", enabled),
+    setPublicOrigin: (origin: string) =>
+      ipcRenderer.invoke("phone:setPublicOrigin", origin),
+    setMetric: (metric: string | null) =>
+      ipcRenderer.invoke("phone:setMetric", metric),
+    pairingStart: () => ipcRenderer.invoke("phone:pairingStart"),
+    pairingCancel: () => ipcRenderer.invoke("phone:pairingCancel"),
+    revokeDevice: (id: string) => ipcRenderer.invoke("phone:revokeDevice", id),
+    queue: () => ipcRenderer.invoke("phone:queue"),
+    onChanged: (cb: () => void) => {
+      const listener = () => {
+        cb();
+      };
+      ipcRenderer.on("phone:changed", listener);
+      return () => {
+        ipcRenderer.removeListener("phone:changed", listener);
+      };
+    },
+  },
+
   secretsHasHermesKey: () =>
     ipcRenderer.invoke("secrets:hasHermesKey") as Promise<boolean>,
   secretsSetHermesKey: (key: string) =>

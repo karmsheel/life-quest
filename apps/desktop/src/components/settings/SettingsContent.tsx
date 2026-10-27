@@ -11,6 +11,7 @@ import { SettingsAppearance } from "./SettingsAppearance";
 import { SettingsCompanionPrompts } from "./SettingsCompanionPrompts";
 import { SettingsDomains } from "./SettingsDomains";
 import { SettingsHermes } from "./SettingsHermes";
+import { SettingsPhone } from "./SettingsPhone";
 import { SettingsVault } from "./SettingsVault";
 import { SettingsUpdates } from "./SettingsUpdates";
 import { SettingsDeveloper } from "./SettingsDeveloper";
@@ -58,6 +59,8 @@ function SettingsPanel({ view }: { view: SettingsViewId }) {
       return <SettingsVault />;
     case "hermes":
       return <SettingsHermes />;
+    case "phone":
+      return <SettingsPhone />;
     case "agent":
       return <SettingsCompanionPrompts />;
     case "questions":

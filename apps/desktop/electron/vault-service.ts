@@ -221,6 +221,7 @@ import {
   type McpDoors,
 } from "./mcp-server.js";
 import * as companion from "./companion.js";
+import { startPhoneForVault } from "./phone-service.js";
 import type {
   ChatStreamEvent,
   CompanionInstructionsInput,
@@ -384,6 +385,15 @@ async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
   );
   if (!mcpResult.ok) {
     mcpError = mcpResult.error;
+  }
+  // The phone door follows the same life as the vault: one root, rebound on a
+  // switch. A failed bind is recorded in the phone service for Settings and
+  // never fails the open.
+  try {
+    await startPhoneForVault(snapshot.rootPath);
+  } catch {
+    // startPhoneForVault reports its own errors; a broken door must not make
+    // the vault unopenable.
   }
   // KAR-70: the doors are now bound to this vault, so the profile must carry
   // this vault companion token. Switching vaults has to refresh the header,

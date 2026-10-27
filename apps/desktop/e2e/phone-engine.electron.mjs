@@ -57,6 +57,7 @@ const CAP_VAULT = path.join(userDataDir, `vault-cap-${stamp}`);
 const CORRUPT_VAULT = path.join(userDataDir, `vault-corrupt-${stamp}`);
 const NO_KIT_VAULT = path.join(userDataDir, `vault-nokit-${stamp}`);
 const DOOR_VAULT = path.join(userDataDir, `vault-door-${stamp}`);
+const SERVICE_VAULT = path.join(userDataDir, `vault-service-${stamp}`);
 const STATIC_DIR = path.join(artifactsDir, "phone-door-static");
 
 function pruneOldVaults() {
@@ -69,7 +70,7 @@ function pruneOldVaults() {
   for (const entry of entries) {
     if (!entry.startsWith("vault-")) continue;
     const full = path.join(userDataDir, entry);
-    if ([VAULT, CAP_VAULT, CORRUPT_VAULT, NO_KIT_VAULT, DOOR_VAULT].includes(full)) continue;
+    if ([VAULT, CAP_VAULT, CORRUPT_VAULT, NO_KIT_VAULT, DOOR_VAULT, SERVICE_VAULT].includes(full)) continue;
     try {
       fs.rmSync(full, { recursive: true, force: true, maxRetries: 3 });
     } catch {
@@ -84,6 +85,7 @@ async function loadModules() {
       contents: [
         `export * from ${JSON.stringify(path.join(repoRoot, "packages/vault-core/src/index.ts"))};`,
         `export * from ${JSON.stringify(path.join(repoRoot, "apps/desktop/electron/phone-door.ts"))};`,
+        `export * from ${JSON.stringify(path.join(repoRoot, "apps/desktop/electron/phone-service.ts"))};`,
       ].join("\n"),
       resolveDir: repoRoot,
       sourcefile: "phone-engine.entry.ts",
@@ -95,6 +97,9 @@ async function loadModules() {
     format: "esm",
     target: "node20",
     external: ["electron"],
+    banner: {
+      js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+    },
     logLevel: "silent",
   });
   return import(pathToFileURL(BUNDLE).href);
@@ -919,6 +924,53 @@ async function doorLeg(mod) {
   }
 }
 
+async function serviceLeg(mod) {
+  const root = await makeVault(mod, SERVICE_VAULT, { kit: false, name: "Phone service" });
+  const staticDir = makeStaticDir();
+  const port = await freePort();
+
+  mod.configurePhoneFromE2e({
+    enabled: true,
+    port,
+    publicOrigin: `http://127.0.0.1:${port}`,
+    staticDir,
+  });
+  await mod.startPhoneForVault(root);
+  const up = await mod.getPhoneState();
+  await mod.stopPhone();
+  const down = await mod.getPhoneState();
+
+  // The same port, already taken: the failure is recorded for Settings and the
+  // rest of the app is untouched.
+  const blocker = net.createServer();
+  await new Promise((resolve, reject) => {
+    blocker.once("error", reject);
+    blocker.listen(port, "127.0.0.1", resolve);
+  });
+  await mod.startPhoneForVault(root);
+  const blocked = await mod.getPhoneState();
+  await mod.stopPhone();
+  await new Promise((resolve) => blocker.close(resolve));
+
+  // Off means off: no listener at all, not a listener nobody paired with.
+  mod.configurePhoneFromE2e({ enabled: false });
+  await mod.startPhoneForVault(root);
+  const off = await mod.getPhoneState();
+  mod.configurePhoneFromE2e(null);
+  await mod.stopPhone();
+
+  check(
+    "the door lives with the vault",
+    up.doorUrl !== "" &&
+      down.doorUrl === "" &&
+      blocked.error !== null &&
+      blocked.doorUrl === "" &&
+      off.enabled === false &&
+      off.doorUrl === "",
+    `up ${up.doorUrl} / down ${down.doorUrl} / blocked ${blocked.error} / off ${off.enabled}:${off.doorUrl}`,
+  );
+}
+
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
   pruneOldVaults();
@@ -935,6 +987,7 @@ async function main() {
     const queued = await queueLeg(mod);
     await toolsLeg(mod, queued.root);
     await doorLeg(mod);
+    await serviceLeg(mod);
     await capLeg(mod);
     await corruptLeg(mod);
     await noKitLeg(mod);
