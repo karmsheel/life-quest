@@ -88,6 +88,7 @@ const SAMPLE = `(() => {
   paperProbe.remove();
 
   const rail = document.querySelector(".nav-rail");
+  const chats = document.querySelector(".chats-rail");
   const main = document.querySelector(".shell__main");
   const chat = document.querySelector(".chat-panel");
   const launcher = document.querySelector(".chat-launcher");
@@ -156,6 +157,7 @@ const SAMPLE = `(() => {
           background: getComputedStyle(rail).backgroundColor
         }
       : null,
+    chats: chats ? { box: box(chats) } : null,
     main: main
       ? {
           box: box(main),
@@ -348,10 +350,13 @@ function checkArrangement(label, state, side) {
   // the middle column when swapped — the rail's trailing edge — and the last one
   // beside the sheet when it is not. A dock still carrying the frame's slack after
   // the swap would run over the sheet instead of the mat.
+  // The pane before the dock is the chats list on the leading side, and the
+  // sheet on the trailing one.
+  const beforeDock = side === "left" ? (state.chats?.box.right ?? rail?.box.right) : main?.box.right;
   check(
     `${label}: the dock starts at the edge of the pane before it`,
-    chat?.box.left === (side === "left" ? rail?.box.right : main?.box.right),
-    `dock left ${chat?.box.left}px vs ${side === "left" ? "rail" : "sheet"} edge ${side === "left" ? rail?.box.right : main?.box.right}px`,
+    chat?.box.left === beforeDock,
+    `dock left ${chat?.box.left}px vs ${side === "left" ? "chats" : "sheet"} edge ${beforeDock}px`,
   );
   const expectedDockWidth = side === "left" ? chatTrack : chatTrack + frame;
   check(
@@ -360,9 +365,9 @@ function checkArrangement(label, state, side) {
     `dock width ${chat?.box.width}px vs ${expectedDockWidth}px (column ${chatTrack}px + ${side === "left" ? 0 : frame}px)`,
   );
   check(
-    `${label}: the leading pane stops where its column does`,
-    intoDock?.box.left === track,
-    `leading pane left ${intoDock?.box.left}px vs ${track}px`,
+    `${label}: the first pane after the leading chrome stops where its column does`,
+    intoDock?.box.left === (state.chats?.box.right ?? track),
+    `leading pane left ${intoDock?.box.left}px vs ${state.chats?.box.right ?? track}px`,
   );
 
   // Whichever pane is last reaches the window's own trailing edge: the dock does
@@ -732,12 +737,13 @@ async function main() {
     const rightTracks = (right.shell?.gridTemplateColumns ?? "").split(" ");
     const leftTracks = (left.shell?.gridTemplateColumns ?? "").split(" ");
     check(
-      "the swapped shell puts the dock's column first",
-      rightTracks.length === 3 &&
-        leftTracks.length === 3 &&
+      "the swapped shell puts the dock's column before the sheet",
+      rightTracks.length === 4 &&
+        leftTracks.length === 4 &&
         leftTracks[0] === rightTracks[0] &&
-        parseFloat(leftTracks[1]) === left.tokens.chatTrack &&
-        parseFloat(rightTracks[2]) === right.tokens.chatTrack,
+        leftTracks[1] === rightTracks[1] &&
+        parseFloat(leftTracks[2]) === left.tokens.chatTrack &&
+        parseFloat(rightTracks[3]) === right.tokens.chatTrack,
       `right tracks ${rightTracks.join(" ")}, left tracks ${leftTracks.join(" ")}`,
     );
 
@@ -758,14 +764,15 @@ async function main() {
     );
     check(
       "left/collapsed dock: its grid column goes to zero",
-      parseFloat((dockCollapsed.shell.gridTemplateColumns.split(" ")[1] ?? "NaN")) === 0,
+      parseFloat((dockCollapsed.shell.gridTemplateColumns.split(" ")[2] ?? "NaN")) === 0,
       `tracks ${dockCollapsed.shell.gridTemplateColumns}`,
     );
     check(
-      "left/collapsed dock: the sheet takes the whole frame back",
-      dockCollapsed.main.box.left === dockCollapsed.tokens.track &&
+      "left/collapsed dock: the sheet takes the column back",
+      dockCollapsed.main.box.left ===
+        (dockCollapsed.chats?.box.right ?? dockCollapsed.tokens.track) &&
         dockCollapsed.main.box.right === dockCollapsed.viewport.width,
-      `sheet ${JSON.stringify(dockCollapsed.main.box)} in a ${dockCollapsed.viewport.width}px window, rail ends at ${dockCollapsed.tokens.track}px`,
+      `sheet ${JSON.stringify(dockCollapsed.main.box)} in a ${dockCollapsed.viewport.width}px window, chats end at ${dockCollapsed.chats?.box.right}px`,
     );
     check(
       "left/collapsed dock: the sheet draws no seam to a dock that is gone",
@@ -883,9 +890,9 @@ async function main() {
       `rail ${JSON.stringify(railCollapsed.rail)}`,
     );
     check(
-      "left/collapsed rail: the dock takes the window's leading edge",
-      railCollapsed.chat.box.left === 0,
-      `dock left ${railCollapsed.chat.box.left}px`,
+      "left/collapsed rail: the dock takes the leading chrome's trailing edge",
+      railCollapsed.chat.box.left === (railCollapsed.chats?.box.right ?? 0),
+      `dock left ${railCollapsed.chat.box.left}px, chats end at ${railCollapsed.chats?.box.right}px`,
     );
     check(
       "left/collapsed rail: the panes still abut",

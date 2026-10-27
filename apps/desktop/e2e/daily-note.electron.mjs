@@ -1820,10 +1820,18 @@ async function main() {
     }
   };
 
-  win.setContentSize(1800, 1040);
+  // The wide-page arrangement is a question about the PAGE's width, and the
+  // page now shares the frame with a chats column. Ask for the same page width
+  // the old 1800px window gave it, by adding the column's own width to the
+  // window: the two-column rule is unchanged, the frame around it is wider.
+  const chatsWidth = await win.webContents.executeJavaScript(
+    `Math.round(document.querySelector(".chats-rail")?.getBoundingClientRect().width ?? 0)`,
+  );
+  const wideWidth = 1800 + chatsWidth;
+  win.setContentSize(wideWidth, 1040);
   await waitFor(
     win,
-    `window.innerWidth >= 1790 && Boolean(document.querySelector(".shell"))`,
+    `window.innerWidth >= ${wideWidth - 10} && Boolean(document.querySelector(".shell"))`,
     "the wide window",
   );
   await win.webContents.executeJavaScript(

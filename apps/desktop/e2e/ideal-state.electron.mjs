@@ -831,9 +831,17 @@ async function run() {
     );
 
     // ── 9. the wide page spreads the strip and the box apart ─────────────────
-    win.setContentSize(1800, 1040);
+    // The wide-page rule is a question about the PAGE's width, and the page now
+    // shares the frame with the chats column. Add the column's width to the
+    // window so the page gets the same 1800px-frame width it had before; the
+    // two-column rule itself is unchanged.
+    const chatsWidth = await js(
+      `Math.round(document.querySelector(".chats-rail")?.getBoundingClientRect().width ?? 0)`,
+    );
+    const wideWidth = 1800 + chatsWidth;
+    win.setContentSize(wideWidth, 1040);
     await waitFor(
-      `window.innerWidth >= 1790`,
+      `window.innerWidth >= ${wideWidth - 10}`,
       "the wide window",
     );
     await js(
