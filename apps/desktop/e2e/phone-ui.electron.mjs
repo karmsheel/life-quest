@@ -379,6 +379,16 @@ async function setControl(win, selector, value, kind) {
 }
 
 async function shot(win, name) {
+  // A hidden window can hand back the frame it painted before the DOM settled;
+  // wait for two frames and a beat so the picture is the screen the checks read.
+  await sample(
+    win,
+    `new Promise((resolve) =>
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => setTimeout(resolve, 350)),
+      ),
+    )`,
+  ).catch(() => undefined);
   const image = await win.webContents.capturePage();
   const file = path.join(artifactsDir, `${name}.png`);
   fs.writeFileSync(file, image.toPNG());
