@@ -34,9 +34,10 @@ export function WindowTitleBar() {
   const [fallbackControls, setFallbackControls] = useState(false);
   const [maximized, setMaximized] = useState(false);
 
-  // The rail's column is reserved for the whole shell, collapsed or not: that is
-  // what keeps the toggle and the vault chip from sliding when it opens and
-  // closes. The welcome flow has no rail, so nothing is reserved there.
+  // The sidebar's column is reserved while it is up, so the chip starts where the
+  // sheet does. Collapsed, the column goes back and the chip takes the window's
+  // leading edge with the re-open toggle in front of it. The welcome flow has no
+  // sidebar, so nothing is reserved there.
   const navColumn = navPresent;
   const navToggle = navPresent && navCollapsed;
 
@@ -74,6 +75,7 @@ export function WindowTitleBar() {
       className={[
         "window-titlebar",
         navColumn ? "window-titlebar--nav-column" : "",
+        navColumn && navCollapsed ? "window-titlebar--nav-collapsed" : "",
       ]
         .filter(Boolean)
         .join(" ")}

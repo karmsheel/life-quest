@@ -831,9 +831,12 @@ async function run() {
     );
 
     // ── 9. the wide page spreads the strip and the box apart ─────────────────
-    win.setContentSize(1800, 1040);
+    // 78rem is the page's own width, and the wide sidebar takes more of the
+    // frame than the old icon rail did — so the window that gives the page its
+    // two columns is wider too.
+    win.setContentSize(2000, 1040);
     await waitFor(
-      `window.innerWidth >= 1790`,
+      `window.innerWidth >= 1990`,
       "the wide window",
     );
     await js(

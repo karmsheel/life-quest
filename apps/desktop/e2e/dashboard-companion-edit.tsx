@@ -50,7 +50,7 @@ import type {
 import HomePage from "@/pages/HomePage";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
-import type { ChatStreamEvent } from "@/vite-env";
+import type { ChatStreamEvent, CompanionStreamFrame } from "@/vite-env";
 import { LiveDataProvider } from "@/state/LiveDataProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import { applyAppSkin } from "./apply-app-skin";
@@ -358,10 +358,14 @@ harness.dashboardCompanionEditUnexpectedCalls = [];
  * `companion-client.ts` emits — rather than to poke the dock's own setter, which
  * would be testing the rig's opinion of how the app works.
  */
-const streamListeners: Array<(event: ChatStreamEvent) => void> = [];
+const streamListeners: Array<(frame: CompanionStreamFrame) => void> = [];
+/** The one chat this board's dock opens, named on every frame main would stamp. */
+const STREAM_SESSION_ID = "harness-session";
 
 function emitTurn(event: ChatStreamEvent): void {
-  for (const listener of [...streamListeners]) listener(event);
+  for (const listener of [...streamListeners]) {
+    listener({ sessionId: STREAM_SESSION_ID, event });
+  }
 }
 
 const stubs: Record<string, (...args: unknown[]) => Promise<unknown>> = {
@@ -424,7 +428,7 @@ const stubs: Record<string, (...args: unknown[]) => Promise<unknown>> = {
   companionSessionDelete: async () => ok(true),
   companionModelOptions: async () => ok({ providers: [], current: { model: "", provider: "" } }),
   onCompanionStream: (cb: unknown) => {
-    const listener = cb as (event: ChatStreamEvent) => void;
+    const listener = cb as (frame: CompanionStreamFrame) => void;
     streamListeners.push(listener);
     return () => {
       const index = streamListeners.indexOf(listener);

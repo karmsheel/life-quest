@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { NavLink } from "react-router-dom";
 import { recordVisibleMulti } from "@lifequest/vault-core/pure";
 import { useVault } from "@/state/VaultProvider";
+import { ChatsSidebar } from "@/components/hermes/ChatsSidebar";
 import { NavCollapseButton } from "./NavCollapseButton";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
 import { UpdateBadge } from "./UpdateBadge";
@@ -71,6 +72,14 @@ export function NavRail() {
       <div className="nav-rail__section nav-rail__section--wing" data-nav-group="wing">
         {wingItems.map(renderItem)}
       </div>
+      {/*
+        The chats are the sidebar's middle: under the pages of the wing the
+        operator is in, above the governed shelf and the Log. The section takes
+        whatever height those two fixed groups leave and scrolls inside it, so a
+        long history never pushes the icons at the foot off the column.
+      */}
+      <div className="nav-rail__divider" role="separator" />
+      <ChatsSidebar />
       {/*
         The governed shelf and the Log are two groups, not one list. The rail
         draws a divider above the shelf and another between the shelf and the

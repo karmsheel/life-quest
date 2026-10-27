@@ -116,15 +116,18 @@ export function useChatColumn(
   const frameRef = useRef(frame);
   frameRef.current = frame;
 
-  /** The shell's own content width, and the rail's track standing in it. */
+  /**
+   * The shell's own content width, and the sidebar's column standing in it.
+   * Measured off the box rather than derived from a token, because a collapsed
+   * sidebar is `display: none` and its box is the honest answer for "how much
+   * of the frame is not the page and not the dock".
+   */
   const measureFrame = useCallback((): ChatColumnFrame => {
     const el = shellRef.current;
     if (!el) return frameRef.current;
     const rail = el.querySelector<HTMLElement>(":scope > .nav-rail");
     return {
       viewport: Math.round(el.clientWidth),
-      // A collapsed rail is `display: none`, so its box is the honest answer for
-      // "how much of the frame is not the page and not the dock".
       nav: rail ? Math.round(rail.getBoundingClientRect().width) : 0,
     };
   }, [shellRef]);
