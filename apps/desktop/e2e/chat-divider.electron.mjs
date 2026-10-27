@@ -63,7 +63,6 @@ const SAMPLE = `(() => {
 
   const shell = document.querySelector(".shell");
   const rail = document.querySelector(".shell > .nav-rail");
-  const chats = document.querySelector(".chats-rail");
   const main = document.querySelector(".shell__main");
   const dock = document.querySelector(".chat-panel");
   const launcher = document.querySelector(".chat-launcher");
@@ -137,7 +136,6 @@ const SAMPLE = `(() => {
         }
       : null,
     rail: rail ? { box: box(rail), display: railStyle.display } : null,
-    chats: chats ? { box: box(chats) } : null,
     main: main
       ? {
           box: mainBox,
@@ -179,12 +177,9 @@ const SAMPLE = `(() => {
     seam: side === "left"
       ? (dockBox ? dockBox.right : null)
       : (mainBox ? mainBox.right : null),
-    // Four tracks: rail, chats list, then the sheet and the dock in whichever
-    // order the side puts them. This rig reads the dock's own track rather than
-    // its box because the trailing pane carries the window frame's slack.
     dockTrack:
-      tracks.length === 4 && side
-        ? Math.round(parseFloat(tracks[side === "left" ? 2 : 3]))
+      tracks.length === 3 && side
+        ? Math.round(parseFloat(tracks[side === "left" ? 1 : 2]))
         : null,
     owners: dividerBox
       ? {
@@ -737,10 +732,10 @@ async function main() {
       `column ${eased.dockTrack}px → ${swapped.dockTrack}px across the swap`,
     );
     check(
-      "swapped: the dock leads the page, against the chats list",
-      swapped.dock.box.left === swapped.chats?.box.right &&
+      "swapped: the dock leads the page, against the rail",
+      swapped.dock.box.left === swapped.rail.box.right &&
         swapped.dock.box.width === swapped.dockTrack,
-      `dock ${swapped.dock.box.left}/${swapped.dock.box.width}px vs chats right ${swapped.chats?.box.right}px and column ${swapped.dockTrack}px`,
+      `dock ${swapped.dock.box.left}/${swapped.dock.box.width}px vs rail right ${swapped.rail.box.right}px and column ${swapped.dockTrack}px`,
     );
     check(
       "swapped: the range did not change with the side",

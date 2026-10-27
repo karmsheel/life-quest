@@ -59,7 +59,7 @@ export const CHAT_COLUMN_KEY_STEP_PX = 16;
  *
  * `viewport` is the shell's own content width — the sum of its three tracks, not
  * the window's, because the shell already stands inside the window's frame and
- * the pane gap. `nav` is the rail's track, 0 while the rail is collapsed.
+ * the pane gap. `nav` is the sidebar's track, 0 while it is collapsed.
  */
 export type ChatColumnFrame = {
   viewport: number;

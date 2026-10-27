@@ -126,16 +126,6 @@ const SAMPLE = `(() => {
         }
       : null,
     railDisplay: rail ? getComputedStyle(rail).display : null,
-    chatsToggle: document.querySelector(".window-titlebar__chats-toggle")
-      ? {
-          label: document
-            .querySelector(".window-titlebar__chats-toggle")
-            .getAttribute("aria-label"),
-          pressed: document
-            .querySelector(".window-titlebar__chats-toggle")
-            .getAttribute("aria-pressed")
-        }
-      : null,
     header: header
       ? {
           box: box(header),
@@ -161,6 +151,8 @@ const SAMPLE = `(() => {
         }
       : null,
     firstLink: box(document.querySelector(".nav-rail__link")),
+    wingSection: box(document.querySelector(".nav-rail__section--wing")),
+    bottomSection: box(document.querySelector(".nav-rail__section--bottom")),
     titlebar: box(titlebar),
     leading: box(leading),
     vault: vault
@@ -183,20 +175,15 @@ const SAMPLE = `(() => {
     titlebarBackground: titlebar
       ? getComputedStyle(titlebar).backgroundColor
       : null,
-    // The chats column beside the rail: the sheet now abuts its trailing edge,
-    // and the titlebar chip sits over its own leading edge.
+    // The chats section, inside the one wide sidebar: between the wing's rows
+    // and the governed shelf at the foot.
     chats: chats
       ? {
           box: box(chats),
-          background: getComputedStyle(chats).backgroundColor,
-          borderRadius: getComputedStyle(chats).borderRadius,
-          borderTopWidth: getComputedStyle(chats).borderTopWidth,
-          borderRightWidth: getComputedStyle(chats).borderRightWidth,
-          borderBottomWidth: getComputedStyle(chats).borderBottomWidth,
-          borderLeftWidth: getComputedStyle(chats).borderLeftWidth,
+          inRail: Boolean(rail && rail.contains(chats)),
           title: (chats.querySelector(".chats-rail__title")?.textContent || "").trim(),
           newChat: Boolean(chats.querySelector(".chats-rail__new")),
-          hide: chats.querySelector(".chats-rail__icon-btn")?.getAttribute("aria-label") ?? null
+          scrollRegion: getComputedStyle(chats.querySelector(".chats-rail__list")).overflowY
         }
       : null,
     main: box(main),
@@ -751,42 +738,37 @@ async function main() {
       `titlebar toggle present: ${JSON.stringify(expanded.titlebarToggle)}`,
     );
     check(
-      "the toggle sits centred in the rail column",
-      expanded.railToggle?.box.left ===
-        Math.round((track - (expanded.railToggle?.box.width ?? 0)) / 2),
-      `rail toggle starts at ${expanded.railToggle?.box.left}px, column centre would be ${Math.round((track - (expanded.railToggle?.box.width ?? 0)) / 2)}px`,
+      "the collapse toggle sits at the sidebar's trailing edge",
+      Boolean(expanded.railToggle) &&
+        expanded.railToggle.box.right > expanded.rail.box.left + track * 0.7 &&
+        expanded.railToggle.box.right <= expanded.rail.box.right,
+      `rail toggle ends at ${expanded.railToggle?.box.right}px, sidebar ends at ${expanded.rail?.box.right}px`,
     );
 
     // 5 — the workspace sheet is flush to the rail and the dock, and keeps its
     // one pane gap only under the strip. The chrome around it is a single band of
     // mat: the rail wears the titlebar's own fill with no frost in between.
     check(
-      "the chats list stands between the rail and the sheet",
-      Boolean(expanded.chats) &&
-        expanded.chats.box.left === expanded.rail?.box.right &&
-        expanded.chats.box.width > 0 &&
+      "the chats section lives inside the sidebar",
+      Boolean(expanded.chats?.inRail) &&
+        expanded.chats.box.left >= expanded.rail.box.left &&
+        expanded.chats.box.right <= expanded.rail.box.right &&
         expanded.chats.title === "Chats" &&
         expanded.chats.newChat &&
-        expanded.chats.hide === "Hide chats",
-      `chats ${JSON.stringify(expanded.chats?.box)} vs rail right ${expanded.rail?.box.right}px, title ${JSON.stringify(expanded.chats?.title)}, new ${expanded.chats?.newChat}, hide ${JSON.stringify(expanded.chats?.hide)}`,
+        expanded.chats.scrollRegion === "auto",
+      `chats ${JSON.stringify(expanded.chats?.box)} inside rail ${JSON.stringify(expanded.rail?.box)}, title ${JSON.stringify(expanded.chats?.title)}, new ${expanded.chats?.newChat}, list overflow ${expanded.chats?.scrollRegion}`,
     );
     check(
-      "the chats list is chrome: flush, square, no lines of its own",
-      Boolean(expanded.chats) &&
-        expanded.chats.background === expanded.rail?.background &&
-        expanded.chats.background === expanded.titlebarBackground &&
-        expanded.chats.borderRadius === "0px" &&
-        ["borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth"].every(
-          (side) => expanded.chats[side] === "0px"
-        ) &&
-        expanded.chats.box.top === titlebarHeight + frame &&
-        expanded.chats.box.bottom === expanded.viewport.height,
-      `background ${expanded.chats?.background} vs rail ${expanded.rail?.background}, radius ${expanded.chats?.borderRadius}, edges ${expanded.chats?.borderTopWidth}/${expanded.chats?.borderRightWidth}/${expanded.chats?.borderBottomWidth}/${expanded.chats?.borderLeftWidth}, box ${JSON.stringify(expanded.chats?.box)}`,
+      "the chats section is the middle band: under the wing's rows, above the foot",
+      Boolean(expanded.chats && expanded.wingSection && expanded.bottomSection) &&
+        expanded.chats.box.top >= expanded.wingSection.bottom - 1 &&
+        expanded.chats.box.bottom <= expanded.bottomSection.top + 1,
+      `chats ${JSON.stringify(expanded.chats?.box)}, wing ends ${expanded.wingSection?.bottom}, foot starts ${expanded.bottomSection?.top}`,
     );
     check(
-      "the sheet abuts the chats list's trailing edge",
-      expanded.main?.left === expanded.chats?.box.right,
-      `sheet left ${expanded.main?.left}px vs chats right ${expanded.chats?.box.right}px`,
+      "the sheet abuts the sidebar's trailing edge",
+      expanded.main?.left === expanded.rail?.box.right,
+      `sheet left ${expanded.main?.left}px vs sidebar right ${expanded.rail?.box.right}px`,
     );
     check(
       "the chrome is one band: the rail wears the titlebar's fill, unfrosted",
@@ -902,9 +884,9 @@ async function main() {
       `top bar ${JSON.stringify(expanded.topBar?.box)} vs dock header ${JSON.stringify(expanded.chatHeader?.box)}, header underline ${expanded.chatHeader?.borderBottomWidth}`,
     );
     check(
-      "the chip lines up with the chats list's leading edge",
-      expanded.vault?.box.left === expanded.chats?.box.left,
-      `chip at ${expanded.vault?.box.left}px vs chats at ${expanded.chats?.box.left}px`,
+      "the chip lines up with the sheet's leading edge",
+      expanded.vault?.box.left === expanded.main?.left,
+      `chip at ${expanded.vault?.box.left}px vs sheet at ${expanded.main?.left}px`,
     );
 
     // The night ladder: the studio is a frame around the darkest page. The page
@@ -1043,14 +1025,16 @@ async function main() {
       `rail ${collapsed.rail ? `display:${collapsed.railDisplay}` : "kept in the tree"}`,
     );
     check(
-      "collapse gives the rail's column back",
-      collapsed.main?.left === collapsed.chats?.box.right,
-      `sheet left ${collapsed.main?.left}px — the chats list holds the window's leading edge`,
+      "collapse gives the sidebar's column back",
+      collapsed.main?.left === 0,
+      `sheet left ${collapsed.main?.left}px — with no sidebar the sheet starts on the window's own edge`,
     );
     check(
-      "the chats list takes the window's leading edge when the rail goes",
-      collapsed.chats?.box.left === 0,
-      `chats left ${collapsed.chats?.box.left}px`,
+      "the vault chip takes the window's leading edge when the sidebar goes",
+      Boolean(collapsed.vault && expanded.vault) &&
+        collapsed.vault.box.left < expanded.vault.box.left &&
+        collapsed.vault.box.left <= titlebarHeight + 8,
+      `collapsed chip at ${collapsed.vault?.box.left}px vs expanded ${expanded.vault?.box.left}px`,
     );
     check(
       "the collapse leaves the sheet flush to the dock",
@@ -1067,30 +1051,25 @@ async function main() {
       `titlebar toggle ${JSON.stringify(collapsed.titlebarToggle)}`,
     );
     check(
-      "the strip keeps its column once the rail is gone",
-      (collapsed.vault?.box.left ?? 0) >= track,
-      `vault chip starts at ${collapsed.vault?.box.left}px — the reserved column collapsed with the rail`,
+      "the strip gives the sidebar's column back with it",
+      (collapsed.vault?.box.left ?? track) < track,
+      `vault chip starts at ${collapsed.vault?.box.left}px — it did not come to the leading edge`,
     );
     check(
-      "the toggle does not move between states",
+      "the re-open toggle steps in at the window's leading edge",
       Boolean(
         collapsed.titlebarToggle &&
-          expanded.railToggle &&
-          ["left", "top", "width", "height"].every(
-            (key) =>
-              collapsed.titlebarToggle.box[key] === expanded.railToggle.box[key],
-          ),
+          collapsed.titlebarToggle.box.left < (expanded.railToggle?.box.left ?? 0),
       ),
       `rail ${JSON.stringify(expanded.railToggle?.box)} vs titlebar ${JSON.stringify(collapsed.titlebarToggle?.box)}`,
     );
     check(
-      "the vault chip does not move between states",
+      "the vault chip follows the sidebar in",
       Boolean(
         collapsed.vault &&
           expanded.vault &&
-          ["left", "top", "width", "height"].every(
-            (key) => collapsed.vault.box[key] === expanded.vault.box[key],
-          ),
+          collapsed.vault.box.left < expanded.vault.box.left &&
+          collapsed.vault.box.width === expanded.vault.box.width,
       ),
       `expanded ${JSON.stringify(expanded.vault?.box)} vs collapsed ${JSON.stringify(collapsed.vault?.box)}`,
     );
@@ -1134,44 +1113,6 @@ async function main() {
       "reopen restores the titlebar offset",
       restored.vault?.box.left === expanded.vault?.box.left,
       `vault chip left ${restored.vault?.box.left}px vs ${expanded.vault?.box.left}px`,
-    );
-
-    // 7a — the chats column's own switch. The titlebar control puts the list
-    // away, the sheet takes its column, and the same control brings it back.
-    const clickedHideChats = await clickToggle(".window-titlebar__chats-toggle");
-    check("chats toggle clicked", clickedHideChats, "no titlebar chats toggle to click");
-    const chatsHidden = await settled();
-    check(
-      "the chats toggle puts the list away",
-      chatsHidden.chats === null,
-      `chats ${JSON.stringify(chatsHidden.chats?.box)}`,
-    );
-    check(
-      "the sheet takes the chats column",
-      chatsHidden.main?.left === track,
-      `sheet left ${chatsHidden.main?.left}px vs rail right ${chatsHidden.rail?.box.right}px`,
-    );
-    check(
-      "the toggle now offers the list back",
-      chatsHidden.chatsToggle?.label === "Show chats" &&
-        chatsHidden.chatsToggle?.pressed === "false",
-      JSON.stringify(chatsHidden.chatsToggle),
-    );
-    const clickedShowChats = await clickToggle(".window-titlebar__chats-toggle");
-    check("chats toggle clicked again", clickedShowChats, "the toggle vanished");
-    const chatsRestored = await settled();
-    check(
-      "the chats toggle restores the list",
-      chatsRestored.chats !== null &&
-        chatsRestored.chats.box.left === track &&
-        chatsRestored.main?.left === chatsRestored.chats.box.right,
-      `chats ${JSON.stringify(chatsRestored.chats?.box)} vs sheet ${chatsRestored.main?.left}px`,
-    );
-    check(
-      "the toggle offers to hide the list again",
-      chatsRestored.chatsToggle?.label === "Hide chats" &&
-        chatsRestored.chatsToggle?.pressed === "true",
-      JSON.stringify(chatsRestored.chatsToggle),
     );
 
     // 8 — the ladder is a *night* ladder. Day keeps its own order, where the mat
@@ -1436,8 +1377,6 @@ async function main() {
       expanded,
       collapsed,
       restored,
-      chatsHidden,
-      chatsRestored,
       day,
       ladder: { night, day: dawn, skins },
       scroll: {

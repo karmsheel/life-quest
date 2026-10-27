@@ -35,11 +35,9 @@
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
-import { ChatsSidebar } from "@/components/hermes/ChatsSidebar";
-import { ChatPanel } from "@/components/hermes/ChatPanel";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { AppShell } from "@/components/shell/AppShell";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
-import { ChatSessionsProvider } from "@/state/ChatSessionsProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import type { CompanionStreamFrame, HermesSession } from "@/vite-env";
@@ -249,22 +247,21 @@ if (!root) throw new Error("#root missing from chat-tabs.html");
 
 createRoot(root).render(
   <StrictMode>
-    <MemoryRouter>
+    <MemoryRouter initialEntries={["/home"]}>
       <VaultProvider>
         <ChatDockProvider>
           <NavDockProvider>
-            <ChatSessionsProvider>
-              <div className="app-root">
-                <div className="app-root__body">
-                  <div className="shell">
-                    <div className="nav-rail" />
-                    <ChatsSidebar />
-                    <div className="shell__main" />
-                    <ChatPanel open onOpenChange={() => {}} />
-                  </div>
-                </div>
-              </div>
-            </ChatSessionsProvider>
+            {/* The real shell, sidebar and dock: the chats section is a part of
+                the sidebar now, so a rig that mounted it as its own column
+                would measure a layout the app no longer has. */}
+            <Routes>
+              <Route element={<AppShell />}>
+                <Route
+                  path="/home"
+                  element={<div className="chat-tabs-harness-page" />}
+                />
+              </Route>
+            </Routes>
           </NavDockProvider>
         </ChatDockProvider>
       </VaultProvider>

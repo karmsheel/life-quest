@@ -2,7 +2,6 @@ import { useState, type FormEvent } from "react";
 import {
   Archive,
   MoreVertical,
-  PanelLeftClose,
   Pencil,
   Pin,
   PinOff,
@@ -10,7 +9,6 @@ import {
 } from "lucide-react";
 import { useChatSessions } from "@/state/ChatSessionsProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
-import { useNavDock } from "@/state/NavDockProvider";
 import { useConfirm } from "@/components/ui/useConfirm";
 import {
   formatSessionWhen,
@@ -27,14 +25,14 @@ function timeValue(lastActive: number | null): string | undefined {
 }
 
 /**
- * The chats column: every conversation on the companion profile, the way Hermes
- * Desktop (and Harness beside it) lists them.
+ * The chats section of the sidebar: every conversation on the companion
+ * profile, between the wing's pages above and the governed shelf at the foot.
  *
  * The list used to be a page inside the dock, which meant a chat was only
- * reachable once the operator had already opened the dock. Here it sits beside
- * the page like the rail does: one click loads a chat into the dock (opening it
- * first if it was collapsed), and the same row carries the four durable things
- * the operator does to a chat without opening it — pin, rename, archive, delete.
+ * reachable once the operator had already opened the dock. Here it is part of
+ * the one wide sidebar: one click loads a chat into the dock (opening it first
+ * if it was collapsed), and the same row carries the four durable things the
+ * operator does to a chat without opening it — pin, rename, archive, delete.
  *
  * Rows are the same Hermes sessions the dock's tabs are, read from
  * `ChatSessionsProvider`, so a pin from here is a pin in the dock, in Hermes
@@ -44,7 +42,6 @@ function timeValue(lastActive: number | null): string | undefined {
 export function ChatsSidebar() {
   const chat = useChatSessions();
   const { open: dockOpen, setOpen: setDockOpen } = useChatDock();
-  const { setChatsOpen } = useNavDock();
   const { ask, dialog } = useConfirm(true);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -236,7 +233,7 @@ export function ChatsSidebar() {
   }
 
   return (
-    <aside className="chats-rail" aria-label="Chats">
+    <section className="chats-rail" aria-label="Chats">
       <header className="chats-rail__header">
         <p className="chats-rail__title">Chats</p>
         {liveCount > 0 ? (
@@ -247,15 +244,6 @@ export function ChatsSidebar() {
             {liveCount} running
           </span>
         ) : null}
-        <button
-          type="button"
-          className="chats-rail__icon-btn"
-          aria-label="Hide chats"
-          title="Hide chats"
-          onClick={() => setChatsOpen(false)}
-        >
-          <PanelLeftClose size={15} aria-hidden />
-        </button>
       </header>
 
       <button
@@ -308,6 +296,6 @@ export function ChatsSidebar() {
       {/* The question is asked here because the row is here; the dialog paints
           over the window rather than the column, so it is not clipped. */}
       {dialog}
-    </aside>
+    </section>
   );
 }

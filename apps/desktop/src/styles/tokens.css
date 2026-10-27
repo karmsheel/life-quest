@@ -6,10 +6,9 @@
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-display: var(--font-sans);
 
-  --shell-nav-width: 4.25rem;
-  /* The chats list beside the rail: wide enough for a chat's name and its 
-     stamp, narrow enough to leave the page the majority of the window. */
-  --shell-chats-width: 15rem;
+  /* One wide sidebar: the nav rows, the chats section and the bottom icons share
+     a single column, the way Hermes Desktop's does. */
+  --shell-nav-width: var(--shell-sidebar-width);
   --shell-sidebar-width: 16rem;
   --shell-chatbar-height: 3rem;
   --shell-max-width: 80rem;

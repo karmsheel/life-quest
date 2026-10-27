@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
-import { ChatsSidebar } from "@/components/hermes/ChatsSidebar";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
 import { ChatSessionsProvider } from "@/state/ChatSessionsProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
@@ -19,11 +18,7 @@ export function AppShell() {
     setPresent: setChatPresent,
     side: chatSide,
   } = useChatDock();
-  const {
-    collapsed: navCollapsed,
-    chatsOpen,
-    setPresent: setNavPresent,
-  } = useNavDock();
+  const { collapsed: navCollapsed, setPresent: setNavPresent } = useNavDock();
   const { pathname } = useLocation();
   const chartBleed = pathname === "/chart";
   // The tray itself: the frame the dock's column is solved in, and the element a
@@ -69,16 +64,11 @@ export function AppShell() {
               // window's own trailing edge. The rail holds its column either way.
               chatSide === "left" ? "shell--chat-left" : "shell--chat-right",
               navCollapsed ? "shell--nav-collapsed" : "",
-              chatsOpen ? "shell--chats-open" : "shell--chats-closed",
             ]
               .filter(Boolean)
               .join(" ")}
           >
             <NavRail />
-            {/* The chats column sits between the rail and the sheet: the rail is
-                still the app's icon spine, and this is the list that turns the
-                sessions into something the operator can see and reach. */}
-            {chatsOpen ? <ChatsSidebar /> : null}
             <div className="shell__main">
               <TopBar />
               <div

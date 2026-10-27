@@ -74,19 +74,15 @@ type State = {
   legacyBrand: boolean;
   leadingText: string;
   titlebarBackground: string | null;
-  chatsToggle: { label: string | null; pressed: string | null } | null;
   chats: {
     box: Box;
-    background: string;
-    borderRadius: string;
-    borderTopWidth: string;
-    borderRightWidth: string;
-    borderBottomWidth: string;
-    borderLeftWidth: string;
+    inRail: boolean;
     title: string;
     newChat: boolean;
-    hide: string | null;
+    scrollRegion: string;
   } | null;
+  wingSection: Box | null;
+  bottomSection: Box | null;
   main: Box | null;
   mainBackground: string | null;
   topBar: {
@@ -179,8 +175,6 @@ type Report = {
   expanded: State;
   collapsed: State;
   restored: State;
-  chatsHidden: State;
-  chatsRestored: State;
   day: State;
   ladder: { night: Ladder; day: Ladder; skins: Record<string, Ladder> };
   scroll: {
@@ -335,10 +329,10 @@ describe("shell sidebar (docked rail)", () => {
       expanded.firstLink.top >= expanded.header.box.bottom,
       "nav rows overlap the topband",
     );
-    assert.equal(
-      expanded.railToggle?.box.left,
-      Math.round((track - (expanded.railToggle?.box.width ?? 0)) / 2),
-      "the toggle is not centred in the rail column",
+    assert.ok(
+      (expanded.railToggle?.box.right ?? 0) > track * 0.7 &&
+        (expanded.railToggle?.box.right ?? 0) <= track,
+      `the collapse toggle sits at ${JSON.stringify(expanded.railToggle?.box)} in a ${track}px column, not at its trailing edge`,
     );
     assert.equal(
       expanded.corner?.insideRail,
@@ -394,33 +388,41 @@ describe("shell sidebar (docked rail)", () => {
       titlebarHeight,
       "the chip does not fill the strip",
     );
-    // The chats column sits between the rail and the sheet: the leading chrome
-    // is now two panes, and the sheet starts at the list's trailing edge.
-    assert.ok(expanded.chats, "the shell rendered no chats column");
+    // The sidebar is one wide column: the chats section sits inside it, between
+    // the wing's rows and the icons at the foot. The sheet abuts the column.
+    assert.ok(expanded.chats, "the sidebar rendered no chats section");
+    assert.equal(expanded.chats.inRail, true, "the chats section left the sidebar");
     assert.equal(
-      expanded.chats.box.left,
-      track,
-      "the chats column is not flush to the rail's trailing edge",
-    );
-    assert.equal(
-      expanded.chats.title,
-      "Chats",
-      "the chats column has no heading",
-    );
-    assert.equal(
-      expanded.chats.newChat,
+      expanded.chats.box.left >= (expanded.rail?.box.left ?? 0) &&
+        expanded.chats.box.right <= (expanded.rail?.box.right ?? 0),
       true,
-      "the chats column offers no New chat",
+      `the chats section (${JSON.stringify(expanded.chats.box)}) is not inside the sidebar (${JSON.stringify(expanded.rail?.box)})`,
+    );
+    assert.equal(expanded.chats.title, "Chats", "the chats section has no heading");
+    assert.equal(expanded.chats.newChat, true, "the chats section offers no New chat");
+    assert.equal(
+      expanded.chats.scrollRegion,
+      "auto",
+      "the chats list does not scroll inside the sidebar",
+    );
+    assert.ok(
+      expanded.wingSection && expanded.bottomSection,
+      "the sidebar did not render its top and bottom groups",
     );
     assert.equal(
-      expanded.chats.hide,
-      "Hide chats",
-      "the chats column has no hide control",
+      expanded.chats.box.top >= expanded.wingSection!.bottom - 1,
+      true,
+      `the chats section starts at ${expanded.chats.box.top}px, above the wing's rows (${expanded.wingSection!.bottom}px)`,
+    );
+    assert.equal(
+      expanded.chats.box.bottom <= expanded.bottomSection!.top + 1,
+      true,
+      `the chats section ends at ${expanded.chats.box.bottom}px, below the foot's start (${expanded.bottomSection!.top}px)`,
     );
     assert.equal(
       expanded.main?.left,
-      expanded.chats.box.right,
-      "the sheet is not flush to the chats list's trailing edge",
+      track,
+      "the sheet is not flush to the sidebar's trailing edge",
     );
     assert.equal(
       expanded.main?.right,
@@ -434,8 +436,8 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.equal(
       expanded.vault?.box.left,
-      expanded.chats?.box.left,
-      "the chip's leading border does not line up with the chats column's",
+      expanded.main?.left,
+      "the chip's leading border does not line up with the sheet's",
     );
 
     // The chrome is one band of mat: the rail that wraps the sheet's leading edge
@@ -581,32 +583,34 @@ describe("shell sidebar (docked rail)", () => {
       collapsed.rail === null || collapsed.railDisplay === "none",
       "collapsing left the rail on screen",
     );
-    // The rail's column is reclaimed; the chats list keeps its own and moves to
-    // the window's leading edge.
-    assert.equal(
-      collapsed.chats?.box.left,
-      0,
-      "the chats list did not take the window's leading edge",
-    );
+    // The sidebar's column is reclaimed, and the chip comes to the window's own
+    // leading edge with the re-open toggle in front of it.
     assert.equal(
       collapsed.main?.left,
-      collapsed.chats?.box.right,
-      "the sheet did not reclaim the collapsed rail's column",
+      0,
+      "the sheet did not reclaim the collapsed sidebar's column",
+    );
+    assert.ok(
+      collapsed.vault && expanded.vault,
+      "the strip lost the vault chip in one of the two states",
+    );
+    assert.ok(
+      collapsed.vault!.box.left < expanded.vault!.box.left,
+      `the chip stayed at ${collapsed.vault!.box.left}px instead of coming to the leading edge`,
+    );
+    assert.ok(
+      collapsed.vault!.box.left <= 48,
+      `the chip sits ${collapsed.vault!.box.left}px in, not at the window's leading edge`,
     );
     assert.equal(
       collapsed.titlebarToggle?.label,
       "Expand sidebar",
       "no reopen toggle in the titlebar",
     );
-    assert.deepEqual(
-      collapsed.titlebarToggle?.box,
-      expanded.railToggle?.box,
-      "the toggle moved between the open and closed states",
-    );
-    assert.deepEqual(
+    assert.notDeepEqual(
       collapsed.vault?.box,
       expanded.vault?.box,
-      "the vault chip moved between the open and closed states",
+      "the vault chip did not take the leading edge when the sidebar went",
     );
     assert.equal(
       collapsed.vault?.text,
@@ -634,38 +638,6 @@ describe("shell sidebar (docked rail)", () => {
       restored.main?.left,
       expanded.main?.left,
       "reopening did not restore the sheet offset",
-    );
-
-    // The chats column has its own switch, and the sheet takes the column back
-    // when it goes. The switch reports the state it is in, so the operator can
-    // tell "put away" from "not there".
-    const { chatsHidden, chatsRestored } = report;
-    assert.equal(chatsHidden.chats, null, "the chats toggle left the list on screen");
-    assert.equal(
-      chatsHidden.main?.left,
-      track,
-      "the sheet did not take the chats column back",
-    );
-    assert.deepEqual(
-      chatsHidden.chatsToggle,
-      { label: "Show chats", pressed: "false" },
-      "the toggle does not offer the list back",
-    );
-    assert.ok(chatsRestored.chats, "the chats toggle did not bring the list back");
-    assert.equal(
-      chatsRestored.chats?.box.left,
-      track,
-      "the restored chats list is not flush to the rail",
-    );
-    assert.equal(
-      chatsRestored.main?.left,
-      chatsRestored.chats?.box.right,
-      "the restored chats list did not push the sheet back",
-    );
-    assert.deepEqual(
-      chatsRestored.chatsToggle,
-      { label: "Hide chats", pressed: "true" },
-      "the toggle does not report the list as up",
     );
 
     assert.equal(

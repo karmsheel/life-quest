@@ -49,7 +49,6 @@ type Arrangement = {
   paperBackground: string;
   shell: { className: string; gridTemplateColumns: string; box: Box } | null;
   rail: { box: Box; display: string; background: string } | null;
-  chats: { box: Box } | null;
   main: {
     box: Box;
     radius: {
@@ -239,7 +238,7 @@ describe("chat dock side switch", () => {
       right.viewport.height,
       "the rail stopped short of the window bottom",
     );
-    assert.equal(right.main?.box.left, right.chats?.box.right, "the sheet left the chats list's trailing edge");
+    assert.equal(right.main?.box.left, track, "the sheet left the rail's trailing edge");
     assert.equal(
       right.main?.box.right,
       right.chat?.box.left,
@@ -329,8 +328,8 @@ describe("chat dock side switch", () => {
     );
     assert.equal(
       left.chat?.box.left,
-      left.chats?.box.right,
-      "the swapped dock did not take the column beside the chats list",
+      left.rail?.box.right,
+      "the swapped dock did not take the column beside the rail",
     );
     assert.equal(
       left.chat?.box.width,
@@ -403,21 +402,16 @@ describe("chat dock side switch", () => {
     // The tracks themselves, not just the boxes they produce.
     const leftTracks = (left.shell?.gridTemplateColumns ?? "").split(" ");
     const rightTracks = (right.shell?.gridTemplateColumns ?? "").split(" ");
-    assert.equal(leftTracks.length, 4, `the shell is not a four-track grid: ${left.shell?.gridTemplateColumns}`);
+    assert.equal(leftTracks.length, 3, `the shell is not a three-track grid: ${left.shell?.gridTemplateColumns}`);
     assert.equal(
-      parseFloat(leftTracks[2]),
+      parseFloat(leftTracks[1]),
       chatTrack,
-      `the swapped shell's third track is not the dock's column: ${leftTracks[2]}`,
+      `the swapped shell's second track is not the dock's column: ${leftTracks[1]}`,
     );
     assert.equal(
-      parseFloat(rightTracks[3]),
+      parseFloat(rightTracks[2]),
       chatTrack,
-      `the shipped shell's last track is not the dock's column: ${rightTracks[3]}`,
-    );
-    assert.equal(
-      leftTracks[1],
-      rightTracks[1],
-      `the chats column's track changed with the swap: ${leftTracks[1]} vs ${rightTracks[1]}`,
+      `the shipped shell's last track is not the dock's column: ${rightTracks[2]}`,
     );
     assert.equal(
       leftTracks[0],
@@ -454,14 +448,14 @@ describe("chat dock side switch", () => {
       "the collapsed dock is still a pane: the vertical strip should be gone",
     );
     assert.equal(
-      parseFloat((dockCollapsed.shell?.gridTemplateColumns.split(" ")[2] ?? "NaN")),
+      parseFloat((dockCollapsed.shell?.gridTemplateColumns.split(" ")[1] ?? "NaN")),
       0,
       `the collapsed shell still reserves a dock column (${dockCollapsed.shell?.gridTemplateColumns})`,
     );
     assert.equal(
       dockCollapsed.main?.box.left,
-      dockCollapsed.chats?.box.right,
-      `the collapsed sheet left the chats list's trailing edge (${dockCollapsed.main?.box.left}px vs ${dockCollapsed.chats?.box.right}px)`,
+      track,
+      `the collapsed sheet left the rail's trailing edge (${dockCollapsed.main?.box.left}px vs ${track}px)`,
     );
     assert.equal(
       dockCollapsed.main?.box.right,
@@ -577,8 +571,8 @@ describe("chat dock side switch", () => {
     );
     assert.equal(
       railCollapsed.chat.box.left,
-      railCollapsed.chats?.box.right,
-      "with the rail gone the dock did not take the chats list's trailing edge",
+      0,
+      "with the rail gone the dock did not take the window's leading edge",
     );
     assert.equal(
       railCollapsed.main.box.right,
@@ -586,8 +580,8 @@ describe("chat dock side switch", () => {
       "with the rail and the dock swapped the sheet left the window's trailing edge",
     );
 
-    // —— Both gone: the mark is fixed to the window's own corner, whatever the
-    // chats column does to the grid. ——
+    // —— Both gone: the mark follows the dock's column, which now starts at the
+    // window's own leading edge. ——
     assert.ok(
       railAndDockCollapsed.launcher,
       "collapsing the dock under a collapsed rail left no floating mark",

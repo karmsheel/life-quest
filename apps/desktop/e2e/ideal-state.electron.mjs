@@ -831,17 +831,12 @@ async function run() {
     );
 
     // ── 9. the wide page spreads the strip and the box apart ─────────────────
-    // The wide-page rule is a question about the PAGE's width, and the page now
-    // shares the frame with the chats column. Add the column's width to the
-    // window so the page gets the same 1800px-frame width it had before; the
-    // two-column rule itself is unchanged.
-    const chatsWidth = await js(
-      `Math.round(document.querySelector(".chats-rail")?.getBoundingClientRect().width ?? 0)`,
-    );
-    const wideWidth = 1800 + chatsWidth;
-    win.setContentSize(wideWidth, 1040);
+    // 78rem is the page's own width, and the wide sidebar takes more of the
+    // frame than the old icon rail did — so the window that gives the page its
+    // two columns is wider too.
+    win.setContentSize(2000, 1040);
     await waitFor(
-      `window.innerWidth >= ${wideWidth - 10}`,
+      `window.innerWidth >= 1990`,
       "the wide window",
     );
     await js(
