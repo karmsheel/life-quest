@@ -92,6 +92,12 @@ async function loadModules() {
     format: "esm",
     target: "node20",
     external: ["electron"],
+    // The bundled main modules reach qrcode through phone-service, and qrcode's
+    // CommonJS calls require() for a builtin. The product's main bundle carries
+    // this banner; a rig that bundles the same modules must carry it too.
+    banner: {
+      js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+    },
     logLevel: "silent",
   });
   return import(pathToFileURL(BUNDLE).href);
