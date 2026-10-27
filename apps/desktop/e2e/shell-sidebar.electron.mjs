@@ -126,6 +126,16 @@ const SAMPLE = `(() => {
         }
       : null,
     railDisplay: rail ? getComputedStyle(rail).display : null,
+    chatsToggle: document.querySelector(".window-titlebar__chats-toggle")
+      ? {
+          label: document
+            .querySelector(".window-titlebar__chats-toggle")
+            .getAttribute("aria-label"),
+          pressed: document
+            .querySelector(".window-titlebar__chats-toggle")
+            .getAttribute("aria-pressed")
+        }
+      : null,
     header: header
       ? {
           box: box(header),
@@ -1126,6 +1136,44 @@ async function main() {
       `vault chip left ${restored.vault?.box.left}px vs ${expanded.vault?.box.left}px`,
     );
 
+    // 7a — the chats column's own switch. The titlebar control puts the list
+    // away, the sheet takes its column, and the same control brings it back.
+    const clickedHideChats = await clickToggle(".window-titlebar__chats-toggle");
+    check("chats toggle clicked", clickedHideChats, "no titlebar chats toggle to click");
+    const chatsHidden = await settled();
+    check(
+      "the chats toggle puts the list away",
+      chatsHidden.chats === null,
+      `chats ${JSON.stringify(chatsHidden.chats?.box)}`,
+    );
+    check(
+      "the sheet takes the chats column",
+      chatsHidden.main?.left === track,
+      `sheet left ${chatsHidden.main?.left}px vs rail right ${chatsHidden.rail?.box.right}px`,
+    );
+    check(
+      "the toggle now offers the list back",
+      chatsHidden.chatsToggle?.label === "Show chats" &&
+        chatsHidden.chatsToggle?.pressed === "false",
+      JSON.stringify(chatsHidden.chatsToggle),
+    );
+    const clickedShowChats = await clickToggle(".window-titlebar__chats-toggle");
+    check("chats toggle clicked again", clickedShowChats, "the toggle vanished");
+    const chatsRestored = await settled();
+    check(
+      "the chats toggle restores the list",
+      chatsRestored.chats !== null &&
+        chatsRestored.chats.box.left === track &&
+        chatsRestored.main?.left === chatsRestored.chats.box.right,
+      `chats ${JSON.stringify(chatsRestored.chats?.box)} vs sheet ${chatsRestored.main?.left}px`,
+    );
+    check(
+      "the toggle offers to hide the list again",
+      chatsRestored.chatsToggle?.label === "Hide chats" &&
+        chatsRestored.chatsToggle?.pressed === "true",
+      JSON.stringify(chatsRestored.chatsToggle),
+    );
+
     // 8 — the ladder is a *night* ladder. Day keeps its own order, where the mat
     // and the panels sink below the sheet; the same rig, the same skin and only
     // the mode flipped, so a day that inherited the night inks fails here rather
@@ -1388,6 +1436,8 @@ async function main() {
       expanded,
       collapsed,
       restored,
+      chatsHidden,
+      chatsRestored,
       day,
       ladder: { night, day: dawn, skins },
       scroll: {

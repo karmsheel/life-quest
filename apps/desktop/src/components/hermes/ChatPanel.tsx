@@ -1123,7 +1123,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   : "chat-panel__session"
               }
               aria-current={active ? "true" : undefined}
-              disabled={sending}
               title={label}
               onClick={() => {
                 if (s.id === sessionId) setView("thread");
@@ -1149,7 +1148,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               title="Chat actions"
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              disabled={sending}
               onClick={() => toggleSessionMenu(s.id)}
             >
               <MoreVertical size={14} aria-hidden />
@@ -1970,7 +1968,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               className="chat-panel__icon-btn chat-panel__action"
               aria-label="New chat"
               title="New chat"
-              disabled={sending}
               onClick={() => void newSession()}
             >
               <SquarePen size={20} aria-hidden />

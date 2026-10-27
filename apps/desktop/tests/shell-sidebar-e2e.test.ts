@@ -74,6 +74,7 @@ type State = {
   legacyBrand: boolean;
   leadingText: string;
   titlebarBackground: string | null;
+  chatsToggle: { label: string | null; pressed: string | null } | null;
   chats: {
     box: Box;
     background: string;
@@ -178,6 +179,8 @@ type Report = {
   expanded: State;
   collapsed: State;
   restored: State;
+  chatsHidden: State;
+  chatsRestored: State;
   day: State;
   ladder: { night: Ladder; day: Ladder; skins: Record<string, Ladder> };
   scroll: {
@@ -631,6 +634,38 @@ describe("shell sidebar (docked rail)", () => {
       restored.main?.left,
       expanded.main?.left,
       "reopening did not restore the sheet offset",
+    );
+
+    // The chats column has its own switch, and the sheet takes the column back
+    // when it goes. The switch reports the state it is in, so the operator can
+    // tell "put away" from "not there".
+    const { chatsHidden, chatsRestored } = report;
+    assert.equal(chatsHidden.chats, null, "the chats toggle left the list on screen");
+    assert.equal(
+      chatsHidden.main?.left,
+      track,
+      "the sheet did not take the chats column back",
+    );
+    assert.deepEqual(
+      chatsHidden.chatsToggle,
+      { label: "Show chats", pressed: "false" },
+      "the toggle does not offer the list back",
+    );
+    assert.ok(chatsRestored.chats, "the chats toggle did not bring the list back");
+    assert.equal(
+      chatsRestored.chats?.box.left,
+      track,
+      "the restored chats list is not flush to the rail",
+    );
+    assert.equal(
+      chatsRestored.main?.left,
+      chatsRestored.chats?.box.right,
+      "the restored chats list did not push the sheet back",
+    );
+    assert.deepEqual(
+      chatsRestored.chatsToggle,
+      { label: "Hide chats", pressed: "true" },
+      "the toggle does not report the list as up",
     );
 
     assert.equal(

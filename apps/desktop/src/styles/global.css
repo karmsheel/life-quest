@@ -751,9 +751,10 @@ a {
   left: calc(100% - var(--chat-column));
 }
 
-/* Leading dock: the rail's column, then the dock's. */
+/* Leading dock: the leading chrome's columns, then the dock's. The chats list
+   sits between the rail and the dock, so the handle has to clear it too. */
 .shell--chat-left > .chat-divider {
-  left: calc(var(--nav-column) + var(--chat-column));
+  left: calc(var(--nav-column) + var(--chats-column) + var(--chat-column));
 }
 
 .chat-divider::after {

@@ -57,6 +57,7 @@ type State = {
     dragging: boolean;
   };
   rail: { box: Box; display: string } | null;
+  chats: { box: Box } | null;
   main: { box: Box; border: Borders; radiusTopLeft: string } | null;
   dock: { box: Box; border: Borders; className: string } | null;
   launcher: {
@@ -141,7 +142,11 @@ const isZero = (value: string | undefined) => parseFloat(value ?? "0") === 0;
  */
 function expectedRange(state: State) {
   const viewport = state.shell.clientWidth;
-  const nav = state.rail ? state.rail.box.width : 0;
+  // The leading chrome is two panes now: the rail and the chats list beside it.
+  // Both come out of the frame before the page's 400px floor is applied.
+  const nav =
+    (state.rail ? state.rail.box.width : 0) +
+    (state.chats ? state.chats.box.width : 0);
   return {
     min: 300,
     max: Math.max(
@@ -396,7 +401,7 @@ describe("chat dock divider", () => {
     assert.equal(
       shipped.shell.chatMax,
       range.max,
-      `the shell's ceiling is ${shipped.shell.chatMax}px, not the contract's ${range.max}px (frame ${range.viewport}px, rail ${range.nav}px)`,
+      `the shell's ceiling is ${shipped.shell.chatMax}px, not the contract's ${range.max}px (frame ${range.viewport}px, chrome ${range.nav}px)`,
     );
     assert.ok(
       shipped.dockTrack > shipped.shell.chatMin &&
@@ -485,8 +490,8 @@ describe("chat dock divider", () => {
     );
     assert.equal(
       swapped.dock!.box.left,
-      swapped.rail!.box.right,
-      "the swapped dock did not take the column beside the rail",
+      swapped.chats?.box.right,
+      "the swapped dock did not take the column beside the chats list",
     );
     assert.equal(
       swapped.dock!.box.width,
