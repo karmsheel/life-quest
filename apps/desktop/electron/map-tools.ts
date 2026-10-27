@@ -25,6 +25,8 @@ import {
   ALL_TOOL_DEFS,
   DATABASE_TOOL_DEFS,
   executeDatabaseTool,
+  PHONE_TOOL_DEFS,
+  executePhoneTool,
   commandForProjectTool,
   projectGet,
   listDecisions,
@@ -208,6 +210,13 @@ async function executeToolInner(
   // capture_transaction, undo_capture, correct_capture
   if (CAPTURE_TOOL_DEFS.some((t) => t.name === name)) {
     return executeCaptureTool(root, actor, name, rec);
+  }
+
+  // list_phone_drafts, post_phone_draft, dismiss_phone_draft. The phone's
+  // queue is companion-only; a connected agent is refused by name in
+  // `toolAllowed` and never reaches this branch.
+  if (PHONE_TOOL_DEFS.some((t) => t.name === name)) {
+    return executePhoneTool(root, actor, name, rec);
   }
 
   // apply_script_block, run_script_block

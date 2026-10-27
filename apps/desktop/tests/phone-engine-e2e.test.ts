@@ -33,6 +33,14 @@ const SCENARIOS = [
   "queue cap is 100",
   "corrupt draft is skipped, not deleted",
   "metric with no kit",
+  "post posts one row and resolves the draft",
+  "ambiguous draft stays pending",
+  "the correction posts once",
+  "posting a resolved draft posts nothing",
+  "dismiss writes no row",
+  "unknown clientId is NOT_FOUND",
+  "connected agents are refused",
+  "double post is one row",
 ];
 
 type Report = {

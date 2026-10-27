@@ -353,6 +353,153 @@ async function queueLeg(mod) {
   return { root };
 }
 
+async function rowCount(mod, root) {
+  const rows = await must(
+    "listRows txns",
+    mod.listRows(root, mod.FINANCE_DOMAIN_SLUG, mod.FINANCE_DB_IDS.transactions),
+  );
+  return rows.length;
+}
+
+async function toolsLeg(mod, root) {
+  const agent = mod.COMPANION_ACTOR;
+  const post = (args) => mod.executePhoneTool(root, agent, "post_phone_draft", args);
+  const dismiss = (args) => mod.executePhoneTool(root, agent, "dismiss_phone_draft", args);
+
+  // 1 — one confirmed draft, one row, one resolution, and a log that names it.
+  const before = await rowCount(mod, root);
+  const postedId = randomUUID();
+  await must(
+    "queue for post",
+    mod.queuePhoneDraft(root, draftInput({ clientId: postedId, text: "R85 Pick n Pay food" }), new Date().toISOString()),
+  );
+  const posted = await post({ clientId: postedId });
+  const after = await rowCount(mod, root);
+  const postedDraft = await must("read posted draft", mod.readPhoneDraft(root, postedId));
+  const postedRow = await must(
+    "get posted row",
+    mod.getRow(root, mod.FINANCE_DOMAIN_SLUG, mod.FINANCE_DB_IDS.transactions, posted.rowId),
+  );
+  const log = await must("read log", mod.readLog(root));
+  const logged = [...log].reverse().find((event) => event.payload?.phoneDraftId === postedId);
+  check(
+    "post posts one row and resolves the draft",
+    posted.posted === true &&
+      posted.resolved === true &&
+      after === before + 1 &&
+      postedDraft.status === "posted" &&
+      postedDraft.rowId === posted.rowId &&
+      postedRow.cells.amount === -85 &&
+      logged?.type === "capture.posted" &&
+      logged?.actor?.name === "Hermes",
+    `posted ${posted.posted} / rows ${before}→${after} / status ${postedDraft.status} / amount ${postedRow?.cells?.amount} / log ${logged?.type} by ${logged?.actor?.name}`,
+  );
+
+  // 2 — an ambiguous draft asks, stays pending, and posts once corrected.
+  const ambiguousId = randomUUID();
+  await must(
+    "queue for ambiguous",
+    mod.queuePhoneDraft(root, draftInput({ clientId: ambiguousId, text: "food" }), new Date().toISOString()),
+  );
+  const asked = await post({ clientId: ambiguousId });
+  const askedDraft = await must("read asked draft", mod.readPhoneDraft(root, ambiguousId));
+  const rowsAfterAsk = await rowCount(mod, root);
+  check(
+    "ambiguous draft stays pending",
+    asked.posted === false &&
+      asked.ask === "What amount?" &&
+      asked.draftStillPending === true &&
+      askedDraft.status === "pending" &&
+      rowsAfterAsk === after,
+    `posted ${asked.posted} / ask ${JSON.stringify(asked.ask)} / status ${askedDraft.status} / rows ${rowsAfterAsk}`,
+  );
+  const corrected = await post({ clientId: ambiguousId, text: "R85 Pick n Pay food" });
+  const correctedDraft = await must("read corrected draft", mod.readPhoneDraft(root, ambiguousId));
+  const rowsAfterCorrect = await rowCount(mod, root);
+  check(
+    "the correction posts once",
+    corrected.posted === true &&
+      correctedDraft.status === "posted" &&
+      correctedDraft.text === "R85 Pick n Pay food" &&
+      rowsAfterCorrect === rowsAfterAsk + 1,
+    `posted ${corrected.posted} / status ${correctedDraft.status} / text ${correctedDraft.text} / rows ${rowsAfterCorrect}`,
+  );
+
+  // 3 — a handled draft is not posted twice.
+  const rowsBeforeAgain = await rowCount(mod, root);
+  const again = await post({ clientId: postedId });
+  const rowsAfterAgain = await rowCount(mod, root);
+  check(
+    "posting a resolved draft posts nothing",
+    again.alreadyResolved === "posted" && rowsAfterAgain === rowsBeforeAgain,
+    `alreadyResolved ${again.alreadyResolved} / rows ${rowsBeforeAgain}→${rowsAfterAgain}`,
+  );
+
+  // 4 — dismissing is not posting.
+  const dismissedId = randomUUID();
+  await must(
+    "queue for dismiss",
+    mod.queuePhoneDraft(root, draftInput({ clientId: dismissedId, text: "coffee" }), new Date().toISOString()),
+  );
+  const rowsBeforeDismiss = await rowCount(mod, root);
+  const dismissed = await dismiss({ clientId: dismissedId });
+  const dismissedDraft = await must("read dismissed draft", mod.readPhoneDraft(root, dismissedId));
+  const rowsAfterDismiss = await rowCount(mod, root);
+  check(
+    "dismiss writes no row",
+    dismissed.status === "dismissed" &&
+      dismissedDraft.status === "dismissed" &&
+      rowsAfterDismiss === rowsBeforeDismiss,
+    `status ${dismissed.status} / draft ${dismissedDraft.status} / rows ${rowsBeforeDismiss}→${rowsAfterDismiss}`,
+  );
+
+  // 5 — an id that is not a draft posts nothing.
+  const unknown = await post({ clientId: randomUUID() });
+  check(
+    "unknown clientId is NOT_FOUND",
+    unknown?.error?.code === "NOT_FOUND",
+    `error ${JSON.stringify(unknown)}`,
+  );
+
+  // 6 — a connected agent never gets the phone's tools.
+  const grant = {
+    agentId: "rig-agent",
+    name: "Rig agent",
+    access: "write",
+    domainSlugs: ["financial"],
+    schedule: false,
+  };
+  const verdicts = ["list_phone_drafts", "post_phone_draft", "dismiss_phone_draft"].map(
+    (name) => mod.toolAllowed(name, grant),
+  );
+  check(
+    "connected agents are refused",
+    verdicts.every((verdict) => verdict === "FORBIDDEN"),
+    `verdicts ${verdicts.join(", ")}`,
+  );
+
+  // 7 — two confirmations in flight are one row.
+  const doubleId = randomUUID();
+  await must(
+    "queue for double",
+    mod.queuePhoneDraft(root, draftInput({ clientId: doubleId, text: "R12 bus" }), new Date().toISOString()),
+  );
+  const rowsBeforeDouble = await rowCount(mod, root);
+  const [first, second] = await Promise.all([
+    post({ clientId: doubleId }),
+    post({ clientId: doubleId }),
+  ]);
+  const rowsAfterDouble = await rowCount(mod, root);
+  const doubleDraft = await must("read double draft", mod.readPhoneDraft(root, doubleId));
+  check(
+    "double post is one row",
+    rowsAfterDouble === rowsBeforeDouble + 1 &&
+      doubleDraft.status === "posted" &&
+      [first, second].filter((outcome) => outcome.posted === true || outcome.alreadyResolved).length === 2,
+    `rows ${rowsBeforeDouble}→${rowsAfterDouble} / first ${JSON.stringify(first)} / second ${JSON.stringify(second)}`,
+  );
+}
+
 async function capLeg(mod) {
   const root = await makeVault(mod, CAP_VAULT);
   for (let i = 0; i < 100; i += 1) {
@@ -409,6 +556,7 @@ async function main() {
   try {
     const mod = await loadModules();
     const queued = await queueLeg(mod);
+    await toolsLeg(mod, queued.root);
     await capLeg(mod);
     await corruptLeg(mod);
     await noKitLeg(mod);

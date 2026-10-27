@@ -418,3 +418,27 @@ export async function pruneResolvedPhoneDrafts(
   }
   return removed;
 }
+
+/**
+ * Replace a pending draft's wording with the operator's correction, before the
+ * companion tries to post it. A failed capture keeps the corrected text: the
+ * operator's words are worth more than the parser's first attempt.
+ */
+export async function amendPhoneDraftText(
+  root: string,
+  clientId: string,
+  text: string,
+): Promise<Result<PhoneDraft>> {
+  const normalized = normalizeDraftText(text);
+  if (normalized === null) {
+    return { ok: false, error: "Draft text cannot be empty" };
+  }
+  const read = await readPhoneDraft(root, clientId);
+  if (!read.ok) return read;
+  if (read.value.status !== "pending") {
+    return { ok: false, error: `already_resolved:${read.value.status}` };
+  }
+  const draft: PhoneDraft = { ...read.value, text: normalized };
+  await writeDraft(root, draft);
+  return { ok: true, value: draft };
+}

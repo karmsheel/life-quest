@@ -317,6 +317,7 @@ import { PROJECT_TOOL_DEFS } from "./projects.ts";
 import { DATABASE_TOOL_DEFS } from "./database-tools.ts";
 import { VIEW_TOOL_DEFS } from "./views-tools.ts";
 import { DAILY_NOTE_TOOL_DEFS } from "./daily-note-tools.ts";
+import { PHONE_TOOL_DEFS } from "./phone-tools.ts";
 import type { MapToolDef } from "./map/tools.ts";
 
 /**
@@ -335,6 +336,7 @@ export const ALL_TOOL_DEFS: MapToolDef[] = [
   ...DATABASE_TOOL_DEFS,
   ...VIEW_TOOL_DEFS,
   ...DAILY_NOTE_TOOL_DEFS,
+  ...PHONE_TOOL_DEFS,
 ];
 
 // ── Phone client ────────────────────────────────────────────────────────────
@@ -356,8 +358,11 @@ export {
   pendingPhoneDraftCount,
   queuePhoneDraft,
   withdrawPhoneDraft,
+  amendPhoneDraftText,
   resolvePhoneDraft,
   pruneResolvedPhoneDrafts,
 } from "./phone-queue.ts";
 export type { QueuePhoneDraftInput } from "./phone-queue.ts";
 export { phoneMetric } from "./phone-metric.ts";
+
+export { PHONE_TOOL_DEFS, executePhoneTool } from "./phone-tools.ts";
