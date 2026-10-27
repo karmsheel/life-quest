@@ -133,7 +133,7 @@ export async function readPhoneDevices(root: string): Promise<Result<PhoneDevice
 
 export async function addPhoneDevice(
   root: string,
-  input: { name: string; tokenHash: string },
+  input: { id?: string; name: string; tokenHash: string },
 ): Promise<Result<PhoneDevice>> {
   const name = input.name.trim().slice(0, DEVICE_NAME_MAX) || "Phone";
   if (!input.tokenHash.trim()) {
@@ -148,7 +148,7 @@ export async function addPhoneDevice(
   }
   const now = new Date().toISOString();
   const device: PhoneDevice = {
-    id: randomUUID(),
+    id: input.id && input.id.trim() ? input.id : randomUUID(),
     name,
     tokenHash: input.tokenHash,
     createdAt: now,

@@ -28,6 +28,8 @@
  * engine is the thing under test.
  */
 import fs from "node:fs";
+import http from "node:http";
+import net from "node:net";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -54,6 +56,8 @@ const VAULT = path.join(userDataDir, `vault-${stamp}`);
 const CAP_VAULT = path.join(userDataDir, `vault-cap-${stamp}`);
 const CORRUPT_VAULT = path.join(userDataDir, `vault-corrupt-${stamp}`);
 const NO_KIT_VAULT = path.join(userDataDir, `vault-nokit-${stamp}`);
+const DOOR_VAULT = path.join(userDataDir, `vault-door-${stamp}`);
+const STATIC_DIR = path.join(artifactsDir, "phone-door-static");
 
 function pruneOldVaults() {
   let entries = [];
@@ -65,7 +69,7 @@ function pruneOldVaults() {
   for (const entry of entries) {
     if (!entry.startsWith("vault-")) continue;
     const full = path.join(userDataDir, entry);
-    if ([VAULT, CAP_VAULT, CORRUPT_VAULT, NO_KIT_VAULT].includes(full)) continue;
+    if ([VAULT, CAP_VAULT, CORRUPT_VAULT, NO_KIT_VAULT, DOOR_VAULT].includes(full)) continue;
     try {
       fs.rmSync(full, { recursive: true, force: true, maxRetries: 3 });
     } catch {
@@ -77,7 +81,10 @@ function pruneOldVaults() {
 async function loadModules() {
   await build({
     stdin: {
-      contents: `export * from ${JSON.stringify(path.join(repoRoot, "packages/vault-core/src/index.ts"))};`,
+      contents: [
+        `export * from ${JSON.stringify(path.join(repoRoot, "packages/vault-core/src/index.ts"))};`,
+        `export * from ${JSON.stringify(path.join(repoRoot, "apps/desktop/electron/phone-door.ts"))};`,
+      ].join("\n"),
       resolveDir: repoRoot,
       sourcefile: "phone-engine.entry.ts",
       loader: "ts",
@@ -542,6 +549,376 @@ async function noKitLeg(mod) {
   );
 }
 
+function rawRequest({ port, method = "GET", path: requestPath, headers = {}, body = null }) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: "127.0.0.1", port, method, path: requestPath, headers },
+      (res) => {
+        let text = "";
+        res.on("data", (chunk) => {
+          text += chunk;
+        });
+        res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, text }));
+      },
+    );
+    req.on("error", reject);
+    if (body !== null) req.write(body);
+    req.end();
+  });
+}
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
+function makeStaticDir() {
+  fs.rmSync(STATIC_DIR, { recursive: true, force: true });
+  fs.mkdirSync(path.join(STATIC_DIR, "assets"), { recursive: true });
+  fs.writeFileSync(
+    path.join(STATIC_DIR, "index.html"),
+    "<!doctype html><html><head><title>LifeQuest phone</title></head><body><div id=root></div></body></html>\n",
+  );
+  fs.writeFileSync(path.join(STATIC_DIR, "sw.js"), "self.addEventListener('fetch', () => {});\n");
+  fs.writeFileSync(path.join(STATIC_DIR, "manifest.webmanifest"), "{}\n");
+  fs.writeFileSync(path.join(STATIC_DIR, "assets", "app.js"), "console.log('phone');\n");
+  return STATIC_DIR;
+}
+
+function api(door, origin, route, opts = {}) {
+  const headers = { Origin: origin, ...(opts.body ? { "Content-Type": "application/json" } : {}), ...(opts.headers ?? {}) };
+  return fetch(`${door.url}/api/phone${route}`, { ...opts, headers });
+}
+
+async function doorLeg(mod) {
+  const root = await makeVault(mod, DOOR_VAULT, { kit: false, name: "Phone door" });
+  const staticDir = makeStaticDir();
+  const port = await freePort();
+  const origin = `http://127.0.0.1:${port}`;
+  const created = await mod.createPhoneDoor({
+    root,
+    vaultName: "Phone door",
+    staticDir,
+    port,
+    publicOrigin: origin,
+    pairingTtlMs: 60_000,
+  });
+  if (!created.ok) throw new Error(`createPhoneDoor: ${created.error}`);
+  const door = created.value;
+
+  try {
+    // 1 — the shell is served, the root redirects, and a climb out of the
+    // static directory finds nothing.
+    const shell = await fetch(`${door.url}/phone/`);
+    const shellBody = await shell.text();
+    const rootRedirect = await fetch(`${door.url}/`, { redirect: "manual" });
+    const traversal = await rawRequest({ port: door.port, path: "/phone/%2e%2e/secret" });
+    check(
+      "static shell is served",
+      shell.status === 200 &&
+        /text\/html/.test(shell.headers.get("content-type") ?? "") &&
+        shellBody.includes("LifeQuest phone") &&
+        (shell.headers.get("content-security-policy") ?? "").includes("default-src 'self'") &&
+        shell.headers.get("cache-control") === "no-store" &&
+        rootRedirect.status === 302 &&
+        rootRedirect.headers.get("location") === "/phone/" &&
+        traversal.status === 404,
+      `shell ${shell.status} / csp ${shell.headers.get("content-security-policy")} / root ${rootRedirect.status} / traversal ${traversal.status}`,
+    );
+
+    // 2 — one code, one device, one cookie.
+    const minted = door.mintPairingCode();
+    if (!minted.ok) throw new Error(`mint: ${minted.error}`);
+    const pair = await api(door, origin, "/pair", {
+      method: "POST",
+      body: JSON.stringify({ code: minted.value.code, deviceName: "iPhone" }),
+    });
+    const pairBody = await pair.json();
+    const setCookie = pair.headers.get("set-cookie") ?? "";
+    const cookie = setCookie.split(";")[0] ?? "";
+    const secret = cookie.includes(".") ? cookie.slice(cookie.indexOf(".") + 1) : "";
+    const devices = await must("read devices", mod.readPhoneDevices(root));
+    const devicesRaw = fs.readFileSync(mod.phonePaths(root).devicesJson, "utf8");
+    check(
+      "pairing sets one device",
+      pair.status === 200 &&
+        pairBody.deviceId === devices[0]?.id &&
+        /HttpOnly/.test(setCookie) &&
+        /Secure/.test(setCookie) &&
+        /SameSite=Strict/.test(setCookie) &&
+        devices.length === 1 &&
+        devices[0].tokenHash.length === 64 &&
+        secret.length > 0 &&
+        !devicesRaw.includes(secret),
+      `status ${pair.status} / cookies ${setCookie} / devices ${devices.length} / hash ${devices[0]?.tokenHash?.length} / secretLeaked ${devicesRaw.includes(secret)}`,
+    );
+
+    // 3 — the code is single-use, and a wrong one is refused.
+    const single = door.mintPairingCode();
+    if (!single.ok) throw new Error(`mint: ${single.error}`);
+    const wrong = await api(door, origin, "/pair", {
+      method: "POST",
+      body: JSON.stringify({ code: "AAAAAAAA", deviceName: "Wrong" }),
+    });
+    const used = await api(door, origin, "/pair", {
+      method: "POST",
+      body: JSON.stringify({ code: single.value.code, deviceName: "Second" }),
+    });
+    const reused = await api(door, origin, "/pair", {
+      method: "POST",
+      body: JSON.stringify({ code: single.value.code, deviceName: "Second" }),
+    });
+
+    // An expired code is refused too. A second door with a 10 ms window is the
+    // only way to make a code old without waiting five minutes.
+    const expiredPort = await freePort();
+    const expiredOrigin = `http://127.0.0.1:${expiredPort}`;
+    const expiredDoorRes = await mod.createPhoneDoor({
+      root,
+      vaultName: "Phone door",
+      staticDir,
+      port: expiredPort,
+      publicOrigin: expiredOrigin,
+      pairingTtlMs: 10,
+    });
+    if (!expiredDoorRes.ok) throw new Error(`expired door: ${expiredDoorRes.error}`);
+    const expiredDoor = expiredDoorRes.value;
+    const expiredCode = expiredDoor.mintPairingCode();
+    if (!expiredCode.ok) throw new Error(`mint expired: ${expiredCode.error}`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const expired = await api(expiredDoor, expiredOrigin, "/pair", {
+      method: "POST",
+      body: JSON.stringify({ code: expiredCode.value.code, deviceName: "Late" }),
+    });
+    await expiredDoor.close();
+    check(
+      "pairing rejects bad codes",
+      wrong.status === 401 &&
+        used.status === 200 &&
+        reused.status === 401 &&
+        expired.status === 401,
+      `wrong ${wrong.status} / used ${used.status} / reused ${reused.status} / expired ${expired.status}`,
+    );
+
+    // 4 — the lock is ten failures, and the eleventh attempt is throttled.
+    const locked = door.mintPairingCode();
+    if (!locked.ok) throw new Error(`mint: ${locked.error}`);
+    const attempts = [];
+    for (let i = 0; i < 11; i += 1) {
+      attempts.push(
+        (
+          await api(door, origin, "/pair", {
+            method: "POST",
+            body: JSON.stringify({ code: "AAAAAAAA", deviceName: "Guess" }),
+          })
+        ).status,
+      );
+    }
+    check(
+      "pairing is rate-limited",
+      attempts.slice(0, 9).every((status) => status === 401) &&
+        attempts[9] === 429 &&
+        attempts[10] === 429,
+      `attempts ${attempts.join(",")}`,
+    );
+
+    // 5 — every call after this needs the cookie.
+    const stateHeaders = { Cookie: cookie };
+    const noCookie = await fetch(`${door.url}/api/phone/state`);
+    const badCookie = await fetch(`${door.url}/api/phone/state`, {
+      headers: { Cookie: `${cookie.slice(0, -1)}${cookie.endsWith("A") ? "B" : "A"}` },
+    });
+    const stateRes = await fetch(`${door.url}/api/phone/state`, { headers: stateHeaders });
+    check(
+      "auth is required",
+      noCookie.status === 401 && badCookie.status === 401 && stateRes.status === 200,
+      `none ${noCookie.status} / tampered ${badCookie.status} / cookie ${stateRes.status}`,
+    );
+
+    // 6 — a draft arrives as a file, not a transaction; a retry is the same one.
+    const today = todayIso();
+    const draftBody = {
+      clientId: randomUUID(),
+      text: "R85 Pick n Pay food",
+      captureDate: today,
+      capturedAt: new Date().toISOString(),
+    };
+    const first = await api(door, origin, "/drafts", {
+      method: "POST",
+      headers: stateHeaders,
+      body: JSON.stringify(draftBody),
+    });
+    const second = await api(door, origin, "/drafts", {
+      method: "POST",
+      headers: stateHeaders,
+      body: JSON.stringify(draftBody),
+    });
+    const tooLong = await api(door, origin, "/drafts", {
+      method: "POST",
+      headers: stateHeaders,
+      body: JSON.stringify({ ...draftBody, clientId: randomUUID(), text: "x".repeat(501) }),
+    });
+    const draftFile = await must("read door draft", mod.readPhoneDraft(root, draftBody.clientId));
+    const resolvedBody = {
+      clientId: randomUUID(),
+      text: "coffee",
+      captureDate: today,
+      capturedAt: new Date().toISOString(),
+    };
+    await api(door, origin, "/drafts", {
+      method: "POST",
+      headers: stateHeaders,
+      body: JSON.stringify(resolvedBody),
+    });
+    await must(
+      "resolve door draft",
+      mod.resolvePhoneDraft(root, resolvedBody.clientId, {
+        status: "posted",
+        rowId: "row-door",
+        receipt: "receipt-door",
+      }),
+    );
+    const reResolved = await api(door, origin, "/drafts", {
+      method: "POST",
+      headers: stateHeaders,
+      body: JSON.stringify(resolvedBody),
+    });
+    const reResolvedBody = await reResolved.json();
+    check(
+      "drafts arrive without a transaction",
+      first.status === 201 &&
+        second.status === 200 &&
+        draftFile.status === "pending" &&
+        tooLong.status === 400 &&
+        reResolved.status === 409 &&
+        reResolvedBody.error === "already_resolved",
+      `first ${first.status} / second ${second.status} / status ${draftFile.status} / long ${tooLong.status} / resolved ${reResolved.status}`,
+    );
+
+    // 7 — the state is the whole surface and nothing more. Read it after the
+    // draft landed, so the pending list is this device's one draft.
+    const freshState = await fetch(`${door.url}/api/phone/state`, { headers: stateHeaders });
+    const stateBody = await freshState.json();
+    const keys = Object.keys(stateBody).sort().join(",");
+    const stateText = JSON.stringify(stateBody);
+    check(
+      "state carries only the surface",
+      keys ===
+        [
+          "apiVersion",
+          "device",
+          "limits",
+          "metric",
+          "metricUnavailable",
+          "pending",
+          "resolved",
+          "serverTime",
+          "vaultName",
+        ].join(",") &&
+        !/"amount"|"payee"|"doctrine"|"documents"|"databases"|"rows"/.test(stateText) &&
+        stateBody.pending.length === 1,
+      `keys ${keys} / pending ${stateBody.pending?.length} / leaked ${/"amount"|"payee"|"doctrine"|"documents"|"databases"|"rows"/.test(stateText)}`,
+    );
+
+    // 8 — CSRF: a foreign origin, a missing origin, and a non-JSON body.
+    const foreign = await api(door, "http://evil.example", "/drafts", {
+      method: "POST",
+      headers: stateHeaders,
+      body: JSON.stringify(draftBody),
+    });
+    const missingOrigin = await rawRequest({
+      port: door.port,
+      method: "POST",
+      path: "/api/phone/drafts",
+      headers: { Cookie: cookie, "Content-Type": "application/json" },
+      body: JSON.stringify(draftBody),
+    });
+    const options = await rawRequest({
+      port: door.port,
+      method: "OPTIONS",
+      path: "/api/phone/drafts",
+      headers: { Origin: origin },
+    });
+    const notJson = await rawRequest({
+      port: door.port,
+      method: "POST",
+      path: "/api/phone/drafts",
+      headers: { Cookie: cookie, Origin: origin, "Content-Type": "text/plain" },
+      body: JSON.stringify(draftBody),
+    });
+    check(
+      "csrf is refused",
+      foreign.status === 403 &&
+        missingOrigin.status === 403 &&
+        options.status === 405 &&
+        notJson.status === 415,
+      `foreign ${foreign.status} / missing ${missingOrigin.status} / options ${options.status} / notJson ${notJson.status}`,
+    );
+
+    // 9 — the cap, then unpair.
+    let queued = 1;
+    while (queued < 100) {
+      const res = await api(door, origin, "/drafts", {
+        method: "POST",
+        headers: stateHeaders,
+        body: JSON.stringify({
+          clientId: randomUUID(),
+          text: "queue filler",
+          captureDate: today,
+          capturedAt: new Date().toISOString(),
+        }),
+      });
+      if (res.status !== 201 && res.status !== 200) break;
+      queued += 1;
+    }
+    const over = await api(door, origin, "/drafts", {
+      method: "POST",
+      headers: stateHeaders,
+      body: JSON.stringify({
+        clientId: randomUUID(),
+        text: "one too many",
+        captureDate: today,
+        capturedAt: new Date().toISOString(),
+      }),
+    });
+    check(
+      "queue_full is a 409",
+      over.status === 409 && (await over.json()).error === "queue_full",
+      `over ${over.status}`,
+    );
+
+    const devicesBeforeUnpair = await must("read devices before unpair", mod.readPhoneDevices(root));
+    const unpair = await api(door, origin, "/unpair", {
+      method: "POST",
+      headers: stateHeaders,
+      body: "{}",
+    });
+    const revokedState = await fetch(`${door.url}/api/phone/state`, { headers: stateHeaders });
+    const devicesAfter = await must("read devices after", mod.readPhoneDevices(root));
+    const removed = !devicesAfter.some((device) => device.id === pairBody.deviceId);
+    check(
+      "unpair revokes",
+      unpair.status === 200 &&
+        /Max-Age=0/.test(unpair.headers.get("set-cookie") ?? "") &&
+        revokedState.status === 401 &&
+        removed &&
+        devicesAfter.length === devicesBeforeUnpair.length - 1,
+      `unpair ${unpair.status} / revoked ${revokedState.status} / devices ${devicesBeforeUnpair.length}→${devicesAfter.length} / removed ${removed}`,
+    );
+
+    return { door };
+  } finally {
+    await door.close();
+  }
+}
+
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
   pruneOldVaults();
@@ -557,6 +934,7 @@ async function main() {
     const mod = await loadModules();
     const queued = await queueLeg(mod);
     await toolsLeg(mod, queued.root);
+    await doorLeg(mod);
     await capLeg(mod);
     await corruptLeg(mod);
     await noKitLeg(mod);

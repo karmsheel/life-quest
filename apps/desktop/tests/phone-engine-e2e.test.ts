@@ -41,6 +41,16 @@ const SCENARIOS = [
   "unknown clientId is NOT_FOUND",
   "connected agents are refused",
   "double post is one row",
+  "static shell is served",
+  "pairing sets one device",
+  "pairing rejects bad codes",
+  "pairing is rate-limited",
+  "auth is required",
+  "drafts arrive without a transaction",
+  "state carries only the surface",
+  "csrf is refused",
+  "queue_full is a 409",
+  "unpair revokes",
 ];
 
 type Report = {
