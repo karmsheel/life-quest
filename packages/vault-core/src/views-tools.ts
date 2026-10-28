@@ -3,7 +3,7 @@ import type { Actor, DatabaseMeta } from "./types.ts";
 import {
   listViews,
   runViewBlocks,
-  validateViewSpec,
+  validateViewSpecForVault,
   getView,
   saveView,
   MAX_VIEW_BLOCKS,
@@ -115,12 +115,33 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
       "wants. Omitting `span` leaves the card its own width: the board measures what the card " +
       "holds and draws it in as many cells as its content needs, so a listing with six columns " +
       "is never squeezed into one cell.\n\n" +
-      "To CHANGE a card that already exists — including how one of its blocks is displayed — read it " +
-      "with get_view, change the field you mean to change, and call save_view again with the same " +
+      "To CHANGE a card that already exists — including how one of its objects is displayed — read " +
+      "it with get_view, change the field you mean to change, and call save_view again with the same " +
       "`viewId`. That updates the card in place, keeps its position on the board, and keeps its " +
       "width unless you name a `span`. So an edit needs no `span` at all: send the whole spec back " +
       "and the card changes where it stands. Omitting `viewId` creates a new card, and a new card " +
       "is pinned at the END of the board.\n\n" +
+      "A CARD IS MADE OF OBJECTS, and each object has three separable parts: what it reads (a " +
+      "database, its filters and timeWindow), what it computes (groupBy, timeBucket, measure, per, " +
+      "convertToZar), and how it draws (presentation and display). A card with one object sets " +
+      "those at the top level; a card with several puts them in `blocks`, and each object may name " +
+      "its own `databaseId`. An object with `columns` prints rows; one with a measure folds them. " +
+      "An object with `from` does not read a database — it folds an EARLIER object's rows, which is " +
+      "how \"the average of these monthly totals\" is expressed: the months table is one object, " +
+      "and {\"id\":\"average\",\"title\":\"Average month\",\"presentation\":\"metric\",\"from\":\"months\", " +
+      "\"measure\":\"avg\"} is the object beside it. That stays live; a number you compute " +
+      "yourself does not.\n\n" +
+      "PRESENTATION IS ONLY THE DRAWING. metric, table, bar and line all read the exact same " +
+      "dataset, so changing one must never change groupBy, timeBucket or measure — and the " +
+      "operator's own presentation buttons change nothing but the drawing. A metric may group: the " +
+      "number it shows is the fold over the groups (the total across months, or the average of " +
+      "their totals). Choose the drawing for the question: metric for one headline figure, table " +
+      "when exact values or a lookup matter, bar to compare categories or periods, line for a trend " +
+      "over time, a row object when the operator wants the transactions themselves. If the operator " +
+      "asks which chart fits their data, say which and why, then save it. For a split — spending by " +
+      "month AND category — use `seriesBy` on a sum or count; the chart gets a legend and a colour " +
+      "per series. `display` names a palette, legend, axis captions and value labels, and never " +
+      "changes the data.\n\n" +
       "The CARD draws itself in the app's design system, so a spec carries data and never looks: " +
       "no currency symbols, thousands separators, markdown, or prose in a title. Its table headers " +
       "come from the query — a timeBucket names the label column (Month, Week), a groupBy names the " +
@@ -377,9 +398,11 @@ export async function executeViewTool(
         title: res.value.title,
         spec,
         note:
-          "This is the whole card. Change the field you mean to change — a block's `presentation`, " +
-          "its `groupBy`, or its `timeWindow` — and send the whole spec back through save_view with " +
-          `viewId: "${res.value.id}" to update it in place.`,
+          "This is the whole card. Change the field you mean to change — an object's `presentation` " +
+          "(a drawing only), its `groupBy`/`measure` (the computation), or its `timeWindow` — and " +
+          "send the whole spec back through save_view with " +
+          `viewId: "${res.value.id}" to update it in place. An object with \`from\` folds an ` +
+          "earlier object's rows; an object with its own `databaseId` reads that database.",
       };
     }
 
@@ -404,6 +427,7 @@ export async function executeViewTool(
           presentation: v.presentation,
           databaseId: v.databaseId,
           blocks: Array.isArray(v.blocks) ? v.blocks.length : 1,
+          objects: Array.isArray(v.blocks) ? v.blocks.length : 1,
         })),
       };
     }
@@ -662,7 +686,7 @@ async function checkSpec(root: string, slug: string, spec: ViewSpec): Promise<Sp
       ),
     };
   }
-  const check = validateViewSpec(spec, live.value);
+  const check = await validateViewSpecForVault(root, slug, spec, live.value);
   if (check.ok) return { ok: true, db: live.value };
   return { ok: false, reply: toolError(check.error, specFix(live.value, slug)) };
 }
@@ -684,18 +708,24 @@ function specFix(db: DatabaseMeta, domainSlug: string): Record<string, unknown> 
       metric: template.metric,
       table: template.table,
       list: template.list,
+      rowTable: template.rowTable,
       ...(template.today ? { today: template.today } : {}),
       ...(template.averagePerWeek ? { averagePerWeek: template.averagePerWeek } : {}),
       ...(template.averagePerMonth ? { averagePerMonth: template.averagePerMonth } : {}),
+      ...(template.seriesChart ? { seriesChart: template.seriesChart } : {}),
+      ...(template.averageOfMonths ? { averageOfMonths: template.averageOfMonths } : {}),
     },
     rules: [
-      "presentation 'metric' takes no groupBy; 'table' and 'bar' require one.",
-      "presentation 'line' requires a date groupBy plus timeBucket ('day' | 'week' | 'month').",
-      "presentation 'list' is not an aggregate: it requires a `columns` array naming 1-6 of this " +
-        "database's columns, and takes no groupBy, no timeBucket and no measure. It prints one line " +
-        "per row, newest first. Use it for \"the recent transactions\".",
+      "`presentation` is only a DRAWING. metric, table, bar and line all read the same dataset: " +
+        "switching between them keeps groupBy, timeBucket and measure, and the operator's own " +
+        "presentation buttons change nothing else. A metric MAY group — the number it shows is the " +
+        "fold over the groups — so do not strip a groupBy to make a metric.",
+      "An object with `columns` is a ROW object: it prints the database's rows, so it draws as " +
+        "'list' or 'table' and takes no groupBy, no timeBucket, no seriesBy and no meaningful " +
+        "measure. Naming columns and also giving a groupBy is a spec that means two things at once " +
+        "and is refused. Use it for \"the recent transactions\"; use an aggregate for totals.",
       "timeBucket only applies to a date groupBy. 'week' labels rows like 2026-W41, 'month' like 2026-10.",
-      "A timeWindow needs timeColumnId on the same block, or it is refused rather than ignored.",
+      "A timeWindow needs timeColumnId on the same object, or it is refused rather than ignored.",
       "A named timeWindow is LIVE and recomputed from the current date on every draw: \"today\", " +
         "\"this-week\", \"this-month\", \"this-year\", \"last-30-days\", {\"kind\":\"last-weeks\",\"weeks\":4}, " +
         "{\"kind\":\"last-months\",\"months\":6} (trailing months, this one included), and " +
@@ -705,12 +735,27 @@ function specFix(db: DatabaseMeta, domainSlug: string): Record<string, unknown> 
       "measure 'avg' is the average ROW (total divided by how many rows); it is NOT an average per " +
         "week or per month. For \"the average spend per month over the previous 4 months\" use " +
         "measure 'avg-per' with per 'month' and timeWindow {\"kind\":\"previous-months\",\"months\":4} " +
-        "(see workingSpecs.averagePerMonth), and for a per-week average per 'week' with " +
-        "{\"kind\":\"last-weeks\",\"weeks\":4} (workingSpecs.averagePerWeek). An 'avg-per' measure is a " +
-        "metric: no groupBy, and a bounded window — never \"all\".",
+        "(see workingSpecs.averagePerMonth). An 'avg-per' measure is one number for one window: no " +
+        "groupBy, no seriesBy, and a bounded window — never \"all\".",
       "`per` is required by 'avg-per' and refused on every other measure.",
       "measureColumnId must name a number column of this database; a 'count' measure takes none, and " +
         "an 'avg-per' may omit it to average the NUMBER OF ROWS per period instead of an amount.",
+      "A block may name its own `databaseId`: a card can hold objects from two databases of the SAME " +
+        "domain. An object that switches database does not inherit the card's column ids, groupBy, " +
+        "filters or window.",
+      "`from` builds an object on an EARLIER object's rows: {\"id\":\"average\",\"title\":\"Average " +
+        "month\",\"presentation\":\"metric\",\"from\":\"months\",\"measure\":\"avg\"} is the average of " +
+        "that table's monthly totals, recomputed live. A derived object takes no groupBy, " +
+        "timeWindow, filters, seriesBy or measureColumnId (see workingSpecs.averageOfMonths).",
+      "`seriesBy` splits each group into series on a category column, with measure 'sum' or " +
+        "'count'. A chart gets a legend and one colour per series; a table gets one column per " +
+        "series plus a total (see workingSpecs.seriesChart).",
+      "`display` is styling only: palette 'accent' | 'warm' | 'cool' | 'mono', legend, xLabel, " +
+        "yLabel, valueLabels. It never changes the query.",
+      "Choose the drawing for the question: metric for one headline number, table for exact values, " +
+        "bar to compare categories or periods, line for a trend over time, row object (`columns`) " +
+        "for the transactions themselves. If the operator asks which chart suits their data, answer " +
+        "with the choice and the reason before saving it.",
       "Pass `spec` as a JSON object, not as a string.",
     ],
   };
@@ -961,6 +1006,8 @@ function previewShape(run: ComposedViewRunResult): {
     columns: string[];
     rows: Array<Array<string | number>>;
     rowCount: number;
+    summary: NonNullable<ComposedViewRunResult["blocks"][number]["result"]["summary"]> | null;
+    series: string[] | null;
     currency: ComposedViewRunResult["blocks"][number]["result"]["currency"];
   }>;
   warnings: string[];
@@ -976,6 +1023,8 @@ function previewShape(run: ComposedViewRunResult): {
         columns: b.result.columns,
         rows,
         rowCount: rows.length,
+        summary: b.result.summary ?? null,
+        series: b.result.series ?? null,
         currency: b.result.currency,
       };
     }),

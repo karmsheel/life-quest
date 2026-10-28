@@ -1257,14 +1257,79 @@ export type ViewMeasure = "sum" | "count" | "last" | "avg" | "avg-per";
 export type ViewSort = { by: "label" | "value"; dir: "asc" | "desc" };
 
 /**
- * One panel of a composed view: exactly the query fields one aggregate needs,
- * plus the two that name it. `id` is stable across renames so React keys and a
- * block's position in the card never depend on its title.
+ * How a chart's series are coloured.
+ *
+ * A palette is a NAME, not a list of hex values, because a card is drawn in the
+ * app's design system and a saved card must not carry a colour scheme that a
+ * skin repaint cannot reach. The names map to theme tokens in CSS, so the same
+ * card is legible in every skin.
+ */
+export const VIEW_PALETTES = ["accent", "warm", "cool", "mono"] as const;
+export type ViewPalette = (typeof VIEW_PALETTES)[number];
+
+/**
+ * The drawing details a card's author can name — everything that changes how a
+ * dataset LOOKS without changing what it holds.
+ *
+ * These are deliberately separate from the query fields. "Make the bars blue"
+ * and "show me the same totals by month instead of by week" are different
+ * requests, and a format that mixed them is a format where changing one loses
+ * the other.
+ */
+export type ViewDisplay = {
+  /** Which theme palette the series use. Omit for the app's default accent. */
+  palette?: ViewPalette | null;
+  /** Draw a colour key under the chart. Omitted means "yes when there are series". */
+  legend?: boolean | null;
+  /** The x-axis caption, e.g. "Month". Never a substitute for the card's title. */
+  xLabel?: string | null;
+  /** The y-axis caption, e.g. "Spend (ZAR)". */
+  yLabel?: string | null;
+  /** Print each value on the bar or beside the point. */
+  valueLabels?: boolean | null;
+};
+
+/**
+ * One object in a card: a dataset plus the way it is drawn.
+ *
+ * There are two kinds, and `from` is what tells them apart:
+ *
+ *  - a DATABASE object reads rows from a database (the card's, or its own
+ *    `databaseId`) and either prints them (`columns`) or folds them into
+ *    label/value groups (`groupBy` + `measure`);
+ *  - a DERIVED object names an earlier object in `from` and folds THAT object's
+ *    rows — the average of a table of monthly totals, for instance.
+ *
+ * `presentation` is now only how the dataset is drawn. Switching a card from a
+ * table to a bar or a line keeps every query field, because the data was never
+ * the presentation's business.
  */
 export type ViewBlock = {
   id: string;
   title: string;
   presentation: ViewPresentation;
+  /**
+   * The database this object reads, when it is not the card's. A card may put a
+   * transactions table and an accounts count side by side, one object each.
+   */
+  databaseId?: string | null;
+  /**
+   * The id of an earlier object in this card whose rows this object folds.
+   *
+   * This is the transformation that cannot be expressed against a database
+   * column: "the average of these monthly totals" is a fold over another
+   * object's output, and with no word for it the only answer was a number
+   * computed by hand — a picture that never updates.
+   */
+  from?: string | null;
+  /**
+   * Split each group into series by this column, e.g. group by month and split
+   * by category. A chart with several series gets a legend and one colour per
+   * series; a table gets one column per series.
+   */
+  seriesBy?: string | null;
+  /** Drawing details: palette, legend, axis captions, value labels. */
+  display?: ViewDisplay | null;
   groupBy: string | null;
   timeBucket: "day" | "week" | "month" | null;
   timeColumnId: string | null;
@@ -1286,10 +1351,11 @@ export type ViewBlock = {
   limit: number;
   convertToZar: boolean;
   /**
-   * The `list` presentation's own columns, in order: which database columns a
-   * listing prints, and in what order, each headed by the column's own name.
-   * Empty for every aggregate, which needs no such list — its two columns come
-   * from the fold. A list must name at least one; an aggregate must name none.
+   * The columns a ROW object prints, in order: which database columns the rows
+   * show, and in what order, each headed by the column's own name. A row object
+   * can draw as `list` (the ledger view) or `table` (the same rows with a table
+   * caption); both are the same data. Empty for an aggregate object, whose two
+   * columns come from the fold. Naming columns is what makes an object raw.
    */
   columns: string[];
   /** 1 = one grid cell, 2 = the card's full width. */
@@ -1331,8 +1397,12 @@ export type ViewSpec = {
   limit: number;
   /** finance:transactions amount measures only. */
   convertToZar: boolean;
-  /** The `list` presentation's columns, in order; empty for an aggregate. */
+  /** A row object's columns, in order; empty for an aggregate. */
   columns: string[];
+  /** Split each group into series by this column; see ViewBlock.seriesBy. */
+  seriesBy?: string | null;
+  /** Drawing details for the root/one-object shape; see ViewBlock.display. */
+  display?: ViewDisplay | null;
   /** Present and non-empty only on a composed view. */
   blocks?: ViewBlock[];
 };
@@ -1342,6 +1412,14 @@ export type ViewBlockSpec = {
   id: string;
   title: string;
   presentation: ViewPresentation;
+  /** The database this object reads; resolved from the block or the card. */
+  databaseId?: string | null;
+  /** The earlier object whose rows this one folds; null for a database object. */
+  from?: string | null;
+  /** The column that splits each group into series; null for one series. */
+  seriesBy?: string | null;
+  /** Drawing details: palette, legend, axis captions, value labels. */
+  display?: ViewDisplay | null;
   groupBy: string | null;
   timeBucket: "day" | "week" | "month" | null;
   timeColumnId: string | null;
@@ -1354,7 +1432,7 @@ export type ViewBlockSpec = {
   sort: ViewSort;
   limit: number;
   convertToZar: boolean;
-  /** The `list` presentation's columns, in order; empty for an aggregate. */
+  /** A row object's columns, in order; empty for an aggregate. */
   columns: string[];
   /** 1 = one grid cell, 2 = the card's full width. */
   span?: 1 | 2;
@@ -1386,10 +1464,31 @@ export type ViewListCell = string | number;
  * it is holding, and a listing can never be mistaken for a two-column fold.
  */
 export type ViewRunResult = {
-  /** The card's column headings, in order: `["label","value"]`, or a listing's own. */
+  /** The card's column headings, in order: `["label","value"]`, or a row object's own. */
   columns: string[];
-  /** An aggregate's two columns. Empty for a listing. */
+  /** An aggregate's two columns, one row per group. Empty for a row object. */
   rows: Array<[label: string, value: number]>;
+  /**
+   * The one headline number this dataset can be folded to, when it has one.
+   *
+   * A metric draws this instead of guessing which row is "the" number. It is
+   * present for every aggregate: an ungrouped aggregate's only row, or a fold
+   * over the groups (a total across months, the average of monthly totals, the
+   * newest month). It is how one object can be drawn as a table AND as the
+   * single figure beside it without either shape changing the query.
+   */
+  summary?: { label: string; value: number } | null;
+  /**
+   * Series names in draw order, when `seriesBy` split each group. A chart draws
+   * one bar cluster or one line per entry, and a table draws one column each.
+   */
+  series?: string[];
+  /**
+   * The per-series detail behind `rows`: one entry per (label, series) pair.
+   * `rows` remains the per-label total so a metric or a summary still has one
+   * number per label, whatever the series are.
+   */
+  seriesRows?: Array<[label: string, series: string, value: number]>;
   /**
    * A listing's rows: one entry per database row, cells in `columns` order.
    * Absent unless the block's presentation is `list`.

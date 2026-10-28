@@ -7531,7 +7531,7 @@ button.chat-panel__activity-line:hover {
    to the panel it changes, and the heading is what names it. */
 .view-card__block-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   min-height: 1.1rem;
@@ -7541,42 +7541,114 @@ button.chat-panel__activity-line:hover {
   margin-bottom: 0.4rem;
 }
 
-/* Four quiet text controls. They sit at the panel's own scale — smaller than
-   anything the card says — because a card is the operator's data, not a form. */
-.view-card__tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.15rem;
+/* The drawing switch is one small control, not a row of tabs. The object is
+   already the drawing the operator asked for; this is the quiet way to change
+   it, and the companion is the normal way. The menu is a popover over the card,
+   so it costs the card no layout and no visible vocabulary. */
+.view-card__display {
+  position: relative;
+  align-self: flex-start;
   margin-bottom: 0.4rem;
 }
 
-.view-card__tool {
-  padding: 0.05rem 0.35rem;
+.view-card__display-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--text-soft);
-  font: inherit;
-  font-size: 0.66rem;
-  letter-spacing: 0.04em;
   cursor: pointer;
 }
 
-.view-card__tool:hover:not(:disabled) {
+.view-card__display-trigger:hover:not(:disabled),
+.view-card__display-trigger[aria-expanded="true"] {
   border-color: var(--border-soft);
-  color: var(--foreground);
-}
-
-.view-card__tool.is-active {
-  border-color: var(--border);
   background: var(--muted-surface);
   color: var(--foreground);
+}
+
+.view-card__display-trigger:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.view-card__display-trigger:disabled {
+  opacity: 0.45;
   cursor: default;
 }
 
-.view-card__tool:disabled {
-  opacity: 0.45;
+.view-card__display-menu {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 7.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-sm);
+}
+
+.view-card__display-menu-title {
+  margin: 0.1rem 0.4rem 0.2rem;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.view-card__display-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.4rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--popover-foreground);
+  font: inherit;
+  font-size: 0.72rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.view-card__display-item:hover:not(:disabled) {
+  background: var(--muted-surface);
+}
+
+.view-card__display-item:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: -1px;
+}
+
+.view-card__display-item.is-active {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.view-card__display-item:disabled {
+  opacity: 0.5;
   cursor: default;
+}
+
+.view-card__display-check {
+  flex: 0 0 auto;
+  opacity: 0;
+}
+
+.view-card__display-item.is-active .view-card__display-check {
+  opacity: 1;
 }
 
 .view-card__edit-error {
@@ -7765,6 +7837,123 @@ button.chat-panel__activity-line:hover {
 
 .view-card__dot {
   fill: var(--accent);
+}
+
+/* ── the chart's chrome ────────────────────────────────────────────────────
+   A chart is read, not just seen: a series needs a name, an axis needs a scale,
+   and zero needs to be distinguishable from "the bottom of the picture". The
+   marks keep their sizes from the SVG; everything here is ink, so a skin
+   repaint recolours the whole chart through the tokens. */
+.view-card__chart-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  /* The six slots a series can take. `accent` is the product's first colour;
+     the rest are semantic tokens rather than a new palette, so a skin that
+     changes its green or blue changes the chart with it. */
+  --chart-1: var(--accent);
+  --chart-2: var(--blue);
+  --chart-3: var(--green);
+  --chart-4: var(--amber);
+  --chart-5: var(--destructive);
+  --chart-6: var(--muted-foreground);
+}
+
+/* Warm: the app's terracotta family, for a card about spend rather than status. */
+.view-card__chart-wrap--warm {
+  --chart-1: var(--accent);
+  --chart-2: var(--amber);
+  --chart-3: var(--destructive);
+  --chart-4: color-mix(in oklab, var(--accent) 68%, var(--background));
+  --chart-5: color-mix(in oklab, var(--amber) 55%, var(--background));
+  --chart-6: color-mix(in oklab, var(--destructive) 50%, var(--background));
+}
+
+/* Cool: blue/green, for a card about trend rather than alarm. */
+.view-card__chart-wrap--cool {
+  --chart-1: var(--blue);
+  --chart-2: var(--green);
+  --chart-3: var(--accent);
+  --chart-4: color-mix(in oklab, var(--blue) 55%, var(--background));
+  --chart-5: color-mix(in oklab, var(--green) 55%, var(--background));
+  --chart-6: var(--muted-foreground);
+}
+
+/* Mono: one ink at six strengths, for a chart where the series are detail. */
+.view-card__chart-wrap--mono {
+  --chart-1: var(--accent);
+  --chart-2: color-mix(in oklab, var(--accent) 76%, var(--background));
+  --chart-3: color-mix(in oklab, var(--accent) 58%, var(--background));
+  --chart-4: color-mix(in oklab, var(--accent) 43%, var(--background));
+  --chart-5: color-mix(in oklab, var(--accent) 30%, var(--background));
+  --chart-6: var(--muted-foreground);
+}
+
+.view-card__grid {
+  stroke: var(--border-soft);
+  stroke-width: 1;
+}
+
+.view-card__zero {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.view-card__axis-label {
+  fill: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.view-card__axis-caption {
+  fill: var(--muted-foreground);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.view-card__value-label {
+  fill: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.view-card__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.view-card__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  color: var(--muted-foreground);
+}
+
+.view-card__legend-swatch {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+/* A series table's columns are all numbers after the label, so the aggregate
+   table's right-edge rule already fits; only the names need room to stay on one
+   line. */
+.view-card__table--series th,
+.view-card__table--series td {
+  white-space: nowrap;
+}
+
+/* The aggregate table gives its one value column 40%; a series table has one
+   per category, and giving every one of them 40% is what spreads the row into
+   columns wider than their numbers. Content decides instead. */
+.view-card__table--series th + th {
+  width: auto;
 }
 
 /* A span-2 view pin is the design's whole layout model: one cell or the row.

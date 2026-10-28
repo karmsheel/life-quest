@@ -19,6 +19,7 @@ import {
   type ViewBlockSpec,
   type ViewListCell,
   type ViewMeasure,
+  type ViewPalette,
   type ViewPeriod,
   type ViewPresentation,
   type ViewQuerySpec,
@@ -83,6 +84,19 @@ export const MAX_VIEW_BLOCKS = 8;
  * columns there is no room left for the values themselves.
  */
 export const MAX_LIST_COLUMNS = 6;
+/**
+ * How many series a chart or table will draw before the tail is pooled into
+ * "Other". A card has room for a handful of coloured lines; a category column
+ * with forty values is a table problem, not a chart problem, and drawing forty
+ * hairlines is not a more informative picture than five and an "Other".
+ */
+export const MAX_VIEW_SERIES = 6;
+/** The palettes a card may name; `VIEW_PALETTES` in types.ts is the one list. */
+export const VIEW_PALETTE_NAMES = ["accent", "warm", "cool", "mono"] as const;
+
+/** The ways an object can be drawn, split by what its dataset is. */
+export const ROW_PRESENTATIONS: readonly ViewPresentation[] = ["list", "table"];
+export const AGGREGATE_PRESENTATIONS: readonly ViewPresentation[] = ["metric", "table", "bar", "line"];
 
 type RawSpec = {
   title?: unknown;
@@ -99,6 +113,10 @@ type RawSpec = {
   limit?: unknown;
   convertToZar?: unknown;
   columns?: unknown;
+  databaseId?: unknown;
+  from?: unknown;
+  seriesBy?: unknown;
+  display?: unknown;
 };
 
 function isDateString(v: unknown): v is string {
@@ -124,18 +142,44 @@ function validWindow(w: unknown): boolean {
   return o.kind === "custom" && isDateString(o.start) && isDateString(o.end);
 }
 
+/** How a spec's block finds the database it names, when that is not the card's. */
+export type ViewDatabaseLookup = (databaseId: string) => DatabaseMeta | null;
+
 /**
- * Validate a view spec against the database's column registry. Shape rules:
- * table and bar aggregate into label/value, so they need a groupBy; a metric
- * is one number and must not group; a line needs a date groupBy collapsed by a
- * timeBucket so its x-axis is time. Every failure names the offending field.
+ * Whether an object prints ROWS rather than folding them.
  *
- * A composed view is validated block by block, and its blocks carry their own
- * presentation, so the same three rules apply to every panel. The root query
- * fields are the first block's defaults and are validated only through the
- * blocks that inherit them.
+ * The presence of `columns` is the signal, not the presentation. A listing and a
+ * raw table are the same dataset drawn two ways, so switching between them is a
+ * display change; a card that had to rewrite its query to move between them is
+ * the bug this rule removes.
  */
-export function validateViewSpec(spec: unknown, db: DatabaseMeta): Result<true> {
+export function isRowObject(block: ViewBlock): boolean {
+  return (
+    !block.from &&
+    ((Array.isArray(block.columns) && block.columns.length > 0) || block.presentation === "list")
+  );
+}
+
+/**
+ * Validate a view spec against the database's column registry.
+ *
+ * Since cards can hold objects from more than one database, a block that names
+ * its own `databaseId` is validated against THAT database. `lookup` is what
+ * supplies it; a caller that only knows the card's database passes neither, and
+ * a block naming another database is then refused by name rather than checked
+ * against the wrong columns.
+ *
+ * The shape rules are about the DATA, not the drawing. `presentation` names how
+ * the object is drawn, and every aggregate's dataset can be drawn four ways, so
+ * a table does not need a groupBy and a metric may have one. What is refused is
+ * a spec that means two different things at once: a row object with a groupBy, a
+ * derived object with a window, a series split on a measure that cannot sum.
+ */
+export function validateViewSpec(
+  spec: unknown,
+  db: DatabaseMeta,
+  lookup?: ViewDatabaseLookup,
+): Result<true> {
   if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
     return { ok: false, error: "View spec must be an object" };
   }
@@ -143,10 +187,12 @@ export function validateViewSpec(spec: unknown, db: DatabaseMeta): Result<true> 
   if (!v.title || typeof v.title !== "string" || !v.title.trim()) {
     return { ok: false, error: "View title is required" };
   }
-  // Which database a block reads is the view's, not the block's: every block of
-  // a composed view is one panel of the same subject.
   const databaseId = typeof v.databaseId === "string" ? v.databaseId : "";
   const rootBlock = asBlock(v as unknown as Record<string, unknown>);
+  rootBlock.databaseId = databaseId;
+  /** Earlier objects, by id → whether that object prints rows (a derived object cannot). */
+  const prior = new Map<string, boolean>();
+
   if (v.blocks !== undefined) {
     if (!Array.isArray(v.blocks)) return { ok: false, error: "View blocks must be an array" };
     if (v.blocks.length === 0) return { ok: false, error: "A composed view needs at least one block" };
@@ -171,37 +217,85 @@ export function validateViewSpec(spec: unknown, db: DatabaseMeta): Result<true> 
       if (b.span != null && b.span !== 1 && b.span !== 2) {
         return { ok: false, error: `Block ${b.id}: span must be 1 or 2` };
       }
+      const resolved = resolveBlock(rootBlock, {
+        ...asBlock(b as unknown as Record<string, unknown>),
+        id: b.id,
+        title: b.title,
+      });
+      const block = toBlockSpec(resolved, i);
+      const wants = resolved.databaseId ?? databaseId;
+      const blockDb =
+        wants === db.id
+          ? db
+          : (lookup?.(wants) ?? null);
+      if (!blockDb) {
+        return {
+          ok: false,
+          error:
+            `Block ${b.id}: database not found: ${wants || "(none)"}. Omit databaseId to use the ` +
+            "card's own database, or name a database that exists in this domain.",
+        };
+      }
       const blockCheck = validateBlock(
-        {
-          ...toBlockSpec(
-            resolveBlock(rootBlock, {
-              ...asBlock(b as unknown as Record<string, unknown>),
-              id: b.id,
-              title: b.title,
-            }),
-            i,
-          ),
-          databaseId,
-        },
-        db,
+        { ...block, databaseId: blockDb.id },
+        blockDb,
         `Block ${b.id}`,
+        prior,
       );
       if (!blockCheck.ok) return blockCheck;
+      prior.set(b.id, isRowObject(resolved));
     }
     return { ok: true, value: true };
   }
   return validateBlock(
-    {
-      ...toBlockSpec(completeBlock(rootBlock, "block-1"), 0),
-      databaseId,
-    },
+    { ...toBlockSpec(completeBlock(rootBlock, "block-1"), 0), databaseId },
     db,
     "",
+    prior,
   );
 }
 
+/**
+ * Validate a spec whose objects may read several databases.
+ *
+ * The validator is synchronous and takes a lookup for exactly this reason: the
+ * caller that writes a card can afford to read the databases it names, while a
+ * reader that already has them can pass a map. Reading them here, once, is what
+ * lets `save_view` refuse a card that names a database it cannot draw.
+ */
+export async function validateViewSpecForVault(
+  root: string,
+  slug: string,
+  spec: ViewSpec,
+  rootDb: DatabaseMeta,
+): Promise<Result<true>> {
+  const wanted = new Set<string>([rootDb.id]);
+  for (const block of resolveViewBlocks(spec)) {
+    if (block.from) continue;
+    wanted.add(block.databaseId ?? rootDb.id);
+  }
+  const found = new Map<string, DatabaseMeta>([[rootDb.id, rootDb]]);
+  for (const id of wanted) {
+    if (found.has(id)) continue;
+    const read = await getDatabase(root, slug, id);
+    if (!read.ok) {
+      return {
+        ok: false,
+        error: `Database not found: ${id}. ${read.error}`,
+      };
+    }
+    found.set(id, read.value);
+  }
+  return validateViewSpec(spec, rootDb, (id) => found.get(id) ?? null);
+}
+
 /** One block's own shape rules, with `where` naming it in every failure. */
-function validateBlock(block: ViewBlockSpec & { databaseId: string }, db: DatabaseMeta, where: string): Result<true> {
+function validateBlock(
+  block: ViewBlockSpec & { databaseId: string },
+  db: DatabaseMeta,
+  where: string,
+  prior: Map<string, boolean>,
+): Result<true> {
   const at = where ? `${where}: ` : "";
   const v = block as unknown as RawSpec;
   const presentation = v.presentation as ViewPresentation;
@@ -217,21 +311,94 @@ function validateBlock(block: ViewBlockSpec & { databaseId: string }, db: Databa
   const col = (id: unknown): DatabaseColumn | null =>
     typeof id === "string" && colById.has(id) ? (colById.get(id) as DatabaseColumn) : null;
 
+  if (v.from != null && typeof v.from !== "string") {
+    return { ok: false, error: `${at}from must be the id of an earlier object` };
+  }
+  const fromId = typeof v.from === "string" && v.from.trim() ? v.from.trim() : null;
+  const isDerived = fromId !== null;
+  const isRow = !isDerived && isRowObject(block as never);
+
+  // ── a derived object: another object's rows, folded again ────────────────
+  //
+  // "The average of these monthly totals" is a fold over an object, not over a
+  // column, and it must name an EARLIER object so the card can run in one pass
+  // and cannot hold a cycle.
+  if (isDerived) {
+    if (!prior.has(fromId)) {
+      return {
+        ok: false,
+        error:
+          `${at}from must name an EARLIER object in this card. "${fromId}" is not one — ` +
+          "an object can only build on one that comes before it.",
+      };
+    }
+    if (prior.get(fromId) === true) {
+      return {
+        ok: false,
+        error:
+          `${at}"${fromId}" prints rows, so there is no label/value fold to build on. Point ` +
+          "from at an aggregate object (one with a groupBy or a measure, not `columns`).",
+      };
+    }
+    if (!(AGGREGATE_PRESENTATIONS as readonly string[]).includes(presentation)) {
+      return {
+        ok: false,
+        error: `${at}A derived object is an aggregate: presentation must be metric, table, bar or line.`,
+      };
+    }
+    if (v.groupBy != null || v.timeBucket != null || v.timeColumnId != null) {
+      return {
+        ok: false,
+        error:
+          `${at}A derived object folds "${fromId}" and cannot group or window again: drop ` +
+          "groupBy, timeBucket and timeColumnId. The source object already chose them.",
+      };
+    }
+    if ((Array.isArray(v.filters) && v.filters.length > 0) || (v.timeWindow != null && v.timeWindow !== "all")) {
+      return {
+        ok: false,
+        error:
+          `${at}A derived object has no rows of its own to filter or window: put filters and ` +
+          `timeWindow on "${fromId}" instead.`,
+      };
+    }
+    if (v.seriesBy != null) {
+      return {
+        ok: false,
+        error: `${at}A derived object inherits its source's series; drop seriesBy.`,
+      };
+    }
+    if (measure === "avg-per") {
+      return {
+        ok: false,
+        error:
+          `${at}avg-per divides a WINDOW's total by its periods, and a derived object has no ` +
+          "window of its own. Use measure 'avg' for the average of the source's rows.",
+      };
+    }
+    if (v.measureColumnId != null) {
+      return {
+        ok: false,
+        error:
+          `${at}A derived object measures the source's VALUES, so it takes no measureColumnId. ` +
+          "Name the column on the source object.",
+      };
+    }
+    const displayCheck = validateDisplay(v.display);
+    if (!displayCheck.ok) return { ok: false, error: `${at}${displayCheck.error}` };
+    return { ok: true, value: true };
+  }
+
   const groupCol = v.groupBy != null ? col(v.groupBy) : null;
   if (v.groupBy != null && !groupCol) {
     return { ok: false, error: `${at}View groupBy column does not exist: ${String(v.groupBy)}` };
   }
 
-  // A listing is every matched row, one line each. It is not an aggregate, so it
-  // has no grouping to make, no measure to take, and no period to collapse time
-  // into — and what it does need is the columns it prints, named in order.
-  const isList = presentation === "list";
-
   // The period average, and the three things it has to be told. Each refusal
   // names the shape that would pass rather than the rule alone, because this is
   // the measure an agent reaches for when an operator asks for "the average
   // spend per month" and the one it will otherwise get wrong by writing `avg`.
-  if (!isList && measure === "avg-per") {
+  if (!isRow && measure === "avg-per") {
     if (presentation !== "metric") {
       return {
         ok: false,
@@ -261,7 +428,15 @@ function validateBlock(block: ViewBlockSpec & { databaseId: string }, db: Databa
           "of periods.",
       };
     }
-  } else if (!isList && v.per != null) {
+    if (groupCol || v.seriesBy != null) {
+      return {
+        ok: false,
+        error:
+          `${at}An 'avg-per' measure is one number for one window, so it cannot group or split ` +
+          "into series. Drop groupBy and seriesBy, or use measure 'sum' for a table of periods.",
+      };
+    }
+  } else if (!isRow && v.per != null) {
     return {
       ok: false,
       error:
@@ -271,27 +446,48 @@ function validateBlock(block: ViewBlockSpec & { databaseId: string }, db: Databa
     };
   }
 
-  if (isList) {
+  if (isRow) {
+    if (!(ROW_PRESENTATIONS as readonly string[]).includes(presentation)) {
+      return {
+        ok: false,
+        error:
+          `${at}An object with \`columns\` prints rows, so it draws as a list or a table — not ` +
+          `a ${presentation}. For a chart, drop \`columns\` and give the object a groupBy and ` +
+          "a measure.",
+      };
+    }
     if (groupCol) {
-      return { ok: false, error: `${at}A list view is one row per database row and must not group` };
+      return {
+        ok: false,
+        error:
+          `${at}This object prints one line per row and must not group. Drop groupBy (a table of ` +
+          "totals is an aggregate: remove `columns` and name a groupBy and a measure), or drop " +
+          "`columns` to make it an aggregate.",
+      };
     }
     if (v.timeBucket != null) {
       return {
         ok: false,
         error:
-          `${at}A list view shows rows, not periods: drop timeBucket. A date column may still be ` +
+          `${at}A row object shows rows, not periods: drop timeBucket. A date column may still be ` +
           "the timeColumnId a timeWindow acts on.",
+      };
+    }
+    if (v.seriesBy != null) {
+      return {
+        ok: false,
+        error: `${at}A row object prints its own columns; series only apply to a grouped aggregate.`,
       };
     }
     const cols = v.columns;
     if (!Array.isArray(cols) || cols.length === 0) {
       return {
         ok: false,
-        error: `${at}A list view needs a non-empty columns array naming the database columns it prints`,
+        error: `${at}A row object needs a non-empty columns array naming the database columns it prints`,
       };
     }
     if (cols.length > MAX_LIST_COLUMNS) {
-      return { ok: false, error: `${at}A list view prints at most ${MAX_LIST_COLUMNS} columns` };
+      return { ok: false, error: `${at}A row object prints at most ${MAX_LIST_COLUMNS} columns` };
     }
     const seenCols = new Set<string>();
     for (const c of cols) {
@@ -304,36 +500,33 @@ function validateBlock(block: ViewBlockSpec & { databaseId: string }, db: Databa
       if (seenCols.has(c)) return { ok: false, error: `${at}View columns repeats ${c}` };
       seenCols.add(c);
     }
-  } else if (Array.isArray(v.columns) && v.columns.length > 0) {
-    // Naming columns is what a LIST does, so an aggregate that names them is
-    // almost always a `presentation` that should have said "list". Refusing it
-    // names that, rather than saving a field nothing will ever read.
-    return {
-      ok: false,
-      error:
-        `${at}Only a list view takes \`columns\`. For one row per database row set ` +
-        `presentation: "list" and keep columns; for a table of totals drop columns and give the ` +
-        "block a groupBy.",
-    };
-  }
-
-  if ((presentation === "table" || presentation === "bar") && !groupCol) {
-    return { ok: false, error: `${at}A ${presentation} view requires a groupBy column` };
-  }
-  if (presentation === "metric" && groupCol) {
-    return { ok: false, error: `${at}A metric view is one number and must not group` };
-  }
-  if (presentation === "line") {
-    if (!groupCol) return { ok: false, error: `${at}A line view requires a date groupBy` };
-    if (groupCol.type !== "date" || v.timeBucket == null) {
+  } else {
+    if (!(AGGREGATE_PRESENTATIONS as readonly string[]).includes(presentation)) {
       return {
         ok: false,
-        error: `${at}A line view requires a date groupBy with a timeBucket (day, week, or month)`,
+        error:
+          `${at}This object is an aggregate, so it draws as metric, table, bar or line — not a ` +
+          `${presentation}. A row listing is an object with \`columns\`.`,
+      };
+    }
+    if (Array.isArray(v.columns) && v.columns.length > 0) {
+      return {
+        ok: false,
+        error:
+          `${at}Naming \`columns\` makes this a row object, not an aggregate. Set presentation ` +
+          `to "table" or "list" to print the rows, or drop columns and give the object a groupBy.`,
       };
     }
   }
+
   if (v.timeBucket != null && !(TIME_BUCKETS as readonly string[]).includes(v.timeBucket as string)) {
     return { ok: false, error: `${at}Unknown timeBucket: ${String(v.timeBucket)}` };
+  }
+  if (v.timeBucket != null && !groupCol) {
+    return {
+      ok: false,
+      error: `${at}timeBucket collapses a date groupBy into periods, so it needs a groupBy.`,
+    };
   }
   if (v.timeBucket != null && groupCol && groupCol.type !== "date") {
     return { ok: false, error: `${at}timeBucket applies only to a date groupBy` };
@@ -352,10 +545,44 @@ function validateBlock(block: ViewBlockSpec & { databaseId: string }, db: Databa
     return { ok: false, error: `${at}View timeWindow is invalid` };
   }
 
-  // A listing takes no measure: it prints the rows, it does not fold them. The
-  // measure fields a list inherits are inert rather than absent, which is why
+  // Splitting a group into series is a second dimension of the same fold. It
+  // only makes sense for a measure that adds up (or counts): a split of an
+  // average has no meaning at the label level, and a split of "last" would sum
+  // one series' latest value into another's.
+  if (v.seriesBy != null) {
+    if (isRow) {
+      return { ok: false, error: `${at}A row object prints its own columns; series only apply to an aggregate.` };
+    }
+    const seriesCol = col(v.seriesBy);
+    if (!seriesCol) {
+      return { ok: false, error: `${at}View seriesBy column does not exist: ${String(v.seriesBy)}` };
+    }
+    if (seriesCol.type === "number") {
+      return {
+        ok: false,
+        error: `${at}seriesBy must be a category column (select, relation, text or boolean), not a number.`,
+      };
+    }
+    if (v.groupBy != null && String(v.seriesBy) === String(v.groupBy)) {
+      return {
+        ok: false,
+        error: `${at}seriesBy repeats groupBy, so every group would hold one series. Split by a different column.`,
+      };
+    }
+    if (measure !== "sum" && measure !== "count") {
+      return {
+        ok: false,
+        error:
+          `${at}A series split needs measure 'sum' or 'count'; '${measure}' is a per-group shape ` +
+          "and cannot be split into series. Use 'sum' for the spending by ${seriesCol.name}.",
+      };
+    }
+  }
+
+  // A row object takes no measure: it prints the rows, it does not fold them.
+  // The measure fields it inherits are inert rather than absent, which is why
   // this check is skipped rather than satisfied.
-  if (!isList) {
+  if (!isRow) {
     if (measure === "count") {
       if (v.measureColumnId != null) {
         return { ok: false, error: `${at}A count measure takes no measureColumnId` };
@@ -428,7 +655,42 @@ function validateBlock(block: ViewBlockSpec & { databaseId: string }, db: Databa
   if (v.convertToZar != null && typeof v.convertToZar !== "boolean") {
     return { ok: false, error: `${at}View convertToZar must be a boolean` };
   }
+  const displayCheck = validateDisplay(v.display);
+  if (!displayCheck.ok) return { ok: false, error: `${at}${displayCheck.error}` };
 
+  return { ok: true, value: true };
+}
+
+/**
+ * The drawing options, checked rather than trusted. They are all cosmetic, but
+ * a palette name that no stylesheet knows is a card drawn in one flat colour
+ * with no way for the operator to see why.
+ */
+function validateDisplay(raw: unknown): Result<true> {
+  if (raw == null) return { ok: true, value: true };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    return { ok: false, error: "display must be an object" };
+  }
+  const v = raw as Record<string, unknown>;
+  if (v.palette != null && !(VIEW_PALETTE_NAMES as readonly string[]).includes(String(v.palette))) {
+    return {
+      ok: false,
+      error: `display.palette must be one of ${VIEW_PALETTE_NAMES.join(", ")}`,
+    };
+  }
+  for (const key of ["legend", "valueLabels"] as const) {
+    if (v[key] != null && typeof v[key] !== "boolean") {
+      return { ok: false, error: `display.${key} must be a boolean` };
+    }
+  }
+  for (const key of ["xLabel", "yLabel"] as const) {
+    if (v[key] != null) {
+      if (typeof v[key] !== "string") return { ok: false, error: `display.${key} must be a string` };
+      if ((v[key] as string).length > 60) {
+        return { ok: false, error: `display.${key} must be 60 characters or fewer` };
+      }
+    }
+  }
   return { ok: true, value: true };
 }
 
@@ -536,6 +798,39 @@ export function periodsInWindow(start: string, end: string, period: ViewPeriod):
 }
 
 /**
+ * A block's drawing options, with every field spelled the same way in the file.
+ *
+ * `undefined` and `null` both mean "not named" and are stored as `null`, so a
+ * reader never has to guess whether an absent palette means the default palette
+ * or a bug. A display with nothing named is stored as `null` rather than an
+ * object full of nulls, because a card with no styling is the normal case.
+ */
+function normalizeDisplay(raw: unknown): ViewBlock["display"] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const v = raw as Record<string, unknown>;
+  const display = {
+    // Kept as written, even when it is not a known palette: validation is what
+    // refuses a name no stylesheet can draw, and normalizing it to null here
+    // would silently replace the operator's choice with the default.
+    palette: typeof v.palette === "string" ? (v.palette as ViewPalette) : null,
+    legend: typeof v.legend === "boolean" ? v.legend : null,
+    xLabel: typeof v.xLabel === "string" && v.xLabel.trim() ? v.xLabel.trim() : null,
+    yLabel: typeof v.yLabel === "string" && v.yLabel.trim() ? v.yLabel.trim() : null,
+    valueLabels: typeof v.valueLabels === "boolean" ? v.valueLabels : null,
+  } as NonNullable<ViewBlock["display"]>;
+  if (
+    display.palette == null &&
+    display.legend == null &&
+    display.xLabel == null &&
+    display.yLabel == null &&
+    display.valueLabels == null
+  ) {
+    return null;
+  }
+  return display;
+}
+
+/**
  * Fill the query fields a proposal may omit, so every block's query is complete
  * and a stored file can never hold a half-specified panel.
  *
@@ -547,6 +842,10 @@ function fillBlockDefaults(block: ViewBlock): Omit<ViewBlock, "id" | "title" | "
   const measure = block.measure ?? "sum";
   return {
     presentation: block.presentation,
+    databaseId: block.databaseId ?? null,
+    from: block.from ?? null,
+    seriesBy: block.seriesBy ?? null,
+    display: normalizeDisplay(block.display),
     measure,
     measureColumnId: measure === "count" ? null : (block.measureColumnId ?? null),
     // Kept as written rather than cleared for the other measures: `per` on a
@@ -573,6 +872,14 @@ function completeBlock(block: ViewBlock, fallbackId: string): ViewBlock {
     title: block.title || fallbackId,
   };
   if (block.span === 1 || block.span === 2) out.span = block.span;
+  // A one-number card written before presentations were separated often carries
+  // the group's bucket with no group. The bucket is inert there, and dropping it
+  // is what keeps an operator's existing card drawing instead of failing a new
+  // rule on the next read. A ROW object keeps it so the validator can refuse a
+  // listing that asked for periods.
+  if (out.groupBy == null && (!Array.isArray(out.columns) || out.columns.length === 0)) {
+    out.timeBucket = null;
+  }
   return out;
 }
 
@@ -585,22 +892,25 @@ function completeBlock(block: ViewBlock, fallbackId: string): ViewBlock {
  * is already complete and a later reader never has to infer anything.
  *
  * A nullable field accepts an explicit `null` as a VALUE rather than as
- * "absent": `groupBy: null` is how a composed view asks for a metric panel, and
- * dropping it would make that panel inherit the root's groupBy and then fail
- * validation as "a metric view is one number and must not group".
+ * "absent": `groupBy: null` is how a composed view asks for one total, and
+ * dropping it would make that object inherit the root's groupBy and draw a table
+ * where the author asked for a number.
  */
 function asBlock(raw: Record<string, unknown>): ViewBlock {
   const out: Record<string, unknown> = {
     id: typeof raw.id === "string" ? raw.id : "",
     title: typeof raw.title === "string" ? raw.title : "",
   };
-  for (const key of ["groupBy", "timeBucket", "timeColumnId", "measureColumnId", "per"]) {
+  for (const key of [
+    "groupBy", "timeBucket", "timeColumnId", "measureColumnId", "per",
+    "databaseId", "from", "seriesBy",
+  ]) {
     if (raw[key] !== undefined) out[key] = raw[key];
   }
   // The rest carry only their own type; `null` is not a value a writer means.
   for (const key of [
     "presentation", "measure", "timeWindow", "filters", "sort", "limit", "convertToZar", "span",
-    "columns",
+    "columns", "display",
   ]) {
     if (raw[key] !== undefined && raw[key] !== null) out[key] = raw[key];
   }
@@ -609,16 +919,15 @@ function asBlock(raw: Record<string, unknown>): ViewBlock {
 
 /**
  * A block that may be partial: anything it does not name is taken from `parent`
- * (the view's root query fields). The measure pair is the exception — it is
- * always the block's own, because a metric panel must not inherit the root's
- * measure column or it would fail its own "one number must not group" check.
+ * (the view's root query fields), except the fields that make it a different
+ * KIND of object. The measure pair is the block's own, because a one-number
+ * object must not inherit a sibling's measured column; a ROW object must not
+ * inherit a grouping it cannot honour; and an object that names another
+ * database cannot inherit column ids chosen against the card's.
  *
- * A listing is the second exception, and for the same reason: it is not an
- * aggregate, so it must not inherit the root's grouping. A composed card's root
- * fields are an aggregate's — the "Spending by month" card on the operator's own
- * board roots a `groupBy: "date"` — and a list block layered over them would
- * otherwise be handed a grouping it can never honour. Only an INHERITED grouping
- * is dropped; a single-aggregate list that names one is refused by the validator.
+ * Only INHERITED fields are dropped. A block that names a grouping on a row
+ * object, or a window on a derived object, is kept as written so the validator
+ * can refuse the contradiction rather than silently dropping half of it.
  *
  * `parent` may itself be partial: a root built from a proposal has only the
  * fields the author wrote. `completeBlock` supplies the rest.
@@ -631,9 +940,72 @@ function resolveBlock(parent: ViewBlock, raw: ViewBlock): ViewBlock {
   // fields: a period average is one panel's own shape, and a sibling table must
   // not be handed a divisor it never asked for.
   layered.per = raw.per ?? null;
-  if (layered.presentation === "list") {
-    layered.groupBy = null;
-    layered.timeBucket = null;
+  // A block that explicitly says `groupBy: null` is asking for one total, so it
+  // cannot also inherit the root's timeBucket. The bucket belonged to the root's
+  // grouping, and carrying it over produced a spec that meant "group by nothing,
+  // by week" — the old validator let that through because it only checked a
+  // bucket against a grouping that existed.
+  if (raw.groupBy === null && raw.timeBucket === undefined) layered.timeBucket = null;
+  // Where this object reads. Only a block that names its own database changes
+  // it; the card's database is the default for every object in it.
+  layered.databaseId = raw.databaseId !== undefined ? raw.databaseId : (parent.databaseId ?? null);
+  // `from` is the block's own switch: a derived object never inherits another
+  // panel's source, or two panels would silently become one.
+  layered.from = raw.from ?? null;
+  // Drawing details are the card's default and the block's own, in that order.
+  layered.display =
+    raw.display !== undefined ? normalizeDisplay(raw.display) : normalizeDisplay(parent.display);
+  // `seriesBy` is a query field like groupBy: inherit unless the block names it,
+  // including an explicit null that turns the split off.
+  layered.seriesBy =
+    raw.seriesBy !== undefined ? raw.seriesBy : (raw.from ? null : (parent.seriesBy ?? null));
+
+  // An object that names a DIFFERENT database cannot inherit the card's column
+  // ids: the date column, the grouping and the filters were chosen against the
+  // other database and mean nothing here. Such an object starts from its own
+  // fields and the ordinary defaults, which is what lets one card hold a
+  // transactions table and an accounts count side by side.
+  const switchesDatabase =
+    typeof raw.databaseId === "string" &&
+    raw.databaseId !== "" &&
+    raw.databaseId !== (parent.databaseId ?? null);
+  if (switchesDatabase) {
+    layered.groupBy = raw.groupBy ?? null;
+    layered.timeBucket = raw.timeBucket ?? null;
+    layered.timeColumnId = raw.timeColumnId ?? null;
+    layered.timeWindow = raw.timeWindow ?? "all";
+    layered.filters = raw.filters ?? [];
+    layered.columns = raw.columns ?? [];
+    layered.seriesBy = raw.seriesBy ?? null;
+    layered.sort = raw.sort ?? { by: "label", dir: "asc" };
+    layered.limit = raw.limit ?? DEFAULT_VIEW_LIMIT;
+    layered.convertToZar = raw.convertToZar ?? false;
+  }
+
+  if (layered.from) {
+    // A derived object folds another object's rows. It cannot also read a
+    // database, choose a window, or group: those were the source's decisions.
+    // Its OWN fields are kept rather than blanked, so the validator can refuse a
+    // spec that named them instead of silently dropping what it asked for.
+    layered.groupBy = raw.groupBy ?? null;
+    layered.timeBucket = raw.timeBucket ?? null;
+    layered.timeColumnId = raw.timeColumnId ?? null;
+    layered.timeWindow = raw.timeWindow ?? "all";
+    layered.filters = raw.filters ?? [];
+    layered.seriesBy = null;
+    layered.databaseId = null;
+  } else {
+    // A ROW object prints rows; it is not an aggregate, so it must not inherit
+    // the root's grouping. Only an INHERITED grouping is dropped: a row object
+    // that names one itself is refused by the validator, because that is a spec
+    // whose author meant two different things.
+    const isRowObject =
+      (Array.isArray(raw.columns) && raw.columns.length > 0) || raw.presentation === "list";
+    if (isRowObject) {
+      layered.groupBy = raw.groupBy ?? null;
+      layered.timeBucket = raw.timeBucket ?? null;
+      layered.seriesBy = raw.seriesBy ?? null;
+    }
   }
   return layered;
 }
@@ -647,7 +1019,11 @@ export function applyViewDefaults(
   if (!blocks || blocks.length === 0) {
     const { blocks: _blocks, ...single } = written;
     void _blocks;
-    return { ...single, ...fillBlockDefaults(asBlock(written)) } as Omit<ViewSpec, "schemaVersion">;
+    const root = asBlock(written);
+    // A single view's database is the card's, and `fillBlockDefaults` must not
+    // overwrite it with the block-level "not named" null.
+    root.databaseId = typeof written.databaseId === "string" ? written.databaseId : null;
+    return { ...single, ...fillBlockDefaults(root) } as Omit<ViewSpec, "schemaVersion">;
   }
   // A composed view's root query fields are the defaults its blocks inherit and
   // are never read directly. They are kept exactly as written so the composer's
@@ -656,6 +1032,10 @@ export function applyViewDefaults(
   const rootFields: Record<string, unknown> = { ...written };
   delete rootFields.blocks;
   const rootBlock = asBlock(written);
+  // The card's database is the default every block inherits; `asBlock` only
+  // carries a block's own fields, so it is supplied here rather than guessed
+  // later by a runner that cannot see the file's root.
+  rootBlock.databaseId = typeof written.databaseId === "string" ? written.databaseId : null;
   return {
     ...rootFields,
     title: written.title,
@@ -673,6 +1053,7 @@ export function applyViewDefaults(
  */
 export function resolveViewBlocks(spec: ViewSpec): ViewBlockSpec[] {
   const root = asBlock(spec as unknown as Record<string, unknown>);
+  root.databaseId = spec.databaseId;
   const blocks = Array.isArray(spec.blocks) ? spec.blocks : [];
   if (blocks.length === 0) {
     return [toBlockSpec(completeBlock(root, "block-1"), 0)];
@@ -925,23 +1306,68 @@ export async function runViewBlocks(
     }
     const dbRes = await getDatabase(root, slug, spec.databaseId);
     if (!dbRes.ok) return dbRes;
-    const db = dbRes.value;
+    const rootDb = dbRes.value;
 
     const blocks = resolveViewBlocks(spec);
+    /**
+     * Every database this card names, read once. A card with objects side by
+     * side can now hold a transactions table and an accounts count; the cache is
+     * what keeps that from becoming one registry read per panel.
+     */
+    const databases = new Map<string, DatabaseMeta>([[rootDb.id, rootDb]]);
+    const databaseFor = async (id: string): Promise<Result<DatabaseMeta>> => {
+      const cached = databases.get(id);
+      if (cached) return { ok: true, value: cached };
+      const read = await getDatabase(root, slug, id);
+      if (read.ok) databases.set(id, read.value);
+      return read;
+    };
+
+    const registry = await readRegistry(vaultPaths(root).domainRegistry(slug));
+    const sqlitePath = vaultPaths(root).domainSqlite(slug);
+    const labelCache = new Map<string, Map<string, string>>();
+    const labelsFor = async (db: DatabaseMeta): Promise<Map<string, string>> => {
+      const cached = labelCache.get(db.id);
+      if (cached) return cached;
+      const labels = await buildRelationLabels(root, slug, db, registry);
+      labelCache.set(db.id, labels);
+      return labels;
+    };
+
+    /** Objects already validated and run, by id; `from` can only name one of these. */
+    const priorRow = new Map<string, boolean>();
+    const priorResults = new Map<string, ViewRunResult>();
+    const today = todayLocalIso(now);
+
+    // Validate every block against ITS database before reading anything, so a
+    // card with one bad panel writes nothing and reads nothing.
     for (const block of blocks) {
+      const wants = block.databaseId ?? rootDb.id;
+      const blockDbRes = await databaseFor(wants);
+      if (!blockDbRes.ok) {
+        return {
+          ok: false,
+          error:
+            `Block ${block.id}: database not found: ${wants}. Omit databaseId to use the card's ` +
+            "own database, or name a database that exists in this domain.",
+        };
+      }
+      const blockDb = blockDbRes.value;
       const check = validateBlock(
-        { ...block, databaseId: spec.databaseId },
-        db,
+        { ...block, databaseId: blockDb.id },
+        blockDb,
         blocks.length > 1 ? `Block ${block.id}` : "",
+        priorRow,
       );
       if (!check.ok) return check;
-      if (block.timeColumnId == null && isWindowed(block.timeWindow)) {
+      const isDerived = Boolean(block.from);
+      if (!isDerived && block.timeColumnId == null && isWindowed(block.timeWindow)) {
         // The refusal names the column to use, not just the rule. This is the
         // one required field a model leaves out on its own — a windowed panel
         // reads as complete without it — and across the recorded sessions it
         // cost a whole extra round trip every time. Naming the database's own
         // date column here is what makes the retry certain rather than likely.
-        const dates = db.columns.filter((c) => c.type === "date");
+        const dates = blockDb.columns.filter((c) => c.type === "date");
         const suggestion =
           dates.length === 1
             ? ` This database's date column is "${dates[0]!.id}" — set timeColumnId: "${dates[0]!.id}" on that block.`
@@ -953,24 +1379,32 @@ export async function runViewBlocks(
           error: `${blocks.length > 1 ? `Block ${block.id}: ` : ""}A timeWindow needs a timeColumnId, or the window silently does nothing.${suggestion} Or set timeWindow to "all".`,
         };
       }
+      priorRow.set(block.id, isRowObject(block as never));
     }
-
-    // One registry read, one relation-label pass, one sqlite path for every
-    // block: a composed view must not re-read the domain once per panel.
-    const registry = await readRegistry(vaultPaths(root).domainRegistry(slug));
-    const sqlitePath = vaultPaths(root).domainSqlite(slug);
-    const relationLabels = await buildRelationLabels(root, slug, db, registry);
-    const today = todayLocalIso(now);
 
     const results: ComposedViewRunResult["blocks"] = [];
     const warnings: string[] = [];
     for (const block of blocks) {
       let result: Result<ViewRunResult>;
       try {
-        result = await runBlock(
-          root, slug, db, registry, sqlitePath, relationLabels,
-          { ...block, databaseId: spec.databaseId }, today,
-        );
+        if (block.from) {
+          const source = priorResults.get(block.from);
+          if (!source) {
+            return {
+              ok: false,
+              error: `Block ${block.id}: from names "${block.from}", which is not an earlier object.`,
+            };
+          }
+          result = { ok: true, value: derivedResult(block, source) };
+        } else {
+          const blockDbRes = await databaseFor(block.databaseId ?? rootDb.id);
+          if (!blockDbRes.ok) return blockDbRes;
+          const blockDb = blockDbRes.value;
+          result = await runBlock(
+            root, slug, blockDb, registry, sqlitePath, await labelsFor(blockDb),
+            { ...block, databaseId: blockDb.id }, today,
+          );
+        }
       } catch (e) {
         // One panel's fault must not blank the whole card: the failure is
         // reported as that block's own warning and the other panels still draw.
@@ -981,6 +1415,7 @@ export async function runViewBlocks(
         };
       }
       if (!result.ok) return result;
+      priorResults.set(block.id, result.value);
       results.push({
         id: block.id,
         title: block.title,
@@ -997,6 +1432,67 @@ export async function runViewBlocks(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * A derived object's result: the source object's rows, plus the one number its
+ * measure folds them into.
+ *
+ * The rows are kept so the object can still be drawn as a table, a bar or a
+ * line; the summary is what a metric draws. That is the whole reason a card can
+ * show "the monthly totals" and "the average month" beside each other without
+ * either being computed by hand and frozen.
+ *
+ * The fold is over the source's ROWS, not its groups: `sum` adds them, `avg`
+ * divides by how many there are, `count` counts them, `last` takes the last. A
+ * quiet month is already a row of zero in the source, so it stays in the
+ * denominator — which is what makes the average agree with the table beside it.
+ */
+function derivedResult(spec: ViewBlockSpec, source: ViewRunResult): ViewRunResult {
+  const warnings: string[] = [];
+  const rows = source.rows;
+  let summary: ViewRunResult["summary"] = null;
+  if (rows.length > 0) {
+    if (spec.measure === "sum") {
+      summary = {
+        label: "total",
+        value: rows.reduce((sum, [, value]) => sum + value, 0),
+      };
+    } else if (spec.measure === "count") {
+      summary = { label: "count", value: rows.length };
+    } else if (spec.measure === "avg") {
+      summary = {
+        label: "average",
+        value: rows.reduce((sum, [, value]) => sum + value, 0) / rows.length,
+      };
+    } else if (spec.measure === "last") {
+      summary = { label: "latest", value: rows[rows.length - 1]![1] };
+    }
+  } else if (spec.measure === "sum" || spec.measure === "count") {
+    summary = { label: spec.measure, value: 0 };
+  }
+
+  // The source's own order, optionally re-sorted and trimmed for the drawing.
+  const sort = spec.sort ?? { by: "label", dir: "asc" };
+  const sorted = [...rows].sort((a, b) => {
+    const cmp =
+      sort.by === "label" ? a[0].localeCompare(b[0]) : a[1] - b[1] || a[0].localeCompare(b[0]);
+    return sort.dir === "asc" ? cmp : -cmp;
+  });
+  const limit = spec.limit ?? DEFAULT_VIEW_LIMIT;
+  if (sorted.length > limit) {
+    warnings.push(`Showing ${limit} of ${sorted.length} rows.`);
+  }
+
+  return {
+    columns: ["label", "value"],
+    rows: sorted.slice(0, limit),
+    ...(summary ? { summary } : {}),
+    ...(source.series ? { series: source.series } : {}),
+    ...(source.seriesRows ? { seriesRows: source.seriesRows } : {}),
+    warnings,
+    currency: source.currency,
+  };
 }
 
 /** True for any window that actually narrows the read. */
@@ -1094,10 +1590,10 @@ async function runBlock(
   // two ask different questions and must still reach the same answer: a listing
   // whose rows were converted differently from the total printed beside them
   // would be lying about one of the two.
-  const isList = spec.presentation === "list";
+  const isRow = isRowObject(spec as ViewBlock);
   const amountColumnId = db.columns.find((c) => c.name === "amount")?.id ?? "";
   const drawsAmount =
-    isList ? amountColumnId !== "" && spec.columns.includes(amountColumnId) : measureCol?.name === "amount";
+    isRow ? amountColumnId !== "" && spec.columns.includes(amountColumnId) : measureCol?.name === "amount";
   const isFinanceAmount =
   slug === "financial" &&
   spec.databaseId === FINANCE_DB_IDS.transactions &&
@@ -1128,7 +1624,7 @@ async function runBlock(
   // it shares every part of the query — the database, the filters, the window —
   // and only the fold differs. The rows it prints are therefore the same rows a
   // table over the same window would have counted.
-  if (isList) {
+  if (isRow) {
     return {
       ok: true,
       value: listResult(
@@ -1141,9 +1637,35 @@ async function runBlock(
   // Aggregate in TS: every rule the design pins as a warning lives here, one
   // loop, no silent bucket. Conversion happens per row at aggregation time,
   // so a group sum is already in home currency when conversion applies.
-  const groups = new Map<string, { label: string; value: number }>();
+  //
+  // A group carries its per-series split when `seriesBy` names a category
+  // column. `value` stays the per-label TOTAL across every series, so the
+  // dataset has one number per label whatever the drawing does with the split:
+  // a metric folds the totals, a table can print a column per series, and a
+  // chart draws one line or bar cluster per series.
+  type SeriesBucket = { value: number; count: number };
+  type GroupBucket = {
+    label: string;
+    value: number;
+    count: number;
+    series: Map<string, SeriesBucket>;
+  };
+  const groups = new Map<string, GroupBucket>();
   let undatedCount = 0;
   const seenCurrencies = new Set<string>();
+  const seriesCol = spec.seriesBy
+    ? (db.columns.find((c) => c.id === spec.seriesBy) as DatabaseColumn | undefined)
+    : undefined;
+
+  /** A column cell as the label a reader sees: relation ids resolved, dates bucketless. */
+  const cellLabel = (column: DatabaseColumn, cells: Record<string, unknown>): string => {
+    const raw = cells[column.id];
+    if (column.type === "relation") {
+      const rid = typeof raw === "string" && raw ? raw : null;
+      return rid ? (relationLabels.get(`${column.relationDatabaseId}::${rid}`) ?? rid) : "(none)";
+    }
+    return labelForValue(raw);
+  };
 
   for (const raw of rawRows) {
     const cells = parseCells(raw.cells);
@@ -1193,29 +1715,50 @@ async function runBlock(
       }
     }
 
-    const existing = groups.get(label);
+    const seriesKey = seriesCol ? cellLabel(seriesCol, cells) : "";
+    let bucket = groups.get(label);
+    if (!bucket) {
+      bucket = { label, value: 0, count: 0, series: new Map() };
+      groups.set(label, bucket);
+    }
+    let seriesBucket = seriesCol ? bucket.series.get(seriesKey) : undefined;
+    if (seriesCol && !seriesBucket) {
+      seriesBucket = { value: 0, count: 0 };
+      bucket.series.set(seriesKey, seriesBucket);
+    }
+
     if (spec.measure === "last") {
       // rows arrive oldest-first, so plain assignment leaves the newest row.
-      groups.set(label, { label, value });
-    } else if (spec.measure === "avg") {
-      if (existing) {
-        existing.value += value;
-        (existing as { count?: number }).count = ((existing as { count?: number }).count ?? 1) + 1;
-      } else {
-        groups.set(label, { label, value, count: 1 } as { label: string; value: number; count: number });
+      bucket.value = value;
+      bucket.count = 1;
+      if (seriesBucket) {
+        seriesBucket.value = value;
+        seriesBucket.count = 1;
       }
-    } else if (existing) {
-      existing.value += value;
+    } else if (spec.measure === "avg") {
+      bucket.value += value;
+      bucket.count += 1;
+      if (seriesBucket) {
+        seriesBucket.value += value;
+        seriesBucket.count += 1;
+      }
     } else {
-      groups.set(label, { label, value });
+      bucket.value += value;
+      bucket.count += 1;
+      if (seriesBucket) {
+        seriesBucket.value += value;
+        seriesBucket.count += 1;
+      }
     }
   }
   // avg divides after the fold: sum/count per label. An empty group cannot
   // happen (count starts at 1), so no zero-division guard is needed here.
   if (spec.measure === "avg") {
-    for (const g of groups.values()) {
-      const count = (g as { count?: number }).count ?? 1;
-      g.value = g.value / count;
+    for (const group of groups.values()) {
+      group.value = group.value / Math.max(1, group.count);
+      for (const series of group.series.values()) {
+        series.value = series.value / Math.max(1, series.count);
+      }
     }
   }
   // A period average divides by the CALENDAR, not by the rows: the window's
@@ -1224,8 +1767,8 @@ async function runBlock(
   // pressing one into the other is what made "the average spend per week across
   // the last 4 weeks" come back as the average transaction.
   if (per && periods > 0) {
-    for (const g of groups.values()) {
-      g.value = g.value / periods;
+    for (const group of groups.values()) {
+      group.value = group.value / periods;
     }
   }
 
@@ -1286,14 +1829,105 @@ async function runBlock(
     ? [["value", 0]]
     : shown.map((e) => [e.label, e.value]);
 
+  // The headline number this dataset folds to. It is computed from ALL groups,
+  // not just the ones the card has room to draw: a metric is the total of the
+  // data, never the total of the visible page of it.
+  const summary = summarizeGroups(entries, spec.measure);
+  const summaryForResult =
+    spec.groupBy == null
+      ? summarizeGroups(rows.map(([label, value]) => ({ label, value })), spec.measure)
+      : summary;
+
+  // Series: keep the biggest MAX_VIEW_SERIES and pool the tail as "Other", so a
+  // category column with forty values still yields a readable legend and a
+  // total that still adds up.
+  let seriesNames: string[] | undefined;
+  let seriesRows: Array<[string, string, number]> | undefined;
+  if (seriesCol) {
+    const totals = new Map<string, number>();
+    // Ranked over the labels the card will actually draw, not the whole result:
+    // a series that exists only beyond the limit would otherwise take a legend
+    // slot and draw no mark.
+    for (const group of shown) {
+      for (const [name, bucket] of group.series) {
+        totals.set(name, (totals.get(name) ?? 0) + bucket.value);
+      }
+    }
+    const ranked = [...totals.entries()]
+      .filter(([, total]) => Math.abs(total) > 0)
+      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]) || a[0].localeCompare(b[0]));
+    const kept = ranked.slice(0, MAX_VIEW_SERIES).map(([name]) => name);
+    const pooled = ranked.slice(MAX_VIEW_SERIES).map(([name]) => name);
+    if (pooled.length > 0) {
+      kept.push("Other");
+      warnings.push(
+        `Showing ${MAX_VIEW_SERIES} of ${ranked.length} ${seriesCol.name} values; the rest are pooled as "Other".`,
+      );
+    }
+    if (kept.length > 0) {
+      seriesNames = kept;
+      seriesRows = [];
+      for (const group of shown) {
+        for (const name of kept) {
+          if (name === "Other") {
+            const value = pooled.reduce(
+              (sum, dropped) => sum + (group.series.get(dropped)?.value ?? 0),
+              0,
+            );
+            if (pooled.length > 0) seriesRows.push([group.label, name, value]);
+            continue;
+          }
+          const bucket = group.series.get(name);
+          if (bucket) seriesRows.push([group.label, name, bucket.value]);
+        }
+      }
+    }
+  }
+
   return {
     ok: true,
     value: {
       columns: ["label", "value"],
       rows,
+      ...(summaryForResult ? { summary: summaryForResult } : {}),
+      ...(seriesNames ? { series: seriesNames } : {}),
+      ...(seriesRows ? { seriesRows } : {}),
       warnings,
       currency,
     },
+  };
+}
+
+/**
+ * The one number a dataset folds to.
+ *
+ * The measure means the same thing here as it does per group, applied to the
+ * groups themselves: `sum` and `count` add up, `avg` averages the group values
+ * (the average of the monthly totals), and `last` takes the newest group in the
+ * card's own sort order. `avg-per` has already divided by its window, so it
+ * reads its one row rather than folding again.
+ */
+function summarizeGroups(
+  entries: Array<{ label: string; value: number }>,
+  measure: ViewMeasure,
+): { label: string; value: number } | null {
+  if (entries.length === 0) return null;
+  if (measure === "avg") {
+    return { label: "average", value: entries.reduce((sum, e) => sum + e.value, 0) / entries.length };
+  }
+  if (measure === "last") {
+    // "Latest" is the newest GROUP, not the last row of whatever display order
+    // the card happens to use: sorting a table newest-first must not turn the
+    // headline into the oldest month.
+    const newest = [...entries].sort((a, b) => a.label.localeCompare(b.label)).at(-1)!;
+    return { label: "latest", value: newest.value };
+  }
+  if (measure === "avg-per") {
+    return entries.length === 1 ? { label: "value", value: entries[0]!.value } : null;
+  }
+  return {
+    label: entries.length === 1 ? "value" : "total",
+    value: entries.reduce((sum, e) => sum + e.value, 0),
   };
 }
 
@@ -1477,7 +2111,7 @@ export async function saveView(
     }
 
     const out = applyViewDefaults(spec);
-    const check = validateViewSpec(out, dbRes.value);
+    const check = await validateViewSpecForVault(root, slug, out as ViewSpec, dbRes.value);
     if (!check.ok) return check;
 
     const now = new Date().toISOString();
