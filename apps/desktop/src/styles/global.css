@@ -7,6 +7,7 @@
 @import "./pages.css";
 @import "./projects.css";
 @import "./automations.css";
+@import "./vault-switcher.css";
 
 * {
   box-sizing: border-box;
@@ -4308,6 +4309,19 @@ a.home-mini-list__link:hover {
   margin-bottom: 1rem;
 }
 
+/* A page can hold more than one block (Vault is two: identity and books). They
+   are separate ideas, not one list with a heading in the middle, so each gets
+   its own space above it instead of butting against the card before it. */
+.settings-overlay__main-scroll > section + section {
+  margin-top: 2rem;
+}
+
+/* The card's own padding closes the last row; a row that kept its bottom
+   padding too would double the card's foot. */
+.settings-card > .settings-card__row:last-child {
+  padding-bottom: 0;
+}
+
 .settings-panel__icon {
   display: flex;
   align-items: center;
@@ -4338,20 +4352,43 @@ a.home-mini-list__link:hover {
   background: var(--bg);
 }
 
-.settings-card__row--theme {
+/* —— Settings rows ——
+   A row is the settings sheet's unit of work: what the control is called on the
+   leading edge, the control that changes it on the trailing edge, and a hairline
+   between one row and the next. The two sides are a flex pair rather than a
+   grid because a row's control can be a button, a switch, a segmented control,
+   or a group of them, and the copy has to give way before any of those do.
+
+   The gap is the breathing room the old rows did not have: label, description
+   and control used to stack against each other with nothing between them, which
+   is what made the sheet read as one squeezed column. */
+.settings-card__row {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
-  padding-bottom: 1rem;
+  gap: 0.75rem 2rem;
+  padding: 1rem 0;
+}
+
+.settings-card__row + .settings-card__row,
+.settings-vault + .settings-card__row {
+  border-top: 1px solid var(--border-soft);
+}
+
+/* Appearance's theme row opens the card, and the skin grid below it is the next
+   thing in that card rather than a row: it keeps the hairline and the space that
+   separate the two, and takes its top padding from the card. */
+.settings-card__row--theme {
+  align-items: flex-start;
+  padding-top: 0;
   margin-bottom: 1rem;
   border-bottom: 1px solid var(--border-soft);
 }
 
 .settings-card__copy {
   min-width: 0;
-  flex: 1;
+  flex: 1 1 14rem;
 }
 
 .settings-card__label {
@@ -4361,14 +4398,38 @@ a.home-mini-list__link:hover {
 }
 
 .settings-card__desc {
-  margin: 0.25rem 0 0;
-  max-width: 28rem;
+  margin: 0.3rem 0 0;
+  max-width: 34rem;
   font-size: 0.75rem;
+  line-height: 1.45;
   color: var(--text-muted);
 }
 
 .settings-card__control {
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* The settings sheet's own corner step for its buttons. The app's `.btn` is a
+   pill everywhere it is a page's control; inside a settings card the buttons sit
+   in a row of their own beside a label, and the pill reads as a chip floating
+   away from the row. Worn at `--radius-sm`, the card's own step, so the control
+   and the card it sits in share a corner. */
+.settings-card__control .btn {
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.85rem;
+  font-size: 0.8125rem;
+}
+
+/* Rows that carry a destructive action put their controls on one trailing edge;
+   a wrapped copy of the description gets the whole card width rather than
+   squeezing the buttons. */
+.settings-card__row--books .settings-card__control {
+  align-items: flex-start;
 }
 
 .settings-appearance__skin-hint {
@@ -4555,35 +4616,159 @@ a.home-mini-list__link:hover {
   fill: none;
 }
 
+/* The vault's identity: what it is called, and where it lives. Each fact is one
+   row with its label on the leading edge and the value on the trailing edge, so
+   the three values line up as a column instead of stepping in and out under
+   headings of their own. The value is right-aligned because it is the trailing
+   half of the row, and a path — the longest of them — wraps inside its half
+   rather than pushing the label around. */
 .settings-vault {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
 }
 
 .settings-vault > div {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
+  display: grid;
+  grid-template-columns: minmax(4.5rem, 9rem) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 1.5rem;
+  padding: 0.6rem 0;
+}
+
+.settings-vault > div:first-child {
+  padding-top: 0;
+}
+
+.settings-vault > div + div {
+  border-top: 1px solid var(--border-soft);
 }
 
 .settings-vault dt {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  color: var(--text-soft);
 }
 
 .settings-vault dd {
   margin: 0;
-  font-size: 0.9rem;
-  word-break: break-all;
+  justify-self: end;
+  text-align: right;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
 }
 
 .settings-vault__mono {
   font-family: var(--font-mono);
   font-size: 0.8rem;
 }
+
+/* —— Books: one row per domain —— */
+/* Export is safe and always available; restore is destructive, so the row's
+   switch arms it and the restore button stays closed until it is on. The
+   controls trail the row as one group, and any message the domain's last action
+   produced sits under that group rather than under the label. */
+.settings-books__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
+
+.settings-books__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.settings-books__message {
+  margin: 0;
+  max-width: 22rem;
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  text-align: right;
+}
+
+/* —— Toggle switch —— */
+/* The restore gate is a switch, not a checkbox: it is a state the operator turns
+   on before the destructive button opens, and the track's size is what makes it
+   read as the way in rather than as a footnote. */
+.ui-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out);
+}
+
+.ui-toggle:hover:not(:disabled) {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.ui-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.ui-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ui-toggle__track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 2.6rem;
+  height: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-muted);
+  transition:
+    background-color var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out);
+}
+
+.ui-toggle__thumb {
+  position: absolute;
+  top: 50%;
+  left: 0.18rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: var(--text-soft);
+  transform: translateY(-50%);
+  transition:
+    left var(--dur-quick) var(--ease-out),
+    background-color var(--dur-quick) var(--ease-out);
+}
+
+.ui-toggle.is-on {
+  color: var(--text);
+}
+
+.ui-toggle.is-on .ui-toggle__track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.ui-toggle.is-on .ui-toggle__thumb {
+  left: calc(100% - 1.28rem);
+  background: var(--accent-fg);
+}
+
 
 .settings-hermes {
   display: flex;
@@ -7180,6 +7365,22 @@ button.chat-panel__activity-line:hover {
 .ui-segmented__icon {
   display: inline-flex;
   flex-shrink: 0;
+}
+
+/* The compact step: a two-choice setting that rides on its row's label line
+   rather than owning a full-width bar under it. Options stop being equal-width
+   dashes and become the two words they are. */
+.ui-segmented--sm {
+  display: inline-flex;
+  padding: 0.125rem;
+  border-radius: var(--radius-sm);
+}
+
+.ui-segmented--sm .ui-segmented__option {
+  flex: 0 0 auto;
+  padding: 0.2rem 0.6rem;
+  border-radius: calc(var(--radius-sm) - 3px);
+  font-size: 0.6875rem;
 }
 
 .ui-list-row {

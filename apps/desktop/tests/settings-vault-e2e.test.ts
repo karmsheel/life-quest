@@ -18,18 +18,101 @@ const REPORT = path.join(desktopRoot, "e2e/artifacts/settings-vault.json");
 const VAULT_A = { id: "vault-a", name: "Harness Vault A", path: "/harness/vault-a" };
 const VAULT_B = { id: "vault-b", name: "Harness Vault B", path: "/harness/vault-b" };
 const REFUSAL = "No LifeQuest vault in that folder.";
+const RESTORE_REFUSAL = "Books.json for this domain could not be read.";
 
-type Calls = { dialog: (string | null)[]; open: string[]; recent: number };
+type Box = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+  centerY: number;
+};
+
+type Calls = {
+  dialog: (string | null)[];
+  open: string[];
+  recent: number;
+  settings: Record<string, unknown>[];
+  export: string[];
+  restore: string[];
+};
+
+type Toggle = {
+  checked: string | null;
+  text: string;
+  className: string;
+  disabled: boolean;
+  box: Box | null;
+  track: Box | null;
+  thumb: Box | null;
+};
+
+type BookRow = {
+  label: string;
+  description: string;
+  row: Box;
+  copy: Box;
+  labelBox: Box;
+  control: Box;
+  checkboxCount: number;
+  toggle: Toggle | null;
+  exportButton: {
+    text: string;
+    disabled: boolean;
+    radius: number | null;
+    className: string;
+    box: Box;
+  } | null;
+  restoreButton: {
+    text: string;
+    disabled: boolean;
+    radius: number | null;
+    box: Box;
+  } | null;
+  messages: { text: string; role: string | null; error: boolean }[];
+};
 
 type State = {
   viewport: { width: number; height: number };
-  identity: { label: string; value: string }[];
+  identity: {
+    label: string;
+    value: string;
+    row: Box;
+    labelBox: Box;
+    valueBox: Box;
+  }[];
   vaultName: string | null;
   vaultId: string | null;
   vaultPath: string | null;
-  folderRowLabel: string | null;
-  folderRowDescription: string | null;
-  button: { label: string; className: string; disabled: boolean } | null;
+  sections: Box[];
+  folderRow: {
+    label: string;
+    description: string;
+    copy: Box;
+    control: Box;
+    labelBox: Box;
+    button: {
+      label: string;
+      className: string;
+      disabled: boolean;
+      radius: number | null;
+    } | null;
+  } | null;
+  weekStart: {
+    label: string;
+    description: string | null;
+    copy: Box;
+    labelBox: Box;
+    control: Box;
+    controlClassName: string;
+    height: number;
+    width: number;
+    disabled: boolean;
+    active: "monday" | "sunday" | null;
+  } | null;
+  books: BookRow[];
   error: string | null;
   calls: Calls;
 };
@@ -60,7 +143,7 @@ function runDriver(): Promise<number> {
     execFile(
       electron,
       [path.join(desktopRoot, "e2e/settings-vault.electron.mjs")],
-      { cwd: desktopRoot, timeout: 120_000 },
+      { cwd: desktopRoot, timeout: 180_000 },
       (error) => {
         if (error && typeof error.code !== "number") {
           reject(error);
@@ -72,8 +155,14 @@ function runDriver(): Promise<number> {
   });
 }
 
-describe("the settings vault-folder switch", () => {
-  it("points the open vault at another folder, and survives a refused one", async (t) => {
+function bookAt(state: State | undefined, label: string): BookRow {
+  const row = state?.books.find((candidate) => candidate.label === label);
+  assert.ok(row, `state has no book row for ${label}`);
+  return row;
+}
+
+describe("the settings vault page", () => {
+  it("gates restores with a switch, lays rows out name-left/control-right, and switches folders", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
@@ -90,74 +179,246 @@ describe("the settings vault-folder switch", () => {
     assert.equal(exitCode, 0, "driver exited non-zero");
     assert.equal(report.pass, true);
 
-    const { landing, cancelled, inFlight, switched, refused } = report.states;
+    const {
+      landing,
+      weekStart,
+      exportState,
+      booksArmed,
+      booksRestored,
+      booksRefused,
+      folderCancelled,
+      folderInFlight,
+      switched,
+      folderRefused,
+      weekLocked,
+    } = report.states;
 
-    // The page is the real settings page, naming the vault that is open, and it
-    // offers a control that is live before anything is asked.
+    assert.ok(landing, "the page never reached its landing state");
+
+    // —— The page still describes the vault that is open ——
     assert.equal(landing.vaultPath, VAULT_A.path, "the open vault's path");
     assert.equal(landing.vaultId, VAULT_A.id, "the open vault's id");
     assert.equal(landing.vaultName, VAULT_A.name, "the open vault's name");
-    assert.equal(landing.folderRowLabel, "Vault folder", "the folder row's label");
-    assert.ok(landing.button, "the folder row carries no control");
-    assert.equal(landing.button?.label, "Change folder…", "the control's own label");
-    assert.equal(landing.button?.disabled, false, "the control was closed before any click");
-    assert.match(landing.button?.className ?? "", /btn/, "the control is not the app's Button");
-    assert.match(
-      landing.folderRowDescription ?? "",
-      /vault folder/i,
-      "the row does not say what the switch does",
+
+    // —— Identity: label on the left, value on the right, rows apart ——
+    assert.equal(landing.identity.length, 3, "identity row count");
+    for (const entry of landing.identity) {
+      assert.ok(
+        entry.labelBox.right <= entry.valueBox.left,
+        `identity ${entry.label}: value is not to the right of its label`,
+      );
+    }
+    for (let index = 1; index < landing.identity.length; index += 1) {
+      const previous = landing.identity[index - 1];
+      const current = landing.identity[index];
+      assert.ok(
+        current.labelBox.top - previous.valueBox.bottom >= 12,
+        `identity rows ${previous.label} / ${current.label} are squeezed together`,
+      );
+    }
+
+    // —— The two blocks on the page are separated ——
+    assert.ok(landing.sections.length >= 2, "Vault and Books are not two sections");
+    assert.ok(
+      landing.sections[1].top - landing.sections[0].bottom >= 24,
+      `the Books heading sits on the Vault card: gap ${landing.sections[1].top - landing.sections[0].bottom}`,
     );
-    assert.deepEqual(landing.calls.dialog, [], "the picker was asked before a click");
-    assert.deepEqual(landing.calls.open, [], "a vault was opened before a click");
-    assert.equal(landing.error, null, "an error was on screen before a click");
 
-    // A cancelled picker is the half that has to open nothing.
-    assert.deepEqual(cancelled.calls.dialog, [null], "the cancelled ask did not reach the picker");
-    assert.deepEqual(cancelled.calls.open, [], "a cancelled picker opened a vault");
-    assert.equal(cancelled.vaultPath, VAULT_A.path, "a cancelled picker moved the open vault");
-    assert.equal(cancelled.error, null, "a cancelled picker reported an error");
-    assert.equal(cancelled.button?.disabled, false, "the control stayed closed after a cancel");
+    // —— Vault folder: live control on the trailing edge, clear of its copy ——
+    assert.equal(landing.folderRow?.label, "Vault folder", "the folder row's label");
+    assert.match(landing.folderRow?.button?.className ?? "", /btn/, "the control is not the app's Button");
+    assert.equal(landing.folderRow?.button?.label, "Change folder…", "the control's own label");
+    assert.equal(landing.folderRow?.button?.disabled, false, "the control was closed before a click");
+    assert.ok(
+      (landing.folderRow?.button?.radius ?? 999) <= 12,
+      `the folder button still wears the pill: radius ${landing.folderRow?.button?.radius}`,
+    );
+    assert.ok(
+      (landing.folderRow?.control?.left ?? 0) - (landing.folderRow?.copy?.right ?? 0) >= 16,
+      "the folder control is pressed against its text",
+    );
+    assert.deepEqual(landing.calls.export, [], "books were written before a click");
+    assert.deepEqual(landing.calls.restore, [], "a restore ran before a click");
 
-    // While the open is in flight the control is closed, so a second dialog
-    // cannot be asked over the first one.
-    assert.equal(inFlight.button?.disabled, true, "the control was live mid-open");
-    assert.equal(inFlight.button?.label, "Opening…", "the control did not say it was working");
-    assert.deepEqual(inFlight.calls.open, [VAULT_B.path], "the open carried the wrong folder");
-    assert.equal(inFlight.vaultPath, VAULT_A.path, "the page moved before the open finished");
-
-    // The switch itself: the folder the picker answered, then the new vault's
-    // identity, and a recent list re-read so the next start reopens it.
+    // —— Week starts on: compact, on the heading's line, hint only when locked ——
+    assert.equal(landing.weekStart?.label, "Week starts on", "the week row's label");
+    assert.match(
+      landing.weekStart?.controlClassName ?? "",
+      /ui-segmented--sm/,
+      "the week control is still the full-size segmented bar",
+    );
+    assert.ok(
+      Math.abs(
+        (landing.weekStart?.control?.top ?? 0) -
+          (landing.weekStart?.labelBox?.top ?? 0),
+      ) <= 8,
+      "the week control is not on the heading's line",
+    );
+    assert.ok(
+      (landing.weekStart?.control?.left ?? 0) > (landing.weekStart?.labelBox?.right ?? 0),
+      "the week control is not to the right of its heading",
+    );
+    assert.ok(
+      (landing.weekStart?.height ?? 999) <= 30,
+      `the week control is not compact: ${landing.weekStart?.height}px`,
+    );
+    assert.ok(
+      (landing.weekStart?.width ?? 999) <= 240,
+      `the week control is still a full-width bar: ${landing.weekStart?.width}px`,
+    );
     assert.equal(
-      switched.calls.dialog[switched.calls.dialog.length - 1],
+      landing.weekStart?.description,
+      null,
+      "a live week-start setting claims it cannot change",
+    );
+
+    // —— Books: checkboxes are gone, replaced by a switch that gates restore ——
+    assert.deepEqual(
+      landing.books.map((row) => row.label),
+      ["Health", "Finance"],
+      "the books rows are not the live domains",
+    );
+    for (const row of landing.books) {
+      assert.equal(row.checkboxCount, 0,`${row.label} still renders a checkbox`);
+      assert.ok(row.toggle, `${row.label} has no restore switch`);
+      assert.equal(row.toggle?.checked, "false", `${row.label}'s switch starts on`);
+      assert.match(row.toggle?.text ?? "", /allow restore/i, `${row.label}'s switch is unlabelled`);
+      assert.ok(
+        (row.toggle?.track?.width ?? 0) >= 40 && (row.toggle?.track?.height ?? 0) >= 20,
+        `${row.label}'s switch is too small to be the way in: ${JSON.stringify(row.toggle?.track)}`,
+      );
+      assert.equal(
+        row.restoreButton?.disabled,
+        true,
+        `${row.label}'s restore is open before the switch arms it`,
+      );
+      assert.equal(row.exportButton?.disabled, false, `${row.label}'s export is closed`);
+      assert.ok(
+        (row.exportButton?.radius ?? 999) <= 12 && (row.restoreButton?.radius ?? 999) <= 12,
+        `${row.label}'s buttons still wear the pill`,
+      );
+      assert.ok(
+        row.control.left > row.labelBox.right && row.control.left - row.copy.right >= 16,
+        `${row.label}'s name and controls are not on opposite sides with a gap`,
+      );
+    }
+    assert.ok(
+      landing.books[1].labelBox.top - landing.books[0].labelBox.bottom >= 40,
+      "the books rows are squeezed together",
+    );
+
+    // —— The week-start switch works, in place ——
+    assert.equal(weekStart?.calls.settings.length, 1, "the week switch did not write settings");
+    assert.equal(
+      weekStart?.calls.settings[0].weekStartDay,
+      "sunday",
+      "the week switch wrote the wrong day",
+    );
+    assert.equal(weekStart?.weekStart?.active, "sunday", "the chosen day is not the active one");
+
+    // —— Export reports on its own row ——
+    assert.deepEqual(exportState?.calls.export, ["health"], "export did not carry the domain");
+    assert.ok(
+      bookAt(exportState, "Health").messages.some(
+        (message) => message.role === "status" && /exported books for health/i.test(message.text),
+      ),
+      "export did not report itself on the Health row",
+    );
+    assert.deepEqual(bookAt(exportState, "Finance").messages, [], "export reported on another row");
+
+    // —— Arming is per domain; a restore disarms its own row again ——
+    assert.equal(bookAt(booksArmed, "Health").toggle?.checked, "true", "Health's switch did not arm");
+    assert.equal(
+      bookAt(booksArmed, "Health").restoreButton?.disabled,
+      false,
+      "Health's restore did not open",
+    );
+    assert.equal(
+      bookAt(booksArmed, "Finance").restoreButton?.disabled,
+      true,
+      "arming Health armed Finance too",
+    );
+    assert.deepEqual(booksRestored?.calls.restore, ["health"], "the restore did not carry the domain");
+    assert.equal(
+      bookAt(booksRestored, "Health").toggle?.checked,
+      "false",
+      "a finished restore left its row armed",
+    );
+    assert.equal(
+      bookAt(booksRestored, "Health").restoreButton?.disabled,
+      true,
+      "a finished restore left its button open",
+    );
+
+    // —— A refused restore names itself on the row that asked ——
+    assert.deepEqual(booksRefused?.calls.restore, ["health", "health"], "the refused restore did not run");
+    assert.ok(
+      bookAt(booksRefused, "Health").messages.some(
+        (message) => message.role === "alert" && message.text === RESTORE_REFUSAL,
+      ),
+      "a refused restore is silent on its row",
+    );
+
+    // —— The folder switch: cancelled, in flight, switched, refused ——
+    assert.deepEqual(folderCancelled?.calls.dialog, [null], "the cancelled ask did not reach the picker");
+    assert.deepEqual(folderCancelled?.calls.open, [], "a cancelled picker opened a vault");
+    assert.equal(folderCancelled?.vaultPath, VAULT_A.path, "a cancelled picker moved the open vault");
+    assert.equal(folderCancelled?.error, null, "a cancelled picker reported an error");
+    assert.equal(
+      folderInFlight?.folderRow?.button?.disabled,
+      true,
+      "the folder control was live mid-open",
+    );
+    assert.equal(
+      folderInFlight?.folderRow?.button?.label,
+      "Opening…",
+      "the folder control did not say it was working",
+    );
+    assert.deepEqual(folderInFlight?.calls.open, [VAULT_B.path], "the open carried the wrong folder");
+    assert.equal(folderInFlight?.vaultPath, VAULT_A.path, "the page moved before the open finished");
+    assert.equal(
+      switched?.calls.dialog[switched?.calls.dialog.length - 1],
       VAULT_B.path,
       "the switch opened a folder the picker never returned",
     );
-    assert.deepEqual(switched.calls.open, [VAULT_B.path], "the switch opened more than one vault");
-    assert.equal(switched.vaultPath, VAULT_B.path, "the switch did not move the path");
-    assert.equal(switched.vaultId, VAULT_B.id, "the switch did not move the vault id");
-    assert.equal(switched.vaultName, VAULT_B.name, "the switch did not move the vault name");
-    assert.ok(
-      switched.calls.recent > landing.calls.recent,
-      `the recent list was not re-read: ${landing.calls.recent} → ${switched.calls.recent}`,
+    assert.equal(switched?.vaultPath, VAULT_B.path, "the switch did not move the path");
+    assert.equal(switched?.vaultId, VAULT_B.id, "the switch did not move the vault id");
+    assert.equal(switched?.vaultName, VAULT_B.name, "the switch did not move the vault name");
+    assert.equal(folderRefused?.error, REFUSAL, "the refusal did not reach the operator");
+    assert.equal(folderRefused?.vaultPath, VAULT_B.path, "a refused open moved the vault");
+    assert.equal(
+      folderRefused?.folderRow?.button?.disabled,
+      false,
+      "a refused open closed the switch control",
     );
-    assert.equal(switched.button?.disabled, false, "the control stayed closed after the switch");
 
-    // A refused folder: the refusal is named, the operator stays on the same
-    // surface on the same vault, and the escape hatch stays on it.
-    assert.equal(
-      refused.calls.open[refused.calls.open.length - 1],
-      VAULT_B.path,
-      "the refused open carried the wrong folder",
+    // —— With weekly files present the week control closes and says why ——
+    assert.equal(weekLocked?.weekStart?.disabled, true, "the locked week control stayed live");
+    assert.match(
+      weekLocked?.weekStart?.description ?? "",
+      /cannot change/i,
+      "the locked week row does not say why it cannot change",
     );
-    assert.equal(refused.error, REFUSAL, "the refusal did not reach the operator");
-    assert.equal(refused.vaultPath, VAULT_B.path, "a refused open moved the vault");
-    assert.equal(refused.vaultId, VAULT_B.id, "a refused open moved the vault id");
-    assert.ok(refused.button, "a refused open unmounted the switch control");
-    assert.equal(refused.button?.disabled, false, "a refused open closed the switch control");
-    assert.equal(
-      refused.calls.recent,
-      switched.calls.recent,
-      "a refused open re-read the recent list",
+    assert.ok(
+      (weekLocked?.weekStart?.height ?? 999) <= 30,
+      "the locked week control grew again",
     );
+
+    // The pictures are the point of the artifact: a run whose images are
+    // missing cannot show that the shipped UI is what passed.
+    for (const name of [
+      "settings-vault-landing.png",
+      "settings-vault-week-start.png",
+      "settings-vault-books-armed.png",
+      "settings-vault-switched.png",
+      "settings-vault-refused.png",
+      "settings-vault-week-locked.png",
+    ]) {
+      assert.equal(
+        fs.existsSync(path.join(desktopRoot, "e2e/artifacts", name)),
+        true,
+        `the rig wrote no ${name}`,
+      );
+    }
   });
 });

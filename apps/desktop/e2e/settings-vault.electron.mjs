@@ -26,7 +26,7 @@ app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
-const url =
+const baseUrl =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/settings-vault.html";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
@@ -34,46 +34,166 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
 const VAULT_A = { id: "vault-a", name: "Harness Vault A", path: "/harness/vault-a" };
 const VAULT_B = { id: "vault-b", name: "Harness Vault B", path: "/harness/vault-b" };
 const REFUSAL = "No LifeQuest vault in that folder.";
+const RESTORE_REFUSAL = "Books.json for this domain could not be read.";
 /** Long enough for the driver to catch the control while the open is in flight. */
 const OPEN_DELAY_MS = 600;
 
+/**
+ * Everything the driver compares is read off the real DOM: boxes come from
+ * `getBoundingClientRect` (the layout engine, not the stylesheet's intent) and
+ * radii from computed style (what the button actually wears). The sample is a
+ * function body, so the driver can call it as many times as a state needs.
+ */
 const SAMPLE = `(() => {
   const text = (el) => ((el && el.textContent) || "").trim();
+  const box = (el) => {
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height, centerY: r.top + r.height / 2 };
+  };
+  const radius = (el) => {
+    if (!el) return null;
+    const value = parseFloat(getComputedStyle(el).borderTopLeftRadius);
+    return Number.isFinite(value) ? value : null;
+  };
+
   const rows = Array.from(document.querySelectorAll(".settings-card__row"));
-  const folderRow = rows.find(
-    (row) => text(row.querySelector(".settings-card__label")) === "Vault folder"
-  );
-  const button = folderRow ? folderRow.querySelector("button") : null;
+  const labelOf = (row) => (row && (row.querySelector(".settings-card__label")?.textContent ?? "").trim()) || "";
+  const rowByLabel = (label) => rows.find((row) => labelOf(row) === label) ?? null;
+
   const identity = Array.from(document.querySelectorAll(".settings-vault > div")).map((div) => ({
     label: text(div.querySelector("dt")),
-    value: text(div.querySelector("dd"))
+    value: text(div.querySelector("dd")),
+    row: box(div),
+    labelBox: box(div.querySelector("dt")),
+    valueBox: box(div.querySelector("dd"))
   }));
-  const calls = window.vaultCalls || { dialog: [], open: [], recent: 0 };
   const identityValue = (label) => {
     const entry = identity.find((item) => item.label === label);
     return entry ? entry.value : null;
   };
+
+  const sections = Array.from(
+    document.querySelectorAll(".settings-overlay__main-scroll > section")
+  ).map((section) => box(section));
+
+  const folderRow = rowByLabel("Vault folder");
+  const folderButton = folderRow ? folderRow.querySelector("button") : null;
+
+  const weekRow = rowByLabel("Week starts on");
+  const weekControl = weekRow ? weekRow.querySelector(".ui-segmented") : null;
+  const weekOptions = weekControl
+    ? Array.from(weekControl.querySelectorAll("button"))
+    : [];
+  const weekOption = (label) => weekOptions.find((button) => text(button) === label) ?? null;
+  const weekCopy = weekRow ? weekRow.querySelector(".settings-card__desc") : null;
+
+  const books = rows
+    .filter((row) => row.classList.contains("settings-card__row--books"))
+    .map((row) => {
+      const toggle = row.querySelector('[role="switch"]');
+      const buttons = Array.from(row.querySelectorAll("button.btn"));
+      const exportButton = buttons.find((button) => text(button) === "Export books") ?? null;
+      const restoreButton = buttons.find((button) => text(button) === "Restore books") ?? null;
+      return {
+        label: text(row.querySelector(".settings-card__label")),
+        description: text(row.querySelector(".settings-card__desc")),
+        row: box(row),
+        copy: box(row.querySelector(".settings-card__copy")),
+        labelBox: box(row.querySelector(".settings-card__label")),
+        control: box(row.querySelector(".settings-card__control")),
+        checkboxCount: row.querySelectorAll('input[type="checkbox"]').length,
+        toggle: toggle
+          ? {
+              checked: toggle.getAttribute("aria-checked"),
+              text: text(toggle),
+              className: toggle.className,
+              disabled: toggle.disabled,
+              box: box(toggle),
+              track: box(toggle.querySelector(".ui-toggle__track")),
+              thumb: box(toggle.querySelector(".ui-toggle__thumb")),
+              labelBox: box(toggle.querySelector(".ui-toggle__label"))
+            }
+          : null,
+        exportButton: exportButton
+          ? {
+              text: text(exportButton),
+              disabled: exportButton.disabled,
+              radius: radius(exportButton),
+              className: exportButton.className,
+              box: box(exportButton)
+            }
+          : null,
+        restoreButton: restoreButton
+          ? {
+              text: text(restoreButton),
+              disabled: restoreButton.disabled,
+              radius: radius(restoreButton),
+              box: box(restoreButton)
+            }
+          : null,
+        messages: Array.from(row.querySelectorAll(".settings-books__message")).map((message) => ({
+          text: text(message),
+          role: message.getAttribute("role"),
+          error: message.classList.contains("form-error")
+        }))
+      };
+    });
+
   const alert = document.querySelector('[role="alert"].form-error');
+  const calls = window.vaultCalls || {};
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
     identity,
     vaultName: identityValue("Name"),
     vaultId: identityValue("Id"),
     vaultPath: identityValue("Path"),
-    folderRowLabel: folderRow ? text(folderRow.querySelector(".settings-card__label")) : null,
-    folderRowDescription: folderRow ? text(folderRow.querySelector(".settings-card__desc")) : null,
-    button: button
+    sections,
+    folderRow: folderRow
       ? {
-          label: text(button),
-          className: button.className,
-          disabled: button.disabled
+          label: labelOf(folderRow),
+          description: text(folderRow.querySelector(".settings-card__desc")),
+          copy: box(folderRow.querySelector(".settings-card__copy")),
+          control: box(folderRow.querySelector(".settings-card__control")),
+          labelBox: box(folderRow.querySelector(".settings-card__label")),
+          button: folderButton
+            ? {
+                label: text(folderButton),
+                className: folderButton.className,
+                disabled: folderButton.disabled,
+                radius: radius(folderButton)
+              }
+            : null
         }
       : null,
+    weekStart: weekRow
+      ? {
+          label: labelOf(weekRow),
+          description: weekCopy ? text(weekCopy) : null,
+          copy: box(weekRow.querySelector(".settings-card__copy")),
+          labelBox: box(weekRow.querySelector(".settings-card__label")),
+          control: box(weekControl),
+          controlClassName: weekControl ? weekControl.className : null,
+          height: weekControl ? box(weekControl).height : null,
+          width: weekControl ? box(weekControl).width : null,
+          disabled: weekOption("Monday") ? weekOption("Monday").disabled : null,
+          active:
+            weekOption("Monday")?.getAttribute("aria-checked") === "true"
+              ? "monday"
+              : weekOption("Sunday")?.getAttribute("aria-checked") === "true"
+                ? "sunday"
+                : null
+        }
+      : null,
+    books,
     error: alert ? text(alert) : null,
     calls: {
-      dialog: [...calls.dialog],
-      open: [...calls.open],
-      recent: calls.recent
+      dialog: [...(calls.dialog ?? [])],
+      open: [...(calls.open ?? [])],
+      recent: calls.recent ?? 0,
+      settings: [...(calls.settings ?? [])],
+      export: [...(calls.export ?? [])],
+      restore: [...(calls.restore ?? [])]
     }
   };
 })()`;
@@ -82,6 +202,9 @@ const failures = [];
 const check = (name, ok, detail) => {
   if (!ok) failures.push(`${name}: ${detail}`);
 };
+
+/** `undefined`-safe, readable rendering of a measured value in a failure line. */
+const show = (value) => JSON.stringify(value ?? null);
 
 /**
  * Ask the window for a size, then PROVE it took it by measuring the real
@@ -149,11 +272,54 @@ async function main() {
     return path.basename(file);
   };
 
-  /** Click the control whose own label is `label`. */
+  /** Click the control whose own label is `label`, anywhere on the page. */
   const clickButton = (label) =>
     run(`(() => {
       const el = Array.from(document.querySelectorAll("button")).find(
         (b) => ((b.textContent || "").trim() === ${JSON.stringify(label)})
+      );
+      if (!el) return false;
+      el.click();
+      return true;
+    })()`);
+
+  /** Click a labelled control inside the books row for `domain`. */
+  const clickBookControl = (domain, label, selector = "button") =>
+    run(`(() => {
+      const row = Array.from(document.querySelectorAll(".settings-card__row--books")).find(
+        (candidate) => ((candidate.querySelector(".settings-card__label")?.textContent ?? "").trim() === ${JSON.stringify(domain)})
+      );
+      if (!row) return false;
+      const el = Array.from(row.querySelectorAll(${JSON.stringify(selector)})).find(
+        (candidate) => ((candidate.textContent || "").trim() === ${JSON.stringify(label)})
+      );
+      if (!el) return false;
+      el.click();
+      return true;
+    })()`);
+
+  /** Click the switch that arms restore on the books row for `domain`. */
+  const clickBookSwitch = (domain) =>
+    run(`(() => {
+      const row = Array.from(document.querySelectorAll(".settings-card__row--books")).find(
+        (candidate) => ((candidate.querySelector(".settings-card__label")?.textContent ?? "").trim() === ${JSON.stringify(domain)})
+      );
+      if (!row) return false;
+      const toggle = row.querySelector('[role="switch"]');
+      if (!toggle) return false;
+      toggle.click();
+      return true;
+    })()`);
+
+  /** Click a week-start option by its visible label. */
+  const clickWeekStart = (label) =>
+    run(`(() => {
+      const row = Array.from(document.querySelectorAll(".settings-card__row")).find(
+        (candidate) => ((candidate.querySelector(".settings-card__label")?.textContent ?? "").trim() === "Week starts on")
+      );
+      if (!row) return false;
+      const el = Array.from(row.querySelectorAll(".ui-segmented button")).find(
+        (candidate) => ((candidate.textContent || "").trim() === ${JSON.stringify(label)})
       );
       if (!el) return false;
       el.click();
@@ -166,11 +332,19 @@ async function main() {
       `(() => { window.vaultKnobs[${JSON.stringify(name)}](${JSON.stringify(value)}); return true; })()`,
     );
 
+  const book = (state, label) =>
+    state.books.find((candidate) => candidate.label === label) ?? null;
+
   let report = {
-    url,
+    url: baseUrl,
     ranAt: new Date().toISOString(),
     window: { ...DEFAULT_SIZE },
-    fixture: { open: VAULT_A, switchTo: VAULT_B, refusal: REFUSAL },
+    fixture: {
+      open: VAULT_A,
+      switchTo: VAULT_B,
+      refusal: REFUSAL,
+      restoreRefusal: RESTORE_REFUSAL,
+    },
     states: {},
     screenshots,
     failures,
@@ -178,7 +352,7 @@ async function main() {
   };
 
   try {
-    await win.loadURL(url);
+    await win.loadURL(baseUrl);
     await run("window.settingsVaultHarnessReady.then(() => true)");
 
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
@@ -193,46 +367,315 @@ async function main() {
     await sizeWindow(win, DEFAULT_SIZE.width, DEFAULT_SIZE.height);
     await new Promise((resolve) => setTimeout(resolve, 250));
 
-    // 1 — the page painted with a live control, and nothing is asked yet.
+    // 1 — the page painted, with the vault it knows, before anything is asked.
     const landing = await settle();
     check(
       "the settings page names the vault that is open",
       landing.vaultPath === VAULT_A.path &&
         landing.vaultId === VAULT_A.id &&
         landing.vaultName === VAULT_A.name,
-      `path ${JSON.stringify(landing.vaultPath)}, id ${JSON.stringify(landing.vaultId)}, name ${JSON.stringify(landing.vaultName)}`,
+      `path ${show(landing.vaultPath)}, id ${show(landing.vaultId)}, name ${show(landing.vaultName)}`,
+    );
+
+    // The identity list is rows, not stacked headings: label on the leading
+    // edge, value on the trailing one, each row ruled off from the next.
+    check(
+      "the identity list is three label/value rows",
+      landing.identity.length === 3 &&
+        landing.identity.every((entry) => entry.label && entry.value),
+      `identity ${show(landing.identity.map((entry) => [entry.label, entry.value]))}`,
     );
     check(
-      "the folder row offers a control",
-      landing.folderRowLabel === "Vault folder" && landing.button !== null,
-      `label ${JSON.stringify(landing.folderRowLabel)}, button ${JSON.stringify(landing.button)}`,
+      "each identity value sits to the right of its label",
+      landing.identity.every(
+        (entry) =>
+          entry.labelBox && entry.valueBox && entry.labelBox.right <= entry.valueBox.left,
+      ),
+      `rows ${show(
+        landing.identity.map((entry) => [
+          entry.label,
+          entry.labelBox?.right,
+          entry.valueBox?.left,
+        ]),
+      )}`,
     );
     check(
-      "the row says what the control does",
-      /vault folder/i.test(landing.folderRowDescription ?? "") &&
-        (landing.folderRowDescription ?? "").length > 40,
-      `description ${JSON.stringify(landing.folderRowDescription)}`,
+      "identity rows are spaced apart rather than stacked",
+      landing.identity.every((entry, index) => {
+        if (index === 0) return true;
+        const previous = landing.identity[index - 1];
+        // Rows abut (the hairline is the next row's border), so the space that
+        // matters is between the previous value and the next label.
+        return entry.labelBox && previous.valueBox
+          ? entry.labelBox.top - previous.valueBox.bottom >= 12
+          : false;
+      }),
+      `gaps ${show(
+        landing.identity.map((entry, index) =>
+          index === 0
+            ? null
+            : (entry.labelBox?.top ?? 0) - (landing.identity[index - 1].valueBox?.bottom ?? 0),
+        ),
+      )}`,
+    );
+
+    // Two blocks on this page (Vault and Books): the heading of the second must
+    // not butt against the card of the first.
+    check(
+      "the two settings blocks are separated",
+      landing.sections.length >= 2 &&
+        landing.sections[1].top - landing.sections[0].bottom >= 24,
+      `sections ${show(landing.sections)}`,
+    );
+
+    // 2 — the vault-folder row: one line, name left, control right, a real gap.
+    check(
+      "the folder row offers the app's own control",
+      landing.folderRow?.label === "Vault folder" &&
+        landing.folderRow?.button !== null &&
+        (landing.folderRow?.button?.className ?? "").includes("btn"),
+      `row ${show(landing.folderRow?.label)}, button ${show(landing.folderRow?.button)}`,
     );
     check(
-      "the control wears the app's own button, not a raw one",
-      (landing.button?.className ?? "").includes("btn"),
-      `button wears "${landing.button?.className}"`,
+      "the folder row says what the control does",
+      /vault folder/i.test(landing.folderRow?.description ?? "") &&
+        (landing.folderRow?.description ?? "").length > 40,
+      `description ${show(landing.folderRow?.description)}`,
     );
     check(
-      "the control is live before anything is asked",
-      landing.button?.disabled === false && landing.button?.label === "Change folder…",
-      `label ${JSON.stringify(landing.button?.label)}, disabled ${landing.button?.disabled}`,
+      "the folder row's control is on the trailing edge, clear of its copy",
+      landing.folderRow?.copy &&
+        landing.folderRow?.control &&
+        landing.folderRow.control.left > landing.folderRow.copy.right &&
+        landing.folderRow.control.left - landing.folderRow.copy.right >= 16,
+      `copy right ${show(landing.folderRow?.copy?.right)}, control left ${show(
+        landing.folderRow?.control?.left,
+      )}`,
     );
     check(
-      "nothing is asked, and no vault is opened, before a click",
-      landing.calls.dialog.length === 0 &&
-        landing.calls.open.length === 0 &&
-        landing.error === null,
-      `dialog ${JSON.stringify(landing.calls.dialog)}, open ${JSON.stringify(landing.calls.open)}, error ${JSON.stringify(landing.error)}`,
+      "the folder control is live before anything is asked",
+      landing.folderRow?.button?.disabled === false &&
+        landing.folderRow?.button?.label === "Change folder…",
+      `label ${show(landing.folderRow?.button?.label)}, disabled ${show(
+        landing.folderRow?.button?.disabled,
+      )}`,
+    );
+    check(
+      "the folder control wears the settings card's corner, not the pill",
+      (landing.folderRow?.button?.radius ?? 999) <= 12,
+      `radius ${show(landing.folderRow?.button?.radius)}`,
+    );
+
+    // 3 — the week-start control is on the label's line, and compact.
+    check(
+      "the week-start row is labelled and controlled",
+      landing.weekStart?.label === "Week starts on" &&
+        landing.weekStart?.controlClassName?.includes("ui-segmented--sm"),
+      `label ${show(landing.weekStart?.label)}, class ${show(
+        landing.weekStart?.controlClassName,
+      )}`,
+    );
+    check(
+      "the week-start control rides on its heading's line",
+      landing.weekStart?.labelBox &&
+        landing.weekStart?.control &&
+        Math.abs(landing.weekStart.control.top - landing.weekStart.labelBox.top) <= 8 &&
+        landing.weekStart.control.left > landing.weekStart.labelBox.right,
+      `label top ${show(landing.weekStart?.labelBox?.top)}, control top ${show(
+        landing.weekStart?.control?.top,
+      )}, label right ${show(landing.weekStart?.labelBox?.right)}, control left ${show(
+        landing.weekStart?.control?.left,
+      )}`,
+    );
+    check(
+      "the week-start control is small, not a full-width bar",
+      (landing.weekStart?.height ?? 999) <= 30 &&
+        (landing.weekStart?.width ?? 999) <= 240,
+      `size ${show(landing.weekStart?.width)}x${show(landing.weekStart?.height)}`,
+    );
+    check(
+      "a live week-start setting does not claim it cannot change",
+      landing.weekStart?.description === null,
+      `description ${show(landing.weekStart?.description)}`,
     );
     screenshots.push(await shot("landing"));
 
-    // 2 — a cancelled picker asks no open and moves nothing.
+    // 4 — the week-start switch changes the setting, in place.
+    const weekClicked = await clickWeekStart("Sunday");
+    const week = await settle();
+    check("clicked Sunday on the week-start row", weekClicked, "no Sunday option");
+    check(
+      "the week-start switch asks the vault for the chosen day",
+      week.calls.settings.length === 1 && week.calls.settings[0].weekStartDay === "sunday",
+      `settings ${show(week.calls.settings)}`,
+    );
+    check(
+      "the chosen day is the one now shown as active",
+      week.weekStart?.active === "sunday",
+      `active ${show(week.weekStart?.active)}`,
+    );
+    screenshots.push(await shot("week-start"));
+
+    // 5 — books: export is live, restore is armed only by its switch, and the
+    // switch is a large track (not a checkbox) on the row's trailing edge.
+    check(
+      "the books block has one row per live domain, archived ones filtered out",
+      landing.books.length === 2 &&
+        landing.books.some((row) => row.label === "Health") &&
+        landing.books.some((row) => row.label === "Finance") &&
+        !landing.books.some((row) => row.label === "Retired"),
+      `rows ${show(landing.books.map((row) => row.label))}`,
+    );
+    for (const row of landing.books) {
+      check(
+        `the ${row.label} row has no checkbox`,
+        row.checkboxCount === 0,
+        `checkboxes ${row.checkboxCount}`,
+      );
+      check(
+        `the ${row.label} row gates restore with a labelled switch`,
+        row.toggle !== null &&
+          row.toggle.checked === "false" &&
+          /allow restore/i.test(row.toggle.text),
+        `toggle ${show(row.toggle)}`,
+      );
+      check(
+        `the ${row.label} switch is large enough to read as the way in`,
+        (row.toggle?.track?.width ?? 0) >= 40 && (row.toggle?.track?.height ?? 0) >= 20,
+        `track ${show(row.toggle?.track)}`,
+      );
+      check(
+        `the ${row.label} restore is closed until the switch arms it`,
+        row.restoreButton?.disabled === true && row.exportButton?.disabled === false,
+        `restore ${show(row.restoreButton?.disabled)}, export ${show(
+          row.exportButton?.disabled,
+        )}`,
+      );
+      check(
+        `${row.label}'s buttons wear the card corner, not the pill`,
+        (row.exportButton?.radius ?? 999) <= 12 && (row.restoreButton?.radius ?? 999) <= 12,
+        `radii ${show([row.exportButton?.radius, row.restoreButton?.radius])}`,
+      );
+      check(
+        `${row.label}'s name is on the left and its controls on the right`,
+        row.labelBox &&
+          row.control &&
+          row.control.left > row.labelBox.right &&
+          row.control.left - row.copy.right >= 16,
+        `label right ${show(row.labelBox?.right)}, copy right ${show(
+          row.copy?.right,
+        )}, control left ${show(row.control?.left)}`,
+      );
+    }
+    check(
+      "books rows are spaced apart rather than stacked",
+      landing.books.length >= 2 &&
+        (landing.books[1]?.labelBox?.top ?? 0) -
+          (landing.books[0]?.labelBox?.bottom ?? 0) >=
+          40,
+      `gap ${show(
+        (landing.books[1]?.labelBox?.top ?? 0) -
+          (landing.books[0]?.labelBox?.bottom ?? 0),
+      )}`,
+    );
+    check(
+      "nothing was written before the operator asked",
+      landing.calls.export.length === 0 &&
+        landing.calls.restore.length === 0 &&
+        landing.calls.dialog.length === 0 &&
+        landing.calls.open.length === 0 &&
+        landing.error === null,
+      `export ${show(landing.calls.export)}, restore ${show(landing.calls.restore)}, error ${show(landing.error)}`,
+    );
+
+    // 6 — export writes, and says so on its own row.
+    const exported = await clickBookControl("Health", "Export books");
+    const exportState = await settle();
+    check("clicked Export books on the Health row", exported, "no Export books control");
+    check(
+      "export asked the vault for the Health domain",
+      show(exportState.calls.export) === show(["health"]),
+      `export ${show(exportState.calls.export)}`,
+    );
+    check(
+      "export reported itself on the Health row, not another",
+      (book(exportState, "Health")?.messages ?? []).some(
+        (message) => message.role === "status" && /exported books for health/i.test(message.text),
+      ) &&
+        (book(exportState, "Finance")?.messages ?? []).length === 0,
+      `messages ${show(exportState.books.map((row) => [row.label, row.messages]))}`,
+    );
+
+    // 7 — arming one row opens that row's restore and leaves the other closed.
+    const armedClick = await clickBookSwitch("Health");
+    const armed = await settle();
+    check("clicked the Health restore switch", armedClick, "no switch on the Health row");
+    check(
+      "the Health switch is on and its restore is open",
+      book(armed, "Health")?.toggle?.checked === "true" &&
+        book(armed, "Health")?.restoreButton?.disabled === false,
+      `toggle ${show(book(armed, "Health")?.toggle?.checked)}, restore ${show(
+        book(armed, "Health")?.restoreButton?.disabled,
+      )}`,
+    );
+    check(
+      "arming one domain does not arm another",
+      book(armed, "Finance")?.restoreButton?.disabled === true &&
+        book(armed, "Finance")?.toggle?.checked === "false",
+      `finance restore ${show(book(armed, "Finance")?.restoreButton?.disabled)}`,
+    );
+    screenshots.push(await shot("books-armed"));
+
+    // 8 — a restore carries the confirmation, then the row disarms itself.
+    const restoredClick = await clickBookControl("Health", "Restore books");
+    const restored = await settle();
+    check("clicked Restore books on the Health row", restoredClick, "no Restore books control");
+    check(
+      "restore asked the vault to confirm-restore the Health domain",
+      show(restored.calls.restore) === show(["health"]),
+      `restore ${show(restored.calls.restore)}`,
+    );
+    check(
+      "a finished restore disarms its row again",
+      book(restored, "Health")?.toggle?.checked === "false" &&
+        book(restored, "Health")?.restoreButton?.disabled === true,
+      `toggle ${show(book(restored, "Health")?.toggle?.checked)}, restore ${show(
+        book(restored, "Health")?.restoreButton?.disabled,
+      )}`,
+    );
+
+    // 9 — a refused restore names the failure on the row that asked for it.
+    await setKnob("setRestoreRefuses", true);
+    await clickBookSwitch("Health");
+    await settle(120);
+    await clickBookControl("Health", "Restore books");
+    const refusedRestore = await settle();
+    check(
+      "a refused restore reached the vault",
+      show(refusedRestore.calls.restore) === show(["health", "health"]),
+      `restore ${show(refusedRestore.calls.restore)}`,
+    );
+    check(
+      "a refused restore says why on its own row",
+      (book(refusedRestore, "Health")?.messages ?? []).some(
+        (message) => message.role === "alert" && message.text === RESTORE_REFUSAL,
+      ) &&
+        (book(refusedRestore, "Finance")?.messages ?? []).length === 0,
+      `messages ${show(refusedRestore.books.map((row) => [row.label, row.messages]))}`,
+    );
+    // Clean up: a successful restore clears the row's error again, which also
+    // proves the error is not sticky once the next attempt works.
+    await setKnob("setRestoreRefuses", false);
+    await clickBookControl("Health", "Restore books");
+    const recovered = await settle();
+    check(
+      "a later successful restore clears the refused message",
+      (book(recovered, "Health")?.messages ?? []).every((message) => !message.error) &&
+        book(recovered, "Health")?.toggle?.checked === "false",
+      `messages ${show(book(recovered, "Health")?.messages)}`,
+    );
+
+    // 10 — a cancelled folder picker asks no open and moves nothing.
     await setKnob("setDialogAnswer", null);
     const cancelledClick = await clickButton("Change folder…");
     const cancelled = await settle();
@@ -240,46 +683,49 @@ async function main() {
     check(
       "the click asked the platform for a folder",
       cancelled.calls.dialog.length === 1 && cancelled.calls.dialog[0] === null,
-      `dialog ${JSON.stringify(cancelled.calls.dialog)}`,
+      `dialog ${show(cancelled.calls.dialog)}`,
     );
     check(
       "a cancelled picker opened no vault",
       cancelled.calls.open.length === 0,
-      `open ${JSON.stringify(cancelled.calls.open)}`,
+      `open ${show(cancelled.calls.open)}`,
     );
     check(
       "a cancelled picker left the open vault on screen",
       cancelled.vaultPath === VAULT_A.path &&
         cancelled.vaultId === VAULT_A.id &&
         cancelled.error === null,
-      `path ${JSON.stringify(cancelled.vaultPath)}, id ${JSON.stringify(cancelled.vaultId)}, error ${JSON.stringify(cancelled.error)}`,
+      `path ${show(cancelled.vaultPath)}, id ${show(cancelled.vaultId)}, error ${show(cancelled.error)}`,
     );
     check(
       "the control came back live after the cancelled ask",
-      cancelled.button?.disabled === false,
-      `disabled ${cancelled.button?.disabled}`,
+      cancelled.folderRow?.button?.disabled === false,
+      `disabled ${show(cancelled.folderRow?.button?.disabled)}`,
     );
 
-    // 3 — while the open is in flight the control is closed, so a second
-    //     dialog cannot be asked over the first.
+    // 11 — while the open is in flight the control is closed, so a second
+    //      dialog cannot be asked over the first.
     await setKnob("setDialogAnswer", VAULT_B.path);
     await setKnob("setOpenDelay", OPEN_DELAY_MS);
     await clickButton("Change folder…");
     const inFlight = await settle(120);
     check(
       "the control is closed while the open is in flight",
-      inFlight.button?.disabled === true && inFlight.button?.label === "Opening…",
-      `label ${JSON.stringify(inFlight.button?.label)}, disabled ${inFlight.button?.disabled}`,
+      inFlight.folderRow?.button?.disabled === true &&
+        inFlight.folderRow?.button?.label === "Opening…",
+      `label ${show(inFlight.folderRow?.button?.label)}, disabled ${show(
+        inFlight.folderRow?.button?.disabled,
+      )}`,
     );
     check(
       "the open is still in flight while the control is closed",
       inFlight.calls.open.length === 1 && inFlight.calls.open[0] === VAULT_B.path,
-      `open ${JSON.stringify(inFlight.calls.open)}`,
+      `open ${show(inFlight.calls.open)}`,
     );
     check(
       "the old vault is still on screen while the open is in flight",
       inFlight.vaultPath === VAULT_A.path,
-      `path ${JSON.stringify(inFlight.vaultPath)}`,
+      `path ${show(inFlight.vaultPath)}`,
     );
     screenshots.push(await shot("in-flight"));
 
@@ -288,14 +734,14 @@ async function main() {
       "the open carried the folder the picker answered",
       switched.calls.dialog[switched.calls.dialog.length - 1] === VAULT_B.path &&
         switched.calls.open.length === 1,
-      `dialog ${JSON.stringify(switched.calls.dialog)}, open ${JSON.stringify(switched.calls.open)}`,
+      `dialog ${show(switched.calls.dialog)}, open ${show(switched.calls.open)}`,
     );
     check(
       "the switch replaced the vault the page names",
       switched.vaultPath === VAULT_B.path &&
         switched.vaultId === VAULT_B.id &&
         switched.vaultName === VAULT_B.name,
-      `path ${JSON.stringify(switched.vaultPath)}, id ${JSON.stringify(switched.vaultId)}, name ${JSON.stringify(switched.vaultName)}`,
+      `path ${show(switched.vaultPath)}, id ${show(switched.vaultId)}, name ${show(switched.vaultName)}`,
     );
     check(
       "the switch re-read the recent list, so the next start reopens the new vault",
@@ -304,13 +750,13 @@ async function main() {
     );
     check(
       "the control came back live after the switch",
-      switched.button?.disabled === false,
-      `disabled ${switched.button?.disabled}`,
+      switched.folderRow?.button?.disabled === false,
+      `disabled ${show(switched.folderRow?.button?.disabled)}`,
     );
     screenshots.push(await shot("switched"));
 
-    // 4 — a refused folder keeps the operator on the same surface, on the
-    //     same vault, with the refusal named.
+    // 12 — a refused folder keeps the operator on the same surface, on the
+    //      same vault, with the refusal named.
     await setKnob("setOpenRefuses", true);
     await setKnob("setOpenDelay", 0);
     const refusedClick = await clickButton("Change folder…");
@@ -321,22 +767,23 @@ async function main() {
       "the refusal reached the vault it was offered",
       refused.calls.open.length === 2 &&
         refused.calls.open[refused.calls.open.length - 1] === VAULT_B.path,
-      `open ${JSON.stringify(refused.calls.open)}`,
+      `open ${show(refused.calls.open)}`,
     );
     check(
       "a refused folder says why",
       refused.error === REFUSAL,
-      `error ${JSON.stringify(refused.error)}`,
+      `error ${show(refused.error)}`,
     );
     check(
       "a refused folder kept the operator on the same vault",
       refused.vaultPath === VAULT_B.path && refused.vaultId === VAULT_B.id,
-      `path ${JSON.stringify(refused.vaultPath)}, id ${JSON.stringify(refused.vaultId)}`,
+      `path ${show(refused.vaultPath)}, id ${show(refused.vaultId)}`,
     );
     check(
       "a refused folder left the switch control on the surface",
-      refused.button !== null && refused.button.disabled === false,
-      `button ${JSON.stringify(refused.button)}`,
+      refused.folderRow?.button !== null &&
+        refused.folderRow?.button?.disabled === false,
+      `button ${show(refused.folderRow?.button)}`,
     );
     check(
       "a refused folder did not re-read the recent list",
@@ -345,7 +792,46 @@ async function main() {
     );
     screenshots.push(await shot("refused"));
 
-    report.states = { landing, cancelled, inFlight, switched, refused };
+    // 13 — the locked week-start state, reached by reloading the harness with
+    //      weekly files present: the control closes and the row says why.
+    await win.loadURL(`${baseUrl}?weeklyFiles=3`);
+    await run("window.settingsVaultHarnessReady.then(() => true)");
+    const locked = await settle(320);
+    check(
+      "with weekly files present the week-start control is closed",
+      locked.weekStart?.disabled === true,
+      `disabled ${show(locked.weekStart?.disabled)}`,
+    );
+    check(
+      "the locked week-start row says why it cannot change",
+      /cannot change/i.test(locked.weekStart?.description ?? ""),
+      `description ${show(locked.weekStart?.description)}`,
+    );
+    check(
+      "the locked control is still compact and on the heading's line",
+      (locked.weekStart?.height ?? 999) <= 30 &&
+        Math.abs(
+          (locked.weekStart?.control?.top ?? 0) -
+            (locked.weekStart?.labelBox?.top ?? 0),
+        ) <= 8,
+      `week start ${show(locked.weekStart)}`,
+    );
+    screenshots.push(await shot("week-locked"));
+
+    report.states = {
+      landing,
+      weekStart: week,
+      exportState,
+      booksArmed: armed,
+      booksRestored: restored,
+      booksRefused: refusedRestore,
+      booksRecovered: recovered,
+      folderCancelled: cancelled,
+      folderInFlight: inFlight,
+      switched,
+      folderRefused: refused,
+      weekLocked: locked,
+    };
     report.pass = failures.length === 0;
   } catch (error) {
     report.failures = [
@@ -361,26 +847,29 @@ async function main() {
 
   const states = report.states;
   if (states.landing) {
-    const table = [["state", "path", "button", "error", "dialog asks", "opens"]];
-    for (const [name, state] of [
-      ["landing", states.landing],
-      ["picker cancelled", states.cancelled],
-      ["open in flight", states.inFlight],
-      ["switched", states.switched],
-      ["open refused", states.refused],
-    ]) {
-      table.push([
-        name,
-        state?.vaultPath ?? "—",
-        state?.button ? `${state.button.label}${state.button.disabled ? " (closed)" : ""}` : "—",
-        state?.error ?? "—",
-        String(state?.calls?.dialog?.length ?? "—"),
-        JSON.stringify(state?.calls?.open ?? []),
-      ]);
-    }
-    const widths = table[0].map((_, i) => Math.max(...table.map((row) => row[i].length)));
-    for (const row of table) {
-      console.log(row.map((cell, i) => cell.padEnd(widths[i])).join("  "));
+    const table = [
+      ["state", "vault", "week", "folder control", "books armed", "restores"],
+    ];
+    const row = (name, state) => [
+      name,
+      state?.vaultName ?? "—",
+      state?.weekStart?.active ?? "—",
+      state?.folderRow?.button?.label ?? "—",
+      (state?.books ?? []).map((entry) => `${entry.label}:${entry.toggle?.checked}`).join(" "),
+      show(state?.calls?.restore ?? []),
+    ];
+    table.push(row("landing", states.landing));
+    table.push(row("week start", states.weekStart));
+    table.push(row("books armed", states.booksArmed));
+    table.push(row("books restored", states.booksRestored));
+    table.push(row("folder cancelled", states.folderCancelled));
+    table.push(row("open in flight", states.folderInFlight));
+    table.push(row("switched", states.switched));
+    table.push(row("open refused", states.folderRefused));
+    table.push(row("week locked", states.weekLocked));
+    const widths = table[0].map((_, i) => Math.max(...table.map((cells) => cells[i].length)));
+    for (const cells of table) {
+      console.log(cells.map((cell, i) => cell.padEnd(widths[i])).join("  "));
     }
     console.log("");
   }

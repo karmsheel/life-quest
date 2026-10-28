@@ -1,0 +1,233 @@
+/* —— Vault switcher ————————————————————————————————————————————————
+   The popup raised by the titlebar's vault chip. Styles live here rather than
+   in global.css so the two writers of this branch never touch the same sheet:
+   the settings polish owns global.css, this file owns the switcher. */
+
+/* The chip became a button in this change, and its shape is declared in
+   global.css. The `@import` that pulls this sheet in sits above those rules, so
+   a plain `.window-titlebar__vault` here would lose the cascade to the chip's
+   own rule; the extra `.window-titlebar` step lets the button-only resets win.
+   What is reset is exactly the platform button chrome the old link never wore:
+   the UA's outset border and its UI font. Everything else — the accent fill, the
+   full strip height, the square corners — is the chip's own recipe in global.css
+   and stays there. */
+.window-titlebar .window-titlebar__vault {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+}
+
+/* The caret reads as "this opens something" beside a name that would otherwise
+   look like a label. Quiet at rest so the vault's name keeps the chip. */
+.window-titlebar__vault-chevron {
+  flex: 0 0 auto;
+  margin-left: 0.28rem;
+  opacity: 0.72;
+}
+
+/* The name is now a flex item inside the chip rather than the chip's own text,
+   so the cut-off that used to happen at the chip's edge has to be asked for on
+   the name itself: a long vault name ellipsizes instead of shoving the caret
+   out of the chip. */
+.window-titlebar__vault-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Above the shell's panes and their sheets (50) and above the app's confirm
+   dialog (60): the chip that raises this sits in the window chrome, so the
+   popup has to clear every surface the window itself can paint under it. Below
+   the update dialog (70), the one modal that owns the window while an installer
+   runs and must never be covered. */
+.vault-switcher-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+
+/* The same in-window modal material as the confirm and update dialogs: a card
+   step above the page (--card, like menus and popovers), the studio's 12px step,
+   and the one soft shadow the dialog layer carries. */
+.vault-switcher {
+  width: min(30rem, 100%);
+  max-height: min(80vh, 40rem);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  padding: 1.05rem 1.15rem 1.15rem;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Focus is moved here programmatically on open; the card is labelled by its own
+   title, so a ring drawn around the whole dialog would only be decoration. */
+.vault-switcher:focus {
+  outline: none;
+}
+
+.vault-switcher__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.vault-switcher__title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.vault-switcher__hint {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+/* A quiet square at the card's trailing corner: the dialog's second dismissal,
+   beside Escape and the scrim, and never the emphasised control. */
+.vault-switcher__close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.vault-switcher__close:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--muted-surface);
+  color: var(--fg);
+}
+
+.vault-switcher__close:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* The provider's own words for a refused folder, in the space the operator is
+   already looking at, so a failed switch is not a dialog that closes onto a
+   screen that looks unchanged. */
+.vault-switcher__error {
+  margin: 0 0 0.7rem;
+}
+
+.vault-switcher__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A row is the vault's name over its path — the two things that tell two vaults
+   with the same name apart. The hairline keeps the rows distinct without a
+   second card; the card above is the one frame (One Frame Per Card). */
+.vault-switcher__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vault-switcher__row:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--muted-surface);
+}
+
+/* The open vault's row is a status, not a switch: it wears the accent tint the
+   titlebar chip wears, and its disabled state is the chip's own fact rather
+   than a wait. Rows closed by a running switch fade instead. */
+.vault-switcher__row[aria-current="true"] {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.vault-switcher__row:disabled:not([aria-current="true"]) {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.vault-switcher__row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.vault-switcher__row-name {
+  overflow: hidden;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A path can be long and has to stay copyable-looking: the app's mono stack, one
+   line, cut at the end. */
+.vault-switcher__row-path {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-switcher__current {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--accent);
+  background: var(--card);
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.vault-switcher__empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.vault-switcher__actions {
+  display: flex;
+  margin-top: 0.85rem;
+}
+
+/* Full width on purpose: when the recents list is short or empty this is the
+   dialog's way out, and a narrow right-aligned control would read as a footnote
+   to a list that is not there. */
+.vault-switcher__open-folder {
+  width: 100%;
+  justify-content: center;
+}
