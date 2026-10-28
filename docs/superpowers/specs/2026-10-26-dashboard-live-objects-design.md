@@ -80,9 +80,11 @@ An aggregate result now carries, from the same run:
   latest), which a metric draws;
 - `series` / `seriesRows`: the per-series detail when `seriesBy` split a group.
 
-The card's per-object tabs therefore write only `presentation`. The operator's
-click can no longer change the query, and a drawing the data cannot hold (a
-chart of a row object) is not offered.
+The switch is now a small menu behind one control on each object, not a row of
+tabs: the object IS the drawing the operator asked for, so the alternatives are
+an option rather than furniture on the card. Choosing one writes only
+`presentation`. The operator's click can no longer change the query, and a
+drawing the data cannot hold (a chart of a row object) is not offered.
 
 ## 4. Series and display
 

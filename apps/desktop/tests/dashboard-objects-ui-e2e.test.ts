@@ -58,11 +58,12 @@ function runDriver(): Promise<number> {
 
 type Sample = {
   title: string | null;
+  visibleDrawings: number;
   blockCount: number;
   monthsTable: { headers: string[]; rows: string[][] } | null;
   monthsBars: number;
   monthsLines: number;
-  monthsTools: string[];
+  monthsMenus: number;
   trend: {
     lines: number;
     dots: number;
@@ -114,6 +115,9 @@ describe("dashboard objects UI e2e", () => {
     const initial = report.checks.initial;
     // Five OBJECTS in one card, each drawn as itself.
     assert.equal(initial.blockCount, 5);
+    // The switch is a menu on the object, not a row of tabs across it.
+    assert.equal(initial.visibleDrawings, 0, "the drawing tabs are visible on the card");
+    assert.equal(initial.monthsMenus, 1, "the months object has no display control");
     assert.deepEqual(initial.monthsTable?.headers, ["Month", "Food", "Travel", "Rent", "Total (ZAR)"]);
     assert.equal(initial.monthsTable?.rows.length, 4);
     assert.deepEqual(initial.monthsTable?.rows[0], ["2026-06", "100", "100", "—", "200"]);

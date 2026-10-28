@@ -75,12 +75,15 @@ const SAMPLE = `(() => {
   const captions = (el) => el ? Array.from(el.querySelectorAll(".view-card__axis-caption")).map((t) => t.textContent.trim()) : [];
   return {
     title: card ? card.querySelector(".view-card__title")?.textContent ?? null : null,
+    // No drawing tabs are ever visible on the card: they exist only inside an
+    // object's menu, which this counts while every menu is closed.
+    visibleDrawings: document.querySelectorAll("[data-testid='view-block-tool']").length,
     blockCount: blocks.length,
     blockTitles: blocks.map((b) => b.querySelector(".view-card__block-title")?.textContent?.trim() ?? null),
     monthsTable: tableData(months),
     monthsBars: months ? months.querySelectorAll(".view-card__bar").length : 0,
     monthsLines: months ? months.querySelectorAll(".view-card__polyline, .view-card__line").length : 0,
-    monthsTools: months ? Array.from(months.querySelectorAll(".view-card__tool")).map((b) => b.getAttribute("data-presentation")) : [],
+    monthsMenus: months ? months.querySelectorAll("[data-testid='view-block-display-menu']").length : 0,
     trend: trend ? {
       lines: trend.querySelectorAll("polyline").length,
       dots: trend.querySelectorAll(".view-card__dot").length,
@@ -129,12 +132,35 @@ async function sample(win) {
   return win.webContents.executeJavaScript(SAMPLE);
 }
 
+/** The object's block element, by its visible title. */
+function blockByTitleScript(title) {
+  return `Array.from(document.querySelectorAll(".view-card__block")).find((b) => (b.querySelector(".view-card__block-title")?.textContent ?? "").trim() === ${JSON.stringify(title)})`;
+}
+
+/**
+ * Pick a drawing from one object's display menu.
+ *
+ * The switch is a popover behind one small control now, so this opens the
+ * object's menu and clicks the item the way the operator would. The menu closes
+ * itself on the pick and the card redraws.
+ */
 async function pick(win, title, presentation) {
+  const opened = await win.webContents.executeJavaScript(`(() => {
+    const block = ${blockByTitleScript(title)};
+    const trigger = block ? block.querySelector("[data-testid='view-block-display-menu']") : null;
+    if (!trigger) return false;
+    trigger.click();
+    return true;
+  })()`);
+  if (!opened) throw new Error(`${title} has no display menu`);
+  await waitFor(
+    win,
+    `Boolean(${blockByTitleScript(title)}?.querySelector("[data-testid='view-block-tool']"))`,
+    `${title}'s display menu`,
+  );
   const clicked = await win.webContents.executeJavaScript(`(() => {
-    const blocks = Array.from(document.querySelectorAll(".view-card__block"));
-    const block = blocks.find((b) => (b.querySelector(".view-card__block-title")?.textContent ?? "").trim() === ${JSON.stringify(title)});
-    if (!block) return false;
-    const btn = Array.from(block.querySelectorAll(".view-card__tool")).find((b) => b.getAttribute("data-presentation") === ${JSON.stringify(presentation)});
+    const block = ${blockByTitleScript(title)};
+    const btn = Array.from(block.querySelectorAll("[data-testid='view-block-tool']")).find((b) => b.getAttribute("data-presentation") === ${JSON.stringify(presentation)});
     if (!btn || btn.disabled) return false;
     btn.click();
     return true;
@@ -142,12 +168,38 @@ async function pick(win, title, presentation) {
   if (!clicked) throw new Error(`no usable ${presentation} switch on ${title}`);
 }
 
+/** Open one object's menu, read its items, and close it again. */
+async function menuItems(win, title) {
+  const opened = await win.webContents.executeJavaScript(`(() => {
+    const block = ${blockByTitleScript(title)};
+    const trigger = block ? block.querySelector("[data-testid='view-block-display-menu']") : null;
+    if (!trigger) return false;
+    trigger.click();
+    return true;
+  })()`);
+  if (!opened) return null;
+  await waitFor(
+    win,
+    `Boolean(${blockByTitleScript(title)}?.querySelector("[data-testid='view-block-tool']"))`,
+    `${title}'s display menu`,
+  );
+  const items = await win.webContents.executeJavaScript(`(() =>
+    Array.from(${blockByTitleScript(title)}.querySelectorAll("[data-testid='view-block-tool']")).map((b) => b.getAttribute("data-presentation"))
+  )()`);
+  await win.webContents.executeJavaScript(`(() => {
+    const block = ${blockByTitleScript(title)};
+    block.querySelector("[data-testid='view-block-display-menu']")?.click();
+    return true;
+  })()`);
+  return items;
+}
+
 async function main() {
   nativeTheme.themeSource = "dark";
   const partition = `dashboard-objects-${Date.now()}`;
   const win = new BrowserWindow({
     width: 1280,
-    height: 1000,
+    height: 1500,
     show: false,
     backgroundColor: "#1a1917",
     webPreferences: {
@@ -157,7 +209,7 @@ async function main() {
       backgroundThrottling: false,
     },
   });
-  win.setContentSize(1280, 1000);
+  win.setContentSize(1280, 1500);
   win.showInactive();
 
   const consoleErrors = [];
@@ -294,16 +346,31 @@ async function main() {
 
     // A drawing the object cannot hold is not offered: the raw listing has no
     // chart switch, because a chart of rows is an aggregate it does not have.
-    const rowsTools = await win.webContents.executeJavaScript(`(() => {
-      const b = Array.from(document.querySelectorAll(".view-card__block")).find((x) => (x.querySelector(".view-card__block-title")?.textContent ?? "").trim() === "The rows themselves");
-      return b ? Array.from(b.querySelectorAll(".view-card__tool")).map((x) => x.getAttribute("data-presentation")) : null;
-    })()`);
+    const rowsTools = await menuItems(win, "The rows themselves");
     checks.rowsTools = rowsTools;
     if (JSON.stringify(rowsTools) !== JSON.stringify(["list", "table"])) {
       failure(`the raw listing offered ${JSON.stringify(rowsTools)}, expected list and table`);
     }
 
     if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
+
+    // The artifact shows the hidden switch OPEN on the raw listing, because that
+    // is the interaction this revision changed. Scroll to the top first: the
+    // card is taller than the fold, and the earlier clicks left the window
+    // scrolled to the menu that was open.
+    await win.webContents.executeJavaScript(`(() => {
+      const block = ${blockByTitleScript("The rows themselves")};
+      block?.querySelector("[data-testid='view-block-display-menu']")?.click();
+      window.scrollTo(0, 0);
+      return true;
+    })()`);
+    await waitFor(
+      win,
+      `Boolean(${blockByTitleScript("The rows themselves")}?.querySelector("[data-testid='view-block-tool']"))`,
+      "the display menu in the screenshot",
+    );
+    await win.webContents.executeJavaScript("window.scrollTo(0, 0); true");
+    await new Promise((resolve) => setTimeout(resolve, 120));
 
     const image = await win.webContents.capturePage();
     fs.mkdirSync(artifactsDir, { recursive: true });

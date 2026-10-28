@@ -199,12 +199,10 @@ function Harness({
     const report = () => {
       const blocks = Array.from(document.querySelectorAll(".view-card__block")).map((el) => ({
         title: el.querySelector(".view-card__block-title")?.textContent ?? null,
-        active: Array.from(el.querySelectorAll(".view-card__tool"))
-          .filter((b) => b.getAttribute("aria-pressed") === "true")
-          .map((b) => b.getAttribute("data-presentation")),
-        tools: Array.from(el.querySelectorAll(".view-card__tool")).map((b) =>
-          b.getAttribute("data-presentation"),
-        ),
+        // The drawing is on the block itself, so this reading survives a closed
+        // display menu — and a save, which is when this channel is read.
+        active: [el.getAttribute("data-presentation")].filter(Boolean),
+        menus: el.querySelectorAll("[data-testid='view-block-display-menu']").length,
         tableRows: el.querySelectorAll(".view-card__table tbody tr").length,
         bars: el.querySelectorAll(".view-card__bar").length,
         metric: el.querySelector(".view-card__metric")?.textContent ?? null,

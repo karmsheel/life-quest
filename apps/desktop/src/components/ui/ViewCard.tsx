@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, SlidersHorizontal } from "lucide-react";
 import type {
   ComposedViewRunResult,
   DatabaseMeta,
@@ -40,16 +41,18 @@ import {
  * can create a table but must never invent its look. Everything here comes from
  * tokens, so a skin repaint reaches a saved view automatically.
  *
- * Editing (2026-10-08, second pass; made non-destructive 2026-10-26): each
- * object carries a quiet row of presentation controls, so "show me this as a bar
- * chart instead" is a click rather than a request to the companion. The switch
- * changes ONLY `presentation` through `view-block-edit.ts` and saves the same
- * card in place, so the operator's edit and the companion's edit go through one
- * writer (`view:save` with the view's own id) and cannot drift. It must not
- * retarget the query: doing that is how a one-number "Spending by month" object
- * became one bar per transaction date and then a table of plain transactions.
- * `editable` is false on a locked dashboard: the board's page lock governs the
- * cards on it, for the operator as much as for the agent.
+ * Editing (2026-10-08, second pass; a hidden menu 2026-10-28): each object
+ * carries one small control that opens the drawings it can take. The object is
+ * already the drawing the operator asked for — they should not be invited to
+ * turn their table into a chart unless they ask — so the alternatives live
+ * behind that control and the companion remains the normal way to change one.
+ * The switch changes ONLY `presentation` through `view-block-edit.ts` and saves
+ * the same card in place, so the operator's edit and the companion's edit go
+ * through one writer (`view:save` with the view's own id) and cannot drift. It
+ * must not retarget the query: doing that is how a one-number "Spending by
+ * month" object became one bar per transaction date and then a table of plain
+ * transactions. `editable` is false on a locked dashboard: the board's page lock
+ * governs the cards on it, for the operator as much as for the agent.
  */
 
 type RunState =
@@ -266,13 +269,16 @@ export function ViewCard({
             ]
               .filter(Boolean)
               .join(" ")}
+            // The drawing is this object's own fact, and it stays readable from
+            // the DOM even while the menu that can change it is closed.
+            data-presentation={block.presentation}
           >
             <div className="view-card__block-head">
               {showBlockTitles ? (
                 <h3 className="view-card__block-title">{block.title}</h3>
               ) : null}
               {editable && block.spec ? (
-                <BlockPresentationControls
+                <BlockDisplayMenu
                   block={block}
                   db={db}
                   busy={saving === block.id}
@@ -299,20 +305,20 @@ export function ViewCard({
 }
 
 /**
- * The ways a block can be displayed, as one quiet row.
+ * How an object is drawn, hidden behind one small control.
  *
- * A switch that cannot be expressed against this database — a line with no date
- * column to group by — is drawn disabled rather than hidden: the operator should
- * be able to see that the option exists and is not available here, and a control
- * that disappears is a control they will report as a bug.
+ * The object IS its drawing: an operator who asked for "a bar chart of spending
+ * by month" has a bar chart, not a tab row inviting them to turn it into four
+ * other things. The four drawings are the same dataset, so the switch is safe —
+ * it changes nothing but the drawing — but it is a behind-the-scenes option,
+ * not furniture on the card. The companion is the normal way to change it;
+ * this menu is for the operator who wants it now.
  *
- * Which is also why a panel that is NOT one of the four aggregates shows its own
- * shape as well. A listing is not a thing this switch moves between — it names
- * its own columns, and an aggregate has none to move back with — so it is drawn
- * marked and unclickable. Without it, a listing's row of four unmarked buttons
- * says "none of these", which is the one thing that is certainly not true.
+ * A row object offers only list and table, because those are its two captions;
+ * an aggregate offers all four. An object with nothing to switch between draws
+ * no control at all.
  */
-function BlockPresentationControls({
+function BlockDisplayMenu({
   block,
   db,
   busy,
@@ -323,40 +329,98 @@ function BlockPresentationControls({
   busy: boolean;
   onPick: (target: ViewPresentation) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const available = availablePresentations(block.spec as ViewBlock, db);
-  // Only the shapes this object's DATA can actually take. A row object offers
-  // list and table because those are the same rows; it does not offer a chart,
-  // because a chart of rows is an aggregate the object does not have — and a
-  // button that cannot work is a button the operator reports as a bug.
-  const shapes = available;
+
+  // Escape closes and returns the operator to the control they opened; a click
+  // anywhere else closes without stealing focus. Both listeners are on the
+  // document because the menu is a popover over the card, not a page of its own.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    // The current drawing is the item the operator wants to see first.
+    const current =
+      menuRef.current?.querySelector<HTMLElement>('[aria-checked="true"]') ??
+      menuRef.current?.querySelector<HTMLElement>("[role=menuitemradio]");
+    current?.focus();
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  if (available.length <= 1) return null;
+
   return (
-    <div
-      className="view-card__tools"
-      role="group"
-      aria-label={`How ${block.title} is displayed`}
-    >
-      {shapes.map((p) => {
-        const active = block.presentation === p;
-        return (
-          <button
-            key={p}
-            type="button"
-            className={`view-card__tool${active ? " is-active" : ""}`}
-            aria-pressed={active}
-            data-testid="view-block-tool"
-            data-presentation={p}
-            disabled={busy || active}
-            title={
-              active
-                ? `${block.title} is drawn as a ${presentationLabel(p).toLowerCase()}`
-                : `Show ${block.title} as a ${presentationLabel(p).toLowerCase()} — the data does not change`
-            }
-            onClick={() => onPick(p)}
-          >
-            {presentationLabel(p)}
-          </button>
-        );
-      })}
+    <div className="view-card__display" ref={wrapRef}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="view-card__display-trigger"
+        data-testid="view-block-display-menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Change how ${block.title} is displayed`}
+        title="Change how this is displayed"
+        disabled={busy}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <SlidersHorizontal size={12} strokeWidth={2} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div
+          ref={menuRef}
+          className="view-card__display-menu"
+          role="menu"
+          aria-label={`How ${block.title} is displayed`}
+        >
+          <p className="view-card__display-menu-title">Show as</p>
+          {available.map((presentation) => {
+            const active = block.presentation === presentation;
+            return (
+              <button
+                key={presentation}
+                type="button"
+                role="menuitemradio"
+                aria-checked={active}
+                className={`view-card__display-item${active ? " is-active" : ""}`}
+                data-testid="view-block-tool"
+                data-presentation={presentation}
+                disabled={busy}
+                title={
+                  active
+                    ? `${block.title} is drawn as a ${presentationLabel(presentation).toLowerCase()}`
+                    : `Show ${block.title} as a ${presentationLabel(presentation).toLowerCase()} — the data does not change`
+                }
+                onClick={() => {
+                  setOpen(false);
+                  if (!active) onPick(presentation);
+                }}
+              >
+                <Check
+                  size={11}
+                  strokeWidth={2.5}
+                  className="view-card__display-check"
+                  aria-hidden="true"
+                />
+                {presentationLabel(presentation)}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }

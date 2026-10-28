@@ -7387,7 +7387,7 @@ button.chat-panel__activity-line:hover {
    to the panel it changes, and the heading is what names it. */
 .view-card__block-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   min-height: 1.1rem;
@@ -7397,42 +7397,114 @@ button.chat-panel__activity-line:hover {
   margin-bottom: 0.4rem;
 }
 
-/* Four quiet text controls. They sit at the panel's own scale — smaller than
-   anything the card says — because a card is the operator's data, not a form. */
-.view-card__tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.15rem;
+/* The drawing switch is one small control, not a row of tabs. The object is
+   already the drawing the operator asked for; this is the quiet way to change
+   it, and the companion is the normal way. The menu is a popover over the card,
+   so it costs the card no layout and no visible vocabulary. */
+.view-card__display {
+  position: relative;
+  align-self: flex-start;
   margin-bottom: 0.4rem;
 }
 
-.view-card__tool {
-  padding: 0.05rem 0.35rem;
+.view-card__display-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--text-soft);
-  font: inherit;
-  font-size: 0.66rem;
-  letter-spacing: 0.04em;
   cursor: pointer;
 }
 
-.view-card__tool:hover:not(:disabled) {
+.view-card__display-trigger:hover:not(:disabled),
+.view-card__display-trigger[aria-expanded="true"] {
   border-color: var(--border-soft);
-  color: var(--foreground);
-}
-
-.view-card__tool.is-active {
-  border-color: var(--border);
   background: var(--muted-surface);
   color: var(--foreground);
+}
+
+.view-card__display-trigger:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.view-card__display-trigger:disabled {
+  opacity: 0.45;
   cursor: default;
 }
 
-.view-card__tool:disabled {
-  opacity: 0.45;
+.view-card__display-menu {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 7.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-sm);
+}
+
+.view-card__display-menu-title {
+  margin: 0.1rem 0.4rem 0.2rem;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.view-card__display-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.4rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--popover-foreground);
+  font: inherit;
+  font-size: 0.72rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.view-card__display-item:hover:not(:disabled) {
+  background: var(--muted-surface);
+}
+
+.view-card__display-item:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: -1px;
+}
+
+.view-card__display-item.is-active {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.view-card__display-item:disabled {
+  opacity: 0.5;
   cursor: default;
+}
+
+.view-card__display-check {
+  flex: 0 0 auto;
+  opacity: 0;
+}
+
+.view-card__display-item.is-active .view-card__display-check {
+  opacity: 1;
 }
 
 .view-card__edit-error {

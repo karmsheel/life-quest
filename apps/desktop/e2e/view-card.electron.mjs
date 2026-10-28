@@ -114,15 +114,10 @@ const SAMPLE = `(() => {
       bars: b.querySelectorAll(".view-card__bar").length,
       lines: b.querySelectorAll(".view-card__line").length,
       empty: b.querySelector(".view-card__empty") ? b.querySelector(".view-card__empty").textContent : null,
-      // The operator's own switches for this panel: which one is on, and which
-      // ones this database can actually express.
-      tools: Array.from(b.querySelectorAll(".view-card__tool")).map((btn) => ({
-        presentation: btn.getAttribute("data-presentation"),
-        label: (btn.textContent || "").trim(),
-        active: btn.getAttribute("aria-pressed") === "true",
-        disabled: btn.disabled,
-        title: btn.getAttribute("title"),
-      })),
+      // The drawing switch is a menu, so its items exist only while it is open.
+      // The menus count says whether this panel HAS a switch; the items are read by
+      // opening it, one panel at a time, in the block-tools step below.
+      menus: b.querySelectorAll("[data-testid='view-block-display-menu']").length,
     })),
     bars,
     ticks: Array.from(document.querySelectorAll(".view-card__tick")).map((t) => (t.textContent || "").trim()),
@@ -253,6 +248,70 @@ async function render(win, fixtureKey, fixture) {
     `${fixtureKey} content`,
   );
   return win.webContents.executeJavaScript(SAMPLE);
+}
+
+/**
+ * Open one panel's display menu and read what it offers.
+ *
+ * The switch is deliberately hidden behind one control now, so "which drawings
+ * does this object offer?" is a question about a menu, not about a row of
+ * visible buttons. Each read closes the menu again, because only one is open at
+ * a time and a popover left open would sit over the next step's target.
+ */
+async function menuForPanel(win, index) {
+  const opened = await win.webContents.executeJavaScript(`(() => {
+    const block = document.querySelectorAll(".view-card__block")[${index}];
+    const trigger = block ? block.querySelector("[data-testid='view-block-display-menu']") : null;
+    if (!trigger) return false;
+    trigger.click();
+    return true;
+  })()`);
+  if (!opened) return [];
+  await waitFor(
+    win,
+    `document.querySelectorAll(".view-card__block")[${index}]?.querySelectorAll("[data-testid='view-block-tool']").length > 0`,
+    `panel ${index}'s display menu`,
+  );
+  const items = await win.webContents.executeJavaScript(`(() =>
+    Array.from(document.querySelectorAll(".view-card__block")[${index}].querySelectorAll("[data-testid='view-block-tool']")).map((btn) => ({
+      presentation: btn.getAttribute("data-presentation"),
+      label: (btn.textContent || "").trim(),
+      active: btn.getAttribute("aria-checked") === "true",
+      disabled: btn.disabled,
+      title: btn.getAttribute("title"),
+    }))
+  )()`);
+  // Close it the same way the operator does: the control that opened it.
+  await win.webContents.executeJavaScript(`(() => {
+    const block = document.querySelectorAll(".view-card__block")[${index}];
+    block.querySelector("[data-testid='view-block-display-menu']")?.click();
+    return true;
+  })()`);
+  return items;
+}
+
+/** Click one drawing in a panel's menu: open, pick, wait for the card to redraw. */
+async function pickInPanel(win, index, presentation) {
+  const opened = await win.webContents.executeJavaScript(`(() => {
+    const block = document.querySelectorAll(".view-card__block")[${index}];
+    block?.querySelector("[data-testid='view-block-display-menu']")?.click();
+    return true;
+  })()`);
+  if (!opened) return false;
+  await waitFor(
+    win,
+    `Boolean(document.querySelectorAll(".view-card__block")[${index}]?.querySelector("[data-testid='view-block-tool']"))`,
+    `panel ${index}'s display menu`,
+  );
+  return win.webContents.executeJavaScript(`(() => {
+    const block = document.querySelectorAll(".view-card__block")[${index}];
+    const item = Array.from(block.querySelectorAll("[data-testid='view-block-tool']")).find(
+      (b) => b.getAttribute("data-presentation") === ${JSON.stringify(presentation)}
+    );
+    if (!item || item.disabled) return false;
+    item.click();
+    return true;
+  })()`);
 }
 
 // KAR-V fixtures: the SavedView + run result pairs the card reads over IPC.
@@ -694,44 +753,37 @@ async function main() {
   at("9 block tools");
   await win.webContents.executeJavaScript(`window.viewCardSetEditable(false)`);
   const readOnly = await render(win, READONLY_KEY, READONLY_FIXTURE);
-  checks.readOnlyTools = readOnly.blocks.map((b) => b.tools.length);
-  if (readOnly.blocks.some((b) => b.tools.length > 0)) {
-    failure("a read-only card still drew block switches");
+  checks.readOnlyTools = readOnly.blocks.map((b) => b.menus);
+  if (readOnly.blocks.some((b) => b.menus > 0)) {
+    failure("a read-only card still drew a display menu");
   }
   await win.webContents.executeJavaScript(`window.viewCardSetEditable(true)`);
 
   const toolsCard = await render(win, TOOLS_KEY, TOOLS_FIXTURE);
-  checks.blockTools = toolsCard.blocks.map((b) => b.tools);
   const panels = toolsCard.blocks;
   if (panels.length !== 3) failure(`the composed card drew ${panels.length} panels, expected 3`);
-  for (const [index, panel] of panels.entries()) {
-    const offered = panel.tools.map((t) => t.presentation);
+  // The switch is hidden behind one small control per object, so the list of
+  // drawings is read by opening that control — one panel at a time.
+  const panelMenus = [];
+  for (let index = 0; index < panels.length; index += 1) {
+    panelMenus.push(await menuForPanel(win, index));
+  }
+  checks.blockTools = panelMenus;
+  for (const [index, tools] of panelMenus.entries()) {
+    const offered = tools.map((t) => t.presentation);
     if (offered.join(",") !== "metric,table,bar,line") {
       failure(`panel ${index} offers ${offered.join(",")} instead of all four presentations`);
     }
-    const on = panel.tools.filter((t) => t.active).map((t) => t.presentation);
+    const on = tools.filter((t) => t.active).map((t) => t.presentation);
     if (on.length !== 1) failure(`panel ${index} marks ${on.length} presentations as current, expected 1`);
   }
-  // The disabled state is driven by the database's own column types, not by a
-  // guess: this fixture has a date column, so a line IS expressible for a metric
-  // panel, and it must be offered live.
-  const metricLine = panels[0].tools.find((t) => t.presentation === "line");
+  const metricLine = panelMenus[0]?.find((t) => t.presentation === "line");
   if (!metricLine || metricLine.disabled) {
     failure("a metric panel cannot be switched to a line even though the database has a date column");
   }
 
   at("9a click");
-  const clickedBar = await win.webContents.executeJavaScript(
-    `(() => {
-      const block = document.querySelectorAll(".view-card__block")[1];
-      const btn = Array.from(block.querySelectorAll(".view-card__tool")).find(
-        (b) => b.getAttribute("data-presentation") === "bar"
-      );
-      if (!btn || btn.disabled) return false;
-      btn.click();
-      return true;
-    })()`,
-  );
+  const clickedBar = await pickInPanel(win, 1, "bar");
   if (!clickedBar) failure("the week table's panel offered no usable Bar switch");
   at("9a1 read channels");
   // The save record and the card's own report come from the page's console, not
