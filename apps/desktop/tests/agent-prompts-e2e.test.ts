@@ -231,6 +231,29 @@ describe("companion prompts e2e", () => {
       "the instructions lost the active domain line",
     );
 
+    // ── 6b. the database write split, and the confirmation it depends on ──
+    // Adding data writes at once and changing existing data files a Decision
+    // (operator policy, 2026-10-28). The direct half is only safe because the
+    // instructions require the operator's agreement in the chat first, so both
+    // lines are asserted: losing either changes what the companion does to the
+    // operator's data.
+    checks.instructionsDatabaseSplit =
+      text.includes("ADDING DATA is written at once") &&
+      text.includes("upsert_row WITH an id") &&
+      text.includes("applied: true");
+    assert.equal(
+      checks.instructionsDatabaseSplit,
+      true,
+      "the instructions lost the direct-write / Decision split",
+    );
+    checks.instructionsNeedsChatConfirmation =
+      text.includes("only after the operator has agreed in this chat");
+    assert.equal(
+      checks.instructionsNeedsChatConfirmation,
+      true,
+      "the instructions do not require the chat's agreement before a direct write",
+    );
+
     // The locked board says the other thing, and the two must not both be true.
     const lockedText = buildInstructions({ ...context, viewingBoardLocked: true });
     checks.lockedLine = /LOCKED/.test(lockedText);
