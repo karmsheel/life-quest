@@ -72,6 +72,7 @@ const SHOTS = {
   list: path.join(artifactsDir, "projects.png"),
   wing: path.join(artifactsDir, "projects-execute-wing.png"),
   detail: path.join(artifactsDir, "projects-detail.png"),
+  modal: path.join(artifactsDir, "projects-new-modal.png"),
 };
 
 const errors = [];
@@ -100,6 +101,20 @@ const SAMPLE = `(() => {
   const text = (el) => (el && el.textContent ? el.textContent.trim() : null);
   const attr = (el, name) => (el ? el.getAttribute(name) : null);
   const value = (el) => (el && typeof el.value === "string" ? el.value : null);
+  const rect = (el) => {
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      left: round(r.left),
+      top: round(r.top),
+      right: round(r.right),
+      bottom: round(r.bottom),
+      width: round(r.width),
+      height: round(r.height),
+      centerX: round(r.left + r.width / 2),
+      centerY: round(r.top + r.height / 2),
+    };
+  };
   const byTestId = (id) => document.querySelector('[data-testid="' + id + '"]');
   const page = document.querySelector("[data-page-context-root]");
   const links = (group) =>
@@ -164,6 +179,13 @@ const SAMPLE = `(() => {
 
   const content = document.querySelector(".shell__content");
   const detail = byTestId("project-detail");
+  const newButton = byTestId("project-new");
+  const heading = page && page.querySelector(".act-page__title");
+  const header = page && page.querySelector(".act-page__header");
+  const dialog = byTestId("project-create-modal");
+  const backdrop = byTestId("project-create-backdrop");
+  const form = byTestId("project-create");
+  const labelledBy = dialog ? attr(dialog, "aria-labelledby") : null;
 
   return {
     route: window.projectsHarnessRoute ?? null,
@@ -175,6 +197,44 @@ const SAMPLE = `(() => {
     pageHeading: text(page && page.querySelector("h1")),
     eyebrow: text(page && page.querySelector(".act-page__eyebrow")),
     count: text(page && page.querySelector(".projects-page__count")),
+    headingRect: rect(heading),
+    headerRect: rect(header),
+    newButton: newButton
+      ? {
+          label: text(newButton),
+          type: attr(newButton, "type"),
+          rect: rect(newButton),
+          inHeader: Boolean(header && header.contains(newButton)),
+        }
+      : null,
+    formPresent: Boolean(form),
+    modal: dialog
+      ? {
+          rect: rect(dialog),
+          role: attr(dialog, "role"),
+          ariaModal: attr(dialog, "aria-modal"),
+          labelledBy,
+          labelledText: labelledBy ? text(document.getElementById(labelledBy)) : null,
+          backdrop: Boolean(backdrop),
+          backdropRect: rect(backdrop),
+          backdropCoversViewport: backdrop
+            ? (() => {
+                const r = backdrop.getBoundingClientRect();
+                return (
+                  r.left <= 1 &&
+                  r.top <= 1 &&
+                  r.right >= window.innerWidth - 1 &&
+                  r.bottom >= window.innerHeight - 1
+                );
+              })()
+            : false,
+          formInside: Boolean(
+            form && form.closest('[data-testid="project-create-modal"]') === dialog,
+          ),
+          formPresent: Boolean(form),
+          focused: document.activeElement?.getAttribute?.("data-testid") ?? null,
+        }
+      : null,
     rows,
     filters: Array.from(document.querySelectorAll('[data-testid^="project-filter-"]')).map((b) => ({
       id: b.dataset.testid ?? null,
@@ -322,6 +382,88 @@ async function main() {
     return file;
   };
 
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  /** The real Escape key, at whichever control has the caret. */
+  const pressEscape = async () => {
+    win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+    win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+    await sleep(120);
+  };
+
+  /**
+   * A real pointer press on the scrim itself: the click has to land on the
+   * backdrop element, not on the dialog card, or the "click outside closes"
+   * path is not the path under test.
+   */
+  const clickBackdrop = async () => {
+    // The window's own title bar paints above the scrim, so the point has to be
+    // chosen by hit test rather than assumed: any point that really is the
+    // backdrop is a click outside the dialog.
+    const point = await run(`(() => {
+      const backdrop = document.querySelector('[data-testid="project-create-backdrop"]');
+      if (!backdrop) return null;
+      const r = backdrop.getBoundingClientRect();
+      const candidates = [
+        [r.left + 8, r.bottom - 8],
+        [r.right - 8, r.bottom - 8],
+        [r.left + 8, r.top + r.height / 2],
+        [r.right - 8, r.top + r.height / 2],
+        [r.left + 8, r.top + 8],
+      ];
+      for (const [x, y] of candidates) {
+        const hit = document.elementFromPoint(x, y);
+        if (hit && (hit === backdrop || backdrop.contains(hit))) {
+          return { x, y, lands: true };
+        }
+      }
+      return { x: r.left + 8, y: r.bottom - 8, lands: false };
+    })()`);
+    if (!point) throw new Error("the modal's backdrop is not on screen");
+    if (!point.lands) throw new Error("the backdrop is not hit-testable anywhere clear of the dialog");
+    win.webContents.sendInputEvent({
+      type: "mouseDown",
+      x: Math.round(point.x),
+      y: Math.round(point.y),
+      button: "left",
+      clickCount: 1,
+    });
+    await sleep(30);
+    win.webContents.sendInputEvent({
+      type: "mouseUp",
+      x: Math.round(point.x),
+      y: Math.round(point.y),
+      button: "left",
+      clickCount: 1,
+    });
+    await sleep(160);
+  };
+
+  /** Open the new-project modal from the heading's button and wait for the form. */
+  const openModal = async () => {
+    if (!(await clickTestId("project-new"))) throw new Error("no New project button to click");
+    await waitFor(
+      `Boolean(document.querySelector('[data-testid="project-create-modal"]'))`,
+      "the new-project modal to open",
+    );
+    await waitFor(
+      `document.activeElement?.getAttribute?.("data-testid") === "project-create-title"`,
+      "the title field to take focus",
+    );
+  };
+
+  /** Wait for the modal to leave the DOM and the heading button to get focus back. */
+  const waitForModalClosed = async (label) => {
+    await waitFor(
+      `document.querySelector('[data-testid="project-create-modal"]') === null`,
+      `${label}: the modal to close`,
+    );
+    await waitFor(
+      `document.activeElement?.getAttribute?.("data-testid") === "project-new"`,
+      `${label}: focus to return to the New project button`,
+    );
+  };
+
   const bridgeCall = (calls, method) => calls.filter((call) => call.method === method);
 
   const timeout = setTimeout(() => {
@@ -364,6 +506,41 @@ async function main() {
       "page-eyebrow",
       initial.eyebrow === "Execute" && initial.pageHeading === "Projects",
       `eyebrow ${JSON.stringify(initial.eyebrow)}, heading ${JSON.stringify(initial.pageHeading)}`,
+    );
+
+    // The "New project" button is part of the heading row, read as boxes: it
+    // overlaps the h1 vertically, sits to its right, and its centre is on the
+    // h1's centre line — not in some section further down the page.
+    const button = initial.newButton;
+    const h1 = initial.headingRect;
+    const headerBox = initial.headerRect;
+    const overlapsHeading =
+      button && h1 ? button.rect.top < h1.bottom && button.rect.bottom > h1.top : false;
+    const rightOfHeading = button && h1 ? button.rect.left >= h1.right - 1 : false;
+    const centredOnHeading = button && h1 ? Math.abs(button.rect.centerY - h1.centerY) <= 6 : false;
+    const insideHeader =
+      button && headerBox
+        ? button.rect.left >= headerBox.left - 1 &&
+          button.rect.right <= headerBox.right + 1 &&
+          button.rect.top >= headerBox.top - 1 &&
+          button.rect.bottom <= headerBox.bottom + 1
+        : false;
+    check(
+      "new-project-inline",
+      Boolean(button) &&
+        button.label === "New project" &&
+        button.type === "button" &&
+        button.inHeader &&
+        insideHeader &&
+        overlapsHeading &&
+        rightOfHeading &&
+        centredOnHeading,
+      `button ${JSON.stringify(button)}, h1 ${JSON.stringify(h1)}, header ${JSON.stringify(headerBox)}`,
+    );
+    check(
+      "modal-closed-by-default",
+      initial.formPresent === false && initial.modal === null,
+      `form present ${initial.formPresent}, modal ${JSON.stringify(initial.modal)}`,
     );
     check(
       "list-count",
@@ -574,8 +751,146 @@ async function main() {
       `overflow ${JSON.stringify(logged.overflow)}`,
     );
 
+    // ── the New-project button and its modal, on the register ──────────────
+    // Back from the project page first: the heading's button belongs to the
+    // register, and the modal is the register's one create path now.
+    await clickTestId("project-back");
+    await waitFor(`window.projectsHarnessRoute === "/projects"`, "the register after Back");
+    await waitFor(`document.querySelectorAll('[data-testid="project-row"]').length === 4`, "the register's four rows");
+    win.setContentSize(SIZE.width, SIZE.height);
+    await sleep(220);
+
+    await openModal();
+    await sleep(120);
+    const opened = await sample();
+    check(
+      "modal-opens",
+      opened.modal !== null &&
+        opened.modal?.role === "dialog" &&
+        opened.modal?.ariaModal === "true" &&
+        opened.modal?.labelledBy === "new-project-title" &&
+        opened.modal?.labelledText === "New project" &&
+        opened.modal?.backdrop === true &&
+        opened.modal?.backdropCoversViewport === true &&
+        opened.modal?.formInside === true &&
+        opened.modal?.formPresent === true &&
+        opened.modal?.focused === "project-create-title",
+      `modal ${JSON.stringify(opened.modal)}`,
+    );
+    const modalShot = await shoot(SHOTS.modal);
+
+    // Escape closes, and the caret goes back to the button that opened it.
+    await pressEscape();
+    await waitForModalClosed("modal-escape");
+    const escaped = await sample();
+    const escapeFocus = await run(
+      `document.activeElement?.getAttribute?.("data-testid") ?? null`,
+    );
+    check(
+      "modal-escape",
+      escaped.modal === null &&
+        escaped.formPresent === false &&
+        escapeFocus === "project-new",
+      `modal ${JSON.stringify(escaped.modal)}, focus ${JSON.stringify(escapeFocus)}`,
+    );
+
+    // A press on the scrim itself closes it.
+    await openModal();
+    await clickBackdrop();
+    await waitForModalClosed("modal-backdrop");
+    const backdropClosed = await sample();
+    const backdropFocus = await run(
+      `document.activeElement?.getAttribute?.("data-testid") ?? null`,
+    );
+    check(
+      "modal-backdrop",
+      backdropClosed.modal === null &&
+        backdropClosed.formPresent === false &&
+        backdropFocus === "project-new",
+      `modal ${JSON.stringify(backdropClosed.modal)}, focus ${JSON.stringify(backdropFocus)}`,
+    );
+
+    // Cancel closes it too.
+    await openModal();
+    check("modal-cancel-click", await clickTestId("project-create-cancel"), "no Cancel control in the modal");
+    await waitForModalClosed("modal-cancel");
+    const cancelled = await sample();
+    check(
+      "modal-cancel",
+      cancelled.modal === null && cancelled.formPresent === false,
+      `modal ${JSON.stringify(cancelled.modal)}`,
+    );
+
+    // Create: title, one attribute (summary) and the context document, then
+    // submit. The page's own projectsCreate call must fire, the modal must
+    // close, and the register must gain the row.
+    const NEW_TITLE = "Draft the winter plan";
+    const NEW_SUMMARY = "Three weeks, one bag, no laptop";
+    const NEW_CONTEXT = "Book the flights before the fare rises.";
+    await openModal();
+    const callsBeforeCreate = (await sample()).calls.length;
+    check(
+      "modal-create-title",
+      await typeInto('[data-testid="project-create-title"]', NEW_TITLE),
+      "the title field would not take the new project's name",
+    );
+    check(
+      "modal-create-summary",
+      await typeInto('[data-testid="project-create-summary"]', NEW_SUMMARY),
+      "the summary field would not take the one attribute",
+    );
+    check(
+      "modal-create-context-open",
+      await run(`(() => {
+        const box = document.querySelector('[data-testid="project-create-context"]');
+        if (!box) return false;
+        box.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, view: window }));
+        return true;
+      })()`),
+      "the context editor is not in the modal",
+    );
+    await waitFor(
+      `Boolean(document.querySelector('[data-testid="project-create-context-input"]'))`,
+      "the context editor's block to open",
+    );
+    check(
+      "modal-create-context",
+      await typeInto('[data-testid="project-create-context-input"]', NEW_CONTEXT),
+      "the context block would not take the text",
+    );
+    check(
+      "modal-create-submit",
+      await clickTestId("project-create-submit"),
+      "no Create project button in the modal",
+    );
+    await waitForModalClosed("modal-create");
+    await waitFor(`document.querySelectorAll('[data-testid="project-row"]').length === 5`, "the register's fifth row");
+    await waitFor(
+      `document.querySelector('[data-testid="projects-page"] .projects-page__count')?.textContent.trim() === "5 projects"`,
+      "the register count to read five",
+    );
+    await sleep(160);
+    const created = await sample();
+    const createCalls = bridgeCall(created.calls.slice(callsBeforeCreate), "projectsCreate");
+    const createArg = createCalls[createCalls.length - 1]?.args?.[0];
+    check(
+      "modal-create",
+      created.modal === null &&
+        created.formPresent === false &&
+        created.count === "5 projects" &&
+        created.rows.length === 5 &&
+        created.rows[0]?.title === NEW_TITLE &&
+        (created.rows[0]?.summary ?? "").includes(NEW_SUMMARY) &&
+        createCalls.length === 1 &&
+        createArg?.title === NEW_TITLE &&
+        createArg?.summary === NEW_SUMMARY &&
+        String(createArg?.bodyMarkdown ?? "").includes(NEW_CONTEXT),
+      `modal ${JSON.stringify(created.modal)}, count ${JSON.stringify(created.count)}, ` +
+        `rows ${JSON.stringify(created.rows.slice(0, 1))}, calls ${JSON.stringify(createCalls)}`,
+    );
+
     // ── clean: no page errors, and nothing outside the chat surface unmodelled
-    const unmodelled = logged.unmodelled.filter(
+    const unmodelled = created.unmodelled.filter(
       (name) => !/^companion/.test(name) && !/^onCompanion/.test(name),
     );
     check(
@@ -591,8 +906,9 @@ async function main() {
       what:
         "Projects on the Execute wing: the shipped rail puts Projects under Execute (and not Plan), " +
         "the register shows every built-in attribute, the project page renders the header, progress " +
-        "timeline, context document and the collated tasks/signals/Decisions/log, and logging progress " +
-        "writes addUpdate through the page's own bridge call",
+        "timeline, context document and the collated tasks/signals/Decisions/log, logging progress " +
+        "writes addUpdate through the page's own bridge call, and the heading's New project button " +
+        "opens a real modal that Escape, the scrim and Cancel close and whose form creates a row",
       command: "LIFEQUEST_E2E_URL=<dev>/e2e/projects.html node e2e/projects.electron.mjs",
       checks: {
         scenarios,
@@ -605,7 +921,29 @@ async function main() {
           footer: initial.footer,
           eyebrow: initial.eyebrow,
           count: initial.count,
+          headingRect: initial.headingRect,
+          headerRect: initial.headerRect,
+          newButton: initial.newButton,
           rows: initial.rows,
+        },
+        newProject: {
+          inline: initial.newButton,
+          heading: initial.headingRect,
+          header: initial.headerRect,
+          closedByDefault:
+            initial.formPresent === false && initial.modal === null,
+          modal: opened.modal,
+          escape: { modalClosed: escaped.modal === null, focus: escapeFocus },
+          backdrop: {
+            modalClosed: backdropClosed.modal === null,
+            focus: backdropFocus,
+          },
+          cancel: { modalClosed: cancelled.modal === null },
+          create: {
+            count: created.count,
+            newRow: created.rows[0] ?? null,
+            call: createCalls[createCalls.length - 1] ?? null,
+          },
         },
         wing: {
           plan: { activeTab: plan.activeTab, rail: plan.rail },
@@ -618,7 +956,7 @@ async function main() {
           call: lastUpdate ?? null,
         },
         overflow: { detail: detail.overflow, afterWrite: logged.overflow },
-        screenshots: [listShot, wingShot, detailShot],
+        screenshots: [listShot, wingShot, detailShot, modalShot],
         unmodelled: logged.unmodelled,
         consoleErrors,
       },

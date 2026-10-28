@@ -41,6 +41,7 @@ const SHOTS = [
   path.join(desktopRoot, "e2e/artifacts/projects.png"),
   path.join(desktopRoot, "e2e/artifacts/projects-execute-wing.png"),
   path.join(desktopRoot, "e2e/artifacts/projects-detail.png"),
+  path.join(desktopRoot, "e2e/artifacts/projects-new-modal.png"),
 ];
 
 /** Every claim the driver must have recorded, by name. */
@@ -49,6 +50,8 @@ const SCENARIOS = [
   "rail-execute",
   "top-bar-tabs",
   "page-eyebrow",
+  "new-project-inline",
+  "modal-closed-by-default",
   "list-count",
   "list-attributes",
   "list-filter",
@@ -68,6 +71,17 @@ const SCENARIOS = [
   "log-progress-note",
   "log-progress",
   "no-overflow-after-write",
+  "modal-opens",
+  "modal-escape",
+  "modal-backdrop",
+  "modal-cancel-click",
+  "modal-cancel",
+  "modal-create-title",
+  "modal-create-summary",
+  "modal-create-context-open",
+  "modal-create-context",
+  "modal-create-submit",
+  "modal-create",
   "clean",
 ];
 
@@ -75,6 +89,33 @@ const EXECUTE_RAIL = ["Projects", "Daily Schedule", "Act"];
 const PLAN_RAIL = ["Goals", "Life Map", "Architecture"];
 
 type RailRow = { label: string | null; href: string | null; active: boolean };
+type Rect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+  centerX: number;
+  centerY: number;
+};
+type NewButton = {
+  label: string | null;
+  type: string | null;
+  rect: Rect;
+  inHeader: boolean;
+};
+type ModalState = {
+  role: string | null;
+  ariaModal: string | null;
+  labelledBy: string | null;
+  labelledText: string | null;
+  backdrop: boolean;
+  backdropCoversViewport: boolean;
+  formInside: boolean;
+  formPresent: boolean;
+  focused: string | null;
+};
 type Scenario = { name: string; pass: boolean; detail: string | null };
 type ListRow = {
   id: string | null;
@@ -126,6 +167,9 @@ type Report = {
       rail: RailRow[];
       eyebrow: string | null;
       count: string | null;
+      headingRect: Rect | null;
+      headerRect: Rect | null;
+      newButton: NewButton | null;
       rows: ListRow[];
     };
     wing: {
@@ -137,6 +181,21 @@ type Report = {
       progress: string | null;
       timeline: TimelineRow[];
       call: { method: string; args: unknown[] } | null;
+    };
+    newProject: {
+      inline: NewButton | null;
+      heading: Rect | null;
+      header: Rect | null;
+      closedByDefault: boolean;
+      modal: ModalState | null;
+      escape: { modalClosed: boolean; focus: string | null };
+      backdrop: { modalClosed: boolean; focus: string | null };
+      cancel: { modalClosed: boolean };
+      create: {
+        count: string | null;
+        newRow: ListRow | null;
+        call: { method: string; args: unknown[] } | null;
+      };
     };
     overflow: { detail: Overflow; afterWrite: Overflow };
     screenshots: string[];
@@ -225,6 +284,39 @@ describe("Projects on the Execute wing e2e", () => {
     assert.equal(report.checks.initial.rail[0]?.href, "/projects", "the Projects rail row points elsewhere");
     assert.equal(report.checks.initial.rail[0]?.active, true, "the Projects row is not the active one");
     assert.equal(report.checks.initial.eyebrow, "Execute", "the page's eyebrow does not read Execute");
+
+    // ── The heading's New project button, measured as boxes ────────────────
+    const newButton = report.checks.initial.newButton;
+    const h1 = report.checks.initial.headingRect;
+    const header = report.checks.initial.headerRect;
+    assert.ok(newButton, "the Projects heading carries no New project button");
+    assert.equal(newButton?.label, "New project", "the heading button is not labelled New project");
+    assert.equal(newButton?.type, "button", "the heading button would submit a form");
+    assert.equal(newButton?.inHeader, true, "the New project button is not in the page header");
+    assert.ok(h1 && header, "the page header or its h1 was not measured");
+    assert.ok(
+      newButton.rect.top < h1.bottom && newButton.rect.bottom > h1.top,
+      `the New project button is not on the h1's row: button ${JSON.stringify(newButton.rect)}, h1 ${JSON.stringify(h1)}`,
+    );
+    assert.ok(
+      newButton.rect.left >= h1.right - 1,
+      "the New project button is not to the right of the heading",
+    );
+    assert.ok(
+      Math.abs(newButton.rect.centerY - h1.centerY) <= 6,
+      `the New project button is not vertically aligned with the h1: button centre ${newButton.rect.centerY}, h1 centre ${h1.centerY}`,
+    );
+    assert.ok(
+      header &&
+        newButton.rect.left >= header.left - 1 &&
+        newButton.rect.right <= header.right + 1 &&
+        newButton.rect.top >= header.top - 1 &&
+        newButton.rect.bottom <= header.bottom + 1,
+      "the New project button sits outside the heading row's box",
+    );
+
+    // ── The composer is a modal: absent until the button is pressed ────────
+    assert.equal(report.checks.newProject.closedByDefault, true, "the create form or modal is rendered before any click");
 
     // The Plan wing has its own three rows and no Projects.
     assert.deepEqual(labels(report.checks.wing.plan.rail), PLAN_RAIL, "the Plan rail moved");
@@ -350,6 +442,48 @@ describe("Projects on the Execute wing e2e", () => {
     assert.equal(patch.addUpdate?.note, "Shipped the rig and proved the wing");
     assert.equal(patch.addUpdate?.progress, 75);
 
+    // ── The New-project modal: open, Escape, scrim, Cancel, create ─────────
+    const modal = report.checks.newProject.modal;
+    assert.ok(modal, "the New project button opened no modal");
+    assert.equal(modal?.role, "dialog", "the popup is not a dialog");
+    assert.equal(modal?.ariaModal, "true", "the dialog is not marked modal");
+    assert.equal(modal?.labelledBy, "new-project-title", "the dialog is not labelled by its heading");
+    assert.equal(modal?.labelledText, "New project", "the dialog's label is not New project");
+    assert.equal(modal?.backdrop, true, "the modal has no backdrop");
+    assert.equal(modal?.backdropCoversViewport, true, "the backdrop does not cover the window");
+    assert.equal(modal?.formInside, true, "the create form is not inside the dialog");
+    assert.equal(modal?.focused, "project-create-title", "focus did not land on the title field");
+
+    assert.equal(report.checks.newProject.escape.modalClosed, true, "Escape did not close the modal");
+    assert.equal(
+      report.checks.newProject.escape.focus,
+      "project-new",
+      "Escape did not return focus to the New project button",
+    );
+    assert.equal(report.checks.newProject.backdrop.modalClosed, true, "a press on the scrim did not close the modal");
+    assert.equal(
+      report.checks.newProject.backdrop.focus,
+      "project-new",
+      "a scrim close did not return focus to the New project button",
+    );
+    assert.equal(report.checks.newProject.cancel.modalClosed, true, "Cancel did not close the modal");
+
+    const creation = report.checks.newProject.create;
+    assert.equal(creation.count, "5 projects", "the register's count did not gain the created project");
+    assert.equal(creation.newRow?.title, "Draft the winter plan", "the created project is not the register's first row");
+    const createArg = creation.call?.args[0] as {
+      title?: string;
+      summary?: string;
+      bodyMarkdown?: string;
+    };
+    assert.ok(creation.call, "submitting the modal wrote no projectsCreate call");
+    assert.equal(creation.call?.method, "projectsCreate");
+    assert.equal(createArg?.title, "Draft the winter plan");
+    assert.equal(createArg?.summary, "Three weeks, one bag, no laptop", "the one attribute was not carried");
+    assert.ok(
+      String(createArg?.bodyMarkdown).includes("Book the flights before the fare rises."),
+      "the context document was not carried",
+    );
     // ── Nothing paints sideways at the sheet width ─────────────────────────
     for (const [label, overflow] of Object.entries(report.checks.overflow)) {
       assert.ok(

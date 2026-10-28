@@ -485,7 +485,6 @@ const bridge: Record<string, unknown> = {
       : Promise.resolve({ ok: false as const, error: `Project not found: ${String(id)}` });
   },
   projectsCreate: (input: unknown) => {
-    record("projectsCreate", [input]);
     const typed = input as Partial<Project>;
     const created: Project = {
       id: `p-new-${projectsState.length + 1}`,
