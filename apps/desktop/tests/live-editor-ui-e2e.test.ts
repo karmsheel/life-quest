@@ -82,6 +82,14 @@ type Box = {
   imageSrc: string | null;
   inputRect: Rect | null;
   renderedRect: Rect | null;
+  lockBadge: string | null;
+  lockSwitch: {
+    role: string | null;
+    checked: string | null;
+    caption: string;
+    locked: string | null;
+    hasTrack: boolean;
+  } | null;
 };
 type SaveCall = { slug: string; kind: string; body: string; title?: string };
 type MediaCall = { slug: string; mime: string; bytes: number };
@@ -95,6 +103,10 @@ type Report = {
     document: Box;
     openedParagraph: Box;
     saved: Box;
+    documentLockCalls: string[];
+    documentLocked: Box;
+    documentUnlockCalls: string[];
+    documentAfterLockCycle: Box;
     saves: SaveCall[];
     media: MediaCall[];
     pasted: Box;
@@ -143,6 +155,33 @@ describe("live editor ui e2e", () => {
     assert.equal(doc.showsMarkers, false, "raw markdown is painted in the box");
     assert.match(String(doc.body), /Three sessions a week, no exceptions\./);
 
+    // The doctrine page's lock is the same badge-and-switch corner the Dashboard
+    // wears: off on an unlocked document, and flipping it writes the lock and
+    // turns the page's own read read-only.
+    assert.equal(doc.lockBadge, "Unlocked");
+    assert.equal(doc.lockSwitch?.role, "switch");
+    assert.equal(doc.lockSwitch?.checked, "false");
+    assert.equal(doc.lockSwitch?.caption, "Lock");
+    assert.equal(doc.lockSwitch?.hasTrack, true, "the document's switch drew no track");
+    assert.deepEqual(report.checks.documentLockCalls, ["documentSetLocked:health:what:true"]);
+    assert.equal(report.checks.documentLocked.lockBadge, "Locked");
+    assert.equal(report.checks.documentLocked.lockSwitch?.checked, "true");
+    assert.equal(
+      report.checks.documentLocked.readOnly,
+      true,
+      "locking the document from the page's corner left the box editable",
+    );
+    assert.equal(
+      report.checks.documentUnlockCalls.at(-1),
+      "documentSetLocked:health:what:false",
+      "unlocking the document did not write the unlock",
+    );
+    assert.equal(
+      report.checks.documentAfterLockCycle.blockCount,
+      2,
+      "the document did not come back whole after the lock round-trip",
+    );
+
     // Opening one paragraph shows that paragraph's markdown, in the column the
     // prose held, and leaves the paragraph above it rendered.
     const opened = report.checks.openedParagraph;
@@ -184,6 +223,12 @@ describe("live editor ui e2e", () => {
     // ── a locked document offers no writing surface at all ──────────────────
     assert.equal(report.checks.locked.readOnly, true, "the locked document was not read-only");
     assert.equal(report.checks.locked.editing, false, "a locked document opened a writing line");
+    assert.equal(report.checks.locked.lockBadge, "Locked");
+    assert.equal(
+      report.checks.locked.lockSwitch?.checked,
+      "true",
+      "the locked document's switch is off",
+    );
     assert.equal(
       report.checks.lockedAfterClick.writingLines,
       0,

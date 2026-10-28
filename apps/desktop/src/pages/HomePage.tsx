@@ -5,6 +5,7 @@ import type { DecisionRecord, LifeEvent, PageListEntry, Pin } from "@lifequest/v
 import { SYSTEM_PIN_KINDS, type SystemPinKind } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { Button } from "@/components/ui/Button";
+import { LockSwitch } from "@/components/ui/LockSwitch";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useVault } from "@/state/VaultProvider";
 import { useLiveData } from "@/state/LiveDataProvider";
@@ -766,32 +767,41 @@ export default function HomePage() {
   return (
     <div className="home-dashboard">
       <header className="home-dashboard__header">
-        <div>
+        <div className="home-dashboard__intro">
           <p className="home-dashboard__eyebrow">Dashboard</p>
-          <h1 className="home-dashboard__title">
-            {title}
-            <span
-              className={`doc-status-badge doc-status-badge--${locked ? "locked" : "unlocked"}`}
-              data-locked={locked ? "true" : "false"}
-              data-testid="board-lock-badge"
-            >
-              {locked ? "Locked" : "Unlocked"}
-            </span>
-          </h1>
+          <h1 className="home-dashboard__title">{title}</h1>
           <p className="home-dashboard__lock-hint muted" data-testid="board-lock-hint">
             {locked
               ? "This dashboard is locked. Unlock to add, move, or remove cards; the companion's changes wait in Decisions."
               : "This dashboard is unlocked. You and the companion change it in place."}
           </p>
         </div>
-        <div className="home-dashboard__controls">
-          {/* The pin board's own control, at the top of the page with the page's
-              other controls. It is absent exactly when the row would be empty:
-              a locked board is not editable here, and a board with everything
-              pinned has nothing left to offer. */}
+        {/* The page's own corner: state, control, then the pin board's menu.
+            The badge is the state in words, the switch is the state in one
+            gesture, and the pin-board button is the menu the page offers. They
+            stack from the title's own line so the page's name and its corner
+            are read together, and the pin board is absent exactly when the row
+            would be empty: a locked board is not editable here, and a board
+            with everything pinned has nothing left to offer. */}
+        <div className="page-corner" data-testid="home-page-corner">
+          <span
+            className={`doc-status-badge doc-status-badge--${locked ? "locked" : "unlocked"}`}
+            data-locked={locked ? "true" : "false"}
+            data-testid="board-lock-badge"
+          >
+            {locked ? "Locked" : "Unlocked"}
+          </span>
+          <LockSwitch
+            locked={locked}
+            busy={lockBusy}
+            onToggle={() => void onToggleLock()}
+            label={locked ? "Unlock this dashboard" : "Lock this dashboard"}
+            testId="board-lock-toggle"
+          />
           {canAdd ? (
             <Button
-              variant="outline"
+              variant="ghost"
+              className="page-corner__pinboard"
               aria-expanded={addOpen}
               data-testid="board-add-toggle"
               onClick={() => setAddOpen((wasOpen) => !wasOpen)}
@@ -800,14 +810,6 @@ export default function HomePage() {
               {addOpen ? "Hide pin board" : "Pin board"}
             </Button>
           ) : null}
-          <Button
-            variant={locked ? "primary" : "outline"}
-            onClick={() => void onToggleLock()}
-            disabled={lockBusy}
-            data-testid="board-lock-toggle"
-          >
-            {lockBusy ? "Saving…" : locked ? "Unlock" : "Lock"}
-          </Button>
         </div>
       </header>
 

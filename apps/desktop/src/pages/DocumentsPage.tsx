@@ -19,6 +19,8 @@ import { containMarkdownLink } from "@/lib/markdown-links";
 import { createWikiResolver } from "@/lib/wiki-links";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
+import { LockSwitch } from "@/components/ui/LockSwitch";
+import { DocumentLockBadge } from "@/components/documents/DocumentLockBadge";
 import { ProposeChangeDialog } from "@/components/documents/ProposeChangeDialog";
 
 function formatWhen(iso: string): string {
@@ -318,11 +320,28 @@ export default function DocumentsPage() {
   return (
     <div className="documents-page">
       <header className="documents-page__header">
-        <h1 className="stub-page__title">Documents</h1>
-        <p className="stub-page__desc muted">
-          Markdown notes. Tag a domain, or leave unassigned to keep them in
-          Overview only.
-        </p>
+        <div className="documents-page__intro">
+          <h1 className="stub-page__title">Documents</h1>
+          <p className="stub-page__desc muted">
+            Markdown notes. Tag a domain, or leave unassigned to keep them in
+            Overview only.
+          </p>
+        </div>
+        {/* The open note's lock sits in the page's corner, the same badge and
+            switch every other lockable page wears. It is absent while the
+            composer is empty: there is no note to lock yet. */}
+        {editingId ? (
+          <div className="page-corner" data-testid="documents-page-corner">
+            <DocumentLockBadge locked={editingLocked} />
+            <LockSwitch
+              locked={editingLocked}
+              busy={busy}
+              onToggle={() => void (editingLocked ? onUnlock() : onLock())}
+              label={editingLocked ? "Unlock this note" : "Lock this note"}
+              testId="note-lock-toggle"
+            />
+          </div>
+        ) : null}
       </header>
 
       <form className="library-composer" onSubmit={(e) => void onSave(e)}>
@@ -407,30 +426,13 @@ export default function DocumentsPage() {
                   <button
                     type="button"
                     className="btn btn-secondary"
-                    onClick={() => void onUnlock()}
-                    disabled={busy}
-                  >
-                    Unlock
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
                     onClick={() => void onProposeOpen()}
                     disabled={busy}
                   >
                     Propose change
                   </button>
                 </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => void onLock()}
-                  disabled={busy}
-                >
-                  Lock
-                </button>
-              )}
+              ) : null}
             </>
           ) : null}
         </div>

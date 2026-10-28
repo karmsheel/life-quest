@@ -15,6 +15,7 @@ import {
 import { DOCUMENT_KIND_COACHING } from "@/lib/doctrine-copy";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
+import { LockSwitch } from "@/components/ui/LockSwitch";
 import { DocumentLockBadge } from "./DocumentLockBadge";
 import { LiveMarkdownEditor } from "./LiveMarkdownEditor";
 import { ProposeChangeDialog } from "./ProposeChangeDialog";
@@ -252,26 +253,41 @@ export function DocumentEditor({
   return (
     <div className="doc-editor">
       <header className="doc-editor__header">
-        <div className="doc-editor__heading">
-          <h1 className="doc-editor__title">
-            {DOCUMENT_KIND_LABELS[kind]}
-            {domainName ? (
-              <span className="doc-editor__domain muted">
-                {" "}
-                · {domainName}
-              </span>
-            ) : null}
-          </h1>
-          <DocumentLockBadge locked={locked} />
-        </div>
-        <p className="doc-editor__coaching muted">
-          {DOCUMENT_KIND_COACHING[kind]}
-        </p>
-        {!editable.ok ? (
-          <p className="doc-editor__lock-hint muted">
-            Document is locked. Unlock to edit, or propose a change.
+        <div className="doc-editor__intro">
+          <div className="doc-editor__heading">
+            <h1 className="doc-editor__title">
+              {DOCUMENT_KIND_LABELS[kind]}
+              {domainName ? (
+                <span className="doc-editor__domain muted">
+                  {" "}
+                  · {domainName}
+                </span>
+              ) : null}
+            </h1>
+          </div>
+          <p className="doc-editor__coaching muted">
+            {DOCUMENT_KIND_COACHING[kind]}
           </p>
-        ) : null}
+          {!editable.ok ? (
+            <p className="doc-editor__lock-hint muted">
+              Document is locked. Unlock to edit, or propose a change.
+            </p>
+          ) : null}
+        </div>
+        {/* The page's corner, the same control the Dashboard wears: the state in
+            words above the state in one gesture. The lock is a setting of this
+            document, so it belongs with the document's name rather than at the
+            bottom of the page beside Save. */}
+        <div className="page-corner" data-testid="document-page-corner">
+          <DocumentLockBadge locked={locked} />
+          <LockSwitch
+            locked={locked}
+            busy={lockPending}
+            onToggle={() => void onLock(!locked)}
+            label={locked ? "Unlock this document" : "Lock this document"}
+            testId="document-lock-toggle"
+          />
+        </div>
       </header>
 
       <label className="field doc-editor__title-field">
@@ -309,43 +325,23 @@ export function DocumentEditor({
 
       <div className="doc-editor__actions">
         {!locked ? (
-          <>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => void onSave()}
-              disabled={busy || !isDirty}
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => void onLock(true)}
-              disabled={busy}
-            >
-              {lockPending ? "Locking…" : "Lock"}
-            </button>
-          </>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => void onSave()}
+            disabled={busy || !isDirty}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
         ) : (
-          <>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => void onLock(false)}
-              disabled={busy}
-            >
-              {lockPending ? "Unlocking…" : "Unlock"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setProposeOpen(true)}
-              disabled={busy}
-            >
-              Propose change
-            </button>
-          </>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setProposeOpen(true)}
+            disabled={busy}
+          >
+            Propose change
+          </button>
         )}
       </div>
 

@@ -1617,8 +1617,18 @@ a {
 
 .doc-editor__header {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  flex-wrap: wrap;
+}
+
+.doc-editor__intro {
+  display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  min-width: 0;
+  flex: 1 1 18rem;
 }
 
 .doc-editor__heading {
@@ -1949,27 +1959,203 @@ a {
 }
 
 /* —— Status badge —— */
+/* The page's lock state, in words. The dot is the part that reads at a glance;
+   the word is the part that cannot be misread. Pages that carry a switch wear it
+   above it in the page's corner, and the cards that have no room for a switch
+   (a doctrine card, a strip) wear it on their own. */
 .doc-status-badge {
   display: inline-flex;
   align-items: center;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
+  gap: 0.38rem;
+  padding: 0.22rem 0.58rem 0.22rem 0.48rem;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
   color: var(--muted);
-  background: transparent;
+  background: var(--bg-subtle);
+  transition:
+    color var(--dur-quick) var(--ease-out),
+    background var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out);
 }
 
+.doc-status-badge::before {
+  content: "";
+  width: 0.42rem;
+  height: 0.42rem;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 18%, transparent);
+}
+
+/* Editable: the quiet green of "this is open". Locked: the amber of "held".
+   Locked is deliberately not the success colour it used to be — a held page is
+   a caution, not a win. */
 .doc-status-badge--unlocked {
-  color: var(--muted);
+  color: var(--green);
+  background: color-mix(in srgb, var(--green-bg) 76%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--green) 30%, var(--border));
 }
 
 .doc-status-badge--locked {
-  color: var(--success);
-  border-color: var(--success);
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber-bg) 82%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
+}
+
+/* —— A page's corner: state, control, menu ——
+   Every lockable page stacks its chrome in this one column at the title's own
+   top-right edge. The badge states, the switch acts, the menu opens; a reader
+   scans one column instead of hunting the page for each control. */
+.page-corner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 0.45rem;
+  flex: 0 0 auto;
+}
+
+/* The pin board's menu is the page's only "add" path, so it is the one control
+   in the corner that wears the accent rather than the neutral border. It steps
+   off the page on hover with a shadow tinted by its own colour. */
+.page-corner__pinboard.btn {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-panel));
+  color: var(--accent);
+  box-shadow: var(--shadow-xs);
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out);
+}
+
+.page-corner__pinboard.btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow:
+    0 0.5rem 1.25rem color-mix(in srgb, var(--accent) 26%, transparent),
+    0 0.125rem 0.35rem color-mix(in srgb, var(--accent) 18%, transparent);
+  transform: translateY(-1px);
+}
+
+.page-corner__pinboard.btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-xs);
+}
+
+/* —— Lock switch ——
+   The page lock as one control: a caption and a track. At rest the thumb sits
+   left, the track is the page's own muted step and the caption is quiet; locked,
+   the thumb crosses, and the track and caption take the amber that means "held".
+   The badge above says the same state in words, which is why the caption can
+   stay "Lock" in both positions. */
+.lock-switch.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0.3rem 0.42rem 0.3rem 0.62rem;
+  border-color: var(--border);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-xs);
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
+}
+
+.lock-switch.btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm);
+}
+
+.lock-switch.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.lock-switch.btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.lock-switch__caption {
+  padding-left: 0.06rem;
+}
+
+.lock-switch__track {
+  position: relative;
+  display: block;
+  width: 2.05rem;
+  height: 1.05rem;
+  flex: none;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--bg-muted);
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out);
+}
+
+.lock-switch__thumb {
+  position: absolute;
+  top: 50%;
+  left: 0.14rem;
+  width: 0.72rem;
+  height: 0.72rem;
+  transform: translateY(-50%);
+  border-radius: var(--radius-pill);
+  background: var(--text-soft);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 28%, transparent);
+  transition:
+    transform var(--dur-enter) var(--ease-out),
+    background var(--dur-quick) var(--ease-out);
+}
+
+.lock-switch--on.btn {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 38%, var(--border));
+  background: color-mix(in srgb, var(--amber-bg) 80%, var(--bg-panel));
+}
+
+.lock-switch--on.btn:hover:not(:disabled) {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
+  background: var(--amber-bg);
+}
+
+.lock-switch--on .lock-switch__track {
+  border-color: color-mix(in srgb, var(--amber) 62%, var(--border));
+  background: color-mix(in srgb, var(--amber) 44%, var(--bg-panel));
+}
+
+.lock-switch--on .lock-switch__thumb {
+  transform: translate(0.92rem, -50%);
+  background: var(--background);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lock-switch__thumb,
+  .page-corner__pinboard.btn {
+    transition: none;
+  }
 }
 
 /* —— Propose change dialog —— */
@@ -2216,6 +2402,16 @@ a {
 
 .documents-page__header {
   margin-bottom: 0.25rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  flex-wrap: wrap;
+}
+
+.documents-page__intro {
+  min-width: 0;
+  max-width: 40rem;
 }
 
 .doc-cards {
@@ -3212,8 +3408,13 @@ a {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 1rem 1.5rem;
   flex-wrap: wrap;
+}
+
+.home-dashboard__intro {
+  min-width: 0;
+  max-width: 46rem;
 }
 
 .home-dashboard__eyebrow {
@@ -3231,20 +3432,6 @@ a {
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.15;
-  /* The page-lock badge rides the title rather than a separate row: it labels
-     the board the same way it labels a doctrine document. */
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-}
-
-/* The header's controls: the pin board's toggle and the page lock. Two controls
-   with nothing in common but their place, which is the top of the page. */
-.home-dashboard__controls {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
 }
 
 .home-dashboard__lock-hint {
@@ -3880,7 +4067,9 @@ a.home-mini-list__link:hover {
 }
 
 .home-dashboard .doc-status-badge {
-  border-radius: var(--home-radius);
+  /* The corner badge keeps the pill the switch under it wears: the two are one
+     stack, so a square badge over a round switch would read as two objects. */
+  border-radius: var(--radius-pill);
 }
 
 .home-card .form-error {
