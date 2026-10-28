@@ -3,8 +3,9 @@
 **Date:** 2026-10-28
 **Scope:** the whole product codebase (`apps/desktop`, `packages/vault-core`, build/release
 configuration, renderer, loopback doors, companion/Hermes integration, vault storage)
-**Base revision:** `354c37b` (master; the audit ran at `47bd3ea` and the branch was rebased onto
-current master before handover so the regression gate runs against the tree the operator has)
+**Base revision:** `9bf2327` (current `origin/master`; the audit ran at `47bd3ea` and the branch was
+rebased twice — onto `354c37b` and then `9bf2327` — so the regression gate runs against the tree the
+operator has)
 **Branch:** `security/fort-knox`
 **Method:** six parallel read-only audits against a written threat model, each claim backed by
 executed evidence (throwaway vaults, in-process doors, a throwaway Electron harness, a Chromium DOM
@@ -224,10 +225,13 @@ Evidence artifact: `apps/desktop/e2e/artifacts/security-fort-knox.json` (machine
 `apps/desktop/e2e/artifacts/security-fort-knox.png` (the shipped welcome screen, captured from the
 real window). The rig ran green on the fixed tree: **32/32 checks**, pass, zero failures.
 
-The full existing suite was run against this branch (rebased onto master `354c37b`) as the
-regression gate: **74 tests, 69 pass, 5 fail**. The five failures are exactly the pre-existing
-stub-bridge test debt proven below; the security rig, the new manual-decision tests, and everything
-else pass.
+The full existing suite was run against this branch (synced to `origin/master` `9bf2327`) as the
+regression gate: **78 tests, 73 pass, 5 fail**. The five failures are exactly the pre-existing
+stub-bridge test debt proven below; the security rig, the new manual-decision/projects/dashboard
+object tests, and everything else pass. Syncing demanded one semantic merge: master's rewritten
+`createProject` now keeps its full input parser, with the security branch's segment fence applied to
+the project id on top of master's own `PROJECT_ID` check (which alone would allow an embedded dot
+segment).
 
 Two temporary failures were found while getting there and were resolved as follows:
 
