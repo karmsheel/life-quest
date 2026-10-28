@@ -146,6 +146,15 @@ function operatorFacingStreamError(message: string): string {
     : message;
 }
 
+/**
+ * One frame of a turn's stream.
+ *
+ * The last two are the app's own, not the gateway's: a companion turn can end
+ * with proposals in its prose that the main process files as Decisions after the
+ * model has stopped talking, and the operator needs to be told that happened
+ * where they are looking. They arrive after `run.completed`, on the same channel,
+ * so a chat that just said "here are the changes" also says what became of them.
+ */
 export type ChatStreamEvent =
   | { type: "run.started"; runId: string }
   | { type: "assistant.delta"; text: string }
@@ -155,7 +164,11 @@ export type ChatStreamEvent =
   | { type: "run.stopped" }
   | { type: "run.incomplete"; reason: string }
   | { type: "run.completed" }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  /** Pending Decisions this turn's fenced proposals became. */
+  | { type: "decisions.filed"; ids: string[]; titles: string[] }
+  /** Proposals in this turn's reply that could not be filed, and why. */
+  | { type: "decisions.problem"; message: string };
 
 export type HermesSession = {
   id: string;
@@ -614,13 +627,20 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
   const fileUnsolicited = input.fileUnsolicited ?? true;
   const fenceRule = fileUnsolicited
     ? [
-        "When you propose a doctrine, library, goal, or day-template change and you did not call a write tool for it, end the turn with one fenced block whose info string is exactly lifequest-decision and whose body is one JSON object, for example:",
+        "When your reply proposes one or more changes to the vault's documents, goals, day templates or projects, and you did not apply that change with a write tool, list EVERY proposal in fenced blocks whose info string is exactly lifequest-decision and whose body is one JSON object. One block per proposal; EVERY block is filed as its own pending Decision. A block that is not readable is reported to the operator, so nothing you propose disappears silently.",
         "```lifequest-decision",
         '{"kind":"doctrine","domainSlug":"health","documentKind":"why","title":"Purpose","body":"new body"}',
         "```",
-        "One block per turn, and only the last valid one counts. Prose outside the block is not a change. A project kind is not a document and files nothing, so do not use it.",
-        "That block becomes one pending Decision; it never edits a file. Silence does not apply a proposal: only the operator approving it does.",
-        "Omit the block entirely when a write tool already ran in this turn.",
+        "The proposal kinds and their bodies:",
+        '- doctrine: {"kind":"doctrine","domainSlug","documentKind":"premise|what|why|how","title","body"}',
+        '- library: {"kind":"library","title","body","domainSlugs":["health"]} — add "id" to update an existing note.',
+        '- goal: {"kind":"goal","command":{...}} with a createGoal, updateGoal or deleteGoal command.',
+        '- day-template: {"kind":"day-template","command":{...}} with a day-type command.',
+        '- project: {"kind":"project","command":{"type":"createProject","title","goalId","domainSlug","bodyMarkdown"}} to propose a new project, or {"kind":"project","command":{"type":"closeProject","id"}} to propose closing one.',
+        'Instead of several blocks you may put them all in one block whose body is {"decisions":[ {...}, {...} ]}.',
+        "A new database or a dashboard card is a tool call, not a block: create_database and save_view file their own pending Decision. The block list above is for the changes no tool covers.",
+        "A write tool that already applied one change does not cancel the rest: fence every OTHER change you did not apply with a tool. Prose outside a block is not a change.",
+        "Each block becomes one pending Decision; nothing edits a file until the operator approves it. Say how many changes you are proposing, and never say a decision was filed unless a fenced block carried it or a tool result answered pending with a decisionId. Silence does not apply a proposal: only the operator approving it does.",
       ]
     : [
         "Filing implied changes is off for this session. Do not emit a lifequest-decision fence; just describe the change in prose and let the operator ask for it.",

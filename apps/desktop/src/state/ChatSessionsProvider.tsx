@@ -858,6 +858,42 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         closedTabs.current.delete(id);
         if (isActive()) setLivePinId(null);
         void refresh();
+        return;
+      }
+      /**
+       * The app's own frames arrive after the stream has finished: the main
+       * process reads the turn's fenced proposals and files them, and a turn that
+       * said "here are the changes" also says what became of them. Without this
+       * line the operator had to take the agent's word for it — the reported bug
+       * was the agent saying it filed decisions while the Inbox (rightly, because
+       * the old funnel dropped them) showed nothing.
+       *
+       * The note lands on the chat the frame names, not on whichever chat is
+       * open: a scheduled automation that files proposals keeps its own record of
+       * having done so in its own tab.
+       */
+      if (evt.type === "decisions.filed") {
+        const count = evt.ids.length;
+        const named = evt.titles
+          .slice(0, 2)
+          .map((title) => (title.length > 64 ? `${title.slice(0, 63)}…` : title));
+        const more =
+          evt.titles.length > named.length
+            ? ` and ${evt.titles.length - named.length} more`
+            : "";
+        updateRun(id, (current) => ({
+          ...current,
+          turnNote: `Filed ${count} ${count === 1 ? "proposal" : "proposals"} — review ${
+            count === 1 ? "it" : "them"
+          } in Decisions${named.length > 0 ? `: ${named.join(", ")}${more}` : ""}.`,
+        }));
+        return;
+      }
+      if (evt.type === "decisions.problem") {
+        // A proposal that could not be filed is said out loud, not left for the
+        // operator to notice as an absence in the Inbox.
+        updateRun(id, (current) => ({ ...current, turnNote: evt.message }));
+        return;
       }
     });
     return off;
