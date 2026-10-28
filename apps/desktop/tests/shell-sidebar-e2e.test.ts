@@ -74,6 +74,15 @@ type State = {
   legacyBrand: boolean;
   leadingText: string;
   titlebarBackground: string | null;
+  chats: {
+    box: Box;
+    inRail: boolean;
+    title: string;
+    newChat: boolean;
+    scrollRegion: string;
+  } | null;
+  wingSection: Box | null;
+  bottomSection: Box | null;
   main: Box | null;
   mainBackground: string | null;
   topBar: {
@@ -320,10 +329,10 @@ describe("shell sidebar (docked rail)", () => {
       expanded.firstLink.top >= expanded.header.box.bottom,
       "nav rows overlap the topband",
     );
-    assert.equal(
-      expanded.railToggle?.box.left,
-      Math.round((track - (expanded.railToggle?.box.width ?? 0)) / 2),
-      "the toggle is not centred in the rail column",
+    assert.ok(
+      (expanded.railToggle?.box.right ?? 0) > track * 0.7 &&
+        (expanded.railToggle?.box.right ?? 0) <= track,
+      `the collapse toggle sits at ${JSON.stringify(expanded.railToggle?.box)} in a ${track}px column, not at its trailing edge`,
     );
     assert.equal(
       expanded.corner?.insideRail,
@@ -379,10 +388,41 @@ describe("shell sidebar (docked rail)", () => {
       titlebarHeight,
       "the chip does not fill the strip",
     );
+    // The sidebar is one wide column: the chats section sits inside it, between
+    // the wing's rows and the icons at the foot. The sheet abuts the column.
+    assert.ok(expanded.chats, "the sidebar rendered no chats section");
+    assert.equal(expanded.chats.inRail, true, "the chats section left the sidebar");
+    assert.equal(
+      expanded.chats.box.left >= (expanded.rail?.box.left ?? 0) &&
+        expanded.chats.box.right <= (expanded.rail?.box.right ?? 0),
+      true,
+      `the chats section (${JSON.stringify(expanded.chats.box)}) is not inside the sidebar (${JSON.stringify(expanded.rail?.box)})`,
+    );
+    assert.equal(expanded.chats.title, "Chats", "the chats section has no heading");
+    assert.equal(expanded.chats.newChat, true, "the chats section offers no New chat");
+    assert.equal(
+      expanded.chats.scrollRegion,
+      "auto",
+      "the chats list does not scroll inside the sidebar",
+    );
+    assert.ok(
+      expanded.wingSection && expanded.bottomSection,
+      "the sidebar did not render its top and bottom groups",
+    );
+    assert.equal(
+      expanded.chats.box.top >= expanded.wingSection!.bottom - 1,
+      true,
+      `the chats section starts at ${expanded.chats.box.top}px, above the wing's rows (${expanded.wingSection!.bottom}px)`,
+    );
+    assert.equal(
+      expanded.chats.box.bottom <= expanded.bottomSection!.top + 1,
+      true,
+      `the chats section ends at ${expanded.chats.box.bottom}px, below the foot's start (${expanded.bottomSection!.top}px)`,
+    );
     assert.equal(
       expanded.main?.left,
       track,
-      "the sheet is not flush to the rail's trailing edge",
+      "the sheet is not flush to the sidebar's trailing edge",
     );
     assert.equal(
       expanded.main?.right,
@@ -543,25 +583,34 @@ describe("shell sidebar (docked rail)", () => {
       collapsed.rail === null || collapsed.railDisplay === "none",
       "collapsing left the rail on screen",
     );
+    // The sidebar's column is reclaimed, and the chip comes to the window's own
+    // leading edge with the re-open toggle in front of it.
     assert.equal(
       collapsed.main?.left,
       0,
-      "the sheet did not reclaim the collapsed column — with no rail it starts on the window's own edge",
+      "the sheet did not reclaim the collapsed sidebar's column",
+    );
+    assert.ok(
+      collapsed.vault && expanded.vault,
+      "the strip lost the vault chip in one of the two states",
+    );
+    assert.ok(
+      collapsed.vault!.box.left < expanded.vault!.box.left,
+      `the chip stayed at ${collapsed.vault!.box.left}px instead of coming to the leading edge`,
+    );
+    assert.ok(
+      collapsed.vault!.box.left <= 48,
+      `the chip sits ${collapsed.vault!.box.left}px in, not at the window's leading edge`,
     );
     assert.equal(
       collapsed.titlebarToggle?.label,
       "Expand sidebar",
       "no reopen toggle in the titlebar",
     );
-    assert.deepEqual(
-      collapsed.titlebarToggle?.box,
-      expanded.railToggle?.box,
-      "the toggle moved between the open and closed states",
-    );
-    assert.deepEqual(
+    assert.notDeepEqual(
       collapsed.vault?.box,
       expanded.vault?.box,
-      "the vault chip moved between the open and closed states",
+      "the vault chip did not take the leading edge when the sidebar went",
     );
     assert.equal(
       collapsed.vault?.text,

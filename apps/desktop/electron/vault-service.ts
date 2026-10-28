@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   applyScriptBlock,
+  appendLog,
   archiveDomain,
+  collectImpliedTurn,
+  COMPANION_ACTOR,
   createDatabase,
   createDecision,
   createDomain,
@@ -20,7 +23,7 @@ import {
   DOCUMENT_KINDS,
   ensurePlanningStub,
   ensureReview,
-  fileImpliedChange,
+  fileImpliedChanges,
   getDailyNote,
   getDatabase,
   getDocument,
@@ -61,7 +64,6 @@ import {
   saveDocumentMedia,
   setDocumentLocked,
   setLibraryLocked,
-  shouldFileImpliedTurn,
   setPins,
   setPinBoardLocked,
   unarchiveDomain,
@@ -137,6 +139,8 @@ import {
   type IdealStateDocument,
   type IdealStateIndexEntry,
   type IdealStateUpdatePatch,
+  type ImpliedChange,
+  type ImpliedFilingOutcome,
   type IngestBatch,
   type IngestFileResult,
   type IngestMapping,
@@ -1661,28 +1665,88 @@ export async function companionChatStreamWithPack(
     attachment,
   );
   if (result.ok && currentRoot) {
+    const root = currentRoot;
     try {
-      const verdict = shouldFileImpliedTurn({
+      const verdict = collectImpliedTurn({
         fileUnsolicited,
         assistantText,
         completedToolNames,
       });
-      if (verdict.change) {
+      if (verdict.changes.length > 0 || verdict.failures.length > 0) {
+        // One turn can propose several changes; every one of them is filed.
+        // `fileImpliedChanges` skips a proposal identical to one already pending
+        // (the same note proposed twice is one card), and hands back the ones
+        // that failed instead of dropping them.
+        let outcome: ImpliedFilingOutcome;
         try {
-          // Filing never approves; the operator still has to approve the Decision.
-          await fileImpliedChange(currentRoot, verdict.change);
-        } finally {
-          // And the window hears about the ATTEMPT, not about the result. This is
-          // the one door that files a Decision without passing a registrar that
-          // already announces a write — `decision:create` and every MCP tool go
-          // through `data-revision.ts`'s own lists, and this is a function call
-          // inside the chat handler — and the result is not the question, because
-          // `createDecision` writes the Decision file BEFORE it writes the life
-          // log: a log that fails returns not-ok with the Decision already on
-          // disk. Announcing a filing that wrote nothing costs one repaint; not
-          // announcing one that wrote is the operator watching an inbox that
-          // never hears about the proposal the companion just said it filed.
-          noteDataChanged();
+          outcome = await fileImpliedChanges(root, verdict.changes);
+        } catch (err) {
+          // A throwing filing is still a filing the operator has to hear about.
+          outcome = {
+            filed: [],
+            skipped: 0,
+            errors: verdict.changes.map((change) => ({
+              change,
+              error: err instanceof Error ? err.message : String(err),
+            })),
+          };
+        }
+        // The window hears about the ATTEMPT, not about the result. This is the
+        // one door that files a Decision without passing a registrar that already
+        // announces a write — `decision:create` and every MCP tool go through
+        // `data-revision.ts`'s own lists, and this is a function call inside the
+        // chat handler — and the result is not the question, because
+        // `createDecision` writes the Decision file BEFORE it writes the life
+        // log: a log that fails returns not-ok with the Decision already on disk.
+        // Announcing a filing that wrote nothing costs one repaint; not
+        // announcing one that wrote is the operator watching an inbox that never
+        // hears about the proposal the companion just said it filed.
+        if (verdict.changes.length > 0) noteDataChanged();
+
+        // And the operator is told in the chat itself what became of the
+        // proposals. The inbox is live, but "it said it filed three and I see
+        // nothing" was also a report about the app not saying anything back:
+        // a turn that filed, or failed to file, says so on the transcript.
+        if (outcome.filed.length > 0) {
+          try {
+            onEvent({
+              type: "decisions.filed",
+              ids: outcome.filed.map((decision) => decision.id),
+              titles: outcome.filed.map((decision) => decision.title),
+            });
+          } catch {
+            // The window closed mid-turn; the Decisions are already on disk and
+            // the next window reads them from the vault.
+          }
+        }
+
+        const lost = [
+          ...verdict.failures.map((failure) => failure.detail),
+          ...outcome.errors.map(
+            (failure) => `${describeImpliedChange(failure.change)} — ${failure.error}`,
+          ),
+        ];
+        if (lost.length > 0) {
+          const message = unfiledMessage(lost, outcome.filed.length, verdict.changes.length);
+          try {
+            onEvent({ type: "decisions.problem", message });
+          } catch {
+            // Same as above: the durable record below is what survives.
+          }
+          // The chat is ephemeral, so the proposals that could not be filed also
+          // get a line in the Log: "nothing slips through" cannot depend on the
+          // operator having been looking at the dock when the turn ended.
+          try {
+            await appendLog(root, {
+              domainSlug: null,
+              type: "decision.unfiled",
+              summary: `${lost.length === 1 ? "One proposed change" : `${lost.length} proposed changes`} from the companion could not be filed`,
+              payload: { details: lost.slice(0, 12).map((detail) => clip(detail, 400)) },
+              actor: COMPANION_ACTOR,
+            });
+          } catch {
+            // A log write failing must not fail the chat; the chat said it.
+          }
         }
       }
     } catch {
@@ -1690,6 +1754,54 @@ export async function companionChatStreamWithPack(
     }
   }
   return result;
+}
+
+/** One line a lost proposal is named by, in the chat and in the Log. */
+function describeImpliedChange(change: ImpliedChange): string {
+  switch (change.kind) {
+    case "doctrine":
+      return `${change.documentKind} of ${change.domainSlug}`;
+    case "library":
+      return `the note "${change.title}"`;
+    case "goal": {
+      const name = (change.command as { name?: unknown }).name;
+      return typeof name === "string" && name.trim() ? `the goal "${name}"` : "a goal change";
+    }
+    case "day-template": {
+      const name = (change.command as { name?: unknown }).name;
+      return typeof name === "string" && name.trim()
+        ? `the day template "${name}"`
+        : "a day-template change";
+    }
+    case "project":
+      return change.command.type === "createProject"
+        ? `the project "${change.command.title}"`
+        : "a project close";
+  }
+}
+
+/** Bound a sentence so one wild proposal cannot stretch a turn note off the dock. */
+function clip(text: string, max: number): string {
+  const trimmed = text.trim().replace(/\s+/g, " ");
+  return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
+}
+
+/**
+ * The one sentence a turn is owed when some of its proposals did not land.
+ *
+ * It says how many DID land when any did, because "filed 2 of 3" is the fact an
+ * operator needs; the inbox's arrival line already covers the happy path.
+ */
+function unfiledMessage(lost: readonly string[], filed: number, proposed: number): string {
+  const head =
+    filed > 0
+      ? `Filed ${filed} of ${proposed} proposals, but ${lost.length} could not be filed`
+      : lost.length === 1
+        ? "One proposal in that reply could not be filed"
+        : `${lost.length} proposals in that reply could not be filed`;
+  const shown = lost.slice(0, 2).map((detail) => clip(detail, 160)).join(" ");
+  const more = lost.length > 2 ? ` (+${lost.length - 2} more in the Log)` : "";
+  return `${head}: ${shown}${more}`;
 }
 
 // KAR-59 adapter secrets

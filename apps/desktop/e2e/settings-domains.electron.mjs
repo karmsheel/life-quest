@@ -248,8 +248,9 @@ async function main() {
     );
     check(
       "and it is not centred on the sheet it was asked from",
-      Math.abs(asked.dialog?.offsetFromSheetX ?? 0) > 40,
-      `card centre is ${asked.dialog?.offsetFromSheetX}px from the sheet's centre`,
+      Math.abs(asked.dialog?.offsetFromWindowX ?? 999) <
+        Math.abs(asked.dialog?.offsetFromSheetX ?? 0),
+      `card centre is ${asked.dialog?.offsetFromSheetX}px from the sheet's and ${asked.dialog?.offsetFromWindowX}px from the window's`,
     );
     check(
       "the scroller does not clip it",

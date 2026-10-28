@@ -360,6 +360,16 @@ async function writeDecisionFile(filePath: string, decision: DecisionRecord): Pr
   await atomicWriteFile(filePath, `${JSON.stringify(decision, null, 2)}\n`);
 }
 
+/**
+ * Decision files this process has already reported as unreadable.
+ *
+ * The inbox is read on every write (the rail badge and the page both poll it on
+ * the vault's change signal), so a broken file must be reported ONCE, not on
+ * every repaint. Keyed by path, so a file repaired and re-broken is reported
+ * again in a later process — which is the only place this module keeps state.
+ */
+const reportedUnreadableDecisions = new Set<string>();
+
 export async function listDecisions(rootPath: string): Promise<Result<DecisionRecord[]>> {
   try {
     const paths = vaultPaths(rootPath);
@@ -376,8 +386,35 @@ export async function listDecisions(rootPath: string): Promise<Result<DecisionRe
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
       const id = entry.name.replace(/\.json$/, "");
-      const decision = await readDecisionFile(paths.decisionJson(id));
-      decisions.push(decision);
+      const filePath = paths.decisionJson(id);
+      try {
+        const decision = await readDecisionFile(filePath);
+        decisions.push(decision);
+      } catch (e) {
+        // ONE bad file must not blank the whole inbox. The old read let a single
+        // unparseable Decision throw out of here, so `decision:list` answered an
+        // error and the page drew "No pending proposals." — every Decision the
+        // operator had, made invisible by one file. The broken file is left on
+        // disk (never deleted or rewritten); it is reported once so it can be
+        // repaired, and the rest of the inbox is read.
+        if (!reportedUnreadableDecisions.has(filePath)) {
+          reportedUnreadableDecisions.add(filePath);
+          try {
+            await appendLog(rootPath, {
+              domainSlug: null,
+              type: "decision.unreadable",
+              summary: `Could not read the Decision file ${entry.name}`,
+              payload: {
+                file: entry.name,
+                error: e instanceof Error ? e.message : String(e),
+              },
+              actor: null,
+            });
+          } catch {
+            // The read path is not a write path; a log failure changes nothing.
+          }
+        }
+      }
     }
     decisions.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     return { ok: true, value: decisions };
