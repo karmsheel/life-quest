@@ -137,6 +137,8 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   // Decisions: creating one and resolving one both change what is pending
   "decision:create",
   "decision:resolve",
+  // A logged manual decision changes History and the manual tab's own list.
+  "manualDecision:create",
   // the chain, projects, the roster, the map, goals, reviews, daily notes
   "signalChain:create",
   "signalChain:update",

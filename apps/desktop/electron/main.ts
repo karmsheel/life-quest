@@ -505,6 +505,15 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
       vault.decisionResolve(id, resolution),
   );
 
+  // The operator's own decisions: logged, not proposed. A create is a write that
+  // changes History, so `data-revision.ts` names the channel above.
+  ipcMain.handle("manualDecision:list", () => vault.manualDecisionList());
+  ipcMain.handle(
+    "manualDecision:create",
+    (_e, input: Parameters<typeof vault.manualDecisionCreate>[0]) =>
+      vault.manualDecisionCreate(input),
+  );
+
   ipcMain.handle("log:list", () => vault.logList());
 
   ipcMain.handle("signalChain:list", () => vault.signalChainList());

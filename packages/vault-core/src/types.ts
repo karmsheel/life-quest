@@ -549,6 +549,30 @@ export type DecisionRecord = {
   reason: string | null;
 };
 
+/**
+ * A decision the operator logged themselves — "manual" in the everyday sense,
+ * including decisions made only in their head.
+ *
+ * The Decisions inbox is for changes proposed against the vault: every one of
+ * those waits for an answer, and answering it writes something. A manual
+ * decision is not a proposal. Nothing is going to be written, so there is
+ * nothing to approve, and it must never appear as a pending card or be resolved.
+ * It lives in its own store for exactly that reason; History reads both stores
+ * and names which one a row came from.
+ */
+export type ManualDecisionRecord = {
+  id: string;
+  /** What was decided, in the operator's own words. */
+  title: string;
+  /** Why — optional; null when the operator left it blank. */
+  rationale: string | null;
+  /** The domain it belongs to, or null when it belongs to no domain. */
+  domainSlug: string | null;
+  /** Always the operator: a manual decision has no proposer. */
+  actor: Actor;
+  createdAt: string;
+};
+
 export type GoalStatus = "open" | "done";
 
 export type Goal = {

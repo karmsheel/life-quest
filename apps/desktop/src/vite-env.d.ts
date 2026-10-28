@@ -18,6 +18,7 @@ import type {
   LibraryDocument,
   LibraryListResult,
   LibraryUpdatePatch,
+  ManualDecisionRecord,
   Project,
   ProjectCreateInput,
   ProjectListResult,
@@ -305,6 +306,12 @@ type LifequestApi = {
     id: string,
     resolution: "approved" | "rejected",
   ) => Promise<Result<DecisionRecord>>;
+  manualDecisionList: () => Promise<Result<ManualDecisionRecord[]>>;
+  manualDecisionCreate: (input: {
+    title: string;
+    rationale?: string | null;
+    domainSlug?: string | null;
+  }) => Promise<Result<ManualDecisionRecord>>;
   logList: () => Promise<Result<LifeEvent[]>>;
   signalChainList: () => Promise<Result<SignalChainListResult>>;
   signalChainCreate: (input: SignalCreateInput) => Promise<Result<SignalRecord>>;
