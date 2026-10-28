@@ -26,6 +26,7 @@ import DocumentsPage from "@/pages/DocumentsPage";
 import DreamPage from "@/pages/DreamPage";
 import VisionPage from "@/pages/VisionPage";
 import IdealStatePage from "@/pages/IdealStatePage";
+import ImagesPage from "@/pages/ImagesPage";
 import GoalsPage from "@/pages/GoalsPage";
 import ProjectPage from "@/pages/ProjectPage";
 import ProjectsPage from "@/pages/ProjectsPage";
@@ -111,6 +112,7 @@ function AppRoutes() {
             element={<DoctrineEditorPage backTo="/vision" />}
           />
           <Route path="/ideal-state" element={<IdealStatePage />} />
+          <Route path="/images" element={<ImagesPage />} />
           <Route path="/goals" element={<GoalsPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:id" element={<ProjectPage />} />

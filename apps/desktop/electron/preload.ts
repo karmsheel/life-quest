@@ -504,6 +504,27 @@ const lifequest = {
   idealStateDelete: (id: string) =>
     ipcRenderer.invoke("ideal-state:delete", id) as Promise<Result<unknown>>,
 
+  // Define → Images. Bytes in, ids out — the renderer never names a vault path.
+  imagesList: () =>
+    ipcRenderer.invoke("images:list") as Promise<Result<unknown>>,
+  imagesSave: (input: {
+    bytes: Uint8Array;
+    mime: string;
+    name: string;
+    width?: number | null;
+    height?: number | null;
+  }) => ipcRenderer.invoke("images:save", input) as Promise<Result<unknown>>,
+  imagesRead: (relPath: string) =>
+    ipcRenderer.invoke("images:read", relPath) as Promise<Result<unknown>>,
+  imagesUpdate: (id: string, patch: { name?: string; caption?: string }) =>
+    ipcRenderer.invoke("images:update", id, patch) as Promise<Result<unknown>>,
+  imagesDelete: (id: string) =>
+    ipcRenderer.invoke("images:delete", id) as Promise<Result<unknown>>,
+  imagesBoardGet: () =>
+    ipcRenderer.invoke("images:boardGet") as Promise<Result<unknown>>,
+  imagesBoardSave: (input: { blocks: unknown[] }) =>
+    ipcRenderer.invoke("images:boardSave", input) as Promise<Result<unknown>>,
+
   deadlineDismiss: () =>
     ipcRenderer.invoke("deadline:dismiss") as Promise<Result<true>>,
 

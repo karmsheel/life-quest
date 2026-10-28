@@ -40,6 +40,12 @@ import type {
   IdealStateDocument,
   IdealStateIndexEntry,
   IdealStateUpdatePatch,
+  ImageMimeType,
+  ImageSaveInput,
+  ImageUpdatePatch,
+  VaultImage,
+  VisionBoard,
+  VisionBoardBlock,
   PeriodPack,
   Pin,
   PinBoardRead,
@@ -526,6 +532,25 @@ type LifequestApi = {
     patch: IdealStateUpdatePatch,
   ) => Promise<Result<IdealStateDocument>>;
   idealStateDelete: (id: string) => Promise<Result<IdealStateDocument>>;
+  /**
+   * Define → Images: the vault-level picture library and the one vision
+   * document written beside it. The renderer hands over bytes and asks for
+   * bytes back; it never names a vault path.
+   */
+  imagesList: () => Promise<Result<VaultImage[]>>;
+  imagesSave: (input: ImageSaveInput) => Promise<Result<VaultImage>>;
+  imagesRead: (
+    relPath: string,
+  ) => Promise<Result<{ bytes: Uint8Array; mime: ImageMimeType }>>;
+  imagesUpdate: (
+    id: string,
+    patch: ImageUpdatePatch,
+  ) => Promise<Result<VaultImage>>;
+  imagesDelete: (id: string) => Promise<Result<{ id: string }>>;
+  imagesBoardGet: () => Promise<Result<VisionBoard>>;
+  imagesBoardSave: (input: {
+    blocks: VisionBoardBlock[];
+  }) => Promise<Result<VisionBoard>>;
   deadlineDismiss: () => Promise<Result<true>>;
   deadlineGetDismissed: () => Promise<Result<string | null>>;
   deadlineMaybeNotify: () => Promise<

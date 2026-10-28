@@ -28,6 +28,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 | [Cold start](docs/superpowers/specs/2026-10-17-cold-start-does-not-wait-on-the-companion-design.md) | What held the splash for 57s, and what the splash is allowed to wait on |
 | [Model probe](docs/superpowers/specs/2026-10-20-model-probe-asks-the-host-design.md) | The retired-model warning: asked of the host, answered after the boot |
 | [Projects on the Execute wing](docs/superpowers/specs/2026-10-27-projects-execute-wing-design.md) | A built-in project page with real attributes, collated context, and companion tools |
+| [Define → Images](docs/superpowers/specs/2026-10-28-define-images-board-design.md) | A vault picture library, and the vision written beside it as Notion-shaped blocks |
 | [Walrus integration report](docs/research/2026-10-19-walrus-integration-report.md) | What Walrus does and does not buy a vault, and the four integrations worth the work |
 
 ## Prerequisites

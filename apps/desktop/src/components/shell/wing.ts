@@ -35,6 +35,7 @@ const PATH_WING: Record<string, WingId> = {
   "/dream": "define",
   "/vision": "define",
   "/ideal-state": "define",
+  "/images": "define",
   "/goals": "plan",
   "/projects": "execute",
   "/chart": "plan",

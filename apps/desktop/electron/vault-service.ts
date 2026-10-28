@@ -18,6 +18,7 @@ import {
   dailyNotesInWindow,
   deleteDomain,
   deleteIdealState,
+  deleteImage,
   deletePage,
   deleteRow,
   deleteSignal,
@@ -34,6 +35,7 @@ import {
   getPeriodPack,
   getReview,
   getRow,
+  getVisionBoard,
   hireAgent,
   libraryCreate,
   libraryDelete,
@@ -46,6 +48,7 @@ import {
   listDailyNotes,
   listDecisions,
   listIdealStates,
+  listImages,
   listManualDecisions,
   listPages,
   listPinBoard,
@@ -59,12 +62,15 @@ import {
   projectList,
   projectUpdate,
   readDocumentMedia,
+  readImage,
   readLog,
   runScriptBlock,
   resolveDecision,
   saveDatabaseFile,
   saveDocument,
   saveDocumentMedia,
+  saveImage,
+  saveVisionBoard,
   setDocumentLocked,
   setLibraryLocked,
   setPins,
@@ -74,6 +80,7 @@ import {
   updateConnectedAgent,
   updateDomain,
   updateIdealState,
+  updateImage,
   updatePage,
   writeDailyNote,
   // Agent-built dashboard views (plan.md design)
@@ -142,6 +149,10 @@ import {
   type IdealStateDocument,
   type IdealStateIndexEntry,
   type IdealStateUpdatePatch,
+  type ImageSaveInput,
+  type ImageUpdatePatch,
+  type VisionBoard,
+  type VaultImage,
   type ImpliedChange,
   type ImpliedFilingOutcome,
   type IngestBatch,
@@ -1582,6 +1593,50 @@ export async function idealStateDelete(
   id: string,
 ): Promise<Result<IdealStateDocument>> {
   return withVault((root) => deleteIdealState(root, id));
+}
+
+/** Define → Images: every picture in the vault-level library, in upload order. */
+export async function imagesList(): Promise<Result<VaultImage[]>> {
+  return withVault((root) => listImages(root));
+}
+
+/** Store one uploaded picture; the bytes decide the kind, not the name. */
+export async function imagesSave(
+  input: ImageSaveInput,
+): Promise<Result<VaultImage>> {
+  return withVault((root) => saveImage(root, input));
+}
+
+/** The bytes of one stored picture, drawn from a blob URL by the renderer. */
+export async function imagesRead(
+  relPath: string,
+): Promise<Result<{ bytes: Uint8Array; mime: import("@lifequest/vault-core").ImageMimeType }>> {
+  return withVault((root) => readImage(root, relPath));
+}
+
+/** Rename or caption a picture. The stored file never moves. */
+export async function imagesUpdate(
+  id: string,
+  patch: ImageUpdatePatch,
+): Promise<Result<VaultImage>> {
+  return withVault((root) => updateImage(root, id, patch));
+}
+
+/** Remove a picture and its bytes from the vault. */
+export async function imagesDelete(id: string): Promise<Result<{ id: string }>> {
+  return withVault((root) => deleteImage(root, id));
+}
+
+/** The one vision document beside the library. Missing reads as empty. */
+export async function imagesBoardGet(): Promise<Result<VisionBoard>> {
+  return withVault((root) => getVisionBoard(root));
+}
+
+/** Replace the vision document's blocks. */
+export async function imagesBoardSave(input: {
+  blocks: unknown;
+}): Promise<Result<VisionBoard>> {
+  return withVault((root) => saveVisionBoard(root, input));
 }
 
 /** A cadence's standing review rules, defaulted when the file is not there. */

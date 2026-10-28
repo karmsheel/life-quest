@@ -396,6 +396,75 @@ export type IdealStateUpdatePatch = {
   bodyMarkdown?: string;
 };
 
+// Define → Images (2026-10-28). A vault-level picture library and the one
+// written vision board beside it. Pictures are stored as files, so the vault
+// keeps what the operator uploaded; the two JSON files are the library's index
+// and the board's blocks.
+export const IMAGE_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+] as const;
+export type ImageMimeType = (typeof IMAGE_MIME_TYPES)[number];
+
+/** The extension a sniffed kind is stored under. The bytes decide, never the name. */
+export const IMAGE_MIME_EXT: Record<ImageMimeType, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
+/** One picture in the operator's library, as the page draws it. */
+export type VaultImage = {
+  id: string;
+  /** Vault-relative path, `images/files/<id>.<ext>`; never absolute. */
+  relPath: string;
+  /** The name the operator's file had, kept for display only. */
+  name: string;
+  caption: string;
+  mime: ImageMimeType;
+  bytes: number;
+  /** The canvas the uploader reported, or null when it did not say. */
+  width: number | null;
+  height: number | null;
+  createdAt: string;
+};
+
+/**
+ * One block of the vision document. Deliberately the small, stable set the
+ * operator asked for — text, heading, bullets and a picture with its caption —
+ * rather than a general rich-text document.
+ */
+export type VisionBoardBlock =
+  | { id: string; kind: "text"; text: string }
+  | { id: string; kind: "heading"; text: string }
+  | { id: string; kind: "bullets"; items: string[] }
+  | { id: string; kind: "image"; imageId: string; caption: string };
+
+export type VisionBoardBlockKind = VisionBoardBlock["kind"];
+
+/** The one long document beside the library. */
+export type VisionBoard = {
+  blocks: VisionBoardBlock[];
+  updatedAt: string;
+};
+
+export type ImageSaveInput = {
+  bytes: Uint8Array;
+  /** Declared by the renderer; the sniffed bytes are authoritative. */
+  mime: string;
+  name: string;
+  width?: number | null;
+  height?: number | null;
+};
+
+export type ImageUpdatePatch = {
+  name?: string;
+  caption?: string;
+};
+
 export type AgentHire = {
   id: string;
   hermesAgentId: string;

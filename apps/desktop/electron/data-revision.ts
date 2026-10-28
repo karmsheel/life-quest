@@ -124,6 +124,11 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   "document:save",
   "document:setLocked",
   "document:mediaSave",
+  // Define → Images: the picture library and the vision document
+  "images:save",
+  "images:update",
+  "images:delete",
+  "images:boardSave",
   "library:create",
   "library:update",
   "library:delete",
