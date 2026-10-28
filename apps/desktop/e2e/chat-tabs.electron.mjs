@@ -122,6 +122,26 @@ const SAMPLE = `(() => {
           title: text(rail.querySelector(".chats-rail__title")),
           liveCount: text(rail.querySelector(".chats-rail__live-count")),
           newChat: Boolean(rail.querySelector(".chats-rail__new")),
+          // The New chat button is a button, not a menu row: its icon and label
+          // sit as one centred pair. Measure the pair's gaps to the button's
+          // own edges instead of trusting the CSS rule.
+          newChatCentered: (() => {
+            const button = rail.querySelector(".chats-rail__new");
+            if (!button) return null;
+            const buttonBox = button.getBoundingClientRect();
+            const parts = Array.from(button.children).map((child) =>
+              child.getBoundingClientRect()
+            );
+            if (parts.length === 0) return null;
+            const left = Math.min(...parts.map((part) => part.left));
+            const right = Math.max(...parts.map((part) => part.right));
+            return (
+              Math.abs(
+                Math.round(left - buttonBox.left) -
+                  Math.round(buttonBox.right - right)
+              ) <= 1
+            );
+          })(),
           // The dead space above and below the rows is part of the design: the
           // rail breathes instead of starting flush against its title/edge.
           paddingTop: Number.parseFloat(window.getComputedStyle(rail).paddingTop) || 0,
@@ -427,6 +447,11 @@ async function main() {
     // the dock lands on a thread with one tab (so the strip is not noise).
     const landing = await settle(300);
     check("the left sidebar lists the chats", landing.rowCount === 5, `${landing.rowCount} rows`);
+    check(
+      "the New chat button centres its icon and label",
+      landing.rail?.newChatCentered === true,
+      JSON.stringify({ centered: landing.rail?.newChatCentered }),
+    );
     check(
       "the pinned chat is the first row of the flat list",
       landing.rows[0]?.label === "Pinned note" && landing.rows[0]?.pinned === true,

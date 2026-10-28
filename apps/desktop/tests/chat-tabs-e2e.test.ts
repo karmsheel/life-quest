@@ -85,6 +85,7 @@ type State = {
     title: string;
     liveCount: string;
     newChat: boolean;
+    newChatCentered: boolean | null;
     paddingTop: number;
     paddingBottom: number;
   } | null;
@@ -192,6 +193,11 @@ describe("chat dock tabs and sidebar chats", () => {
     assert.equal(landing.rowCount, 5, "the sidebar did not list every chat");
     assert.equal(landing.rail?.title, "Chats", "the sidebar has no heading");
     assert.equal(landing.rail?.newChat, true, "the sidebar offers no New chat");
+    assert.equal(
+      landing.rail?.newChatCentered,
+      true,
+      "the New chat button does not centre its icon and label",
+    );
     assert.ok(
       (landing.rail?.paddingTop ?? 0) >= 10,
       `the rail has no dead space above its rows (${landing.rail?.paddingTop}px)`,

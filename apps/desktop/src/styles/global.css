@@ -8133,10 +8133,12 @@ button.chat-panel__activity-line:hover {
 }
 
 /* The one write that starts a chat, at the top of the list the way every chat
-   client puts it: a full-width row, not another icon in the rail. */
+   client puts it: a full-width row, not another icon in the rail. Its icon and
+   label are centred as a pair — the row is a button, not a menu item. */
 .chats-rail__new {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
   flex: 0 0 auto;
   margin: 0 0.15rem 0.15rem;
@@ -8147,7 +8149,7 @@ button.chat-panel__activity-line:hover {
   color: var(--fg);
   font: inherit;
   font-size: 0.75rem;
-  text-align: left;
+  text-align: center;
   cursor: pointer;
 }
 
