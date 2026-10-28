@@ -221,6 +221,22 @@ function domainDetail(card) {
     .join("; ");
 }
 
+/** The painted shadow as far as a claim can read it: layers and their blur radii. */
+function shadowInfo(value) {
+  const px = [...value.matchAll(/(-?\d+(?:\.\d+)?)px/g)].map((match) =>
+    Number(match[1]),
+  );
+  const blurs = [];
+  for (let index = 0; index + 3 < px.length; index += 4) {
+    blurs.push(px[index + 2]);
+  }
+  return {
+    none: value === "none",
+    layers: blurs.length,
+    maxBlur: blurs.length > 0 ? Math.max(...blurs) : 0,
+  };
+}
+
 function surfaceDetail(screenNow) {
   const sheet = screenNow.sheet?.background ?? "?";
   return screenNow.cards
@@ -282,6 +298,31 @@ async function main() {
     ),
     dark.cards
       .map((card) => `${card.id}: ${card.backgroundImage} / ${card.sheenBackgroundImage}`)
+      .join(" | "),
+  );
+  claim(
+    "the-card-is-grey-and-steps-up-off-the-sheet",
+    dark.cards.every(
+      (card) =>
+        card.channelSpread <= 10 &&
+        card.luminanceDeltaVsSheet > 0.01 &&
+        card.contrastVsSheet >= 1.15,
+    ),
+    dark.cards
+      .map(
+        (card) =>
+          `${card.id}: ${card.background} spread=${card.channelSpread} Δlum=${card.luminanceDeltaVsSheet} contrast=${card.contrastVsSheet}`,
+      )
+      .join(" | "),
+  );
+  claim(
+    "the-card-casts-a-shadow-that-raises-it",
+    dark.cards.every((card) => {
+      const shadow = shadowInfo(card.boxShadow);
+      return !shadow.none && shadow.layers >= 2 && shadow.maxBlur >= 8;
+    }),
+    dark.cards
+      .map((card) => `${card.id}: ${card.boxShadow}`)
       .join(" | "),
   );
 
@@ -387,6 +428,52 @@ async function main() {
       .join(" | "),
   );
 
+  const tallest = Math.max(...dark.cards.map((card) => card.cardBox.height));
+  claim(
+    "the-cards-are-condensed",
+    dark.cards.length === 3 && tallest <= 380,
+    `card heights ${dark.cards.map((card) => `${card.id}=${card.cardBox.height}px`).join(", ")} (tallest ${tallest}px)`,
+  );
+  claim(
+    "two-full-cards-fit-on-the-sheet-without-scrolling",
+    dark.sheetBody !== null && dark.fullyVisibleCards.length >= 2,
+    `scrollport ${JSON.stringify(dark.sheetBody)}; fully visible ${JSON.stringify(dark.fullyVisibleCards)}`,
+  );
+
+  // ══ the answer buttons: bigger, rectangular, still rounded ══════════════════
+  const buttonCards = pendingCards.filter((card) => card.buttons.length > 0);
+  const buttonHolds = buttonCards.every((card) => {
+    const labels = card.buttons.map((button) => button.label);
+    return (
+      labels.includes("Approve") &&
+      labels.includes("Reject") &&
+      card.buttons.every(
+        (button) =>
+          button.box.height >= 40 &&
+          button.box.width >= 110 &&
+          button.fontSize >= 14.5 &&
+          button.borderRadius >= 2 &&
+          button.borderRadius <= 8 &&
+          button.paddingX >= 16,
+      )
+    );
+  });
+  claim(
+    "approve-and-reject-are-bigger-and-more-rectangular",
+    buttonHolds,
+    pendingCards
+      .map(
+        (card) =>
+          `${card.id}: ${card.buttons
+            .map(
+              (button) =>
+                `${button.label} ${button.box.width}x${button.box.height} r=${button.borderRadius} font=${button.fontSize}`,
+            )
+            .join(", ")}`,
+      )
+      .join(" | "),
+  );
+
   // ══ the domain badge beside it ═════════════════════════════════════════════
   const financial = cardIn(dark, "decision-financial");
   const health = cardIn(dark, "decision-health");
@@ -428,7 +515,9 @@ async function main() {
         (card) =>
           card.background !== light.sheet.background &&
           card.contrastVsSheet >= 1.05 &&
-          card.channelDeltaVsSheet >= 6,
+          card.channelDeltaVsSheet >= 6 &&
+          card.channelSpread <= 10 &&
+          !shadowInfo(card.boxShadow).none,
       ),
     surfaceDetail(light),
   );

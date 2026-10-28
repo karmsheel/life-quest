@@ -66,11 +66,23 @@ type Card = {
   contrastVsSheet: number;
   channelDeltaVsSheet: number;
   channelDeltaVsCanvas: number;
+  luminanceDeltaVsSheet: number;
+  channelSpread: number;
+  boxShadow: string;
+  cardBox: { width: number; height: number };
   status: string;
   statusBox: Box | null;
   statusFontSize: number | null;
   kindBox: Box | null;
   kindFontSize: number | null;
+  buttons: Array<{
+    label: string;
+    box: { width: number; height: number };
+    fontSize: number;
+    borderRadius: number;
+    paddingX: number;
+    paddingY: number;
+  }>;
   domains: Chip[];
   domainsImmediatelyBeforeStatus: boolean;
   hovered: boolean;
@@ -84,6 +96,8 @@ type Screen = {
   theme: string | null;
   sheet: { background: string } | null;
   activeTab: string | null;
+  sheetBody: { top: number; bottom: number; height: number } | null;
+  fullyVisibleCards: string[];
   cards: Card[];
 };
 
@@ -110,6 +124,8 @@ type Report = {
 const WANTED = [
   "the-card-wears-a-surface-different-from-its-sheet",
   "the-card-carries-a-diagonal-shading-wash",
+  "the-card-is-grey-and-steps-up-off-the-sheet",
+  "the-card-casts-a-shadow-that-raises-it",
   "the-slash-waits-off-the-card-at-rest",
   "hovering-really-lands-on-the-card",
   "hover-sweeps-the-slash-across-the-card",
@@ -118,6 +134,9 @@ const WANTED = [
   "leaving-the-card-puts-the-shading-back",
   "the-pending-badge-is-larger-than-the-kind-chip",
   "the-pending-badge-keeps-the-top-right-corner",
+  "the-cards-are-condensed",
+  "two-full-cards-fit-on-the-sheet-without-scrolling",
+  "approve-and-reject-are-bigger-and-more-rectangular",
   "a-domain-badge-sits-beside-the-pending-badge",
   "the-domain-badge-names-the-domain-not-its-slug",
   "a-domainless-decision-wears-no-domain-badge",
@@ -178,6 +197,23 @@ describe("decisions inbox cards e2e", () => {
         `${one.id}: card/page channel distance ${one.channelDeltaVsCanvas} is below 5`,
       );
       assert.match(one.backgroundImage, /linear-gradient/);
+      assert.ok(
+        one.channelSpread <= 10,
+        `${one.id}: card colour spread ${one.channelSpread} is not a neutral grey`,
+      );
+      assert.ok(
+        one.luminanceDeltaVsSheet > 0.01,
+        `${one.id}: the card does not step up off the sheet (Δlum ${one.luminanceDeltaVsSheet})`,
+      );
+      assert.ok(one.contrastVsSheet >= 1.15);
+      // The card is raised by its own painted shadow: at least two layers, and a
+      // real blur rather than a hairline outline.
+      assert.notEqual(one.boxShadow, "none", `${one.id} has no shadow`);
+      const blurs = [...one.boxShadow.matchAll(/(-?\d+(?:\.\d+)?)px/g)]
+        .map((match) => Number(match[1]))
+        .filter((_, index) => index % 4 === 2);
+      assert.ok(blurs.length >= 2, `${one.id}: shadow layers ${blurs.length}`);
+      assert.ok(Math.max(...blurs) >= 8, `${one.id}: shadow blur is only ${Math.max(...blurs)}px`);
     }
     assert.equal(light.theme, "light");
     assert.ok(light.sheet);
@@ -185,6 +221,27 @@ describe("decisions inbox cards e2e", () => {
       assert.notEqual(one.background, light.sheet.background);
       assert.ok(one.contrastVsSheet >= 1.05);
       assert.ok(one.channelDeltaVsSheet >= 6);
+      assert.ok(one.channelSpread <= 10);
+    }
+
+    // ── the card is condensed, and its two answers are bigger ───────────────
+    const tallest = Math.max(...dark.cards.map((one) => one.cardBox.height));
+    assert.ok(tallest <= 380, `the tallest card is ${tallest}px, not condensed`);
+    assert.ok(
+      dark.fullyVisibleCards.length >= 2,
+      `only ${dark.fullyVisibleCards.length} whole cards fit on the sheet`,
+    );
+    for (const one of dark.cards.filter((entry) => entry.status === "pending")) {
+      assert.equal(one.buttons.length, 2, `${one.id} should offer Approve and Reject`);
+      const labels = one.buttons.map((button) => button.label).sort();
+      assert.deepEqual(labels, ["Approve", "Reject"]);
+      for (const button of one.buttons) {
+        assert.ok(button.box.height >= 40, `${one.id} ${button.label} is ${button.box.height}px tall`);
+        assert.ok(button.box.width >= 110, `${one.id} ${button.label} is ${button.box.width}px wide`);
+        assert.ok(button.fontSize >= 14.5);
+        assert.ok(button.borderRadius >= 2 && button.borderRadius <= 8);
+        assert.ok(button.paddingX >= 16);
+      }
     }
 
     // ── the hover: off one edge at rest, off the other under the pointer ─────

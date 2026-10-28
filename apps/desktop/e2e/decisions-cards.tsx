@@ -211,6 +211,12 @@ type CardSample = {
   channelDeltaVsSheet: number;
   /** Largest per-channel difference against the page canvas behind the sheet. */
   channelDeltaVsCanvas: number;
+  /** How far the card is lighter than the sheet: positive means it steps up. */
+  luminanceDeltaVsSheet: number;
+  /** Max minus min channel: 0 is a perfect neutral grey, higher is a tint. */
+  channelSpread: number;
+  /** The painted elevation: the card's own raised shadow. */
+  boxShadow: string;
   status: string;
   statusBox: Box | null;
   statusFontSize: number | null;
@@ -220,6 +226,15 @@ type CardSample = {
   kind: string | null;
   kindBox: Box | null;
   kindFontSize: number | null;
+  /** The card's answer buttons, so "bigger and more rectangular" has numbers. */
+  buttons: Array<{
+    label: string;
+    box: Box;
+    fontSize: number;
+    borderRadius: number;
+    paddingX: number;
+    paddingY: number;
+  }>;
   domains: Chip[];
   /** True when every domain badge is the status pill's immediately preceding sibling. */
   domainsImmediatelyBeforeStatus: boolean;
@@ -247,6 +262,10 @@ type Screen = {
   sheet: SheetSample | null;
   bodyBackground: string;
   activeTab: string | null;
+  /** The sheet's own scrollport, for "how many cards fit without scrolling". */
+  sheetBody: { top: number; bottom: number; height: number } | null;
+  /** Cards whose whole box is inside the scrollport at rest. */
+  fullyVisibleCards: string[];
   cards: CardSample[];
 };
 
@@ -361,6 +380,12 @@ function sampleCard(card: HTMLElement, sheetBackground: string, canvasBackground
     contrastVsSheet: contrast(background, sheetBackground),
     channelDeltaVsSheet: channelDelta(background, sheetBackground),
     channelDeltaVsCanvas: channelDelta(background, canvasBackground),
+    luminanceDeltaVsSheet: Number(
+      (luminance(background) - luminance(sheetBackground)).toFixed(4),
+    ),
+    channelSpread:
+      Math.max(...channels(background)) - Math.min(...channels(background)),
+    boxShadow: cardStyle.boxShadow,
     status: statusEl ? text(statusEl) : "",
     statusBox: statusEl ? box(statusEl) : null,
     statusFontSize: statusStyle ? parseFloat(statusStyle.fontSize) : null,
@@ -370,6 +395,19 @@ function sampleCard(card: HTMLElement, sheetBackground: string, canvasBackground
     kind: kindEl ? text(kindEl) : null,
     kindBox: kindEl ? box(kindEl) : null,
     kindFontSize: kindStyle ? parseFloat(kindStyle.fontSize) : null,
+    buttons: [...card.querySelectorAll<HTMLButtonElement>(".decision-card__actions button")].map(
+      (button) => {
+        const style = getComputedStyle(button);
+        return {
+          label: text(button),
+          box: box(button),
+          fontSize: parseFloat(style.fontSize),
+          borderRadius: parseFloat(style.borderTopLeftRadius),
+          paddingX: parseFloat(style.paddingLeft),
+          paddingY: parseFloat(style.paddingTop),
+        };
+      },
+    ),
     domains: chips.map((chip) => {
       const style = getComputedStyle(chip);
       return {
@@ -410,6 +448,8 @@ function screen(): Screen {
   // the painted page when the token is not resolvable to a colour.
   const canvas = canvasBackground.trim() || "rgb(0, 0, 0)";
   const cards = [...document.querySelectorAll<HTMLElement>(".decision-card")];
+  const scroller = document.querySelector<HTMLElement>(".sheet-overlay__body--scroll");
+  const scrollerBox = scroller ? box(scroller) : null;
   return {
     ready: Boolean(harness.decisionsCardsReady),
     skin: skinName,
@@ -420,6 +460,17 @@ function screen(): Screen {
     bodyBackground: canvas,
     activeTab:
       text(document.querySelector('.decisions-inbox__tab[aria-selected="true"]')) || null,
+    sheetBody: scrollerBox
+      ? { top: scrollerBox.top, bottom: scrollerBox.bottom, height: scrollerBox.height }
+      : null,
+    fullyVisibleCards: scrollerBox
+      ? cards
+          .filter((card) => {
+            const cardBox = card.getBoundingClientRect();
+            return cardBox.top >= scrollerBox.top - 1 && cardBox.bottom <= scrollerBox.bottom + 1;
+          })
+          .map((card) => card.dataset.decisionId ?? card.dataset.manualDecisionId ?? "")
+      : [],
     cards: cards.map((card) => sampleCard(card, sheetBackground, canvas)),
   };
 }
