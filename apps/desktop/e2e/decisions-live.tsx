@@ -472,6 +472,10 @@ const stubs: Record<string, (...args: unknown[]) => Promise<unknown>> = {
     // holding on to what it was given, and `decisionResolve` is the only writer.
     return ok(vault.decisions.map((d) => ({ ...d })));
   },
+  // The History tab also reads the operator's own manual decisions. This rig is
+  // about a filing landing live, so it holds none; the manual store has its own
+  // rig (`decisions-manual.tsx`).
+  manualDecisionList: async () => ok([]),
   decisionResolve: async (id: unknown, resolution: unknown) => {
     harness.decisionsLiveResolves!.push({
       id: String(id),

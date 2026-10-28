@@ -7,16 +7,50 @@ import {
 import {
   actorDisplayName,
   DOCUMENT_KIND_LABELS,
+  recordVisible,
   recordVisibleMulti,
 } from "@lifequest/vault-core/pure";
-import type { DecisionRecord } from "@lifequest/vault-core";
+import type {
+  DecisionRecord,
+  ManualDecisionRecord,
+} from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 import { useLiveData } from "@/state/LiveDataProvider";
 import { DecisionBody } from "./DecisionBody";
+import { ManualDecisionCard, ManualDecisionsPanel } from "./ManualDecisions";
 
-type Tab = "pending" | "history";
+type Tab = "pending" | "history" | "manual";
+
+/**
+ * Which store History is drawing from.
+ *
+ * The Decisions inbox is the approval queue for proposed changes; a manual
+ * decision is the operator's own record and never enters that queue. History is
+ * the one place both are read, so it names the two sides the operator asked to
+ * compare: their own `Manual` decisions and the `AI`-related ones filed through
+ * the inbox. An operator-filed proposal lives in the inbox store too and wears
+ * `You` on its chip; the filter still groups it with the proposals, which is the
+ * axis that matters here (logged vs proposed).
+ */
+type HistoryFilter = "all" | "manual" | "ai";
+
+const HISTORY_FILTERS: { id: HistoryFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "manual", label: "Manual" },
+  { id: "ai", label: "AI" },
+];
+
+/** One row of the list: a proposal Decision, or a logged manual decision. */
+type InboxRow =
+  | { kind: "ai"; decision: DecisionRecord }
+  | { kind: "manual"; manual: ManualDecisionRecord };
+
+/** When the row's decision was made — the sort key the two stores share. */
+function rowAt(row: InboxRow): string {
+  return row.kind === "ai" ? row.decision.createdAt : row.manual.createdAt;
+}
 
 /**
  * A Decision this page had never drawn, and the moment it found it.
@@ -117,6 +151,15 @@ function kindLabel(target: DecisionRecord["target"]): string {
  * filed it. The mark is a pulse rather than a flag that stays, because a badge
  * that never clears stops meaning "new" and starts meaning "some decision".
  *
+ * THE THIRD TAB: MANUAL DECISIONS
+ *
+ * The operator also makes decisions the vault never sees. Those are not
+ * proposals — nothing is waiting for an answer — so they are logged rather than
+ * filed, in their own store (`manual-decisions.ts`), and they never appear in
+ * the approval queue. The `Manual` tab is that capture surface, and History reads
+ * both stores with a source chip on every card and a filter to compare the
+ * operator's own decisions against the AI's.
+ *
  * WHAT IT DELIBERATELY DOES NOT DO
  *
  * It does not move the page. A prepend at the start of a list is where the
@@ -137,7 +180,15 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
   const live = useLiveData();
 
   const [tab, setTab] = useState<Tab>("pending");
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [items, setItems] = useState<DecisionRecord[]>([]);
+  /**
+   * The other store. Kept unfiltered: the lens is applied where the rows are
+   * drawn, so a record that just landed is never hidden from the store the page
+   * holds just because the lens it was logged under is not the active one.
+   */
+  const [manualItems, setManualItems] = useState<ManualDecisionRecord[]>([]);
+  const [manualLoading, setManualLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
@@ -184,6 +235,7 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
       const seq = readSeqRef.current + 1;
       readSeqRef.current = seq;
       if (mode === "view" && !seededRef.current) setLoading(true);
+      if (mode === "view" && tab !== "pending") setManualLoading(true);
       setError(null);
       try {
         const result = await api().decisionList();
@@ -222,6 +274,33 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
         list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
         setItems(list);
+
+        // The second store is read only by the tabs that show it. A failure to
+        // read it must not read as "you have logged nothing": an empty history
+        // and a broken one are different facts, so the error is said out loud.
+        if (tab !== "pending") {
+          try {
+            const manualResult = await api().manualDecisionList();
+            if (readSeqRef.current !== seq) return;
+            if (manualResult.ok) {
+              setManualItems(manualResult.value);
+            } else {
+              setManualItems([]);
+              setError(`Could not load manual decisions: ${manualResult.error}`);
+            }
+          } catch (err) {
+            if (readSeqRef.current !== seq) return;
+            setManualItems([]);
+            setError(
+              `Could not load manual decisions: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            );
+          }
+        } else {
+          setManualItems([]);
+        }
+
         if (fresh.length > 0) {
           const newest = fresh
             .slice()
@@ -237,6 +316,7 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
         if (mode === "view") setItems([]);
       } finally {
         setLoading(false);
+        setManualLoading(false);
       }
     },
     [tab, lens],
@@ -293,6 +373,28 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
     }
   }
 
+  function selectTab(next: Tab) {
+    setTab(next);
+    setActionMessage(null);
+    setError(null);
+  }
+
+  /**
+   * The record the form just logged.
+   *
+   * It is added to the store the page already holds — not re-read — so it is on
+   * screen the moment the form hands it over. The live revision will ask for a
+   * fresh read too, which is what makes a decision logged in another window
+   * arrive here later.
+   */
+  function manualLogged(decision: ManualDecisionRecord) {
+    setManualItems((previous) =>
+      [decision, ...previous.filter((m) => m.id !== decision.id)],
+    );
+    setActionMessage("Decision logged.");
+    setError(null);
+  }
+
   /**
    * The arrivals this tab is actually showing.
    *
@@ -303,6 +405,43 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
    */
   const arrivedIds = new Set(arrival?.ids ?? []);
   const arrivedOnScreen = items.filter((d) => arrivedIds.has(d.id));
+  const livedDomains = domains.filter((d) => !d.meta.archivedAt);
+
+  // The manual store is shown under the same lens as the inbox: a decision
+  // logged under Health belongs to Health, and one logged with no domain is the
+  // Overview's own.
+  const manualVisible = manualItems
+    .filter((m) => recordVisible(lens, m.domainSlug))
+    .slice()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  // The list this tab draws. Pending is one store; History merges the resolved
+  // proposals with the operator's own decisions, and the filter decides which
+  // side of that comparison is on screen.
+  let rows: InboxRow[];
+  if (tab === "history") {
+    const aiRows: InboxRow[] = items.map((decision) => ({ kind: "ai", decision }));
+    const manualRows: InboxRow[] = manualVisible.map((manual) => ({
+      kind: "manual",
+      manual,
+    }));
+    if (historyFilter === "ai") rows = aiRows;
+    else if (historyFilter === "manual") rows = manualRows;
+    else rows = [...aiRows, ...manualRows];
+    rows.sort((a, b) => rowAt(b).localeCompare(rowAt(a)));
+  } else {
+    rows = items.map((decision) => ({ kind: "ai", decision }));
+  }
+
+  const emptyText =
+    tab === "pending"
+      ? "No pending proposals."
+      : historyFilter === "manual"
+        ? "No manual decisions logged yet."
+        : historyFilter === "ai"
+          ? "No resolved AI decisions yet."
+          : "No decisions yet. Log one yourself on the Manual tab, or wait for a proposal.";
+
   const newMark = arrival ? `is-new decision-card--new-${arrival.at}` : "";
 
   return (
@@ -315,7 +454,8 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
           <p className="decisions-inbox__eyebrow">Inbox</p>
           <h1 className="stub-page__title">Decisions</h1>
           <p className="stub-page__desc muted">
-            Approve a proposal to write it into the vault. Reject it to leave the vault as it is.
+            Approve a proposal to write it into the vault. Reject it to leave the
+            vault as it is. Log your own decisions on the Manual tab.
           </p>
         </header>
       ) : null}
@@ -331,10 +471,7 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
           ]
             .filter(Boolean)
             .join(" ")}
-          onClick={() => {
-            setTab("pending");
-            setActionMessage(null);
-          }}
+          onClick={() => selectTab("pending")}
         >
           Pending
         </button>
@@ -348,14 +485,54 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
           ]
             .filter(Boolean)
             .join(" ")}
-          onClick={() => {
-            setTab("history");
-            setActionMessage(null);
-          }}
+          onClick={() => selectTab("history")}
         >
           History
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "manual"}
+          className={[
+            "decisions-inbox__tab",
+            tab === "manual" ? "decisions-inbox__tab--active" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          onClick={() => selectTab("manual")}
+        >
+          Manual
+        </button>
       </div>
+
+      {/* The comparison the operator asked for, on the tab where both stores are
+          read: their own decisions against the ones filed through the inbox. */}
+      {tab === "history" ? (
+        <div
+          className="decisions-inbox__filters"
+          role="group"
+          aria-label="Filter decisions by source"
+        >
+          {HISTORY_FILTERS.map((filter) => (
+            <button
+              key={filter.id}
+              type="button"
+              aria-pressed={historyFilter === filter.id}
+              className={[
+                "decisions-inbox__filter",
+                historyFilter === filter.id
+                  ? "decisions-inbox__filter--active"
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              onClick={() => setHistoryFilter(filter.id)}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {error ? (
         <p className="form-error" role="alert">
@@ -383,17 +560,31 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
         </p>
       ) : null}
 
-      {loading ? (
+      {tab === "manual" ? (
+        <ManualDecisionsPanel
+          domains={livedDomains}
+          defaultDomainSlug={lens.kind === "domain" ? lens.slug : null}
+          items={manualVisible}
+          loading={manualLoading}
+          onLogged={manualLogged}
+        />
+      ) : loading ? (
         <p className="muted">Loading decisions…</p>
-      ) : items.length === 0 ? (
-        <p className="muted decisions-inbox__empty">
-          {tab === "pending"
-            ? "No pending proposals."
-            : "No resolved decisions yet."}
-        </p>
+      ) : rows.length === 0 ? (
+        <p className="muted decisions-inbox__empty">{emptyText}</p>
       ) : (
         <ul className="decisions-inbox__list">
-          {items.map((d) => {
+          {rows.map((row) => {
+            if (row.kind === "manual") {
+              return (
+                <ManualDecisionCard
+                  key={`manual:${row.manual.id}`}
+                  decision={row.manual}
+                  domains={domains}
+                />
+              );
+            }
+            const d = row.decision;
             const title =
               tab === "pending" && d.proposedTitle ? d.proposedTitle : d.title;
             const domainsLabel = d.domainSlugs
@@ -417,6 +608,16 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
               >
                 <div className="decision-card__kicker">
                   <span className="decision-card__kicker-left">
+                    {/* History reads two stores, so it names the side each card
+                        came from. Pending is the inbox itself and needs no chip. */}
+                    {tab === "history" ? (
+                      <span
+                        className="decision-source decision-source--ai"
+                        data-source={d.actor.type === "agent" ? "ai" : "you"}
+                      >
+                        {d.actor.type === "agent" ? "AI" : "You"}
+                      </span>
+                    ) : null}
                     <span className="decision-kind">{kindLabel(d.target)}</span>
                     {isNew ? <span className="decision-new">New</span> : null}
                   </span>

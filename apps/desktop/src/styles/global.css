@@ -2659,6 +2659,150 @@ a {
   font-size: 0.8rem;
 }
 
+/* The source of a history row: the operator's own logged decision, or one that
+   came through the inbox. Two chips rather than two lists, because the point is
+   comparing them side by side. */
+.decision-source {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.55rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.decision-source--manual {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.decision-source--ai {
+  background: var(--muted-surface);
+  color: var(--muted);
+}
+
+/* A logged decision is a record, not an approval: it says what it is without the
+   green of a resolved proposal. */
+.decision-status--logged {
+  color: var(--muted);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-soft);
+}
+
+/* —— Manual decisions tab —— */
+.decisions-inbox__filters {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+}
+
+.decisions-inbox__filter {
+  border: 0;
+  border-radius: var(--radius-pill);
+  padding: 0.24rem 0.7rem;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.decisions-inbox__filter--active {
+  background: var(--card);
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: var(--shadow-xs);
+}
+
+.manual-decisions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.manual-decisions__lead {
+  margin: 0;
+  max-width: 44rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.manual-decisions__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.manual-decisions__form .field span {
+  font-weight: 600;
+}
+
+.manual-decisions__form .field textarea,
+.manual-decisions__form .field select {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.55rem;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+
+.manual-decisions__form .field textarea {
+  line-height: 1.45;
+}
+
+.manual-decisions__domain {
+  max-width: 18rem;
+}
+
+.manual-decisions__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.manual-decisions__history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.manual-decisions__heading {
+  margin: 0.2rem 0 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.manual-decisions__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.manual-decisions__empty {
+  margin: 0;
+}
+
+.decision-card--manual {
+  border-left: 3px solid var(--accent);
+}
+
 .decision-proposal,
 .decision-section {
   display: flex;

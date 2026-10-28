@@ -44,6 +44,7 @@ export async function createVault(
 
     await fs.mkdir(paths.lifequestDir, { recursive: true });
     await fs.mkdir(paths.decisionsDir, { recursive: true });
+    await fs.mkdir(paths.manualDecisionsDir, { recursive: true });
     await fs.mkdir(paths.domainsDir, { recursive: true });
 
     const settings: VaultSettings = {

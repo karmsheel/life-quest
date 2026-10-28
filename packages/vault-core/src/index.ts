@@ -13,6 +13,7 @@ export * from "./domains.ts";
 export * from "./domain-documents.ts";
 export * from "./decisions.ts";
 export * from "./decision-labels.ts";
+export * from "./manual-decisions.ts";
 export * from "./agents.ts";
 export { readAutoApproveInserts } from "./agents.ts";
 export {

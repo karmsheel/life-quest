@@ -224,6 +224,10 @@ const lifequest = {
     ipcRenderer.invoke("decision:resolve", id, resolution) as Promise<
       Result<unknown>
     >,
+  manualDecisionList: () =>
+    ipcRenderer.invoke("manualDecision:list") as Promise<Result<unknown>>,
+  manualDecisionCreate: (input: Record<string, unknown>) =>
+    ipcRenderer.invoke("manualDecision:create", input) as Promise<Result<unknown>>,
 
   logList: () => ipcRenderer.invoke("log:list") as Promise<Result<unknown>>,
 
