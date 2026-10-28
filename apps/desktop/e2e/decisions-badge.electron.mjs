@@ -273,12 +273,22 @@ async function main() {
   await call(win, "decisionsBadgeStartPulseWatch");
   const secondId = await call(win, "decisionsBadgeFile", "Premise revision 2");
   const bumped = await settle(win, "window.decisionsBadgeScreen().badgeText === '2'", 6_000);
+  // The arrival mark is stamped by an effect one commit after the count moves,
+  // so a read taken the instant the count reads "2" can land between the two and
+  // miss it. Wait for the mark the claim is about (the pulse lasts seconds, so a
+  // real absence still times out); the count itself is already asserted above.
+  const secondMarked = await settle(
+    win,
+    "window.decisionsBadgeScreen().arrived === 'true'",
+    2_000,
+  );
   const afterSecond = await screen(win);
   checks.afterSecond = afterSecond;
   checks.secondId = secondId;
   claim(
     "a-second-filing-bumps-the-count",
     bumped &&
+      secondMarked &&
       afterSecond.badgePresent === true &&
       afterSecond.badgeText === "2" &&
       afterSecond.ariaLabel === "Decisions, 2 pending" &&
