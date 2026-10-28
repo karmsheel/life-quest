@@ -434,7 +434,6 @@ export async function projectCreate(
   actor: Actor = USER_ACTOR,
 ): Promise<Result<Project>> {
   try {
-<<<<<<< HEAD
     if (!input || typeof input !== "object") return fail("Project input is required");
     const raw = input as unknown as Record<string, unknown>;
 
