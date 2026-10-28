@@ -13,6 +13,11 @@ export function vaultPaths(root: string) {
     connectedAgentsJson: path.join(rootPath, ".lifequest", "connected-agents.json"),
     logJsonl: path.join(rootPath, ".lifequest", "log.jsonl"),
     decisionsDir: path.join(rootPath, ".lifequest", "decisions"),
+    // A manual decision is a record, not a proposal, so it is stored apart from
+    // the inbox: nothing in the approval path can ever see one.
+    manualDecisionsDir: path.join(rootPath, ".lifequest", "manual-decisions"),
+    manualDecisionJson: (id: string) =>
+      safeJoin(rootPath, ".lifequest", "manual-decisions", `${id}.json`),
     signalChainDir: path.join(rootPath, ".lifequest", "signal-chain"),
     domainDir: (slug: string) => safeJoin(rootPath, "domains", slug),
     domainJson: (slug: string) => safeJoin(rootPath, "domains", slug, "domain.json"),

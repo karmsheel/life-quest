@@ -8,6 +8,7 @@ import {
   COMPANION_ACTOR,
   createDatabase,
   createDecision,
+  createManualDecision,
   createDomain,
   createIdealState,
   createPage,
@@ -44,6 +45,7 @@ import {
   listDailyNotes,
   listDecisions,
   listIdealStates,
+  listManualDecisions,
   listPages,
   listPinBoard,
   listRows,
@@ -152,6 +154,8 @@ import {
   type DecisionRecord,
   type DocumentKind,
   type DocumentTarget,
+  type ManualDecisionInput,
+  type ManualDecisionRecord,
   type DoctrineDocument,
   type DomainMeta,
   type DomainRecord,
@@ -1120,6 +1124,23 @@ export async function decisionResolve(
     if (res.ok) await captureDoctrineMtimes(root);
     return res;
   });
+}
+
+/**
+ * The operator's manual decisions.
+ *
+ * A separate pair of calls rather than a flag on `decisionList`: the inbox is
+ * the approval queue, and a logged decision is not in it. The page reads this
+ * store only for History and for its own form's recent list.
+ */
+export async function manualDecisionList(): Promise<Result<ManualDecisionRecord[]>> {
+  return withVault((root) => listManualDecisions(root));
+}
+
+export async function manualDecisionCreate(
+  input: ManualDecisionInput,
+): Promise<Result<ManualDecisionRecord>> {
+  return withVault((root) => createManualDecision(root, input));
 }
 
 export async function logList(): Promise<Result<LifeEvent[]>> {

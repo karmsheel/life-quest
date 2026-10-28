@@ -80,15 +80,85 @@ const MEASURE_DESCRIPTION =
  * columns come from its fold, and a listing that named none would draw an empty
  * table, so the shape is refused rather than drawn blank.
  */
+/**
+ * How the four aggregate drawings differ, in the words the model is shown.
+ *
+ * The important sentence is the first one: `presentation` is a DRAWING. The
+ * dataset is the query, and the four aggregate drawings all read the same one,
+ * so moving between them must never require the model to rewrite a groupBy.
+ */
+const PRESENTATION_DESCRIPTION =
+  "How this object is DRAWN. It never changes the data: metric, table, bar and line all read the " +
+  "same dataset, so a card can be shown as a table and then as a chart without its groupBy or " +
+  "measure moving. Choose by what the operator is asking: 'metric' for one headline number; " +
+  "'table' when exact values or a lookup matter; 'bar' to compare categories or periods against " +
+  "each other; 'line' for a trend over time (best with a date groupBy and a timeBucket); 'list' " +
+  "or 'table' with `columns` to print the rows themselves. A line over categories is allowed, but " +
+  "say why if the operator asked for a trend and there is no date to plot.";
+
+/**
+ * When a card needs several objects, and how to compose them.
+ *
+ * A model that has never seen `from` will compute an average of monthly totals
+ * by hand and paste the number, which is exactly the picture-that-cannot-update
+ * the live-dashboard work removed. The guidance is attached to the `blocks`
+ * field, where the model is already reading about several objects.
+ */
+const BLOCKS_DESCRIPTION =
+  "A card made of several OBJECTS: one entry each, up to 8. Use it for a summary that needs more " +
+  "than one figure (a metric beside its table), for two views of one dataset, or for an object " +
+  "built on another. Each object may name another database of the SAME domain as its " +
+  "databaseId; an object that omits it reads the card's database. An object with `from` does not read a database at all — it folds an EARLIER " +
+  "object's rows, which is how 'the average of these monthly totals' stays live: {\"id\":\"avg\", " +
+  "\"title\":\"Average month\",\"presentation\":\"metric\",\"from\":\"months\",\"measure\":\"avg\"}. " +
+  "Objects draw under one card title, in order. A summary that is one figure plus one table is " +
+  "ONE card, not two views.";
+
 const LIST_COLUMNS_SCHEMA = {
   type: "array",
   description:
-    "The `list` presentation's columns, in order — which database columns the listing prints, " +
-    "each headed by the column's own name. Name 1 to 6, e.g. ['date','payee','category','amount']. " +
-    "Omit for every other presentation.",
+    "The columns a ROW object prints, in order — which database columns the rows show, each " +
+    "headed by the column's own name. Name 1 to 6, e.g. ['date','payee','category','amount']. " +
+    "Naming columns is what makes an object raw: it then draws as 'list' or 'table' and takes no " +
+    "groupBy, no timeBucket and no meaningful measure. Omit for an aggregate.",
   items: {
     type: "string",
     description: "A column id of this database, e.g. 'date'. A relation prints its target's name.",
+  },
+} as const;
+
+/** The drawing details a model can name, and the only values that will draw. */
+const VIEW_DISPLAY_SCHEMA = {
+  type: "object",
+  description:
+    "How the object looks, never what it holds. Omit for the app's defaults. Set these when the " +
+    "operator asks for a colour scheme, a legend, axis captions, or values printed on the marks. " +
+    "Colours are a NAMED palette, not hex values, so a skin repaint still reaches the card.",
+  properties: {
+    palette: {
+      type: "string",
+      enum: ["accent", "warm", "cool", "mono"],
+      description:
+        "'accent' (default: the product's own colours), 'warm' (terracotta/amber/red), 'cool' " +
+        "(blue/green), or 'mono' (one ink at six strengths). Series take the palette in order.",
+    },
+    legend: {
+      type: "boolean",
+      description:
+        "Draw a colour key under the chart. Defaults to true when the object has several series.",
+    },
+    xLabel: {
+      type: "string",
+      description: "A short caption for the x-axis, e.g. 'Month'. Not the card's title.",
+    },
+    yLabel: {
+      type: "string",
+      description: "A short caption for the y-axis, e.g. 'Spend (ZAR)'.",
+    },
+    valueLabels: {
+      type: "boolean",
+      description: "Print each value on its bar or beside its point. Useful for a short series.",
+    },
   },
 } as const;
 
@@ -113,13 +183,34 @@ const VIEW_BLOCK_SCHEMA = {
     presentation: {
       type: "string",
       enum: PRESENTATIONS,
-      description:
-        "How this panel draws. 'metric' is one number and must not group; 'table' and 'bar' need a " +
-        "groupBy; 'line' needs a date groupBy plus a timeBucket; 'list' is not an aggregate at all " +
-        "— it prints one line per row, newest first, in its own `columns`, and takes no measure and " +
-        "no groupBy. Use 'list' for \"show me the recent transactions\", and 'table' for \"a table " +
-        "of totals\".",
+      description: PRESENTATION_DESCRIPTION,
     },
+    databaseId: {
+      type: "string",
+      description:
+        "The database THIS object reads, when it is not the card's. It must belong to the same " +
+        "domain as the card (a view lives in one domain). Omit to read the card's database. Use " +
+        "it to put two subjects in one card (a transactions table and an accounts count), but " +
+        "keep each object's column ids inside its own database.",
+    },
+    from: {
+      type: "string",
+      description:
+        "Build this object on another object's rows instead of a database. Name an EARLIER " +
+        "object's id. The object folds those rows with its own `measure`: 'sum' adds them, 'avg' " +
+        "averages them (the average of monthly totals), 'count' counts them, 'last' takes the " +
+        "last. A derived object takes no groupBy, timeWindow, filters, seriesBy or " +
+        "measureColumnId. This is how an average of totals stays live.",
+    },
+    seriesBy: {
+      type: "string",
+      description:
+        "Split each group into series by this category column (select, relation, text or " +
+        "boolean), e.g. groupBy 'date' with timeBucket 'month' and seriesBy 'category' for one " +
+        "line per category. Requires measure 'sum' or 'count' and an aggregate. A chart gets a " +
+        "legend and one colour per series; a table gets a column per series plus a total.",
+    },
+    display: VIEW_DISPLAY_SCHEMA,
     measure: {
       type: "string",
       enum: MEASURES,
@@ -143,14 +234,18 @@ const VIEW_BLOCK_SCHEMA = {
     groupBy: {
       type: "string",
       description:
-        "The column whose values become the rows, e.g. 'date' or 'category'. Omit for a metric panel.",
+        "The column whose values become the rows, e.g. 'date' or 'category'. Omit for one total " +
+        "(and omit for a row object, which prints its own rows). A metric may group: the number " +
+        "it draws is then the fold over those groups, so the same object can be a table and a " +
+        "headline. A row object must not group.",
     },
     timeBucket: {
       type: "string",
       enum: BUCKETS,
       description:
         "Collapse a date groupBy into periods: 'day', 'week' (Monday start, labelled 2026-W41) or " +
-        "'month' (labelled 2026-10). Only valid when groupBy is a date column.",
+        "'month' (labelled 2026-10). Needs a groupBy that is a date column. Use it for any table " +
+        "or chart whose x-axis is time.",
     },
     timeColumnId: {
       type: "string",
@@ -210,13 +305,20 @@ const VIEW_BLOCK_SCHEMA = {
 export const VIEW_SPEC_SCHEMA = {
   type: "object",
   description:
-    "A saved dashboard card, described as a live query — never as a picture. The card re-runs this " +
-    "every time it is drawn, so a spec carries no totals and no formatting: no currency symbols, no " +
-    "thousands separators, no markdown, and no prose in a title. " +
-    "ONE aggregate: set the query fields at the top level (a metric, or a table/bar/line that groups). " +
-    "SEVERAL panels: add a non-empty `blocks` array and each entry is one panel of the same card, " +
-    "reading the same database — a metric panel for the headline number plus a table panel for the " +
-    "detail is ONE card, not two views. Whatever a block omits is inherited from the top-level fields.",
+    "A saved dashboard card, described as LIVE DATA OBJECTS — never as a picture. The card re-runs " +
+    "this every time it is drawn or the vault changes, so a spec carries no totals and no " +
+    "formatting: no currency symbols, no thousands separators, no markdown, and no prose in a " +
+    "title. " +
+    "ONE object: set the query fields at the top level. SEVERAL objects: add a non-empty `blocks` " +
+    "array; each entry is one object of the same card, and each may read a different database or " +
+    "build on an earlier object with `from`. Whatever an object omits is inherited from the " +
+    "top-level fields (except when it names its own database, or is derived). " +
+    "The QUERY is the data; `presentation` and `display` are only how it is drawn, which is why " +
+    "the operator can switch a card between table and chart without losing its grouping. Choose " +
+    "the drawing for the question: a metric for one headline number, a table for exact values, " +
+    "bars to compare categories or periods, a line for a trend over time, rows (`columns`) when " +
+    "the operator wants the transactions themselves. If the operator asks what chart to use, say " +
+    "which and why before saving it.",
   required: ["databaseId", "title", "presentation"],
   properties: {
     schemaVersion: {
@@ -227,7 +329,8 @@ export const VIEW_SPEC_SCHEMA = {
       type: "string",
       description:
         "The database this card reads, exactly as list_databases or get_database reports it, " +
-        "e.g. 'finance:transactions'. Every block of a composed card reads this one database.",
+        "e.g. 'finance:transactions'. It is the default for every object; an object may name its " +
+        "own databaseId instead.",
     },
     title: {
       type: "string",
@@ -239,11 +342,9 @@ export const VIEW_SPEC_SCHEMA = {
       type: "string",
       enum: PRESENTATIONS,
       description:
-        "How the card draws when it has no blocks, and the default for blocks that omit their own. " +
-        "'metric' is one number and must not group; 'table' and 'bar' need a groupBy; 'line' needs a " +
-        "date groupBy plus a timeBucket; 'list' is not an aggregate at all — it prints one line per " +
-        "row, newest first, in its own `columns`, and takes no measure and no groupBy. Use 'list' " +
-        'for "show me the recent transactions", and \'table\' for "a table of totals".',
+        "How the card draws when it has no blocks, and the default for objects that omit their " +
+        "own. " +
+        PRESENTATION_DESCRIPTION,
     },
     measure: {
       type: "string",
@@ -268,14 +369,15 @@ export const VIEW_SPEC_SCHEMA = {
     groupBy: {
       type: "string",
       description:
-        "The column whose values become the rows, e.g. 'date' or 'category'. Omit for a metric view.",
+        "The column whose values become the rows, e.g. 'date' or 'category'. Omit for one total. " +
+        "A metric may group; the number it draws is then the fold over those groups.",
     },
     timeBucket: {
       type: "string",
       enum: BUCKETS,
       description:
         "Collapse a date groupBy into periods: 'day', 'week' (Monday start, labelled 2026-W41) or " +
-        "'month' (labelled 2026-10). This is how a weekly table is asked for.",
+        "'month' (labelled 2026-10). Needs a date groupBy. This is how a weekly table is asked for.",
     },
     timeColumnId: {
       type: "string",
@@ -295,12 +397,12 @@ export const VIEW_SPEC_SCHEMA = {
     limit: VIEW_BLOCK_SCHEMA.properties.limit,
     convertToZar: VIEW_BLOCK_SCHEMA.properties.convertToZar,
     columns: LIST_COLUMNS_SCHEMA,
+    seriesBy: VIEW_BLOCK_SCHEMA.properties.seriesBy,
+    display: VIEW_DISPLAY_SCHEMA,
     span: VIEW_BLOCK_SCHEMA.properties.span,
     blocks: {
       type: "array",
-      description:
-        "A composed card: one panel per entry, at most 8. Use it whenever the operator asks for a " +
-        '"summary" that needs more than one figure. Omit it for a single-aggregate card.',
+      description: BLOCKS_DESCRIPTION,
       items: VIEW_BLOCK_SCHEMA,
     },
   },
@@ -316,6 +418,7 @@ export const VIEW_VOCABULARY = {
   /** The `per` of an `avg-per` measure: how long the period being averaged is. */
   per: PERIODS,
   timeBucket: BUCKETS,
+  palette: ["accent", "warm", "cool", "mono"],
   timeWindow: [
     ...WINDOWS,
     { kind: "last-weeks", weeks: 8 },
@@ -338,11 +441,15 @@ export function viewSpecTemplate(db: DatabaseMeta): {
   metric: Record<string, unknown>;
   table: Record<string, unknown>;
   list: Record<string, unknown>;
+  rowTable: Record<string, unknown>;
   today: Record<string, unknown> | null;
   averagePerWeek: Record<string, unknown> | null;
   averagePerMonth: Record<string, unknown> | null;
+  seriesChart: Record<string, unknown> | null;
+  averageOfMonths: Record<string, unknown> | null;
   dateColumnId: string | null;
   numberColumnId: string | null;
+  categoryColumnId: string | null;
 } {
   const number = db.columns.find((c) => c.type === "number") ?? null;
   const date = db.columns.find((c) => c.type === "date") ?? null;
@@ -396,6 +503,15 @@ export function viewSpecTemplate(db: DatabaseMeta): {
     ...windowed,
   };
 
+  // The same rows, under a table caption: a row object's other drawing. Shown
+  // beside the listing because "table" and "list" are the same dataset, and a
+  // model that thought a table had to be an aggregate would rewrite the query.
+  const rowTable: Record<string, unknown> = {
+    ...list,
+    title: "Recent rows (table)",
+    presentation: "table",
+  };
+
   // The fourth shape, and the one the reported bug needed: a metric over TODAY,
   // as a window rather than as a date written into a filter. It is only possible
   // when the database has a date column to anchor the window on, and it is
@@ -440,14 +556,82 @@ export function viewSpecTemplate(db: DatabaseMeta): {
         }
       : null;
 
+  // A category column, for the two objects that need a second dimension: a
+  // chart split into series, and the months table a derived average folds.
+  const category =
+    db.columns.find(
+      (c) => c.type === "select" || c.type === "relation" || c.type === "text",
+    ) ?? null;
+
+  // The composition the operator's own question asks for — a table of monthly
+  // totals, and beside it the average of THOSE totals. It is one card, and the
+  // metric is an object with `from`, not a number computed by hand.
+  const averageOfMonths: Record<string, unknown> | null =
+    date && number
+      ? {
+          databaseId: db.id,
+          title: "Monthly spend and its average",
+          presentation: "table",
+          groupBy: date.id,
+          timeBucket: "month",
+          timeColumnId: date.id,
+          timeWindow: { kind: "previous-months", months: 4 },
+          measure: "sum",
+          measureColumnId: number.id,
+          blocks: [
+            {
+              id: "months",
+              title: "Month by month",
+              presentation: "table",
+              groupBy: date.id,
+              timeBucket: "month",
+              timeColumnId: date.id,
+              timeWindow: { kind: "previous-months", months: 4 },
+              measure: "sum",
+              measureColumnId: number.id,
+            },
+            {
+              id: "average",
+              title: "Average month",
+              presentation: "metric",
+              from: "months",
+              measure: "avg",
+            },
+          ],
+        }
+      : null;
+
+  // A trend split by category, with the chart details a model can otherwise
+  // forget to offer: a legend, axis captions, and values printed on the marks.
+  const seriesChart: Record<string, unknown> | null =
+    date && number && category
+      ? {
+          databaseId: db.id,
+          title: "Spending by month and category",
+          presentation: "line",
+          groupBy: date.id,
+          timeBucket: "month",
+          timeColumnId: date.id,
+          timeWindow: { kind: "last-months", months: 6 },
+          measure: "sum",
+          measureColumnId: number.id,
+          seriesBy: category.id,
+          display: { legend: true, xLabel: "Month", yLabel: "Spend", palette: "accent" },
+        }
+      : null;
+
   return {
     metric,
     table,
     list,
+    rowTable,
     today,
     averagePerWeek: periodAverage("week"),
     averagePerMonth: periodAverage("month"),
+    seriesChart,
+    averageOfMonths,
     dateColumnId: date?.id ?? null,
     numberColumnId: number?.id ?? null,
+    categoryColumnId: category?.id ?? null,
   };
 }

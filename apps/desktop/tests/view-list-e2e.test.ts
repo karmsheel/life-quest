@@ -463,9 +463,11 @@ describe("recent transactions listing e2e", () => {
         "the refusal offered no listing that would pass",
       );
 
-      // An aggregate carrying `columns` is a spec that meant "list": it must be
-      // refused rather than saved with a field nothing will ever read.
-      const aggregateWithColumns = (await callTool(auth, "save_view", {
+      // `columns` is what makes an object a ROW object now, so the same rows can
+      // be drawn as a list OR a table without rewriting the query. What is still
+      // refused is a row object that also groups: that is a spec meaning two
+      // different things, and the refusal names both ways out.
+      const groupedRows = (await callTool(auth, "save_view", {
         domainSlug: "financial",
         boardSlug: "financial",
         spec: {
@@ -481,11 +483,32 @@ describe("recent transactions listing e2e", () => {
           columns: ["date", "amount"],
         },
       })) as SavedCard;
-      checks.aggregateWithColumns = aggregateWithColumns;
+      checks.groupedRows = groupedRows;
       assert.match(
-        aggregateWithColumns.error?.message ?? "",
-        /Only a list view takes/,
-        "a table carrying `columns` was saved with an inert field",
+        groupedRows.error?.message ?? "",
+        /must not group/,
+        "a row object that also grouped was accepted",
+      );
+
+      // The other drawing of the same rows — a table caption on a raw object —
+      // is accepted by the engine and draws the rows, not a fold of them.
+      const rowTable = (await callTool(auth, "preview_view", {
+        domainSlug: "financial",
+        spec: { ...listSpec, title: "Recent rows (table)", presentation: "table" },
+      })) as {
+        error?: { message: string };
+        blocks?: Array<{ columns: string[]; rows: unknown[]; presentation: string }>;
+      };
+      checks.rowTable = rowTable;
+      assert.equal(
+        rowTable.error,
+        undefined,
+        `a row object drawn as a table was refused: ${JSON.stringify(rowTable.error)}`,
+      );
+      assert.equal(rowTable.blocks?.[0]?.presentation, "table");
+      assert.ok(
+        (rowTable.blocks?.[0]?.rows.length ?? 0) > 0,
+        "the row table drew no rows",
       );
 
       // Five refusals, and still exactly one card: a refused spec must not leave
@@ -617,20 +640,39 @@ describe("recent transactions listing e2e", () => {
       );
       assert.equal(switchedSave.applied, true, "the switch did not land");
       assert.equal(switchedSave.updated, true, "the switch made a second card instead of changing this one");
-      const asAggregate = await runCard(vaultRoot, viewId);
+      const asTable = await runCard(vaultRoot, viewId);
       assert.equal(
-        asAggregate.block.presentation,
+        asTable.block.presentation,
         "table",
         "the card did not become the table the operator asked for",
       );
-      assert.ok(
-        asAggregate.block.columns.length === 2,
-        "an aggregate after the switch is not a two-column table",
+      assert.equal(
+        asTable.block.columns.length,
+        4,
+        "switching a listing to a table changed its data instead of only its drawing",
       );
       assert.ok(
-        asAggregate.block.rowCount > 0,
-        "the table the switch produced drew no rows, so it is not measuring anything",
+        asTable.block.rowCount > 0,
+        "the table the switch produced drew no rows, so it is not showing the ledger",
       );
+      // The switch is a DRAWING change: the saved spec still names its columns
+      // and still has no measure, groupBy or bucket. That is the regression the
+      // operator's "the data is lost when I change tabs" report was about.
+      const switchedFile = await getView(vaultRoot, "financial", viewId);
+      assert.equal(switchedFile.ok, true);
+      const switchedValue = (switchedFile as { ok: true; value: Record<string, unknown> }).value;
+      // A card saved before composed views has no `blocks`: its root fields are
+      // its one object, and the switch must preserve them there too.
+      const switchedBlock = Array.isArray(switchedValue.blocks)
+        ? (switchedValue.blocks[0] as Record<string, unknown>)
+        : switchedValue;
+      assert.deepEqual(
+        switchedBlock?.columns,
+        ["date", "payee", "category", "amount"],
+        "the switch dropped the row object's columns",
+      );
+      assert.equal(switchedBlock?.groupBy, null, "the switch invented a grouping");
+      assert.equal(switchedBlock?.timeBucket, null, "the switch invented a period");
     } finally {
       await doors.close();
     }
