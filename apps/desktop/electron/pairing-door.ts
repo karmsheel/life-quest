@@ -13,6 +13,7 @@
 // answers with the matching tool error JSON.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer, type Server as HttpServer } from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   CallToolRequestSchema,
@@ -57,6 +58,35 @@ const MAX_NAME_LENGTH = 80;
  */
 const NEAR_MISS_CHARS = 12;
 
+/**
+ * DOOR-03: the only names a request may address either door by. The listeners
+ * bind 127.0.0.1 only, so a Host of anything else is a request that came through
+ * a name resolver rather than from this machine — the DNS-rebinding shape — and
+ * is refused before authentication or the MCP transport sees it.
+ */
+const LOOPBACK_HOST_NAMES = ["127.0.0.1", "localhost"] as const;
+
+/**
+ * DOOR-05: request limits on both doors. The MCP SDK reads the body as JSON with
+ * no cap of its own (SUPP-04), so the door enforces one while streaming, and
+ * bounds the time a request may take to arrive and the sockets that may exist at
+ * once. The window limits below are per door and in-process; they are a speed
+ * bump for floods, not an authorization decision.
+ */
+const MAX_BODY_BYTES = 1024 * 1024; // 1 MiB
+const MAX_BATCH_ITEMS = 32; // JSON-RPC batch length (larger is refused 413)
+const BODY_READ_TIMEOUT_MS = 10_000; // headers arrived, body stalled
+const HEADERS_TIMEOUT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 30_000;
+const KEEP_ALIVE_TIMEOUT_MS = 5_000;
+const MAX_REQUESTS_PER_SOCKET = 1000;
+const MAX_CONNECTIONS = 64;
+const RATE_WINDOW_MS = 10_000;
+/** Presented-but-wrong credentials: headroom for a client fixing a typo. */
+const MAX_FAILED_AUTH_PER_WINDOW = 30;
+/** Introductions cost a Decision each; the pending cap still sits under this. */
+const MAX_INTRODUCTIONS_PER_WINDOW = 40;
+
 type DoorKind = "local" | "invite";
 
 /** KAR-70: the actor the live MCP door already acts as. Not a new one. */
@@ -67,7 +97,8 @@ type AuthCode =
   | "NAME_REQUIRED"
   | "INVITE_REQUIRED"
   | "INVITE_INVALID"
-  | "PAIRING_LIMIT";
+  | "PAIRING_LIMIT"
+  | "RATE_LIMITED";
 
 type ToolCode =
   | "PAIRING_PENDING"
@@ -82,6 +113,7 @@ const AUTH_MESSAGES: Record<AuthCode, string> = {
   INVITE_REQUIRED: "Invite code is required",
   INVITE_INVALID: "Invite code is no longer valid",
   PAIRING_LIMIT: "Too many agents are waiting for approval",
+  RATE_LIMITED: "Too many pairing attempts; try again shortly",
 };
 
 const AUTH_STATUS: Record<AuthCode, number> = {
@@ -90,6 +122,7 @@ const AUTH_STATUS: Record<AuthCode, number> = {
   INVITE_REQUIRED: 401,
   INVITE_INVALID: 401,
   PAIRING_LIMIT: 429,
+  RATE_LIMITED: 429,
 };
 
 /**
@@ -115,6 +148,7 @@ function errorBody(code: string, message: string): string {
 function writeAuthFailure(res: ServerResponse, code: AuthCode, message?: string): void {
   // The fixed strings are the contract. `message` only carries the underlying
   // reason for a failure that has no specified message of its own.
+  if (res.headersSent) return;
   const body = errorBody(code, message ?? AUTH_MESSAGES[code]);
   res.writeHead(AUTH_STATUS[code], {
     "content-type": "application/json",
@@ -124,12 +158,186 @@ function writeAuthFailure(res: ServerResponse, code: AuthCode, message?: string)
 }
 
 function sendJson(res: ServerResponse, status: number, payload: unknown): void {
+  if (res.headersSent) return;
   const body = JSON.stringify(payload);
   res.writeHead(status, {
     "content-type": "application/json",
     "content-length": Buffer.byteLength(body),
   });
   res.end(body);
+}
+
+/** A refusal that is not one of the fixed auth codes: 403/408/413/429/500. */
+function sendRefusal(
+  res: ServerResponse,
+  status: number,
+  code: string,
+  message: string,
+  headers: Record<string, string> = {},
+): void {
+  if (res.headersSent) return;
+  const body = errorBody(code, message);
+  res.writeHead(status, {
+    "content-type": "application/json",
+    "content-length": Buffer.byteLength(body),
+    ...headers,
+  });
+  res.end(body);
+}
+
+/**
+ * DOOR-03: is this `Host` one of the loopback names for this door's port?
+ * A bare `127.0.0.1`/`localhost` (no port) is tolerated because some clients
+ * omit a default port; an arbitrary name is not, even when a DNS answer points
+ * it at the loopback address.
+ */
+function hostAllowed(rawHost: string | undefined, port: number): boolean {
+  const value = (rawHost ?? "").trim().toLowerCase();
+  if (!value) return false;
+  const match = /^([^:]+)(?::(\d+))?$/.exec(value);
+  if (!match) return false;
+  const name = match[1] ?? "";
+  if (!(LOOPBACK_HOST_NAMES as readonly string[]).includes(name)) return false;
+  if (match[2] === undefined) return true;
+  return Number.parseInt(match[2], 10) === port;
+}
+
+/** DOOR-03: an absent Origin is fine (CLI clients); a present one must be this door. */
+function originAllowed(rawOrigin: string | undefined, port: number): boolean {
+  const value = (rawOrigin ?? "").trim();
+  if (!value) return true;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:") return false;
+  if (!(LOOPBACK_HOST_NAMES as readonly string[]).includes(url.hostname.toLowerCase())) return false;
+  return Number.parseInt(url.port || "80", 10) === port;
+}
+
+/** What the SDK's own rebinding protection is told is allowed (defence in depth). */
+function allowedHostHeaders(port: number): string[] {
+  return [`127.0.0.1:${port}`, `localhost:${port}`, "127.0.0.1", "localhost"];
+}
+
+function allowedOriginHeaders(port: number): string[] {
+  return [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
+}
+
+type RateWindow = { startedAt: number; count: number };
+
+function newRateWindow(at: number): RateWindow {
+  return { startedAt: at, count: 0 };
+}
+
+function rateWindowExpired(window: RateWindow, at: number): boolean {
+  return at - window.startedAt >= RATE_WINDOW_MS;
+}
+
+/** Consume one unit; false when this window is used up. */
+function rateTake(window: RateWindow, max: number, at: number): boolean {
+  if (rateWindowExpired(window, at)) {
+    window.startedAt = at;
+    window.count = 0;
+  }
+  if (window.count >= max) return false;
+  window.count += 1;
+  return true;
+}
+
+function retryAfterSeconds(): string {
+  return String(Math.ceil(RATE_WINDOW_MS / 1000));
+}
+
+type BodyResult =
+  | { ok: true; value: unknown }
+  | { ok: false; reason: "too_large" | "timeout" | "aborted" | "invalid" | "empty" };
+
+/**
+ * DOOR-05: read and parse the request body under a byte cap and a time cap, then
+ * hand the parsed value to the MCP transport (`handleRequest(req, res, parsedBody)`)
+ * so the SDK never gets an unbounded `req.json()`. Every failure writes its own
+ * refusal; the caller only has to stop.
+ */
+function readCappedBody(
+  req: IncomingMessage,
+  res: ServerResponse,
+  maxBytes: number,
+  timeoutMs: number,
+): Promise<BodyResult> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer: NodeJS.Timeout | null = null;
+    const finish = (value: BodyResult): void => {
+      if (settled) return;
+      settled = true;
+      if (timer !== null) clearTimeout(timer);
+      resolve(value);
+    };
+    const refuse = (status: number, code: string, message: string): void => {
+      // The response goes out FIRST; the socket is torn down when it has been
+      // written, so the client reliably sees 413/408 instead of a reset that
+      // loses the status line.
+      sendRefusal(res, status, code, message, { connection: "close" });
+      res.once("finish", () => req.destroy());
+      finish({ ok: false, reason: status === 413 ? "too_large" : status === 408 ? "timeout" : "invalid" });
+    };
+
+    const declared = Number.parseInt(header(req, "content-length"), 10);
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      refuse(413, "PAYLOAD_TOO_LARGE", "Request body is too large");
+      return;
+    }
+
+    timer = setTimeout(() => {
+      refuse(408, "REQUEST_TIMEOUT", "Request body was not received in time");
+    }, timeoutMs);
+
+    const chunks: Buffer[] = [];
+    let total = 0;
+    req.on("data", (chunk: Buffer | string) => {
+      if (settled) return;
+      const buf = typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk;
+      total += buf.length;
+      if (total > maxBytes) {
+        refuse(413, "PAYLOAD_TOO_LARGE", "Request body is too large");
+        return;
+      }
+      chunks.push(buf);
+    });
+    req.on("aborted", () => finish({ ok: false, reason: "aborted" }));
+    req.on("error", () => finish({ ok: false, reason: "aborted" }));
+    req.on("end", () => {
+      if (settled) return;
+      const raw = Buffer.concat(chunks).toString("utf8");
+      if (!raw.trim()) {
+        sendRefusal(res, 400, "INVALID_REQUEST", "An MCP request body is required", {
+          connection: "close",
+        });
+        finish({ ok: false, reason: "empty" });
+        return;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        sendJson(res, 400, {
+          jsonrpc: "2.0",
+          error: { code: -32700, message: "Parse error: Invalid JSON" },
+          id: null,
+        });
+        finish({ ok: false, reason: "invalid" });
+        return;
+      }
+      if (Array.isArray(parsed) && parsed.length > MAX_BATCH_ITEMS) {
+        refuse(413, "PAYLOAD_TOO_LARGE", "JSON-RPC batch is too large");
+        return;
+      }
+      finish({ ok: true, value: parsed });
+    });
+  });
 }
 
 function header(req: IncomingMessage, name: string): string {
@@ -141,6 +349,14 @@ function header(req: IncomingMessage, name: string): string {
 function bearerOf(req: IncomingMessage): string {
   const match = /^Bearer\s+(.*)$/i.exec(header(req, "authorization").trim());
   return match ? (match[1] ?? "").trim() : "";
+}
+
+/** Constant-time comparison of two bearer strings (different lengths compare false). */
+function secretEquals(a: string, b: string): boolean {
+  const left = Buffer.from(a, "utf8");
+  const right = Buffer.from(b, "utf8");
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
 }
 
 /**
@@ -200,6 +416,12 @@ type DoorContext = {
    * vault open, not per request.
    */
   lens: () => string | null;
+  /**
+   * DOOR-05: consume one introduction from this door's pairing budget. Called
+   * only when the request is about to introduce a new bearer, so a flood of
+   * first contacts is answered 429 before it can file Decisions.
+   */
+  allowIntroduction: () => boolean;
 };
 
 type Authorized =
@@ -218,7 +440,7 @@ async function authorize(
   // The companion token takes the companion path on either door. A bearer that
   // is merely long enough is never treated as the companion.
   const companion = await companionBearer(ctx.secretsDir, ctx.vaultId);
-  if (companion && bearer === companion) {
+  if (companion && secretEquals(bearer, companion)) {
     return { ok: true, kind: "companion" };
   }
 
@@ -236,6 +458,13 @@ async function authorize(
 
   const known = await resolveBearer(ctx.secretsDir, ctx.vaultId, bearer);
   if (known) {
+    // DOOR-11: the secrets map is keyed by a fingerprint derived from the bearer
+    // itself. A key that does not derive from this bearer is a corrupt (or
+    // collision-forged) entry and must not authorise anything.
+    if (fingerprintOf(bearer).slice(0, 12) !== known) {
+      console.error("[pairing-door] refused a bearer whose secrets key does not match its own fingerprint");
+      return { ok: false, code: "AUTH_REQUIRED" };
+    }
     const row = await getConnectedAgentByFingerprint(ctx.root, known);
     if (row.ok && row.value) {
       // A known bearer is never a pairing attempt: no new Decision, and an
@@ -279,6 +508,10 @@ async function authorize(
     // is not a pairing attempt, and the code it presented stays unspent.
     const nowKnown = s.resolveBearer(bearer);
     if (nowKnown) {
+      if (fingerprintOf(bearer).slice(0, 12) !== nowKnown) {
+        console.error("[pairing-door] refused a bearer whose secrets key does not match its own fingerprint");
+        return { ok: false, code: "AUTH_REQUIRED" as const };
+      }
       const row = await getConnectedAgentByFingerprint(ctx.root, nowKnown);
       if (row.ok && row.value) {
         return { ok: true, kind: "agent" as const, agent: row.value };
@@ -292,6 +525,39 @@ async function authorize(
       return { ok: false, code: "INVITE_INVALID" as const };
     }
 
+    // DOOR-04: a roster row is vault data, and the vault is not trusted to
+    // authorise a caller. This machine's secrets store is the only thing that
+    // can say a bearer was accepted here (it is written when an introduction
+    // succeeds), and this branch is reached precisely because it did NOT
+    // resolve — so a row that already exists at this fingerprint (active,
+    // rejected, or revoked) must not hand its grant to this caller. A pending
+    // row is fine: it is the normal repeated first contact and authorises
+    // nothing. Without this, a crafted/synced `connected-agents.json` could
+    // mark an attacker-chosen bearer active+write and the first contact would
+    // be served with no operator approval.
+    const existing = await getConnectedAgentByFingerprint(ctx.root, fingerprint);
+    if (!existing.ok) {
+      console.error("[pairing-door] roster could not be read during introduction:", existing.error);
+      return { ok: false, code: "AUTH_REQUIRED" as const, message: "Pairing is temporarily unavailable" };
+    }
+    if (existing.value && existing.value.status !== "pending") {
+      console.error(
+        `[pairing-door] refused an unbounded introduction: fingerprint ${fingerprint} matches a ${existing.value.status} roster row ${existing.value.id} this machine never paired`,
+      );
+      return {
+        ok: false,
+        code: "AUTH_REQUIRED" as const,
+        message:
+          "This bearer is not paired on this machine; ask the operator to approve a new pairing.",
+      };
+    }
+
+    // DOOR-05: budget the introduction itself. Checked here, before anything
+    // is written, so a flood files no roster rows and spends no invite codes.
+    if (!ctx.allowIntroduction()) {
+      return { ok: false, code: "RATE_LIMITED" as const };
+    }
+
     const res = await introduceConnectedAgent(ctx.root, {
       name,
       fingerprint,
@@ -300,12 +566,16 @@ async function authorize(
     if (!res.ok) {
       // Only a blank name is the caller's to fix. Every other failure is ours,
       // so it is not reported as a name problem — that would send the client
-      // away to "fix" a name that was fine.
+      // away to "fix" a name that was fine — and its detail never reaches the
+      // wire, where it could name a filesystem path (DOOR-10).
+      if (res.error !== "PAIRING_LIMIT" && res.error !== "name is required") {
+        console.error("[pairing-door] introduction failed:", res.error);
+      }
       return res.error === "PAIRING_LIMIT"
         ? ({ ok: false, code: "PAIRING_LIMIT" as const })
         : res.error === "name is required"
           ? ({ ok: false, code: "NAME_REQUIRED" as const })
-          : ({ ok: false, code: "AUTH_REQUIRED" as const, message: res.error });
+          : ({ ok: false, code: "AUTH_REQUIRED" as const, message: "Pairing is temporarily unavailable" });
     }
 
     const agent = res.value.agent;
@@ -379,9 +649,22 @@ export async function startPairingDoors(opts: {
   let companionSeenAt: number | null = null;
 
   function listen(port: number, kind: DoorKind): Promise<Binding> {
+    // Requests only arrive once listen succeeded, so this is the port the Host
+    // check must accept; port 0 (a rig's ephemeral bind) is only knowable here.
+    let listeningPort = port;
+    const failedAuth = newRateWindow(now().getTime());
+    const introductions = newRateWindow(now().getTime());
     const httpServer = createServer((req, res) => {
-      void handle(req, res, kind);
+      void handle(req, res, kind, () => listeningPort, failedAuth, introductions);
     });
+    // DOOR-05: bound the connection and the time a request may take. The
+    // response side is deliberately untouched: a legitimate tools/call may run
+    // long, and cutting the stream off would look like a door failure.
+    httpServer.headersTimeout = HEADERS_TIMEOUT_MS;
+    httpServer.requestTimeout = REQUEST_TIMEOUT_MS;
+    httpServer.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;
+    httpServer.maxRequestsPerSocket = MAX_REQUESTS_PER_SOCKET;
+    httpServer.maxConnections = MAX_CONNECTIONS;
     return new Promise<Binding>((resolve) => {
       httpServer.once("error", (err: NodeJS.ErrnoException) => {
         // A door that cannot bind keeps its own error and leaves the other
@@ -396,7 +679,9 @@ export async function startPairingDoors(opts: {
         });
       });
       httpServer.listen(port, MCP_HOST, () => {
-        resolve({ server: httpServer, port, error: null });
+        const address = httpServer.address();
+        if (address && typeof address === "object") listeningPort = address.port;
+        resolve({ server: httpServer, port: listeningPort, error: null });
       });
     });
   }
@@ -405,12 +690,35 @@ export async function startPairingDoors(opts: {
     req: IncomingMessage,
     res: ServerResponse,
     kind: DoorKind,
+    portOf: () => number,
+    failedAuth: RateWindow,
+    introductions: RateWindow,
   ): Promise<void> {
+    const port = portOf();
+    // DOOR-03: before auth, before the transport. A request addressed to a name
+    // that is not this loopback door is the DNS-rebinding shape and gets 403,
+    // not an auth error it could use as an oracle.
+    if (
+      !hostAllowed(header(req, "host"), port) ||
+      !originAllowed(header(req, "origin"), port)
+    ) {
+      sendRefusal(res, 403, "FORBIDDEN", "This door is local to 127.0.0.1");
+      return;
+    }
+
     const url = (req.url ?? "").split("?")[0];
     if (req.method !== "POST" || url !== MCP_PATH) {
       sendJson(res, 404, { error: { code: "NOT_FOUND", message: "Not found" } });
       return;
     }
+
+    // DOOR-05: presented-but-wrong credentials are budgeted per door, but a
+    // *correct* credential is never blocked by other people's failures — the
+    // budget is charged on the failure path below, not before authentication, so
+    // a flood of guesses cannot lock the companion out of its own door. A
+    // request with no Authorization header at all is a health probe/observer (the
+    // app's own rigs poll exactly that way) and is not part of a guessing attack.
+    const presented = header(req, "authorization").trim() !== "";
 
     const ctx: DoorContext = {
       root,
@@ -419,35 +727,67 @@ export async function startPairingDoors(opts: {
       door: kind,
       now,
       lens: opts.lens ?? (() => null),
+      allowIntroduction: () =>
+        rateTake(introductions, MAX_INTRODUCTIONS_PER_WINDOW, now().getTime()),
     };
     let auth: Awaited<ReturnType<typeof authorize>>;
     try {
       auth = await authorize(ctx, req);
     } catch (e) {
       // The secrets write at the end of the lock can fail. Answer rather than
-      // leave the socket open, and do not claim the introduction succeeded.
-      sendJson(res, 500, {
-        error: {
-          code: "INTERNAL",
-          message: `Pairing failed: ${e instanceof Error ? e.message : String(e)}`,
-        },
-      });
+      // leave the socket open, do not claim the introduction succeeded, and do
+      // not put the internal message (which can name a filesystem path) on the
+      // wire (DOOR-10).
+      console.error("[pairing-door] pairing failed:", e);
+      sendRefusal(res, 500, "INTERNAL", "Pairing is temporarily unavailable");
       return;
     }
     if (!auth.ok) {
+      // Charge the failure. Over budget, every further failure answers 429 (and
+      // is charged no more) until the window rolls over.
+      if (presented && !rateTake(failedAuth, MAX_FAILED_AUTH_PER_WINDOW, now().getTime())) {
+        sendRefusal(res, 429, "RATE_LIMITED", AUTH_MESSAGES.RATE_LIMITED, {
+          "retry-after": retryAfterSeconds(),
+        });
+        return;
+      }
+      if (auth.code === "RATE_LIMITED") {
+        sendRefusal(res, 429, "RATE_LIMITED", AUTH_MESSAGES.RATE_LIMITED, {
+          "retry-after": retryAfterSeconds(),
+        });
+        return;
+      }
       writeAuthFailure(res, auth.code, auth.message);
       return;
     }
     // The door's answer to "has the host actually reached us since we bound".
     if (auth.kind === "companion") companionSeenAt = now().getTime();
 
+    // DOOR-05/SUPP-04: read the body ourselves, capped, and hand the parsed
+    // value to the transport so the SDK never reads an unbounded stream.
+    const body = await readCappedBody(req, res, MAX_BODY_BYTES, BODY_READ_TIMEOUT_MS);
+    if (!body.ok) return;
+
     const mcp = await buildServer(ctx, auth);
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    void mcp.connect(transport);
-    void transport.handleRequest(req, res);
+    // DOOR-03 (second layer): the SDK's own rebinding protection, now configured
+    // with exactly the loopback names for the port this process bound.
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      allowedHosts: allowedHostHeaders(port),
+      allowedOrigins: allowedOriginHeaders(port),
+      enableDnsRebindingProtection: true,
+    });
     res.on("close", () => {
       void transport.close();
       void mcp.close();
+    });
+    void mcp.connect(transport);
+    void transport.handleRequest(req, res, body.value).catch((e) => {
+      // An abort mid-stream is a client that left; anything else must not take
+      // the main process down as an unhandled rejection.
+      console.error("[pairing-door] MCP request failed:", e);
+      if (!res.headersSent) sendRefusal(res, 500, "INTERNAL", "The request could not be served");
+      else res.end();
     });
   }
 

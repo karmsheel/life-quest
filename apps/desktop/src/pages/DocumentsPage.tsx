@@ -15,6 +15,7 @@ import {
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { doctrineMarkdownToHtml } from "@/lib/doctrine-markdown";
+import { containMarkdownLink } from "@/lib/markdown-links";
 import { createWikiResolver } from "@/lib/wiki-links";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
@@ -130,15 +131,20 @@ export default function DocumentsPage() {
   );
 
   // A library link stays in the composer: open the target note instead of
-  // navigating. Doctrine links are plain hashes and route normally.
+  // navigating. Doctrine links are plain hashes and route normally. Anything
+  // else is contained: the preview renders untrusted markdown into the window
+  // that carries the preload bridge, so a non-hash href is never followed here.
   function onPreviewClick(e: ReactMouseEvent<HTMLDivElement>) {
     const anchor = (e.target as HTMLElement).closest<HTMLAnchorElement>(
-      "a[data-library-id]",
+      "a[href]",
     );
     const id = anchor?.getAttribute("data-library-id");
-    if (!id) return;
-    e.preventDefault();
-    void openEdit(id);
+    if (anchor && id) {
+      e.preventDefault();
+      void openEdit(id);
+      return;
+    }
+    containMarkdownLink(e);
   }
 
   function domainName(slug: string): string {

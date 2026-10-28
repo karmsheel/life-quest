@@ -34,12 +34,47 @@ function isSourceKind(v: string): v is IngestSourceKind {
   return v === "csv" || v === "pdf";
 }
 
+/**
+ * Import caps. A CSV is a spreadsheet export, not a database dump: 20k rows and
+ * 256 columns is already far past the product's own examples, and the bytes are
+ * held in the renderer, the main process and then the vault. Without these the
+ * unit is the machine's memory and the vault's disk, and a rejected payload used
+ * to be written to the vault before its type was even checked.
+ */
+export const INGEST_MAX_BYTES = 25 * 1024 * 1024;
+export const INGEST_MAX_ROWS = 20_000;
+export const INGEST_MAX_COLUMNS = 256;
+export const INGEST_MAX_COLUMN_NAME = 200;
+
 function detectSourceKind(mime: string, name: string): IngestSourceKind | null {
-  if (mime === "text/csv" || mime === "text/plain" || name.toLowerCase().endsWith(".csv")) {
+  const type = typeof mime === "string" ? (mime.split(";")[0] ?? "").trim().toLowerCase() : "";
+  const fileName = typeof name === "string" ? name.toLowerCase() : "";
+  if (type === "text/csv" || type === "text/plain" || type === "application/csv" ||
+      fileName.endsWith(".csv")) {
     return "csv";
   }
-  if (mime === "application/pdf" || name.toLowerCase().endsWith(".pdf")) {
+  if (type === "application/pdf" || fileName.endsWith(".pdf")) {
     return "pdf";
+  }
+  return null;
+}
+
+/** Bound one parsed table before it reaches the database or a Decision. */
+function checkTableShape(columns: string[], rowCount: number): string | null {
+  if (columns.length === 0) return "No columns were found";
+  if (columns.length > INGEST_MAX_COLUMNS) {
+    return `That file has ${columns.length} columns; the limit is ${INGEST_MAX_COLUMNS}.`;
+  }
+  if (rowCount > INGEST_MAX_ROWS) {
+    return `That file has ${rowCount} rows; the limit is ${INGEST_MAX_ROWS}.`;
+  }
+  for (const column of columns) {
+    if (column.length > INGEST_MAX_COLUMN_NAME) {
+      return "A column name is longer than 200 characters.";
+    }
+    if (/[\u0000-\u001f\u007f]/.test(column)) {
+      return "A column name contains a control character.";
+    }
   }
   return null;
 }
@@ -60,6 +95,9 @@ function parseCsvBytes(bytes: Uint8Array): { columns: string[]; rows: Record<str
     offset = 3;
   }
   const text = new TextDecoder("utf-8").decode(bytes.subarray(offset));
+  if (text.includes("\u0000")) {
+    throw new Error("CSV contains NUL bytes");
+  }
   const rawLines = text.split(/\r?\n/);
   // First non-empty line is headers
   let headerLine = "";
@@ -245,26 +283,30 @@ export async function ingestFile(
   },
 ): Promise<Result<IngestFileResult>> {
   try {
-    // 1. Refuse unknown/archived domain
+    // 1. Bound the payload before it is held anywhere else.
+    if (!(input.bytes instanceof Uint8Array) || input.bytes.byteLength === 0) {
+      return { ok: false, error: "The file is empty." };
+    }
+    if (input.bytes.byteLength > INGEST_MAX_BYTES) {
+      return {
+        ok: false,
+        error: `That file is larger than ${Math.round(INGEST_MAX_BYTES / (1024 * 1024))} MB.`,
+      };
+    }
+
+    // 2. Refuse unknown/archived domain
     if (!(await isDomainLive(root, slug))) {
       return { ok: false, error: `Domain not found or archived: ${slug}` };
     }
 
-    // 2. Database must exist
+    // 3. Database must exist
     const dbRes = await getDatabase(root, slug, input.databaseId);
     if (!dbRes.ok) return dbRes;
     const dbMeta: DatabaseMeta = dbRes.value;
 
-    // 3. Copy file first (always, even if parse later fails)
-    const fileRes = await saveDatabaseFile(root, slug, {
-      bytes: input.bytes,
-      mime: input.mime,
-      name: input.name,
-    });
-    if (!fileRes.ok) return fileRes;
-    const { relPath, fileId } = fileRes.value;
-
-    // 4. Detect sourceKind
+    // 4. Detect sourceKind BEFORE storing: a rejected type must not leave its
+    //    bytes in the vault. A file that fails to *parse* is still kept (the
+    //    original is provenance); a file that is the wrong kind is not.
     const sourceKind = detectSourceKind(input.mime, input.name);
     if (!sourceKind) {
       return {
@@ -273,12 +315,23 @@ export async function ingestFile(
       };
     }
 
+    // 5. Copy the original (always, even if parse later fails)
+    const fileRes = await saveDatabaseFile(root, slug, {
+      bytes: input.bytes,
+      mime: input.mime,
+      name: input.name,
+    });
+    if (!fileRes.ok) return fileRes;
+    const { relPath, fileId } = fileRes.value;
+
     // 5. Parse or take extractedRows
     let sourceColumns: string[];
     let sourceRows: Record<string, string>[];
     if (sourceKind === "csv") {
       try {
         const parsed = parseCsvBytes(input.bytes);
+        const shape = checkTableShape(parsed.columns, parsed.rows.length);
+        if (shape) return { ok: false, error: shape };
         sourceColumns = parsed.columns;
         sourceRows = parsed.rows;
       } catch (e) {
@@ -296,6 +349,12 @@ export async function ingestFile(
           error: "Could not extract rows from PDF",
         };
       }
+      if (er.length > INGEST_MAX_ROWS) {
+        return {
+          ok: false,
+          error: `That PDF produced ${er.length} rows; the limit is ${INGEST_MAX_ROWS}.`,
+        };
+      }
       const keySet = new Set<string>();
       for (const r of er) {
         for (const k of Object.keys(r)) {
@@ -303,6 +362,8 @@ export async function ingestFile(
         }
       }
       sourceColumns = Array.from(keySet);
+      const shape = checkTableShape(sourceColumns, er.length);
+      if (shape) return { ok: false, error: shape };
       sourceRows = er.map((r) => ({ ...r }));
     }
 

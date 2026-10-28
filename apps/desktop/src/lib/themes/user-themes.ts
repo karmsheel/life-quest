@@ -72,7 +72,42 @@ const OPTIONAL_COLORS = [
   "info",
 ] as const;
 
-const TYPOGRAPHY_KEYS = ["fontSans", "fontMono", "fontDisplay", "fontUrl"] as const;
+/** The typography keys an installed theme may set; `fontUrl` is deliberately absent. */
+const TYPOGRAPHY_KEYS = ["fontSans", "fontMono", "fontDisplay"] as const;
+
+/**
+ * A CSS font stack: font names, separated by commas, optionally quoted.
+ *
+ * Typography is the one part of a theme that must stay a *value* rather than a
+ * stylesheet fragment — `applySkin` writes it into a CSS custom property, and
+ * the theme file is untrusted input (an operator-installed JSON). Letters,
+ * digits, spaces, commas, quotes, dots and hyphens cover every real font list
+ * (`ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`)
+ * and exclude everything that could start a declaration or a `url()`:
+ * `;`, `{`, `}`, `(`, `)`, `@`, `\`, `/`, `:`.
+ */
+const FONT_STACK = /^[\w\s,'".-]+$/u;
+const MAX_FONT_STACK = 200;
+
+function typographyFrom(
+  raw: unknown,
+): ForgeSkin["typography"] | undefined {
+  if (!isRecord(raw)) return undefined;
+  const typography: Record<string, string> = {};
+  for (const key of TYPOGRAPHY_KEYS) {
+    const value = raw[key];
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    // A theme that names a font badly still installs: it simply wears the
+    // shipped font for that slot rather than putting arbitrary CSS in.
+    if (!trimmed || trimmed.length > MAX_FONT_STACK) continue;
+    if (!FONT_STACK.test(trimmed)) continue;
+    typography[key] = trimmed;
+  }
+  return Object.keys(typography).length
+    ? (typography as ForgeSkin["typography"])
+    : undefined;
+}
 
 export type InstallResult =
   | { ok: true; skin: ForgeSkin }
@@ -119,20 +154,6 @@ function colorsFrom(
     if (typeof value === "string") colors[key] = value.trim();
   }
   return { ok: true, colors: colors as unknown as SkinColors };
-}
-
-function typographyFrom(
-  raw: unknown,
-): ForgeSkin["typography"] | undefined {
-  if (!isRecord(raw)) return undefined;
-  const typography: Record<string, string> = {};
-  for (const key of TYPOGRAPHY_KEYS) {
-    const value = raw[key];
-    if (typeof value === "string" && value.trim()) typography[key] = value.trim();
-  }
-  return Object.keys(typography).length
-    ? (typography as ForgeSkin["typography"])
-    : undefined;
 }
 
 /**

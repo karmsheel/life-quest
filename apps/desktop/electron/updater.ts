@@ -35,6 +35,10 @@
  *     kept, because the product asks once, at launch. `force` is the operator
  *     asking by hand — the rail's build number and Settings → Updates — and only
  *     those do that.
+ * 13. An install request names an asset main did not just offer, a name that is
+ *     not a `-setup.exe`, no declared size, or a URL on a trusted host that is
+ *     not one of this repository's release assets — refused before a byte moves.
+ *     A real install also asks the operator in a native dialog first.
  */
 import { app, shell } from "electron";
 import fs from "node:fs/promises";
@@ -72,18 +76,47 @@ const DEFAULT_TRUST_HOSTS = ["github.com", "githubusercontent.com"];
  * auto-update rig serves its own bytes over loopback (neither https nor GitHub)
  * and has to move the line, and it moves the line somewhere else again to prove
  * the refusal still fires. The product never calls the setter.
+ *
+ * `strictAssetPath` is the product's second half of that policy: an installer a
+ * real session may run has to be an asset of *this* repository's release
+ * (`https://github.com/<OWNER_REPO>/releases/download/…`), not merely a file on
+ * a trusted host — `githubusercontent.com` content is writable by any GitHub
+ * account, so a host allowlist alone would let a compromised renderer download
+ * an attacker's bytes and hand them to the OS. The e2e seam moves the line to
+ * its own loopback feed and therefore relaxes this too (default false when the
+ * override is installed; a rig may opt back in with `strictAssetPath: true`).
  */
-type TrustPolicy = { hosts: string[]; allowHttp: boolean };
+type TrustPolicy = {
+  hosts: string[];
+  allowHttp: boolean;
+  strictAssetPath: boolean;
+};
 
 const DEFAULT_TRUST: TrustPolicy = {
   hosts: DEFAULT_TRUST_HOSTS,
   allowHttp: false,
+  strictAssetPath: true,
 };
 
 let trust: TrustPolicy = DEFAULT_TRUST;
 
-export function setUpdateTrustPolicy(policy: TrustPolicy | null): void {
-  trust = policy ?? DEFAULT_TRUST;
+/**
+ * Install the e2e trust override. Called only by the e2e seam.
+ *
+ * An override moves the whole line (hosts + protocol) to a world the rig owns,
+ * so the release-path rule relaxes with it unless the caller asks for it back.
+ * The product never calls this; `strictAssetPath` stays true.
+ */
+export function setUpdateTrustPolicy(
+  policy: (Omit<TrustPolicy, "strictAssetPath"> & { strictAssetPath?: boolean }) | null,
+): void {
+  trust = policy
+    ? {
+        hosts: policy.hosts,
+        allowHttp: policy.allowHttp,
+        strictAssetPath: policy.strictAssetPath ?? false,
+      }
+    : DEFAULT_TRUST;
 }
 
 const CHECK_TIMEOUT_MS = 15_000;
@@ -241,6 +274,28 @@ export function isGitHubPage(url: string): boolean {
 }
 
 /**
+ * A release asset of *this* app: an https URL under
+ * `https://github.com/<OWNER_REPO>/releases/download/`.
+ *
+ * The host allowlist on its own accepts any file any GitHub account can put on
+ * `raw.githubusercontent.com` — so a renderer that called `update:install` with
+ * bytes it chose would get them executed. This is the check that makes the
+ * download the release the operator was actually offered.
+ */
+export function isReleaseAssetUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  if (parsed.hostname.toLowerCase() !== "github.com") return false;
+  if (parsed.username || parsed.password) return false;
+  return parsed.pathname.startsWith(`/${OWNER_REPO}/releases/download/`);
+}
+
+/**
  * The installer this app is willing to run: the first asset named for the
  * Windows setup, at a GitHub url. Null when the release carries none.
  */
@@ -252,6 +307,7 @@ export function installerAssetOf(assets: unknown): UpdateAsset | null {
     if (!name || !url) continue;
     if (!/setup.*\.exe$/i.test(name)) continue;
     if (!isTrustedAssetUrl(url)) continue;
+    if (trust.strictAssetPath && !isReleaseAssetUrl(url)) continue;
     const size = typeof raw.size === "number" && raw.size > 0 ? raw.size : 0;
     return { name, url, size };
   }
@@ -411,6 +467,18 @@ async function fetchLatestRelease(): Promise<
 let sessionCheck: Promise<UpdateCheckResult> | null = null;
 
 /**
+ * The installer this session most recently *offered*, kept in main.
+ *
+ * `update:install` takes its argument across the IPC boundary, so the renderer
+ * names the URL that will be downloaded and executed. Remembering the offer
+ * here and accepting only a byte-for-byte equal asset (name, url, size) is what
+ * makes the install a decision main already made rather than a URL the renderer
+ * can invent. Cleared whenever a check answers anything but "available", so a
+ * stale offer cannot be replayed after a later check says "current".
+ */
+let offeredInstaller: UpdateAsset | null = null;
+
+/**
  * Ask for the newest release. Without `force` the session keeps its first
  * answer, which is what makes the product's cadence "once, at launch"; Settings
  * passes `force` because the operator asked by hand.
@@ -430,13 +498,22 @@ export async function checkForUpdate(
   const result = await run;
   // A failed check is not an answer worth keeping: the operator's next attempt
   // should reach the network again rather than replay a dead end.
-  if (!result.ok) sessionCheck = null;
+  if (!result.ok) {
+    sessionCheck = null;
+    offeredInstaller = null;
+  } else if (result.decision.state === "available" && result.decision.installer) {
+    const { name, url, size } = result.decision.installer;
+    offeredInstaller = { name, url, size };
+  } else {
+    offeredInstaller = null;
+  }
   return result;
 }
 
 /** Test seam only: forget the session's answer. */
 export function resetUpdateSession(): void {
   sessionCheck = null;
+  offeredInstaller = null;
 }
 
 // —— download and hand over ——————————————————————————————————————————————————
@@ -479,6 +556,74 @@ export function readAsset(input: unknown): UpdateAsset | null {
   };
 }
 
+export type InstallRequest =
+  | { ok: true; asset: UpdateAsset }
+  | { ok: false; error: string };
+
+/**
+ * The install this session may run, or the reason it may not.
+ *
+ * Every rule is checked here, before a byte moves and (in main) before the
+ * operator is even asked to confirm:
+ *
+ *  - the argument is a well-formed asset;
+ *  - its url is on a trusted host under the current policy;
+ *  - under the product policy it is an asset of this repository's release
+ *    (`isReleaseAssetUrl`), not merely some trusted host;
+ *  - its name is a LifeQuest setup executable;
+ *  - it declares a size (a size-less asset cannot be verified, so it is not run);
+ *  - and it is exactly the installer main itself last offered. The renderer
+ *    cannot name a URL; it can only agree to the one main already chose.
+ */
+export function validateInstallRequest(input: unknown): InstallRequest {
+  const asset = readAsset(input);
+  if (!asset) {
+    return {
+      ok: false,
+      error:
+        "The release did not describe a Windows installer, so nothing was downloaded.",
+    };
+  }
+  if (!isTrustedAssetUrl(asset.url)) {
+    return {
+      ok: false,
+      error: `Refusing to download an installer from ${asset.url} — it is not a trusted host.`,
+    };
+  }
+  if (trust.strictAssetPath && !isReleaseAssetUrl(asset.url)) {
+    return {
+      ok: false,
+      error: `Refusing to download ${asset.url} — it is not a release asset of this app.`,
+    };
+  }
+  if (!/-setup\.exe$/i.test(asset.name)) {
+    return {
+      ok: false,
+      error: `Refusing to run ${asset.name} — it is not a LifeQuest setup executable.`,
+    };
+  }
+  if (asset.size <= 0) {
+    return {
+      ok: false,
+      error:
+        "The release did not declare the installer's size, so nothing was downloaded.",
+    };
+  }
+  const offered = offeredInstaller;
+  if (
+    !offered ||
+    offered.name !== asset.name ||
+    offered.url !== asset.url ||
+    offered.size !== asset.size
+  ) {
+    return {
+      ok: false,
+      error: "Refusing to install an update this session did not offer.",
+    };
+  }
+  return { ok: true, asset };
+}
+
 /**
  * The one executable this app runs on the operator's behalf. Downloading and
  * launching are one flight: a second request joins the first, so a double click
@@ -488,14 +633,9 @@ export function installUpdate(
   input: unknown,
   onProgress: (progress: UpdateProgress) => void,
 ): Promise<InstallResult> {
-  const asset = readAsset(input);
-  if (!asset) {
-    return Promise.resolve({
-      ok: false,
-      error:
-        "The release did not describe a Windows installer, so nothing was downloaded.",
-    });
-  }
+  const checked = validateInstallRequest(input);
+  if (!checked.ok) return Promise.resolve(checked);
+  const asset = checked.asset;
   if (installFlight) return installFlight;
   const flight = runInstall(asset, onProgress).then((result) => {
     // Only a success stays as the session's answer: an attempt that failed —

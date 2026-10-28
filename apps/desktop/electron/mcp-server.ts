@@ -173,3 +173,31 @@ export function getMcpVaultId(): string | null {
 export function getMcpDoorState(): { boundAt: number; companionSeenAt: number | null } | null {
   return doors ? doors.doorsState() : null;
 }
+
+/**
+ * DOOR-01: what the companion profile writer must know before it hands the host
+ * a url and a bearer.
+ *
+ * `attempted` separates the two sessions that look alike from the outside:
+ * before any vault opens, no door was asked to bind and an existing profile
+ * entry may legitimately be left alone; after a vault open, the app DID try to
+ * bind, so `bound: false` means another process owns the local port and the
+ * profile must not name it.
+ */
+export function getLocalDoorCredentialState(): {
+  attempted: boolean;
+  bound: boolean;
+  url: string | null;
+  error: string | null;
+} {
+  if (!doors) {
+    return { attempted: false, bound: false, url: null, error: null };
+  }
+  const state = getMcpDoors();
+  return {
+    attempted: true,
+    bound: Boolean(state.localUrl),
+    url: state.localUrl || null,
+    error: state.localError,
+  };
+}

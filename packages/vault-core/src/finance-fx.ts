@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { readRegistry } from "./domain-databases.ts";
+import { fetchPublicText } from "./egress.ts";
 import { appendLog } from "./log.ts";
 import { todayLocalIso } from "./map/dates.ts";
-import { vaultPaths } from "./paths.ts";
+import { assertNoSymlinkLeaf, assertPhysicalContainment, vaultPaths } from "./paths.ts";
 import {
   FINANCE_DOMAIN_SLUG,
   FINANCE_KIT_ID,
@@ -136,6 +137,7 @@ export function parseAsOf(value: unknown): string | null {
 async function fxWritable(root: string): Promise<Result<true>> {
   const paths = vaultPaths(root);
   try {
+    await assertPhysicalContainment(root, paths.domainJson(FINANCE_DOMAIN_SLUG), "read");
     const meta = JSON.parse(await fs.readFile(paths.domainJson(FINANCE_DOMAIN_SLUG), "utf8"));
     if (meta.archivedAt != null) {
       return { ok: false, error: `Domain not found or archived: ${FINANCE_DOMAIN_SLUG}` };
@@ -179,34 +181,44 @@ export type FxRefreshResult = {
  * thrown fetch error would have to be caught and re-worded identically at every
  * call site — which is how one of them ends up saying "fetch failed".
  */
-async function fetchJson(url: string, timeoutMs: number): Promise<Result<unknown>> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+/**
+ * One JSON read of a source, under the shared egress guard.
+ *
+ * The source URL is stored in the vault's own `registry.json`, and `vault:open`
+ * refreshes it with no operator action, so this is a fetch driven by vault
+ * content. `egress.ts` makes it https + public-address only, re-validates every
+ * redirect and caps the body. The old version also quoted the first 60 bytes of
+ * a non-JSON answer back into `registry.json` — which the vault is then synced
+ * with — so a hostile vault could point the app at an internal service and read
+ * a slice of its answer out of the error field. The error now names the source
+ * and the reason, never the body.
+ *
+ * It never rejects: the caller's subject is the rate, not the transport.
+ */
+async function fetchJson(
+  url: string,
+  timeoutMs: number,
+  allowPrivateNetwork: boolean,
+): Promise<Result<unknown>> {
   try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { accept: "application/json" },
+    const res = await fetchPublicText(url, {
+      timeoutMs,
+      maxBytes: 256 * 1024,
+      allowPrivateNetwork,
     });
-    if (!res.ok) return { ok: false, error: `${url} answered HTTP ${res.status}` };
-    const text = await res.text();
+    if (res.status < 200 || res.status >= 300) {
+      return { ok: false, error: `${url} answered HTTP ${res.status}` };
+    }
     try {
-      return { ok: true, value: JSON.parse(text) as unknown };
+      return { ok: true, value: JSON.parse(res.body) as unknown };
     } catch {
       // An HTML error page, a captive portal, a plain-text body: all of them are
-      // "not a rate", and showing what came back is what makes the setting fixable.
-      const seen = text.trim().slice(0, 60) || "an empty body";
-      return { ok: false, error: `${url} did not answer JSON (got ${seen})` };
+      // "not a rate". The body itself is not echoed into the vault.
+      return { ok: false, error: `${url} did not answer JSON` };
     }
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    return {
-      ok: false,
-      error: /abort/i.test(message)
-        ? `${url} did not answer within ${Math.round(timeoutMs / 1000)}s`
-        : `${url} could not be reached: ${message}`,
-    };
-  } finally {
-    clearTimeout(timer);
+    return { ok: false, error: message };
   }
 }
 
@@ -220,13 +232,26 @@ async function fetchJson(url: string, timeoutMs: number): Promise<Result<unknown
  */
 export async function refreshFxRate(
   root: string,
-  opts?: { timeoutMs?: number; now?: Date },
+  opts?: {
+    timeoutMs?: number;
+    now?: Date;
+    /**
+     * Test-only escape hatch for the e2e rigs, which serve a rate over a local
+     * http server. It is not reachable from the renderer or an agent - the IPC
+     * path calls this with no options - so production always gets the public
+     * https guard.
+     */
+    allowPrivateNetwork?: boolean;
+  },
 ): Promise<Result<FxRefreshResult>> {
   const writable = await fxWritable(root);
   if (!writable.ok) return writable;
 
   const paths = vaultPaths(root);
-  const registry = await readRegistry(paths.domainRegistry(FINANCE_DOMAIN_SLUG));
+  const registryPath = paths.domainRegistry(FINANCE_DOMAIN_SLUG);
+  await assertPhysicalContainment(root, registryPath, "read");
+  await assertNoSymlinkLeaf(registryPath);
+  const registry = await readRegistry(registryPath);
   const settings = financeBlock(registry.finance);
   const source = fxSourceOf(settings);
   const now = opts?.now ?? new Date();
@@ -236,7 +261,8 @@ export async function refreshFxRate(
       ...settings,
       fxSource: { ...source, lastFetchedAt: now.toISOString(), lastError: error },
     };
-    await atomicWriteFile(paths.domainRegistry(FINANCE_DOMAIN_SLUG), `${JSON.stringify(registry, null, 2)}\n`);
+    await assertPhysicalContainment(root, registryPath, "write");
+    await atomicWriteFile(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
     return {
       ok: true,
       value: {
@@ -248,7 +274,11 @@ export async function refreshFxRate(
     };
   };
 
-  const fetched = await fetchJson(source.url, opts?.timeoutMs ?? FETCH_TIMEOUT_MS);
+  const fetched = await fetchJson(
+    source.url,
+    opts?.timeoutMs ?? FETCH_TIMEOUT_MS,
+    opts?.allowPrivateNetwork === true,
+  );
   if (!fetched.ok) return await fail(fetched.error);
   const body = fetched.value;
 
@@ -273,7 +303,8 @@ export async function refreshFxRate(
     usdZarAsOf: asOf,
     fxSource: { ...source, lastFetchedAt: now.toISOString(), lastError: null },
   };
-  await atomicWriteFile(paths.domainRegistry(FINANCE_DOMAIN_SLUG), `${JSON.stringify(registry, null, 2)}\n`);
+  await assertPhysicalContainment(root, registryPath, "write");
+  await atomicWriteFile(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
   return { ok: true, value: { settings: registry.finance, rate, asOf, refreshed: true } };
 }
 
@@ -294,7 +325,9 @@ export async function setFxRateSource(
   if (!writable.ok) return writable;
 
   const paths = vaultPaths(root);
-  const registry = await readRegistry(paths.domainRegistry(FINANCE_DOMAIN_SLUG));
+  const registryPath = paths.domainRegistry(FINANCE_DOMAIN_SLUG);
+  await assertPhysicalContainment(root, registryPath, "read");
+  const registry = await readRegistry(registryPath);
   const settings = financeBlock(registry.finance);
 
   if (input.url === null) {
@@ -302,12 +335,13 @@ export async function setFxRateSource(
       ...settings,
       fxSource: { ...DEFAULT_FX_SOURCE, lastFetchedAt: settings.fxSource?.lastFetchedAt ?? null },
     };
-    await atomicWriteFile(paths.domainRegistry(FINANCE_DOMAIN_SLUG), `${JSON.stringify(registry, null, 2)}\n`);
+    await assertPhysicalContainment(root, registryPath, "write");
+    await atomicWriteFile(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
     return { ok: true, value: registry.finance };
   }
 
   const url = (input.url ?? "").trim();
-  if (!/^https?:\/\/\S+$/i.test(url)) {
+  if (url.length > 2048 || !/^https?:\/\/\S+$/i.test(url)) {
     return { ok: false, error: "The rate source must be an http or https URL" };
   }
   const path = (input.path ?? "").trim();
@@ -328,7 +362,8 @@ export async function setFxRateSource(
       lastError: url === previous.url && path === previous.path ? previous.lastError : null,
     },
   };
-  await atomicWriteFile(paths.domainRegistry(FINANCE_DOMAIN_SLUG), `${JSON.stringify(registry, null, 2)}\n`);
+  await assertPhysicalContainment(root, registryPath, "write");
+  await atomicWriteFile(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
 
   await appendLog(root, {
     domainSlug: FINANCE_DOMAIN_SLUG,

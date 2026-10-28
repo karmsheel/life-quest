@@ -39,6 +39,7 @@ import {
   connectedGoalVisible,
   connectedReviewVisible,
   connectedLibraryVisible,
+  connectedBoardAllowed,
   connectedWriteDomainsAllowed,
   connectedWriteKind,
   projectConnectedPack,
@@ -468,6 +469,40 @@ async function executeConnectedTool(
     return result;
   }
 
+  // ── dashboard views: a view belongs to a domain, a board *is* a domain ────
+  //
+  // Fort-Knox AGENT-01: these three were the hole in the gate. They are granted
+  // by name, but their domain argument was never read here, so they fell
+  // through to the blind VIEW dispatch and a one-domain read grant could read
+  // another domain's rows, saved-card inventory, board and page ids. A read of
+  // an unassigned domain answers NOT_FOUND, the same answer as a missing one;
+  // the Overview board is a real board the agent knows exists, so it answers
+  // FORBIDDEN instead — `connectedBoardAllowed` makes that judgement once.
+  if (name === "preview_view" || name === "list_views") {
+    if (!granted(rec.domainSlug)) return grantRefusal("NOT_FOUND");
+    if (name === "list_views") return executeViewTool(root, actor, name, rec);
+    // `preview_view`'s board argument is only a lock advisory. A named board
+    // must be in the grant; an absent one means the Overview board, whose lock
+    // state is not the agent's to read, so the advisory is dropped instead of
+    // answered. The query itself was already scoped by `domainSlug`.
+    const board = rec.boardSlug as string | null | undefined;
+    const overview = board === undefined || board === null || board === "null";
+    if (!overview && !connectedBoardAllowed(board, grant)) return grantRefusal("NOT_FOUND");
+    const previewed = await executeViewTool(root, actor, name, rec);
+    return overview ? withoutBoardAdvisory(previewed) : previewed;
+  }
+
+  if (name === "get_dashboard") {
+    const board = rec.domainSlug as string | null | undefined;
+    if (!connectedBoardAllowed(board, grant)) {
+      // A named-but-unassigned board must not confirm that board exists.
+      return board === undefined || board === null || board === "null"
+        ? grantRefusal("FORBIDDEN")
+        : grantRefusal("NOT_FOUND");
+    }
+    return executeViewTool(root, actor, name, rec);
+  }
+
   // ── list reads: run, then drop what the grant does not cover ─────────────
   if (name === "list_databases") {
     const result = await executeDatabaseTool(root, actor, name, rec);
@@ -745,7 +780,10 @@ async function connectedWriteRefusal(
   if (name === "write_review" || name === "unlock_review") {
     // Both act on the whole review file, whose body carries the `overall`
     // preamble and every domain's sections. There is no domain slice of that
-    // write to give an agent, so it stays with the companion.
+    // write to give an agent, so it stays with the companion. Fort-Knox
+    // AGENT-10: neither name is in a grant set any more, so `toolAllowed`
+    // refuses them before this point and the door does not advertise them; this
+    // branch is kept as the second line of defence if a set ever grows one back.
     return grantRefusal("FORBIDDEN");
   }
 
@@ -852,6 +890,22 @@ function isGrantError(value: unknown): boolean {
   if (value === null || typeof value !== "object") return false;
   const err = (value as { error?: unknown }).error;
   return err !== null && typeof err === "object";
+}
+
+/**
+ * Fort-Knox AGENT-01: a view result with the board advisory removed.
+ *
+ * `preview_view` answers with `{ board: { domainSlug, locked, note } }` when the
+ * caller names a board to pin on. For a connected agent the only board it can
+ * name is one of its own domains, but the *absent* board means Overview, whose
+ * lock state spans every domain and is not in any grant. The tool already read
+ * it by then; the answer is what must not carry it, and nothing else in the
+ * reply depends on the advisory.
+ */
+function withoutBoardAdvisory(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  const { board: _board, ...rest } = value as Record<string, unknown>;
+  return rest;
 }
 
 /** Agent map tools that write the Architecture day templates and therefore need approval. */

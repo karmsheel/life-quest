@@ -375,6 +375,20 @@ export async function setPins(
     // flag is carried over: a pin write must never silently unlock the page.
     const next: PinBoard = { schemaVersion: 1, pins, locked };
     await atomicWriteFile(filePath, `${JSON.stringify(next, null, 2)}\n`);
+    // Fort-Knox AGENT-09: a board write is an attributable write. Before this it
+    // logged nothing at all, so an agent's arrange/save_view landing on an
+    // unlocked board left no line naming it. A no-op reorder (the same pins in
+    // the same order) writes nothing to the log, so a drag that ends where it
+    // started does not spam the feed.
+    if (JSON.stringify(board?.pins ?? []) !== JSON.stringify(pins)) {
+      await appendLog(root, {
+        domainSlug,
+        type: "board.pins-updated",
+        summary: `Changed the ${boardLabel(domainSlug)}`,
+        payload: { domainSlug, pins: pins.map((pin) => pin.id) },
+        actor,
+      });
+    }
     return { ok: true, value: { applied: true, pins, locked } };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

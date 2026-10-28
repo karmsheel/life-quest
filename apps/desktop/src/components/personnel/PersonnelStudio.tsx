@@ -366,7 +366,14 @@ export function PersonnelStudio() {
         </div>
 
         {invite ? (
-          <div className="personnel-studio__invite" role="status">
+          // The code is a one-time pairing credential: the page-context read
+          // must never carry it into a model turn, so its block opts out of
+          // `capturePageOutline` wholesale.
+          <div
+            className="personnel-studio__invite"
+            role="status"
+            data-page-context="ignore"
+          >
             <p className="muted">
               Send this code to the agent. It is shown once and expires{" "}
               {new Date(invite.expiresAt).toLocaleString()}.

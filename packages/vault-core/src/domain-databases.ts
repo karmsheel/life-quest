@@ -4,7 +4,12 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { appendLog } from "./log.ts";
-import { vaultPaths } from "./paths.ts";
+import {
+  assertNoSymlinkLeaf,
+  assertPhysicalContainment,
+  assertSafeSegment,
+  vaultPaths,
+} from "./paths.ts";
 import {
   DATABASE_COLUMN_TYPES,
   DATABASE_SOT_MODES,
@@ -24,6 +29,41 @@ function isColumnType(v: unknown): v is DatabaseColumnType {
     typeof v === "string" &&
     (DATABASE_COLUMN_TYPES as readonly string[]).includes(v)
   );
+}
+
+/**
+ * A database `file` cell points at a stored attachment. The column is a generic
+ * attachment picker in the UI, so the type is not narrowed to images or
+ * documents; what is refused is active content (HTML/SVG/script/executables)
+ * that could be opened as a document later, and the size/name are bounded
+ * because the bytes land in the vault and in the main process's memory.
+ */
+export const DATABASE_FILE_MAX_BYTES = 25 * 1024 * 1024;
+const DATABASE_FILE_FORBIDDEN_MIMES = new Set([
+  "text/html",
+  "application/xhtml+xml",
+  "image/svg+xml",
+  "application/javascript",
+  "text/javascript",
+  "application/x-javascript",
+  "application/x-sh",
+  "application/x-msdownload",
+  "application/x-executable",
+  "application/vnd.microsoft.portable-executable",
+  "application/x-msdos-program",
+  "text/x-shellscript",
+]);
+
+/** Reduce an operator filename to one safe vault segment, keeping it readable. */
+function sanitizeStoredFileName(raw: string): string {
+  const base = path.basename(raw.trim());
+  const cleaned = base
+    .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/g, "_")
+    .replace(/\.\.+/g, "_")
+    .replace(/^[. ]+/, "")
+    .replace(/[. ]+$/, "")
+    .slice(0, 100);
+  return cleaned || "file";
 }
 
 function validateColumnName(name: string): Result<true> {
@@ -55,6 +95,9 @@ export async function readRegistry(
   registryPath: string,
 ): Promise<DomainDatabaseRegistry> {
   try {
+    // A symlinked `registry.json` would be read from wherever it points; the
+    // write paths refuse to replace it, so treat the read the same way.
+    await assertNoSymlinkLeaf(registryPath);
     const raw = await fs.readFile(registryPath, "utf8");
     const parsed = safeParseRegistry(raw);
     if (parsed) return parsed;
@@ -64,7 +107,20 @@ export async function readRegistry(
   }
 }
 
-function openSqlite(sqlitePath: string): DatabaseSync {
+/**
+ * Open the domain database.
+ *
+ * The caller passes the vault root and slug (not a pre-built path) so this can
+ * verify the file physically sits inside the vault before SQLite touches it: a
+ * `domain.sqlite` symlinked at an outside database used to mean a plain
+ * `listRows` ran `PRAGMA journal_mode=WAL` and `CREATE TABLE` against a file
+ * outside the vault. `readOnly` is used by the view/script readers; this is the
+ * read-write connection the row API needs.
+ */
+async function openSqlite(root: string, slug: string): Promise<DatabaseSync> {
+  const sqlitePath = vaultPaths(root).domainSqlite(slug);
+  await assertPhysicalContainment(root, sqlitePath, "write");
+  await assertNoSymlinkLeaf(sqlitePath);
   const db = new DatabaseSync(sqlitePath);
   db.exec("PRAGMA journal_mode=WAL;");
   db.exec(`CREATE TABLE IF NOT EXISTS rows (
@@ -81,6 +137,8 @@ function openSqlite(sqlitePath: string): DatabaseSync {
 export async function isDomainLive(root: string, slug: string): Promise<boolean> {
   try {
     const metaPath = vaultPaths(root).domainJson(slug);
+    await assertPhysicalContainment(root, metaPath, "read");
+    await assertNoSymlinkLeaf(metaPath);
     const raw = await fs.readFile(metaPath, "utf8");
     const meta = JSON.parse(raw);
     return meta.archivedAt == null;
@@ -98,6 +156,8 @@ async function ensureVaultDatabaseGitignore(root: string): Promise<void> {
     return; // not a git repo
   }
   const ignorePath = paths.root + "/.gitignore";
+  await assertPhysicalContainment(paths.root, ignorePath, "write");
+  await assertNoSymlinkLeaf(ignorePath);
   let current = "";
   try {
     current = await fs.readFile(ignorePath, "utf8");
@@ -115,7 +175,9 @@ async function ensureVaultDatabaseGitignore(root: string): Promise<void> {
   }
   if (!hasCache) updated += ".lifequest/cache/\n";
   if (updated !== current) {
-    await fs.writeFile(ignorePath, updated);
+    // Atomic, and it refuses a symlinked target: `fs.writeFile` followed a
+    // `.gitignore` link planted in the vault and truncated the file it named.
+    await atomicWriteFile(ignorePath, updated);
   }
 }
 
@@ -161,9 +223,9 @@ export async function createDatabase(
     }
     const paths = vaultPaths(root);
     const dataDir = paths.domainDataDir(slug);
+    await assertPhysicalContainment(root, dataDir, "write");
     await fs.mkdir(dataDir, { recursive: true });
     const registryPath = paths.domainRegistry(slug);
-    const sqlitePath = paths.domainSqlite(slug);
 
     const now = new Date().toISOString();
     const dbMeta: DatabaseMeta = {
@@ -182,11 +244,12 @@ export async function createDatabase(
     await withRegistryLock(registryPath, async () => {
       const registry = await readRegistry(registryPath);
       registry.databases.push(dbMeta);
+      await assertPhysicalContainment(root, registryPath, "write");
       await atomicWriteFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
     });
 
     // Open sqlite to create rows table
-    const sqlite = openSqlite(sqlitePath);
+    const sqlite = await openSqlite(root, slug);
     sqlite.close();
 
     // Cache dir
@@ -325,6 +388,7 @@ export async function addDatabaseColumn(
       db.columns.push(col);
       db.updatedAt = new Date().toISOString();
 
+      await assertPhysicalContainment(root, registryPath, "write");
       await atomicWriteFile(registryPath, JSON.stringify(registry, null, 2) + "\n");
       return { ok: true as const, value: db };
     });
@@ -333,7 +397,7 @@ export async function addDatabaseColumn(
   }
 }
 
-function validateCells(
+export function validateCells(
   registry: DomainDatabaseRegistry,
   dbId: string,
   slug: string,
@@ -394,12 +458,16 @@ function validateCells(
           return { ok: false, error: `Column ${col.name} expects file path string` };
         }
         const prefix = `domains/${slug}/data/files/`;
-        if (
-          path.isAbsolute(val) ||
-          val.includes("..") ||
-          val.includes("\\") ||
-          !val.startsWith(prefix)
-        ) {
+        if (path.isAbsolute(val) || !val.startsWith(prefix)) {
+          return { ok: false, error: `Column ${col.name} invalid file path` };
+        }
+        const tail = val.slice(prefix.length).split("/");
+        if (tail.length !== 2) {
+          return { ok: false, error: `Column ${col.name} invalid file path` };
+        }
+        try {
+          for (const segment of tail) assertSafeSegment(segment, "file path segment");
+        } catch {
           return { ok: false, error: `Column ${col.name} invalid file path` };
         }
         break;
@@ -518,6 +586,7 @@ export async function listRows(
   try {
     const paths = vaultPaths(root);
     const sqlitePath = paths.domainSqlite(slug);
+    await assertPhysicalContainment(root, sqlitePath, "read");
     try {
       await fs.access(sqlitePath);
     } catch {
@@ -531,7 +600,7 @@ export async function listRows(
       opts?.offset !== undefined && Number.isInteger(opts.offset) && opts.offset > 0
         ? opts.offset
         : 0;
-    const sqlite = openSqlite(sqlitePath);
+    const sqlite = await openSqlite(root, slug);
     try {
       // Deterministic order, always: paged and unpaged reads must agree.
       const base =
@@ -577,12 +646,13 @@ export async function countRows(
   try {
     const paths = vaultPaths(root);
     const sqlitePath = paths.domainSqlite(slug);
+    await assertPhysicalContainment(root, sqlitePath, "read");
     try {
       await fs.access(sqlitePath);
     } catch {
       return { ok: true, value: 0 };
     }
-    const sqlite = openSqlite(sqlitePath);
+    const sqlite = await openSqlite(root, slug);
     try {
       const row = sqlite
         .prepare("SELECT COUNT(*) AS n FROM rows WHERE database_id = ?")
@@ -605,12 +675,13 @@ export async function getRow(
   try {
     const paths = vaultPaths(root);
     const sqlitePath = paths.domainSqlite(slug);
+    await assertPhysicalContainment(root, sqlitePath, "read");
     try {
       await fs.access(sqlitePath);
     } catch {
       return { ok: false, error: `Row not found: ${rowId}` };
     }
-    const sqlite = openSqlite(sqlitePath);
+    const sqlite = await openSqlite(root, slug);
     try {
       const stmt = sqlite.prepare(
         "SELECT id, database_id, created_at, updated_at, cells FROM rows WHERE database_id = ? AND id = ?",
@@ -714,7 +785,6 @@ export async function upsertRow(
   try {
     const paths = vaultPaths(root);
     const registryPath = paths.domainRegistry(slug);
-    const sqlitePath = paths.domainSqlite(slug);
 
     const registry = await readRegistry(registryPath);
 
@@ -725,7 +795,7 @@ export async function upsertRow(
     const id = input.id ?? randomUUID();
     const now = new Date().toISOString();
 
-    const sqlite = openSqlite(sqlitePath);
+    const sqlite = await openSqlite(root, slug);
     try {
       // Check if row exists
       const existing = sqlite
@@ -775,7 +845,7 @@ export async function insertRows(
     }
 
     const now = new Date().toISOString();
-    const sqlite = openSqlite(paths.domainSqlite(slug));
+    const sqlite = await openSqlite(root, slug);
     try {
       sqlite.exec("BEGIN");
       const existing = sqlite.prepare(
@@ -817,8 +887,8 @@ export async function deleteRow(
 ): Promise<Result<{ id: string }>> {
   try {
     const paths = vaultPaths(root);
-    const sqlitePath = paths.domainSqlite(slug);
-    const sqlite = openSqlite(sqlitePath);
+    await assertPhysicalContainment(root, paths.domainSqlite(slug), "write");
+    const sqlite = await openSqlite(root, slug);
     try {
       const info = sqlite
         .prepare("DELETE FROM rows WHERE database_id = ? AND id = ?")
@@ -841,21 +911,43 @@ export async function saveDatabaseFile(
   input: { bytes: Uint8Array; mime: string; name: string },
 ): Promise<Result<{ relPath: string; fileId: string }>> {
   try {
-    const name = input.name;
-    // Reject path escape
-    if (!name || name.includes("..") || path.isAbsolute(name)) {
-      return { ok: false, error: "Invalid file name" };
+    // The caller is the renderer (a Data Studio attachment) or a receipt, so the
+    // bytes are attacker-influenced: bound the size, refuse active content, and
+    // reduce the name to one safe segment rather than trusting it.
+    if (!(input.bytes instanceof Uint8Array)) {
+      return { ok: false, error: "Invalid file bytes" };
     }
-    // Additional: reject backslashes with absolute drive
-    if (/^[a-zA-Z]:/.test(name)) {
-      return { ok: false, error: "Invalid file name" };
+    if (input.bytes.byteLength === 0) {
+      return { ok: false, error: "File is empty" };
+    }
+    if (input.bytes.byteLength > DATABASE_FILE_MAX_BYTES) {
+      return {
+        ok: false,
+        error: `That file is larger than ${Math.round(DATABASE_FILE_MAX_BYTES / (1024 * 1024))} MB.`,
+      };
+    }
+    const mime = typeof input.mime === "string" ? input.mime.trim().toLowerCase() : "";
+    if (DATABASE_FILE_FORBIDDEN_MIMES.has(mime)) {
+      return { ok: false, error: `Files of type ${mime} are not stored in the vault.` };
+    }
+    if (!(await isDomainLive(root, slug))) {
+      return { ok: false, error: `Domain not found or archived: ${slug}` };
     }
 
+    const rawName = typeof input.name === "string" ? input.name : "";
+    if (!rawName || path.isAbsolute(rawName) || /^[a-zA-Z]:/.test(rawName)) {
+      return { ok: false, error: "Invalid file name" };
+    }
+    const safeName = sanitizeStoredFileName(rawName);
+
     const fileId = randomUUID();
-    const safeName = path.basename(name);
     const paths = vaultPaths(root);
     const fullPath = paths.domainFile(slug, fileId, safeName);
+    // Physical containment before any mkdir/write: a symlinked `data`/`files`
+    // directory inside the vault must not redirect a save outside the vault.
+    await assertPhysicalContainment(root, fullPath, "write");
     await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    await assertNoSymlinkLeaf(path.dirname(fullPath));
     await fs.writeFile(fullPath, input.bytes);
 
     const relPath = `domains/${slug}/data/files/${fileId}/${safeName}`;
@@ -870,6 +962,7 @@ export { ensureVaultDatabaseGitignore };
 export async function invalidateDomainCache(root: string): Promise<void> {
   const paths = vaultPaths(root);
   try {
+    await assertPhysicalContainment(root, paths.cacheDir, "write");
     const entries = await fs.readdir(paths.cacheDir);
     for (const entry of entries) {
       await fs.rm(path.join(paths.cacheDir, entry), { recursive: true, force: true });
