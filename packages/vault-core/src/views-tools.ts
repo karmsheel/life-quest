@@ -526,6 +526,8 @@ async function writeViewAndPin(
 
   const saved = await saveView(root, domainSlug, spec as Omit<ViewSpec, "schemaVersion">, {
     ...(viewId ? { id: viewId } : {}),
+    // AGENT-09: the life-log line names the agent that wrote the card.
+    actor,
   });
   if (!saved.ok) return toolError(saved.error);
   const savedId = saved.value.id;

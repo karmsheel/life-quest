@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   applyScriptBlock,
   appendLog,
+  assertPhysicalContainment,
   archiveDomain,
   collectImpliedTurn,
   COMPANION_ACTOR,
@@ -408,7 +409,13 @@ async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
   } catch {
     token = null;
   }
-  await companion.companionWriteMcpProfile(token);
+  // DOOR-01: only hand the bearer to the profile when THIS process owns the
+  // local door. `startMcp` can fail (a port-squatter already on 8643), and a
+  // profile written with a token + url pointing at a door we did not bind would
+  // hand the master bearer to whatever is listening there.
+  const doors = getMcpDoors();
+  const localDoorIsOurs = Boolean(doors.localUrl);
+  await companion.companionWriteMcpProfile(localDoorIsOurs ? token : null);
   // KAR-71: the profile now names a live door, but the host read its
   // `mcp_servers` when it started — and a host that was already running when
   // these doors bound has parked on them, which leaves every session on the
@@ -586,7 +593,24 @@ export async function vaultCreate(
   name?: string,
 ): Promise<Result<VaultSnapshot>> {
   return enqueue(async () => {
+    if (typeof rootPath !== "string" || !rootPath.trim()) {
+      return { ok: false, error: "A vault folder is required" };
+    }
     const abs = path.resolve(rootPath);
+    // A vault is a folder the operator picked; the filesystem root and an
+    // existing non-directory are never one, and creating a vault skeleton there
+    // would write into places the app has no business owning.
+    if (path.dirname(abs) === abs) {
+      return { ok: false, error: "Choose a folder for the vault, not a filesystem root" };
+    }
+    try {
+      const stat = await fs.stat(abs);
+      if (!stat.isDirectory()) {
+        return { ok: false, error: `Not a folder: ${abs}` };
+      }
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+    }
     const res = await createVault(abs, name ?? "Personal");
     if (!res.ok) return res;
     await rememberOpen(res.value);
@@ -1281,10 +1305,11 @@ async function loadHermesCreds(): Promise<
     return noVaultError<{ baseUrl: string; apiKey: string }>();
   }
   try {
-    const settingsRaw = await fs.readFile(
-      path.join(currentRoot, ".lifequest", "settings.json"),
-      "utf8",
-    );
+    // Build through the vault paths (which validate every segment and refuse a
+    // symlinked `.lifequest`), not a hand-joined path.
+    const settingsPath = vaultPaths(currentRoot).settingsJson;
+    await assertPhysicalContainment(currentRoot, settingsPath, "read");
+    const settingsRaw = await fs.readFile(settingsPath, "utf8");
     const settings = JSON.parse(settingsRaw) as VaultSettings;
     const baseUrl = (settings.hermesBaseUrl || "").trim().replace(/\/$/, "");
     if (!baseUrl) {

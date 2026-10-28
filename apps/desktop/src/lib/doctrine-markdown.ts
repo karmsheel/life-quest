@@ -25,6 +25,13 @@ const STASH = "\uE000";
 /** The two ends of the one HTML tag this renderer passes through: `<u>`. */
 const UNDERLINE_OPEN = "\uE001";
 const UNDERLINE_CLOSE = "\uE002";
+/**
+ * Every sentinel the stashing above mints. Input may never carry one: a vault
+ * file that spelled `\uE0000\uE000` itself would be indistinguishable from a
+ * placeholder this renderer created, and would be "expanded" wherever the
+ * pipeline carried it. So the characters are removed before parsing.
+ */
+const SENTINEL_CHARS = /[\uE000-\uE002]/g;
 
 /** One line of a pipe table: it opens and closes with a pipe. */
 const PIPE_ROW = /^\s*\|.*\|\s*$/;
@@ -73,32 +80,98 @@ function stashUnderline(text: string): string {
     .replace(/<\/u>/gi, UNDERLINE_CLOSE);
 }
 
-function unstashUnderline(text: string): string {
-  return text
-    .replace(new RegExp(UNDERLINE_OPEN, "g"), "<u>")
-    .replace(new RegExp(UNDERLINE_CLOSE, "g"), "</u>");
-}
+/**
+ * A stashed wiki token: the anchor to put back, and the literal text it stands
+ * for when the placeholder ends up somewhere an anchor cannot go (an attribute
+ * value — see `expandSentinels`).
+ */
+type WikiStash = { html: string; text: string };
 
 /**
  * Swaps wiki tokens for sentinels before escaping, so a target can never inject
  * HTML and the remaining inline rules cannot rewrite an anchor. An unresolved
  * target is stashed back as its literal `[[target]]` characters.
  */
-function stashWiki(text: string, resolve: WikiResolver): [string, string[]] {
-  const kept: string[] = [];
+function stashWiki(text: string, resolve: WikiResolver): [string, WikiStash[]] {
+  const kept: WikiStash[] = [];
   const stashed = text.replace(WIKI_TOKEN, (whole, raw: string) => {
     const link = resolve(raw);
-    kept.push(link ? wikiAnchor(raw, link.href, link.libraryId) : escapeHtml(whole));
+    // `text` is the token as it should print when it is not expanded: escaped
+    // here because this function runs before the escaping pass.
+    kept.push({
+      html: link ? wikiAnchor(raw, link.href, link.libraryId) : escapeHtml(whole),
+      text: escapeHtml(whole),
+    });
     return `${STASH}${kept.length - 1}${STASH}`;
   });
   return [stashed, kept];
 }
 
-function unstashWiki(text: string, kept: string[]): string {
-  return text.replace(
-    new RegExp(`${STASH}(\\d+)${STASH}`, "g"),
-    (_m, i: string) => kept[Number(i)] ?? "",
-  );
+/**
+ * Puts the stashed HTML back — but only where HTML reads text as text.
+ *
+ * The placeholders travel through the inline pipeline as ordinary characters,
+ * so a link or image rule can carry one into an attribute value. That is how a
+ * wiki token written inside a markdown link's URL used to be expanded into
+ * `href="…"`: the anchor's own quotes ended the attribute early, the rest of
+ * the template (`target="_blank" rel="noopener noreferrer"`) printed as text,
+ * and the surviving `<a>` had no target and so navigated the privileged window
+ * in place. Outside a tag, expand to the anchor (or `<u>`); inside a tag,
+ * expand to the escaped literal token the placeholder stood for, which can
+ * never contain a quote or an angle bracket. Nothing an attacker writes can
+ * therefore put HTML inside an attribute this renderer generates.
+ *
+ * The tag scan is sound because raw `<` and `>` in this pipeline only come from
+ * tags the renderer generated: every character of untrusted text has already
+ * been escaped, and the expansions appended here are whole, balanced elements.
+ */
+function expandSentinels(s: string, kept: readonly WikiStash[]): string {
+  let out = "";
+  let i = 0;
+  let inTag = false;
+  while (i < s.length) {
+    const ch = s[i]!;
+    if (ch === "<") {
+      inTag = true;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === ">") {
+      inTag = false;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === UNDERLINE_OPEN) {
+      if (!inTag) out += "<u>";
+      i += 1;
+      continue;
+    }
+    if (ch === UNDERLINE_CLOSE) {
+      if (!inTag) out += "</u>";
+      i += 1;
+      continue;
+    }
+    if (ch === STASH) {
+      let j = i + 1;
+      let digits = "";
+      while (j < s.length && s[j]! >= "0" && s[j]! <= "9") {
+        digits += s[j]!;
+        j += 1;
+      }
+      const placeholder = digits !== "" && s[j] === STASH;
+      const entry = placeholder ? kept[Number(digits)] : undefined;
+      if (entry) out += inTag ? entry.text : entry.html;
+      // A sentinel that is not one of ours was blanked out of the input, so it
+      // can only be a stray: skip the whole placeholder, or just the character.
+      i = placeholder ? j + 1 : i + 1;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
 }
 
 function inlineFormat(text: string, resolve?: WikiResolver): string {
@@ -124,8 +197,7 @@ function inlineFormat(text: string, resolve?: WikiResolver): string {
   s = s.replace(/~~([^~]+)~~/g, "<del>$1</del>");
   s = s.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "<em>$1</em>");
   s = s.replace(/(?<![\w_])_([^_\n]+)_(?![\w_])/g, "<em>$1</em>");
-  s = unstashUnderline(s);
-  return kept.length > 0 ? unstashWiki(s, kept) : s;
+  return expandSentinels(s, kept);
 }
 
 /**
@@ -136,7 +208,12 @@ export function doctrineMarkdownToHtml(
   markdown: string,
   resolveWiki?: WikiResolver,
 ): string {
-  const lines = stripComments(markdown).replace(/\r\n/g, "\n").split("\n");
+  // The private-use characters below are this renderer's own placeholders, so
+  // input may never spell one: blanked out first, a vault file cannot forge a
+  // placeholder that the pipeline would later expand into HTML.
+  const lines = stripComments(markdown.replace(SENTINEL_CHARS, ""))
+    .replace(/\r\n/g, "\n")
+    .split("\n");
   const out: string[] = [];
   let i = 0;
   let inUl = false;

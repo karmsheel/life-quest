@@ -360,8 +360,10 @@ export function SettingsHermes() {
         </div>
       </SettingsSection>
       {/* KAR-70: the two loopback doors. Each keeps its own bind error, so a
-          taken port takes down one row and not the other url. */}
-      <div className="settings-card">
+          taken port takes down one row and not the other url. The block opts
+          out of page-context capture: the doors are local plumbing, not content
+          for a model turn. */}
+      <div className="settings-card" data-page-context="ignore">
         <h3 className="settings-panel__section-title">MCP doors</h3>
         <dl className="settings-hermes">
           <div className="settings-field">

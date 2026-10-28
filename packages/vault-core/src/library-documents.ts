@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
-import { vaultPaths } from "./paths.ts";
+import { assertPhysicalContainment, assertSafeSegment, vaultPaths } from "./paths.ts";
 import {
   actorDisplayName,
   assertEditable,
@@ -124,7 +124,9 @@ async function writeLibraryFile(
   // formatValue quotes scalars that contain spaces; library notes keep
   // unquoted titles (`title: Inbox note`) which parseFrontmatter still reads.
   const raw = md.replace(/^title: "([^"\\]+)"$/m, "title: $1");
-  await atomicWriteFile(paths.libraryDocumentMd(record.id), raw);
+  const filePath = paths.libraryDocumentMd(record.id);
+  await assertPhysicalContainment(rootPath, filePath, "write");
+  await atomicWriteFile(filePath, raw);
 }
 
 async function readLiveLibrary(
@@ -133,6 +135,7 @@ async function readLiveLibrary(
 ): Promise<Result<LibraryDocument>> {
   try {
     const filePath = vaultPaths(rootPath).libraryDocumentMd(id);
+    await assertPhysicalContainment(rootPath, filePath, "read");
     const raw = await fs.readFile(filePath, "utf8");
     const record = parseLibraryFile(id, raw);
     if (!record || record.deletedAt) return fail("Document not found");
@@ -167,6 +170,7 @@ export async function libraryList(
       let filePath: string;
       try {
         filePath = paths.libraryDocumentMd(id);
+        await assertPhysicalContainment(rootPath, filePath, "read");
       } catch {
         skipped += 1;
         continue;
@@ -205,6 +209,15 @@ export async function libraryCreate(
     if (!title) return fail("title is required");
     const domains = await normalizeDomains(rootPath, input.domainSlugs);
     if (!domains.ok) return domains;
+    if (input.id !== undefined) {
+      // The operator path mints a UUID; the id is accepted only so a Decision
+      // can name the note it proposes. It is still a filename, so validate it.
+      try {
+        assertSafeSegment(input.id, "library note id");
+      } catch (e) {
+        return fail(asError(e));
+      }
+    }
     const now = new Date().toISOString();
     const record: LibraryDocument = {
       id: input.id ?? randomUUID(),

@@ -20,13 +20,25 @@ import {
   saveDatabaseFile,
   type Result,
 } from "@lifequest/vault-core";
+import {
+  dimensionsTooLarge,
+  RECEIPT_COPY_CEILING,
+  RECEIPT_ORIGINAL_CEILING,
+  sniffImageDimensions,
+  sniffReceiptKind,
+  type ReceiptKind,
+} from "./image-headers.js";
 
-export type ReceiptKind = "image/jpeg" | "image/png";
-
-/** The original may be this large; the vault keeps it as it arrived. */
-export const RECEIPT_ORIGINAL_CEILING = 25 * 1024 * 1024;
-/** The copy Hermes sees may be this large, before base64 inflation. */
-export const RECEIPT_COPY_CEILING = 2 * 1024 * 1024;
+export {
+  RECEIPT_COPY_CEILING,
+  RECEIPT_MAX_DIMENSION,
+  RECEIPT_MAX_PIXELS,
+  RECEIPT_ORIGINAL_CEILING,
+  dimensionsTooLarge,
+  sniffImageDimensions,
+  sniffReceiptKind,
+} from "./image-headers.js";
+export type { ReceiptKind } from "./image-headers.js";
 
 export const RECEIPT_TYPE_MESSAGE = "Receipts must be JPEG or PNG images.";
 export const RECEIPT_SIZE_MESSAGE = "That receipt is larger than 25 MB.";
@@ -43,23 +55,6 @@ const COPY_LADDER: Array<{ longEdge: number; quality: number }> = [
   { longEdge: 1600, quality: 60 },
   { longEdge: 1200, quality: 55 },
 ];
-
-/**
- * The format is read from the bytes. The file name and the declared mime are
- * both operator-supplied strings, and a receipt that only claims to be an image
- * would reach `nativeImage` and fail there with a message about decoding rather
- * than about what the operator picked.
- */
-export function sniffReceiptKind(bytes: Uint8Array): ReceiptKind | null {
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return "image/jpeg";
-  }
-  const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-  if (bytes.length >= png.length && png.every((byte, i) => bytes[i] === byte)) {
-    return "image/png";
-  }
-  return null;
-}
 
 /** The same shape `nativeImage.createFromBuffer` returns. */
 type NativeImage = ReturnType<typeof nativeImage.createFromBuffer>;
@@ -100,6 +95,10 @@ export async function prepareReceipt(
   if (!kind) return { ok: false, error: RECEIPT_TYPE_MESSAGE };
   if (input.bytes.byteLength > RECEIPT_ORIGINAL_CEILING) {
     return { ok: false, error: RECEIPT_SIZE_MESSAGE };
+  }
+  const dimensions = sniffImageDimensions(input.bytes);
+  if (!dimensions || dimensionsTooLarge(dimensions)) {
+    return { ok: false, error: RECEIPT_TYPE_MESSAGE };
   }
   if (!(await isReceiptStoreReady(root))) {
     return { ok: false, error: RECEIPT_KIT_MESSAGE };

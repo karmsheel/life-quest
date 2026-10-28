@@ -55,7 +55,8 @@ export const REVIEW_TOOL_DEFS: MapToolDef[] = [
   },
   {
     name: "unlock_review",
-    description: "Unlock a locked review so it can be edited in place",
+    description:
+      "Unlock a locked review so it can be edited in place. Operator-only: an agent's call is refused, because the lock is what routes an agent's review edit into a Decision.",
     parameters: {
       type: "object",
       properties: { cadence: { type: "string" }, period: { type: "string" } },
@@ -205,6 +206,8 @@ export async function executeReviewTool(
         cadence: cp.cadence,
         period: cp.period,
         scope,
+        // AGENT-09: the life-log line names the actor that marked it.
+        actor,
       });
       if (!result.ok) return vaultError(result.error);
       return { review: result.value };
@@ -213,8 +216,17 @@ export async function executeReviewTool(
     case "unlock_review": {
       const cp = requireCadencePeriod(args);
       if ("error" in cp) return cp;
-      const result = await unlockReview(root, cp.cadence, cp.period);
-      if (!result.ok) return vaultError(result.error);
+      // AGENT-14: user-actor-only in the engine. An agent caller (the companion
+      // included) is refused there; report that refusal in the grant's own
+      // vocabulary rather than as a malformed argument. A connected agent never
+      // reaches this branch at all (the name is not in a grant set any more).
+      const result = await unlockReview(root, cp.cadence, cp.period, actor);
+      if (!result.ok) {
+        if (result.error === "Only the operator can unlock a review") {
+          return { error: { code: "FORBIDDEN", message: result.error } };
+        }
+        return vaultError(result.error);
+      }
       return { review: result.value };
     }
 
@@ -264,7 +276,7 @@ export async function executeReviewTool(
       if (typeof markdown !== "string" || !markdown.trim()) {
         return { error: { code: "MALFORMED", message: "markdown is required" } };
       }
-      const written = await writeReviewSkill(root, cadence, markdown);
+      const written = await writeReviewSkill(root, cadence, markdown, actor);
       if (!written.ok) return vaultError(written.error);
       return {
         skill: {

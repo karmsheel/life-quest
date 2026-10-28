@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { shell } from "electron";
-import { companionMcpUrl } from "./mcp-server.ts";
+import { companionMcpUrl, getLocalDoorCredentialState } from "./mcp-server.ts";
 import {
   DEFAULT_API_PORT,
   PROFILE_NAME,
@@ -52,6 +52,7 @@ import {
   modelVerdict,
   modelWarningFor,
   shutdownCompanion,
+  stripCompanionMcpProfile,
   writeCompanionMcpProfile,
   type CompanionIo,
   type CompanionReady,
@@ -544,6 +545,42 @@ async function ensureHostGateway(
   throw new Error(said ? `${verdict}\n${said}` : verdict);
 }
 
+/**
+ * DOOR-02 / SUPP-05: every file this module writes into the Hermes home may
+ * carry a credential (the profile `config.yaml` carries the companion bearer,
+ * the profile `.env` carries the host API key). umask-derived 0644 is not good
+ * enough, and a file that already exists keeps its inode mode when rewritten —
+ * which is why the mode is both set on creation and corrected afterwards.
+ */
+const PRIVATE_FILE_MODE = 0o600;
+const PRIVATE_DIR_MODE = 0o700;
+
+function isPosix(): boolean {
+  return process.platform !== "win32";
+}
+
+async function hardenPathMode(target: string, mode: number, wantDir: boolean): Promise<void> {
+  if (!isPosix()) return;
+  try {
+    const st = await fs.stat(target);
+    if ((wantDir ? st.isDirectory() : st.isFile()) && (st.mode & 0o777) !== mode) {
+      await fs.chmod(target, mode);
+    }
+  } catch {
+    /* Best effort: the write itself reports a real failure. */
+  }
+}
+
+async function writeFilePrivate(p: string, body: string): Promise<void> {
+  await fs.writeFile(p, body, { encoding: "utf8", mode: PRIVATE_FILE_MODE });
+  await hardenPathMode(p, PRIVATE_FILE_MODE, false);
+}
+
+async function mkdirPrivate(p: string): Promise<void> {
+  await fs.mkdir(p, { recursive: true, mode: PRIVATE_DIR_MODE });
+  await hardenPathMode(p, PRIVATE_DIR_MODE, true);
+}
+
 function realIo(): CompanionIo {
   return {
     homedir: os.homedir(),
@@ -557,13 +594,24 @@ function realIo(): CompanionIo {
         throw e;
       }
     },
-    writeFile: (p, body) => fs.writeFile(p, body, "utf8"),
-    mkdirp: (p) => fs.mkdir(p, { recursive: true }).then(() => undefined),
+    writeFile: writeFilePrivate,
+    mkdirp: mkdirPrivate,
+    hardenFile: (p) => hardenPathMode(p, PRIVATE_FILE_MODE, false),
     isPortFree,
     health,
     capabilities,
     ensureHostGateway: (cli, home, force, profileName) =>
       ensureHostGateway(cli, home, force, profileName),
+    /**
+     * DOOR-01: whether this process's local door is bound. `attempted` is false
+     * before any vault has opened (there is no door to bind), which is the one
+     * case where leaving an existing profile entry alone is correct.
+     */
+    localDoor: async () => {
+      const state = getLocalDoorCredentialState();
+      if (!state.attempted) return null;
+      return { attempted: state.attempted, bound: state.bound };
+    },
     // Imported lazily for the same reason the vault token is: mcp-server owns
     // the doors and reaches Electron, and this module is imported by the chat
     // path, so a static import would close a cycle for no gain.
@@ -862,21 +910,35 @@ export function companionAttachToGateway(
  * `companionToken` is passed in rather than looked up here. The caller is
  * `rememberOpen`, which runs on the vault queue; minting a token through
  * `vault-service` would re-enter that same queue and deadlock — the outer
- * task would be waiting on the inner one it just enqueued. Null means no
- * token, and the profile is left exactly as it is.
+ * task would be waiting on the inner one it just enqueued.
+ *
+ * DOOR-01: a null token, or a token offered for a port this process did not
+ * bind, must never reach the host. The profile is what the running Hermes host
+ * reads to find `lifequest`; naming `http://127.0.0.1:8643/mcp` and carrying a
+ * bearer while another local process owns that port hands the companion's
+ * master credential to that process on the host's next reconnect. So:
+ *
+ *  - the local door is bound here  -> write the url + bearer (normal path);
+ *  - the app tried to bind and failed -> REMOVE our entry and the root
+ *    Authorization header (a previous run's entry is already on disk);
+ *  - no vault has opened, so no door was attempted -> leave the profile alone.
+ *
+ * Returns true only when the credential was written.
  */
 export async function companionWriteMcpProfile(
   companionToken: string | null,
 ): Promise<boolean> {
-  if (!companionToken) return false;
   try {
     const root = hermesRoot(process.env, os.homedir());
-    await writeCompanionMcpProfile(
-      realIo(),
-      path.join(profileDir(root, await activeProfileName()), "config.yaml"),
-      companionToken,
-      path.join(root, "config.yaml"),
-    );
+    const configPath = path.join(profileDir(root, await activeProfileName()), "config.yaml");
+    const rootConfigPath = path.join(root, "config.yaml");
+    const door = getLocalDoorCredentialState();
+    if (door.attempted && !door.bound) {
+      await stripCompanionMcpProfile(realIo(), configPath, rootConfigPath);
+      return false;
+    }
+    if (!companionToken) return false;
+    await writeCompanionMcpProfile(realIo(), configPath, companionToken, rootConfigPath);
     return true;
   } catch {
     return false;

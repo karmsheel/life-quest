@@ -7,7 +7,7 @@ import { loadGoals } from "./goals.ts";
 import { listDomains } from "./domains.ts";
 import { openVault } from "./open-vault.ts";
 import { listSignals } from "./signal-chain.ts";
-import { vaultPaths } from "./paths.ts";
+import { assertPhysicalContainment, assertSafeSegment, vaultPaths } from "./paths.ts";
 import type { MapToolDef } from "./map/tools.ts";
 import {
   PROJECT_PRIORITIES,
@@ -355,15 +355,15 @@ async function writeProjectFile(rootPath: string, record: Project): Promise<void
     raw = quoteTextScalar(raw, key, value);
   }
   // formatValue quotes scalars with spaces; keep unquoted titles for readability.
-  await atomicWriteFile(
-    paths.projectMd(record.id),
-    raw.replace(/^title: "([^"\\]+)"$/m, "title: $1"),
-  );
+  const filePath = paths.projectMd(record.id);
+  await assertPhysicalContainment(rootPath, filePath, "write");
+  await atomicWriteFile(filePath, raw.replace(/^title: "([^"\\]+)"$/m, "title: $1"));
 }
 
 async function readProject(rootPath: string, id: string): Promise<Result<Project>> {
   try {
     const filePath = vaultPaths(rootPath).projectMd(id);
+    await assertPhysicalContainment(rootPath, filePath, "read");
     const raw = await fs.readFile(filePath, "utf8");
     const record = parseProjectFile(id, raw);
     if (!record) return fail(`Project not found or malformed: ${id}`);
@@ -396,7 +396,9 @@ export async function projectList(
       if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
       const id = entry.name.slice(0, -".md".length);
       try {
-        const raw = await fs.readFile(paths.projectMd(id), "utf8");
+        const filePath = paths.projectMd(id);
+        await assertPhysicalContainment(rootPath, filePath, "read");
+        const raw = await fs.readFile(filePath, "utf8");
         const record = parseProjectFile(id, raw);
         if (!record) {
           skipped += 1;
@@ -432,6 +434,7 @@ export async function projectCreate(
   actor: Actor = USER_ACTOR,
 ): Promise<Result<Project>> {
   try {
+<<<<<<< HEAD
     if (!input || typeof input !== "object") return fail("Project input is required");
     const raw = input as unknown as Record<string, unknown>;
 
@@ -470,6 +473,14 @@ export async function projectCreate(
     if (raw.id !== undefined) {
       if (typeof raw.id !== "string" || !PROJECT_ID.test(raw.id.trim())) {
         return fail("id must be a filename-safe string");
+      }
+      // PROJECT_ID allows a dot segment (`a..b`) that the path builders refuse;
+      // the same segment fence every other id goes through is applied here so a
+      // Decision body can never smuggle a path in the id.
+      try {
+        assertSafeSegment(raw.id.trim(), "project id");
+      } catch (e) {
+        return fail(asError(e));
       }
       id = raw.id.trim();
     }

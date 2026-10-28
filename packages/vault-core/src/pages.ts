@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { appendLog } from "./log.ts";
-import { vaultPaths } from "./paths.ts";
+import { assertNoSymlinkLeaf, assertPhysicalContainment, vaultPaths } from "./paths.ts";
 import {
   PAGE_BLOCK_KINDS,
   METRIC_AGGS,
@@ -153,6 +153,8 @@ function validateBlocks(
 async function isDomainLive(root: string, slug: string): Promise<boolean> {
   try {
     const metaPath = vaultPaths(root).domainJson(slug);
+    await assertPhysicalContainment(root, metaPath, "read");
+    await assertNoSymlinkLeaf(metaPath);
     const raw = await fs.readFile(metaPath, "utf8");
     const meta = JSON.parse(raw);
     return meta.archivedAt == null;
@@ -165,6 +167,7 @@ async function readRegistry(
   registryPath: string,
 ): Promise<{ databases: Array<{ id: string; columns: Array<{ id: string }> }> } | null> {
   try {
+    await assertNoSymlinkLeaf(registryPath);
     const raw = await fs.readFile(registryPath, "utf8");
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && Array.isArray(parsed.databases)) {
@@ -228,9 +231,17 @@ export async function listPages(
         for (const entry of pageEntries) {
           if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
           const pageId = entry.name.replace(/\.json$/, "");
-          const page = await readPageFile(paths.domainPage(slug, pageId));
-          if (page) {
-            entries.push({ domainSlug: slug, page });
+          try {
+            const filePath = paths.domainPage(slug, pageId);
+            // One unreadable/odd file must not blank the whole page list, and a
+            // symlink must not be followed out of the vault.
+            await assertPhysicalContainment(root, filePath, "read");
+            const page = await readPageFile(filePath);
+            if (page) {
+              entries.push({ domainSlug: slug, page });
+            }
+          } catch {
+            // skipped: invalid id, symlinked path, or unreadable file
           }
         }
       } catch {
@@ -252,6 +263,7 @@ export async function getPage(
   try {
     const paths = vaultPaths(root);
     const filePath = paths.domainPage(slug, pageId);
+    await assertPhysicalContainment(root, filePath, "read");
     const page = await readPageFile(filePath);
     if (!page) {
       return { ok: false, error: `Page not found: ${pageId}` };
@@ -288,6 +300,7 @@ export async function createPage(
     };
 
     const filePath = paths.domainPage(slug, page.id);
+    await assertPhysicalContainment(root, filePath, "write");
     await atomicWriteFile(filePath, `${JSON.stringify(page, null, 2)}\n`);
 
     await appendLog(root, {
@@ -313,6 +326,7 @@ export async function updatePage(
   try {
     const paths = vaultPaths(root);
     const filePath = paths.domainPage(slug, pageId);
+    await assertPhysicalContainment(root, filePath, "read");
     const existing = await readPageFile(filePath);
     if (!existing) {
       return { ok: false, error: `Page not found: ${pageId}` };
@@ -354,6 +368,7 @@ export async function updatePage(
     }
 
     // User actor → write file
+    await assertPhysicalContainment(root, filePath, "write");
     await atomicWriteFile(filePath, `${JSON.stringify(updated, null, 2)}\n`);
     return { ok: true, value: { applied: true, page: updated } };
   } catch (e) {
@@ -369,6 +384,7 @@ export async function deletePage(
   try {
     const paths = vaultPaths(root);
     const filePath = paths.domainPage(slug, pageId);
+    await assertPhysicalContainment(root, filePath, "write");
     try {
       await fs.unlink(filePath);
     } catch (e) {

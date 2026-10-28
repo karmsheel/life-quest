@@ -116,9 +116,17 @@ export const CONNECTED_DAY_TEMPLATE_TOOLS: ReadonlySet<string> = new Set([
 
 /**
  * KAR-70: the writes that file a Decision. They follow the companion's rule
- * exactly — doctrine, library notes, goals, projects, database changes, and
- * review changes never land on their own — so the only thing this task adds is
- * the domain they are allowed to touch.
+ * exactly — doctrine, library notes, goals, projects, and database changes
+ * never land on their own — so the only thing this task adds is the domain they
+ * are allowed to touch.
+ *
+ * Fort-Knox AGENT-10: this list is the *advertised* surface, so it may only
+ * carry tools that really do file a Decision. `write_review` and `unlock_review`
+ * were here and were then refused unconditionally by the per-call gate, which
+ * advertised two tools an agent could never call. They are gone; an agent gets
+ * `FORBIDDEN` by name (unclassified = denied) instead of a tool-list entry that
+ * lies. `mark_review_done` moved to the immediate set: `executeReviewTool`
+ * applies it directly, so claiming it files a Decision was wrong.
  */
 export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "update_document",
@@ -133,9 +141,6 @@ export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "delete_row",
   "create_database",
   "add_column",
-  "write_review",
-  "mark_review_done",
-  "unlock_review",
   // Agent-built dashboard views (plan.md design): a view or a pin change is a
   // write, and whether it lands or becomes a Decision is the board's own page
   // lock rather than this list. It is classified here because the gate is what
@@ -149,6 +154,12 @@ export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
  * KAR-70: the writes that apply immediately, as they do for the companion:
  * events, script blocks on a page, and the capture thread. Each still needs its
  * domain inside the assignment.
+ *
+ * Fort-Knox AGENT-10: `mark_review_done` belongs here — it applies the scope's
+ * `done` status at once, with no Decision (`review-tools.ts`), so classifying it
+ * as a Decision write described behaviour the vault does not have. (Marking the
+ * `overall` scope also locks the review, but a connected agent can never be
+ * granted `overall`: the per-call gate refuses it.)
  */
 export const CONNECTED_IMMEDIATE_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "create_event",
@@ -158,6 +169,7 @@ export const CONNECTED_IMMEDIATE_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "capture_transaction",
   "undo_capture",
   "correct_capture",
+  "mark_review_done",
 ]);
 
 /**
@@ -286,6 +298,25 @@ export function connectedEventVisible(
   return event.domainSlug !== null && grant.domainSlugs.includes(event.domainSlug);
 }
 
+/**
+ * Fort-Knox AGENT-01: whether a dashboard (pin board) is inside the grant.
+ *
+ * A board is a domain: the domain's own board names its slug, and `null` is the
+ * Overview board, which spans every domain — so it is never a connected agent's
+ * board, read or write. The write gate already judged `boardSlug: null` that
+ * way; the read tools had no such check at all, which is how a read-only agent
+ * read another domain's cards and pins.
+ *
+ * An absent slug is not a board either: it means the caller did not say, which
+ * the tools resolve to Overview, so it is refused rather than guessed at.
+ */
+export function connectedBoardAllowed(
+  boardSlug: string | null | undefined,
+  grant: ConnectedGrant,
+): boolean {
+  return typeof boardSlug === "string" && grant.domainSlugs.includes(boardSlug);
+}
+
 export function connectedGoalVisible(
   goal: Pick<Goal, "domainSlug">,
   grant: ConnectedGrant,
@@ -375,12 +406,19 @@ function currentWeek(state: MapStoreState): ResolvedWeek | null {
  * Schedule surface and go empty unless Schedule is on; the previous review and
  * the overall section list belong to the `overall` scope, which a connected
  * agent never has, so they go whatever Schedule says.
+ *
+ * Fort-Knox AGENT-02: `dailyNotes` goes too. A daily note is not domain-scoped —
+ * `getPeriodPack` attaches every note in the window to every scope ("every scope
+ * sees the same journal") — so a grant cannot contain it, exactly as the
+ * daily-note tools are refused by name to a connected agent. Leaving the field
+ * in this spread handed the operator's journal to a one-domain read grant.
  */
 export function projectConnectedPack(pack: PeriodPack, grant: ConnectedGrant): PeriodPack {
   return {
     ...pack,
     tasks: grant.schedule ? pack.tasks : [],
     liveDays: grant.schedule ? pack.liveDays : [],
+    dailyNotes: [],
     previousReview: null,
     domainSections: [],
   };

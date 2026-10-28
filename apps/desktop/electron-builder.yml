@@ -11,6 +11,27 @@ npmRebuild: false
 forceCodeSigning: false
 extraMetadata:
   main: dist-electron/main.js
+# Fort-Knox hardening of the packaged runtime (security sweep 2026-10-28,
+# SUPP-06 / SHELL-09). The shipped app has no Node-mode entry point, no
+# NODE_OPTIONS injection, no inspector flags, and only ever loads app.asar:
+#   - runAsNode off: the binary cannot be used as a generic Node interpreter.
+#   - NODE_OPTIONS / inspector off: no environment or flag turns the bundled
+#     main process into an attacker-controlled runtime.
+#   - cookie encryption on: the (unused today) Chromium cookie store is not
+#     plaintext on disk.
+#   - onlyLoadAppFromAsar + asar integrity: a swapped `resources/app` folder or
+#     a tampered app.asar is not loaded.
+# This block changes only the packaged build; `npm run dev` is unaffected. It
+# must be re-exercised by `npm run release` on the Windows build machine before
+# the next release ships — a packaging-config change is not something a dev
+# checkout can prove.
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
 win:
   # `npm run package` passes `--dir` and so builds only the first target, fast.
   # `npm run release` builds all three: the folder, the installer and the zip.

@@ -1,10 +1,12 @@
 import fs from "node:fs/promises";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
+import { appendLog } from "./log.ts";
 import { isFuturePeriod, periodBounds, periodTitle } from "./period.ts";
 import { listDomains } from "./domains.ts";
 import { vaultPaths } from "./paths.ts";
 import {
+  USER_ACTOR,
   type Actor,
   type Result,
   type ReviewCadence,
@@ -13,6 +15,27 @@ import {
   type ReviewScopeState,
   type WeekStartDay,
 } from "./types.ts";
+
+/**
+ * Fort-Knox AGENT-09: the review file is a vault document like any other, so
+ * every write to it leaves one life-log line naming the actor. Before this the
+ * whole module logged nothing: a companion could rewrite a review (or a
+ * connected agent mark a scope done) and the life log could not say who did it.
+ *
+ * The event types are new names, not a change to an existing one, so a reader
+ * that ignores unknown types keeps working (the feed renders `e.type` as-is).
+ */
+async function logReview(
+  rootPath: string,
+  type: "review.ensured" | "review.written" | "review.marked-done" | "review.unlocked" | "review.applied",
+  summary: string,
+  payload: Record<string, unknown>,
+  actor: Actor,
+): Promise<void> {
+  // Reviews span domains, so the line carries no domain slug. A logging failure
+  // must not fail the write that already landed: same rule the map uses.
+  await appendLog(rootPath, { domainSlug: null, type, summary, payload, actor });
+}
 
 const OVERALL = "overall";
 const DOMAIN_HEADINGS = ["Look-back", "Keep", "Change", "Next-period intent"] as const;
@@ -112,8 +135,12 @@ async function parseReviewFile(
   period: string,
 ): Promise<Result<ReviewRecord>> {
   const paths = vaultPaths(rootPath);
-  const filePath = paths.reviewMd(cadence, period);
+  // The path builder validates its segments (path containment, vault-warden's
+  // VAULT-06) and throws on a traversing cadence/period. Built inside the try so
+  // the read path keeps its Result contract: `get_review` with a bad period is
+  // an error result, never a rejected tool call.
   try {
+    const filePath = paths.reviewMd(cadence, period);
     const raw = await fs.readFile(filePath, "utf8");
     const { data, body } = parseFrontmatter(raw);
     // Validate required fields for a review file
@@ -315,6 +342,14 @@ export async function ensureReview(
         body,
       );
       await atomicWriteFile(filePath, md);
+      // AGENT-09: an ensured review is a write (the file did not exist).
+      await logReview(
+        rootPath,
+        "review.ensured",
+        `Started the ${title}`,
+        { cadence: input.cadence, period: input.period, scope: input.scope },
+        USER_ACTOR,
+      );
       return parseReviewFile(rootPath, input.cadence, input.period);
     }
 
@@ -348,6 +383,14 @@ export async function ensureReview(
       newBody,
     );
     await atomicWriteFile(filePath, md);
+    // AGENT-09: adding a domain section is a write too.
+    await logReview(
+      rootPath,
+      "review.ensured",
+      `Added the ${name} section to the ${existing.title}`,
+      { cadence: input.cadence, period: input.period, scope: input.scope },
+      USER_ACTOR,
+    );
     return parseReviewFile(rootPath, input.cadence, input.period);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -370,6 +413,9 @@ export async function writeReview(
     const existing = await parseReviewFile(rootPath, input.cadence, input.period);
     if (!existing.ok) return existing;
     const record = existing.value;
+    // AGENT-09: the page autosaves the body as the operator types. Compare the
+    // canonical body with the file's own so only a real content change logs.
+    const previousBody = record.bodyMarkdown;
 
     if (record.locked) {
       return { ok: false, error: "LOCKED" };
@@ -404,6 +450,18 @@ export async function writeReview(
       record.bodyMarkdown,
     );
     await atomicWriteFile(filePath, md);
+    // AGENT-09: one line per real edit, naming who wrote the review. A no-op
+    // autosave (the page sends the body it already sent) writes nothing to the
+    // log, so the feed stays a record of changes rather than of keystrokes.
+    if (record.bodyMarkdown !== previousBody) {
+      await logReview(
+        rootPath,
+        "review.written",
+        `Wrote the ${record.title}`,
+        { cadence: input.cadence, period: input.period, chars: record.bodyMarkdown.length },
+        input.actor,
+      );
+    }
     // The file is the truth, and it is handed back as the file holds it. A body
     // returned as this function built it rather than as it was written differs
     // from the next read by the file's own trailing newline — which is the whole
@@ -417,7 +475,7 @@ export async function writeReview(
 
 export async function markReviewDone(
   rootPath: string,
-  input: { cadence: ReviewCadence; period: string; scope: string },
+  input: { cadence: ReviewCadence; period: string; scope: string; actor?: Actor },
 ): Promise<Result<ReviewRecord>> {
   try {
     const existing = await parseReviewFile(rootPath, input.cadence, input.period);
@@ -450,18 +508,42 @@ export async function markReviewDone(
       record.bodyMarkdown,
     );
     await atomicWriteFile(filePath, md);
+    // AGENT-09: a scope transition is an attributable write. Marking `overall`
+    // done also locks the review, which is the state the operator expects to be
+    // final, so "who marked this done" has to be answerable.
+    await logReview(
+      rootPath,
+      "review.marked-done",
+      `Marked ${input.scope} done on the ${record.title}`,
+      { cadence: input.cadence, period: input.period, scope: input.scope, locked: record.locked },
+      input.actor ?? USER_ACTOR,
+    );
     return { ok: true, value: record };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
+/**
+ * Unlock a locked review so it can be edited in place.
+ *
+ * Fort-Knox AGENT-14: this is user-actor-only. The review lock's whole job is to
+ * route an agent's edit into a pending Decision, and an agent that could call
+ * `unlock_review` first could then write the "final" review directly — which is
+ * exactly what a prompt-injected companion could do when the tool was open to
+ * every actor. The operator's own unlock comes through the renderer IPC, which
+ * passes the user actor (or nothing, which defaults to it).
+ */
 export async function unlockReview(
   rootPath: string,
   cadence: ReviewCadence,
   period: string,
+  actor: Actor = USER_ACTOR,
 ): Promise<Result<ReviewRecord>> {
   try {
+    if (actor.type !== "user") {
+      return { ok: false, error: "Only the operator can unlock a review" };
+    }
     const existing = await parseReviewFile(rootPath, cadence, period);
     if (!existing.ok) return existing;
     const record = existing.value;
@@ -483,6 +565,14 @@ export async function unlockReview(
       record.bodyMarkdown,
     );
     await atomicWriteFile(filePath, md);
+    // AGENT-09: unlocking a "final" review is an attributable event.
+    await logReview(
+      rootPath,
+      "review.unlocked",
+      `Unlocked the ${record.title}`,
+      { cadence, period },
+      actor,
+    );
     return { ok: true, value: record };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -573,6 +663,7 @@ export async function applyLockedReviewBody(
   cadence: ReviewCadence,
   period: string,
   bodyMarkdown: string,
+  actor: Actor = USER_ACTOR,
 ): Promise<Result<ReviewRecord>> {
   try {
     const existing = await parseReviewFile(rootPath, cadence, period);
@@ -608,6 +699,17 @@ export async function applyLockedReviewBody(
       record.bodyMarkdown,
     );
     await atomicWriteFile(filePath, md);
+    // AGENT-09: a locked-review Decision that approved and applied is a review
+    // write; name the actor the approval carried (decisions.ts passes none yet,
+    // so this reads as the operator approving, which is the consent that landed
+    // it).
+    await logReview(
+      rootPath,
+      "review.applied",
+      `Applied an approved change to the ${record.title}`,
+      { cadence, period, chars: record.bodyMarkdown.length },
+      actor,
+    );
     return { ok: true, value: record };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

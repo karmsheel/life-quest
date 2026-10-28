@@ -18,6 +18,61 @@ import type { Result } from "@lifequest/vault-core";
 const INVITE_BYTES = 16;
 const INVITE_TTL_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * DOOR-02 / SUPP-05: this file holds the raw companion token, so it is private
+ * to the operator's user. The modes are applied at creation AND corrected on an
+ * existing file, because a file created before this rule (or by a tool that did
+ * not set a mode) must not keep its umask-derived 0644/0755.
+ */
+const SECRET_FILE_MODE = 0o600;
+const SECRET_DIR_MODE = 0o700;
+
+/** chmod best-effort: Windows has no POSIX mode, and a real failure surfaces on the next read/write. */
+async function bestEffortChmod(target: string, mode: number): Promise<void> {
+  try {
+    await fs.chmod(target, mode);
+  } catch {
+    /* The write/read that follows is where an unreachable path must surface. */
+  }
+}
+
+/** Make the secrets dir exist as 0700, or correct the mode of one that already does. */
+async function ensureSecretsDir(secretsDir: string): Promise<void> {
+  await fs.mkdir(secretsDir, { recursive: true, mode: SECRET_DIR_MODE });
+  try {
+    const st = await fs.stat(secretsDir);
+    if (st.isDirectory() && (st.mode & 0o777) !== SECRET_DIR_MODE) {
+      await bestEffortChmod(secretsDir, SECRET_DIR_MODE);
+    }
+  } catch {
+    /* mkdir succeeded; a failed stat leaves the write to report the real error. */
+  }
+}
+
+/**
+ * Correct the mode of the secrets dir and file when they already exist. Called
+ * on the read path so an install upgraded from a pre-fix build is repaired the
+ * first time the door touches it, without waiting for a write.
+ */
+async function hardenExistingSecrets(secretsDir: string, file: string): Promise<void> {
+  try {
+    const dir = await fs.stat(secretsDir);
+    if (dir.isDirectory() && (dir.mode & 0o777) !== SECRET_DIR_MODE) {
+      await bestEffortChmod(secretsDir, SECRET_DIR_MODE);
+    }
+  } catch {
+    /* No dir/file yet: nothing to harden. */
+  }
+  try {
+    const st = await fs.stat(file);
+    if (st.isFile() && (st.mode & 0o777) !== SECRET_FILE_MODE) {
+      await bestEffortChmod(file, SECRET_FILE_MODE);
+    }
+  } catch {
+    /* No file yet: the first write creates it 0600. */
+  }
+}
+
 export type InviteRecord = {
   id: string;
   codeHash: string;
@@ -97,7 +152,10 @@ function normalizeVault(raw: unknown): PairingVaultSecrets {
 
 async function readSecretsFile(secretsDir: string): Promise<PairingSecretsFile> {
   try {
-    const raw = await fs.readFile(secretsPath(secretsDir), "utf8");
+    const file = secretsPath(secretsDir);
+    const raw = await fs.readFile(file, "utf8");
+    // DOOR-02: repair a file/dir left behind with umask-derived modes.
+    await hardenExistingSecrets(secretsDir, file);
     const parsed = JSON.parse(raw) as { vaults?: Record<string, unknown> };
     const vaults: Record<string, PairingVaultSecrets> = {};
     if (parsed.vaults && typeof parsed.vaults === "object") {
@@ -116,11 +174,17 @@ async function writeSecretsFile(
   secretsDir: string,
   data: PairingSecretsFile,
 ): Promise<void> {
-  await fs.mkdir(secretsDir, { recursive: true });
+  await ensureSecretsDir(secretsDir);
   const file = secretsPath(secretsDir);
   const tmp = `${file}.tmp`;
-  await fs.writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+  // The mode is set on the temp file so the rename publishes it already 0600;
+  // the chmod after the rename also repairs an inode that predates this rule.
+  await fs.writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: SECRET_FILE_MODE,
+  });
   await fs.rename(tmp, file);
+  await bestEffortChmod(file, SECRET_FILE_MODE);
 }
 
 function fingerprintForHash(vault: PairingVaultSecrets, hash: string): string | null {

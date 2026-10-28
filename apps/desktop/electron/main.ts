@@ -4,6 +4,7 @@ import {
   dialog,
   ipcMain as electronIpcMain,
   Notification,
+  session,
   shell,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
@@ -30,6 +31,7 @@ import {
   setUpdateFeedUrl,
   setUpdateLauncher,
   setUpdateTrustPolicy,
+  validateInstallRequest,
 } from "./updater.js";
 import {
   setDeadlineDismissedOn,
@@ -66,8 +68,15 @@ const isDev = !app.isPackaged;
  * are 8643 and 8646 in the product, and the operator's own app holds both, so a
  * rig that watches a door bind has to move it off those ports. The listeners and
  * the url written into the Hermes profile move together (see `mcp-server.ts`).
+ *
+ * TWO GATES, and both matter. `__LIFEQUEST_E2E_SEAM__` is a build-time constant
+ * (`true` in `dev.mjs`, `false` in `bundle-electron.mjs`) so the shipped bundle
+ * contains no seam at all; `!app.isPackaged` is the runtime belt for a bundle
+ * built by the dev script that is nevertheless running packaged. A packaged
+ * LifeQuest therefore cannot be pointed at another profile, feed, trust policy,
+ * or installer launcher by setting an environment variable.
  */
-const E2E_RAW = process.env.LIFEQUEST_E2E;
+declare const __LIFEQUEST_E2E_SEAM__: boolean;
 const E2E: {
   userData?: string;
   showWindow: boolean;
@@ -84,89 +93,122 @@ const E2E: {
    * auto-update rig, which serves them over loopback; the product leaves the
    * policy at GitHub over https.
    */
-  updateTrust?: { hosts: string[]; allowHttp?: boolean };
+  updateTrust?: { hosts: string[]; allowHttp?: boolean; strictAssetPath?: boolean };
 } = { showWindow: true };
-if (E2E_RAW) {
-  try {
-    const parsed = JSON.parse(E2E_RAW) as {
-      userData?: unknown;
-      showWindow?: unknown;
-      mcpPorts?: { local?: unknown; invite?: unknown };
-      updateFeedUrl?: unknown;
-      updateLauncher?: { exe?: unknown; args?: unknown };
-      updateTrust?: { hosts?: unknown; allowHttp?: unknown };
-    };
-    if (typeof parsed.userData === "string" && parsed.userData.trim()) {
-      // Realpath, not the string: `userData` must be absolute and existing
-      // before Electron resolves its own paths, and a typo here would silently
-      // fall back to the operator's profile.
-      E2E.userData = fs.realpathSync(parsed.userData);
-    }
-    if (parsed.showWindow === false) E2E.showWindow = false;
-    const local = parsed.mcpPorts?.local;
-    const invite = parsed.mcpPorts?.invite;
-    if (typeof local === "number" || typeof invite === "number") {
-      E2E.mcpPorts = {
-        ...(typeof local === "number" ? { local } : {}),
-        ...(typeof invite === "number" ? { invite } : {}),
+/**
+ * Whether the rig seam is live in this process.
+ *
+ * The one place that decides, so "the product does not do this" stays a single
+ * expression: the update install confirmation is skipped only here, and the
+ * shipped bundle — where `__LIFEQUEST_E2E_SEAM__` is defined false — compiles
+ * this to the constant `false`.
+ */
+const E2E_ACTIVE =
+  __LIFEQUEST_E2E_SEAM__ && !app.isPackaged && Boolean(process.env.LIFEQUEST_E2E);
+/*
+ * The seam itself. The gate is the build-time constant and the runtime
+ * `!app.isPackaged`, both on the `if` itself: with the constant false esbuild
+ * removes the whole branch (dead code), so the shipped `dist-electron/main.js`
+ * contains no seam code, no seam string, and nothing to reach by setting an
+ * environment variable. `dev.mjs` compiles the constant true so the rigs and
+ * the bench keep the whole seam.
+ */
+if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
+  const E2E_RAW = process.env.LIFEQUEST_E2E;
+  if (E2E_RAW) {
+    try {
+      const parsed = JSON.parse(E2E_RAW) as {
+        userData?: unknown;
+        showWindow?: unknown;
+        mcpPorts?: { local?: unknown; invite?: unknown };
+        updateFeedUrl?: unknown;
+        updateLauncher?: { exe?: unknown; args?: unknown };
+        updateTrust?: {
+          hosts?: unknown;
+          allowHttp?: unknown;
+          strictAssetPath?: unknown;
+        };
       };
+      if (typeof parsed.userData === "string" && parsed.userData.trim()) {
+        // Realpath, not the string: `userData` must be absolute and existing
+        // before Electron resolves its own paths, and a typo here would silently
+        // fall back to the operator's profile.
+        E2E.userData = fs.realpathSync(parsed.userData);
+      }
+      if (parsed.showWindow === false) E2E.showWindow = false;
+      const local = parsed.mcpPorts?.local;
+      const invite = parsed.mcpPorts?.invite;
+      if (typeof local === "number" || typeof invite === "number") {
+        E2E.mcpPorts = {
+          ...(typeof local === "number" ? { local } : {}),
+          ...(typeof invite === "number" ? { invite } : {}),
+        };
+      }
+      if (
+        typeof parsed.updateFeedUrl === "string" &&
+        parsed.updateFeedUrl.trim()
+      ) {
+        E2E.updateFeedUrl = parsed.updateFeedUrl;
+      }
+      // A rig cannot let the app launch a real installer, and cannot read an
+      // assertion out of a process it did not start: the launcher is replaced
+      // by one the rig owns, which records the file it was handed.
+      if (
+        parsed.updateLauncher &&
+        typeof parsed.updateLauncher.exe === "string" &&
+        parsed.updateLauncher.exe.trim()
+      ) {
+        E2E.updateLauncher = {
+          exe: parsed.updateLauncher.exe,
+          args: Array.isArray(parsed.updateLauncher.args)
+            ? parsed.updateLauncher.args.filter(
+                (arg): arg is string => typeof arg === "string",
+              )
+            : [],
+        };
+      }
+      const hosts = parsed.updateTrust?.hosts;
+      if (
+        Array.isArray(hosts) &&
+        hosts.length > 0 &&
+        hosts.every((host): host is string => typeof host === "string")
+      ) {
+        E2E.updateTrust = {
+          hosts,
+          allowHttp: parsed.updateTrust?.allowHttp === true,
+          strictAssetPath: parsed.updateTrust?.strictAssetPath === true,
+        };
+      }
+    } catch (err) {
+      console.error("[e2e] LIFEQUEST_E2E is not valid JSON; ignoring:", err);
     }
-    if (typeof parsed.updateFeedUrl === "string" && parsed.updateFeedUrl.trim()) {
-      E2E.updateFeedUrl = parsed.updateFeedUrl;
-    }
-    // A rig cannot let the app launch a real installer, and cannot read an
-    // assertion out of a process it did not start: the launcher is replaced by
-    // one the rig owns, which records the file it was handed.
-    if (
-      parsed.updateLauncher &&
-      typeof parsed.updateLauncher.exe === "string" &&
-      parsed.updateLauncher.exe.trim()
-    ) {
-      E2E.updateLauncher = {
-        exe: parsed.updateLauncher.exe,
-        args: Array.isArray(parsed.updateLauncher.args)
-          ? parsed.updateLauncher.args.filter(
-              (arg): arg is string => typeof arg === "string",
-            )
-          : [],
-      };
-    }
-    const hosts = parsed.updateTrust?.hosts;
-    if (
-      Array.isArray(hosts) &&
-      hosts.length > 0 &&
-      hosts.every((host): host is string => typeof host === "string")
-    ) {
-      E2E.updateTrust = {
-        hosts,
-        allowHttp: parsed.updateTrust?.allowHttp === true,
-      };
-    }
-  } catch (err) {
-    console.error("[e2e] LIFEQUEST_E2E is not valid JSON; ignoring:", err);
   }
-}
-if (E2E.userData) {
-  app.setPath("userData", E2E.userData);
-}
-if (E2E.mcpPorts) {
-  // Before any window or vault: a door binds with whatever is set here.
-  setMcpPorts(E2E.mcpPorts);
-}
-if (E2E.updateFeedUrl) {
-  setUpdateFeedUrl(E2E.updateFeedUrl);
-}
-if (typeof E2E.updateLauncher?.exe === "string") {
-  setUpdateLauncher({
-    exe: E2E.updateLauncher.exe,
-    args: (E2E.updateLauncher.args as string[] | undefined) ?? [],
-  });
-}
-if (E2E.updateTrust) {
-  setUpdateTrustPolicy({
-    hosts: E2E.updateTrust.hosts,
-    allowHttp: E2E.updateTrust.allowHttp === true,
-  });
+  // The seam's effects live inside the same gate as its parse: in the shipped
+  // bundle this whole block is dead code and dropped, so there is nothing to
+  // reach even by setting the environment variable.
+  if (E2E.userData) {
+    app.setPath("userData", E2E.userData);
+  }
+  if (E2E.mcpPorts) {
+    // Before any window or vault: a door binds with whatever is set here.
+    setMcpPorts(E2E.mcpPorts);
+  }
+  if (E2E.updateFeedUrl) {
+    setUpdateFeedUrl(E2E.updateFeedUrl);
+  }
+  if (typeof E2E.updateLauncher?.exe === "string") {
+    setUpdateLauncher({
+      exe: E2E.updateLauncher.exe,
+      args: (E2E.updateLauncher.args as string[] | undefined) ?? [],
+    });
+  }
+  if (E2E.updateTrust) {
+    setUpdateTrustPolicy({
+      hosts: E2E.updateTrust.hosts,
+      allowHttp: E2E.updateTrust.allowHttp === true,
+      strictAssetPath: E2E.updateTrust.strictAssetPath === true,
+    });
+  }
 }
 
 const TITLEBAR_OVERLAY_HEIGHT = 32;
@@ -185,6 +227,25 @@ function localIsoDate(): string {
   return `${y}-${m}-${d}`;
 }
 
+/**
+ * One line of vault-supplied text, safe for OS chrome.
+ *
+ * Control characters (including newlines, which a notification would split on)
+ * collapse to a space; the run collapses; the length is bounded. The caller owns
+ * the fixed prefix, so the vault can never choose what the notification claims
+ * to be about.
+ */
+function sanitizeNotificationText(value: unknown, maxLength: number): string {
+  const text = typeof value === "string" ? value : "";
+  const cleaned = text
+    .replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.length > maxLength
+    ? `${cleaned.slice(0, Math.max(0, maxLength - 1))}…`
+    : cleaned;
+}
+
 function windowFromEvent(event: { sender: Electron.WebContents }): BrowserWindow | null {
   return BrowserWindow.fromWebContents(event.sender);
 }
@@ -200,12 +261,16 @@ function registerWindowAccelerators(win: BrowserWindow) {
       win.reload();
       return;
     }
-    if (ctrl && input.shift && !input.alt && key === "i") {
+    // DevTools is a development tool. In a packaged build it is the whole
+    // preload bridge in a REPL: anyone at the keyboard could read or rewrite the
+    // vault, approve agent tool calls, and run the updater. Gate both the
+    // shortcut and (in `createWindow`) the `devTools` preference on `isDev`.
+    if (isDev && ctrl && input.shift && !input.alt && key === "i") {
       event.preventDefault();
       win.webContents.toggleDevTools();
       return;
     }
-    if (input.key === "F12") {
+    if (isDev && input.key === "F12") {
       event.preventDefault();
       win.webContents.toggleDevTools();
       return;
@@ -223,13 +288,196 @@ function registerWindowAccelerators(win: BrowserWindow) {
 }
 
 /**
- * `ipcMain`, with the live-dashboard notice added.
+ * The product's one window.
+ *
+ * Two things key off this object and nothing else: the packaged-build IPC
+ * allowlist (the only WebContents that may call a handler) and the identity of
+ * "the window main created" when deciding whether a navigation guard belongs on
+ * it. Rig-created harness windows are deliberately not tracked: they are the
+ * rig's, they are unpackaged-only, and the dev IPC rule below covers them.
+ */
+let productWindow: BrowserWindow | null = null;
+
+function productWindowWebContentsId(): number | null {
+  if (!productWindow || productWindow.isDestroyed()) return null;
+  return productWindow.webContents.id;
+}
+
+/** The renderer's URL: the Vite server in dev, the packaged file otherwise. */
+const DEV_SERVER_URL =
+  process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173";
+
+/** The document the packaged app loads — and the only file document it may be. */
+const APP_INDEX_PATH = path.join(__dirname, "../dist/index.html");
+
+/** A host that can only be this machine. Never a name a DNS record can answer. */
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+/** The dev server's port, so a loopback page on some other port is not "the app". */
+function devServerPort(): string {
+  try {
+    return new URL(DEV_SERVER_URL).port || "80";
+  } catch {
+    return "5173";
+  }
+}
+
+/**
+ * Whether a URL is the app's own document.
+ *
+ * In dev that is any path on the Vite origin — the product window and the rig
+ * harness pages are served from it. In a packaged build it is exactly the
+ * `dist/index.html` the window was told to load, and nothing else on disk.
+ */
+function isAppDocumentUrl(rawUrl: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (isDev) {
+    try {
+      return url.origin === new URL(DEV_SERVER_URL).origin;
+    } catch {
+      return false;
+    }
+  }
+  if (url.protocol !== "file:") return false;
+  try {
+    return fileURLToPath(url) === APP_INDEX_PATH;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Open an https URL in the operator's own browser, and nothing else.
+ *
+ * This is the *only* way renderer content reaches `shell.openExternal`: parsed
+ * with `new URL` (not a regex), https only, with a host and without userinfo.
+ * An `http:` link is deliberately a no-op — an in-app link should never be able
+ * to make the app launch a browser at a loopback address or an ambiguous URL,
+ * and the product only ever links to https.
+ */
+function openExternalHttps(rawUrl: string): void {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return;
+  }
+  if (url.protocol !== "https:") return;
+  if (!url.hostname || url.username || url.password) return;
+  void shell.openExternal(url.href).catch(() => {
+    // The browser failing to start is not a reason to take the app down.
+  });
+}
+
+/**
+ * Confine one window to the app's own document.
+ *
+ * Electron's default is to let the renderer navigate anywhere, and the preload
+ * is attached to the WebContents — so a navigation to a foreign origin would
+ * run `preload.js` (and expose the whole `window.lifequest` bridge) to that
+ * origin. These guards are the control that keeps a link click, a `location`
+ * assignment, a meta refresh, or a server redirect on the app document:
+ *
+ *  - `will-navigate` (main frame, user/page initiated): allow only the app
+ *    document; a denied https link is the operator asking to see that page, so
+ *    it goes to the system browser; an http link is simply refused.
+ *  - `will-frame-navigate`: any subframe is someone else's document. The app has
+ *    no iframes; deny, and never open a browser from one.
+ *  - `will-redirect`: a redirect is the server talking, not the operator. Deny
+ *    an off-document hop without opening anything.
+ *  - `setWindowOpenHandler`: `window.open`/`target=_blank` may not create a
+ *    child BrowserWindow at all; an https URL is handed to the browser instead.
+ *
+ * Attached per window main creates (`createWindow`), not app-wide: rig-created
+ * harness windows are the rig's own and must keep loading whatever they test.
+ */
+function installContentGuards(win: BrowserWindow): void {
+  const contents = win.webContents;
+
+  contents.on("will-navigate", (details) => {
+    if (isAppDocumentUrl(details.url)) return;
+    details.preventDefault();
+    openExternalHttps(details.url);
+  });
+
+  contents.on("will-frame-navigate", (details) => {
+    if (details.isMainFrame && isAppDocumentUrl(details.url)) return;
+    details.preventDefault();
+  });
+
+  contents.on("will-redirect", (details) => {
+    if (isAppDocumentUrl(details.url)) return;
+    details.preventDefault();
+  });
+
+  contents.setWindowOpenHandler((details) => {
+    openExternalHttps(details.url);
+    return { action: "deny" };
+  });
+
+  // `<webview>` is not used by this app (the preference is off by default), and
+  // a renderer must not be able to create one: it would be a second frame with
+  // its own preload. Refuse every attach outright.
+  contents.on("will-attach-webview", (event) => {
+    event.preventDefault();
+  });
+}
+
+/**
+ * Whether this IPC event comes from a frame the app is willing to serve.
+ *
+ * Every channel goes through this (see the `ipcMain` facade). The rules:
+ *
+ *  - the sender must be a top-level frame (a subframe is never the app);
+ *  - a packaged build: the sender must be *the* product window and the frame
+ *    must be loading the app document. Nothing else exists or is accepted;
+ *  - unpackaged/dev: the bench's dev server is the trust boundary. The product
+ *    window and the rig-created windows that load harness pages from that same
+ *    loopback port may call IPC — which is what keeps the existing rigs on the
+ *    real bridge — while a frame that navigated to any other origin is refused.
+ *
+ * `senderFrame` is null when the frame is already gone; null is a refusal.
+ */
+function isTrustedIpcSender(event: IpcMainInvokeEvent | IpcMainEvent): boolean {
+  const frame = event.senderFrame;
+  if (!frame || frame.parent !== null) return false;
+  if (event.sender.mainFrame !== frame) return false;
+  let url: URL;
+  try {
+    url = new URL(frame.url);
+  } catch {
+    return false;
+  }
+  if (isDev) {
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    return isLoopbackHost(url.hostname) && url.port === devServerPort();
+  }
+  if (event.sender.id !== productWindowWebContentsId()) return false;
+  return isAppDocumentUrl(frame.url);
+}
+
+/**
+ * `ipcMain`, with the live-dashboard notice added and every sender checked.
  *
  * Every channel below is registered through this object rather than through
  * Electron's registrar directly, so "which channels announce a change" is one
  * list in `data-revision.ts` instead of a decision taken again at each of the
  * hundred-odd registration sites — and a channel added later is covered by
  * whatever that list says about it rather than by whether its author remembered.
+ *
+ * The sender check lives here for the same reason: Electron's checklist asks
+ * every handler to validate `event.sender`/`senderFrame`, and one facade means a
+ * channel added tomorrow is covered without anyone remembering to check. An
+ * invoke from a refused frame rejects; a fire-and-forget send from one is
+ * dropped.
  *
  * The notice is sent once a handler has settled, and only for a channel the list
  * names. Both of those are load-bearing. The filter, because a card's repaint
@@ -251,6 +499,11 @@ const ipcMain = {
     listener: (event: IpcMainInvokeEvent, ...args: any[]) => unknown,
   ): void {
     electronIpcMain.handle(channel, async (event, ...args: unknown[]) => {
+      if (!isTrustedIpcSender(event)) {
+        throw new Error(
+          `LifeQuest refused ${channel} from a frame that is not the app window.`,
+        );
+      }
       try {
         return await listener(event, ...args);
       } finally {
@@ -259,7 +512,10 @@ const ipcMain = {
     });
   },
   on(channel: string, listener: (event: IpcMainEvent, ...args: any[]) => void): void {
-    electronIpcMain.on(channel, listener);
+    electronIpcMain.on(channel, (event, ...args: unknown[]) => {
+      if (!isTrustedIpcSender(event)) return;
+      listener(event, ...args);
+    });
   },
 };
 
@@ -906,11 +1162,17 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     await setDeadlineNotifiedOn(vaultId);
     const soonest = pressured[0];
     const days = daysUntilDeadline(soonest.deadline, today);
+    // Goal names come out of the vault (which the operator syncs and shares),
+    // and this text lands in OS chrome outside the app window and its CSP. A
+    // native notification showing "Vault corrupted — visit …" would be a
+    // trusted-looking phishing surface, so the fixed prefix is the app's and the
+    // vault-supplied name is bounded to one line of plain text.
+    const goalName = sanitizeNotificationText(soonest.name, 96);
     const body = days < 0
-      ? `${soonest.name} — overdue`
+      ? `LifeQuest: ${goalName} — overdue`
       : days === 0
-        ? `${soonest.name} — due today`
-        : `${soonest.name} — due in ${days} days`;
+        ? `LifeQuest: ${goalName} — due today`
+        : `LifeQuest: ${goalName} — due in ${days} days`;
     const title = pressured.length > 1
       ? `LifeQuest: ${pressured.length} deadlines approaching`
       : `LifeQuest: deadline pressure`;
@@ -929,23 +1191,66 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     (_e, options?: { force?: boolean }) =>
       checkForUpdate({ force: options?.force === true }),
   );
-  ipcMain.handle("update:install", (event, asset: unknown) => {
+  ipcMain.handle("update:install", async (event, asset: unknown) => {
+    // `update:install` runs a downloaded executable, and its argument crosses the
+    // IPC boundary from the renderer. Main therefore decides twice: first that
+    // this is the install it already offered and would trust (`updater.ts`), and
+    // only then — with a URL no renderer chose — that a human confirmed it.
+    const checked = validateInstallRequest(asset);
+    if (!checked.ok) return checked;
     const win = windowFromEvent(event);
-    return installUpdate(asset, (progress) => {
+    if (!E2E_ACTIVE) {
+      const options: Electron.MessageBoxOptions = {
+        type: "question",
+        buttons: ["Install update", "Cancel"],
+        // Cancel is the default: Enter closes the dialog, not the vault.
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+        title: "LifeQuest",
+        message: "Install this LifeQuest update?",
+        detail:
+          `${checked.asset.name}\n\n` +
+          "LifeQuest downloaded it from its GitHub release and will close so the " +
+          "installer can replace its files. Only do this if you asked for it.",
+      };
+      const parent = win && !win.isDestroyed() ? win : null;
+      const { response } = parent
+        ? await dialog.showMessageBox(parent, options)
+        : await dialog.showMessageBox(options);
+      if (response !== 0) {
+        return { ok: false as const, error: "The update was not installed." };
+      }
+    }
+    return installUpdate(checked.asset, (progress) => {
       if (win && !win.isDestroyed()) {
         win.webContents.send("update:progress", progress);
       }
     });
   });
   ipcMain.handle("update:openReleasePage", async (_e, url: string) => {
-    // The renderer chooses the url, so it is checked here: this opens the
+    // The renderer chooses the url, so it is parsed here: this opens the
     // operator's own browser, and the only page the app has any business
-    // opening on its behalf is the release it just told them about.
-    if (!/^https:\/\/(www\.)?github\.com\//i.test(url)) {
+    // opening on its behalf is the release it just told them about. `new URL`,
+    // not a regex, because the regexes are where `github.com@evil.example` and
+    // protocol-relative tricks live.
+    let parsed: URL;
+    try {
+      parsed = new URL(String(url));
+    } catch {
+      return { ok: false as const, error: "Only GitHub release pages are opened." };
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (
+      parsed.protocol !== "https:" ||
+      (host !== "github.com" && host !== "www.github.com") ||
+      parsed.username ||
+      parsed.password
+    ) {
       return { ok: false as const, error: "Only GitHub release pages are opened." };
     }
     try {
-      await shell.openExternal(url);
+      await shell.openExternal(parsed.href);
     } catch (error) {
       return {
         ok: false as const,
@@ -1040,13 +1345,25 @@ async function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // A packaged build has no DevTools: it is the whole preload bridge in a
+      // REPL, and nothing in production needs it. Development and e2e keep it.
+      devTools: isDev,
     },
+  });
+
+  // The one window main owns. The packaged IPC allowlist and the navigation
+  // guards both key off it (rig-created harness windows are deliberately left
+  // alone; see `installContentGuards` and `isTrustedIpcSender`).
+  productWindow = win;
+  win.on("closed", () => {
+    if (productWindow === win) productWindow = null;
   });
 
   if (process.platform !== "darwin") {
     win.removeMenu();
   }
   registerWindowAccelerators(win);
+  installContentGuards(win);
   // Hidden only for an e2e rig that asked for it, and applied after Electron
   // has already shown the window during load (see the E2E block at the top).
   if (!E2E.showWindow) {
@@ -1085,10 +1402,9 @@ async function createWindow() {
   });
 
   if (isDev) {
-    const devUrl = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173";
-    await win.loadURL(devUrl);
+    await win.loadURL(DEV_SERVER_URL);
   } else {
-    await win.loadFile(path.join(__dirname, "../dist/index.html"));
+    await win.loadFile(APP_INDEX_PATH);
   }
   return win;
 }
@@ -1147,6 +1463,23 @@ app.whenReady().then(() => {
     ipcRegistered = true;
     registerIpcHandlers();
   }
+  // Permissions are denied by default, for every session that might load a
+  // document. The app asks the renderer for nothing — no camera, microphone,
+  // geolocation, notifications, USB, serial, screen capture or clipboard read:
+  // the only notification is constructed in main, and file access goes through
+  // the bridge. Electron's default is to grant whatever a page asks for, which
+  // means an attacker page in a child window (or any future navigated document)
+  // would silently get a camera. One exception is deliberate: the Copy buttons
+  // use `navigator.clipboard.writeText`, so *sanitized clipboard write* stays
+  // allowed; it can overwrite the clipboard, but never read it.
+  const ALLOWED_PERMISSIONS = new Set(["clipboard-sanitized-write"]);
+  session.defaultSession.setPermissionRequestHandler(
+    (_contents, permission, callback) =>
+      callback(ALLOWED_PERMISSIONS.has(permission)),
+  );
+  session.defaultSession.setPermissionCheckHandler(
+    (_contents, permission) => ALLOWED_PERMISSIONS.has(permission),
+  );
   // Before any window exists, so the first write of the session already has
   // somewhere to go. Subscribing once is enough: the broadcast walks whatever
   // windows are open at the moment a change is noted, so a window opened later

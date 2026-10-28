@@ -2,11 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { listDomains } from "./domains.ts";
+import { appendLog } from "./log.ts";
 import { periodBounds } from "./period.ts";
 import { vaultPaths } from "./paths.ts";
 import { ensureReview, getReview, writeReview } from "./reviews.ts";
 import { applyViewDefaults, resolveViewBlocks, runViewBlocks } from "./views.ts";
 import {
+  USER_ACTOR,
   type Actor,
   type ComposedViewRunResult,
   type Result,
@@ -313,8 +315,10 @@ export async function getReviewSkill(
   rootPath: string,
   cadence: ReviewCadence,
 ): Promise<Result<ReviewSkill>> {
-  const file = vaultPaths(rootPath).reviewSkillMd(cadence);
   try {
+    // The builder validates its segment and throws on a traversing cadence
+    // (VAULT-06); inside the try so this read keeps its Result contract.
+    const file = vaultPaths(rootPath).reviewSkillMd(cadence);
     const markdown = await fs.readFile(file, "utf8");
     return { ok: true, value: skillFrom(cadence, markdown, true) };
   } catch (e) {
@@ -346,26 +350,54 @@ export async function ensureReviewSkill(
   rootPath: string,
   cadence: ReviewCadence,
 ): Promise<Result<ReviewSkill>> {
-  const file = vaultPaths(rootPath).reviewSkillMd(cadence);
-  const existing = await getReviewSkill(rootPath, cadence);
-  if (!existing.ok) return existing;
-  if (existing.value.exists) return existing;
-  const written = await writeSkillFile(file, existing.value.markdown);
-  if (!written.ok) return written;
-  return getReviewSkill(rootPath, cadence);
+  try {
+    const file = vaultPaths(rootPath).reviewSkillMd(cadence);
+    const existing = await getReviewSkill(rootPath, cadence);
+    if (!existing.ok) return existing;
+    if (existing.value.exists) return existing;
+    const written = await writeSkillFile(file, existing.value.markdown);
+    if (!written.ok) return written;
+    return getReviewSkill(rootPath, cadence);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
+/**
+ * Replace a cadence's standing rules.
+ *
+ * Fort-Knox AGENT-09: this write had no life-log line at all, which made the
+ * instruction-poisoning path — a companion rewriting the rules that every later
+ * review session is told "outrank your own habits" — invisible. The line
+ * carries the actor, the cadence, and the new length; not the prose, which is
+ * already in the file.
+ */
 export async function writeReviewSkill(
   rootPath: string,
   cadence: ReviewCadence,
   markdown: string,
+  actor: Actor = USER_ACTOR,
 ): Promise<Result<ReviewSkill>> {
-  const written = await writeSkillFile(
-    vaultPaths(rootPath).reviewSkillMd(cadence),
-    markdown,
-  );
-  if (!written.ok) return written;
-  return getReviewSkill(rootPath, cadence);
+  try {
+    // The builder validates its segment (VAULT-06) and throws on a traversing
+    // cadence; inside the try so this write keeps its Result contract for every
+    // caller (the tool, the renderer IPC, the review session).
+    const written = await writeSkillFile(
+      vaultPaths(rootPath).reviewSkillMd(cadence),
+      markdown,
+    );
+    if (!written.ok) return written;
+    await appendLog(rootPath, {
+      domainSlug: null,
+      type: "review-skill.written",
+      summary: `Wrote the ${cadence} review skill`,
+      payload: { cadence, chars: markdown.length },
+      actor,
+    });
+    return getReviewSkill(rootPath, cadence);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 // ---------------------------------------------------------------------------

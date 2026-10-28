@@ -3,6 +3,79 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { Result } from "@lifequest/vault-core";
 
+/**
+ * DOOR-02 / SUPP-05: this file holds OS-encrypted secrets, but on Linux without
+ * a keyring `safeStorage` resolves to the `basic_text` backend, which is not
+ * encryption at all. The file is therefore private to the operator's user by
+ * mode, and a plaintext-backend warning is emitted once.
+ */
+const SECRET_FILE_MODE = 0o600;
+const SECRET_DIR_MODE = 0o700;
+
+let warnedPlaintextBackend = false;
+
+/**
+ * Linux without a keyring (GNOME Keyring/KWallet) makes Electron fall back to
+ * `basic_text`: `isEncryptionAvailable()` is true, but the bytes are plain
+ * base64. There is no better store available, so the app still works — but it
+ * must not do so silently. Warn once per process, before the first encrypt or
+ * decrypt.
+ */
+function warnIfSafeStorageIsPlaintext(): void {
+  if (warnedPlaintextBackend) return;
+  warnedPlaintextBackend = true;
+  if (process.platform !== "linux") return;
+  try {
+    const backend = safeStorage.getSelectedStorageBackend?.();
+    if (backend === "basic_text") {
+      console.warn(
+        "[secrets] OS keyring is unavailable; Electron safeStorage is using the " +
+          "plaintext basic_text backend. Secrets in secrets.json are protected by " +
+          "file permissions only. Install/unlock a keyring (gnome-keyring, kwallet) " +
+          "to encrypt them.",
+      );
+    }
+  } catch {
+    /* An older Electron without the backend probe: nothing to decide. */
+  }
+}
+
+async function bestEffortChmod(target: string, mode: number): Promise<void> {
+  // Windows has no POSIX mode (chmod only toggles the read-only bit), and the
+  // per-user ACL already protects the directory there.
+  if (process.platform === "win32") return;
+  try {
+    await fs.chmod(target, mode);
+  } catch {
+    /* The caller's read/write surfaces a real failure. */
+  }
+}
+
+/** The userData dir must be 0700; correct an existing one on the read path too. */
+async function ensureUserDataDir(file: string): Promise<void> {
+  const dir = path.dirname(file);
+  await fs.mkdir(dir, { recursive: true, mode: SECRET_DIR_MODE });
+  try {
+    const st = await fs.stat(dir);
+    if (st.isDirectory() && (st.mode & 0o777) !== SECRET_DIR_MODE) {
+      await bestEffortChmod(dir, SECRET_DIR_MODE);
+    }
+  } catch {
+    /* mkdir succeeded; the following write reports anything that matters. */
+  }
+}
+
+async function hardenExistingFile(file: string): Promise<void> {
+  try {
+    const st = await fs.stat(file);
+    if (st.isFile() && (st.mode & 0o777) !== SECRET_FILE_MODE) {
+      await bestEffortChmod(file, SECRET_FILE_MODE);
+    }
+  } catch {
+    /* No file yet: the first write creates it 0600. */
+  }
+}
+
 /** vaultId → base64(encrypted) Hermes API key */
 type SecretsFile = {
   hermesKeys: Record<string, string>;
@@ -15,7 +88,11 @@ function secretsPath(): string {
 
 async function loadSecrets(): Promise<SecretsFile> {
   try {
-    const raw = await fs.readFile(secretsPath(), "utf8");
+    const file = secretsPath();
+    const raw = await fs.readFile(file, "utf8");
+    // DOOR-02: repair a file/dir left behind with umask-derived modes.
+    await hardenExistingFile(file);
+    await ensureUserDataDir(file);
     const parsed = JSON.parse(raw) as Partial<SecretsFile>;
     return {
       hermesKeys:
@@ -37,10 +114,16 @@ async function loadSecrets(): Promise<SecretsFile> {
 
 async function saveSecrets(data: SecretsFile): Promise<void> {
   const file = secretsPath();
-  await fs.mkdir(path.dirname(file), { recursive: true });
+  await ensureUserDataDir(file);
   const tmp = `${file}.tmp`;
-  await fs.writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+  // Mode on the temp file so the rename publishes it already 0600; the chmod
+  // after the rename also repairs an inode that predates this rule.
+  await fs.writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: SECRET_FILE_MODE,
+  });
   await fs.rename(tmp, file);
+  await bestEffortChmod(file, SECRET_FILE_MODE);
 }
 
 function encryptString(plain: string): string {
@@ -49,6 +132,7 @@ function encryptString(plain: string): string {
       "OS secure storage is unavailable; cannot persist Hermes API key",
     );
   }
+  warnIfSafeStorageIsPlaintext();
   const buf = safeStorage.encryptString(plain);
   return buf.toString("base64");
 }
@@ -59,6 +143,7 @@ function decryptString(b64: string): string {
       "OS secure storage is unavailable; cannot read Hermes API key",
     );
   }
+  warnIfSafeStorageIsPlaintext();
   const buf = Buffer.from(b64, "base64");
   return safeStorage.decryptString(buf);
 }

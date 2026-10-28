@@ -664,6 +664,127 @@ export function ensureRootCompanionHeader(
 }
 
 /**
+ * The `mcp_servers.<name>` entry in any config, as a line range.
+ *
+ * Unlike `rootCompanionBlock` above (which is deliberately the narrow shape the
+ * root writer supports), this walks any indentation, because a profile config
+ * may have been hand-edited. It is used only by the DOOR-01 neutraliser below.
+ */
+function mcpServerEntryRange(
+  lines: string[],
+  name: string,
+): { start: number; end: number; indent: string } | null {
+  const escaped = escapeRegExp(name);
+  const entry = new RegExp(`^([ \\t]+)${escaped}:[ \\t]*(?:#.*)?$`);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    const match = entry.exec(line);
+    if (!match) continue;
+    let earlier = i - 1;
+    while (earlier >= 0 && (lines[earlier] ?? "").trim() === "") earlier -= 1;
+    if (earlier < 0) continue;
+    const parent = /^([ \t]*)mcp_servers:[ \t]*$/.exec(lines[earlier] ?? "");
+    if (!parent) continue;
+    const indent = match[1] ?? "";
+    if (indent.length <= (parent[1] ?? "").length) continue;
+    let end = i + 1;
+    while (end < lines.length) {
+      const next = lines[end] ?? "";
+      if (next.trim() !== "") {
+        const own = /^([ \t]*)/.exec(next)?.[1] ?? "";
+        if (own.length <= indent.length) break;
+      }
+      end += 1;
+    }
+    return { start: i, end, indent };
+  }
+  return null;
+}
+
+/** Remove `mcp_servers:` itself when the entry removal left it with no children. */
+function pruneEmptyMcpServers(lines: string[]): string[] {
+  const header = lines.findIndex((line) => /^([ \t]*)mcp_servers:[ \t]*$/.test(line));
+  if (header < 0) return lines;
+  const indent = /^([ \t]*)/.exec(lines[header] ?? "")?.[1] ?? "";
+  for (let i = header + 1; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (line.trim() === "") continue;
+    const own = /^([ \t]*)/.exec(line)?.[1] ?? "";
+    if (own.length > indent.length) return lines; // still has a server under it
+    break;
+  }
+  return [...lines.slice(0, header), ...lines.slice(header + 1)];
+}
+
+/**
+ * DOOR-01: remove this app's `mcp_servers.lifequest` entry from a profile
+ * config.
+ *
+ * A door that did not bind must not leave a url (or a bearer) in the Hermes
+ * profile: the host would connect to whichever process owns the local port and
+ * hand it the companion credential. Removing the whole entry is the neutral
+ * state — the host simply has no lifequest server until a later bind writes one
+ * — and every other `mcp_servers` entry and top-level key is preserved.
+ */
+export function removeCompanionMcpEntry(
+  yaml: string,
+  name: string = "lifequest",
+): string {
+  if (!yaml) return yaml;
+  const nl = lineBreak(yaml);
+  const lines = yaml.split(/\r?\n/);
+  const range = mcpServerEntryRange(lines, name);
+  if (!range) return yaml;
+  const next = pruneEmptyMcpServers([...lines.slice(0, range.start), ...lines.slice(range.end)]);
+  return next.join(nl);
+}
+
+/**
+ * DOOR-01: remove only the `Authorization` header (and an emptied `headers:`
+ * block) from the root config's `mcp_servers.lifequest` entry.
+ *
+ * The root config belongs to the operator's Hermes install and may list other
+ * servers (and its own keys on our entry), so the writer this pairs with only
+ * ever adds a header there. The neutraliser must therefore not delete the
+ * operator's entry: it strips the credential and leaves the rest exactly as it
+ * was. A root config with no such entry is returned unchanged.
+ */
+export function removeCompanionAuthorizationHeader(
+  yaml: string,
+  name: string = "lifequest",
+): string {
+  if (!yaml) return yaml;
+  const nl = lineBreak(yaml);
+  let lines = yaml.split(/\r?\n/);
+  const first = mcpServerEntryRange(lines, name);
+  if (!first) return yaml;
+  const auth = /^[ \t]*authorization[ \t]*:/i;
+  lines = lines.filter((line, index) => !(index > first.start && index < first.end && auth.test(line)));
+  // Drop a `headers:` block that now has no children, so the entry stays valid
+  // YAML instead of carrying an empty mapping.
+  const current = mcpServerEntryRange(lines, name);
+  if (current) {
+    for (let i = current.start + 1; i < current.end; i += 1) {
+      if (!/^[ \t]*headers:[ \t]*$/.test(lines[i] ?? "")) continue;
+      const headerIndent = /^([ \t]*)/.exec(lines[i] ?? "")?.[1].length ?? 0;
+      let hasChild = false;
+      for (let j = i + 1; j < current.end; j += 1) {
+        const line = lines[j] ?? "";
+        if (line.trim() === "") continue;
+        const own = /^([ \t]*)/.exec(line)?.[1].length ?? 0;
+        if (own > headerIndent) hasChild = true;
+        break;
+      }
+      if (!hasChild) {
+        lines = [...lines.slice(0, i), ...lines.slice(i + 1)];
+        break;
+      }
+    }
+  }
+  return lines.join(nl);
+}
+
+/**
  * Seed a missing soul, and upgrade one this app wrote in an earlier wording.
  *
  * An operator may have edited theirs, and overwriting that would discard their

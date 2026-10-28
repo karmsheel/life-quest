@@ -5,7 +5,12 @@ import { getDocument } from "./domain-documents.ts";
 import { libraryGet } from "./library-documents.ts";
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
-import { vaultPaths } from "./paths.ts";
+import {
+  assertDomainSlug,
+  assertSafeSegment,
+  assertPhysicalContainment,
+  vaultPaths,
+} from "./paths.ts";
 import {
   DOCUMENT_KINDS,
   DOCUMENT_KIND_LABELS,
@@ -356,7 +361,14 @@ async function readDecisionFile(filePath: string): Promise<DecisionRecord> {
   return normalizeDecision(parsed);
 }
 
-async function writeDecisionFile(filePath: string, decision: DecisionRecord): Promise<void> {
+async function writeDecisionFile(
+  rootPath: string,
+  filePath: string,
+  decision: DecisionRecord,
+): Promise<void> {
+  // The inbox directory and the Decision file both live under `.lifequest`; a
+  // symlinked ancestor there would redirect the write out of the vault.
+  await assertPhysicalContainment(rootPath, filePath, "write");
   await atomicWriteFile(filePath, `${JSON.stringify(decision, null, 2)}\n`);
 }
 
@@ -386,7 +398,15 @@ export async function listDecisions(rootPath: string): Promise<Result<DecisionRe
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
       const id = entry.name.replace(/\.json$/, "");
-      const filePath = paths.decisionJson(id);
+      let filePath: string;
+      try {
+        filePath = paths.decisionJson(id);
+        await assertPhysicalContainment(rootPath, filePath, "read");
+      } catch {
+        // An invalid or symlinked filename is skipped, like an unparseable one:
+        // one hostile file must not blank the inbox.
+        continue;
+      }
       try {
         const decision = await readDecisionFile(filePath);
         decisions.push(decision);
@@ -727,7 +747,7 @@ export async function createDecision(
     };
 
     await fs.mkdir(paths.decisionsDir, { recursive: true });
-    await writeDecisionFile(paths.decisionJson(id), decision);
+    await writeDecisionFile(rootPath, paths.decisionJson(id), decision);
 
     const logRes = await appendLog(paths.root, {
       domainSlug: domainSlugForLog,
@@ -853,10 +873,55 @@ async function applyViewDecision(
   return { ok: true, value: { viewId: save.value.id, boardSlug } };
 }
 
+/**
+ * A Decision target names vault paths (`domainSlug`, `pageId`, `mappingId`, a
+ * library `id`, a view id, review cadence/period). The proposal body is written
+ * by an agent or a model, so the apply path validates the target through the
+ * same segment helpers every other path uses. A malformed target can never
+ * apply, so it is reported as terminal instead of being retried forever.
+ */
+function decisionTargetProblem(decision: DecisionRecord): string | null {
+  const target = decision.target as unknown as Record<string, unknown>;
+  try {
+    if (typeof target.domainSlug === "string" && target.domainSlug) {
+      assertDomainSlug(target.domainSlug);
+    }
+    if (typeof target.pageId === "string") {
+      assertSafeSegment(target.pageId, "page id");
+    }
+    if (typeof target.mappingId === "string") {
+      assertSafeSegment(target.mappingId, "mapping id");
+    }
+    if (typeof target.id === "string" && target.id) {
+      assertSafeSegment(target.id, "document id");
+    }
+    // A view decision carries `viewId: ""` at propose time: the id is minted
+    // when the operator approves it (see the view target comment above). An
+    // empty id is therefore "a new card", not a path — only a non-empty value
+    // is a segment that has to be safe.
+    if (typeof target.viewId === "string" && target.viewId) {
+      assertSafeSegment(target.viewId, "view id");
+    }
+    if (typeof target.cadence === "string") {
+      assertSafeSegment(target.cadence, "review cadence");
+    }
+    if (typeof target.period === "string") {
+      assertSafeSegment(target.period, "review period");
+    }
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+  return null;
+}
+
 async function applyApprovedBody(
   rootPath: string,
   decision: DecisionRecord,
 ): Promise<ApplyOutcome> {
+  const targetProblem = decisionTargetProblem(decision);
+  if (targetProblem) {
+    return { ok: false, error: targetProblem, terminal: true };
+  }
   try {
     if (decision.target.type === "agent-pairing") {
       // Approval only flips the row to active. It must not touch access,
@@ -972,6 +1037,7 @@ async function applyApprovedBody(
       }
       // Write mapping file
       const mappingPath = paths.domainMapping(decision.target.domainSlug, decision.target.mappingId);
+      await assertPhysicalContainment(rootPath, mappingPath, "write");
       await atomicWriteFile(mappingPath, `${JSON.stringify(mapping, null, 2)}\n`);
       // Log
       await appendLog(rootPath, {
@@ -1330,6 +1396,7 @@ async function applyApprovedBody(
     if (decision.target.type === "doctrine") {
       const paths = vaultPaths(rootPath);
       const docPath = paths.documentMd(decision.target.domainSlug, decision.target.kind);
+      await assertPhysicalContainment(rootPath, docPath, "read");
 
       let raw: string;
       try {
@@ -1358,6 +1425,7 @@ async function applyApprovedBody(
         },
         decision.proposedBodyMarkdown,
       );
+      await assertPhysicalContainment(rootPath, docPath, "write");
       await atomicWriteFile(docPath, md);
       return { ok: true, value: undefined };
     } else {
@@ -1397,7 +1465,9 @@ async function applyApprovedBody(
       // Keep unquoted title style for titles without spaces.
       const raw = md.replace(/^title: "([^"\\]+)"$/m, "title: $1");
       const paths = vaultPaths(rootPath);
-      await atomicWriteFile(paths.libraryDocumentMd(decision.target.id), raw);
+      const libraryPath = paths.libraryDocumentMd(decision.target.id);
+      await assertPhysicalContainment(rootPath, libraryPath, "write");
+      await atomicWriteFile(libraryPath, raw);
       return { ok: true, value: undefined };
     }
   } catch (e) {
@@ -1417,6 +1487,7 @@ export async function resolveDecision(
 
     const paths = vaultPaths(rootPath);
     const filePath = paths.decisionJson(id);
+    await assertPhysicalContainment(rootPath, filePath, "read");
 
     let decision: DecisionRecord;
     try {
@@ -1473,7 +1544,7 @@ export async function resolveDecision(
             reason: applyRes.error,
             resolvedAt: now,
           };
-          await writeDecisionFile(filePath, decision);
+          await writeDecisionFile(rootPath, filePath, decision);
           const failedLog = await appendLog(paths.root, {
             domainSlug: decision.domainSlugs[0] ?? null,
             type: "decision.resolved",
@@ -1493,7 +1564,7 @@ export async function resolveDecision(
       status: resolution,
       resolvedAt: now,
     };
-    await writeDecisionFile(filePath, decision);
+    await writeDecisionFile(rootPath, filePath, decision);
 
     const logRes = await appendLog(paths.root, {
       domainSlug: decision.domainSlugs[0] ?? null,

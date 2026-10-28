@@ -235,7 +235,7 @@ async function main() {
     )}\n`,
   );
 
-  const { cdpPort, localPort, invitePort } = await threeFreePorts();
+  const { cdpPort } = await threeFreePorts();
 
   // --- Launch the thing an operator would double-click ---------------------
   // The child's output goes to a file rather than a pipe: this transcript is
@@ -245,17 +245,21 @@ async function main() {
   // Electron hosts (DSH, and any other Electron app) export this; left in
   // place, the packaged exe would run as plain Node and never open a window.
   delete env.ELECTRON_RUN_AS_NODE;
-  env.LIFEQUEST_E2E = JSON.stringify({
-    userData: profileDir,
-    showWindow: false,
-    mcpPorts: { local: localPort, invite: invitePort },
-  });
 
-  child = spawn(exePath, [`--remote-debugging-port=${cdpPort}`], {
-    cwd: unpacked,
-    stdio: ["ignore", logFd, logFd],
-    env,
-  });
+  // The packaged bundle compiles the `LIFEQUEST_E2E` seam out (security sweep
+  // 2026-10-28, SHELL-03/SUPP-07): a shipped app ignores that variable by
+  // design, so this rig isolates itself the way Electron itself supports —
+  // `--user-data-dir` — and lets the product bind its real door ports. The rig
+  // therefore requires no other LifeQuest instance to be running.
+  child = spawn(
+    exePath,
+    [`--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profileDir}`],
+    {
+      cwd: unpacked,
+      stdio: ["ignore", logFd, logFd],
+      env,
+    },
+  );
   fs.closeSync(logFd);
 
   // --- Check 4: the window, and the document in it -------------------------
@@ -300,14 +304,14 @@ async function main() {
 
   // --- Check 5: the vault, through the app's own door ----------------------
   const doorUp = await waitForValue(
-    async () => ((await portOpen(localPort)) ? true : null),
+    async () => ((await portOpen(8643)) ? true : null),
     60_000,
     400,
   );
   check(
-    "the MCP door bound on the throwaway port",
+    "the MCP door bound on the product port",
     doorUp === true,
-    doorUp ? null : `nothing listening on ${localPort} within 60s`,
+    doorUp ? null : "nothing listening on 8643 within 60s (is another LifeQuest running?)",
   );
 
   const prefs = JSON.parse(fs.readFileSync(prefsFile, "utf8"));

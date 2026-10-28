@@ -9,6 +9,7 @@ import { vaultPaths } from "./paths.ts";
 import { isDomainLive, getDatabase, rowDisplayLabel, readRegistry } from "./domain-databases.ts";
 import {
   FINANCE_DB_IDS,
+  USER_ACTOR,
   type Actor,
   type ComposedViewRunResult,
   type DatabaseMeta,
@@ -2097,7 +2098,14 @@ export async function saveView(
   root: string,
   slug: string,
   spec: Omit<ViewSpec, "schemaVersion">,
-  opts?: { id?: string },
+  /**
+   * `id` edits a card in place. `actor` is who wrote it, for the life log:
+   * Fort-Knox AGENT-09 — a view created by an agent's `save_view` (or by an
+   * approved Decision) is an attributable write and this line used to name no
+   * one. Defaults to the operator, because the renderer's own editor passes
+   * nothing and a missing actor must read as "the app did it", not as an agent.
+   */
+  opts?: { id?: string; actor?: Actor },
 ): Promise<Result<SavedView>> {
   try {
     if (!(await isDomainLive(root, slug))) {
@@ -2135,6 +2143,8 @@ export async function saveView(
       type: updated ? "view.updated" : "view.created",
       summary: `${updated ? "Updated" : "Created"} view "${view.title}" in ${slug}`,
       payload: { viewId: id, presentation: view.presentation, databaseId: view.databaseId },
+      // AGENT-09: name the writer. `USER_ACTOR` when the caller did not say.
+      actor: opts?.actor ?? USER_ACTOR,
     });
 
     return { ok: true, value: view };
