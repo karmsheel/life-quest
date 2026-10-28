@@ -44,30 +44,58 @@ const SAMPLE = `(() => {
     };
   };
   const text = (el) => ((el && el.textContent) || "").trim();
+  // Computed display, not presence: the hover-only controls stay in the DOM and
+  // are hidden by CSS, and the resting time/pin marks are hidden the same way.
+  const shown = (el) => Boolean(el) && window.getComputedStyle(el).display !== "none";
+  const shownBox = (el) =>
+    Boolean(el) && window.getComputedStyle(el).display !== "none" && el.offsetParent !== null;
   const rail = document.querySelector(".chats-rail");
   const panel = document.querySelector(".chat-panel");
   const composer = document.querySelector(".chat-panel__composer-input");
   const threadHeader = document.querySelector(".chat-panel__header--thread");
 
-  // The sidebar's rows in paint order, with the group each one sits under. The
-  // group label is a sibling row of its own, so the walk keeps the last one seen.
-  let group = "";
-  const rows = [];
-  for (const li of Array.from(document.querySelectorAll(".chats-rail__rows > li"))) {
-    if (li.classList.contains("chats-rail__group")) {
-      group = text(li);
-      continue;
+  // One flat list: the pinned rows first (in pin order), the rest after them. A
+  // row's pin mark is a resting decoration and its pin/archive buttons live in a
+  // hover-only span, so both are reported by computed display rather than by
+  // presence in the DOM.
+  const rows = Array.from(document.querySelectorAll(".chats-rail__rows .chats-rail__row")).map(
+    (li) => {
+      const when = li.querySelector(".chats-rail__when");
+      const pinState = li.querySelector(".chats-rail__pin-state");
+      const actions = li.querySelector(".chats-rail__actions");
+      const pin = li.querySelector(".chats-rail__pin-btn");
+      const archive = li.querySelector(".chats-rail__archive-btn");
+      const svg = pin ? pin.querySelector("svg") : null;
+      return {
+        label: text(li.querySelector(".chats-rail__label")),
+        when: text(when),
+        whenVisible: shown(when),
+        active: li.hasAttribute("data-active"),
+        live: li.hasAttribute("data-live"),
+        approval: li.hasAttribute("data-approval"),
+        menuOpen: Boolean(li.querySelector(".chats-rail__menu")),
+        pinned: li.getAttribute("data-pinned") === "true",
+        pinState: shown(pinState),
+        actionsVisible: shown(actions),
+        pin: {
+          exists: Boolean(pin),
+          visible: shownBox(pin),
+          label: pin ? (pin.getAttribute("aria-label") ?? pin.getAttribute("title")) : null,
+          dataPinned: pin ? pin.getAttribute("data-pinned") : null,
+          filled: Boolean(svg) && svg.getAttribute("fill") === "currentColor"
+        },
+        archive: {
+          exists: Boolean(archive),
+          visible: shownBox(archive),
+          label: archive
+            ? (archive.getAttribute("aria-label") ?? archive.getAttribute("title"))
+            : null,
+          beforePin: Boolean(archive && pin && archive.nextElementSibling === pin)
+        },
+        box: box(li)
+      };
     }
-    rows.push({
-      group,
-      label: text(li.querySelector(".chats-rail__label")),
-      when: text(li.querySelector(".chats-rail__when")),
-      active: li.hasAttribute("data-active"),
-      live: li.hasAttribute("data-live"),
-      approval: li.hasAttribute("data-approval"),
-      menuOpen: Boolean(li.querySelector(".chats-rail__menu"))
-    });
-  }
+  );
 
   const tabs = Array.from(document.querySelectorAll(".chat-panel__tab")).map((tab) => ({
     label: text(tab.querySelector(".chat-panel__tab-label")),
@@ -94,7 +122,10 @@ const SAMPLE = `(() => {
           title: text(rail.querySelector(".chats-rail__title")),
           liveCount: text(rail.querySelector(".chats-rail__live-count")),
           newChat: Boolean(rail.querySelector(".chats-rail__new")),
-          groups: Array.from(document.querySelectorAll(".chats-rail__group")).map(text)
+          // The dead space above and below the rows is part of the design: the
+          // rail breathes instead of starting flush against its title/edge.
+          paddingTop: Number.parseFloat(window.getComputedStyle(rail).paddingTop) || 0,
+          paddingBottom: Number.parseFloat(window.getComputedStyle(rail).paddingBottom) || 0
         }
       : null,
     rows,
@@ -213,6 +244,100 @@ async function main() {
       return true;
     })()`);
 
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const findRowScript = (label) =>
+    `Array.from(document.querySelectorAll(".chats-rail__rows .chats-rail__row")).find(
+      (li) => (li.querySelector(".chats-rail__label")?.textContent || "").trim() === ${JSON.stringify(label)}
+    )`;
+
+  /** The row's centre in window content coordinates, from a live layout read. */
+  const rowCenter = (label) =>
+    run(`(() => {
+      const row = ${findRowScript(label)};
+      if (!row) return null;
+      const r = row.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+
+  const rowActionsVisible = (label) =>
+    run(`(() => {
+      const row = ${findRowScript(label)};
+      const actions = row ? row.querySelector(".chats-rail__actions") : null;
+      return Boolean(actions) && window.getComputedStyle(actions).display !== "none";
+    })()`);
+
+  /*
+   * CSS :hover only follows a real pointer — a synthetic `mouseover` DOM event
+   * does not move the browser's hover state. So hover goes through the window's
+   * input pipeline. `showInactive` leaves the window unfocused; if that pipeline
+   * ignores the move, the same event goes over the devtools protocol instead,
+   * and stays there for the rest of the run (both are then sent together).
+   */
+  let pointerViaCdp = false;
+  const cdpMove = async (x, y) => {
+    const wc = win.webContents;
+    if (!wc.debugger.isAttached()) wc.debugger.attach("1.3");
+    await wc.debugger.sendCommand("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x,
+      y,
+      button: "none",
+      buttons: 0,
+      clickCount: 0,
+    });
+  };
+  const movePointer = async (x, y) => {
+    win.webContents.sendInputEvent({ type: "mouseMove", x, y });
+    if (pointerViaCdp) {
+      try {
+        await cdpMove(x, y);
+      } catch {
+        pointerViaCdp = false;
+      }
+    }
+    await wait(120);
+  };
+
+  const hoverSidebarRow = async (label) => {
+    const center = await rowCenter(label);
+    if (!center) return false;
+    // Coordinates are window content DIPs: keep them inside the content box.
+    const x = clamp(Math.round(center.x), 1, DEFAULT_SIZE.width - 2);
+    const y = clamp(Math.round(center.y), 1, DEFAULT_SIZE.height - 2);
+    await movePointer(x, y);
+    if (!(await rowActionsVisible(label))) {
+      try {
+        await cdpMove(x, y);
+        pointerViaCdp = true;
+        await wait(120);
+      } catch {
+        pointerViaCdp = false;
+      }
+    }
+    await wait(60);
+    return true;
+  };
+
+  /** Park the pointer outside every sidebar row so :hover clears. */
+  const unhover = async () => {
+    await movePointer(8, 8);
+    await wait(120);
+    return true;
+  };
+
+  /** Press a control inside one row, the way a pointer would land on it. */
+  const clickRowControl = (label, selector) =>
+    run(`(async () => {
+      const row = ${findRowScript(label)};
+      const target = row ? row.querySelector(${JSON.stringify(selector)}) : null;
+      if (!target) return false;
+      target.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
   const clickSidebarMenuItem = (label) =>
     run(`(async () => {
       const el = document.querySelector('.chats-rail__menu [aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']');
@@ -294,21 +419,49 @@ async function main() {
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
     await new Promise((resolve) => setTimeout(resolve, 250));
     win.showInactive();
+    // Park the pointer away from the rows before the first sample: a cursor an
+    // operator left over the window must not decide whether landing is "at rest".
+    await unhover();
 
-    // 1 — the sidebar lists every live chat, pinned first, and the dock lands on
-    // a thread with one tab (so the strip is not noise).
+    // 1 — the sidebar lists every live chat in one flat list, pinned first, and
+    // the dock lands on a thread with one tab (so the strip is not noise).
     const landing = await settle(300);
     check("the left sidebar lists the chats", landing.rowCount === 5, `${landing.rowCount} rows`);
     check(
-      "pinned chats sit in their own group, first",
-      landing.rows[0]?.group === "Pinned" && landing.rows[0]?.label === "Pinned note",
-      JSON.stringify(landing.rows.map((r) => [r.group, r.label])),
+      "the pinned chat is the first row of the flat list",
+      landing.rows[0]?.label === "Pinned note" && landing.rows[0]?.pinned === true,
+      JSON.stringify(landing.rows.map((r) => [r.label, r.pinned])),
     );
     check(
-      "the recent chats follow under a Recent heading",
-      landing.rail?.groups.join("/") === "Pinned/Recent" &&
-        landing.rows.filter((r) => r.group === "Recent").length === 4,
-      JSON.stringify(landing.rail?.groups),
+      "every other row is unpinned",
+      landing.rows.slice(1).every((row) => row.pinned === false),
+      JSON.stringify(landing.rows.map((r) => [r.label, r.pinned])),
+    );
+    check(
+      "only the pinned row wears a resting pin mark",
+      landing.rows[0]?.pinState === true &&
+        landing.rows.slice(1).every((row) => row.pinState === false),
+      JSON.stringify(landing.rows.map((r) => [r.label, r.pinState])),
+    );
+    check(
+      "the resting rows show their time",
+      landing.rows.every((row) => row.whenVisible),
+      JSON.stringify(landing.rows.map((r) => [r.label, r.whenVisible])),
+    );
+    check(
+      "pin and archive are hover-only",
+      landing.rows.every((row) => !row.actionsVisible),
+      JSON.stringify(landing.rows.map((r) => [r.label, r.actionsVisible])),
+    );
+    // The rail breathes above and below its rows instead of starting flush
+    // against its frame.
+    check(
+      "the rail keeps dead space above and below its rows",
+      (landing.rail?.paddingTop ?? 0) >= 10 && (landing.rail?.paddingBottom ?? 0) >= 10,
+      JSON.stringify({
+        paddingTop: landing.rail?.paddingTop,
+        paddingBottom: landing.rail?.paddingBottom,
+      }),
     );
     check(
       "the dock lands on the newest chat",
@@ -322,6 +475,72 @@ async function main() {
       JSON.stringify(landing.composer),
     );
     screenshots.push(await shot("landing"));
+
+    // 1b — pin and archive are hover-only: a real pointer over a row reveals
+    // them and the resting time/pin mark step aside, on that row only.
+    check("hovered the pinned row", await hoverSidebarRow("Pinned note"), "no row to hover");
+    const hovered = await settle();
+    const hoveredPinnedRow = hovered.rows.find((row) => row.label === "Pinned note");
+    check(
+      "hovering a row reveals its actions, and only that row's",
+      hoveredPinnedRow?.actionsVisible === true &&
+        hovered.rows.filter((row) => row.actionsVisible).length === 1,
+      JSON.stringify(hovered.rows.map((r) => [r.label, r.actionsVisible])),
+    );
+    check(
+      "the resting time and pin mark step aside under the pointer",
+      hoveredPinnedRow?.whenVisible === false && hoveredPinnedRow?.pinState === false,
+      JSON.stringify({ when: hoveredPinnedRow?.whenVisible, pinState: hoveredPinnedRow?.pinState }),
+    );
+    check(
+      "the pinned row's hover control is Unpin, filled, right after Archive",
+      hoveredPinnedRow?.pin.exists === true &&
+        hoveredPinnedRow?.pin.visible === true &&
+        hoveredPinnedRow?.pin.label === "Unpin chat" &&
+        hoveredPinnedRow?.pin.dataPinned === "true" &&
+        hoveredPinnedRow?.pin.filled === true &&
+        hoveredPinnedRow?.archive.visible === true &&
+        hoveredPinnedRow?.archive.label === "Archive chat" &&
+        hoveredPinnedRow?.archive.beforePin === true,
+      JSON.stringify({ pin: hoveredPinnedRow?.pin, archive: hoveredPinnedRow?.archive }),
+    );
+
+    check("hovered an unpinned row", await hoverSidebarRow("Alpha planning"), "no row to hover");
+    const hoveredUnpinned = await settle();
+    const alphaHover = hoveredUnpinned.rows.find((row) => row.label === "Alpha planning");
+    check(
+      "the unpinned row's hover control is Pin, outline, and visible",
+      hoveredUnpinned.rows.filter((row) => row.actionsVisible).length === 1 &&
+        alphaHover?.actionsVisible === true &&
+        alphaHover?.pin.visible === true &&
+        alphaHover?.pin.label === "Pin chat" &&
+        alphaHover?.pin.dataPinned === null &&
+        alphaHover?.pin.filled === false,
+      JSON.stringify({ pin: alphaHover?.pin, actions: alphaHover?.actionsVisible }),
+    );
+    check(
+      "the unpinned row's archive control sits right before the pin",
+      alphaHover?.archive.visible === true &&
+        alphaHover?.archive.label === "Archive chat" &&
+        alphaHover?.archive.beforePin === true,
+      JSON.stringify(alphaHover?.archive),
+    );
+    // The artifact: one row lit up with its pin and archive icons.
+    screenshots.push(await shot("hover"));
+
+    check("moved the pointer off the rows", await unhover(), "no neutral point");
+    const unhovered = await settle();
+    check(
+      "the hover controls go away with the pointer",
+      unhovered.rows.every((row) => !row.actionsVisible),
+      JSON.stringify(unhovered.rows.map((r) => [r.label, r.actionsVisible])),
+    );
+    check(
+      "the resting time and pin mark come back",
+      unhovered.rows.every((row) => row.whenVisible) &&
+        unhovered.rows.find((row) => row.label === "Pinned note")?.pinState === true,
+      JSON.stringify(unhovered.rows.map((r) => [r.label, r.whenVisible, r.pinState])),
+    );
 
     // 2 — a plain click is navigation: the clicked chat takes over the main chat
     // and no tab is added.
@@ -531,9 +750,21 @@ async function main() {
       JSON.stringify(splitSettled.tabs),
     );
 
-    // 10 — the sidebar's own management: pin reaches the bridge and moves the row.
-    check("opened Bravo's menu", await openSidebarMenu("Bravo budget"), "no menu control");
-    check("clicked Pin", await clickSidebarMenuItem("Pin chat"), "no Pin item");
+    // 10 — the row's hover pin control: one patch to the bridge, and the row
+    // becomes the very first row (a fresh pin leads the list).
+    check("hovered Bravo", await hoverSidebarRow("Bravo budget"), "no row to hover");
+    const hoveredBravo = await settle();
+    check(
+      "Bravo's hover pin control is visible before the click",
+      hoveredBravo.rows.find((row) => row.label === "Bravo budget")?.pin.visible === true,
+      JSON.stringify(hoveredBravo.rows.find((row) => row.label === "Bravo budget")?.pin),
+    );
+    check(
+      "clicked Bravo's hover pin",
+      await clickRowControl("Bravo budget", ".chats-rail__pin-btn"),
+      "no pin control",
+    );
+    check("moved the pointer off the rows after the pin", await unhover(), "no neutral point");
     const pinned = await settle();
     check(
       "Pin reached the bridge for Bravo",
@@ -542,14 +773,87 @@ async function main() {
       JSON.stringify(pinned.patchCalls.at(-1)),
     );
     check(
-      "the pinned chat moved under the Pinned heading",
-      pinned.rows[0]?.group === "Pinned" && pinned.rows[0]?.label === "Bravo budget",
-      JSON.stringify(pinned.rows.map((row) => [row.group, row.label])),
+      "the newly pinned chat is the very first row",
+      pinned.rows[0]?.label === "Bravo budget" && pinned.rows[0]?.pinned === true,
+      JSON.stringify(pinned.rows.map((row) => [row.label, row.pinned])),
+    );
+    check(
+      "the pinned row shows its resting pin mark and its hover controls are gone",
+      pinned.rows[0]?.pinState === true && pinned.rows.every((row) => !row.actionsVisible),
+      JSON.stringify(pinned.rows.map((row) => [row.label, row.pinState, row.actionsVisible])),
     );
 
-    // 11 — archive removes the row and the tab it had.
-    check("opened Alpha's menu", await openSidebarMenu("Alpha planning"), "no menu control");
-    check("clicked Archive", await clickSidebarMenuItem("Archive chat"), "no Archive item");
+    // 10b — the same control toggles: Unpin un-pins, and the row leaves the front.
+    check("hovered the now-pinned Bravo", await hoverSidebarRow("Bravo budget"), "no row to hover");
+    const hoveredPinned = await settle();
+    const pinnedHover = hoveredPinned.rows.find((row) => row.label === "Bravo budget");
+    check(
+      "the pinned row's hover control reads Unpin and is filled",
+      pinnedHover?.pin.visible === true &&
+        pinnedHover?.pin.label === "Unpin chat" &&
+        pinnedHover?.pin.dataPinned === "true" &&
+        pinnedHover?.pin.filled === true &&
+        pinnedHover?.pinState === false,
+      JSON.stringify(pinnedHover?.pin),
+    );
+    check(
+      "clicked Bravo's hover Unpin",
+      await clickRowControl("Bravo budget", ".chats-rail__pin-btn"),
+      "no pin control",
+    );
+    check("moved the pointer off the rows after the unpin", await unhover(), "no neutral point");
+    const unpinned = await settle();
+    check(
+      "Unpin reached the bridge for Bravo",
+      unpinned.patchCalls.at(-1)?.id === "chat-bravo" &&
+        unpinned.patchCalls.at(-1)?.patch.pinned === false,
+      JSON.stringify(unpinned.patchCalls.at(-1)),
+    );
+    const unpinnedBravo = unpinned.rows.find((row) => row.label === "Bravo budget");
+    check(
+      "the unpinned chat left the front and lost its pin mark",
+      unpinnedBravo?.pinned === false &&
+        unpinnedBravo?.pinState === false &&
+        unpinned.rows[0]?.label === "Pinned note",
+      JSON.stringify(unpinned.rows.map((row) => [row.label, row.pinned, row.pinState])),
+    );
+
+    // 10c — pin it again, so the archive/delete/background states below run
+    // against the same list they always did (Bravo pinned, three rows after).
+    check("hovered Bravo once more", await hoverSidebarRow("Bravo budget"), "no row to hover");
+    check(
+      "clicked Bravo's pin again",
+      await clickRowControl("Bravo budget", ".chats-rail__pin-btn"),
+      "no pin control",
+    );
+    check("moved the pointer off the rows after the re-pin", await unhover(), "no neutral point");
+    const repinned = await settle();
+    check(
+      "Bravo is pinned again and back at the front",
+      repinned.patchCalls.at(-1)?.id === "chat-bravo" &&
+        repinned.patchCalls.at(-1)?.patch.pinned === true &&
+        repinned.rows[0]?.label === "Bravo budget" &&
+        repinned.rows[0]?.pinned === true,
+      JSON.stringify({
+        patch: repinned.patchCalls.at(-1),
+        rows: repinned.rows.map((row) => [row.label, row.pinned]),
+      }),
+    );
+
+    // 11 — the hover archive control removes the row and the tab it had.
+    check("hovered Alpha", await hoverSidebarRow("Alpha planning"), "no row to hover");
+    const hoveredAlpha = await settle();
+    check(
+      "Alpha's hover archive control is visible before the click",
+      hoveredAlpha.rows.find((row) => row.label === "Alpha planning")?.archive.visible === true,
+      JSON.stringify(hoveredAlpha.rows.find((row) => row.label === "Alpha planning")?.archive),
+    );
+    check(
+      "clicked Alpha's hover archive",
+      await clickRowControl("Alpha planning", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    check("moved the pointer off the rows after the archive", await unhover(), "no neutral point");
     const archived = await settle();
     check(
       "Archive reached the bridge for Alpha",
@@ -661,6 +965,9 @@ async function main() {
       screenshots,
       states: {
         landing,
+        hovered,
+        hoveredUnpinned,
+        unhovered,
         opened,
         middleOpened,
         menuOpened,
@@ -674,7 +981,12 @@ async function main() {
         alphaAgain,
         split,
         splitSettled,
+        hoveredBravo,
         pinned,
+        hoveredPinned,
+        unpinned,
+        repinned,
+        hoveredAlpha,
         archived,
         asked,
         declined,
@@ -710,6 +1022,9 @@ async function main() {
     const table = [
       ["state", "rows", "tabs", "live", "heading", "calls", "patches"],
       ["landing", state.landing.rowCount, state.landing.tabCount, "", state.landing.heading, "", ""],
+      ["hovered", state.hovered.rowCount, state.hovered.tabCount, "", state.hovered.heading, "", ""],
+      ["hovered unpinned", state.hoveredUnpinned.rowCount, state.hoveredUnpinned.tabCount, "", state.hoveredUnpinned.heading, "", ""],
+      ["unhovered", state.unhovered.rowCount, state.unhovered.tabCount, "", state.unhovered.heading, "", ""],
       ["opened", state.opened.rowCount, state.opened.tabCount, "", state.opened.heading, "", ""],
       ["middle", state.middleOpened.rowCount, state.middleOpened.tabCount, "", state.middleOpened.heading, "", ""],
       ["menu", state.menuOpened.rowCount, state.menuOpened.tabCount, "", state.menuOpened.heading, "", ""],
@@ -718,6 +1033,9 @@ async function main() {
       ["finished", state.finished.rowCount, state.finished.tabCount, "", state.finished.heading, "", ""],
       ["split", state.split.rowCount, state.split.tabCount, "alpha", state.split.heading, "", ""],
       ["pinned", state.pinned.rowCount, state.pinned.tabCount, "", state.pinned.heading, "", state.pinned.patchCalls.length],
+      ["unpinned", state.unpinned.rowCount, state.unpinned.tabCount, "", state.unpinned.heading, "", state.unpinned.patchCalls.length],
+      ["repinned", state.repinned.rowCount, state.repinned.tabCount, "", state.repinned.heading, "", state.repinned.patchCalls.length],
+      ["archived", state.archived.rowCount, state.archived.tabCount, "", state.archived.heading, "", state.archived.patchCalls.length],
       ["deleted", state.deleted.rowCount, state.deleted.tabCount, "", state.deleted.heading, "", ""],
       ["background", state.background.rowCount, state.background.tabCount, "delta", state.background.heading, "", ""],
     ];

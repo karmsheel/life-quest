@@ -8097,7 +8097,11 @@ button.chat-panel__activity-line:hover {
   gap: 0.1rem;
   min-width: 0;
   min-height: 0;
-  padding: 0.05rem 0 0.1rem;
+  /* The list is the middle band of the rail, and it was sitting on the two
+     dividers that bracket it: the wing's pages above, the governed shelf below.
+     The breathing room is the section's own, so it survives a long history (the
+     list scrolls between these pads) as well as an empty one. */
+  padding: 0.7rem 0 0.9rem;
   overflow: hidden;
   position: relative;
 }
@@ -8155,7 +8159,7 @@ button.chat-panel__activity-line:hover {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 0.1rem 0 0.5rem;
+  padding: 0.1rem 0 0.35rem;
 }
 
 .chats-rail__rows {
@@ -8165,19 +8169,6 @@ button.chat-panel__activity-line:hover {
   display: flex;
   flex-direction: column;
   gap: 0.08rem;
-}
-
-.chats-rail__group {
-  margin: 0.45rem 0.45rem 0.1rem;
-  color: var(--muted);
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.chats-rail__group:first-child {
-  margin-top: 0.15rem;
 }
 
 .chats-rail__row {
@@ -8259,7 +8250,23 @@ button.chat-panel__activity-line:hover {
   font-size: 0.65rem;
 }
 
-.chats-rail__menu-btn {
+/*
+ * The row's verbs are paint-only at rest: the list reads as names and times
+ * until the pointer (or the keyboard) arrives, which is the reference client's
+ * pin gesture. A pinned row keeps a filled pin at rest in the exact slot its
+ * hover button will occupy, so "this one is pinned" is legible without a hover
+ * and the button does not jump when it appears.
+ */
+.chats-rail__actions {
+  display: none;
+  align-items: center;
+  gap: 0.05rem;
+  flex: 0 0 auto;
+}
+
+.chats-rail__menu-btn,
+.chats-rail__archive-btn,
+.chats-rail__pin-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -8272,19 +8279,51 @@ button.chat-panel__activity-line:hover {
   background: none;
   color: var(--muted);
   cursor: pointer;
-  opacity: 0.55;
-}
-
-.chats-rail__row:hover .chats-rail__menu-btn,
-.chats-rail__menu-btn[aria-expanded="true"],
-.chats-rail__menu-btn:focus-visible {
-  opacity: 1;
 }
 
 .chats-rail__menu-btn:hover,
-.chats-rail__menu-btn[aria-expanded="true"] {
+.chats-rail__menu-btn[aria-expanded="true"],
+.chats-rail__menu-btn:focus-visible,
+.chats-rail__archive-btn:hover,
+.chats-rail__archive-btn:focus-visible,
+.chats-rail__pin-btn:hover,
+.chats-rail__pin-btn:focus-visible {
   background: var(--selected-soft);
   color: var(--fg);
+}
+
+/* The pinned state is darker than the muted glyph an unpinned row shows on
+   hover; the rest marker and the button that unpins it occupy one slot. */
+.chats-rail__pin-btn[data-pinned] {
+  color: var(--fg);
+}
+
+.chats-rail__pin-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-left: 0.15rem;
+  color: var(--fg);
+}
+
+/* Hover, keyboard focus, or an open menu trades the time and the rest-state
+   pin for the verbs: nothing is drawn twice, and the name keeps the space. */
+.chats-rail__row:hover .chats-rail__actions,
+.chats-rail__row:focus-within .chats-rail__actions,
+.chats-rail__row[data-menu-open] .chats-rail__actions {
+  display: inline-flex;
+}
+
+.chats-rail__row:hover .chats-rail__when,
+.chats-rail__row:focus-within .chats-rail__when,
+.chats-rail__row[data-menu-open] .chats-rail__when,
+.chats-rail__row:hover .chats-rail__pin-state,
+.chats-rail__row:focus-within .chats-rail__pin-state,
+.chats-rail__row[data-menu-open] .chats-rail__pin-state {
+  display: none;
 }
 
 /* Hangs under the control that opened it, over the rows below: the list scrolls,
