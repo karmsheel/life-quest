@@ -189,6 +189,17 @@ type ChatStreamEvent =
   /** Proposals in this turn's reply that could not be filed, and why (app-sent). */
   | { type: "decisions.problem"; message: string };
 
+/**
+ * One frame of the companion's stream. The session id sits on the envelope
+ * rather than on each event: several turns can be in the air at once, and the
+ * renderer routes a delta by the chat that owns it — never by whichever thread
+ * happens to be on screen.
+ */
+type CompanionStreamFrame = {
+  sessionId: string;
+  event: ChatStreamEvent;
+};
+
 type HermesSession = {
   id: string;
   title: string;
@@ -412,7 +423,7 @@ type LifequestApi = {
   companionPrompts: () => Promise<
     { ok: true; value: CompanionPrompts } | { ok: false; error: string }
   >;
-  onCompanionStream: (cb: (evt: ChatStreamEvent) => void) => () => void;
+  onCompanionStream: (cb: (frame: CompanionStreamFrame) => void) => () => void;
   mapGetState: () => Promise<Result<MapStoreState>>;
   mapApply: (command: MapCommand) => Promise<Result<VaultSnapshot>>;
   goalsApply: (command: GoalsCommand) => Promise<Result<VaultSnapshot>>;
@@ -710,6 +721,7 @@ export type {
   CompanionProfilesResult,
   CompanionPrompts,
   CompanionRuntimeOverride,
+  CompanionStreamFrame,
   CompanionSkill,
   CompanionStatus,
   FocusedCardContext,

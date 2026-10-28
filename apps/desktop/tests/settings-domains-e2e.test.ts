@@ -153,8 +153,8 @@ describe("the app's own confirm dialog on a settings surface", () => {
       `the card is not centred in the window: ${archive.offsetFromWindowX}px across, ${archive.offsetFromWindowY}px down`,
     );
     assert.ok(
-      Math.abs(archive.offsetFromSheetX ?? 0) > 40,
-      `the card is centred on the sheet rather than the window: ${archive.offsetFromSheetX}px`,
+      Math.abs(archive.offsetFromWindowX) < Math.abs(archive.offsetFromSheetX ?? 0),
+      `the card is nearer the sheet's centre than the window's: ${archive.offsetFromSheetX}px from the sheet vs ${archive.offsetFromWindowX}px from the window`,
     );
     assert.equal(archive.clippedBySheet, false, "the sheet's scroller clipped the card");
     assert.equal(archive.backdrop?.width, asked.viewport.width, "the scrim does not cover the window");

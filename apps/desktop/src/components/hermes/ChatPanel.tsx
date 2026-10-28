@@ -39,20 +39,25 @@ import {
   type SignalRecord,
 } from "@lifequest/vault-core/pure";
 import { copyText } from "@/lib/clipboard";
-import { AUTOMATIONS_CHANGED_EVENT } from "@/lib/automations";
 import { api } from "@/lib/ipc";
-import { pageLabelFor, readPageContext } from "@/lib/page-context";
+import { pageLabelFor } from "@/lib/page-context";
 import { WING_LABELS, wingForPath } from "@/components/shell/wing";
 import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
-import { summarizeToolRun, toolRowLabel, type ToolCall } from "@/lib/tool-run";
+import { summarizeToolRun, toolRowLabel } from "@/lib/tool-run";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
 import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
-import { useActiveDomain, useDashboardBoard } from "@/components/shell/useActiveDomain";
+import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { useConfirm } from "@/components/ui/useConfirm";
-import { useChatDock, type ChatCardContext } from "@/state/ChatDockProvider";
+import { useChatDock } from "@/state/ChatDockProvider";
+import {
+  ChatSessionsProvider,
+  useChatSessions,
+  useChatSessionsOptional,
+  type ChatMessage,
+  type ChatReceipt,
+} from "@/state/ChatSessionsProvider";
 import { useVault } from "@/state/VaultProvider";
 import type {
-  ChatStreamEvent,
   CompanionModelCatalog,
   CompanionRuntimeOverride,
   HermesSession,
@@ -61,45 +66,11 @@ import {
   formatMessageWhen,
   formatSessionWhen,
   sessionLabel,
-  type FocusedCardContext,
 } from "../../../electron/companion-client.ts";
 
-export type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  /** When the message was sent or received, as epoch milliseconds. */
-  at?: number;
-  /** The receipt this turn carried, as the thread remembers it after sending. */
-  receipt?: { name: string; size: number };
-};
-
 /**
- * The dock's card, flattened for the turn.
- *
- * The pin travels whole through the dock because the companion's tools address a
- * card by the pin's own ids; this is the same fact in the shape the instructions
- * are built from. A field the pin does not have is left off rather than filled
- * in: a system card has no `viewId`, and saying it did would invite a `save_view`
- * that cannot work.
+ * Bytes as the chip says them: 287 B, 41 KB, 1.2 MB.
  */
-function focusedCardOf(card: ChatCardContext): FocusedCardContext {
-  const pin = card.pin;
-  const shared = {
-    label: card.label,
-    pinId: pin.id,
-    boardSlug: card.boardSlug,
-  };
-  if (pin.kind === "view") {
-    return { ...shared, kind: "view", domainSlug: pin.domainSlug, viewId: pin.viewId };
-  }
-  if (pin.kind === "page") {
-    return { ...shared, kind: "page", domainSlug: pin.domainSlug, pageId: pin.pageId };
-  }
-  return { ...shared, kind: "system", domainSlug: null, system: pin.system };
-}
-
-/** Bytes as the chip says them: 287 B, 41 KB, 1.2 MB. */
 function formatReceiptSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
@@ -133,57 +104,6 @@ type ChatPanelProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-const LAST_SESSION_KEY = "lifequest.companion.lastSessionId";
-/**
- * The composer's model / thinking pick, **per chat**. Hermes Desktop keeps the
- * choice on the chat's own view state (`view.$model`, `view.$reasoningEffort`)
- * rather than on the client, so the pins are keyed by session id here too: a
- * chat comes back on the model it was left on, and a new chat opens unpinned.
- *
- * The turn still carries the pin — that is the transport's only path. The
- * gateway's own `POST /api/sessions/{id}/model` lock is write-only (no unpin
- * route, and `model_config` never crosses the client API), and Desktop does not
- * call it either.
- */
-const RUNTIME_PINS_KEY = "lifequest.companion.runtimePins";
-
-/** A pin with anything that is not a usable string dropped. */
-function cleanRuntimePick(value: unknown): CompanionRuntimeOverride {
-  const source = (value ?? {}) as Record<string, unknown>;
-  const pick: CompanionRuntimeOverride = {};
-  for (const key of ["model", "provider", "reasoningEffort"] as const) {
-    const entry = source[key];
-    if (typeof entry === "string" && entry.trim()) pick[key] = entry.trim();
-  }
-  return pick;
-}
-
-/** Every chat's pin, keyed by session id; an empty pin is not remembered. */
-function readStoredRuntimePins(): Record<string, CompanionRuntimeOverride> {
-  try {
-    const raw = window.localStorage.getItem(RUNTIME_PINS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const pins: Record<string, CompanionRuntimeOverride> = {};
-    for (const [sessionId, value] of Object.entries(parsed ?? {})) {
-      if (!sessionId) continue;
-      const pick = cleanRuntimePick(value);
-      if (Object.keys(pick).length > 0) pins[sessionId] = pick;
-    }
-    return pins;
-  } catch {
-    return {};
-  }
-}
-
-function writeStoredRuntimePins(pins: Record<string, CompanionRuntimeOverride>): void {
-  try {
-    window.localStorage.setItem(RUNTIME_PINS_KEY, JSON.stringify(pins));
-  } catch {
-    // A storage refusal costs the pins their memory, not the current chat.
-  }
-}
-
 /** One shared empty pin, so an unpinned chat keeps a stable identity. */
 const NO_RUNTIME_PICK: CompanionRuntimeOverride = {};
 
@@ -191,10 +111,6 @@ const NO_RUNTIME_PICK: CompanionRuntimeOverride = {};
 const COMPOSER_MAX_PANEL_RATIO = 0.5;
 /** Floor for that cap so a very short panel still shows a usable field. */
 const COMPOSER_MIN_VISIBLE_PX = 72;
-
-function nextId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
 
 /**
  * Whether the caret sits in a field somebody is typing in — ours or another
@@ -216,14 +132,29 @@ function sessionTimeValue(lastActive: number | null): string | undefined {
   return date.toISOString();
 }
 
-export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
+/**
+ * The dock, with the chats it shares with the sidebar and the tabs.
+ *
+ * The state lives in `ChatSessionsProvider` because a chat outlives this panel:
+ * the left sidebar lists it, the tab strip names it, and a parallel turn keeps
+ * streaming while the operator is somewhere else. A harness that mounts the
+ * panel on its own gets a provider of its own, so the component still works
+ * without the shell around it.
+ */
+export function ChatPanel(props: ChatPanelProps) {
+  const mounted = useChatSessionsOptional();
+  if (mounted) return <ChatPanelView {...props} />;
+  return (
+    <ChatSessionsProvider>
+      <ChatPanelView {...props} />
+    </ChatSessionsProvider>
+  );
+}
+
+function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const activeDomain = useActiveDomain();
   const domainName = activeDomain?.meta.name ?? "Overview";
-  const { snapshot, refresh, reloadGeneration, lens } = useVault();
-  // The board the operator is on, and its page lock. The turn carries both so
-  // the companion knows whether a dashboard change lands or files a Decision —
-  // and it is the same board/file HomePage reads, not a second guess at it.
-  const { slug: boardSlug, locked: boardLocked } = useDashboardBoard();
+  const { snapshot, reloadGeneration, lens } = useVault();
   const {
     requestedSessionId,
     requestedKickoff,
@@ -231,7 +162,6 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     clearRequestedSession,
     contextCard,
     setContextCard,
-    setLivePinId,
     pageContext,
     setPageContextOn,
     // The dock's side is the shell's business — it is the shell that swaps the
@@ -239,27 +169,35 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     // collapses toward, so it reads the side too.
     side: dockSide,
   } = useChatDock();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [sessions, setSessions] = useState<HermesSession[]>([]);
-  const [sessionsLoaded, setSessionsLoaded] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const chat = useChatSessions();
+  const sessions = chat.sessions;
+  const sessionsLoaded = chat.sessionsLoaded;
+  const sessionId = chat.activeId;
+  const openTabs = chat.openTabs;
+  const view = chat.surface;
+  const setView = chat.setSurface;
+  const run = chat.runOf(sessionId);
+  const messages = run.messages;
+  const sending = run.sending;
+  const runId = run.runId;
+  const turnNote = run.turnNote;
+  const tools = run.tools;
+  const toolsOpen = run.toolsOpen;
+  const approval = run.approval;
+  const error = run.error ?? chat.listError;
+  const draft = sessionId ? chat.draftOf(sessionId) : "";
+  const receipt = chat.receiptOf(sessionId);
+  const requestIdRef = useRef(requestedSessionId);
+  requestIdRef.current = requestedSessionId;
+  /** The store as of this render, for effects that must not re-bind per delta. */
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
   /**
-   * The receipt waiting to ride the next turn. Main keeps the original and the
-   * copy it built for the model, so what lives here is a name to show and the
-   * path to name on the turn — the bytes never come back through the bridge.
+   * The receipt waiting to ride one chat's next turn. Main keeps the original
+   * and the copy it built for the model, so what lives in the store is a name to
+   * show and the path to name on the turn — the bytes never come back.
    */
-  const [receipt, setReceipt] = useState<{
-    relPath: string;
-    name: string;
-    size: number;
-    previewUrl: string;
-  } | null>(null);
   const receiptInputRef = useRef<HTMLInputElement | null>(null);
-  /** The live thumbnail URL, held in a ref so it can always be released. */
-  const receiptPreviewRef = useRef<string | null>(null);
   /**
    * The bubble whose text was last copied, and whether the clipboard took it.
    * `ok: false` is shown for a moment too: a copy control that silently does
@@ -268,22 +206,23 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const [copied, setCopied] = useState<{ id: string; ok: boolean } | null>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /** Replace (or drop) the pending receipt, releasing the old thumbnail. */
-  const putReceipt = useCallback(
-    (next: { relPath: string; name: string; size: number; previewUrl: string } | null) => {
-      if (receiptPreviewRef.current) {
-        URL.revokeObjectURL(receiptPreviewRef.current);
-        receiptPreviewRef.current = null;
-      }
-      if (next) receiptPreviewRef.current = next.previewUrl;
-      setReceipt(next);
+  const setDraft = useCallback(
+    (text: string) => {
+      if (sessionId) chat.setDraftFor(sessionId, text);
     },
-    [],
+    [chat, sessionId],
+  );
+
+  /** Replace (or drop) the receipt waiting on the open chat. */
+  const putReceipt = useCallback(
+    (next: ChatReceipt | null) => {
+      if (sessionId) chat.setReceiptFor(sessionId, next);
+    },
+    [chat, sessionId],
   );
 
   useEffect(() => {
     return () => {
-      if (receiptPreviewRef.current) URL.revokeObjectURL(receiptPreviewRef.current);
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
   }, []);
@@ -308,7 +247,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
    * from main leaves the previous one exactly where it was.
    */
   async function attachReceipt(file: File) {
-    setError(null);
+    chat.reportError(null);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const result = await api().receiptAttach({
@@ -317,7 +256,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
         name: file.name,
       });
       if (!result.ok) {
-        setError(result.error);
+        chat.reportError(result.error);
         return;
       }
       putReceipt({
@@ -327,7 +266,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
         previewUrl: URL.createObjectURL(file),
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not attach that receipt");
+      chat.reportError(err instanceof Error ? err.message : "Could not attach that receipt");
     }
   }
 
@@ -346,26 +285,15 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
    * thread comes back on the model it was left on.
    */
   const [modelCatalog, setModelCatalog] = useState<CompanionModelCatalog | null>(null);
-  const [runtimePins, setRuntimePins] = useState<Record<string, CompanionRuntimeOverride>>(() =>
-    readStoredRuntimePins(),
-  );
-  const runtimePick = (sessionId && runtimePins[sessionId]) || NO_RUNTIME_PICK;
-  /**
-   * Which of the dock's three surfaces is up. The list is a real page now — with
-   * twenty chats an 11rem strip was not navigable — and a thread replaces it
-   * once a chat is opened. The chain is the third, swapped in from the bottom
-   * bar: the same vault records the Life-Chain page reads, so the two surfaces
-   * are one chain seen twice, not two chains.
-   */
-  const [view, setView] = useState<"list" | "thread" | "chain">("thread");
-  const [renaming, setRenaming] = useState(false);
-  const [renameDraft, setRenameDraft] = useState("");
+  const runtimePick = (sessionId && chat.runtimePins[sessionId]) || NO_RUNTIME_PICK;
   /**
    * The list's own row UI: the row the 3-dot menu is open on, and the row being
    * renamed in place. One row at a time, the same rule the chain's rows follow.
    * `renameDraft` is shared with the thread header's rename because the two
    * fields never coexist — one lives in the list, the other in the thread.
    */
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
   const [sessionMenuId, setSessionMenuId] = useState<string | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   /**
@@ -377,32 +305,6 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   /** Drives the inline control: the arrow needs text, the stop square needs a run. */
   const sendable = draft.trim().length > 0 || receipt !== null;
   const controlVisible = sending || sendable;
-  const [approval, setApproval] = useState<{
-    runId: string;
-    requestId: string;
-    summary: string;
-  } | null>(null);
-  /** Run id of the live turn, learned from `run.started`; the stop needs it. */
-  const [runId, setRunId] = useState<string | null>(null);
-  /**
-   * How the last turn ended, when it did not end cleanly. `Thinking…` and the
-   * synthetic `tool:` rows are already live-only turn evidence; this sits in the
-   * same family — LifeQuest stores no chat history, so it is not persisted and
-   * does not claim to be.
-   */
-  const [turnNote, setTurnNote] = useState<string | null>(null);
-  /**
-   * This turn's tool calls, in the order the wire reported them. They are a
-   * live turn's in-flight evidence and deliberately NOT messages: a reloaded
-   * transcript has no tool rows (the store's own are never read back), so
-   * pushing them into `messages` made Hermes look like it had said "tool:
-   * read_file" and buried the conversation under one bubble per event.
-   *
-   * They collapse to a single grey line — see `lib/tool-run.ts`.
-   */
-  const [tools, setTools] = useState<ToolCall[]>([]);
-  /** Whether that line is opened to show the calls it stands for. */
-  const [toolsOpen, setToolsOpen] = useState(false);
   /** The chain's records, as the vault returned them: newest first. */
   const [signals, setSignals] = useState<SignalRecord[]>([]);
   const [signalsLoaded, setSignalsLoaded] = useState(false);
@@ -427,27 +329,6 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   const chainRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const assistantId = useRef<string | null>(null);
-  /**
-   * The card in context, readable from a listener that outlives a render.
-   *
-   * The turn stream's listener is installed once, so a closure over `contextCard`
-   * would name whichever card was in context when the listener was built — and the
-   * card being worked on is read at the moment a turn STARTS, which can be many
-   * renders later. The ref is the same fact without the staleness.
-   */
-  const contextCardRef = useRef<ChatCardContext | null>(null);
-  contextCardRef.current = contextCard;
-  /**
-   * The page material automation chats carry, by session id.
-   *
-   * It lives here rather than in the composer because it belongs to the chat,
-   * not to the field: an automation opens a new chat with the page already
-   * quoted, and every turn taken in that chat should still be able to read it.
-   * The map is session state — a relaunched app still has the chat's transcript,
-   * but not this context, which is the same trade the live tool rows make.
-   */
-  const automationContextBySession = useRef(new Map<string, string>());
   /** Bottom for the composer: the box height it rests at with an empty draft. */
   const restingHeightRef = useRef(0);
 
@@ -565,77 +446,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     return () => observer.disconnect();
   }, [open, syncComposerHeight]);
 
-  const loadSession = useCallback(async (id: string) => {
-    const result = await api().companionSessionMessages(id);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    setSessionId(id);
-    window.localStorage.setItem(LAST_SESSION_KEY, id);
-    // Everything below describes the turn running in the chat being left
-    // behind, so it goes with it. The pending receipt is part of that: it was
-    // attached to the chat being left, and its original stays in the vault.
-    putReceipt(null);
-    setTools([]);
-    setToolsOpen(false);
-    setTurnNote(null);
-    setApproval(null);
-    setRunId(null);
-    setCopied(null);
-    setMessages(
-      result.value.map((m) => ({
-        id: nextId(),
-        role: m.role,
-        content: m.content,
-        at: m.at,
-      })),
-    );
-    const firstUser = result.value.find((m) => m.role === "user" && m.content.trim());
-    if (firstUser) {
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === id && !s.preview?.trim() ? { ...s, preview: firstUser.content } : s,
-        ),
-      );
-    }
-  }, [putReceipt]);
-
-  /** Refresh the list and hand it back, so a caller can pick a row off it. */
-  const loadSessions = useCallback(async (): Promise<HermesSession[] | null> => {
-    const listed = await api().companionSessionsList();
-    if (!listed.ok) {
-      setError(listed.error);
-      return null;
-    }
-    setSessionsLoaded(true);
-    setSessions(listed.value);
-    return listed.value;
-  }, []);
-
-  // A scheduled automation opens its chat outside the dock. The run writes the
-  // automation store and fires the shelf's change event; the list then picks up
-  // the thread the run started, so it is waiting there next time the operator
-  // opens the dock rather than invisible until a restart.
-  useEffect(() => {
-    const refresh = () => void loadSessions();
-    window.addEventListener(AUTOMATIONS_CHANGED_EVENT, refresh);
-    return () => window.removeEventListener(AUTOMATIONS_CHANGED_EVENT, refresh);
-  }, [loadSessions]);
-
-  /** Open one chat: the thread takes the panel over from the list. */
+  /** Open one chat, and hand the composer the caret the gesture implies. */
   const openSession = useCallback(
     async (id: string) => {
-      setView("thread");
-      await loadSession(id);
-      // Opening a chat is the gesture that asks for the caret. It is handed over
-      // here as well as in the effect below because the New chat slot has a case
-      // no state change can signal: the blank chat it lands on is already the
-      // open one, so neither the view nor the session moves and the effect never
-      // fires.
+      await chat.openChat(id);
       focusComposer();
     },
-    [loadSession, focusComposer],
+    [chat, focusComposer],
   );
 
   /** Read the chain — the same call the Life-Chain page makes. */
@@ -643,14 +460,14 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     try {
       const result = await api().signalChainList();
       if (!result.ok) {
-        setError(result.error);
+        chat.reportError(result.error);
         setSignals([]);
         return;
       }
       setSignals(result.value.records);
       setSignalsLoaded(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to reach the chain");
+      chat.reportError(err instanceof Error ? err.message : "Failed to reach the chain");
       setSignals([]);
     }
   }, []);
@@ -674,28 +491,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
 
   /**
    * Landing behaviour: resume the chat this dock opened last, else the most
-   * recent one, else show the list. Never mints a session — an empty chat made
-   * on every open is how the list filled up with "New chat" rows.
+   * recent one, else show the list. The store guards the "already landed" case,
+   * so a run's deltas re-rendering this panel cannot resume it a second time.
    */
   useEffect(() => {
-    if (!open) return;
-    if (requestedSessionId) return;
-    let cancelled = false;
-    void (async () => {
-      const listed = await loadSessions();
-      if (cancelled || !listed) return;
-      const stored = window.localStorage.getItem(LAST_SESSION_KEY);
-      const resume = listed.find((s) => s.id === stored) ?? listed[0] ?? null;
-      if (resume) {
-        await openSession(resume.id);
-        return;
-      }
-      setView("list");
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, loadSessions, openSession, requestedSessionId]);
+    if (!open || requestedSessionId) return;
+    void chatRef.current.resumeLast();
+  }, [open, requestedSessionId]);
 
   /**
    * Leaving the list drops its row UI: a menu, or a rename field, left open on a
@@ -774,128 +576,6 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextCard]);
 
-  useEffect(() => {
-    const off = api().onCompanionStream((evt: ChatStreamEvent) => {
-      if (evt.type === "run.started") {
-        // First frame of every turn: this is the id `stop` has to name.
-        setRunId(evt.runId || null);
-        // ...and the card the turn is about, which the board draws a ring around
-        // for as long as this is set. The turn is the window the operator waits
-        // through: it opens before the first write and closes after the last, so
-        // a card being re-read is already wearing it.
-        setLivePinId(contextCardRef.current?.pin.id ?? null);
-        return;
-      }
-      if (evt.type === "assistant.delta") {
-        const id = assistantId.current ?? nextId();
-        assistantId.current = id;
-        // Stamped before the updater: the first delta is when the reply began,
-        // and an updater that reads the clock is not pure under StrictMode.
-        const startedAt = Date.now();
-        setMessages((prev) => {
-          const idx = prev.findIndex((m) => m.id === id);
-          if (idx === -1) {
-            return [...prev, { id, role: "assistant", content: evt.text, at: startedAt }];
-          }
-          const copy = prev.slice();
-          const cur = copy[idx]!;
-          copy[idx] = { ...cur, content: cur.content + evt.text };
-          return copy;
-        });
-        return;
-      }
-      if (evt.type === "tool.started") {
-        setTools((prev) => [
-          ...prev,
-          { id: nextId(), name: evt.name, target: evt.target, done: false },
-        ]);
-        return;
-      }
-      if (evt.type === "tool.completed") {
-        // Oldest first, by name: the frame names the call it ends and carries
-        // nothing else, so a run that called the same tool twice resolves in
-        // the order it started.
-        setTools((prev) => {
-          const idx = prev.findIndex((call) => !call.done && call.name === evt.name);
-          if (idx === -1) return prev;
-          const copy = prev.slice();
-          copy[idx] = { ...copy[idx]!, done: true };
-          return copy;
-        });
-        return;
-      }
-      if (evt.type === "approval.request") {
-        setApproval({
-          runId: evt.runId,
-          requestId: evt.requestId,
-          summary: evt.summary,
-        });
-        return;
-      }
-      if (evt.type === "run.stopped") {
-        setTurnNote(
-          "Stopped — the reply above is only what arrived before the interrupt",
-        );
-        setLivePinId(null);
-        return;
-      }
-      if (evt.type === "run.incomplete") {
-        setTurnNote(
-          evt.reason
-            ? `Ended before finishing — ${evt.reason}`
-            : "Ended before finishing",
-        );
-        setLivePinId(null);
-        return;
-      }
-      if (evt.type === "error") {
-        setError(evt.message);
-        return;
-      }
-      if (evt.type === "run.completed") {
-        setRunId(null);
-        // The turn is over, so the card is nobody's work in progress. What it drew
-        // stays exactly as it is: this clears a ring, it does not undo an edit.
-        setLivePinId(null);
-        void refresh();
-        return;
-      }
-      /**
-       * The app's own frames arrive after the stream has finished: the main
-       * process reads the turn's fenced proposals and files them, and a turn that
-       * said "here are the changes" also says what became of them. Without this
-       * line the operator had to take the agent's word for it — the reported bug
-       * was the agent saying it filed decisions while the Inbox (rightly, because
-       * the old funnel dropped them) showed nothing.
-       */
-      if (evt.type === "decisions.filed") {
-        const count = evt.ids.length;
-        const named = evt.titles
-          .slice(0, 2)
-          .map((title) => (title.length > 64 ? `${title.slice(0, 63)}…` : title));
-        const more = evt.titles.length > named.length ? ` and ${evt.titles.length - named.length} more` : "";
-        setTurnNote(
-          `Filed ${count} ${count === 1 ? "proposal" : "proposals"} — review ${
-            count === 1 ? "it" : "them"
-          } in Decisions${named.length > 0 ? `: ${named.join(", ")}${more}` : ""}.`,
-        );
-        return;
-      }
-      if (evt.type === "decisions.problem") {
-        // A proposal that could not be filed is said out loud, not left for the
-        // operator to notice as an absence in the Inbox.
-        setTurnNote(evt.message);
-        return;
-      }
-    });
-    return () => {
-      off();
-      // A dock that goes away mid-turn must not leave a ring on a board it can no
-      // longer explain.
-      setLivePinId(null);
-    };
-  }, [refresh, setLivePinId]);
-
   /**
    * Read the model inventory once, when the dock is first opened.
    *
@@ -921,150 +601,44 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     };
   }, [open, modelCatalog]);
 
-  /** Pin this chat — or, with every field cleared, un-pin it back to the default. */
+  /** Pin this chat's model and thinking level, or clear the pin back to default. */
   function updateRuntimePick(next: CompanionRuntimeOverride) {
-    const activeId = sessionId;
-    if (!activeId) return;
-    const pick = cleanRuntimePick(next);
-    setRuntimePins((prev) => {
-      const pins = { ...prev };
-      if (Object.keys(pick).length > 0) pins[activeId] = pick;
-      else delete pins[activeId];
-      writeStoredRuntimePins(pins);
-      return pins;
-    });
+    if (!sessionId) return;
+    chat.updateRuntimePick(sessionId, next);
   }
 
+  /**
+   * Send one turn in a chat. The store owns the bubble, the receipt and the run;
+   * this is the gesture's thin end.
+   */
   async function sendMessage(text: string, overrideSessionId?: string) {
-    const content = text.trim();
-    const activeId = overrideSessionId ?? sessionId;
-    // A receipt can carry the turn on its own: the operator photographs a
-    // receipt and sends it without typing anything.
-    const attached = receipt;
-    if ((!content && !attached) || sending || !activeId) return;
-
-    // The screen, read at the moment of sending rather than at the moment the
-    // panel opened: the operator may have scrolled, filtered or navigated since,
-    // and what rides the turn has to be what they were looking at when they
-    // pressed send. Off — or unreadable — sends no `pageContext` key at all, so
-    // the turn is exactly the turn it was before the pill existed.
-    const page = pageContext.on
-      ? readPageContext(pageContext.route)
-      : null;
-    // The page material this chat was opened with, if it was opened by an
-    // automation. It rides every turn of that chat, not only the first, so a
-    // follow-up about "the note" still has the note in front of the agent.
-    const automationContext = automationContextBySession.current.get(activeId);
-
-    const sentAt = Date.now();
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: nextId(),
-        role: "user",
-        content,
-        at: sentAt,
-        ...(attached ? { receipt: { name: attached.name, size: attached.size } } : {}),
-      },
-    ]);
-    // The path goes with the turn and the chip goes away. Main took the copy out
-    // of its slot, so the receipt now lives on the row the agent writes.
-    putReceipt(null);
-    setSessions((prev) =>
-      prev
-        .map((s) => {
-          if (s.id !== activeId) return s;
-          const preview = content || attached?.name || "";
-          return {
-            ...s,
-            preview: s.preview?.trim() ? s.preview : preview,
-            lastActive: Date.now() / 1000,
-          };
-        })
-        .sort((a, b) => (b.lastActive ?? 0) - (a.lastActive ?? 0)),
-    );
-    setSending(true);
-    setError(null);
-    assistantId.current = null;
-    // A new turn's run id arrives with its own `run.started`; never carry the
-    // previous turn's id — or its outcome note — into this one.
-    setRunId(null);
-    setTurnNote(null);
-    setTools([]);
-    setToolsOpen(false);
-
-    try {
-      const result = await api().companionChatStream({
-        sessionId: activeId,
-        input: content,
-        instructionsContext: {
-          domainName: activeDomain?.meta.name ?? null,
-          domainSlug: activeDomain?.slug ?? null,
-          // What the operator is looking at: the home board's domain, null on
-          // Overview. This anchors "the Dashboard" in the agent's instructions.
-          viewingBoard: boardSlug,
-          // And whether that board is read-only right now, which is what decides
-          // between an applied change and a pending Decision.
-          viewingBoardLocked: boardLocked,
-          // The card the operator put in front of this chat, if they did: the
-          // turn is then about that card and they never have to name it. Absent
-          // when nothing is in context, which is the turn it always was.
-          ...(contextCard ? { focusedCard: focusedCardOf(contextCard) } : {}),
-          // The screen the operator is looking at, when the pill beside the
-          // attach control says it is in context. Absent when it is off, which
-          // is the turn the composer sent before this existed.
-          ...(page ? { pageContext: page } : {}),
-          // What an automation read for this chat: the note itself, fenced and
-          // named as the operator's own data, plus what to do with it. Absent on
-          // every ordinary chat, which is the turn it always was.
-          ...(automationContext ? { automationContext } : {}),
-          aboutMe: snapshot?.map?.aboutMe ?? "",
-          locked: false,
-          vaultOpen: Boolean(snapshot),
-        },
-        // The composer's pills, if the operator has picked anything: absent
-        // fields leave the turn on the gateway's own defaults.
-        runtime: runtimePick,
-        // The receipt waiting in main for this turn. Absent means a text turn.
-        receiptRelPath: attached?.relPath ?? null,
-      });
-      if ("ok" in result && result.ok === false) {
-        setError(result.error);
-      }
-      void refresh();
-      const listed = await api().companionSessionsList();
-      if (listed.ok) setSessions(listed.value);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to reach Hermes");
-    } finally {
-      setSending(false);
-    }
+    const target = overrideSessionId ?? sessionId;
+    if (!target) return;
+    await chat.sendMessage(target, text);
   }
 
+  /**
+   * An automation, a review or a saved question hands the dock a chat outside
+   * the panel's own navigation. The request is cleared only after the kickoff,
+   * so the landing pass cannot replace the prompt bubble with a transcript the
+   * gateway has not written yet.
+   */
   useEffect(() => {
     if (!requestedSessionId) return;
     let cancelled = false;
     const targetId = requestedSessionId;
     const kickoff = requestedKickoff;
-    const automationContext = requestedAutomationContext;
     (async () => {
       onOpenChange(true);
-      const listed = await loadSessions();
+      await chatRef.current.openChat(targetId);
       if (cancelled) return;
-      if (listed) setSessionsLoaded(true);
-      await openSession(targetId);
-      if (cancelled) return;
-      // Bind the automation's context before the kickoff is sent, so the first
-      // turn carries the same material every later turn in this chat will.
-      if (automationContext?.trim()) {
-        automationContextBySession.current.set(targetId, automationContext);
+      // Bind the automation's page material before the first turn is sent, so
+      // that turn carries the same context every later turn in the chat will.
+      if (requestedAutomationContext?.trim()) {
+        chatRef.current.setAutomationContext(targetId, requestedAutomationContext);
       }
-      // The kickoff goes first and the request is cleared after it: clearing
-      // re-arms the landing effect, and a landing pass that reloads the session
-      // while its first turn is still in the air can replace the prompt bubble
-      // with a transcript the gateway has not written yet.
       if (kickoff?.trim()) {
-        await sendMessage(kickoff, targetId);
+        await chatRef.current.sendMessage(targetId, kickoff);
       }
       if (cancelled) return;
       clearRequestedSession();
@@ -1088,7 +662,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     if (!body || chainBusyRef.current) return;
     chainBusyRef.current = true;
     setChainBusy(true);
-    setError(null);
+    chat.reportError(null);
     try {
       const result = await api().signalChainCreate({
         type: "thought",
@@ -1097,13 +671,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
         domainSlug: null,
       });
       if (!result.ok) {
-        setError(result.error);
+        chat.reportError(result.error);
         return;
       }
       setChainDraft("");
       await loadChain();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to log the signal");
+      chat.reportError(err instanceof Error ? err.message : "Failed to log the signal");
     } finally {
       chainBusyRef.current = false;
       setChainBusy(false);
@@ -1138,16 +712,16 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     if (current === nextDomain || chainBusyRef.current) return;
     chainBusyRef.current = true;
     setSignalBusyId(id);
-    setError(null);
+    chat.reportError(null);
     try {
       const result = await api().signalChainUpdate(id, { domainSlug: nextDomain });
       if (!result.ok) {
-        setError(result.error);
+        chat.reportError(result.error);
         return;
       }
       await loadChain();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to assign the signal");
+      chat.reportError(err instanceof Error ? err.message : "Failed to assign the signal");
     } finally {
       chainBusyRef.current = false;
       setSignalBusyId(null);
@@ -1159,17 +733,17 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     if (!body || chainBusyRef.current) return;
     chainBusyRef.current = true;
     setSignalBusyId(id);
-    setError(null);
+    chat.reportError(null);
     try {
       const result = await api().signalChainUpdate(id, { body });
       if (!result.ok) {
-        setError(result.error);
+        chat.reportError(result.error);
         return;
       }
       cancelEditSignal();
       await loadChain();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save the signal");
+      chat.reportError(err instanceof Error ? err.message : "Failed to save the signal");
     } finally {
       chainBusyRef.current = false;
       setSignalBusyId(null);
@@ -1192,18 +766,18 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
     if (chainBusyRef.current) return;
     chainBusyRef.current = true;
     setSignalBusyId(id);
-    setError(null);
+    chat.reportError(null);
     try {
       const result = await api().signalChainDelete(id);
       if (!result.ok) {
-        setError(result.error);
+        chat.reportError(result.error);
         return;
       }
       if (editingSignalId === id) cancelEditSignal();
       setSignalMenuId(null);
       await loadChain();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete the signal");
+      chat.reportError(err instanceof Error ? err.message : "Failed to delete the signal");
     } finally {
       chainBusyRef.current = false;
       setSignalBusyId(null);
@@ -1243,52 +817,26 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
   }
 
   /**
-   * Interrupt the live turn. The gateway stops the run cooperatively and the
-   * stream closes on its own, which is what clears `sending` — nothing here
-   * pretends the turn ended locally.
+   * Interrupt the open chat's live turn. The gateway stops the run cooperatively
+   * and the stream closes on its own, which is what clears `sending` — nothing
+   * here pretends the turn ended locally.
    */
   async function stopRun() {
-    if (!runId) return;
-    const result = await api().companionRunStop(runId);
-    if (!result.ok) setError(result.error);
+    if (!sessionId) return;
+    await chat.stopRun(sessionId);
   }
 
   /**
-   * Rename, pin or archive one chat. All three are durable Hermes-side flags:
-   * the write goes back to the gateway, so Hermes Desktop and every other
-   * channel on this profile see the same state.
-   *
-   * The row is patched from the patch itself, never from the reply. The reply
-   * carries the raw session row, which has no `preview` and no `last_active`
-   * (the list query computes those), so merging it would blank the row's name
-   * fallback and its timestamp.
+   * Rename, pin or archive one chat. All three are durable Hermes-side flags, so
+   * the store writes them back to the gateway and Hermes Desktop sees the same
+   * state. The row is patched from the patch itself, never from the reply: the
+   * reply carries no `preview` and no `last_active`.
    */
   async function patchSession(
     id: string,
     patch: { title?: string; pinned?: boolean; archived?: boolean },
   ): Promise<boolean> {
-    const result = await api().companionSessionPatch(id, patch);
-    if (!result.ok) {
-      setError(result.error);
-      return false;
-    }
-    setSessions((prev) =>
-      prev
-        .map((s) =>
-          s.id === id
-            ? {
-                ...s,
-                title: typeof patch.title === "string" ? patch.title : s.title,
-                pinned: typeof patch.pinned === "boolean" ? patch.pinned : s.pinned,
-              }
-            : s,
-        )
-        // An archived chat leaves this list. Hermes keeps every message, and
-        // Hermes Desktop is where it can be unarchived.
-        .filter((s) => !(patch.archived === true && s.id === id)),
-    );
-    if (patch.archived === true && id === sessionId) setView("list");
-    return true;
+    return chat.patchSession(id, patch);
   }
 
   async function togglePin() {
@@ -1364,35 +912,8 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
       message: `Delete "${label}"? Its messages leave Hermes everywhere, and this cannot be undone.`,
       confirmLabel: "Delete chat",
       destructive: true,
-      run: () => void runDeleteSession(id),
+      run: () => void chat.deleteChat(id),
     });
-  }
-
-  async function runDeleteSession(id: string) {
-    const result = await api().companionSessionDelete(id);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    setSessions((prev) => prev.filter((s) => s.id !== id));
-    // The page material belonged to the chat: a deleted chat takes it with it.
-    automationContextBySession.current.delete(id);
-    // The pin belonged to the chat: a deleted chat takes its pin with it.
-    setRuntimePins((prev) => {
-      if (!(id in prev)) return prev;
-      const pins = { ...prev };
-      delete pins[id];
-      writeStoredRuntimePins(pins);
-      return pins;
-    });
-    // The open chat cannot outlive its own row: fall back to the list rather
-    // than showing a thread for a chat that no longer exists.
-    if (id === sessionId) {
-      setSessionId(null);
-      setMessages([]);
-      window.localStorage.removeItem(LAST_SESSION_KEY);
-      setView("list");
-    }
   }
 
   /**
@@ -1402,25 +923,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
    * caller until the next render.
    */
   async function newSession(): Promise<string | null> {
-    // A chat that was created and never written in is already a "New chat"
-    // row: an empty transcript, no preview. Clicking the slot again is
-    // navigation to it, not a second empty chat — that is what kept the
-    // list filling with identical "New chat" rows.
-    const listed = await loadSessions();
-    const blank = listed?.find((s) => !s.preview?.trim());
-    if (blank) {
-      await openSession(blank.id);
-      return blank.id;
-    }
-
-    const created = await api().companionSessionCreate("");
-    if (!created.ok) {
-      setError(created.error);
-      return null;
-    }
-    setSessions((prev) => [created.value, ...prev.filter((s) => s.id !== created.value.id)]);
-    await openSession(created.value.id);
-    return created.value.id;
+    const id = await chat.newChat();
+    // The slot has one case no state change can signal: the blank chat it lands
+    // on may already be the open one, so neither the surface nor the session
+    // moves and the caret effect never fires. The gesture still asked for the
+    // field, so hand it over here.
+    focusComposer();
+    return id;
   }
 
   /**
@@ -1431,12 +940,9 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
    */
   async function askStarter(question: ChatQuestion): Promise<void> {
     if (sending) return;
-    let target = sessionId;
-    if (!target) {
-      target = await newSession();
-      if (!target) return;
-    }
-    await sendMessage(question.text, target);
+    const target = sessionId ?? (await chat.newChat());
+    if (!target) return;
+    await chat.sendMessage(target, question.text);
   }
 
   /**
@@ -1617,11 +1123,21 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                   : "chat-panel__session"
               }
               aria-current={active ? "true" : undefined}
-              disabled={sending}
-              title={label}
+              title={`${label} — middle-click to open in a new tab`}
               onClick={() => {
                 if (s.id === sessionId) setView("thread");
                 else void openSession(s.id);
+              }}
+              onAuxClick={(e) => {
+                // The same gesture the sidebar's rows take: keep the chat in
+                // front and give this one its own tab.
+                if (e.button !== 1) return;
+                e.preventDefault();
+                if (!sessionId) return;
+                void chat.openChatInNewTab(s.id);
+              }}
+              onMouseDown={(e) => {
+                if (e.button === 1) e.preventDefault();
               }}
             >
               {s.pinned ? (
@@ -1643,7 +1159,6 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               title="Chat actions"
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              disabled={sending}
               onClick={() => toggleSessionMenu(s.id)}
             >
               <MoreVertical size={14} aria-hidden />
@@ -1696,7 +1211,7 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
         <button
           type="button"
           className="chat-panel__text-btn"
-          onClick={() => setError(null)}
+          onClick={() => chat.dismissError(sessionId)}
         >
           Dismiss
         </button>
@@ -1868,6 +1383,66 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               )}
             </div>
           )}
+          {/*
+            The open chats, as tabs. One chat needs no strip — the header names
+            it — but the moment a second turn is in the air (or a second chat is
+            open) this is where the parallel sessions live: the dot is a turn
+            still streaming, the amber dot a run waiting on an approval, and the
+            close control stops a turn before it drops the tab.
+          */}
+          {view === "thread" && openTabs.length > 1 ? (
+            <div className="chat-panel__tabs" role="tablist" aria-label="Open chats">
+              {openTabs.map((id) => {
+                const row = sessions.find((s) => s.id === id) ?? null;
+                const tabRun = chat.runOf(id);
+                const label = row ? sessionLabel(row) : "Chat";
+                const live = tabRun.sending;
+                const waiting = tabRun.approval !== null;
+                return (
+                  <div
+                    key={id}
+                    role="presentation"
+                    className={[
+                      "chat-panel__tab",
+                      id === sessionId ? "chat-panel__tab--active" : "",
+                      live ? "chat-panel__tab--live" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    data-live={live || undefined}
+                    data-approval={waiting || undefined}
+                  >
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={id === sessionId}
+                      className="chat-panel__tab-main"
+                      title={label}
+                      onClick={() => {
+                        if (id === sessionId) {
+                          setView("thread");
+                          return;
+                        }
+                        void openSession(id);
+                      }}
+                    >
+                      <span className="chat-panel__tab-dot" aria-hidden />
+                      <span className="chat-panel__tab-label">{label}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="chat-panel__tab-close"
+                      aria-label={`Close ${label}`}
+                      title={`Close ${label}`}
+                      onClick={() => chat.closeTab(id)}
+                    >
+                      <X size={11} aria-hidden />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
 
           <div className="chat-panel__body" ref={listRef} hidden={view !== "thread"}>
             {errorBanner}
@@ -1880,12 +1455,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                     type="button"
                     className="chat-panel__text-btn"
                     onClick={() => {
-                      void api().companionApproval({
-                        runId: approval.runId,
-                        requestId: approval.requestId,
-                        allow: true,
-                      });
-                      setApproval(null);
+                      if (!sessionId) return;
+                      chat.approve(
+                        sessionId,
+                        approval.runId,
+                        approval.requestId,
+                        true,
+                      );
                     }}
                   >
                     Allow once
@@ -1894,12 +1470,13 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                     type="button"
                     className="chat-panel__text-btn"
                     onClick={() => {
-                      void api().companionApproval({
-                        runId: approval.runId,
-                        requestId: approval.requestId,
-                        allow: false,
-                      });
-                      setApproval(null);
+                      if (!sessionId) return;
+                      chat.approve(
+                        sessionId,
+                        approval.runId,
+                        approval.requestId,
+                        false,
+                      );
                     }}
                   >
                     Deny
@@ -2059,7 +1636,9 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
                         type="button"
                         className="chat-panel__activity-line"
                         aria-expanded={toolsOpen}
-                        onClick={() => setToolsOpen((wasOpen) => !wasOpen)}
+                        onClick={() => {
+                          if (sessionId) chat.setToolsOpen(sessionId, !toolsOpen);
+                        }}
                       >
                         <ChevronRight
                           size={12}
@@ -2400,7 +1979,6 @@ export function ChatPanel({ open, onOpenChange }: ChatPanelProps) {
               className="chat-panel__icon-btn chat-panel__action"
               aria-label="New chat"
               title="New chat"
-              disabled={sending}
               onClick={() => void newSession()}
             >
               <SquarePen size={20} aria-hidden />

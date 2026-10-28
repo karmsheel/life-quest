@@ -34,6 +34,7 @@ import { MemoryRouter } from "react-router-dom";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
+import type { ChatStreamEvent, CompanionStreamFrame } from "@/vite-env";
 import "@/styles/global.css";
 // The real SSE decoder main uses, so a rig can feed a wire frame through the
 // same function the stream does instead of hand-building the event object.
@@ -129,8 +130,10 @@ type HarnessWindow = {
   __lqStopCalls?: string[];
   /** Delay before the chat stream promise resolves, so a run can be observed live. */
   __lqChatDelay?: number;
-  /** The callback ChatPanel registered for `companion:stream` events. */
+  /** The callback ChatPanel registered for `companion:stream` frames. */
   __lqEmit?: (evt: unknown) => void;
+  /** Emit a frame for an explicit chat, so a rig can prove the routing. */
+  __lqEmitFor?: (sessionId: string, evt: unknown) => void;
   /** The real SSE decoder, so a driver can prove a wire frame maps to an event. */
   __lqParseSse?: (raw: string) => unknown;
   /** Every `receiptAttach` the panel made, in order. */
@@ -142,6 +145,13 @@ const harness = window as unknown as HarnessWindow;
 harness.__lqChatDelay = 0;
 harness.__lqParseSse = parseSseBlock;
 harness.__lqAttachCalls = [];
+
+/**
+ * The chat the panel has open, as far as the bridge can see: its transcript was
+ * the last one asked for. Main stamps every frame with the chat it belongs to,
+ * so the harness's single-chat emitters use this to name the same one.
+ */
+let openSessionId = SESSION.id;
 
 const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(null),
@@ -157,8 +167,9 @@ const bridge: Record<string, unknown> = {
   companionSessionCreate: () => ok(SESSION),
   // The shipping parser is what turns the gateway's epoch-seconds `timestamp`
   // into the transcript's own time, so the harness sends wire rows through it.
-  companionSessionMessages: (id: string) =>
-    ok(
+  companionSessionMessages: (id: string) => {
+    openSessionId = id;
+    return ok(
       messagesFromPayload({
         data:
           id === OTHER_SESSION.id
@@ -170,8 +181,9 @@ const bridge: Record<string, unknown> = {
                 { role: "user", content: "Composer harness", timestamp: 1_700_000_000 },
                 { role: "assistant", content: "Ready.", timestamp: 1_700_000_002 },
               ],
-      }),
-    ),
+        }),
+      );
+  },
   // Recorded so a rig can prove the inline control really submits, and held
   // open long enough to observe the streaming state.
   companionChatStream: async (payload: ChatCall) => {
@@ -201,10 +213,18 @@ const bridge: Record<string, unknown> = {
     harness.__lqStopCalls = [...(harness.__lqStopCalls ?? []), runId];
     return ok(true);
   },
-  onCompanionStream: (cb: (evt: unknown) => void) => {
-    harness.__lqEmit = cb;
+  onCompanionStream: (cb: (frame: CompanionStreamFrame) => void) => {
+    // The panel's subscriber takes frames, the way main sends them. The
+    // single-chat handles below stay raw-event-shaped for the existing rigs and
+    // stamp the chat whose transcript was asked for last; `__lqEmitFor` is the
+    // explicit form a parallel-run rig uses.
+    const emit = (evt: unknown) => cb({ sessionId: openSessionId, event: evt as ChatStreamEvent });
+    harness.__lqEmit = emit;
+    harness.__lqEmitFor = (sessionId: string, evt: unknown) =>
+      cb({ sessionId, event: evt as ChatStreamEvent });
     return () => {
-      if (harness.__lqEmit === cb) harness.__lqEmit = undefined;
+      if (harness.__lqEmit === emit) harness.__lqEmit = undefined;
+      if (harness.__lqEmitFor) harness.__lqEmitFor = undefined;
     };
   },
 };

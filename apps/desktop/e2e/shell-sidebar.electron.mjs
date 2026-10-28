@@ -59,6 +59,7 @@ const SAMPLE = `(() => {
   const vault = document.querySelector(".window-titlebar__vault");
   const railToggle = document.querySelector(".nav-rail .nav-toggle");
   const titlebarToggle = document.querySelector(".window-titlebar__nav-toggle");
+  const chats = document.querySelector(".chats-rail");
   const main = document.querySelector(".shell__main");
   const chat = document.querySelector(".chat-panel");
   const dockActions = document.querySelector(".chat-panel__actions");
@@ -150,6 +151,8 @@ const SAMPLE = `(() => {
         }
       : null,
     firstLink: box(document.querySelector(".nav-rail__link")),
+    wingSection: box(document.querySelector(".nav-rail__section--wing")),
+    bottomSection: box(document.querySelector(".nav-rail__section--bottom")),
     titlebar: box(titlebar),
     leading: box(leading),
     vault: vault
@@ -171,6 +174,17 @@ const SAMPLE = `(() => {
     leadingText: (leading?.textContent || "").trim(),
     titlebarBackground: titlebar
       ? getComputedStyle(titlebar).backgroundColor
+      : null,
+    // The chats section, inside the one wide sidebar: between the wing's rows
+    // and the governed shelf at the foot.
+    chats: chats
+      ? {
+          box: box(chats),
+          inRail: Boolean(rail && rail.contains(chats)),
+          title: (chats.querySelector(".chats-rail__title")?.textContent || "").trim(),
+          newChat: Boolean(chats.querySelector(".chats-rail__new")),
+          scrollRegion: getComputedStyle(chats.querySelector(".chats-rail__list")).overflowY
+        }
       : null,
     main: box(main),
     mainBackground: main ? getComputedStyle(main).backgroundColor : null,
@@ -724,19 +738,37 @@ async function main() {
       `titlebar toggle present: ${JSON.stringify(expanded.titlebarToggle)}`,
     );
     check(
-      "the toggle sits centred in the rail column",
-      expanded.railToggle?.box.left ===
-        Math.round((track - (expanded.railToggle?.box.width ?? 0)) / 2),
-      `rail toggle starts at ${expanded.railToggle?.box.left}px, column centre would be ${Math.round((track - (expanded.railToggle?.box.width ?? 0)) / 2)}px`,
+      "the collapse toggle sits at the sidebar's trailing edge",
+      Boolean(expanded.railToggle) &&
+        expanded.railToggle.box.right > expanded.rail.box.left + track * 0.7 &&
+        expanded.railToggle.box.right <= expanded.rail.box.right,
+      `rail toggle ends at ${expanded.railToggle?.box.right}px, sidebar ends at ${expanded.rail?.box.right}px`,
     );
 
     // 5 — the workspace sheet is flush to the rail and the dock, and keeps its
     // one pane gap only under the strip. The chrome around it is a single band of
     // mat: the rail wears the titlebar's own fill with no frost in between.
     check(
-      "the sheet abuts the rail's trailing edge",
-      expanded.main?.left === track,
-      `sheet left ${expanded.main?.left}px vs rail right ${expanded.rail?.box.right}px`,
+      "the chats section lives inside the sidebar",
+      Boolean(expanded.chats?.inRail) &&
+        expanded.chats.box.left >= expanded.rail.box.left &&
+        expanded.chats.box.right <= expanded.rail.box.right &&
+        expanded.chats.title === "Chats" &&
+        expanded.chats.newChat &&
+        expanded.chats.scrollRegion === "auto",
+      `chats ${JSON.stringify(expanded.chats?.box)} inside rail ${JSON.stringify(expanded.rail?.box)}, title ${JSON.stringify(expanded.chats?.title)}, new ${expanded.chats?.newChat}, list overflow ${expanded.chats?.scrollRegion}`,
+    );
+    check(
+      "the chats section is the middle band: under the wing's rows, above the foot",
+      Boolean(expanded.chats && expanded.wingSection && expanded.bottomSection) &&
+        expanded.chats.box.top >= expanded.wingSection.bottom - 1 &&
+        expanded.chats.box.bottom <= expanded.bottomSection.top + 1,
+      `chats ${JSON.stringify(expanded.chats?.box)}, wing ends ${expanded.wingSection?.bottom}, foot starts ${expanded.bottomSection?.top}`,
+    );
+    check(
+      "the sheet abuts the sidebar's trailing edge",
+      expanded.main?.left === expanded.rail?.box.right,
+      `sheet left ${expanded.main?.left}px vs sidebar right ${expanded.rail?.box.right}px`,
     );
     check(
       "the chrome is one band: the rail wears the titlebar's fill, unfrosted",
@@ -993,9 +1025,16 @@ async function main() {
       `rail ${collapsed.rail ? `display:${collapsed.railDisplay}` : "kept in the tree"}`,
     );
     check(
-      "collapse gives the column back",
+      "collapse gives the sidebar's column back",
       collapsed.main?.left === 0,
-      `sheet left ${collapsed.main?.left}px — with no rail the sheet starts on the window's own edge`,
+      `sheet left ${collapsed.main?.left}px — with no sidebar the sheet starts on the window's own edge`,
+    );
+    check(
+      "the vault chip takes the window's leading edge when the sidebar goes",
+      Boolean(collapsed.vault && expanded.vault) &&
+        collapsed.vault.box.left < expanded.vault.box.left &&
+        collapsed.vault.box.left <= titlebarHeight + 8,
+      `collapsed chip at ${collapsed.vault?.box.left}px vs expanded ${expanded.vault?.box.left}px`,
     );
     check(
       "the collapse leaves the sheet flush to the dock",
@@ -1012,30 +1051,25 @@ async function main() {
       `titlebar toggle ${JSON.stringify(collapsed.titlebarToggle)}`,
     );
     check(
-      "the strip keeps its column once the rail is gone",
-      (collapsed.vault?.box.left ?? 0) >= track,
-      `vault chip starts at ${collapsed.vault?.box.left}px — the reserved column collapsed with the rail`,
+      "the strip gives the sidebar's column back with it",
+      (collapsed.vault?.box.left ?? track) < track,
+      `vault chip starts at ${collapsed.vault?.box.left}px — it did not come to the leading edge`,
     );
     check(
-      "the toggle does not move between states",
+      "the re-open toggle steps in at the window's leading edge",
       Boolean(
         collapsed.titlebarToggle &&
-          expanded.railToggle &&
-          ["left", "top", "width", "height"].every(
-            (key) =>
-              collapsed.titlebarToggle.box[key] === expanded.railToggle.box[key],
-          ),
+          collapsed.titlebarToggle.box.left < (expanded.railToggle?.box.left ?? 0),
       ),
       `rail ${JSON.stringify(expanded.railToggle?.box)} vs titlebar ${JSON.stringify(collapsed.titlebarToggle?.box)}`,
     );
     check(
-      "the vault chip does not move between states",
+      "the vault chip follows the sidebar in",
       Boolean(
         collapsed.vault &&
           expanded.vault &&
-          ["left", "top", "width", "height"].every(
-            (key) => collapsed.vault.box[key] === expanded.vault.box[key],
-          ),
+          collapsed.vault.box.left < expanded.vault.box.left &&
+          collapsed.vault.box.width === expanded.vault.box.width,
       ),
       `expanded ${JSON.stringify(expanded.vault?.box)} vs collapsed ${JSON.stringify(collapsed.vault?.box)}`,
     );

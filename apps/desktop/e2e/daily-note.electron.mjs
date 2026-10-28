@@ -1820,10 +1820,13 @@ async function main() {
     }
   };
 
-  win.setContentSize(1800, 1040);
+  // The wide-page rule is a container query on the page: 78rem of page, not of
+  // window. The one wide sidebar takes more of the frame than the old icon rail
+  // did, so the window it takes to give the page that width is wider too.
+  win.setContentSize(2000, 1040);
   await waitFor(
     win,
-    `window.innerWidth >= 1790 && Boolean(document.querySelector(".shell"))`,
+    `window.innerWidth >= 1990 && Boolean(document.querySelector(".shell"))`,
     "the wide window",
   );
   await win.webContents.executeJavaScript(

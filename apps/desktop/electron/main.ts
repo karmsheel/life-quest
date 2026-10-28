@@ -683,7 +683,14 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
         payload.instructionsContext,
         (evt) => {
           if (!event.sender.isDestroyed()) {
-            event.sender.send("companion:stream", evt);
+            // Every frame names the chat it belongs to. The renderer keeps more
+            // than one turn in the air at a time, so the channel is a single
+            // wire carrying many conversations — an untagged delta would be
+            // folded into whichever thread happened to be open.
+            event.sender.send("companion:stream", {
+              sessionId: payload.sessionId,
+              event: evt,
+            });
           }
         },
         payload.runtime ?? null,
