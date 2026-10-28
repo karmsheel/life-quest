@@ -92,9 +92,10 @@ type State = {
     background: string;
   } | null;
   /**
-   * The band's two selectors, the wing switcher and the domain lens. Each is a
+   * The sheet's band now carries one selector, the domain lens. It is a
    * `.ui-segmented`, whose shared rule framed the whole control one pixel outside
-   * the active tab's own line.
+   * the active tab's own line. The wing switcher moved to the rail, and is
+   * measured separately below.
    */
   topBarSelectors: {
     selector: string;
@@ -107,6 +108,24 @@ type State = {
     activeBackground: string | null;
     optionCount: number;
   }[];
+  /** How many `.ui-segmented` controls the sheet's band carries. */
+  bandControlCount: number;
+  /** The domain lens as the band lays it out, for the centring claim. */
+  domainLens: { box: Box; labels: string[] } | null;
+  /** The rail's first level: the five-wing switcher and the band it sits in. */
+  wingsBand: Box | null;
+  wingSwitcher: {
+    box: Box;
+    inRail: boolean;
+    role: string | null;
+    ariaLabel: string | null;
+    labels: string[];
+    active: string | null;
+    optionCount: number;
+    background: string;
+  } | null;
+  /** The active wing's rows, as the rail renders them under the switcher. */
+  wingRows: { label: string | null; href: string | null; active: boolean }[];
   chatHeader: {
     box: Box;
     borderBottomWidth: string;
@@ -175,6 +194,8 @@ type Report = {
   expanded: State;
   collapsed: State;
   restored: State;
+  /** The rail switcher's own trip: Define, then back to Home. */
+  wingSwitch: { defined: State; home: State };
   day: State;
   ladder: { night: Ladder; day: Ladder; skins: Record<string, Ladder> };
   scroll: {
@@ -328,6 +349,57 @@ describe("shell sidebar (docked rail)", () => {
     assert.ok(
       expanded.firstLink.top >= expanded.header.box.bottom,
       "nav rows overlap the topband",
+    );
+
+    // The rail's first level: the five-wing switcher in a band of its own, above
+    // the wing's rows and on the sheet's top-bar row. The hairline under that
+    // band is the top bar's own line carried across the rail.
+    assert.ok(expanded.wingSwitcher, "the rail rendered no wing switcher");
+    assert.equal(
+      expanded.wingSwitcher.inRail,
+      true,
+      "the wing switcher left the rail",
+    );
+    assert.equal(
+      expanded.wingSwitcher.role,
+      "tablist",
+      `the wing switcher is not a tablist (${expanded.wingSwitcher.role})`,
+    );
+    assert.equal(
+      expanded.wingSwitcher.optionCount,
+      5,
+      `the wing switcher rendered ${expanded.wingSwitcher.optionCount} options`,
+    );
+    assert.deepEqual(
+      expanded.wingSwitcher.labels,
+      ["Home", "Define", "Plan", "Execute", "Review"],
+      "the wing switcher is not the five wings in order",
+    );
+    assert.equal(
+      expanded.wingSwitcher.active,
+      "Home",
+      `the active wing tab reads ${JSON.stringify(expanded.wingSwitcher.active)}`,
+    );
+    assert.ok(expanded.wingsBand, "the rail drew no band for the wing switcher");
+    assert.ok(expanded.topBar, "the sheet rendered no top bar");
+    assert.equal(
+      expanded.wingsBand.top,
+      expanded.topBar.box.top,
+      `the rail's band starts at ${expanded.wingsBand.top}px, not on the top bar's row (${expanded.topBar.box.top}px)`,
+    );
+    assert.equal(
+      expanded.wingsBand.bottom,
+      expanded.topBar.box.bottom,
+      `the rail's band ends at ${expanded.wingsBand.bottom}px, not on the top bar's line (${expanded.topBar.box.bottom}px)`,
+    );
+    assert.ok(
+      expanded.wingSwitcher.box.top >= expanded.wingsBand.top &&
+        expanded.wingSwitcher.box.bottom <= expanded.wingsBand.bottom,
+      `the switcher (${JSON.stringify(expanded.wingSwitcher.box)}) does not sit inside its band (${JSON.stringify(expanded.wingsBand)})`,
+    );
+    assert.ok(
+      expanded.firstLink.top >= expanded.wingsBand.bottom - 1,
+      `the wing's first row starts at ${expanded.firstLink.top}px, above the switcher's band bottom at ${expanded.wingsBand.bottom}px`,
     );
     assert.ok(
       (expanded.railToggle?.box.right ?? 0) > track * 0.7 &&
@@ -538,15 +610,25 @@ describe("shell sidebar (docked rail)", () => {
       `the dock header lost its underline (${expanded.chatHeader.borderBottomWidth})`,
     );
 
-    // Neither of the band's two selectors wears a frame of its own. The frame is
-    // what the pair doubled: `.ui-segmented`'s hairline sits one pixel outside the
-    // active tab's own, so the wing switcher and the domain lens read as two
-    // concentric outlines in a row. The control must still read as one without it
-    // — its fill separates it from the band, and the active tab keeps its line.
+    // The sheet's band carries one control now — the domain lens — with no frame
+    // of its own, centred in the pane. The frame doubled the pair's outlines back
+    // when the wing switcher shared the row; the control must still read as one
+    // without it — its fill separates it from the band, and the active tab keeps
+    // its line.
+    assert.equal(
+      expanded.bandControlCount,
+      1,
+      `the sheet's band carries ${expanded.bandControlCount} .ui-segmented controls, expected the lens alone`,
+    );
     assert.equal(
       expanded.topBarSelectors?.length,
-      2,
-      `the rig did not measure both of the band's selectors: ${JSON.stringify(expanded.topBarSelectors)}`,
+      1,
+      `the rig did not measure the band's one selector: ${JSON.stringify(expanded.topBarSelectors)}`,
+    );
+    assert.equal(
+      expanded.topBarSelectors?.[0]?.selector,
+      ".domain-switcher__tabs",
+      "the sheet's band is not carrying the domain lens",
     );
     for (const entry of expanded.topBarSelectors ?? []) {
       assert.equal(
@@ -577,6 +659,45 @@ describe("shell sidebar (docked rail)", () => {
         `${entry.selector}'s active tab lost its fill (${entry.activeBackground})`,
       );
     }
+    assert.ok(expanded.domainLens, "the band rendered no domain lens");
+    assert.ok(expanded.topBar, "the sheet rendered no top bar");
+    assert.ok(
+      Math.abs(
+        (expanded.domainLens.box.left + expanded.domainLens.box.right) / 2 -
+          (expanded.topBar.box.left + expanded.topBar.box.right) / 2,
+      ) <= 1,
+      `the domain lens is not centred: its centre is ${(expanded.domainLens.box.left + expanded.domainLens.box.right) / 2}px, the band's is ${(expanded.topBar.box.left + expanded.topBar.box.right) / 2}px`,
+    );
+
+    // The switcher is live where it now sits: clicking Define in the rail turns
+    // the rows under it into the Define pages, and Home brings the Home pages
+    // back. Read off the shipping rail, so a switcher that renders but does not
+    // navigate cannot pass.
+    const { wingSwitch } = report;
+    assert.ok(
+      wingSwitch?.defined && wingSwitch?.home,
+      "the rig did not record the rail switcher's trip",
+    );
+    assert.equal(
+      wingSwitch.defined.wingSwitcher?.active,
+      "Define",
+      `after clicking Define the active wing tab reads ${JSON.stringify(wingSwitch.defined.wingSwitcher?.active)}`,
+    );
+    assert.deepEqual(
+      wingSwitch.defined.wingRows.map((row) => row.label),
+      ["Dream", "Vision", "Ideal State"],
+      "the Define wing's rows did not replace the Home wing's under the switcher",
+    );
+    assert.equal(
+      wingSwitch.home.wingSwitcher?.active,
+      "Home",
+      `after clicking Home the active wing tab reads ${JSON.stringify(wingSwitch.home.wingSwitcher?.active)}`,
+    );
+    assert.deepEqual(
+      wingSwitch.home.wingRows.map((row) => row.label),
+      ["Dashboard", "Data", "Pages", "Documents", "Personnel"],
+      "the Home wing's rows did not come back",
+    );
 
     // Collapsed: rail gone, its width back to the sheet, a toggle left behind.
     assert.ok(

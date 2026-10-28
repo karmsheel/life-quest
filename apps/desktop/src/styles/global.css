@@ -848,13 +848,42 @@ a {
   gap: 0.15rem;
 }
 
-/* The wing's rows begin under the top bar's bottom hairline rather than level
-   with the Home/Define selector. The sidebar's header is the titlebar row; this
-   is the top bar's own band, so Dashboard starts on the first line of the page's
-   content instead of sitting beside the selector. The extra pixel or two is the
-   row's own leading: a 31px row starting on the hairline would cover it. */
+/* The sidebar's own band: the five-wing switcher sits on the same row as the
+   sheet's top bar, one `--shell-topbar-height` under the titlebar strip, so the
+   hairline under it is the top bar's own line carried across the rail and the
+   two panes read as one band of chrome. The band escapes the rail's side padding
+   so its line reaches both window edges rather than stopping short. */
+.nav-rail__wings-band {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: var(--shell-topbar-height);
+  /* The rail's flex gap and the header's own bottom margin already sit between
+     the titlebar row and this band; `--shell-frame - 0.3rem` is what is left of
+     the pane gap, so the band starts exactly where the sheet's top bar does. */
+  margin: calc(var(--shell-frame) - 0.3rem) -0.35rem 0;
+  padding: 0 0.45rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Five labels in a 16rem column. The control's shape is `.ui-segmented`'s; the
+   rail only tightens the option padding and steps the type down so the longest
+   wing name ("Execute") fits the fifth of the column it is given. */
+.nav-rail__wings {
+  width: 100%;
+}
+
+.nav-rail__wings .ui-segmented__option {
+  padding: 0.375rem 0.2rem;
+  font-size: 0.625rem;
+  white-space: nowrap;
+}
+
+/* The wing's rows begin under the switcher's band rather than under the sheet's
+   top bar: the rail owns the first level of navigation now, and the row directly
+   beneath the band is the active wing's first page. */
 .nav-rail__section--wing {
-  padding-top: 3.4rem;
+  padding-top: 0.25rem;
 }
 
 .nav-rail__section--bottom {
@@ -1120,11 +1149,14 @@ a {
 /* The band that runs across the top of the sheet. `--shell-topbar-height` is the
    height of that band in *both* panes — the dock's header wears it too — so the
    two underlines land on one line instead of stepping at the seam. No vertical
-   padding: the band is the height, and its contents centre in it. */
+   padding: the band is the height, and its one control centres in it. The wing
+   switcher used to share this row; it now sits in the sidebar's own band, which
+   leaves the domain lens alone here and on the sheet's centre line. */
 .top-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem 0.75rem;
   padding: 0 0.75rem;
   border-bottom: 1px solid var(--border);
@@ -1132,31 +1164,17 @@ a {
   min-height: var(--shell-topbar-height);
 }
 
-.top-bar__wings {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-/* Neither selector on the band wears a frame of its own. `.ui-segmented` draws a
-   hairline around the whole control, and the active tab draws its own inside it —
-   one pixel apart, so the wing switcher and the domain lens each read as two
-   concentric outlines sitting in a row. The control's soft fill still sets it off
-   the band, and the active tab keeps its line, which is what a tab is. Prefixed
-   with the band both because the shared `.ui-segmented` rule is declared further
-   down this sheet (so a bare class here would lose on source order) and to keep
-   the frame everywhere else the control appears — Goals' filters, the settings
-   nav — where there is no second outline to clash with. */
-.top-bar .top-bar__wings,
+/* The band's one control wears no frame of its own. `.ui-segmented` draws a
+   hairline around the whole control, a pixel outside the active tab's own line;
+   with the wing switcher moved to the rail the domain lens has no second outline
+   to pair with, and the frame only doubled it. The control's soft fill still
+   sets it off the band, and the active tab keeps its line, which is what a tab
+   is. Prefixed with the band both because the shared `.ui-segmented` rule is
+   declared further down this sheet (so a bare class here would lose on source
+   order) and to keep the frame everywhere else the control appears — Goals'
+   filters, the settings nav. */
 .top-bar .domain-switcher__tabs {
   border: none;
-}
-
-.top-bar__controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-left: auto;
 }
 
 /* —— Domain switcher —— */

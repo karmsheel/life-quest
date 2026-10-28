@@ -14,6 +14,7 @@ import { NAV_ITEMS, type NavItem } from "./nav-items";
 import { UpdateBadge } from "./UpdateBadge";
 import { useDomainLens } from "./useActiveDomain";
 import { useWing } from "./WingProvider";
+import { WingTabs } from "./WingTabs";
 
 /** How long the badge wears the arrival mark. */
 const BADGE_ARRIVAL_MS = 4_000;
@@ -152,6 +153,15 @@ export function NavRail() {
     <nav className="nav-rail" id="nav-rail" aria-label="Main">
       <div className="nav-rail__header">
         <NavCollapseButton />
+      </div>
+      {/*
+        The sidebar's own band, on the same row as the sheet's top bar: the five
+        wings, and under them the active wing's pages. The rail is the first
+        level of navigation, so the switcher belongs here rather than in the
+        sheet, where it also crowded the domain lens off the band's centre.
+      */}
+      <div className="nav-rail__wings-band" data-nav-group="wings">
+        <WingTabs />
       </div>
       {topPinned.length > 0 ? (
         <>
