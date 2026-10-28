@@ -125,7 +125,15 @@ function isProjectCommand(value: unknown): value is ProjectCommand {
   }
   if (command.type !== "createProject") return false;
   if (typeof command.title !== "string" || !command.title.trim()) return false;
-  if (typeof command.goalId !== "string" || !command.goalId.trim()) return false;
+  // A project no longer has to be filed under a goal: the schema made goalId
+  // optional so a project can start before it belongs to one.
+  if (
+    command.goalId !== undefined &&
+    command.goalId !== null &&
+    typeof command.goalId !== "string"
+  ) {
+    return false;
+  }
   if (
     command.domainSlug !== undefined &&
     command.domainSlug !== null &&
@@ -164,24 +172,51 @@ function parseProjectFence(parsed: Record<string, unknown>): ParseOutcome {
   if (parsed.command !== undefined) {
     if (!isProjectCommand(parsed.command)) {
       return failed(
-        "A project proposal needs a command of type createProject (title, goalId) or closeProject (id).",
+        "A project proposal needs a command of type createProject (title, optional goalId) or closeProject (id).",
         "invalid",
       );
     }
     const command = parsed.command as ProjectCommand;
-    if (
-      command.type === "createProject" &&
-      (typeof command.id !== "string" || !command.id.trim())
-    ) {
-      // The schema the companion is given does not include an id — a model cannot
-      // mint a uuid it has no way to know — so the id is allocated here, at propose
-      // time. The approve path writes the file under `command.id`; without this the
-      // project would be created as "undefined.md" and every later create would
-      // collide with it. `proposalIdentity` leaves the id out, so dedupe still sees
-      // the same project proposed twice.
-      return { change: { kind: "project", command: { ...command, id: randomUUID() } } };
+    if (command.type === "closeProject") {
+      return { change: { kind: "project", command } };
     }
-    return { change: { kind: "project", command } };
+    if (command.type !== "createProject") {
+      // A fence can propose a create or a close; an update is something the
+      // companion files through the `update_project` tool, with a patch.
+      return failed(
+        "A project proposal can only create or close a project.",
+        "invalid",
+      );
+    }
+    const create = command as Extract<ProjectCommand, { type: "createProject" }>;
+    // The schema the companion is given does not include an id — a model cannot
+    // mint a uuid it has no way to know — so the id is allocated here, at propose
+    // time. The approve path writes the file under `command.id`; without this the
+    // project would be created as "undefined.md" and every later create would
+    // collide with it. `proposalIdentity` leaves the id out, so dedupe still sees
+    // the same project proposed twice. The links are normalized to null when the
+    // fence omitted them, which is the schema's own shape.
+    return {
+      change: {
+        kind: "project",
+        command: {
+          ...create,
+          type: "createProject",
+          id:
+            typeof create.id === "string" && create.id.trim()
+              ? create.id
+              : randomUUID(),
+          goalId:
+            typeof create.goalId === "string" && create.goalId.trim()
+              ? create.goalId.trim()
+              : null,
+          domainSlug:
+            typeof create.domainSlug === "string" && create.domainSlug.trim()
+              ? create.domainSlug.trim()
+              : null,
+        },
+      },
+    };
   }
   if (typeof parsed.id === "string" && parsed.id.trim() && parsed.title === undefined) {
     return {
@@ -189,8 +224,13 @@ function parseProjectFence(parsed: Record<string, unknown>): ParseOutcome {
     };
   }
   if (typeof parsed.title === "string" && parsed.title.trim()) {
-    if (typeof parsed.goalId !== "string" || !parsed.goalId.trim()) {
-      return failed("A new project needs the id of the Goal it serves (goalId).", "invalid");
+    // goalId is optional now; a present one still has to be a string.
+    if (
+      parsed.goalId !== undefined &&
+      parsed.goalId !== null &&
+      typeof parsed.goalId !== "string"
+    ) {
+      return failed("A project's goalId must be a string or null.", "malformed");
     }
     if (
       parsed.domainSlug !== undefined &&
@@ -210,7 +250,10 @@ function parseProjectFence(parsed: Record<string, unknown>): ParseOutcome {
           // Allocated now so approval writes the exact file this proposal named.
           id: randomUUID(),
           title: parsed.title.trim(),
-          goalId: parsed.goalId.trim(),
+          goalId:
+            typeof parsed.goalId === "string" && parsed.goalId.trim()
+              ? parsed.goalId.trim()
+              : null,
           domainSlug:
             typeof parsed.domainSlug === "string" && parsed.domainSlug.trim()
               ? parsed.domainSlug.trim()
@@ -221,7 +264,7 @@ function parseProjectFence(parsed: Record<string, unknown>): ParseOutcome {
     };
   }
   return failed(
-    "A project proposal needs either a command, a new title + goalId, or an id to close.",
+    "A project proposal needs either a command, a new title (goalId optional), or an id to close.",
     "invalid",
   );
 }
@@ -523,13 +566,16 @@ export async function fileImpliedChange(
 
   // A project proposal is validated before it is filed, the way the
   // `create_project` / `close_project` tools validate theirs: a project naming a
-  // goal that does not exist would file a Decision that can never apply.
+  // goal or domain that does not exist would file a Decision that can never
+  // apply. Both links are optional; only a present one is checked.
   const command = change.command;
   if (command.type === "createProject") {
-    const goals = await loadGoals(rootPath);
-    if (!goals.ok) return goals;
-    if (!goals.value.some((goal) => goal.id === command.goalId)) {
-      return { ok: false, error: `Goal not found: ${command.goalId}` };
+    if (command.goalId) {
+      const goals = await loadGoals(rootPath);
+      if (!goals.ok) return goals;
+      if (!goals.value.some((goal) => goal.id === command.goalId)) {
+        return { ok: false, error: `Goal not found: ${command.goalId}` };
+      }
     }
     if (command.domainSlug) {
       const domains = await listDomains(rootPath);
@@ -542,7 +588,9 @@ export async function fileImpliedChange(
       }
     }
     return createDecision(rootPath, {
-      target: { type: "project" },
+      // The target carries the project id so the Decisions surface and the
+      // project's own page can collate the proposal onto it.
+      target: { type: "project", id: command.id },
       proposedTitle: command.title,
       proposedBodyMarkdown: JSON.stringify(command),
       previousBodyMarkdown: null,
@@ -553,7 +601,7 @@ export async function fileImpliedChange(
   const project = await projectGet(rootPath, command.id);
   if (!project.ok) return project;
   return createDecision(rootPath, {
-    target: { type: "project" },
+    target: { type: "project", id: command.id },
     proposedTitle: project.value.title,
     proposedBodyMarkdown: JSON.stringify(command),
     previousBodyMarkdown: JSON.stringify(project.value),
@@ -597,6 +645,11 @@ function proposalIdentity(change: ImpliedChange): string {
   }
   const command = change.command;
   if (command.type === "closeProject") return `project-close|${command.id}`;
+  if (command.type === "updateProject") {
+    // A fenced update is not produced by this parser today, but the command union
+    // can carry one; key it on the change the operator would approve.
+    return `project-update|${command.id}|${JSON.stringify(command.patch)}`;
+  }
   return `project-create|${command.title}|${command.goalId}|${command.domainSlug ?? ""}|${command.bodyMarkdown ?? ""}`;
 }
 

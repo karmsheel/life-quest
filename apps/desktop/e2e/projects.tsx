@@ -515,9 +515,11 @@ const bridge: Record<string, unknown> = {
       : Promise.resolve({ ok: false as const, error: `Project not found: ${String(id)}` });
   },
   signalChainList: () => ok({ records: clone(SIGNALS), skipped: 0 }),
-  // The shell's own reads: the chat dock's page-context board lock, and the
-  // model inventory its control row would show. Both are unrelated to Projects;
-  // they are modelled so a clean run really means "nothing unexpected".
+  // The shell's own reads: the rail's Decisions badge, the chat dock's
+  // page-context board lock, and the model inventory its control row would show.
+  // All are unrelated to Projects; they are modelled so a clean run really means
+  // "nothing unexpected".
+  decisionList: () => ok(clone(DECISIONS)),
   pinsList: () => ok({ pins: [], locked: false }),
   companionModelOptions: () =>
     ok({ providers: [], current: { model: "harness", provider: "harness" } }),
