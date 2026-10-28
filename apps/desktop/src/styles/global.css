@@ -849,10 +849,9 @@ a {
 }
 
 /* The sidebar's own band: the five-wing switcher sits on the same row as the
-   sheet's top bar, one `--shell-topbar-height` under the titlebar strip, so the
-   hairline under it is the top bar's own line carried across the rail and the
-   two panes read as one band of chrome. The band escapes the rail's side padding
-   so its line reaches both window edges rather than stopping short. */
+   sheet's top bar, one `--shell-topbar-height` under the titlebar strip. The
+   band paints no line of its own — that hairline belongs to the sheet's top bar,
+   under the domain lens, and stops at the pane seam. */
 .nav-rail__wings-band {
   display: flex;
   align-items: center;
@@ -861,14 +860,13 @@ a {
   /* The rail's flex gap and the header's own bottom margin already sit between
      the titlebar row and this band; `--shell-frame - 0.3rem` is what is left of
      the pane gap, so the band starts exactly where the sheet's top bar does. */
-  margin: calc(var(--shell-frame) - 0.3rem) -0.35rem 0;
+  margin: calc(var(--shell-frame) - 0.3rem) 0 0;
   padding: 0 0.45rem;
-  border-bottom: 1px solid var(--border);
 }
 
 /* Five labels in a 16rem column. The control's shape is `.ui-segmented`'s; the
    rail only tightens the option padding and steps the type down so the longest
-   wing name ("Execute") fits the fifth of the column it is given. */
+   wing name fits the fifth of the column it is given. */
 .nav-rail__wings {
   width: 100%;
 }
@@ -8009,6 +8007,88 @@ button.chat-panel__activity-line:hover {
   white-space: nowrap;
 }
 
+/* The header's trailing pair, in line with the "Chats" heading: search the
+   list, and decide which chats the list is allowed to show. Both are quiet
+   until hovered; the view menu hangs under the icon that opened it. */
+.chats-rail__actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.05rem;
+  flex: 0 0 auto;
+}
+
+.chats-rail__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.3rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chats-rail__icon-btn:hover,
+.chats-rail__icon-btn[aria-expanded="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+/* The search field takes the list's own column: full width under the heading,
+   so the query has room and the list never shifts sideways. */
+.chats-rail__search {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+  margin: 0 0.15rem 0.25rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--muted);
+}
+
+.chats-rail__search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.chats-rail__search-input::placeholder {
+  color: var(--muted);
+}
+
+.chats-rail__search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chats-rail__search-clear:hover {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
 /* The one write that starts a chat, at the top of the list the way every chat
    client puts it: a full-width row, not another icon in the rail. */
 .chats-rail__new {
@@ -8183,6 +8263,54 @@ button.chat-panel__activity-line:hover {
   border-radius: var(--radius-sm);
   background: var(--card);
   box-shadow: var(--shadow-sm);
+}
+
+/* The view menu is wider than a row menu: it names the option it is on and
+   carries a check column so the current view is readable at a glance. */
+.chats-rail__view-menu {
+  top: calc(100% + 0.2rem);
+  right: 0;
+  min-width: 10.5rem;
+}
+
+.chats-rail__menu-title {
+  margin: 0;
+  padding: 0.2rem 0.5rem 0.3rem;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chats-rail__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.9rem;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+/* An archived row is what the view option exists for: readable and restorable,
+   never openable. Its greying is the row's, not the list's. */
+.chats-rail__row[data-archived] .chats-rail__row-main,
+.chats-rail__row[data-archived] .chats-rail__row-main:hover {
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+}
+
+.chats-rail__archived-tag {
+  flex: 0 0 auto;
+  padding: 0.02rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .chats-rail__menu button {

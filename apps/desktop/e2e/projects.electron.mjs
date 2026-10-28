@@ -19,7 +19,7 @@
  *     wing group reads Projects, Daily Schedule, Act with Projects active. This
  *     is the move from Plan to Execute, read off the shipped rail.
  *  2. `rail-plan` / `wing-switch` — clicking Plan shows Goals, Life Map,
- *     Architecture and NOT Projects; clicking Execute lands back on `/projects`
+ *     Architecture and NOT Projects; clicking Act lands back on `/projects`
  *     with the Projects row active. The route is the wing's own.
  *  3. `list-attributes` / `list-count` — every built-in attribute a row is
  *     specified to show is on the row: state note, status chip, priority, goal,
@@ -63,7 +63,7 @@ const SIZE = { width: 1280, height: 1000 };
 /** The detail page is long; a taller capture shows the header and the timeline. */
 const DETAIL_SIZE = { width: 1280, height: 1180 };
 
-const WING_TABS = ["Home", "Define", "Plan", "Execute", "Review"];
+const WING_TABS = ["Home", "Define", "Plan", "Act", "Review"];
 const EXECUTE_RAIL = ["Projects", "Daily Schedule", "Act"];
 const PLAN_RAIL = ["Goals", "Life Map", "Architecture"];
 const LIST_ORDER = ["p-exec", "p-paused", "p-closed", "p-trip"];
@@ -489,7 +489,7 @@ async function main() {
     check(
       "rail-execute",
       initial.route === "/projects" &&
-        initial.activeTab === "Execute" &&
+        initial.activeTab === "Act" &&
         same(initial.rail.map((row) => row.label), EXECUTE_RAIL) &&
         initial.rail[0]?.href === "/projects" &&
         initial.rail[0]?.active === true,
@@ -603,13 +603,13 @@ async function main() {
         !plan.rail.some((row) => row.label === "Projects"),
       `active wing ${plan.activeTab}, rail ${JSON.stringify(plan.rail.map((row) => row.label))}`,
     );
-    check("wing-tab-execute", await wingTab("Execute"), "no Execute tab in the rail switcher");
-    await waitFor(`window.projectsHarnessRoute === "/projects"`, "the Execute tab to land back on Projects");
+    check("wing-tab-execute", await wingTab("Act"), "no Act tab in the rail switcher");
+    await waitFor(`window.projectsHarnessRoute === "/projects"`, "the Act tab to land back on Projects");
     await waitFor(`document.querySelectorAll('[data-testid="project-row"]').length === 4`, "the register to come back");
     const executeAgain = await sample();
     check(
       "wing-switch",
-      executeAgain.activeTab === "Execute" &&
+      executeAgain.activeTab === "Act" &&
         same(executeAgain.rail.map((row) => row.label), EXECUTE_RAIL) &&
         executeAgain.rail[0]?.active === true,
       `active wing ${executeAgain.activeTab}, rail ${JSON.stringify(executeAgain.rail.map((row) => [row.label, row.active]))}`,

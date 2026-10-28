@@ -112,8 +112,12 @@ type State = {
   bandControlCount: number;
   /** The domain lens as the band lays it out, for the centring claim. */
   domainLens: { box: Box; labels: string[] } | null;
-  /** The rail's first level: the five-wing switcher and the band it sits in. */
-  wingsBand: Box | null;
+  /**
+   * The rail's first level: the five-wing switcher and the band it sits in.
+   * The band's own bottom border is measured because it must stay unpainted —
+   * the hairline under the strip belongs to the sheet's top bar alone.
+   */
+  wingsBand: { box: Box; borderBottomWidth: string } | null;
   wingSwitcher: {
     box: Box;
     inRail: boolean;
@@ -352,8 +356,8 @@ describe("shell sidebar (docked rail)", () => {
     );
 
     // The rail's first level: the five-wing switcher in a band of its own, above
-    // the wing's rows and on the sheet's top-bar row. The hairline under that
-    // band is the top bar's own line carried across the rail.
+    // the wing's rows and on the sheet's top-bar row. The band paints no line of
+    // its own — the strip's hairline stays in the sheet, under the domain lens.
     assert.ok(expanded.wingSwitcher, "the rail rendered no wing switcher");
     assert.equal(
       expanded.wingSwitcher.inRail,
@@ -372,7 +376,7 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.deepEqual(
       expanded.wingSwitcher.labels,
-      ["Home", "Define", "Plan", "Execute", "Review"],
+      ["Home", "Define", "Plan", "Act", "Review"],
       "the wing switcher is not the five wings in order",
     );
     assert.equal(
@@ -383,23 +387,28 @@ describe("shell sidebar (docked rail)", () => {
     assert.ok(expanded.wingsBand, "the rail drew no band for the wing switcher");
     assert.ok(expanded.topBar, "the sheet rendered no top bar");
     assert.equal(
-      expanded.wingsBand.top,
+      expanded.wingsBand.box.top,
       expanded.topBar.box.top,
-      `the rail's band starts at ${expanded.wingsBand.top}px, not on the top bar's row (${expanded.topBar.box.top}px)`,
+      `the rail's band starts at ${expanded.wingsBand.box.top}px, not on the top bar's row (${expanded.topBar.box.top}px)`,
     );
     assert.equal(
-      expanded.wingsBand.bottom,
+      expanded.wingsBand.box.bottom,
       expanded.topBar.box.bottom,
-      `the rail's band ends at ${expanded.wingsBand.bottom}px, not on the top bar's line (${expanded.topBar.box.bottom}px)`,
+      `the rail's band ends at ${expanded.wingsBand.box.bottom}px, not on the top bar's line (${expanded.topBar.box.bottom}px)`,
     );
     assert.ok(
-      expanded.wingSwitcher.box.top >= expanded.wingsBand.top &&
-        expanded.wingSwitcher.box.bottom <= expanded.wingsBand.bottom,
+      expanded.wingSwitcher.box.top >= expanded.wingsBand.box.top &&
+        expanded.wingSwitcher.box.bottom <= expanded.wingsBand.box.bottom,
       `the switcher (${JSON.stringify(expanded.wingSwitcher.box)}) does not sit inside its band (${JSON.stringify(expanded.wingsBand)})`,
     );
     assert.ok(
-      expanded.firstLink.top >= expanded.wingsBand.bottom - 1,
-      `the wing's first row starts at ${expanded.firstLink.top}px, above the switcher's band bottom at ${expanded.wingsBand.bottom}px`,
+      expanded.firstLink.top >= expanded.wingsBand.box.bottom - 1,
+      `the wing's first row starts at ${expanded.firstLink.top}px, above the switcher's band bottom at ${expanded.wingsBand.box.bottom}px`,
+    );
+    assert.equal(
+      expanded.wingsBand.borderBottomWidth,
+      "0px",
+      `the sidebar's band paints a line across the rail (${expanded.wingsBand.borderBottomWidth}); the strip's hairline belongs to the sheet's top bar`,
     );
     assert.ok(
       (expanded.railToggle?.box.right ?? 0) > track * 0.7 &&

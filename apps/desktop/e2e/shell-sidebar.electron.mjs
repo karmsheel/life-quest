@@ -238,7 +238,12 @@ const SAMPLE = `(() => {
       : null,
     // The rail's first level: the five-wing switcher, in a band of its own on the
     // sheet's top-bar row, above the active wing's pages.
-    wingsBand: box(wingsBand),
+    wingsBand: wingsBand
+      ? {
+          box: box(wingsBand),
+          borderBottomWidth: getComputedStyle(wingsBand).borderBottomWidth
+        }
+      : null,
     wingSwitcher: wings
       ? {
           box: box(wings),
@@ -741,8 +746,8 @@ async function main() {
     );
 
     // 2b — the sidebar's first level: the five-wing switcher in its own band,
-    // above the wing's pages and on the sheet's top-bar row. The hairline under
-    // that band is the top bar's own line carried across the rail.
+    // above the wing's pages and on the sheet's top-bar row. The band paints no
+    // line of its own: the strip's hairline stays in the sheet, under the lens.
     const wingBand = expanded.wingsBand;
     const switcher = expanded.wingSwitcher;
     check(
@@ -756,25 +761,31 @@ async function main() {
         switcher.role === "tablist" &&
         switcher.optionCount === 5 &&
         JSON.stringify(switcher.labels) ===
-          JSON.stringify(["Home", "Define", "Plan", "Execute", "Review"]) &&
+          JSON.stringify(["Home", "Define", "Plan", "Act", "Review"]) &&
         switcher.active === "Home",
       `role ${switcher?.role}, options ${JSON.stringify(switcher?.labels)}, active ${JSON.stringify(switcher?.active)}`,
     );
     check(
       "the wing switcher sits above the wing's rows",
       Boolean(wingBand && switcher && expanded.firstLink) &&
-        wingBand.top >= (expanded.header?.box.bottom ?? 0) &&
-        switcher.box.top >= wingBand.top &&
-        switcher.box.bottom <= wingBand.bottom &&
-        wingBand.bottom <= expanded.firstLink.top + 1,
+        wingBand.box.top >= (expanded.header?.box.bottom ?? 0) &&
+        switcher.box.top >= wingBand.box.top &&
+        switcher.box.bottom <= wingBand.box.bottom &&
+        wingBand.box.bottom <= expanded.firstLink.top + 1,
       `band ${JSON.stringify(wingBand)}, control ${JSON.stringify(switcher?.box)}, first row ${JSON.stringify(expanded.firstLink)}`,
     );
     check(
       "the rail's band shares the top bar's row",
       Boolean(wingBand && expanded.topBar) &&
-        wingBand.top === expanded.topBar.box.top &&
-        wingBand.bottom === expanded.topBar.box.bottom,
+        wingBand.box.top === expanded.topBar.box.top &&
+        wingBand.box.bottom === expanded.topBar.box.bottom,
       `rail band ${JSON.stringify(wingBand)} vs top bar ${JSON.stringify(expanded.topBar?.box)}`,
+    );
+    check(
+      "the sidebar band paints no line of its own",
+      wingBand?.borderBottomWidth === "0px" &&
+        parseFloat(expanded.topBar?.borderBottomWidth ?? "0") > 0,
+      `rail band border ${wingBand?.borderBottomWidth}, top bar border ${expanded.topBar?.borderBottomWidth}`,
     );
 
     // 3 — paint order: the rail's topband, not the titlebar, owns the corner.

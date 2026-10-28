@@ -208,6 +208,12 @@ type HermesSession = {
   lastActive: number | null;
   /** Durable Hermes-side flag: pinned chats sort into their own section. */
   pinned: boolean;
+  /**
+   * Durable Hermes-side flag: an archived chat. The list carries these only
+   * when the caller asks for them (the sidebar's view options), and they are
+   * restorable rather than openable.
+   */
+  archived: boolean;
 };
 
 /**
@@ -388,7 +394,9 @@ type LifequestApi = {
    * the new status, so the caller re-renders from one call.
    */
   companionUseProfile: (name: string) => Promise<CompanionStatus>;
-  companionSessionsList: () => Promise<Result<HermesSession[]>>;
+  companionSessionsList: (options?: {
+    includeArchived?: boolean;
+  }) => Promise<Result<HermesSession[]>>;
   companionSessionCreate: (title: string) => Promise<Result<HermesSession>>;
   companionSessionMessages: (
     id: string,

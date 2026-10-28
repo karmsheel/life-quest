@@ -40,8 +40,8 @@
  *     leading or bottom edge, on the rail's trailing edge, or on any edge of the
  *     dock. The studio has exactly one: the sheet's trailing edge, the seam with
  *     the dock. The line under the strip belongs to the top bar, and it must
- *     survive: lose it and the domain lens loses its underline, and the sidebar's
- *     own band loses the line it carries across the rail.
+ *     survive: lose it and the domain lens loses its underline. The rail's own
+ *     band paints nothing of its own, so the line stops at the pane seam.
  * 17. Native bar left in place — a scroller whose gutter is the platform's own
  *     15-17px instead of the app's 8px, which is what a `::-webkit-scrollbar`
  *     rule that never applied looks like.

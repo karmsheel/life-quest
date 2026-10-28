@@ -32,6 +32,9 @@ type Row = {
   label: string;
   when: string;
   active: boolean;
+  archived: boolean;
+  archivedTag: string;
+  disabled: boolean;
   live: boolean;
   approval: boolean;
   menuOpen: boolean;
@@ -59,6 +62,26 @@ type State = {
     liveCount: string;
     newChat: boolean;
     groups: string[];
+    empty: string;
+    header: {
+      box: { left: number; top: number; right: number; bottom: number; width: number; height: number };
+      titleBox: { left: number; top: number; right: number; bottom: number; width: number; height: number };
+      controls: {
+        label: string;
+        box: { left: number; top: number; right: number; bottom: number; width: number; height: number };
+      }[];
+    } | null;
+    search: {
+      value: string;
+      placeholder: string | null;
+      focused: boolean;
+      panelBox: { left: number; top: number; right: number; bottom: number; width: number; height: number };
+    } | null;
+    viewMenu: {
+      title: string;
+      items: { label: string; checked: boolean }[];
+    } | null;
+    listOptions: ({ includeArchived?: boolean } | null)[];
   } | null;
   composer: { value: string; disabled: boolean; focused: boolean } | null;
   messages: { role: string; content: string }[];
@@ -148,6 +171,19 @@ describe("chat dock tabs and sidebar chats", () => {
       background,
       closedLive,
       lateFrame,
+      header,
+      searchOpen,
+      searched,
+      noMatch,
+      cleared,
+      searchClosed,
+      viewMenu,
+      archivedShown,
+      archivedClick,
+      archivedSearch,
+      unarchived,
+      viewMenuShown,
+      archivedHidden,
     } = report.states;
 
     // The sidebar is the app's chat list, pinned first, and its rows are the
@@ -360,6 +396,157 @@ describe("chat dock tabs and sidebar chats", () => {
       lateFrame.rows.find((row) => row.label === "Delta automation")?.live,
       true,
       "the late frame did not land in its own run",
+    );
+
+    // The header's two controls: search the list, and choose the view it is
+    // drawn from. Both sit in line with the "Chats" heading, not in a row of
+    // their own above it.
+    assert.deepEqual(
+      header.rail?.header?.controls.map((control) => control.label),
+      ["Search chats", "View options"],
+      "the chats header does not carry the search and view controls",
+    );
+    for (const control of header.rail?.header?.controls ?? []) {
+      assert.ok(
+        Math.abs(
+          (control.box.top + control.box.bottom) / 2 -
+            (header.rail!.header!.titleBox.top + header.rail!.header!.titleBox.bottom) / 2,
+        ) <= 4,
+        `${control.label} is not on the heading's row (${JSON.stringify(control.box)} vs ${JSON.stringify(header.rail?.header?.titleBox)})`,
+      );
+    }
+    assert.equal(header.rail?.search, null, "a search box is drawn before the icon is clicked");
+    assert.equal(header.rail?.viewMenu, null, "the view menu is drawn before the icon is clicked");
+
+    // The search icon opens a full-width field and typing narrows the rows.
+    assert.equal(searchOpen.rail?.search?.focused, true, "the search box did not take focus");
+    assert.equal(searchOpen.rail?.search?.value, "", "the search box opened with text in it");
+    assert.equal(searchOpen.rail?.search?.placeholder, "Search chats");
+    assert.ok(
+      (searchOpen.rail?.search?.panelBox.width ?? 0) >=
+        (searchOpen.rail?.header?.box.width ?? 0) - 6,
+      `the search box does not span the list's column (${JSON.stringify(searchOpen.rail?.search?.panelBox)} vs ${JSON.stringify(searchOpen.rail?.header?.box)})`,
+    );
+    assert.deepEqual(
+      searched.rows.map((row) => row.label),
+      ["Delta automation"],
+      "the search did not narrow the rows to the match",
+    );
+    assert.deepEqual(searched.rail?.groups, [], "the filtered list kept an empty group heading");
+    assert.equal(searched.heading, "Bravo budget", "searching moved the open chat");
+    assert.equal(noMatch.rowCount, 0, "a search with no match still listed rows");
+    assert.match(
+      noMatch.rail?.empty ?? "",
+      /No chats match/,
+      "a search with no match said nothing",
+    );
+    assert.equal(cleared.rowCount, 3, "clearing the search did not bring the rows back");
+    assert.equal(searchClosed.rail?.search, null, "the search icon did not close the box");
+
+    // The view menu is the filter: hide the archived chats (the default), or
+    // show them as a greyed, restorable group.
+    assert.equal(viewMenu.rail?.viewMenu?.title, "View options");
+    assert.deepEqual(
+      viewMenu.rail?.viewMenu?.items,
+      [
+        { label: "Hide archived chats", checked: true },
+        { label: "Show archived chats", checked: false },
+      ],
+      "the view menu does not offer hide/show archived, or marks the wrong one",
+    );
+    assert.equal(
+      archivedShown.rowCount,
+      6,
+      `showing archived chats listed ${archivedShown.rowCount} rows, expected 3 live + 3 archived`,
+    );
+    assert.equal(
+      archivedShown.rail?.listOptions.at(-1)?.includeArchived,
+      true,
+      "the show-archived view did not ask the list for archived rows",
+    );
+    assert.ok(
+      archivedShown.rail?.groups.includes("Archived"),
+      `the archived rows have no group of their own: ${JSON.stringify(archivedShown.rail?.groups)}`,
+    );
+    const shownArchived = archivedShown.rows.filter((row) => row.archived);
+    assert.deepEqual(
+      shownArchived.map((row) => row.label).sort(),
+      ["Alpha planning", "Echo archived", "Foxtrot archived"],
+      "the archived group is not the archived chats",
+    );
+    for (const row of shownArchived) {
+      assert.equal(row.archivedTag, "Archived", `${row.label} carries no Archived tag`);
+      assert.equal(row.disabled, true, `${row.label} is openable while archived`);
+      assert.equal(row.group, "Archived", `${row.label} is outside the Archived group`);
+    }
+    assert.equal(
+      archivedShown.rows.filter((row) => !row.archived).length,
+      3,
+      "the live chats left the list while the archived view was shown",
+    );
+    assert.equal(archivedShown.heading, "Bravo budget", "showing archived chats moved the dock");
+    assert.equal(
+      archivedClick.heading,
+      "Bravo budget",
+      "clicking an archived row opened it",
+    );
+    assert.notEqual(
+      archivedClick.messageCalls.at(-1),
+      "chat-echo",
+      "clicking an archived row read its transcript",
+    );
+    assert.deepEqual(
+      archivedSearch.rows.map((row) => [row.label, row.archived]),
+      [["Echo archived", true]],
+      "the search did not find the archived chat while the view showed it",
+    );
+
+    // Unarchive restores the chat to the working list, and hiding the archived
+    // view again leaves the restored chat where it belongs.
+    assert.equal(unarchived.patchCalls.at(-1)?.id, "chat-echo", "Unarchive hit the wrong chat");
+    assert.equal(
+      unarchived.patchCalls.at(-1)?.patch.archived,
+      false,
+      "Unarchive never reached the bridge",
+    );
+    assert.deepEqual(
+      [
+        unarchived.rows.find((row) => row.label === "Echo archived")?.group,
+        unarchived.rows.find((row) => row.label === "Echo archived")?.archived,
+      ],
+      ["Recent", false],
+      "the restored chat did not rejoin the working list",
+    );
+    assert.equal(unarchived.rowCount, 6, "unarchive changed the wrong number of rows");
+    assert.deepEqual(
+      viewMenuShown.rail?.viewMenu?.items,
+      [
+        { label: "Hide archived chats", checked: false },
+        { label: "Show archived chats", checked: true },
+      ],
+      "the view menu does not mark the shown-archived view as current",
+    );
+    assert.equal(
+      archivedHidden.rowCount,
+      4,
+      `hiding archived chats left ${archivedHidden.rowCount} rows, expected the 4 live chats`,
+    );
+    assert.equal(
+      archivedHidden.rail?.listOptions.at(-1)?.includeArchived,
+      false,
+      "the hide-archived view did not ask for a live-only list",
+    );
+    assert.equal(
+      archivedHidden.rail?.groups.includes("Archived"),
+      false,
+      "the Archived group survived the view being hidden",
+    );
+    assert.equal(
+      archivedHidden.rows.some(
+        (row) => row.label === "Echo archived" && !row.archived,
+      ),
+      true,
+      "hiding the archived view dropped the restored chat",
     );
 
     for (const file of report.screenshots) {

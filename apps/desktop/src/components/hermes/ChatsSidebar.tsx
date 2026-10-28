@@ -1,12 +1,17 @@
 import { useState, type FormEvent } from "react";
 import {
   Archive,
+  ArchiveRestore,
+  Check,
   MoreVertical,
   Pencil,
   Pin,
   PinOff,
+  Search,
+  Settings2,
   SquarePen,
   SquarePlus,
+  X,
 } from "lucide-react";
 import { useChatSessions } from "@/state/ChatSessionsProvider";
 import { useChatDock } from "@/state/ChatDockProvider";
@@ -38,6 +43,12 @@ function timeValue(lastActive: number | null): string | undefined {
  * middle click, or the row's "Open in new tab", is the only gesture that adds a
  * tab.
  *
+ * The header carries the two controls the list needs to stay usable as it
+ * grows: a search field that narrows the rows as the operator types, and a view
+ * menu that decides whether archived chats are listed. Archived rows come back
+ * greyed and restorable rather than openable — the chat is out of the working
+ * set, but not lost.
+ *
  * Rows are the same Hermes sessions the dock's tabs are, read from
  * `ChatSessionsProvider`, so a pin from here is a pin in the dock, in Hermes
  * Desktop, and on every other channel on this profile. A live turn is a dot on
@@ -50,9 +61,25 @@ export function ChatsSidebar() {
   const [menuId, setMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
 
-  const pinned = chat.sessions.filter((s) => s.pinned);
-  const recent = chat.sessions.filter((s) => !s.pinned);
+  const needle = query.trim().toLowerCase();
+  const matches = (s: HermesSession) => {
+    if (!needle) return true;
+    return (
+      sessionLabel(s).toLowerCase().includes(needle) ||
+      (s.preview ?? "").toLowerCase().includes(needle)
+    );
+  };
+  const shown = chat.sessions.filter(matches);
+  // An archived row is neither pinned nor recent: it has its own group so the
+  // working list above it keeps the shape it had before the view existed.
+  const pinned = shown.filter((s) => s.pinned && !s.archived);
+  const recent = shown.filter((s) => !s.pinned && !s.archived);
+  const archived = shown.filter((s) => s.archived);
+  const matchCount = pinned.length + recent.length + archived.length;
   const liveCount = chat.openTabs.filter((id) => chat.runOf(id).sending).length;
 
   /** Load one chat into the dock, opening the dock if it was put away. */
@@ -77,6 +104,15 @@ export function ChatsSidebar() {
 
   function toggleMenu(id: string) {
     setMenuId((current) => (current === id ? null : id));
+  }
+
+  function toggleSearch() {
+    setViewMenuOpen(false);
+    setMenuId(null);
+    setSearchOpen((open) => {
+      if (open) setQuery("");
+      return !open;
+    });
   }
 
   function startRename(s: HermesSession) {
@@ -118,6 +154,7 @@ export function ChatsSidebar() {
     const when = formatSessionWhen(s.lastActive);
     const run = chat.runOf(s.id);
     const active = s.id === chat.activeId;
+    const archived = s.archived === true;
     const menuOpen = menuId === s.id;
     const renaming = renamingId === s.id;
     return (
@@ -125,6 +162,7 @@ export function ChatsSidebar() {
         key={s.id}
         className="chats-rail__row"
         data-active={active || undefined}
+        data-archived={archived || undefined}
         data-live={run.sending || undefined}
         data-approval={run.approval !== null || undefined}
       >
@@ -164,7 +202,13 @@ export function ChatsSidebar() {
               type="button"
               className="chats-rail__row-main"
               aria-current={active ? "true" : undefined}
-              title={`${label} — middle-click to open in a new tab`}
+              aria-disabled={archived || undefined}
+              disabled={archived}
+              title={
+                archived
+                  ? `${label} — archived; restore it to open`
+                  : `${label} — middle-click to open in a new tab`
+              }
               onClick={() => void openChat(s.id)}
               onAuxClick={(e) => {
                 // Middle click is "keep this one too": the browser gesture the
@@ -181,7 +225,9 @@ export function ChatsSidebar() {
             >
               <span className="chats-rail__dot" aria-hidden />
               <span className="chats-rail__label">{label}</span>
-              {when ? (
+              {archived ? (
+                <span className="chats-rail__archived-tag">Archived</span>
+              ) : when ? (
                 <time className="chats-rail__when" dateTime={timeValue(s.lastActive)}>
                   {when}
                 </time>
@@ -200,33 +246,60 @@ export function ChatsSidebar() {
             </button>
             {menuOpen ? (
               <div className="chats-rail__menu" role="menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label="Open in new tab"
-                  onClick={() => void openInNewTab(s.id)}
-                >
-                  <SquarePlus size={12} aria-hidden /> Open in new tab
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label={s.pinned ? "Unpin chat" : "Pin chat"}
-                  onClick={() => {
-                    setMenuId(null);
-                    void chat.patchSession(s.id, { pinned: !s.pinned });
-                  }}
-                >
-                  {s.pinned ? (
-                    <>
-                      <PinOff size={12} aria-hidden /> Unpin
-                    </>
-                  ) : (
-                    <>
-                      <Pin size={12} aria-hidden /> Pin
-                    </>
-                  )}
-                </button>
+                {archived ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-label="Unarchive chat"
+                    onClick={() => {
+                      setMenuId(null);
+                      void chat.patchSession(s.id, { archived: false });
+                    }}
+                  >
+                    <ArchiveRestore size={12} aria-hidden /> Unarchive
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      aria-label="Open in new tab"
+                      onClick={() => void openInNewTab(s.id)}
+                    >
+                      <SquarePlus size={12} aria-hidden /> Open in new tab
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      aria-label={s.pinned ? "Unpin chat" : "Pin chat"}
+                      onClick={() => {
+                        setMenuId(null);
+                        void chat.patchSession(s.id, { pinned: !s.pinned });
+                      }}
+                    >
+                      {s.pinned ? (
+                        <>
+                          <PinOff size={12} aria-hidden /> Unpin
+                        </>
+                      ) : (
+                        <>
+                          <Pin size={12} aria-hidden /> Pin
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      aria-label="Archive chat"
+                      onClick={() => {
+                        setMenuId(null);
+                        void chat.patchSession(s.id, { archived: true });
+                      }}
+                    >
+                      <Archive size={12} aria-hidden /> Archive
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   role="menuitem"
@@ -234,17 +307,6 @@ export function ChatsSidebar() {
                   onClick={() => startRename(s)}
                 >
                   <Pencil size={12} aria-hidden /> Rename
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label="Archive chat"
-                  onClick={() => {
-                    setMenuId(null);
-                    void chat.patchSession(s.id, { archived: true });
-                  }}
-                >
-                  <Archive size={12} aria-hidden /> Archive
                 </button>
                 <button
                   type="button"
@@ -275,6 +337,71 @@ export function ChatsSidebar() {
             {liveCount} running
           </span>
         ) : null}
+        <div className="chats-rail__actions">
+          <button
+            type="button"
+            className="chats-rail__icon-btn"
+            aria-label="Search chats"
+            title="Search chats"
+            aria-expanded={searchOpen}
+            onClick={toggleSearch}
+          >
+            <Search size={14} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="chats-rail__icon-btn"
+            aria-label="View options"
+            title="View options"
+            aria-haspopup="menu"
+            aria-expanded={viewMenuOpen}
+            onClick={() => {
+              setMenuId(null);
+              setViewMenuOpen((open) => !open);
+            }}
+          >
+            <Settings2 size={14} aria-hidden />
+          </button>
+          {viewMenuOpen ? (
+            <div
+              className="chats-rail__menu chats-rail__view-menu"
+              role="menu"
+              aria-label="View options"
+            >
+              <p className="chats-rail__menu-title">View options</p>
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={!chat.showArchived}
+                aria-label="Hide archived chats"
+                onClick={() => {
+                  chat.setShowArchived(false);
+                  setViewMenuOpen(false);
+                }}
+              >
+                <span className="chats-rail__check" aria-hidden>
+                  {!chat.showArchived ? <Check size={12} /> : null}
+                </span>
+                Hide archived
+              </button>
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={chat.showArchived}
+                aria-label="Show archived chats"
+                onClick={() => {
+                  chat.setShowArchived(true);
+                  setViewMenuOpen(false);
+                }}
+              >
+                <span className="chats-rail__check" aria-hidden>
+                  {chat.showArchived ? <Check size={12} /> : null}
+                </span>
+                Show archived
+              </button>
+            </div>
+          ) : null}
+        </div>
       </header>
 
       <button
@@ -287,6 +414,37 @@ export function ChatsSidebar() {
         <SquarePen size={15} aria-hidden />
         <span>New chat</span>
       </button>
+
+      {searchOpen ? (
+        <div className="chats-rail__search" role="search">
+          <Search size={13} aria-hidden />
+          <input
+            className="chats-rail__search-input"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              e.preventDefault();
+              setQuery("");
+              setSearchOpen(false);
+            }}
+            placeholder="Search chats"
+            aria-label="Search chats"
+            autoFocus
+          />
+          {query ? (
+            <button
+              type="button"
+              className="chats-rail__search-clear"
+              aria-label="Clear search"
+              title="Clear search"
+              onClick={() => setQuery("")}
+            >
+              <X size={12} aria-hidden />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {chat.listError ? (
         <div className="chats-rail__error" role="alert">
@@ -319,6 +477,17 @@ export function ChatsSidebar() {
                 ) : null}
                 {recent.map(renderRow)}
               </>
+            ) : null}
+            {archived.length > 0 ? (
+              <>
+                <li className="chats-rail__group">Archived</li>
+                {archived.map(renderRow)}
+              </>
+            ) : null}
+            {needle && matchCount === 0 ? (
+              <li className="chats-rail__empty">
+                No chats match “{query.trim()}”
+              </li>
             ) : null}
           </ul>
         )}

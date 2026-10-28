@@ -274,11 +274,11 @@ describe("Projects on the Execute wing e2e", () => {
 
     // ── Projects lives on Execute, not Plan ─────────────────────────────────
     assert.equal(report.checks.initial.route, "/projects", "a cold load of /projects was somewhere else");
-    assert.equal(report.checks.initial.activeTab, "Execute", "the ship selected another wing for /projects");
+    assert.equal(report.checks.initial.activeTab, "Act", "the ship selected another wing for /projects");
     assert.deepEqual(
       report.checks.initial.tabs.map((tab) => tab.label),
-      ["Home", "Define", "Plan", "Execute", "Review"],
-      "the top bar's wings moved",
+      ["Home", "Define", "Plan", "Act", "Review"],
+      "the rail's wings moved",
     );
     assert.deepEqual(labels(report.checks.initial.rail), EXECUTE_RAIL, "the Execute rail moved");
     assert.equal(report.checks.initial.rail[0]?.href, "/projects", "the Projects rail row points elsewhere");
@@ -326,7 +326,7 @@ describe("Projects on the Execute wing e2e", () => {
       "Projects is still drawn under Plan",
     );
     assert.deepEqual(labels(report.checks.wing.execute.rail), EXECUTE_RAIL, "the Execute rail moved after a switch");
-    assert.equal(report.checks.wing.execute.activeTab, "Execute");
+    assert.equal(report.checks.wing.execute.activeTab, "Act");
     assert.equal(report.checks.wing.execute.rail[0]?.active, true, "the Projects row lost its active state");
 
     // ── The register shows the built-in attributes ──────────────────────────

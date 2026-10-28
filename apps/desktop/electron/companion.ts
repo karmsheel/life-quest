@@ -1061,7 +1061,16 @@ async function errorDetail(res: Response, fallback: string): Promise<string> {
   return fallback;
 }
 
-export async function companionSessionsList(): Promise<
+/**
+ * The profile's chats.
+ *
+ * `includeArchived` is the sidebar's view option: archived rows come back
+ * instead of being dropped, so the operator can see and restore them. Hidden
+ * rows never cross the boundary either way.
+ */
+export async function companionSessionsList(
+  options: { includeArchived?: boolean } = {},
+): Promise<
   { ok: true; value: HermesSession[] } | { ok: false; error: string }
 > {
   try {
@@ -1072,7 +1081,12 @@ export async function companionSessionsList(): Promise<
     if (unreachable) return { ok: false, error: unreachable };
     const response = res as Response;
     if (!response.ok) return { ok: false, error: `Sessions list failed (${response.status})` };
-    return { ok: true, value: sessionsFromPayload(await response.json()) };
+    return {
+      ok: true,
+      value: sessionsFromPayload(await response.json(), {
+        includeArchived: options.includeArchived === true,
+      }),
+    };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
