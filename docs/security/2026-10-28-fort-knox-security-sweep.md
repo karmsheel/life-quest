@@ -3,7 +3,8 @@
 **Date:** 2026-10-28
 **Scope:** the whole product codebase (`apps/desktop`, `packages/vault-core`, build/release
 configuration, renderer, loopback doors, companion/Hermes integration, vault storage)
-**Base revision:** `47bd3ea` (master)
+**Base revision:** `354c37b` (master; the audit ran at `47bd3ea` and the branch was rebased onto
+current master before handover so the regression gate runs against the tree the operator has)
 **Branch:** `security/fort-knox`
 **Method:** six parallel read-only audits against a written threat model, each claim backed by
 executed evidence (throwaway vaults, in-process doors, a throwaway Electron harness, a Chromium DOM
@@ -223,20 +224,26 @@ Evidence artifact: `apps/desktop/e2e/artifacts/security-fort-knox.json` (machine
 `apps/desktop/e2e/artifacts/security-fort-knox.png` (the shipped welcome screen, captured from the
 real window). The rig ran green on the fixed tree: **32/32 checks**, pass, zero failures.
 
-The full existing suite was also run against this branch as the regression gate:
-**72 tests, 65 pass, 7 fail**. The seven were investigated individually:
+The full existing suite was run against this branch (rebased onto master `354c37b`) as the
+regression gate: **74 tests, 69 pass, 5 fail**. The five failures are exactly the pre-existing
+stub-bridge test debt proven below; the security rig, the new manual-decision tests, and everything
+else pass.
+
+Two temporary failures were found while getting there and were resolved as follows:
 
 | test | cause | disposition |
 |---|---|---|
-| `dashboard page lock` | **Branch regression**: a Decision that saves a new dashboard view carries `viewId: ""` at propose time (the id is minted on approval); the new segment validator rejected the empty string. | **Fixed** in `decisions.ts` (empty `viewId` is "new card", not a path segment); the file is committed. A bench-confirmed rerun is queued behind other sessions' bench use — see the handover. |
-| `automations`, `daily-note-ui`, `ideal-state-ui`, `live-editor-ui`, `review-ui` | **Pre-existing harness gap**: these stub-bridge rigs flag any bridge method they do not model. The app's rail already polls `decisionList` on master (`NavRail.tsx`, `HomePage.tsx`, `DecisionsInbox.tsx` — untouched by this branch), so the rigs see an unmodelled call independent of this branch. | Not caused here; the harness stubs need a `decisionList` entry (test-debt, not a security defect). |
-| `decisions nav badge live` | Same stub-bridge context: the rig produced no report artifact (it crashed before writing), and its harness is the `decisionList`-polling rail. No file it loads was changed by this branch. | Same pre-existing class; noted for the test-debt list. |
+| `dashboard page lock` | **Branch regression**: a Decision that saves a new dashboard view carries `viewId: ""` at propose time (the id is minted on approval); the new segment validator rejected the empty string. | **Fixed** in `decisions.ts` (an empty `viewId` is "new card", not a path segment). Verified by running the test directly against `vault-core` (`pass 1, fail 0`) and by the final suite. |
+| `decisions nav badge live` | **Stale base**: the branch was cut from `47bd3ea`; master's next commit (`df14f59`) mounts the chats column in that harness, so the older harness crashed on the newer rail. | Resolved by rebasing onto `354c37b`; the test passes in the final suite. |
 
-Because the bench is shared with other concurrent branches, a clean master-vs-branch baseline could
-not be completed inside this run; the classification above rests on the unchanged files and the call
-site, and is stated as such rather than as a proven baseline. The security rig, the 18-test targeted
-regression set (update install/badge, companion doors, MCP pairing, live dashboard, cold start,
-finance FX, page context, settings agent, welcome pane) and the full suite were all run against this
+The five remaining failures (`automations`, `daily-note-ui`, `ideal-state-ui`, `live-editor-ui`,
+`review-ui`) were verified **pre-existing** by running the same five tests on master `354c37b`: they
+fail there with the identical unmodelled-`decisionList` message. The harness stubs predate the rail's
+`decisionList` polling; this is test debt, not a security defect and not a branch regression.
+
+The security rig, a targeted 18-test regression set (update install/badge, companion doors, MCP
+pairing, live dashboard, cold start, finance FX, page context, settings agent, welcome pane), the
+master baseline above, and the final full suite were all run through `lifequest-e2e` against this
 branch.
 
 The new guards also forced one **manual** rig update: `e2e/packaged-smoke.mjs` used `LIFEQUEST_E2E` to
