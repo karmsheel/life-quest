@@ -77,6 +77,8 @@ import type {
 import { NavRail } from "@/components/shell/NavRail";
 import { WingProvider } from "@/components/shell/WingProvider";
 import { LiveDataProvider } from "@/state/LiveDataProvider";
+import { ChatDockProvider } from "@/state/ChatDockProvider";
+import { ChatSessionsProvider } from "@/state/ChatSessionsProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { UpdateProvider } from "@/state/UpdateProvider";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
@@ -435,6 +437,14 @@ const stubs: Record<string, (...args: unknown[]) => Promise<unknown> | unknown> 
       if (index >= 0) vault.listeners.splice(index, 1);
     };
   },
+  // The rail now also carries the chats column. Its provider reads the session
+  // list at mount and the board lock for the active lens; both are answered
+  // empty, because no chat claim is made here.
+  companionSessionsList: async () => ok([]),
+  // The chats column's provider owns a stream listener for its whole life; the
+  // rail has no chat to stream into here, so it subscribes to nothing.
+  onCompanionStream: () => () => {},
+  pinsList: async () => ok({ pins: [], locked: false }),
   decisionList: async () => {
     vault.listCalls += 1;
     // A read hands back copies: the rail must never be able to edit the vault by
@@ -535,11 +545,15 @@ createRoot(document.getElementById("root")!).render(
       <UpdateProvider>
         <VaultProvider>
           <LiveDataProvider>
-            <NavDockProvider>
-              <WingProvider>
-                <Harness />
-              </WingProvider>
-            </NavDockProvider>
+            <ChatDockProvider>
+              <NavDockProvider>
+                <WingProvider>
+                  <ChatSessionsProvider>
+                    <Harness />
+                  </ChatSessionsProvider>
+                </WingProvider>
+              </NavDockProvider>
+            </ChatDockProvider>
           </LiveDataProvider>
         </VaultProvider>
       </UpdateProvider>
