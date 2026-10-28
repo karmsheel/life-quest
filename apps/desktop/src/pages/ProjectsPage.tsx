@@ -1,38 +1,100 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import { Link } from "react-router-dom";
+import { X } from "lucide-react";
 import {
   lensSlug,
+  PROJECT_PRIORITIES,
+  PROJECT_STATUSES,
   recordVisible,
   type Project,
+  type ProjectPriority,
   type ProjectStatus,
 } from "@lifequest/vault-core/pure";
+import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
+import { Button, buttonClassName } from "@/components/ui/Button";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { api } from "@/lib/ipc";
+import {
+  formatProjectDay,
+  PROJECT_PRIORITY_LABELS,
+  PROJECT_STATUS_LABELS,
+} from "@/lib/projects";
+import { useLiveData } from "@/state/LiveDataProvider";
 import { useVault } from "@/state/VaultProvider";
 
-type StatusFilter = "open" | "closed" | "all";
-
 /**
- * KAR-7: a Project is one markdown file linked to one Goal. The operator creates
- * and edits it directly — every write here goes straight to the vault with no
- * Decision in the loop. The agent only proposes create and close.
+ * Execute · Projects.
+ *
+ * A Project is not a database the operator has to build first: every vault ships
+ * with the schema, one markdown file per project, and the body is its context
+ * document. This page is the register — the rows say where each project stands
+ * and open the project's own page, which is where the work around it collates.
+ *
+ * KAR-7: an operator write here goes straight to the vault; no Decision.
  */
+
+type StatusFilter = "all" | ProjectStatus;
+
+type Composer = {
+  title: string;
+  summary: string;
+  goalId: string;
+  domainSlug: string;
+  status: ProjectStatus;
+  priority: "" | ProjectPriority;
+  startDate: string;
+  targetDate: string;
+  nextAction: string;
+  stateNote: string;
+  context: string;
+};
+
+function emptyComposer(domainSlug: string): Composer {
+  return {
+    title: "",
+    summary: "",
+    goalId: "",
+    domainSlug,
+    status: "open",
+    priority: "",
+    startDate: "",
+    targetDate: "",
+    nextAction: "",
+    stateNote: "",
+    context: "",
+  };
+}
+
 export default function ProjectsPage() {
-  const { snapshot, refresh } = useVault();
+  const { snapshot, refresh, reloadGeneration } = useVault();
   const lens = useDomainLens();
+  const liveRevision = useLiveData();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  // Composer state. The same fields serve create and edit.
-  const [title, setTitle] = useState("");
-  const [bodyMarkdown, setBodyMarkdown] = useState("");
-  const [goalId, setGoalId] = useState("");
-  const [domainValue, setDomainValue] = useState("");
-  const [status, setStatus] = useState<ProjectStatus>("open");
+  const [domainDirty, setDomainDirty] = useState(false);
+  const [composer, setComposer] = useState<Composer>(() =>
+    emptyComposer(lensSlug(lens) ?? ""),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Creating is a modal over the register, not a section below it: the register
+   * is the page, and a project starts from the heading's own button. The form is
+   * the same form; only where it lives changed.
+   */
+  const [creating, setCreating] = useState(false);
+  /** The button that opened the modal, so closing hands focus back to it. */
+  const newButtonRef = useRef<HTMLButtonElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   const liveDomains = useMemo(
     () =>
@@ -44,8 +106,6 @@ export default function ProjectsPage() {
   );
 
   const goals = snapshot?.goals ?? [];
-
-  const defaultDomain = useCallback((): string => lensSlug(lens) ?? "", [lens]);
 
   const load = useCallback(async () => {
     try {
@@ -63,14 +123,15 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     void load();
-  }, [load, snapshot]);
+  }, [load, reloadGeneration, liveRevision]);
 
-  // Overview shows everything, including unassigned. A domain lens shows only
-  // that domain, so unassigned work drops out of a domain view.
+  // The domain lens is the app's, not a second filter on the page: Overview shows
+  // every project, a domain lens shows that domain's own.
   const visible = useMemo(
     () => projects.filter((p) => recordVisible(lens, p.domainSlug)),
     [projects, lens],
   );
+
   const listed = useMemo(
     () =>
       statusFilter === "all"
@@ -79,123 +140,134 @@ export default function ProjectsPage() {
     [statusFilter, visible],
   );
 
-  const domainName = (slug: string | null): string => {
-    if (!slug) return "Unassigned";
-    return snapshot?.domains.find((d) => d.slug === slug)?.meta.name ?? slug;
+  const domainName = useCallback(
+    (slugValue: string | null): string => {
+      if (!slugValue) return "Unassigned";
+      return (
+        snapshot?.domains.find((d) => d.slug === slugValue)?.meta.name ??
+        slugValue
+      );
+    },
+    [snapshot],
+  );
+
+  const goalLabel = useCallback(
+    (id: string | null): string => {
+      if (!id) return "No goal";
+      const goal = goals.find((g) => g.id === id);
+      return goal?.name ?? `${id} (missing)`;
+    },
+    [goals],
+  );
+
+  // Keep the composer's domain following the lens until the operator picks one.
+  useEffect(() => {
+    if (domainDirty) return;
+    setComposer((prev) => ({ ...prev, domainSlug: lensSlug(lens) ?? "" }));
+  }, [domainDirty, lens]);
+
+  const setField = <K extends keyof Composer>(key: K, value: Composer[K]) => {
+    setComposer((prev) => ({ ...prev, [key]: value }));
   };
 
-  const goalName = (id: string): string =>
-    goals.find((g) => g.id === id)?.name ?? `${id} (missing)`;
-
-  const resetComposer = useCallback(() => {
-    setEditingId(null);
-    setTitle("");
-    setBodyMarkdown("");
-    setGoalId("");
-    setStatus("open");
+  const openCreate = useCallback(() => {
+    // Each opening starts clean, on the lens's domain, with no stale error from
+    // the last attempt.
+    setComposer(emptyComposer(lensSlug(lens) ?? ""));
+    setDomainDirty(false);
     setError(null);
-    setDomainValue(defaultDomain());
-  }, [defaultDomain]);
+    setCreating(true);
+  }, [lens]);
 
-  // Keep the domain default following the lens until the operator picks one.
-  const [domainDirty, setDomainDirty] = useState(false);
+  const closeCreate = useCallback(() => {
+    setCreating(false);
+    setError(null);
+    // The modal was opened from the heading's button; leaving returns to it
+    // rather than dropping the caret at the top of the document.
+    requestAnimationFrame(() => newButtonRef.current?.focus());
+  }, []);
+
   useEffect(() => {
-    if (editingId || domainDirty) return;
-    setDomainValue(defaultDomain());
-  }, [defaultDomain, domainDirty, editingId]);
+    if (!creating) return;
+    titleInputRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      // A create in flight keeps the modal up: closing it would hide the only
+      // place the failure can be reported.
+      if (event.key !== "Escape" || busy) return;
+      event.preventDefault();
+      closeCreate();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [creating, closeCreate, busy]);
 
-  function openEdit(project: Project) {
+  async function onCreate(e: FormEvent) {
+    e.preventDefault();
     if (busy) return;
-    setEditingId(project.id);
-    setTitle(project.title);
-    setBodyMarkdown(project.bodyMarkdown);
-    setGoalId(project.goalId);
-    setStatus(project.status);
-    setDomainValue(project.domainSlug ?? "");
-    setDomainDirty(true);
-    setError(null);
-  }
-
-  async function onCreate() {
-    if (busy) return;
-    if (!title.trim()) {
+    if (!composer.title.trim()) {
       setError("Title is required");
-      return;
-    }
-    if (!goalId) {
-      setError("Pick a goal");
       return;
     }
     setBusy(true);
     setError(null);
     try {
       const result = await api().projectsCreate({
-        title: title.trim(),
-        goalId,
-        domainSlug: domainValue || null,
-        bodyMarkdown,
+        title: composer.title.trim(),
+        summary: composer.summary.trim(),
+        bodyMarkdown: composer.context,
+        stateNote: composer.stateNote.trim(),
+        goalId: composer.goalId || null,
+        domainSlug: composer.domainSlug || null,
+        status: composer.status,
+        priority: composer.priority || null,
+        startDate: composer.startDate || null,
+        targetDate: composer.targetDate || null,
+        nextAction: composer.nextAction.trim() || null,
       });
       if (!result.ok) {
         setError(result.error);
         return;
       }
-      resetComposer();
-      await load();
+      setComposer(emptyComposer(lensSlug(lens) ?? ""));
+      setDomainDirty(false);
+      closeCreate();
       await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create project");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create project");
     } finally {
       setBusy(false);
     }
   }
-
-  async function onSave() {
-    if (busy || !editingId) return;
-    if (!title.trim()) {
-      setError("Title is required");
-      return;
-    }
-    if (!goalId) {
-      setError("Pick a goal");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await api().projectsUpdate(editingId, {
-        title: title.trim(),
-        bodyMarkdown,
-        goalId,
-        domainSlug: domainValue || null,
-        status,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      resetComposer();
-      await load();
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save project");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const editing = editingId ? projects.find((p) => p.id === editingId) ?? null : null;
 
   return (
-    <div className="projects-page">
+    <div className="projects-page" data-testid="projects-page">
       <header className="act-page__header">
         <div>
-          <p className="act-page__eyebrow muted">Plan</p>
+          <p className="act-page__eyebrow muted">Execute</p>
           <h1 className="act-page__title">Projects</h1>
         </div>
+        <div className="projects-page__header-actions">
+          <span className="muted projects-page__count">
+            {visible.length === 1 ? "1 project" : `${visible.length} projects`}
+          </span>
+          <button
+            ref={newButtonRef}
+            type="button"
+            className={buttonClassName({ variant: "primary" })}
+            onClick={openCreate}
+            data-testid="project-new"
+          >
+            New project
+          </button>
+        </div>
       </header>
-      <p className="muted">
-        A project is one markdown document in the vault, linked to a goal. You
-        edit it directly here.
+
+      <p className="projects-page__intro muted">
+        A project is a built-in vault document: one markdown file with a fixed
+        set of attributes and a context page of its own. Open one to log
+        progress and see the tasks, signals, Decisions and log lines gathered
+        around it.
       </p>
 
       {loadError ? (
@@ -204,153 +276,328 @@ export default function ProjectsPage() {
         </p>
       ) : null}
 
-      <section className="act-page__section">
-        <h2 className="act-page__section-title">
-          {editing ? `Edit — ${editing.title}` : "New project"}
-        </h2>
-        <div className="act-run__agent-field">
-          <label className="field">
-            <span>Title</span>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              aria-label="Project title"
-            />
-          </label>
-          <label className="field">
-            <span>Goal</span>
-            <select
-              value={goalId}
-              onChange={(e) => setGoalId(e.target.value)}
-              aria-label="Project goal"
+      <div className="projects-page__toolbar">
+        <div
+          className="ui-segmented projects-page__filters"
+          role="radiogroup"
+          aria-label="Project status filter"
+        >
+          {(["all", ...PROJECT_STATUSES] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={statusFilter === value}
+              className={`ui-segmented__option${statusFilter === value ? " is-active" : ""}`}
+              onClick={() => setStatusFilter(value)}
+              data-testid={`project-filter-${value}`}
             >
-              <option value="">Pick a goal</option>
-              {goals.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Domain</span>
-            <select
-              value={domainValue}
-              onChange={(e) => {
-                setDomainValue(e.target.value);
-                setDomainDirty(true);
-              }}
-              aria-label="Project domain"
+              {value === "all" ? "All" : PROJECT_STATUS_LABELS[value]}
+            </button>
+          ))}
+        </div>
+        <p className="muted projects-page__scope">
+          {lens.kind === "overview"
+            ? "Overview — every domain"
+            : `Scoped to ${domainName(lens.slug)}`}
+        </p>
+      </div>
+
+      {projects.length === 0 ? (
+        <p className="muted projects-page__empty" data-testid="projects-empty">
+          No projects yet. Use New project above — it becomes a markdown file in
+          the vault the moment you create it.
+        </p>
+      ) : visible.length === 0 ? (
+        <p className="muted projects-page__empty">
+          No projects in {domainName(lens.kind === "domain" ? lens.slug : null)}.
+        </p>
+      ) : listed.length === 0 ? (
+        <p className="muted projects-page__empty">
+          No {statusFilter === "all" ? "" : `${statusFilter} `}projects.
+        </p>
+      ) : (
+        <ul className="projects-list" aria-label="Projects">
+          {listed.map((project) => (
+            <li key={project.id} className="projects-list__item">
+              <Link
+                to={`/projects/${project.id}`}
+                className="projects-row"
+                data-testid="project-row"
+                data-project-id={project.id}
+                data-status={project.status}
+              >
+                <span className="projects-row__main">
+                  <span className="projects-row__head">
+                    <span className="projects-row__title">{project.title}</span>
+                    <span
+                      className={`projects-chip projects-chip--${project.status}`}
+                    >
+                      {PROJECT_STATUS_LABELS[project.status]}
+                    </span>
+                    {project.priority ? (
+                      <span className="projects-row__priority muted">
+                        {PROJECT_PRIORITY_LABELS[project.priority]}
+                      </span>
+                    ) : null}
+                  </span>
+                  {project.stateNote || project.summary ? (
+                    <span className="projects-row__summary">
+                      {project.stateNote || project.summary}
+                    </span>
+                  ) : null}
+                  <span className="projects-row__meta">
+                    <span>{goalLabel(project.goalId)}</span>
+                    <span>{domainName(project.domainSlug)}</span>
+                    {project.targetDate ? (
+                      <span>Target {formatProjectDay(project.targetDate)}</span>
+                    ) : null}
+                    {project.nextAction ? (
+                      <span className="projects-row__next">
+                        Next: {project.nextAction}
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
+                <span
+                  className="projects-row__aside"
+                  aria-label={`${project.progress}% complete`}
+                >
+                  <span className="projects-progress">
+                    <span className="projects-progress__track" aria-hidden="true">
+                      <span
+                        className="projects-progress__fill"
+                        style={{ width: `${project.progress}%` }}
+                      />
+                    </span>
+                    <span className="projects-progress__value">
+                      {project.progress}%
+                    </span>
+                  </span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {creating ? (
+        <div
+          className="project-modal-backdrop"
+          role="presentation"
+          data-testid="project-create-backdrop"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !busy) closeCreate();
+          }}
+        >
+          <div
+            className="project-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-project-title"
+            data-testid="project-create-modal"
+          >
+            <div className="project-modal__head">
+              <div className="project-modal__heading">
+                <h2 className="project-modal__title" id="new-project-title">
+                  New project
+                </h2>
+                <p className="muted project-modal__hint">
+                  Every attribute is optional except the title. A project can
+                  start before it is filed under a goal.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="project-modal__close"
+                aria-label="Close new project"
+                onClick={closeCreate}
+                disabled={busy}
+                data-testid="project-create-close"
+              >
+                <X size={16} aria-hidden />
+              </button>
+            </div>
+            <form
+              className="projects-page__composer project-modal__form"
+              onSubmit={(e) => void onCreate(e)}
+              data-testid="project-create"
             >
-              <option value="">Unassigned</option>
-              {liveDomains.map((d) => (
-                <option key={d.slug} value={d.slug}>
-                  {d.meta.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {editing ? (
-            <label className="field">
-              <span>Status</span>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as ProjectStatus)}
-                aria-label="Project status"
-              >
-                <option value="open">Open</option>
-                <option value="closed">Closed</option>
-              </select>
-            </label>
-          ) : null}
-          <label className="field">
-            <span>Notes</span>
-            <textarea
-              value={bodyMarkdown}
-              onChange={(e) => setBodyMarkdown(e.target.value)}
-              rows={4}
-              aria-label="Project notes"
-            />
-          </label>
-          {error ? (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <div className="act-page__section-head">
-            {editing ? (
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => void onSave()}
-                disabled={busy}
-              >
-                Save
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => void onCreate()}
-                disabled={busy}
-              >
-                Create
-              </button>
-            )}
-            {editing ? (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={resetComposer}
-                disabled={busy}
-              >
-                Cancel
-              </button>
-            ) : null}
+              <div className="projects-page__grid">
+                <label className="field projects-page__span2">
+                  <span>Title</span>
+                  <input
+                    ref={titleInputRef}
+                    value={composer.title}
+                    onChange={(e) => setField("title", e.target.value)}
+                    aria-label="Project title"
+                    data-testid="project-create-title"
+                    required
+                  />
+                </label>
+                <label className="field projects-page__span2">
+                  <span>Summary</span>
+                  <input
+                    value={composer.summary}
+                    onChange={(e) => setField("summary", e.target.value)}
+                    aria-label="Project summary"
+                    data-testid="project-create-summary"
+                    placeholder="One line: what this is"
+                  />
+                </label>
+                <label className="field">
+                  <span>Goal</span>
+                  <select
+                    value={composer.goalId}
+                    onChange={(e) => setField("goalId", e.target.value)}
+                    aria-label="Project goal"
+                    data-testid="project-create-goal"
+                  >
+                    <option value="">No goal</option>
+                    {goals.map((goal) => (
+                      <option key={goal.id} value={goal.id}>
+                        {goal.status === "done" ? `${goal.name} (done)` : goal.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Domain</span>
+                  <select
+                    value={composer.domainSlug}
+                    onChange={(e) => {
+                      setDomainDirty(true);
+                      setField("domainSlug", e.target.value);
+                    }}
+                    aria-label="Project domain"
+                    data-testid="project-create-domain"
+                  >
+                    <option value="">Unassigned</option>
+                    {liveDomains.map((domain) => (
+                      <option key={domain.slug} value={domain.slug}>
+                        {domain.meta.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Status</span>
+                  <select
+                    value={composer.status}
+                    onChange={(e) =>
+                      setField("status", e.target.value as ProjectStatus)
+                    }
+                    aria-label="Project status"
+                    data-testid="project-create-status"
+                  >
+                    {PROJECT_STATUSES.map((value) => (
+                      <option key={value} value={value}>
+                        {PROJECT_STATUS_LABELS[value]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Priority</span>
+                  <select
+                    value={composer.priority}
+                    onChange={(e) =>
+                      setField("priority", e.target.value as "" | ProjectPriority)
+                    }
+                    aria-label="Project priority"
+                    data-testid="project-create-priority"
+                  >
+                    <option value="">No priority</option>
+                    {PROJECT_PRIORITIES.map((value) => (
+                      <option key={value} value={value}>
+                        {PROJECT_PRIORITY_LABELS[value]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Start date</span>
+                  <input
+                    type="date"
+                    value={composer.startDate}
+                    onChange={(e) => setField("startDate", e.target.value)}
+                    aria-label="Project start date"
+                    data-testid="project-create-start"
+                  />
+                </label>
+                <label className="field">
+                  <span>Target date</span>
+                  <input
+                    type="date"
+                    value={composer.targetDate}
+                    onChange={(e) => setField("targetDate", e.target.value)}
+                    aria-label="Project target date"
+                    data-testid="project-create-target"
+                  />
+                </label>
+                <label className="field projects-page__span2">
+                  <span>Next action</span>
+                  <input
+                    value={composer.nextAction}
+                    onChange={(e) => setField("nextAction", e.target.value)}
+                    aria-label="Project next action"
+                    data-testid="project-create-next-action"
+                    placeholder="The one thing to do next"
+                  />
+                </label>
+                <label className="field projects-page__span2">
+                  <span>State note</span>
+                  <input
+                    value={composer.stateNote}
+                    onChange={(e) => setField("stateNote", e.target.value)}
+                    aria-label="Project state note"
+                    data-testid="project-create-state-note"
+                    placeholder="Where it stands right now"
+                  />
+                </label>
+              </div>
+
+              <div className="field projects-page__context">
+                <span>Context</span>
+                <LiveMarkdownEditor
+                  value={composer.context}
+                  onChange={(next) => setField("context", next)}
+                  slug={composer.domainSlug || (lensSlug(lens) ?? "")}
+                  ariaLabel="Project context"
+                  placeholder="The project's own context document. Markdown, saved with the project."
+                  testId="project-create-context"
+                />
+              </div>
+
+              {error ? (
+                <p className="form-error" role="alert">
+                  {error}
+                </p>
+              ) : null}
+
+              <div className="projects-page__actions project-modal__actions">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={closeCreate}
+                  disabled={busy}
+                  data-testid="project-create-cancel"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={busy || !composer.title.trim()}
+                  data-testid="project-create-submit"
+                >
+                  {busy ? "Creating…" : "Create project"}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
-      </section>
-
-      <section className="act-page__section">
-        <div className="act-page__section-head">
-          <h2 className="act-page__section-title">All projects</h2>
-          <label className="field">
-            <span>Status</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-              aria-label="Project status filter"
-            >
-              <option value="all">All</option>
-              <option value="open">Open</option>
-              <option value="closed">Closed</option>
-            </select>
-          </label>
-        </div>
-        {listed.length === 0 ? (
-          <p className="muted">No projects yet.</p>
-        ) : (
-          <ul className="act-activity-list">
-            {listed.map((project) => (
-              <li key={project.id} className="act-activity-row">
-                <button
-                  type="button"
-                  className="project-row__open"
-                  onClick={() => openEdit(project)}
-                >
-                  {project.title}
-                </button>
-                <span className="act-activity-row__type">
-                  {project.status === "closed" ? "Closed" : "Open"}
-                </span>
-                <span className="act-activity-row__summary">
-                  {domainName(project.domainSlug)} · {goalName(project.goalId)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      ) : null}
     </div>
   );
 }

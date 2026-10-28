@@ -4,6 +4,7 @@ import type { MapToolDef } from "./map/tools.ts";
 import type {
   Actor,
   DatabaseBatchDecisionBody,
+  DatabaseColumnSpec,
   DatabaseColumnType,
   DatabaseDecisionBody,
   DatabaseMeta,
@@ -32,6 +33,14 @@ import { lookupExternalId } from "./ingest.ts";
 import { vaultPaths } from "./paths.ts";
 
 const INSERT_ROWS_MAX = 200;
+
+/**
+ * A table that arrives with more columns than this was almost certainly built
+ * from a copy-paste of another schema; fifty is comfortably past any table the
+ * app's own kits define. The cap also keeps one Decision's proposed body small
+ * enough for the operator to actually read before approving it.
+ */
+const CREATE_DATABASE_COLUMNS_MAX = 50;
 
 /**
  * KAR-63: one generic tool set keyed on (domainSlug, databaseId), covering every
@@ -184,12 +193,41 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
   {
     name: "create_database",
     description:
-      "Propose creating a new empty database in a live domain. Files a Decision naming the database id " +
-      "it proposes. Columns are added by a separate add_column call, one per column (also " +
-      "Decision-gated).",
+      "Propose creating a database in a live domain, optionally with its columns in the same " +
+      "call. ONE Decision creates the database and every column it names when the operator " +
+      "approves it, so a new table is one approval rather than one per column. Columns are " +
+      "validated now (unique names, known types, options for select, an existing database for " +
+      "relation), so an approval cannot fail on a bad schema. Returns " +
+      "{ decisionId, databaseId, status, columns } where columns is how many the Decision " +
+      "creates; claim the database exists only when status is approved. Use add_column to add " +
+      "a column to a database that already exists.",
     parameters: {
       type: "object",
-      properties: { domainSlug: { type: "string" }, name: { type: "string" } },
+      properties: {
+        domainSlug: { type: "string" },
+        name: { type: "string" },
+        columns: {
+          type: "array",
+          description:
+            "Optional columns the new database is born with, 1 to 50. Omit for an empty database.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              type: {
+                type: "string",
+                description: "One of: text, number, date, select, checkbox, relation, file.",
+              },
+              options: { type: "array", description: "Required for type 'select'." },
+              relationDatabaseId: {
+                type: "string",
+                description: "Required for type 'relation'; an existing database in this domain.",
+              },
+            },
+            required: ["name", "type"],
+          },
+        },
+      },
       required: ["domainSlug", "name"],
     },
   },
@@ -346,6 +384,156 @@ async function liveDomainSlugs(root: string): Promise<string[]> {
     if (await isDomainLive(root, entry.name)) slugs.push(entry.name);
   }
   return slugs;
+}
+
+/**
+ * Validate a create_database `columns` argument up front and return the exact
+ * specs the Decision will carry.
+ *
+ * ALL schema validation happens here rather than being split between propose and
+ * apply: the operator approves one body, so a column that only fails at apply
+ * time would turn one approval into a half-created database. The apply path
+ * still has to cope with the vault moving underneath it (a relation target
+ * deleted while the Decision sat pending), which is why it can still fail — it
+ * just cannot fail on a spec this function accepted.
+ *
+ * The rules match add_column's own engine checks, so a spec that is legal here
+ * stays legal when addDatabaseColumn runs it for real.
+ */
+async function validateNewDatabaseColumns(
+  root: string,
+  domainSlug: string,
+  raw: unknown,
+): Promise<
+  | { ok: true; columns: DatabaseColumnSpec[] }
+  | { ok: false; result: DatabaseToolResult }
+> {
+  // Absent is the pre-existing call shape: a database with no columns yet.
+  if (raw === undefined || raw === null) return { ok: true, columns: [] };
+  if (!Array.isArray(raw)) {
+    return { ok: false, result: fail("VALIDATION", "columns must be an array of column objects") };
+  }
+  if (raw.length < 1 || raw.length > CREATE_DATABASE_COLUMNS_MAX) {
+    return {
+      ok: false,
+      result: fail(
+        "VALIDATION",
+        `columns must contain 1 to ${CREATE_DATABASE_COLUMNS_MAX} column objects`,
+      ),
+    };
+  }
+
+  const columns: DatabaseColumnSpec[] = [];
+  // Case-insensitive because the operator reads the schema as a table header row,
+  // and two headers differing only in case read as one column repeated.
+  const seenNames = new Set<string>();
+  for (let i = 0; i < raw.length; i++) {
+    const columnNumber = i + 1;
+    const entry = raw[i];
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      return {
+        ok: false,
+        result: fail("VALIDATION", `Column ${columnNumber}: must be a JSON object`),
+      };
+    }
+    const spec = entry as Record<string, unknown>;
+
+    if (!isNonEmptyString(spec.name)) {
+      return { ok: false, result: fail("VALIDATION", `Column ${columnNumber}: name is required`) };
+    }
+    const name = spec.name.trim();
+    if (seenNames.has(name.toLowerCase())) {
+      return {
+        ok: false,
+        result: fail("VALIDATION", `Column ${columnNumber}: duplicate column name "${name}"`),
+      };
+    }
+    seenNames.add(name.toLowerCase());
+
+    if (!isNonEmptyString(spec.type)) {
+      return { ok: false, result: fail("VALIDATION", `Column ${columnNumber}: type is required`) };
+    }
+    const type = spec.type as DatabaseColumnType;
+    if (!(DATABASE_COLUMN_TYPES as readonly string[]).includes(type)) {
+      return {
+        ok: false,
+        result: fail(
+          "VALIDATION",
+          `Column ${columnNumber}: Unknown column type: ${type}. One of: ${DATABASE_COLUMN_TYPES.join(", ")}`,
+        ),
+      };
+    }
+
+    // Same coercion add_column applies, so a spec filed here is the spec the
+    // engine will store. A non-array options value is rejected rather than
+    // ignored: silently dropping it would propose a select with no choices.
+    let options: string[] | undefined;
+    if (spec.options !== undefined && spec.options !== null) {
+      if (!Array.isArray(spec.options)) {
+        return {
+          ok: false,
+          result: fail("VALIDATION", `Column ${columnNumber}: options must be an array`),
+        };
+      }
+      options = spec.options.map(String);
+    }
+    if (type === "select" && (!options || options.length < 1)) {
+      return {
+        ok: false,
+        result: fail("VALIDATION", `Column ${columnNumber}: select requires at least one option`),
+      };
+    }
+
+    let relationDatabaseId: string | undefined;
+    if (spec.relationDatabaseId !== undefined && spec.relationDatabaseId !== null) {
+      if (!isNonEmptyString(spec.relationDatabaseId)) {
+        return {
+          ok: false,
+          result: fail(
+            "VALIDATION",
+            `Column ${columnNumber}: relationDatabaseId must be a non-empty string`,
+          ),
+        };
+      }
+      relationDatabaseId = spec.relationDatabaseId.trim();
+    }
+    if (type === "relation" && !relationDatabaseId) {
+      return {
+        ok: false,
+        result: fail("VALIDATION", `Column ${columnNumber}: relation requires relationDatabaseId`),
+      };
+    }
+    if (type !== "relation" && relationDatabaseId !== undefined) {
+      return {
+        ok: false,
+        result: fail(
+          "VALIDATION",
+          `Column ${columnNumber}: relationDatabaseId is only valid for type 'relation'`,
+        ),
+      };
+    }
+    // The new database cannot be a relation target for itself (it does not exist
+    // until approval), so only a database already in this live domain qualifies.
+    if (relationDatabaseId) {
+      const target = await getDatabase(root, domainSlug, relationDatabaseId);
+      if (!target.ok) {
+        return {
+          ok: false,
+          result: fail(
+            "VALIDATION",
+            `Column ${columnNumber}: relation target not found in this domain: ${relationDatabaseId}`,
+          ),
+        };
+      }
+    }
+
+    const column: DatabaseColumnSpec = { name, type };
+    if (options) column.options = options;
+    if (relationDatabaseId) column.relationDatabaseId = relationDatabaseId;
+    columns.push(column);
+  }
+
+  return { ok: true, columns };
 }
 
 /**
@@ -799,6 +987,13 @@ export async function executeDatabaseTool(
       const { slug: domainSlug } = live;
       const name = String(args.name).trim();
 
+      const validatedColumns = await validateNewDatabaseColumns(
+        root,
+        domainSlug,
+        args.columns,
+      );
+      if (!validatedColumns.ok) return validatedColumns.result;
+
       // The id is minted here, at propose time, and carried through the body. The
       // alternative — creating the database before filing — is the ungated write
       // this design exists to prevent, and it would leave an un-approved database
@@ -809,18 +1004,31 @@ export async function executeDatabaseTool(
         op: "create-database",
         databaseId: newDatabaseId,
         name,
+        // The columns the one Decision creates on approve. Empty means the old
+        // shape: a database with no columns, added later by add_column.
+        columns: validatedColumns.columns,
         databaseName: name,
         rowLabel: null,
         previousCells: null,
         cells: null,
         expectedUpdatedAt: null,
       };
-      return fileDecision(root, actor, {
+      const filed = await fileDecision(root, actor, {
         target: { type: "database", domainSlug, databaseId: newDatabaseId },
         proposedTitle: decisionTitle("create-database", null, domainSlug, null, name),
         body,
         previousBodyMarkdown: null,
       });
+      if ("error" in filed) return filed;
+      // The scheduled columns count is reported even while pending: it is what
+      // the operator is being asked to approve, and it is the fact the agent
+      // cannot learn any other way before approval (get_database is NOT_FOUND).
+      return {
+        decisionId: String((filed as { decisionId: string }).decisionId),
+        databaseId: newDatabaseId,
+        status: String((filed as { status: string }).status),
+        columns: validatedColumns.columns.length,
+      };
     }
 
     case "add_column": {

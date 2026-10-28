@@ -34,6 +34,8 @@ export * from "./domain-lens.ts";
 export * from "./library-documents.ts";
 export {
   commandForProjectTool,
+  executeProjectReadTool,
+  isProjectReadTool,
   projectClose,
   projectCreate,
   projectGet,
@@ -311,6 +313,11 @@ export type {
   DatabaseToolResult,
   DatabaseErrorCode,
 } from "./database-tools.ts";
+export { PAGE_TOOL_DEFS, executePageTool } from "./pages-tools.ts";
+export type { PageToolResult } from "./pages-tools.ts";
+export { SIGNAL_TOOL_DEFS, executeSignalTool } from "./signal-tools.ts";
+export type { SignalToolResult } from "./signal-tools.ts";
+export type { ProjectToolResult } from "./projects.ts";
 
 import { MAP_TOOL_DEFS, GOALS_TOOL_DEFS } from "./map/tools.ts";
 import { DOCUMENT_TOOL_DEFS } from "./document-tools.ts";
@@ -321,6 +328,8 @@ import { PROJECT_TOOL_DEFS } from "./projects.ts";
 import { DATABASE_TOOL_DEFS } from "./database-tools.ts";
 import { VIEW_TOOL_DEFS } from "./views-tools.ts";
 import { DAILY_NOTE_TOOL_DEFS } from "./daily-note-tools.ts";
+import { PAGE_TOOL_DEFS } from "./pages-tools.ts";
+import { SIGNAL_TOOL_DEFS } from "./signal-tools.ts";
 import type { MapToolDef } from "./map/tools.ts";
 
 /**
@@ -339,4 +348,6 @@ export const ALL_TOOL_DEFS: MapToolDef[] = [
   ...DATABASE_TOOL_DEFS,
   ...VIEW_TOOL_DEFS,
   ...DAILY_NOTE_TOOL_DEFS,
+  ...PAGE_TOOL_DEFS,
+  ...SIGNAL_TOOL_DEFS,
 ];

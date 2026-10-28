@@ -127,6 +127,7 @@ export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "update_goal",
   "delete_goal",
   "create_project",
+  "update_project",
   "close_project",
   "upsert_row",
   "delete_row",

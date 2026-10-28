@@ -45,7 +45,7 @@ export type NavItem = {
   pin?: "top" | "bottom" | "footer";
 };
 
-/** Home: Dashboard, Data, Pages, Documents, Personnel. Define: Dream, Vision, Ideal State. Plan: Goals, Projects, Life Map, Architecture. Execute: Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom shelf: Life-Chain, Decisions, Daily Note, Automations. Footer: Log. */
+/** Home: Dashboard, Data, Pages, Documents, Personnel. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Architecture. Execute: Projects, Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom shelf: Life-Chain, Decisions, Daily Note, Automations. Footer: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -159,14 +159,6 @@ export const NAV_ITEMS: NavItem[] = [
     wing: "plan",
   },
   {
-    id: "projects",
-    href: "/projects",
-    label: "Projects",
-    icon: FolderKanban,
-    section: "main",
-    wing: "plan",
-  },
-  {
     id: "chart",
     href: "/chart",
     label: "Life Map",
@@ -181,6 +173,16 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Target,
     section: "main",
     wing: "plan",
+  },
+  {
+    // Execute's first row: a project is the unit of work the operator is
+    // actually carrying, so it sits ahead of the schedule and the dispatch page.
+    id: "projects",
+    href: "/projects",
+    label: "Projects",
+    icon: FolderKanban,
+    section: "main",
+    wing: "execute",
   },
   {
     id: "schedule",
