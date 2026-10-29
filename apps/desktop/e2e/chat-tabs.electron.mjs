@@ -17,7 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, nativeTheme } from "electron";
+import { app, BrowserWindow, nativeTheme, screen } from "electron";
 
 // An occluded window stops painting, and a window that stops painting stops
 // firing requestAnimationFrame: a rig that waits on a frame then hangs until its
@@ -191,6 +191,43 @@ const SAMPLE = `(() => {
     stopCalls: window.__lqStopCalls ?? []
   };
 })()`;
+
+/**
+ * Slide the window so the ambient pointer cannot sit over the chats rail.
+ *
+ * This rig is the first in the suite whose assertions read `:hover`, and it
+ * reads them on a SHOWN window (a hidden window takes no pointer at all). The
+ * bench shares one X display with the operator's app, so the cursor may already
+ * be resting over a chat row when the rig starts: the window would inherit that
+ * hover on show and the "at rest" landing sample would measure a hover the rig
+ * never produced.
+ *
+ * The window nearly fills the display, so there is no corner clear of the
+ * cursor; what the sample needs is narrower — the cursor not over the chat
+ * rows. Moving the window horizontally by its one free strip (the difference
+ * between the display and the window) either pushes the rail under a different
+ * screen x or pushes the cursor outside the window. One of the two extremes
+ * always maps the ambient pointer off the rail, for any cursor position.
+ */
+function placeWindowOffTheRail(win, rail) {
+  const display = screen.getPrimaryDisplay().workArea;
+  const bounds = win.getBounds();
+  const cursor = screen.getCursorScreenPoint();
+  const maxX = Math.max(display.x, display.x + display.width - bounds.width);
+  const contentY = cursor.y - bounds.y;
+  // Above or below the window is already clear of every row.
+  if (contentY < 0 || contentY > bounds.height) return;
+  // A few pixels of slack: the row's own padding is not part of its hover box,
+  // but landing the pointer on the rail's edge is too close to be a fact.
+  const railLeft = rail.left - 8;
+  const railRight = rail.right + 8;
+  const clear = (x) => {
+    const contentX = cursor.x - x;
+    return contentX < railLeft || contentX > railRight;
+  };
+  const x = [display.x, maxX].find(clear) ?? display.x;
+  win.setPosition(x, bounds.y);
+}
 
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
@@ -438,6 +475,13 @@ async function main() {
     await run("window.chatTabsHarnessReady.then(() => true)");
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
     await new Promise((resolve) => setTimeout(resolve, 250));
+    // The window is shown so a REAL pointer can drive `:hover`; slide it so the
+    // operator's parked cursor cannot decide the landing state for us.
+    const railRect = await run(`(() => {
+      const r = document.querySelector(".chats-rail")?.getBoundingClientRect();
+      return r ? { left: r.left, right: r.right } : null;
+    })()`);
+    placeWindowOffTheRail(win, railRect ?? { left: 0, right: 260 });
     win.showInactive();
     // Park the pointer away from the rows before the first sample: a cursor an
     // operator left over the window must not decide whether landing is "at rest".
