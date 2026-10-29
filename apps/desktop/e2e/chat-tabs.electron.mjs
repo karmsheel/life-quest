@@ -53,49 +53,67 @@ const SAMPLE = `(() => {
   const panel = document.querySelector(".chat-panel");
   const composer = document.querySelector(".chat-panel__composer-input");
   const threadHeader = document.querySelector(".chat-panel__header--thread");
+  const chatsHeader = document.querySelector(".chats-rail__header");
+  const chatsTitle = chatsHeader?.querySelector(".chats-rail__title");
+  const chatsControls = chatsHeader
+    ? Array.from(chatsHeader.querySelectorAll(".chats-rail__header-actions button"))
+    : [];
+  const searchInput = document.querySelector(".chats-rail__search-input");
+  const viewMenu = document.querySelector(".chats-rail__view-menu");
 
-  // One flat list: the pinned rows first (in pin order), the rest after them. A
-  // row's pin mark is a resting decoration and its pin/archive buttons live in a
-  // hover-only span, so both are reported by computed display rather than by
-  // presence in the DOM.
-  const rows = Array.from(document.querySelectorAll(".chats-rail__rows .chats-rail__row")).map(
-    (li) => {
-      const when = li.querySelector(".chats-rail__when");
-      const pinState = li.querySelector(".chats-rail__pin-state");
-      const actions = li.querySelector(".chats-rail__actions");
-      const pin = li.querySelector(".chats-rail__pin-btn");
-      const archive = li.querySelector(".chats-rail__archive-btn");
-      const svg = pin ? pin.querySelector("svg") : null;
-      return {
-        label: text(li.querySelector(".chats-rail__label")),
-        when: text(when),
-        whenVisible: shown(when),
-        active: li.hasAttribute("data-active"),
-        live: li.hasAttribute("data-live"),
-        approval: li.hasAttribute("data-approval"),
-        menuOpen: Boolean(li.querySelector(".chats-rail__menu")),
-        pinned: li.getAttribute("data-pinned") === "true",
-        pinState: shown(pinState),
-        actionsVisible: shown(actions),
-        pin: {
-          exists: Boolean(pin),
-          visible: shownBox(pin),
-          label: pin ? (pin.getAttribute("aria-label") ?? pin.getAttribute("title")) : null,
-          dataPinned: pin ? pin.getAttribute("data-pinned") : null,
-          filled: Boolean(svg) && svg.getAttribute("fill") === "currentColor"
-        },
-        archive: {
-          exists: Boolean(archive),
-          visible: shownBox(archive),
-          label: archive
-            ? (archive.getAttribute("aria-label") ?? archive.getAttribute("title"))
-            : null,
-          beforePin: Boolean(archive && pin && archive.nextElementSibling === pin)
-        },
-        box: box(li)
-      };
+  // One flat list: the pinned rows first (in pin order), the rest after them,
+  // then the archived band when the view asks for it. A row's pin mark is a
+  // resting decoration and its pin/archive buttons live in a hover-only span, so
+  // both are reported by computed display rather than by presence in the DOM.
+  const rows = [];
+  let group = "";
+  for (const li of Array.from(document.querySelectorAll(".chats-rail__rows > li"))) {
+    if (li.classList.contains("chats-rail__group")) {
+      group = text(li);
+      continue;
     }
-  );
+    // The "nothing matched" line is a row of the list, not a chat.
+    if (li.classList.contains("chats-rail__empty")) continue;
+    const when = li.querySelector(".chats-rail__when");
+    const pinState = li.querySelector(".chats-rail__pin-state");
+    const actions = li.querySelector(".chats-rail__actions");
+    const pin = li.querySelector(".chats-rail__pin-btn");
+    const archive = li.querySelector(".chats-rail__archive-btn");
+    const rowMain = li.querySelector(".chats-rail__row-main");
+    const svg = pin ? pin.querySelector("svg") : null;
+    rows.push({
+      group,
+      label: text(li.querySelector(".chats-rail__label")),
+      when: text(when),
+      whenVisible: shown(when),
+      active: li.hasAttribute("data-active"),
+      archived: li.hasAttribute("data-archived"),
+      archivedTag: text(li.querySelector(".chats-rail__archived-tag")),
+      disabled: Boolean(rowMain && rowMain.disabled),
+      live: li.hasAttribute("data-live"),
+      approval: li.hasAttribute("data-approval"),
+      menuOpen: Boolean(li.querySelector(".chats-rail__menu")),
+      pinned: li.getAttribute("data-pinned") === "true",
+      pinState: shown(pinState),
+      actionsVisible: shown(actions),
+      pin: {
+        exists: Boolean(pin),
+        visible: shownBox(pin),
+        label: pin ? (pin.getAttribute("aria-label") ?? pin.getAttribute("title")) : null,
+        dataPinned: pin ? pin.getAttribute("data-pinned") : null,
+        filled: Boolean(svg) && svg.getAttribute("fill") === "currentColor"
+      },
+      archive: {
+        exists: Boolean(archive),
+        visible: shownBox(archive),
+        label: archive
+          ? (archive.getAttribute("aria-label") ?? archive.getAttribute("title"))
+          : null,
+        beforePin: Boolean(archive && pin && archive.nextElementSibling === pin)
+      },
+      box: box(li)
+    });
+  }
 
   const tabs = Array.from(document.querySelectorAll(".chat-panel__tab")).map((tab) => ({
     label: text(tab.querySelector(".chat-panel__tab-label")),
@@ -122,6 +140,9 @@ const SAMPLE = `(() => {
           title: text(rail.querySelector(".chats-rail__title")),
           liveCount: text(rail.querySelector(".chats-rail__live-count")),
           newChat: Boolean(rail.querySelector(".chats-rail__new")),
+          newChatBox: box(rail.querySelector(".chats-rail__new")),
+          groups: Array.from(document.querySelectorAll(".chats-rail__group")).map(text),
+          empty: text(rail.querySelector(".chats-rail__empty")),
           // The New chat button is a button, not a menu row: its icon and label
           // sit as one centred pair. Measure the pair's gaps to the button's
           // own edges instead of trusting the CSS rule.
@@ -145,7 +166,39 @@ const SAMPLE = `(() => {
           // The dead space above and below the rows is part of the design: the
           // rail breathes instead of starting flush against its title/edge.
           paddingTop: Number.parseFloat(window.getComputedStyle(rail).paddingTop) || 0,
-          paddingBottom: Number.parseFloat(window.getComputedStyle(rail).paddingBottom) || 0
+          paddingBottom: Number.parseFloat(window.getComputedStyle(rail).paddingBottom) || 0,
+          header: chatsHeader
+            ? {
+                box: box(chatsHeader),
+                titleBox: box(chatsTitle),
+                controls: chatsControls.map((control) => ({
+                  label: control.getAttribute("aria-label"),
+                  box: box(control)
+                }))
+              }
+            : null,
+          search: searchInput
+            ? {
+                box: box(searchInput),
+                panelBox: box(document.querySelector(".chats-rail__search")),
+                value: searchInput.value,
+                placeholder: searchInput.getAttribute("placeholder"),
+                focused: document.activeElement === searchInput
+              }
+            : null,
+          viewMenu: viewMenu
+            ? {
+                box: box(viewMenu),
+                title: text(viewMenu.querySelector(".chats-rail__menu-title")),
+                items: Array.from(
+                  viewMenu.querySelectorAll('[role="menuitemradio"]')
+                ).map((el) => ({
+                  label: el.getAttribute("aria-label"),
+                  checked: el.getAttribute("aria-checked") === "true"
+                }))
+              }
+            : null,
+          listOptions: window.__lqListOptions ?? []
         }
       : null,
     rows,
@@ -398,6 +451,72 @@ async function main() {
   const clickSidebarMenuItem = (label) =>
     run(`(async () => {
       const el = document.querySelector('.chats-rail__menu [aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']');
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** A header control of the chats section, by its accessible name. */
+  const clickRailControl = (label) =>
+    run(`(async () => {
+      const el = Array.from(document.querySelectorAll(".chats-rail__header-actions button")).find(
+        (button) => button.getAttribute("aria-label") === ${JSON.stringify(label)}
+      );
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** Type into the chats search field, through React's own input handling. */
+  const typeSearch = (next) =>
+    run(`(async () => {
+      const el = document.querySelector(".chats-rail__search-input");
+      if (!el) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      setter.call(el, ${JSON.stringify(next)});
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return true;
+    })()`);
+
+  /** Close the search with the cross in its own field. */
+  const closeSearchBox = () =>
+    run(`(async () => {
+      const el = document.querySelector(".chats-rail__search-clear");
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** A press anywhere outside the field: the sidebar's list is the nearest one. */
+  const pressOutsideSearch = () =>
+    run(`(async () => {
+      const el = document.querySelector(".chats-rail__list");
+      if (!el) return false;
+      el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** Escape in the field. */
+  const pressEscapeSearch = () =>
+    run(`(async () => {
+      const el = document.querySelector(".chats-rail__search-input");
+      if (!el) return false;
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** One option of the chats section's view menu. */
+  const clickViewOption = (label) =>
+    run(`(async () => {
+      const el = Array.from(document.querySelectorAll(".chats-rail__view-menu [role=menuitemradio]")).find(
+        (item) => item.getAttribute("aria-label") === ${JSON.stringify(label)}
+      );
       if (!el) return false;
       el.click();
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
@@ -1027,6 +1146,276 @@ async function main() {
       JSON.stringify(lateFrame.rows),
     );
 
+    // 15 — the chats header carries its two controls in line with the heading:
+    // search the list, and choose which views (all chats or hidden archives)
+    // the list is drawn from.
+    const header = await settle();
+    check(
+      "the chats header carries a search and a view control",
+      header.rail?.header?.controls.map((control) => control.label).join("/") ===
+        "Search chats/View options",
+      JSON.stringify(header.rail?.header?.controls),
+    );
+    check(
+      "both header controls sit on the heading's row",
+      Boolean(header.rail?.header) &&
+        header.rail.header.controls.every(
+          (control) =>
+            Math.abs(
+              (control.box.top + control.box.bottom) / 2 -
+                (header.rail.header.titleBox.top + header.rail.header.titleBox.bottom) / 2,
+            ) <= 4,
+        ),
+      JSON.stringify(header.rail?.header),
+    );
+    check(
+      "no search box before the icon is clicked",
+      header.rail?.search === null,
+      JSON.stringify(header.rail?.search),
+    );
+    check(
+      "no view menu before the icon is clicked",
+      header.rail?.viewMenu === null,
+      JSON.stringify(header.rail?.viewMenu),
+    );
+
+    // 16 — the search icon opens a full-width field; typing narrows the rows to
+    // the chats that match, without touching the dock.
+    check("clicked search", await clickRailControl("Search chats"), "no search control");
+    const searchOpen = await settle();
+    check(
+      "the search icon turns the header into a search box",
+      searchOpen.rail?.search?.focused === true &&
+        searchOpen.rail.search.value === "" &&
+        searchOpen.rail.search.placeholder === "Search chats",
+      JSON.stringify(searchOpen.rail?.search),
+    );
+    check(
+      "the field takes the header's own line",
+      Boolean(searchOpen.rail?.search && searchOpen.rail.header) &&
+        searchOpen.rail.header.titleBox === null &&
+        searchOpen.rail.header.controls.length === 0 &&
+        searchOpen.rail.search.panelBox.top >= searchOpen.rail.header.box.top - 1 &&
+        searchOpen.rail.search.panelBox.bottom <=
+          searchOpen.rail.header.box.bottom + 1,
+      JSON.stringify({
+        search: searchOpen.rail?.search?.panelBox,
+        header: searchOpen.rail?.header,
+      }),
+    );
+    check(
+      "the field spans the row the title and icons had",
+      Boolean(searchOpen.rail?.search && searchOpen.rail.newChatBox) &&
+        Math.abs(
+          searchOpen.rail.search.panelBox.left -
+            searchOpen.rail.newChatBox.left,
+        ) <= 1 &&
+        Math.abs(
+          searchOpen.rail.search.panelBox.right -
+            searchOpen.rail.newChatBox.right,
+        ) <= 1,
+      `search ${JSON.stringify(searchOpen.rail?.search?.panelBox)} vs New chat ${JSON.stringify(searchOpen.rail?.newChatBox)}`,
+    );
+    check("typed in the search box", await typeSearch("delta"), "no search input");
+    const searched = await settle();
+    check(
+      "the search narrows the rows to the match",
+      searched.rows.map((row) => row.label).join("/") === "Delta automation" &&
+        searched.rail?.groups.length === 0,
+      JSON.stringify(searched.rows.map((row) => [row.group, row.label])),
+    );
+    check(
+      "searching leaves the open chat alone",
+      searched.heading === "Bravo budget",
+      `heading "${searched.heading}"`,
+    );
+    screenshots.push(await shot("search"));
+    check("typed a miss", await typeSearch("zzz"), "no search input");
+    const noMatch = await settle();
+    check(
+      "a search with no match says so",
+      noMatch.rowCount === 0 &&
+        (noMatch.rail?.empty ?? "").includes("No chats match"),
+      JSON.stringify({ rows: noMatch.rowCount, empty: noMatch.rail?.empty }),
+    );
+    check(
+      "the archived chats are not searchable while the view hides them",
+      (await typeSearch("alpha")) && (await settle()).rowCount === 0,
+      "an archived chat came back through the search while hidden",
+    );
+    check("closed the search with its cross", await closeSearchBox(), "no close control");
+    const closedByCross = await settle();
+    check(
+      "the cross restores the chats header",
+      closedByCross.rail?.search === null &&
+        closedByCross.rail?.header?.titleBox !== null &&
+        closedByCross.rail?.header?.controls.length === 2 &&
+        closedByCross.rowCount === 3,
+      JSON.stringify({
+        search: closedByCross.rail?.search,
+        header: closedByCross.rail?.header,
+        rows: closedByCross.rowCount,
+      }),
+    );
+    check("reopened the search", await clickRailControl("Search chats"), "no search control");
+    await settle();
+    check("pressed outside the field", await pressOutsideSearch(), "no list to press");
+    const closedByOutside = await settle();
+    check(
+      "a press outside the field closes it and restores the header",
+      closedByOutside.rail?.search === null &&
+        closedByOutside.rail?.header?.controls.length === 2,
+      JSON.stringify({
+        search: closedByOutside.rail?.search,
+        header: closedByOutside.rail?.header,
+      }),
+    );
+    check("reopened the search once more", await clickRailControl("Search chats"), "no search control");
+    await settle();
+    check("pressed Escape in the field", await pressEscapeSearch(), "no search input");
+    const closedByEscape = await settle();
+    check(
+      "Escape also closes the field",
+      closedByEscape.rail?.search === null &&
+        closedByEscape.rail?.header?.controls.length === 2,
+      JSON.stringify(closedByEscape.rail?.header),
+    );
+
+    // 17 — the view options icon opens the filter: hide the archived chats, or
+    // show them as their own greyed, restorable group.
+    check("opened view options", await clickRailControl("View options"), "no view control");
+    const viewMenu = await settle();
+    check(
+      "the view menu names its two views",
+      viewMenu.rail?.viewMenu?.title === "View options" &&
+        JSON.stringify(viewMenu.rail.viewMenu.items) ===
+          JSON.stringify([
+            { label: "Hide archived chats", checked: true },
+            { label: "Show archived chats", checked: false },
+          ]),
+      JSON.stringify(viewMenu.rail?.viewMenu),
+    );
+    screenshots.push(await shot("view-options"));
+    check(
+      "clicked Show archived chats",
+      await clickViewOption("Show archived chats"),
+      "no Show archived item",
+    );
+    const archivedShown = await settle(420);
+    check(
+      "the archived chats came into the list",
+      archivedShown.rowCount === 6,
+      `${archivedShown.rowCount} rows: ${JSON.stringify(archivedShown.rows.map((row) => row.label))}`,
+    );
+    check(
+      "the view asked the list for the archived rows",
+      archivedShown.rail?.listOptions.at(-1)?.includeArchived === true,
+      JSON.stringify(archivedShown.rail?.listOptions),
+    );
+    check(
+      "the archived chats sit in their own group",
+      archivedShown.rail?.groups.includes("Archived") &&
+        archivedShown.rows
+          .filter((row) => row.archived)
+          .map((row) => row.label)
+          .sort()
+          .join("/") === "Alpha planning/Echo archived/Foxtrot archived",
+      JSON.stringify(archivedShown.rows.map((row) => [row.group, row.label, row.archived])),
+    );
+    check(
+      "archived rows are greyed, tagged and not openable",
+      archivedShown.rows
+        .filter((row) => row.archived)
+        .every(
+          (row) =>
+            row.archivedTag === "Archived" &&
+            row.disabled === true &&
+            row.group === "Archived",
+        ),
+      JSON.stringify(archivedShown.rows.filter((row) => row.archived)),
+    );
+    check(
+      "the live chats are still listed above them",
+      archivedShown.rows.filter((row) => !row.archived).length === 3,
+      JSON.stringify(archivedShown.rows.filter((row) => !row.archived).map((row) => row.label)),
+    );
+    check(
+      "the show-archived view does not change the open chat",
+      archivedShown.heading === "Bravo budget",
+      `heading "${archivedShown.heading}"`,
+    );
+    screenshots.push(await shot("archived-view"));
+    check("clicked an archived row", await clickSidebarRow("Echo archived"), "no archived row");
+    const archivedClick = await settle();
+    check(
+      "an archived row cannot be opened",
+      archivedClick.heading === "Bravo budget" &&
+        archivedClick.messageCalls.at(-1) !== "chat-echo",
+      JSON.stringify({ heading: archivedClick.heading, reads: archivedClick.messageCalls.slice(-2) }),
+    );
+    check("searched the archived view", await clickRailControl("Search chats"), "no search control");
+    check("typed an archived title", await typeSearch("echo"), "no search input");
+    const archivedSearch = await settle();
+    check(
+      "the search finds an archived chat while the view shows them",
+      archivedSearch.rowCount === 1 && archivedSearch.rows[0]?.archived === true,
+      JSON.stringify(archivedSearch.rows.map((row) => [row.label, row.archived])),
+    );
+    check("closed the archived search", await closeSearchBox(), "no close control");
+    await settle();
+    check(
+      "restored the archived chat",
+      (await openSidebarMenu("Echo archived")) &&
+        (await clickSidebarMenuItem("Unarchive chat")),
+      "no Unarchive item",
+    );
+    const unarchived = await settle();
+    check(
+      "Unarchive reached the bridge",
+      unarchived.patchCalls.at(-1)?.id === "chat-echo" &&
+        unarchived.patchCalls.at(-1)?.patch.archived === false,
+      JSON.stringify(unarchived.patchCalls.at(-1)),
+    );
+    check(
+      "the restored chat rejoined the flat live list",
+      unarchived.rows.find((row) => row.label === "Echo archived")?.archived === false &&
+        unarchived.rows.find((row) => row.label === "Echo archived")?.group === "" &&
+        unarchived.rowCount === 6,
+      JSON.stringify(unarchived.rows.map((row) => [row.group, row.label, row.archived])),
+    );
+    check("opened view options again", await clickRailControl("View options"), "no view control");
+    const viewMenuShown = await settle();
+    check(
+      "the view menu marks the current view",
+      JSON.stringify(viewMenuShown.rail?.viewMenu?.items) ===
+        JSON.stringify([
+          { label: "Hide archived chats", checked: false },
+          { label: "Show archived chats", checked: true },
+        ]),
+      JSON.stringify(viewMenuShown.rail?.viewMenu),
+    );
+    check(
+      "clicked Hide archived chats",
+      await clickViewOption("Hide archived chats"),
+      "no Hide archived item",
+    );
+    const archivedHidden = await settle(420);
+    check(
+      "hiding the archived view takes the archived rows out again",
+      archivedHidden.rowCount === 4 &&
+        !archivedHidden.rail?.groups.includes("Archived") &&
+        archivedHidden.rail?.listOptions.at(-1)?.includeArchived === false,
+      JSON.stringify({
+        rows: archivedHidden.rows.map((row) => [row.group, row.label]),
+        listOptions: archivedHidden.rail?.listOptions,
+      }),
+    );
+    check(
+      "the restored chat survives the view being hidden",
+      archivedHidden.rows.some((row) => row.label === "Echo archived" && !row.archived),
+      JSON.stringify(archivedHidden.rows.map((row) => row.label)),
+    );
+
     report = {
       url,
       ranAt: new Date().toISOString(),
@@ -1063,6 +1452,20 @@ async function main() {
         background,
         closedLive,
         lateFrame,
+        header,
+        searchOpen,
+        searched,
+        noMatch,
+        closedByCross,
+        closedByOutside,
+        closedByEscape,
+        viewMenu,
+        archivedShown,
+        archivedClick,
+        archivedSearch,
+        unarchived,
+        viewMenuShown,
+        archivedHidden,
       },
       failures,
       pass: failures.length === 0,

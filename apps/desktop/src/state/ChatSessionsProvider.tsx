@@ -172,6 +172,14 @@ type ChatSessionsContextValue = {
   runtimePins: Record<string, CompanionRuntimeOverride>;
   updateRuntimePick: (id: string, pick: CompanionRuntimeOverride) => void;
 
+  /**
+   * The sidebar's view option: when true the list also carries archived chats.
+   * They are shown greyed and restorable, never openable, and the dock's own
+   * working list stays live-only.
+   */
+  showArchived: boolean;
+  setShowArchived: (show: boolean) => void;
+
   loadSessions: () => Promise<HermesSession[] | null>;
   /** Navigate the active tab to a chat, the way a link navigates a browser tab. */
   openChat: (id: string) => Promise<void>;
@@ -218,6 +226,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   const [runtimePins, setRuntimePins] = useState<Record<string, CompanionRuntimeOverride>>(
     () => readStoredRuntimePins(),
   );
+  const [showArchived, setShowArchivedState] = useState(false);
 
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
@@ -227,6 +236,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   openTabsRef.current = openTabs;
   const runtimePinsRef = useRef(runtimePins);
   runtimePinsRef.current = runtimePins;
+  const showArchivedRef = useRef(showArchived);
+  showArchivedRef.current = showArchived;
   const contextCardRef = useRef<ChatCardContext | null>(contextCard);
   contextCardRef.current = contextCard;
   /**
@@ -301,7 +312,9 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   );
 
   const loadSessions = useCallback(async (): Promise<HermesSession[] | null> => {
-    const listed = await api().companionSessionsList();
+    const listed = await api().companionSessionsList({
+      includeArchived: showArchivedRef.current,
+    });
     if (!listed.ok) {
       setListError(listed.error);
       return null;
@@ -311,6 +324,21 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     setSessions(listed.value);
     return listed.value;
   }, []);
+
+  /**
+   * Turn the sidebar's archived view on or off. The list is re-read rather than
+   * filtered from what is held: whether archived rows exist at all is the
+   * gateway's answer, and the read also refreshes the live rows beside them.
+   */
+  const setShowArchived = useCallback(
+    (show: boolean) => {
+      if (show === showArchivedRef.current) return;
+      showArchivedRef.current = show;
+      setShowArchivedState(show);
+      void loadSessions();
+    },
+    [loadSessions],
+  );
 
   /** Put a chat in the tab strip without moving the operator's focus. */
   const ensureTab = useCallback((id: string) => {
@@ -488,12 +516,24 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
                   ...s,
                   title: typeof patch.title === "string" ? patch.title : s.title,
                   pinned: typeof patch.pinned === "boolean" ? patch.pinned : s.pinned,
+                  archived:
+                    typeof patch.archived === "boolean"
+                      ? patch.archived
+                      : s.archived,
                 }
               : s,
           )
-          // An archived chat leaves this list. Hermes keeps every message, and
-          // Hermes Desktop is where it can be unarchived.
-          .filter((s) => !(patch.archived === true && s.id === id)),
+          // Archiving hides the row from the working view. The archived view
+          // keeps it, greyed: that view exists so the chat can be found and
+          // restored. Hermes keeps every message either way.
+          .filter(
+            (s) =>
+              !(
+                patch.archived === true &&
+                s.id === id &&
+                !showArchivedRef.current
+              ),
+          ),
       );
       if (patch.archived === true) {
         const wasActive = activeIdRef.current === id;
@@ -953,6 +993,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       setReceiptFor,
       runtimePins,
       updateRuntimePick,
+      showArchived,
+      setShowArchived,
       loadSessions,
       openChat,
       openChatInNewTab,
@@ -993,6 +1035,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       sendMessage,
       sessions,
       sessionsLoaded,
+      setShowArchived,
+      showArchived,
       setAutomationContext,
       setDraftFor,
       reportError,

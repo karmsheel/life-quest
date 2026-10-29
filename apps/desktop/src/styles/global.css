@@ -848,13 +848,40 @@ a {
   gap: 0.15rem;
 }
 
-/* The wing's rows begin under the top bar's bottom hairline rather than level
-   with the Home/Define selector. The sidebar's header is the titlebar row; this
-   is the top bar's own band, so Dashboard starts on the first line of the page's
-   content instead of sitting beside the selector. The extra pixel or two is the
-   row's own leading: a 31px row starting on the hairline would cover it. */
+/* The sidebar's own band: the five-wing switcher sits on the same row as the
+   sheet's top bar, one `--shell-topbar-height` under the titlebar strip. The
+   band paints no line of its own — that hairline belongs to the sheet's top bar,
+   under the domain lens, and stops at the pane seam. */
+.nav-rail__wings-band {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: var(--shell-topbar-height);
+  /* The rail's flex gap and the header's own bottom margin already sit between
+     the titlebar row and this band; `--shell-frame - 0.3rem` is what is left of
+     the pane gap, so the band starts exactly where the sheet's top bar does. */
+  margin: calc(var(--shell-frame) - 0.3rem) 0 0;
+  padding: 0 0.45rem;
+}
+
+/* Five labels in a 16rem column. The control's shape is `.ui-segmented`'s; the
+   rail only tightens the option padding and steps the type down so the longest
+   wing name fits the fifth of the column it is given. */
+.nav-rail__wings {
+  width: 100%;
+}
+
+.nav-rail__wings .ui-segmented__option {
+  padding: 0.375rem 0.2rem;
+  font-size: 0.625rem;
+  white-space: nowrap;
+}
+
+/* The wing's rows begin under the switcher's band rather than under the sheet's
+   top bar: the rail owns the first level of navigation now, and the row directly
+   beneath the band is the active wing's first page. */
 .nav-rail__section--wing {
-  padding-top: 3.4rem;
+  padding-top: 0.25rem;
 }
 
 .nav-rail__section--bottom {
@@ -1120,11 +1147,14 @@ a {
 /* The band that runs across the top of the sheet. `--shell-topbar-height` is the
    height of that band in *both* panes — the dock's header wears it too — so the
    two underlines land on one line instead of stepping at the seam. No vertical
-   padding: the band is the height, and its contents centre in it. */
+   padding: the band is the height, and its one control centres in it. The wing
+   switcher used to share this row; it now sits in the sidebar's own band, which
+   leaves the domain lens alone here and on the sheet's centre line. */
 .top-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem 0.75rem;
   padding: 0 0.75rem;
   border-bottom: 1px solid var(--border);
@@ -1132,31 +1162,17 @@ a {
   min-height: var(--shell-topbar-height);
 }
 
-.top-bar__wings {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-/* Neither selector on the band wears a frame of its own. `.ui-segmented` draws a
-   hairline around the whole control, and the active tab draws its own inside it —
-   one pixel apart, so the wing switcher and the domain lens each read as two
-   concentric outlines sitting in a row. The control's soft fill still sets it off
-   the band, and the active tab keeps its line, which is what a tab is. Prefixed
-   with the band both because the shared `.ui-segmented` rule is declared further
-   down this sheet (so a bare class here would lose on source order) and to keep
-   the frame everywhere else the control appears — Goals' filters, the settings
-   nav — where there is no second outline to clash with. */
-.top-bar .top-bar__wings,
+/* The band's one control wears no frame of its own. `.ui-segmented` draws a
+   hairline around the whole control, a pixel outside the active tab's own line;
+   with the wing switcher moved to the rail the domain lens has no second outline
+   to pair with, and the frame only doubled it. The control's soft fill still
+   sets it off the band, and the active tab keeps its line, which is what a tab
+   is. Prefixed with the band both because the shared `.ui-segmented` rule is
+   declared further down this sheet (so a bare class here would lose on source
+   order) and to keep the frame everywhere else the control appears — Goals'
+   filters, the settings nav. */
 .top-bar .domain-switcher__tabs {
   border: none;
-}
-
-.top-bar__controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-left: auto;
 }
 
 /* —— Domain switcher —— */
@@ -8501,6 +8517,97 @@ button.chat-panel__activity-line:hover {
   white-space: nowrap;
 }
 
+/* The header's trailing pair, in line with the "Chats" heading: search the
+   list, and decide which chats the list is allowed to show. Both are quiet
+   until hovered; the view menu hangs under the icon that opened it. Its name
+   is deliberately not `.chats-rail__actions`: that class is the row's
+   hover-only verb band below. */
+.chats-rail__header-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.05rem;
+  flex: 0 0 auto;
+}
+
+.chats-rail__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.3rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chats-rail__icon-btn:hover,
+.chats-rail__icon-btn[aria-expanded="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+/* While the search is open it IS the header: it takes the whole row the title
+   and the two icons had, so the field is the first thing in the section and
+   nothing sits above it but the wing switcher. The header drops its own side
+   padding so the field lines up with the New chat button and the rows. */
+.chats-rail__header--search {
+  padding: 0.3rem 0.15rem 0.2rem;
+}
+
+/* The search field on that row: full width, the column's own inset. */
+.chats-rail__search {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--muted);
+}
+
+.chats-rail__search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.chats-rail__search-input::placeholder {
+  color: var(--muted);
+}
+
+.chats-rail__search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chats-rail__search-clear:hover {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
 /* The one write that starts a chat, at the top of the list the way every chat
    client puts it: a full-width row, not another icon in the rail. Its icon and
    label are centred as a pair — the row is a button, not a menu item. */
@@ -8540,6 +8647,18 @@ button.chat-panel__activity-line:hover {
   display: flex;
   flex-direction: column;
   gap: 0.08rem;
+}
+
+/* The one group heading the list still has: the archived band's eyebrow. The
+   live list is flat (pinned rows simply lead it), so this label only appears
+   when the view options turn the archived chats on. */
+.chats-rail__group {
+  margin: 0.6rem 0.45rem 0.1rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .chats-rail__row {
@@ -8712,6 +8831,54 @@ button.chat-panel__activity-line:hover {
   border-radius: var(--radius-sm);
   background: var(--card);
   box-shadow: var(--shadow-sm);
+}
+
+/* The view menu is wider than a row menu: it names the option it is on and
+   carries a check column so the current view is readable at a glance. */
+.chats-rail__view-menu {
+  top: calc(100% + 0.2rem);
+  right: 0;
+  min-width: 10.5rem;
+}
+
+.chats-rail__menu-title {
+  margin: 0;
+  padding: 0.2rem 0.5rem 0.3rem;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chats-rail__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.9rem;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+/* An archived row is what the view option exists for: readable and restorable,
+   never openable. Its greying is the row's, not the list's. */
+.chats-rail__row[data-archived] .chats-rail__row-main,
+.chats-rail__row[data-archived] .chats-rail__row-main:hover {
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+}
+
+.chats-rail__archived-tag {
+  flex: 0 0 auto;
+  padding: 0.02rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .chats-rail__menu button {

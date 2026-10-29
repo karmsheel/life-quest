@@ -351,11 +351,16 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     field.focus();
   }, []);
 
-  /** The open chat's row, when it is still listed (an archived one is not). */
-  const activeSession = sessions.find((s) => s.id === sessionId) ?? null;
+  /**
+   * The dock's working set: archived chats are the sidebar's recovery view, so
+   * they are not drawn here even while the sidebar is showing them. The open
+   * chat's row is always live (archiving it closes its tab).
+   */
+  const liveSessions = sessions.filter((s) => !s.archived);
+  const activeSession = liveSessions.find((s) => s.id === sessionId) ?? null;
   const activeLabel = activeSession ? sessionLabel(activeSession) : "Chat";
-  const pinnedSessions = sessions.filter((s) => s.pinned);
-  const recentSessions = sessions.filter((s) => !s.pinned);
+  const pinnedSessions = liveSessions.filter((s) => s.pinned);
+  const recentSessions = liveSessions.filter((s) => !s.pinned);
 
   /**
    * The chain, lensed the way the Life-Chain page lenses it: everything in
@@ -1262,7 +1267,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               </div>
               <div className="chat-panel__list">
                 {errorBanner}
-                {sessionsLoaded && sessions.length === 0 ? (
+                {sessionsLoaded && liveSessions.length === 0 ? (
                   <p className="chat-panel__sessions-empty">No chats yet</p>
                 ) : (
                   <ul
