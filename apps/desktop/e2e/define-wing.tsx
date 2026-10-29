@@ -3,7 +3,7 @@
  *
  * The claim under test is a *shape of the app*, so the rig mounts the shipping
  * shell and the shipping pages rather than a description of them: the real
- * `AppShell` (real nav rail, real wing tabs, real `wingForPath`), the real
+ * `AppShell` (real nav rail with its wing switcher, real `wingForPath`), the real
  * `DreamPage`, `VisionPage`, `DocumentsPage` and `DoctrineEditorPage`.
  *
  * This is a system-in-isolation rig, so the ways it can lie are written down
@@ -294,7 +294,7 @@ const ready = new Promise<void>((resolve) => {
  */
 const waitForShell = () => {
   const rail = document.querySelector(".nav-rail");
-  const tabs = document.querySelector(".top-bar__wings");
+  const tabs = document.querySelector(".nav-rail__wings");
   const page = document.querySelector("[data-page-context-root] > *");
   if (!rail || !tabs || !page) {
     requestAnimationFrame(waitForShell);

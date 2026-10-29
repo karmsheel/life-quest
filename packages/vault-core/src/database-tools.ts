@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import type { MapToolDef } from "./map/tools.ts";
 import type {
   Actor,
-  DatabaseBatchDecisionBody,
   DatabaseColumnSpec,
   DatabaseColumnType,
   DatabaseDecisionBody,
@@ -15,20 +14,24 @@ import {
   FINANCE_DOMAIN_SLUG,
 } from "./types.ts";
 import {
+  addDatabaseColumn,
   checkDatabaseCells,
   countRows,
+  createDatabase,
   getDatabase,
   getRow,
+  insertRows,
   rowDisplayLabel,
   isDomainLive,
   listDatabases,
   listRows,
+  upsertRow,
   validateRowCells,
 } from "./domain-databases.ts";
 import { listSyncConflicts } from "./adapters.ts";
 import { listInstalledKits } from "./finance-kit.ts";
-import { createDecision, listDecisions, resolveDecision } from "./decisions.ts";
-import { readAutoApproveInserts } from "./agents.ts";
+import { createDecision, listDecisions } from "./decisions.ts";
+import { appendLog } from "./log.ts";
 import { lookupExternalId } from "./ingest.ts";
 import { vaultPaths } from "./paths.ts";
 
@@ -134,11 +137,14 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
   {
     name: "upsert_row",
     description:
-      "Propose creating or fully replacing a row in a database. Cells is a map of column id to " +
+      "Create a new row or fully replace an existing row in a database. Cells is a map of column id to " +
       "value and MUST contain the complete set of cells for an existing row (read the row with " +
-      "get_row first); this is a replace, not a patch. Every call files a Decision; the operator " +
-      "approves it in Decisions. A rejected Decision must not be retried as a silent write. " +
-      "A create in a database on the operator's insert allowlist can return posted: true. An update stays pending until the operator approves it.",
+      "get_row first); this is a replace, not a patch. " +
+      "Without an id this CREATES a row and writes it immediately: call it only after the operator " +
+      "has agreed in the chat to that row, and claim it landed only when the result says posted: true. " +
+      "With an id this is an UPDATE of data that already exists: it files one pending Decision, writes " +
+      "nothing until the operator approves it in Decisions, and a rejected Decision must not be retried " +
+      "as a silent write.",
     parameters: {
       type: "object",
       properties: {
@@ -146,7 +152,8 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
         databaseId: { type: "string" },
         id: {
           type: "string",
-          description: "Row id for an update. Omit entirely to create a new row (a UUID is generated).",
+          description:
+            "Row id for an update. Omit entirely to create a new row (a UUID is generated and the row is written at once).",
         },
         cells: {
           type: "object",
@@ -160,7 +167,11 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
   {
     name: "insert_rows",
     description:
-      "Insert many new rows into one database. rows is an array of cell objects, at most 200, and this call does not take row ids. One call files one Decision titled Insert N rows into the database. Use upsert_row for a single new row or any edit. The result includes posted and rowCount. Claim that rows landed only when posted is true. status pending means one Decision is waiting; name the database and the count. status rejected includes reason; do not send those same rows again.",
+      "Insert many new rows into one database. rows is an array of cell objects, at most 200, and this " +
+      "call does not take row ids. The rows are written immediately: call it only after the operator has " +
+      "agreed in the chat to those rows. Use upsert_row with an id to change an existing row (that files " +
+      "a pending Decision). The result includes posted: true and rowCount; name the database and the row " +
+      "count. A row that fails validation is named in the error and nothing is written.",
     parameters: {
       type: "object",
       properties: {
@@ -178,8 +189,8 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
   {
     name: "delete_row",
     description:
-      "Propose deleting a row by id. Files a Decision. The operator approves or rejects it in " +
-      "Decisions; a rejected Decision must not be retried silently.",
+      "Propose deleting a row by id. Deleting existing data files a pending Decision; the row is still " +
+      "there until the operator approves it in Decisions, and a rejected Decision must not be retried silently.",
     parameters: {
       type: "object",
       properties: {
@@ -193,14 +204,13 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
   {
     name: "create_database",
     description:
-      "Propose creating a database in a live domain, optionally with its columns in the same " +
-      "call. ONE Decision creates the database and every column it names when the operator " +
-      "approves it, so a new table is one approval rather than one per column. Columns are " +
-      "validated now (unique names, known types, options for select, an existing database for " +
-      "relation), so an approval cannot fail on a bad schema. Returns " +
-      "{ decisionId, databaseId, status, columns } where columns is how many the Decision " +
-      "creates; claim the database exists only when status is approved. Use add_column to add " +
-      "a column to a database that already exists.",
+      "Create a database in a live domain, optionally with its columns in the same call. This writes " +
+      "immediately: call it only after the operator has agreed in the chat to the database and its " +
+      "columns. Columns are validated first (unique names, known types, options for select, an existing " +
+      "database for relation), so a bad schema writes nothing. Returns " +
+      "{ applied: true, databaseId, name, columns } where columns is how many were created; claim the " +
+      "database exists only when applied is true. Use add_column to add a column to a database that " +
+      "already exists (that files a pending Decision).",
     parameters: {
       type: "object",
       properties: {
@@ -234,9 +244,9 @@ export const DATABASE_TOOL_DEFS: MapToolDef[] = [
   {
     name: "add_column",
     description:
-      "Propose adding one column to an existing database. Files a Decision. The relation target is " +
-      "an existing databaseId, so a self-referential or newly created column cannot be added in the " +
-      "same call.",
+      "Propose adding one column to an existing database. Changing an existing database's schema files a " +
+      "Decision; the column exists only after the operator approves it. The relation target is an " +
+      "existing databaseId, so a self-referential or newly created column cannot be added in the same call.",
     parameters: {
       type: "object",
       properties: {
@@ -624,53 +634,60 @@ async function checkConflicts(
 }
 
 /**
- * Map a finished allowlist resolve onto the tool result.
- * Rows are already in the database when the re-read record is approved, including
- * when the decision.resolved log line failed after that write.
+ * The write policy for the database tools (operator decision, 2026-10-28).
+ *
+ * Adding data is not a change to data that already exists, so it does not wait
+ * in the approval queue: the chat confirmation is the operator's yes, and the
+ * tool then writes. That covers a NEW DATABASE (`create_database`), a NEW ROW
+ * (`upsert_row` with no id) and a BATCH OF NEW ROWS (`insert_rows`).
+ *
+ * Changing what the vault already holds still goes through Decisions:
+ * `upsert_row` with an id (an update), `delete_row`, and `add_column` all file
+ * one pending Decision and write nothing until the operator approves it. That
+ * is the operator's own line — "the update or delete of existing data should
+ * definitely go through the decision gate" — and it is why the direct path
+ * below is limited to creates.
+ *
+ * Ingest mappings and batches keep their own gate (LAWS/DATABASES.md): they are
+ * not the companion adding a row it was asked for, they are a file import whose
+ * mapping the operator has not seen.
+ *
+ * A write applied directly is logged here, because the Life log is how the
+ * operator sees what the companion added when no Decision card exists to show
+ * it. `createDatabase` writes its own `database.created` line; rows have no
+ * engine-level log, so this is where they get one.
  */
-export function postedAllowlistResult(
-  decisionId: string,
-  rowCount: number,
-  reason: string,
-  record: { status: string; reason?: string | null } | undefined,
-): DatabaseToolResult {
-  if (record?.status === "approved") {
-    return { decisionId, status: "approved", posted: true, rowCount };
-  }
-  if (record?.status === "rejected") {
-    return {
-      decisionId,
-      status: "rejected",
-      posted: false,
+async function logAppliedRows(
+  root: string,
+  actor: Actor,
+  input: {
+    domainSlug: string;
+    databaseId: string;
+    databaseName: string;
+    rowIds: string[];
+    /** The first row's display label, for a single-row write's summary. */
+    label?: string | null;
+  },
+): Promise<void> {
+  const rowCount = input.rowIds.length;
+  const result = await appendLog(root, {
+    domainSlug: input.domainSlug,
+    type: rowCount === 1 ? "database.row.created" : "database.rows.created",
+    summary:
+      rowCount === 1
+        ? `Added ${input.label ?? "a row"} to ${input.databaseName}`
+        : `Added ${rowCount} rows to ${input.databaseName}`,
+    payload: {
+      databaseId: input.databaseId,
+      databaseName: input.databaseName,
+      rowIds: input.rowIds,
       rowCount,
-      reason: record.reason ?? reason,
-    };
-  }
-  return { decisionId, status: "pending", posted: false, rowCount, reason };
-}
-
-/** An allowlisted create resolves in this call. Anything else stays pending and writes nothing. */
-async function finishWrite(
-  root: string,
-  decisionId: string,
-  rowCount: number,
-  allow: boolean,
-): Promise<DatabaseToolResult> {
-  if (!allow) return { decisionId, status: "pending", posted: false, rowCount };
-  const resolved = await resolveDecision(root, decisionId, "approved");
-  if (resolved.ok) return postedAllowlistResult(decisionId, rowCount, "", { status: "approved" });
-  const listed = await listDecisions(root);
-  const record = listed.ok ? listed.value.find((d) => d.id === decisionId) : undefined;
-  return postedAllowlistResult(decisionId, rowCount, resolved.error, record);
-}
-
-async function allowInsert(
-  root: string,
-  domainSlug: string,
-  databaseId: string,
-): Promise<boolean> {
-  const list = await readAutoApproveInserts(root);
-  return list.some((entry) => entry.domainSlug === domainSlug && entry.databaseId === databaseId);
+    },
+    actor,
+  });
+  // The rows are already written: a log line that could not be appended is not a
+  // reason to answer the write as failed and invite the agent to write it again.
+  void result;
 }
 
 /** File the Decision and return the tool's success shape. Nothing is written here. */
@@ -694,27 +711,6 @@ async function fileDecision(
     previousBodyMarkdown: input.previousBodyMarkdown,
     // The actor is the one executeTool received, never one from args: a
     // model-controlled parameter is not an identity source.
-    actor,
-  });
-  if (!created.ok) return engineError(created.error);
-  return { decisionId: created.value.id, status: created.value.status };
-}
-
-async function fileBatchDecision(
-  root: string,
-  actor: Actor,
-  input: {
-    target: { type: "database-batch"; domainSlug: string; databaseId: string };
-    proposedTitle: string;
-    body: DatabaseBatchDecisionBody;
-  },
-): Promise<DatabaseToolResult> {
-  const created = await createDecision(root, {
-    target: input.target,
-    proposedTitle: input.proposedTitle,
-    proposedBodyMarkdown: JSON.stringify(input.body, null, 2),
-    previousBodyMarkdown: null,
-    // The actor is the function argument, never one from args.
     actor,
   });
   if (!created.ok) return engineError(created.error);
@@ -856,7 +852,7 @@ export async function executeDatabaseTool(
       };
     }
 
-    // ─── Writes. Every one of these files a Decision; nothing is written here. ──
+    // ─── Writes. A create writes now; a change to existing data files a Decision. ──
     case "upsert_row": {
       const live = await requireLiveDomain(root, args.domainSlug);
       if (!live.ok) return live.result;
@@ -900,23 +896,44 @@ export async function executeDatabaseTool(
         }
       }
 
-      // Capture the current state so the inbox shows a real before/after, and so
-      // the apply can refuse a proposal made against a row that has moved on.
-      let previousCells: Record<string, unknown> | null = null;
-      let expectedUpdatedAt: string | null = null;
-      if (rowId) {
-        const existing = await getRow(root, domainSlug, databaseId, rowId);
-        if (!existing.ok) return engineError(existing.error);
-        previousCells = existing.value.cells as Record<string, unknown>;
-        expectedUpdatedAt = existing.value.updatedAt;
-      }
-
-      // The relation-row-exists and posted-transaction rules are checked at
-      // propose time too, so a bad proposal is never filed in the first place.
+      // The relation-row-exists and posted-transaction rules are checked here
+      // for both shapes: a direct create must not write a row the engine will
+      // reject, and a pending update must not be filed against one either.
       const referential = await checkDatabaseCells(root, domainSlug, databaseId, cellMap);
       if (!referential.ok) return engineError(referential.error);
 
       const label = rowDisplayLabel(dbMeta, cellMap) || null;
+
+      // No id means a NEW row: data the operator asked to add, not a change to
+      // data the vault holds. It is written now and logged, with no Decision —
+      // the chat confirmation is the answer. An update (the branch below) is a
+      // change to existing data and always goes through the approval queue.
+      if (rowId === null) {
+        const written = await upsertRow(root, domainSlug, databaseId, { cells: cellMap });
+        if (!written.ok) return engineError(written.error);
+        await logAppliedRows(root, actor, {
+          domainSlug,
+          databaseId,
+          databaseName: dbMeta.name,
+          rowIds: [written.value.id],
+          label,
+        });
+        return {
+          posted: true,
+          applied: true,
+          databaseId,
+          rowId: written.value.id,
+          rowCount: 1,
+        };
+      }
+
+      // Capture the current state so the inbox shows a real before/after, and so
+      // the apply can refuse a proposal made against a row that has moved on.
+      const existing = await getRow(root, domainSlug, databaseId, rowId);
+      if (!existing.ok) return engineError(existing.error);
+      const previousCells = existing.value.cells as Record<string, unknown>;
+      const expectedUpdatedAt = existing.value.updatedAt;
+
       const body: DatabaseDecisionBody = {
         op: "upsert",
         databaseName: dbMeta.name,
@@ -933,8 +950,7 @@ export async function executeDatabaseTool(
       });
       if ("error" in filed) return filed;
       const decisionId = String((filed as { decisionId: string }).decisionId);
-      const allow = rowId === null && (await allowInsert(root, domainSlug, databaseId));
-      return finishWrite(root, decisionId, 1, allow);
+      return { decisionId, status: "pending", posted: false, rowCount: 1 };
     }
 
     case "delete_row": {
@@ -994,39 +1010,34 @@ export async function executeDatabaseTool(
       );
       if (!validatedColumns.ok) return validatedColumns.result;
 
-      // The id is minted here, at propose time, and carried through the body. The
-      // alternative — creating the database before filing — is the ungated write
-      // this design exists to prevent, and it would leave an un-approved database
-      // behind on rejection. No name-uniqueness check: duplicate names stay legal
-      // for the agent and the operator alike.
-      const newDatabaseId = randomUUID();
-      const body: DatabaseDecisionBody = {
-        op: "create-database",
-        databaseId: newDatabaseId,
-        name,
-        // The columns the one Decision creates on approve. Empty means the old
-        // shape: a database with no columns, added later by add_column.
-        columns: validatedColumns.columns,
-        databaseName: name,
-        rowLabel: null,
-        previousCells: null,
-        cells: null,
-        expectedUpdatedAt: null,
-      };
-      const filed = await fileDecision(root, actor, {
-        target: { type: "database", domainSlug, databaseId: newDatabaseId },
-        proposedTitle: decisionTitle("create-database", null, domainSlug, null, name),
-        body,
-        previousBodyMarkdown: null,
-      });
-      if ("error" in filed) return filed;
-      // The scheduled columns count is reported even while pending: it is what
-      // the operator is being asked to approve, and it is the fact the agent
-      // cannot learn any other way before approval (get_database is NOT_FOUND).
+      // A new database is data the operator asked to add, so it is written now
+      // rather than parked in the approval queue: the chat confirmation is the
+      // answer. `createDatabase` mints the id and logs `database.created`; the
+      // columns are added one by one, exactly as the old approve path did, so a
+      // database and its schema are still one call.
+      const created = await createDatabase(root, domainSlug, { name });
+      if (!created.ok) return engineError(created.error);
+      const databaseId = created.value.id;
+
+      for (let i = 0; i < validatedColumns.columns.length; i++) {
+        const spec = validatedColumns.columns[i]!;
+        const added = await addDatabaseColumn(root, domainSlug, databaseId, spec);
+        if (!added.ok) {
+          // The database itself is already written. Saying which column failed
+          // and leaving the rest to add_column is honest; reporting the whole
+          // call as "nothing happened" would not be.
+          return fail(
+            "FAILED",
+            `Database "${name}" was created, but column ${i + 1} "${spec.name}" failed: ` +
+              `${added.error}. Add the remaining columns with add_column.`,
+          );
+        }
+      }
+
       return {
-        decisionId: String((filed as { decisionId: string }).decisionId),
-        databaseId: newDatabaseId,
-        status: String((filed as { status: string }).status),
+        applied: true,
+        databaseId,
+        name,
         columns: validatedColumns.columns.length,
       };
     }
@@ -1123,7 +1134,9 @@ export async function executeDatabaseTool(
         (c) => c.name.toLowerCase() === "external_id" || c.id === "external_id",
       )?.id;
       const seenExternal = new Set<string>();
-      const batchRows: DatabaseBatchDecisionBody["rows"] = [];
+      const ids: string[] = [];
+      const rows: Array<{ id: string; cells: Record<string, unknown> }> = [];
+      const labels: string[] = [];
       for (let i = 0; i < rowsArg.length; i++) {
         const rowNumber = i + 1;
         const cells = rowsArg[i];
@@ -1154,27 +1167,33 @@ export async function executeDatabaseTool(
           seenExternal.add(externalId);
         }
 
-        batchRows.push({
-          id: randomUUID(),
-          cells: cellMap,
-          rowLabel: rowDisplayLabel(dbMeta, cellMap) || null,
-        });
+        const id = randomUUID();
+        ids.push(id);
+        rows.push({ id, cells: cellMap });
+        labels.push(rowDisplayLabel(dbMeta, cellMap) || "");
       }
 
-      const proposedTitle = `Insert ${rowsArg.length} rows into ${dbMeta.name}`;
-      const filed = await fileBatchDecision(root, actor, {
-        target: { type: "database-batch", domainSlug, databaseId },
-        proposedTitle,
-        body: { op: "insert-rows", databaseName: dbMeta.name, rows: batchRows },
+      // New rows are data the operator asked to add, so they are written now —
+      // one transaction, nothing written if any row fails. This is not a change
+      // to existing data, so there is no Decision to approve; the chat is where
+      // the operator already said yes and the Life log is where the write is
+      // recorded.
+      const written = await insertRows(root, domainSlug, databaseId, rows);
+      if (!written.ok) return engineError(written.error);
+      await logAppliedRows(root, actor, {
+        domainSlug,
+        databaseId,
+        databaseName: dbMeta.name,
+        rowIds: ids,
+        label: rows.length === 1 ? labels[0] || null : null,
       });
-      if ("error" in filed) return filed;
-      const decisionId = String((filed as { decisionId: string }).decisionId);
-      return finishWrite(
-        root,
-        decisionId,
-        rowsArg.length,
-        await allowInsert(root, domainSlug, databaseId),
-      );
+      return {
+        posted: true,
+        applied: true,
+        databaseId,
+        rowCount: rows.length,
+        rowIds: ids,
+      };
     }
 
     default:

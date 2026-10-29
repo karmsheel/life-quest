@@ -30,7 +30,13 @@
  *  7. The record survives leaving the tab: History re-reads the manual store
  *     (`manualDecision:list` is asked again) rather than drawing React state
  *     left over from the form, and the page is never remounted to show it.
- *  8. The page asks the bridge for nothing it does not need, and logs no errors.
+ *  8. The surface is GLOBAL, not lens-scoped: with the lens on Finance, a manual
+ *     decision logged under Health stays visible on the Manual tab it was just
+ *     logged on. A lens filter here would hide the operator's own record because
+ *     of where they happen to be looking — the reported fault, one store over.
+ *  9. History under that lens draws both stores without a domain filter: the
+ *     Health proposal resolved earlier and both manual records are still rows.
+ * 10. The page asks the bridge for nothing it does not need, and logs no errors.
  *
  * NOT covered here: that the main process resolves those names in the first
  * place (the engine rig, `tests/manual-decisions-engine-e2e.test.ts`, runs the
@@ -441,7 +447,71 @@ async function main() {
       `settled=${returned} rows=${JSON.stringify(returnScreen.rows.map((row) => row.id))} mounts=${mountsBefore}->${mountsAfter}`,
     );
 
-    // ══ 9. Nothing unexpected, nothing screaming ════════════════════════════
+    // ══ 9. The page is global: another domain's record is still shown ════════
+    //
+    // The reported fault was lens-shaped: the companion filed for other domains
+    // and the Decisions surface was empty because the lens was elsewhere. The
+    // manual store belongs to the same global surface — a decision the operator
+    // logs under one domain must stay visible when the lens is on another.
+    await call(win, "decisionsManualSetLens", "financial");
+    const lensSet = await settle(
+      win,
+      `window.decisionsManualLens() === "financial"`,
+    );
+    await call(win, "decisionsManualTab", "Manual");
+    const formOpen = await settle(
+      win,
+      `(() => {
+        const s = window.decisionsManualScreen();
+        return s.activeTab === "Manual" && s.form !== null;
+      })()`,
+    );
+    await call(win, "decisionsManualType", "title", "Skip the clinic follow-up");
+    await call(win, "decisionsManualDomain", "health");
+    const crossSubmitted = await call(win, "decisionsManualSubmit");
+    const crossLogged = await settle(
+      win,
+      `(() => {
+        const s = window.decisionsManualScreen();
+        return s.createCalls.length === 2 &&
+          s.manualRows.some((row) => row.id === "manual-002");
+      })()`,
+    );
+    const crossLog = await screen(win);
+    checks.crossLog = crossLog;
+    claim(
+      "a-cross-domain-manual-decision-stays-visible",
+      lensSet &&
+        formOpen &&
+        crossSubmitted &&
+        crossLogged &&
+        crossLog.manualRows.some(
+          (row) => row.id === "manual-002" && row.source === "Manual",
+        ),
+      `lensSet=${lensSet} form=${formOpen} submitted=${crossSubmitted} logged=${crossLogged} rows=${JSON.stringify(crossLog.manualRows)}`,
+    );
+
+    // History under the same lens is still the whole shelf: both manual records
+    // and the Health proposal resolved earlier are rows, none of them filtered by
+    // the lens.
+    await call(win, "decisionsManualTab", "History");
+    const crossHistorySettled = await settle(
+      win,
+      `window.decisionsManualScreen().activeTab === "History" &&
+        window.decisionsManualScreen().rows.length === 4`,
+    );
+    const crossHistory = await screen(win);
+    checks.crossHistory = crossHistory;
+    claim(
+      "history-shows-every-domains-records-under-the-lens",
+      lensSet &&
+        crossHistorySettled &&
+        crossHistory.rows.some((row) => row.id === "manual-002") &&
+        crossHistory.rows.some((row) => row.id === "decision-002"),
+      `lensSet=${lensSet} rows=${JSON.stringify(crossHistory.rows.map((row) => row.id))}`,
+    );
+
+    // ══ 10. Nothing unexpected, nothing screaming ═══════════════════════════
     const unexpected = await win.webContents.executeJavaScript(
       "window.decisionsManualUnexpectedCalls",
     );

@@ -116,9 +116,15 @@ export const CONNECTED_DAY_TEMPLATE_TOOLS: ReadonlySet<string> = new Set([
 
 /**
  * KAR-70: the writes that file a Decision. They follow the companion's rule
- * exactly — doctrine, library notes, goals, projects, and database changes
- * never land on their own — so the only thing this task adds is the domain they
- * are allowed to touch.
+ * exactly — doctrine, library notes, goals, projects, and CHANGES TO DATABASE
+ * DATA never land on their own — so the only thing this task adds is the domain
+ * they are allowed to touch.
+ *
+ * `upsert_row` is the one mixed tool: without an id it CREATES a row and writes
+ * it at once (the companion's own policy, 2026-10-28); with an id it updates
+ * existing data and files a Decision. It stays in this list because the update
+ * case is the one a grant's write check is guarding, and the per-call domain
+ * check below runs for every database write either way.
  *
  * Fort-Knox AGENT-10: this list is the *advertised* surface, so it may only
  * carry tools that really do file a Decision. `write_review` and `unlock_review`
@@ -139,7 +145,6 @@ export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "close_project",
   "upsert_row",
   "delete_row",
-  "create_database",
   "add_column",
   // Agent-built dashboard views (plan.md design): a view or a pin change is a
   // write, and whether it lands or becomes a Decision is the board's own page
@@ -152,8 +157,12 @@ export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
 
 /**
  * KAR-70: the writes that apply immediately, as they do for the companion:
- * events, script blocks on a page, and the capture thread. Each still needs its
- * domain inside the assignment.
+ * events, script blocks on a page, the capture thread, and — since the
+ * 2026-10-28 policy — adding database data (`create_database`,
+ * `insert_rows`). A new row through `upsert_row` is not named here because the
+ * same tool also updates existing rows; it is classified with the Decision
+ * writes above and the per-call domain check runs either way. Each tool here
+ * still needs its domain inside the assignment.
  *
  * Fort-Knox AGENT-10: `mark_review_done` belongs here — it applies the scope's
  * `done` status at once, with no Decision (`review-tools.ts`), so classifying it
@@ -170,6 +179,8 @@ export const CONNECTED_IMMEDIATE_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "undo_capture",
   "correct_capture",
   "mark_review_done",
+  "create_database",
+  "insert_rows",
 ]);
 
 /**

@@ -83,6 +83,12 @@ Writes (Decision-gated):
 
 ### `create_database` takes its columns, returns its id
 
+> **Amended 2026-10-28** ([direct database writes](./2026-10-28-direct-database-writes-design.md)):
+> creating a database is adding data, so it now writes immediately with no Decision.
+> The shape is `{ applied: true, databaseId, name, columns }`; the columns are
+> validated before the database is written. The rest of this section is the original
+> contract and no longer describes the reply.
+
 - params: `{ domainSlug, name, columns?: [{ name, type, options?, relationDatabaseId? }] }`
 - one Decision creates the database **and** its columns on approve;
 - validation at propose time: non-empty unique names, known column types,

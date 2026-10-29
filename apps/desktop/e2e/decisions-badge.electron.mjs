@@ -33,12 +33,16 @@
  *  8. A DECREASE (a Decision resolved elsewhere) updates the count without
  *     flashing the arrival mark: the mark means "something new for you", not
  *     "something changed".
- *  9. With nothing pending the badge leaves the rail entirely and the link goes
+ *  9. The count is GLOBAL, not lens-scoped: with the lens on Finance and one
+ *     Finance Decision already counted, a Decision filed for Health makes the
+ *     badge 2 and marks the arrival. This is the reported fault — a cross-domain
+ *     filing left the rail silent because the count was filtered by the lens.
+ * 10. With nothing pending the badge leaves the rail entirely and the link goes
  *     back to plain "Decisions".
- * 10. Nothing was rebuilt between the baseline and the end — the same no-remount
+ * 11. Nothing was rebuilt between the baseline and the end — the same no-remount
  *     fact read at the end of the run rather than only at the first arrival.
- * 11. The stub bridge recorded no unexpected method calls.
- * 12. The page logged no console errors (and the window captured no uncaught
+ * 12. The stub bridge recorded no unexpected method calls.
+ * 13. The page logged no console errors (and the window captured no uncaught
  *     errors or unhandled rejections).
  *
  * NOT covered here: whether the real main process announces a Decision at all,
@@ -107,6 +111,26 @@ function waitFor(win, expression, label, timeoutMs = 10_000) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Let the rail paint the state that was just measured, before photographing it.
+ *
+ * A hidden window paints asynchronously and `capturePage` reads the last painted
+ * frame, so a capture taken straight after the count changed can show the rail
+ * without its badge. Two animation frames put the commit on the compositor; the
+ * short settle gives the capture a frame of its own.
+ */
+async function paint(win) {
+  try {
+    await win.webContents.executeJavaScript(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))",
+    );
+  } catch {
+    // A reload mid-wait clears the globals; the capture below is still the
+    // page's own, just possibly one frame older.
+  }
+  await sleep(150);
+}
 
 /**
  * Wait for a condition, and say whether it ever held.
@@ -202,6 +226,7 @@ async function main() {
   const filedId = await call(win, "decisionsBadgeFile", "Premise revision 1");
   const landed = await settle(win, "window.decisionsBadgeScreen().badgePresent", 6_000);
   // The money shot: the count on the rail, with the arrival mark on it.
+  await paint(win);
   const image = await win.webContents.capturePage();
   fs.mkdirSync(artifactsDir, { recursive: true });
   const pngPath = path.join(artifactsDir, "decisions-badge.png");
@@ -273,12 +298,22 @@ async function main() {
   await call(win, "decisionsBadgeStartPulseWatch");
   const secondId = await call(win, "decisionsBadgeFile", "Premise revision 2");
   const bumped = await settle(win, "window.decisionsBadgeScreen().badgeText === '2'", 6_000);
+  // The arrival mark is stamped by an effect one commit after the count moves,
+  // so a read taken the instant the count reads "2" can land between the two and
+  // miss it. Wait for the mark the claim is about (the pulse lasts seconds, so a
+  // real absence still times out); the count itself is already asserted above.
+  const secondMarked = await settle(
+    win,
+    "window.decisionsBadgeScreen().arrived === 'true'",
+    2_000,
+  );
   const afterSecond = await screen(win);
   checks.afterSecond = afterSecond;
   checks.secondId = secondId;
   claim(
     "a-second-filing-bumps-the-count",
     bumped &&
+      secondMarked &&
       afterSecond.badgePresent === true &&
       afterSecond.badgeText === "2" &&
       afterSecond.ariaLabel === "Decisions, 2 pending" &&
@@ -324,8 +359,50 @@ async function main() {
     `resolved=${resolvedElsewhere} decreased=${decreased} badge=${afterDecrease.badgePresent} text=${JSON.stringify(afterDecrease.badgeText)} arrived=${JSON.stringify(afterDecrease.arrived)} class=${afterDecrease.arrivedClass} listCalls=${afterDecrease.decisionListCalls} (was ${afterSecond.decisionListCalls})`,
   );
 
+  // ══ the count is global: another domain's filing counts under this lens ═══
+  //
+  // The reported fault: the companion filed three pending Decisions, the
+  // operator's lens was on another domain, and the rail said nothing. The rail is
+  // governance for the whole vault, so the badge counts what is pending rather
+  // than what is pending in the lens.
+  await call(win, "decisionsBadgeSetLens", "financial");
+  const lensSet = await settle(
+    win,
+    `window.decisionsBadgeLens() === "financial"`,
+  );
+  const crossId = await call(win, "decisionsBadgeFile", "A health premise", "health");
+  const crossCounted = await settle(
+    win,
+    "window.decisionsBadgeScreen().badgeText === '2'",
+    6_000,
+  );
+  const afterCross = await screen(win);
+  checks.lensSet = lensSet;
+  checks.afterCross = afterCross;
+  checks.crossId = crossId;
+  claim(
+    "a-cross-domain-filing-is-counted-under-the-active-lens",
+    lensSet &&
+      crossCounted &&
+      afterCross.badgePresent === true &&
+      afterCross.badgeText === "2" &&
+      afterCross.ariaLabel === "Decisions, 2 pending" &&
+      afterCross.arrived === "true" &&
+      afterCross.arrivedClass === true &&
+      afterCross.decisionListCalls > afterDecrease.decisionListCalls,
+    `lensSet=${lensSet} counted=${crossCounted} badge=${afterCross.badgePresent} text=${JSON.stringify(afterCross.badgeText)} aria=${JSON.stringify(afterCross.ariaLabel)} arrived=${JSON.stringify(afterCross.arrived)} class=${afterCross.arrivedClass} listCalls=${afterCross.decisionListCalls} (was ${afterDecrease.decisionListCalls})`,
+  );
+
   // ══ nothing pending: the badge leaves the rail ════════════════════════════
+  // Wait this arrival's mark out first, so "no mark" below is about the empty
+  // state rather than the remains of the cross-domain pulse.
+  await settle(
+    win,
+    "(() => { const s = window.decisionsBadgeScreen(); return !s.badgePresent || (s.arrived !== 'true' && !s.arrivedClass); })()",
+    9_000,
+  );
   const lastResolved = await call(win, "decisionsBadgeResolve", filedId);
+  const crossResolved = await call(win, "decisionsBadgeResolve", crossId);
   const emptied = await settle(
     win,
     "window.decisionsBadgeScreen().badgePresent === false",
@@ -336,13 +413,14 @@ async function main() {
   claim(
     "the-badge-disappears-when-nothing-is-pending",
     lastResolved === true &&
+      crossResolved === true &&
       emptied &&
       afterEmpty.badgePresent === false &&
       afterEmpty.ariaLabel === "Decisions" &&
       afterEmpty.title === "Decisions" &&
       afterEmpty.arrived !== "true" &&
-      afterEmpty.decisionListCalls > afterDecrease.decisionListCalls,
-    `resolved=${lastResolved} emptied=${emptied} badge=${afterEmpty.badgePresent} aria=${JSON.stringify(afterEmpty.ariaLabel)} title=${JSON.stringify(afterEmpty.title)} listCalls=${afterEmpty.decisionListCalls} (was ${afterDecrease.decisionListCalls})`,
+      afterEmpty.decisionListCalls > afterCross.decisionListCalls,
+    `resolved=${lastResolved}/${crossResolved} emptied=${emptied} badge=${afterEmpty.badgePresent} aria=${JSON.stringify(afterEmpty.ariaLabel)} title=${JSON.stringify(afterEmpty.title)} listCalls=${afterEmpty.decisionListCalls} (was ${afterCross.decisionListCalls})`,
   );
 
   // ══ and none of that rebuilt the rail ═════════════════════════════════════

@@ -11,8 +11,8 @@
  *
  * What this rig claims:
  *
- *  1. The wing is called Define. The top bar carries exactly
- *     Home / Define / Plan / Execute / Review — no tab still says "Vision".
+ *  1. The wing is called Define. The rail carries exactly
+ *     Home / Define / Plan / Act / Review — no tab still says "Vision".
  *  2. The Define wing's rail carries Dream, Vision and Ideal State, and the Home wing's
  *     rail carries Dashboard / Data / Pages / Documents / Personnel — Documents
  *     moved, it was not duplicated.
@@ -47,8 +47,8 @@ const url =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/define-wing.html";
 const SIZE = { width: 1280, height: 900 };
 
-/** The wings the top bar must carry, in order — the rename's whole point. */
-const WING_TABS = ["Home", "Define", "Plan", "Execute", "Review"];
+/** The wings the rail must carry, in order — the rename's whole point. */
+const WING_TABS = ["Home", "Define", "Plan", "Act", "Review"];
 /** The wing rails, as the operator sees them. */
 const HOME_RAIL = ["Dashboard", "Data", "Pages", "Documents", "Personnel"];
 const DEFINE_RAIL = ["Dream", "Vision", "Ideal State"];
@@ -66,7 +66,7 @@ const SAMPLE = `(() => {
       active: a.classList.contains("nav-rail__link--active"),
     }));
   const tabs = Array.from(
-    document.querySelectorAll(".top-bar__wings .ui-segmented__option"),
+    document.querySelectorAll(".nav-rail__wings .ui-segmented__option"),
   ).map((b) => ({
     label: text(b),
     selected: b.getAttribute("aria-selected") === "true",
@@ -221,7 +221,7 @@ async function main() {
     })()`);
 
   const railLink = (label) => clickIn(".nav-rail__link", label);
-  const wingTab = (label) => clickIn(".top-bar__wings .ui-segmented__option", label);
+  const wingTab = (label) => clickIn(".nav-rail__wings .ui-segmented__option", label);
   const firstCard = () => clickIn(".doctrine-index__card", null);
 
   const shoot = async (name) => {
@@ -244,11 +244,11 @@ async function main() {
     await new Promise((resolve) => setTimeout(resolve, 250));
     win.showInactive();
 
-    // 1 — Home, on the Dashboard: the wing tabs and the Home rail.
+    // 1 — Home, on the Dashboard: the rail's wing switcher and the Home rail.
     const home = await sample();
     check("shell rendered", home.route === "/home", `route ${home.route}`);
     check(
-      "the top bar carries the five wings, Define among them",
+      "the rail carries the five wings, Define among them",
       same(home.tabs.map((t) => t.label), WING_TABS),
       `tabs ${JSON.stringify(home.tabs.map((t) => t.label))}`,
     );
@@ -281,7 +281,7 @@ async function main() {
     screenshots.push(await shoot("home"));
 
     // 2 — the Define tab: the wing's default page and its rail.
-    check("Define tab clicked", await wingTab("Define"), "no Define tab in the top bar");
+    check("Define tab clicked", await wingTab("Define"), "no Define tab in the rail switcher");
     await waitFor(
       `window.defineWingRoute === "/dream"`,
       "the Define tab lands on Dream",
@@ -431,7 +431,7 @@ async function main() {
     );
 
     // 5 — Documents, now a Home page.
-    check("Home tab clicked", await wingTab("Home"), "no Home tab in the top bar");
+    check("Home tab clicked", await wingTab("Home"), "no Home tab in the rail switcher");
     await waitFor(`window.defineWingRoute === "/home"`, "the Home wing");
     check("Documents rail row clicked", await railLink("Documents"), "no Documents row in the Home rail");
     await waitFor(
