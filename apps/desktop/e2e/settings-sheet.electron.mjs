@@ -12,7 +12,8 @@
  * than a line of driver code.
  *
  * What is measured that a screenshot cannot show: the panel's own measure and
- * its centring in the window, the scrim's computed `backdrop-filter`, the
+ * its centring in the window, the floating search bar's measure and the panel
+ * border that crosses its axis, the scrim's computed `backdrop-filter`, the
  * cross's corner, the search field's effect on the section list, which
  * dismissal did what, and the two favourites lists the star feeds.
  */
@@ -182,7 +183,11 @@ const SAMPLE = `(() => {
           focused: document.activeElement === search,
         }
       : null,
-    chromeInputs: document.querySelectorAll(".settings-overlay__chrome input").length,
+    // The search left the top strip for the floating band on the panel's edge;
+    // count it across the sheet so a second copy would still be caught.
+    searchInputs: document.querySelectorAll(
+      "[data-settings-overlay] input[type='search']"
+    ).length,
     nav,
     navEmpty: text(document.querySelector(".settings-overlay__nav-empty")) || null,
     panelView:

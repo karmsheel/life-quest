@@ -14,22 +14,27 @@
  *     happen to coincide (~90%), which is exactly why the driver also asserts
  *     the absolute width — and why `settings-vault` proves the cap on a wider
  *     window: the panel must not grow while the mat beside it does.
- *  3. **The backdrop does not blur.** `backdrop-filter` is a computed property a
+ *  3. **The search is a full-width top bar again, or it misses the frame's
+ *     edge.** It is a short field centred over the panel with the panel's top
+ *     border running through its horizontal axis — half in the sheet, half over
+ *     the scrim. A rig that only checked "a search input exists" would pass a
+ *     bar that runs edge to edge, sits under the border, or hugs one side.
+ *  4. **The backdrop does not blur.** `backdrop-filter` is a computed property a
  *     stylesheet typo silently drops; the scrim then reads as a plain dim and the
  *     "glass" is gone. The rig reads the property back, it does not trust the CSS.
- *  4. **The cross drifts to the trailing edge.** Hermes puts its close on the
+ *  5. **The cross drifts to the trailing edge.** Hermes puts its close on the
  *     right; this sheet's brief puts it top *left*, beside the search bar. A rig
  *     that only checked "a close button exists" would pass either.
- *  5. **The search filters nothing, or filters the panel away.** A query must
+ *  6. **The search filters nothing, or filters the panel away.** A query must
  *     narrow the section list, move the panel to a match it can no longer see in
  *     the list, and leave the panel standing when nothing matches — a blank
  *     settings page is not an empty result.
- *  6. **A press inside closes it.** The scrim's `mousedown` handler must not fire
+ *  7. **A press inside closes it.** The scrim's `mousedown` handler must not fire
  *     for presses that land on the panel; a sheet dismissed by clicking the
  *     search bar would be unusable.
- *  7. **Escape closes a half-typed search.** It must clear the query first, and
+ *  8. **Escape closes a half-typed search.** It must clear the query first, and
  *     only close on the second press.
- *  8. **A starred theme does not reach the quick menu**, or reaches it in the
+ *  9. **A starred theme does not reach the quick menu**, or reaches it in the
  *     wrong group, or does not survive a reload. The star is written to the same
  *     storage the popover reads at mount; the rig reloads the window to prove it.
  *

@@ -3984,11 +3984,48 @@ a.home-mini-list__link:hover {
   width: 100%;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  /* Not clipped here: the panel's own corner clip moves to the clip inside it,
+     because settings' search bar straddles this edge and must keep the half of
+     itself that hangs over the scrim. */
+  overflow: visible;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   box-shadow: var(--shadow-sm);
+}
+
+/* The panel's rounded body. Everything the sheet is made of sits inside this
+   box, so the corner radius still cuts the nav's fill and the page's scroll box
+   exactly as the panel's own `overflow: hidden` used to. One step in, because
+   the panel's 1px border is already the outer curve. */
+.sheet-overlay__clip {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: calc(var(--radius-sm) - 1px);
+}
+
+/* Floating chrome: one control band centred on the panel's top border, half in
+   and half out. It carries no layout height, so the panel's own chrome below it
+   keeps the cross; the band ignores pointer events itself, so presses beside the
+   control fall through to the panel and only the control answers. */
+.sheet-overlay__floating {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 50%;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.sheet-overlay__floating > * {
+  pointer-events: auto;
 }
 
 /* The panel takes the caret when a sheet opens without a field of its own.
@@ -4037,6 +4074,14 @@ a.home-mini-list__link:hover {
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--border-soft);
   background: var(--bg-elevated);
+}
+
+/* Settings' strip holds only the cross: its search floats on the panel's top
+   border, so a hairline under this strip would be a second line a finger's width
+   below the first one. The strip stays for the cross and for the caret. */
+.settings-overlay__chrome {
+  border-bottom: 0;
+  background: transparent;
 }
 
 .sheet-overlay__heading {
@@ -4111,17 +4156,21 @@ a.home-mini-list__link:hover {
   outline-offset: 1px;
 }
 
+/* A short bar, not a full-width top bar: it is centred on the sheet's top
+   border and reads as one floating field, so its measure is the field's own
+   (28rem) rather than the panel's. */
 .settings-overlay__search {
   display: flex;
-  flex: 1 1 auto;
+  width: min(28rem, calc(100% - 2rem));
   align-items: center;
   gap: 0.4rem;
-  height: 1.875rem;
-  padding: 0 0.5rem;
-  border: 1px solid var(--border-soft);
+  height: 2.25rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg-subtle);
+  background: var(--bg-elevated);
   color: var(--text-soft);
+  box-shadow: var(--shadow-sm);
   transition:
     border-color var(--dur-quick) var(--ease-out),
     background-color var(--dur-quick) var(--ease-out),
@@ -4130,7 +4179,6 @@ a.home-mini-list__link:hover {
 
 .settings-overlay__search:focus-within {
   border-color: var(--accent);
-  background: var(--bg-elevated);
   color: var(--accent);
 }
 

@@ -34,6 +34,7 @@ export function SheetOverlay({
   onClose,
   onEscape,
   header,
+  floating,
   initialFocusRef,
   scroll = false,
   bodyClassName,
@@ -51,8 +52,17 @@ export function SheetOverlay({
    * says the key was consumed; the sheet stays up.
    */
   onEscape?: () => boolean;
-  /** Chrome between the title and the cross — settings' search field. */
+  /** Chrome between the title and the cross, inside the panel. */
   header?: ReactNode;
+  /**
+   * Chrome that crosses the panel's own top edge, centred over the frame — the
+   * settings search field. Rendered inside the dialog but outside the clip, so
+   * the half of it that hangs above the border is not cut off by the panel's
+   * rounded, overflow-hidden body. It takes no layout height: it is a floating
+   * band on the frame's top line, and the chrome inside the panel keeps the
+   * close control.
+   */
+  floating?: ReactNode;
   /** What receives the caret on open, and what catches it if it leaves. */
   initialFocusRef?: RefObject<HTMLElement | null>;
   /** Let the body scroll as one column (decisions) instead of owning a layout. */
@@ -174,42 +184,58 @@ export function SheetOverlay({
         aria-labelledby={titleId}
         tabIndex={-1}
       >
-        <header className={`sheet-overlay__chrome ${sheet}-overlay__chrome`}>
-          <div className="sheet-overlay__heading">
-            <h2
-              id={titleId}
-              className={showTitle ? "sheet-overlay__title" : "visually-hidden"}
-            >
-              {title}
-            </h2>
-            {subtitle ? (
-              <p className="sheet-overlay__subtitle">{subtitle}</p>
-            ) : null}
+        {/*
+          The floating band: one centred control sitting on the panel's top
+          border, half in the panel and half over the scrim. It is a sibling of
+          the clip rather than a child, because the clip is what gives the panel
+          its rounded corners, and a control crossing the edge must not be
+          rounded away with the rest of the body. The band itself takes no
+          pointer events — only the control inside it does — so a press beside
+          the control still falls through to the panel below, not the scrim.
+        */}
+        {floating ? (
+          <div className="sheet-overlay__floating" data-sheet-floating="">
+            {floating}
           </div>
-          {header}
-          {/* The cross is the sheet's last control, at its top right: the corner
-              a hand goes to when the frame has no title bar to close from. */}
-          <button
-            type="button"
-            className={`sheet-overlay__close ${sheet}-overlay__close`}
-            aria-label={closeLabel}
-            title={closeLabel}
-            onClick={onClose}
-          >
-            <X size={16} aria-hidden />
-          </button>
-        </header>
+        ) : null}
+        <div className="sheet-overlay__clip">
+          <header className={`sheet-overlay__chrome ${sheet}-overlay__chrome`}>
+            <div className="sheet-overlay__heading">
+              <h2
+                id={titleId}
+                className={showTitle ? "sheet-overlay__title" : "visually-hidden"}
+              >
+                {title}
+              </h2>
+              {subtitle ? (
+                <p className="sheet-overlay__subtitle">{subtitle}</p>
+              ) : null}
+            </div>
+            {header}
+            {/* The cross is the sheet's last control, at its top right: the corner
+                a hand goes to when the frame has no title bar to close from. */}
+            <button
+              type="button"
+              className={`sheet-overlay__close ${sheet}-overlay__close`}
+              aria-label={closeLabel}
+              title={closeLabel}
+              onClick={onClose}
+            >
+              <X size={16} aria-hidden />
+            </button>
+          </header>
 
-        <div
-          className={[
-            "sheet-overlay__body",
-            scroll ? "sheet-overlay__body--scroll" : "",
-            bodyClassName ?? "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-        >
-          {children}
+          <div
+            className={[
+              "sheet-overlay__body",
+              scroll ? "sheet-overlay__body--scroll" : "",
+              bodyClassName ?? "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            {children}
+          </div>
         </div>
       </div>
     </div>

@@ -274,8 +274,8 @@ describe("the settings sheet over the app", () => {
       `the scrim does not dim the app: ${scrim?.background}`,
     );
 
-    // 3 — the cross is the sheet's top *right* control, and the one search bar
-    //     runs up to it.
+    // 3 — the cross is the sheet's top *right* control, and the search floats
+    //     centred on the sheet's top border, clear of it.
     assert.ok(opened.close, "the sheet has no close control");
     assert.equal(opened.close?.label, "Close settings", "the close control is unlabelled");
     assert.ok(
@@ -289,17 +289,45 @@ describe("the settings sheet over the app", () => {
       "the cross sits on the leading half, not the trailing one",
     );
 
-    assert.equal(opened.chromeInputs, 1, "the top bar is not a single search bar");
+    assert.equal(opened.searchInputs, 1, "the sheet does not hold exactly one search field");
     assert.ok(opened.search, "the sheet has no search field");
     assert.equal(opened.search?.placeholder, "Search settings", "the search is unlabelled");
     assert.equal(opened.search?.focused, true, "opening the sheet did not focus the search");
+
+    // 3b — the floating search: a short field centred over the panel, with the
+    //      panel's top border running through its own horizontal axis (half in
+    //      the sheet, half over the scrim). This is the Hermes Desktop shape the
+    //      operator asked for; a full-width bar or a bar sitting entirely below
+    //      the edge both fail here.
+    const bar = opened.search?.bar;
+    assert.ok(bar, "the search field has no bar to measure");
     assert.ok(
-      (opened.search?.box.top ?? 0) - panel.box.top <= 44,
-      `the search bar is not at the top of the sheet: ${opened.search?.box.top}`,
+      Math.abs(bar.width - 28 * 16) <= 1,
+      `the search bar is ${bar.width}px wide, not its 28rem measure`,
     );
     assert.ok(
-      (opened.search?.bar?.right ?? 0) <= opened.close.box.left,
-      `the search bar does not end before the cross: ${opened.search?.bar?.right} vs ${opened.close.box.left}`,
+      bar.width < panel.box.width * 0.5,
+      `the search bar is still a top bar: ${bar.width}px of a ${panel.box.width}px sheet`,
+    );
+    assert.ok(
+      Math.abs(bar.left + bar.width / 2 - (panel.box.left + panel.box.width / 2)) <= 2,
+      `the search bar is not centred over the sheet: ${bar.left + bar.width / 2} vs ${
+        panel.box.left + panel.box.width / 2
+      }`,
+    );
+    assert.ok(
+      Math.abs(bar.top + bar.height / 2 - panel.box.top) <= 2,
+      `the sheet's top border does not run through the search bar's axis: bar centre ${
+        bar.top + bar.height / 2
+      }, border ${panel.box.top}`,
+    );
+    assert.ok(
+      bar.top < panel.box.top && bar.bottom > panel.box.top,
+      `the search bar does not straddle the top border: ${bar.top}..${bar.bottom} vs ${panel.box.top}`,
+    );
+    assert.ok(
+      bar.right <= opened.close.box.left,
+      `the search bar does not end before the cross: ${bar.right} vs ${opened.close.box.left}`,
     );
 
     // 4 — a query narrows the section list and takes the panel with it.
