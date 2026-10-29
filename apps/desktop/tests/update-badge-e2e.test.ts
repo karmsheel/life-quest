@@ -52,6 +52,15 @@ type Dialog = {
   error: string | null;
 };
 
+type Box = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+
 type State = {
   reducedMotion: boolean;
   calls: {
@@ -129,10 +138,23 @@ type State = {
     summaryText: string | null;
     hasTokenField: boolean;
     note: string | null;
+    previewTag: string | null;
+    previewRole: string | null;
     previewChecked: boolean | null;
     previewState: string | null;
     previewNote: string | null;
     storedPreview: string | null;
+    previewBox: Box | null;
+    previewRowBox: Box | null;
+    previewCopyBox: Box | null;
+    previewDescBox: Box | null;
+    previewTrackBox: Box | null;
+    previewThumbBox: Box | null;
+    previewTrackBackground: string | null;
+    previewThumbTransform: string | null;
+    previewRowDisplay: string | null;
+    previewRowJustify: string | null;
+    previewList: { display: string; direction: string; rows: number } | null;
     buttons: { label: string | null; disabled: boolean }[];
     message: string | null;
     error: string | null;
@@ -683,9 +705,92 @@ describe("auto-update badge", () => {
       `the page did not report the switch as off: ${developer.settings?.previewState}`,
     );
     assert.equal(
+      developer.settings?.previewTag,
+      "button",
+      "the Developer page's control is not a button",
+    );
+    assert.equal(
+      developer.settings?.previewRole,
+      "switch",
+      "the Developer page's control does not announce itself as a switch",
+    );
+    // The switch belongs on the row's trailing edge, in its own column: the copy
+    // and its description must end before the switch begins.
+    assert.ok(
+      developer.settings?.previewBox != null &&
+        developer.settings?.previewRowBox != null,
+      "the switch has no box to measure",
+    );
+    if (developer.settings?.previewBox && developer.settings.previewRowBox) {
+      assert.ok(
+        Math.abs(
+          developer.settings.previewRowBox.right -
+            developer.settings.previewBox.right,
+        ) <= 2,
+        `the switch is not on the row's trailing edge: switch ${JSON.stringify(developer.settings.previewBox)}, row ${JSON.stringify(developer.settings.previewRowBox)}`,
+      );
+      assert.ok(
+        developer.settings.previewBox.top <=
+          developer.settings.previewRowBox.top + 8,
+        `the switch is not at the top of its row: ${JSON.stringify(developer.settings.previewBox)}`,
+      );
+    }
+    assert.ok(
+      (developer.settings?.previewCopyBox?.right ?? Infinity) <=
+        (developer.settings?.previewBox?.left ?? 0) - 12,
+      `the copy runs under the switch: copy ${JSON.stringify(developer.settings?.previewCopyBox)}, switch ${JSON.stringify(developer.settings?.previewBox)}`,
+    );
+    assert.ok(
+      (developer.settings?.previewDescBox?.right ?? Infinity) <=
+        (developer.settings?.previewBox?.left ?? 0) - 12,
+      `the description runs under the switch: desc ${JSON.stringify(developer.settings?.previewDescBox)}, switch ${JSON.stringify(developer.settings?.previewBox)}`,
+    );
+    // A page with one switch is still a list: the next developer setting is
+    // another row, so the container and the row keep the layout that makes it so.
+    assert.equal(
+      developer.settings?.previewList?.display,
+      "flex",
+      `the developer settings are not a list: ${JSON.stringify(developer.settings?.previewList)}`,
+    );
+    assert.equal(
+      developer.settings?.previewList?.direction,
+      "column",
+      "the developer settings do not stack",
+    );
+    assert.equal(
+      developer.settings?.previewRowDisplay,
+      "flex",
+      "a developer setting is not a row",
+    );
+    assert.equal(
+      developer.settings?.previewRowJustify,
+      "space-between",
+      "the row does not push the switch to its trailing edge",
+    );
+    assert.equal(
       previewOn.settings?.previewChecked,
       true,
       "the switch did not come up checked when it was turned on",
+    );
+    assert.notEqual(
+      previewOn.settings?.previewThumbTransform,
+      developer.settings?.previewThumbTransform,
+      "the thumb did not move when the switch went on",
+    );
+    assert.notEqual(
+      previewOn.settings?.previewTrackBackground,
+      developer.settings?.previewTrackBackground,
+      "the track did not change ink when the switch went on",
+    );
+    assert.equal(
+      previewOn.settings?.previewBox?.width,
+      developer.settings?.previewBox?.width,
+      "the switch changed width with its state",
+    );
+    assert.equal(
+      previewOn.settings?.previewBox?.height,
+      developer.settings?.previewBox?.height,
+      "the switch changed height with its state",
     );
     assert.equal(
       previewOn.settings?.storedPreview,

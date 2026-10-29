@@ -157,10 +157,11 @@ const ready = new Promise<void>((resolve) => {
   settle = resolve;
 });
 requestAnimationFrame(function waitForView() {
-  // Whichever panel this page opened, its own first element is the signal.
+  // Whichever panel this page opened, its own first element is the signal. The
+  // Developer page's switch is a `role="switch"` button, not a checkbox input.
   const found =
     view === "developer"
-      ? document.querySelector("[data-developer-preview]")
+      ? document.querySelector('[role="switch"][aria-label="Preview the update badge"]')
       : document.querySelector("[data-update-summary]");
   if (!found) {
     requestAnimationFrame(waitForView);
