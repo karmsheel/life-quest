@@ -13,6 +13,9 @@
     "build": "npm run build -w @lifequest/desktop",
     "package": "npm run package -w @lifequest/desktop",
     "release": "npm run release -w @lifequest/desktop",
-    "typecheck": "npm run typecheck -w @lifequest/desktop"
+    "typecheck": "npm run typecheck -w @lifequest/desktop",
+    "dev:landing": "node apps/landing/scripts/serve.mjs",
+    "test:landing": "node apps/landing/scripts/e2e.mjs",
+    "shot:landing": "node apps/landing/scripts/shot.mjs"
   }
 }

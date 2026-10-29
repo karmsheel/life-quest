@@ -20,3 +20,6 @@ apps/desktop/e2e/artifacts/
 
 # local npm cache for sandboxed installs
 .npm-cache/
+
+# Landing E2E captures are regenerable with `node apps/landing/scripts/e2e.mjs`
+apps/landing/e2e/artifacts/*.png

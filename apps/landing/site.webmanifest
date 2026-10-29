@@ -1,0 +1,26 @@
+{
+  "name": "LifeQuest",
+  "short_name": "LifeQuest",
+  "description": "The private operating system for one life.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0A0920",
+  "theme_color": "#0A0920",
+  "icons": [
+    {
+      "src": "./brand/lq-mark-128.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    },
+    {
+      "src": "./brand/lq-mark-256.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    },
+    {
+      "src": "./brand/lq-mark-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
