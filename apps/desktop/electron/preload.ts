@@ -220,6 +220,8 @@ const lifequest = {
     ipcRenderer.invoke("decision:list") as Promise<Result<unknown>>,
   decisionCreate: (input: Record<string, unknown>) =>
     ipcRenderer.invoke("decision:create", input) as Promise<Result<unknown>>,
+  decisionAmend: (id: string, input: Record<string, unknown>) =>
+    ipcRenderer.invoke("decision:amend", id, input) as Promise<Result<unknown>>,
   decisionResolve: (id: string, resolution: "approved" | "rejected") =>
     ipcRenderer.invoke("decision:resolve", id, resolution) as Promise<
       Result<unknown>

@@ -584,6 +584,9 @@ async function executeConnectedTool(
         proposedTitle: d.proposedTitle,
         createdAt: d.createdAt,
         reason: d.reason,
+        // The operator may have corrected the proposal before answering it; a
+        // proposer that cannot see that would re-file the version already fixed.
+        amended: d.amendedAt !== null,
       })),
     };
   }

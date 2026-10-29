@@ -6,6 +6,7 @@ import type {
   DatabaseListEntry,
   DatabaseMeta,
   DatabaseRow,
+  DecisionAmendment,
   DecisionRecord,
   DocumentKind,
   DoctrineDocument,
@@ -302,6 +303,10 @@ type LifequestApi = {
     proposedBodyMarkdown: string;
     previousBodyMarkdown?: string | null;
   }) => Promise<Result<DecisionRecord>>;
+  decisionAmend: (
+    id: string,
+    input: DecisionAmendment,
+  ) => Promise<Result<DecisionRecord>>;
   decisionResolve: (
     id: string,
     resolution: "approved" | "rejected",
