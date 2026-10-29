@@ -145,7 +145,7 @@ A read of one record outside the grant returns `NOT_FOUND`. List tools omit thos
 
 Write uses the companion's current rules inside the assigned domains.
 
-These still file a Decision and do not land until the operator approves them: doctrine, library notes, goals, and projects. A database write follows the companion. If the companion would file a Decision, the connected agent files a Decision. If the companion would apply a new row immediately because that database is on the insert allowlist, the connected agent does too, when Write is on and the database's domain is assigned. Updates, deletes, new databases, and new columns stay pending, as they do for the companion.
+These still file a Decision and do not land until the operator approves them: doctrine, library notes, goals, and projects. A database write follows the companion. If the companion would file a Decision, the connected agent files a Decision. If the companion would write immediately, the connected agent does too, when Write is on and the database's domain is assigned. Updates, deletes, and new columns stay pending, as they do for the companion; new databases and inserted rows write immediately (amended 2026-10-28, [direct database writes](./2026-10-28-direct-database-writes-design.md) — the insert allowlist named here is retired).
 
 Event create, update, and delete run immediately when the event's domain is an assigned live domain, matching the companion.
 

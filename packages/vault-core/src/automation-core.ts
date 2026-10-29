@@ -105,7 +105,7 @@ export const DEFAULT_ANALYZE_PROMPT = [
   "- Things worth tracking that LifeQuest has no place for yet. For each one, propose the document, page or database that should exist — with the columns or sections it needs — and say why the existing places do not fit. If an existing document, page, project, goal or database is the right home, name that instead of proposing a duplicate.",
   "",
   "Use the note's own words when naming an element, and say which part of the note it came from. Do not invent a task, a goal or a detail that is not in the note; if something is ambiguous, ask about it instead of guessing.",
-  "Group the breakdown by where each element belongs. Do not write anything to the vault until I confirm which elements to apply.",
+  "Group the breakdown by where each element belongs. Do not write anything to the vault until I confirm which elements to apply: a new database or new rows you create are written immediately, so only create what I have confirmed.",
 ].join("\n");
 
 const DEFAULT_CREATED_AT = "2026-01-01T00:00:00.000Z";

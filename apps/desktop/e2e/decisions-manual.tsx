@@ -34,9 +34,10 @@ import type {
   ManualDecisionRecord,
   VaultSnapshot,
 } from "@lifequest/vault-core";
+import { domainLens, overviewLens } from "@lifequest/vault-core/pure";
 import { DecisionsInbox } from "@/components/decisions/DecisionsInbox";
 import { LiveDataProvider } from "@/state/LiveDataProvider";
-import { VaultProvider } from "@/state/VaultProvider";
+import { VaultProvider, useVault } from "@/state/VaultProvider";
 import { applyAppSkin } from "./apply-app-skin";
 import "@/styles/global.css";
 
@@ -203,6 +204,10 @@ type Screen = {
 type HarnessWindow = Window & {
   decisionsManualReady?: boolean;
   decisionsManualMounts?: () => number;
+  /** The app's own lens setter, so a lens switch is the real one. */
+  decisionsManualSetLens?: (slug: string | null) => boolean;
+  /** The lens the page is actually under: null in Overview, else the slug. */
+  decisionsManualLens?: () => string | null;
   decisionsManualTab?: (label: string) => boolean;
   decisionsManualFilter?: (label: string) => boolean;
   decisionsManualType?: (field: "title" | "rationale", value: string) => boolean;
@@ -442,6 +447,34 @@ harness.decisionsManualUnexpectedCalls = [];
 
 // ── the page ────────────────────────────────────────────────────────────────
 
+/**
+ * The app's own lens setter, and the lens as the page's provider holds it.
+ *
+ * The Decisions surface is global; the lens is only the form's default domain.
+ * The rig moves it through the real provider so a claim can prove a record logged
+ * under another domain is still on the page.
+ */
+function LensBridge() {
+  const { lens, setLens } = useVault();
+  useEffect(() => {
+    harness.decisionsManualSetLens = (slug) => {
+      void setLens(slug ? domainLens(slug) : overviewLens());
+      return true;
+    };
+    return () => {
+      harness.decisionsManualSetLens = undefined;
+    };
+  }, [setLens]);
+  useEffect(() => {
+    harness.decisionsManualLens = () =>
+      lens.kind === "domain" ? lens.slug : null;
+    return () => {
+      harness.decisionsManualLens = undefined;
+    };
+  }, [lens]);
+  return null;
+}
+
 /** One mount of the page, counted: the rig must never reload it to see a record. */
 function MountProbe() {
   useEffect(() => {
@@ -463,6 +496,7 @@ function Harness() {
       <VaultProvider>
         <LiveDataProvider>
           <MountProbe />
+          <LensBridge />
           <DecisionsInbox />
         </LiveDataProvider>
       </VaultProvider>

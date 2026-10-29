@@ -253,8 +253,28 @@ const SAMPLE = `(() => {
       const summary = document.querySelector("[data-update-summary]");
       const token = document.querySelector("[data-update-token]");
       const input = document.querySelector(".settings-updates__token input");
-      const previewToggle = document.querySelector("[data-developer-preview]");
+      // The Developer page's control is a switch, not a checkbox: its state is
+      // aria-checked, and its box is what proves it sits beside the copy.
+      const previewToggle = document.querySelector(
+        '[role="switch"][aria-label="Preview the update badge"]'
+      );
       const previewState = document.querySelector("[data-developer-state]");
+      const previewRow = previewToggle
+        ? previewToggle.closest(".settings-card__row")
+        : null;
+      const previewCopy = previewRow
+        ? previewRow.querySelector(".settings-card__copy")
+        : null;
+      const previewDesc = previewRow
+        ? previewRow.querySelector(".settings-card__desc")
+        : null;
+      const previewTrack = previewToggle
+        ? previewToggle.querySelector(".ui-toggle__track")
+        : null;
+      const previewThumb = previewToggle
+        ? previewToggle.querySelector(".ui-toggle__thumb")
+        : null;
+      const previewList = document.querySelector("[data-developer-settings]");
       if (!summary && !token && !previewToggle) return null;
       const text = (sel) => {
         const el = document.querySelector(sel);
@@ -273,10 +293,39 @@ const SAMPLE = `(() => {
         /** True when the page still asks the operator for a token. */
         hasTokenField: Boolean(token || input),
         note: text(".settings-card__desc"),
-        previewChecked: previewToggle ? previewToggle.checked : null,
+        previewTag: previewToggle ? previewToggle.tagName.toLowerCase() : null,
+        previewRole: previewToggle ? previewToggle.getAttribute("role") : null,
+        previewChecked: previewToggle
+          ? previewToggle.getAttribute("aria-checked") === "true"
+          : null,
         previewState: previewState ? previewState.getAttribute("data-developer-state") : null,
         previewNote: previewState ? (previewState.textContent || "").trim() : null,
         storedPreview: stored,
+        // Geometry: the switch's own box, the row it belongs to, and the copy it
+        // sits beside. A toggle on the right is a set of coordinates, not a class.
+        previewBox: box(previewToggle),
+        previewRowBox: box(previewRow),
+        previewCopyBox: box(previewCopy),
+        previewDescBox: box(previewDesc),
+        previewTrackBox: box(previewTrack),
+        previewThumbBox: box(previewThumb),
+        previewTrackBackground: previewTrack
+          ? getComputedStyle(previewTrack).backgroundColor
+          : null,
+        previewThumbTransform: previewThumb
+          ? getComputedStyle(previewThumb).transform
+          : null,
+        previewRowDisplay: previewRow ? getComputedStyle(previewRow).display : null,
+        previewRowJustify: previewRow
+          ? getComputedStyle(previewRow).justifyContent
+          : null,
+        previewList: previewList
+          ? {
+              display: getComputedStyle(previewList).display,
+              direction: getComputedStyle(previewList).flexDirection,
+              rows: previewList.querySelectorAll(":scope > .settings-card__row").length
+            }
+          : null,
         buttons: Array.from(
           document.querySelectorAll(".settings-page-shell button[aria-label]")
         ).map((el) => ({
@@ -1185,9 +1234,11 @@ async function main() {
     await loadScenario("current", "developer", false);
     const developer = await settle();
     check(
-      "the Developer page renders its switch",
-      developer.settings?.previewChecked === false,
-      `preview ${JSON.stringify(developer.settings)}`,
+      "the Developer page renders a switch, not a checkbox",
+      developer.settings?.previewTag === "button" &&
+        developer.settings?.previewRole === "switch" &&
+        developer.settings?.previewChecked === false,
+      `tag ${developer.settings?.previewTag}, role ${developer.settings?.previewRole}, checked ${developer.settings?.previewChecked}`,
     );
     check(
       "the switch starts off, with nothing glowing",
@@ -1195,8 +1246,37 @@ async function main() {
         !(developer.settings?.previewNote ?? "").includes("9.9.9"),
       `state ${developer.settings?.previewState}, note ${JSON.stringify(developer.settings?.previewNote)}`,
     );
+    check(
+      "the switch sits at the row's trailing edge",
+      developer.settings?.previewBox != null &&
+        developer.settings?.previewRowBox != null &&
+        Math.abs(
+          developer.settings.previewRowBox.right - developer.settings.previewBox.right,
+        ) <= 2 &&
+        developer.settings.previewBox.top <= developer.settings.previewRowBox.top + 8,
+      `switch ${JSON.stringify(developer.settings?.previewBox)}, row ${JSON.stringify(developer.settings?.previewRowBox)}`,
+    );
+    check(
+      "the toggle has its own column, right of the description",
+      (developer.settings?.previewCopyBox?.right ?? Infinity) <=
+        (developer.settings?.previewBox?.left ?? 0) - 12 &&
+        (developer.settings?.previewDescBox?.right ?? Infinity) <=
+          (developer.settings?.previewBox?.left ?? 0) - 12,
+      `copy ${JSON.stringify(developer.settings?.previewCopyBox)}, desc ${JSON.stringify(developer.settings?.previewDescBox)}, switch ${JSON.stringify(developer.settings?.previewBox)}`,
+    );
+    check(
+      "the Developer page is a list a second switch can join",
+      developer.settings?.previewList?.display === "flex" &&
+        developer.settings?.previewList?.direction === "column" &&
+        developer.settings?.previewList?.rows === 1 &&
+        developer.settings?.previewRowDisplay === "flex" &&
+        developer.settings?.previewRowJustify === "space-between",
+      `list ${JSON.stringify(developer.settings?.previewList)}, row display ${developer.settings?.previewRowDisplay}, justify ${developer.settings?.previewRowJustify}`,
+    );
 
-    await click('input[aria-label="Preview the update badge"]');
+    screenshots.push(await shoot("update-badge-developer-off.png"));
+
+    await click('[role="switch"][aria-label="Preview the update badge"]');
     const previewOn = await settle(320);
     check(
       "turning the switch on writes the preference",
@@ -1208,6 +1288,18 @@ async function main() {
       previewOn.settings?.previewChecked === true &&
         previewOn.settings?.previewState === "previewing",
       `checked ${previewOn.settings?.previewChecked}, state ${previewOn.settings?.previewState}`,
+    );
+    check(
+      "the on state is drawn without moving the row",
+      previewOn.settings?.previewThumbTransform !==
+        developer.settings?.previewThumbTransform &&
+        previewOn.settings?.previewTrackBackground !==
+          developer.settings?.previewTrackBackground &&
+        previewOn.settings?.previewBox?.width ===
+          developer.settings?.previewBox?.width &&
+        previewOn.settings?.previewBox?.height ===
+          developer.settings?.previewBox?.height,
+      `thumb ${JSON.stringify(previewOn.settings?.previewThumbTransform)} vs ${JSON.stringify(developer.settings?.previewThumbTransform)}, track ${JSON.stringify(previewOn.settings?.previewTrackBackground)} vs ${JSON.stringify(developer.settings?.previewTrackBackground)}, box ${JSON.stringify(previewOn.settings?.previewBox)} vs ${JSON.stringify(developer.settings?.previewBox)}`,
     );
     check(
       "the page says what the preview is showing",
@@ -1328,7 +1420,7 @@ async function main() {
         developerOn.settings?.previewState === "previewing",
       `checked ${developerOn.settings?.previewChecked}, state ${developerOn.settings?.previewState}`,
     );
-    await click('input[aria-label="Preview the update badge"]');
+    await click('[role="switch"][aria-label="Preview the update badge"]');
     const developerOff = await settle(320);
     check(
       "turning the switch off clears the preference",

@@ -85,9 +85,12 @@ type Report = {
     afterFirst: BadgeScreen;
     afterSecond: BadgeScreen;
     afterDecrease: BadgeScreen;
+    afterCross: BadgeScreen;
     afterEmpty: BadgeScreen;
     filedId: string;
     secondId: string;
+    crossId: string;
+    lensSet: boolean;
     pulseFirst: {
       arrivedAt: number | null;
       goneAt: number | null;
@@ -141,6 +144,7 @@ describe("decisions nav badge live e2e", () => {
       "the-mark-is-a-pulse-and-the-count-stays",
       "a-second-filing-bumps-the-count",
       "a-decrease-updates-without-a-pulse",
+      "a-cross-domain-filing-is-counted-under-the-active-lens",
       "the-badge-disappears-when-nothing-is-pending",
       "nothing-was-rebuilt-between-the-baseline-and-the-end",
       "the-page-asks-the-bridge-for-nothing-else",
@@ -188,6 +192,13 @@ describe("decisions nav badge live e2e", () => {
     assert.equal(report.checks.afterDecrease.badgeText, "1");
     assert.equal(report.checks.afterDecrease.arrived, null);
     assert.equal(report.checks.afterDecrease.arrivedClass, false);
+    // The count is global: a filing for a domain the lens is not on still counts,
+    // and still says "this is new".
+    assert.equal(report.checks.lensSet, true, "the rig never moved the lens");
+    assert.ok(report.checks.crossId, "the cross-domain filing has no id");
+    assert.equal(report.checks.afterCross.badgeText, "2");
+    assert.equal(report.checks.afterCross.ariaLabel, "Decisions, 2 pending");
+    assert.equal(report.checks.afterCross.arrived, "true");
     assert.equal(report.checks.afterEmpty.badgePresent, false);
     assert.equal(report.checks.afterEmpty.ariaLabel, "Decisions");
     assert.equal(report.checks.afterEmpty.mounts, report.checks.before.mounts);

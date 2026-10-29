@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
-import {
-  recordVisibleMulti,
-  type DomainLens,
-} from "@lifequest/vault-core/pure";
 import type { DecisionRecord } from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 import { useLiveData } from "@/state/LiveDataProvider";
@@ -12,29 +8,29 @@ import { ChatsSidebar } from "@/components/hermes/ChatsSidebar";
 import { NavCollapseButton } from "./NavCollapseButton";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
 import { UpdateBadge } from "./UpdateBadge";
-import { useDomainLens } from "./useActiveDomain";
 import { useWing } from "./WingProvider";
 import { WingTabs } from "./WingTabs";
 
 /** How long the badge wears the arrival mark. */
 const BADGE_ARRIVAL_MS = 4_000;
 
-/** The pending Decisions this rail is counting for the lens it is showing. */
-function pendingCountFor(
-  decisions: readonly DecisionRecord[],
-  lens: DomainLens,
-): number {
-  return decisions.filter((decision) => {
-    if (decision.status !== "pending") return false;
-    const slugs = Array.isArray(decision.domainSlugs) ? decision.domainSlugs : [];
-    return recordVisibleMulti(lens, slugs);
-  }).length;
+/**
+ * The pending Decisions this rail is counting — every one of them.
+ *
+ * The rail's Decisions shelf is global governance, so its badge counts what the
+ * operator has to answer, whichever domain filed it. Filtering this count by the
+ * active domain lens is how a cross-domain filing once went unnoticed: the
+ * companion filed three pending Decisions, the lens was on another domain, and
+ * both the page and this badge said there was nothing waiting. The lens-scoped
+ * view is the dashboard's "Pending decisions" pin, not this badge.
+ */
+function countPending(decisions: readonly DecisionRecord[]): number {
+  return decisions.filter((decision) => decision.status === "pending").length;
 }
 
 export function NavRail() {
   const { active } = useWing();
   const { snapshot } = useVault();
-  const lens = useDomainLens();
   /**
    * The vault's own change signal, which is how a Decision filed by the agent
    * reaches this rail while it sits at the edge of every page.
@@ -56,7 +52,7 @@ export function NavRail() {
    */
   const live = useLiveData();
   const [pendingCount, setPendingCount] = useState(() =>
-    pendingCountFor(snapshot?.decisions ?? [], lens),
+    countPending(snapshot?.decisions ?? []),
   );
   /** The newest read, so a slower earlier answer cannot replace it. */
   const readSeq = useRef(0);
@@ -67,12 +63,12 @@ export function NavRail() {
       try {
         const result = await api().decisionList();
         if (!result.ok || readSeq.current !== seq) return;
-        setPendingCount(pendingCountFor(result.value, lens));
+        setPendingCount(countPending(result.value));
       } catch {
         // Keep what is drawn: a transient read failure is not "no decisions".
       }
     })();
-  }, [live, lens]);
+  }, [live]);
 
   /**
    * The moment the count last grew, so the badge can say "this is new" rather

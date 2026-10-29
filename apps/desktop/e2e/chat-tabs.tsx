@@ -325,9 +325,11 @@ const stubbed = new Proxy(bridge, {
 (window as unknown as { lifequest: unknown }).lifequest = stubbed;
 
 // A previous run's last chat would decide the landing view; clear it so the rig
-// always starts on the same chat.
+// always starts on the same chat. The pinned order is client-side state too, so
+// a leftover order from an earlier run would reorder the list under the rig.
 window.localStorage.removeItem("lifequest.companion.lastSessionId");
 window.localStorage.removeItem("lifequest.companion.runtimePins");
+window.localStorage.removeItem("lifequest.companion.pinnedOrder");
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from chat-tabs.html");

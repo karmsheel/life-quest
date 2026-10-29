@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -6,7 +13,6 @@ import {
   MoreVertical,
   Pencil,
   Pin,
-  PinOff,
   Search,
   Settings2,
   SquarePen,
@@ -31,25 +37,69 @@ function timeValue(lastActive: number | null): string | undefined {
 }
 
 /**
+ * The pinned rows' order, most recently pinned first.
+ *
+ * The pin itself is durable in Hermes — that is what keeps the row above the
+ * unpinned chats on every channel. What Hermes does not carry is the order
+ * WITHIN that pinned band: the gateway sorts the list by activity, so a pinned
+ * chat that has been quiet for a week would drift under the ones that just
+ * spoke. The operator's gesture says "keep this at the top", so the sidebar
+ * remembers the order the pins were made in, browser-locally, exactly as the
+ * reference client does. This store is only consulted for the pinned band and
+ * is reconciled against the live list on every render, so a stale id costs
+ * nothing.
+ */
+const PINNED_ORDER_KEY = "lifequest.companion.pinnedOrder";
+
+function readPinnedOrder(): string[] {
+  try {
+    const raw = window.localStorage.getItem(PINNED_ORDER_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id): id is string => typeof id === "string");
+  } catch {
+    return [];
+  }
+}
+
+function writePinnedOrder(ids: string[]): void {
+  try {
+    window.localStorage.setItem(PINNED_ORDER_KEY, JSON.stringify(ids));
+  } catch {
+    // A storage refusal costs the order its memory, not the pin: the pin is
+    // already durable in Hermes, which is what keeps the row in the band.
+  }
+}
+
+/**
  * The chats section of the sidebar: every conversation on the companion
  * profile, between the wing's pages above and the governed shelf at the foot.
  *
  * The list used to be a page inside the dock, which meant a chat was only
  * reachable once the operator had already opened the dock. Here it is part of
  * the one wide sidebar: one click loads a chat into the dock (opening it first
- * if it was collapsed), and the same row carries the five things the operator
- * does to a chat without opening it — open in a new tab, pin, rename, archive,
- * delete. A plain click is navigation and takes over the tab on screen; a
- * middle click, or the row's "Open in new tab", is the only gesture that adds a
- * tab.
+ * if it was collapsed). A plain click is navigation and takes over the tab on
+ * screen; a middle click, or the row's "Open in new tab", is the only gesture
+ * that adds a tab.
+ *
+ * Pinning follows the desktop reference client rather than two labelled
+ * sections: there is no "Pinned"/"Recent" eyebrow, the pinned chats simply form
+ * the top of one list, and the row itself carries the gesture. Pin and archive
+ * are hover buttons (with the kebab menu still holding the named commands for
+ * keyboard and rename/delete); a pinned row keeps a filled pin at rest in the
+ * slot the hover pin button will occupy, so the state is legible without
+ * hovering. Pinning fronts the row in the pinned band, unpinning drops it back
+ * to the activity order, and archiving takes it out of the list.
  *
  * The header carries the two controls the list needs to stay usable as it
  * grows. The magnifier does not open a second row under the heading: the field
  * takes the header's own line, where the title and both icons were, focused and
  * ready for the query; the cross, a press anywhere outside it, or Escape hands
  * the usual header back. The sliders open the view menu that decides whether
- * archived chats are listed. Archived rows come back greyed and restorable
- * rather than openable — the chat is out of the working set, but not lost.
+ * archived chats are listed. Archived rows come back below the live ones in
+ * their own greyed, tagged band, restorable but never openable — the chat is
+ * out of the working set, but not lost.
  *
  * Rows are the same Hermes sessions the dock's tabs are, read from
  * `ChatSessionsProvider`, so a pin from here is a pin in the dock, in Hermes
@@ -63,6 +113,7 @@ export function ChatsSidebar() {
   const [menuId, setMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [pinnedOrder, setPinnedOrder] = useState<string[]>(readPinnedOrder);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
@@ -78,12 +129,32 @@ export function ChatsSidebar() {
     );
   };
   const shown = chat.sessions.filter(matches);
-  // An archived row is neither pinned nor recent: it has its own group so the
-  // working list above it keeps the shape it had before the view existed.
-  const pinned = shown.filter((s) => s.pinned && !s.archived);
+
+  /**
+   * One live list, pinned band first, then the activity order. The pinned band
+   * follows the remembered pin order (newest pin at the front); a pinned chat
+   * the local order has not seen yet waits at the back of the band, ordered the
+   * way the gateway sent it. Archived rows are not part of this list: they have
+   * their own band at the foot when the view shows them.
+   */
+  const pinned = useMemo(() => {
+    const rank = new Map<string, number>();
+    pinnedOrder.forEach((id, index) => {
+      if (!rank.has(id)) rank.set(id, index);
+    });
+    return shown
+      .filter((s) => s.pinned && !s.archived)
+      .sort((a, b) => {
+        const aRank = rank.get(a.id) ?? Number.POSITIVE_INFINITY;
+        const bRank = rank.get(b.id) ?? Number.POSITIVE_INFINITY;
+        if (aRank !== bRank) return aRank - bRank;
+        return (b.lastActive ?? 0) - (a.lastActive ?? 0);
+      });
+  }, [shown, pinnedOrder]);
   const recent = shown.filter((s) => !s.pinned && !s.archived);
   const archived = shown.filter((s) => s.archived);
-  const matchCount = pinned.length + recent.length + archived.length;
+  const ordered = [...pinned, ...recent];
+  const matchCount = ordered.length + archived.length;
   const liveCount = chat.openTabs.filter((id) => chat.runOf(id).sending).length;
 
   /** Load one chat into the dock, opening the dock if it was put away. */
@@ -108,6 +179,39 @@ export function ChatsSidebar() {
 
   function toggleMenu(id: string) {
     setMenuId((current) => (current === id ? null : id));
+  }
+
+  /**
+   * Pin or unpin one chat. The order moves on the gesture, not on the reply:
+   * the operator clicks pin and the row is at the top before the gateway has
+   * answered, which is what the row should feel like. A refused write puts the
+   * remembered order back and the provider's error banner does the talking.
+   */
+  function togglePin(s: HermesSession) {
+    setMenuId(null);
+    const next = !s.pinned;
+    const previous = pinnedOrder;
+    const applied = next
+      ? [s.id, ...pinnedOrder.filter((id) => id !== s.id)]
+      : pinnedOrder.filter((id) => id !== s.id);
+    setPinnedOrder(applied);
+    writePinnedOrder(applied);
+    void chat.patchSession(s.id, { pinned: next }).then((ok) => {
+      if (ok) return;
+      setPinnedOrder((current) => {
+        // Only undo the move if nothing else has pinned since; a newer gesture
+        // owns the order and must not be overwritten by this refusal.
+        if (current.join("|") !== applied.join("|")) return current;
+        writePinnedOrder(previous);
+        return previous;
+      });
+    });
+  }
+
+  /** Archive takes the chat out of the list; leaving that list is the gesture. */
+  function archiveChat(s: HermesSession) {
+    setMenuId(null);
+    void chat.patchSession(s.id, { archived: true });
   }
 
   /**
@@ -191,6 +295,8 @@ export function ChatsSidebar() {
         className="chats-rail__row"
         data-active={active || undefined}
         data-archived={archived || undefined}
+        data-pinned={s.pinned || undefined}
+        data-menu-open={menuOpen || undefined}
         data-live={run.sending || undefined}
         data-approval={run.approval !== null || undefined}
       >
@@ -261,17 +367,72 @@ export function ChatsSidebar() {
                 </time>
               ) : null}
             </button>
-            <button
-              type="button"
-              className="chats-rail__menu-btn"
-              aria-label="Chat actions"
-              title="Chat actions"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={() => toggleMenu(s.id)}
-            >
-              <MoreVertical size={14} aria-hidden />
-            </button>
+            {archived ? null : s.pinned ? (
+              <span
+                className="chats-rail__pin-state"
+                role="img"
+                aria-label="Pinned"
+                title="Pinned"
+              >
+                <Pin size={14} fill="currentColor" aria-hidden />
+              </span>
+            ) : null}
+            {/*
+              The row's own verbs. The pin is rightmost because the marker it
+              replaces at rest sits there, and archive is its neighbour — the
+              same pair, in the same places, as the reference client. Both are
+              paint-only until the row is hovered (or focused, so the keyboard
+              can reach them), which is what keeps a quiet list quiet. An
+              archived row has no working verbs: its menu offers Unarchive.
+            */}
+            <span className="chats-rail__actions">
+              <button
+                type="button"
+                className="chats-rail__menu-btn"
+                aria-label="Chat actions"
+                title="Chat actions"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                // A pointer press must not leave focus on the revealed control:
+                // focus keeps the verbs on screen (`:focus-within`), and a click
+                // that ends with the row stuck open would read as a stuck hover.
+                // Keyboard focus still arrives by Tab, which is the point of
+                // showing the verbs on focus at all.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => toggleMenu(s.id)}
+              >
+                <MoreVertical size={14} aria-hidden />
+              </button>
+              {archived ? null : (
+                <>
+                  <button
+                    type="button"
+                    className="chats-rail__archive-btn"
+                    aria-label="Archive chat"
+                    title="Archive chat"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => archiveChat(s)}
+                  >
+                    <Archive size={14} aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    className="chats-rail__pin-btn"
+                    data-pinned={s.pinned || undefined}
+                    aria-label={s.pinned ? "Unpin chat" : "Pin chat"}
+                    title={s.pinned ? "Unpin chat" : "Pin chat"}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => togglePin(s)}
+                  >
+                    <Pin
+                      size={14}
+                      fill={s.pinned ? "currentColor" : "none"}
+                      aria-hidden
+                    />
+                  </button>
+                </>
+              )}
+            </span>
             {menuOpen ? (
               <div className="chats-rail__menu" role="menu">
                 {archived ? (
@@ -300,31 +461,17 @@ export function ChatsSidebar() {
                       type="button"
                       role="menuitem"
                       aria-label={s.pinned ? "Unpin chat" : "Pin chat"}
-                      onClick={() => {
-                        setMenuId(null);
-                        void chat.patchSession(s.id, { pinned: !s.pinned });
-                      }}
+                      onClick={() => togglePin(s)}
                     >
                       {s.pinned ? (
                         <>
-                          <PinOff size={12} aria-hidden /> Unpin
+                          <Pin size={12} fill="currentColor" aria-hidden /> Unpin
                         </>
                       ) : (
                         <>
                           <Pin size={12} aria-hidden /> Pin
                         </>
                       )}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      aria-label="Archive chat"
-                      onClick={() => {
-                        setMenuId(null);
-                        void chat.patchSession(s.id, { archived: true });
-                      }}
-                    >
-                      <Archive size={12} aria-hidden /> Archive
                     </button>
                   </>
                 )}
@@ -336,6 +483,16 @@ export function ChatsSidebar() {
                 >
                   <Pencil size={12} aria-hidden /> Rename
                 </button>
+                {archived ? null : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-label="Archive chat"
+                    onClick={() => archiveChat(s)}
+                  >
+                    <Archive size={12} aria-hidden /> Archive
+                  </button>
+                )}
                 <button
                   type="button"
                   role="menuitem"
@@ -405,7 +562,7 @@ export function ChatsSidebar() {
                 {liveCount} running
               </span>
             ) : null}
-            <div className="chats-rail__actions">
+            <div className="chats-rail__header-actions">
               <button
                 type="button"
                 className="chats-rail__icon-btn"
@@ -503,20 +660,7 @@ export function ChatsSidebar() {
           <p className="chats-rail__empty">No chats yet</p>
         ) : (
           <ul className="chats-rail__rows" aria-label="Chats">
-            {pinned.length > 0 ? (
-              <>
-                <li className="chats-rail__group">Pinned</li>
-                {pinned.map(renderRow)}
-              </>
-            ) : null}
-            {recent.length > 0 ? (
-              <>
-                {pinned.length > 0 ? (
-                  <li className="chats-rail__group">Recent</li>
-                ) : null}
-                {recent.map(renderRow)}
-              </>
-            ) : null}
+            {ordered.map(renderRow)}
             {archived.length > 0 ? (
               <>
                 <li className="chats-rail__group">Archived</li>

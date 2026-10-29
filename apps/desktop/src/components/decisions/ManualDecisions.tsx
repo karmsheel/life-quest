@@ -73,18 +73,23 @@ export function ManualDecisionCard({
         <span className="decision-card__kicker-left">
           <span className="decision-source decision-source--manual">Manual</span>
         </span>
-        <span className="decision-status decision-status--logged">Logged</span>
+        <span className="decision-card__kicker-right">
+          {domain ? (
+            <span
+              className="decision-domain"
+              data-domain-slug={domain}
+              title={`Domain: ${domainLabel(domain, domains)}`}
+            >
+              {domainLabel(domain, domains)}
+            </span>
+          ) : null}
+          <span className="decision-status decision-status--logged">Logged</span>
+        </span>
       </div>
       <div>
         <h2 className="decision-card__title">{decision.title}</h2>
         <p className="decision-card__meta muted">
           <span>{actorDisplayName(decision.actor)}</span>
-          {domain ? (
-            <>
-              <span aria-hidden="true">·</span>
-              <span>{domainLabel(domain, domains)}</span>
-            </>
-          ) : null}
           <span aria-hidden="true">·</span>
           <time dateTime={decision.createdAt}>{formatWhen(decision.createdAt)}</time>
         </p>
