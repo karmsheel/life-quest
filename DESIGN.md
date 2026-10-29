@@ -30,7 +30,7 @@ ThemeProvider may apply a named skin and light/dark/system. It must not generate
 - One Frame Per Card — a card draws its own shell, and its container adds none. A wrapper around a card carries layout markers only (`.view-card--span2`); giving it the card's own class nested two shells and put a frame inside a frame on every view pin.
 - One Box — a markdown editor is `LiveMarkdownEditor`, one surface where the file renders and the paragraph under the caret does not. Never add a second pane beside it: two surfaces that show the same file can disagree about it, and the operator has to read both to know which one is right.
 - Closed Primitive — extend `Button` / settings primitives; do not restyle in features.
-- Flat First — canvas vs sheet is the elevation ladder; do not add shadows beyond `--shadow-sm` on the sheet.
+- Flat First — canvas vs sheet is the elevation ladder; do not add shadows beyond `--shadow-sm` on the sheet. **Named exemption:** the Decisions inbox cards (`.decision-card`) are the one surface that stands proud of the sheet — the operator answers them one at a time, so each wears a neutral grey step, `--shadow-card`, and the hover slash, and runs tighter than a page card (three-line rationale, an 8rem cap on proposal prose, compact field rows).
 - Calm Scale — radii are `6 / 12 / 18 / 24 / --radius-pill`. Do not change the type scale here.
 
 ## Primitives
@@ -40,6 +40,8 @@ ThemeProvider may apply a named skin and light/dark/system. It must not generate
 **Named exception — the journal's own page.** `Daily Note` (`.daily-note`) wears `.btn` at `--radius-xs` rather than the pill, the same way `.data-studio` and `.pages-studio` already square theirs. The day's page is a page of prose with a pager above it and a strip of days below, and a row of pills around a paragraph reads as chips rather than as the page's own controls. The step is the Calm Scale's own smallest, so the primitive is worn at a different step rather than restyled, and the override lives in `notes.css` with the page's other chrome. Every other wing keeps the pill.
 
 `SettingsSection` / `SettingsRow` own settings heading and row chrome. Settings cards use `--radius-sm`.
+
+**Named exception — the inbox's answers.** The Decisions card's `Approve` / `Reject` controls are `.btn` at `--radius-xs` and larger than the primitive's default padding: a card is one question with two answers, and a pill there reads as another badge beside the domain and status pills above it. The radius is the Calm Scale's own smallest, as with the journal.
 
 `LiveMarkdownEditor` (`.note-live`) is the studio's one markdown surface. Every editor that writes markdown — a daily note, a doctrine document, a review — is this box: the file reads as prose and the paragraph under the caret is its raw markdown, in place. A locked document renders the same box read-only, with no writing line at all. There is no split editor and no preview pane beside it.
 

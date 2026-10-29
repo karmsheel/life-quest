@@ -2433,7 +2433,7 @@ a {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0.65rem;
 }
 
 .decisions-inbox__empty {
@@ -2441,29 +2441,145 @@ a {
 }
 
 .decision-card {
-  border: 1px solid var(--border);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  /* A neutral grey card that stands off the sheet, with the inbox's own raised
+     shadow. The sheet panel paints `--card` too, so the card is mixed toward the
+     foreground: lighter grey in the night skins, a grey card on the day sheet. */
+  --decision-card-surface: color-mix(in srgb, var(--card) 86%, var(--foreground) 14%);
+  --decision-card-surface-hover: color-mix(
+    in srgb,
+    var(--card) 79%,
+    var(--foreground) 21%
+  );
+  border: 1px solid color-mix(in srgb, var(--foreground) 16%, var(--border));
   border-radius: var(--radius-sm);
-  padding: 1rem 1.1rem 0.95rem;
+  padding: 0.7rem 0.9rem 0.65rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  background: var(--card);
-  box-shadow: var(--shadow-sm);
+  gap: 0.45rem;
+  background-color: var(--decision-card-surface);
+  background-image: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--foreground) 4%, transparent),
+    transparent 46%
+  );
+  background-repeat: no-repeat;
+  box-shadow: var(--shadow-card);
+  transition:
+    background-color 160ms var(--ease-out),
+    border-color 160ms var(--ease-out),
+    box-shadow 160ms var(--ease-out);
+}
+
+/* By day the sheet is the light surface, so the grey step comes down from the
+   paper rather than up from the ink. The card is still the cool grey the operator
+   asked for, and the shadow is what raises it. */
+[data-theme="light"] .decision-card {
+  --decision-card-surface: color-mix(in srgb, var(--card) 93%, var(--foreground) 7%);
+  --decision-card-surface-hover: color-mix(
+    in srgb,
+    var(--card) 88%,
+    var(--foreground) 12%
+  );
+}
+
+/* The slash the hover reveals: one diagonal band of shading laid across the
+   card, under its content. It is not on the card at rest — the inbox is a list
+   of proposals, not a row of stripes — and it fades in as the pointer arrives.
+   The band below sweeps across it, so the effect is a slash AND a pass of light
+   rather than a flat wash. */
+.decision-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -2;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 26%,
+    color-mix(in srgb, var(--foreground) 8%, transparent) 45%,
+    color-mix(in srgb, var(--foreground) 4%, transparent) 56%,
+    transparent 74%
+  );
+  opacity: 0;
+  transition: opacity 220ms var(--ease-out);
+}
+
+/* The pass of light: a narrower diagonal band that sweeps across the card when
+   the operator points at it. It too lives under the content — the text, chips and
+   buttons never move or dim — and sits off the card entirely at rest. */
+.decision-card::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 38%,
+    color-mix(in srgb, var(--foreground) 6%, transparent) 48%,
+    color-mix(in srgb, var(--foreground) 2%, transparent) 54%,
+    transparent 64%
+  );
+  transform: translateX(-135%);
+  transition: transform 700ms var(--ease-out);
+}
+
+.decision-card:hover,
+.decision-card:focus-within {
+  background-color: var(--decision-card-surface-hover);
+  border-color: color-mix(in srgb, var(--foreground) 27%, var(--border));
+  box-shadow: var(--shadow-card);
+}
+
+.decision-card:hover::before,
+.decision-card:focus-within::before {
+  opacity: 1;
+}
+
+.decision-card:hover::after,
+.decision-card:focus-within::after {
+  transform: translateX(135%);
+}
+
+/* Reduced motion keeps the slash shading the hover reveals — that is colour, not
+   movement — and drops the sweep and the fading. */
+@media (prefers-reduced-motion: reduce) {
+  .decision-card::before {
+    transition: none;
+  }
+  .decision-card::after {
+    display: none;
+  }
 }
 
 .decision-card__kicker {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 /* The kind chip and, when it applies, the arrival chip: one group on the left so
-   the status pill keeps the right edge to itself. */
+   the domain and status pills keep the right edge to themselves. */
 .decision-card__kicker-left {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+/* The domain a Decision was filed for, beside its status: the scope of the change
+   is the first thing the operator asks of a proposal, so it is a badge rather
+   than a word buried in the meta line. */
+.decision-card__kicker-right {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-width: 0;
 }
 
 /* A Decision that arrived while the operator was on this page. Nothing about the
@@ -2474,13 +2590,13 @@ a {
 
 @keyframes decision-arrived {
   0% {
-    box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm);
+    box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-card);
   }
   55% {
-    box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-xs);
+    box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-card);
   }
   100% {
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-card);
   }
 }
 
@@ -2540,18 +2656,60 @@ a {
   text-transform: uppercase;
 }
 
-.decision-status {
-  padding: 0.18rem 0.55rem;
+.decision-domain {
+  display: inline-flex;
+  align-items: center;
+  max-width: 14rem;
+  padding: 0.22rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   border-radius: var(--radius-pill);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: capitalize;
+  background: var(--bg-subtle);
+  color: var(--card-foreground);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* One dot of brand ink, so the badge reads as a scope marker rather than another
+   status: the name itself is the fact, and the dot is only the bullet. */
+.decision-domain::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 0.38rem;
+  height: 0.38rem;
+  margin-right: 0.34rem;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.75;
+}
+
+.decision-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.26rem 0.72rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+/* Pending is the one status that asks the operator for something, so it is the
+   one status drawn a step larger than the rest. */
 .decision-status--pending {
+  padding: 0.3rem 0.85rem;
+  font-size: 0.84rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
   color: var(--blue);
   background: var(--blue-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 22%, transparent);
 }
 
 .decision-status--approved {
@@ -2572,44 +2730,51 @@ a {
 
 .decision-card__title {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.02rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.25;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
 }
 
 .decision-card__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem 0.45rem;
-  margin: 0.28rem 0 0;
-  font-size: 0.8rem;
+  gap: 0.2rem 0.4rem;
+  margin: 0.14rem 0 0;
+  font-size: 0.75rem;
 }
 
+/* The rationale is the card's context, not its content: three lines of it and
+   the rest stays behind the card's own height. An inbox this long does not need
+   a paragraph per card before the operator can answer it. */
 .decision-card__rationale {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
   margin: 0;
-  padding: 0.6rem 0.75rem;
+  padding: 0.4rem 0.6rem;
   border-left: 3px solid var(--accent);
   border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
   background: color-mix(in srgb, var(--accent) 7%, transparent);
-  font-size: 0.92rem;
-  line-height: 1.45;
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .decision-card__reason {
   margin: 0;
-  padding: 0.6rem 0.75rem;
+  padding: 0.4rem 0.6rem;
   border: 1px solid color-mix(in srgb, var(--amber) 35%, var(--border));
   border-radius: var(--radius-xs);
   background: var(--amber-bg);
-  font-size: 0.86rem;
-  line-height: 1.45;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .decision-card__reason-label {
   display: block;
-  margin-bottom: 0.15rem;
-  font-size: 0.75rem;
+  margin-bottom: 0.1rem;
+  font-size: 0.72rem;
   font-weight: 700;
 }
 
@@ -2617,21 +2782,32 @@ a {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.4rem;
+  gap: 0.3rem;
   margin: 0;
-  font-size: 0.86rem;
+  font-size: 0.8rem;
 }
 
+/* Approve and Reject are the card's two answers: larger, rectangular with the
+   Calm Scale's smallest radius, and wide enough to be a target rather than a tag. */
 .decision-card__actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
-  padding-top: 0.15rem;
+  gap: 0.55rem;
+  padding-top: 0.05rem;
+}
+
+.decision-card__actions .btn {
+  min-width: 7.5rem;
+  padding: 0.68rem 1.35rem;
+  border-radius: var(--radius-xs);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.1;
 }
 
 .decision-card__resolved {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.74rem;
 }
 
 /* The source of a history row: the operator's own logged decision, or one that
@@ -2778,17 +2954,40 @@ a {
   border-left: 3px solid var(--accent);
 }
 
+/* The logged card keeps its brand edge when the hover shading warms the rest of
+   the frame: the edge is what says "logged", not the shade. */
+.decision-card--manual:hover,
+.decision-card--manual:focus-within {
+  border-left-color: var(--accent);
+}
+
 .decision-proposal,
 .decision-section {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.3rem;
 }
 
 .decision-lead {
   margin: 0;
-  font-size: 0.92rem;
-  line-height: 1.45;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+/* The settings blocks a pairing/agent Decision borrows were built for a page,
+   not a card: tighten them so the preview does not outgrow the answer. */
+.decision-card .settings-hermes {
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+}
+
+.decision-card .settings-field {
+  gap: 0.1rem;
+  font-size: 0.8rem;
+}
+
+.decision-card .settings-field p {
+  margin: 0;
 }
 
 .decision-change {
@@ -2800,12 +2999,12 @@ a {
 .decision-fields {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.86rem;
+  font-size: 0.8rem;
 }
 
 .decision-fields th,
 .decision-fields td {
-  padding: 0.48rem 0.7rem;
+  padding: 0.28rem 0.55rem;
   text-align: left;
   vertical-align: top;
   border-bottom: 1px solid var(--border-soft);
@@ -2814,7 +3013,7 @@ a {
 .decision-fields thead th {
   background: var(--bg-subtle);
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -2829,7 +3028,7 @@ a {
   width: 28%;
   color: var(--muted);
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
 }
 
 .decision-row--changed {
@@ -2858,15 +3057,15 @@ a {
 
 .decision-unchanged summary {
   cursor: pointer;
-  padding: 0.4rem 0.7rem;
+  padding: 0.28rem 0.55rem;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
 }
 
 .decision-prose-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.65rem;
+  gap: 0.45rem;
 }
 
 @media (min-width: 42rem) {
@@ -2876,9 +3075,9 @@ a {
 }
 
 .decision-prose-pane__label {
-  margin: 0 0 0.3rem;
+  margin: 0 0 0.2rem;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -2886,16 +3085,16 @@ a {
 
 .decision-prose {
   margin: 0;
-  max-height: 16rem;
+  max-height: 8rem;
   overflow: auto;
-  padding: 0.7rem 0.8rem;
+  padding: 0.45rem 0.55rem;
   border-radius: var(--radius-xs);
   background: var(--bg-subtle);
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-sans);
-  font-size: 0.9rem;
-  line-height: 1.5;
+  font-size: 0.82rem;
+  line-height: 1.42;
 }
 
 .decision-blocks,
@@ -2909,14 +3108,14 @@ a {
 .decision-blocks {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.3rem;
 }
 
 .decision-block {
   display: flex;
-  gap: 0.65rem;
+  gap: 0.5rem;
   align-items: baseline;
-  padding: 0.5rem 0.7rem;
+  padding: 0.32rem 0.5rem;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-xs);
   background: var(--bg-subtle);
@@ -2932,17 +3131,17 @@ a {
 }
 
 .decision-block__detail {
-  font-size: 0.86rem;
-  line-height: 1.4;
+  font-size: 0.8rem;
+  line-height: 1.35;
 }
 
 .decision-pin {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.42rem 0.1rem;
+  gap: 0.5rem;
+  padding: 0.24rem 0.1rem;
   border-bottom: 1px solid var(--border-soft);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
 }
 
 .decision-pin:last-child {
@@ -2968,7 +3167,7 @@ a {
 }
 
 .decision-checklist li {
-  margin: 0.15rem 0;
+  margin: 0.05rem 0;
 }
 
 .decision-color {
@@ -2992,7 +3191,7 @@ a {
   width: fit-content;
   cursor: pointer;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
 }
 
 .decision-source summary:hover {
@@ -3000,16 +3199,16 @@ a {
 }
 
 .decision-source pre {
-  margin: 0.4rem 0 0;
-  max-height: 12rem;
+  margin: 0.25rem 0 0;
+  max-height: 8rem;
   overflow: auto;
-  padding: 0.6rem 0.7rem;
+  padding: 0.45rem 0.55rem;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-xs);
   background: var(--bg-subtle);
   font-family: var(--font-mono);
-  font-size: 0.72rem;
-  line-height: 1.45;
+  font-size: 0.7rem;
+  line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
 }
