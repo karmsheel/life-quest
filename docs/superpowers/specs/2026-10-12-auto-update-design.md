@@ -3,7 +3,8 @@
 **Date:** 2026-10-12  
 **Status:** Approved — implemented  
 **Product:** LifeQuest — local-first life-management studio  
-**Depends on:** [Windows packaging](./2026-08-28-windows-portable-packaging-design.md), [Glass chrome](./2026-09-12-glass-chrome-design.md), [Shell sidebar](../e2e/shell-sidebar.tsx)
+**Depends on:** [Windows packaging](./2026-08-28-windows-portable-packaging-design.md), [Glass chrome](./2026-09-12-glass-chrome-design.md), [Shell sidebar](../e2e/shell-sidebar.tsx)  
+**Superseded in part by:** [Update polling](./2026-10-29-update-polling-design.md) — decision 3's "once, at launch" cadence became a 15-minute watch, and the operator now gets an in-app notice. Everything else here still stands.
 
 The studio ships as a Windows installer and a portable zip. Nothing told the operator when a newer one existed. This spec makes the build number at the foot of the rail say so, by glowing, and makes clicking it offer the upgrade.
 
@@ -11,14 +12,14 @@ The studio ships as a Windows installer and a portable zip. Nothing told the ope
 
 ## 1. Purpose
 
-A release is cut with `npm run release` and attached with `gh release create`. From that moment the newer build exists and nobody knows. The operator should learn it without leaving the app, without a poller, and without the studio ever installing something they did not ask for.
+A release is cut with `npm run release` and attached with `gh release create`. From that moment the newer build exists and nobody knows. The operator should learn it without leaving the app, and without the studio ever installing something they did not ask for. (This spec originally said "without a poller"; a launch-only check proved too quiet, and the polling addendum above replaced that cadence.)
 
 ### Success criteria
 
 - With a newer release published, `v<version>` in the rail wears a halo, becomes a button, and opens a popup naming both versions, the release notes, and the installer.
 - With no newer release, the rail is exactly what it was: one line of muted text, not a control, no glow.
 - The popup can download the installer, verify it, hand it to Windows, and step aside so it can replace the app.
-- The app asks the feed **once per launch**. `npm test` covers every refusal path.
+- The app asks the feed **at launch and then on a 15-minute watch** (see the polling addendum). `npm test` covers every refusal path.
 - `npm run typecheck` introduces no new errors.
 
 ---
@@ -29,7 +30,7 @@ A release is cut with `npm run release` and attached with `gh release create`. F
 |---|--------|----------|
 | 1 | Feed | **GitHub Releases API** for `karmsheel/life-quest`, `releases/latest`. |
 | 2 | Auth | The repository is public, so the check reads its releases **unauthenticated** — one anonymous GET, with no token stored anywhere in the app. A check that fails is reported as "could not check", never as "up to date". |
-| 3 | Cadence | **Once, at launch.** The renderer's `UpdateProvider` asks on mount and main keeps that answer for the session. Settings → *Check now* is the operator asking by hand, and is the only caller that forces a re-read. |
+| 3 | Cadence | **At launch, then every 15 minutes** (superseded — see [Update polling](./2026-10-29-update-polling-design.md)). The renderer's `UpdateProvider` asks on mount, main keeps that answer for the session, and main's watch reads the feed on a clock and pushes a notice. Settings → *Check now* is still the operator asking by hand. |
 | 4 | Glow | `--accent` hairline + `--accent-fill` bloom on the chip's **own `::after` layer**, whose `opacity` breathes over 4s. Not a shadow on the chip: the breath then never repaints a blur, and the shadow stays readable at the value it was written as. |
 | 5 | Popup | An in-window modal, portalled to `body` so the rail's scroll box cannot clip it. Names current → latest, the release notes behind a disclosure, the installer's name and size. Not dismissible mid-download. |
 | 6 | Install | Download the release's `-setup.exe` to `%TEMP%\LifeQuest-update\`, check its size against the feed's, `shell.openPath` it, and quit **after** the launch is confirmed. |
