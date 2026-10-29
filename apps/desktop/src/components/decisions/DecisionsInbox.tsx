@@ -7,8 +7,6 @@ import {
 import {
   actorDisplayName,
   DOCUMENT_KIND_LABELS,
-  recordVisible,
-  recordVisibleMulti,
 } from "@lifequest/vault-core/pure";
 import type {
   DecisionRecord,
@@ -55,10 +53,11 @@ function rowAt(row: InboxRow): string {
 /**
  * A Decision this page had never drawn, and the moment it found it.
  *
- * `ids` is wider than the cards on screen on purpose: a proposal filed for another
- * lens is still one this page had never seen, and a tab switch must not turn a
- * whole inbox into "New" chips. `at` is a tick rather than a boolean so a second
- * filing restarts the mark instead of inheriting a class that was already there.
+ * `ids` is wider than the cards on screen on purpose: a filing can land while
+ * History owns the screen, where no pending card is drawn, and a tab switch must
+ * not turn that filing into a whole inbox of "New" chips when the operator comes
+ * back to Pending. `at` is a tick rather than a boolean so a second filing
+ * restarts the mark instead of inheriting a class that was already there.
  */
 type Arrival = { ids: string[]; actor: string; at: number };
 
@@ -160,6 +159,20 @@ function kindLabel(target: DecisionRecord["target"]): string {
  * both stores with a source chip on every card and a filter to compare the
  * operator's own decisions against the AI's.
  *
+ * WHY THE DOMAIN LENS IS NOT PART OF THIS PAGE
+ *
+ * This surface is the governed shelf at the foot of the rail: a global queue of
+ * things waiting for the operator's answer, not one domain's view. It used to
+ * filter by the active domain lens, and the operator reported what that costs:
+ * the companion filed three pending create-database Decisions and said so, but
+ * with the lens on another domain the page said "No pending proposals." and the
+ * rail's badge — filtered the same way — was silent too. A filing must never be
+ * invisible because of where the operator happens to be looking: Pending,
+ * History and Manual all show every Decision the vault holds, whatever domain
+ * filed it. The lens-scoped reading of decisions is the dashboard's own "Pending
+ * decisions" pin (`PendingDecisionsCard`), which is the per-domain view and
+ * stays scoped by design.
+ *
  * WHAT IT DELIBERATELY DOES NOT DO
  *
  * It does not move the page. A prepend at the start of a list is where the
@@ -183,9 +196,9 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [items, setItems] = useState<DecisionRecord[]>([]);
   /**
-   * The other store. Kept unfiltered: the lens is applied where the rows are
-   * drawn, so a record that just landed is never hidden from the store the page
-   * holds just because the lens it was logged under is not the active one.
+   * The other store, kept whole. This page is global, so the lens is not
+   * consulted here either: a record logged under any domain is the operator's
+   * own and is theirs to read on this shelf.
    */
   const [manualItems, setManualItems] = useState<ManualDecisionRecord[]>([]);
   const [manualLoading, setManualLoading] = useState(false);
@@ -211,24 +224,27 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
   /**
    * The newest read, so a slower earlier one cannot land on top of it.
    *
-   * A read takes a round trip, and the tab or the lens can move inside it — a
-   * live refresh started on Pending, then History clicked, would otherwise draw
-   * the pending list under the History tab until something asked again. Only the
-   * last read owns the screen; a discarded one changes nothing, not even the ids
-   * this page counts as drawn.
+   * A read takes a round trip, and the tab can move inside it — a live refresh
+   * started on Pending, then History clicked, would otherwise draw the pending
+   * list under the History tab until something asked again. Only the last read
+   * owns the screen; a discarded one changes nothing, not even the ids this page
+   * counts as drawn.
    */
   const readSeqRef = useRef(0);
 
   /**
    * Read the inbox.
    *
-   *  - `view` — a first load, a tab switch, a lens change. These are answers to
-   *    something the operator did, so they may replace what is on screen.
+   *  - `view` — a first load, a tab switch. These are answers to something the
+   *    operator did, so they may replace what is on screen.
    *  - `live` — a vault revision moved. Nobody asked; a card that arrived has to
    *    be added to what the operator is already reading, not swapped in for it.
    *
    * Arrival is judged against every decision the vault holds rather than against
    * this tab's filtered list, because a filing is a filing whatever is on screen.
+   *
+   * There is no domain lens in this read: the surface is global, so moving the
+   * lens is not a reason to ask the vault again and cannot change the answer.
    */
   const load = useCallback(
     async (mode: "view" | "live" = "view") => {
@@ -262,14 +278,9 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
         } else {
           list = list.filter((d) => d.status !== "pending");
         }
-        // KAR-70: a pairing Decision belongs to no domain, so the lens
-        // filter would hide the very card the operator has to act on. Every
-        // pairing Decision stays visible under every lens.
-        list = list.filter(
-          (d) =>
-            d.target.type === "agent-pairing" ||
-            recordVisibleMulti(lens, d.domainSlugs),
-        );
+        // No domain filter: this shelf is global, and the active lens must never
+        // be able to hide a proposal waiting for an answer. The dashboard's own
+        // "Pending decisions" card is where the lens-scoped reading lives.
         // Newest first
         list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
@@ -319,10 +330,11 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
         setManualLoading(false);
       }
     },
-    [tab, lens],
+    [tab],
   );
 
-  // The operator's own moves: the first paint, a tab, the domain lens.
+  // The operator's own moves: the first paint and a tab. The lens is not one of
+  // them — the page reads the same list under every lens.
   useEffect(() => {
     void load("view");
   }, [load]);
@@ -399,19 +411,19 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
    * The arrivals this tab is actually showing.
    *
    * The mark is worn by the cards on screen, and the line above the list counts
-   * those same cards: a proposal filed under another lens is not something this
-   * page can point at, and a count the operator cannot reach is a worse lie than
-   * silence.
+   * those same cards. A filing can land while History owns the screen, where no
+   * pending card is drawn; the line must then wait for the operator to come back
+   * to Pending rather than count a card they cannot see.
    */
   const arrivedIds = new Set(arrival?.ids ?? []);
   const arrivedOnScreen = items.filter((d) => arrivedIds.has(d.id));
   const livedDomains = domains.filter((d) => !d.meta.archivedAt);
 
-  // The manual store is shown under the same lens as the inbox: a decision
-  // logged under Health belongs to Health, and one logged with no domain is the
-  // Overview's own.
-  const manualVisible = manualItems
-    .filter((m) => recordVisible(lens, m.domainSlug))
+  // The manual store is global on this surface too: a decision the operator
+  // logged under one domain is still theirs to read on the governance shelf, and
+  // one logged with no domain is the Overview's own. Newest first, like the
+  // proposals; the tab and the history filter are the only things that narrow it.
+  const manualDecisions = manualItems
     .slice()
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
@@ -421,7 +433,7 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
   let rows: InboxRow[];
   if (tab === "history") {
     const aiRows: InboxRow[] = items.map((decision) => ({ kind: "ai", decision }));
-    const manualRows: InboxRow[] = manualVisible.map((manual) => ({
+    const manualRows: InboxRow[] = manualDecisions.map((manual) => ({
       kind: "manual",
       manual,
     }));
@@ -563,8 +575,10 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
       {tab === "manual" ? (
         <ManualDecisionsPanel
           domains={livedDomains}
+          // The lens is only a convenient default for the DOMAIN FIELD here, not
+          // a filter: the panel and History draw every logged decision.
           defaultDomainSlug={lens.kind === "domain" ? lens.slug : null}
-          items={manualVisible}
+          items={manualDecisions}
           loading={manualLoading}
           onLogged={manualLogged}
         />

@@ -37,10 +37,10 @@ import { ensureCompanionToken } from "../electron/pairing-secrets.ts";
  *   5. A task created with `links.projectId` is collated by `get_project`; a
  *      signal created by `create_signal` and linked from that task is collated
  *      too.
- *   6. `create_database` with three columns is ONE call: it returns the
- *      `databaseId` and `columns: 3`, the database does not exist before
- *      approve, ONE approve creates it with all three columns (the "three
- *      approvals become three finished databases" case).
+ *   6. `create_database` with three columns is ONE call: it returns
+ *      `applied: true`, the `databaseId` and `columns: 3`, the database and all
+ *      three columns exist immediately (adding data writes at once, 2026-10-28),
+ *      and it files no Decision.
  *   7. `list_pages` / `get_page` read a page the operator created.
  *   8. `list_signals` / `get_signal` / `create_signal` round-trip.
  *
@@ -434,7 +434,9 @@ describe("projects and harness tools over the real MCP door", () => {
         `the approved update Decision is not collated: ${JSON.stringify(readCollated.decisions).slice(0, 300)}`,
       );
 
-      // ── 6. create_database: one call, one approve, three columns ─────────
+      // ── 6. create_database: one call, written at once, three columns ─────
+      // Operator policy (2026-10-28): creating a database is ADDING data, so the
+      // tool writes it and files no Decision; the chat confirmation is the yes.
       const CREATE_DB_ARGS = {
         domainSlug: "financial",
         name: "Bottles",
@@ -448,65 +450,37 @@ describe("projects and harness tools over the real MCP door", () => {
         await callTool(bearer, "create_database", CREATE_DB_ARGS),
         "create_database",
       );
-      const databaseDecisionId = String(databaseFiled.decisionId ?? "");
       const databaseId = String(databaseFiled.databaseId ?? "");
       scenario(
         "create-database-one-call",
-        databaseFiled.status === "pending" &&
+        databaseFiled.applied === true &&
           databaseFiled.columns === 3 &&
-          databaseDecisionId.length > 0 &&
-          databaseId.length > 0,
+          databaseId.length > 0 &&
+          databaseFiled.name === "Bottles",
         `create_database answered ${JSON.stringify(databaseFiled).slice(0, 300)}`,
       );
 
-      const beforeApproveDb = asRecord(
+      const afterCreateDb = asRecord(
         await callTool(bearer, "get_database", { domainSlug: "financial", databaseId }),
         "get_database",
       );
-      scenario(
-        "database-not-found-before-approve",
-        errorCode(beforeApproveDb) === "NOT_FOUND",
-        `get_database answered ${JSON.stringify(beforeApproveDb).slice(0, 200)}`,
-      );
-      const pendingDatabases = await pendingFor(vaultRoot, "database");
-      scenario(
-        "create-database-one-decision",
-        pendingDatabases.length === 1,
-        `${pendingDatabases.length} pending database Decisions for one three-column create`,
-      );
-
-      const approveDb = await resolveDecision(vaultRoot, databaseDecisionId, "approved");
-      assert.equal(
-        approveDb.ok,
-        true,
-        `approving the database failed: ${approveDb.ok ? "" : approveDb.error}`,
-      );
-      const afterApproveDb = asRecord(
-        await callTool(bearer, "get_database", { domainSlug: "financial", databaseId }),
-        "get_database",
-      );
-      const database = asRecord(afterApproveDb.database, "get_database.database");
+      const database = asRecord(afterCreateDb.database, "get_database.database");
       const columns = (database.columns ?? []) as { id?: string; name?: string; type?: string }[];
       scenario(
-        "database-approve-once",
+        "database-written-before-any-approval",
         database.id === databaseId &&
           database.name === "Bottles" &&
           columns.length === 3 &&
           JSON.stringify(columns.map((column) => [column.name, column.type])) ===
             JSON.stringify(CREATE_DB_ARGS.columns.map((column) => [column.name, column.type])) &&
           columns.every((column) => typeof column.id === "string" && column.id.length > 0),
-        `the approved database is ${JSON.stringify(database).slice(0, 400)}`,
+        `the created database is ${JSON.stringify(database).slice(0, 400)}`,
       );
-      const decidedDatabases = (await listDecisions(vaultRoot)).ok
-        ? ((await listDecisions(vaultRoot)) as unknown as { value: { id: string; status: string }[] }).value.filter(
-            (decision) =>
-              decision.id === databaseDecisionId && decision.status === "approved",
-          )
-        : [];
+      const pendingDatabases = await pendingFor(vaultRoot, "database");
       scenario(
-        "three-columns-one-decision-not-three",
-        decidedDatabases.length === 1,
-        "the three columns were not created by exactly one approved Decision",
+        "create-database-files-no-decision",
+        pendingDatabases.length === 0,
+        `${pendingDatabases.length} pending database Decisions for one written create`,
       );
 
       // ── 7. pages: list_pages / get_page over an operator-created page ────
@@ -645,7 +619,6 @@ describe("projects and harness tools over the real MCP door", () => {
           signalId,
           taskId,
           databaseId,
-          databaseDecisionId,
           pageId,
         },
         bodies: {
@@ -654,12 +627,12 @@ describe("projects and harness tools over the real MCP door", () => {
           projectAfterUpdate: readAfterUpdate,
           projectCollated: readCollated,
           projectClosed: readClosed,
-          database: afterApproveDb,
+          database: afterCreateDb,
           pages: pagesListed,
           page: pageGot,
           signals: signalsListed,
           signal: signalGot,
-          createDatabaseProposal: databaseFiled,
+          createDatabaseResult: databaseFiled,
           createProjectProposal: createFiled,
           updateProjectProposal: updateFiled,
           closeProjectProposal: closeFiled,

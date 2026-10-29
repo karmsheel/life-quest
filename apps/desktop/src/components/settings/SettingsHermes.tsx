@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
-import type { DatabaseListEntry } from "@lifequest/vault-core";
 import { Button } from "@/components/ui/Button";
 import { CompanionProfilePicker } from "@/components/hermes/CompanionProfilePicker";
 import { SettingsRow } from "@/components/ui/SettingsRow";
@@ -34,20 +33,12 @@ const NO_VAULT: McpDoors = {
 };
 
 export function SettingsHermes() {
-  const { snapshot, updateSettings } = useVault();
+  const { snapshot } = useVault();
   const { status, ensuring, retry, profile } = useCompanion();
   const [doors, setDoors] = useState<McpDoors>(NO_VAULT);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [fileImplied, setFileImplied] = useState(true);
-  const [databases, setDatabases] = useState<DatabaseListEntry[] | null>(null);
-  const [listStatus, setListStatus] = useState<"loading" | "ready" | "failed">("loading");
-  const [listError, setListError] = useState<string | null>(null);
-  const insertFlight = useRef<{
-    rootPath: string;
-    list: { domainSlug: string; databaseId: string }[];
-  } | null>(null);
-  const insertSave = useRef(Promise.resolve());
 
   useEffect(() => {
     let cancelled = false;
@@ -95,71 +86,6 @@ export function SettingsHermes() {
     };
   }, [snapshot?.rootPath]);
 
-  const vaultPath = snapshot?.rootPath ?? null;
-  useEffect(() => {
-    if (!vaultPath) {
-      setDatabases(null);
-      setListStatus("loading");
-      setListError(null);
-      return;
-    }
-    let cancelled = false;
-    setListStatus("loading");
-    setListError(null);
-    void (async () => {
-      try {
-        const result = await api().dbList(null);
-        if (cancelled) return;
-        if (!result.ok) {
-          setDatabases(null);
-          setListStatus("failed");
-          setListError(result.error);
-          return;
-        }
-        setDatabases(result.value);
-        setListStatus("ready");
-        setListError(null);
-      } catch (err) {
-        if (!cancelled) {
-          setDatabases(null);
-          setListStatus("failed");
-          setListError(err instanceof Error ? err.message : "Could not list databases");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [vaultPath]);
-
-  async function onToggleInsert(domainSlug: string, databaseId: string, checked: boolean) {
-    if (!snapshot) return;
-    const rootPath = snapshot.rootPath;
-    const fromRender = snapshot.settings.autoApproveInserts ?? [];
-    insertSave.current = insertSave.current
-      .then(async () => {
-        const current =
-          insertFlight.current?.rootPath === rootPath ? insertFlight.current.list : fromRender;
-        const without = current.filter(
-          (pair) => pair.domainSlug !== domainSlug || pair.databaseId !== databaseId,
-        );
-        const next = checked ? [...without, { domainSlug, databaseId }] : without;
-        insertFlight.current = { rootPath, list: next };
-        const result = await updateSettings({ autoApproveInserts: next });
-        if (!result.ok) {
-          insertFlight.current = { rootPath, list: current };
-          setError(result.error);
-          return;
-        }
-        setError(null);
-      })
-      .then(
-        () => undefined,
-        () => undefined,
-      );
-    await insertSave.current;
-  }
-
   async function onRecheck() {
     setError(null);
     setMessage(null);
@@ -173,26 +99,6 @@ export function SettingsHermes() {
 
   const ready = status?.kind === "ready" ? status : null;
   const probeOk = status?.kind === "ready";
-  const allowlist = snapshot?.settings.autoApproveInserts ?? [];
-  const liveDomains = (snapshot?.domains ?? [])
-    .filter((domain) => domain.meta.archivedAt == null)
-    .slice()
-    .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder);
-  const groups = liveDomains
-    .map((domain) => ({
-      domain,
-      entries: (databases ?? []).filter((entry) => entry.domainSlug === domain.slug),
-    }))
-    .filter((group) => group.entries.length > 0);
-  const liveKeys = new Set(
-    groups.flatMap((group) =>
-      group.entries.map((entry) => `${entry.domainSlug}\0${entry.database.id}`),
-    ),
-  );
-  const stalePairs =
-    databases == null
-      ? []
-      : allowlist.filter((pair) => !liveKeys.has(`${pair.domainSlug}\0${pair.databaseId}`));
 
   return (
     <>
@@ -201,16 +107,11 @@ export function SettingsHermes() {
         title="Hermes"
         subtitle={`LifeQuest companion on the ${profile ?? "lifequest"} Hermes profile`}
         banner={
-          error || listError || message ? (
+          error || message ? (
             <>
               {error ? (
                 <p className="form-error" role="alert">
                   {error}
-                </p>
-              ) : null}
-              {listError ? (
-                <p className="form-error" role="alert">
-                  {listError}
                 </p>
               ) : null}
               {message ? (
@@ -299,65 +200,14 @@ export function SettingsHermes() {
             Open profile folder
           </Button>
         </div>
-        <div className="settings-hermes">
-          <h3 className="settings-panel__section-title">Apply assistant inserts immediately</h3>
-          <p className="settings-card__desc">
-            New rows the assistant proposes in a checked database are applied immediately. Updates, deletes, and other databases still wait in Decisions.
-          </p>
-          {snapshot && listStatus === "loading" ? <p className="muted">Loading databases…</p> : null}
-          {databases != null && groups.length === 0 && stalePairs.length === 0 ? (
-            <p className="muted">No databases in live domains.</p>
-          ) : null}
-          {groups.map((group) => {
-            const domainName = group.domain.meta.name;
-            const domainSlug = group.domain.slug;
-            return (
-              <div key={domainSlug}>
-                <h4 className="settings-card__label">{domainName}</h4>
-                {group.entries.map((entry) => {
-                  const database = entry.database;
-                  const listed = allowlist.some(
-                    (pair) => pair.domainSlug === domainSlug && pair.databaseId === database.id,
-                  );
-                  return (
-                    <SettingsRow
-                      key={database.id}
-                      label={database.name}
-                      action={
-                        <input
-                          type="checkbox"
-                          aria-label={`Apply assistant inserts immediately: ${domainName} / ${database.name}`}
-                          checked={listed}
-                          onChange={(e) =>
-                            void onToggleInsert(domainSlug, database.id, e.target.checked)
-                          }
-                        />
-                      }
-                    />
-                  );
-                })}
-              </div>
-            );
-          })}
-          {stalePairs.map((pair) => (
-            <SettingsRow
-              key={`${pair.domainSlug}/${pair.databaseId}`}
-              label={`${pair.domainSlug} / ${pair.databaseId}`}
-              action={
-                <input
-                  type="checkbox"
-                  aria-label={`Apply assistant inserts immediately: ${pair.domainSlug} / ${pair.databaseId}`}
-                  checked
-                  onChange={(e) => {
-                    if (!e.target.checked) {
-                      void onToggleInsert(pair.domainSlug, pair.databaseId, false);
-                    }
-                  }}
-                />
-              }
-            />
-          ))}
-        </div>
+        {/* The insert allowlist is gone: adding database data is no longer
+            gated at all (operator policy, 2026-10-28). This row says what the
+            companion does now, so the one place that used to configure the old
+            behaviour explains the new one instead of leaving a dead control. */}
+        <SettingsRow
+          label="Database writes"
+          description="A new database, a new row, or a batch of new rows is written as soon as you agree to it in the chat. Changing or deleting data that already exists still waits for your approval in Decisions."
+        />
       </SettingsSection>
       {/* KAR-70: the two loopback doors. Each keeps its own bind error, so a
           taken port takes down one row and not the other url. The block opts

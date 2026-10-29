@@ -121,6 +121,8 @@ type Report = {
     aiOnly: Screen;
     all: Screen;
     returned: Screen & { mountsBefore: number; mountsAfter: number };
+    crossLog: Screen;
+    crossHistory: Screen;
     unexpectedBridgeCalls: string[];
     consoleErrors: string[];
   } & Record<string, unknown>;
@@ -164,6 +166,8 @@ describe("manual decisions e2e", () => {
       "the-ai-filter-leaves-only-inbox-decisions",
       "the-all-filter-brings-both-sides-back",
       "a-logged-decision-survives-a-tab-switch-from-the-store",
+      "a-cross-domain-manual-decision-stays-visible",
+      "history-shows-every-domains-records-under-the-lens",
       "the-page-asks-the-bridge-for-nothing-else",
       "the-page-logs-no-errors",
     ];
@@ -255,6 +259,18 @@ describe("manual decisions e2e", () => {
       returned.mountsAfter,
       returned.mountsBefore,
       "showing a logged decision remounted the page",
+    );
+
+    // The surface is global: a record logged under Health while the lens is on
+    // Finance is on the page, and History still draws both stores unfiltered.
+    const crossRow = report.checks.crossLog.manualRows.find(
+      (row) => row.id === "manual-002",
+    );
+    assert.ok(crossRow, "a cross-domain manual decision was hidden by the lens");
+    assert.equal(crossRow.title, "Skip the clinic follow-up");
+    assert.deepEqual(
+      report.checks.crossHistory.rows.map((row) => row.id),
+      ["manual-002", "manual-001", "decision-001", "decision-002"],
     );
 
     assert.deepEqual(report.checks.unexpectedBridgeCalls, []);
