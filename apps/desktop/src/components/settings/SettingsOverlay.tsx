@@ -12,10 +12,12 @@ import { SettingsContent } from "./SettingsContent";
  * settings-specific part: the one search field, which narrows the section list
  * in place (`settings-search.ts`) rather than opening a second surface.
  *
- * That field is Hermes Desktop's floating search: a short bar centred over the
- * panel and sitting on the panel's top border, half in and half out, so the
- * border runs through its own horizontal axis. It is the sheet's only floating
- * chrome; the cross stays in the panel's top-right corner.
+ * That field is Hermes Desktop's floating search: a short pill (`20rem`) centred
+ * over the panel and sitting on the panel's top border, half in and half out, so
+ * the border runs through its own horizontal axis. It is the sheet's only
+ * floating chrome. There is no title band under it — the cross floats over the
+ * page's top-right padding — so the section column starts at the panel's top
+ * edge and the search is the one thing that crosses it.
  */
 export function SettingsOverlay({
   activeView,

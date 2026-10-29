@@ -4076,12 +4076,27 @@ a.home-mini-list__link:hover {
   background: var(--bg-elevated);
 }
 
-/* Settings' strip holds only the cross: its search floats on the panel's top
-   border, so a hairline under this strip would be a second line a finger's width
-   below the first one. The strip stays for the cross and for the caret. */
+/* Settings has no title band at all. Its search floats on the panel's top
+   border, so a strip of panel between that bar and the section list read as a
+   grey titlebar holding one control — and pushed the nav and the page down by
+   its own height. The cross is the only chrome left, so it is lifted out of the
+   flow and pinned to the panel's top-right over the page's own top padding: the
+   nav and the page now start at the panel's top edge, immediately under the
+   floating search. The strip ignores pointer events itself so it cannot swallow
+   a click meant for the page beneath it; the cross still answers its own. */
 .settings-overlay__chrome {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  padding: 0.5rem 0.6rem;
   border-bottom: 0;
   background: transparent;
+  pointer-events: none;
+}
+
+.settings-overlay__chrome .settings-overlay__close {
+  pointer-events: auto;
 }
 
 .sheet-overlay__heading {
@@ -4158,16 +4173,18 @@ a.home-mini-list__link:hover {
 
 /* A short bar, not a full-width top bar: it is centred on the sheet's top
    border and reads as one floating field, so its measure is the field's own
-   (28rem) rather than the panel's. */
+   (20rem) rather than the panel's. Both ends are pills — the one control in the
+   app whose shape is its own outline rather than a box, because it floats on an
+   edge and has no panel corner to agree with. */
 .settings-overlay__search {
   display: flex;
-  width: min(28rem, calc(100% - 2rem));
+  width: min(20rem, calc(100% - 2rem));
   align-items: center;
   gap: 0.4rem;
   height: 2.25rem;
-  padding: 0 0.7rem;
+  padding: 0 0.85rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   background: var(--bg-elevated);
   color: var(--text-soft);
   box-shadow: var(--shadow-sm);

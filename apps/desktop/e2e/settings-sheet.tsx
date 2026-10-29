@@ -15,10 +15,14 @@
  *     the absolute width — and why `settings-vault` proves the cap on a wider
  *     window: the panel must not grow while the mat beside it does.
  *  3. **The search is a full-width top bar again, or it misses the frame's
- *     edge.** It is a short field centred over the panel with the panel's top
- *     border running through its horizontal axis — half in the sheet, half over
- *     the scrim. A rig that only checked "a search input exists" would pass a
- *     bar that runs edge to edge, sits under the border, or hugs one side.
+ *     edge.** It is a short, pill-ended field (20rem) centred over the panel
+ *     with the panel's top border running through its horizontal axis — half in
+ *     the sheet, half over the scrim. A rig that only checked "a search input
+ *     exists" would pass a bar that runs edge to edge, sits under the border,
+ *     hugs one side, or is a square-cornered box.
+ *  3b. **A title band comes back between the floating bar and the page.** The
+ *     panel must have no strip between its top edge and the section column: the
+ *     nav starts where the panel does, and only the search crosses that line.
  *  4. **The backdrop does not blur.** `backdrop-filter` is a computed property a
  *     stylesheet typo silently drops; the scrim then reads as a plain dim and the
  *     "glass" is gone. The rig reads the property back, it does not trust the CSS.

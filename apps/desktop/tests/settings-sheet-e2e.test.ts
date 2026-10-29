@@ -71,12 +71,15 @@ type Sample = {
   search: {
     box: Box;
     bar: Box | null;
+    radius: number | null;
     value: string;
     placeholder: string | null;
     label: string | null;
     focused: boolean;
   } | null;
-  chromeInputs: number;
+  navBox: Box;
+  chromeBox: Box | null;
+  searchInputs: number;
   nav: NavRow[];
   navEmpty: string | null;
   panelView: string | null;
@@ -294,20 +297,24 @@ describe("the settings sheet over the app", () => {
     assert.equal(opened.search?.placeholder, "Search settings", "the search is unlabelled");
     assert.equal(opened.search?.focused, true, "opening the sheet did not focus the search");
 
-    // 3b — the floating search: a short field centred over the panel, with the
-    //      panel's top border running through its own horizontal axis (half in
-    //      the sheet, half over the scrim). This is the Hermes Desktop shape the
-    //      operator asked for; a full-width bar or a bar sitting entirely below
-    //      the edge both fail here.
+    // 3b — the floating search: a short, pill-ended field centred over the
+    //      panel, with the panel's top border running through its own horizontal
+    //      axis (half in the sheet, half over the scrim). This is the Hermes
+    //      Desktop shape the operator asked for; a full-width bar, a bar sitting
+    //      entirely below the edge, or a box-cornered field all fail here.
     const bar = opened.search?.bar;
     assert.ok(bar, "the search field has no bar to measure");
     assert.ok(
-      Math.abs(bar.width - 28 * 16) <= 1,
-      `the search bar is ${bar.width}px wide, not its 28rem measure`,
+      Math.abs(bar.width - 20 * 16) <= 1,
+      `the search bar is ${bar.width}px wide, not its 20rem measure`,
     );
     assert.ok(
       bar.width < panel.box.width * 0.5,
       `the search bar is still a top bar: ${bar.width}px of a ${panel.box.width}px sheet`,
+    );
+    assert.ok(
+      (opened.search?.radius ?? 0) >= bar.height / 2 - 1,
+      `the search bar is not pill-ended: radius ${opened.search?.radius} for a ${bar.height}px bar`,
     );
     assert.ok(
       Math.abs(bar.left + bar.width / 2 - (panel.box.left + panel.box.width / 2)) <= 2,
@@ -328,6 +335,14 @@ describe("the settings sheet over the app", () => {
     assert.ok(
       bar.right <= opened.close.box.left,
       `the search bar does not end before the cross: ${bar.right} vs ${opened.close.box.left}`,
+    );
+
+    // 3c — no title band: the section column starts at the panel's own top edge,
+    //      so the gap the operator saw between the floating search and the page
+    //      (the strip that held only the cross) is gone.
+    assert.ok(
+      opened.navBox.top - panel.box.top <= 2,
+      `there is a title band above the page: nav top ${opened.navBox.top}, panel top ${panel.box.top}`,
     );
 
     // 4 — a query narrows the section list and takes the panel with it.
