@@ -3952,8 +3952,10 @@ a.home-mini-list__link:hover {
 
 /* —— The app's sheets (Settings, Decisions) —— */
 /* A sheet is a surface over the page you were on, not a page of its own: the
-   window dims and blurs, and a panel takes ~90% of it. Settings and the
-   decisions inbox share this frame; each supplies its own chrome and body. */
+   window dims and blurs, and a panel takes most of it. Settings and the
+   decisions inbox share this frame; each supplies its own chrome, body and
+   measure — neither stretches to the window's edges on a monitor wider than
+   its own line. */
 .sheet-overlay {
   position: fixed;
   inset: 0;
@@ -3997,9 +3999,9 @@ a.home-mini-list__link:hover {
 }
 
 /* Decisions is a reading column, not a settings workbench. The frame stops at
-   the inbox's own measure instead of taking 90% of a wide window and padding
-   either side of the cards with empty panel. It still shrinks to the window on
-   a narrow screen, where 56rem cannot fit. */
+   the inbox's own measure instead of taking the window and padding either side
+   of the cards with empty panel. It still shrinks to the window on a narrow
+   screen, where 56rem cannot fit. */
 .sheet-overlay--decisions {
   justify-content: center;
 }
@@ -4007,6 +4009,23 @@ a.home-mini-list__link:hover {
 .sheet-overlay__panel--decisions {
   flex: 0 1 56rem;
   width: 56rem;
+  max-width: 100%;
+}
+
+/* Settings is a workbench, not a reading column: a section nav and one page
+   beside it. It stops at the measure that workbench was drawn and measured at
+   instead of stretching with the window, so an ultra-wide monitor gets mat on
+   both sides of the form rather than a form 3000px wide with the nav stranded
+   at one edge. 72rem keeps the 13rem nav and a page line in the 900s, which is
+   the width every settings rig measures; the frame centres the panel it no
+   longer fills. On a narrow window the panel still shrinks to fit. */
+.sheet-overlay--settings {
+  justify-content: center;
+}
+
+.sheet-overlay__panel--settings {
+  flex: 0 1 72rem;
+  width: 72rem;
   max-width: 100%;
 }
 

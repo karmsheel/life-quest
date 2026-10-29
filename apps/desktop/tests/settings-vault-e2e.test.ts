@@ -19,6 +19,8 @@ const VAULT_A = { id: "vault-a", name: "Harness Vault A", path: "/harness/vault-
 const VAULT_B = { id: "vault-b", name: "Harness Vault B", path: "/harness/vault-b" };
 const REFUSAL = "No LifeQuest vault in that folder.";
 const RESTORE_REFUSAL = "Books.json for this domain could not be read.";
+/** The settings sheet's own measure: `72rem` at a 16px root. */
+const SHEET_MEASURE_PX = 72 * 16;
 
 type Box = {
   left: number;
@@ -28,6 +30,14 @@ type Box = {
   width: number;
   height: number;
   centerY: number;
+};
+
+type Frame = {
+  sheet: Box;
+  panel: Box;
+  card: Box;
+  leftGutter: number | null;
+  rightGutter: number | null;
 };
 
 type Calls = {
@@ -76,6 +86,7 @@ type BookRow = {
 
 type State = {
   viewport: { width: number; height: number };
+  frame: Frame;
   identity: {
     label: string;
     value: string;
@@ -181,6 +192,7 @@ describe("the settings vault page", () => {
 
     const {
       landing,
+      wide,
       weekStart,
       exportState,
       booksArmed,
@@ -222,6 +234,41 @@ describe("the settings vault page", () => {
     assert.ok(
       landing.sections[1].top - landing.sections[0].bottom >= 24,
       `the Books heading sits on the Vault card: gap ${landing.sections[1].top - landing.sections[0].bottom}`,
+    );
+
+    // —— The sheet has a measure, not a share of the window ——
+    // On a 1280 window the 72rem panel is already the limit; on a 1500 window it
+    // must not move while the mat around it grows. Both panels are centred.
+    assert.ok(
+      Math.abs((landing.frame?.panel?.width ?? 0) - SHEET_MEASURE_PX) <= 1,
+      `the settings panel is ${landing.frame?.panel?.width}px, not its ${SHEET_MEASURE_PX}px measure`,
+    );
+    assert.ok(
+      Math.abs((wide?.frame?.panel?.width ?? 0) - (landing.frame?.panel?.width ?? 0)) <= 1,
+      `the settings panel grew with the window: ${landing.frame?.panel?.width} → ${wide?.frame?.panel?.width}`,
+    );
+    assert.ok(
+      Math.abs((wide?.frame?.card?.width ?? 0) - (landing.frame?.card?.width ?? 0)) <= 1,
+      `the settings page grew with the window: ${landing.frame?.card?.width} → ${wide?.frame?.card?.width}`,
+    );
+    const gutterGrowth =
+      (wide?.frame?.leftGutter ?? 0) +
+      (wide?.frame?.rightGutter ?? 0) -
+      ((landing.frame?.leftGutter ?? 0) + (landing.frame?.rightGutter ?? 0));
+    assert.ok(
+      (wide?.frame?.leftGutter ?? 0) >= 100 && (wide?.frame?.rightGutter ?? 0) >= 100,
+      `the wider window did not grow mat beside the sheet: ${JSON.stringify([
+        wide?.frame?.leftGutter,
+        wide?.frame?.rightGutter,
+      ])}`,
+    );
+    assert.ok(
+      gutterGrowth >= 100,
+      `the wider window grew its sheet instead of its dead space: gutters grew ${gutterGrowth}px`,
+    );
+    assert.ok(
+      Math.abs((wide?.frame?.leftGutter ?? 0) - (wide?.frame?.rightGutter ?? 0)) <= 2,
+      `the capped panel is not centred: left ${wide?.frame?.leftGutter}, right ${wide?.frame?.rightGutter}`,
     );
 
     // —— Vault folder: live control on the trailing edge, clear of its copy ——
@@ -408,6 +455,7 @@ describe("the settings vault page", () => {
     // missing cannot show that the shipped UI is what passed.
     for (const name of [
       "settings-vault-landing.png",
+      "settings-vault-wide.png",
       "settings-vault-week-start.png",
       "settings-vault-books-armed.png",
       "settings-vault-switched.png",

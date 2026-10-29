@@ -163,7 +163,7 @@ function runDriver(): Promise<number> {
 }
 
 describe("the settings sheet over the app", () => {
-  it("takes 90% of the window over a blurred app, searches its own sections, and curates the quick menu's themes", async (t) => {
+  it("takes its own measure over a blurred app, searches its own sections, and curates the quick menu's themes", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
@@ -215,7 +215,9 @@ describe("the settings sheet over the app", () => {
     assert.equal(landing.path, "/home", "the rig did not start on its page");
     assert.equal(landing.backgroundPage, true, "the page behind the sheet is missing");
 
-    // 2 — 90% of the window, centred, over a blurred and dimmed app.
+    // 2 — the sheet's own 72rem measure, centred, over a blurred and dimmed
+    //     app. At this rig's 1280px window that measure is ~90% wide, so the
+    //     absolute width is asserted first: the panel is capped, not a share.
     assert.equal(report.steps.openedClick, true, "the rig could not open settings");
     const panel = opened.overlay?.panel;
     assert.ok(panel, "opening settings painted no panel");
@@ -234,8 +236,12 @@ describe("the settings sheet over the app", () => {
       `the panel is ${(heightShare * 100).toFixed(1)}% of the window's height, not ~90%`,
     );
     assert.ok(
-      widthShare >= 0.88 && widthShare <= 0.96,
-      `the panel is ${(widthShare * 100).toFixed(1)}% of the window's width, not ~90%`,
+      Math.abs(panel.box.width - 72 * 16) <= 1,
+      `the settings panel is ${panel.box.width}px, not its 72rem measure — the sheet stretches with the window`,
+    );
+    assert.ok(
+      widthShare <= 0.905,
+      `the panel is ${(widthShare * 100).toFixed(1)}% of the window's width — wider than its measure`,
     );
     assert.ok(
       Math.abs(panel.box.left + panel.box.width / 2 - opened.viewport.width / 2) <= 2 &&

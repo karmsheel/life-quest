@@ -11,10 +11,10 @@
  * holds the interactions and the measurements, so a failure names a state rather
  * than a line of driver code.
  *
- * What is measured that a screenshot cannot show: the panel's share of the
- * window, the scrim's computed `backdrop-filter`, the cross's corner, the search
- * field's effect on the section list, which dismissal did what, and the two
- * favourites lists the star feeds.
+ * What is measured that a screenshot cannot show: the panel's own measure and
+ * its centring in the window, the scrim's computed `backdrop-filter`, the
+ * cross's corner, the search field's effect on the section list, which
+ * dismissal did what, and the two favourites lists the star feeds.
  */
 import fs from "node:fs";
 import path from "node:path";

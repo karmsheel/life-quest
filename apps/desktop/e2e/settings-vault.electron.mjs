@@ -29,6 +29,15 @@ const artifactsDir = path.join(here, "artifacts");
 const baseUrl =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/settings-vault.html";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
+/**
+ * A second, wider window. The settings sheet caps its own width, so this is the
+ * proof that the cap holds: the panel and its card must not move while the mat
+ * on either side doubles. 1500 fits inside this box's 1600px display with the
+ * window frame included.
+ */
+const WIDE_SIZE = { width: 1500, height: 900 };
+/** `72rem` in the app's root (16px) — the settings sheet's own measure. */
+const SHEET_MEASURE_PX = 72 * 16;
 
 /** The two vaults the harness holds: the one open on load, the one it opens. */
 const VAULT_A = { id: "vault-a", name: "Harness Vault A", path: "/harness/vault-a" };
@@ -76,6 +85,16 @@ const SAMPLE = `(() => {
   const sections = Array.from(
     document.querySelectorAll(".settings-overlay__main-scroll > section")
   ).map((section) => box(section));
+
+  /*
+   * The frame around the page is part of the contract too: the settings sheet
+   * stops at its own measure on a wide window, so what grows is the mat on
+   * either side of the panel — never the panel. The card inside it is the
+   * operator-visible proof that the page's line stays put.
+   */
+  const panel = document.querySelector(".sheet-overlay__panel--settings");
+  const sheet = document.querySelector(".sheet-overlay--settings");
+  const card = document.querySelector(".settings-card");
 
   const folderRow = rowByLabel("Vault folder");
   const folderButton = folderRow ? folderRow.querySelector("button") : null;
@@ -144,6 +163,13 @@ const SAMPLE = `(() => {
   const calls = window.vaultCalls || {};
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
+    frame: {
+      sheet: box(sheet),
+      panel: box(panel),
+      card: box(card),
+      leftGutter: panel && sheet ? panel.getBoundingClientRect().left - sheet.getBoundingClientRect().left : null,
+      rightGutter: panel && sheet ? sheet.getBoundingClientRect().right - panel.getBoundingClientRect().right : null
+    },
     identity,
     vaultName: identityValue("Name"),
     vaultId: identityValue("Id"),
@@ -500,6 +526,48 @@ async function main() {
     );
     screenshots.push(await shot("landing"));
 
+    // 2b — the sheet has a measure, not a share. On a wider window the panel
+    //      keeps its width, the page's card keeps its width, and the extra
+    //      window becomes mat on both sides of a centred panel.
+    await sizeWindow(win, WIDE_SIZE.width, WIDE_SIZE.height);
+    const wide = await settle(320);
+    const wideGutters = wide.frame.leftGutter + wide.frame.rightGutter;
+    check(
+      "the settings sheet fits its own measure at the standard window",
+      Math.abs((landing.frame.panel?.width ?? 0) - SHEET_MEASURE_PX) <= 1,
+      `panel ${show(landing.frame.panel?.width)} vs measure ${SHEET_MEASURE_PX}`,
+    );
+    check(
+      "the settings sheet does not grow with a wider window",
+      Math.abs((wide.frame.panel?.width ?? 0) - (landing.frame.panel?.width ?? 0)) <= 1,
+      `panel ${show(wide.frame.panel?.width)} after widening from ${show(landing.frame.panel?.width)}`,
+    );
+    check(
+      "the page inside the sheet keeps its width on a wider window",
+      Math.abs((wide.frame.card?.width ?? 0) - (landing.frame.card?.width ?? 0)) <= 1,
+      `card ${show(wide.frame.card?.width)} after widening from ${show(landing.frame.card?.width)}`,
+    );
+    check(
+      "the wider window grew mat on both sides instead of widening the sheet",
+      (wide.frame.leftGutter ?? 0) >= 100 &&
+        (wide.frame.rightGutter ?? 0) >= 100 &&
+        wideGutters - ((landing.frame.leftGutter ?? 0) + (landing.frame.rightGutter ?? 0)) >= 100,
+      `gutters ${show([
+        landing.frame.leftGutter,
+        landing.frame.rightGutter,
+        wide.frame.leftGutter,
+        wide.frame.rightGutter,
+      ])}`,
+    );
+    check(
+      "the capped panel is centred in the window",
+      Math.abs((wide.frame.leftGutter ?? 0) - (wide.frame.rightGutter ?? 0)) <= 2,
+      `left ${show(wide.frame.leftGutter)}, right ${show(wide.frame.rightGutter)}`,
+    );
+    screenshots.push(await shot("wide"));
+    await sizeWindow(win, DEFAULT_SIZE.width, DEFAULT_SIZE.height);
+    await settle(260);
+
     // 4 — the week-start switch changes the setting, in place.
     const weekClicked = await clickWeekStart("Sunday");
     const week = await settle();
@@ -820,6 +888,7 @@ async function main() {
 
     report.states = {
       landing,
+      wide,
       weekStart: week,
       exportState,
       booksArmed: armed,
@@ -859,6 +928,7 @@ async function main() {
       show(state?.calls?.restore ?? []),
     ];
     table.push(row("landing", states.landing));
+    table.push(row("wide window", states.wide));
     table.push(row("week start", states.weekStart));
     table.push(row("books armed", states.booksArmed));
     table.push(row("books restored", states.booksRestored));

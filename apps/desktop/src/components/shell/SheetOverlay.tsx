@@ -8,17 +8,22 @@ import { X } from "lucide-react";
  *
  * Settings and the decisions inbox are not pages in this app — they are
  * surfaces over the page you were on. The whole window dims and blurs behind a
- * panel that takes ~90% of it, the surface scrolls inside that frame, and the
+ * panel that takes most of it, the surface scrolls inside that frame, and the
  * app underneath is still the app: the rail, the titlebar and the dock stay
  * where they were, out of reach behind the scrim.
+ *
+ * The frame is shared; the measure is not. Each sheet caps its own width in
+ * global.css (`--settings` at its workbench measure, `--decisions` at its
+ * reading column), so a window wider than that measure grows mat around the
+ * surface instead of stretching a form across it.
  *
  * Three ways out, because a sheet this large has no close-button muscle memory
  * yet: the cross at the top right, a click on the scrim, and Escape.
  *
  * Portalled to `<body>`: `.shell__content` is a scrolling, padded column, and a
  * fixed scrim painted inside it would be clipped by its scroll box and would
- * still have to outrank the titlebar. The portal makes "90% of the page" mean the
- * window.
+ * still have to outrank the titlebar. The portal makes the sheet's share of the
+ * window mean the window itself, not the scroll box it was painted in.
  */
 export function SheetOverlay({
   sheet,
@@ -67,8 +72,8 @@ export function SheetOverlay({
 
   /**
    * Escape unwinds one step at a time where a sheet has an inner step (a search
-   * in progress clears, and only an empty search closes settings). Closing a 90%
-   * frame by reflex while a query is half-typed is the one dismissal the
+   * in progress clears, and only an empty search closes settings). Closing a
+   * frame this large by reflex while a query is half-typed is the one dismissal the
    * operator did not ask for.
    *
    * A question asked over the sheet — the app's own confirm, or the update dialog

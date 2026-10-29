@@ -8,10 +8,12 @@
  *     back to. The rig mounts the same `useSettingsBackground` + route shape the
  *     app renders, so the background page is asserted by the driver while the
  *     sheet is up.
- *  2. **It is the window's 90%, not the sheet's.** A panel sized in `%` inside a
- *     padded, scrolling column measures its parent, not the window: 90% of
- *     ~1200px of a 1280px window is indistinguishable from 100% of the column by
- *     eye, and both are wrong.
+ *  2. **It is the window's share, not the sheet's measure.** The settings sheet
+ *     stops at `72rem`; a panel sized in `%` inside a padded, scrolling column
+ *     measures its parent, not the window. At this rig's 1280px window the two
+ *     happen to coincide (~90%), which is exactly why the driver also asserts
+ *     the absolute width — and why `settings-vault` proves the cap on a wider
+ *     window: the panel must not grow while the mat beside it does.
  *  3. **The backdrop does not blur.** `backdrop-filter` is a computed property a
  *     stylesheet typo silently drops; the scrim then reads as a plain dim and the
  *     "glass" is gone. The rig reads the property back, it does not trust the CSS.
@@ -23,7 +25,7 @@
  *     the list, and leave the panel standing when nothing matches — a blank
  *     settings page is not an empty result.
  *  6. **A press inside closes it.** The scrim's `mousedown` handler must not fire
- *     for presses that land on the panel; a 90% sheet dismissed by clicking the
+ *     for presses that land on the panel; a sheet dismissed by clicking the
  *     search bar would be unusable.
  *  7. **Escape closes a half-typed search.** It must clear the query first, and
  *     only close on the second press.
