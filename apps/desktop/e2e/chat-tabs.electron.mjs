@@ -106,6 +106,7 @@ const SAMPLE = `(() => {
           title: text(rail.querySelector(".chats-rail__title")),
           liveCount: text(rail.querySelector(".chats-rail__live-count")),
           newChat: Boolean(rail.querySelector(".chats-rail__new")),
+          newChatBox: box(rail.querySelector(".chats-rail__new")),
           groups: Array.from(document.querySelectorAll(".chats-rail__group")).map(text),
           empty: text(rail.querySelector(".chats-rail__empty")),
           header: chatsHeader
@@ -291,12 +292,32 @@ async function main() {
       return true;
     })()`);
 
-  /** Clear the search field with its own control. */
-  const clearSearch = () =>
+  /** Close the search with the cross in its own field. */
+  const closeSearchBox = () =>
     run(`(async () => {
       const el = document.querySelector(".chats-rail__search-clear");
       if (!el) return false;
       el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** A press anywhere outside the field: the sidebar's list is the nearest one. */
+  const pressOutsideSearch = () =>
+    run(`(async () => {
+      const el = document.querySelector(".chats-rail__list");
+      if (!el) return false;
+      el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** Escape in the field. */
+  const pressEscapeSearch = () =>
+    run(`(async () => {
+      const el = document.querySelector(".chats-rail__search-input");
+      if (!el) return false;
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
       return true;
     })()`);
@@ -783,18 +804,37 @@ async function main() {
     check("clicked search", await clickRailControl("Search chats"), "no search control");
     const searchOpen = await settle();
     check(
-      "the search icon opens a full search box",
+      "the search icon turns the header into a search box",
       searchOpen.rail?.search?.focused === true &&
         searchOpen.rail.search.value === "" &&
         searchOpen.rail.search.placeholder === "Search chats",
       JSON.stringify(searchOpen.rail?.search),
     );
     check(
-      "the search box takes the list's own column",
+      "the field takes the header's own line",
       Boolean(searchOpen.rail?.search && searchOpen.rail.header) &&
-        searchOpen.rail.search.panelBox.width >=
-          searchOpen.rail.header.box.width - 6,
-      `search ${JSON.stringify(searchOpen.rail?.search?.panelBox)} vs header ${JSON.stringify(searchOpen.rail?.header?.box)}`,
+        searchOpen.rail.header.titleBox === null &&
+        searchOpen.rail.header.controls.length === 0 &&
+        searchOpen.rail.search.panelBox.top >= searchOpen.rail.header.box.top - 1 &&
+        searchOpen.rail.search.panelBox.bottom <=
+          searchOpen.rail.header.box.bottom + 1,
+      JSON.stringify({
+        search: searchOpen.rail?.search?.panelBox,
+        header: searchOpen.rail?.header,
+      }),
+    );
+    check(
+      "the field spans the row the title and icons had",
+      Boolean(searchOpen.rail?.search && searchOpen.rail.newChatBox) &&
+        Math.abs(
+          searchOpen.rail.search.panelBox.left -
+            searchOpen.rail.newChatBox.left,
+        ) <= 1 &&
+        Math.abs(
+          searchOpen.rail.search.panelBox.right -
+            searchOpen.rail.newChatBox.right,
+        ) <= 1,
+      `search ${JSON.stringify(searchOpen.rail?.search?.panelBox)} vs New chat ${JSON.stringify(searchOpen.rail?.newChatBox)}`,
     );
     check("typed in the search box", await typeSearch("delta"), "no search input");
     const searched = await settle();
@@ -823,22 +863,45 @@ async function main() {
       (await typeSearch("alpha")) && (await settle()).rowCount === 0,
       "an archived chat came back through the search while hidden",
     );
-    check("cleared the search", await clearSearch(), "no clear control");
-    const cleared = await settle();
+    check("closed the search with its cross", await closeSearchBox(), "no close control");
+    const closedByCross = await settle();
     check(
-      "clearing the search restores the rows",
-      cleared.rowCount === 3 && cleared.rail?.search?.value === "",
-      JSON.stringify({ rows: cleared.rowCount, search: cleared.rail?.search }),
+      "the cross restores the chats header",
+      closedByCross.rail?.search === null &&
+        closedByCross.rail?.header?.titleBox !== null &&
+        closedByCross.rail?.header?.controls.length === 2 &&
+        closedByCross.rowCount === 3,
+      JSON.stringify({
+        search: closedByCross.rail?.search,
+        header: closedByCross.rail?.header,
+        rows: closedByCross.rowCount,
+      }),
     );
-    check("closed the search box", await clickRailControl("Search chats"), "no search control");
-    const searchClosed = await settle();
+    check("reopened the search", await clickRailControl("Search chats"), "no search control");
+    await settle();
+    check("pressed outside the field", await pressOutsideSearch(), "no list to press");
+    const closedByOutside = await settle();
     check(
-      "the search icon closes the box",
-      searchClosed.rail?.search === null,
-      JSON.stringify(searchClosed.rail?.search),
+      "a press outside the field closes it and restores the header",
+      closedByOutside.rail?.search === null &&
+        closedByOutside.rail?.header?.controls.length === 2,
+      JSON.stringify({
+        search: closedByOutside.rail?.search,
+        header: closedByOutside.rail?.header,
+      }),
+    );
+    check("reopened the search once more", await clickRailControl("Search chats"), "no search control");
+    await settle();
+    check("pressed Escape in the field", await pressEscapeSearch(), "no search input");
+    const closedByEscape = await settle();
+    check(
+      "Escape also closes the field",
+      closedByEscape.rail?.search === null &&
+        closedByEscape.rail?.header?.controls.length === 2,
+      JSON.stringify(closedByEscape.rail?.header),
     );
 
-    // 17 — the view options icon opens the filter: hide the archived chats, or
+    // 17 — the view options icon opens the filter    // 17 — the view options icon opens the filter: hide the archived chats, or
     // show them as their own greyed, restorable group.
     check("opened view options", await clickRailControl("View options"), "no view control");
     const viewMenu = await settle();
@@ -918,8 +981,7 @@ async function main() {
       archivedSearch.rowCount === 1 && archivedSearch.rows[0]?.archived === true,
       JSON.stringify(archivedSearch.rows.map((row) => [row.label, row.archived])),
     );
-    check("cleared the archived search", await clearSearch(), "no clear control");
-    check("closed the archived search", await clickRailControl("Search chats"), "no search control");
+    check("closed the archived search", await closeSearchBox(), "no close control");
     await settle();
     check(
       "restored the archived chat",
@@ -1006,8 +1068,9 @@ async function main() {
         searchOpen,
         searched,
         noMatch,
-        cleared,
-        searchClosed,
+        closedByCross,
+        closedByOutside,
+        closedByEscape,
         viewMenu,
         archivedShown,
         archivedClick,

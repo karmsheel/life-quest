@@ -29,8 +29,11 @@
  * 12. Bridge stubs masking real calls — anything the two surfaces reach for that
  *     is not named here must not throw.
  * 13. A header without its controls — no search icon or view-options icon in
- *     line with the "Chats" heading, or a search box that does not open, does
- *     not take focus, or does not narrow the rows.
+ *     line with the "Chats" heading; or a search field that does not replace
+ *     that row (title and icons still drawn behind it, or the field landing
+ *     under the New chat button), does not take focus, or does not narrow the
+ *     rows; or a field that cannot be dismissed by its cross, a press outside
+ *     it, or Escape.
  * 14. A view option that lies — hide/show archived not marked, the shown view
  *     not asking the list for archived rows, archived rows openable or untagged,
  *     or unarchive failing to rejoin the working list.

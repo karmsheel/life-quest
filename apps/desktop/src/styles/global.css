@@ -8038,14 +8038,21 @@ button.chat-panel__activity-line:hover {
   color: var(--fg);
 }
 
-/* The search field takes the list's own column: full width under the heading,
-   so the query has room and the list never shifts sideways. */
+/* While the search is open it IS the header: it takes the whole row the title
+   and the two icons had, so the field is the first thing in the section and
+   nothing sits above it but the wing switcher. The header drops its own side
+   padding so the field lines up with the New chat button and the rows. */
+.chats-rail__header--search {
+  padding: 0.3rem 0.15rem 0.2rem;
+}
+
+/* The search field on that row: full width, the column's own inset. */
 .chats-rail__search {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  flex: 0 0 auto;
-  margin: 0 0.15rem 0.25rem;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 0.3rem 0.45rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

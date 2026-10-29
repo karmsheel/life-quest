@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -44,10 +44,12 @@ function timeValue(lastActive: number | null): string | undefined {
  * tab.
  *
  * The header carries the two controls the list needs to stay usable as it
- * grows: a search field that narrows the rows as the operator types, and a view
- * menu that decides whether archived chats are listed. Archived rows come back
- * greyed and restorable rather than openable — the chat is out of the working
- * set, but not lost.
+ * grows. The magnifier does not open a second row under the heading: the field
+ * takes the header's own line, where the title and both icons were, focused and
+ * ready for the query; the cross, a press anywhere outside it, or Escape hands
+ * the usual header back. The sliders open the view menu that decides whether
+ * archived chats are listed. Archived rows come back greyed and restorable
+ * rather than openable — the chat is out of the working set, but not lost.
  *
  * Rows are the same Hermes sessions the dock's tabs are, read from
  * `ChatSessionsProvider`, so a pin from here is a pin in the dock, in Hermes
@@ -64,6 +66,8 @@ export function ChatsSidebar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const searchBoxRef = useRef<HTMLDivElement | null>(null);
+  const searchButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const needle = query.trim().toLowerCase();
   const matches = (s: HermesSession) => {
@@ -106,14 +110,38 @@ export function ChatsSidebar() {
     setMenuId((current) => (current === id ? null : id));
   }
 
-  function toggleSearch() {
+  /**
+   * The field is the header while it is open: the "Chats" title and its two
+   * icons step aside for a full-width input, and the cross (or a press anywhere
+   * outside it) hands that header back.
+   */
+  const closeSearch = useCallback((focusButton = false) => {
+    setSearchOpen(false);
+    setQuery("");
+    if (!focusButton) return;
+    // The header re-renders with the magnifier in this same commit; put the
+    // keyboard back on the control that opened the field.
+    requestAnimationFrame(() => searchButtonRef.current?.focus());
+  }, []);
+
+  function openSearch() {
     setViewMenuOpen(false);
     setMenuId(null);
-    setSearchOpen((open) => {
-      if (open) setQuery("");
-      return !open;
-    });
+    setQuery("");
+    setSearchOpen(true);
   }
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const box = searchBoxRef.current;
+      if (box && event.target instanceof Node && box.contains(event.target)) return;
+      closeSearch(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () =>
+      document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [searchOpen, closeSearch]);
 
   function startRename(s: HermesSession) {
     setMenuId(null);
@@ -327,81 +355,123 @@ export function ChatsSidebar() {
 
   return (
     <section className="chats-rail" aria-label="Chats">
-      <header className="chats-rail__header">
-        <p className="chats-rail__title">Chats</p>
-        {liveCount > 0 ? (
-          <span
-            className="chats-rail__live-count"
-            title={`${liveCount} ${liveCount === 1 ? "chat is" : "chats are"} running`}
-          >
-            {liveCount} running
-          </span>
-        ) : null}
-        <div className="chats-rail__actions">
-          <button
-            type="button"
-            className="chats-rail__icon-btn"
-            aria-label="Search chats"
-            title="Search chats"
-            aria-expanded={searchOpen}
-            onClick={toggleSearch}
-          >
-            <Search size={14} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="chats-rail__icon-btn"
-            aria-label="View options"
-            title="View options"
-            aria-haspopup="menu"
-            aria-expanded={viewMenuOpen}
-            onClick={() => {
-              setMenuId(null);
-              setViewMenuOpen((open) => !open);
-            }}
-          >
-            <Settings2 size={14} aria-hidden />
-          </button>
-          {viewMenuOpen ? (
-            <div
-              className="chats-rail__menu chats-rail__view-menu"
-              role="menu"
-              aria-label="View options"
+      <header
+        className={[
+          "chats-rail__header",
+          searchOpen ? "chats-rail__header--search" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {searchOpen ? (
+          /*
+            The field takes the header's own line, where the magnifier was: one
+            row, the full width of the column, focused and ready for the query.
+            Nothing sits above it but the wing switcher.
+          */
+          <div className="chats-rail__search" role="search" ref={searchBoxRef}>
+            <Search size={13} aria-hidden />
+            <input
+              className="chats-rail__search-input"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Escape") return;
+                e.preventDefault();
+                closeSearch(true);
+              }}
+              placeholder="Search chats"
+              aria-label="Search chats"
+              autoFocus
+            />
+            <button
+              type="button"
+              className="chats-rail__search-clear"
+              aria-label="Close search"
+              title="Close search"
+              onClick={() => closeSearch(true)}
             >
-              <p className="chats-rail__menu-title">View options</p>
+              <X size={12} aria-hidden />
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="chats-rail__title">Chats</p>
+            {liveCount > 0 ? (
+              <span
+                className="chats-rail__live-count"
+                title={`${liveCount} ${liveCount === 1 ? "chat is" : "chats are"} running`}
+              >
+                {liveCount} running
+              </span>
+            ) : null}
+            <div className="chats-rail__actions">
               <button
                 type="button"
-                role="menuitemradio"
-                aria-checked={!chat.showArchived}
-                aria-label="Hide archived chats"
-                onClick={() => {
-                  chat.setShowArchived(false);
-                  setViewMenuOpen(false);
-                }}
+                className="chats-rail__icon-btn"
+                aria-label="Search chats"
+                title="Search chats"
+                ref={searchButtonRef}
+                onClick={openSearch}
               >
-                <span className="chats-rail__check" aria-hidden>
-                  {!chat.showArchived ? <Check size={12} /> : null}
-                </span>
-                Hide archived
+                <Search size={14} aria-hidden />
               </button>
               <button
                 type="button"
-                role="menuitemradio"
-                aria-checked={chat.showArchived}
-                aria-label="Show archived chats"
+                className="chats-rail__icon-btn"
+                aria-label="View options"
+                title="View options"
+                aria-haspopup="menu"
+                aria-expanded={viewMenuOpen}
                 onClick={() => {
-                  chat.setShowArchived(true);
-                  setViewMenuOpen(false);
+                  setMenuId(null);
+                  setViewMenuOpen((open) => !open);
                 }}
               >
-                <span className="chats-rail__check" aria-hidden>
-                  {chat.showArchived ? <Check size={12} /> : null}
-                </span>
-                Show archived
+                <Settings2 size={14} aria-hidden />
               </button>
+              {viewMenuOpen ? (
+                <div
+                  className="chats-rail__menu chats-rail__view-menu"
+                  role="menu"
+                  aria-label="View options"
+                >
+                  <p className="chats-rail__menu-title">View options</p>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={!chat.showArchived}
+                    aria-label="Hide archived chats"
+                    onClick={() => {
+                      chat.setShowArchived(false);
+                      setViewMenuOpen(false);
+                    }}
+                  >
+                    <span className="chats-rail__check" aria-hidden>
+                      {!chat.showArchived ? <Check size={12} /> : null}
+                    </span>
+                    Hide archived
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={chat.showArchived}
+                    aria-label="Show archived chats"
+                    onClick={() => {
+                      chat.setShowArchived(true);
+                      setViewMenuOpen(false);
+                    }}
+                  >
+                    <span className="chats-rail__check" aria-hidden>
+                      {chat.showArchived ? <Check size={12} /> : null}
+                    </span>
+                    Show archived
+                  </button>
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
+          </>
+        )}
       </header>
 
       <button
@@ -414,37 +484,6 @@ export function ChatsSidebar() {
         <SquarePen size={15} aria-hidden />
         <span>New chat</span>
       </button>
-
-      {searchOpen ? (
-        <div className="chats-rail__search" role="search">
-          <Search size={13} aria-hidden />
-          <input
-            className="chats-rail__search-input"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== "Escape") return;
-              e.preventDefault();
-              setQuery("");
-              setSearchOpen(false);
-            }}
-            placeholder="Search chats"
-            aria-label="Search chats"
-            autoFocus
-          />
-          {query ? (
-            <button
-              type="button"
-              className="chats-rail__search-clear"
-              aria-label="Clear search"
-              title="Clear search"
-              onClick={() => setQuery("")}
-            >
-              <X size={12} aria-hidden />
-            </button>
-          ) : null}
-        </div>
-      ) : null}
 
       {chat.listError ? (
         <div className="chats-rail__error" role="alert">

@@ -63,9 +63,10 @@ type State = {
     newChat: boolean;
     groups: string[];
     empty: string;
+    newChatBox: { left: number; top: number; right: number; bottom: number; width: number; height: number } | null;
     header: {
       box: { left: number; top: number; right: number; bottom: number; width: number; height: number };
-      titleBox: { left: number; top: number; right: number; bottom: number; width: number; height: number };
+      titleBox: { left: number; top: number; right: number; bottom: number; width: number; height: number } | null;
       controls: {
         label: string;
         box: { left: number; top: number; right: number; bottom: number; width: number; height: number };
@@ -175,8 +176,9 @@ describe("chat dock tabs and sidebar chats", () => {
       searchOpen,
       searched,
       noMatch,
-      cleared,
-      searchClosed,
+      closedByCross,
+      closedByOutside,
+      closedByEscape,
       viewMenu,
       archivedShown,
       archivedClick,
@@ -410,7 +412,7 @@ describe("chat dock tabs and sidebar chats", () => {
       assert.ok(
         Math.abs(
           (control.box.top + control.box.bottom) / 2 -
-            (header.rail!.header!.titleBox.top + header.rail!.header!.titleBox.bottom) / 2,
+            (header.rail!.header!.titleBox!.top + header.rail!.header!.titleBox!.bottom) / 2,
         ) <= 4,
         `${control.label} is not on the heading's row (${JSON.stringify(control.box)} vs ${JSON.stringify(header.rail?.header?.titleBox)})`,
       );
@@ -418,15 +420,40 @@ describe("chat dock tabs and sidebar chats", () => {
     assert.equal(header.rail?.search, null, "a search box is drawn before the icon is clicked");
     assert.equal(header.rail?.viewMenu, null, "the view menu is drawn before the icon is clicked");
 
-    // The search icon opens a full-width field and typing narrows the rows.
+    // The search icon turns the header itself into a full-width field: the
+    // title and both icons step aside, and the field occupies their row.
     assert.equal(searchOpen.rail?.search?.focused, true, "the search box did not take focus");
     assert.equal(searchOpen.rail?.search?.value, "", "the search box opened with text in it");
     assert.equal(searchOpen.rail?.search?.placeholder, "Search chats");
-    assert.ok(
-      (searchOpen.rail?.search?.panelBox.width ?? 0) >=
-        (searchOpen.rail?.header?.box.width ?? 0) - 6,
-      `the search box does not span the list's column (${JSON.stringify(searchOpen.rail?.search?.panelBox)} vs ${JSON.stringify(searchOpen.rail?.header?.box)})`,
+    assert.equal(
+      searchOpen.rail?.header?.titleBox,
+      null,
+      "the Chats title is still drawn behind the open search",
     );
+    assert.deepEqual(
+      searchOpen.rail?.header?.controls,
+      [],
+      "the header icons are still drawn behind the open search",
+    );
+    assert.ok(
+      (searchOpen.rail?.search?.panelBox.top ?? 0) >=
+        (searchOpen.rail?.header?.box.top ?? 0) - 1 &&
+        (searchOpen.rail?.search?.panelBox.bottom ?? 0) <=
+          (searchOpen.rail?.header?.box.bottom ?? 0) + 1,
+      `the search box left the header's row (${JSON.stringify(searchOpen.rail?.search?.panelBox)} vs ${JSON.stringify(searchOpen.rail?.header?.box)})`,
+    );
+    assert.ok(
+      Math.abs(
+        (searchOpen.rail?.search?.panelBox.left ?? 0) -
+          (searchOpen.rail?.newChatBox?.left ?? -99),
+      ) <= 1 &&
+        Math.abs(
+          (searchOpen.rail?.search?.panelBox.right ?? 0) -
+            (searchOpen.rail?.newChatBox?.right ?? -99),
+        ) <= 1,
+      `the field does not span the row the title and icons had (${JSON.stringify(searchOpen.rail?.search?.panelBox)} vs New chat ${JSON.stringify(searchOpen.rail?.newChatBox)})`,
+    );
+    assert.equal(searchOpen.rail?.newChat, true, "New chat left the section while searching");
     assert.deepEqual(
       searched.rows.map((row) => row.label),
       ["Delta automation"],
@@ -440,8 +467,38 @@ describe("chat dock tabs and sidebar chats", () => {
       /No chats match/,
       "a search with no match said nothing",
     );
-    assert.equal(cleared.rowCount, 3, "clearing the search did not bring the rows back");
-    assert.equal(searchClosed.rail?.search, null, "the search icon did not close the box");
+    assert.equal(closedByCross.rowCount, 3, "closing the search did not bring the rows back");
+    assert.equal(closedByCross.rail?.search, null, "the cross did not close the search");
+    assert.equal(
+      closedByCross.rail?.header?.titleBox !== null,
+      true,
+      "the Chats title did not come back with the header",
+    );
+    assert.deepEqual(
+      closedByCross.rail?.header?.controls.map((control) => control.label),
+      ["Search chats", "View options"],
+      "the header icons did not come back",
+    );
+    assert.equal(
+      closedByOutside.rail?.search,
+      null,
+      "a press outside the field did not close the search",
+    );
+    assert.deepEqual(
+      closedByOutside.rail?.header?.controls.map((control) => control.label),
+      ["Search chats", "View options"],
+      "a press outside the field did not restore the header",
+    );
+    assert.equal(
+      closedByEscape.rail?.search,
+      null,
+      "Escape did not close the search",
+    );
+    assert.deepEqual(
+      closedByEscape.rail?.header?.controls.map((control) => control.label),
+      ["Search chats", "View options"],
+      "Escape did not restore the header",
+    );
 
     // The view menu is the filter: hide the archived chats (the default), or
     // show them as a greyed, restorable group.
