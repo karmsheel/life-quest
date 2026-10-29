@@ -4394,6 +4394,158 @@ a.home-mini-list__link:hover {
   flex: 0 0 auto;
 }
 
+/* —— Keyboard shortcuts —— */
+/* A list, not a dialog per movement: the row that is recording dresses itself,
+   so the operator never loses sight of the movement being bound. */
+.settings-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.settings-shortcuts__hint {
+  margin: 0 0 0.35rem;
+  max-width: 42rem;
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.settings-shortcuts__hint--quiet {
+  margin: 0;
+  font-size: 0.6875rem;
+}
+
+.settings-shortcuts__group {
+  padding-top: 0.75rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-shortcuts__group:first-of-type {
+  margin-top: 0;
+  border-top: 0;
+}
+
+.settings-shortcuts__group-title {
+  margin: 0 0 0.15rem;
+  color: var(--text-soft);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.settings-shortcuts__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  padding: 0.6rem 0.5rem;
+  border-radius: var(--radius-xs);
+}
+
+.settings-shortcuts__row[data-recording="true"] {
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+  background: var(--accent-tint);
+}
+
+.settings-shortcuts__copy {
+  min-width: 12rem;
+  flex: 1 1 18rem;
+}
+
+.settings-shortcuts__label {
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.settings-shortcuts__desc {
+  margin: 0.2rem 0 0;
+  max-width: 30rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.settings-shortcuts__default {
+  margin: 0.25rem 0 0;
+  color: var(--text-faint);
+  font-size: 0.6875rem;
+}
+
+.settings-shortcuts__control {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.settings-shortcuts__keys {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.settings-shortcuts__keycap {
+  display: inline-flex;
+  min-width: 1.65rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.16rem 0.42rem;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-subtle);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.3;
+}
+
+.settings-shortcuts__unassigned {
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+.settings-shortcuts__recording {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.settings-shortcuts__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.settings-shortcuts__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.85rem;
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-shortcuts__footer .settings-shortcuts__hint {
+  flex: 1 1 18rem;
+  margin: 0;
+}
+
 /* —— Install a theme / the installed list —— */
 /* Below the grid, ruled off from it: the grid is what the app wears, this is what
    was brought in and can be taken away again. */

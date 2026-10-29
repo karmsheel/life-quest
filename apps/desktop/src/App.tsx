@@ -41,6 +41,7 @@ import { useSheetBackground } from "@/components/shell/useSheetBackground";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { AutomationScheduler } from "@/state/AutomationScheduler";
 import { NavDockProvider } from "@/state/NavDockProvider";
+import { ShortcutsProvider } from "@/state/ShortcutsProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
 import { LiveDataProvider } from "@/state/LiveDataProvider";
 import { UpdateProvider } from "@/state/UpdateProvider";
@@ -166,12 +167,14 @@ export default function App() {
                 <SplashGate />
                 <ChatDockProvider>
                   <NavDockProvider>
-                    <div className="app-root">
-                      <WindowTitleBar />
-                      <div className="app-root__body">
-                        <AppRoutes />
+                    <ShortcutsProvider>
+                      <div className="app-root">
+                        <WindowTitleBar />
+                        <div className="app-root__body">
+                          <AppRoutes />
+                        </div>
                       </div>
-                    </div>
+                    </ShortcutsProvider>
                   </NavDockProvider>
                 </ChatDockProvider>
               </LiveDataProvider>

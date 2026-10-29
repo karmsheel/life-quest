@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Building2,
   FlaskConical,
+  Keyboard,
   Layers,
   MessageCircleQuestion,
   Palette,
@@ -13,6 +14,7 @@ import {
 
 export type SettingsViewId =
   | "appearance"
+  | "shortcuts"
   | "domains"
   | "vault"
   | "hermes"
@@ -52,6 +54,28 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "system",
       "palette",
       "look",
+    ],
+  },
+  {
+    id: "shortcuts",
+    label: "Keyboard",
+    icon: Keyboard,
+    keywords: [
+      "keyboard",
+      "shortcut",
+      "shortcuts",
+      "key",
+      "keys",
+      "binding",
+      "bindings",
+      "hotkey",
+      "hotkeys",
+      "movement",
+      "movements",
+      "navigate",
+      "navigation",
+      "toggle",
+      "panel",
     ],
   },
   {
