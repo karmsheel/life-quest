@@ -2009,23 +2009,35 @@ a {
   border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
 }
 
-/* —— A page's corner: state, control, menu ——
-   Every lockable page stacks its chrome in this one column at the title's own
-   top-right edge. The badge states, the switch acts, the menu opens; a reader
-   scans one column instead of hunting the page for each control. */
+/* —— A page's corner: the controls in a row ——
+   Every lockable page puts its lock switch at the title's own top-right edge,
+   with the Dashboard's pin board menu beside it. Both are one height so the
+   pair reads as one row of controls rather than two objects that happen to
+   share a corner. */
 .page-corner {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: flex-start;
-  gap: 0.45rem;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+/* One height for a page's controls, and a width that follows the label. */
+.page-corner__action {
+  height: 2.25rem;
 }
 
 /* The pin board's menu is the page's only "add" path, so it is the one control
    in the corner that wears the accent rather than the neutral border. It steps
    off the page on hover with a shadow tinted by its own colour. */
 .page-corner__pinboard.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding-block: 0;
   border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
   background: color-mix(in srgb, var(--accent) 10%, var(--bg-panel));
   color: var(--accent);
@@ -2056,8 +2068,8 @@ a {
    The page lock as one control: a caption and a track. At rest the thumb sits
    left, the track is the page's own muted step and the caption is quiet; locked,
    the thumb crosses, and the track and caption take the amber that means "held".
-   The badge above says the same state in words, which is why the caption can
-   stay "Lock" in both positions. */
+   The badge beside the page's name says the same state in words, which is why
+   the caption can stay "Lock" in both positions. */
 .lock-switch.btn {
   display: inline-flex;
   align-items: center;
@@ -3432,6 +3444,12 @@ a {
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.15;
+  /* The page-lock badge rides the title: it labels the board the same way it
+     labels a doctrine document. */
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .home-dashboard__lock-hint {
@@ -4067,8 +4085,9 @@ a.home-mini-list__link:hover {
 }
 
 .home-dashboard .doc-status-badge {
-  /* The corner badge keeps the pill the switch under it wears: the two are one
-     stack, so a square badge over a round switch would read as two objects. */
+  /* The badge keeps the pill the page's controls wear: the title and the
+     top-right row are read together, so a square badge beside a round switch
+     would read as two vocabularies. */
   border-radius: var(--radius-pill);
 }
 

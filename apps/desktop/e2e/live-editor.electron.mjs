@@ -28,9 +28,10 @@
  *     blank line and all, is the body `documentSave` receives.
  *  5. A locked document has no writing line at all, and a click on its prose
  *     opens none: the engine refuses a locked write, so the UI must not offer one.
- *     The doctrine page's lock is the same badge-and-switch corner the Dashboard
- *     wears: the switch is off on an unlocked document, flipping it sends
- *     `documentSetLocked`, and the page's own read turns read-only behind it.
+ *     The doctrine page's lock is the same badge-beside-the-name and switch-at-
+ *     the-top-right pair the Dashboard wears: the switch is off on an unlocked
+ *     document, flipping it sends `documentSetLocked`, and the page's own read
+ *     turns read-only behind it.
  *  6. A pasted image is saved once, and its markdown lands in the note as its own
  *     paragraph, which the box then renders as an `<img>` resolved through
  *     `documentMediaRead`.
@@ -63,8 +64,16 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
 const SAMPLE = `(() => {
   const text = (el) => (el && el.textContent ? el.textContent.trim() : null);
   const rect = (el) => {
+    if (!el) return null;
     const r = el.getBoundingClientRect();
-    return { left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width) };
+    return {
+      left: Math.round(r.left),
+      top: Math.round(r.top),
+      right: Math.round(r.right),
+      bottom: Math.round(r.bottom),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    };
   };
   const box = document.querySelector(".note-live");
   const input = box ? box.querySelector("textarea") : null;
@@ -102,9 +111,12 @@ const SAMPLE = `(() => {
     renderedRect: rendered[0] ? rect(rendered[0]) : null,
     boxRect: box ? rect(box) : null,
     saveDisabled: save ? save.disabled : null,
-    // The document's lock, in the page's corner: the same badge and switch the
-    // Dashboard wears, read here on the doctrine page.
+    // The document's lock: the badge beside the document's name and the switch
+    // in the page's top-right row, the same pair the Dashboard wears.
     lockBadge: text(document.querySelector(".doc-editor__header .doc-status-badge")),
+    headingRect: rect(document.querySelector(".doc-editor__title")),
+    lockBadgeRect: rect(document.querySelector(".doc-editor__header .doc-status-badge")),
+    lockSwitchRect: rect(document.querySelector('[data-testid="document-lock-toggle"]')),
     lockSwitch: (() => {
       const el = document.querySelector('[data-testid="document-lock-toggle"]');
       if (!el) return null;
@@ -416,9 +428,41 @@ async function main() {
   if (document.lockBadge !== "Unlocked") {
     failure(`the unlocked document's badge read ${JSON.stringify(document.lockBadge)}`);
   }
+  // The badge is beside the document's name again, and the switch is in the
+  // page's top-right row: their boxes say so, rather than the markup.
+  const lockHeading = document.headingRect;
+  const lockBadgeBox = document.lockBadgeRect;
+  const lockSwitchBox = document.lockSwitchRect;
+  if (!lockHeading || !lockBadgeBox || !lockSwitchBox) {
+    failure("the doctrine page's lock controls recorded no boxes");
+  } else {
+    const headingMid = (lockHeading.top + lockHeading.bottom) / 2;
+    const badgeMid = (lockBadgeBox.top + lockBadgeBox.bottom) / 2;
+    if (Math.abs(headingMid - badgeMid) > 6) {
+      failure(
+        `the document badge is not on the name's line: badge mid ${badgeMid}, heading mid ${headingMid}`,
+      );
+    }
+    if (lockBadgeBox.left < lockHeading.left) {
+      failure("the document badge sits left of the document's name");
+    }
+    if (lockBadgeBox.right >= lockSwitchBox.left) {
+      failure(
+        `the badge (right ${lockBadgeBox.right}) is not left of the switch (left ${lockSwitchBox.left})`,
+      );
+    }
+    if (lockSwitchBox.left < lockHeading.right) {
+      failure(
+        `the switch (left ${lockSwitchBox.left}) is not in the page's right column (name ends ${lockHeading.right})`,
+      );
+    }
+    if (Math.abs(headingMid - (lockSwitchBox.top + lockSwitchBox.bottom) / 2) > 40) {
+      failure("the switch is not on the heading's row");
+    }
+  }
 
   // The one gesture writes `documentSetLocked`, and the page's own read follows:
-  // locking from the corner makes the box read-only, unlocking restores it.
+  // locking from the header switch makes the box read-only, unlocking restores it.
   await click(win, '[data-testid="document-lock-toggle"]');
   await waitFor(
     win,
@@ -451,7 +495,7 @@ async function main() {
     );
   }
   if (lockedDoc.readOnly !== true) {
-    failure("locking the document from the page's corner left the box editable");
+    failure("locking the document from the header switch left the box editable");
   }
 
   await click(win, '[data-testid="document-lock-toggle"]');
@@ -473,7 +517,7 @@ async function main() {
     failure(`unlocking the document sent ${JSON.stringify(unlockCalls.at(-1))}`);
   }
   if ((await sample(win)).lockBadge !== "Unlocked") {
-    failure("unlocking the document from the corner left the badge locked");
+    failure("unlocking the document from the header switch left the badge locked");
   }
   // The write refreshes the vault snapshot, and the page re-reads its document
   // off that refresh. Let that settle so the round-trip is judged on the page

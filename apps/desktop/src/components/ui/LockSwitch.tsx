@@ -7,8 +7,8 @@
  * it would take, which read as a command rather than as a setting. The switch
  * says the state instead: the thumb is at rest while the page is editable and
  * moves across, and the caption turns amber, while the page is locked. The
- * badge that sits above it in the page's corner repeats the state in words, so
- * the control does not have to carry both.
+ * badge beside the page's name repeats the state in words, so the control does
+ * not have to carry both.
  *
  * It is a `Button` wearing `role="switch"` rather than a checkbox because it is
  * a command, not a form value: pressing it writes to the vault immediately. The

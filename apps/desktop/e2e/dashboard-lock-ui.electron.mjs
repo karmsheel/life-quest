@@ -15,9 +15,10 @@
  *     off (`aria-checked="false"`), the pin board is offered (closed, and it
  *     draws its row when asked), and every pin carries its unpin / move chrome.
  *     Removing the `locked` gate from any of those renders the locked sample
- *     with editable chrome, which fails. The page's corner is measured too: the
- *     badge, the switch and the pin board's menu stack at the page's top right,
- *     and hovering the menu draws a shadow.
+ *     with editable chrome, which fails. The header is measured too: the badge
+ *     sits on the page name's line, while the switch and the pin board's menu
+ *     share one top-right row at one height, and hovering the menu draws a
+ *     shadow.
  *  2. LOCKED, the board is read-only: badge Locked, switch on, NO pin-board
  *     control at all, no Add-pin row, NO pin chrome at all, and the hint says
  *     where the companion's changes go. This is the claim the whole feature
@@ -79,6 +80,7 @@ const SAMPLE = `(() => {
   const toggle = document.querySelector('[data-testid="board-lock-toggle"]');
   const pinboard = document.querySelector('[data-testid="board-add-toggle"]');
   const corner = document.querySelector('[data-testid="home-page-corner"]');
+  const heading = document.querySelector(".home-dashboard__title");
   return {
     title: text(".home-dashboard__title"),
     badge: badge ? badge.textContent.trim() : null,
@@ -91,12 +93,18 @@ const SAMPLE = `(() => {
     switchTrack: toggle ? Boolean(toggle.querySelector(".lock-switch__track")) : false,
     switchThumb: toggle ? Boolean(toggle.querySelector(".lock-switch__thumb")) : false,
     hint: text('[data-testid="board-lock-hint"]'),
-    // The page's corner: the badge, then the switch under it, then the pin
-    // board's menu under that. The boxes are read so the order is a fact about
-    // the rendered page, not a claim about the markup.
+    // The badge belongs beside the page's name again: its box is compared with
+    // the heading's, not with the corner's.
+    titleRow: {
+      heading: box(heading),
+      badge: box(badge),
+      viewportWidth: window.innerWidth,
+    },
+    // The page's controls: the switch and the pin board's menu in one row at
+    // the top right. The boxes are read so the row, the order and the matching
+    // heights are facts about the rendered page, not claims about the markup.
     corner: corner
       ? {
-          badge: box(badge),
           switch: box(toggle),
           pinboard: box(pinboard),
           alignItems: getComputedStyle(corner).alignItems,
@@ -260,52 +268,78 @@ async function main() {
   if (unlocked.chrome === 0) failure("the unlocked board drew no pin chrome");
   if (unlocked.chromeButtons === 0) failure("the unlocked board's pin chrome has no buttons");
 
-  // 1a. The page's corner: badge on top, the switch under it, the pin board's
-  //     menu under that, all against the page's trailing edge. The boxes come
-  //     from the rendered page, so a corner that is really a row, or a stack
-  //     that is left-aligned, fails here rather than being eyeballed.
+  // 1a. The badge is back beside the page's name: its box shares the heading's
+  //     line, on the left half of the page. The badge that sat in the top-right
+  //     corner fails the viewport half of this.
+  const titleRow = unlocked.titleRow;
+  if (!titleRow?.heading || !titleRow.badge) {
+    failure("the page's heading or its badge recorded no box");
+  } else {
+    const heading = titleRow.heading;
+    const badge = titleRow.badge;
+    const headingMid = (heading.top + heading.bottom) / 2;
+    const badgeMid = (badge.top + badge.bottom) / 2;
+    if (Math.abs(headingMid - badgeMid) > 6) {
+      failure(
+        `the badge is not on the heading's line: badge mid ${badgeMid}, heading mid ${headingMid}`,
+      );
+    }
+    if (badge.left < heading.left || badge.left > heading.left + heading.width) {
+      failure(
+        `the badge is not inside the heading row: badge left ${badge.left}, heading ${heading.left}..${heading.left + heading.width}`,
+      );
+    }
+    if (badge.right > titleRow.viewportWidth / 2) {
+      failure(
+        `the badge is still on the page's right: badge right ${badge.right} of ${titleRow.viewportWidth}`,
+      );
+    }
+  }
+
+  // 1b. The page's controls: the switch and the pin board's menu in one row at
+  //     the top right, both the same height. The boxes come from the rendered
+  //     page, so a stack, a left-aligned row or two different heights fail
+  //     here rather than being eyeballed.
   const corner = unlocked.corner;
   if (!corner) {
-    failure("the page drew no corner for its state and its controls");
-  } else if (!corner.badge || !corner.switch) {
-    failure("the page's corner is missing its badge or its switch");
+    failure("the page drew no corner for its controls");
+  } else if (!corner.switch) {
+    failure("the page's corner is missing its switch");
   } else {
-    if (corner.flexDirection !== "column") {
-      failure(`the corner stacks ${corner.flexDirection}, expected a column`);
+    if (corner.flexDirection !== "row") {
+      failure(`the corner lays out ${corner.flexDirection}, expected a row`);
     }
-    if (corner.alignItems !== "flex-end") {
-      failure(`the corner aligns ${corner.alignItems}, expected the trailing edge`);
+    if (corner.alignItems !== "center") {
+      failure(`the corner aligns ${corner.alignItems}, expected centred`);
     }
-    if (corner.badge.bottom > corner.switch.top) {
-      failure("the badge does not sit above the switch");
+    if (corner.switch.top > 120) {
+      failure(`the page's controls are not at the top: switch top ${corner.switch.top}`);
     }
-    if (corner.switch.right !== corner.badge.right) {
+    if (corner.switch.right < corner.viewportWidth / 2) {
       failure(
-        `the switch (right ${corner.switch.right}) and badge (right ${corner.badge.right}) are not aligned`,
+        `the page's controls are not on the right: switch right ${corner.switch.right} of ${corner.viewportWidth}`,
       );
-    }
-    if (corner.badge.right < corner.viewportWidth / 2) {
-      failure(
-        `the page's corner is not on the right: badge right ${corner.badge.right} of ${corner.viewportWidth}`,
-      );
-    }
-    if (corner.badge.top > 120) {
-      failure(`the page's corner is not at the top: badge top ${corner.badge.top}`);
     }
     if (unlocked.addToggle) {
       if (!corner.pinboard) {
         failure("the pin board's control did not record a box");
-      } else if (corner.switch.bottom > corner.pinboard.top) {
-        failure("the pin board's control is not under the switch");
-      } else if (corner.pinboard.right !== corner.switch.right) {
+      } else if (Math.abs(corner.switch.top - corner.pinboard.top) > 2) {
         failure(
-          `the pin board (right ${corner.pinboard.right}) and switch (right ${corner.switch.right}) are not aligned`,
+          `the pin board is not beside the switch: switch top ${corner.switch.top}, pin board top ${corner.pinboard.top}`,
+        );
+      } else if (corner.pinboard.left < corner.switch.right) {
+        failure(
+          `the pin board (left ${corner.pinboard.left}) is not to the right of the switch (right ${corner.switch.right})`,
+        );
+      } else if (corner.pinboard.height !== corner.switch.height) {
+        failure(
+          `the two controls are not one height: switch ${corner.switch.height}, pin board ${corner.pinboard.height}`,
         );
       }
     }
   }
 
-  // 1b. The pin board's menu wears the accent, not the page's own surface. The
+  // 1c. The pin board's menu wears the accent, not the page's own surface. The
   //     eyebrow is painted in `--accent`, so the two colours are compared
   //     rather than a colour being named.
   if (unlocked.pinboardPaint) {
@@ -324,7 +358,7 @@ async function main() {
     failure("the unlocked board's pin-board button recorded no paint");
   }
 
-  // 1c. And the control really draws the row. Without this, "an unlocked board
+  // 1d. And the control really draws the row. Without this, "an unlocked board
   //     offers Add pin" would be a claim about a button nobody pressed.
   await win.webContents.executeJavaScript(
     `document.querySelector('[data-testid="board-add-toggle"]').click()`,

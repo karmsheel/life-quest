@@ -327,9 +327,11 @@ export default function DocumentsPage() {
             Overview only.
           </p>
         </div>
-        {/* The open note's lock sits in the page's corner, the same badge and
-            switch every other lockable page wears. It is absent while the
-            composer is empty: there is no note to lock yet. */}
+        {/* The open note's lock sits in the page's corner. This page has no
+            document heading — the note's title is a field in the composer — so
+            the state badge stays beside the switch rather than beside
+            "Documents", where it would mislabel the page. It is absent while
+            the composer is empty: there is no note to lock yet. */}
         {editingId ? (
           <div className="page-corner" data-testid="documents-page-corner">
             <DocumentLockBadge locked={editingLocked} />
@@ -339,6 +341,7 @@ export default function DocumentsPage() {
               onToggle={() => void (editingLocked ? onUnlock() : onLock())}
               label={editingLocked ? "Unlock this note" : "Lock this note"}
               testId="note-lock-toggle"
+              className="page-corner__action"
             />
           </div>
         ) : null}

@@ -264,6 +264,9 @@ export function DocumentEditor({
                 </span>
               ) : null}
             </h1>
+            {/* The state badge sits beside the document's name, where it has
+                always labelled this page. */}
+            <DocumentLockBadge locked={locked} />
           </div>
           <p className="doc-editor__coaching muted">
             {DOCUMENT_KIND_COACHING[kind]}
@@ -274,18 +277,17 @@ export function DocumentEditor({
             </p>
           ) : null}
         </div>
-        {/* The page's corner, the same control the Dashboard wears: the state in
-            words above the state in one gesture. The lock is a setting of this
-            document, so it belongs with the document's name rather than at the
-            bottom of the page beside Save. */}
+        {/* The lock is a setting of this document, so the switch belongs with
+            the document's name rather than at the bottom of the page beside
+            Save; the badge beside the name says what the switch is set to. */}
         <div className="page-corner" data-testid="document-page-corner">
-          <DocumentLockBadge locked={locked} />
           <LockSwitch
             locked={locked}
             busy={lockPending}
             onToggle={() => void onLock(!locked)}
             label={locked ? "Unlock this document" : "Lock this document"}
             testId="document-lock-toggle"
+            className="page-corner__action"
           />
         </div>
       </header>

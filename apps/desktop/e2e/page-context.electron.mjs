@@ -436,11 +436,9 @@ async function main() {
       !/^Bar$/m.test(dashBody) &&
       !/^Line$/m.test(dashBody) &&
       !/^Lock$/m.test(dashBody),
-    // The heading is the page's name and nothing else: the lock badge moved
-    // out of the `<h1>` into the page's corner, so the outline quotes the title
-    // alone and the badge on its own line.
-    headingIsTitle: /^# Overview$/m.test(dashBody),
-    badgeQuoted: /^Unlocked$/m.test(dashBody),
+    // The heading and its badge are joined with a space rather than welded on:
+    // the badge rides the title again, as it always did.
+    headingIsSpaced: /^# Overview Unlocked$/m.test(dashBody),
     saysAlreadyExists: /already exists on that screen/.test(dashText),
     saysNoDuplicate: /instead of proposing a duplicate/.test(dashText),
   };
@@ -451,8 +449,7 @@ async function main() {
       checks.dashboardTurn.namesTheCard === true &&
       checks.dashboardTurn.namesTheFigures === true &&
       checks.dashboardTurn.noAffordances === true &&
-      checks.dashboardTurn.headingIsTitle === true &&
-      checks.dashboardTurn.badgeQuoted === true &&
+      checks.dashboardTurn.headingIsSpaced === true &&
       checks.dashboardTurn.saysAlreadyExists === true &&
       checks.dashboardTurn.saysNoDuplicate === true,
     `the Dashboard turn read route=${JSON.stringify(checks.dashboardTurn.route)} ` +
@@ -460,8 +457,7 @@ async function main() {
       `namesCard=${checks.dashboardTurn.namesTheCard} ` +
       `namesFigures=${checks.dashboardTurn.namesTheFigures} ` +
       `noAffordances=${checks.dashboardTurn.noAffordances} ` +
-      `headingIsTitle=${checks.dashboardTurn.headingIsTitle} ` +
-      `badgeQuoted=${checks.dashboardTurn.badgeQuoted} ` +
+      `headingSpaced=${checks.dashboardTurn.headingIsSpaced} ` +
       `alreadyExists=${checks.dashboardTurn.saysAlreadyExists} ` +
       `noDuplicate=${checks.dashboardTurn.saysNoDuplicate}; body:\n${dashBody}`,
   );

@@ -58,11 +58,16 @@ type Box = {
 };
 
 type Corner = {
-  badge: Box | null;
   switch: Box | null;
   pinboard: Box | null;
   alignItems: string;
   flexDirection: string;
+  viewportWidth: number;
+};
+
+type TitleRow = {
+  heading: Box | null;
+  badge: Box | null;
   viewportWidth: number;
 };
 
@@ -76,6 +81,7 @@ type BoardSample = {
   switchTrack: boolean;
   switchThumb: boolean;
   hint: string | null;
+  titleRow: TitleRow | null;
   corner: Corner | null;
   pinboardPaint: { background: string; color: string; shadow: string } | null;
   addToggle: boolean;
@@ -106,8 +112,8 @@ type Report = {
 /**
  * The Dashboard page lock, as the operator sees it: the board is editable while
  * unlocked and read-only — no pin chrome, no Add-pin row — while locked, and the
- * header's switch is the one way to change that. The page's corner holds the
- * state badge, the switch under it and the pin board's menu under that.
+ * header's switch is the one way to change that. The state badge sits beside the
+ * page's name; the switch and the pin board's menu share the top-right row.
  */
 describe("dashboard lock ui e2e", () => {
   it("makes the board read-only while locked and editable while unlocked", async (t) => {
@@ -143,38 +149,57 @@ describe("dashboard lock ui e2e", () => {
     assert.ok(report.checks.openedPinBoard.strayAddButtons > 0, "the row offered nothing to add");
     assert.ok(report.checks.unlocked.chrome > 0, "an unlocked board drew no pin chrome");
 
-    // The page's corner: state, switch, menu — stacked at the top right. The
-    // boxes are measured on the rendered page, so a corner that drifted back to
-    // a row, to the left, or below the title fails here.
+    // The badge is back beside the page's name: same line, left half of the
+    // page. A badge that drifted back into the top-right corner fails here.
+    const titleRow = report.checks.unlocked.titleRow;
+    assert.ok(titleRow?.heading, "the page's heading recorded no box");
+    assert.ok(titleRow?.badge, "the page's badge recorded no box");
+    const headingMid = (titleRow.heading.top + titleRow.heading.bottom) / 2;
+    const badgeMid = (titleRow.badge.top + titleRow.badge.bottom) / 2;
+    assert.ok(
+      Math.abs(headingMid - badgeMid) <= 6,
+      `the badge is not on the heading's line: badge mid ${badgeMid}, heading mid ${headingMid}`,
+    );
+    assert.ok(
+      titleRow.badge.left >= titleRow.heading.left &&
+        titleRow.badge.left <= titleRow.heading.left + titleRow.heading.width,
+      "the badge is not inside the heading row",
+    );
+    assert.ok(
+      titleRow.badge.right <= titleRow.viewportWidth / 2,
+      `the badge is still on the page's right: badge right ${titleRow.badge.right} of ${titleRow.viewportWidth}`,
+    );
+
+    // The page's controls: the switch and the pin board's menu beside each
+    // other in one row at the top right, both one height. The boxes are measured
+    // on the rendered page, so a stack, a left-aligned row or mismatched heights
+    // fail here.
     const corner = report.checks.unlocked.corner;
-    assert.ok(corner, "the page drew no corner for its state and controls");
-    const badgeBox = corner.badge;
+    assert.ok(corner, "the page drew no corner for its controls");
     const switchBox = corner.switch;
     const pinboardBox = corner.pinboard;
-    assert.ok(badgeBox, "the corner has no badge");
     assert.ok(switchBox, "the corner has no switch");
     assert.ok(pinboardBox, "the corner has no pin board");
-    assert.equal(corner.flexDirection, "column", "the page's corner is not a stack");
-    assert.equal(corner.alignItems, "flex-end", "the page's corner is not trailing-aligned");
+    assert.equal(corner.flexDirection, "row", "the page's controls are not a row");
+    assert.equal(corner.alignItems, "center", "the page's controls are not centred");
+    assert.ok(switchBox.top <= 120, `the controls are not at the top: switch top ${switchBox.top}`);
     assert.ok(
-      badgeBox.bottom <= switchBox.top,
-      "the badge does not sit above the switch",
+      switchBox.right >= corner.viewportWidth / 2,
+      `the controls are not on the page's right: switch right ${switchBox.right} of ${corner.viewportWidth}`,
     );
     assert.ok(
-      switchBox.bottom <= pinboardBox.top,
-      "the switch does not sit above the pin board",
+      Math.abs(switchBox.top - pinboardBox.top) <= 2,
+      "the pin board is not beside the switch",
     );
-    assert.equal(badgeBox.right, switchBox.right, "the badge and switch are not right-aligned");
+    assert.ok(
+      pinboardBox.left >= switchBox.right,
+      `the pin board (left ${pinboardBox.left}) is not to the right of the switch (right ${switchBox.right})`,
+    );
     assert.equal(
-      switchBox.right,
-      pinboardBox.right,
-      "the switch and pin board are not right-aligned",
+      pinboardBox.height,
+      switchBox.height,
+      `the two controls are not one height: switch ${switchBox.height}, pin board ${pinboardBox.height}`,
     );
-    assert.ok(
-      badgeBox.right >= corner.viewportWidth / 2,
-      `the corner is not on the page's right edge: badge right ${badgeBox.right} of ${corner.viewportWidth}`,
-    );
-    assert.ok(badgeBox.top <= 120, `the corner is not at the top: badge top ${badgeBox.top}`);
 
     // The pin board's menu wears the accent, and lifting the pointer onto it
     // draws a shadow it does not have at rest.
@@ -211,6 +236,14 @@ describe("dashboard lock ui e2e", () => {
     );
     assert.match(report.checks.locked.hint ?? "", /locked/i);
     assert.match(report.checks.locked.hint ?? "", /Decisions/);
+    assert.ok(
+      report.checks.locked.titleRow?.badge,
+      "the locked board's badge left the heading row",
+    );
+    assert.ok(
+      report.checks.locked.titleRow!.badge!.right <= report.checks.locked.titleRow!.viewportWidth / 2,
+      "the locked board's badge is on the page's right rather than beside the name",
+    );
 
     // The control is a real write to the board, and it toggles back.
     assert.deepEqual(report.checks.toggleCalls, [{ locked: false, boardSlug: null }]);

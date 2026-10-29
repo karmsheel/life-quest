@@ -85,8 +85,7 @@ type Report = {
       namesTheCard: boolean;
       namesTheFigures: boolean;
       noAffordances: boolean;
-      headingIsTitle: boolean;
-      badgeQuoted: boolean;
+      headingIsSpaced: boolean;
       saysAlreadyExists: boolean;
       saysNoDuplicate: boolean;
     };
@@ -216,10 +215,7 @@ describe("page context e2e", () => {
       true,
       `the outline quoted the card's controls:\n${dashboard.body}`,
     );
-    // The heading is the page's name; the lock badge is quoted on a line of its
-    // own from the page's corner rather than welded onto the title.
-    assert.equal(dashboard.headingIsTitle, true, `the heading was not the page's name alone:\n${dashboard.body}`);
-    assert.equal(dashboard.badgeQuoted, true, `the outline missed the lock badge:\n${dashboard.body}`);
+    assert.equal(dashboard.headingIsSpaced, true, `a heading's badge was welded on:\n${dashboard.body}`);
     assert.equal(dashboard.saysAlreadyExists, true);
     assert.equal(dashboard.saysNoDuplicate, true);
 

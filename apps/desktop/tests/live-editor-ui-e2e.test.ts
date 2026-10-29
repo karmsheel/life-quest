@@ -64,7 +64,14 @@ function runDriver(): Promise<number> {
   });
 }
 
-type Rect = { left: number; top: number; width: number };
+type Rect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
 type Box = {
   heading: string | null;
   body: string | null;
@@ -82,7 +89,10 @@ type Box = {
   imageSrc: string | null;
   inputRect: Rect | null;
   renderedRect: Rect | null;
+  headingRect: Rect | null;
   lockBadge: string | null;
+  lockBadgeRect: Rect | null;
+  lockSwitchRect: Rect | null;
   lockSwitch: {
     role: string | null;
     checked: string | null;
@@ -155,21 +165,37 @@ describe("live editor ui e2e", () => {
     assert.equal(doc.showsMarkers, false, "raw markdown is painted in the box");
     assert.match(String(doc.body), /Three sessions a week, no exceptions\./);
 
-    // The doctrine page's lock is the same badge-and-switch corner the Dashboard
-    // wears: off on an unlocked document, and flipping it writes the lock and
-    // turns the page's own read read-only.
+    // The doctrine page's lock: the badge is back beside the document's name,
+    // and the switch sits in the page's top-right column.
     assert.equal(doc.lockBadge, "Unlocked");
     assert.equal(doc.lockSwitch?.role, "switch");
     assert.equal(doc.lockSwitch?.checked, "false");
     assert.equal(doc.lockSwitch?.caption, "Lock");
     assert.equal(doc.lockSwitch?.hasTrack, true, "the document's switch drew no track");
+    assert.ok(doc.headingRect, "the document's name recorded no box");
+    assert.ok(doc.lockBadgeRect, "the document's badge recorded no box");
+    assert.ok(doc.lockSwitchRect, "the document's switch recorded no box");
+    const headingMid = (doc.headingRect.top + doc.headingRect.bottom) / 2;
+    const badgeMid = (doc.lockBadgeRect.top + doc.lockBadgeRect.bottom) / 2;
+    assert.ok(
+      Math.abs(headingMid - badgeMid) <= 6,
+      `the document badge is not on the name's line: badge mid ${badgeMid}, heading mid ${headingMid}`,
+    );
+    assert.ok(
+      doc.lockBadgeRect.right < doc.lockSwitchRect.left,
+      "the document badge is not left of the switch",
+    );
+    assert.ok(
+      doc.lockSwitchRect.left >= doc.headingRect.right,
+      "the document switch is not in the page's right column",
+    );
     assert.deepEqual(report.checks.documentLockCalls, ["documentSetLocked:health:what:true"]);
     assert.equal(report.checks.documentLocked.lockBadge, "Locked");
     assert.equal(report.checks.documentLocked.lockSwitch?.checked, "true");
     assert.equal(
       report.checks.documentLocked.readOnly,
       true,
-      "locking the document from the page's corner left the box editable",
+      "locking the document from the header switch left the box editable",
     );
     assert.equal(
       report.checks.documentUnlockCalls.at(-1),
