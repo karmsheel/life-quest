@@ -27,14 +27,40 @@ const electron = require("electron") as string;
 const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/chat-tabs.json");
 
+type Box = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+
 type Row = {
-  group: string;
   label: string;
   when: string;
+  whenVisible: boolean;
   active: boolean;
   live: boolean;
   approval: boolean;
   menuOpen: boolean;
+  pinned: boolean;
+  pinState: boolean;
+  actionsVisible: boolean;
+  pin: {
+    exists: boolean;
+    visible: boolean;
+    label: string | null;
+    dataPinned: string | null;
+    filled: boolean;
+  };
+  archive: {
+    exists: boolean;
+    visible: boolean;
+    label: string | null;
+    beforePin: boolean;
+  };
+  box: Box | null;
 };
 
 type Tab = {
@@ -54,11 +80,14 @@ type State = {
   list: boolean;
   thread: boolean;
   rail: {
+    box: Box | null;
     label: string | null;
     title: string;
     liveCount: string;
     newChat: boolean;
-    groups: string[];
+    newChatCentered: boolean | null;
+    paddingTop: number;
+    paddingBottom: number;
   } | null;
   composer: { value: string; disabled: boolean; focused: boolean } | null;
   messages: { role: string; content: string }[];
@@ -127,6 +156,9 @@ describe("chat dock tabs and sidebar chats", () => {
 
     const {
       landing,
+      hovered,
+      hoveredUnpinned,
+      unhovered,
       opened,
       middleOpened,
       menuOpened,
@@ -140,7 +172,12 @@ describe("chat dock tabs and sidebar chats", () => {
       alphaAgain,
       split,
       splitSettled,
+      hoveredBravo,
       pinned,
+      hoveredPinned,
+      unpinned,
+      repinned,
+      hoveredAlpha,
       archived,
       asked,
       declined,
@@ -150,19 +187,124 @@ describe("chat dock tabs and sidebar chats", () => {
       lateFrame,
     } = report.states;
 
-    // The sidebar is the app's chat list, pinned first, and its rows are the
-    // profile's own sessions.
+    // The sidebar is one flat list of the profile's chats, pinned first; the
+    // pin/archive controls belong to a hover, not to the resting row, and the
+    // rail keeps dead space above and below its rows.
     assert.equal(landing.rowCount, 5, "the sidebar did not list every chat");
     assert.equal(landing.rail?.title, "Chats", "the sidebar has no heading");
     assert.equal(landing.rail?.newChat, true, "the sidebar offers no New chat");
-    assert.deepEqual(landing.rail?.groups, ["Pinned", "Recent"]);
+    assert.equal(
+      landing.rail?.newChatCentered,
+      true,
+      "the New chat button does not centre its icon and label",
+    );
+    assert.ok(
+      (landing.rail?.paddingTop ?? 0) >= 10,
+      `the rail has no dead space above its rows (${landing.rail?.paddingTop}px)`,
+    );
+    assert.ok(
+      (landing.rail?.paddingBottom ?? 0) >= 10,
+      `the rail has no dead space below its rows (${landing.rail?.paddingBottom}px)`,
+    );
+    assert.equal(landing.rows[0]?.label, "Pinned note", "the pinned chat is not the first row");
+    assert.equal(landing.rows[0]?.pinned, true, "the first row is not marked pinned");
+    assert.equal(landing.rows[0]?.pinState, true, "the pinned row shows no resting pin mark");
     assert.deepEqual(
-      [landing.rows[0]?.group, landing.rows[0]?.label],
-      ["Pinned", "Pinned note"],
-      "the pinned chat is not the first Pinned row",
+      landing.rows.slice(1).map((row) => row.pinned),
+      [false, false, false, false],
+      "an unpinned chat is marked pinned",
+    );
+    assert.equal(
+      landing.rows.slice(1).every((row) => row.pinState === false),
+      true,
+      "an unpinned row wears a pin mark",
+    );
+    assert.equal(
+      landing.rows.every((row) => row.whenVisible),
+      true,
+      "a resting row hides its time",
+    );
+    assert.equal(
+      landing.rows.some((row) => row.actionsVisible),
+      false,
+      "pin/archive are not hover-only: a row shows its actions at rest",
     );
     assert.equal(landing.tabCount, 0, "one open chat drew a tab strip");
     assert.equal(landing.heading, "Alpha planning", "the dock landed on the wrong chat");
+
+    // A real pointer over a row reveals its pin/archive controls and hides the
+    // resting time and pin mark; moving off restores the resting row.
+    const hoveredPinnedRow = hovered.rows.find((row) => row.label === "Pinned note");
+    assert.equal(hoveredPinnedRow?.actionsVisible, true, "hovering a row revealed no actions");
+    assert.deepEqual(
+      hovered.rows.filter((row) => row.actionsVisible).map((row) => row.label),
+      ["Pinned note"],
+      "hover revealed another row's actions",
+    );
+    assert.equal(hoveredPinnedRow?.whenVisible, false, "the hovering row still shows its time");
+    assert.equal(
+      hoveredPinnedRow?.pinState,
+      false,
+      "the hovering pinned row still shows its pin mark",
+    );
+    assert.equal(hoveredPinnedRow?.pin.exists, true, "the pinned row has no pin control");
+    assert.equal(hoveredPinnedRow?.pin.visible, true, "the pinned row's hover pin is not visible");
+    assert.equal(
+      hoveredPinnedRow?.pin.label,
+      "Unpin chat",
+      "the pinned row's hover control is not Unpin",
+    );
+    assert.equal(
+      hoveredPinnedRow?.pin.dataPinned,
+      "true",
+      "the hover pin control does not carry the pinned flag",
+    );
+    assert.equal(hoveredPinnedRow?.pin.filled, true, "the pinned hover pin is not filled");
+    assert.equal(
+      hoveredPinnedRow?.archive.visible,
+      true,
+      "the pinned row's hover archive is not visible",
+    );
+    assert.equal(hoveredPinnedRow?.archive.label, "Archive chat");
+    assert.equal(hoveredPinnedRow?.archive.beforePin, true, "Archive does not sit right before Pin");
+
+    const alphaHover = hoveredUnpinned.rows.find((row) => row.label === "Alpha planning");
+    assert.equal(alphaHover?.actionsVisible, true, "hovering an unpinned row revealed no actions");
+    assert.deepEqual(
+      hoveredUnpinned.rows.filter((row) => row.actionsVisible).map((row) => row.label),
+      ["Alpha planning"],
+      "the hover leaked to another row",
+    );
+    assert.equal(alphaHover?.pin.visible, true, "the unpinned row's hover pin is not visible");
+    assert.equal(alphaHover?.pin.label, "Pin chat", "the unpinned hover control is not Pin");
+    assert.equal(
+      alphaHover?.pin.dataPinned,
+      null,
+      "the unpinned hover pin control carries a pinned flag",
+    );
+    assert.equal(alphaHover?.pin.filled, false, "the unpinned hover pin is filled");
+    assert.equal(
+      alphaHover?.archive.visible,
+      true,
+      "the unpinned row's hover archive is not visible",
+    );
+    assert.equal(alphaHover?.archive.beforePin, true, "Archive does not sit right before Pin");
+
+    assert.equal(
+      unhovered.rows.some((row) => row.actionsVisible),
+      false,
+      "the hover controls stayed after the pointer left",
+    );
+    assert.equal(
+      unhovered.rows.every((row) => row.whenVisible),
+      true,
+      "the resting time did not come back",
+    );
+    assert.equal(
+      unhovered.rows.find((row) => row.label === "Pinned note")?.pinState,
+      true,
+      "the resting pin mark did not come back",
+    );
 
     // A plain click is navigation: the clicked chat takes over the main chat and
     // no tab is added. The hidden strip is the proof — a second tab would draw
@@ -284,16 +426,58 @@ describe("chat dock tabs and sidebar chats", () => {
       "the split tab stayed live after its run ended",
     );
 
-    // Sidebar management reaches the gateway and the list follows.
+    // The hover pin control reaches the gateway and the list follows: a fresh
+    // pin is the very first row and wears a resting pin mark.
+    assert.equal(
+      hoveredBravo.rows.find((row) => row.label === "Bravo budget")?.pin.visible,
+      true,
+      "Bravo's hover pin control did not appear",
+    );
     const pin = pinned.patchCalls.at(-1);
     assert.equal(pin?.id, "chat-bravo", "Pin hit the wrong chat");
     assert.equal(pin?.patch.pinned, true, "Pin never reached the bridge");
-    assert.deepEqual(
-      [pinned.rows[0]?.group, pinned.rows[0]?.label],
-      ["Pinned", "Bravo budget"],
-      "the pinned chat did not move under Pinned",
+    assert.equal(pinned.rows[0]?.label, "Bravo budget", "the pinned chat did not become the first row");
+    assert.equal(pinned.rows[0]?.pinned, true, "the first row is not marked pinned");
+    assert.equal(pinned.rows[0]?.pinState, true, "the pinned row lost its resting pin mark");
+    assert.equal(
+      pinned.rows.some((row) => row.actionsVisible),
+      false,
+      "the hover controls stayed up after the pointer left and the pin landed",
     );
 
+    // The same control toggles off: Unpin leaves the front and drops the flag.
+    const pinnedHover = hoveredPinned.rows.find((row) => row.label === "Bravo budget");
+    assert.equal(pinnedHover?.pin.visible, true, "the pinned row's hover pin is not visible");
+    assert.equal(pinnedHover?.pin.label, "Unpin chat", "the pinned hover control does not read Unpin");
+    assert.equal(pinnedHover?.pin.dataPinned, "true", "the pinned hover control lost its flag");
+    assert.equal(pinnedHover?.pin.filled, true, "the pinned hover pin is not filled");
+    const unpin = unpinned.patchCalls.at(-1);
+    assert.equal(unpin?.id, "chat-bravo", "Unpin hit the wrong chat");
+    assert.equal(unpin?.patch.pinned, false, "Unpin never reached the bridge");
+    const unpinnedBravo = unpinned.rows.find((row) => row.label === "Bravo budget");
+    assert.equal(unpinnedBravo?.pinned, false, "the unpinned chat kept its pinned flag");
+    assert.equal(unpinnedBravo?.pinState, false, "the unpinned chat still wears a pin mark");
+    assert.equal(
+      unpinned.rows[0]?.label,
+      "Pinned note",
+      "unpinning did not hand the front back to the remaining pinned chat",
+    );
+
+    // Pinned again, so the archive/delete/background states below run against
+    // the list they have always run against.
+    const repin = repinned.patchCalls.at(-1);
+    assert.equal(repin?.id, "chat-bravo", "the second Pin hit the wrong chat");
+    assert.equal(repin?.patch.pinned, true, "the second Pin never reached the bridge");
+    assert.equal(repinned.rows[0]?.label, "Bravo budget", "the re-pinned chat is not first");
+    assert.equal(repinned.rows[0]?.pinned, true, "the re-pinned chat is not marked pinned");
+
+    // The hover archive control removes the row and the tab it had, and does not
+    // move the open thread when the archived chat is a background tab.
+    assert.equal(
+      hoveredAlpha.rows.find((row) => row.label === "Alpha planning")?.archive.visible,
+      true,
+      "Alpha's hover archive control did not appear",
+    );
     const archive = archived.patchCalls.at(-1);
     assert.equal(archive?.id, "chat-alpha", "Archive hit the wrong chat");
     assert.equal(archive?.patch.archived, true, "Archive never reached the bridge");
