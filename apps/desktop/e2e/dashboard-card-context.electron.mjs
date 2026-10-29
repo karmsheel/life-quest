@@ -160,8 +160,9 @@ const SAMPLE = `(() => {
       const badge = header.querySelector('[data-testid="board-lock-badge"]');
       return {
         eyebrow: (header.querySelector('.home-dashboard__eyebrow') || {}).textContent?.trim() ?? null,
-        // The title's own words, without the lock badge it also carries: the
-        // badge is a sibling span, so a text-node read is the honest one.
+        // The title is the page's name and nothing else now that the lock badge
+        // and switch live in the page's own corner; a text-node read still says
+        // exactly the words the heading paints.
         title: title
           ? [...title.childNodes]
               .filter((node) => node.nodeType === 3)
