@@ -4371,6 +4371,60 @@ a.home-mini-list__link:hover {
   flex-shrink: 0;
 }
 
+/* —— Developer page ——
+   Every developer switch is one row of this list: the copy on the left, the
+   switch on the row's trailing edge, a hairline between rows. The next switch is
+   another row, so adding one never reflows the page's own shape. */
+.settings-developer {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-developer > .settings-card__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+}
+
+.settings-developer > .settings-card__row + .settings-card__row {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* The copy keeps its own measure rather than running under the switch: the
+   description is long enough to want a column, and the empty column beside it is
+   where the switch lives. */
+.settings-developer .settings-card__copy {
+  max-width: 38rem;
+}
+
+.settings-developer .settings-card__desc {
+  max-width: none;
+  line-height: 1.5;
+}
+
+.settings-developer .settings-card__control {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 0.08rem;
+}
+
+/* The row's own report. Quiet while the setting rests, amber while it is doing
+   something the rest of the app does not normally do. */
+.settings-developer__state {
+  margin: 0.6rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.settings-developer__state[data-developer-state="previewing"],
+.settings-developer__state[data-developer-state="shadowed"] {
+  color: var(--amber);
+}
+
 .settings-appearance__skin-hint {
   margin: 0 0 0.5rem;
   font-size: 0.6875rem;
@@ -7209,6 +7263,89 @@ button.chat-panel__activity-line:hover {
 
 .ui-list-row__action {
   flex-shrink: 0;
+}
+
+/* —— Toggle ——
+   One switch for a setting that is written the moment it moves: a track and a
+   thumb, accent-filled while on and muted while off. The control is a button with
+   `role="switch"` (see `Toggle`), so the drawing owes it two things — a focus ring,
+   and a state that does not move the row when it changes. */
+.ui-toggle {
+  --toggle-width: 2.375rem;
+  --toggle-height: 1.375rem;
+  --toggle-thumb: 0.9375rem;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  cursor: pointer;
+}
+
+.ui-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.ui-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ui-toggle__track {
+  position: relative;
+  display: block;
+  width: var(--toggle-width);
+  height: var(--toggle-height);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-muted);
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out);
+}
+
+.ui-toggle:hover:not(:disabled) .ui-toggle__track {
+  border-color: var(--border-strong);
+}
+
+.ui-toggle__thumb {
+  position: absolute;
+  top: 50%;
+  left: 0.15rem;
+  width: var(--toggle-thumb);
+  height: var(--toggle-thumb);
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-50%);
+  transition:
+    transform var(--dur-enter) var(--ease-out),
+    background var(--dur-quick) var(--ease-out);
+}
+
+.ui-toggle.is-on .ui-toggle__track {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+/* The travel is the track's inner width less the thumb and the inset it keeps on
+   both ends, so the thumb lands mirrored in the on position. */
+.ui-toggle.is-on .ui-toggle__thumb {
+  background: var(--accent-fg);
+  transform: translate(
+    calc(var(--toggle-width) - 2px - var(--toggle-thumb) - 0.3rem),
+    -50%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-toggle__track,
+  .ui-toggle__thumb {
+    transition: none;
+  }
 }
 
 /* —— Doctrine indexes (Dream / Vision / Architecture) —— */
