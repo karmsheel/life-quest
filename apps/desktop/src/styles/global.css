@@ -3035,6 +3035,120 @@ a {
   font-size: 0.74rem;
 }
 
+/* —— Decision editor ——
+
+   The amend surface inside a pending card. It sits where the read-only proposal
+   and the answer pair sat, so the card never grows a second column: the
+   operator is still reading one card, now with its words under their hands.
+   The tinted background is the only thing that changes, because an editor that
+   looks like a form dropped into a list reads as something other than the card
+   it belongs to. */
+.decision-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem 0.95rem;
+  border: 1px solid var(--accent-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.decision-editor__lead {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+/* Scalars sit in a responsive grid: a project proposal carries ten of them and
+   one column would push the answer buttons two screens down. */
+.decision-editor__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.65rem 0.9rem;
+}
+
+.decision-editor__field {
+  min-width: 0;
+}
+
+.decision-editor__field span {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.decision-editor__field--wide {
+  grid-column: 1 / -1;
+}
+
+.decision-editor__field input,
+.decision-editor__field select,
+.decision-editor__field textarea,
+.decision-editor__exact textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 0.42rem 0.55rem;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.decision-editor__field textarea,
+.decision-editor__exact textarea {
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.decision-editor__exact summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.decision-editor__exact .field {
+  margin-top: 0.45rem;
+}
+
+.decision-editor__json {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.decision-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.decision-editor__actions-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.decision-editor__revert {
+  font-size: 0.82rem;
+}
+
+/* A proposal the operator has corrected: the same chip language as `New`, but
+   muted — it is provenance, not freshness, and the card is still theirs to
+   answer. */
+.decision-edited {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.55rem;
+  border-radius: var(--radius-pill);
+  background: var(--muted-surface);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 /* The source of a history row: the operator's own logged decision, or one that
    came through the inbox. Two chips rather than two lists, because the point is
    comparing them side by side. */

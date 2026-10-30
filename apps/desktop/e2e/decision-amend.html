@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>LifeQuest decision amend harness</title>
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+
+      /* The real app scrolls its page inside `.shell__content`; this rig gives it
+         the same shape and a fixed height, so the pending card, its editor and
+         History sit where the operator would meet them. */
+      .shell__content {
+        box-sizing: border-box;
+        padding: 1.25rem 1.5rem 2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./decision-amend.tsx"></script>
+  </body>
+</html>

@@ -756,6 +756,14 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
       vault.decisionCreate(input),
   );
   ipcMain.handle(
+    "decision:amend",
+    (
+      _e,
+      id: string,
+      input: Parameters<typeof vault.decisionAmend>[1],
+    ) => vault.decisionAmend(id, input),
+  );
+  ipcMain.handle(
     "decision:resolve",
     (_e, id: string, resolution: "approved" | "rejected") =>
       vault.decisionResolve(id, resolution),

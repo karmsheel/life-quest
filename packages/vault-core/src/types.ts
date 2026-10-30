@@ -708,6 +708,40 @@ export type DecisionRecord = {
    * every other case, including a transient apply failure that stays retryable.
    */
   reason: string | null;
+  /**
+   * When the operator last edited the proposal before answering it, or null.
+   *
+   * A Decision is the agent's proposal, and approval applies whatever the record
+   * holds. The operator can correct a proposal in the inbox — a misspelt project
+   * name, a detail worth adding — and these fields are how the record admits that
+   * what was approved is theirs, not the proposer's. They are also what the
+   * resolve path reads to decide whether a terminal apply failure is fixable.
+   */
+  amendedAt: string | null;
+  /** Who made the last amendment. Always the operator today. */
+  amendedBy: Actor | null;
+  /** The operator's reason for the edit, in their own words, or null. */
+  amendmentNote: string | null;
+  /**
+   * The proposal exactly as it was filed, kept from the first amendment so the
+   * inbox can show (and restore) what the agent actually asked for.
+   */
+  originalProposedTitle: string | null;
+  originalProposedBodyMarkdown: string | null;
+};
+
+/**
+ * The operator's edit to a pending Decision's proposal.
+ *
+ * Every field is optional because an amendment may touch only the title, only
+ * the body, or only the note. `revert` is the one exception: it restores the
+ * proposal as filed and clears the amendment, ignoring the other fields.
+ */
+export type DecisionAmendment = {
+  proposedTitle?: string | null;
+  proposedBodyMarkdown?: string;
+  note?: string | null;
+  revert?: boolean;
 };
 
 /**
