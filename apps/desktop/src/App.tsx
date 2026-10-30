@@ -26,6 +26,7 @@ import DocumentsPage from "@/pages/DocumentsPage";
 import DreamPage from "@/pages/DreamPage";
 import VisionPage from "@/pages/VisionPage";
 import IdealStatePage from "@/pages/IdealStatePage";
+import ImagesPage from "@/pages/ImagesPage";
 import GoalsPage from "@/pages/GoalsPage";
 import ProjectPage from "@/pages/ProjectPage";
 import ProjectsPage from "@/pages/ProjectsPage";
@@ -44,6 +45,7 @@ import { NavDockProvider } from "@/state/NavDockProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
 import { LiveDataProvider } from "@/state/LiveDataProvider";
 import { UpdateProvider } from "@/state/UpdateProvider";
+import { UpdateNotice } from "@/components/shell/UpdateNotice";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
 
 function RequireVault({ children }: { children: ReactNode }) {
@@ -111,6 +113,7 @@ function AppRoutes() {
             element={<DoctrineEditorPage backTo="/vision" />}
           />
           <Route path="/ideal-state" element={<IdealStatePage />} />
+          <Route path="/images" element={<ImagesPage />} />
           <Route path="/goals" element={<GoalsPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:id" element={<ProjectPage />} />
@@ -156,6 +159,11 @@ export default function App() {
             news the operator wants before they go looking for why chat is
             quiet. */}
         <UpdateProvider>
+          {/* The notice lives above every route and outside the vault gate: a
+              release published while the operator is on the welcome screen is
+              still news, and the dialog it opens needs only the update state. It
+              portals to the body, so the shell's grid never clips it. */}
+          <UpdateNotice />
           <CompanionProvider>
             <VaultProvider>
               {/* Inside the vault, outside every page: a card's numbers are a

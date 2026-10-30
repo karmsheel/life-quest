@@ -14,6 +14,7 @@ import {
   FolderKanban,
   Goal,
   Home,
+  Image as ImageIcon,
   Map,
   NotebookPen,
   Radio,
@@ -147,6 +148,16 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/ideal-state",
     label: "Ideal State",
     icon: Compass,
+    section: "main",
+    wing: "define",
+  },
+  {
+    // The pictures a vision is made of, and the one document they are written
+    // beside. Last under Define: after the words, the life as it should look.
+    id: "images",
+    href: "/images",
+    label: "Images",
+    icon: ImageIcon,
     section: "main",
     wing: "define",
   },

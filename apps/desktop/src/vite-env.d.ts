@@ -41,6 +41,12 @@ import type {
   IdealStateDocument,
   IdealStateIndexEntry,
   IdealStateUpdatePatch,
+  ImageMimeType,
+  ImageSaveInput,
+  ImageUpdatePatch,
+  VaultImage,
+  VisionBoard,
+  VisionBoardBlock,
   PeriodPack,
   Pin,
   PinBoardRead,
@@ -539,6 +545,25 @@ type LifequestApi = {
     patch: IdealStateUpdatePatch,
   ) => Promise<Result<IdealStateDocument>>;
   idealStateDelete: (id: string) => Promise<Result<IdealStateDocument>>;
+  /**
+   * Define → Images: the vault-level picture library and the one vision
+   * document written beside it. The renderer hands over bytes and asks for
+   * bytes back; it never names a vault path.
+   */
+  imagesList: () => Promise<Result<VaultImage[]>>;
+  imagesSave: (input: ImageSaveInput) => Promise<Result<VaultImage>>;
+  imagesRead: (
+    relPath: string,
+  ) => Promise<Result<{ bytes: Uint8Array; mime: ImageMimeType }>>;
+  imagesUpdate: (
+    id: string,
+    patch: ImageUpdatePatch,
+  ) => Promise<Result<VaultImage>>;
+  imagesDelete: (id: string) => Promise<Result<{ id: string }>>;
+  imagesBoardGet: () => Promise<Result<VisionBoard>>;
+  imagesBoardSave: (input: {
+    blocks: VisionBoardBlock[];
+  }) => Promise<Result<VisionBoard>>;
   deadlineDismiss: () => Promise<Result<true>>;
   deadlineGetDismissed: () => Promise<Result<string | null>>;
   deadlineMaybeNotify: () => Promise<
@@ -547,7 +572,9 @@ type LifequestApi = {
   /**
    * Auto-update. `updateCheck` without `force` answers with the session's one
    * answer — the launch's check; `force` re-reads the feed, which is what the
-   * rail's build number and Settings do when the operator asks by hand.
+   * rail's build number and Settings do when the operator asks by hand. The
+   * launch's own answer is no longer the only one the app gets: main also reads
+   * the feed on a clock and pushes a fresh answer over `onUpdateDecision`.
    * `updateInstall` downloads the release's installer, hands it to Windows, and
    * quits the app so the installer can replace it.
    */
@@ -566,6 +593,12 @@ type LifequestApi = {
   onUpdateProgress: (
     cb: (progress: { downloaded: number; total: number }) => void,
   ) => () => void;
+  /**
+   * Main's watch read the feed: an available release to surface, or the news
+   * that the one it announced is no longer offered. Shaped like an
+   * `UpdateDecision`, and validated by the renderer before it is drawn.
+   */
+  onUpdateDecision: (cb: (decision: UpdateDecision) => void) => () => void;
   // KAR-55 domain databases
   dbList: (domainSlug: string | null) => Promise<Result<DatabaseListEntry[]>>;
   dbGet: (slug: string, dbId: string) => Promise<Result<DatabaseMeta>>;

@@ -164,6 +164,26 @@ export {
   updateIdealState,
 } from "./ideal-state.ts";
 export {
+  IMAGE_MAX_BYTES,
+  IMAGE_NAME_MAX,
+  IMAGE_CAPTION_MAX,
+  BOARD_MAX_BLOCKS,
+  BOARD_TEXT_MAX,
+  BOARD_HEADING_MAX,
+  BOARD_ITEMS_MAX,
+  BOARD_ITEM_MAX,
+  BOARD_IMAGE_CAPTION_MAX,
+  BOARD_MAX_BYTES,
+  deleteImage,
+  getVisionBoard,
+  listImages,
+  readImage,
+  saveImage,
+  saveVisionBoard,
+  sniffImageMime,
+  updateImage,
+} from "./images.ts";
+export {
   DAILY_NOTE_TOOL_DEFS,
   executeDailyNoteTool,
 } from "./daily-note-tools.ts";
