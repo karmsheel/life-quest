@@ -46,6 +46,7 @@ import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
 import { summarizeToolRun, toolRowLabel } from "@/lib/tool-run";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
 import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
+import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
@@ -168,14 +169,16 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     // two panes — but the bottom bar's collapse arrow points out of the side it
     // collapses toward, so it reads the side too.
     side: dockSide,
+    // What the pane is showing. It sits on the dock because the titlebar's
+    // shortcuts control opens the dock onto that page from above this store.
+    surface: view,
+    setSurface: setView,
   } = useChatDock();
   const chat = useChatSessions();
   const sessions = chat.sessions;
   const sessionsLoaded = chat.sessionsLoaded;
   const sessionId = chat.activeId;
   const openTabs = chat.openTabs;
-  const view = chat.surface;
-  const setView = chat.setSurface;
   const run = chat.runOf(sessionId);
   const messages = run.messages;
   const sending = run.sending;
@@ -498,9 +501,18 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * Landing behaviour: resume the chat this dock opened last, else the most
    * recent one, else show the list. The store guards the "already landed" case,
    * so a run's deltas re-rendering this panel cannot resume it a second time.
+   *
+   * A surface the operator asked for by name — the titlebar's shortcuts
+   * reference — is not a landing: opening the dock onto it must not have a chat
+   * resume over the top of it. The check reads a ref rather than a dependency:
+   * landing is "the dock opened", not "the surface changed", and re-running
+   * when the surface changes would make archiving the last chat resume it
+   * again off a list that has not been re-read yet.
    */
+  const viewRef = useRef(view);
+  viewRef.current = view;
   useEffect(() => {
-    if (!open || requestedSessionId) return;
+    if (!open || requestedSessionId || viewRef.current === "shortcuts") return;
     void chatRef.current.resumeLast();
   }, [open, requestedSessionId]);
 
@@ -547,7 +559,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * it for a caret the operator has already given to the answer.
    */
   useEffect(() => {
-    if (!open || view === "list" || asking) return;
+    if (!open || view === "list" || view === "shortcuts" || asking) return;
     if (view === "thread" && (sending || !sessionId)) return;
     if (view === "chain" && chainBusy) return;
     focusComposer();
@@ -1258,6 +1270,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
       className="chat-panel"
       role="complementary"
       aria-label="Hermes chat"
+      data-chat-surface={view}
     >
         <div className="chat-panel__open">
           {view === "list" ? (
@@ -1295,6 +1308,38 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
           ) : view === "chain" ? (
             <div className="chat-panel__header">
               <p className="chat-panel__heading">Life-Chain</p>
+            </div>
+          ) : view === "shortcuts" ? (
+            /*
+              The titlebar's shortcuts control opens the dock onto this page. It
+              shares the thread's header shape — a way back, the page's name, and
+              the one control the page needs — but its body is a reference, not a
+              conversation, so there is no composer under it and no tab strip
+              above it.
+            */
+            <div className="chat-panel__header chat-panel__header--shortcuts">
+              <button
+                type="button"
+                className="chat-panel__icon-btn"
+                aria-label="Back to chat"
+                title="Back to chat"
+                onClick={() => setView(sessionId ? "thread" : "list")}
+              >
+                <ArrowLeft size={16} aria-hidden />
+              </button>
+              <p className="chat-panel__heading chat-panel__heading--thread">
+                Keyboard shortcuts
+              </p>
+              <div className="chat-panel__header-actions">
+                <Link
+                  to="/settings?tab=shortcuts"
+                  className="chat-panel__icon-btn"
+                  aria-label="Change keyboard shortcuts in Settings"
+                  title="Change in Settings"
+                >
+                  <Pencil size={16} aria-hidden />
+                </Link>
+              </div>
             </div>
           ) : (
             <div className="chat-panel__header chat-panel__header--thread">
@@ -1705,7 +1750,27 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             )}
           </div>
 
-          <div className="chat-panel__footer" hidden={view === "list"}>
+          {/*
+            The shortcuts reference, as the dock's fourth surface: every movement
+            and the keys it currently answers to, read from the same table the
+            Settings page edits. It has no composer — there is nothing to send
+            from a reference — and its one write path is the pencil in the header,
+            which opens the editable page over the app.
+          */}
+          <div
+            className="chat-panel__body chat-panel__body--shortcuts"
+            hidden={view !== "shortcuts"}
+          >
+            {/* Mounted only while it is the surface: the page reads the
+                shortcuts provider, and a shell mounted without one should not
+                pay for a page it cannot show. */}
+            {view === "shortcuts" ? <ChatShortcutsPage /> : null}
+          </div>
+
+          <div
+            className="chat-panel__footer"
+            hidden={view === "list" || view === "shortcuts"}
+          >
             {view === "chain" ? (
               /*
                 The chain's composer: the same field, the same inline arrow, the
@@ -1963,12 +2028,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
           {/*
             The dock's own actions, pinned to the bottom of the bar and shared by
-            all three surfaces: the list is where most navigation happens, so its
+            every surface: the list is where most navigation happens, so its
             entry point cannot live inside the thread it replaces. The chain is
             the dock's second way into the Life-Chain, alongside the rail's, and
             the collapse control trails the group at the bar's far right.
           */}
-          <nav className="chat-panel__actions" aria-label="Chat and chain actions">
+          <nav className="chat-panel__actions" aria-label="Dock actions">
             <button
               type="button"
               className="chat-panel__icon-btn chat-panel__action"

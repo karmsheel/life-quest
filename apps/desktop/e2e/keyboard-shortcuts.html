@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>LifeQuest keyboard shortcuts harness</title>
+    <style>
+      /* Rig chrome only. Everything inside the shell and the sheet is the app's
+         own CSS, loaded by the harness module. */
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+
+      .rig-page {
+        padding: 1.5rem;
+        color: var(--text);
+      }
+
+      .rig-page h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.5rem;
+      }
+
+      .rig-page p {
+        margin: 0 0 1rem;
+        max-width: 34rem;
+        color: var(--text-muted);
+        font-size: 0.875rem;
+        line-height: 1.5;
+      }
+
+      .rig-page code {
+        padding: 0.05rem 0.3rem;
+        border-radius: var(--radius-xs);
+        background: var(--bg-subtle);
+      }
+
+      /* The one field the typing guard is measured against: a real input on the
+         page behind the settings sheet. */
+      .rig-field {
+        display: inline-flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        padding: 0.75rem;
+        border: 1px solid var(--border-soft);
+        border-radius: var(--radius-sm);
+        color: var(--text-muted);
+        font-size: 0.75rem;
+      }
+
+      .rig-field input {
+        min-width: 16rem;
+        padding: 0.4rem 0.55rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xs);
+        background: var(--bg-base);
+        color: var(--text);
+        font: inherit;
+        font-size: 0.875rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./keyboard-shortcuts.tsx"></script>
+  </body>
+</html>

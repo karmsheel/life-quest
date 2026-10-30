@@ -3,6 +3,7 @@ import {
   Building2,
   FlaskConical,
   Inbox,
+  Keyboard,
   Layers,
   MessageCircleQuestion,
   Palette,
@@ -14,6 +15,7 @@ import {
 
 export type SettingsViewId =
   | "appearance"
+  | "shortcuts"
   | "domains"
   | "vault"
   | "hermes"
@@ -54,6 +56,28 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "system",
       "palette",
       "look",
+    ],
+  },
+  {
+    id: "shortcuts",
+    label: "Keyboard",
+    icon: Keyboard,
+    keywords: [
+      "keyboard",
+      "shortcut",
+      "shortcuts",
+      "key",
+      "keys",
+      "binding",
+      "bindings",
+      "hotkey",
+      "hotkeys",
+      "movement",
+      "movements",
+      "navigate",
+      "navigation",
+      "toggle",
+      "panel",
     ],
   },
   {

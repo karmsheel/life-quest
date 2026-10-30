@@ -43,12 +43,26 @@ export type ChatCardContext = {
  */
 export type ChatDockSide = "left" | "right";
 
+/**
+ * What the dock is showing: the all-chats list, the open thread, the Life-Chain
+ * the dock can carry, or the keyboard-shortcuts reference.
+ *
+ * It lives on the dock rather than in the chat store because the titlebar's
+ * shortcuts control opens the dock straight onto the reference, and the titlebar
+ * stands above the chat store's provider. The chat store still moves it — a
+ * chat opening or closing lands the dock on its thread or list — but the fact
+ * itself is "what is this pane showing", which is the dock's business.
+ */
+export type ChatSurface = "list" | "thread" | "chain" | "shortcuts";
+
 type ChatDockContextValue = {
   open: boolean;
   setOpen: (open: boolean) => void;
   present: boolean;
   setPresent: (present: boolean) => void;
   side: ChatDockSide;
+  surface: ChatSurface;
+  setSurface: (surface: ChatSurface) => void;
   /**
    * The titlebar's one control over it: the two panes trade places. There is no
    * setter beside it — nothing else in the app has an opinion about which side
@@ -126,6 +140,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(true);
   const [present, setPresent] = useState(false);
   const [side, setSide] = useState<ChatDockSide>("right");
+  const [surface, setSurface] = useState<ChatSurface>("thread");
   const [width, setWidth] = useState<number | null>(null);
   const [requestedSessionId, setRequestedSessionId] = useState<string | null>(
     null,
@@ -175,6 +190,8 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       present,
       setPresent,
       side,
+      surface,
+      setSurface,
       swapSide,
       width,
       setWidth,
@@ -194,6 +211,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       open,
       present,
       side,
+      surface,
       swapSide,
       width,
       requestedSessionId,

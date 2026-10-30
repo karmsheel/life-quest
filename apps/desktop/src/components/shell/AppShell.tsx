@@ -10,6 +10,7 @@ import { TopBar } from "./TopBar";
 import { WingProvider } from "./WingProvider";
 import { useChatColumn } from "./useChatColumn";
 import { MapYearProvider } from "@/state/MapYearProvider";
+import { ShortcutRunner } from "./ShortcutRunner";
 
 export function AppShell() {
   const {
@@ -39,6 +40,7 @@ export function AppShell() {
   return (
     <MapYearProvider>
       <WingProvider>
+        <ShortcutRunner />
         {/*
           The chats outlive the panel: the sidebar lists them, the dock's tabs
           name them, and a running turn must keep streaming while the operator

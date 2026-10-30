@@ -3,6 +3,7 @@ import {
   ArrowLeftRight,
   ChevronDown,
   Copy,
+  Keyboard,
   Minus,
   PanelLeftClose,
   PanelLeftOpen,
@@ -27,6 +28,8 @@ export function WindowTitleBar() {
     setOpen: setChatOpen,
     present: chatPresent,
     side: chatSide,
+    surface: chatSurface,
+    setSurface: setChatSurface,
     swapSide,
   } = useChatDock();
   const { collapsed: navCollapsed, present: navPresent } = useNavDock();
@@ -132,6 +135,26 @@ export function WindowTitleBar() {
             {chatPresent ? (
               <>
                 <NavThemeModeToggle className="window-titlebar__btn" />
+                {/*
+                  The shortcuts reference, beside the settings it belongs with.
+                  The dock is where the page lives — the same bar that carries the
+                  chat list and the Life-Chain — so this control opens the dock if
+                  it is collapsed and puts the reference on it. Pressed when the
+                  dock is already showing it.
+                */}
+                <button
+                  type="button"
+                  className="window-titlebar__btn window-titlebar__shortcuts"
+                  aria-label="Keyboard shortcuts"
+                  title="Keyboard shortcuts"
+                  aria-pressed={chatOpen && chatSurface === "shortcuts"}
+                  onClick={() => {
+                    setChatOpen(true);
+                    setChatSurface("shortcuts");
+                  }}
+                >
+                  <Keyboard size={15} aria-hidden />
+                </button>
                 <SettingsMenu
                   className="window-titlebar__settings"
                   placement="bottom-end"
