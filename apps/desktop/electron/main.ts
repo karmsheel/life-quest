@@ -93,9 +93,8 @@ const E2E: {
   updateLauncher?: { exe?: unknown; args?: unknown };
   /**
    * How often the update watch reads the feed, in milliseconds. Present only for
-   * the polling rig: the product's cadence is `UPDATE_POLL_MS` (fifteen
-   * minutes), and a rig that waited a quarter of an hour for a tick would not
-   * test the watch at all.
+   * the polling rig: the product's cadence is `UPDATE_POLL_MS` (one hour), and a
+   * rig that waited an hour for a tick would not test the watch at all.
    */
   updatePollMs?: number;
   /**

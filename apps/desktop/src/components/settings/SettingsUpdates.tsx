@@ -7,12 +7,11 @@ import { useUpdate } from "@/state/UpdateProvider";
 /**
  * Updates: what this build is, and what the feed last said.
  *
- * The cadence is the app's own: a check at launch, and main's watch every fifteen
- * minutes after that, so a release published while the studio is open turns up
- * here (and as a notice) without anyone asking. This page does not add another
- * poller. What it adds is a "Check now", which is the operator asking by hand, so
- * it passes `force` and re-reads the feed instead of replaying the session's
- * answer.
+ * The cadence is the app's own: a check at launch, and main's watch every hour
+ * after that, so a release published while the studio is open turns up here (and
+ * as a notice) without anyone asking. This page does not add another poller. What
+ * it adds is a "Check now", which is the operator asking by hand, so it passes
+ * `force` and re-reads the feed instead of replaying the session's answer.
  *
  * The feed is public, so there is no token to configure here: the check is one
  * anonymous read. The Developer page is where the upgrade affordance itself can
@@ -77,8 +76,8 @@ export function SettingsUpdates() {
 
       <p className="settings-card__desc">
         The release feed is public, so this check holds no token and nothing is
-        stored for it. LifeQuest asks at launch and then every fifteen minutes
-        while it is open, so a new release is reported without a click;{" "}
+        stored for it. LifeQuest asks at launch and then every hour while it is
+        open, so a new release is reported without a click;{" "}
         <em>Check now</em> — like the version number at the foot of the rail — is
         you asking by hand.
       </p>

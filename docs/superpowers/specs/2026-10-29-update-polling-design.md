@@ -53,7 +53,7 @@ does not have.
 
 Polling is the shape that fits the product: one anonymous GET of the public
 `releases/latest` feed, on a timer, in main. GitHub's unauthenticated rate limit
-(60 requests/hour/IP) is far above four reads an hour.
+(60 requests/hour/IP) is far above one read an hour.
 
 ---
 
@@ -62,7 +62,7 @@ Polling is the shape that fits the product: one anonymous GET of the public
 | # | Topic | Decision |
 |---|--------|----------|
 | 1 | Where | **Main process.** A renderer timer is throttled when the window is hidden, and a hidden app is exactly when OS notification matters. Main owns the clock; the renderer owns the drawing. |
-| 2 | Cadence | **Every 15 minutes** (`UPDATE_POLL_MS`), armed once when the app is ready, beside the FX refresh loop. The launch check is unchanged. An in-flight read is skipped, so reads never queue. |
+| 2 | Cadence | **Every hour** (`UPDATE_POLL_MS`), armed once when the app is ready, beside the FX refresh loop. The launch check is unchanged. An in-flight read is skipped, so reads never queue. |
 | 3 | Channel | One push channel, `update:decision` → `onUpdateDecision`, carrying the feed's answer (`available` or `current`). Main has no polling state the renderer re-derives: the feed's latest answer is the one on screen. |
 | 4 | Notice | An in-app card at the foot of the content column — the version, the running build, *View update*, and a dismissal. Portalled to `body`, `role="status"`, `aria-live="polite"`, never focused, never modal. |
 | 5 | Notice lifetime | Once per release per session. A dismissal is final for that release. A release that disappears from the feed clears the notice; if it comes back, it is news again. |

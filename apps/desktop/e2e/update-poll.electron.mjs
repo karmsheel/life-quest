@@ -22,8 +22,8 @@
  *
  * Isolation: `LIFEQUEST_E2E` points the app at a throwaway profile, keeps the
  * window off the operator's desktop, replaces the feed with this rig's server, and
- * shortens the watch's interval through the seam — the product reads every fifteen
- * minutes; a rig that waited that long would not be testing the watch at all.
+ * shortens the watch's interval through the seam — the product reads every hour;
+ * a rig that waited that long would not be testing the watch at all.
  *
  * Run from `apps/desktop`, with the dev server up and the main bundle built:
  *

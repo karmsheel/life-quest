@@ -565,12 +565,12 @@ export function resetUpdateSession(): void {
  * The launch's check answers for the moment the operator arrives. A release
  * published while they are working used to stay invisible until they clicked the
  * build number — and they had no reason to click it, because nothing told them
- * there was news (that is the reported fault this cadence repairs). Fifteen
- * minutes puts a fresh release in front of a running studio within a quarter of
- * an hour, and the feed is one anonymous GET of a public document: four reads an
- * hour at most, and no credential anywhere.
+ * there was news (that is the reported fault this cadence repairs). An hour puts
+ * a fresh release in front of a running studio within an hour of it being
+ * published, and the feed is one anonymous GET of a public document: one read an
+ * hour, and no credential anywhere.
  */
-export const UPDATE_POLL_MS = 15 * 60_000;
+export const UPDATE_POLL_MS = 60 * 60_000;
 
 /** The fastest a caller may ask the watch to run — the e2e rig uses this floor. */
 export const MIN_UPDATE_POLL_MS = 250;
