@@ -22,7 +22,7 @@ existing domain.
 - **Receipts**: the chat dock composer, beside the field.
 - **Restore**: **Settings → Vault → Books**.
 
-Back to [Wiki home](./README.md).
+Back to [Wiki home](./index.md).
 
 ## What it is for
 

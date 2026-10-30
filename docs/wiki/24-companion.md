@@ -6,7 +6,7 @@ agent loop, memory, skills and transcripts to a Hermes profile, and the studio
 shell will not open until that companion is ready. What remains in the studio is
 what only the studio can own — the vault, the tools that read and write it, the
 locks, and the [Decisions](./23-decisions.md) queue that reviews agent writes.
-See also [Wiki home](./README.md).
+See also [Wiki home](./index.md).
 
 ## Where it lives
 

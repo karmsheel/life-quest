@@ -11,7 +11,7 @@ Architecture plans the week; it does not record the day. The live day belongs to
 - Page, not a sheet. It is the only place day types, the default week, and real weeks are edited.
 - A **Year** selector sits in the page header, next to the heading **Architecture**. It shares its selection with the [Life Map](./11-life-map.md): picking a year on one page opens the other on the same year.
 
-Return to [Wiki home](./README.md).
+Return to [Wiki home](./index.md).
 
 ## What it is for
 
@@ -112,7 +112,7 @@ Loading shows **Loading map…**; a map that cannot be read shows the vault's er
 
 ## Related
 
-- [Wiki home](./README.md)
+- [Wiki home](./index.md)
 - [Doctrine](./07-doctrine.md)
 - [Goals](./10-goals.md)
 - [Life Map](./11-life-map.md)

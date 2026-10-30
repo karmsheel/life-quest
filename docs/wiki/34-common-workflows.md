@@ -3,7 +3,7 @@
 Recipes for the things an operator actually does, in order, with the exact
 controls. Each recipe links to the page that explains the feature in full.
 
-Return to [Wiki home](./README.md).
+Return to [Wiki home](./index.md).
 
 ## Set up LifeQuest from zero
 

@@ -4,7 +4,7 @@ The Log is the vault's own history: an append-only feed of what changed, when,
 who changed it, and which domain it belonged to. It is the one surface in the
 studio that is purely a record. Nothing on it can be edited, deleted or
 reordered, because the file behind it has exactly one writer and that writer only
-appends. See also [Wiki home](./README.md).
+appends. See also [Wiki home](./index.md).
 
 ## Where it lives
 

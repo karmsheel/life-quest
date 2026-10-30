@@ -17,7 +17,7 @@ as a page with the composer at the top and the library below it.
 - There is no per-note route. Clicking a note opens it in the composer on the
   same page.
 
-Back to [Wiki home](./README.md).
+Back to [Wiki home](./index.md).
 
 ## What it is for
 

@@ -5,7 +5,7 @@ carries the companion's own state, the welcome screen carries vault-open errors,
 banner carries external file changes, and Settings carries the update, door and
 restore results. This page maps what you see to what it means and what to do about
 it. It only describes controls and messages the app actually has. Start from
-[Wiki home](./README.md).
+[Wiki home](./index.md).
 
 ## Where it lives
 

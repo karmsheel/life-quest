@@ -13,7 +13,7 @@ into tasks, goals and details worth filing.
 - Surface: a full page in the centre pane: the shelf of jobs with an inline editor that
   opens over the list.
 
-This page is part of the [Wiki home](./README.md).
+This page is part of the [Wiki home](./index.md).
 
 ## What it is for
 

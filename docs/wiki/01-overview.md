@@ -142,7 +142,7 @@ coherent and an agent that quietly rewrites your life.
 
 ## Related
 
-- [Wiki home](./README.md)
+- [Wiki home](./index.md)
 - [Getting started](./02-getting-started.md)
 - [The studio](./03-the-studio.md)
 - [The vault](./04-the-vault.md)

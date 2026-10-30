@@ -10,7 +10,7 @@ You manage goals on the **Goals** page. The same records appear on the **Dashboa
 - Plan wing's default page: opening Plan lands here unless the wing remembers another Plan page.
 - The records live in `.lifequest/goals.json`; they are not markdown files and not part of the Life Map's year records.
 
-Return to [Wiki home](./README.md).
+Return to [Wiki home](./index.md).
 
 ## What it is for
 
@@ -122,7 +122,7 @@ The companion can read goals with `list_goals`, but its writes do not land direc
 
 ## Related
 
-- [Wiki home](./README.md)
+- [Wiki home](./index.md)
 - [Life Map](./11-life-map.md)
 - [Projects](./12-projects.md)
 - [Reviews](./18-reviews.md)

@@ -11,7 +11,7 @@ The Life Map draws events, not tasks and not goal records. Tasks are on [Act](./
 - The selected year is session state shared with Architecture; it is not written into the vault.
 - Map data lives in `.lifequest/map.json`: the years, their events, their month text, and the detached weeks that Architecture edits.
 
-Return to [Wiki home](./README.md).
+Return to [Wiki home](./index.md).
 
 ## What it is for
 
@@ -112,7 +112,7 @@ The **Add event** and **Add** buttons are shown only on a live year. On an archi
 
 ## Related
 
-- [Wiki home](./README.md)
+- [Wiki home](./index.md)
 - [Architecture](./08-architecture.md)
 - [Goals](./10-goals.md)
 - [Daily Schedule](./13-daily-schedule.md)

@@ -5,7 +5,7 @@ LifeQuest is a two-workspace npm monorepo: the Electron + Vite + React studio in
 maintainer's path — how to run it, how the dev loop reloads main-process changes,
 what `npm test` actually runs, and how a build becomes a Windows release. If you
 only want to *use* the app, read [Getting started](./02-getting-started.md)
-instead. Start from [Wiki home](./README.md).
+instead. Start from [Wiki home](./index.md).
 
 ## Where it lives
 

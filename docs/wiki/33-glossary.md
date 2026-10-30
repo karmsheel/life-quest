@@ -3,7 +3,7 @@
 Every term this wiki uses, defined once. Where a term belongs to a page, the
 definition links there for the full story.
 
-Return to [Wiki home](./README.md).
+Return to [Wiki home](./index.md).
 
 **Act** — the Execute wing's task board. Columns of tasks, drag and keyboard
 reordering, and a task editor. See [Act](./14-act.md).
@@ -236,6 +236,6 @@ cannot change while weekly review or planning files exist.
 
 ## Related
 
-- [Wiki home](./README.md)
+- [Wiki home](./index.md)
 - [Common workflows](./34-common-workflows.md)
 - [Overview](./01-overview.md)

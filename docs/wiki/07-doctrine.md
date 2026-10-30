@@ -11,7 +11,7 @@ This page covers the documents and their editor. For the pages that host them, s
 - The Strategy (How) document also opens from the Plan wing, rail label **Architecture**, icon Target, route `/track`.
 - The editor for one document is a page at `/dream/:slug/:kind`, `/vision/:slug/:kind`, or `/track/:slug/:kind`. The index and editor are pages, not sheets.
 
-Return to [Wiki home](./README.md).
+Return to [Wiki home](./index.md).
 
 ## What it is for
 
@@ -115,7 +115,7 @@ With no live domains, either index says **No live domains yet.**
 
 ## Related
 
-- [Wiki home](./README.md)
+- [Wiki home](./index.md)
 - [Domains](./05-domains.md)
 - [Architecture](./08-architecture.md)
 - [Ideal State](./09-ideal-state.md)

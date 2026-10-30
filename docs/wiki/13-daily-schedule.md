@@ -15,7 +15,7 @@ rewrites the plan in Architecture.
 - Surface: a full page in the centre pane. It always shows the local calendar date —
   there is no date switcher and no past-day browsing.
 
-This page is part of the [Wiki home](./README.md).
+This page is part of the [Wiki home](./index.md).
 
 ## What it is for
 

@@ -10,7 +10,7 @@ Each document is a plain markdown file in the vault with the title in its frontm
 - Page, not a sheet. The rail keeps it beside Dream and Vision because it is also about the future being aimed at.
 - Files live at `notes/ideal-state/<id>.md`; the id is the file's name (minus `.md`) and the title is stored inside the file.
 
-Return to [Wiki home](./README.md).
+Return to [Wiki home](./index.md).
 
 ## What it is for
 
@@ -116,7 +116,7 @@ The editor and the strip are one workspace; there is no separate preview pane an
 
 ## Related
 
-- [Wiki home](./README.md)
+- [Wiki home](./index.md)
 - [Doctrine](./07-doctrine.md)
 - [The vault](./04-the-vault.md)
 - [Documents](./22-documents.md)

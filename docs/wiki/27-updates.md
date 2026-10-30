@@ -5,7 +5,7 @@ without installing anything you did not ask for. The version number at the foot
 of the rail is the whole affordance: quiet text while you are current, a glowing
 button when GitHub names something newer, and one dialog that offers to download
 the installer, hand it to Windows, and step aside so it can replace the app. See
-also [Wiki home](./README.md).
+also [Wiki home](./index.md).
 
 ## Where it lives
 

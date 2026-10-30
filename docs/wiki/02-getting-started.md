@@ -4,7 +4,7 @@ LifeQuest is a desktop studio that opens a **vault**: a folder on your computer
 that holds your life data as plain files. This page takes you from the
 prerequisites to a working first vault, and explains the one thing that can stop
 the app from opening at all — the companion. Read
-[the wiki home](./README.md) first if you want the shape of the product before
+[the wiki home](./index.md) first if you want the shape of the product before
 the install.
 
 ## Where it lives

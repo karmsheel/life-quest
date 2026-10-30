@@ -14,7 +14,7 @@ fall inside the period it covers.
 - Surface: a full page in the centre pane, with the editor and the **Earlier notes**
   strip beside it (the strip moves to the page's other edge when the chat dock swaps sides).
 
-This page is part of the [Wiki home](./README.md).
+This page is part of the [Wiki home](./index.md).
 
 ## What it is for
 

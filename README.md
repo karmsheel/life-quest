@@ -8,7 +8,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 
 | Doc | Description |
 |-----|-------------|
-| [Project wiki](docs/wiki/README.md) | The operator's guide: every feature, how to use it, and how the system works |
+| [Project wiki](docs/wiki/index.md) | The operator's guide: every feature, how to use it, and how the system works |
 | [VISION.md](VISION.md) | Acceptance policy for future change |
 | [PRODUCT.md](PRODUCT.md) | Users, purpose, anti-references |
 | [DESIGN.md](DESIGN.md) | Token contract and primitives |

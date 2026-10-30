@@ -19,7 +19,7 @@ your data is a file in your vault, and nothing posts until you accept it.
   on this page when the Financial domain is live; the kit itself is covered in
   [Finance kit](./20-finance-kit.md).
 
-Back to [Wiki home](./README.md).
+Back to [Wiki home](./index.md).
 
 ## What it is for
 

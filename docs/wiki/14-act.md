@@ -13,7 +13,7 @@ day's tasks are actually put on a clock.
 - Surface: a full page in the centre pane: the board, then **Run an agent**, then
   **Recent activity**.
 
-This page is part of the [Wiki home](./README.md).
+This page is part of the [Wiki home](./index.md).
 
 ## What it is for
 

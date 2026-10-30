@@ -6,7 +6,7 @@ the log of decisions you make yourself. Every agent write that can change meanin
 an ingest mapping, a ledger row, a dashboard view, an agent pairing — is frozen
 into a proposal file and waits here. Approving it writes the change; rejecting it
 leaves the vault exactly as it was. Nothing else in the app can approve an
-agent's write. See also [Wiki home](./README.md).
+agent's write. See also [Wiki home](./index.md).
 
 ## Where it lives
 

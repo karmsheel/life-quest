@@ -6,7 +6,7 @@ them and a top bar inside the main column. The rail navigates, the top bar
 switches wings and the domain lens, and the chat pane keeps the companion beside
 whatever you are doing. Settings and Decisions are not pages in this layout; they
 are sheets drawn over it. This page explains that layout; [the wiki
-home](./README.md) has the full page index.
+home](./index.md) has the full page index.
 
 ## Where it lives
 

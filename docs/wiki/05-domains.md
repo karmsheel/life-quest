@@ -5,7 +5,7 @@ database, pages, saved views and its own Dashboard board, all in one folder in t
 vault. The **domain lens** in the top bar chooses which life area the domain-scoped
 screens are showing, and **Overview** is the virtual lens that shows all of them
 together. A new vault seeds four domains; you can add, rename, archive and delete
-them. [The wiki home](./README.md) has the full page index.
+them. [The wiki home](./index.md) has the full page index.
 
 ## Where it lives
 

@@ -6,7 +6,7 @@ external MCP agents you have connected over the pairing doors, and the Hermes
 agents you have hired from a scan. It also holds the grant switches — which
 domains an agent may reach, whether it may write, and whether it may touch the
 Schedule — so the roster is not a list of names but the place authority is given
-and taken away. See also [Wiki home](./README.md).
+and taken away. See also [Wiki home](./index.md).
 
 ## Where it lives
 

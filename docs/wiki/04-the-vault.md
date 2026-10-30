@@ -4,7 +4,7 @@ A vault is a folder on your computer that holds your life as plain files: doctri
 goals, projects, the Life Map, journals, reviews, decisions, your own pages and
 documents, and one SQLite file per domain for tabular data. Opening a vault is how
 you identify yourself to LifeQuest — there is no account and no hosted copy. The
-folder is the database. [The wiki home](./README.md) has the full page index.
+folder is the database. [The wiki home](./index.md) has the full page index.
 
 ## Where it lives
 

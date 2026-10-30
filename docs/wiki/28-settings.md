@@ -4,7 +4,7 @@ Settings is one sheet over the app, not a page in the rail. It holds nine tabs, 
 a fixed order: from the theme and skin you use, through the Hermes profile your
 companion runs on, to the update preview under **Developer**. A search field above
 the tab list narrows the list in place, so a setting you can name is two keystrokes
-away. [The wiki home](./README.md) has the full page index.
+away. [The wiki home](./index.md) has the full page index.
 
 ## Where it lives
 

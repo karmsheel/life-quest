@@ -5,7 +5,7 @@ privileged half is Node inside Electron, the file engine is a separate workspace
 package, and the companion is Hermes running as a local host the app attaches to.
 This page is the map: which process owns what, how the pieces talk, where a write
 lands, and what a repaint waits for. It assumes you have read
-[Wiki home](./README.md).
+[Wiki home](./index.md).
 
 ## Where it lives
 

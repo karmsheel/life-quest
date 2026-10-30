@@ -10,7 +10,7 @@ The board is a control the operator can open and close, not a fixed layout. A ne
 board starts with the built-in cards, and everything on it is meant to be
 arranged by hand.
 
-Return to [Wiki home](./README.md).
+Return to [Wiki home](./index.md).
 
 ## Where it lives
 

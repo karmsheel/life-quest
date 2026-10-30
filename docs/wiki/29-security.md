@@ -6,7 +6,7 @@ set of doors the app opens on purpose: the OS secure store for API keys, two
 loopback MCP doors for agents, the GitHub release feed for updates, and the one
 privileged Electron window. This page says where secrets live, which boundaries
 the code enforces, and what the app refuses to do. Read alongside
-[Wiki home](./README.md).
+[Wiki home](./index.md).
 
 ## Where it lives
 

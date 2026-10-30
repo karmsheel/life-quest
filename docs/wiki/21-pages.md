@@ -16,7 +16,7 @@ pinned to a Dashboard so one click gets you back to it.
 - A page pin appears on a Dashboard board and opens the same canvas. Pins are
   added from the Dashboard, not from the Pages page.
 
-Back to [Wiki home](./README.md).
+Back to [Wiki home](./index.md).
 
 ## What it is for
 

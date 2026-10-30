@@ -13,7 +13,7 @@ you still have it.
 - Surface: a full page in the centre pane. The chat dock also has a Life-Chain view of
   the same chain (see below).
 
-This page is part of the [Wiki home](./README.md).
+This page is part of the [Wiki home](./index.md).
 
 ## What it is for
 

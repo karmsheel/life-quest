@@ -16,7 +16,7 @@ has the schema, and a new project becomes a file the moment you create it.
 - Surface: both are full pages in the centre pane, not sheets. The chat dock stays
   beside them.
 
-This page is part of the [Wiki home](./README.md).
+This page is part of the [Wiki home](./index.md).
 
 ## What it is for
 

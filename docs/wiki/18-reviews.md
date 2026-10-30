@@ -26,7 +26,7 @@ under `/review/` redirects to `/review/weekly`. The top bar lens still applies:
 with **Overview** selected the active scope is the overall review; with a domain
 selected the active scope is that domain's section.
 
-Back to [Wiki home](./README.md).
+Back to [Wiki home](./index.md).
 
 ## What it is for
 
