@@ -342,7 +342,8 @@ const lifequest = {
   companionProfilesList: () => ipcRenderer.invoke("companion:profilesList"),
   companionUseProfile: (name: string) =>
     ipcRenderer.invoke("companion:useProfile", name),
-  companionSessionsList: () => ipcRenderer.invoke("companion:sessionsList"),
+  companionSessionsList: (options?: { includeArchived?: boolean }) =>
+    ipcRenderer.invoke("companion:sessionsList", options),
   companionSessionCreate: (title: string) =>
     ipcRenderer.invoke("companion:sessionCreate", title),
   companionSessionMessages: (id: string) =>

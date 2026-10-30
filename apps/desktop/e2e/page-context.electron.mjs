@@ -436,7 +436,8 @@ async function main() {
       !/^Bar$/m.test(dashBody) &&
       !/^Line$/m.test(dashBody) &&
       !/^Lock$/m.test(dashBody),
-    // The heading's badge is joined with a space rather than welded on.
+    // The heading and its badge are joined with a space rather than welded on:
+    // the badge rides the title again, as it always did.
     headingIsSpaced: /^# Overview Unlocked$/m.test(dashBody),
     saysAlreadyExists: /already exists on that screen/.test(dashText),
     saysNoDuplicate: /instead of proposing a duplicate/.test(dashText),

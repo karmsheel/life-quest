@@ -12,7 +12,9 @@ export const WING_LABELS: Record<WingId, string> = {
   home: "Home",
   define: "Define",
   plan: "Plan",
-  execute: "Execute",
+  // The wing is the act phase of the loop; its id stays `execute` so stored
+  // paths, settings and question scopes keep resolving.
+  execute: "Act",
   review: "Review",
 };
 

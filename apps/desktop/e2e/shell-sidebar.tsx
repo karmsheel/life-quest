@@ -40,7 +40,8 @@
  *     leading or bottom edge, on the rail's trailing edge, or on any edge of the
  *     dock. The studio has exactly one: the sheet's trailing edge, the seam with
  *     the dock. The line under the strip belongs to the top bar, and it must
- *     survive: lose it and the wing and domain selectors lose their underline.
+ *     survive: lose it and the domain lens loses its underline. The rail's own
+ *     band paints nothing of its own, so the line stops at the pane seam.
  * 17. Native bar left in place — a scroller whose gutter is the platform's own
  *     15-17px instead of the app's 8px, which is what a `::-webkit-scrollbar`
  *     rule that never applied looks like.
@@ -50,12 +51,19 @@
  *     cannot find, or one that never responds to the pointer. It is quiet at rest
  *     on purpose and must still be DRAWN; a custom scrollbar also follows its own
  *     region, not hover anywhere in the app.
- * 20. A frame back around either selector on the band — `.ui-segmented`'s shared
- *     hairline, sitting one pixel outside the active tab's own, is what made the
- *     wing switcher and the domain lens read as two concentric outlines in a row.
- *     The pair carries no outer frame; the fill is what sets each off the band,
- *     and the active tab keeps its line. Both halves are measured, so "frameless"
- *     cannot be satisfied by a control that stopped rendering its fill or its tab.
+ * 20. A frame back around the band's selector — `.ui-segmented`'s shared hairline,
+ *     sitting one pixel outside the active tab's own, is what made the old pair
+ *     (wing switcher + domain lens) read as concentric outlines in a row. The
+ *     domain lens carries no outer frame now; the fill is what sets it off the
+ *     band, and the active tab keeps its line. Both the frame and the fill are
+ *     measured, so "frameless" cannot be satisfied by a control that stopped
+ *     rendering its fill or its tab.
+ * 20a. The wing switcher back in the sheet — five tabs in the top bar again, or a
+ *     switcher in the rail's band that does not sit on the top bar's row, above
+ *     the wing's rows, or does not navigate. Its band is measured against the top
+ *     bar's box, and its trip (Home → Define → Home) against the rail's rows.
+ * 20b. The domain lens off-centre — one selector left in the sheet, so the band
+ *     must centre it; measured by comparing the lens's box to the band's.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page); everything else — the real AppShell, the real NavRail, the real
@@ -176,8 +184,16 @@ createRoot(root).render(
                 <div className="app-root__body">
                   <Routes>
                     <Route element={<AppShell />}>
+                      {/*
+                        One route for every path. The rail's wing switcher really
+                        navigates (that is part of what this rig measures), and a
+                        pathless layout route with no matching child would unmount
+                        the shell instead of leaving it on screen — the wing rows
+                        would then be missing on the way back, which would read as
+                        a switcher that does not work.
+                      */}
                       <Route
-                        path="/home"
+                        path="*"
                         element={
                           <div className="stub-page">
                             {/*

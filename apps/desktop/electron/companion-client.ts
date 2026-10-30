@@ -179,6 +179,12 @@ export type HermesSession = {
   lastActive: number | null;
   /** Durable sidebar flag: a pinned chat is never archived and never sinks out of the list. */
   pinned: boolean;
+  /**
+   * Durable flag: the chat is archived. Archived rows are listed only when the
+   * caller asked for them (the sidebar's view options), and the dock's working
+   * list never contains one.
+   */
+  archived: boolean;
 };
 
 /**
@@ -384,17 +390,28 @@ function sessionFromRow(r: SessionRow): HermesSession | null {
     preview: preview || null,
     lastActive: unixSeconds(r.last_active ?? r.last_activity_at ?? r.started_at),
     pinned: flag(r.pinned),
+    archived: flag(r.archived),
   };
 }
 
-export function sessionsFromPayload(payload: unknown): HermesSession[] {
+/**
+ * The list as the dock and the sidebar draw it.
+ *
+ * Hidden rows are Hermes Desktop's own business and never cross this boundary.
+ * Archived rows cross it only when `includeArchived` asks: the sidebar's view
+ * options are the one surface that shows them, greyed and restorable, and the
+ * working list (and the dock) must never contain one.
+ */
+export function sessionsFromPayload(
+  payload: unknown,
+  options: { includeArchived?: boolean } = {},
+): HermesSession[] {
   const out: HermesSession[] = [];
   for (const row of rowsOf(payload, ["sessions", "data", "items"])) {
     if (!row || typeof row !== "object") continue;
     const r = row as SessionRow;
-    // Archived and hidden rows belong to Hermes Desktop's recovery surface; the
-    // dock lists live chats only.
-    if (flag(r.hidden) || flag(r.archived)) continue;
+    if (flag(r.hidden)) continue;
+    if (flag(r.archived) && !options.includeArchived) continue;
     const session = sessionFromRow(r);
     if (session) out.push(session);
   }

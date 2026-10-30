@@ -28,6 +28,17 @@
  *     actually running.
  * 12. Bridge stubs masking real calls — anything the two surfaces reach for that
  *     is not named here must not throw.
+ * 13. A header without its controls — no search icon or view-options icon in
+ *     line with the "Chats" heading; or a search field that does not replace
+ *     that row (title and icons still drawn behind it, or the field landing
+ *     under the New chat button), does not take focus, or does not narrow the
+ *     rows; or a field that cannot be dismissed by its cross, a press outside
+ *     it, or Escape.
+ * 14. A view option that lies — hide/show archived not marked, the shown view
+ *     not asking the list for archived rows, archived rows openable or untagged,
+ *     or unarchive failing to rejoin the working list.
+ * 15. Archived chats leaking into the default view — the archived rows are only
+ *     drawn when the view asks for them, and never while the view is off.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page); everything else — the real ChatsSidebar, the real ChatPanel, the real
@@ -40,7 +51,12 @@ import { AppShell } from "@/components/shell/AppShell";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
-import type { CompanionStreamFrame, HermesSession } from "@/vite-env";
+import type { CompanionStreamFrame } from "@/vite-env";
+import {
+  createdSessionFromPayload,
+  sessionFromPayload,
+  sessionsFromPayload,
+} from "../electron/companion-client";
 import type { VaultSnapshot } from "@lifequest/vault-core/pure";
 import "@/styles/global.css";
 
@@ -54,6 +70,7 @@ type HarnessWindow = {
   __lqDeleteCalls?: string[];
   __lqMessageCalls?: string[];
   __lqStopCalls?: string[];
+  __lqListOptions?: ({ includeArchived?: boolean } | null)[];
   __lqFinishChat?: (sessionId: string) => void;
   chatTabsHarnessReady?: Promise<void>;
 };
@@ -64,6 +81,7 @@ harness.__lqPatchCalls = [];
 harness.__lqDeleteCalls = [];
 harness.__lqMessageCalls = [];
 harness.__lqStopCalls = [];
+harness.__lqListOptions = [];
 
 const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value });
 
@@ -93,41 +111,104 @@ const SNAPSHOT = {
   weeklyFileCount: 0,
 } as unknown as VaultSnapshot;
 
-const ROWS: HermesSession[] = [
+/**
+ * The profile's session table, in the gateway's own row shape: `sessionsFromPayload`
+ * is the shipping parser, so the fixture exercises the real archived/hidden
+ * filter instead of a description of it. Five live chats, two archived ones and
+ * one hidden one: a view option that shows everything must show the archived
+ * pair and never the hidden one.
+ */
+type FixtureRow = {
+  id: string;
+  title: string | null;
+  preview: string | null;
+  last_active: number;
+  started_at: number;
+  pinned: number;
+  archived: number;
+  hidden: number;
+};
+
+const ROWS: FixtureRow[] = [
   {
     id: "chat-alpha",
     title: "Alpha planning",
     preview: "Plan the alpha launch",
-    lastActive: 1_700_000_300,
-    pinned: false,
+    last_active: 1_700_000_300,
+    started_at: 1_700_000_300,
+    pinned: 0,
+    archived: 0,
+    hidden: 0,
   },
   {
     id: "chat-bravo",
     title: "Bravo budget",
     preview: "Plan the bravo budget",
-    lastActive: 1_700_000_200,
-    pinned: false,
+    last_active: 1_700_000_200,
+    started_at: 1_700_000_200,
+    pinned: 0,
+    archived: 0,
+    hidden: 0,
   },
   {
     id: "chat-charlie",
     title: "Charlie retro",
     preview: "What went well",
-    lastActive: 1_700_000_100,
-    pinned: false,
+    last_active: 1_700_000_100,
+    started_at: 1_700_000_100,
+    pinned: 0,
+    archived: 0,
+    hidden: 0,
   },
   {
     id: "chat-pinned",
     title: "Pinned note",
     preview: "Keep this one",
-    lastActive: 1_700_000_050,
-    pinned: true,
+    last_active: 1_700_000_050,
+    started_at: 1_700_000_050,
+    pinned: 1,
+    archived: 0,
+    hidden: 0,
   },
   {
     id: "chat-delta",
     title: "Delta automation",
     preview: "Scheduled run",
-    lastActive: 1_700_000_400,
-    pinned: false,
+    last_active: 1_700_000_400,
+    started_at: 1_700_000_400,
+    pinned: 0,
+    archived: 0,
+    hidden: 0,
+  },
+  {
+    id: "chat-echo",
+    title: "Echo archived",
+    preview: "Old notes kept for reference",
+    last_active: 1_699_000_000,
+    started_at: 1_699_000_000,
+    pinned: 0,
+    archived: 1,
+    hidden: 0,
+  },
+  {
+    id: "chat-foxtrot",
+    title: "Foxtrot archived",
+    preview: "Another retired thread",
+    last_active: 1_698_000_000,
+    started_at: 1_698_000_000,
+    pinned: 0,
+    archived: 1,
+    hidden: 0,
+  },
+  {
+    id: "chat-hidden",
+    title: "Hidden scratch",
+    preview: "Hermes Desktop's own",
+    last_active: 1_697_000_000,
+    started_at: 1_697_000_000,
+    pinned: 0,
+    archived: 0,
+    hidden: 1,
   },
 ];
 
@@ -145,7 +226,7 @@ const MESSAGES: Record<string, { role: "user" | "assistant"; content: string }[]
   "chat-delta": [{ role: "user", content: "Delta seed" }],
 };
 
-const live = ROWS.map((row) => ({ ...row }));
+const rows: FixtureRow[] = ROWS.map((row) => ({ ...row }));
 const listeners = new Set<(frame: CompanionStreamFrame) => void>();
 /** The pending `companionChatStream` promise per chat, so the driver owns time. */
 const chatResolvers = new Map<string, (value: { ok: true }) => void>();
@@ -166,38 +247,44 @@ const bridge: Record<string, unknown> = {
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
   pinsList: () => ok({ locked: false, pins: [] }),
-  companionSessionsList: () => ok(live.map((row) => ({ ...row }))),
+  companionSessionsList: (options?: { includeArchived?: boolean }) => {
+    harness.__lqListOptions = [...(harness.__lqListOptions ?? []), options ?? null];
+    // The shipping parser and filter decide what the sidebar receives; hidden
+    // rows never cross, archived rows only when the view option asks.
+    return ok(sessionsFromPayload({ data: rows }, options));
+  },
   companionSessionMessages: (id: string) => {
     harness.__lqMessageCalls = [...(harness.__lqMessageCalls ?? []), id];
     return ok((MESSAGES[id] ?? []).map((message) => ({ ...message })));
   },
   companionSessionCreate: (title: string) => {
-    const row: HermesSession = {
+    const row: FixtureRow = {
       id: "chat-new",
-      title: title || "",
+      title: title || null,
       preview: null,
-      lastActive: Date.now() / 1000,
-      pinned: false,
+      last_active: Date.now() / 1000,
+      started_at: Date.now() / 1000,
+      pinned: 0,
+      archived: 0,
+      hidden: 0,
     };
-    live.unshift(row);
-    return ok({ ...row });
+    rows.unshift(row);
+    return ok(createdSessionFromPayload({ session: row }, title));
   },
   companionSessionPatch: (id: string, patch: Record<string, unknown>) => {
     harness.__lqPatchCalls = [...(harness.__lqPatchCalls ?? []), { id, patch }];
-    const row = live.find((candidate) => candidate.id === id);
+    const row = rows.find((candidate) => candidate.id === id);
     if (!row) return Promise.resolve({ ok: false as const, error: `no such chat ${id}` });
     if (typeof patch.title === "string") row.title = patch.title;
-    if (typeof patch.pinned === "boolean") row.pinned = patch.pinned;
-    if (patch.archived === true) {
-      const index = live.indexOf(row);
-      if (index >= 0) live.splice(index, 1);
-    }
-    return ok({ ...row });
+    if (typeof patch.pinned === "boolean") row.pinned = patch.pinned ? 1 : 0;
+    if (typeof patch.archived === "boolean") row.archived = patch.archived ? 1 : 0;
+    // Mirrors the shipping handler: the reply is parsed back into a session.
+    return ok(sessionFromPayload(row));
   },
   companionSessionDelete: (id: string) => {
     harness.__lqDeleteCalls = [...(harness.__lqDeleteCalls ?? []), id];
-    const index = live.findIndex((row) => row.id === id);
-    if (index >= 0) live.splice(index, 1);
+    const index = rows.findIndex((row) => row.id === id);
+    if (index >= 0) rows.splice(index, 1);
     return ok({ id, deleted: true });
   },
   companionModelOptions: () =>

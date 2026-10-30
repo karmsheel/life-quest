@@ -911,7 +911,11 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("companion:useProfile", (_e, name: string) =>
     companion.companionUseProfile(typeof name === "string" ? name : ""),
   );
-  ipcMain.handle("companion:sessionsList", () => companion.companionSessionsList());
+  ipcMain.handle("companion:sessionsList", (_e, options?: { includeArchived?: boolean }) =>
+    companion.companionSessionsList({
+      includeArchived: options?.includeArchived === true,
+    }),
+  );
   ipcMain.handle("companion:sessionCreate", (_e, title: string) =>
     companion.companionSessionCreate(typeof title === "string" ? title : ""),
   );

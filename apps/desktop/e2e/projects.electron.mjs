@@ -10,7 +10,7 @@
  * repeatable artifact; the test file `tests/projects-e2e.test.ts` refuses a
  * report that does not hold.
  *
- * The rig mounts the real `AppShell` (real `NavRail`, `TopBar`, `WingTabs`,
+ * The rig mounts the real `AppShell` (real `NavRail` with its wing switcher, real `TopBar`,
  * `WingProvider`/`wingForPath`) with the real `ProjectsPage` and `ProjectPage` on
  * their routes, against a recording stub vault. The claims, and what makes each
  * falsifiable:
@@ -19,7 +19,7 @@
  *     wing group reads Projects, Daily Schedule, Act with Projects active. This
  *     is the move from Plan to Execute, read off the shipped rail.
  *  2. `rail-plan` / `wing-switch` — clicking Plan shows Goals, Life Map,
- *     Architecture and NOT Projects; clicking Execute lands back on `/projects`
+ *     Architecture and NOT Projects; clicking Act lands back on `/projects`
  *     with the Projects row active. The route is the wing's own.
  *  3. `list-attributes` / `list-count` — every built-in attribute a row is
  *     specified to show is on the row: state note, status chip, priority, goal,
@@ -63,7 +63,7 @@ const SIZE = { width: 1280, height: 1000 };
 /** The detail page is long; a taller capture shows the header and the timeline. */
 const DETAIL_SIZE = { width: 1280, height: 1180 };
 
-const WING_TABS = ["Home", "Define", "Plan", "Execute", "Review"];
+const WING_TABS = ["Home", "Define", "Plan", "Act", "Review"];
 const EXECUTE_RAIL = ["Projects", "Daily Schedule", "Act"];
 const PLAN_RAIL = ["Goals", "Life Map", "Architecture"];
 const LIST_ORDER = ["p-exec", "p-paused", "p-closed", "p-trip"];
@@ -124,7 +124,7 @@ const SAMPLE = `(() => {
       active: a.classList.contains("nav-rail__link--active"),
     }));
   const tabs = Array.from(
-    document.querySelectorAll(".top-bar__wings .ui-segmented__option"),
+    document.querySelectorAll(".nav-rail__wings .ui-segmented__option"),
   ).map((b) => ({
     label: text(b),
     selected: b.getAttribute("aria-selected") === "true",
@@ -361,7 +361,7 @@ async function main() {
     })()`);
 
   const clickTestId = (id) => clickIn(`[data-testid="${id}"]`);
-  const wingTab = (label) => clickIn(".top-bar__wings .ui-segmented__option", label);
+  const wingTab = (label) => clickIn(".nav-rail__wings .ui-segmented__option", label);
 
   /** Type into a React-controlled field by driving the native value setter. */
   const typeInto = (selector, next) =>
@@ -489,7 +489,7 @@ async function main() {
     check(
       "rail-execute",
       initial.route === "/projects" &&
-        initial.activeTab === "Execute" &&
+        initial.activeTab === "Act" &&
         same(initial.rail.map((row) => row.label), EXECUTE_RAIL) &&
         initial.rail[0]?.href === "/projects" &&
         initial.rail[0]?.active === true,
@@ -593,7 +593,7 @@ async function main() {
     await waitFor(`document.querySelectorAll('[data-testid="project-row"]').length === 4`, "the All filter");
 
     // ── the wing wiring: Projects is Execute's, not Plan's ─────────────────
-    check("wing-tab-plan", await wingTab("Plan"), "no Plan tab in the top bar");
+    check("wing-tab-plan", await wingTab("Plan"), "no Plan tab in the rail switcher");
     await waitFor(`window.projectsHarnessRoute === "/goals"`, "the Plan tab to land on Goals");
     const plan = await sample();
     check(
@@ -603,13 +603,13 @@ async function main() {
         !plan.rail.some((row) => row.label === "Projects"),
       `active wing ${plan.activeTab}, rail ${JSON.stringify(plan.rail.map((row) => row.label))}`,
     );
-    check("wing-tab-execute", await wingTab("Execute"), "no Execute tab in the top bar");
-    await waitFor(`window.projectsHarnessRoute === "/projects"`, "the Execute tab to land back on Projects");
+    check("wing-tab-execute", await wingTab("Act"), "no Act tab in the rail switcher");
+    await waitFor(`window.projectsHarnessRoute === "/projects"`, "the Act tab to land back on Projects");
     await waitFor(`document.querySelectorAll('[data-testid="project-row"]').length === 4`, "the register to come back");
     const executeAgain = await sample();
     check(
       "wing-switch",
-      executeAgain.activeTab === "Execute" &&
+      executeAgain.activeTab === "Act" &&
         same(executeAgain.rail.map((row) => row.label), EXECUTE_RAIL) &&
         executeAgain.rail[0]?.active === true,
       `active wing ${executeAgain.activeTab}, rail ${JSON.stringify(executeAgain.rail.map((row) => [row.label, row.active]))}`,

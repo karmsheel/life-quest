@@ -2,6 +2,14 @@ import { useRef, type KeyboardEvent } from "react";
 import { WING_IDS, WING_LABELS, type WingId } from "./wing.ts";
 import { useWing } from "./WingProvider";
 
+/**
+ * The five wings, as one control.
+ *
+ * It lives in the sidebar's own top band, sharing the row with the sheet's top
+ * bar: the wings are the sidebar's first level, and the rows under them are the
+ * active wing's pages. It used to sit in the sheet's top bar, where it pushed
+ * the domain lens off the band's centre.
+ */
 export function WingTabs() {
   const { active, selectWing } = useWing();
   const refs = useRef<Partial<Record<WingId, HTMLButtonElement | null>>>({});
@@ -25,7 +33,7 @@ export function WingTabs() {
 
   return (
     <div
-      className="ui-segmented top-bar__wings"
+      className="ui-segmented nav-rail__wings"
       role="tablist"
       aria-label="App wing"
     >

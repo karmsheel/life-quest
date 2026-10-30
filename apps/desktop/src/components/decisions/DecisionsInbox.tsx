@@ -753,9 +753,14 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
             const d = row.decision;
             const title =
               tab === "pending" && d.proposedTitle ? d.proposedTitle : d.title;
-            const domainsLabel = d.domainSlugs
-              .map((slug) => domainLabel(slug, domains))
-              .join(", ");
+            // The domain reads as a badge beside the status pill, where the eye
+            // scans before it reads the card, rather than as a word buried in the
+            // meta line that repeats it. KAR-70 pairing Decisions belong to no
+            // domain, so they simply have no badge.
+            const domainChips = d.domainSlugs.map((slug) => ({
+              slug,
+              name: domainLabel(slug, domains),
+            }));
             const statusLabel = d.reason
               ? "Could not apply"
               : d.status === "approved" && d.amendedAt != null
@@ -806,18 +811,26 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
                       </span>
                     ) : null}
                   </span>
-                  <span className={`decision-status ${statusClass}`}>{statusLabel}</span>
+                  <span className="decision-card__kicker-right">
+                    {domainChips.map((chip) => (
+                      <span
+                        key={chip.slug}
+                        className="decision-domain"
+                        data-domain-slug={chip.slug}
+                        title={`Domain: ${chip.name}`}
+                      >
+                        {chip.name}
+                      </span>
+                    ))}
+                    <span className={`decision-status ${statusClass}`}>
+                      {statusLabel}
+                    </span>
+                  </span>
                 </div>
                 <div>
                   <h2 className="decision-card__title">{title}</h2>
                   <p className="decision-card__meta muted">
                     <span>{actorDisplayName(d.actor)}</span>
-                    {domainsLabel ? (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span>{domainsLabel}</span>
-                      </>
-                    ) : null}
                     <span aria-hidden="true">·</span>
                     <time dateTime={d.createdAt}>{formatWhen(d.createdAt)}</time>
                   </p>

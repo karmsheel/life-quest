@@ -71,7 +71,7 @@ const SAMPLE = `(() => {
     active: el.classList.contains("nav-rail__link--active"),
   }));
   const tabs = Array.from(
-    document.querySelectorAll(".top-bar__wings .ui-segmented__option"),
+    document.querySelectorAll(".nav-rail__wings .ui-segmented__option"),
   ).map((el) => ({
     label: text(el),
     selected: el.getAttribute("aria-selected") === "true",
