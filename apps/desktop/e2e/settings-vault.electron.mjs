@@ -131,7 +131,7 @@ const SAMPLE = `(() => {
               box: box(toggle),
               track: box(toggle.querySelector(".ui-toggle__track")),
               thumb: box(toggle.querySelector(".ui-toggle__thumb")),
-              labelBox: box(toggle.querySelector(".ui-toggle__label"))
+              labelBox: box(toggle.querySelector(".ui-toggle__caption"))
             }
           : null,
         exportButton: exportButton

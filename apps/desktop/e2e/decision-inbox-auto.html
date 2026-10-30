@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>LifeQuest decision inbox auto-open harness</title>
+    <style>
+      /* Rig chrome only. Everything inside the sheet, the page and the settings
+         panel is the app's own CSS. */
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+
+      .rig-chrome {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        height: 3rem;
+        padding: 0 0.75rem;
+        border-bottom: 1px solid var(--border-soft);
+        background: var(--canvas-base);
+      }
+
+      .rig-link {
+        padding: 0.25rem 0.5rem;
+        border: 0;
+        border-radius: var(--radius-xs);
+        background: transparent;
+        color: var(--text-muted);
+        font: inherit;
+        font-size: 0.75rem;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      .rig-link:hover {
+        background: var(--bg-subtle);
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./decision-inbox-auto.tsx"></script>
+  </body>
+</html>

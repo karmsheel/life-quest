@@ -2,6 +2,10 @@ import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
 import { chatQuestionsFromUnknown, parseChatQuestionsPatch } from "./chat-questions.ts";
+import {
+  decisionInboxFromUnknown,
+  parseDecisionInboxPatch,
+} from "./decision-inbox.ts";
 import { vaultPaths } from "./paths.ts";
 import { isWeekStartDay } from "./period.ts";
 import type { AgentHire, AutoApproveInsert, ChatQuestion, Result, VaultSettings, WeekStartDay } from "./types.ts";
@@ -198,6 +202,11 @@ export async function updateSettings(
     const currentQuestions: ChatQuestion[] = chatQuestionsFromUnknown(
       current.chatQuestions,
     );
+    // `next` is rebuilt from named fields rather than spread from `current`, so
+    // every field this function does not know about is dropped on the next
+    // unrelated write. The new switches therefore have to be carried through
+    // explicitly, normalized so a legacy vault gains the defaults.
+    const currentInbox = decisionInboxFromUnknown(current.decisionInbox);
     const next: VaultSettings = {
       hermesBaseUrl:
         patch.hermesBaseUrl !== undefined ? patch.hermesBaseUrl : current.hermesBaseUrl,
@@ -205,6 +214,7 @@ export async function updateSettings(
       weekStartDay: currentWeekStart,
       autoApproveInserts: currentInserts,
       chatQuestions: currentQuestions,
+      decisionInbox: currentInbox,
     };
 
     if (patch.hermesBaseUrl !== undefined) {
@@ -253,6 +263,20 @@ export async function updateSettings(
       const parsedQuestions = parseChatQuestionsPatch(patch.chatQuestions);
       if (!parsedQuestions.ok) return parsedQuestions;
       next.chatQuestions = parsedQuestions.value;
+    }
+
+    if (patch.decisionInbox !== undefined) {
+      // Merge the patch over the value already stored, not over the defaults:
+      // a caller that writes one switch (the settings page sends both, but the
+      // IPC channel is public) must not silently reset the other to its default
+      // and undo a choice the operator made. Field types are still validated on
+      // the merged object, so a hand-edited string is refused.
+      const parsedInbox = parseDecisionInboxPatch({
+        ...currentInbox,
+        ...patch.decisionInbox,
+      });
+      if (!parsedInbox.ok) return parsedInbox;
+      next.decisionInbox = parsedInbox.value;
     }
 
     await atomicWriteFile(paths.settingsJson, `${JSON.stringify(next, null, 2)}\n`);

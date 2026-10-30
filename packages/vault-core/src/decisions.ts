@@ -19,6 +19,7 @@ import {
   type DatabaseBatchDecisionBody,
   type DatabaseColumnType,
   type DatabaseDecisionBody,
+  type DecisionAmendment,
   type DecisionRecord,
   type DocumentKind,
   type DocumentTarget,
@@ -223,6 +224,24 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
   // dropped on every subsequent read.
   const reason = typeof raw.reason === "string" ? raw.reason : null;
 
+  // Operator amendments, rebuilt for the same reason `reason` is: a field that
+  // is written but not read back disappears on the next load of the inbox.
+  const amendedAt = typeof raw.amendedAt === "string" ? raw.amendedAt : null;
+  const amendedBy =
+    typeof raw.amendedBy === "object" &&
+    raw.amendedBy !== null &&
+    "type" in raw.amendedBy
+      ? (raw.amendedBy as Actor)
+      : null;
+  const amendmentNote =
+    typeof raw.amendmentNote === "string" ? raw.amendmentNote : null;
+  const originalProposedTitle =
+    typeof raw.originalProposedTitle === "string" ? raw.originalProposedTitle : null;
+  const originalProposedBodyMarkdown =
+    typeof raw.originalProposedBodyMarkdown === "string"
+      ? raw.originalProposedBodyMarkdown
+      : null;
+
   // For legacy records missing proposedTitle, keep the file title as the decision title.
   const title =
     typeof raw.title === "string" ? raw.title : `Proposed change to ${documentTargetLabel(target, "")}`;
@@ -242,6 +261,11 @@ export function normalizeDecision(raw: Record<string, unknown>): DecisionRecord 
     createdAt,
     resolvedAt,
     reason,
+    amendedAt,
+    amendedBy,
+    amendmentNote,
+    originalProposedTitle,
+    originalProposedBodyMarkdown,
   };
 }
 
@@ -744,6 +768,13 @@ export async function createDecision(
       createdAt: now,
       resolvedAt: null,
       reason: null,
+      // A freshly filed proposal has no amendment yet; the fields exist on every
+      // record so the inbox never has to guess whether it can trust their absence.
+      amendedAt: null,
+      amendedBy: null,
+      amendmentNote: null,
+      originalProposedTitle: null,
+      originalProposedBodyMarkdown: null,
     };
 
     await fs.mkdir(paths.decisionsDir, { recursive: true });
@@ -755,6 +786,300 @@ export async function createDecision(
       summary: `Created decision: ${title}`,
       payload: { id, targetType: input.target.type, title },
       actor: input.actor,
+    });
+    if (!logRes.ok) return logRes;
+
+    return { ok: true, value: decision };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Targets whose proposal body is a document's markdown rather than a JSON payload.
+ *
+ * Approval writes these bodies as prose (`applyApprovedBody`), so an amendment
+ * may be prose too. A review is prose as well: `applyLockedReviewBody` writes
+ * the body into the review file, and review-tools files markdown there. Every
+ * other target parses its body as JSON at apply time, and a body that does not
+ * parse is a Decision that can never land — so the amend path refuses it before
+ * the operator approves something doomed.
+ */
+function isProseTarget(target: DocumentTarget): boolean {
+  return target.type === "doctrine" || target.type === "library" || target.type === "review";
+}
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Where inside the proposal body the title approval writes actually lives.
+ *
+ * Approval reads the display title from two different places depending on the
+ * target: a project's `title` / a goal's `name` are written by their apply
+ * paths, while a doctrine or page writes `proposedTitle` over the file's title.
+ * An amendment that edited only the card's title would therefore fix the
+ * spelling on screen and still land the typo in the project file, so the body
+ * path is named here and the amend path keeps both in agreement.
+ */
+function bodyTitlePath(target: DocumentTarget, body: Record<string, unknown>): string[] | null {
+  switch (target.type) {
+    case "project":
+      if (body.type === "createProject") return ["title"];
+      if (body.type === "updateProject" && isRecordValue(body.patch)) return ["patch", "title"];
+      return null;
+    case "goal":
+      // A delete carries no name; every other goal command may set one.
+      return body.type === "deleteGoal" ? null : ["name"];
+    case "database":
+      // Only a create names the database itself; add-column's `name` is a column.
+      return body.op === "create-database" ? ["name"] : null;
+    case "day-template":
+      return typeof body.name === "string" ? ["name"] : null;
+    case "view":
+      return isRecordValue(body.spec) ? ["spec", "title"] : null;
+    default:
+      return null;
+  }
+}
+
+/** The title value at a body path, or null when the path is not a string there. */
+function titleAtPath(body: Record<string, unknown>, path: readonly string[]): string | null {
+  let cursor: unknown = body;
+  for (const key of path) {
+    if (!isRecordValue(cursor)) return null;
+    cursor = cursor[key];
+  }
+  return typeof cursor === "string" && cursor.trim() ? cursor.trim() : null;
+}
+
+/** Write a title into the body where approval will read it. */
+function setTitleAtPath(
+  body: Record<string, unknown>,
+  path: readonly string[],
+  title: string,
+): boolean {
+  let cursor: Record<string, unknown> = body;
+  for (const key of path.slice(0, -1)) {
+    const next = cursor[key];
+    if (!isRecordValue(next)) return false;
+    cursor = next;
+  }
+  cursor[path[path.length - 1]!] = title;
+  return true;
+}
+
+/** The proposal title the body itself carries, when it carries one. */
+function proposalTitleFromBody(
+  target: DocumentTarget,
+  body: Record<string, unknown>,
+): string | null {
+  const path = bodyTitlePath(target, body);
+  return path ? titleAtPath(body, path) : null;
+}
+
+/**
+ * Fields that name what a Decision applies to rather than what it says.
+ *
+ * An amendment is the operator correcting the proposal, not replacing what it
+ * targets: editing a project id would retarget the file approval writes, and
+ * swapping `op` or `type` would change the command under the card they read.
+ * Both are refused even through the exact-proposal editor.
+ */
+const STRUCTURAL_BODY_KEYS = ["id", "op", "type"] as const;
+
+function structuralBodyChange(before: unknown, after: unknown): string | null {
+  if (!isRecordValue(before) || !isRecordValue(after)) return null;
+  for (const key of STRUCTURAL_BODY_KEYS) {
+    const wasThere = key in before;
+    const isThere = key in after;
+    if (wasThere !== isThere) return `A proposal's ${key} cannot be added or removed`;
+    if (wasThere && before[key] !== after[key]) {
+      return `A proposal's ${key} cannot be changed; it names what the Decision applies to`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Let the operator correct a pending proposal without leaving the inbox.
+ *
+ * Approval applies whatever the record holds, so "approve with changes" needs no
+ * separate apply path: the amendment rewrites the pending proposal, and the
+ * existing approve path writes the edited version. What this function adds is
+ * the part a raw file edit would skip — the record keeps the proposal the agent
+ * actually filed (`originalProposed*`), the title and the body are kept in
+ * agreement for targets that write the title from the body, and the edit is
+ * named in the life log next to the proposal it changed.
+ *
+ * `revert` is the undo: it restores the proposal as filed and clears the
+ * amendment, so a correction the operator regrets is one click, not a re-prompt.
+ */
+export async function amendDecision(
+  rootPath: string,
+  id: string,
+  input: DecisionAmendment,
+  actor: Actor = USER_ACTOR,
+): Promise<Result<DecisionRecord>> {
+  try {
+    const paths = vaultPaths(rootPath);
+    const filePath = paths.decisionJson(id);
+    await assertPhysicalContainment(rootPath, filePath, "read");
+
+    let decision: DecisionRecord;
+    try {
+      decision = await readDecisionFile(filePath);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+        return { ok: false, error: `Decision not found: ${id}` };
+      }
+      throw e;
+    }
+
+    // An answered Decision is history. Editing it would change what the operator
+    // approved after the fact, and the applied file would no longer match it.
+    if (decision.status !== "pending") {
+      return { ok: false, error: `Decision is already ${decision.status}` };
+    }
+
+    const now = new Date().toISOString();
+
+    if (input.revert) {
+      if (decision.amendedAt === null || decision.originalProposedBodyMarkdown === null) {
+        return { ok: false, error: "This Decision has no original proposal to restore" };
+      }
+      decision = {
+        ...decision,
+        proposedTitle: decision.originalProposedTitle,
+        proposedBodyMarkdown: decision.originalProposedBodyMarkdown,
+        originalProposedTitle: null,
+        originalProposedBodyMarkdown: null,
+        amendedAt: null,
+        amendedBy: null,
+        amendmentNote: null,
+      };
+      await writeDecisionFile(rootPath, filePath, decision);
+      const revertLog = await appendLog(paths.root, {
+        domainSlug: decision.domainSlugs[0] ?? null,
+        type: "decision.amended",
+        summary: `Restored the original proposal: ${decision.title}`,
+        payload: {
+          id: decision.id,
+          targetType: decision.target.type,
+          reverted: true,
+        },
+        actor,
+      });
+      if (!revertLog.ok) return revertLog;
+      return { ok: true, value: decision };
+    }
+
+    if (input.proposedTitle === undefined && input.proposedBodyMarkdown === undefined) {
+      return { ok: false, error: "An amendment needs a new title or a new proposal body" };
+    }
+
+    let proposedTitle = decision.proposedTitle;
+    const titleGiven = input.proposedTitle !== undefined && input.proposedTitle !== null;
+    if (titleGiven) {
+      if (typeof input.proposedTitle !== "string" || !input.proposedTitle.trim()) {
+        return { ok: false, error: "proposedTitle must be a non-empty string" };
+      }
+      proposedTitle = input.proposedTitle.trim();
+    }
+
+    let proposedBodyMarkdown = decision.proposedBodyMarkdown;
+    const bodyGiven = input.proposedBodyMarkdown !== undefined;
+    if (bodyGiven) {
+      if (typeof input.proposedBodyMarkdown !== "string") {
+        return { ok: false, error: "proposedBodyMarkdown must be a string" };
+      }
+      if (isProseTarget(decision.target)) {
+        proposedBodyMarkdown = input.proposedBodyMarkdown;
+      } else {
+        let nextBody: unknown;
+        try {
+          nextBody = JSON.parse(input.proposedBodyMarkdown);
+        } catch {
+          return {
+            ok: false,
+            error: "The proposal body must be valid JSON for this Decision",
+          };
+        }
+        let oldBody: unknown = null;
+        try {
+          oldBody = JSON.parse(decision.proposedBodyMarkdown);
+        } catch {
+          // A stored proposal that is not JSON has no structure to protect; the
+          // body being amended parses, which is what the apply path needs.
+        }
+        const violation = structuralBodyChange(oldBody, nextBody);
+        if (violation) return { ok: false, error: violation };
+        proposedBodyMarkdown = input.proposedBodyMarkdown;
+      }
+    }
+
+    if (!isProseTarget(decision.target)) {
+      // A title-only edit still has to move the body, or approval keeps the old
+      // spelling. This is also how a caller that sends no body at all is safe.
+      if (titleGiven && !bodyGiven && proposedTitle !== null) {
+        try {
+          const body: unknown = JSON.parse(proposedBodyMarkdown);
+          if (isRecordValue(body)) {
+            const path = bodyTitlePath(decision.target, body);
+            if (path && setTitleAtPath(body, path, proposedTitle)) {
+              proposedBodyMarkdown = JSON.stringify(body);
+            }
+          }
+        } catch {
+          // The stored body was not JSON; there is no body field to keep in step.
+        }
+      }
+      // The body is authoritative wherever it carries the title approval writes,
+      // so the card and the file can never disagree after an amendment.
+      try {
+        const body: unknown = JSON.parse(proposedBodyMarkdown);
+        if (isRecordValue(body)) {
+          const derived = proposalTitleFromBody(decision.target, body);
+          if (derived !== null) proposedTitle = derived;
+        }
+      } catch {
+        // Same as above: nothing to derive from a prose-shaped stored body.
+      }
+    }
+
+    decision = {
+      ...decision,
+      proposedTitle,
+      proposedBodyMarkdown,
+      // Only the first amendment captures the original. A later correction must
+      // not overwrite what the agent asked for with an earlier correction.
+      originalProposedTitle:
+        decision.amendedAt === null
+          ? decision.proposedTitle
+          : decision.originalProposedTitle,
+      originalProposedBodyMarkdown:
+        decision.amendedAt === null
+          ? decision.proposedBodyMarkdown
+          : decision.originalProposedBodyMarkdown,
+      amendedAt: now,
+      amendedBy: actor,
+      amendmentNote:
+        typeof input.note === "string" && input.note.trim() ? input.note.trim() : null,
+    };
+
+    await writeDecisionFile(rootPath, filePath, decision);
+
+    const logRes = await appendLog(paths.root, {
+      domainSlug: decision.domainSlugs[0] ?? null,
+      type: "decision.amended",
+      summary: `Amended decision: ${decision.title}`,
+      payload: {
+        id: decision.id,
+        targetType: decision.target.type,
+        note: decision.amendmentNote,
+      },
+      actor,
     });
     if (!logRes.ok) return logRes;
 
@@ -1535,6 +1860,15 @@ export async function resolveDecision(
       const applyRes = await applyApprovedBody(rootPath, decision);
       if (!applyRes.ok) {
         if (applyRes.terminal) {
+          // An operator-edited proposal is not terminal in the sense KAR-64
+          // meant. That ruling rests on "re-approving re-validates identically",
+          // and it no longer holds once the proposal can be corrected: recording
+          // a rejection here would destroy the Decision the operator was in the
+          // middle of fixing. It stays pending, the error goes back to the inbox,
+          // and the operator can amend it again or reject it deliberately.
+          if (decision.amendedAt !== null) {
+            return { ok: false, error: applyRes.error };
+          }
           // Permanent: record the outcome instead of stranding the decision
           // pending forever with no way for anyone to act on it. The operator
           // did approve this, so `reason` is what tells the two rejections apart.

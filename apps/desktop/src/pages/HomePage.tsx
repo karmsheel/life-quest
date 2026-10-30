@@ -5,6 +5,7 @@ import type { DecisionRecord, LifeEvent, PageListEntry, Pin } from "@lifequest/v
 import { SYSTEM_PIN_KINDS, type SystemPinKind } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { Button } from "@/components/ui/Button";
+import { LockSwitch } from "@/components/ui/LockSwitch";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useVault } from "@/state/VaultProvider";
 import { useLiveData } from "@/state/LiveDataProvider";
@@ -766,10 +767,13 @@ export default function HomePage() {
   return (
     <div className="home-dashboard">
       <header className="home-dashboard__header">
-        <div>
+        <div className="home-dashboard__intro">
           <p className="home-dashboard__eyebrow">Dashboard</p>
           <h1 className="home-dashboard__title">
             {title}
+            {/* The state badge stays beside the page's name: it labels the board
+                the way it labels a doctrine document, and the corner is left to
+                the controls that change it. */}
             <span
               className={`doc-status-badge doc-status-badge--${locked ? "locked" : "unlocked"}`}
               data-locked={locked ? "true" : "false"}
@@ -784,14 +788,25 @@ export default function HomePage() {
               : "This dashboard is unlocked. You and the companion change it in place."}
           </p>
         </div>
-        <div className="home-dashboard__controls">
-          {/* The pin board's own control, at the top of the page with the page's
-              other controls. It is absent exactly when the row would be empty:
-              a locked board is not editable here, and a board with everything
-              pinned has nothing left to offer. */}
+        {/* The page's controls, in a row at the title's own top-right edge: the
+            lock switch and, when there is anything left to pin, the pin board's
+            menu beside it. Both wear the same height so the pair reads as one
+            row of controls, and the pin board is absent exactly when the row
+            would be empty: a locked board is not editable here, and a board
+            with everything pinned has nothing left to offer. */}
+        <div className="page-corner" data-testid="home-page-corner">
+          <LockSwitch
+            locked={locked}
+            busy={lockBusy}
+            onToggle={() => void onToggleLock()}
+            label={locked ? "Unlock this dashboard" : "Lock this dashboard"}
+            testId="board-lock-toggle"
+            className="page-corner__action"
+          />
           {canAdd ? (
             <Button
-              variant="outline"
+              variant="ghost"
+              className="page-corner__pinboard page-corner__action"
               aria-expanded={addOpen}
               data-testid="board-add-toggle"
               onClick={() => setAddOpen((wasOpen) => !wasOpen)}
@@ -800,14 +815,6 @@ export default function HomePage() {
               {addOpen ? "Hide pin board" : "Pin board"}
             </Button>
           ) : null}
-          <Button
-            variant={locked ? "primary" : "outline"}
-            onClick={() => void onToggleLock()}
-            disabled={lockBusy}
-            data-testid="board-lock-toggle"
-          >
-            {lockBusy ? "Saving…" : locked ? "Unlock" : "Lock"}
-          </Button>
         </div>
       </header>
 

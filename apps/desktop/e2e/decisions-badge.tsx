@@ -9,6 +9,12 @@
  * to `vault:dataChanged`, re-read the vault, count what is pending, and mark an
  * arrival for a few seconds.
  *
+ * The count is GLOBAL: every pending Decision is counted, whichever domain filed
+ * it. Filtering it by the active domain lens is the second half of the same
+ * report — the companion filed for other domains and the badge stayed silent
+ * because the operator's lens was elsewhere. A lens-scoped reading of Decisions
+ * belongs to the dashboard's own pin, not to the rail's governance shelf.
+ *
  * WHAT THIS RIG IS, AND WHAT IT IS NOT
  *
  * It renders the REAL `NavRail` inside the REAL `VaultProvider`,
@@ -74,6 +80,7 @@ import type {
   DomainRecord,
   VaultSnapshot,
 } from "@lifequest/vault-core";
+import { domainLens, overviewLens } from "@lifequest/vault-core/pure";
 import { NavRail } from "@/components/shell/NavRail";
 import { WingProvider } from "@/components/shell/WingProvider";
 import { LiveDataProvider } from "@/state/LiveDataProvider";
@@ -255,8 +262,16 @@ type HarnessWindow = Window & {
   decisionsBadgeUnexpectedCalls?: string[];
   decisionsBadgeBooted?: boolean;
   decisionsBadgeScreen?: () => Screen;
-  /** The agent's filing: a pending Decision written, then the one event the page hears. */
-  decisionsBadgeFile?: (title?: string) => string;
+  /**
+   * The agent's filing: a pending Decision written, then the one event the page
+   * hears. `domainSlug` is which domain filed it — the cross-lens claim files for
+   * a domain the lens is not on.
+   */
+  decisionsBadgeFile?: (title?: string, domainSlug?: string) => string;
+  /** The app's own lens setter, so a lens switch is the real one. */
+  decisionsBadgeSetLens?: (slug: string | null) => boolean;
+  /** The lens the rail is actually under: null in Overview, else the slug. */
+  decisionsBadgeLens?: () => string | null;
   /** A Decision resolved in another window: status flipped in the vault, then the event. */
   decisionsBadgeResolve?: (id: string) => boolean;
   /** Sample the badge on a timer from before a filing. */
@@ -331,9 +346,9 @@ function screen(): Screen {
 
 harness.decisionsBadgeScreen = screen;
 
-harness.decisionsBadgeFile = (title) => {
+harness.decisionsBadgeFile = (title, domainSlug = "financial") => {
   vault.seq += 1;
-  const decision = makeDecision(vault.seq);
+  const decision = makeDecision(vault.seq, domainSlug);
   if (title) {
     decision.title = title;
     decision.proposedTitle = title;
@@ -452,13 +467,16 @@ const stubs: Record<string, (...args: unknown[]) => Promise<unknown> | unknown> 
     return ok(vault.decisions.map((decision) => ({ ...decision })));
   },
   // The rail renders the real `UpdateBadge`, so the real `UpdateProvider` asks
-  // its own channel at mount. Answering it here is what keeps "unexpected bridge
-  // calls" an assertion about the badge rather than about the update feed.
+  // its own channel at mount, and subscribes to the watch's push channel (the
+  // app's clock is not this page's business). Answering both here is what keeps
+  // "unexpected bridge calls" an assertion about the badge rather than about the
+  // update feed.
   updateCheck: async () => ({
     ok: true,
     decision: { state: "current", current: appVersion, latest: appVersion },
   }),
   onUpdateProgress: () => () => {},
+  onUpdateDecision: () => () => {},
 };
 
 (window as unknown as { lifequest: object }).lifequest = new Proxy(stubs, {
@@ -498,6 +516,34 @@ function MountProbe() {
   return null;
 }
 
+/**
+ * The app's own lens setter, and the lens as the rail's provider holds it.
+ *
+ * The reported fault was lens-shaped, so the cross-domain claim has to put the
+ * lens on one domain and file for another through the real provider, not by
+ * reaching into state.
+ */
+function LensBridge() {
+  const { lens, setLens } = useVault();
+  useEffect(() => {
+    harness.decisionsBadgeSetLens = (slug) => {
+      void setLens(slug ? domainLens(slug) : overviewLens());
+      return true;
+    };
+    return () => {
+      harness.decisionsBadgeSetLens = undefined;
+    };
+  }, [setLens]);
+  useEffect(() => {
+    harness.decisionsBadgeLens = () =>
+      lens.kind === "domain" ? lens.slug : null;
+    return () => {
+      harness.decisionsBadgeLens = undefined;
+    };
+  }, [lens]);
+  return null;
+}
+
 /** Publish the vault's own boot state, so the driver can take its baseline after it. */
 function BootProbe() {
   const { booting } = useVault();
@@ -525,6 +571,7 @@ function Harness() {
         <div className="shell shell--chat-collapsed shell--chat-right">
           <MountProbe />
           <BootProbe />
+          <LensBridge />
           <NavRail />
           <div className="shell__main">
             <div className="shell__content" data-page-context-root="">

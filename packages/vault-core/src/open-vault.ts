@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { autoApproveInsertsFromUnknown, countWeeklyVaultFiles } from "./agents.ts";
 import { chatQuestionsFromUnknown } from "./chat-questions.ts";
+import { decisionInboxFromUnknown } from "./decision-inbox.ts";
 import { readOrCreateDoctrineFile } from "./domain-documents.ts";
 import { loadGoals } from "./goals.ts";
 import { readLog } from "./log.ts";
@@ -64,6 +65,10 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
           : "monday",
       autoApproveInserts: autoApproveInsertsFromUnknown(parsedSettings.autoApproveInserts),
       chatQuestions: chatQuestionsFromUnknown(parsedSettings.chatQuestions),
+      // A vault written before these switches existed has no key at all; the
+      // tolerant read gives it both defaults rather than leaving the renderer to
+      // guess, so the settings page and the watcher never disagree.
+      decisionInbox: decisionInboxFromUnknown(parsedSettings.decisionInbox),
     };
 
     const agentsRaw = await fs.readFile(paths.agentsJson, "utf8");

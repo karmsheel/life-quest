@@ -49,6 +49,9 @@ const SPLIT_LEFT_SHOT = path.join(
   desktopRoot,
   "e2e/artifacts/daily-note-split-left.png",
 );
+/** The day's page with its own act under the box — the artifact for the report
+ *  that this control was black-on-black and sat up with the pager. */
+const ANALYZE_SHOT = path.join(desktopRoot, "e2e/artifacts/daily-note-analyze.png");
 
 function devServerUp(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -187,6 +190,34 @@ type Sample = {
   renderedRect: Box | null;
 };
 
+/** Where the day's own act landed, and how it is painted, read off the DOM. */
+type AutomationSample =
+  | { present: false }
+  | {
+      present: true;
+      inHeader: boolean;
+      inCompose: boolean;
+      belowBox: boolean;
+      gapBelowBox: number;
+      rightEdgeOffBy: number;
+      insideBoxColumn: boolean;
+      buttonRadius: number;
+      step: number;
+      backgroundImage: string;
+      boxShadow: string;
+      color: string;
+      disabled: boolean;
+      label: string | null;
+      /** The painted gradient's two stops, in channel values. */
+      fillTop: number[];
+      fillBottom: number[];
+      /** The sheet the control sits on, in channel values. */
+      page: number[];
+      faceChroma: number;
+      faceLift: number;
+      distinctStops: boolean;
+    };
+
 type Report = {
   pass: boolean;
   failures: string[];
@@ -218,6 +249,7 @@ type Report = {
     } | null;
     wideRight: Layout;
     wideLeft: Layout;
+    automation: AutomationSample;
     emptyParagraphs: Sample;
     box: { boxes: number; splits: number; previews: number; writingLines: number };
     afterTyping: Sample;
@@ -274,8 +306,10 @@ describe("daily note ui e2e", () => {
     fs.rmSync(PANEL_SHOT, { force: true });
     fs.rmSync(SPLIT_RIGHT_SHOT, { force: true });
     fs.rmSync(SPLIT_LEFT_SHOT, { force: true });
+    fs.rmSync(ANALYZE_SHOT, { force: true });
     const exitCode = await runDriver();
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
+    assert.equal(fs.existsSync(ANALYZE_SHOT), true, "driver captured no picture of the day's act");
 
     const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
     assert.deepEqual(report.failures, []);
@@ -333,6 +367,64 @@ describe("daily note ui e2e", () => {
         `an earlier-notes row paints ${row.background} at rest instead of nothing`,
       );
     }
+
+    // ── the day's act: under the box, on its trailing edge, and a key ───────
+    // The operator's report was a control that read black-on-black in Nous and
+    // sat up with the pager. The driver measures both against the painted DOM —
+    // a gradient face is a fill, an inset shadow is a bevel, a hue off grey is
+    // the skin's accent actually arriving — and its picture is the screen they
+    // will see.
+    const automation = report.checks.automation;
+    assert.equal(automation.present, true, "the Analyze note control is not on the page");
+    if (!automation.present) return;
+    assert.equal(automation.inHeader, false, "the Analyze note control is still in the header");
+    assert.equal(automation.inCompose, true, "the Analyze note control is not under the box");
+    assert.equal(
+      automation.belowBox,
+      true,
+      `the Analyze note control sits ${automation.gapBelowBox}px above the box's bottom edge`,
+    );
+    assert.ok(
+      Math.abs(automation.rightEdgeOffBy) <= 2,
+      `the Analyze note control ends ${automation.rightEdgeOffBy}px from the box's trailing edge`,
+    );
+    assert.equal(
+      automation.insideBoxColumn,
+      true,
+      "the Analyze note control reaches outside the box's own column",
+    );
+    assert.ok(
+      automation.buttonRadius <= automation.step,
+      `the Analyze note control is rounded to ${automation.buttonRadius}px, past the ${automation.step}px step`,
+    );
+    assert.equal(
+      automation.disabled,
+      false,
+      "the Analyze note control is disabled on a day that holds a written note",
+    );
+    assert.match(
+      automation.backgroundImage,
+      /linear-gradient/,
+      `the Analyze note control paints ${JSON.stringify(automation.backgroundImage)} instead of a filled face`,
+    );
+    assert.match(
+      automation.boxShadow,
+      /inset/,
+      `the Analyze note control wears ${JSON.stringify(automation.boxShadow)} — no bevel`,
+    );
+    assert.ok(
+      automation.faceChroma >= 24,
+      `the Analyze note control's face ${JSON.stringify(automation.fillTop)} is grey, not the skin's accent`,
+    );
+    assert.ok(
+      automation.faceLift >= 40,
+      `the Analyze note control's face is too close to the page ${JSON.stringify(automation.page)} to read as a control`,
+    );
+    assert.equal(
+      automation.distinctStops,
+      true,
+      "the Analyze note control's face is one flat stop, not a lit key",
+    );
 
     // ── the strip is a table of three columns ───────────────────────────────
     // The date the note is *for*, that date's weekday, and when it was last

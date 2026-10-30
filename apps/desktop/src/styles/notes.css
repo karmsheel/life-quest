@@ -86,14 +86,25 @@
   color: var(--fg);
 }
 
-/* The page's actions that are not navigation: the manual automations this day
-   owns, under the pager on the box's own column. Each is a button of the page's
-   own square step, like every other control here. */
+/* The box's foot: the autosave line on the leading edge and the day's own
+   automations on the trailing one. The day's act belongs under the prose it
+   commits — down here it reads as the page's own verb, where above the box it
+   sat in the pager's row and read as another navigation control. */
+.daily-note__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  width: 100%;
+}
+
 .daily-note__automations {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.5rem;
+  margin-left: auto;
 }
 
 .daily-note__analyze {
@@ -137,11 +148,14 @@
 }
 
 /* The autosave line. There is no Save control: this one quiet line is the whole
-   of what the page says about the day reaching the vault. */
+   of what the page says about the day reaching the vault. It shares the foot
+   with the day's automations, so it takes the slack the buttons leave rather
+   than the whole row. */
 .daily-note__status {
   margin: 0;
   min-height: 1.1rem;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 0.85rem;
 }
 

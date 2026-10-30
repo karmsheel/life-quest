@@ -4,7 +4,8 @@
  *
  * The page under test is the real page, not a copy: `ProjectsPage` and
  * `ProjectPage` are mounted on their real routes under the real `AppShell` —
- * real `NavRail`, real `TopBar`/`WingTabs`, real `WingProvider`/`wingForPath`,
+ * real `NavRail` with its wing switcher, real `TopBar`, real
+ * `WingProvider`/`wingForPath`,
  * real CSS and real layout engine. The rail claim ("Projects is under Execute,
  * not Plan") is only meaningful in the shipped shell, so the harness renders the
  * shell the app renders.
@@ -639,7 +640,7 @@ const ready = new Promise<void>((resolve) => {
 
 const waitForShell = (): void => {
   const rail = document.querySelector(".nav-rail");
-  const tabs = document.querySelector(".top-bar__wings");
+  const tabs = document.querySelector(".nav-rail__wings");
   const page = document.querySelector("[data-page-context-root] > *");
   if (!rail || !tabs || !page) {
     requestAnimationFrame(waitForShell);

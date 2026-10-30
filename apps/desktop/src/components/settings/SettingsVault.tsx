@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
-import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
+import { Toggle } from "@/components/ui/Toggle";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import type { WeekStartDay } from "@lifequest/vault-core/pure";
@@ -199,12 +199,12 @@ export function SettingsVault() {
                       >
                         Export books
                       </Button>
-                      {/* The destructive control's own gate: a labelled switch,
-                          large enough to read as the way in, that the row's
-                          description explains. */}
-                      <ToggleSwitch
-                        label="Allow restore"
-                        ariaLabel={`Allow restore for ${domain.meta.name}`}
+                      {/* The destructive control's own gate: the app's Toggle
+                          at its large step, captioned because this row's label
+                          is the domain, not the switch. */}
+                      <Toggle
+                        label={`Allow restore for ${domain.meta.name}`}
+                        caption="Allow restore"
                         checked={armed}
                         onChange={(checked) =>
                           setRestoreArmed((prev) => ({

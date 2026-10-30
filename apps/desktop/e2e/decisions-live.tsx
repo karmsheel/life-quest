@@ -73,7 +73,7 @@ function domain(slug: string, name: string, sortOrder: number): DomainRecord {
   };
 }
 
-/** Two domains, so a proposal filed for one of them can be hidden by the lens. */
+/** Two domains, so a filing can be made for a domain the lens is NOT on. */
 const DOMAINS = [domain("financial", "Financial", 1), domain("health", "Health", 2)];
 
 const SNAPSHOT: VaultSnapshot = {
@@ -207,10 +207,21 @@ type HarnessWindow = Window & {
    * about it. Returns the id it filed, so the driver can name the card.
    */
   decisionsLiveFile?: (kind: "financial" | "health", title?: string) => string;
+  /**
+   * A burst of filings inside one frame: every Decision is written, then ONE
+   * event is fired — the coalescing `main.ts` does with its 16ms broadcast, and
+   * the input the plural arrival line is about. Returns the ids it filed.
+   */
+  decisionsLiveFileBurst?: (
+    kind: "financial" | "health",
+    titles: string[],
+  ) => string[];
   /** A Decision resolved in another window: status flipped, then the event. */
   decisionsLiveResolveElsewhere?: (id: string) => boolean;
   /** The app's own lens setter, so a lens switch is the real one. */
   decisionsLiveSetLens?: (slug: string | null) => boolean;
+  /** The lens the page is actually under: null in Overview, else the slug. */
+  decisionsLiveLens?: () => string | null;
   /** What the page shows, and where the cards sit in the scrollport. */
   decisionsLiveScreen?: () => Screen;
   /** The scrollport's own numbers. */
@@ -358,6 +369,24 @@ harness.decisionsLiveFile = (domainSlug, title) => {
   // order the real write path has.
   setTimeout(announce, 0);
   return decision.id;
+};
+
+harness.decisionsLiveFileBurst = (domainSlug, titles) => {
+  const ids: string[] = [];
+  for (const title of titles) {
+    vault.seq += 1;
+    const decision = makeDecision(vault.seq, domainSlug);
+    decision.title = title;
+    decision.proposedTitle = title;
+    vault.decisions.push(decision);
+    ids.push(decision.id);
+  }
+  // ONE announcement for the whole burst. The real main process coalesces every
+  // write inside one frame into a single `vault:dataChanged` broadcast, so this
+  // is the input the page actually receives when two filings land together; the
+  // plural arrival line is only answerable if the page is asked once.
+  setTimeout(announce, 0);
+  return ids;
 };
 
 harness.decisionsLiveResolveElsewhere = (id) => {
@@ -515,7 +544,7 @@ const stubs: Record<string, (...args: unknown[]) => Promise<unknown>> = {
  * does this.
  */
 function LensBridge() {
-  const { setLens } = useVault();
+  const { lens, setLens } = useVault();
   useEffect(() => {
     harness.decisionsLiveSetLens = (slug) => {
       void setLens(slug ? domainLens(slug) : overviewLens());
@@ -525,6 +554,15 @@ function LensBridge() {
       harness.decisionsLiveSetLens = undefined;
     };
   }, [setLens]);
+  // The lens as the page actually holds it, so a claim about a cross-lens filing
+  // can first prove the lens is where it says it is.
+  useEffect(() => {
+    harness.decisionsLiveLens = () =>
+      lens.kind === "domain" ? lens.slug : null;
+    return () => {
+      harness.decisionsLiveLens = undefined;
+    };
+  }, [lens]);
   return null;
 }
 

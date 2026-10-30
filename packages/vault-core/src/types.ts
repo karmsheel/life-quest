@@ -219,13 +219,39 @@ export type ChatQuestion = {
   createdAt: string;
 };
 
+/**
+ * How the Decisions inbox interrupts whatever the operator is doing.
+ *
+ * The inbox is a sheet the operator opens to approve the proposals the companion
+ * files. Both switches are about the sheet moving on its own: `autoOpen` raises
+ * it when a new proposal arrives, and `autoClose` puts it away once the last
+ * pending one is answered. They are separate because the operator may want the
+ * inbox to announce itself without it also deciding when the interruption ends
+ * — or the reverse, closing quietly while only ever opening it by hand.
+ */
+export type DecisionInboxSettings = {
+  /** Open the inbox when the companion files a decision. */
+  autoOpen: boolean;
+  /** Close the inbox when the last pending decision is answered. */
+  autoClose: boolean;
+};
+
 export type VaultSettings = {
   hermesBaseUrl: string;
   theme: "system" | "light" | "dark";
   weekStartDay: WeekStartDay;
+  /**
+   * LEGACY, read for compatibility and ignored for behaviour. Adding data is no
+   * longer gated at all (2026-10-28), so an insert allowlist has nothing left to
+   * decide; old vaults keep the key so opening them does not rewrite settings and
+   * so `updateSettings` preserves it. See
+   * `docs/superpowers/specs/2026-10-28-direct-database-writes-design.md`.
+   */
   autoApproveInserts: AutoApproveInsert[];
   /** Saved questions the chat composer offers, in the operator's own order. */
   chatQuestions: ChatQuestion[];
+  /** Whether the Decisions inbox opens and closes itself. */
+  decisionInbox: DecisionInboxSettings;
 };
 
 export type ReviewScopeStatus = "missing" | "draft" | "done";
@@ -394,6 +420,75 @@ export type IdealStateCreateInput = {
 export type IdealStateUpdatePatch = {
   title?: string;
   bodyMarkdown?: string;
+};
+
+// Define → Images (2026-10-28). A vault-level picture library and the one
+// written vision board beside it. Pictures are stored as files, so the vault
+// keeps what the operator uploaded; the two JSON files are the library's index
+// and the board's blocks.
+export const IMAGE_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+] as const;
+export type ImageMimeType = (typeof IMAGE_MIME_TYPES)[number];
+
+/** The extension a sniffed kind is stored under. The bytes decide, never the name. */
+export const IMAGE_MIME_EXT: Record<ImageMimeType, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
+/** One picture in the operator's library, as the page draws it. */
+export type VaultImage = {
+  id: string;
+  /** Vault-relative path, `images/files/<id>.<ext>`; never absolute. */
+  relPath: string;
+  /** The name the operator's file had, kept for display only. */
+  name: string;
+  caption: string;
+  mime: ImageMimeType;
+  bytes: number;
+  /** The canvas the uploader reported, or null when it did not say. */
+  width: number | null;
+  height: number | null;
+  createdAt: string;
+};
+
+/**
+ * One block of the vision document. Deliberately the small, stable set the
+ * operator asked for — text, heading, bullets and a picture with its caption —
+ * rather than a general rich-text document.
+ */
+export type VisionBoardBlock =
+  | { id: string; kind: "text"; text: string }
+  | { id: string; kind: "heading"; text: string }
+  | { id: string; kind: "bullets"; items: string[] }
+  | { id: string; kind: "image"; imageId: string; caption: string };
+
+export type VisionBoardBlockKind = VisionBoardBlock["kind"];
+
+/** The one long document beside the library. */
+export type VisionBoard = {
+  blocks: VisionBoardBlock[];
+  updatedAt: string;
+};
+
+export type ImageSaveInput = {
+  bytes: Uint8Array;
+  /** Declared by the renderer; the sniffed bytes are authoritative. */
+  mime: string;
+  name: string;
+  width?: number | null;
+  height?: number | null;
+};
+
+export type ImageUpdatePatch = {
+  name?: string;
+  caption?: string;
 };
 
 export type AgentHire = {
@@ -632,6 +727,40 @@ export type DecisionRecord = {
    * every other case, including a transient apply failure that stays retryable.
    */
   reason: string | null;
+  /**
+   * When the operator last edited the proposal before answering it, or null.
+   *
+   * A Decision is the agent's proposal, and approval applies whatever the record
+   * holds. The operator can correct a proposal in the inbox — a misspelt project
+   * name, a detail worth adding — and these fields are how the record admits that
+   * what was approved is theirs, not the proposer's. They are also what the
+   * resolve path reads to decide whether a terminal apply failure is fixable.
+   */
+  amendedAt: string | null;
+  /** Who made the last amendment. Always the operator today. */
+  amendedBy: Actor | null;
+  /** The operator's reason for the edit, in their own words, or null. */
+  amendmentNote: string | null;
+  /**
+   * The proposal exactly as it was filed, kept from the first amendment so the
+   * inbox can show (and restore) what the agent actually asked for.
+   */
+  originalProposedTitle: string | null;
+  originalProposedBodyMarkdown: string | null;
+};
+
+/**
+ * The operator's edit to a pending Decision's proposal.
+ *
+ * Every field is optional because an amendment may touch only the title, only
+ * the body, or only the note. `revert` is the one exception: it restores the
+ * proposal as filed and clears the amendment, ignoring the other fields.
+ */
+export type DecisionAmendment = {
+  proposedTitle?: string | null;
+  proposedBodyMarkdown?: string;
+  note?: string | null;
+  revert?: boolean;
 };
 
 /**

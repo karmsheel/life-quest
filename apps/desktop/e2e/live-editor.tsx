@@ -212,6 +212,10 @@ const bridge: Record<string, unknown> = {
     return Promise.resolve(ok({ bytes: new Uint8Array([1]), mime: "image/png" }));
   },
   libraryList: () => ok({ records: [], skipped: 0 }),
+  // A lock write refreshes the vault snapshot, and the snapshot now carries the
+  // Decisions inbox. An empty inbox is the honest answer here; the rig is not
+  // about decisions.
+  decisionList: () => ok([]),
 
   reviewGet: (cadence: string, period: string) => {
     harness.liveEditorCalls?.push(`reviewGet:${cadence}:${period}`);

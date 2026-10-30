@@ -24,6 +24,7 @@ import { describe, it } from "node:test";
 import {
   addDatabaseColumn,
   createDatabase,
+  createDecision,
   createVault,
   executeDatabaseTool,
   executeViewTool,
@@ -139,16 +140,32 @@ describe("decision field names on read", () => {
       );
 
       // ── a batch insert ───────────────────────────────────────────────────
-      const batchFiled = (await executeDatabaseTool(root, AGENT, "insert_rows", {
-        domainSlug: "financial",
-        databaseId,
-        rows: [cells(fields, ["Wine", 1500, "2026-10-02"]), cells(fields, ["Brandy", 1000, "2026-10-03"])],
-      })) as { decisionId?: string; status?: string };
-      assert.equal(batchFiled.status, "pending", `the batch was not filed: ${JSON.stringify(batchFiled)}`);
+      // New rows are no longer gated (operator policy, 2026-10-28), so the tool
+      // writes them and files nothing. The batch Decision shape still exists in
+      // vaults that filed one before that change, and the inbox still has to
+      // read its column names — so this files the same body directly, the way
+      // `createDecision` did, and asks the read path to label it.
+      const batchRows = [
+        { id: randomUUID(), cells: cells(fields, ["Wine", 1500, "2026-10-02"]), rowLabel: "Wine" },
+        { id: randomUUID(), cells: cells(fields, ["Brandy", 1000, "2026-10-03"]), rowLabel: "Brandy" },
+      ];
+      const batchFiled = await createDecision(root, {
+        target: { type: "database-batch", domainSlug: "financial", databaseId },
+        proposedTitle: "Insert 2 rows into Bottles",
+        proposedBodyMarkdown: JSON.stringify(
+          { op: "insert-rows", databaseName: "Bottles", rows: batchRows },
+          null,
+          2,
+        ),
+        previousBodyMarkdown: null,
+        actor: AGENT,
+      });
+      assert.equal(batchFiled.ok, true, batchFiled.ok ? "" : batchFiled.error);
+      const batchDecisionId = batchFiled.ok ? batchFiled.value.id : "";
       const afterBatch = await listDecisions(root);
       assert.equal(afterBatch.ok, true, afterBatch.ok ? "" : afterBatch.error);
       const batchRaw = afterBatch.ok
-        ? afterBatch.value.find((entry) => entry.id === batchFiled.decisionId)
+        ? afterBatch.value.find((entry) => entry.id === batchDecisionId)
         : undefined;
       assert.ok(batchRaw, "the filed batch Decision is not in the vault's list");
       assert.equal(batchRaw.proposedBodyMarkdown.includes("columnNames"), false);

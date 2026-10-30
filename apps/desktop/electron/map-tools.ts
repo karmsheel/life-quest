@@ -227,10 +227,11 @@ async function executeToolInner(
     return executeViewTool(root, actor, name, rec);
   }
 
-  // list_databases, get_database, list_rows, get_row, and the Decision-gated
-  // write tools (upsert_row, delete_row, create_database, add_column) plus the
-  // read-only list_decisions. The actor is passed in from executeTool and is
-  // never read from args.
+  // list_databases, get_database, list_rows, get_row, and the write tools —
+  // create_database and insert_rows apply at once, while an upsert_row with an
+  // id, delete_row and add_column file a Decision — plus the read-only
+  // list_decisions. The actor is passed in from executeTool and is never read
+  // from args.
   if (DATABASE_TOOL_DEFS.some((t) => t.name === name)) {
     return executeDatabaseTool(root, actor, name, rec);
   }
@@ -583,6 +584,9 @@ async function executeConnectedTool(
         proposedTitle: d.proposedTitle,
         createdAt: d.createdAt,
         reason: d.reason,
+        // The operator may have corrected the proposal before answering it; a
+        // proposer that cannot see that would re-file the version already fixed.
+        amended: d.amendedAt !== null,
       })),
     };
   }
@@ -767,6 +771,7 @@ async function connectedWriteRefusal(
     name === "upsert_row" ||
     name === "delete_row" ||
     name === "create_database" ||
+    name === "insert_rows" ||
     name === "add_column"
   ) {
     return allow([rec.domainSlug as string | null | undefined]);

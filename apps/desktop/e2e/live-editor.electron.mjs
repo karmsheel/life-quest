@@ -28,6 +28,10 @@
  *     blank line and all, is the body `documentSave` receives.
  *  5. A locked document has no writing line at all, and a click on its prose
  *     opens none: the engine refuses a locked write, so the UI must not offer one.
+ *     The doctrine page's lock is the same badge-beside-the-name and switch-at-
+ *     the-top-right pair the Dashboard wears: the switch is off on an unlocked
+ *     document, flipping it sends `documentSetLocked`, and the page's own read
+ *     turns read-only behind it.
  *  6. A pasted image is saved once, and its markdown lands in the note as its own
  *     paragraph, which the box then renders as an `<img>` resolved through
  *     `documentMediaRead`.
@@ -60,8 +64,16 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
 const SAMPLE = `(() => {
   const text = (el) => (el && el.textContent ? el.textContent.trim() : null);
   const rect = (el) => {
+    if (!el) return null;
     const r = el.getBoundingClientRect();
-    return { left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width) };
+    return {
+      left: Math.round(r.left),
+      top: Math.round(r.top),
+      right: Math.round(r.right),
+      bottom: Math.round(r.bottom),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    };
   };
   const box = document.querySelector(".note-live");
   const input = box ? box.querySelector("textarea") : null;
@@ -99,6 +111,23 @@ const SAMPLE = `(() => {
     renderedRect: rendered[0] ? rect(rendered[0]) : null,
     boxRect: box ? rect(box) : null,
     saveDisabled: save ? save.disabled : null,
+    // The document's lock: the badge beside the document's name and the switch
+    // in the page's top-right row, the same pair the Dashboard wears.
+    lockBadge: text(document.querySelector(".doc-editor__header .doc-status-badge")),
+    headingRect: rect(document.querySelector(".doc-editor__title")),
+    lockBadgeRect: rect(document.querySelector(".doc-editor__header .doc-status-badge")),
+    lockSwitchRect: rect(document.querySelector('[data-testid="document-lock-toggle"]')),
+    lockSwitch: (() => {
+      const el = document.querySelector('[data-testid="document-lock-toggle"]');
+      if (!el) return null;
+      return {
+        role: el.getAttribute("role"),
+        checked: el.getAttribute("aria-checked"),
+        caption: (el.textContent || "").trim(),
+        locked: el.dataset.locked ?? null,
+        hasTrack: Boolean(el.querySelector(".lock-switch__track")),
+      };
+    })(),
     reviewEditing: Boolean(document.querySelector(".review-page__actions")),
     reviewSaveDisabled: reviewSave ? reviewSave.disabled : null,
     reviewPeriod: text(document.querySelector(".review-page__period")),
@@ -380,6 +409,128 @@ async function main() {
     failure(`the box did not resolve the image it was given: ${JSON.stringify(mediaReads)}`);
   }
 
+  // ── 4b. the doctrine page's lock is the same switch ─────────────────────
+  if (!document.lockSwitch) {
+    failure("the doctrine page drew no lock switch");
+  } else {
+    const sw = document.lockSwitch;
+    if (sw.role !== "switch") {
+      failure(`the document's lock control had role ${JSON.stringify(sw.role)}`);
+    }
+    if (sw.checked !== "false") {
+      failure(`the unlocked document's switch read aria-checked=${JSON.stringify(sw.checked)}`);
+    }
+    if (sw.caption !== "Lock") {
+      failure(`the document's switch caption read ${JSON.stringify(sw.caption)}`);
+    }
+    if (!sw.hasTrack) failure("the document's switch drew no track");
+  }
+  if (document.lockBadge !== "Unlocked") {
+    failure(`the unlocked document's badge read ${JSON.stringify(document.lockBadge)}`);
+  }
+  // The badge is beside the document's name again, and the switch is in the
+  // page's top-right row: their boxes say so, rather than the markup.
+  const lockHeading = document.headingRect;
+  const lockBadgeBox = document.lockBadgeRect;
+  const lockSwitchBox = document.lockSwitchRect;
+  if (!lockHeading || !lockBadgeBox || !lockSwitchBox) {
+    failure("the doctrine page's lock controls recorded no boxes");
+  } else {
+    const headingMid = (lockHeading.top + lockHeading.bottom) / 2;
+    const badgeMid = (lockBadgeBox.top + lockBadgeBox.bottom) / 2;
+    if (Math.abs(headingMid - badgeMid) > 6) {
+      failure(
+        `the document badge is not on the name's line: badge mid ${badgeMid}, heading mid ${headingMid}`,
+      );
+    }
+    if (lockBadgeBox.left < lockHeading.left) {
+      failure("the document badge sits left of the document's name");
+    }
+    if (lockBadgeBox.right >= lockSwitchBox.left) {
+      failure(
+        `the badge (right ${lockBadgeBox.right}) is not left of the switch (left ${lockSwitchBox.left})`,
+      );
+    }
+    if (lockSwitchBox.left < lockHeading.right) {
+      failure(
+        `the switch (left ${lockSwitchBox.left}) is not in the page's right column (name ends ${lockHeading.right})`,
+      );
+    }
+    if (Math.abs(headingMid - (lockSwitchBox.top + lockSwitchBox.bottom) / 2) > 40) {
+      failure("the switch is not on the heading's row");
+    }
+  }
+
+  // The one gesture writes `documentSetLocked`, and the page's own read follows:
+  // locking from the header switch makes the box read-only, unlocking restores it.
+  await click(win, '[data-testid="document-lock-toggle"]');
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="document-lock-toggle"]')?.getAttribute('aria-checked') === 'true'`,
+    "the document to lock",
+  );
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="document-lock-toggle"]')?.disabled`,
+    "the document's switch to settle",
+  );
+  const lockCalls = await win.webContents.executeJavaScript(
+    "(window.liveEditorCalls ?? []).filter((c) => c.startsWith('documentSetLocked'))",
+  );
+  checks.documentLockCalls = lockCalls;
+  if (lockCalls.length !== 1) {
+    failure(`the document's switch called documentSetLocked ${lockCalls.length} time(s), expected 1`);
+  }
+  if (lockCalls[0] !== "documentSetLocked:health:what:true") {
+    failure(`locking the document sent ${JSON.stringify(lockCalls[0])}`);
+  }
+  const lockedDoc = await sample(win);
+  checks.documentLocked = lockedDoc;
+  if (lockedDoc.lockBadge !== "Locked") {
+    failure(`the locked document's badge read ${JSON.stringify(lockedDoc.lockBadge)}`);
+  }
+  if (lockedDoc.lockSwitch?.checked !== "true") {
+    failure(
+      `the locked document's switch read aria-checked=${JSON.stringify(lockedDoc.lockSwitch?.checked)}`,
+    );
+  }
+  if (lockedDoc.readOnly !== true) {
+    failure("locking the document from the header switch left the box editable");
+  }
+
+  await click(win, '[data-testid="document-lock-toggle"]');
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="document-lock-toggle"]')?.getAttribute('aria-checked') === 'false'`,
+    "the document to unlock",
+  );
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="document-lock-toggle"]')?.disabled`,
+    "the document's switch to settle after unlocking",
+  );
+  const unlockCalls = await win.webContents.executeJavaScript(
+    "(window.liveEditorCalls ?? []).filter((c) => c.startsWith('documentSetLocked'))",
+  );
+  checks.documentUnlockCalls = unlockCalls;
+  if (unlockCalls.at(-1) !== "documentSetLocked:health:what:false") {
+    failure(`unlocking the document sent ${JSON.stringify(unlockCalls.at(-1))}`);
+  }
+  if ((await sample(win)).lockBadge !== "Unlocked") {
+    failure("unlocking the document from the header switch left the badge locked");
+  }
+  // The write refreshes the vault snapshot, and the page re-reads its document
+  // off that refresh. Let that settle so the round-trip is judged on the page
+  // that came back, not on one still re-reading.
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  const afterLockCycle = await sample(win);
+  checks.documentAfterLockCycle = afterLockCycle;
+  if (afterLockCycle.blockCount !== 2) {
+    failure(
+      `after the lock round-trip the document rendered ${afterLockCycle.blockCount} block(s), expected 2`,
+    );
+  }
+
   // ── 5. a locked document has no writing line at all ─────────────────────
   await win.webContents.executeJavaScript("window.liveEditorLocked = true");
   await win.webContents.executeJavaScript(`window.liveEditorGoto("/review/weekly")`);
@@ -395,6 +546,14 @@ async function main() {
   if (locked.editing) failure("a locked document opened a writing line");
   if (locked.readOnly !== true) failure("the box did not report itself read-only");
   if (locked.blockCount < 1) failure("the locked document rendered nothing");
+  if (locked.lockBadge !== "Locked") {
+    failure(`the locked document's badge read ${JSON.stringify(locked.lockBadge)}`);
+  }
+  if (locked.lockSwitch?.checked !== "true") {
+    failure(
+      `the locked document's switch read aria-checked=${JSON.stringify(locked.lockSwitch?.checked)}`,
+    );
+  }
   // A click on locked prose opens nothing: the engine refuses a locked write, so
   // the surface must not offer one.
   await win.webContents.executeJavaScript(`(() => {

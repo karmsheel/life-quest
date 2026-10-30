@@ -1,0 +1,134 @@
+# MkDocs configuration for the LifeQuest project wiki.
+#
+# The wiki is authored in `docs/wiki/` and built from a staged copy in
+# `.docs-build/` (see `scripts/build-docs.mjs`) so that the pages' relative links
+# to `../../LAWS/` and `../../VISION.md` keep working in the published site.
+#
+# Preview locally:
+#   node scripts/build-docs.mjs
+#   mkdocs serve
+#
+# The GitHub Actions workflow `.github/workflows/docs.yml` builds and deploys it
+# to GitHub Pages on every push to `master`.
+
+site_name: LifeQuest
+site_description: The operator's guide to the LifeQuest studio, its vault, and the Hermes companion.
+site_url: https://karmsheel.github.io/life-quest/
+repo_url: https://github.com/karmsheel/life-quest
+repo_name: karmsheel/life-quest
+copyright: LifeQuest — local-first life management
+
+docs_dir: .docs-build
+site_dir: site
+use_directory_urls: true
+
+theme:
+  name: material
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep-orange
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep-orange
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+
+validation:
+  nav:
+    omitted_files: ignore
+  links:
+    not_found: warn
+    anchors: ignore
+    absolute_links: ignore
+    unrecognized_links: ignore
+
+nav:
+  - Home: index.md
+  - Foundations:
+      - Overview: 01-overview.md
+      - Getting started: 02-getting-started.md
+      - The studio: 03-the-studio.md
+      - The vault: 04-the-vault.md
+      - Domains: 05-domains.md
+  - The Home wing:
+      - Dashboard: 06-dashboard.md
+  - Define:
+      - Doctrine: 07-doctrine.md
+      - Ideal State: 09-ideal-state.md
+  - Plan:
+      - Architecture: 08-architecture.md
+      - Goals: 10-goals.md
+      - Life Map: 11-life-map.md
+  - Execute:
+      - Projects: 12-projects.md
+      - Daily Schedule: 13-daily-schedule.md
+      - Act: 14-act.md
+  - Daily capture and review:
+      - Life-Chain: 15-life-chain.md
+      - Daily Note: 16-daily-note.md
+      - Automations: 17-automations.md
+      - Reviews: 18-reviews.md
+  - Data and knowledge:
+      - Data and databases: 19-data-and-databases.md
+      - Finance kit: 20-finance-kit.md
+      - Pages: 21-pages.md
+      - Documents: 22-documents.md
+  - Companion and governance:
+      - Decisions: 23-decisions.md
+      - Companion: 24-companion.md
+      - Personnel and agents: 25-personnel-and-agents.md
+      - Log: 26-log.md
+      - Updates: 27-updates.md
+  - System:
+      - Settings: 28-settings.md
+      - Security: 29-security.md
+      - System architecture: 30-system-architecture.md
+      - Development: 31-development.md
+      - Troubleshooting: 32-troubleshooting.md
+  - Reference:
+      - Glossary: 33-glossary.md
+      - Common workflows: 34-common-workflows.md
+  - Project laws:
+      - Architectural laws: LAWS/README.md
+      - Vision: VISION.md
+      - Companion: LAWS/COMPANION.md
+      - Dashboard: LAWS/DASHBOARD.md
+      - Databases: LAWS/DATABASES.md
+      - Doctrine: LAWS/DOCTRINE.md
+      - Domain filter: LAWS/DOMAIN-FILTER.md
+      - Identity: LAWS/IDENTITY.md
+      - Notes: LAWS/NOTES.md
+      - Reviews: LAWS/REVIEWS.md
+      - Secrets: LAWS/SECRETS.md
+      - Wings: LAWS/WINGS.md

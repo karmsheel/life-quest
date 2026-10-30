@@ -6,11 +6,11 @@ import {
 } from "react";
 import {
   actorDisplayName,
+  DEFAULT_DECISION_INBOX_SETTINGS,
   DOCUMENT_KIND_LABELS,
-  recordVisible,
-  recordVisibleMulti,
 } from "@lifequest/vault-core/pure";
 import type {
+  DecisionAmendment,
   DecisionRecord,
   ManualDecisionRecord,
 } from "@lifequest/vault-core";
@@ -19,6 +19,8 @@ import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 import { useLiveData } from "@/state/LiveDataProvider";
 import { DecisionBody } from "./DecisionBody";
+import { DecisionEditor } from "./DecisionEditor";
+import { supportsAmendment } from "./decision-edit";
 import { ManualDecisionCard, ManualDecisionsPanel } from "./ManualDecisions";
 
 type Tab = "pending" | "history" | "manual";
@@ -55,10 +57,11 @@ function rowAt(row: InboxRow): string {
 /**
  * A Decision this page had never drawn, and the moment it found it.
  *
- * `ids` is wider than the cards on screen on purpose: a proposal filed for another
- * lens is still one this page had never seen, and a tab switch must not turn a
- * whole inbox into "New" chips. `at` is a tick rather than a boolean so a second
- * filing restarts the mark instead of inheriting a class that was already there.
+ * `ids` is wider than the cards on screen on purpose: a filing can land while
+ * History owns the screen, where no pending card is drawn, and a tab switch must
+ * not turn that filing into a whole inbox of "New" chips when the operator comes
+ * back to Pending. `at` is a tick rather than a boolean so a second filing
+ * restarts the mark instead of inheriting a class that was already there.
  */
 type Arrival = { ids: string[]; actor: string; at: number };
 
@@ -160,6 +163,35 @@ function kindLabel(target: DecisionRecord["target"]): string {
  * both stores with a source chip on every card and a filter to compare the
  * operator's own decisions against the AI's.
  *
+ * WHY THE DOMAIN LENS IS NOT PART OF THIS PAGE
+ *
+ * This surface is the governed shelf at the foot of the rail: a global queue of
+ * things waiting for the operator's answer, not one domain's view. It used to
+ * filter by the active domain lens, and the operator reported what that costs:
+ * the companion filed three pending create-database Decisions and said so, but
+ * with the lens on another domain the page said "No pending proposals." and the
+ * rail's badge — filtered the same way — was silent too. A filing must never be
+ * invisible because of where the operator happens to be looking: Pending,
+ * History and Manual all show every Decision the vault holds, whatever domain
+ * filed it. The lens-scoped reading of decisions is the dashboard's own "Pending
+ * decisions" pin (`PendingDecisionsCard`), which is the per-domain view and
+ * stays scoped by design.
+ *
+ * CORRECTING A PROPOSAL INSTEAD OF REFUSING IT
+ *
+ * Until this card could be edited, the only answers were approve and reject. A
+ * proposal with one misspelt project name or one missing detail therefore cost
+ * the operator either the whole thing (reject, wait for the agent to file it
+ * again) or the correction (approve, then fix the file by hand — if the target
+ * is even editable there). So a pending proposal is now a staging surface: the
+ * operator can edit it in place, and the amend keeps the agent's original
+ * beside the correction so `Revert to agent's version` stays one click. The
+ * edit does not answer the Decision — saving leaves it pending, which is the
+ * whole point of editing before approving — and "Approve with changes" is the
+ * two calls in order, amend then the existing approve. The chip on the card and
+ * the `approved · edited` status in History are how the record admits whose
+ * words were approved.
+ *
  * WHAT IT DELIBERATELY DOES NOT DO
  *
  * It does not move the page. A prepend at the start of a list is where the
@@ -172,28 +204,72 @@ function kindLabel(target: DecisionRecord["target"]): string {
  * place to show them something they did not ask for, and the card is marked either
  * way.
  */
-export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) {
+export function DecisionsInbox({
+  showHeader = true,
+  onClose,
+  arrivalIds,
+}: {
+  showHeader?: boolean;
+  /**
+   * The sheet's own close, supplied when the inbox is worn as a surface (see
+   * `DecisionsOverlay`). The standalone shape the rigs draw has none, and then
+   * the auto-close switch has nothing to close.
+   */
+  onClose?: () => void;
+  /**
+   * Pending Decision ids whose filing opened this sheet, when the watcher opened
+   * it (see `DecisionInboxAutoOpen`). They are the arrival the live mark cannot
+   * know about, because this page was not on screen when they were written.
+   */
+  arrivalIds?: readonly string[];
+}) {
   const { snapshot, refresh } = useVault();
   const lens = useDomainLens();
   const domains = snapshot?.domains ?? [];
   /** The vault's revision: it moves on any write, in this window or the agent's. */
   const live = useLiveData();
+  /**
+   * Settings › Decisions › auto-close, defaulted for a snapshot from a rig or a
+   * vault written before the switch existed.
+   */
+  const autoClose =
+    snapshot?.settings.decisionInbox?.autoClose ??
+    DEFAULT_DECISION_INBOX_SETTINGS.autoClose;
 
   const [tab, setTab] = useState<Tab>("pending");
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [items, setItems] = useState<DecisionRecord[]>([]);
   /**
-   * The other store. Kept unfiltered: the lens is applied where the rows are
-   * drawn, so a record that just landed is never hidden from the store the page
-   * holds just because the lens it was logged under is not the active one.
+   * The other store, kept whole. This page is global, so the lens is not
+   * consulted here either: a record logged under any domain is the operator's
+   * own and is theirs to read on this shelf.
    */
   const [manualItems, setManualItems] = useState<ManualDecisionRecord[]>([]);
   const [manualLoading, setManualLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
+  /**
+   * The card whose proposal is open in the editor, if any.
+   *
+   * Editing is a mode of this page rather than a separate screen: the operator
+   * is correcting a card they are already reading, and a modal over the inbox
+   * would hide the queue they are deciding against. Only one card can be open
+   * at a time — two half-edited proposals on screen is two questions.
+   */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  /** The card currently talking to the vault, so its controls stay quiet. */
+  const [savingId, setSavingId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [arrival, setArrival] = useState<Arrival | null>(null);
+  /**
+   * The filing this sheet was opened FOR, if the watcher opened it.
+   *
+   * A ref, not state: it is input to the first paint only, and the mark must not
+   * come back when the operator switches tabs. The first successful read is the
+   * one that draws the list the filing is in, so it consumes this.
+   */
+  const arrivalSeedRef = useRef<readonly string[] | null>(arrivalIds ?? null);
 
   /**
    * Every decision id this page has drawn, so "just arrived" is decidable.
@@ -211,24 +287,27 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
   /**
    * The newest read, so a slower earlier one cannot land on top of it.
    *
-   * A read takes a round trip, and the tab or the lens can move inside it — a
-   * live refresh started on Pending, then History clicked, would otherwise draw
-   * the pending list under the History tab until something asked again. Only the
-   * last read owns the screen; a discarded one changes nothing, not even the ids
-   * this page counts as drawn.
+   * A read takes a round trip, and the tab can move inside it — a live refresh
+   * started on Pending, then History clicked, would otherwise draw the pending
+   * list under the History tab until something asked again. Only the last read
+   * owns the screen; a discarded one changes nothing, not even the ids this page
+   * counts as drawn.
    */
   const readSeqRef = useRef(0);
 
   /**
    * Read the inbox.
    *
-   *  - `view` — a first load, a tab switch, a lens change. These are answers to
-   *    something the operator did, so they may replace what is on screen.
+   *  - `view` — a first load, a tab switch. These are answers to something the
+   *    operator did, so they may replace what is on screen.
    *  - `live` — a vault revision moved. Nobody asked; a card that arrived has to
    *    be added to what the operator is already reading, not swapped in for it.
    *
    * Arrival is judged against every decision the vault holds rather than against
    * this tab's filtered list, because a filing is a filing whatever is on screen.
+   *
+   * There is no domain lens in this read: the surface is global, so moving the
+   * lens is not a reason to ask the vault again and cannot change the answer.
    */
   const load = useCallback(
     async (mode: "view" | "live" = "view") => {
@@ -248,6 +327,8 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
           if (mode === "view") setItems([]);
           return;
         }
+        /** The paint that draws the list for the first time, not a live update. */
+        const firstLoad = !seededRef.current;
         const fresh = seededRef.current
           ? result.value.filter(
               (d) => d.status === "pending" && !drawnRef.current.has(d.id),
@@ -262,18 +343,37 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
         } else {
           list = list.filter((d) => d.status !== "pending");
         }
-        // KAR-70: a pairing Decision belongs to no domain, so the lens
-        // filter would hide the very card the operator has to act on. Every
-        // pairing Decision stays visible under every lens.
-        list = list.filter(
-          (d) =>
-            d.target.type === "agent-pairing" ||
-            recordVisibleMulti(lens, d.domainSlugs),
-        );
+        // No domain filter: this shelf is global, and the active lens must never
+        // be able to hide a proposal waiting for an answer. The dashboard's own
+        // "Pending decisions" card is where the lens-scoped reading lives.
         // Newest first
         list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
         setItems(list);
+
+        // A filing that OPENED this sheet. The page was not on screen when it
+        // was written, so the live-arrival path below never saw it; the watcher
+        // carried the ids in the navigation. The first paint marks those cards,
+        // so the sheet opens with the new one already wearing the aura and the
+        // line above the list naming who filed it — the eye lands on the thing
+        // it is meant to answer, not on a list where one more card appeared.
+        const seed = arrivalSeedRef.current;
+        if (firstLoad && seed && seed.length > 0) {
+          arrivalSeedRef.current = null;
+          const arrived = result.value.filter(
+            (d) => d.status === "pending" && seed.includes(d.id),
+          );
+          if (arrived.length > 0) {
+            const newest = arrived
+              .slice()
+              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]!;
+            setArrival({
+              ids: arrived.map((d) => d.id),
+              actor: actorDisplayName(newest.actor),
+              at: Date.now(),
+            });
+          }
+        }
 
         // The second store is read only by the tabs that show it. A failure to
         // read it must not read as "you have logged nothing": an empty history
@@ -319,10 +419,11 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
         setManualLoading(false);
       }
     },
-    [tab, lens],
+    [tab],
   );
 
-  // The operator's own moves: the first paint, a tab, the domain lens.
+  // The operator's own moves: the first paint and a tab. The lens is not one of
+  // them — the page reads the same list under every lens.
   useEffect(() => {
     void load("view");
   }, [load]);
@@ -345,6 +446,44 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
     return () => window.clearTimeout(timer);
   }, [arrival]);
 
+  /**
+   * Hand the page back when the queue has been answered.
+   *
+   * Settings › Decisions › auto-close. The check is on the whole store rather
+   * than on this tab's list: the queue is empty when no Decision anywhere is
+   * still pending, which is exactly the moment the operator has nothing left to
+   * answer here and the sheet is only in their way. It fires on a rejection as
+   * well as an approval — the operator's answer is what empties the queue, not
+   * the verdict.
+   *
+   * Only the operator's own answer closes the sheet. A Decision resolved in
+   * another window arrives through the live revision, and a sheet that vanished
+   * under an operator who was reading History would be the app taking their
+   * place rather than handing it back.
+   *
+   * The read is its own, rather than the list `load()` just drew: the approve
+   * write announces a vault revision, and the live re-read that announcement
+   * starts can supersede the answer path's read (`readSeqRef`) and hand it back
+   * `null`. Asking the vault once more is a cheap local call, and it makes "is
+   * the queue empty" a fact of the vault rather than a race between two reads.
+   * A read that fails leaves the sheet up: closing on a guess is worse than one
+   * extra click.
+   */
+  async function closeIfAnswered(): Promise<void> {
+    if (!onClose) return;
+    if (!autoClose) return;
+    let remaining: DecisionRecord[];
+    try {
+      const result = await api().decisionList();
+      if (!result.ok) return;
+      remaining = result.value;
+    } catch {
+      return;
+    }
+    if (remaining.some((decision) => decision.status === "pending")) return;
+    onClose();
+  }
+
   async function resolve(id: string, resolution: "approved" | "rejected") {
     setResolvingId(id);
     setActionMessage(null);
@@ -364,6 +503,7 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
       await load();
       // Refresh vault snapshot so document editors pick up approved body.
       await refresh();
+      await closeIfAnswered();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to resolve decision",
@@ -375,8 +515,132 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
 
   function selectTab(next: Tab) {
     setTab(next);
+    setEditingId(null);
     setActionMessage(null);
     setError(null);
+  }
+
+  function beginEdit(id: string) {
+    setEditingId(id);
+    setActionMessage(null);
+    setError(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setError(null);
+  }
+
+  /**
+   * Amend only — the Decision stays in the queue.
+   *
+   * The list is re-read rather than patched in place because the engine owns
+   * what the amended record looks like (it keeps the agent's original on the
+   * first amendment, re-derives the title for body-carried titles); reading it
+   * back is what makes the chip and the title on the card the record's own
+   * facts rather than this page's guess. `refresh()` is not needed here: no
+   * document changed, only a proposal waiting for an answer.
+   */
+  async function saveAmendment(id: string, amendment: DecisionAmendment) {
+    setSavingId(id);
+    setError(null);
+    setActionMessage(null);
+    try {
+      const result = await api().decisionAmend(id, amendment);
+      if (!result.ok) {
+        // The editor stays open: a refusal (a structural field edited through
+        // the exact proposal, say) must not throw away the operator's work.
+        setError(result.error);
+        return;
+      }
+      setEditingId(null);
+      setActionMessage("Changes saved.");
+      await load();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to save the changes",
+      );
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  /**
+   * Amend, then approve — one operator intent, two vault writes.
+   *
+   * The amend has to land first: approval applies whatever the record holds, so
+   * approving first and editing after would be editing a proposal that already
+   * became a file. If the amend succeeds and the approve does not, the edited
+   * proposal is kept on screen (the list is re-read) and the resolve error is
+   * said above it — the operator's correction is not lost because the apply
+   * was refused, and the record is still pending for them to fix.
+   */
+  async function approveWithChanges(id: string, amendment: DecisionAmendment) {
+    setSavingId(id);
+    setError(null);
+    setActionMessage(null);
+    setArrival(null);
+    let amended = false;
+    try {
+      const amendResult = await api().decisionAmend(id, amendment);
+      if (!amendResult.ok) {
+        setError(amendResult.error);
+        return;
+      }
+      amended = true;
+      setEditingId(null);
+      const resolveResult = await api().decisionResolve(id, "approved");
+      if (!resolveResult.ok) {
+        // Reload BEFORE saying why: the read clears the page's error line, so
+        // an error set first would be wiped by the refresh that keeps the
+        // operator's corrected proposal on screen.
+        await load();
+        setError(resolveResult.error);
+        return;
+      }
+      setActionMessage("Decision approved with your changes.");
+      await load();
+      // Refresh vault snapshot so document editors pick up approved body.
+      await refresh();
+      await closeIfAnswered();
+    } catch (err) {
+      if (amended) await load();
+      setError(
+        err instanceof Error ? err.message : "Failed to approve the decision",
+      );
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  /**
+   * Put the agent's proposal back, in one click.
+   *
+   * It is an amendment with `revert: true` because the undo has to be recorded
+   * like every other touch: the log line names the restoration, and a later
+   * reading of the record can tell that the operator once corrected it and
+   * changed their mind.
+   */
+  async function revertToOriginal(id: string) {
+    setSavingId(id);
+    setError(null);
+    setActionMessage(null);
+    try {
+      const result = await api().decisionAmend(id, { revert: true });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setEditingId(null);
+      setActionMessage("Reverted to the agent's version.");
+      await load();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to revert the proposal",
+      );
+    } finally {
+      setSavingId(null);
+    }
   }
 
   /**
@@ -399,19 +663,19 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
    * The arrivals this tab is actually showing.
    *
    * The mark is worn by the cards on screen, and the line above the list counts
-   * those same cards: a proposal filed under another lens is not something this
-   * page can point at, and a count the operator cannot reach is a worse lie than
-   * silence.
+   * those same cards. A filing can land while History owns the screen, where no
+   * pending card is drawn; the line must then wait for the operator to come back
+   * to Pending rather than count a card they cannot see.
    */
   const arrivedIds = new Set(arrival?.ids ?? []);
   const arrivedOnScreen = items.filter((d) => arrivedIds.has(d.id));
   const livedDomains = domains.filter((d) => !d.meta.archivedAt);
 
-  // The manual store is shown under the same lens as the inbox: a decision
-  // logged under Health belongs to Health, and one logged with no domain is the
-  // Overview's own.
-  const manualVisible = manualItems
-    .filter((m) => recordVisible(lens, m.domainSlug))
+  // The manual store is global on this surface too: a decision the operator
+  // logged under one domain is still theirs to read on the governance shelf, and
+  // one logged with no domain is the Overview's own. Newest first, like the
+  // proposals; the tab and the history filter are the only things that narrow it.
+  const manualDecisions = manualItems
     .slice()
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
@@ -421,7 +685,7 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
   let rows: InboxRow[];
   if (tab === "history") {
     const aiRows: InboxRow[] = items.map((decision) => ({ kind: "ai", decision }));
-    const manualRows: InboxRow[] = manualVisible.map((manual) => ({
+    const manualRows: InboxRow[] = manualDecisions.map((manual) => ({
       kind: "manual",
       manual,
     }));
@@ -563,8 +827,10 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
       {tab === "manual" ? (
         <ManualDecisionsPanel
           domains={livedDomains}
+          // The lens is only a convenient default for the DOMAIN FIELD here, not
+          // a filter: the panel and History draw every logged decision.
           defaultDomainSlug={lens.kind === "domain" ? lens.slug : null}
-          items={manualVisible}
+          items={manualDecisions}
           loading={manualLoading}
           onLogged={manualLogged}
         />
@@ -587,14 +853,27 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
             const d = row.decision;
             const title =
               tab === "pending" && d.proposedTitle ? d.proposedTitle : d.title;
-            const domainsLabel = d.domainSlugs
-              .map((slug) => domainLabel(slug, domains))
-              .join(", ");
-            const statusLabel = d.reason ? "Could not apply" : d.status;
+            // The domain reads as a badge beside the status pill, where the eye
+            // scans before it reads the card, rather than as a word buried in the
+            // meta line that repeats it. KAR-70 pairing Decisions belong to no
+            // domain, so they simply have no badge.
+            const domainChips = d.domainSlugs.map((slug) => ({
+              slug,
+              name: domainLabel(slug, domains),
+            }));
+            const statusLabel = d.reason
+              ? "Could not apply"
+              : d.status === "approved" && d.amendedAt != null
+                ? // The operator's correction is what got approved, so History
+                  // names it. A terminal apply failure above keeps its own
+                  // label: "could not apply" is a different fact from "edited".
+                  "approved · edited"
+                : d.status;
             const statusClass = d.reason
               ? "decision-status--stale"
               : `decision-status--${d.status}`;
             const isNew = arrivedIds.has(d.id);
+            const isEditing = editingId === d.id;
             return (
               <li
                 key={d.id}
@@ -620,19 +899,38 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
                     ) : null}
                     <span className="decision-kind">{kindLabel(d.target)}</span>
                     {isNew ? <span className="decision-new">New</span> : null}
+                    {/* Provenance on the queue itself: this proposal is no
+                        longer the agent's words, and the operator answering it
+                        should know before they answer. */}
+                    {tab === "pending" && d.amendedAt != null ? (
+                      <span
+                        className="decision-edited"
+                        data-testid="decision-edited-chip"
+                      >
+                        Edited by you
+                      </span>
+                    ) : null}
                   </span>
-                  <span className={`decision-status ${statusClass}`}>{statusLabel}</span>
+                  <span className="decision-card__kicker-right">
+                    {domainChips.map((chip) => (
+                      <span
+                        key={chip.slug}
+                        className="decision-domain"
+                        data-domain-slug={chip.slug}
+                        title={`Domain: ${chip.name}`}
+                      >
+                        {chip.name}
+                      </span>
+                    ))}
+                    <span className={`decision-status ${statusClass}`}>
+                      {statusLabel}
+                    </span>
+                  </span>
                 </div>
                 <div>
                   <h2 className="decision-card__title">{title}</h2>
                   <p className="decision-card__meta muted">
                     <span>{actorDisplayName(d.actor)}</span>
-                    {domainsLabel ? (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span>{domainsLabel}</span>
-                      </>
-                    ) : null}
                     <span aria-hidden="true">·</span>
                     <time dateTime={d.createdAt}>{formatWhen(d.createdAt)}</time>
                   </p>
@@ -655,6 +953,7 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
                 ) : null}
 
                 {tab === "pending" &&
+                !isEditing &&
                 d.status === "pending" &&
                 d.previousTitle != null &&
                 d.previousTitle !== (d.proposedTitle ?? "") ? (
@@ -666,34 +965,66 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
                   </p>
                 ) : null}
 
-                <DecisionBody
-                  target={d.target}
-                  proposed={d.proposedBodyMarkdown}
-                  previous={d.previousBodyMarkdown}
-                  goalName={(id) => snapshot?.goals.find((goal) => goal.id === id)?.name ?? null}
-                  domainName={(slug) => domainLabel(slug, domains)}
-                />
+                {isEditing ? (
+                  // The editor takes the place of both the read-only body and
+                  // the answer pair: a card being corrected is not being
+                  // answered, and its own Save/Approve-with-changes are the
+                  // answers it offers.
+                  <DecisionEditor
+                    decision={d}
+                    busy={savingId === d.id}
+                    onCancel={cancelEdit}
+                    onSave={(amendment) => saveAmendment(d.id, amendment)}
+                    onApproveChanges={(amendment) =>
+                      approveWithChanges(d.id, amendment)
+                    }
+                    onRevert={() => revertToOriginal(d.id)}
+                  />
+                ) : (
+                  <>
+                    <DecisionBody
+                      target={d.target}
+                      proposed={d.proposedBodyMarkdown}
+                      previous={d.previousBodyMarkdown}
+                      goalName={(id) => snapshot?.goals.find((goal) => goal.id === id)?.name ?? null}
+                      domainName={(slug) => domainLabel(slug, domains)}
+                    />
 
-                {tab === "pending" && d.status === "pending" ? (
-                  <div className="decision-card__actions">
-                    <button
-                      type="button"
-                      className="btn btn-danger"
-                      disabled={resolvingId === d.id}
-                      onClick={() => void resolve(d.id, "rejected")}
-                    >
-                      {resolvingId === d.id ? "…" : "Reject"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      disabled={resolvingId === d.id}
-                      onClick={() => void resolve(d.id, "approved")}
-                    >
-                      {resolvingId === d.id ? "…" : "Approve"}
-                    </button>
-                  </div>
-                ) : null}
+                    {tab === "pending" && d.status === "pending" ? (
+                      <div className="decision-card__actions">
+                        <button
+                          type="button"
+                          className="btn btn-danger"
+                          data-testid="btn-decision-reject"
+                          disabled={resolvingId === d.id || savingId === d.id}
+                          onClick={() => void resolve(d.id, "rejected")}
+                        >
+                          {resolvingId === d.id ? "…" : "Reject"}
+                        </button>
+                        {supportsAmendment(d) ? (
+                          <button
+                            type="button"
+                            className="btn"
+                            data-testid="btn-decision-edit"
+                            disabled={resolvingId === d.id || savingId === d.id}
+                            onClick={() => beginEdit(d.id)}
+                          >
+                            Edit
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          data-testid="btn-decision-approve"
+                          disabled={resolvingId === d.id || savingId === d.id}
+                          onClick={() => void resolve(d.id, "approved")}
+                        >
+                          {resolvingId === d.id ? "…" : "Approve"}
+                        </button>
+                      </div>
+                    ) : null}
+                  </>
+                )}
 
                 {d.resolvedAt ? (
                   <p className="decision-card__resolved muted">

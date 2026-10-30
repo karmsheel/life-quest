@@ -55,6 +55,20 @@
   --accent-soft: #f5d8cb;
   --accent-tint: #fbeee5;
 
+  /* The raised button's face and its two lit edges. The face is the skin's own
+     accent sunk into the page canvas, so every palette colours it with its
+     brand — in Nous that is the brand blue at a third of its lightness, which is
+     the one control on the Daily Note that reads as a key rather than as another
+     outline chip beside the prose. The values are per mode because the ladder
+     inverts at night: by day the light step is the sheet showing through, at
+     night it is the accent lifted off it. */
+  --raised-fill-top: color-mix(in srgb, var(--primary) 44%, var(--background));
+  --raised-fill-bottom: color-mix(in srgb, var(--primary) 60%, var(--background));
+  --raised-edge: color-mix(in srgb, var(--primary) 76%, var(--background));
+  --raised-highlight: rgba(255, 255, 255, 0.5);
+  --raised-lip: color-mix(in srgb, var(--primary) 74%, var(--background));
+  --raised-fg: var(--foreground);
+
   /* The ink of the app's own scrollbar thumb. A neutral, and deliberately the
      same mid ink a skin gives muted text rather than the accent: the bar is
      chrome, and the brand must not tint it. Because this aliases a token the
@@ -85,6 +99,11 @@
   --shadow-xs: 0 1px 0 rgba(28, 27, 26, 0.04);
   --shadow-sm: 0 1px 2px rgba(28, 27, 26, 0.05), 0 1px 3px rgba(28, 27, 26, 0.04);
   --shadow-md: 0 6px 24px rgba(28, 27, 26, 0.07), 0 2px 6px rgba(28, 27, 26, 0.04);
+  /* The decisions inbox's card is the one surface that stands proud of the
+     sheet: a card an operator is asked to answer should read as a thing put on
+     the page, not painted into it. Every other surface keeps the flat ladder. */
+  --shadow-card:
+    0 1px 2px rgba(28, 27, 26, 0.1), 0 10px 22px -10px rgba(28, 27, 26, 0.26);
   --shadow-nous:
     0 0.125rem 0.25rem -0.125rem color-mix(in srgb, #000 7%, transparent),
     0 0.5rem 0.75rem -0.375rem color-mix(in srgb, #000 6%, transparent),
@@ -183,6 +202,16 @@
   --accent-soft: #3d2318;
   --accent-tint: #2e1a12;
 
+  /* The raised face at night: the accent lifted off the page for the light step
+     and sunk toward it for the shade, with a lip darker than either so the
+     control sits on the sheet instead of in it. */
+  --raised-fill-top: color-mix(in srgb, var(--primary) 56%, var(--background));
+  --raised-fill-bottom: color-mix(in srgb, var(--primary) 42%, var(--background));
+  --raised-edge: color-mix(in srgb, var(--primary) 34%, var(--background));
+  --raised-highlight: rgba(255, 255, 255, 0.18);
+  --raised-lip: color-mix(in srgb, var(--primary) 22%, var(--background));
+  --raised-fg: var(--foreground);
+
   --map-gold: #e0c36a;
   --map-red: #e06b65;
   --map-blue: #6b8fe8;
@@ -206,6 +235,8 @@
   --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.2);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.25);
+  --shadow-card:
+    0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 26px -10px rgba(0, 0, 0, 0.55);
   --shadow-nous:
     0 0.125rem 0.25rem -0.125rem color-mix(in srgb, #000 12%, transparent),
     0 0.5rem 0.75rem -0.375rem color-mix(in srgb, #000 10%, transparent),
@@ -255,6 +286,13 @@
     --accent-soft: #3d2318;
     --accent-tint: #2e1a12;
 
+    --raised-fill-top: color-mix(in srgb, var(--primary) 56%, var(--background));
+    --raised-fill-bottom: color-mix(in srgb, var(--primary) 42%, var(--background));
+    --raised-edge: color-mix(in srgb, var(--primary) 34%, var(--background));
+    --raised-highlight: rgba(255, 255, 255, 0.18);
+    --raised-lip: color-mix(in srgb, var(--primary) 22%, var(--background));
+    --raised-fg: var(--foreground);
+
     --map-gold: #e0c36a;
     --map-red: #e06b65;
     --map-blue: #6b8fe8;
@@ -278,6 +316,8 @@
     --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.2);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2);
     --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.25);
+    --shadow-card:
+      0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 26px -10px rgba(0, 0, 0, 0.55);
     --shadow-nous:
       0 0.125rem 0.25rem -0.125rem color-mix(in srgb, #000 12%, transparent),
       0 0.5rem 0.75rem -0.375rem color-mix(in srgb, #000 10%, transparent),
