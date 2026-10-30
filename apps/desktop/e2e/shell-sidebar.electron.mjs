@@ -1147,7 +1147,7 @@ async function main() {
       "the rail switcher moves to the Define wing",
       defined.wingSwitcher?.active === "Define" &&
         JSON.stringify(defined.wingRows?.map((row) => row.label)) ===
-          JSON.stringify(["Dream", "Vision", "Ideal State"]),
+          JSON.stringify(["Dream", "Vision", "Ideal State", "Images"]),
       `active ${JSON.stringify(defined.wingSwitcher?.active)}, rows ${JSON.stringify(defined.wingRows?.map((row) => row.label))}`,
     );
     at("wing switcher: Home");
