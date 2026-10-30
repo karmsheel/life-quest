@@ -299,7 +299,7 @@ const waitForShell = () => {
   const shell = document.querySelector(".shell");
   const page = document.querySelector('[data-rig-page="home"]');
   const input = document.querySelector("[data-rig-input]");
-  const wings = document.querySelector(".top-bar__wings");
+  const wings = document.querySelector(".nav-rail__wings");
   if (!shell || !page || !input || !wings) {
     requestAnimationFrame(waitForShell);
     return;

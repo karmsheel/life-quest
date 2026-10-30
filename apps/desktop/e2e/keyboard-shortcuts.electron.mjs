@@ -150,7 +150,7 @@ const SAMPLE = `(() => {
   }
 
   const wingTabs = Array.from(
-    document.querySelectorAll(".top-bar__wings [role='tab']"),
+    document.querySelectorAll(".nav-rail__wings [role='tab']"),
   ).map((tab) => ({
     label: text(tab),
     selected: tab.getAttribute("aria-selected") === "true",
@@ -1878,9 +1878,16 @@ async function main() {
     );
 
     at("the dock-recorded key toggles the sidebar");
-    // The titlebar's vault link, not Ctrl+1: the wing shortcut returns to the
-    // wing's last page, which the page-step test above left at /pages.
-    await clickSelector(".window-titlebar__vault");
+    // Home is two real moves from the Define wing: Ctrl+1 returns to Home's last
+    // page, then the rail's Dashboard row goes to /home. The titlebar's vault
+    // chip is no longer a link there — it raises the vault switcher — so the
+    // page's own rail is the way in.
+    await press("1", ["control"]);
+    await waitFor(
+      'Boolean(document.querySelector(\'.nav-rail__link[href="/home"]\'))',
+      "the Home wing's rail row",
+    );
+    await clickSelector('.nav-rail__link[href="/home"]');
     const dockEditHome = await record(
       "dockEditHome",
       'document.body.dataset.rigPath === "/home"',
