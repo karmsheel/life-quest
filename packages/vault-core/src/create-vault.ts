@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { atomicWriteFile } from "./atomic-write.ts";
+import { DEFAULT_DECISION_INBOX_SETTINGS } from "./decision-inbox.ts";
 import { serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
 import { openVault } from "./open-vault.ts";
@@ -53,6 +54,7 @@ export async function createVault(
       weekStartDay: "monday",
       autoApproveInserts: [],
       chatQuestions: [],
+      decisionInbox: { ...DEFAULT_DECISION_INBOX_SETTINGS },
     };
     await atomicWriteFile(paths.settingsJson, `${JSON.stringify(settings, null, 2)}\n`);
     await atomicWriteFile(paths.agentsJson, `${JSON.stringify({ hires: [] }, null, 2)}\n`);

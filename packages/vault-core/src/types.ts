@@ -219,6 +219,23 @@ export type ChatQuestion = {
   createdAt: string;
 };
 
+/**
+ * How the Decisions inbox interrupts whatever the operator is doing.
+ *
+ * The inbox is a sheet the operator opens to approve the proposals the companion
+ * files. Both switches are about the sheet moving on its own: `autoOpen` raises
+ * it when a new proposal arrives, and `autoClose` puts it away once the last
+ * pending one is answered. They are separate because the operator may want the
+ * inbox to announce itself without it also deciding when the interruption ends
+ * — or the reverse, closing quietly while only ever opening it by hand.
+ */
+export type DecisionInboxSettings = {
+  /** Open the inbox when the companion files a decision. */
+  autoOpen: boolean;
+  /** Close the inbox when the last pending decision is answered. */
+  autoClose: boolean;
+};
+
 export type VaultSettings = {
   hermesBaseUrl: string;
   theme: "system" | "light" | "dark";
@@ -233,6 +250,8 @@ export type VaultSettings = {
   autoApproveInserts: AutoApproveInsert[];
   /** Saved questions the chat composer offers, in the operator's own order. */
   chatQuestions: ChatQuestion[];
+  /** Whether the Decisions inbox opens and closes itself. */
+  decisionInbox: DecisionInboxSettings;
 };
 
 export type ReviewScopeStatus = "missing" | "draft" | "done";

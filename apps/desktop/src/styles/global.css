@@ -4703,6 +4703,109 @@ a.home-mini-list__link:hover {
   outline: none;
 }
 
+/* —— The sheet's arrival and leave ——
+   A surface this large appearing between one frame and the next reads as a
+   flash, and vanishing in one frame reads as a dismissal that never finished.
+   So the scrim dims first (120ms) and the panel settles up from a hair below
+   over 200ms; on the way out the panel drops a few pixels as it fades and the
+   scrim goes with it (140ms). Distances are deliberately tiny — this panel is
+   ~90% of the window, and a long slide would read as a page transition rather
+   than a surface arriving over one.
+
+   Only `opacity` and `transform` are animated: the scrim's blur is constant, so
+   the compositor never has to re-rasterise a 7px backdrop-filter per frame.
+   The exit's length is mirrored by `SHEET_EXIT_MS` in `SheetOverlay.tsx`, which
+   defers the unmount until the motion has played. Nothing moves under
+   `prefers-reduced-motion`, and the frame leaves at once.
+
+   Fade and travel are two animations, not one. On the app's `--ease-out` a
+   200ms fade is already ~97% done at its halfway point, which is why the sheet
+   used to read as a pop with a twitch attached; the fade therefore runs linear,
+   so the arrival is legible for its whole length, while the transform keeps the
+   settle curve the rest of the app moves with. */
+.sheet-overlay {
+  animation: sheet-scrim-in var(--dur-quick) linear both;
+}
+
+.sheet-overlay.is-closing {
+  animation: sheet-scrim-out var(--dur-exit) linear both;
+}
+
+.sheet-overlay__panel {
+  animation:
+    sheet-panel-fade-in var(--dur-enter) linear both,
+    sheet-panel-rise-in var(--dur-enter) var(--ease-out) both;
+}
+
+.sheet-overlay.is-closing .sheet-overlay__panel {
+  animation:
+    sheet-panel-fade-out var(--dur-exit) linear both,
+    sheet-panel-drop-out var(--dur-exit) var(--ease-out) both;
+}
+
+@keyframes sheet-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sheet-scrim-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-panel-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sheet-panel-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-panel-rise-in {
+  from {
+    transform: translateY(10px) scale(0.992);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes sheet-panel-drop-out {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translateY(4px) scale(0.996);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-overlay,
+  .sheet-overlay.is-closing,
+  .sheet-overlay__panel,
+  .sheet-overlay.is-closing .sheet-overlay__panel {
+    animation: none;
+  }
+}
+
 /* Decisions is a reading column, not a settings workbench. The frame stops at
    the inbox's own measure instead of taking 90% of a wide window and padding
    either side of the cards with empty panel. It still shrinks to the window on
@@ -5131,6 +5234,47 @@ a.home-mini-list__link:hover {
 .settings-developer__state[data-developer-state="previewing"],
 .settings-developer__state[data-developer-state="shadowed"] {
   color: var(--amber);
+}
+
+/* —— Decisions page ——
+   The same list shape as Developer, because it is the same kind of page: two
+   switches, each one row, the copy on the left and the switch pinned to the
+   row's trailing edge. A plain `SettingsRow` in a card stacks its control under
+   the copy; that reads as a paragraph with a switch dropped in it, and the eye
+   has no column to scan for the state. The hairline between rows keeps them
+   from running together. */
+.settings-decisions {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-decisions > .settings-card__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+}
+
+.settings-decisions > .settings-card__row + .settings-card__row {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* The copy keeps its own measure rather than running under the switch. */
+.settings-decisions .settings-card__copy {
+  max-width: 38rem;
+}
+
+.settings-decisions .settings-card__desc {
+  max-width: none;
+  line-height: 1.5;
+}
+
+.settings-decisions .settings-card__control {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 0.08rem;
 }
 
 .settings-appearance__skin-hint {

@@ -15,6 +15,7 @@ import { SettingsVault } from "./SettingsVault";
 import { SettingsUpdates } from "./SettingsUpdates";
 import { SettingsDeveloper } from "./SettingsDeveloper";
 import { SettingsQuestions } from "./SettingsQuestions";
+import { SettingsDecisions } from "./SettingsDecisions";
 import { SettingsAbout } from "./SettingsAbout";
 
 function SettingsNavItem({
@@ -62,6 +63,8 @@ function SettingsPanel({ view }: { view: SettingsViewId }) {
       return <SettingsCompanionPrompts />;
     case "questions":
       return <SettingsQuestions />;
+    case "decisions":
+      return <SettingsDecisions />;
     case "updates":
       return <SettingsUpdates />;
     case "about":

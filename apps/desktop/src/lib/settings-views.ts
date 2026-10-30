@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Building2,
   FlaskConical,
+  Inbox,
   Layers,
   MessageCircleQuestion,
   Palette,
@@ -18,6 +19,7 @@ export type SettingsViewId =
   | "hermes"
   | "agent"
   | "questions"
+  | "decisions"
   | "updates"
   | "about"
   | "developer";
@@ -118,6 +120,26 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "chat",
       "ask",
       "suggested",
+    ],
+  },
+  {
+    id: "decisions",
+    label: "Decisions",
+    icon: Inbox,
+    keywords: [
+      "decision",
+      "decisions",
+      "inbox",
+      "proposal",
+      "proposals",
+      "approve",
+      "approval",
+      "auto",
+      "automatic",
+      "open",
+      "close",
+      "popup",
+      "sheet",
     ],
   },
   {

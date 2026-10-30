@@ -6,6 +6,7 @@ import {
 } from "react";
 import {
   actorDisplayName,
+  DEFAULT_DECISION_INBOX_SETTINGS,
   DOCUMENT_KIND_LABELS,
 } from "@lifequest/vault-core/pure";
 import type {
@@ -203,12 +204,37 @@ function kindLabel(target: DecisionRecord["target"]): string {
  * place to show them something they did not ask for, and the card is marked either
  * way.
  */
-export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) {
+export function DecisionsInbox({
+  showHeader = true,
+  onClose,
+  arrivalIds,
+}: {
+  showHeader?: boolean;
+  /**
+   * The sheet's own close, supplied when the inbox is worn as a surface (see
+   * `DecisionsOverlay`). The standalone shape the rigs draw has none, and then
+   * the auto-close switch has nothing to close.
+   */
+  onClose?: () => void;
+  /**
+   * Pending Decision ids whose filing opened this sheet, when the watcher opened
+   * it (see `DecisionInboxAutoOpen`). They are the arrival the live mark cannot
+   * know about, because this page was not on screen when they were written.
+   */
+  arrivalIds?: readonly string[];
+}) {
   const { snapshot, refresh } = useVault();
   const lens = useDomainLens();
   const domains = snapshot?.domains ?? [];
   /** The vault's revision: it moves on any write, in this window or the agent's. */
   const live = useLiveData();
+  /**
+   * Settings › Decisions › auto-close, defaulted for a snapshot from a rig or a
+   * vault written before the switch existed.
+   */
+  const autoClose =
+    snapshot?.settings.decisionInbox?.autoClose ??
+    DEFAULT_DECISION_INBOX_SETTINGS.autoClose;
 
   const [tab, setTab] = useState<Tab>("pending");
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
@@ -236,6 +262,14 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
   const [savingId, setSavingId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [arrival, setArrival] = useState<Arrival | null>(null);
+  /**
+   * The filing this sheet was opened FOR, if the watcher opened it.
+   *
+   * A ref, not state: it is input to the first paint only, and the mark must not
+   * come back when the operator switches tabs. The first successful read is the
+   * one that draws the list the filing is in, so it consumes this.
+   */
+  const arrivalSeedRef = useRef<readonly string[] | null>(arrivalIds ?? null);
 
   /**
    * Every decision id this page has drawn, so "just arrived" is decidable.
@@ -293,6 +327,8 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
           if (mode === "view") setItems([]);
           return;
         }
+        /** The paint that draws the list for the first time, not a live update. */
+        const firstLoad = !seededRef.current;
         const fresh = seededRef.current
           ? result.value.filter(
               (d) => d.status === "pending" && !drawnRef.current.has(d.id),
@@ -314,6 +350,30 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
         list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
         setItems(list);
+
+        // A filing that OPENED this sheet. The page was not on screen when it
+        // was written, so the live-arrival path below never saw it; the watcher
+        // carried the ids in the navigation. The first paint marks those cards,
+        // so the sheet opens with the new one already wearing the aura and the
+        // line above the list naming who filed it — the eye lands on the thing
+        // it is meant to answer, not on a list where one more card appeared.
+        const seed = arrivalSeedRef.current;
+        if (firstLoad && seed && seed.length > 0) {
+          arrivalSeedRef.current = null;
+          const arrived = result.value.filter(
+            (d) => d.status === "pending" && seed.includes(d.id),
+          );
+          if (arrived.length > 0) {
+            const newest = arrived
+              .slice()
+              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]!;
+            setArrival({
+              ids: arrived.map((d) => d.id),
+              actor: actorDisplayName(newest.actor),
+              at: Date.now(),
+            });
+          }
+        }
 
         // The second store is read only by the tabs that show it. A failure to
         // read it must not read as "you have logged nothing": an empty history
@@ -386,6 +446,44 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
     return () => window.clearTimeout(timer);
   }, [arrival]);
 
+  /**
+   * Hand the page back when the queue has been answered.
+   *
+   * Settings › Decisions › auto-close. The check is on the whole store rather
+   * than on this tab's list: the queue is empty when no Decision anywhere is
+   * still pending, which is exactly the moment the operator has nothing left to
+   * answer here and the sheet is only in their way. It fires on a rejection as
+   * well as an approval — the operator's answer is what empties the queue, not
+   * the verdict.
+   *
+   * Only the operator's own answer closes the sheet. A Decision resolved in
+   * another window arrives through the live revision, and a sheet that vanished
+   * under an operator who was reading History would be the app taking their
+   * place rather than handing it back.
+   *
+   * The read is its own, rather than the list `load()` just drew: the approve
+   * write announces a vault revision, and the live re-read that announcement
+   * starts can supersede the answer path's read (`readSeqRef`) and hand it back
+   * `null`. Asking the vault once more is a cheap local call, and it makes "is
+   * the queue empty" a fact of the vault rather than a race between two reads.
+   * A read that fails leaves the sheet up: closing on a guess is worse than one
+   * extra click.
+   */
+  async function closeIfAnswered(): Promise<void> {
+    if (!onClose) return;
+    if (!autoClose) return;
+    let remaining: DecisionRecord[];
+    try {
+      const result = await api().decisionList();
+      if (!result.ok) return;
+      remaining = result.value;
+    } catch {
+      return;
+    }
+    if (remaining.some((decision) => decision.status === "pending")) return;
+    onClose();
+  }
+
   async function resolve(id: string, resolution: "approved" | "rejected") {
     setResolvingId(id);
     setActionMessage(null);
@@ -405,6 +503,7 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
       await load();
       // Refresh vault snapshot so document editors pick up approved body.
       await refresh();
+      await closeIfAnswered();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to resolve decision",
@@ -503,6 +602,7 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
       await load();
       // Refresh vault snapshot so document editors pick up approved body.
       await refresh();
+      await closeIfAnswered();
     } catch (err) {
       if (amended) await load();
       setError(
