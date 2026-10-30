@@ -1,8 +1,10 @@
 /**
- * E2E harness for Define → Images — driven by `images-board.electron.mjs`.
+ * E2E harness for Define → Images and the Vision board — driven by
+ * `images-board.electron.mjs`.
  *
- * The real shell, the real rail, the real Images page and the real stylesheet
- * render here; only the IPC bridge is stubbed, and it is a *recording* stub:
+ * The real shell, the real rail, the real Images page, the real Vision page and
+ * the real stylesheet render here; only the IPC bridge is stubbed, and it is a
+ * *recording* stub:
  * every method the page calls is listed, and anything else answers a refusal and
  * is NAMED in `imagesBoardUnexpectedCalls`, so a page that grows a dependency
  * this rig does not model fails the run loudly instead of rendering an empty
@@ -11,7 +13,9 @@
  * ── How this can fail (written before the assertions) ────────────────────────
  *
  *  1. The Define rail entry is missing, misnamed, or points somewhere other
- *     than `/images`, so the operator cannot find the page.
+ *     than `/images`, so the operator cannot find the page; or the board is
+ *     still on Images instead of under the Vision page, where the operator
+ *     asked for it.
  *  2. The bridge stub stores the bytes it was handed but the page never draws
  *     them: a blob URL that is never made, or an `<img>` that never decodes.
  *  3. The stub does not model a write. An upload would report success and the
@@ -34,6 +38,7 @@ import type { VaultImage, VisionBoardBlock } from "@lifequest/vault-core";
 import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import ImagesPage from "@/pages/ImagesPage";
+import VisionPage from "@/pages/VisionPage";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
@@ -122,7 +127,29 @@ const SNAPSHOT = {
     weekStartDay: "monday",
     autoApproveInserts: [],
   },
-  domains: [],
+  domains: [
+    {
+      slug: "health",
+      meta: {
+        name: "Health",
+        description: null,
+        color: null,
+        sortOrder: 0,
+        archivedAt: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      documents: {
+        what: {
+          kind: "what",
+          title: "Vision & Desire",
+          bodyMarkdown: "A body that carries me through the years.",
+          locked: false,
+          updatedAt: "2026-09-30T09:00:00.000Z",
+        },
+      },
+    },
+  ],
   agents: [],
   decisions: [],
   log: [],
@@ -315,6 +342,7 @@ createRoot(root).render(
                         }
                       />
                       <Route path="/images" element={<ImagesPage />} />
+                      <Route path="/vision" element={<VisionPage />} />
                     </Route>
                   </Routes>
                 </div>
@@ -336,8 +364,13 @@ const waitForPage = () => {
   const rail = document.querySelector(".nav-rail");
   const page = document.querySelector(".images-studio");
   const library = document.querySelector('[data-testid="images-library"]');
-  const board = document.querySelector('[data-testid="vision-board"]');
-  if (!rail || !page || !library || !board) {
+  // The library's own first read has landed: the Images page is the library and
+  // nothing else now, so its settled state is the empty card or the grid — not a
+  // vision board (that lives on the Vision page).
+  const settled =
+    document.querySelector('[data-testid="images-empty"]') ||
+    document.querySelector('[data-testid="images-grid"]');
+  if (!rail || !page || !library || !settled) {
     requestAnimationFrame(waitForPage);
     return;
   }

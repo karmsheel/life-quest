@@ -25,6 +25,10 @@ type FocusRequest = {
 };
 
 export type VisionBoardEditorProps = {
+  /** The document's heading; the Vision page says "Vision board". */
+  title?: string;
+  /** One line under the heading, naming where pictures come from. */
+  lead?: string;
   blocks: VisionBoardBlock[];
   /** The library, for image blocks and the picture picker. */
   images: VaultImage[];
@@ -85,6 +89,8 @@ function BlockButton({
  * rig.
  */
 export function VisionBoardEditor({
+  title = "The vision",
+  lead = "Write it as blocks. Add pictures from the library beside this document, drop one in, or paste one into a text block.",
   blocks,
   images,
   urls,
@@ -534,7 +540,7 @@ export function VisionBoardEditor({
     >
       <header className="vision-board__header">
         <div className="vision-board__heading">
-          <h2 id="vision-board-heading">The vision</h2>
+          <h2 id="vision-board-heading">{title}</h2>
           <span
             className="vision-board__status"
             data-testid="vision-board-status"
@@ -543,10 +549,7 @@ export function VisionBoardEditor({
             {statusLabel}
           </span>
         </div>
-        <p className="vision-board__lead">
-          Write it as blocks. Add pictures from the library beside this
-          document, drop one in, or paste one into a text block.
-        </p>
+        <p className="vision-board__lead">{lead}</p>
       </header>
 
       {blocks.length === 0 ? (

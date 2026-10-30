@@ -1,11 +1,12 @@
-/* Define → Images. Two surfaces in one sheet: the picture library on the left,
-   the vision document on the right. Chrome is the studio's — 2px corners, the
-   shared eyebrow/title/lead type scale — so it reads as Ideal State's sibling
-   rather than a new kind of page. */
+/* Define → Images and the Vision board.
+   Images is the vault's picture library: one full-width surface with the
+   studio's chrome — 2px corners, the shared eyebrow/title/lead type scale — so
+   it reads as Ideal State's sibling rather than a new kind of page. The vision
+   board itself sits on the Vision page below the doctrine cards, and the
+   `.vision-board*` rules at the foot of this file dress it there. */
 
 .images-studio {
   --images-radius: 2px;
-  container-type: inline-size;
   position: relative;
   width: 100%;
   display: flex;
@@ -62,11 +63,20 @@
   color: var(--destructive);
 }
 
-.images-studio__layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-  gap: 0.85rem;
-  align-items: start;
+.images-studio__crosslink {
+  margin: 0.35rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+
+.images-studio__crosslink a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.images-studio__crosslink a:hover {
+  text-decoration: underline;
 }
 
 .images-studio .btn {
@@ -153,7 +163,7 @@
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
   gap: 0.6rem;
 }
 
@@ -179,7 +189,6 @@
   border-bottom: 1px solid var(--border-soft);
   background: color-mix(in srgb, var(--foreground) 4%, var(--bg-subtle));
   overflow: hidden;
-  cursor: pointer;
 }
 
 .image-card__preview img {
@@ -189,14 +198,6 @@
   display: block;
 }
 
-.image-card__preview:hover img {
-  opacity: 0.9;
-}
-
-.image-card__preview:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: -2px;
-}
 
 .image-card__waiting {
   padding: 0.5rem;
@@ -246,7 +247,7 @@
 .image-card__actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 0.35rem;
   margin-top: 0.15rem;
 }
@@ -647,8 +648,17 @@
   pointer-events: none;
 }
 
-@container (max-width: 760px) {
-  .images-studio__layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
+/* ── the board, on the Vision page ───────────────────────────────────────── */
+
+.vision-board-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+/* The doctrine cards above are the page's short read; the board is the long
+   one, so it gets a hairline to say the page changes register here. */
+.vision-board-panel > .vision-board {
+  margin-top: 0.35rem;
 }

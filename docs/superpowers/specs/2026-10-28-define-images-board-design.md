@@ -122,6 +122,24 @@ an error the page can report.
   Ctrl+S recovery, and the narrow layout. Artifacts: `e2e/artifacts/images-board.json`
   and four captures.
 
+## Revision 2026-10-30 — the board moved to the Vision page
+
+The first cut put the library and the board on one sheet at `/images`. The
+operator reviewed it: the library belongs on Images, but the board is a vision
+document and must sit under **Vision** in the Define wing. This revision moves
+it.
+
+- `ImagesPage` is now the library only: upload, drop, caption, remove, and a
+  link to Vision. No board, no two-column layout.
+- `VisionPage` keeps its doctrine card(s) and carries the board below them,
+  through a self-contained `VisionBoardPanel` that owns the library read, the
+  autosave, the picture picker/drop/paste uploads and the errors.
+- Data is unchanged: the same `images/library.json` and `images/board.json`, the
+  same IPC and the same block kinds. Nothing migrates.
+- The rig now drives both pages in one run: the library on Images, navigation to
+  Vision, the board written there, and a picture deleted on Images left drawing
+  as missing on the board.
+
 ## Out of scope
 
 Companion/MCP tools for the library and the document (a later pass), galleries on
