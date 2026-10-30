@@ -602,27 +602,6 @@ export default function DailyNotePage() {
               Next day ›
             </Button>
           </div>
-          {manualAutomations.length > 0 ? (
-            <div className="daily-note__automations">
-              {manualAutomations.map((automation) => (
-                <Button
-                  key={automation.id}
-                  variant="outline"
-                  className="daily-note__analyze"
-                  data-testid={dailyNoteAutomationTestId(automation.id)}
-                  onClick={() => void onRunAutomation(automation)}
-                  disabled={!canRunAutomation}
-                  title={
-                    automation.description ||
-                    "Open a new chat with this note in context"
-                  }
-                >
-                  <Sparkles size={14} aria-hidden />
-                  {runningId === automation.id ? "Opening chat…" : automation.name}
-                </Button>
-              ))}
-            </div>
-          ) : null}
         </header>
 
         {error ? (
@@ -656,13 +635,41 @@ export default function DailyNotePage() {
                 />
               </div>
 
-              <p
-                className="daily-note__status muted"
-                data-testid="daily-note-status"
-                role="status"
-              >
-                {status}
-              </p>
+              {/* The box's foot: the autosave line, and the day's own act on the
+                  trailing edge — under the prose it commits rather than up with
+                  the pager, where it read as another navigation control. */}
+              <div className="daily-note__footer">
+                <p
+                  className="daily-note__status muted"
+                  data-testid="daily-note-status"
+                  role="status"
+                >
+                  {status}
+                </p>
+                {manualAutomations.length > 0 ? (
+                  <div className="daily-note__automations">
+                    {manualAutomations.map((automation) => (
+                      <Button
+                        key={automation.id}
+                        variant="raised"
+                        className="daily-note__analyze"
+                        data-testid={dailyNoteAutomationTestId(automation.id)}
+                        onClick={() => void onRunAutomation(automation)}
+                        disabled={!canRunAutomation}
+                        title={
+                          automation.description ||
+                          "Open a new chat with this note in context"
+                        }
+                      >
+                        <Sparkles size={14} aria-hidden />
+                        {runningId === automation.id
+                          ? "Opening chat…"
+                          : automation.name}
+                      </Button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </div>
           )}
 

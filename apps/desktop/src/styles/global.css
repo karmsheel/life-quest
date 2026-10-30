@@ -154,6 +154,55 @@ a {
   filter: brightness(1.05);
 }
 
+/* The raised button: the page's one act, given a face, a bevel and a lip so it
+   reads as a key rather than as another outline control. The face is the skin's
+   accent sunk into the page canvas (tokens.css owns the two modes), the inset
+   line is the top edge catching the light, and the hard step under the border is
+   the control's own thickness — the drop shadow only lifts it off the sheet.
+   This is the one named exemption to Flat First beyond the inbox cards: the
+   Daily Note's Analyze control is what commits the prose above it, and the
+   operator asked for it to stand proud. It is a primitive variant rather than a
+   page override, so the look cannot drift between the surfaces that ask for it. */
+.btn-raised {
+  color: var(--raised-fg);
+  background: linear-gradient(
+    to bottom,
+    var(--raised-fill-top),
+    var(--raised-fill-bottom)
+  );
+  border-color: var(--raised-edge);
+  box-shadow:
+    inset 0 1px 0 var(--raised-highlight),
+    0 2px 0 var(--raised-lip),
+    var(--shadow-md);
+  transition:
+    filter var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
+}
+
+.btn-raised:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* Pressed: the key travels into its own lip and gives the lift back. */
+.btn-raised:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 0 var(--raised-highlight),
+    0 1px 0 var(--raised-lip),
+    var(--shadow-sm);
+}
+
+/* Disabled: no face, no bevel — a key that cannot be turned should not look
+   pressable. The primitive's own opacity still does the quieting. */
+.btn-raised:disabled {
+  background: color-mix(in srgb, var(--primary) 16%, var(--background));
+  border-color: var(--border);
+  color: var(--muted-foreground);
+  box-shadow: none;
+}
+
 .btn-secondary:hover:not(:disabled) {
   background: var(--selected-soft);
 }
