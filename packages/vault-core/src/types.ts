@@ -223,6 +223,13 @@ export type VaultSettings = {
   hermesBaseUrl: string;
   theme: "system" | "light" | "dark";
   weekStartDay: WeekStartDay;
+  /**
+   * LEGACY, read for compatibility and ignored for behaviour. Adding data is no
+   * longer gated at all (2026-10-28), so an insert allowlist has nothing left to
+   * decide; old vaults keep the key so opening them does not rewrite settings and
+   * so `updateSettings` preserves it. See
+   * `docs/superpowers/specs/2026-10-28-direct-database-writes-design.md`.
+   */
   autoApproveInserts: AutoApproveInsert[];
   /** Saved questions the chat composer offers, in the operator's own order. */
   chatQuestions: ChatQuestion[];

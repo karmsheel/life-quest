@@ -79,6 +79,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "port",
       "agent",
       "chat",
+      "mcp",
+      "door",
+      "doors",
+      "profile",
+      "profiles",
+      "filing",
     ],
   },
   {

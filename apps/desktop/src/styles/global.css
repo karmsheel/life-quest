@@ -849,13 +849,40 @@ a {
   gap: 0.15rem;
 }
 
-/* The wing's rows begin under the top bar's bottom hairline rather than level
-   with the Home/Define selector. The sidebar's header is the titlebar row; this
-   is the top bar's own band, so Dashboard starts on the first line of the page's
-   content instead of sitting beside the selector. The extra pixel or two is the
-   row's own leading: a 31px row starting on the hairline would cover it. */
+/* The sidebar's own band: the five-wing switcher sits on the same row as the
+   sheet's top bar, one `--shell-topbar-height` under the titlebar strip. The
+   band paints no line of its own — that hairline belongs to the sheet's top bar,
+   under the domain lens, and stops at the pane seam. */
+.nav-rail__wings-band {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: var(--shell-topbar-height);
+  /* The rail's flex gap and the header's own bottom margin already sit between
+     the titlebar row and this band; `--shell-frame - 0.3rem` is what is left of
+     the pane gap, so the band starts exactly where the sheet's top bar does. */
+  margin: calc(var(--shell-frame) - 0.3rem) 0 0;
+  padding: 0 0.45rem;
+}
+
+/* Five labels in a 16rem column. The control's shape is `.ui-segmented`'s; the
+   rail only tightens the option padding and steps the type down so the longest
+   wing name fits the fifth of the column it is given. */
+.nav-rail__wings {
+  width: 100%;
+}
+
+.nav-rail__wings .ui-segmented__option {
+  padding: 0.375rem 0.2rem;
+  font-size: 0.625rem;
+  white-space: nowrap;
+}
+
+/* The wing's rows begin under the switcher's band rather than under the sheet's
+   top bar: the rail owns the first level of navigation now, and the row directly
+   beneath the band is the active wing's first page. */
 .nav-rail__section--wing {
-  padding-top: 3.4rem;
+  padding-top: 0.25rem;
 }
 
 .nav-rail__section--bottom {
@@ -1121,11 +1148,14 @@ a {
 /* The band that runs across the top of the sheet. `--shell-topbar-height` is the
    height of that band in *both* panes — the dock's header wears it too — so the
    two underlines land on one line instead of stepping at the seam. No vertical
-   padding: the band is the height, and its contents centre in it. */
+   padding: the band is the height, and its one control centres in it. The wing
+   switcher used to share this row; it now sits in the sidebar's own band, which
+   leaves the domain lens alone here and on the sheet's centre line. */
 .top-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem 0.75rem;
   padding: 0 0.75rem;
   border-bottom: 1px solid var(--border);
@@ -1133,31 +1163,17 @@ a {
   min-height: var(--shell-topbar-height);
 }
 
-.top-bar__wings {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-/* Neither selector on the band wears a frame of its own. `.ui-segmented` draws a
-   hairline around the whole control, and the active tab draws its own inside it —
-   one pixel apart, so the wing switcher and the domain lens each read as two
-   concentric outlines sitting in a row. The control's soft fill still sets it off
-   the band, and the active tab keeps its line, which is what a tab is. Prefixed
-   with the band both because the shared `.ui-segmented` rule is declared further
-   down this sheet (so a bare class here would lose on source order) and to keep
-   the frame everywhere else the control appears — Goals' filters, the settings
-   nav — where there is no second outline to clash with. */
-.top-bar .top-bar__wings,
+/* The band's one control wears no frame of its own. `.ui-segmented` draws a
+   hairline around the whole control, a pixel outside the active tab's own line;
+   with the wing switcher moved to the rail the domain lens has no second outline
+   to pair with, and the frame only doubled it. The control's soft fill still
+   sets it off the band, and the active tab keeps its line, which is what a tab
+   is. Prefixed with the band both because the shared `.ui-segmented` rule is
+   declared further down this sheet (so a bare class here would lose on source
+   order) and to keep the frame everywhere else the control appears — Goals'
+   filters, the settings nav. */
 .top-bar .domain-switcher__tabs {
   border: none;
-}
-
-.top-bar__controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-left: auto;
 }
 
 /* —— Domain switcher —— */
@@ -1618,8 +1634,18 @@ a {
 
 .doc-editor__header {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  flex-wrap: wrap;
+}
+
+.doc-editor__intro {
+  display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  min-width: 0;
+  flex: 1 1 18rem;
 }
 
 .doc-editor__heading {
@@ -1950,27 +1976,215 @@ a {
 }
 
 /* —— Status badge —— */
+/* The page's lock state, in words. The dot is the part that reads at a glance;
+   the word is the part that cannot be misread. Pages that carry a switch wear it
+   above it in the page's corner, and the cards that have no room for a switch
+   (a doctrine card, a strip) wear it on their own. */
 .doc-status-badge {
   display: inline-flex;
   align-items: center;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
+  gap: 0.38rem;
+  padding: 0.22rem 0.58rem 0.22rem 0.48rem;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
   color: var(--muted);
-  background: transparent;
+  background: var(--bg-subtle);
+  transition:
+    color var(--dur-quick) var(--ease-out),
+    background var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out);
 }
 
+.doc-status-badge::before {
+  content: "";
+  width: 0.42rem;
+  height: 0.42rem;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 18%, transparent);
+}
+
+/* Editable: the quiet green of "this is open". Locked: the amber of "held".
+   Locked is deliberately not the success colour it used to be — a held page is
+   a caution, not a win. */
 .doc-status-badge--unlocked {
-  color: var(--muted);
+  color: var(--green);
+  background: color-mix(in srgb, var(--green-bg) 76%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--green) 30%, var(--border));
 }
 
 .doc-status-badge--locked {
-  color: var(--success);
-  border-color: var(--success);
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber-bg) 82%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--border));
+}
+
+/* —— A page's corner: the controls in a row ——
+   Every lockable page puts its lock switch at the title's own top-right edge,
+   with the Dashboard's pin board menu beside it. Both are one height so the
+   pair reads as one row of controls rather than two objects that happen to
+   share a corner. */
+.page-corner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+/* One height for a page's controls, and a width that follows the label. */
+.page-corner__action {
+  height: 2.25rem;
+}
+
+/* The pin board's menu is the page's only "add" path, so it is the one control
+   in the corner that wears the accent rather than the neutral border. It steps
+   off the page on hover with a shadow tinted by its own colour. */
+.page-corner__pinboard.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding-block: 0;
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-panel));
+  color: var(--accent);
+  box-shadow: var(--shadow-xs);
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out);
+}
+
+.page-corner__pinboard.btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow:
+    0 0.5rem 1.25rem color-mix(in srgb, var(--accent) 26%, transparent),
+    0 0.125rem 0.35rem color-mix(in srgb, var(--accent) 18%, transparent);
+  transform: translateY(-1px);
+}
+
+.page-corner__pinboard.btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-xs);
+}
+
+/* —— Lock switch ——
+   The page lock as one control: a caption and a track. At rest the thumb sits
+   left, the track is the page's own muted step and the caption is quiet; locked,
+   the thumb crosses, and the track and caption take the amber that means "held".
+   The badge beside the page's name says the same state in words, which is why
+   the caption can stay "Lock" in both positions. */
+.lock-switch.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0.3rem 0.42rem 0.3rem 0.62rem;
+  border-color: var(--border);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1;
+  text-transform: uppercase;
+  box-shadow: var(--shadow-xs);
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
+}
+
+.lock-switch.btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm);
+}
+
+.lock-switch.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.lock-switch.btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.lock-switch__caption {
+  padding-left: 0.06rem;
+}
+
+.lock-switch__track {
+  position: relative;
+  display: block;
+  width: 2.05rem;
+  height: 1.05rem;
+  flex: none;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--bg-muted);
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out);
+}
+
+.lock-switch__thumb {
+  position: absolute;
+  top: 50%;
+  left: 0.14rem;
+  width: 0.72rem;
+  height: 0.72rem;
+  transform: translateY(-50%);
+  border-radius: var(--radius-pill);
+  background: var(--text-soft);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 28%, transparent);
+  transition:
+    transform var(--dur-enter) var(--ease-out),
+    background var(--dur-quick) var(--ease-out);
+}
+
+.lock-switch--on.btn {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 38%, var(--border));
+  background: color-mix(in srgb, var(--amber-bg) 80%, var(--bg-panel));
+}
+
+.lock-switch--on.btn:hover:not(:disabled) {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
+  background: var(--amber-bg);
+}
+
+.lock-switch--on .lock-switch__track {
+  border-color: color-mix(in srgb, var(--amber) 62%, var(--border));
+  background: color-mix(in srgb, var(--amber) 44%, var(--bg-panel));
+}
+
+.lock-switch--on .lock-switch__thumb {
+  transform: translate(0.92rem, -50%);
+  background: var(--background);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lock-switch__thumb,
+  .page-corner__pinboard.btn {
+    transition: none;
+  }
 }
 
 /* —— Propose change dialog —— */
@@ -2217,6 +2431,16 @@ a {
 
 .documents-page__header {
   margin-bottom: 0.25rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  flex-wrap: wrap;
+}
+
+.documents-page__intro {
+  min-width: 0;
+  max-width: 40rem;
 }
 
 .doc-cards {
@@ -2434,7 +2658,7 @@ a {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0.65rem;
 }
 
 .decisions-inbox__empty {
@@ -2442,29 +2666,145 @@ a {
 }
 
 .decision-card {
-  border: 1px solid var(--border);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  /* A neutral grey card that stands off the sheet, with the inbox's own raised
+     shadow. The sheet panel paints `--card` too, so the card is mixed toward the
+     foreground: lighter grey in the night skins, a grey card on the day sheet. */
+  --decision-card-surface: color-mix(in srgb, var(--card) 86%, var(--foreground) 14%);
+  --decision-card-surface-hover: color-mix(
+    in srgb,
+    var(--card) 79%,
+    var(--foreground) 21%
+  );
+  border: 1px solid color-mix(in srgb, var(--foreground) 16%, var(--border));
   border-radius: var(--radius-sm);
-  padding: 1rem 1.1rem 0.95rem;
+  padding: 0.7rem 0.9rem 0.65rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  background: var(--card);
-  box-shadow: var(--shadow-sm);
+  gap: 0.45rem;
+  background-color: var(--decision-card-surface);
+  background-image: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--foreground) 4%, transparent),
+    transparent 46%
+  );
+  background-repeat: no-repeat;
+  box-shadow: var(--shadow-card);
+  transition:
+    background-color 160ms var(--ease-out),
+    border-color 160ms var(--ease-out),
+    box-shadow 160ms var(--ease-out);
+}
+
+/* By day the sheet is the light surface, so the grey step comes down from the
+   paper rather than up from the ink. The card is still the cool grey the operator
+   asked for, and the shadow is what raises it. */
+[data-theme="light"] .decision-card {
+  --decision-card-surface: color-mix(in srgb, var(--card) 93%, var(--foreground) 7%);
+  --decision-card-surface-hover: color-mix(
+    in srgb,
+    var(--card) 88%,
+    var(--foreground) 12%
+  );
+}
+
+/* The slash the hover reveals: one diagonal band of shading laid across the
+   card, under its content. It is not on the card at rest — the inbox is a list
+   of proposals, not a row of stripes — and it fades in as the pointer arrives.
+   The band below sweeps across it, so the effect is a slash AND a pass of light
+   rather than a flat wash. */
+.decision-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -2;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 26%,
+    color-mix(in srgb, var(--foreground) 8%, transparent) 45%,
+    color-mix(in srgb, var(--foreground) 4%, transparent) 56%,
+    transparent 74%
+  );
+  opacity: 0;
+  transition: opacity 220ms var(--ease-out);
+}
+
+/* The pass of light: a narrower diagonal band that sweeps across the card when
+   the operator points at it. It too lives under the content — the text, chips and
+   buttons never move or dim — and sits off the card entirely at rest. */
+.decision-card::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 38%,
+    color-mix(in srgb, var(--foreground) 6%, transparent) 48%,
+    color-mix(in srgb, var(--foreground) 2%, transparent) 54%,
+    transparent 64%
+  );
+  transform: translateX(-135%);
+  transition: transform 700ms var(--ease-out);
+}
+
+.decision-card:hover,
+.decision-card:focus-within {
+  background-color: var(--decision-card-surface-hover);
+  border-color: color-mix(in srgb, var(--foreground) 27%, var(--border));
+  box-shadow: var(--shadow-card);
+}
+
+.decision-card:hover::before,
+.decision-card:focus-within::before {
+  opacity: 1;
+}
+
+.decision-card:hover::after,
+.decision-card:focus-within::after {
+  transform: translateX(135%);
+}
+
+/* Reduced motion keeps the slash shading the hover reveals — that is colour, not
+   movement — and drops the sweep and the fading. */
+@media (prefers-reduced-motion: reduce) {
+  .decision-card::before {
+    transition: none;
+  }
+  .decision-card::after {
+    display: none;
+  }
 }
 
 .decision-card__kicker {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 /* The kind chip and, when it applies, the arrival chip: one group on the left so
-   the status pill keeps the right edge to itself. */
+   the domain and status pills keep the right edge to themselves. */
 .decision-card__kicker-left {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+/* The domain a Decision was filed for, beside its status: the scope of the change
+   is the first thing the operator asks of a proposal, so it is a badge rather
+   than a word buried in the meta line. */
+.decision-card__kicker-right {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-width: 0;
 }
 
 /* A Decision that arrived while the operator was on this page. Nothing about the
@@ -2475,13 +2815,13 @@ a {
 
 @keyframes decision-arrived {
   0% {
-    box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm);
+    box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-card);
   }
   55% {
-    box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-xs);
+    box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-card);
   }
   100% {
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-card);
   }
 }
 
@@ -2541,18 +2881,60 @@ a {
   text-transform: uppercase;
 }
 
-.decision-status {
-  padding: 0.18rem 0.55rem;
+.decision-domain {
+  display: inline-flex;
+  align-items: center;
+  max-width: 14rem;
+  padding: 0.22rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   border-radius: var(--radius-pill);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: capitalize;
+  background: var(--bg-subtle);
+  color: var(--card-foreground);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* One dot of brand ink, so the badge reads as a scope marker rather than another
+   status: the name itself is the fact, and the dot is only the bullet. */
+.decision-domain::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 0.38rem;
+  height: 0.38rem;
+  margin-right: 0.34rem;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.75;
+}
+
+.decision-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.26rem 0.72rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+/* Pending is the one status that asks the operator for something, so it is the
+   one status drawn a step larger than the rest. */
 .decision-status--pending {
+  padding: 0.3rem 0.85rem;
+  font-size: 0.84rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
   color: var(--blue);
   background: var(--blue-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 22%, transparent);
 }
 
 .decision-status--approved {
@@ -2573,44 +2955,51 @@ a {
 
 .decision-card__title {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.02rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.25;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
 }
 
 .decision-card__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem 0.45rem;
-  margin: 0.28rem 0 0;
-  font-size: 0.8rem;
+  gap: 0.2rem 0.4rem;
+  margin: 0.14rem 0 0;
+  font-size: 0.75rem;
 }
 
+/* The rationale is the card's context, not its content: three lines of it and
+   the rest stays behind the card's own height. An inbox this long does not need
+   a paragraph per card before the operator can answer it. */
 .decision-card__rationale {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
   margin: 0;
-  padding: 0.6rem 0.75rem;
+  padding: 0.4rem 0.6rem;
   border-left: 3px solid var(--accent);
   border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
   background: color-mix(in srgb, var(--accent) 7%, transparent);
-  font-size: 0.92rem;
-  line-height: 1.45;
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .decision-card__reason {
   margin: 0;
-  padding: 0.6rem 0.75rem;
+  padding: 0.4rem 0.6rem;
   border: 1px solid color-mix(in srgb, var(--amber) 35%, var(--border));
   border-radius: var(--radius-xs);
   background: var(--amber-bg);
-  font-size: 0.86rem;
-  line-height: 1.45;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .decision-card__reason-label {
   display: block;
-  margin-bottom: 0.15rem;
-  font-size: 0.75rem;
+  margin-bottom: 0.1rem;
+  font-size: 0.72rem;
   font-weight: 700;
 }
 
@@ -2618,21 +3007,32 @@ a {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.4rem;
+  gap: 0.3rem;
   margin: 0;
-  font-size: 0.86rem;
+  font-size: 0.8rem;
 }
 
+/* Approve and Reject are the card's two answers: larger, rectangular with the
+   Calm Scale's smallest radius, and wide enough to be a target rather than a tag. */
 .decision-card__actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
-  padding-top: 0.15rem;
+  gap: 0.55rem;
+  padding-top: 0.05rem;
+}
+
+.decision-card__actions .btn {
+  min-width: 7.5rem;
+  padding: 0.68rem 1.35rem;
+  border-radius: var(--radius-xs);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.1;
 }
 
 .decision-card__resolved {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.74rem;
 }
 
 /* The source of a history row: the operator's own logged decision, or one that
@@ -2779,17 +3179,40 @@ a {
   border-left: 3px solid var(--accent);
 }
 
+/* The logged card keeps its brand edge when the hover shading warms the rest of
+   the frame: the edge is what says "logged", not the shade. */
+.decision-card--manual:hover,
+.decision-card--manual:focus-within {
+  border-left-color: var(--accent);
+}
+
 .decision-proposal,
 .decision-section {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.3rem;
 }
 
 .decision-lead {
   margin: 0;
-  font-size: 0.92rem;
-  line-height: 1.45;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+/* The settings blocks a pairing/agent Decision borrows were built for a page,
+   not a card: tighten them so the preview does not outgrow the answer. */
+.decision-card .settings-hermes {
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+}
+
+.decision-card .settings-field {
+  gap: 0.1rem;
+  font-size: 0.8rem;
+}
+
+.decision-card .settings-field p {
+  margin: 0;
 }
 
 .decision-change {
@@ -2801,12 +3224,12 @@ a {
 .decision-fields {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.86rem;
+  font-size: 0.8rem;
 }
 
 .decision-fields th,
 .decision-fields td {
-  padding: 0.48rem 0.7rem;
+  padding: 0.28rem 0.55rem;
   text-align: left;
   vertical-align: top;
   border-bottom: 1px solid var(--border-soft);
@@ -2815,7 +3238,7 @@ a {
 .decision-fields thead th {
   background: var(--bg-subtle);
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -2830,7 +3253,7 @@ a {
   width: 28%;
   color: var(--muted);
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
 }
 
 .decision-row--changed {
@@ -2859,15 +3282,15 @@ a {
 
 .decision-unchanged summary {
   cursor: pointer;
-  padding: 0.4rem 0.7rem;
+  padding: 0.28rem 0.55rem;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
 }
 
 .decision-prose-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.65rem;
+  gap: 0.45rem;
 }
 
 @media (min-width: 42rem) {
@@ -2877,9 +3300,9 @@ a {
 }
 
 .decision-prose-pane__label {
-  margin: 0 0 0.3rem;
+  margin: 0 0 0.2rem;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -2887,16 +3310,16 @@ a {
 
 .decision-prose {
   margin: 0;
-  max-height: 16rem;
+  max-height: 8rem;
   overflow: auto;
-  padding: 0.7rem 0.8rem;
+  padding: 0.45rem 0.55rem;
   border-radius: var(--radius-xs);
   background: var(--bg-subtle);
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-sans);
-  font-size: 0.9rem;
-  line-height: 1.5;
+  font-size: 0.82rem;
+  line-height: 1.42;
 }
 
 .decision-blocks,
@@ -2910,14 +3333,14 @@ a {
 .decision-blocks {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.3rem;
 }
 
 .decision-block {
   display: flex;
-  gap: 0.65rem;
+  gap: 0.5rem;
   align-items: baseline;
-  padding: 0.5rem 0.7rem;
+  padding: 0.32rem 0.5rem;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-xs);
   background: var(--bg-subtle);
@@ -2933,17 +3356,17 @@ a {
 }
 
 .decision-block__detail {
-  font-size: 0.86rem;
-  line-height: 1.4;
+  font-size: 0.8rem;
+  line-height: 1.35;
 }
 
 .decision-pin {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.42rem 0.1rem;
+  gap: 0.5rem;
+  padding: 0.24rem 0.1rem;
   border-bottom: 1px solid var(--border-soft);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
 }
 
 .decision-pin:last-child {
@@ -2969,7 +3392,7 @@ a {
 }
 
 .decision-checklist li {
-  margin: 0.15rem 0;
+  margin: 0.05rem 0;
 }
 
 .decision-color {
@@ -2993,7 +3416,7 @@ a {
   width: fit-content;
   cursor: pointer;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
 }
 
 .decision-source summary:hover {
@@ -3001,16 +3424,16 @@ a {
 }
 
 .decision-source pre {
-  margin: 0.4rem 0 0;
-  max-height: 12rem;
+  margin: 0.25rem 0 0;
+  max-height: 8rem;
   overflow: auto;
-  padding: 0.6rem 0.7rem;
+  padding: 0.45rem 0.55rem;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-xs);
   background: var(--bg-subtle);
   font-family: var(--font-mono);
-  font-size: 0.72rem;
-  line-height: 1.45;
+  font-size: 0.7rem;
+  line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -3213,8 +3636,13 @@ a {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 1rem 1.5rem;
   flex-wrap: wrap;
+}
+
+.home-dashboard__intro {
+  min-width: 0;
+  max-width: 46rem;
 }
 
 .home-dashboard__eyebrow {
@@ -3232,20 +3660,12 @@ a {
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.15;
-  /* The page-lock badge rides the title rather than a separate row: it labels
-     the board the same way it labels a doctrine document. */
+  /* The page-lock badge rides the title: it labels the board the same way it
+     labels a doctrine document. */
   display: flex;
   align-items: center;
   gap: 0.6rem;
   flex-wrap: wrap;
-}
-
-/* The header's controls: the pin board's toggle and the page lock. Two controls
-   with nothing in common but their place, which is the top of the page. */
-.home-dashboard__controls {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
 }
 
 .home-dashboard__lock-hint {
@@ -3881,7 +4301,10 @@ a.home-mini-list__link:hover {
 }
 
 .home-dashboard .doc-status-badge {
-  border-radius: var(--home-radius);
+  /* The badge keeps the pill the page's controls wear: the title and the
+     top-right row are read together, so a square badge beside a round switch
+     would read as two vocabularies. */
+  border-radius: var(--radius-pill);
 }
 
 .home-card .form-error {
@@ -4372,6 +4795,60 @@ a.home-mini-list__link:hover {
   flex-shrink: 0;
 }
 
+/* —— Developer page ——
+   Every developer switch is one row of this list: the copy on the left, the
+   switch on the row's trailing edge, a hairline between rows. The next switch is
+   another row, so adding one never reflows the page's own shape. */
+.settings-developer {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-developer > .settings-card__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+}
+
+.settings-developer > .settings-card__row + .settings-card__row {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* The copy keeps its own measure rather than running under the switch: the
+   description is long enough to want a column, and the empty column beside it is
+   where the switch lives. */
+.settings-developer .settings-card__copy {
+  max-width: 38rem;
+}
+
+.settings-developer .settings-card__desc {
+  max-width: none;
+  line-height: 1.5;
+}
+
+.settings-developer .settings-card__control {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 0.08rem;
+}
+
+/* The row's own report. Quiet while the setting rests, amber while it is doing
+   something the rest of the app does not normally do. */
+.settings-developer__state {
+  margin: 0.6rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.settings-developer__state[data-developer-state="previewing"],
+.settings-developer__state[data-developer-state="shadowed"] {
+  color: var(--amber);
+}
+
 .settings-appearance__skin-hint {
   margin: 0 0 0.5rem;
   font-size: 0.6875rem;
@@ -4586,11 +5063,112 @@ a.home-mini-list__link:hover {
   font-size: 0.8rem;
 }
 
+/* The stacked definition list Settings → Agent and the decision body still use.
+   Kept under its own name while those two surfaces wear it. */
 .settings-hermes {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   margin-top: 0.75rem;
+}
+
+/* —— Settings · Hermes ——
+   Four short blocks on one card: the doors, the connection, the profile, and
+   the two chat-behaviour rows. Each block is a heading and its own facts, and
+   the hairline is the seam between them — no more page-long stack of rows. */
+.settings-hermes__block {  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.settings-hermes__block + .settings-hermes__block {
+  margin-top: 1.15rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-hermes__heading {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.settings-hermes__note {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+/* Name on the leading edge, value on the trailing one, one baseline: a fact is
+   a definition, not a form field waiting for input below its label. */
+.settings-facts {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-fact {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 1rem;
+  padding: 0.4rem 0;
+  font-size: 0.8125rem;
+}
+
+.settings-fact + .settings-fact {
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-fact__label {
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.settings-fact__value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-fact__error {
+  grid-column: 1 / -1;
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+}
+
+/* Hermes rows sit as one line — copy leading, control trailing — rather than
+   the control dropping under its own description. */
+.settings-hermes__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.settings-hermes__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.settings-hermes__row .settings-card__copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings-hermes__row .settings-card__control {
+  flex: 0 0 auto;
+  padding-top: 0.1rem;
 }
 
 .settings-field {
@@ -5608,14 +6186,19 @@ a.home-mini-list__link:hover {
 }
 
 /* —— Companion profile picker (setup screen + Settings → Hermes) ——
-   One Hermes profile runs the companion. These rows are the whole surface
-   for choosing it: radio semantics, because the choice is remembered and
-   re-seeds the profile, and a disabled row while an ensure is in flight,
-   because a second switch would race the first. */
+   One Hermes profile runs the companion. These cards are the whole surface for
+   choosing it: radio semantics, because the choice is remembered and re-seeds
+   the profile, and a disabled card while an ensure is in flight, because a
+   second switch would race the first.
+
+   Cards, not full-width rows: a stack of page-wide bars took the whole width of
+   the settings page for a four-item choice. These are short profile cards — an
+   avatar, the name, where the profile lives — as many to a row as fit. */
 .companion-profile-picker {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  max-width: 54rem;
 }
 
 .companion-profile-picker__lead {
@@ -5628,6 +6211,15 @@ a.home-mini-list__link:hover {
   color: var(--muted);
 }
 
+.companion-profile-picker__lead svg {
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+}
+
+.companion-profile-picker__lead span {
+  min-width: 0;
+}
+
 .companion-profile-picker__lead code {
   font-size: 0.78rem;
 }
@@ -5637,29 +6229,35 @@ a.home-mini-list__link:hover {
   font-size: 0.8125rem;
 }
 
-.companion-profile-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
+.companion-profile-list,
+.companion-profile-create {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+  gap: 0.5rem;
 }
 
 .companion-profile-row {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0.15rem 0.6rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.55rem;
   width: 100%;
-  padding: 0.55rem 0.7rem;
+  padding: 0.5rem 0.6rem;
   text-align: left;
-  background: color-mix(in srgb, var(--selected) 30%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 0.45rem;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
   color: var(--fg);
   font: inherit;
   cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
 }
 
 .companion-profile-row:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--selected) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--card));
+  border-color: var(--border);
 }
 
 .companion-profile-row:disabled {
@@ -5668,6 +6266,7 @@ a.home-mini-list__link:hover {
 }
 
 .companion-profile-row--active {
+  background: color-mix(in srgb, var(--accent) 7%, var(--card));
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
@@ -5676,17 +6275,55 @@ a.home-mini-list__link:hover {
   border-style: dashed;
 }
 
+.companion-profile-row--create:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.companion-profile-row__avatar {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.companion-profile-row--active .companion-profile-row__avatar {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.companion-profile-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
 .companion-profile-row__name {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
+  gap: 0.35rem;
+  min-width: 0;
+  font-size: 0.82rem;
   font-weight: 600;
 }
 
+.companion-profile-row__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .companion-profile-row__tag {
+  flex: 0 0 auto;
   padding: 0.05rem 0.35rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   font-size: 0.6rem;
   font-weight: 600;
@@ -5696,26 +6333,36 @@ a.home-mini-list__link:hover {
 }
 
 .companion-profile-row__desc {
-  grid-column: 1;
-  font-size: 0.72rem;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.7rem;
   line-height: 1.4;
   color: var(--muted);
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The card's radio: an empty ring on every card, a filled check on the chosen
+   one. The word "In use" stays in the card for a screen reader, where a ring
+   cannot say what it means; on screen the ring is the affordance and the
+   second column belongs to the name and its path. */
+.companion-profile-row__in-use,
+.companion-profile-row__pick {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
 }
 
 .companion-profile-row__in-use {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: center;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--accent);
-  white-space: nowrap;
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.companion-profile-row__pick {
+  border: 1px solid var(--border);
 }
 
 /* A transcript reads like a chat: it rests on the composer and grows upward
@@ -7212,6 +7859,89 @@ button.chat-panel__activity-line:hover {
   flex-shrink: 0;
 }
 
+/* —— Toggle ——
+   One switch for a setting that is written the moment it moves: a track and a
+   thumb, accent-filled while on and muted while off. The control is a button with
+   `role="switch"` (see `Toggle`), so the drawing owes it two things — a focus ring,
+   and a state that does not move the row when it changes. */
+.ui-toggle {
+  --toggle-width: 2.375rem;
+  --toggle-height: 1.375rem;
+  --toggle-thumb: 0.9375rem;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  cursor: pointer;
+}
+
+.ui-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.ui-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ui-toggle__track {
+  position: relative;
+  display: block;
+  width: var(--toggle-width);
+  height: var(--toggle-height);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-muted);
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out);
+}
+
+.ui-toggle:hover:not(:disabled) .ui-toggle__track {
+  border-color: var(--border-strong);
+}
+
+.ui-toggle__thumb {
+  position: absolute;
+  top: 50%;
+  left: 0.15rem;
+  width: var(--toggle-thumb);
+  height: var(--toggle-thumb);
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-50%);
+  transition:
+    transform var(--dur-enter) var(--ease-out),
+    background var(--dur-quick) var(--ease-out);
+}
+
+.ui-toggle.is-on .ui-toggle__track {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+/* The travel is the track's inner width less the thumb and the inset it keeps on
+   both ends, so the thumb lands mirrored in the on position. */
+.ui-toggle.is-on .ui-toggle__thumb {
+  background: var(--accent-fg);
+  transform: translate(
+    calc(var(--toggle-width) - 2px - var(--toggle-thumb) - 0.3rem),
+    -50%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-toggle__track,
+  .ui-toggle__thumb {
+    transition: none;
+  }
+}
+
 /* —— Doctrine indexes (Dream / Vision / Architecture) —— */
 .doctrine-page {
   display: flex;
@@ -7961,7 +8691,11 @@ button.chat-panel__activity-line:hover {
   gap: 0.1rem;
   min-width: 0;
   min-height: 0;
-  padding: 0.05rem 0 0.1rem;
+  /* The list is the middle band of the rail, and it was sitting on the two
+     dividers that bracket it: the wing's pages above, the governed shelf below.
+     The breathing room is the section's own, so it survives a long history (the
+     list scrolls between these pads) as well as an empty one. */
+  padding: 0.7rem 0 0.9rem;
   overflow: hidden;
   position: relative;
 }
@@ -7992,11 +8726,104 @@ button.chat-panel__activity-line:hover {
   white-space: nowrap;
 }
 
+/* The header's trailing pair, in line with the "Chats" heading: search the
+   list, and decide which chats the list is allowed to show. Both are quiet
+   until hovered; the view menu hangs under the icon that opened it. Its name
+   is deliberately not `.chats-rail__actions`: that class is the row's
+   hover-only verb band below. */
+.chats-rail__header-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.05rem;
+  flex: 0 0 auto;
+}
+
+.chats-rail__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.3rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chats-rail__icon-btn:hover,
+.chats-rail__icon-btn[aria-expanded="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+/* While the search is open it IS the header: it takes the whole row the title
+   and the two icons had, so the field is the first thing in the section and
+   nothing sits above it but the wing switcher. The header drops its own side
+   padding so the field lines up with the New chat button and the rows. */
+.chats-rail__header--search {
+  padding: 0.3rem 0.15rem 0.2rem;
+}
+
+/* The search field on that row: full width, the column's own inset. */
+.chats-rail__search {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--muted);
+}
+
+.chats-rail__search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.chats-rail__search-input::placeholder {
+  color: var(--muted);
+}
+
+.chats-rail__search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chats-rail__search-clear:hover {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
 /* The one write that starts a chat, at the top of the list the way every chat
-   client puts it: a full-width row, not another icon in the rail. */
+   client puts it: a full-width row, not another icon in the rail. Its icon and
+   label are centred as a pair — the row is a button, not a menu item. */
 .chats-rail__new {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
   flex: 0 0 auto;
   margin: 0 0.15rem 0.15rem;
@@ -8007,7 +8834,7 @@ button.chat-panel__activity-line:hover {
   color: var(--fg);
   font: inherit;
   font-size: 0.75rem;
-  text-align: left;
+  text-align: center;
   cursor: pointer;
 }
 
@@ -8019,7 +8846,7 @@ button.chat-panel__activity-line:hover {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 0.1rem 0 0.5rem;
+  padding: 0.1rem 0 0.35rem;
 }
 
 .chats-rail__rows {
@@ -8031,17 +8858,16 @@ button.chat-panel__activity-line:hover {
   gap: 0.08rem;
 }
 
+/* The one group heading the list still has: the archived band's eyebrow. The
+   live list is flat (pinned rows simply lead it), so this label only appears
+   when the view options turn the archived chats on. */
 .chats-rail__group {
-  margin: 0.45rem 0.45rem 0.1rem;
+  margin: 0.6rem 0.45rem 0.1rem;
   color: var(--muted);
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-
-.chats-rail__group:first-child {
-  margin-top: 0.15rem;
 }
 
 .chats-rail__row {
@@ -8123,7 +8949,23 @@ button.chat-panel__activity-line:hover {
   font-size: 0.65rem;
 }
 
-.chats-rail__menu-btn {
+/*
+ * The row's verbs are paint-only at rest: the list reads as names and times
+ * until the pointer (or the keyboard) arrives, which is the reference client's
+ * pin gesture. A pinned row keeps a filled pin at rest in the exact slot its
+ * hover button will occupy, so "this one is pinned" is legible without a hover
+ * and the button does not jump when it appears.
+ */
+.chats-rail__actions {
+  display: none;
+  align-items: center;
+  gap: 0.05rem;
+  flex: 0 0 auto;
+}
+
+.chats-rail__menu-btn,
+.chats-rail__archive-btn,
+.chats-rail__pin-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -8136,19 +8978,51 @@ button.chat-panel__activity-line:hover {
   background: none;
   color: var(--muted);
   cursor: pointer;
-  opacity: 0.55;
-}
-
-.chats-rail__row:hover .chats-rail__menu-btn,
-.chats-rail__menu-btn[aria-expanded="true"],
-.chats-rail__menu-btn:focus-visible {
-  opacity: 1;
 }
 
 .chats-rail__menu-btn:hover,
-.chats-rail__menu-btn[aria-expanded="true"] {
+.chats-rail__menu-btn[aria-expanded="true"],
+.chats-rail__menu-btn:focus-visible,
+.chats-rail__archive-btn:hover,
+.chats-rail__archive-btn:focus-visible,
+.chats-rail__pin-btn:hover,
+.chats-rail__pin-btn:focus-visible {
   background: var(--selected-soft);
   color: var(--fg);
+}
+
+/* The pinned state is darker than the muted glyph an unpinned row shows on
+   hover; the rest marker and the button that unpins it occupy one slot. */
+.chats-rail__pin-btn[data-pinned] {
+  color: var(--fg);
+}
+
+.chats-rail__pin-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-left: 0.15rem;
+  color: var(--fg);
+}
+
+/* Hover, keyboard focus, or an open menu trades the time and the rest-state
+   pin for the verbs: nothing is drawn twice, and the name keeps the space. */
+.chats-rail__row:hover .chats-rail__actions,
+.chats-rail__row:focus-within .chats-rail__actions,
+.chats-rail__row[data-menu-open] .chats-rail__actions {
+  display: inline-flex;
+}
+
+.chats-rail__row:hover .chats-rail__when,
+.chats-rail__row:focus-within .chats-rail__when,
+.chats-rail__row[data-menu-open] .chats-rail__when,
+.chats-rail__row:hover .chats-rail__pin-state,
+.chats-rail__row:focus-within .chats-rail__pin-state,
+.chats-rail__row[data-menu-open] .chats-rail__pin-state {
+  display: none;
 }
 
 /* Hangs under the control that opened it, over the rows below: the list scrolls,
@@ -8166,6 +9040,54 @@ button.chat-panel__activity-line:hover {
   border-radius: var(--radius-sm);
   background: var(--card);
   box-shadow: var(--shadow-sm);
+}
+
+/* The view menu is wider than a row menu: it names the option it is on and
+   carries a check column so the current view is readable at a glance. */
+.chats-rail__view-menu {
+  top: calc(100% + 0.2rem);
+  right: 0;
+  min-width: 10.5rem;
+}
+
+.chats-rail__menu-title {
+  margin: 0;
+  padding: 0.2rem 0.5rem 0.3rem;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chats-rail__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.9rem;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+/* An archived row is what the view option exists for: readable and restorable,
+   never openable. Its greying is the row's, not the list's. */
+.chats-rail__row[data-archived] .chats-rail__row-main,
+.chats-rail__row[data-archived] .chats-rail__row-main:hover {
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+}
+
+.chats-rail__archived-tag {
+  flex: 0 0 auto;
+  padding: 0.02rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .chats-rail__menu button {

@@ -179,6 +179,12 @@ export type HermesSession = {
   lastActive: number | null;
   /** Durable sidebar flag: a pinned chat is never archived and never sinks out of the list. */
   pinned: boolean;
+  /**
+   * Durable flag: the chat is archived. Archived rows are listed only when the
+   * caller asked for them (the sidebar's view options), and the dock's working
+   * list never contains one.
+   */
+  archived: boolean;
 };
 
 /**
@@ -384,17 +390,28 @@ function sessionFromRow(r: SessionRow): HermesSession | null {
     preview: preview || null,
     lastActive: unixSeconds(r.last_active ?? r.last_activity_at ?? r.started_at),
     pinned: flag(r.pinned),
+    archived: flag(r.archived),
   };
 }
 
-export function sessionsFromPayload(payload: unknown): HermesSession[] {
+/**
+ * The list as the dock and the sidebar draw it.
+ *
+ * Hidden rows are Hermes Desktop's own business and never cross this boundary.
+ * Archived rows cross it only when `includeArchived` asks: the sidebar's view
+ * options are the one surface that shows them, greyed and restorable, and the
+ * working list (and the dock) must never contain one.
+ */
+export function sessionsFromPayload(
+  payload: unknown,
+  options: { includeArchived?: boolean } = {},
+): HermesSession[] {
   const out: HermesSession[] = [];
   for (const row of rowsOf(payload, ["sessions", "data", "items"])) {
     if (!row || typeof row !== "object") continue;
     const r = row as SessionRow;
-    // Archived and hidden rows belong to Hermes Desktop's recovery surface; the
-    // dock lists live chats only.
-    if (flag(r.hidden) || flag(r.archived)) continue;
+    if (flag(r.hidden)) continue;
+    if (flag(r.archived) && !options.includeArchived) continue;
     const session = sessionFromRow(r);
     if (session) out.push(session);
   }
@@ -638,7 +655,7 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
         '- day-template: {"kind":"day-template","command":{...}} with a day-type command.',
         '- project: {"kind":"project","command":{"type":"createProject","title","goalId","domainSlug","bodyMarkdown"}} to propose a new project, or {"kind":"project","command":{"type":"closeProject","id"}} to propose closing one.',
         'Instead of several blocks you may put them all in one block whose body is {"decisions":[ {...}, {...} ]}.',
-        "A new database or a dashboard card is a tool call, not a block: create_database and save_view file their own pending Decision. The block list above is for the changes no tool covers.",
+        "A new database or a dashboard card is a tool call, not a block: create_database writes a new database at once, and save_view applies at once on an unlocked board and files a pending Decision on a locked one. The block list above is for the changes no tool covers.",
         "A write tool that already applied one change does not cancel the rest: fence every OTHER change you did not apply with a tool. Prose outside a block is not a change.",
         "Each block becomes one pending Decision; nothing edits a file until the operator approves it. Say how many changes you are proposing, and never say a decision was filed unless a fenced block carried it or a tool result answered pending with a decisionId. Silence does not apply a proposal: only the operator approving it does.",
       ]
@@ -676,7 +693,8 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     "You are the app's own companion: pre-paired, acting as the operator, with full access to this vault. You never need a credential, a handshake, or an invite code. Do not curl 127.0.0.1:8643 or :8646, do not read a bearer out of config.yaml or out of `hermes mcp list` (both mask it), and never introduce yourself as a connected agent — Personnel's pairing controls and grants exist for OTHER agents. If a LifeQuest tool is missing from your tool list, say exactly that and stop rather than routing around it: pairing yourself as a stranger files a Decision the operator has to clean up, and an approved stranger's every call answers NO_GRANT.",
     "Money the operator states must be logged with capture_transaction (or undo_capture / correct_capture in that thread). Do not claim a row was posted unless the tool result says posted: true. If the tool returns ask, ask that and do not invent an account.",
     receiptLine,
-    "When adding many new rows to one database, call insert_rows once. Use upsert_row for a single new row or any edit. If the tool result has posted: true, name the database and the row count. If status is pending, say a decision is waiting and name the database and the count. If status is rejected, give the reason and do not send those rows again.",
+    "Database writes split by what they touch. ADDING DATA is written at once, with no Decision: create_database writes a new database and its columns, upsert_row without an id creates a row, and insert_rows adds up to 200 new rows; their results say applied: true / posted: true. CHANGING OR REMOVING DATA THAT ALREADY EXISTS still files a pending Decision and writes nothing until the operator approves it: upsert_row WITH an id (an update), delete_row, and add_column. The chat confirmation is the operator's yes, so call a direct write only after the operator has agreed in this chat to that exact database or those exact rows — never create a database or add rows speculatively, and never claim a database or row exists unless the tool result says applied: true / posted: true. For a write that became a Decision, say a decision is waiting and name it; a rejected Decision must not be retried as a silent write.",
+    "When adding many new rows to one database, call insert_rows once. Use upsert_row without an id for a single new row. With an id, upsert_row is an EDIT of existing data and files a Decision instead of writing; say the decision is waiting.",
     "A page script block is the one page change you apply yourself: use apply_script_block, then name the script you applied in your reply, and do not file a Decision for it. Every other page edit still goes through a Decision. Do not claim a script ran unless run_script_block returned queries or fetches.",
     "The Dashboard is the app's home screen — the pin board the operator sees first, one per domain plus one Overview. It is NOT a page; never ask for a page id for it and never create a 'Dashboard page'. To put a table, chart, or metric there, ONE save_view call does the whole job: it validates the spec, saves the card, and pins it to the board you name, and its reply carries the card's own rows, so you can report the figures without reading the rows yourself — do not call list_rows or preview_view first for a plain summary request, and do not follow save_view with arrange_dashboard. Pass the spec as a JSON OBJECT, never as a string. Say the card is on the board only when the reply says applied: true. To CHANGE a card that already exists — including how one of its objects is displayed — get_view for its spec, change the field you mean, and save_view again with the same viewId; that updates it in place and keeps its place on the board. Each dashboard also has a page lock the operator controls: on an unlocked board save_view applies at once, and on a locked board the same call files one pending Decision that saves and pins the card when it is approved. Never claim you changed a locked board directly.",
     "A card is a set of LIVE DATA OBJECTS, not a picture. Each object reads rows (the card's database, or its own databaseId from the same domain), transforms them (filters, timeWindow, groupBy, timeBucket, measure, per, convertToZar) and draws them (presentation + display). The spec carries data and never looks: no totals, no currency symbols, thousands separators, markdown, or prose in a title. Its fields are databaseId, title, presentation (table | bar | line | metric | list), measure (sum | count | avg | last | avg-per), measureColumnId (a NUMBER column; omit for count, and for an avg-per that averages the NUMBER OF ROWS per period), per (day | week | month — required by avg-per, refused on every other measure), groupBy, columns, timeBucket, timeColumnId, timeWindow, filters, sort, limit, convertToZar, seriesBy, display, and span. PRESENTATION IS ONLY THE DRAWING: metric, table, bar and line all read the same dataset, so changing one must never change groupBy, timeBucket or measure; a metric MAY group and shows the fold over the groups. Choose the drawing for the question — metric for one headline number, table for exact values, bar to compare categories or periods, line for a trend over time, and a row object when the operator wants the transactions themselves. If they ask which chart suits their data, say which and why, then save it. A row object is an object with `columns` (1-6 real ids): it prints one line per row, newest first, and draws as list or table, taking no groupBy, timeBucket, seriesBy or meaningful measure. A spec whose title says \"summary\" but whose figures are several is ONE card with a `blocks` array — a metric object for the headline, a table object for the detail, a bar or line object for the trend — not several views. An object with `from` does not read a database: it folds an EARLIER object's rows (measure avg gives the average of that table's totals), which is how a transformation over computed data stays live. An object with seriesBy splits a sum/count by a category into coloured series with a legend. `display` is styling only: palette accent | warm | cool | mono, legend, xLabel, yLabel, valueLabels. Whatever an object omits it inherits from the top-level fields. Pass span: 2 for a composed card.",

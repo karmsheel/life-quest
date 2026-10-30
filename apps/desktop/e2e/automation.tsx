@@ -342,6 +342,9 @@ const bridge: Record<string, unknown> = {
       })),
     ),
   onCompanionStream: () => () => {},
+  // The rail reads the pending-Decision list on mount and on the vault's change
+  // signal; the snapshot above carries none, so the live read answers the same.
+  decisionList: () => Promise.resolve(ok([])),
   companionChatStream: (payload: ChatCall) => {
     harness.automationChatCalls?.push(payload);
     const messages = storedMessages.get(payload.sessionId) ?? [];
