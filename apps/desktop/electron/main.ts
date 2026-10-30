@@ -1092,6 +1092,29 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("ideal-state:delete", (_e, id: string) =>
     vault.idealStateDelete(id),
   );
+  // Define → Images: a vault-level picture library and the vision document
+  // written beside it. The renderer never names a path: it hands over bytes and
+  // gets back an id the vault minted.
+  ipcMain.handle("images:list", () => vault.imagesList());
+  ipcMain.handle(
+    "images:save",
+    (_e, input: Parameters<typeof vault.imagesSave>[0]) => vault.imagesSave(input),
+  );
+  ipcMain.handle("images:read", (_e, relPath: string) =>
+    vault.imagesRead(relPath),
+  );
+  ipcMain.handle(
+    "images:update",
+    (_e, id: string, patch: Parameters<typeof vault.imagesUpdate>[1]) =>
+      vault.imagesUpdate(id, patch),
+  );
+  ipcMain.handle("images:delete", (_e, id: string) => vault.imagesDelete(id));
+  ipcMain.handle("images:boardGet", () => vault.imagesBoardGet());
+  ipcMain.handle(
+    "images:boardSave",
+    (_e, input: Parameters<typeof vault.imagesBoardSave>[0]) =>
+      vault.imagesBoardSave(input),
+  );
   // A cadence's standing review rules, and the snapshot pass the review page
   // runs before it asks the agent for anything.
   ipcMain.handle(
