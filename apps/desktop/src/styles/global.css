@@ -507,6 +507,12 @@ a {
   color: #fff;
 }
 
+/* The shortcuts control is a page selector, like the dock's own bar: while the
+   dock is showing that page it reads as the current surface. */
+.window-titlebar__shortcuts[aria-pressed="true"] {
+  background: var(--selected-soft);
+}
+
 .window-titlebar__settings {
   display: flex;
   align-items: stretch;
@@ -6145,6 +6151,111 @@ button.chat-panel__activity-line:hover {
 .chat-panel__action:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* —— The dock's keyboard-shortcuts reference —— */
+/* A reference page, not a settings form: the movement name and the keys it
+   answers to, grouped the same way the Settings page groups them. It wraps the
+   dock's width rather than growing a scrollbar sideways. */
+.chat-panel__header--shortcuts {
+  gap: 0.35rem;
+  justify-content: flex-start;
+}
+
+.chat-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.chat-shortcuts__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.chat-shortcuts__edit {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.chat-shortcuts__edit:hover {
+  text-decoration: underline;
+}
+
+.chat-shortcuts__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.chat-shortcuts__group-title {
+  margin: 0 0 0.1rem;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chat-shortcuts__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.chat-shortcuts__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.28rem 0.35rem;
+  border-radius: 0.35rem;
+}
+
+.chat-shortcuts__row:hover {
+  background: var(--selected-soft);
+}
+
+.chat-shortcuts__label {
+  min-width: 0;
+  color: var(--fg);
+  font-size: 0.8rem;
+}
+
+.chat-shortcuts__keys {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.chat-shortcuts__keycap {
+  display: inline-flex;
+  min-width: 1.45rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.12rem 0.32rem;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-subtle);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  line-height: 1.3;
+}
+
+.chat-shortcuts__unassigned {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-style: italic;
 }
 
 /* The card this chat is about, above the field. It wears the receipt's own

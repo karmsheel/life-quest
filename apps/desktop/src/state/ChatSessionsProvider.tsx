@@ -65,11 +65,12 @@ export type SessionRun = {
 };
 
 /**
- * The dock's three surfaces. `list` is the all-chats page, `thread` the open
- * conversation, and `chain` the Life-Chain the same dock can show.
+ * The dock's three chat surfaces — the all-chats list, the open conversation,
+ * and the Life-Chain the same dock can show — live on `ChatDockProvider` now,
+ * beside the dock's open state, because the titlebar's shortcuts control opens
+ * the dock onto a fourth one. The chat store reads the surface it is on and
+ * moves it as chats open and close.
  */
-export type ChatSurface = "list" | "thread" | "chain";
-
 const EMPTY_RUN: SessionRun = Object.freeze({
   messages: [] as ChatMessage[],
   messagesLoaded: false,
@@ -153,9 +154,6 @@ type ChatSessionsContextValue = {
   /** A list-level failure, as opposed to a turn's own error. */
   listError: string | null;
 
-  surface: ChatSurface;
-  setSurface: (surface: ChatSurface) => void;
-
   activeId: string | null;
   /** The chats the operator has open, in the order the tabs were made. */
   openTabs: string[];
@@ -204,12 +202,12 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     contextCard,
     setLivePinId,
     pageContext,
+    setSurface,
   } = useChatDock();
 
   const [sessions, setSessions] = useState<HermesSession[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
-  const [surface, setSurface] = useState<ChatSurface>("thread");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [runs, setRuns] = useState<Record<string, SessionRun>>({});
@@ -940,8 +938,6 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       sessions,
       sessionsLoaded,
       listError,
-      surface,
-      setSurface,
       activeId,
       openTabs,
       activeSession,
@@ -1000,7 +996,6 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       setReceiptFor,
       setToolsOpen,
       stopRun,
-      surface,
       updateRun,
       updateRuntimePick,
     ],

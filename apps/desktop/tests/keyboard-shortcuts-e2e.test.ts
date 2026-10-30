@@ -30,6 +30,8 @@ const SHOTS = [
   "keyboard-shortcuts-cleared.png",
   "keyboard-shortcuts-reload.png",
   "keyboard-shortcuts-typing-guard.png",
+  "keyboard-shortcuts-dock.png",
+  "keyboard-shortcuts-dock-live.png",
 ];
 
 /** The contract this branch ships, restated here so the suite fails on a
@@ -71,6 +73,51 @@ type RowState = {
   buttons: Array<string | null>;
 };
 
+type DockRowState = {
+  id: string;
+  label: string;
+  binding: string;
+  changed: boolean;
+  keysValue: string | null;
+  keycaps: string[];
+};
+
+type DockState = {
+  surface: string | null;
+  ariaLabel: string | null;
+  shortcutsHeading: string;
+  back: { present: boolean; label: string | null };
+  pencil: { present: boolean; label: string | null; href: string | null };
+  footerHidden: boolean | null;
+  footerVisible: boolean;
+  composerVisible: boolean;
+  bodyVisible: boolean;
+  shortcutsRoot: boolean;
+  hint: string;
+  groups: Array<{ id: string | null; rows: string[] }>;
+  rows: DockRowState[];
+};
+
+type TitlebarChild = {
+  tag: string;
+  className: string;
+  label: string | null;
+  pressed: string | null;
+  icon: string | null;
+};
+
+type TitlebarState = {
+  shortcuts: {
+    present: boolean;
+    label: string | null;
+    title: string | null;
+    pressed: string | null;
+    icon: string | null;
+    inTrailing: boolean;
+  };
+  trailing: TitlebarChild[];
+};
+
 type State = {
   path: string | null;
   overlayOpen: boolean;
@@ -93,6 +140,8 @@ type State = {
   storage: string | null;
   shellClass: string | null;
   chatPanel: boolean;
+  dock: DockState | null;
+  titlebar: TitlebarState;
   wingTabs: Array<{ label: string; selected: boolean }>;
   selectedWing: string | null;
   vaultText: string;
@@ -130,6 +179,12 @@ const state = (report: Report, name: string): State => {
 const row = (snapshot: State, id: string): RowState => {
   const found = snapshot.rows.find((candidate) => candidate.id === id);
   assert.ok(found, `the "${snapshot.path}" page has no ${id} row`);
+  return found;
+};
+
+const dockRow = (snapshot: State, id: string): DockRowState => {
+  const found = (snapshot.dock?.rows ?? []).find((row) => row.id === id);
+  assert.ok(found, `the dock has no ${id} row`);
   return found;
 };
 
@@ -222,6 +277,134 @@ describe("keyboard shortcuts settings and runner", () => {
       landing.input.present,
       true,
       "the home stub has no [data-rig-input] for the typing guard",
+    );
+
+    // —— The dock's keyboard-shortcuts reference: the titlebar control, the
+    //       read-only page it opens, and Back to the thread.
+    const dockThread = state(report, "dockThread");
+    assert.equal(
+      dockThread.dock?.surface,
+      "thread",
+      "the dock did not start on the thread surface",
+    );
+    assert.equal(
+      dockThread.dock?.composerVisible,
+      true,
+      "the thread surface has no visible composer",
+    );
+    assert.equal(
+      dockThread.titlebar.shortcuts.present,
+      true,
+      "the titlebar carries no shortcuts control",
+    );
+    assert.equal(
+      dockThread.titlebar.shortcuts.label,
+      "Keyboard shortcuts",
+      `the control's aria-label is ${JSON.stringify(dockThread.titlebar.shortcuts.label)}`,
+    );
+    assert.equal(
+      dockThread.titlebar.shortcuts.title,
+      "Keyboard shortcuts",
+      `the control's title is ${JSON.stringify(dockThread.titlebar.shortcuts.title)}`,
+    );
+    assert.equal(
+      dockThread.titlebar.shortcuts.pressed,
+      "false",
+      "the control reports pressed while the dock is on a thread",
+    );
+    assert.equal(
+      dockThread.titlebar.shortcuts.inTrailing,
+      true,
+      "the control is not in the titlebar's trailing cluster",
+    );
+    const trailingClasses = dockThread.titlebar.trailing.map((child) => child.className);
+    const shortcutsAt = trailingClasses.findIndex((name) =>
+      name.includes("window-titlebar__shortcuts"),
+    );
+    const settingsAt = trailingClasses.findIndex((name) => name.includes("settings-menu"));
+    assert.equal(
+      shortcutsAt,
+      settingsAt - 1,
+      `the shortcuts control is not immediately before the settings menu: ${JSON.stringify(trailingClasses)}`,
+    );
+    const expectedTrailing = [
+      "theme-mode-toggle",
+      "window-titlebar__shortcuts",
+      "settings-menu",
+      "window-titlebar__side-switch",
+      "window-titlebar__chat-toggle",
+    ];
+    expectedTrailing.forEach((needle, index) => {
+      assert.ok(
+        String(trailingClasses[index] ?? "").includes(needle),
+        `trailing child ${index} is not ${needle}: ${JSON.stringify(trailingClasses)}`,
+      );
+    });
+
+    const dockDefaults = state(report, "dockDefaults");
+    const dock = dockDefaults.dock;
+    assert.ok(dock, "the titlebar control did not open the dock onto its page");
+    assert.equal(dock.surface, "shortcuts", `dock surface ${dock.surface}`);
+    assert.equal(
+      dock.shortcutsHeading,
+      "Keyboard shortcuts",
+      `dock heading ${JSON.stringify(dock.shortcutsHeading)}`,
+    );
+    assert.equal(dock.back.present, true, "the dock page has no Back control");
+    assert.equal(dock.back.label, "Back to chat", `Back label ${dock.back.label}`);
+    assert.equal(dock.pencil.present, true, "the dock page has no Settings pencil");
+    assert.equal(
+      dock.pencil.label,
+      "Change keyboard shortcuts in Settings",
+      `pencil label ${dock.pencil.label}`,
+    );
+    assert.equal(
+      dock.pencil.href,
+      "/settings?tab=shortcuts",
+      `pencil href ${dock.pencil.href}`,
+    );
+    assert.equal(dock.shortcutsRoot, true, "the dock body has no [data-chat-shortcuts]");
+    assert.equal(dock.rows.length, 14, `the dock lists ${dock.rows.length} rows, not 14`);
+    assert.deepEqual(
+      dock.groups.map((group) => ({ id: group.id, rows: group.rows.length })),
+      GROUPS,
+      `dock groups ${JSON.stringify(dock.groups)}`,
+    );
+    for (const [id, binding] of Object.entries(DEFAULTS)) {
+      assert.equal(
+        dockRow(dockDefaults, id).binding,
+        binding,
+        `dock row ${id} is not on its default binding`,
+      );
+    }
+    for (const item of dock.rows) {
+      assert.equal(item.changed, false, `dock row ${item.id} is marked changed on a defaults page`);
+    }
+    assert.deepEqual(dockRow(dockDefaults, "wing.next").keycaps, ["Ctrl", "PgDn"]);
+    assert.deepEqual(dockRow(dockDefaults, "history.back").keycaps, ["Alt", "←"]);
+    assert.deepEqual(dockRow(dockDefaults, "surface.settings.open").keycaps, ["Ctrl", ","]);
+    assert.match(
+      dock.hint,
+      /All on their default keys\./,
+      `dock hint ${JSON.stringify(dock.hint)}`,
+    );
+    assert.equal(dock.footerHidden, true, "the reference kept the chat footer visible");
+    assert.equal(dock.footerVisible, false, "the reference footer is painted");
+    assert.equal(dock.composerVisible, false, "the reference kept a visible composer");
+    assert.equal(dock.bodyVisible, true, "the reference body is not painted");
+    assert.equal(
+      dockDefaults.titlebar.shortcuts.pressed,
+      "true",
+      "the titlebar control does not report pressed on its page",
+    );
+
+    const dockBack = state(report, "dockBackToThread");
+    assert.equal(dockBack.dock?.surface, "thread", "Back did not return the dock to the thread");
+    assert.equal(dockBack.dock?.composerVisible, true, "the thread did not get its composer back");
+    assert.equal(
+      dockBack.titlebar.shortcuts.pressed,
+      "false",
+      "the titlebar control stayed pressed after Back",
     );
 
     // —— 1. Settings nav shows "Keyboard"; the page has all 14 rows in four
@@ -329,6 +512,67 @@ describe("keyboard shortcuts settings and runner", () => {
       `the movement key did not arrive as Ctrl+Alt+N: ${JSON.stringify(reboundKey)}`,
     );
 
+    // —— The dock reads the same provider the Settings page writes: the row
+    //       just rebound shows its new keys, the hint counts it, and the pencil
+    //       opens the editable page without closing the dock.
+    const dockLive = state(report, "dockLive");
+    assert.equal(dockLive.dock?.surface, "shortcuts", "the dock is not on the reference");
+    const liveDockRow = dockRow(dockLive, "wing.next");
+    assert.equal(
+      liveDockRow.binding,
+      "Ctrl+Alt+N",
+      `the dock row shows ${liveDockRow.binding}, not the freshly stored binding`,
+    );
+    assert.equal(liveDockRow.changed, true, "the customized row is not marked changed in the dock");
+    assert.deepEqual(liveDockRow.keycaps, ["Ctrl", "Alt", "N"]);
+    assert.match(
+      dockLive.dock?.hint ?? "",
+      /1 movement is changed from the defaults\./,
+      `dock hint ${JSON.stringify(dockLive.dock?.hint)}`,
+    );
+    assert.deepEqual(
+      (dockLive.dock?.rows ?? []).filter((item) => item.changed).map((item) => item.id),
+      ["wing.next"],
+      "the dock marks more than the one rebound movement as changed",
+    );
+
+    const dockPencil = state(report, "dockPencilSettings");
+    assert.equal(dockPencil.overlayOpen, true, "the pencil did not open the settings sheet");
+    assert.equal(
+      dockPencil.path,
+      "/settings?tab=shortcuts",
+      `the pencil landed on ${dockPencil.path}`,
+    );
+    assert.equal(dockPencil.viewedTab, "shortcuts", "the pencil did not open the shortcuts panel");
+    assert.equal(dockPencil.pageTitle, "Keyboard shortcuts", `page title ${dockPencil.pageTitle}`);
+    assert.equal(dockPencil.dock?.surface, "shortcuts", "the dock left its reference behind the sheet");
+
+    const dockAfterSettings = state(report, "dockAfterSettingsClose");
+    assert.equal(dockAfterSettings.overlayOpen, false, "Escape did not close the settings sheet");
+    assert.equal(dockAfterSettings.path, "/home", `closing the sheet landed on ${dockAfterSettings.path}`);
+    assert.equal(
+      String(dockAfterSettings.shellClass).includes("shell--chat-open"),
+      true,
+      "closing the sheet collapsed the dock",
+    );
+    assert.equal(
+      dockAfterSettings.dock?.surface,
+      "shortcuts",
+      "Escape took the dock off its reference instead of just closing the sheet",
+    );
+    assert.equal(
+      dockAfterSettings.titlebar.shortcuts.pressed,
+      "true",
+      "the titlebar control stopped reporting pressed while the dock stayed on the page",
+    );
+
+    const dockBackAfterSettings = state(report, "dockBackAfterSettings");
+    assert.equal(
+      dockBackAfterSettings.dock?.surface,
+      "thread",
+      "the dock did not return to the thread after the settings visit",
+    );
+
     // —— 4. A conflict names the other movement, changes nothing, keeps the row
     //       recording, and the runner stands down.
     const conflict = state(report, "conflict");
@@ -368,6 +612,53 @@ describe("keyboard shortcuts settings and runner", () => {
     assert.equal(row(conflictCancelled, "wing.previous").recording, false, "recording survived Escape");
     assert.equal(conflictCancelled.promptCount, 0, "a prompt survived Escape");
     assert.equal(conflictCancelled.error, null, "the error banner survived the cancel");
+
+    // —— A collapsed dock opens straight onto the reference, and the
+    //       chat-resume effect does not replace the requested surface.
+    const dockCollapsed = state(report, "dockCollapsedForShortcuts");
+    assert.equal(dockCollapsed.chatPanel, false, "the chat toggle left the dock mounted");
+    assert.equal(
+      String(dockCollapsed.shellClass).includes("shell--chat-collapsed"),
+      true,
+      "the chat toggle did not collapse the dock",
+    );
+    assert.equal(
+      dockCollapsed.titlebar.shortcuts.pressed,
+      "false",
+      "the titlebar control reports pressed while the dock is collapsed",
+    );
+
+    const dockReopened = state(report, "dockReopenedOnShortcuts");
+    assert.equal(dockReopened.chatPanel, true, "the control did not open the collapsed dock");
+    assert.equal(
+      String(dockReopened.shellClass).includes("shell--chat-open"),
+      true,
+      `the reopened shell is ${JSON.stringify(dockReopened.shellClass)}`,
+    );
+    assert.equal(dockReopened.dock?.surface, "shortcuts", "the reopened dock is not on the reference");
+    assert.equal(
+      dockReopened.titlebar.shortcuts.pressed,
+      "true",
+      "the titlebar control does not report pressed on the reopened page",
+    );
+    assert.equal(dockReopened.dock?.footerHidden, true, "the reopened reference kept its footer");
+    assert.equal(dockReopened.dock?.composerVisible, false, "the reopened reference kept a composer");
+    assert.equal(dockReopened.dock?.rows.length, 14, "the reopened reference lost rows");
+
+    const dockReopenedSettled = state(report, "dockReopenedSettled");
+    assert.equal(
+      dockReopenedSettled.dock?.surface,
+      "shortcuts",
+      "the chat-resume effect replaced the surface the titlebar control asked for",
+    );
+    assert.equal(
+      dockReopenedSettled.path,
+      "/dream",
+      `reopening the dock navigated the page behind it to ${dockReopenedSettled.path}`,
+    );
+
+    const dockReopenedBack = state(report, "dockReopenedBack");
+    assert.equal(dockReopenedBack.dock?.surface, "thread", "Back did not return the reopened dock to the thread");
 
     // —— 5. Reserved combinations are refused and change nothing.
     const reserved = state(report, "reserved");

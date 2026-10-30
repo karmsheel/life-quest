@@ -28,7 +28,7 @@ import { useWing } from "@/components/shell/WingProvider";
 import { WING_IDS, type WingId } from "@/components/shell/wing";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useNavDock } from "@/state/NavDockProvider";
-import { useShortcuts } from "@/state/ShortcutsProvider";
+import { useShortcutsOptional } from "@/state/ShortcutsProvider";
 import {
   isTypingTarget,
   shortcutActionForEvent,
@@ -80,7 +80,12 @@ function modalIsOpen(): boolean {
 }
 
 export function ShortcutRunner() {
-  const { bindings, recording } = useShortcuts();
+  // A harness (or any embedding of the shell) that does not mount the provider
+  // gets a shell with no keyboard movements rather than a crash; the real app
+  // always wraps the shell, so this is only the isolated-tree fallback.
+  const shortcuts = useShortcutsOptional();
+  const bindings = shortcuts?.bindings ?? null;
+  const recording = shortcuts?.recording ?? null;
   const { active, selectWing } = useWing();
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -141,6 +146,9 @@ export function ShortcutRunner() {
   );
 
   useEffect(() => {
+    if (!bindings) return;
+    const currentBindings = bindings;
+
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || event.repeat || event.isComposing) return;
       if (recording) return;
@@ -148,7 +156,7 @@ export function ShortcutRunner() {
       if (isTypingTarget(event.target) && !event.ctrlKey && !event.metaKey) {
         return;
       }
-      const action = shortcutActionForEvent(event, bindings);
+      const action = shortcutActionForEvent(event, currentBindings);
       if (!action) return;
       event.preventDefault();
       run(action);

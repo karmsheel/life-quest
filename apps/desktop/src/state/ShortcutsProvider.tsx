@@ -197,3 +197,17 @@ export function useShortcuts(): ShortcutsContextValue {
   }
   return context;
 }
+
+/**
+ * The shortcuts, if this tree is wrapped in the provider.
+ *
+ * `ShortcutRunner` sits inside `AppShell`, and the shell is mounted by harnesses
+ * that do not need the keyboard — a dock rig, a sidebar rig, a page rig. Those
+ * trees predate the shortcuts feature and are complete without it; the runner
+ * standing down is the honest behaviour there, the same way `ChatPanel` falls
+ * back to its own chat store when the shell's provider is absent. Pages that
+ * actually edit or read the bindings use `useShortcuts` and still require it.
+ */
+export function useShortcutsOptional(): ShortcutsContextValue | null {
+  return useContext(ShortcutsContext);
+}

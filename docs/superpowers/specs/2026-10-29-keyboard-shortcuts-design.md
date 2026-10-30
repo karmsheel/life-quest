@@ -72,6 +72,23 @@ A conflict keeps the row recording, so the operator can press another combinatio
 without walking back to the button. A cleared binding (`null`) is a deliberate
 choice and survives reload.
 
+## The dock's reference page
+
+A titlebar control — the keyboard icon immediately before the settings gear —
+opens the dock onto a read-only Keyboard shortcuts page. It is the look-up
+surface: the page the operator is working on stays where it is, and the keys are
+one click away in the pane that already carries the chat list and the Life-Chain.
+
+The control opens the dock if it is collapsed and puts the reference on it
+without a chat resuming over the top. The page lists the same movements and
+effective bindings as Settings → Keyboard, grouped the same way, and its pencil
+opens the editable page over the app. The dock's back control returns to the
+thread it left (or the list when no chat is open), and any other dock action —
+history, Life-Chain, or opening a chat — replaces the reference as usual.
+
+For this, `surface` moved from the chat store to `ChatDockProvider`: the titlebar
+stands above the chat store, and "what is this pane showing" is dock state.
+
 ## Storage
 
 Overrides live in `localStorage` under `lifequest-keyboard-shortcuts`:
@@ -107,8 +124,11 @@ The listener is mounted once, inside `AppShell`. It stands down while:
 | `apps/desktop/src/state/ShortcutsProvider.tsx` | Bindings, overrides, recording, refusals |
 | `apps/desktop/src/components/shell/ShortcutRunner.tsx` | The listener and what each movement does |
 | `apps/desktop/src/components/settings/SettingsShortcuts.tsx` | The page |
+| `apps/desktop/src/components/hermes/ChatShortcutsPage.tsx` | The dock's read-only reference page |
+| `apps/desktop/src/state/ChatDockProvider.tsx` | The dock's surface, including the reference page |
+| `apps/desktop/src/components/shell/WindowTitleBar.tsx` | The keyboard icon that opens the dock page |
 | `apps/desktop/src/lib/settings-views.ts` | The Keyboard section and its search keywords |
-| `apps/desktop/src/styles/global.css` | Keycaps, groups and the recording row |
+| `apps/desktop/src/styles/global.css` | Keycaps, groups, the recording row and the dock reference |
 
 ## Verification
 
@@ -117,5 +137,7 @@ real shell and the real settings sheet: defaults and search, recording a
 binding, the rebound key moving the app after the sheet closes, conflict and
 reserved refusals (including the runner standing down while recording),
 Backspace clearing, per-row and all-defaults reset, persistence across a reload,
-the typing guard, and the default panel/page/wing/surface movements. Its report
-and screenshots land in `apps/desktop/e2e/artifacts/keyboard-shortcuts.*`.
+the typing guard, the default panel/page/wing/surface movements, and the
+titlebar control opening the dock's reference page (including from a collapsed
+dock and after a binding changed). Its report and screenshots land in
+`apps/desktop/e2e/artifacts/keyboard-shortcuts.*`.
