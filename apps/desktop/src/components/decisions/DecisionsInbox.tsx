@@ -207,6 +207,7 @@ function kindLabel(target: DecisionRecord["target"]): string {
 export function DecisionsInbox({
   showHeader = true,
   onClose,
+  arrivalIds,
 }: {
   showHeader?: boolean;
   /**
@@ -215,6 +216,12 @@ export function DecisionsInbox({
    * the auto-close switch has nothing to close.
    */
   onClose?: () => void;
+  /**
+   * Pending Decision ids whose filing opened this sheet, when the watcher opened
+   * it (see `DecisionInboxAutoOpen`). They are the arrival the live mark cannot
+   * know about, because this page was not on screen when they were written.
+   */
+  arrivalIds?: readonly string[];
 }) {
   const { snapshot, refresh } = useVault();
   const lens = useDomainLens();
@@ -255,6 +262,14 @@ export function DecisionsInbox({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [arrival, setArrival] = useState<Arrival | null>(null);
+  /**
+   * The filing this sheet was opened FOR, if the watcher opened it.
+   *
+   * A ref, not state: it is input to the first paint only, and the mark must not
+   * come back when the operator switches tabs. The first successful read is the
+   * one that draws the list the filing is in, so it consumes this.
+   */
+  const arrivalSeedRef = useRef<readonly string[] | null>(arrivalIds ?? null);
 
   /**
    * Every decision id this page has drawn, so "just arrived" is decidable.
@@ -312,6 +327,8 @@ export function DecisionsInbox({
           if (mode === "view") setItems([]);
           return;
         }
+        /** The paint that draws the list for the first time, not a live update. */
+        const firstLoad = !seededRef.current;
         const fresh = seededRef.current
           ? result.value.filter(
               (d) => d.status === "pending" && !drawnRef.current.has(d.id),
@@ -333,6 +350,30 @@ export function DecisionsInbox({
         list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
         setItems(list);
+
+        // A filing that OPENED this sheet. The page was not on screen when it
+        // was written, so the live-arrival path below never saw it; the watcher
+        // carried the ids in the navigation. The first paint marks those cards,
+        // so the sheet opens with the new one already wearing the aura and the
+        // line above the list naming who filed it — the eye lands on the thing
+        // it is meant to answer, not on a list where one more card appeared.
+        const seed = arrivalSeedRef.current;
+        if (firstLoad && seed && seed.length > 0) {
+          arrivalSeedRef.current = null;
+          const arrived = result.value.filter(
+            (d) => d.status === "pending" && seed.includes(d.id),
+          );
+          if (arrived.length > 0) {
+            const newest = arrived
+              .slice()
+              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]!;
+            setArrival({
+              ids: arrived.map((d) => d.id),
+              actor: actorDisplayName(newest.actor),
+              at: Date.now(),
+            });
+          }
+        }
 
         // The second store is read only by the tabs that show it. A failure to
         // read it must not read as "you have logged nothing": an empty history

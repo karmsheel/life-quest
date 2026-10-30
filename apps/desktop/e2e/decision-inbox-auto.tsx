@@ -333,6 +333,26 @@ type Screen = {
   updates: Array<Record<string, unknown>>;
   resolveCalls: Array<{ id: string; resolution: string }>;
   listCalls: number;
+  /**
+   * The sheet's arrival/leave motion as the engine is actually running it:
+   * the declared animation on the scrim and the panel, and where the panel is
+   * at this instant. `null` when no decisions sheet is up.
+   */
+  motion: {
+    closing: boolean;
+    scrimAnimation: string;
+    panelAnimation: string;
+    panelDuration: string;
+    panelEasing: string;
+    panelOpacity: string;
+    panelTransform: string;
+    /** The live CSSAnimation's own state; null when nothing is running. */
+    panelPlayState: string | null;
+  } | null;
+  /** The cards wearing the arrival mark, and the line above the list. */
+  arrived: string[];
+  arrivalLine: string | null;
+  newChips: number;
 };
 
 function round(value: number): number {
@@ -377,12 +397,35 @@ function switches(): Screen["switches"] {
   );
 }
 
+/**
+ * The sheet's own animations, by the names the stylesheet gives them.
+ *
+ * Read from the engine's animation list rather than from the stylesheet, so a
+ * rule that is declared but not applied (a typo in the selector, a class that
+ * never lands) shows up as "no animation" instead of passing on the CSS text.
+ */
+function sheetAnimations(): CSSAnimation[] {
+  return document.getAnimations().filter(
+    (animation): animation is CSSAnimation =>
+      "animationName" in animation &&
+      String(animation.animationName).startsWith("sheet-"),
+  );
+}
+
 function screen(): Screen {
   const decisionsOverlay = document.querySelector("[data-decisions-overlay]");
   const settingsOverlay = document.querySelector("[data-settings-overlay]");
   const overlayStyle = decisionsOverlay
     ? getComputedStyle(decisionsOverlay)
     : null;
+  const panel = decisionsOverlay?.querySelector<HTMLElement>(
+    ".sheet-overlay__panel",
+  );
+  const panelStyle = panel ? getComputedStyle(panel) : null;
+  const panelAnimation =
+    sheetAnimations().find((animation) =>
+      animation.animationName.startsWith("sheet-panel"),
+    ) ?? null;
   const port = scroller();
   const portBox = box(port);
   const markerBox = box(document.querySelector("[data-work-marker]"));
@@ -439,6 +482,25 @@ function screen(): Screen {
     updates: copy(vault.updates),
     resolveCalls: copy(vault.resolves),
     listCalls: vault.listCalls,
+    motion:
+      decisionsOverlay && panelStyle
+        ? {
+            closing: decisionsOverlay.classList.contains("is-closing"),
+            scrimAnimation: overlayStyle!.animationName,
+            panelAnimation: panelStyle.animationName,
+            panelDuration: panelStyle.animationDuration,
+            panelEasing: panelStyle.animationTimingFunction,
+            panelOpacity: panelStyle.opacity,
+            panelTransform: panelStyle.transform,
+            panelPlayState: panelAnimation?.playState ?? null,
+          }
+        : null,
+    arrived: Array.from(
+      document.querySelectorAll<HTMLElement>(".decision-card[data-arrived='true']"),
+    ).map((card) => card.dataset.decisionId ?? ""),
+    arrivalLine:
+      text(document.querySelector('[data-testid="decisions-arrival"]')) || null,
+    newChips: document.querySelectorAll(".decision-new").length,
   };
 }
 
@@ -627,6 +689,65 @@ function clickCardAction(id: string | undefined, label: string): boolean {
 harness.decisionAutoApprove = (id) => clickCardAction(id, "Approve");
 harness.decisionAutoReject = (id) => clickCardAction(id, "Reject");
 
+/**
+ * Wait for the sheet's first frame. The driver needs the moment the panel
+ * mounts — before the arrival motion has finished — to measure the motion, and
+ * a fixed sleep would either miss it or stall the run on a slow machine.
+ */
+harness.decisionAutoWaitForSheet = () =>
+  new Promise<boolean>((resolve) => {
+    const started = performance.now();
+    const tick = () => {
+      if (document.querySelector("[data-decisions-overlay]")) {
+        resolve(true);
+        return;
+      }
+      if (performance.now() - started > 4000) {
+        resolve(false);
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
+
+/** The sheet's motion as it stands right now. */
+harness.decisionAutoMotion = () => screen().motion;
+
+/**
+ * Freeze the sheet's animations at `ms` and return how many were moved.
+ *
+ * The arrival is 200ms and a driver's round trip is not deterministic, so a
+ * claim about the panel being mid-flight is measured at a chosen instant rather
+ * than whenever the sample happened to land: seek, read, finish.
+ */
+harness.decisionAutoSeekSheet = (ms) => {
+  const animations = sheetAnimations();
+  for (const animation of animations) {
+    animation.pause();
+    animation.currentTime = ms;
+  }
+  return animations.length;
+};
+
+/** Play the frozen arrival out to its end, so the sheet sits at rest. */
+harness.decisionAutoFinishSheet = () => {
+  const animations = sheetAnimations();
+  for (const animation of animations) animation.finish();
+  return animations.length;
+};
+
+/** Press the sheet's own cross, the way a hand would. */
+harness.decisionAutoCloseSheet = () => {
+  const close = document.querySelector<HTMLElement>(".decisions-overlay__close");
+  if (!close) return false;
+  close.click();
+  return true;
+};
+
+harness.decisionAutoPrefersReducedMotion = () =>
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 type HarnessWindow = Window & {
   decisionAutoReady?: Promise<void>;
   decisionAutoSkin?: string;
@@ -640,6 +761,12 @@ type HarnessWindow = Window & {
   >;
   decisionAutoSettings?: () => VaultSettings;
   decisionAutoResolveCalls?: () => Array<{ id: string; resolution: string }>;
+  decisionAutoWaitForSheet?: () => Promise<boolean>;
+  decisionAutoMotion?: () => Screen["motion"];
+  decisionAutoSeekSheet?: (ms: number) => number;
+  decisionAutoFinishSheet?: () => number;
+  decisionAutoCloseSheet?: () => boolean;
+  decisionAutoPrefersReducedMotion?: () => boolean;
 };
 
 const root = document.getElementById("root");

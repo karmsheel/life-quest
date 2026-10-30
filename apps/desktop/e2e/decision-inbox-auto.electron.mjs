@@ -26,12 +26,19 @@
  *   8. Auto-open on, auto-close off: the sheet stays up on its empty state.
  *   9. Auto-close on while the sheet is up: a second filing arrives in place and
  *      answering it closes the sheet.
+ *  10. Reduced motion: the sheet still arrives and leaves, nothing moves, and
+ *      the close does not wait for a motion that is not playing.
+ *  11. The motion as a study: the arrival frozen at start/mid/end (the strip)
+ *      and a slowed replay encoded as a short film, because a still cannot show
+ *      a settle.
  *
  * Measured because a screenshot cannot show it: the background page's mount
  * count, its scrollTop and content-marker offset before and after every sheet,
- * the body's scroll lock, and the exact settingsUpdate patches and resolve calls
- * the page made.
+ * the body's scroll lock, the declared arrival/exit animations and where the
+ * panel actually is mid-flight, and the exact settingsUpdate patches and resolve
+ * calls the page made.
  */
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -165,6 +172,13 @@ async function main() {
   const approve = async (id) =>
     run(`window.decisionAutoApprove(${JSON.stringify(id)})`);
 
+  /** The sheet's first frame, its motion, and the controls that drive it. */
+  const waitForSheet = () => run("window.decisionAutoWaitForSheet()");
+  const seekSheet = (ms) =>
+    run(`window.decisionAutoSeekSheet(${JSON.stringify(ms)})`);
+  const finishSheet = () => run("window.decisionAutoFinishSheet()");
+  const closeSheet = () => run("window.decisionAutoCloseSheet()");
+
   const record = (name, value) => {
     states[name] = value;
     return value;
@@ -215,21 +229,74 @@ async function main() {
     step("scroll", await scrollTo(WORKSPACE_TOP));
     record("parked", await settle());
 
-    // 3 — the companion files a Decision: the inbox raises itself over the page.
+    // 3 — the companion files a Decision: the inbox raises itself over the page,
+    //     in motion. The arrival is measured at a chosen instant (seeked to
+    //     100ms) rather than whenever the sample happened to land, and the
+    //     filing that caused the open must wear the arrival mark.
     step("filedId", await fileDecision("Filed while the operator was reading"));
     const filedId = steps.filedId;
+    step("sheetAppeared", await waitForSheet());
+    record("openedMotion", await sample());
+    // Freeze the arrival at chosen instants and photograph them: start, middle,
+    // end. They are the frames of the motion strip — the gesture as stills, at
+    // times the engine was told to hold rather than times the driver guessed.
+    step("motionSeeked", await seekSheet(0));
+    const motionFrames = [await shot("motion-000")];
+    await seekSheet(100);
+    record("openedMotionMid", await sample());
+    motionFrames.push(await shot("motion-100"));
+    await seekSheet(200);
+    motionFrames.push(await shot("motion-200"));
+    step("motionFinished", await finishSheet());
+    const stripFile = path.join(
+      artifactsDir,
+      "decision-inbox-auto-motion-strip.png",
+    );
+    execFileSync("convert", [
+      ...motionFrames.map((name) => path.join(artifactsDir, name)),
+      "+append",
+      stripFile,
+    ]);
+    screenshots.push(path.basename(stripFile));
     const filed = record(
       "filed",
       await waitFor(
-        "the inbox to open for the new filing",
+        "the inbox to open for the new filing with the filing marked as new",
+        (state) =>
+          state.sheet === "decisions" &&
+          state.cards.length === 2 &&
+          state.cards.some((card) => card.id === filedId) &&
+          state.arrived.includes(filedId),
+      ),
+    );
+    record("filed", await settle(120));
+    await shot("opened");
+
+    // 3b — the frame leaves in motion too: the cross runs the exit, then the
+    //      route hands the page back. Reopened by hand so the queue is intact
+    //      for the answer steps below.
+    step("closeByHand", await closeSheet());
+    record("closingMotion", await sample());
+    record(
+      "closedByHand",
+      await waitFor(
+        "the hand-closed inbox to leave the workspace",
+        (state) => state.sheet === null && state.path === "/work",
+      ),
+    );
+    record("closedByHand", await settle(160));
+    await shot("closed-by-hand");
+    step("reopenClick", await click("[data-open-decisions]"));
+    record(
+      "reopened",
+      await waitFor(
+        "the inbox reopened by hand with both pending cards",
         (state) =>
           state.sheet === "decisions" &&
           state.cards.length === 2 &&
           state.cards.some((card) => card.id === filedId),
       ),
     );
-    record("filed", await settle(120));
-    await shot("opened");
 
     // 4 — one of the two answers the sheet outlives: the queue is not empty yet.
     const approveFirstId =
@@ -248,8 +315,12 @@ async function main() {
     );
 
     // 5 — the last pending answer puts the sheet away, onto the parked page.
+    //     Timed as well as observed: the close must play the exit motion before
+    //     the route changes, so an instant disappearance is a failure even
+    //     though the end state is the same.
     const lastId = states.afterFirstApprove.cards[0]?.id;
     step("approveLastId", lastId ?? null);
+    const approveStartedAt = Date.now();
     step("approveLast", lastId ? await approve(lastId) : false);
     record(
       "closed",
@@ -258,6 +329,7 @@ async function main() {
         (state) => state.sheet === null && state.path === "/work",
       ),
     );
+    step("autoCloseElapsedMs", Date.now() - approveStartedAt);
     record("closed", await settle(160));
     await shot("closed");
 
@@ -425,6 +497,91 @@ async function main() {
     );
     record("autoClosedByLast", await settle(160));
     await shot("final-closed");
+
+    // 10 — reduced motion: the frame still arrives and still leaves, but nothing
+    //      moves and the close does not wait for a motion that is not playing.
+    //      The media feature is emulated over CDP because that is the only way
+    //      to ask a real engine for it; a build that refuses the emulation drops
+    //      the claim rather than faking it.
+    let emulated = false;
+    try {
+      win.webContents.debugger.attach("1.3");
+      await win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {
+        features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+      });
+      emulated = true;
+    } catch (error) {
+      console.log(`[reduced motion not emulated] ${error}`);
+    }
+    step(
+      "prefersReducedMotion",
+      emulated ? await run("window.decisionAutoPrefersReducedMotion()") : false,
+    );
+    if (!emulated) {
+      failures.push(
+        "this Electron build refused Emulation.setEmulatedMedia, so prefers-reduced-motion could not be asked for",
+      );
+    } else {
+      step("reducedOpenClick", await click("[data-open-decisions]"));
+      step("reducedSheetAppeared", await waitForSheet());
+      record("reducedMotionOpen", await sample());
+      step("reducedCloseClick", await closeSheet());
+      await sleep(80);
+      record("reducedMotionClosed", await sample());
+      try {
+        win.webContents.debugger.detach();
+      } catch {
+        // Detaching a debugger that already went away is not a failure.
+      }
+    }
+
+    // 11 — the motion as a film. A still cannot show a settle, so the same open
+    //      is replayed with the animation slowed (only the duration is changed;
+    //      the curve, distances and classes are the shipped ones), captured
+    //      frame by frame and encoded beside the report. The clip is a study of
+    //      the gesture, not a claim about its speed: the report above measures
+    //      the shipped 200ms enter / 140ms exit pair.
+    const motionCss = await win.webContents.insertCSS(
+      ".sheet-overlay { animation-duration: 1100ms !important; } .sheet-overlay__panel { animation-duration: 1500ms !important; }",
+    );
+    const framesDir = path.join(artifactsDir, "decision-inbox-auto-motion");
+    fs.rmSync(framesDir, { recursive: true, force: true });
+    fs.mkdirSync(framesDir, { recursive: true });
+    step("motionStudyFile", await fileDecision("Filed for the motion study"));
+    step("motionStudySheet", await waitForSheet());
+    const frameFiles = [];
+    for (let index = 0; index < 18; index += 1) {
+      const image = await win.webContents.capturePage();
+      const file = path.join(
+        framesDir,
+        `frame-${String(index).padStart(3, "0")}.png`,
+      );
+      fs.writeFileSync(file, image.toPNG());
+      frameFiles.push(file);
+      await sleep(100);
+    }
+    step("motionStudyFrames", frameFiles.length);
+    await closeSheet();
+    await sleep(400);
+    await win.webContents.removeInsertedCSS(motionCss);
+    const videoFile = path.join(artifactsDir, "decision-inbox-auto-motion.mp4");
+    execFileSync("ffmpeg", [
+      "-y",
+      "-loglevel",
+      "error",
+      "-framerate",
+      "10",
+      "-i",
+      path.join(framesDir, "frame-%03d.png"),
+      "-c:v",
+      "libx264",
+      "-pix_fmt",
+      "yuv420p",
+      "-movflags",
+      "+faststart",
+      videoFile,
+    ]);
+    screenshots.push(path.basename(videoFile));
 
     report.pass = true;
   } catch (error) {

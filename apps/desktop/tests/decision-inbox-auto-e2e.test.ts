@@ -18,6 +18,8 @@ const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/decision-inbox-auto.json");
 const ARTIFACT_SCREENSHOTS = [
   "decision-inbox-auto-opened.png",
+  "decision-inbox-auto-motion-strip.png",
+  "decision-inbox-auto-closed-by-hand.png",
   "decision-inbox-auto-closed.png",
   "decision-inbox-auto-settings.png",
   "decision-inbox-auto-stayed-open.png",
@@ -76,6 +78,19 @@ type Screen = {
   updates: Array<{ decisionInbox?: { autoOpen?: boolean; autoClose?: boolean } }>;
   resolveCalls: Array<{ id: string; resolution: string }>;
   listCalls: number;
+  motion: {
+    closing: boolean;
+    scrimAnimation: string;
+    panelAnimation: string;
+    panelDuration: string;
+    panelEasing: string;
+    panelOpacity: string;
+    panelTransform: string;
+    panelPlayState: string | null;
+  } | null;
+  arrived: string[];
+  arrivalLine: string | null;
+  newChips: number;
 };
 
 type Report = {
@@ -90,6 +105,19 @@ type Report = {
   steps: {
     scroll?: boolean;
     filedId?: string;
+    sheetAppeared?: boolean;
+    motionSeeked?: number;
+    motionFinished?: number;
+    closeByHand?: boolean;
+    reopenClick?: boolean;
+    autoCloseElapsedMs?: number;
+    prefersReducedMotion?: boolean;
+    reducedOpenClick?: boolean;
+    reducedSheetAppeared?: boolean;
+    reducedCloseClick?: boolean;
+    motionStudyFile?: string;
+    motionStudySheet?: boolean;
+    motionStudyFrames?: number;
     approveFirstId?: string | null;
     approveFirst?: boolean;
     approveLastId?: string | null;
@@ -170,9 +198,16 @@ describe("the decisions inbox that opens and closes itself", () => {
     const {
       landing,
       parked,
+      openedMotion,
+      openedMotionMid,
       filed,
+      closingMotion,
+      closedByHand,
+      reopened,
       afterFirstApprove,
       closed,
+      reducedMotionOpen,
+      reducedMotionClosed,
       settings,
       settingsToggledOff,
       settingsToggledOn,
@@ -272,6 +307,144 @@ describe("the decisions inbox that opens and closes itself", () => {
       "the filed decision never reached the inbox",
     );
 
+    // 3a — the sheet arrives in motion, not between two frames: the scrim dims
+    //      first, the panel settles up from a hair below, and both come to rest.
+    //      The mid-flight reading is taken at a chosen instant (seeked to 100ms
+    //      of the 200ms), so it is a fact about the motion rather than about
+    //      when the driver happened to sample.
+    assert.equal(report.steps.sheetAppeared, true, "the sheet never mounted");
+    assert.ok(openedMotion.motion, "no motion was measurable when the sheet mounted");
+    const arriving = openedMotion.motion!;
+    assert.equal(arriving.closing, false, "a freshly opened sheet is already closing");
+    assert.equal(
+      arriving.scrimAnimation,
+      "sheet-scrim-in",
+      `the scrim arrives with "${arriving.scrimAnimation}"`,
+    );
+    // The arrival is a linear fade plus a settle-curve rise: on the settle curve
+    // alone a 200ms fade is ~97% done at its midpoint, which reads as a pop.
+    assert.match(
+      arriving.panelAnimation,
+      /sheet-panel-fade-in/,
+      `the panel's arrival has no fade: "${arriving.panelAnimation}"`,
+    );
+    assert.match(
+      arriving.panelAnimation,
+      /sheet-panel-rise-in/,
+      `the panel's arrival has no rise: "${arriving.panelAnimation}"`,
+    );
+    const arrivalDurations = arriving.panelDuration.split(",").map((part) => part.trim());
+    assert.deepEqual(
+      arrivalDurations,
+      ["0.2s", "0.2s"],
+      `the panel arrival runs for ${arriving.panelDuration}, not two 200ms tracks`,
+    );
+    assert.match(
+      arriving.panelEasing,
+      /linear/,
+      `the fade is not linear: "${arriving.panelEasing}"`,
+    );
+    assert.match(
+      arriving.panelEasing,
+      /cubic-bezier\(0\.23, 1, 0\.32, 1\)/,
+      `the rise does not settle on the app's curve: "${arriving.panelEasing}"`,
+    );
+    assert.notEqual(
+      arriving.panelPlayState,
+      null,
+      "the panel's arrival is declared but no animation object is running it",
+    );
+    assert.equal(
+      report.steps.motionSeeked,
+      3,
+      "the arrival is not three animations (scrim + panel fade + panel rise)",
+    );
+    assert.ok(openedMotionMid.motion, "no motion reading at the seeked instant");
+    const mid = openedMotionMid.motion!;
+    const midOpacity = Number(mid.panelOpacity);
+    assert.ok(
+      midOpacity > 0.2 && midOpacity < 0.8,
+      `the panel is at opacity ${mid.panelOpacity} 100ms into its 200ms arrival — the fade is not legible at its midpoint`,
+    );
+    assert.match(
+      mid.panelTransform,
+      /matrix/,
+      `the panel does not move on the way in: "${mid.panelTransform}"`,
+    );
+    assert.notEqual(mid.panelTransform, "none", "the panel's arrival has no transform");
+    assert.equal(report.steps.motionFinished, 3, "the arrival could not be played out");
+    assert.ok(filed.motion, "the sheet has no motion at rest");
+    assert.equal(
+      filed.motion!.panelOpacity,
+      "1",
+      `the landed panel is still translucent: ${filed.motion!.panelOpacity}`,
+    );
+    // A landed transform computes to the identity matrix rather than the
+    // `none` keyword, because the finished animation is still applying its
+    // final keyframe. Either spelling is "at rest".
+    assert.ok(
+      filed.motion!.panelTransform === "none" ||
+        filed.motion!.panelTransform === "matrix(1, 0, 0, 1, 0, 0)",
+      `the landed panel is still displaced: ${filed.motion!.panelTransform}`,
+    );
+
+    // 3b — the card that caused the sheet to open wears the arrival mark, and
+    //      the card that was already waiting does not. The page was not on
+    //      screen when the filing happened, so this is the only mark it gets.
+    assert.deepEqual(
+      filed.arrived,
+      [report.steps.filedId],
+      `the cards marked new are ${JSON.stringify(filed.arrived)}`,
+    );
+    assert.equal(
+      filed.arrived.includes(report.fixture.seededId),
+      false,
+      "the pre-existing decision was marked as new",
+    );
+    assert.equal(filed.newChips, 1, "the new card does not wear exactly one New chip");
+    assert.match(
+      filed.arrivalLine ?? "",
+      /^New decision filed by Hermes\.$/,
+      `the arrival line is "${filed.arrivalLine}"`,
+    );
+
+    // 3c — closing by hand leaves the same way: the exit motion plays before the
+    //      route changes, then the page behind is handed back untouched.
+    assert.equal(report.steps.closeByHand, true, "the sheet's cross could not be pressed");
+    assert.ok(closingMotion.motion, "no exit motion was measurable after the cross");
+    const leaving = closingMotion.motion!;
+    assert.equal(leaving.closing, true, "the sheet did not enter its closing state");
+    assert.equal(
+      leaving.scrimAnimation,
+      "sheet-scrim-out",
+      `the scrim leaves with "${leaving.scrimAnimation}"`,
+    );
+    assert.match(
+      leaving.panelAnimation,
+      /sheet-panel-fade-out/,
+      `the panel's exit has no fade: "${leaving.panelAnimation}"`,
+    );
+    assert.match(
+      leaving.panelAnimation,
+      /sheet-panel-drop-out/,
+      `the panel's exit has no drop: "${leaving.panelAnimation}"`,
+    );
+    assert.deepEqual(
+      leaving.panelDuration.split(",").map((part) => part.trim()),
+      ["0.14s", "0.14s"],
+      `the exit runs for ${leaving.panelDuration}, not two 140ms tracks`,
+    );
+    assert.equal(closedByHand.sheet, null, "the hand-closed sheet is still up");
+    assert.equal(closedByHand.path, "/work", "the hand-closed sheet did not return to the page");
+    assert.equal(
+      closedByHand.workspace.mounts,
+      parked.workspace.mounts,
+      "the hand-closed sheet remounted the page behind it",
+    );
+    assert.equal(report.steps.reopenClick, true, "the inbox could not be reopened by hand");
+    assert.equal(reopened.sheet, "decisions", "reopening by hand painted no sheet");
+    assert.equal(reopened.cards.length, 2, "the reopened inbox lost a pending card");
+
     // 4 — approving one of two pending cards leaves the sheet up.
     assert.equal(report.steps.approveFirst, true, "the Approve control could not be pressed");
     assert.equal(afterFirstApprove.sheet, "decisions", "one answer closed the inbox early");
@@ -322,6 +495,18 @@ describe("the decisions inbox that opens and closes itself", () => {
       closed.resolveCalls.length,
       2,
       "the second answer never reached the vault",
+    );
+    // The auto-close is not an instant disappearance: it plays the same 140ms
+    // exit before the route changes. A close that skipped the motion would land
+    // well under this floor (the answer path itself is a few milliseconds here).
+    assert.equal(
+      typeof report.steps.autoCloseElapsedMs,
+      "number",
+      "the driver did not time the auto-close",
+    );
+    assert.ok(
+      report.steps.autoCloseElapsedMs! >= 100,
+      `auto-close took ${report.steps.autoCloseElapsedMs}ms — the exit motion was skipped`,
     );
 
     // 6 — Settings › Decisions, reached through the real settings sheet.
@@ -530,6 +715,58 @@ describe("the decisions inbox that opens and closes itself", () => {
       autoClosedByLast.bodyOverflow,
       "hidden",
       "the final auto-close left the page scroll-locked",
+    );
+
+    // 10 — reduced motion: the frame still arrives and still leaves, but nothing
+    //      moves and the close does not wait for a motion that is not playing.
+    assert.equal(
+      report.steps.prefersReducedMotion,
+      true,
+      "prefers-reduced-motion could not be emulated, so the guard is unproven",
+    );
+    assert.equal(reducedMotionOpen.sheet, "decisions", "the sheet did not open under reduced motion");
+    assert.ok(reducedMotionOpen.motion, "the reduced-motion sheet has no motion reading");
+    assert.equal(
+      reducedMotionOpen.motion!.panelAnimation,
+      "none",
+      `the panel still animates under reduced motion: "${reducedMotionOpen.motion!.panelAnimation}"`,
+    );
+    assert.equal(
+      reducedMotionOpen.motion!.scrimAnimation,
+      "none",
+      `the scrim still animates under reduced motion: "${reducedMotionOpen.motion!.scrimAnimation}"`,
+    );
+    assert.equal(report.steps.reducedCloseClick, true, "the reduced-motion cross could not be pressed");
+    assert.equal(
+      reducedMotionClosed.sheet,
+      null,
+      "under reduced motion the close waited for a motion that never played",
+    );
+    assert.equal(
+      reducedMotionClosed.path,
+      "/work",
+      "the reduced-motion close did not hand the page back",
+    );
+
+    // The motion as a study: the arrival frozen at start/mid/end (the strip),
+    // and a slowed replay encoded as a film because a still cannot show a
+    // settle. The clip's durations are deliberately not the shipped ones — the
+    // report above measures those — it exists to show the gesture's shape.
+    assert.ok(
+      (report.steps.motionStudyFrames ?? 0) >= 12,
+      `the motion study captured ${report.steps.motionStudyFrames} frames`,
+    );
+    assert.equal(
+      fs.existsSync(path.join(desktopRoot, "e2e/artifacts/decision-inbox-auto-motion.mp4")),
+      true,
+      "the motion study wrote no film",
+    );
+    assert.equal(
+      fs.existsSync(
+        path.join(desktopRoot, "e2e/artifacts/decision-inbox-auto-motion/frame-000.png"),
+      ),
+      true,
+      "the motion study kept no frames",
     );
 
     // The repeatable artifact: a JSON report plus the frames it measured.

@@ -49,6 +49,12 @@ import { useVault } from "@/state/VaultProvider";
  * switch on must not treat the decisions already waiting as new. Turning it off
  * still updates the known set, so the filings it missed while off do not all pop
  * the moment it is turned back on — only the next genuinely new one does.
+ *
+ * The filing's ids are carried into the navigation (`decisionArrivalIds`) for
+ * the same reason the inbox's own live arrival mark exists: an operator who was
+ * not looking at the inbox when a Decision was written should still be told which
+ * card is the new one. The sheet opens in motion; the card that caused it wears
+ * the arrival aura as it lands.
  */
 export function DecisionInboxAutoOpen() {
   const { snapshot } = useVault();
@@ -110,7 +116,12 @@ export function DecisionInboxAutoOpen() {
         // Already answering: a second navigation would push a second history
         // entry behind the sheet the operator is looking at.
         if (routeRef.current === "/decisions") return;
-        navigate("/decisions");
+        // The ids travel with the navigation: the inbox was not on screen when
+        // these were filed, so its own live-arrival mark never saw them. The
+        // sheet's first paint uses them to wear the mark on the card that caused
+        // it to open — the operator's eye should land on what is new, not on a
+        // quiet list where one more card appeared.
+        navigate("/decisions", { state: { decisionArrivalIds: fresh } });
       } catch {
         // A read that failed is not a filing. Keep the baseline and wait for the
         // next announcement, which is what a transient failure deserves.
