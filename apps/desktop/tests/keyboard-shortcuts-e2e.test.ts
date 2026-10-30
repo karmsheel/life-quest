@@ -32,6 +32,7 @@ const SHOTS = [
   "keyboard-shortcuts-typing-guard.png",
   "keyboard-shortcuts-dock.png",
   "keyboard-shortcuts-dock-live.png",
+  "keyboard-shortcuts-dock-editing.png",
 ];
 
 /** The contract this branch ships, restated here so the suite fails on a
@@ -78,6 +79,10 @@ type DockRowState = {
   label: string;
   binding: string;
   changed: boolean;
+  recording: boolean;
+  prompt: boolean;
+  edit: { present: boolean; label: string | null; title: string | null };
+  cancel: { present: boolean; label: string | null };
   keysValue: string | null;
   keycaps: string[];
 };
@@ -94,6 +99,9 @@ type DockState = {
   bodyVisible: boolean;
   shortcutsRoot: boolean;
   hint: string;
+  editCount: number;
+  recordingPromptCount: number;
+  editingError: string | null;
   groups: Array<{ id: string | null; rows: string[] }>;
   rows: DockRowState[];
 };
@@ -772,6 +780,173 @@ describe("keyboard shortcuts settings and runner", () => {
     const settingsClosed = state(report, "settingsClosed");
     assert.equal(settingsClosed.overlayOpen, false, "Escape did not close the settings sheet");
     assert.equal(settingsClosed.path, "/dream", "closing settings did not return to the page it covered");
+
+    // —— 11. The dock's page is an editor too: every row has its own pencil,
+    //       the provider's one recorder runs without opening the settings
+    //       sheet, refusals stay on the page, and the saved key moves the shell.
+    const dockEditingSetup = state(report, "dockEditingSetup");
+    assert.deepEqual(
+      storedBindings(dockEditingSetup),
+      {},
+      `the set-up reset left overrides behind: ${dockEditingSetup.storage}`,
+    );
+
+    const dockEditReady = state(report, "dockEditReady");
+    const editDock = dockEditReady.dock;
+    assert.ok(editDock, "the dock is not open on its shortcuts page");
+    assert.equal(editDock.surface, "shortcuts", "the dock is not on the shortcuts surface");
+    assert.equal(editDock.editCount, 14, `the dock page has ${editDock.editCount} edit pencils, not 14`);
+    assert.equal(editDock.rows.length, 14, `the dock page lists ${editDock.rows.length} rows, not 14`);
+    for (const item of editDock.rows) {
+      assert.equal(item.edit.present, true, `the ${item.id} row has no edit pencil`);
+      assert.equal(
+        item.edit.label,
+        `Change shortcut for ${item.label}`,
+        `the ${item.id} pencil is labelled ${JSON.stringify(item.edit.label)}`,
+      );
+    }
+    assert.deepEqual(
+      editDock.groups.map((group) => ({ id: group.id, rows: group.rows.length })),
+      GROUPS,
+      `the pencils do not cover all four dock groups: ${JSON.stringify(editDock.groups)}`,
+    );
+    assert.equal(
+      editDock.pencil.present,
+      true,
+      "the dock page lost its header pencil to Settings",
+    );
+    assert.equal(
+      editDock.pencil.label,
+      "Change keyboard shortcuts in Settings",
+      `the header pencil is labelled ${JSON.stringify(editDock.pencil.label)}`,
+    );
+    assert.equal(editDock.recordingPromptCount, 0, "a dock row was already recording");
+    assert.equal(editDock.editingError, null, "a dock error was already up");
+
+    const dockRecording = state(report, "dockRecording");
+    const recordingDockRow = dockRow(dockRecording, "panel.sidebar.toggle");
+    assert.equal(recordingDockRow.recording, true, "the Toggle sidebar row did not start recording");
+    assert.equal(recordingDockRow.prompt, true, "the recording prompt is missing from the dock row");
+    assert.deepEqual(recordingDockRow.keycaps, [], "the recording dock row still draws keycaps");
+    assert.equal(
+      dockRecording.dock?.recordingPromptCount,
+      1,
+      "the dock page shows more than the one recording prompt",
+    );
+    assert.equal(recordingDockRow.cancel.present, true, "the recording dock row has no cancel control");
+    assert.equal(
+      recordingDockRow.cancel.label,
+      "Cancel changing the shortcut for Toggle sidebar",
+      `the dock cancel is labelled ${JSON.stringify(recordingDockRow.cancel.label)}`,
+    );
+    assert.equal(recordingDockRow.edit.present, false, "the dock pencil is still drawn while recording");
+    assert.equal(dockRecording.overlayOpen, false, "clicking a dock pencil opened the settings sheet");
+    assert.equal(dockRecording.dock?.surface, "shortcuts", "the dock left its page while recording");
+
+    const dockSaved = state(report, "dockSaved");
+    const savedDockRow = dockRow(dockSaved, "panel.sidebar.toggle");
+    assert.equal(savedDockRow.binding, "Ctrl+Alt+Y", `the dock saved ${savedDockRow.binding}`);
+    assert.equal(savedDockRow.changed, true, "the saved dock row is not marked changed");
+    assert.deepEqual(savedDockRow.keycaps, ["Ctrl", "Alt", "Y"]);
+    assert.equal(savedDockRow.recording, false, "the dock row is still recording after saving");
+    assert.equal(savedDockRow.edit.present, true, "the pencil did not return after saving");
+    assert.deepEqual(
+      storedBindings(dockSaved),
+      { "panel.sidebar.toggle": "Ctrl+Alt+Y" },
+      `storage after the dock save: ${dockSaved.storage}`,
+    );
+    assert.match(
+      dockSaved.dock?.hint ?? "",
+      /1 movement is changed from the defaults\./,
+      `dock hint ${JSON.stringify(dockSaved.dock?.hint)}`,
+    );
+    assert.equal(dockSaved.overlayOpen, false, "saving from the dock opened the settings sheet");
+
+    const dockEditHome = state(report, "dockEditHome");
+    assert.equal(dockEditHome.path, "/home", `the movement step ran on ${dockEditHome.path}`);
+    const dockEditCollapsed = state(report, "dockEditCollapsed");
+    assert.equal(
+      String(dockEditCollapsed.shellClass).includes("shell--nav-collapsed"),
+      true,
+      "Ctrl+Alt+Y did not collapse the sidebar",
+    );
+    const dockEditExpanded = state(report, "dockEditExpanded");
+    assert.equal(
+      String(dockEditExpanded.shellClass).includes("shell--nav-collapsed"),
+      false,
+      "Ctrl+Alt+Y did not expand the sidebar again",
+    );
+
+    const dockConflictRecording = state(report, "dockConflictRecording");
+    assert.equal(
+      dockRow(dockConflictRecording, "surface.settings.open").recording,
+      true,
+      "the Open settings row did not start recording",
+    );
+    const dockConflict = state(report, "dockConflict");
+    assert.match(
+      dockConflict.dock?.editingError ?? "",
+      /Next wing/,
+      `the dock conflict does not name Next wing: ${JSON.stringify(dockConflict.dock?.editingError)}`,
+    );
+    assert.equal(
+      dockRow(dockConflict, "surface.settings.open").binding,
+      "Ctrl+Comma",
+      "the refused dock row lost its binding",
+    );
+    assert.equal(
+      dockRow(dockConflict, "surface.settings.open").recording,
+      true,
+      "the refused dock row stopped recording",
+    );
+    assert.equal(dockConflict.path, "/home", "the refused Ctrl+PageDown fired the runner and navigated");
+    assert.equal(dockConflict.overlayOpen, false, "the dock conflict opened the settings sheet");
+
+    const dockConflictCancelled = state(report, "dockConflictCancelled");
+    assert.equal(dockConflictCancelled.dock?.editingError, null, "the dock error survived Escape");
+    assert.equal(
+      dockRow(dockConflictCancelled, "surface.settings.open").recording,
+      false,
+      "the dock recording survived Escape",
+    );
+    assert.equal(
+      dockConflictCancelled.dock?.surface,
+      "shortcuts",
+      "Escape took the dock off its shortcuts page",
+    );
+
+    const dockReserved = state(report, "dockReserved");
+    assert.match(
+      dockReserved.dock?.editingError ?? "",
+      /reserved/i,
+      `the dock did not refuse Ctrl+W as reserved: ${JSON.stringify(dockReserved.dock?.editingError)}`,
+    );
+    assert.equal(
+      dockRow(dockReserved, "history.back").binding,
+      "Alt+ArrowLeft",
+      "the reserved refusal rebound Back in the dock",
+    );
+    assert.equal(dockRow(dockReserved, "history.back").recording, true, "the reserved refusal ended recording");
+    const dockReservedCancelled = state(report, "dockReservedCancelled");
+    assert.equal(dockReservedCancelled.dock?.editingError, null, "the dock reserved error survived Escape");
+
+    const dockCleared = state(report, "dockCleared");
+    const clearedDockRow = dockRow(dockCleared, "history.back");
+    assert.equal(clearedDockRow.binding, "unassigned", "Backspace did not clear the dock row");
+    assert.equal(clearedDockRow.changed, true, "the cleared dock row is not marked changed");
+    assert.deepEqual(clearedDockRow.keycaps, [], "the cleared dock row still draws keycaps");
+    assert.deepEqual(
+      storedBindings(dockCleared),
+      { "panel.sidebar.toggle": "Ctrl+Alt+Y", "history.back": null },
+      `storage after the dock clear: ${dockCleared.storage}`,
+    );
+    assert.match(
+      dockCleared.dock?.hint ?? "",
+      /2 movements are changed from the defaults\./,
+      `dock hint after the clear ${JSON.stringify(dockCleared.dock?.hint)}`,
+    );
+    assert.equal(dockCleared.dock?.surface, "shortcuts", "the dock left its page after the clear");
+    assert.equal(dockCleared.overlayOpen, false, "the dock clear opened the settings sheet");
 
     // The repeatable artifact: a JSON report plus the frames it measured.
     assert.equal(report.screenshots.length, SHOTS.length, `the run recorded ${report.screenshots.length} screenshots`);

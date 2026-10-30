@@ -6175,13 +6175,13 @@ button.chat-panel__activity-line:hover {
   line-height: 1.5;
 }
 
-.chat-shortcuts__edit {
+.chat-shortcuts__edit-link {
   color: var(--accent);
   font-weight: 600;
   text-decoration: none;
 }
 
-.chat-shortcuts__edit:hover {
+.chat-shortcuts__edit-link:hover {
   text-decoration: underline;
 }
 
@@ -6227,6 +6227,57 @@ button.chat-panel__activity-line:hover {
   min-width: 0;
   color: var(--fg);
   font-size: 0.8rem;
+}
+
+/* The keys and the row's one control: read them, or start changing them. */
+.chat-shortcuts__control {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.chat-shortcuts__icon-btn {
+  display: inline-flex;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chat-shortcuts__icon-btn:hover {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.chat-shortcuts__prompt {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.chat-shortcuts__error {
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+  border-radius: 0.45rem;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.chat-shortcuts__hint--quiet {
+  margin-top: -0.4rem;
+  font-size: 0.68rem;
 }
 
 .chat-shortcuts__keys {

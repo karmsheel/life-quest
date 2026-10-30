@@ -80,6 +80,7 @@ const SHOTS = {
   typing: "keyboard-shortcuts-typing-guard.png",
   dock: "keyboard-shortcuts-dock.png",
   dockLive: "keyboard-shortcuts-dock-live.png",
+  dockEditing: "keyboard-shortcuts-dock-editing.png",
 };
 
 /**
@@ -200,11 +201,27 @@ const SAMPLE = `(() => {
     document.querySelectorAll("[data-chat-shortcut-row]"),
   ).map((row) => {
     const keys = row.querySelector("[data-chat-shortcut-keys]");
+    const edit = row.querySelector("button.chat-shortcuts__edit");
+    const cancel = row.querySelector(
+      'button[aria-label^="Cancel changing the shortcut for"]',
+    );
     return {
       id: attr(row, "data-chat-shortcut-row"),
       label: text(row.querySelector(".chat-shortcuts__label")),
       binding: attr(row, "data-binding"),
       changed: attr(row, "data-changed") === "true",
+      recording: attr(row, "data-recording") === "true",
+      prompt: Boolean(row.querySelector("[data-chat-shortcut-recording-prompt]")),
+      edit: edit
+        ? {
+            present: true,
+            label: attr(edit, "aria-label"),
+            title: attr(edit, "title"),
+          }
+        : { present: false, label: null, title: null },
+      cancel: cancel
+        ? { present: true, label: attr(cancel, "aria-label") }
+        : { present: false, label: null },
       keysValue: keys ? attr(keys, "data-chat-shortcut-keys") : null,
       keycaps: keys
         ? Array.from(keys.querySelectorAll(".chat-shortcuts__keycap")).map(text)
@@ -272,6 +289,13 @@ const SAMPLE = `(() => {
           bodyVisible: visible(chatShortcutsBody),
           shortcutsRoot: present("[data-chat-shortcuts]"),
           hint: text(document.querySelector(".chat-shortcuts__hint")),
+          editCount: document.querySelectorAll(".chat-shortcuts__edit").length,
+          recordingPromptCount: document.querySelectorAll(
+            "[data-chat-shortcut-recording-prompt]",
+          ).length,
+          editingError: text(
+            document.querySelector("[data-chat-shortcuts-error]"),
+          ) || null,
           groups: chatShortcutGroups,
           rows: chatShortcutRows,
         }
@@ -341,6 +365,7 @@ const rowById = (state, id) => (state?.rows ?? []).find((row) => row.id === id) 
 
 const dockRow = (state, id) =>
   (state?.dock?.rows ?? []).find((row) => row.id === id) || null;
+
 
 /** The bindings object in storage, `null` when nothing is stored, or the string
  *  "unparseable" — never a throw, so a check can name the bad artifact. */
@@ -1696,6 +1721,334 @@ async function main() {
       "Escape closes the sheet back onto the page it covered",
       settingsClosed.overlayOpen === false && settingsClosed.path === "/dream",
       `overlay ${settingsClosed.overlayOpen}, path ${settingsClosed.path}`,
+    );
+
+    // —— 11 (dock editing) — the dock's page is an editor too: every row has a
+    //        pencil, the recording is the provider's one recorder (no settings
+    //        sheet opens), refusals stay on the page, and a saved key works.
+    //        Restore Next wing first so the documented Ctrl+PageDown conflict
+    //        below is the real one.
+    at("restore Next wing for dock editing");
+    await openSettings();
+    await clickNav("Keyboard", "shortcuts");
+    await clickRowButton("wing.next", "Reset shortcut for");
+    const dockEditingSetup = await record(
+      "dockEditingSetup",
+      "document.querySelectorAll('[data-customized=\"true\"]').length === 0",
+    );
+    check(
+      "the set-up reset leaves every movement on its default",
+      same(storedBindings(dockEditingSetup), {}),
+      `storage ${JSON.stringify(dockEditingSetup.storage)}`,
+    );
+    await press("Escape");
+    const dockEditingSetupClosed = await record(
+      "dockEditingSetupClosed",
+      '!document.querySelector("[data-settings-overlay]")',
+    );
+    check(
+      "the set-up settings sheet closes back onto the page it covered",
+      dockEditingSetupClosed.overlayOpen === false &&
+        dockEditingSetupClosed.path === "/dream",
+      `overlay ${dockEditingSetupClosed.overlayOpen}, path ${dockEditingSetupClosed.path}`,
+    );
+
+    at("the dock page carries a pencil on every row");
+    await clickSelector(".window-titlebar__shortcuts");
+    const dockEditReady = await record(
+      "dockEditReady",
+      'document.querySelector("aside.chat-panel").getAttribute("data-chat-surface") === "shortcuts"',
+    );
+    const editDock = dockEditReady.dock;
+    check(
+      "the dock page is open on the shortcuts surface",
+      editDock !== null && editDock.surface === "shortcuts",
+      `surface ${JSON.stringify(editDock && editDock.surface)}`,
+    );
+    check(
+      "every movement row carries exactly one edit pencil",
+      editDock.editCount === 14 &&
+        editDock.rows.length === 14 &&
+        editDock.rows.every((row) => row.edit.present === true),
+      `${editDock.editCount} pencils, rows ${JSON.stringify(editDock.rows.map((row) => [row.id, row.edit.present]))}`,
+    );
+    check(
+      "each pencil names the movement it edits",
+      editDock.rows.every(
+        (row) => row.edit.label === `Change shortcut for ${row.label}`,
+      ),
+      `labels ${JSON.stringify(editDock.rows.map((row) => [row.id, row.edit.label]))}`,
+    );
+    check(
+      "the pencils cover all four groups",
+      same(
+        editDock.groups.map((group) => ({ id: group.id, rows: group.rows.length })),
+        EXPECTED_GROUPS,
+      ) &&
+        editDock.groups.every((group) =>
+          group.rows.every((id) => dockRow(dockEditReady, id)?.edit.present === true),
+        ),
+      `groups ${JSON.stringify(editDock.groups)}`,
+    );
+    check(
+      "the dock page still carries the header pencil to Settings",
+      editDock.pencil.present === true &&
+        editDock.pencil.label === "Change keyboard shortcuts in Settings",
+      `header pencil ${JSON.stringify(editDock.pencil)}`,
+    );
+    check(
+      "nothing is recording when the dock page opens",
+      editDock.recordingPromptCount === 0 &&
+        editDock.rows.every((row) => !row.recording && !row.prompt) &&
+        editDock.editingError === null,
+      `prompts ${editDock.recordingPromptCount}, error ${JSON.stringify(editDock.editingError)}`,
+    );
+
+    at("edit Toggle sidebar from the dock");
+    await clickSelector(
+      '[data-chat-shortcut-row="panel.sidebar.toggle"] .chat-shortcuts__edit',
+    );
+    const dockRecording = await record(
+      "dockRecording",
+      'document.querySelector(\'[data-chat-shortcut-row="panel.sidebar.toggle"]\').getAttribute("data-recording") === "true"',
+    );
+    await scrollTo('[data-chat-shortcut-row="panel.sidebar.toggle"]', "center");
+    await shot("dockEditing");
+    const dockRecordingRow = dockRow(dockRecording, "panel.sidebar.toggle");
+    check(
+      "the dock row enters the provider's recording state",
+      dockRecordingRow.recording === true &&
+        dockRecordingRow.prompt === true &&
+        same(dockRecordingRow.keycaps, []) &&
+        dockRecording.dock.recordingPromptCount === 1,
+      `row ${JSON.stringify(dockRecordingRow)}`,
+    );
+    check(
+      "the recording row offers its cancel control",
+      dockRecordingRow.cancel.present === true &&
+        dockRecordingRow.cancel.label ===
+          "Cancel changing the shortcut for Toggle sidebar" &&
+        dockRecordingRow.edit.present === false,
+      `cancel ${JSON.stringify(dockRecordingRow.cancel)}, edit ${JSON.stringify(dockRecordingRow.edit)}`,
+    );
+    check(
+      "the dock stays on its page: the settings sheet did not open",
+      dockRecording.overlayOpen === false &&
+        dockRecording.dock.surface === "shortcuts",
+      `overlay ${dockRecording.overlayOpen}, surface ${JSON.stringify(dockRecording.dock.surface)}`,
+    );
+
+    at("save Toggle sidebar as Ctrl+Alt+Y");
+    await press("Y", ["control", "alt"]);
+    const dockSaved = await record(
+      "dockSaved",
+      'document.querySelector(\'[data-chat-shortcut-row="panel.sidebar.toggle"]\').getAttribute("data-binding") === "Ctrl+Alt+Y"',
+    );
+    const dockSavedRow = dockRow(dockSaved, "panel.sidebar.toggle");
+    check(
+      "the dock row shows the saved binding and keycaps",
+      dockSavedRow.binding === "Ctrl+Alt+Y" &&
+        dockSavedRow.changed === true &&
+        same(dockSavedRow.keycaps, ["Ctrl", "Alt", "Y"]),
+      `row ${JSON.stringify(dockSavedRow)}`,
+    );
+    check(
+      "the saved binding ends the recording and returns the pencil",
+      dockSavedRow.recording === false &&
+        dockSavedRow.prompt === false &&
+        dockSavedRow.edit.present === true &&
+        dockSaved.dock.recordingPromptCount === 0,
+      `row ${JSON.stringify(dockSavedRow)}`,
+    );
+    check(
+      "the dock page writes the binding to storage",
+      same(storedBindings(dockSaved), { "panel.sidebar.toggle": "Ctrl+Alt+Y" }),
+      `storage ${JSON.stringify(dockSaved.storage)}`,
+    );
+    check(
+      "the dock hint counts the one edited movement",
+      typeof dockSaved.dock.hint === "string" &&
+        dockSaved.dock.hint.includes("1 movement is changed from the defaults."),
+      `hint ${JSON.stringify(dockSaved.dock.hint)}`,
+    );
+    check(
+      "saving from the dock did not open the settings sheet",
+      dockSaved.overlayOpen === false,
+      `overlay ${dockSaved.overlayOpen}, path ${dockSaved.path}`,
+    );
+
+    at("the dock-recorded key toggles the sidebar");
+    // The titlebar's vault link, not Ctrl+1: the wing shortcut returns to the
+    // wing's last page, which the page-step test above left at /pages.
+    await clickSelector(".window-titlebar__vault");
+    const dockEditHome = await record(
+      "dockEditHome",
+      'document.body.dataset.rigPath === "/home"',
+    );
+    check(
+      "the shell is on the home page for the movement",
+      dockEditHome.path === "/home" && dockEditHome.selectedWing === "Home",
+      `path ${dockEditHome.path}, wing ${dockEditHome.selectedWing}`,
+    );
+    await press("Y", ["control", "alt"]);
+    const dockEditCollapsed = await record(
+      "dockEditCollapsed",
+      'document.querySelector(".shell").classList.contains("shell--nav-collapsed")',
+    );
+    check(
+      "Ctrl+Alt+Y collapses the sidebar",
+      String(dockEditCollapsed.shellClass).includes("shell--nav-collapsed"),
+      `shell ${JSON.stringify(dockEditCollapsed.shellClass)}`,
+    );
+    await press("Y", ["control", "alt"]);
+    const dockEditExpanded = await record(
+      "dockEditExpanded",
+      '!document.querySelector(".shell").classList.contains("shell--nav-collapsed")',
+    );
+    check(
+      "Ctrl+Alt+Y expands the sidebar again",
+      !String(dockEditExpanded.shellClass).includes("shell--nav-collapsed"),
+      `shell ${JSON.stringify(dockEditExpanded.shellClass)}`,
+    );
+
+    at("dock conflict names Next wing");
+    await clickSelector(
+      '[data-chat-shortcut-row="surface.settings.open"] .chat-shortcuts__edit',
+    );
+    const dockConflictRecording = await record(
+      "dockConflictRecording",
+      'document.querySelector(\'[data-chat-shortcut-row="surface.settings.open"]\').getAttribute("data-recording") === "true"',
+    );
+    check(
+      "the Open settings row is recording with its binding unchanged",
+      dockRow(dockConflictRecording, "surface.settings.open").binding ===
+        "Ctrl+Comma" &&
+        dockRow(dockConflictRecording, "surface.settings.open").recording === true,
+      `row ${JSON.stringify(dockRow(dockConflictRecording, "surface.settings.open"))}`,
+    );
+    await press("PageDown", ["control"]);
+    const dockConflict = await record(
+      "dockConflict",
+      'Boolean(document.querySelector("[data-chat-shortcuts-error]"))',
+    );
+    check(
+      "the dock conflict names the movement that owns Ctrl+PageDown",
+      typeof dockConflict.dock.editingError === "string" &&
+        dockConflict.dock.editingError.includes("Next wing"),
+      `error ${JSON.stringify(dockConflict.dock.editingError)}`,
+    );
+    check(
+      "the refused dock row keeps its binding and keeps recording",
+      dockRow(dockConflict, "surface.settings.open").binding === "Ctrl+Comma" &&
+        dockRow(dockConflict, "surface.settings.open").recording === true &&
+        dockConflict.dock.recordingPromptCount === 1,
+      `row ${JSON.stringify(dockRow(dockConflict, "surface.settings.open"))}`,
+    );
+    check(
+      "the conflict did not fire the runner and navigate",
+      dockConflict.path === "/home" && dockConflict.overlayOpen === false,
+      `path ${dockConflict.path}, overlay ${dockConflict.overlayOpen}`,
+    );
+    await press("Escape");
+    const dockConflictCancelled = await record(
+      "dockConflictCancelled",
+      '!document.querySelector("[data-chat-shortcuts-error]") && !document.querySelector(\'[data-chat-shortcut-row="surface.settings.open"]\').hasAttribute("data-recording")',
+    );
+    check(
+      "Escape cancels the dock recording and clears the error",
+      dockConflictCancelled.dock.editingError === null &&
+        dockRow(dockConflictCancelled, "surface.settings.open").recording ===
+          false &&
+        dockConflictCancelled.dock.recordingPromptCount === 0,
+      `error ${JSON.stringify(dockConflictCancelled.dock.editingError)}, row ${JSON.stringify(dockRow(dockConflictCancelled, "surface.settings.open"))}`,
+    );
+    check(
+      "cancelling keeps the dock on the shortcuts page",
+      dockConflictCancelled.dock.surface === "shortcuts" &&
+        dockConflictCancelled.overlayOpen === false,
+      `surface ${JSON.stringify(dockConflictCancelled.dock.surface)}, overlay ${dockConflictCancelled.overlayOpen}`,
+    );
+
+    at("dock reserved combination");
+    await clickSelector(
+      '[data-chat-shortcut-row="history.back"] .chat-shortcuts__edit',
+    );
+    await press("W", ["control"]);
+    const dockReserved = await record(
+      "dockReserved",
+      'Boolean(document.querySelector("[data-chat-shortcuts-error]"))',
+    );
+    check(
+      "the dock refuses Ctrl+W as reserved",
+      typeof dockReserved.dock.editingError === "string" &&
+        /reserved/i.test(dockReserved.dock.editingError),
+      `error ${JSON.stringify(dockReserved.dock.editingError)}`,
+    );
+    check(
+      "the reserved refusal leaves the dock row's binding alone",
+      dockRow(dockReserved, "history.back").binding === "Alt+ArrowLeft" &&
+        dockRow(dockReserved, "history.back").recording === true,
+      `row ${JSON.stringify(dockRow(dockReserved, "history.back"))}`,
+    );
+    await press("Escape");
+    const dockReservedCancelled = await record(
+      "dockReservedCancelled",
+      '!document.querySelector("[data-chat-shortcuts-error]") && !document.querySelector(\'[data-chat-shortcut-row="history.back"]\').hasAttribute("data-recording")',
+    );
+    check(
+      "cancelling the reserved recording clears the dock error",
+      dockReservedCancelled.dock.editingError === null &&
+        dockRow(dockReservedCancelled, "history.back").binding === "Alt+ArrowLeft",
+      `error ${JSON.stringify(dockReservedCancelled.dock.editingError)}`,
+    );
+
+    at("dock Backspace clears Back");
+    await clickSelector(
+      '[data-chat-shortcut-row="history.back"] .chat-shortcuts__edit',
+    );
+    const dockClearRecording = await record(
+      "dockClearRecording",
+      'document.querySelector(\'[data-chat-shortcut-row="history.back"]\').getAttribute("data-recording") === "true"',
+    );
+    check(
+      "the Back row is recording from the dock",
+      dockRow(dockClearRecording, "history.back").recording === true,
+      `row ${JSON.stringify(dockRow(dockClearRecording, "history.back"))}`,
+    );
+    await press("Backspace");
+    const dockCleared = await record(
+      "dockCleared",
+      'document.querySelector(\'[data-chat-shortcut-row="history.back"]\').getAttribute("data-binding") === "unassigned"',
+    );
+    const dockClearedRow = dockRow(dockCleared, "history.back");
+    check(
+      "Backspace leaves the dock row unassigned and changed",
+      dockClearedRow.binding === "unassigned" &&
+        dockClearedRow.changed === true &&
+        same(dockClearedRow.keycaps, []) &&
+        dockClearedRow.edit.present === true,
+      `row ${JSON.stringify(dockClearedRow)}`,
+    );
+    check(
+      "the dock clear writes the deliberate null to storage",
+      same(storedBindings(dockCleared), {
+        "panel.sidebar.toggle": "Ctrl+Alt+Y",
+        "history.back": null,
+      }),
+      `storage ${JSON.stringify(dockCleared.storage)}`,
+    );
+    check(
+      "the dock hint counts both changed movements",
+      typeof dockCleared.dock.hint === "string" &&
+        dockCleared.dock.hint.includes("2 movements are changed from the defaults."),
+      `hint ${JSON.stringify(dockCleared.dock.hint)}`,
+    );
+    check(
+      "the dock stayed on its page through all editing",
+      dockCleared.dock.surface === "shortcuts" &&
+        dockCleared.overlayOpen === false &&
+        String(dockCleared.shellClass).includes("shell--chat-open"),
+      `surface ${JSON.stringify(dockCleared.dock.surface)}, overlay ${dockCleared.overlayOpen}, shell ${JSON.stringify(dockCleared.shellClass)}`,
     );
 
     steps.expectedDefaults = EXPECTED_DEFAULTS;

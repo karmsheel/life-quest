@@ -17,7 +17,7 @@
  *    movement is named, and the row stays open so the operator can try the next
  *    one instead of walking back to the button.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SettingsSection } from "@/components/ui/SettingsSection";
@@ -28,10 +28,8 @@ import {
   defaultShortcutBinding,
   formatShortcutKeycaps,
   shortcutAction,
-  shortcutBindingFromEvent,
   shortcutBindingToString,
   type ShortcutAction,
-  type ShortcutActionId,
   type ShortcutBinding,
   type ShortcutGroupId,
 } from "@/lib/shortcuts";
@@ -93,6 +91,7 @@ function ShortcutRow({
     <div
       className="settings-shortcuts__row"
       data-shortcut-row={action.id}
+      data-shortcut-recording-row={recording ? action.id : undefined}
       data-recording={recording ? "true" : undefined}
       data-customized={customized ? "true" : undefined}
       data-binding={binding ? shortcutBindingToString(binding) : "unassigned"}
@@ -149,16 +148,29 @@ export function SettingsShortcuts() {
   const {
     bindings,
     recording,
+    recordingMessage,
     beginRecording,
     cancelRecording,
-    setBinding,
+    clearRecordingMessage,
     resetBinding,
     resetAll,
     customizedCount,
     overrides,
     mac,
   } = useShortcuts();
-  const [message, setMessage] = useState<Message | null>(null);
+  /**
+   * The page's own notes (a reset, a restore) are local; the recording's notes
+   * belong to the provider, because the dock's reference can start the same
+   * recording. Whichever is newest is what the page draws.
+   */
+  const [pageMessage, setPageMessage] = useState<Message | null>(null);
+  const message =
+    pageMessage ??
+    (recordingMessage
+      ? { kind: recordingMessage.kind, text: recordingMessage.text }
+      : null);
+  const statusText =
+    message?.kind === "status" ? message.text : null;
 
   const byGroup = useMemo(() => {
     const groups = new Map<ShortcutGroupId, ShortcutAction[]>();
@@ -168,79 +180,6 @@ export function SettingsShortcuts() {
     }
     return groups;
   }, []);
-
-  const finish = useCallback(
-    (next: Message | null) => {
-      setMessage(next);
-      cancelRecording();
-    },
-    [cancelRecording],
-  );
-
-  /**
-   * The key belongs to the row while it records. This is a capture listener so it
-   * runs before the sheet's own Escape and before the shell's runner, and it
-   * stops the event there: the next Escape must cancel the recording, not close
-   * the settings the operator is working in.
-   */
-  useEffect(() => {
-    if (!recording) return;
-    const actionId: ShortcutActionId = recording;
-
-    function onKeyDown(event: KeyboardEvent) {
-      // A composing IME owns its keys: let the composition finish rather than
-      // turning the keystroke into a binding.
-      if (event.isComposing) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-
-      if (event.repeat) return;
-      if (event.key === "Escape") {
-        finish({ kind: "status", text: "Shortcut change cancelled." });
-        return;
-      }
-      if (event.key === "Backspace" || event.key === "Delete") {
-        const result = setBinding(actionId, null);
-        finish(
-          result.ok
-            ? { kind: "status", text: "Shortcut cleared." }
-            : { kind: "error", text: result.error },
-        );
-        return;
-      }
-
-      const binding = shortcutBindingFromEvent(event);
-      if (!binding) return; // a modifier held on its own is not the binding yet
-
-      const result = setBinding(actionId, shortcutBindingToString(binding));
-      if (!result.ok) {
-        // Stay in the row: the next combination should be one key away.
-        setMessage({ kind: "error", text: result.error });
-        return;
-      }
-      finish({ kind: "status", text: "Shortcut saved." });
-    }
-
-    function onPointerDown(event: PointerEvent) {
-      const row = document.querySelector(
-        `[data-shortcut-row="${recording}"]`,
-      );
-      if (row && event.target instanceof Node && row.contains(event.target)) return;
-      cancelRecording();
-    }
-
-    window.addEventListener("keydown", onKeyDown, true);
-    document.addEventListener("pointerdown", onPointerDown, true);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown, true);
-      document.removeEventListener("pointerdown", onPointerDown, true);
-    };
-  }, [cancelRecording, finish, recording, setBinding]);
-
-  // Closing the sheet while a row waits for a key would otherwise leave the
-  // provider recording forever, and the runner would never move the app again.
-  useEffect(() => cancelRecording, [cancelRecording]);
 
   return (
     <SettingsSection
@@ -296,17 +235,20 @@ export function SettingsShortcuts() {
                     recording={recording === action.id}
                     mac={mac}
                     onChange={() => {
-                      setMessage(null);
+                      setPageMessage(null);
+                      clearRecordingMessage();
                       beginRecording(action.id);
                     }}
                     onCancel={() => {
-                      setMessage(null);
+                      setPageMessage(null);
+                      clearRecordingMessage();
                       cancelRecording();
                     }}
                     onReset={() => {
                       const actionRecord = shortcutAction(action.id);
                       resetBinding(action.id);
-                      setMessage({
+                      clearRecordingMessage();
+                      setPageMessage({
                         kind: "status",
                         text: `${actionRecord?.label ?? "Shortcut"} is back on its default.`,
                       });
@@ -325,7 +267,7 @@ export function SettingsShortcuts() {
               : `${customizedCount} ${
                   customizedCount === 1 ? "movement is" : "movements are"
                 } changed from the defaults.`}
-            {message?.kind === "status" ? ` ${message.text}` : ""}
+            {statusText ? ` ${statusText}` : ""}
           </p>
           <Button
             type="button"
@@ -334,7 +276,11 @@ export function SettingsShortcuts() {
             data-shortcuts-reset-all=""
             onClick={() => {
               resetAll();
-              setMessage({ kind: "status", text: "Every shortcut is back on its default." });
+              clearRecordingMessage();
+              setPageMessage({
+                kind: "status",
+                text: "Every shortcut is back on its default.",
+              });
             }}
           >
             Restore all defaults
