@@ -4,6 +4,8 @@
 
 The product runtime is **Electron + Vite + React**. There is no cloud account and no Prisma. Domain database rows live in a SQLite file inside the vault folder: that SQLite is the domain book, not the archived Prisma app, and it is not hosted.
 
+**Docs:** [LifeQuest project wiki](https://karmsheel.github.io/life-quest/) — the operator's guide to every feature; the source is in [docs/wiki/](docs/wiki/index.md).
+
 ## Design
 
 | Doc | Description |
