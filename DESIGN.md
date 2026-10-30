@@ -30,14 +30,16 @@ ThemeProvider may apply a named skin and light/dark/system. It must not generate
 - One Frame Per Card — a card draws its own shell, and its container adds none. A wrapper around a card carries layout markers only (`.view-card--span2`); giving it the card's own class nested two shells and put a frame inside a frame on every view pin.
 - One Box — a markdown editor is `LiveMarkdownEditor`, one surface where the file renders and the paragraph under the caret does not. Never add a second pane beside it: two surfaces that show the same file can disagree about it, and the operator has to read both to know which one is right.
 - Closed Primitive — extend `Button` / settings primitives; do not restyle in features.
-- Flat First — canvas vs sheet is the elevation ladder; do not add shadows beyond `--shadow-sm` on the sheet. **Named exemption:** the Decisions inbox cards (`.decision-card`) are the one surface that stands proud of the sheet — the operator answers them one at a time, so each wears a neutral grey step, `--shadow-card`, and the hover slash, and runs tighter than a page card (three-line rationale, an 8rem cap on proposal prose, compact field rows).
+- Flat First — canvas vs sheet is the elevation ladder; do not add shadows beyond `--shadow-sm` on the sheet. **Named exemption:** the Decisions inbox cards (`.decision-card`) are the one surface that stands proud of the sheet — the operator answers them one at a time, so each wears a neutral grey step, `--shadow-card`, and the hover slash, and runs tighter than a page card (three-line rationale, an 8rem cap on proposal prose, compact field rows). **Named exemption:** the `raised` `Button` variant (`.btn-raised`) lifts the Daily Note's own act off the page — a face, a bevel and a lip rather than a flat fill — because that control is what commits the prose under it; every other control on the sheet stays on the flat ladder.
 - Calm Scale — radii are `6 / 12 / 18 / 24 / --radius-pill`. Do not change the type scale here.
 
 ## Primitives
 
-`Button`: `primary` | `outline` | `ghost`, plus `destructive` (maps to `.btn-danger`). Pill radius via `.btn`. Links via `to`. No Radix.
+`Button`: `primary` | `outline` | `ghost` | `raised`, plus `destructive` (maps to `.btn-danger`). Pill radius via `.btn`. Links via `to`. No Radix.
 
 **Named exception — the journal's own page.** `Daily Note` (`.daily-note`) wears `.btn` at `--radius-xs` rather than the pill, the same way `.data-studio` and `.pages-studio` already square theirs. The day's page is a page of prose with a pager above it and a strip of days below, and a row of pills around a paragraph reads as chips rather than as the page's own controls. The step is the Calm Scale's own smallest, so the primitive is worn at a different step rather than restyled, and the override lives in `notes.css` with the page's other chrome. Every other wing keeps the pill.
+
+**Named exception — the journal's act.** The Daily Note's manual automations — the built-in `Analyze note` first among them — are `Button variant="raised"`: the skin's accent sunk into the page canvas (`--raised-fill-top` / `--raised-fill-bottom`), a lit top edge, a hard lip and the sheet's drop shadow, drawn at the page's `--radius-xs` step like every other control there and sitting on the box's trailing edge under the prose it commits. The day's page is the one surface whose action commits the writing above it, so it is the one control that stands proud; the look lives in the Button primitive (`.btn-raised`) and the token file, so a feature file still restyles no button, and any surface that later asks for the same act wears the same key.
 
 `SettingsSection` / `SettingsRow` own settings heading and row chrome. Settings cards use `--radius-sm`.
 

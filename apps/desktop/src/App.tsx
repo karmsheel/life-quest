@@ -46,6 +46,7 @@ import { NavDockProvider } from "@/state/NavDockProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
 import { LiveDataProvider } from "@/state/LiveDataProvider";
 import { UpdateProvider } from "@/state/UpdateProvider";
+import { UpdateNotice } from "@/components/shell/UpdateNotice";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
 
 function RequireVault({ children }: { children: ReactNode }) {
@@ -163,6 +164,11 @@ export default function App() {
             news the operator wants before they go looking for why chat is
             quiet. */}
         <UpdateProvider>
+          {/* The notice lives above every route and outside the vault gate: a
+              release published while the operator is on the welcome screen is
+              still news, and the dialog it opens needs only the update state. It
+              portals to the body, so the shell's grid never clips it. */}
+          <UpdateNotice />
           <CompanionProvider>
             <VaultProvider>
               {/* Inside the vault, outside every page: a card's numbers are a

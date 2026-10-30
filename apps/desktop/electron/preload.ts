@@ -572,6 +572,20 @@ const lifequest = {
       ipcRenderer.removeListener("update:progress", listener);
     };
   },
+  /**
+   * The feed answered on main's own clock: a release to show, or the news that a
+   * release already announced is gone. Pushed, not asked for — the renderer has
+   * no timer of its own, so a hidden or throttled window cannot miss the news.
+   */
+  onUpdateDecision: (cb: (decision: unknown) => void) => {
+    const listener = (_event: unknown, decision: unknown) => {
+      cb(decision);
+    };
+    ipcRenderer.on("update:decision", listener);
+    return () => {
+      ipcRenderer.removeListener("update:decision", listener);
+    };
+  },
 
   onVaultFileChanged: (cb: (payload: { path: string }) => void) => {
     const listener = (_event: unknown, payload: { path: string }) => {

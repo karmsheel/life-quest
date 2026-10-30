@@ -4,10 +4,13 @@
 
 The product runtime is **Electron + Vite + React**. There is no cloud account and no Prisma. Domain database rows live in a SQLite file inside the vault folder: that SQLite is the domain book, not the archived Prisma app, and it is not hosted.
 
+**Docs:** [LifeQuest project wiki](https://karmsheel.github.io/life-quest/) — the operator's guide to every feature; the source is in [docs/wiki/](docs/wiki/index.md).
+
 ## Design
 
 | Doc | Description |
 |-----|-------------|
+| [Project wiki](docs/wiki/index.md) | The operator's guide: every feature, how to use it, and how the system works |
 | [VISION.md](VISION.md) | Acceptance policy for future change |
 | [PRODUCT.md](PRODUCT.md) | Users, purpose, anti-references |
 | [DESIGN.md](DESIGN.md) | Token contract and primitives |
@@ -76,7 +79,7 @@ It prints the size and SHA-256 of each, and writes `release/release-manifest.jso
 
 ### Who hears about a release
 
-The app asks GitHub Releases **once per launch** for the newest release of `karmsheel/life-quest`. If it names something newer than this build, the version number at the foot of the left rail starts to glow; clicking it opens a popup that names both versions, the release's notes, and the installer — and offers to download it and run it. After the installer is up, the app quits so it can be replaced.
+The app asks GitHub Releases **at launch and then once an hour** for the newest release of `karmsheel/life-quest`. If it names something newer than this build, an in-app notice says so — naming the release and the build you are running, with *View update* and a dismissal — and the version number at the foot of the left rail glows. The notice opens the same popup the build number does: both versions, the release's notes, and the installer, with an offer to download it and run it. After the installer is up, the app quits so it can be replaced. When the window is not focused, the OS also gets a notification.
 
 The release repository is public, so the check is one anonymous read and the app holds no token for it. With nothing to read, it reports that it could not check — it never claims to be up to date.
 

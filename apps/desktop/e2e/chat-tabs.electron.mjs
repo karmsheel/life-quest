@@ -115,13 +115,23 @@ const SAMPLE = `(() => {
     });
   }
 
+  // The tab's own box, not its label's: the equal-width claim is about the tab
+  // element, and a content-sized tab would show up here as a box narrower than
+  // its siblings whatever its title happens to be.
   const tabs = Array.from(document.querySelectorAll(".chat-panel__tab")).map((tab) => ({
     label: text(tab.querySelector(".chat-panel__tab-label")),
     active: tab.querySelector("[role=tab]")?.getAttribute("aria-selected") === "true",
     live: tab.hasAttribute("data-live"),
     approval: tab.hasAttribute("data-approval"),
-    close: tab.querySelector(".chat-panel__tab-close")?.getAttribute("aria-label") ?? null
+    close: tab.querySelector(".chat-panel__tab-close")?.getAttribute("aria-label") ?? null,
+    box: box(tab)
   }));
+
+  // The dock's resize handle: the drawn column, the range it is held to, and
+  // where the divider currently sits. A narrow-strip claim is only worth
+  // something if the dock was really moved, so the walk to the floor is read
+  // from these attributes rather than assumed from the number of presses.
+  const divider = document.querySelector(".chat-divider");
 
   const messages = Array.from(document.querySelectorAll(".chat-panel__message")).map((m) => ({
     role: text(m.querySelector(".chat-panel__message-role")),
@@ -205,6 +215,15 @@ const SAMPLE = `(() => {
     rowCount: rows.length,
     tabs,
     tabCount: tabs.length,
+    chatDivider: divider
+      ? {
+          label: divider.getAttribute("aria-label"),
+          now: Number(divider.getAttribute("aria-valuenow")),
+          min: Number(divider.getAttribute("aria-valuemin")),
+          max: Number(divider.getAttribute("aria-valuemax")),
+          box: box(divider)
+        }
+      : null,
     heading: text(
       document.querySelector(".chat-panel__heading--thread") ??
         document.querySelector(".chat-panel__heading")
@@ -545,6 +564,55 @@ async function main() {
       button.click();
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
       return true;
+    })()`);
+
+  /**
+   * The dock's own New chat control, in the action bar at the bottom of the
+   * panel. It shares the store's `newChat` action with the sidebar's slot; the
+   * dock's is the one the operator's hand is on while a chat is open.
+   */
+  const clickNewChat = () =>
+    run(`(async () => {
+      const button = document.querySelector('.chat-panel__actions [aria-label="New chat"]');
+      if (!button) return false;
+      button.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /**
+   * Walk the dock's divider down to its floor with ArrowRight presses, the way a
+   * keyboard resizes the column: the trailing dock narrows one 16px step per
+   * press and the clamp stops at the 300px floor. The readings are returned so
+   * the caller can assert the walk LANDED, not merely that it was attempted.
+   */
+  const narrowDockToFloor = (maxPresses = 40) =>
+    run(`(async () => {
+      const divider = document.querySelector(".chat-divider");
+      if (!divider) return { reached: false, presses: 0, reason: "no divider" };
+      const read = () => ({
+        now: Number(divider.getAttribute("aria-valuenow")),
+        min: Number(divider.getAttribute("aria-valuemin")),
+        max: Number(divider.getAttribute("aria-valuemax"))
+      });
+      divider.focus();
+      const start = read();
+      let presses = 0;
+      while (presses < ${maxPresses}) {
+        const before = read();
+        if (before.now <= before.min) break;
+        divider.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true })
+        );
+        presses += 1;
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() =>
+          requestAnimationFrame(r)
+        )));
+        const after = read();
+        if (after.now === before.now) break;
+      }
+      const end = read();
+      return { reached: end.now === end.min, presses, start, end };
     })()`);
 
   const typeAndSend = (text) =>
@@ -1416,6 +1484,131 @@ async function main() {
       JSON.stringify(archivedHidden.rows.map((row) => row.label)),
     );
 
+    // 18 — the dock's New chat is the gesture that KEEPS the chat in front: it
+    // opens a blank conversation in a tab of its own instead of replacing the
+    // one on screen. The old behaviour — the slot navigating the same tab —
+    // shows up here as one tab, with the chat that was in front gone.
+    check(
+      "pressed the dock's New chat",
+      await clickNewChat(),
+      "no New chat control in the dock's action bar",
+    );
+    const newChatTab = await settle(420);
+    check(
+      "New chat opens a second tab instead of replacing the chat in front",
+      newChatTab.tabCount === 2 &&
+        newChatTab.tabs.map((tab) => tab.label).join("/") === "Bravo budget/New chat" &&
+        newChatTab.tabs[1]?.active === true &&
+        newChatTab.heading === "New chat",
+      JSON.stringify({ tabs: newChatTab.tabs, heading: newChatTab.heading }),
+    );
+    check(
+      "the chat that was in front kept its tab",
+      newChatTab.tabs.some((tab) => tab.label === "Bravo budget"),
+      JSON.stringify(newChatTab.tabs.map((tab) => tab.label)),
+    );
+    check(
+      "the new blank chat joined the sidebar list",
+      newChatTab.rows.some((row) => row.label === "New chat"),
+      JSON.stringify(newChatTab.rows.map((row) => row.label)),
+    );
+    screenshots.push(await shot("new-chat-tab"));
+
+    // The chat that was in front is still open, not merely still listed: its tab
+    // is there and clicking it brings its thread back. New chat added a tab, it
+    // did not close one.
+    check("clicked the previous chat's tab", await clickTab("Bravo budget"), "no Bravo tab");
+    const newChatKept = await settle();
+    check(
+      "the previous chat is still open and reachable beside the new one",
+      newChatKept.heading === "Bravo budget" &&
+        newChatKept.tabCount === 2 &&
+        newChatKept.tabs.some((tab) => tab.label === "New chat"),
+      JSON.stringify({ heading: newChatKept.heading, tabs: newChatKept.tabs }),
+    );
+    check("switched back to the new chat", await clickTab("New chat"), "no New chat tab");
+    const newChatActive = await settle();
+    check(
+      "the new chat is the one in front when its own tab is clicked",
+      newChatActive.heading === "New chat" &&
+        newChatActive.tabs.find((tab) => tab.label === "New chat")?.active === true,
+      JSON.stringify({ heading: newChatActive.heading, tabs: newChatActive.tabs }),
+    );
+
+    // 19 — every open tab is one share of the strip, not one share of its own
+    // label. A third tab with a title unlike the other two is what makes a
+    // content-sized strip obvious: "Delta automation" would otherwise be twice
+    // the width of "New chat".
+    check(
+      "middle-clicked Delta for a third tab",
+      await middleClickSidebarRow("Delta automation"),
+      "no row button",
+    );
+    const equalTabs = await settle();
+    const equalLabels = equalTabs.tabs.map((tab) => tab.label);
+    check(
+      "three chats are open, with labels of different lengths",
+      equalTabs.tabCount === 3 &&
+        equalLabels.join("/") === "Bravo budget/New chat/Delta automation" &&
+        new Set(equalLabels.map((label) => label.length)).size > 1,
+      JSON.stringify(equalLabels),
+    );
+    const equalWidths = equalTabs.tabs.map((tab) => tab.box?.width ?? null);
+    check(
+      "every tab is the same width at the default dock width",
+      equalWidths.length === 3 &&
+        equalWidths.every((width) => typeof width === "number") &&
+        Math.max(...equalWidths) - Math.min(...equalWidths) <= 1,
+      JSON.stringify({ widths: equalWidths, tabs: equalLabels }),
+    );
+
+    // Hit the divider's ArrowRight until the dock is at its floor, then read the
+    // same three tabs again: they must all have shrunk together, and they must
+    // still be the same width as each other.
+    const narrowed = await narrowDockToFloor();
+    const narrowTabs = await settle(360);
+    check(
+      "the divider walked the dock down to its floor",
+      narrowed.reached === true &&
+        typeof narrowTabs.chatDivider?.now === "number" &&
+        narrowTabs.chatDivider.now === narrowTabs.chatDivider.min &&
+        narrowTabs.chatDivider.now < equalTabs.chatDivider?.now,
+      JSON.stringify({
+        walk: narrowed,
+        divider: narrowTabs.chatDivider,
+        panelBefore: equalTabs.panel,
+        panelAfter: narrowTabs.panel,
+      }),
+    );
+    check(
+      "the dock really got narrower",
+      (narrowTabs.panel?.width ?? 0) < (equalTabs.panel?.width ?? 0),
+      JSON.stringify({ before: equalTabs.panel, after: narrowTabs.panel }),
+    );
+    const narrowWidths = narrowTabs.tabs.map((tab) => tab.box?.width ?? null);
+    check(
+      "the tabs are still the same width at the dock's floor",
+      narrowTabs.tabCount === 3 &&
+        narrowWidths.length === 3 &&
+        narrowWidths.every((width) => typeof width === "number") &&
+        Math.max(...narrowWidths) - Math.min(...narrowWidths) <= 1,
+      JSON.stringify({ widths: narrowWidths, tabs: narrowTabs.tabs.map((tab) => tab.label) }),
+    );
+    check(
+      "every tab is narrower at the dock's floor than at its default width",
+      narrowWidths.length === equalWidths.length &&
+        narrowWidths.every(
+          (width, index) => typeof width === "number" && width < equalWidths[index],
+        ),
+      JSON.stringify({ default: equalWidths, floor: narrowWidths }),
+    );
+    check(
+      "the strip kept all three chats while the dock narrowed",
+      narrowTabs.tabs.map((tab) => tab.label).join("/") === equalLabels.join("/"),
+      JSON.stringify(narrowTabs.tabs.map((tab) => tab.label)),
+    );
+    screenshots.push(await shot("narrow-tabs"));
+
     report = {
       url,
       ranAt: new Date().toISOString(),
@@ -1466,6 +1659,11 @@ async function main() {
         unarchived,
         viewMenuShown,
         archivedHidden,
+        newChatTab,
+        newChatKept,
+        newChatActive,
+        equalTabs,
+        narrowTabs,
       },
       failures,
       pass: failures.length === 0,
@@ -1510,6 +1708,18 @@ async function main() {
       ["archived", state.archived.rowCount, state.archived.tabCount, "", state.archived.heading, "", state.archived.patchCalls.length],
       ["deleted", state.deleted.rowCount, state.deleted.tabCount, "", state.deleted.heading, "", ""],
       ["background", state.background.rowCount, state.background.tabCount, "delta", state.background.heading, "", ""],
+      ["new chat", state.newChatTab.rowCount, state.newChatTab.tabCount, "", state.newChatTab.heading, "", ""],
+      ["new chat kept", state.newChatKept.rowCount, state.newChatKept.tabCount, "", state.newChatKept.heading, "", ""],
+      ["three tabs", state.equalTabs.rowCount, state.equalTabs.tabCount, "", state.equalTabs.heading, "", ""],
+      [
+        "tabs at floor",
+        state.narrowTabs.rowCount,
+        state.narrowTabs.tabCount,
+        "",
+        state.narrowTabs.heading,
+        "",
+        `widths ${JSON.stringify(state.narrowTabs.tabs.map((tab) => tab.box?.width ?? null))}`,
+      ],
     ];
     console.log(table.map((row) => row.join(" | ")).join("\n"));
   }
