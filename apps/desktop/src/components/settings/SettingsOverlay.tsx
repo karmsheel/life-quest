@@ -9,8 +9,15 @@ import { SettingsContent } from "./SettingsContent";
  *
  * Settings are not a page in this app — they are a surface over the page you were
  * on (see `SheetOverlay` for the frame and its three ways out). This file is the
- * settings-specific part: the one field in the chrome, which narrows the section
- * list in place (`settings-search.ts`) rather than opening a second surface.
+ * settings-specific part: the one search field, which narrows the section list
+ * in place (`settings-search.ts`) rather than opening a second surface.
+ *
+ * That field is Hermes Desktop's floating search: a short pill (`20rem`) centred
+ * over the panel and sitting on the panel's top border, half in and half out, so
+ * the border runs through its own horizontal axis. It is the sheet's only
+ * floating chrome. There is no title band under it — the cross floats over the
+ * page's top-right padding — so the section column starts at the panel's top
+ * edge and the search is the one thing that crosses it.
  */
 export function SettingsOverlay({
   activeView,
@@ -43,7 +50,7 @@ export function SettingsOverlay({
       onClose={onClose}
       onEscape={onEscape}
       initialFocusRef={searchRef}
-      header={
+      floating={
         <div className="settings-overlay__search" role="search">
           <Search size={14} aria-hidden />
           <input

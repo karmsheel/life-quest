@@ -71,12 +71,15 @@ type Sample = {
   search: {
     box: Box;
     bar: Box | null;
+    radius: number | null;
     value: string;
     placeholder: string | null;
     label: string | null;
     focused: boolean;
   } | null;
-  chromeInputs: number;
+  navBox: Box;
+  chromeBox: Box | null;
+  searchInputs: number;
   nav: NavRow[];
   navEmpty: string | null;
   panelView: string | null;
@@ -163,7 +166,7 @@ function runDriver(): Promise<number> {
 }
 
 describe("the settings sheet over the app", () => {
-  it("takes 90% of the window over a blurred app, searches its own sections, and curates the quick menu's themes", async (t) => {
+  it("takes its own measure over a blurred app, searches its own sections, and curates the quick menu's themes", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
@@ -215,7 +218,9 @@ describe("the settings sheet over the app", () => {
     assert.equal(landing.path, "/home", "the rig did not start on its page");
     assert.equal(landing.backgroundPage, true, "the page behind the sheet is missing");
 
-    // 2 — 90% of the window, centred, over a blurred and dimmed app.
+    // 2 — the sheet's own 72rem measure, centred, over a blurred and dimmed
+    //     app. At this rig's 1280px window that measure is ~90% wide, so the
+    //     absolute width is asserted first: the panel is capped, not a share.
     assert.equal(report.steps.openedClick, true, "the rig could not open settings");
     const panel = opened.overlay?.panel;
     assert.ok(panel, "opening settings painted no panel");
@@ -234,8 +239,12 @@ describe("the settings sheet over the app", () => {
       `the panel is ${(heightShare * 100).toFixed(1)}% of the window's height, not ~90%`,
     );
     assert.ok(
-      widthShare >= 0.88 && widthShare <= 0.96,
-      `the panel is ${(widthShare * 100).toFixed(1)}% of the window's width, not ~90%`,
+      Math.abs(panel.box.width - 72 * 16) <= 1,
+      `the settings panel is ${panel.box.width}px, not its 72rem measure — the sheet stretches with the window`,
+    );
+    assert.ok(
+      widthShare <= 0.905,
+      `the panel is ${(widthShare * 100).toFixed(1)}% of the window's width — wider than its measure`,
     );
     assert.ok(
       Math.abs(panel.box.left + panel.box.width / 2 - opened.viewport.width / 2) <= 2 &&
@@ -268,8 +277,8 @@ describe("the settings sheet over the app", () => {
       `the scrim does not dim the app: ${scrim?.background}`,
     );
 
-    // 3 — the cross is the sheet's top *right* control, and the one search bar
-    //     runs up to it.
+    // 3 — the cross is the sheet's top *right* control, and the search floats
+    //     centred on the sheet's top border, clear of it.
     assert.ok(opened.close, "the sheet has no close control");
     assert.equal(opened.close?.label, "Close settings", "the close control is unlabelled");
     assert.ok(
@@ -283,17 +292,57 @@ describe("the settings sheet over the app", () => {
       "the cross sits on the leading half, not the trailing one",
     );
 
-    assert.equal(opened.chromeInputs, 1, "the top bar is not a single search bar");
+    assert.equal(opened.searchInputs, 1, "the sheet does not hold exactly one search field");
     assert.ok(opened.search, "the sheet has no search field");
     assert.equal(opened.search?.placeholder, "Search settings", "the search is unlabelled");
     assert.equal(opened.search?.focused, true, "opening the sheet did not focus the search");
+
+    // 3b — the floating search: a short, pill-ended field centred over the
+    //      panel, with the panel's top border running through its own horizontal
+    //      axis (half in the sheet, half over the scrim). This is the Hermes
+    //      Desktop shape the operator asked for; a full-width bar, a bar sitting
+    //      entirely below the edge, or a box-cornered field all fail here.
+    const bar = opened.search?.bar;
+    assert.ok(bar, "the search field has no bar to measure");
     assert.ok(
-      (opened.search?.box.top ?? 0) - panel.box.top <= 44,
-      `the search bar is not at the top of the sheet: ${opened.search?.box.top}`,
+      Math.abs(bar.width - 20 * 16) <= 1,
+      `the search bar is ${bar.width}px wide, not its 20rem measure`,
     );
     assert.ok(
-      (opened.search?.bar?.right ?? 0) <= opened.close.box.left,
-      `the search bar does not end before the cross: ${opened.search?.bar?.right} vs ${opened.close.box.left}`,
+      bar.width < panel.box.width * 0.5,
+      `the search bar is still a top bar: ${bar.width}px of a ${panel.box.width}px sheet`,
+    );
+    assert.ok(
+      (opened.search?.radius ?? 0) >= bar.height / 2 - 1,
+      `the search bar is not pill-ended: radius ${opened.search?.radius} for a ${bar.height}px bar`,
+    );
+    assert.ok(
+      Math.abs(bar.left + bar.width / 2 - (panel.box.left + panel.box.width / 2)) <= 2,
+      `the search bar is not centred over the sheet: ${bar.left + bar.width / 2} vs ${
+        panel.box.left + panel.box.width / 2
+      }`,
+    );
+    assert.ok(
+      Math.abs(bar.top + bar.height / 2 - panel.box.top) <= 2,
+      `the sheet's top border does not run through the search bar's axis: bar centre ${
+        bar.top + bar.height / 2
+      }, border ${panel.box.top}`,
+    );
+    assert.ok(
+      bar.top < panel.box.top && bar.bottom > panel.box.top,
+      `the search bar does not straddle the top border: ${bar.top}..${bar.bottom} vs ${panel.box.top}`,
+    );
+    assert.ok(
+      bar.right <= opened.close.box.left,
+      `the search bar does not end before the cross: ${bar.right} vs ${opened.close.box.left}`,
+    );
+
+    // 3c — no title band: the section column starts at the panel's own top edge,
+    //      so the gap the operator saw between the floating search and the page
+    //      (the strip that held only the cross) is gone.
+    assert.ok(
+      opened.navBox.top - panel.box.top <= 2,
+      `there is a title band above the page: nav top ${opened.navBox.top}, panel top ${panel.box.top}`,
     );
 
     // 4 — a query narrows the section list and takes the panel with it.

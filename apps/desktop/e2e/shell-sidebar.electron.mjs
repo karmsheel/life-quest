@@ -166,7 +166,11 @@ const SAMPLE = `(() => {
           background: getComputedStyle(vault).backgroundColor,
           color: getComputedStyle(vault).color,
           radius: getComputedStyle(vault).borderRadius,
-          href: vault.getAttribute("href"),
+          // The chip raises the vault switcher now instead of linking home: it
+          // is a button with a dialog behind it, and the rig reads both facts
+          // rather than the href it used to carry.
+          tag: vault.tagName.toLowerCase(),
+          haspopup: vault.getAttribute("aria-haspopup"),
           appRegion: getComputedStyle(vault).getPropertyValue("-webkit-app-region")
         }
       : null,
@@ -830,10 +834,11 @@ async function main() {
       `chip top ${expanded.vault?.box.top}px, height ${expanded.vault?.box.height}px vs strip ${titlebarHeight}px`,
     );
     check(
-      "the chip still goes home and stays clickable",
-      (expanded.vault?.href ?? "").endsWith("/home") &&
+      "the chip opens the vault switcher and stays clickable",
+      expanded.vault?.tag === "button" &&
+        expanded.vault?.haspopup === "dialog" &&
         expanded.vault?.appRegion === "no-drag",
-      `href ${expanded.vault?.href}, app-region ${expanded.vault?.appRegion}`,
+      `tag ${expanded.vault?.tag}, popup ${expanded.vault?.haspopup}, app-region ${expanded.vault?.appRegion}`,
     );
     check(
       "no toggle doubles up while the rail is open",
