@@ -55,6 +55,20 @@
   --accent-soft: #f5d8cb;
   --accent-tint: #fbeee5;
 
+  /* The raised button's face and its two lit edges. The face is the skin's own
+     accent sunk into the page canvas, so every palette colours it with its
+     brand — in Nous that is the brand blue at a third of its lightness, which is
+     the one control on the Daily Note that reads as a key rather than as another
+     outline chip beside the prose. The values are per mode because the ladder
+     inverts at night: by day the light step is the sheet showing through, at
+     night it is the accent lifted off it. */
+  --raised-fill-top: color-mix(in srgb, var(--primary) 44%, var(--background));
+  --raised-fill-bottom: color-mix(in srgb, var(--primary) 60%, var(--background));
+  --raised-edge: color-mix(in srgb, var(--primary) 76%, var(--background));
+  --raised-highlight: rgba(255, 255, 255, 0.5);
+  --raised-lip: color-mix(in srgb, var(--primary) 74%, var(--background));
+  --raised-fg: var(--foreground);
+
   /* The ink of the app's own scrollbar thumb. A neutral, and deliberately the
      same mid ink a skin gives muted text rather than the accent: the bar is
      chrome, and the brand must not tint it. Because this aliases a token the
@@ -188,6 +202,16 @@
   --accent-soft: #3d2318;
   --accent-tint: #2e1a12;
 
+  /* The raised face at night: the accent lifted off the page for the light step
+     and sunk toward it for the shade, with a lip darker than either so the
+     control sits on the sheet instead of in it. */
+  --raised-fill-top: color-mix(in srgb, var(--primary) 56%, var(--background));
+  --raised-fill-bottom: color-mix(in srgb, var(--primary) 42%, var(--background));
+  --raised-edge: color-mix(in srgb, var(--primary) 34%, var(--background));
+  --raised-highlight: rgba(255, 255, 255, 0.18);
+  --raised-lip: color-mix(in srgb, var(--primary) 22%, var(--background));
+  --raised-fg: var(--foreground);
+
   --map-gold: #e0c36a;
   --map-red: #e06b65;
   --map-blue: #6b8fe8;
@@ -261,6 +285,13 @@
     --primary-hover-foreground: #1a1917;
     --accent-soft: #3d2318;
     --accent-tint: #2e1a12;
+
+    --raised-fill-top: color-mix(in srgb, var(--primary) 56%, var(--background));
+    --raised-fill-bottom: color-mix(in srgb, var(--primary) 42%, var(--background));
+    --raised-edge: color-mix(in srgb, var(--primary) 34%, var(--background));
+    --raised-highlight: rgba(255, 255, 255, 0.18);
+    --raised-lip: color-mix(in srgb, var(--primary) 22%, var(--background));
+    --raised-fg: var(--foreground);
 
     --map-gold: #e0c36a;
     --map-red: #e06b65;
