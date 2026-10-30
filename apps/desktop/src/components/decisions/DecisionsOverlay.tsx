@@ -22,7 +22,12 @@ export function DecisionsOverlay({ onClose }: { onClose: () => void }) {
       scroll
       bodyClassName="decisions-sheet__body"
     >
-      <DecisionsInbox showHeader={false} />
+      {/* The inbox is handed the sheet's own close so that answering the last
+          proposal can hand the page back itself (Settings › Decisions ›
+          auto-close). Closing this way unwinds exactly the one navigation into
+          the sheet, so the operator lands on the page, scroll position and
+          mounted page they left — not on a fixed route. */}
+      <DecisionsInbox showHeader={false} onClose={onClose} />
     </SheetOverlay>
   );
 }

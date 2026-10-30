@@ -38,6 +38,7 @@ import ReviewPage from "@/pages/ReviewPage";
 import WelcomePage from "@/pages/WelcomePage";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
+import { DecisionInboxAutoOpen } from "@/components/decisions/DecisionInboxAutoOpen";
 import { useSheetBackground } from "@/components/shell/useSheetBackground";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { AutomationScheduler } from "@/state/AutomationScheduler";
@@ -144,6 +145,10 @@ function AppRoutes() {
       </Routes>
       {sheetOverBackground && sheet === "settings" ? <SettingsPage /> : null}
       {sheetOverBackground && sheet === "decisions" ? <DecisionsPage /> : null}
+      {/* Inside the router and the vault, outside every page: a filing has to be
+          able to open the inbox from wherever the operator happens to be, and
+          the sheet it opens must sit over the page they were already reading. */}
+      <DecisionInboxAutoOpen />
     </>
   );
 }
