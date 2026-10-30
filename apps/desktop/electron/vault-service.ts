@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  amendDecision,
   applyScriptBlock,
   appendLog,
   assertPhysicalContainment,
@@ -152,6 +153,7 @@ import {
   type MapActor,
   type MapCommand,
   type MapStoreState,
+  type DecisionAmendment,
   type DecisionRecord,
   type DocumentKind,
   type DocumentTarget,
@@ -1136,6 +1138,21 @@ export async function decisionCreate(input: {
       actor: USER_ACTOR,
     }),
   );
+}
+
+/**
+ * The operator's correction to a pending proposal.
+ *
+ * A separate call from `decisionCreate` rather than a flag on it: creating a
+ * Decision files a proposal, amending one edits a proposal someone else filed,
+ * and the record has to remember both — the agent's original and the version
+ * the operator is about to approve.
+ */
+export async function decisionAmend(
+  id: string,
+  input: DecisionAmendment,
+): Promise<Result<DecisionRecord>> {
+  return withVault((root) => amendDecision(root, id, input, USER_ACTOR));
 }
 
 export async function decisionResolve(

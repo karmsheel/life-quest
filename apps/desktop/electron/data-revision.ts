@@ -134,8 +134,11 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   "fx:refresh",
   "fx:setSource",
   "finance:saveAssumptionSet",
-  // Decisions: creating one and resolving one both change what is pending
+  // Decisions: filing one, amending one, and resolving one all change what is
+  // pending. The amendment matters to every other reader too — another window's
+  // inbox must redraw the edited proposal rather than the version it last read.
   "decision:create",
+  "decision:amend",
   "decision:resolve",
   // A logged manual decision changes History and the manual tab's own list.
   "manualDecision:create",

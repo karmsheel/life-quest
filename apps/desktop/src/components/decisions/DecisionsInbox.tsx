@@ -9,6 +9,7 @@ import {
   DOCUMENT_KIND_LABELS,
 } from "@lifequest/vault-core/pure";
 import type {
+  DecisionAmendment,
   DecisionRecord,
   ManualDecisionRecord,
 } from "@lifequest/vault-core";
@@ -17,6 +18,8 @@ import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 import { useLiveData } from "@/state/LiveDataProvider";
 import { DecisionBody } from "./DecisionBody";
+import { DecisionEditor } from "./DecisionEditor";
+import { supportsAmendment } from "./decision-edit";
 import { ManualDecisionCard, ManualDecisionsPanel } from "./ManualDecisions";
 
 type Tab = "pending" | "history" | "manual";
@@ -173,6 +176,21 @@ function kindLabel(target: DecisionRecord["target"]): string {
  * decisions" pin (`PendingDecisionsCard`), which is the per-domain view and
  * stays scoped by design.
  *
+ * CORRECTING A PROPOSAL INSTEAD OF REFUSING IT
+ *
+ * Until this card could be edited, the only answers were approve and reject. A
+ * proposal with one misspelt project name or one missing detail therefore cost
+ * the operator either the whole thing (reject, wait for the agent to file it
+ * again) or the correction (approve, then fix the file by hand — if the target
+ * is even editable there). So a pending proposal is now a staging surface: the
+ * operator can edit it in place, and the amend keeps the agent's original
+ * beside the correction so `Revert to agent's version` stays one click. The
+ * edit does not answer the Decision — saving leaves it pending, which is the
+ * whole point of editing before approving — and "Approve with changes" is the
+ * two calls in order, amend then the existing approve. The chip on the card and
+ * the `approved · edited` status in History are how the record admits whose
+ * words were approved.
+ *
  * WHAT IT DELIBERATELY DOES NOT DO
  *
  * It does not move the page. A prepend at the start of a list is where the
@@ -205,6 +223,17 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
+  /**
+   * The card whose proposal is open in the editor, if any.
+   *
+   * Editing is a mode of this page rather than a separate screen: the operator
+   * is correcting a card they are already reading, and a modal over the inbox
+   * would hide the queue they are deciding against. Only one card can be open
+   * at a time — two half-edited proposals on screen is two questions.
+   */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  /** The card currently talking to the vault, so its controls stay quiet. */
+  const [savingId, setSavingId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [arrival, setArrival] = useState<Arrival | null>(null);
 
@@ -387,8 +416,131 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
 
   function selectTab(next: Tab) {
     setTab(next);
+    setEditingId(null);
     setActionMessage(null);
     setError(null);
+  }
+
+  function beginEdit(id: string) {
+    setEditingId(id);
+    setActionMessage(null);
+    setError(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setError(null);
+  }
+
+  /**
+   * Amend only — the Decision stays in the queue.
+   *
+   * The list is re-read rather than patched in place because the engine owns
+   * what the amended record looks like (it keeps the agent's original on the
+   * first amendment, re-derives the title for body-carried titles); reading it
+   * back is what makes the chip and the title on the card the record's own
+   * facts rather than this page's guess. `refresh()` is not needed here: no
+   * document changed, only a proposal waiting for an answer.
+   */
+  async function saveAmendment(id: string, amendment: DecisionAmendment) {
+    setSavingId(id);
+    setError(null);
+    setActionMessage(null);
+    try {
+      const result = await api().decisionAmend(id, amendment);
+      if (!result.ok) {
+        // The editor stays open: a refusal (a structural field edited through
+        // the exact proposal, say) must not throw away the operator's work.
+        setError(result.error);
+        return;
+      }
+      setEditingId(null);
+      setActionMessage("Changes saved.");
+      await load();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to save the changes",
+      );
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  /**
+   * Amend, then approve — one operator intent, two vault writes.
+   *
+   * The amend has to land first: approval applies whatever the record holds, so
+   * approving first and editing after would be editing a proposal that already
+   * became a file. If the amend succeeds and the approve does not, the edited
+   * proposal is kept on screen (the list is re-read) and the resolve error is
+   * said above it — the operator's correction is not lost because the apply
+   * was refused, and the record is still pending for them to fix.
+   */
+  async function approveWithChanges(id: string, amendment: DecisionAmendment) {
+    setSavingId(id);
+    setError(null);
+    setActionMessage(null);
+    setArrival(null);
+    let amended = false;
+    try {
+      const amendResult = await api().decisionAmend(id, amendment);
+      if (!amendResult.ok) {
+        setError(amendResult.error);
+        return;
+      }
+      amended = true;
+      setEditingId(null);
+      const resolveResult = await api().decisionResolve(id, "approved");
+      if (!resolveResult.ok) {
+        // Reload BEFORE saying why: the read clears the page's error line, so
+        // an error set first would be wiped by the refresh that keeps the
+        // operator's corrected proposal on screen.
+        await load();
+        setError(resolveResult.error);
+        return;
+      }
+      setActionMessage("Decision approved with your changes.");
+      await load();
+      // Refresh vault snapshot so document editors pick up approved body.
+      await refresh();
+    } catch (err) {
+      if (amended) await load();
+      setError(
+        err instanceof Error ? err.message : "Failed to approve the decision",
+      );
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  /**
+   * Put the agent's proposal back, in one click.
+   *
+   * It is an amendment with `revert: true` because the undo has to be recorded
+   * like every other touch: the log line names the restoration, and a later
+   * reading of the record can tell that the operator once corrected it and
+   * changed their mind.
+   */
+  async function revertToOriginal(id: string) {
+    setSavingId(id);
+    setError(null);
+    setActionMessage(null);
+    try {
+      const result = await api().decisionAmend(id, { revert: true });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setEditingId(null);
+      setActionMessage("Reverted to the agent's version.");
+      await load();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to revert the proposal",
+      );
+    } finally {
+      setSavingId(null);
+    }
   }
 
   /**
@@ -609,11 +761,19 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
               slug,
               name: domainLabel(slug, domains),
             }));
-            const statusLabel = d.reason ? "Could not apply" : d.status;
+            const statusLabel = d.reason
+              ? "Could not apply"
+              : d.status === "approved" && d.amendedAt != null
+                ? // The operator's correction is what got approved, so History
+                  // names it. A terminal apply failure above keeps its own
+                  // label: "could not apply" is a different fact from "edited".
+                  "approved · edited"
+                : d.status;
             const statusClass = d.reason
               ? "decision-status--stale"
               : `decision-status--${d.status}`;
             const isNew = arrivedIds.has(d.id);
+            const isEditing = editingId === d.id;
             return (
               <li
                 key={d.id}
@@ -639,6 +799,17 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
                     ) : null}
                     <span className="decision-kind">{kindLabel(d.target)}</span>
                     {isNew ? <span className="decision-new">New</span> : null}
+                    {/* Provenance on the queue itself: this proposal is no
+                        longer the agent's words, and the operator answering it
+                        should know before they answer. */}
+                    {tab === "pending" && d.amendedAt != null ? (
+                      <span
+                        className="decision-edited"
+                        data-testid="decision-edited-chip"
+                      >
+                        Edited by you
+                      </span>
+                    ) : null}
                   </span>
                   <span className="decision-card__kicker-right">
                     {domainChips.map((chip) => (
@@ -682,6 +853,7 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
                 ) : null}
 
                 {tab === "pending" &&
+                !isEditing &&
                 d.status === "pending" &&
                 d.previousTitle != null &&
                 d.previousTitle !== (d.proposedTitle ?? "") ? (
@@ -693,34 +865,66 @@ export function DecisionsInbox({ showHeader = true }: { showHeader?: boolean }) 
                   </p>
                 ) : null}
 
-                <DecisionBody
-                  target={d.target}
-                  proposed={d.proposedBodyMarkdown}
-                  previous={d.previousBodyMarkdown}
-                  goalName={(id) => snapshot?.goals.find((goal) => goal.id === id)?.name ?? null}
-                  domainName={(slug) => domainLabel(slug, domains)}
-                />
+                {isEditing ? (
+                  // The editor takes the place of both the read-only body and
+                  // the answer pair: a card being corrected is not being
+                  // answered, and its own Save/Approve-with-changes are the
+                  // answers it offers.
+                  <DecisionEditor
+                    decision={d}
+                    busy={savingId === d.id}
+                    onCancel={cancelEdit}
+                    onSave={(amendment) => saveAmendment(d.id, amendment)}
+                    onApproveChanges={(amendment) =>
+                      approveWithChanges(d.id, amendment)
+                    }
+                    onRevert={() => revertToOriginal(d.id)}
+                  />
+                ) : (
+                  <>
+                    <DecisionBody
+                      target={d.target}
+                      proposed={d.proposedBodyMarkdown}
+                      previous={d.previousBodyMarkdown}
+                      goalName={(id) => snapshot?.goals.find((goal) => goal.id === id)?.name ?? null}
+                      domainName={(slug) => domainLabel(slug, domains)}
+                    />
 
-                {tab === "pending" && d.status === "pending" ? (
-                  <div className="decision-card__actions">
-                    <button
-                      type="button"
-                      className="btn btn-danger"
-                      disabled={resolvingId === d.id}
-                      onClick={() => void resolve(d.id, "rejected")}
-                    >
-                      {resolvingId === d.id ? "…" : "Reject"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      disabled={resolvingId === d.id}
-                      onClick={() => void resolve(d.id, "approved")}
-                    >
-                      {resolvingId === d.id ? "…" : "Approve"}
-                    </button>
-                  </div>
-                ) : null}
+                    {tab === "pending" && d.status === "pending" ? (
+                      <div className="decision-card__actions">
+                        <button
+                          type="button"
+                          className="btn btn-danger"
+                          data-testid="btn-decision-reject"
+                          disabled={resolvingId === d.id || savingId === d.id}
+                          onClick={() => void resolve(d.id, "rejected")}
+                        >
+                          {resolvingId === d.id ? "…" : "Reject"}
+                        </button>
+                        {supportsAmendment(d) ? (
+                          <button
+                            type="button"
+                            className="btn"
+                            data-testid="btn-decision-edit"
+                            disabled={resolvingId === d.id || savingId === d.id}
+                            onClick={() => beginEdit(d.id)}
+                          >
+                            Edit
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          data-testid="btn-decision-approve"
+                          disabled={resolvingId === d.id || savingId === d.id}
+                          onClick={() => void resolve(d.id, "approved")}
+                        >
+                          {resolvingId === d.id ? "…" : "Approve"}
+                        </button>
+                      </div>
+                    ) : null}
+                  </>
+                )}
 
                 {d.resolvedAt ? (
                   <p className="decision-card__resolved muted">
