@@ -94,6 +94,13 @@
  *     box, and the gutter between the two as wide as the room between the box and
  *     the dock. Swapping the dock swaps only the strip's side. The header and
  *     pager keep their place over the box.
+ * 22. The day's own automation — the built-in Analyze note control — sits under
+ *     the box on its trailing edge, not in the header above it, and it is a key
+ *     rather than an outline chip: the page's own square step, the skin's accent
+ *     as a filled face and the primitive's bevel and lip. The whole run is judged
+ *     in Nous, the palette the operator asked about, because a control that reads
+ *     black-on-black in the theme they run is the defect this claim exists to
+ *     catch.
  *
  * NOT covered here: that the note reaches disk as `notes/daily/{date}.md`, that a
  * second write edits one file, and that a review's period pack reads the window
@@ -115,6 +122,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
 const url =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/daily-note.html";
+// The palette the operator who asked for this feature runs. The driver names it
+// in the URL and the harness persists it before its first render, so the
+// screenshots below are the screen they will see, not the product default.
+const SKIN = "nous";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
 /** Read the rail and the page straight off the rendered DOM. */
@@ -721,7 +732,7 @@ async function main() {
     if (event.level === "error") consoleErrors.push(event.message);
   });
 
-  await win.loadURL(`${url}?v=${Date.now()}`);
+  await win.loadURL(`${url}?v=${Date.now()}&skin=${SKIN}`);
   await waitFor(win, "Boolean(window.dailyNoteReady)", "dailyNoteReady");
 
   const today = await win.webContents.executeJavaScript("window.dailyNoteToday");
@@ -737,12 +748,19 @@ async function main() {
   const checks = { today, yesterday, twoBack, tomorrow, farDay, farDayYear };
 
   // A harness that never applied the skin would draw a palette the operator does
-  // not run, and every layout claim below would be about the wrong theme.
+  // not run, and every layout claim below would be about the wrong theme. This
+  // rig names the palette it judges, so a harness that ignored the name is a
+  // failure here rather than a quietly different set of screenshots.
   checks.skin = await win.webContents.executeJavaScript(
     "({ name: window.dailyNoteSkin, applied: document.documentElement.dataset.skin ?? null })",
   );
   if (!checks.skin.name || checks.skin.applied !== checks.skin.name) {
     failure(`the harness did not paint in the app's skin: ${JSON.stringify(checks.skin)}`);
+  }
+  if (checks.skin.name !== SKIN) {
+    failure(
+      `the rig asked for the ${JSON.stringify(SKIN)} skin and the page painted ${JSON.stringify(checks.skin.name)}`,
+    );
   }
 
   // ── 1. the rail: Daily Note, directly under Decisions on the shelf ────────
@@ -1911,6 +1929,142 @@ async function main() {
   checks.calls = await win.webContents.executeJavaScript("window.dailyNoteCalls");
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
+
+  // ── 10. the day's act sits under the box, and reads as a key ──────────────
+  // The operator's report was that the Analyze note control read black-on-black
+  // in Nous and sat up with the pager. Both are measured here, in the palette
+  // the page is actually painted in, and the screenshot beside this claim is the
+  // screen they will see: under the prose it commits, on the box's trailing edge,
+  // filled with the skin's accent and lifted by the primitive's bevel and lip.
+  const automation = await win.webContents.executeJavaScript(`(() => {
+    const row = document.querySelector(".daily-note__automations");
+    const editor = document.querySelector(".daily-note__editor");
+    const compose = document.querySelector(".daily-note__compose");
+    const header = document.querySelector(".daily-note__header");
+    const button = document.querySelector('[data-testid="daily-note-analyze"]');
+    if (!row || !editor || !button) return { present: false };
+    const rect = (el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+    };
+    // A color-mix() resolves to either rgb() or color(srgb …) depending on the
+    // engine's serializer; both are read to channel values here so the chroma
+    // and the lift are measured on the paint, not on the token's spelling.
+    const channels = (value) => {
+      const mixed = String(value).match(/color\\(srgb\\s+([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)/);
+      if (mixed) return [mixed[1], mixed[2], mixed[3]].map((v) => Math.round(Number(v) * 255));
+      const rgb = String(value).match(/[\\d.]+/g) ?? [];
+      return rgb.slice(0, 3).map(Number);
+    };
+    const root = getComputedStyle(document.documentElement);
+    const rowBox = rect(row);
+    const editorBox = rect(editor);
+    const style = getComputedStyle(button);
+    // The face is read off the painted gradient (a real property, so the engine
+    // has resolved its colors) rather than off the custom property that fed it.
+    const stops = String(style.backgroundImage).match(/(?:rgb|color\\(srgb)[^)]*\\)/g) ?? [];
+    const fillTop = channels(stops[0] ?? "");
+    const fillBottom = channels(stops[1] ?? stops[0] ?? "");
+    const sheet = document.querySelector(".shell__main") ?? document.body;
+    const page = channels(getComputedStyle(sheet).backgroundColor);
+    return {
+      present: true,
+      inHeader: Boolean(header && header.contains(row)),
+      inCompose: Boolean(compose && compose.contains(row)),
+      belowBox: rowBox.top >= editorBox.bottom - 1,
+      gapBelowBox: Math.round(rowBox.top - editorBox.bottom),
+      rightEdgeOffBy: Math.round(rowBox.right - editorBox.right),
+      insideBoxColumn:
+        rowBox.left >= editorBox.left - 1 && rowBox.right <= editorBox.right + 1,
+      buttonRadius: parseFloat(style.borderTopLeftRadius),
+      step: parseFloat(root.getPropertyValue("--radius-xs")),
+      backgroundImage: style.backgroundImage,
+      boxShadow: style.boxShadow,
+      color: style.color,
+      disabled: button.disabled,
+      label: (button.textContent || "").trim(),
+      fillTop,
+      fillBottom,
+      page,
+      // How far the face is from grey (a hue that is actually there) and from
+      // the page it sits on (a face, not a hole cut in the sheet).
+      faceChroma: fillTop.length === 3 ? Math.max(...fillTop) - Math.min(...fillTop) : 0,
+      faceLift:
+        fillTop.length === 3 && page.length === 3
+          ? Math.abs(fillTop[0] - page[0]) +
+            Math.abs(fillTop[1] - page[1]) +
+            Math.abs(fillTop[2] - page[2])
+          : 0,
+      distinctStops: JSON.stringify(fillTop) !== JSON.stringify(fillBottom),
+    };
+  })()`);
+  checks.automation = automation;
+  if (!automation.present) {
+    failure("the day's Analyze note button is not on the page at all");
+  } else {
+    if (automation.inHeader) {
+      failure("the day's automation still sits in the header, above the box");
+    }
+    if (!automation.inCompose) {
+      failure("the day's automation is not inside the box's own column");
+    }
+    if (!automation.belowBox) {
+      failure(
+        `the day's automation sits ${automation.gapBelowBox}px above the box's bottom edge, not under it`,
+      );
+    }
+    if (Math.abs(automation.rightEdgeOffBy) > 2) {
+      failure(
+        `the day's automation ends ${automation.rightEdgeOffBy}px from the box's trailing edge, not on it`,
+      );
+    }
+    if (!automation.insideBoxColumn) {
+      failure("the day's automation reaches outside the box's own column");
+    }
+    if (!(automation.buttonRadius <= automation.step)) {
+      failure(
+        `the Analyze note button is rounded to ${automation.buttonRadius}px, past the ${automation.step}px step`,
+      );
+    }
+    if (automation.disabled) {
+      failure("the Analyze note button is disabled on a day that holds a written note");
+    }
+    if (!/linear-gradient/.test(automation.backgroundImage)) {
+      failure(
+        `the Analyze note button paints ${JSON.stringify(automation.backgroundImage)} instead of a filled face`,
+      );
+    }
+    if (automation.boxShadow === "none" || !/inset/.test(automation.boxShadow)) {
+      failure(
+        `the Analyze note button wears ${JSON.stringify(automation.boxShadow)} — no bevel`,
+      );
+    }
+    if (!(automation.faceChroma >= 24)) {
+      failure(
+        `the Analyze note button's face is ${JSON.stringify(automation.fillTop)} — grey, not the skin's accent`,
+      );
+    }
+    if (!(automation.faceLift >= 40)) {
+      failure(
+        `the Analyze note button's face ${JSON.stringify(automation.fillTop)} is too close to the page ${JSON.stringify(automation.page)} to read as a control`,
+      );
+    }
+    if (!automation.distinctStops) {
+      failure("the Analyze note button's face is one flat stop, not a lit key");
+    }
+  }
+
+  // The artifact for this claim: the day's page with the note written, the act
+  // under it, in the operator's own palette.
+  await win.webContents.executeJavaScript(
+    `document.querySelector(".daily-note__automations").scrollIntoView({ block: "nearest" })`,
+  );
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const analyzeShot = await win.webContents.capturePage();
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(path.join(artifactsDir, "daily-note-analyze.png"), analyzeShot.toPNG());
 
   // The screenshot is today's page holding a written note — the state the
   // feature exists for.

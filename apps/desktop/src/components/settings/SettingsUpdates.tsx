@@ -7,7 +7,9 @@ import { useUpdate } from "@/state/UpdateProvider";
 /**
  * Updates: what this build is, and what the feed last said.
  *
- * The cadence is the launch's own check — this page does not add a poller. What
+ * The cadence is the app's own: a check at launch, and main's watch every hour
+ * after that, so a release published while the studio is open turns up here (and
+ * as a notice) without anyone asking. This page does not add another poller. What
  * it adds is a "Check now", which is the operator asking by hand, so it passes
  * `force` and re-reads the feed instead of replaying the session's answer.
  *
@@ -74,8 +76,10 @@ export function SettingsUpdates() {
 
       <p className="settings-card__desc">
         The release feed is public, so this check holds no token and nothing is
-        stored for it. The app asks once per launch; <em>Check now</em> — like
-        the version number at the foot of the rail — is you asking by hand.
+        stored for it. LifeQuest asks at launch and then every hour while it is
+        open, so a new release is reported without a click;{" "}
+        <em>Check now</em> — like the version number at the foot of the rail — is
+        you asking by hand.
       </p>
     </SettingsSection>
   );

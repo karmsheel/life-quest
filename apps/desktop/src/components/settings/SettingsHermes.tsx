@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CompanionProfilePicker } from "@/components/hermes/CompanionProfilePicker";
+import { SettingsFact } from "@/components/ui/SettingsFact";
 import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
+import { Toggle } from "@/components/ui/Toggle";
 import { api } from "@/lib/ipc";
 import { useCompanion } from "@/state/CompanionProvider";
 import { useVault } from "@/state/VaultProvider";
@@ -23,6 +25,10 @@ function statusSummary(status: CompanionStatus | null, ensuring: boolean): strin
   if (status.kind === "auth_error") return "Companion API key was rejected.";
   return "Companion disconnected.";
 }
+
+/** The loopback doors' default ports, shown while the door is not bound yet. */
+const LOCAL_DOOR = "http://127.0.0.1:8643/mcp";
+const INVITE_DOOR = "http://127.0.0.1:8646/mcp";
 
 /** KAR-70: no vault open means no door, and no error to report. */
 const NO_VAULT: McpDoors = {
@@ -101,28 +107,64 @@ export function SettingsHermes() {
   const probeOk = status?.kind === "ready";
 
   return (
-    <>
-      <SettingsSection
-        icon={<Sparkles size={16} />}
-        title="Hermes"
-        subtitle={`LifeQuest companion on the ${profile ?? "lifequest"} Hermes profile`}
-        banner={
-          error || message ? (
-            <>
-              {error ? (
-                <p className="form-error" role="alert">
-                  {error}
-                </p>
-              ) : null}
-              {message ? (
-                <p className="form-message" role="status">
-                  {message}
-                </p>
-              ) : null}
-            </>
-          ) : undefined
-        }
+    <SettingsSection
+      icon={<Sparkles size={16} />}
+      title="Hermes"
+      subtitle={`LifeQuest companion on the ${profile ?? "lifequest"} Hermes profile`}
+      banner={
+        error || message ? (
+          <>
+            {error ? (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            ) : null}
+            {message ? (
+              <p className="form-message" role="status">
+                {message}
+              </p>
+            ) : null}
+          </>
+        ) : undefined
+      }
+    >
+      {/*
+        MCP doors first: they are the two addresses every other agent on this
+        machine needs in order to reach the vault, and the thing an operator
+        comes to this page to copy. They used to sit under the profile picker,
+        below the fold on a normal window — local plumbing at the end of the
+        page. The block opts out of page-context capture: the doors are local
+        plumbing, not content for a model turn.
+      */}
+      <section
+        className="settings-hermes__block"
+        data-page-context="ignore"
+        data-testid="hermes-doors"
       >
+        <h3 className="settings-hermes__heading">MCP doors</h3>
+        <div className="settings-facts">
+          <SettingsFact
+            label="Local"
+            value={doors.localUrl || LOCAL_DOOR}
+            error={doors.localError}
+            status
+          />
+          <SettingsFact
+            label="Invite"
+            value={doors.inviteUrl || INVITE_DOOR}
+            error={doors.inviteError}
+            status
+          />
+        </div>
+        {!snapshot ? (
+          <p className="settings-hermes__note muted" role="status">
+            MCP doors are closed — open a vault to expose the Life Map store.
+          </p>
+        ) : null}
+      </section>
+
+      <section className="settings-hermes__block" data-testid="hermes-connection">
+        <h3 className="settings-hermes__heading">Connection</h3>
         <p
           className={
             probeOk
@@ -141,45 +183,12 @@ export function SettingsHermes() {
         ) : null}
 
         {ready ? (
-          <dl className="settings-hermes">
-            <div className="settings-field">
-              <span>CLI</span>
-              <p className="muted">{ready.cliPath}</p>
-            </div>
-            <div className="settings-field">
-              <span>Profile</span>
-              <p className="muted">{ready.profilePath}</p>
-            </div>
-            <div className="settings-field">
-              <span>API</span>
-              <p className="muted">{ready.baseUrl}</p>
-            </div>
-          </dl>
+          <div className="settings-facts" data-testid="hermes-facts">
+            <SettingsFact label="CLI" value={ready.cliPath} />
+            <SettingsFact label="Profile" value={ready.profilePath} />
+            <SettingsFact label="API" value={ready.baseUrl} />
+          </div>
         ) : null}
-
-        {/*
-          The same picker the setup screen offers, so switching the companion's
-          profile later does not mean being stuck first: every installed Hermes
-          profile, the active one marked, and the app's own `lifequest` on
-          offer. Choosing one re-runs the ensure against it.
-        */}
-        <div className="settings-hermes__profile">
-          <h3 className="settings-panel__section-title">Companion profile</h3>
-          <CompanionProfilePicker />
-        </div>
-
-        <SettingsRow
-          label="File implied changes"
-          description="When a chat proposes a doctrine, library, goal, or day-template change, file one pending Decision. The vault changes only when you approve it."
-          action={
-            <input
-              type="checkbox"
-              aria-label="File implied changes"
-              checked={fileImplied}
-              onChange={(e) => void onToggleFileImplied(e.target.checked)}
-            />
-          }
-        />
 
         <div className="settings-hermes__actions">
           <Button
@@ -200,51 +209,45 @@ export function SettingsHermes() {
             Open profile folder
           </Button>
         </div>
-        {/* The insert allowlist is gone: adding database data is no longer
-            gated at all (operator policy, 2026-10-28). This row says what the
-            companion does now, so the one place that used to configure the old
-            behaviour explains the new one instead of leaving a dead control. */}
-        <SettingsRow
-          label="Database writes"
-          description="A new database, a new row, or a batch of new rows is written as soon as you agree to it in the chat. Changing or deleting data that already exists still waits for your approval in Decisions."
-        />
-      </SettingsSection>
-      {/* KAR-70: the two loopback doors. Each keeps its own bind error, so a
-          taken port takes down one row and not the other url. The block opts
-          out of page-context capture: the doors are local plumbing, not content
-          for a model turn. */}
-      <div className="settings-card" data-page-context="ignore">
-        <h3 className="settings-panel__section-title">MCP doors</h3>
-        <dl className="settings-hermes">
-          <div className="settings-field">
-            <span>Local</span>
-            <p className="muted" role="status">
-              {doors.localUrl || "http://127.0.0.1:8643/mcp"}
-            </p>
-            {doors.localError ? (
-              <p className="form-error" role="alert">
-                {doors.localError}
-              </p>
-            ) : null}
-          </div>
-          <div className="settings-field">
-            <span>Invite</span>
-            <p className="muted" role="status">
-              {doors.inviteUrl || "http://127.0.0.1:8646/mcp"}
-            </p>
-            {doors.inviteError ? (
-              <p className="form-error" role="alert">
-                {doors.inviteError}
-              </p>
-            ) : null}
-          </div>
-        </dl>
-        {!snapshot ? (
-          <p className="settings-hermes__probe muted" role="status">
-            MCP doors are closed — open a vault to expose the Life Map store.
-          </p>
-        ) : null}
-      </div>
-    </>
+      </section>
+
+      {/*
+        The same picker the setup screen offers, so switching the companion's
+        profile later does not mean being stuck first: every installed Hermes
+        profile, the active one marked, and the app's own `lifequest` on
+        offer. Choosing one re-runs the ensure against it.
+      */}
+      <section className="settings-hermes__block" data-testid="hermes-profile">
+        <h3 className="settings-hermes__heading">Companion profile</h3>
+        <CompanionProfilePicker />
+      </section>
+
+      <section className="settings-hermes__block" data-testid="hermes-behaviour">
+        <h3 className="settings-hermes__heading">Chat behaviour</h3>
+        <div className="settings-hermes__rows">
+          <SettingsRow
+            className="settings-hermes__row"
+            label="File implied changes"
+            description="When a chat proposes a doctrine, library, goal, or day-template change, file one pending Decision. The vault changes only when you approve it."
+            action={
+              <Toggle
+                checked={fileImplied}
+                onChange={(next) => void onToggleFileImplied(next)}
+                label="File implied changes"
+              />
+            }
+          />
+          {/* The insert allowlist is gone: adding database data is no longer
+              gated at all (operator policy, 2026-10-28). This row says what the
+              companion does now, so the one place that used to configure the old
+              behaviour explains the new one instead of leaving a dead control. */}
+          <SettingsRow
+            className="settings-hermes__row"
+            label="Database writes"
+            description="A new database, a new row, or a batch of new rows is written as soon as you agree to it in the chat. Changing or deleting data that already exists still waits for your approval in Decisions."
+          />
+        </div>
+      </section>
+    </SettingsSection>
   );
 }

@@ -467,13 +467,16 @@ const stubs: Record<string, (...args: unknown[]) => Promise<unknown> | unknown> 
     return ok(vault.decisions.map((decision) => ({ ...decision })));
   },
   // The rail renders the real `UpdateBadge`, so the real `UpdateProvider` asks
-  // its own channel at mount. Answering it here is what keeps "unexpected bridge
-  // calls" an assertion about the badge rather than about the update feed.
+  // its own channel at mount, and subscribes to the watch's push channel (the
+  // app's clock is not this page's business). Answering both here is what keeps
+  // "unexpected bridge calls" an assertion about the badge rather than about the
+  // update feed.
   updateCheck: async () => ({
     ok: true,
     decision: { state: "current", current: appVersion, latest: appVersion },
   }),
   onUpdateProgress: () => () => {},
+  onUpdateDecision: () => () => {},
 };
 
 (window as unknown as { lifequest: object }).lifequest = new Proxy(stubs, {

@@ -1,4 +1,4 @@
-export type ButtonVariant = "primary" | "outline" | "ghost";
+export type ButtonVariant = "primary" | "outline" | "ghost" | "raised";
 
 export type ButtonClassNameProps = {
   variant?: ButtonVariant;
@@ -15,6 +15,7 @@ export function buttonClassName({
   if (destructive) classes.push("btn-danger");
   else if (variant === "primary") classes.push("btn-primary");
   else if (variant === "ghost") classes.push("btn-ghost");
+  else if (variant === "raised") classes.push("btn-raised");
   else classes.push("btn-secondary");
   if (className.trim()) classes.push(className.trim());
   return classes.join(" ");

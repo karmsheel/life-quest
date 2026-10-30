@@ -349,6 +349,27 @@ export function vaultPaths(root: string) {
     },
     idealStateMd: (id: string) =>
       build("notes", "ideal-state", assertSafeSegment(id, "ideal state id") + ".md"),
+    // Define → Images: one vault-level picture library. The index names the
+    // pictures and the board holds the operator's blocks; the pictures
+    // themselves are files under `images/files/`, never encoded into JSON.
+    get imagesDir(): string {
+      return build("images");
+    },
+    get imagesFilesDir(): string {
+      return build("images", "files");
+    },
+    get imagesLibraryJson(): string {
+      return build("images", "library.json");
+    },
+    get imagesBoardJson(): string {
+      return build("images", "board.json");
+    },
+    imageFile: (id: string, ext: string) =>
+      build(
+        "images",
+        "files",
+        assertSafeSegment(id, "image id") + "." + assertSafeSegment(ext, "image extension"),
+      ),
     // KAR-55 domain database paths
     domainDataDir: (slug: string) => build("domains", assertDomainSlug(slug), "data"),
     domainSqlite: (slug: string) =>

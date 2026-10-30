@@ -26,6 +26,7 @@ import DocumentsPage from "@/pages/DocumentsPage";
 import DreamPage from "@/pages/DreamPage";
 import VisionPage from "@/pages/VisionPage";
 import IdealStatePage from "@/pages/IdealStatePage";
+import ImagesPage from "@/pages/ImagesPage";
 import GoalsPage from "@/pages/GoalsPage";
 import ProjectPage from "@/pages/ProjectPage";
 import ProjectsPage from "@/pages/ProjectsPage";
@@ -37,6 +38,7 @@ import ReviewPage from "@/pages/ReviewPage";
 import WelcomePage from "@/pages/WelcomePage";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
+import { DecisionInboxAutoOpen } from "@/components/decisions/DecisionInboxAutoOpen";
 import { useSheetBackground } from "@/components/shell/useSheetBackground";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
 import { AutomationScheduler } from "@/state/AutomationScheduler";
@@ -45,6 +47,7 @@ import { ShortcutsProvider } from "@/state/ShortcutsProvider";
 import { CompanionProvider, useCompanion } from "@/state/CompanionProvider";
 import { LiveDataProvider } from "@/state/LiveDataProvider";
 import { UpdateProvider } from "@/state/UpdateProvider";
+import { UpdateNotice } from "@/components/shell/UpdateNotice";
 import { VaultProvider, useVault } from "@/state/VaultProvider";
 
 function RequireVault({ children }: { children: ReactNode }) {
@@ -112,6 +115,7 @@ function AppRoutes() {
             element={<DoctrineEditorPage backTo="/vision" />}
           />
           <Route path="/ideal-state" element={<IdealStatePage />} />
+          <Route path="/images" element={<ImagesPage />} />
           <Route path="/goals" element={<GoalsPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:id" element={<ProjectPage />} />
@@ -143,6 +147,10 @@ function AppRoutes() {
       </Routes>
       {sheetOverBackground && sheet === "settings" ? <SettingsPage /> : null}
       {sheetOverBackground && sheet === "decisions" ? <DecisionsPage /> : null}
+      {/* Inside the router and the vault, outside every page: a filing has to be
+          able to open the inbox from wherever the operator happens to be, and
+          the sheet it opens must sit over the page they were already reading. */}
+      <DecisionInboxAutoOpen />
     </>
   );
 }
@@ -157,6 +165,11 @@ export default function App() {
             news the operator wants before they go looking for why chat is
             quiet. */}
         <UpdateProvider>
+          {/* The notice lives above every route and outside the vault gate: a
+              release published while the operator is on the welcome screen is
+              still news, and the dialog it opens needs only the update state. It
+              portals to the body, so the shell's grid never clips it. */}
+          <UpdateNotice />
           <CompanionProvider>
             <VaultProvider>
               {/* Inside the vault, outside every page: a card's numbers are a

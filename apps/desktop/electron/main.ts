@@ -28,9 +28,12 @@ import * as vault from "./vault-service.js";
 import {
   checkForUpdate,
   installUpdate,
+  MIN_UPDATE_POLL_MS,
   setUpdateFeedUrl,
   setUpdateLauncher,
   setUpdateTrustPolicy,
+  startUpdateWatch,
+  type UpdateWatchNews,
   validateInstallRequest,
 } from "./updater.js";
 import {
@@ -89,6 +92,12 @@ const E2E: {
   updateFeedUrl?: string;
   updateLauncher?: { exe?: unknown; args?: unknown };
   /**
+   * How often the update watch reads the feed, in milliseconds. Present only for
+   * the polling rig: the product's cadence is `UPDATE_POLL_MS` (one hour), and a
+   * rig that waited an hour for a tick would not test the watch at all.
+   */
+  updatePollMs?: number;
+  /**
    * Where the install's bytes are allowed to come from. Present only for the
    * auto-update rig, which serves them over loopback; the product leaves the
    * policy at GitHub over https.
@@ -123,6 +132,7 @@ if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
         mcpPorts?: { local?: unknown; invite?: unknown };
         updateFeedUrl?: unknown;
         updateLauncher?: { exe?: unknown; args?: unknown };
+        updatePollMs?: unknown;
         updateTrust?: {
           hosts?: unknown;
           allowHttp?: unknown;
@@ -149,6 +159,13 @@ if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
         parsed.updateFeedUrl.trim()
       ) {
         E2E.updateFeedUrl = parsed.updateFeedUrl;
+      }
+      if (
+        typeof parsed.updatePollMs === "number" &&
+        Number.isFinite(parsed.updatePollMs) &&
+        parsed.updatePollMs >= MIN_UPDATE_POLL_MS
+      ) {
+        E2E.updatePollMs = Math.round(parsed.updatePollMs);
       }
       // A rig cannot let the app launch a real installer, and cannot read an
       // assertion out of a process it did not start: the launcher is replaced
@@ -756,6 +773,14 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
       vault.decisionCreate(input),
   );
   ipcMain.handle(
+    "decision:amend",
+    (
+      _e,
+      id: string,
+      input: Parameters<typeof vault.decisionAmend>[1],
+    ) => vault.decisionAmend(id, input),
+  );
+  ipcMain.handle(
     "decision:resolve",
     (_e, id: string, resolution: "approved" | "rejected") =>
       vault.decisionResolve(id, resolution),
@@ -903,7 +928,11 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("companion:useProfile", (_e, name: string) =>
     companion.companionUseProfile(typeof name === "string" ? name : ""),
   );
-  ipcMain.handle("companion:sessionsList", () => companion.companionSessionsList());
+  ipcMain.handle("companion:sessionsList", (_e, options?: { includeArchived?: boolean }) =>
+    companion.companionSessionsList({
+      includeArchived: options?.includeArchived === true,
+    }),
+  );
   ipcMain.handle("companion:sessionCreate", (_e, title: string) =>
     companion.companionSessionCreate(typeof title === "string" ? title : ""),
   );
@@ -1080,6 +1109,29 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("ideal-state:delete", (_e, id: string) =>
     vault.idealStateDelete(id),
   );
+  // Define → Images: a vault-level picture library and the vision document
+  // written beside it. The renderer never names a path: it hands over bytes and
+  // gets back an id the vault minted.
+  ipcMain.handle("images:list", () => vault.imagesList());
+  ipcMain.handle(
+    "images:save",
+    (_e, input: Parameters<typeof vault.imagesSave>[0]) => vault.imagesSave(input),
+  );
+  ipcMain.handle("images:read", (_e, relPath: string) =>
+    vault.imagesRead(relPath),
+  );
+  ipcMain.handle(
+    "images:update",
+    (_e, id: string, patch: Parameters<typeof vault.imagesUpdate>[1]) =>
+      vault.imagesUpdate(id, patch),
+  );
+  ipcMain.handle("images:delete", (_e, id: string) => vault.imagesDelete(id));
+  ipcMain.handle("images:boardGet", () => vault.imagesBoardGet());
+  ipcMain.handle(
+    "images:boardSave",
+    (_e, input: Parameters<typeof vault.imagesBoardSave>[0]) =>
+      vault.imagesBoardSave(input),
+  );
   // A cadence's standing review rules, and the snapshot pass the review page
   // runs before it asks the agent for anything.
   ipcMain.handle(
@@ -1183,9 +1235,11 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   });
 
   // —— auto-update ——————————————————————————————————————————————————————————
-  // `update:check` is the launch's one call; `force` is the operator asking by
-  // hand — the rail's build number, or Settings → Updates. Progress is pushed,
-  // not polled: a download reports itself as it arrives.
+  // `update:check` is the launch's call; `force` is the operator asking by hand
+  // (the rail's build number, or Settings → Updates). The watch's own reads do
+  // not come through here — they are main's clock, not the renderer's
+  // (`startUpdateWatch`). Progress is pushed, not polled: a download reports
+  // itself as it arrives.
   ipcMain.handle(
     "update:check",
     (_e, options?: { force?: boolean }) =>
@@ -1458,6 +1512,50 @@ export async function fxRefreshForE2e(): Promise<void> {
   await refreshFxNow();
 }
 
+/**
+ * Tell whatever is open that the feed answered on the watch's clock.
+ *
+ * The renderer gets every answer the watch reports — a release to show, or the
+ * news that an announced release is gone — over one channel, so the badge and the
+ * notice always draw the feed's latest answer rather than two views that can
+ * disagree. The OS notification is the second half, and it fires only when the
+ * window is not focused: an operator looking at the studio already gets the
+ * in-app notice, and two notifications for one release would be one too many.
+ *
+ * The e2e seam skips it. A hidden rig window is never focused, so without this
+ * the suite would fire a real desktop notification on the machine running it —
+ * a side effect no rig asked for, and nothing a hidden window can screenshot.
+ */
+function announceUpdateNews(news: UpdateWatchNews): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send("update:decision", news);
+  }
+  if (news.state !== "available" || E2E_ACTIVE) return;
+  const win = productWindow;
+  if (win && !win.isDestroyed() && win.isFocused()) return;
+  if (!Notification.isSupported()) return;
+  try {
+    const notification = new Notification({
+      title: `LifeQuest ${news.latest} is available`,
+      body: "Open LifeQuest to download and install it.",
+    });
+    // Clicking the notification is the operator answering it: bring the window
+    // that carries the offer to the front rather than leaving them to find it in
+    // the taskbar. The in-app notice is already waiting there.
+    notification.on("click", () => {
+      const target = productWindow;
+      if (!target || target.isDestroyed()) return;
+      if (target.isMinimized()) target.restore();
+      target.show();
+      target.focus();
+    });
+    notification.show();
+  } catch {
+    // A notification is a courtesy; the in-app notice and the rail's glow carry
+    // the news whether or not the OS accepts it.
+  }
+}
+
 app.whenReady().then(() => {
   if (!ipcRegistered) {
     ipcRegistered = true;
@@ -1497,6 +1595,11 @@ app.whenReady().then(() => {
   // The rate is read on a clock, not on a draw, so it is armed once here rather
   // than wherever a card happens to be rendered.
   startFxRefreshLoop();
+  // The feed is read on a clock as well as at launch: a release published while
+  // the studio is open has to reach the operator without a click. Armed beside
+  // the other loops, once, on the product's own cadence — the rig moves the
+  // interval through the seam, and only the rig does.
+  startUpdateWatch(announceUpdateNews, { intervalMs: E2E.updatePollMs });
 });
 
 app.on("window-all-closed", () => {

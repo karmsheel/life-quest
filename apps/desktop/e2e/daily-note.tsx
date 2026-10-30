@@ -75,8 +75,11 @@ import { applyAppSkin } from "./apply-app-skin";
 import "@/styles/global.css";
 
 // The app's own skin first: this rig judges the page the operator sees, so it has
-// to paint in the palette they run rather than in the base tokens.
-const skinName = applyAppSkin("dark");
+// to paint in the palette they run rather than in the base tokens. The driver may
+// name that palette (`?skin=nous`) when the feature under review is one operator's
+// theme; the helper persists it so ThemeProvider's first render agrees.
+const requestedSkin = new URLSearchParams(location.search).get("skin");
+const skinName = applyAppSkin("dark", requestedSkin);
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 const ok = <T,>(value: T): Result<T> => ({ ok: true, value });
@@ -241,12 +244,14 @@ const bridge: Record<string, unknown> = {
   companionSessionsList: () => ok([SESSION]),
   companionSessionCreate: () => ok(SESSION),
   companionSessionMessages: () => ok([]),
-  // The shell's own dependencies: the dock reads the open board's lock, and the
-  // composer asks which models the profile offers. Neither is this rig's subject;
-  // both are modelled so that "an unmodelled call" stays a real signal.
+  // The shell's own dependencies: the dock reads the open board's lock, the
+  // composer asks which models the profile offers, and the rail reads the
+  // Decisions inbox for its pending badge. None is this rig's subject; all are
+  // modelled so that "an unmodelled call" stays a real signal.
   companionModelOptions: () =>
     ok({ providers: [], current: { model: "harness", provider: "harness" } }),
   pinsList: () => ok({ pins: [], locked: false }),
+  decisionList: () => ok([]),
   onCompanionStream: () => () => {},
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),

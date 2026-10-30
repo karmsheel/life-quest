@@ -11,10 +11,12 @@
  * holds the interactions and the measurements, so a failure names a state rather
  * than a line of driver code.
  *
- * What is measured that a screenshot cannot show: the panel's share of the
- * window, the scrim's computed `backdrop-filter`, the cross's corner, the search
- * field's effect on the section list, which dismissal did what, and the two
- * favourites lists the star feeds.
+ * What is measured that a screenshot cannot show: the panel's own measure and
+ * its centring in the window, the floating search bar's measure, pill ends and
+ * the panel border that crosses its axis, the absent title band between that bar
+ * and the section column, the scrim's computed `backdrop-filter`, the
+ * cross's corner, the search field's effect on the section list, which
+ * dismissal did what, and the two favourites lists the star feeds.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -35,7 +37,7 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
 
 /** The theme the driver stars, and the query that finds its page. */
 const STARRED_SKIN = "Ember";
-const SECTION_COUNT = 10;
+const SECTION_COUNT = 11;
 
 /**
  * A theme in the shape the app installs: the Forge palette, hex only, every
@@ -95,6 +97,7 @@ const SAMPLE = `(() => {
   const overlay = document.querySelector("[data-settings-overlay]");
   const panel = document.querySelector(".settings-overlay__panel");
   const chrome = document.querySelector(".settings-overlay__chrome");
+  const navColumn = document.querySelector(".settings-overlay__nav");
   const close = document.querySelector(".settings-overlay__close");
   const search = document.querySelector(".settings-overlay__search-input");
   const searchBar = document.querySelector(".settings-overlay__search");
@@ -176,13 +179,25 @@ const SAMPLE = `(() => {
       ? {
           box: box(search),
           bar: box(searchBar),
+          // The bar's own corner: a pill, so the radius is half its height.
+          radius: searchBar
+            ? parseFloat(getComputedStyle(searchBar).borderTopLeftRadius)
+            : null,
           value: search.value,
           placeholder: search.getAttribute("placeholder"),
           label: search.getAttribute("aria-label"),
           focused: document.activeElement === search,
         }
       : null,
-    chromeInputs: document.querySelectorAll(".settings-overlay__chrome input").length,
+    // The section column's leading edge is where the "no title band" contract is
+    // read: it must start at the panel's own top edge.
+    navBox: box(navColumn),
+    chromeBox: box(chrome),
+    // The search left the top strip for the floating band on the panel's edge;
+    // count it across the sheet so a second copy would still be caught.
+    searchInputs: document.querySelectorAll(
+      "[data-settings-overlay] input[type='search']"
+    ).length,
     nav,
     navEmpty: text(document.querySelector(".settings-overlay__nav-empty")) || null,
     panelView:

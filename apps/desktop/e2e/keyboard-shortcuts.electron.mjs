@@ -958,11 +958,11 @@ async function main() {
     await clickSelector(".settings-overlay__search-clear");
     const searchCleared = await record(
       "searchCleared",
-      'document.querySelectorAll(".settings-nav-item").length === 10',
+      'document.querySelectorAll(".settings-nav-item").length === 11',
     );
     check(
       "clearing the search restores the whole section list",
-      searchCleared.nav.length === 10 && searchCleared.searchValue === "",
+      searchCleared.nav.length === 11 && searchCleared.searchValue === "",
       `${searchCleared.nav.length} rows, search ${JSON.stringify(searchCleared.searchValue)}`,
     );
     check(

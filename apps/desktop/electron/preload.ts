@@ -220,6 +220,8 @@ const lifequest = {
     ipcRenderer.invoke("decision:list") as Promise<Result<unknown>>,
   decisionCreate: (input: Record<string, unknown>) =>
     ipcRenderer.invoke("decision:create", input) as Promise<Result<unknown>>,
+  decisionAmend: (id: string, input: Record<string, unknown>) =>
+    ipcRenderer.invoke("decision:amend", id, input) as Promise<Result<unknown>>,
   decisionResolve: (id: string, resolution: "approved" | "rejected") =>
     ipcRenderer.invoke("decision:resolve", id, resolution) as Promise<
       Result<unknown>
@@ -340,7 +342,8 @@ const lifequest = {
   companionProfilesList: () => ipcRenderer.invoke("companion:profilesList"),
   companionUseProfile: (name: string) =>
     ipcRenderer.invoke("companion:useProfile", name),
-  companionSessionsList: () => ipcRenderer.invoke("companion:sessionsList"),
+  companionSessionsList: (options?: { includeArchived?: boolean }) =>
+    ipcRenderer.invoke("companion:sessionsList", options),
   companionSessionCreate: (title: string) =>
     ipcRenderer.invoke("companion:sessionCreate", title),
   companionSessionMessages: (id: string) =>
@@ -504,6 +507,27 @@ const lifequest = {
   idealStateDelete: (id: string) =>
     ipcRenderer.invoke("ideal-state:delete", id) as Promise<Result<unknown>>,
 
+  // Define → Images. Bytes in, ids out — the renderer never names a vault path.
+  imagesList: () =>
+    ipcRenderer.invoke("images:list") as Promise<Result<unknown>>,
+  imagesSave: (input: {
+    bytes: Uint8Array;
+    mime: string;
+    name: string;
+    width?: number | null;
+    height?: number | null;
+  }) => ipcRenderer.invoke("images:save", input) as Promise<Result<unknown>>,
+  imagesRead: (relPath: string) =>
+    ipcRenderer.invoke("images:read", relPath) as Promise<Result<unknown>>,
+  imagesUpdate: (id: string, patch: { name?: string; caption?: string }) =>
+    ipcRenderer.invoke("images:update", id, patch) as Promise<Result<unknown>>,
+  imagesDelete: (id: string) =>
+    ipcRenderer.invoke("images:delete", id) as Promise<Result<unknown>>,
+  imagesBoardGet: () =>
+    ipcRenderer.invoke("images:boardGet") as Promise<Result<unknown>>,
+  imagesBoardSave: (input: { blocks: unknown[] }) =>
+    ipcRenderer.invoke("images:boardSave", input) as Promise<Result<unknown>>,
+
   deadlineDismiss: () =>
     ipcRenderer.invoke("deadline:dismiss") as Promise<Result<true>>,
 
@@ -546,6 +570,20 @@ const lifequest = {
     ipcRenderer.on("update:progress", listener);
     return () => {
       ipcRenderer.removeListener("update:progress", listener);
+    };
+  },
+  /**
+   * The feed answered on main's own clock: a release to show, or the news that a
+   * release already announced is gone. Pushed, not asked for — the renderer has
+   * no timer of its own, so a hidden or throttled window cannot miss the news.
+   */
+  onUpdateDecision: (cb: (decision: unknown) => void) => {
+    const listener = (_event: unknown, decision: unknown) => {
+      cb(decision);
+    };
+    ipcRenderer.on("update:decision", listener);
+    return () => {
+      ipcRenderer.removeListener("update:decision", listener);
     };
   },
 

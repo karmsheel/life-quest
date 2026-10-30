@@ -66,6 +66,10 @@ const SAMPLE = `(() => {
   const topBar = document.querySelector(".top-bar");
   const chatHeader = document.querySelector(".chat-panel__header");
   const shell = document.querySelector(".shell");
+  const wings = document.querySelector(".nav-rail__wings");
+  const wingsBand = document.querySelector(".nav-rail__wings-band");
+  const wingRows = document.querySelector(".nav-rail__section--wing");
+  const domainSwitcher = document.querySelector(".domain-switcher");
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
 
   const probe = document.createElement("div");
@@ -162,7 +166,11 @@ const SAMPLE = `(() => {
           background: getComputedStyle(vault).backgroundColor,
           color: getComputedStyle(vault).color,
           radius: getComputedStyle(vault).borderRadius,
-          href: vault.getAttribute("href"),
+          // The chip raises the vault switcher now instead of linking home: it
+          // is a button with a dialog behind it, and the rig reads both facts
+          // rather than the href it used to carry.
+          tag: vault.tagName.toLowerCase(),
+          haspopup: vault.getAttribute("aria-haspopup"),
           appRegion: getComputedStyle(vault).getPropertyValue("-webkit-app-region")
         }
       : null,
@@ -196,12 +204,11 @@ const SAMPLE = `(() => {
           background: getComputedStyle(topBar).backgroundColor
         }
       : null,
-    // The band's two selectors — the wing switcher and the domain lens. Both are
-    // a .ui-segmented, and the shared rule frames the whole control: that frame,
-    // one pixel outside the active tab's own line, is what made the pair read as
-    // concentric outlines. Measured by selector rather than by a single class so
-    // the report names whichever one regressed.
-    topBarSelectors: [".top-bar__wings", ".domain-switcher__tabs"].map((selector) => {
+    // The sheet's band now carries one selector only — the domain lens — and the
+    // band centres it. The wing switcher moved to the rail's own band above it,
+    // so this list is the lens alone. Measured by selector rather than by a
+    // single class so the report names the control that regressed.
+    topBarSelectors: [".domain-switcher__tabs"].map((selector) => {
       const el = document.querySelector(selector);
       if (!el) return { selector, optionCount: 0 };
       const style = getComputedStyle(el);
@@ -220,6 +227,52 @@ const SAMPLE = `(() => {
         optionCount: el.querySelectorAll(".ui-segmented__option").length
       };
     }),
+    // One control on the sheet's band, and it is the domain lens — the wing
+    // switcher must not have left a copy behind in the sheet.
+    bandControlCount: topBar
+      ? topBar.querySelectorAll(".ui-segmented").length
+      : 0,
+    domainLens: domainSwitcher
+      ? {
+          box: box(domainSwitcher),
+          labels: Array.from(
+            domainSwitcher.querySelectorAll(".ui-segmented__option")
+          ).map((el) => (el.textContent || "").trim())
+        }
+      : null,
+    // The rail's first level: the five-wing switcher, in a band of its own on the
+    // sheet's top-bar row, above the active wing's pages.
+    wingsBand: wingsBand
+      ? {
+          box: box(wingsBand),
+          borderBottomWidth: getComputedStyle(wingsBand).borderBottomWidth
+        }
+      : null,
+    wingSwitcher: wings
+      ? {
+          box: box(wings),
+          inRail: Boolean(rail && rail.contains(wings)),
+          role: wings.getAttribute("role"),
+          ariaLabel: wings.getAttribute("aria-label"),
+          labels: Array.from(
+            wings.querySelectorAll(".ui-segmented__option")
+          ).map((el) => (el.textContent || "").trim()),
+          active:
+            (
+              wings.querySelector(".ui-segmented__option.is-active")
+                ?.textContent || ""
+            ).trim() || null,
+          optionCount: wings.querySelectorAll(".ui-segmented__option").length,
+          background: getComputedStyle(wings).backgroundColor
+        }
+      : null,
+    wingRows: wingRows
+      ? Array.from(wingRows.querySelectorAll(".nav-rail__link")).map((a) => ({
+          label: (a.querySelector(".nav-rail__label")?.textContent || "").trim(),
+          href: a.getAttribute("href"),
+          active: a.classList.contains("nav-rail__link--active")
+        }))
+      : [],
     chatHeader: chatHeader
       ? {
           box: box(chatHeader),
@@ -568,6 +621,17 @@ async function main() {
       return true;
     })()`);
 
+  /** Click one tab of the rail's wing switcher, through React's own handler. */
+  const clickWing = async (label) =>
+    run(`(async () => {
+      const nodes = Array.from(document.querySelectorAll(".nav-rail__wings .ui-segmented__option"));
+      const el = nodes.find((n) => ((n.textContent || "").trim()) === ${JSON.stringify(label)});
+      if (!el) return false;
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, view: window }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
   /**
    * The harness's own theme switch: `applyThemePreference` + `applySkin`, the two
    * calls the provider makes when the preference or the skin changes. It returns
@@ -685,6 +749,49 @@ async function main() {
       `first row top ${expanded.firstLink?.top}px vs band bottom ${expanded.header?.box.bottom}px`,
     );
 
+    // 2b — the sidebar's first level: the five-wing switcher in its own band,
+    // above the wing's pages and on the sheet's top-bar row. The band paints no
+    // line of its own: the strip's hairline stays in the sheet, under the lens.
+    const wingBand = expanded.wingsBand;
+    const switcher = expanded.wingSwitcher;
+    check(
+      "the wing switcher lives in the rail",
+      Boolean(switcher?.inRail),
+      `switcher ${JSON.stringify(switcher?.box)} in rail ${JSON.stringify(expanded.rail?.box)}`,
+    );
+    check(
+      "the wing switcher is the five wings, in order",
+      Boolean(switcher) &&
+        switcher.role === "tablist" &&
+        switcher.optionCount === 5 &&
+        JSON.stringify(switcher.labels) ===
+          JSON.stringify(["Home", "Define", "Plan", "Act", "Review"]) &&
+        switcher.active === "Home",
+      `role ${switcher?.role}, options ${JSON.stringify(switcher?.labels)}, active ${JSON.stringify(switcher?.active)}`,
+    );
+    check(
+      "the wing switcher sits above the wing's rows",
+      Boolean(wingBand && switcher && expanded.firstLink) &&
+        wingBand.box.top >= (expanded.header?.box.bottom ?? 0) &&
+        switcher.box.top >= wingBand.box.top &&
+        switcher.box.bottom <= wingBand.box.bottom &&
+        wingBand.box.bottom <= expanded.firstLink.top + 1,
+      `band ${JSON.stringify(wingBand)}, control ${JSON.stringify(switcher?.box)}, first row ${JSON.stringify(expanded.firstLink)}`,
+    );
+    check(
+      "the rail's band shares the top bar's row",
+      Boolean(wingBand && expanded.topBar) &&
+        wingBand.box.top === expanded.topBar.box.top &&
+        wingBand.box.bottom === expanded.topBar.box.bottom,
+      `rail band ${JSON.stringify(wingBand)} vs top bar ${JSON.stringify(expanded.topBar?.box)}`,
+    );
+    check(
+      "the sidebar band paints no line of its own",
+      wingBand?.borderBottomWidth === "0px" &&
+        parseFloat(expanded.topBar?.borderBottomWidth ?? "0") > 0,
+      `rail band border ${wingBand?.borderBottomWidth}, top bar border ${expanded.topBar?.borderBottomWidth}`,
+    );
+
     // 3 — paint order: the rail's topband, not the titlebar, owns the corner.
     check(
       "rail paints over the titlebar",
@@ -727,10 +834,11 @@ async function main() {
       `chip top ${expanded.vault?.box.top}px, height ${expanded.vault?.box.height}px vs strip ${titlebarHeight}px`,
     );
     check(
-      "the chip still goes home and stays clickable",
-      (expanded.vault?.href ?? "").endsWith("/home") &&
+      "the chip opens the vault switcher and stays clickable",
+      expanded.vault?.tag === "button" &&
+        expanded.vault?.haspopup === "dialog" &&
         expanded.vault?.appRegion === "no-drag",
-      `href ${expanded.vault?.href}, app-region ${expanded.vault?.appRegion}`,
+      `tag ${expanded.vault?.tag}, popup ${expanded.vault?.haspopup}, app-region ${expanded.vault?.appRegion}`,
     );
     check(
       "no toggle doubles up while the rail is open",
@@ -827,7 +935,7 @@ async function main() {
       expanded.main?.top === titlebarHeight + frame,
       `sheet top ${expanded.main?.top}px (want ${titlebarHeight + frame}px)`,
     );
-    // One rounded corner: the leading top, next to the wing selector's first tab,
+    // One rounded corner: the leading top, next to the sidebar's wing switcher,
     // where the mat is on both sides of the corner. The other three stay square —
     // a radius there would notch the rail's seam or the window's own edge.
     check(
@@ -862,10 +970,10 @@ async function main() {
       expanded.sheet?.box.top === titlebarHeight + frame,
       `sheet top at y=${expanded.sheet?.box.top}px, strip ends at ${titlebarHeight}px, pane gap ${frame}px`,
     );
-    // The line the strip reads as its own is the top bar's, under the wing and
-    // domain selectors — not a frame on the sheet's top edge.
+    // The line the strip reads as its own is the top bar's, under the domain lens, and
+    // not a frame on the sheet's top edge.
     check(
-      "the line under the wing and domain selectors is the top bar's own",
+      "the line under the domain lens is the top bar's own",
       parseFloat(expanded.topBar?.borderBottomWidth ?? "0") > 0 &&
         parseFloat(expanded.topBar?.borderBottomWidth ?? "0") <= 1 &&
         expanded.topBar?.background === expanded.mainBackground,
@@ -942,16 +1050,22 @@ async function main() {
       `scrollTop ${expanded.rail?.scrollTop}, content ${expanded.rail?.scrollHeight}px in ${expanded.rail?.clientHeight}px`,
     );
 
-    // Each of the band's two selectors is one control with no frame of its own.
-    // The frame is what the pair doubled: `.ui-segmented`'s hairline lands a pixel
-    // outside the active tab's own, so the wing switcher and the domain lens sat
-    // as two concentric outlines on the same row. Dropping the outer one must not
-    // cost the control its shape — the fill is what sets it off the band, and the
-    // active tab keeps the line that makes it the current one.
+    // The sheet's band carries one control now — the domain lens — with no frame
+    // of its own, centred in the pane. The frame only doubled the pair's outlines
+    // when the wing switcher shared the row; dropping it must not cost the
+    // control its shape — the fill sets it off the band, and the active tab keeps
+    // the line that makes it the current one.
     const selectors = expanded.topBarSelectors ?? [];
     check(
-      "the band's two selectors wear no frame of their own",
-      selectors.length === 2 &&
+      "the sheet's band carries the domain lens alone",
+      selectors.length === 1 &&
+        selectors[0].selector === ".domain-switcher__tabs" &&
+        expanded.bandControlCount === 1,
+      `selectors ${JSON.stringify(selectors.map((entry) => entry.selector))}, controls ${expanded.bandControlCount}`,
+    );
+    check(
+      "the domain lens wears no frame of its own",
+      selectors.length === 1 &&
         selectors.every(
           (entry) =>
             entry.borderTopWidth === "0px" &&
@@ -962,8 +1076,8 @@ async function main() {
       `borders ${JSON.stringify(selectors.map((entry) => [entry.selector, entry.borderTopWidth, entry.borderRightWidth, entry.borderBottomWidth, entry.borderLeftWidth]))}`,
     );
     check(
-      "each selector still reads as a control without it",
-      selectors.length === 2 &&
+      "the domain lens still reads as a control without it",
+      selectors.length === 1 &&
         selectors.every(
           (entry) =>
             entry.optionCount > 0 &&
@@ -971,6 +1085,15 @@ async function main() {
             entry.activeBorderWidth !== "0px",
         ),
       `fills ${JSON.stringify(selectors.map((entry) => [entry.selector, entry.background, entry.optionCount, entry.activeBorderWidth]))}`,
+    );
+    check(
+      "the domain lens is centred in the sheet",
+      Boolean(expanded.domainLens && expanded.topBar) &&
+        Math.abs(
+          (expanded.domainLens.box.left + expanded.domainLens.box.right) / 2 -
+            (expanded.topBar.box.left + expanded.topBar.box.right) / 2,
+        ) <= 1,
+      `lens centre ${((expanded.domainLens?.box.left ?? 0) + (expanded.domainLens?.box.right ?? 0)) / 2} vs band centre ${((expanded.topBar?.box.left ?? 0) + (expanded.topBar?.box.right ?? 0)) / 2}`,
     );
 
     const expandedShot = await win.webContents.capturePage();
@@ -1013,6 +1136,46 @@ async function main() {
     });
     const bandFile = path.join(artifactsDir, "shell-sidebar-band.png");
     fs.writeFileSync(bandFile, bandShot.toPNG());
+
+    // 5b — the switcher is live where it now sits: Define moves the rail to the
+    // Define pages, and Home brings them back. Both are read off the rail itself,
+    // so a switcher that renders but does not navigate fails here.
+    at("wing switcher: Define");
+    const clickedDefine = await clickWing("Define");
+    check(
+      "rail wing switcher clicked (Define)",
+      clickedDefine,
+      "no Define tab in the rail switcher",
+    );
+    const defined = await settled(320);
+    check(
+      "the rail switcher moves to the Define wing",
+      defined.wingSwitcher?.active === "Define" &&
+        JSON.stringify(defined.wingRows?.map((row) => row.label)) ===
+          JSON.stringify(["Dream", "Vision", "Ideal State", "Images"]),
+      `active ${JSON.stringify(defined.wingSwitcher?.active)}, rows ${JSON.stringify(defined.wingRows?.map((row) => row.label))}`,
+    );
+    at("wing switcher: Home");
+    const clickedHome = await clickWing("Home");
+    check(
+      "rail wing switcher clicked (Home)",
+      clickedHome,
+      "no Home tab in the rail switcher",
+    );
+    const homeAgain = await settled(320);
+    check(
+      "the rail switcher comes back to the Home wing",
+      homeAgain.wingSwitcher?.active === "Home" &&
+        JSON.stringify(homeAgain.wingRows?.map((row) => row.label)) ===
+          JSON.stringify([
+            "Dashboard",
+            "Data",
+            "Pages",
+            "Documents",
+            "Personnel",
+          ]),
+      `active ${JSON.stringify(homeAgain.wingSwitcher?.active)}, rows ${JSON.stringify(homeAgain.wingRows?.map((row) => row.label))}`,
+    );
 
     // 6 — the toggle collapses: rail gone, column given back, way back in place.
     const clickedCollapse = await clickToggle(".nav-rail .nav-toggle");
@@ -1377,6 +1540,10 @@ async function main() {
       expanded,
       collapsed,
       restored,
+      // The rail switcher's own trip: the Define sample and the Home sample it
+      // came back to. The tests read the rail rows off these, so the claim that
+      // the control navigates is made on the shipping switcher.
+      wingSwitch: { defined, home: homeAgain },
       day,
       ladder: { night, day: dawn, skins },
       scroll: {
