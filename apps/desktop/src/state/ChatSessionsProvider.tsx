@@ -394,8 +394,9 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    * A plain click is navigation, the way a link is: the chat takes over the tab
    * the operator is looking at, and a chat that already has a tab is simply
    * activated. A second tab exists only when it was asked for — a middle click,
-   * the row's "Open in new tab", or a run nobody opened — which is the whole
-   * difference between "look at this chat" and "keep this chat".
+   * the row's "Open in new tab", the New chat slot, or a run nobody opened —
+   * which is the whole difference between "look at this chat" and "keep this
+   * chat".
    */
   const openChat = useCallback(
     async (id: string) => {
@@ -592,14 +593,22 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     [setReceiptFor],
   );
 
+  /**
+   * The "New chat" slot: a blank conversation, always in a tab of its own.
+   *
+   * Asking for a new chat is the gesture that keeps the one in front — a fresh
+   * conversation is a second thing to work in, not a replacement for the thread
+   * on screen. So this takes the same path as a middle click, `openChatInNewTab`,
+   * and not the navigating `openChat` a plain row click uses. A blank chat that
+   * already exists still wins: it is a "New chat" row with an empty transcript
+   * and no preview, and the slot lands on the tab it already has rather than
+   * minting a second empty chat beside it.
+   */
   const newChat = useCallback(async (): Promise<string | null> => {
-    // A chat that was created and never written in is already a "New chat" row:
-    // an empty transcript, no preview. Clicking the slot again navigates to it
-    // rather than minting a second empty chat.
     const listed = await loadSessions();
     const blank = listed?.find((s) => !s.preview?.trim());
     if (blank) {
-      await openChat(blank.id);
+      await openChatInNewTab(blank.id);
       return blank.id;
     }
 
@@ -609,9 +618,9 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       return null;
     }
     setSessions((prev) => [created.value, ...prev.filter((s) => s.id !== created.value.id)]);
-    await openChat(created.value.id);
+    await openChatInNewTab(created.value.id);
     return created.value.id;
-  }, [loadSessions, openChat]);
+  }, [loadSessions, openChatInNewTab]);
 
   const setAutomationContext = useCallback((id: string, context: string) => {
     if (context.trim()) automationContexts.current.set(id, context);

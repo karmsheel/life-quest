@@ -9301,12 +9301,19 @@ button.chat-panel__activity-line:hover {
   overflow-y: hidden;
 }
 
+/*
+ * One tab is one share of the strip, never a share of its own label: a basis of
+ * zero and `flex-grow: 1` make every tab the same width — capped at the same
+ * `max-width` — so a long title cannot hold a wider tab than a short one, and
+ * narrowing the dock shrinks them all by the same amount. The label truncates;
+ * the tab does not.
+ */
 .chat-panel__tab {
   display: flex;
   align-items: center;
   min-width: 0;
   max-width: 11rem;
-  flex: 0 1 auto;
+  flex: 1 1 0;
   border-radius: 0.4rem;
 }
 
@@ -9323,6 +9330,9 @@ button.chat-panel__activity-line:hover {
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
+  /* The label's half of the tab fills the tab; the close control stays pinned
+     to the trailing edge however wide the strip makes the tab. */
+  flex: 1 1 auto;
   padding: 0.3rem 0.15rem 0.3rem 0.45rem;
   border: 0;
   background: none;
