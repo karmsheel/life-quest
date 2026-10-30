@@ -16,8 +16,7 @@ site_description: The operator's guide to the LifeQuest studio, its vault, and t
 site_url: https://karmsheel.github.io/life-quest/
 repo_url: https://github.com/karmsheel/life-quest
 repo_name: karmsheel/life-quest
-edit_uri: edit/master/docs/wiki/
-copyright: LifeQuest 0.2.0 — local-first life management
+copyright: LifeQuest — local-first life management
 
 docs_dir: .docs-build
 site_dir: site
