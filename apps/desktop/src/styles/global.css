@@ -4963,6 +4963,47 @@ a.home-mini-list__link:hover {
   color: var(--amber);
 }
 
+/* —— Decisions page ——
+   The same list shape as Developer, because it is the same kind of page: two
+   switches, each one row, the copy on the left and the switch pinned to the
+   row's trailing edge. A plain `SettingsRow` in a card stacks its control under
+   the copy; that reads as a paragraph with a switch dropped in it, and the eye
+   has no column to scan for the state. The hairline between rows keeps them
+   from running together. */
+.settings-decisions {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-decisions > .settings-card__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+}
+
+.settings-decisions > .settings-card__row + .settings-card__row {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* The copy keeps its own measure rather than running under the switch. */
+.settings-decisions .settings-card__copy {
+  max-width: 38rem;
+}
+
+.settings-decisions .settings-card__desc {
+  max-width: none;
+  line-height: 1.5;
+}
+
+.settings-decisions .settings-card__control {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 0.08rem;
+}
+
 .settings-appearance__skin-hint {
   margin: 0 0 0.5rem;
   font-size: 0.6875rem;
