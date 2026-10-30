@@ -80,8 +80,8 @@ function writePinnedOrder(ids: string[]): void {
  * reachable once the operator had already opened the dock. Here it is part of
  * the one wide sidebar: one click loads a chat into the dock (opening it first
  * if it was collapsed). A plain click is navigation and takes over the tab on
- * screen; a middle click, or the row's "Open in new tab", is the only gesture
- * that adds a tab.
+ * screen; a middle click, the row's "Open in new tab", or the New chat button
+ * below is what adds a tab.
  *
  * Pinning follows the desktop reference client rather than two labelled
  * sections: there is no "Pinned"/"Recent" eyebrow, the pinned chats simply form

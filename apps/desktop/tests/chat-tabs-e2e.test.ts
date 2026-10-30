@@ -73,6 +73,7 @@ type Tab = {
   live: boolean;
   approval: boolean;
   close: string | null;
+  box: Box | null;
 };
 
 type State = {
@@ -80,6 +81,13 @@ type State = {
   rows: Row[];
   tabs: Tab[];
   tabCount: number;
+  chatDivider: {
+    label: string | null;
+    now: number;
+    min: number;
+    max: number;
+    box: Box | null;
+  } | null;
   heading: string;
   list: boolean;
   thread: boolean;
@@ -222,6 +230,11 @@ describe("chat dock tabs and sidebar chats", () => {
       unarchived,
       viewMenuShown,
       archivedHidden,
+      newChatTab,
+      newChatKept,
+      newChatActive,
+      equalTabs,
+      narrowTabs,
     } = report.states;
 
     // The sidebar is one flat list of the profile's chats, pinned first; the
@@ -787,6 +800,133 @@ describe("chat dock tabs and sidebar chats", () => {
       ),
       true,
       "hiding the archived view dropped the restored chat",
+    );
+
+    // The dock's New chat keeps the chat in front: the blank conversation opens
+    // as a second tab instead of replacing the open one. The old behaviour is
+    // one tab with the chat that was in front gone, so both tabs are named and
+    // each one's thread is visited: a tab that is merely listed is not proof the
+    // chat is still open.
+    assert.equal(
+      newChatTab.tabCount,
+      2,
+      `New chat drew ${newChatTab.tabCount} tab(s) instead of a second tab beside the open chat`,
+    );
+    assert.deepEqual(
+      newChatTab.tabs.map((tab) => tab.label),
+      ["Bravo budget", "New chat"],
+      "New chat did not open the blank chat as its own tab",
+    );
+    assert.equal(
+      newChatTab.tabs[1]?.active,
+      true,
+      "the new chat's tab is not the one in front",
+    );
+    assert.equal(
+      newChatTab.heading,
+      "New chat",
+      `the dock did not land on the new chat ("${newChatTab.heading}")`,
+    );
+    assert.equal(
+      newChatTab.tabs.some((tab) => tab.label === "Bravo budget"),
+      true,
+      "New chat made the chat that was in front lose its tab",
+    );
+    assert.equal(
+      newChatTab.rows.some((row) => row.label === "New chat"),
+      true,
+      "the new blank chat never joined the sidebar list",
+    );
+    assert.equal(
+      newChatKept.heading,
+      "Bravo budget",
+      `the previous chat's tab did not bring its thread back ("${newChatKept.heading}")`,
+    );
+    assert.equal(newChatKept.tabCount, 2, "revisiting the previous chat dropped a tab");
+    assert.equal(
+      newChatKept.tabs.some((tab) => tab.label === "New chat"),
+      true,
+      "the new chat's tab went away when the previous chat was revisited",
+    );
+    assert.equal(
+      newChatActive.heading,
+      "New chat",
+      `the new chat's tab did not bring its thread back ("${newChatActive.heading}")`,
+    );
+    assert.equal(
+      newChatActive.tabs.find((tab) => tab.label === "New chat")?.active,
+      true,
+      "the new chat is not the active tab after clicking it",
+    );
+
+    // Equal tabs: at the default dock width every tab is one share of the strip,
+    // whatever the length of its label; at the dock's floor they have all
+    // shrunk together and are still equal to each other. A content-sized strip
+    // fails the first spread, and a strip that does not shrink fails the
+    // narrower-per-tab comparison.
+    assert.equal(
+      equalTabs.tabCount,
+      3,
+      `the third chat did not open a tab: ${JSON.stringify(equalTabs.tabs.map((tab) => tab.label))}`,
+    );
+    const equalLabels = equalTabs.tabs.map((tab) => tab.label);
+    assert.deepEqual(
+      equalLabels,
+      ["Bravo budget", "New chat", "Delta automation"],
+      "the three open chats are not the three tabs",
+    );
+    assert.ok(
+      new Set(equalLabels.map((label) => label.length)).size > 1,
+      "every tab label is the same length, so a content-sized strip would not show",
+    );
+    const spread = (widths: number[]) => Math.max(...widths) - Math.min(...widths);
+    const equalWidths = equalTabs.tabs.map((tab) => tab.box?.width ?? Number.NaN);
+    assert.equal(equalWidths.length, 3, "not every tab was measured");
+    assert.ok(
+      equalWidths.every((width) => Number.isFinite(width)),
+      "a tab has no box to measure",
+    );
+    assert.ok(
+      spread(equalWidths) <= 1,
+      `tabs are content-sized, not equal shares of the strip: ${JSON.stringify(equalWidths)}`,
+    );
+
+    assert.notEqual(narrowTabs.chatDivider, null, "the dock has no resize handle");
+    assert.equal(
+      narrowTabs.chatDivider?.now,
+      narrowTabs.chatDivider?.min,
+      `the dock never reached its floor (${narrowTabs.chatDivider?.now}px, floor ${narrowTabs.chatDivider?.min}px), so the narrow-strip claim is untested`,
+    );
+    assert.ok(
+      (narrowTabs.chatDivider?.now ?? Number.POSITIVE_INFINITY) <
+        (equalTabs.chatDivider?.now ?? Number.NEGATIVE_INFINITY),
+      `the divider did not move between the two samples (${equalTabs.chatDivider?.now}px → ${narrowTabs.chatDivider?.now}px)`,
+    );
+    assert.ok(
+      (narrowTabs.panel?.width ?? Number.POSITIVE_INFINITY) <
+        (equalTabs.panel?.width ?? Number.NEGATIVE_INFINITY),
+      `the dock did not get narrower (${equalTabs.panel?.width}px → ${narrowTabs.panel?.width}px)`,
+    );
+    const narrowWidths = narrowTabs.tabs.map((tab) => tab.box?.width ?? Number.NaN);
+    assert.equal(narrowTabs.tabCount, 3, "the strip lost a tab while the dock narrowed");
+    assert.deepEqual(
+      narrowTabs.tabs.map((tab) => tab.label),
+      equalLabels,
+      "the strip's chats changed while the dock narrowed",
+    );
+    assert.ok(
+      narrowWidths.every((width) => Number.isFinite(width)),
+      "a tab has no box at the dock's floor",
+    );
+    assert.ok(
+      spread(narrowWidths) <= 1,
+      `the tabs are not equal at the dock's floor: ${JSON.stringify(narrowWidths)}`,
+    );
+    assert.ok(
+      narrowWidths.every(
+        (width, index) => width < (equalWidths[index] ?? Number.NEGATIVE_INFINITY),
+      ),
+      `the tabs did not shrink with the dock: ${JSON.stringify(equalWidths)} → ${JSON.stringify(narrowWidths)}`,
     );
 
     for (const file of report.screenshots) {

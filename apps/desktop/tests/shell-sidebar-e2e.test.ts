@@ -694,7 +694,7 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.deepEqual(
       wingSwitch.defined.wingRows.map((row) => row.label),
-      ["Dream", "Vision", "Ideal State"],
+      ["Dream", "Vision", "Ideal State", "Images"],
       "the Define wing's rows did not replace the Home wing's under the switcher",
     );
     assert.equal(
