@@ -671,7 +671,19 @@ function pageContextLine(page: PageContextInput): string {
   return [where, ...quoted].join("\n");
 }
 
-export function buildInstructions(input: CompanionInstructionsInput): string {
+export function buildInstructions(
+  input: CompanionInstructionsInput,
+  /**
+   * How this companion reaches the vault's tools.
+   *
+   * "hermes" is the external MCP client, and its paragraph warns the agent not
+   * to re-pair itself through the doors. "pi" is the built-in companion, whose
+   * tools are registered in-process through the same door, so there is no
+   * server name to pass and nothing to curl. Everything else in this prompt is
+   * shared, because every rule in it is about the vault, not the transport.
+   */
+  transport: "hermes" | "pi" = "hermes",
+): string {
   const domain =
     input.domainName || input.domainSlug
       ? `${input.domainName ?? "unnamed"}${input.domainSlug ? ` (${input.domainSlug})` : ""}`
@@ -741,14 +753,26 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
   const pageContext = input.pageContext
     ? pageContextLine(input.pageContext)
     : "";
+  // The one part of this prompt that depends on how the companion is wired.
+  // Absent from the shared block so a second harness cannot drift from the
+  // governance rules by copying them.
+  const toolTransport =
+    transport === "pi"
+      ? [
+          "LifeQuest's tools are already yours: their names are the tool names in this session, so use them directly for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
+          "You are the app's own companion, acting as the operator, with full access to this vault. There is no server name, credential, handshake, or invite code in this path, and you must never try to reach the MCP door yourself. If a LifeQuest tool is missing from your tool list, say exactly that and stop rather than routing around it.",
+        ]
+      : [
+          "LifeQuest MCP server name is lifequest. Use it for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
+          "You are the app's own companion: pre-paired, acting as the operator, with full access to this vault. You never need a credential, a handshake, or an invite code. Do not curl 127.0.0.1:8643 or :8646, do not read a bearer out of config.yaml or out of `hermes mcp list` (both mask it), and never introduce yourself as a connected agent — Personnel's pairing controls and grants exist for OTHER agents. If a LifeQuest tool is missing from your tool list, say exactly that and stop rather than routing around it: pairing yourself as a stranger files a Decision the operator has to clean up, and an approved stranger's every call answers NO_GRANT.",
+        ];
   const base = [
     "You are chatting inside the LifeQuest app.",
     `Active domain: ${domain}`,
     `About me: ${about}`,
     `Agent lock: ${input.locked}`,
     `Vault: ${input.vaultOpen ? "open" : "closed"}`,
-    "LifeQuest MCP server name is lifequest. Use it for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
-    "You are the app's own companion: pre-paired, acting as the operator, with full access to this vault. You never need a credential, a handshake, or an invite code. Do not curl 127.0.0.1:8643 or :8646, do not read a bearer out of config.yaml or out of `hermes mcp list` (both mask it), and never introduce yourself as a connected agent — Personnel's pairing controls and grants exist for OTHER agents. If a LifeQuest tool is missing from your tool list, say exactly that and stop rather than routing around it: pairing yourself as a stranger files a Decision the operator has to clean up, and an approved stranger's every call answers NO_GRANT.",
+    ...toolTransport,
     "Money the operator states must be logged with capture_transaction (or undo_capture / correct_capture in that thread). Do not claim a row was posted unless the tool result says posted: true. If the tool returns ask, ask that and do not invent an account.",
     "Three operator surfaces are read directly, never guessed at: list_projects / get_project for the operator's projects — a project is not a document, so get_document on a project id refuses and names the right tool, and create_project / update_project (addUpdate logs progress) / close_project file a Decision instead of writing; the Life-Chain through list_signals / get_signal, which is also how you check a capture is not already there, and create_signal, which applies at once and is logged under your name; and list_pages / get_page for a domain's pages, which are read-only apart from apply_script_block.",
     receiptLine,

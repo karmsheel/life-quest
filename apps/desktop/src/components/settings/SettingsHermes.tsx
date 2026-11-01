@@ -3,6 +3,8 @@ import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CompanionProfilePicker } from "@/components/hermes/CompanionProfilePicker";
 import { SettingsFact } from "@/components/ui/SettingsFact";
+import { HarnessPicker } from "@/components/hermes/HarnessPicker";
+import { PiEndpointForm } from "@/components/settings/PiEndpointForm";
 import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
 import { Toggle } from "@/components/ui/Toggle";
@@ -13,9 +15,9 @@ import type { CompanionStatus, McpDoors } from "@/vite-env";
 
 function statusSummary(status: CompanionStatus | null, ensuring: boolean): string {
   if (ensuring || !status) return "Connecting…";
-  if (status.kind === "ready") {
-    const how = status.startedByLifeQuest ? "started by LifeQuest" : "attached";
-    return `Ready · ${status.baseUrl} · ${how}`;
+  if (status.kind === "ready") return status.detail;
+  if (status.kind === "needs_setup") {
+    return status.message ?? "The built-in companion needs an endpoint and a model.";
   }
   if (status.kind === "needs_install") return "Hermes CLI not found on PATH.";
   if (status.kind === "profile_error") return status.message;
@@ -40,7 +42,7 @@ const NO_VAULT: McpDoors = {
 
 export function SettingsHermes() {
   const { snapshot } = useVault();
-  const { status, ensuring, retry, profile } = useCompanion();
+  const { status, ensuring, retry, profile, harness } = useCompanion();
   const [doors, setDoors] = useState<McpDoors>(NO_VAULT);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -182,14 +184,13 @@ export function SettingsHermes() {
           </p>
         ) : null}
 
-        {ready ? (
+        {ready && harness !== "pi" ? (
           <div className="settings-facts" data-testid="hermes-facts">
-            <SettingsFact label="CLI" value={ready.cliPath} />
-            <SettingsFact label="Profile" value={ready.profilePath} />
-            <SettingsFact label="API" value={ready.baseUrl} />
+            <SettingsFact label="CLI" value={ready.cliPath ?? ""} />
+            <SettingsFact label="Profile" value={ready.profilePath ?? ""} />
+            <SettingsFact label="API" value={ready.baseUrl ?? ""} />
           </div>
         ) : null}
-
         <div className="settings-hermes__actions">
           <Button
             type="button"
@@ -200,16 +201,34 @@ export function SettingsHermes() {
           >
             {ensuring ? "Checking…" : "Recheck"}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!ready}
-            onClick={() => void api().companionOpenProfileFolder()}
-          >
-            Open profile folder
-          </Button>
+          {harness === "pi" ? null : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!ready}
+              onClick={() => void api().companionOpenProfileFolder()}
+            >
+              Open profile folder
+            </Button>
+          )}
         </div>
       </section>
+
+      <section className="settings-hermes__block" data-testid="companion-harness">
+        <h3 className="settings-hermes__heading">Companion</h3>
+        <p className="settings-hermes__lead">
+          Which companion answers in the chat bar. A chat belongs to the
+          companion that made it, so switching changes the chats you see.
+        </p>
+        <HarnessPicker />
+      </section>
+
+      {harness === "pi" ? (
+        <section className="settings-hermes__block" data-testid="pi-endpoint">
+          <h3 className="settings-hermes__heading">Built-in endpoint</h3>
+          <PiEndpointForm disabled={ensuring} />
+        </section>
+      ) : null}
 
       {/*
         The same picker the setup screen offers, so switching the companion's
@@ -217,10 +236,12 @@ export function SettingsHermes() {
         profile, the active one marked, and the app's own `lifequest` on
         offer. Choosing one re-runs the ensure against it.
       */}
-      <section className="settings-hermes__block" data-testid="hermes-profile">
-        <h3 className="settings-hermes__heading">Companion profile</h3>
-        <CompanionProfilePicker />
-      </section>
+      {harness === "pi" ? null : (
+        <section className="settings-hermes__block" data-testid="hermes-profile">
+          <h3 className="settings-hermes__heading">Companion profile</h3>
+          <CompanionProfilePicker />
+        </section>
+      )}
 
       <section className="settings-hermes__block" data-testid="hermes-behaviour">
         <h3 className="settings-hermes__heading">Chat behaviour</h3>

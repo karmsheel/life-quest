@@ -12,6 +12,12 @@ import {
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// Chromium 140 (Electron 38) allocates renderer shared memory in /dev/shm.
+// On a locked-down host — a container, or this project's headless bench — that
+// directory is not writable and the renderer dies before the first window with
+// a bare "fork failed". /tmp always works, and this app's pages are small
+// enough that the cost is irrelevant. A no-op on Windows, which has no /dev/shm.
+app.commandLine.appendSwitch("disable-dev-shm-usage");
 import { stopMcp, setMcpPorts } from "./mcp-server.js";
 import {
   channelMayChangeData,
@@ -19,6 +25,8 @@ import {
   onDataChanged,
 } from "./data-revision.js";
 import * as companion from "./companion.js";
+import * as harness from "./harness/facade.js";
+import { readPiSettings, writePiSettings, writePiKey, hasPiKey, piKeyIsPersisted } from "./harness/pi-settings.js";
 import { getFileUnsolicited, setFileUnsolicited } from "./companion-filing.js";
 import type {
   CompanionInstructionsInput,
@@ -579,7 +587,7 @@ function startDataChangeBroadcast(): void {
  * window opened later reads `companion:status` for itself on mount.
  */
 function startCompanionStatusBroadcast(): void {
-  companion.onCompanionStatusChanged((status) => {
+  harness.onHarnessStatusChanged((status) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send("companion:statusChanged", status);
     }
@@ -925,8 +933,49 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     vault.connectedAgentsDropInvite(typeof id === "string" ? id : ""),
   );
 
-  ipcMain.handle("companion:ensure", () => companion.companionEnsure());
-  ipcMain.handle("companion:status", () => companion.companionStatus());
+  ipcMain.handle("companion:ensure", () => harness.harnessEnsure());
+  ipcMain.handle("companion:status", () => harness.harnessStatus());
+  // Which companion the studio talks to. Two, not a plugin system: the picker
+  // is a choice between the built-in companion and the external sidekick.
+  ipcMain.handle("companion:harnesses", () => harness.harnessSummaries());
+  ipcMain.handle("companion:useHarness", (_e, id: string) =>
+    harness.useHarness(id === "hermes" ? "hermes" : "pi"),
+  );
+  // The built-in companion's endpoint. The key is write-only: it goes to OS
+  // secure storage and never travels back to the renderer.
+  ipcMain.handle("companion:piSettings", async () => {
+    const settings = await readPiSettings();
+    return {
+      ...settings,
+      hasKey: await hasPiKey(),
+      keyPersisted: piKeyIsPersisted(),
+    };
+  });
+  ipcMain.handle(
+    "companion:piSettingsSave",
+    async (
+      _e,
+      input: {
+        baseUrl?: string;
+        model?: string;
+        providerName?: string;
+        apiKey?: string | null;
+      },
+    ) => {
+      const currentSettings = await readPiSettings();
+      await writePiSettings({
+        baseUrl:
+          typeof input?.baseUrl === "string" ? input.baseUrl : currentSettings.baseUrl,
+        model: typeof input?.model === "string" ? input.model : currentSettings.model,
+        providerName:
+          typeof input?.providerName === "string"
+            ? input.providerName
+            : currentSettings.providerName,
+      });
+      if (typeof input?.apiKey === "string") await writePiKey(input.apiKey);
+      return harness.harnessEnsure();
+    },
+  );
   // The profile picker: every installed Hermes profile, and the switch that
   // moves the companion onto one (or creates the app's own `lifequest`).
   ipcMain.handle("companion:profilesList", () => companion.companionProfilesList());
@@ -934,15 +983,15 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     companion.companionUseProfile(typeof name === "string" ? name : ""),
   );
   ipcMain.handle("companion:sessionsList", (_e, options?: { includeArchived?: boolean }) =>
-    companion.companionSessionsList({
+    harness.harnessSessionsList({
       includeArchived: options?.includeArchived === true,
     }),
   );
   ipcMain.handle("companion:sessionCreate", (_e, title: string) =>
-    companion.companionSessionCreate(typeof title === "string" ? title : ""),
+    harness.harnessSessionCreate(typeof title === "string" ? title : ""),
   );
   ipcMain.handle("companion:sessionMessages", (_e, id: string) =>
-    companion.companionSessionMessages(id),
+    harness.harnessSessionMessages(id),
   );
   ipcMain.handle(
     "companion:sessionPatch",
@@ -951,19 +1000,21 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
       id: string,
       patch: { title?: string; pinned?: boolean; archived?: boolean; revision?: number | null },
     ) =>
-      companion.companionSessionPatch(
+      harness.harnessSessionPatch(
         typeof id === "string" ? id : "",
         patch && typeof patch === "object" ? patch : {},
       ),
   );
-  ipcMain.handle("companion:sessionDelete", (_e, id: string, options?: { revision?: number | null }) =>
-    companion.companionSessionDelete(
-      typeof id === "string" ? id : "",
-      options && typeof options === "object" ? options : {},
-    ),
+  ipcMain.handle(
+    "companion:sessionDelete",
+    (_e, id: string, options?: { revision?: number | null }) =>
+      harness.harnessSessionDelete(
+        typeof id === "string" ? id : "",
+        options && typeof options === "object" ? options : {},
+      ),
   );
   ipcMain.handle("companion:modelOptions", () =>
-    companion.companionModelOptions(),
+    harness.harnessModelOptions(),
   );
   ipcMain.handle(
     "companion:chatStream",
@@ -1003,10 +1054,10 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle(
     "companion:approval",
     (_e, payload: { runId: string; requestId: string; allow: boolean }) =>
-      companion.companionApproval(payload.runId, payload.requestId, payload.allow),
+      harness.harnessApproval(payload.runId, payload.requestId, payload.allow),
   );
   ipcMain.handle("companion:runStop", (_e, runId: string) =>
-    companion.companionRunStop(runId),
+    harness.harnessRunStop(runId),
   );
   ipcMain.handle("companion:openProfileFolder", () =>
     companion.companionOpenProfileFolder(),
@@ -1394,7 +1445,10 @@ export async function bootForE2e(): Promise<BrowserWindow> {
     registerIpcHandlers();
   }
   if (windowReady) return windowReady;
-  windowReady = createWindow();
+  windowReady = (async () => {
+    await harness.loadHarnessSelection();
+    return createWindow();
+  })();
   return windowReady;
 }
 
@@ -1607,7 +1661,13 @@ app.whenReady().then(() => {
   // Published before it is awaited, so a rig that calls `bootForE2e` while the
   // product's own boot is still loading joins that window instead of opening a
   // second one.
-  windowReady = createWindow();
+  // The choice has to be hydrated before the first window asks for a status:
+  // the renderer calls companion:ensure on mount, and a lazy probe there would
+  // race the answer.
+  windowReady = (async () => {
+    await harness.loadHarnessSelection();
+    return createWindow();
+  })();
   void windowReady;
   // The rate is read on a clock, not on a draw, so it is armed once here rather
   // than wherever a card happens to be rendered.
@@ -1625,8 +1685,8 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", (event) => {
   event.preventDefault();
-  void companion
-    .companionShutdown()
+  void harness
+    .shutdownHarnesses()
     .finally(() => stopMcp())
     .finally(() => app.exit(0));
 });

@@ -613,8 +613,8 @@ async function main() {
       JSON.stringify({ heading: landing.heading, tabs: landing.tabs }),
     );
     check(
-      "the dock header carries Archive while the active chat is unpinned",
-      landing.header?.actions.includes("Archive chat") === true,
+      "the dock header carries no chat controls",
+      JSON.stringify(landing.header?.actions ?? []) === "[]",
       JSON.stringify(landing.header),
     );
     check(
@@ -638,9 +638,8 @@ async function main() {
       JSON.stringify({ heading: activePinned.heading, tabs: activePinned.tabs }),
     );
     check(
-      "the dock header hides Archive while the active chat is pinned",
-      activePinned.header?.actions.includes("Archive chat") === false &&
-        activePinned.header?.actions.includes("Unpin chat") === true,
+      "the dock header still carries no chat controls while a pinned chat is active",
+      JSON.stringify(activePinned.header?.actions ?? []) === "[]",
       JSON.stringify(activePinned.header),
     );
     await shot("active-pinned");
@@ -756,8 +755,8 @@ async function main() {
       JSON.stringify(unpinnedTab.tabs),
     );
     check(
-      "the dock header shows Archive again once the active chat is unpinned",
-      unpinnedTab.header?.actions.includes("Archive chat") === true,
+      "the dock header carries no chat controls once the chat is unpinned",
+      JSON.stringify(unpinnedTab.header?.actions ?? []) === "[]",
       JSON.stringify(unpinnedTab.header),
     );
     await shot("unpinned-tab");

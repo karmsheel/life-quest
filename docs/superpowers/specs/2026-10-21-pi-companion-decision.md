@@ -1,7 +1,7 @@
 # Pi as a built-in companion — Decision Memo
 
 **Date:** 2026-10-21
-**Status:** Draft — decision memo for review. No implementation follows from this document.
+**Status:** Implemented 2026-11-01 on `feat/pi-companion`. The decision and its evidence are below as written; the implementation record in §14 records what shipped and what the build taught.
 **Product:** LifeQuest — local-first life-management studio
 **Depends on:** [Local vault (Electron) design](./2026-07-19-local-vault-electron-design.md), [Hermes companion profile design](./2026-09-04-hermes-companion-profile-design.md), [MCP agent pairing design](./2026-10-03-mcp-agent-pairing-design.md), [Cold start does not wait on the companion](./2026-10-17-cold-start-does-not-wait-on-the-companion-design.md)
 **Answers:** *Should LifeQuest ship a second, selectable agent harness — an in-built Pi companion — so an operator without Hermes can run a lighter app?*
@@ -104,7 +104,7 @@ What each number means:
 - **The banner is required.** The straightforward bundle built clean and then failed at runtime with `Dynamic require of "child_process" is not supported`. Adding `import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);` as an esbuild `--banner:js` fixed it; `createAgentSession({ sessionManager: SessionManager.inMemory() })` then booted with no `pi` CLI on PATH, no `~/.pi`, and no credentials.
 - **`pi-agent-core` is the cheap route.** A realistic embedding — `Agent`, a TypeBox tool, and the `anthropic`, `openai`, and `openrouter` providers registered through `@earendil-works/pi-ai/models` + `providers/*` — is **2.5 MB** and registers all three. `pi-coding-agent` is 11 MB heavier because it drags `pi-tui` (with six native `.node` prebuilds), the TUI, `photon-node` WASM, `quickjs-wasi`, and the CLI surface.
 - **Proportion matters.** The main bundle is currently 2.3 MB (measured in the cold-start spec, `2026-10-17…md:34-35`), and the renderer is 654 kB. A `pi-agent-core` + 3-provider companion roughly doubles the main bundle. That is a real, bounded cost — not the 155 MB the install tree suggests, and not the 13.5 MB the coding agent suggests.
-- **The Node floor is a genuine gap.** Pi 1.3.0 declares `engines: node >=22.19.0`. The host the repository installs today — Electron 35.7.5, under `^35.0.0` — bundles **Node 22.16.0** (`process.versions.node`, read from the binary). Imports, `Agent` construction, `SessionManager.inMemory()`, `createModels()`, provider registration, and tool binding all worked on 22.16.0. That is an **unsupported configuration**: it works today by surface, and any 1.3.x minor is free to use a 22.19+ API. Shipping Pi means shipping a newer Electron.
+- **The Node floor was a non-issue in the end.** When this memo was written the app was on Electron 35 (Node 22.16), below Pi's declared `engines: node >=22.19.0`. By the time the feature was built, master had already moved to **Electron 44**, which bundles **Node 24.22.1** — comfortably above the floor. No browser bump was needed for Pi. (An attempt to bump to Electron 38 during the build was reverted once the base branch turned out to be newer; see §14.)
 - **No native binaries on the recommended route.** Native `.node` files exist only in `pi-tui`, which the recommended route does not use. All WASM is in the coding agent's extras. `asarUnpack` is therefore not needed for `pi-agent-core`.
 
 ### 4.1 How to reproduce
@@ -242,7 +242,7 @@ Ship D only if all five hold. Thresholds 1–4 are pass/fail facts. Threshold 5'
 | 1 | Seam merged, all existing rigs green, renderer diff empty | Otherwise "second harness" is a rewrite, not a plugin |
 | 2 | VISION amended (decision 3) | Engineering cannot overrule the written product |
 | 3 | Tool parity on the full manifest, the Decision fence, and the agent lock, proven by a rig that runs the same legs against both harnesses | Parity is the product, not a test |
-| 4 | Electron on Node ≥22.19 | 22.16 is unsupported by Pi's own `engines` |
+| 4 | Electron on Node ≥22.19 | Satisfied by master's Electron 44 (Node 24.22.1); nothing to bump |
 | 5 | Main-bundle growth inside a stated budget (measured 2.5 MB for 3 providers; expect more per provider) | Keeps "lighter" honest |
 
 **Kill it** if the model catalog cannot feed the existing composer pills (`ChatPanel.tsx:817`, `companionModelOptions` at `companion.ts:1243`), or if parity costs more than one rig-week.
@@ -314,3 +314,43 @@ Stated so a reader can tell the difference between measured and assumed:
 | Internal consistency | Decisions 2–3 (amend, then build) match section 8's order; option B is rejected in both places |
 | Scope | Documentation only; no code, tests, or locked docs touched |
 | Ambiguity | The one place the answer flips (a bundled agent vs a second harness) is named explicitly in section 2 |
+
+## 14. Implementation record (2026-11-01)
+
+What shipped on `feat/pi-companion`, and what changed the plan.
+
+### 14.1 The seam, as landed
+
+- `apps/desktop/electron/harness/` — `types.ts`, `status-bus.ts`, `agent-harness.ts`, `hermes-harness.ts`, `pi-harness.ts`, `pi-settings.ts`, `pi-sessions.ts`, `registry.ts`, `facade.ts`.
+- `companion.ts` keeps its exports and gains two fields on the ready status (`harness`, `detail`); the status listener set moved to the bus so a second harness can publish into it.
+- `main.ts` and `vault-service.ts` call the facade. The 17 `companion:*` channels are unchanged; four are added (`companion:harnesses`, `companion:useHarness`, `companion:piSettings`, `companion:piSettingsSave`).
+- The dock's list header carries the picker. Session state reset on a switch lives in `ChatSessionsProvider`, because master moved the dock's chats into that store while this branch was open.
+
+### 14.2 The built-in companion, as landed
+
+- `pi-agent-core` + `pi-ai` only. `pi-coding-agent` is not a dependency; there is no filesystem or shell tool in the process.
+- Tools come from the existing MCP door with the vault's companion token. With no vault open the agent has no tools and says so.
+- Endpoint, model and key: `%APPDATA%/LifeQuest/pi-endpoint.json` and `pi-endpoint.key` (safeStorage). Where no keyring exists the key is session-only and the form says so.
+- Transcripts: `%APPDATA%/LifeQuest/pi-sessions/<id>.json`, never the vault.
+- Model catalog: the endpoint's own `GET /models`, reduced to the composer's shape. Thinking levels read as unsupported, so the pills stay off rather than lying.
+- Default companion: the stored choice; with none, Hermes if the CLI is on `PATH` (an existing install keeps working), Pi otherwise (a fresh machine gets the built-in one). The unhydrated registry default is Hermes so direct callers that never boot main — rigs, harness pages — keep the behaviour they were written for.
+
+### 14.3 Measured
+
+| Fact | Value |
+|---|---|
+| Main bundle before / after | 2.3 MB → **4.29 MB** (+~2 MB) |
+| Electron on the base branch | 44.10.0, **Node 24.22.1** |
+| Install footprint of the two Pi packages | 155 MB unpacked (bundled, not shipped) |
+| New rig | `e2e/pi-companion.electron.mjs` + `tests/pi-companion-e2e.test.ts` |
+
+### 14.4 Corrections to this memo
+
+- The build was started against a base that already carried Electron 44 and a refactored chat store; the `ChatPanel`/`ChatSessionsProvider` split and the `includeArchived` session option are newer than this memo.
+- Electron 35 was briefly reinstated during the build on a wrong reading of the base branch. It was a downgrade, not a fix, and is not in the branch.
+
+### 14.5 Known gaps at handover
+
+- **Personnel's "Scan Hermes agents" and the Act planner** still go through `hermes-proxy.ts` and are Hermes-only. With Pi selected they fail as they always did for a missing gateway; a Pi-only mode is not honest until they are answered.
+- **Approvals** are plumbed but unused for Pi: the companion has the door's full access, so no Pi tool asks.
+- **Archived chats**: the seam accepts `includeArchived`; the Pi store ignores it (archived rows are filtered). The Hermes path honours it.

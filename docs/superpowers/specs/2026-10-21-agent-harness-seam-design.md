@@ -1,7 +1,7 @@
 # Design: the agent harness seam
 
 **Date:** 2026-10-21
-**Status:** Draft — design only. No implementation follows from this document.
+**Status:** Implemented 2026-11-01 in `feat/pi-companion` (see §8). The design below is what was built; §13 records where the landed code departs from it.
 **Product:** LifeQuest — local-first life-management studio
 **Answers:** *What is the smallest interface that lets LifeQuest host more than one companion, without the renderer learning which one it is talking to?*
 **Decision context:** [Pi as a built-in companion — Decision Memo](./2026-10-21-pi-companion-decision.md). That document decides *whether* a second harness is built. This one defines *where the boundary is* if it is.
@@ -394,3 +394,16 @@ It writes `e2e/artifacts/harness-contract-<id>.json`. `tests/harness-contract-e2
 | Verification is E2E and repeatable | §9, with an artifact path and an explicit restart rule |
 | Citations resolve | Every `file:line` re-verified against commit `833f971` at write time |
 | Ambiguity | The uncovered callers (Personnel scan, Act planner) are called out rather than assumed |
+
+## 13. As implemented
+
+Departures from the design above, and why:
+
+| Design said | Landed | Why |
+|---|---|---|
+| Session reset effect in `ChatPanel` | Reset in `ChatSessionsProvider` | Master moved the dock's chats into that store before this branch merged; the panel no longer owns them. |
+| Picker in the dock list header | Same, plus a `Companion` section in Settings | The list header is where the chats are; Settings is where an operator looks when the picker is not on screen. |
+| Move types into `harness/types.ts` | Types re-exported; `CompanionStatus` aliases to `HarnessStatus` | Zero churn in 17 channels and the panel; a rename can follow when nothing else is moving. |
+| `statusMessage` per harness | Same, plus `detail` on the ready status | The renderer formats no transport field; a built-in companion has no port to print. |
+| Unhydrated default "pi" | **"hermes"** | Direct callers that never boot main (rigs, harness pages) were written against the external companion; the boot path is what decides. |
+| `beforeToolCall` policy | Not used yet | The only tools registered are the MCP door's, so there is nothing to block that the door would not block itself. |

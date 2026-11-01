@@ -11092,3 +11092,93 @@ button.chat-panel__activity-line:hover {
 .chat-panel__tab-menu button.chat-panel__tab-menu-danger {
   color: var(--danger);
 }
+
+/* The thread header's agent corner: a hairline, then the companion picker. */
+.chat-panel__header-agent {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.chat-panel__header-divider {
+  width: 1px;
+  height: 1.15rem;
+  background: var(--border);
+  flex: 0 0 auto;
+}
+
+/* Which companion answers: a compact name + menu in the thread header. */
+.chat-panel__agent {
+  position: relative;
+}
+
+.chat-panel__agent-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  cursor: pointer;
+}
+
+.chat-panel__agent-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.chat-panel__agent-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  z-index: 30;
+  min-width: 10rem;
+  padding: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-panel__agent-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  padding: 0.35rem 0.45rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-panel__agent-item:hover,
+.chat-panel__agent-item--active {
+  background: var(--border);
+}
+
+.chat-panel__agent-item-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.chat-panel__agent-item-blurb {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.chat-panel__agent-item--active .chat-panel__agent-item-name::after {
+  content: " ·";
+  color: var(--muted);
+}

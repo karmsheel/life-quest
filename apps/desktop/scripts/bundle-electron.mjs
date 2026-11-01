@@ -45,6 +45,13 @@ await build({
   keepNames: true,
   target: "node20",
   define: LIFEQUEST_DEFINE,
+  // The Pi SDK's provider modules reach for Node built-ins through a dynamic
+  // require. In an ESM bundle that throws "Dynamic require of X is not
+  // supported" at runtime, so the bundle defines the require it expects. One
+  // line, and it only affects the main process bundle.
+  banner: {
+    js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
+  },
 });
 
 // Preload MUST be CommonJS: Electron's ESM preload loader requires the .mjs

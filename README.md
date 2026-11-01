@@ -40,7 +40,7 @@ The product runtime is **Electron + Vite + React**. There is no cloud account an
 |------|--------|
 | **Node.js 20+** | Developed on Node 22; 20 LTS minimum target |
 | **npm** | Workspaces monorepo |
-| **Hermes gateway** | Required for the studio. Default `http://localhost:8642`. Capture is not the studio. |
+| **A companion** | Required for the studio. The built-in one needs an OpenAI-compatible endpoint (a local Ollama or LM Studio works); Hermes is the optional external sidekick. Capture is not the studio. |
 
 ## Quick start
 
@@ -136,15 +136,16 @@ docs/superpowers/      Design specs and implementation plans
 archive/web-skeleton/  Frozen Next.js + Prisma multi-user web app (not product runtime)
 ```
 
-## Hermes (required for the studio)
+## The companion (required for the studio)
 
-The studio does not open without the companion. Capture is not the studio.
+The studio does not open without the companion. Capture is not the studio. There are two, and the chat bar's picker switches between them:
 
-1. Run a Hermes / OpenAI-compatible gateway (default **`http://localhost:8642`**).
-2. In the app: **Settings → Hermes** — base URL, API key if required, **Test connection**.
-3. Chat and Personnel scan go through the **Electron main process** proxy; the renderer never holds the raw key.
+- **Pi — built in.** No install. On a fresh machine the setup screen asks for an OpenAI-compatible endpoint and a model; a local server (Ollama, LM Studio, llama.cpp) needs no key. The endpoint, the model and the key live in app userData; the key is sealed by OS secure storage and never enters the vault.
+- **Hermes — external sidekick.** Run a Hermes gateway (default **`http://localhost:8642`**) and pick Hermes in the chat bar. The app attaches to its `lifequest` profile or starts it, and Settings → Hermes manages the profile, the model and the MCP doors.
 
-LifeQuest owns the vault, the MCP door, and the UI. Hermes owns the agent loop, memory, skills, and transcripts.
+Whichever answers, the vault is written through the **Electron main process** and the same MCP door, under the same lock and Decision rules; the renderer never holds a raw key. LifeQuest owns the vault, the MCP door, and the UI. The companion owns the agent loop and the transcripts, in app userData rather than in the vault.
+
+Why: [Pi as a built-in companion](docs/superpowers/specs/2026-10-21-pi-companion-decision.md) and [the harness seam](docs/superpowers/specs/2026-10-21-agent-harness-seam-design.md).
 
 ## Vault identity
 

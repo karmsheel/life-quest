@@ -2147,7 +2147,14 @@ async function main() {
       renameTargetOpen.heading === "Pinned note" && renameTargetOpen.renaming === false,
       JSON.stringify({ heading: renameTargetOpen.heading, renaming: renameTargetOpen.renaming }),
     );
-    check("opened the rename field", await clickDockControl("Rename chat"), "no Rename chat control");
+    // The dock header no longer carries the chat controls: rename starts from
+    // the row's own menu, which is where a chat is managed now.
+    check(
+      "opened the row menu",
+      await clickRowControl("Pinned note", ".chats-rail__menu-btn"),
+      "no row menu control",
+    );
+    check("opened the rename field", await clickSidebarMenuItem("Rename chat"), "no Rename chat item");
     check("typed a name", await typeThreadRename("Wrong chat name"), "no rename field");
     const renameOpen = await settle();
     check(

@@ -63,22 +63,28 @@ import {
   type CompanionReady,
   type CompanionStatus,
 } from "./companion-lifecycle.ts";
+import type { HarnessStatus } from "./harness/types.ts";
+import { onHarnessStatusChanged, publishHarnessStatus } from "./harness/status-bus.ts";
 
-export type PublicCompanionStatus = Exclude<CompanionStatus, { kind: "ready" }> | {
-  kind: "ready";
-  port: number;
-  baseUrl: string;
-  startedByLifeQuest: boolean;
-  profilePath: string;
-  cliPath: string;
-  childPid: number | null;
-  modelWarning?: string;
-};
+export type PublicCompanionStatus = HarnessStatus;
 
+/**
+ * The Hermes status as the app sees it.
+ *
+ * `harness` and `detail` are added here, at the seam, so every consumer — the
+ * setup screen, Settings, the gate — can read one shape regardless of which
+ * companion answered. A port and a profile path are Hermes facts; they stay
+ * present but optional, because a built-in companion has neither.
+ */
 export function publicStatus(status: CompanionStatus): PublicCompanionStatus {
   if (status.kind !== "ready") return status;
   const { apiKey: _key, ...rest } = status;
-  return rest;
+  const how = rest.startedByLifeQuest ? "started by LifeQuest" : "attached";
+  return {
+    ...rest,
+    harness: "hermes",
+    detail: `Ready · ${rest.baseUrl} · ${how}`,
+  };
 }
 
 let current: CompanionStatus = { kind: "needs_install" };
@@ -86,40 +92,21 @@ let current: CompanionStatus = { kind: "needs_install" };
 /**
  * Everyone who wants to hear that the companion's status moved.
  *
- * The status can now change AFTER it is first reported: the model probe lands
- * once the host has answered for its catalog, which is ~0.6s behind the ready
- * status. Before this, `current` was written once per ensure and the renderer
- * only ever saw the value its own `companion:ensure` call returned — so a fact
- * discovered a moment later had no way to reach the screen that shows it.
- *
- * A listener that throws is caught, exactly as `data-revision.ts` does it: this
- * is called from inside an ensure's success path, and a broken consumer must
- * not be able to turn a working companion into a failed one.
+ * The listener set lives on the app's bus (`harness/status-bus.ts`), not here:
+ * the renderer subscribes once, before any harness is chosen, and a built-in
+ * companion's status has to reach the same screen. This module keeps the
+ * function name the rest of the app imports.
  */
-const statusListeners = new Set<(status: PublicCompanionStatus) => void>();
-
-/** Listen for status changes. Returns the unsubscribe. */
 export function onCompanionStatusChanged(
   listener: (status: PublicCompanionStatus) => void,
 ): () => void {
-  statusListeners.add(listener);
-  return () => {
-    statusListeners.delete(listener);
-  };
+  return onHarnessStatusChanged(listener);
 }
 
 /** Store the status and tell everyone. Returns the wire shape (no API key). */
 function publish(status: CompanionStatus): PublicCompanionStatus {
   current = status;
-  const next = publicStatus(status);
-  for (const listener of [...statusListeners]) {
-    try {
-      listener(next);
-    } catch {
-      // The consumer's failure is its own; the status it heard about is still true.
-    }
-  }
-  return next;
+  return publishHarnessStatus(publicStatus(status));
 }
 
 /**

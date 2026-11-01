@@ -246,6 +246,7 @@ import {
   type McpDoors,
 } from "./mcp-server.js";
 import * as companion from "./companion.js";
+import * as harness from "./harness/facade.js";
 import type {
   ChatStreamEvent,
   CompanionInstructionsInput,
@@ -1730,9 +1731,9 @@ export async function planningEnsure(
 }
 
 const companionSessionFns = {
-  open: () => companion.companionSessionsOpen(),
-  list: () => companion.companionSessionsList(),
-  create: (title: string) => companion.companionSessionCreate(title),
+  open: () => harness.harnessSessionsOpen(),
+  list: () => harness.harnessSessionsList(),
+  create: (title: string) => harness.harnessSessionCreate(title),
 };
 
 export async function reviewStartOrResume(
@@ -1806,7 +1807,7 @@ export async function companionChatStreamWithPack(
     onEvent(evt);
   };
 
-  const result = await companion.companionChatStream(
+  const result = await harness.harnessChatStream(
     sessionId,
     input,
     ctx,
