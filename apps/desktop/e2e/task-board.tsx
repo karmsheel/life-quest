@@ -388,11 +388,11 @@ type HarnessWindow = Window & {
   /** The chats this run created, in order. */
   taskBoardSessions?: { id: string; title: string }[];
   /**
-   * When true, the next hand-over's session creation fails. This is the one
+   * When true, the next send-to-agent's session creation fails. This is the one
    * failure path the board has to report to the operator rather than swallow.
    */
-  taskBoardFailHandover?: boolean;
-  /** What the dock was asked to open, as the board handed it over. */
+  taskBoardFailSendAgent?: boolean;
+  /** What the dock was asked to open, as the board sent it. */
   taskBoardDock?: {
     requestedSessionId: string | null;
     requestedKickoff: string | null;
@@ -421,15 +421,15 @@ const stubs: Record<string, (...args: unknown[]) => unknown> = {
     mapState = applyMapCommand(mapState, typed);
     return ok(snapshot());
   },
-  // A hand-over creates a real companion chat before the dock is asked to open
+  // A send-to-agent creates a real companion chat before the dock is asked to open
   // it; the harness answers with a session shaped like the gateway's, so the
   // board and the dock are exercised without a Hermes behind them.
   companionSessionCreate: async (title: unknown) => {
-    if (harness.taskBoardFailHandover) {
+    if (harness.taskBoardFailSendAgent) {
       return { ok: false, error: "gateway down" };
     }
     const session = {
-      id: `sess-handover-${harness.taskBoardSessions!.length + 1}`,
+      id: `sess-send-agent-${harness.taskBoardSessions!.length + 1}`,
       title: typeof title === "string" ? title : "Task",
       preview: null,
       lastActive: null,
@@ -466,7 +466,7 @@ const stubs: Record<string, (...args: unknown[]) => unknown> = {
  *
  * The real dock consumes a session request by opening the chat and sending the
  * kickoff; this rig has no ChatPanel, so the request is observed at the context
- * boundary instead. That is the seam the hand-over feature actually owns — the
+ * boundary instead. That is the seam the send-to-agent feature actually owns — the
  * rest is the chat panel's own job, covered by its rig.
  */
 function DockProbe() {

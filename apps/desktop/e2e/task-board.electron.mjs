@@ -64,14 +64,23 @@
  * 12. `agent-origin` — exactly one card (the agent-seeded one) wears the
  *                      provenance mark, whose tooltip and accessible name both
  *                      say "Added by agent".
- * 13. `handover-control` — every card offers a button named "Hand over <task> to
- *                      agent" with the tooltip "Hand over to agent".
- * 14. `handover`    — pressing it creates ONE companion chat named for the task,
- *                      asks the dock to open that chat, and hands it a kickoff
+ * 13. `send-agent-control` — every card offers a raised button whose visible label
+ *                      is "Send to agent", with a Send glyph before the words and the
+ *                      tooltip of the same name.
+ * 14. `send-agent-confirm` — pressing it opens the app's own confirmation dialog,
+ *                      which explains that a new session starts, the card's context
+ *                      is given to it, and the agent begins work; nothing is created
+ *                      until the operator confirms.
+ * 15. `send-agent-cancel` — cancelling (or Escape) closes the question and creates
+ *                      no chat, giving the agent nothing.
+ * 16. `send-agent`    — confirming creates ONE companion chat named for the task,
+ *                      asks the dock to open that chat, and gives it a kickoff
  *                      carrying the task id, title, notes, column and links plus
  *                      an explicit `move_task` -> `column: "done"` completion
  *                      gate; it writes no map command itself.
- * 15. `composer-outside` — a column composer stays open on a press inside it and
+ * 17. `send-agent-failure` — a session the gateway refuses is printed on the
+ *                      board, and creates no chat and moves no card.
+ * 18. `composer-outside` — a column composer stays open on a press inside it and
  *                      closes on a press outside it, with no map write either way.
  *
  * NOT covered here: the board's persistence beyond `mapApply` (that is
@@ -237,7 +246,20 @@ const SAMPLE = `(() => {
       const form = document.querySelector('[data-testid="task-composer"]');
       return form ? (form.closest("[data-column]")?.dataset.column ?? null) : null;
     })(),
-    // The hand-over request as the dock received it (the harness probes the
+    // The app's own confirmation, when one is up: what it asks, in its words.
+    dialog: (() => {
+      const d = document.querySelector('[role="dialog"]');
+      if (!d) return null;
+      return {
+        role: d.getAttribute("role"),
+        modal: d.getAttribute("aria-modal"),
+        title: text(d.querySelector(".confirm-dialog__title")),
+        message: text(d.querySelector(".confirm-dialog__message")),
+        confirm: text(d.querySelector(".confirm-dialog__confirm")),
+        cancel: text(d.querySelector(".confirm-dialog__cancel")),
+      };
+    })(),
+    // The send-to-agent request as the dock received it (the harness probes the
     // context, because this rig has no ChatPanel) and the chats it created.
     dock: window.taskBoardDock ?? null,
     sessions: window.taskBoardSessions ?? [],
@@ -247,7 +269,7 @@ const SAMPLE = `(() => {
       const trigger = card.querySelector('[data-testid="task-menu-toggle"]');
       const titleEl = card.querySelector(".task-card__title");
       const agent = card.querySelector('[data-testid="task-card-agent"]');
-      const handover = card.querySelector('[data-testid="task-handover"]');
+      const sendAgent = card.querySelector('[data-testid="task-send-agent"]');
       return {
         id: card.dataset.taskId ?? null,
         column: card.closest("[data-column]")?.dataset.column ?? null,
@@ -266,23 +288,31 @@ const SAMPLE = `(() => {
               title: agent.getAttribute("title"),
             }
           : null,
-        // The hand-over control's own words: the verb the operator reads, and
-        // the accessible name that says which task it would hand over.
-        handover: handover
+        // The send-to-agent control's own words: the verb the operator reads, and
+        // the accessible name that says which task it would send to agent.
+        sendAgent: sendAgent
           ? {
-              label: handover.getAttribute("aria-label"),
-              title: handover.getAttribute("title"),
-              text: text(handover),
-              tag: handover.tagName.toLowerCase(),
+              label: sendAgent.getAttribute("aria-label"),
+              title: sendAgent.getAttribute("title"),
+              text: text(sendAgent),
+              tag: sendAgent.tagName.toLowerCase(),
               // A visible control in the title's row squeezed narrow-card titles
               // into mid-word breaks; the foot is where it has to stay.
-              inFoot: Boolean(handover.closest(".task-card__foot")),
+              inFoot: Boolean(sendAgent.closest(".task-card__foot")),
+              // The glyph sits before the words, as the requirement says.
+              iconFirst: sendAgent.firstElementChild?.tagName.toLowerCase() === "svg",
+              // The raised key's own shading: a gradient face and a drop shadow,
+              // measured as computed values rather than trusted from a class.
+              style: (() => {
+                const cs = getComputedStyle(sendAgent);
+                return { backgroundImage: cs.backgroundImage, boxShadow: cs.boxShadow };
+              })(),
               // The label has to fit on one line inside the card: a truncated
-              // action label ("Hand over to ag…") is not the requested button.
+              // action label ("Send to ag…") is not the requested button.
               box: (() => {
-                const label = handover.querySelector(".task-card__handover-label");
+                const label = sendAgent.querySelector(".task-card__send-agent-label");
                 return {
-                  button: round(handover.getBoundingClientRect().width),
+                  button: round(sendAgent.getBoundingClientRect().width),
                   card: round(card.getBoundingClientRect().width),
                   labelClient: label ? label.clientWidth : null,
                   labelScroll: label ? label.scrollWidth : null,
@@ -702,24 +732,27 @@ async function main() {
       `${JSON.stringify(marked.map((card) => [card.id, card.agentBadge]))}`,
   );
 
-  // ── Every card offers the first-class hand-over control ────────────────────
-  step("handover-control");
+  // ── Every card offers the first-class send-to-agent control ────────────────────
+  step("send-agent-control");
   check(
-    "handover-control",
+    "send-agent-control",
     standard.cards.every(
       (card) =>
-        card.handover?.tag === "button" &&
-        card.handover?.inFoot === true &&
-        card.handover?.title === "Hand over to agent" &&
-        card.handover?.text === "Hand over to agent" &&
+        card.sendAgent?.tag === "button" &&
+        card.sendAgent?.inFoot === true &&
+        card.sendAgent?.title === "Send to agent" &&
+        card.sendAgent?.text === "Send to agent" &&
+        card.sendAgent?.iconFirst === true &&
+        card.sendAgent?.style?.backgroundImage?.includes("gradient") &&
+        card.sendAgent?.style?.boxShadow !== "none" &&
         // The visible label leads the accessible name (WCAG Label in Name).
-        card.handover?.label === `Hand over to agent: ${card.title}` &&
+        card.sendAgent?.label === `Send to agent: ${card.title}` &&
         // And the action's own words are readable, not ellipsized away.
-        typeof card.handover?.box?.labelClient === "number" &&
-        typeof card.handover?.box?.labelScroll === "number" &&
-        card.handover.box.labelScroll <= card.handover.box.labelClient,
+        typeof card.sendAgent?.box?.labelClient === "number" &&
+        typeof card.sendAgent?.box?.labelScroll === "number" &&
+        card.sendAgent.box.labelScroll <= card.sendAgent.box.labelClient,
     ),
-    `controls ${JSON.stringify(standard.cards.map((card) => [card.id, card.handover]))}`,
+    `controls ${JSON.stringify(standard.cards.map((card) => [card.id, card.sendAgent]))}`,
   );
 
   // ── The menu holds the destructive action, and gets out of the way ──────────
@@ -761,65 +794,135 @@ async function main() {
     `after Escape: menus=${afterEscape.menuCount}, focus=${JSON.stringify(afterEscape.activeLabel)}`,
   );
 
-  // ── Hand over: a new chat is created and the task goes into its kickoff ────
-  step("handover");
-  const beforeHandover = await win.webContents.executeJavaScript(
+  // ── Send to agent asks first and explains what the press starts ─────────────
+  step("send-agent-confirm");
+  const beforeSend = await win.webContents.executeJavaScript(
     "window.taskBoardCommands.length",
   );
-  await clickSelector(win, `[data-task-id="t-ship"] [data-testid="task-handover"]`);
+  await clickSelector(win, `[data-task-id="t-ship"] [data-testid="task-send-agent"]`);
   await waitFor(
     win,
-    `window.taskBoardDock?.requestedSessionId === "sess-handover-1"`,
-    "the hand-over chat to reach the dock",
+    `document.querySelector('[role="dialog"]') !== null`,
+    "the send-to-agent confirmation to open",
   );
-  const handed = await sample(win, "handover");
-  const handoverCommands = (
-    await win.webContents.executeJavaScript("window.taskBoardCommands")
-  ).slice(beforeHandover);
-  const handedKickoff = handed.dock?.requestedKickoff ?? "";
+  const confirming = await sample(win, "send-agent-confirm");
   check(
-    "handover",
-    handed.sessions.length === 1 &&
-      handed.sessions[0]?.title === "Task · Ship the redesigned Act board" &&
-      handed.dock?.requestedSessionId === handed.sessions[0]?.id &&
-      handedKickoff.includes("Task id: t-ship") &&
-      handedKickoff.includes("Ship the redesigned Act board") &&
-      handedKickoff.includes("Menus, column rhythm, responsive widths.") &&
-      // The links the board resolved (its own words, not ids) travel too.
-      handedKickoff.includes("Column: This week") &&
-      handedKickoff.includes("Goal: Ship a calmer operating system") &&
-      handedKickoff.includes("Project: Act board redesign") &&
-      handedKickoff.includes("Week item: Weekly review") &&
-      handedKickoff.includes("move_task") &&
-      handedKickoff.includes('column: "done"') &&
-      handoverCommands.length === 0,
-    `sessions ${JSON.stringify(handed.sessions)}; ` +
-      `kickoff ${JSON.stringify(handedKickoff)}; ` +
-      `commands ${JSON.stringify(handoverCommands)}`,
+    "send-agent-confirm",
+    confirming.dialog?.role === "dialog" &&
+      confirming.dialog?.modal === "true" &&
+      confirming.dialog?.title === "Send to agent" &&
+      confirming.dialog?.confirm === "Send to agent" &&
+      confirming.dialog?.cancel === "Cancel" &&
+      (confirming.dialog?.message ?? "").includes("starts a new session") &&
+      (confirming.dialog?.message ?? "").includes("context") &&
+      (confirming.dialog?.message ?? "").includes("start working") &&
+      confirming.sessions.length === 0 &&
+      // The probe reports null fields until a request lands; "no request" is an
+      // absent id, not an absent probe.
+      confirming.dock?.requestedSessionId == null,
+    `dialog ${JSON.stringify(confirming.dialog)}; ` +
+      `sessions ${JSON.stringify(confirming.sessions)}; dock ${JSON.stringify(confirming.dock)}`,
   );
 
-  // ── A failed hand-over says so instead of pretending it was sent ───────────
-  step("handover-failure");
-  await win.webContents.executeJavaScript("window.taskBoardFailHandover = true");
-  await clickSelector(win, `[data-task-id="t-receipts"] [data-testid="task-handover"]`);
+  // The question itself, as the picture of the new confirmation.
+  try {
+    const image = await win.webContents.capturePage();
+    fs.mkdirSync(artifactsDir, { recursive: true });
+    fs.writeFileSync(path.join(artifactsDir, "task-board-send-confirm.png"), image.toPNG());
+  } catch (error) {
+    console.log(`[task-board-send-confirm.png skipped] ${error}`);
+  }
+
+  // Cancelling answers no: the question closes and nothing leaves the board.
+  step("send-agent-cancel");
+  await clickSelector(win, '[role="dialog"] .confirm-dialog__cancel');
   await waitFor(
     win,
-    `document.querySelector('[data-testid="handover-error"]') !== null`,
-    "the hand-over failure to be reported on the board",
+    `document.querySelector('[role="dialog"]') === null`,
+    "the confirmation to close on cancel",
   );
-  const failedHandover = await sample(win, "handover-failure");
+  const cancelledSend = await sample(win, "send-agent-cancel");
+  const cancelledCommands = (
+    await win.webContents.executeJavaScript("window.taskBoardCommands")
+  ).slice(beforeSend);
+  check(
+    "send-agent-cancel",
+    cancelledSend.dialog === null &&
+      cancelledSend.sessions.length === 0 &&
+      cancelledSend.dock?.requestedSessionId == null &&
+      cancelledCommands.length === 0,
+    `dialog ${JSON.stringify(cancelledSend.dialog)}; ` +
+      `sessions ${JSON.stringify(cancelledSend.sessions)}; commands ${JSON.stringify(cancelledCommands)}`,
+  );
+
+  // Confirming is the send: one chat, the card's context, the completion gate.
+  step("send-agent");
+  await clickSelector(win, `[data-task-id="t-ship"] [data-testid="task-send-agent"]`);
+  await waitFor(
+    win,
+    `document.querySelector('[role="dialog"]') !== null`,
+    "the confirmation to reopen",
+  );
+  await clickSelector(win, '[role="dialog"] .confirm-dialog__confirm');
+  await waitFor(
+    win,
+    `window.taskBoardDock?.requestedSessionId === "sess-send-agent-1"`,
+    "the send-to-agent chat to reach the dock",
+  );
+  const sent = await sample(win, "send-agent");
+  const sendCommands = (
+    await win.webContents.executeJavaScript("window.taskBoardCommands")
+  ).slice(beforeSend);
+  const sentKickoff = sent.dock?.requestedKickoff ?? "";
+  check(
+    "send-agent",
+    sent.sessions.length === 1 &&
+      sent.sessions[0]?.title === "Task · Ship the redesigned Act board" &&
+      sent.dock?.requestedSessionId === sent.sessions[0]?.id &&
+      sentKickoff.includes("Task id: t-ship") &&
+      sentKickoff.includes("Ship the redesigned Act board") &&
+      sentKickoff.includes("Menus, column rhythm, responsive widths.") &&
+      // The links the board resolved (its own words, not ids) travel too.
+      sentKickoff.includes("Column: This week") &&
+      sentKickoff.includes("Goal: Ship a calmer operating system") &&
+      sentKickoff.includes("Project: Act board redesign") &&
+      sentKickoff.includes("Week item: Weekly review") &&
+      sentKickoff.includes("move_task") &&
+      sentKickoff.includes('column: "done"') &&
+      sendCommands.length === 0,
+    `sessions ${JSON.stringify(sent.sessions)}; ` +
+      `kickoff ${JSON.stringify(sentKickoff)}; ` +
+      `commands ${JSON.stringify(sendCommands)}`,
+  );
+
+  // ── A failed send-to-agent says so instead of pretending it was sent ───────────
+  step("send-agent-failure");
+  await win.webContents.executeJavaScript("window.taskBoardFailSendAgent = true");
+  await clickSelector(win, `[data-task-id="t-receipts"] [data-testid="task-send-agent"]`);
+  await waitFor(
+    win,
+    `document.querySelector('[role="dialog"]') !== null`,
+    "the failing send's confirmation to open",
+  );
+  await clickSelector(win, '[role="dialog"] .confirm-dialog__confirm');
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="send-agent-error"]') !== null`,
+    "the send-to-agent failure to be reported on the board",
+  );
+  const failedSend = await sample(win, "send-agent-failure");
   const failureText = await win.webContents.executeJavaScript(
-    `document.querySelector('[data-testid="handover-error"]')?.textContent?.trim() ?? ""`,
+    `document.querySelector('[data-testid="send-agent-error"]')?.textContent?.trim() ?? ""`,
   );
   check(
-    "handover-failure",
+    "send-agent-failure",
     failureText === "gateway down" &&
-      failedHandover.sessions.length === 1 &&
-      failedHandover.dock?.requestedSessionId === "sess-handover-1",
-    `banner ${JSON.stringify(failureText)}; sessions ${JSON.stringify(failedHandover.sessions)}; ` +
-      `dock ${JSON.stringify(failedHandover.dock?.requestedSessionId)}`,
+      failedSend.sessions.length === 1 &&
+      failedSend.dock?.requestedSessionId === "sess-send-agent-1",
+    `banner ${JSON.stringify(failureText)}; sessions ${JSON.stringify(failedSend.sessions)}; ` +
+      `dock ${JSON.stringify(failedSend.dock?.requestedSessionId)}`,
   );
-  await win.webContents.executeJavaScript("window.taskBoardFailHandover = false");
+  await win.webContents.executeJavaScript("window.taskBoardFailSendAgent = false");
 
   // ── Delete is one deliberate step behind the 3-dot, and it lands ────────────
   step("delete");
@@ -1315,7 +1418,8 @@ async function main() {
     what:
       "the Act page's task board: header before board, six titled and counted columns through " +
       "In-progress and Next 30 days, card titles at the column heading's own size, the agent-added " +
-      "mark on exactly the card an agent created, a hand-over control that creates a chat and hands " +
+      "mark on exactly the card an agent created, a raised Send-to-agent control that asks first, " +
+      "explains the new session and hands the card's context to it, then creates the chat and hands " +
       "it the task id with a move_task-to-done gate, a column composer that closes on an outside " +
       "press, cards that can be dragged across columns or reordered in place, columns that widen " +
       "with the sheet up to the board's own ceiling, and a page without the Strategy badge or " +
@@ -1345,27 +1449,43 @@ async function main() {
         // The two sizes the operator compared, as rendered pixels.
         cardTitlePx,
         columnTitlePx,
-        // The provenance mark, and the hand-over control on every card.
+        // The provenance mark, and the send-to-agent control on every card.
         agentBadges: standard.cards.map((card) => ({
           id: card.id,
           badge: card.agentBadge,
         })),
-        handoverControls: standard.cards.map((card) => ({
+        sendAgentControls: standard.cards.map((card) => ({
           id: card.id,
           title: card.title,
-          control: card.handover,
+          control: card.sendAgent,
         })),
-        // What the one hand-over press created and told the dock.
-        handover: {
-          sessions: handed.sessions,
-          dock: handed.dock,
-          mapCommands: handoverCommands,
+        // What the one send-to-agent press created and told the dock.
+        // What the confirmation asked, when it was up.
+        dialog: confirming.dialog,
+        sendAgent: {
+          sessions: sent.sessions,
+          dock: sent.dock,
+          mapCommands: sendCommands,
+          // The question the press asks first, and the proof that asking it
+          // starts nothing.
+          confirmation: {
+            dialog: confirming.dialog,
+            sessions: confirming.sessions,
+            dock: confirming.dock,
+          },
+          // Answering no: the question closed, nothing was created.
+          cancelled: {
+            dialog: cancelledSend.dialog,
+            sessions: cancelledSend.sessions,
+            dock: cancelledSend.dock,
+            mapCommands: cancelledCommands,
+          },
           // The failed press: the banner the operator reads, and the proof that
           // a failure created no chat and moved no card.
           failure: {
             error: failureText,
-            sessions: failedHandover.sessions,
-            dock: failedHandover.dock,
+            sessions: failedSend.sessions,
+            dock: failedSend.dock,
           },
         },
         bareDeletes: standard.cards.reduce((n, card) => n + card.bareDeletes, 0),

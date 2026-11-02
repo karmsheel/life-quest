@@ -16,7 +16,7 @@ import { COLUMN_LABELS } from "@/components/tasks/TaskBoard";
  * agent needs to find the same card again, and the ids stay out of the prose
  * except where a tool call needs one.
  */
-export type HandoverContext = {
+export type SendToAgentContext = {
   columnLabel: string;
   goalName: string | null;
   projectName: string | null;
@@ -24,7 +24,7 @@ export type HandoverContext = {
 };
 
 /** The new companion session's name: the task's title, marked as a task. */
-export function handoverTitle(task: Task): string {
+export function sendToAgentTitle(task: Task): string {
   return `Task · ${task.title}`;
 }
 
@@ -58,16 +58,16 @@ function weekItemLabel(
  * Resolve a task's links against the board's live data.
  *
  * A dangling goal keeps the "(missing)" mark the board's pickers use, so the
- * agent is told the link is broken instead of being handed a bare id that looks
+ * agent is told the link is broken instead of being given a bare id that looks
  * like a name. A dangling project falls back to its id, matching the contract
  * the project picker already states.
  */
-export function handoverContext(
+export function sendToAgentContext(
   state: StoreState,
   task: Task,
   goals: Goal[],
   projects: Project[],
-): HandoverContext {
+): SendToAgentContext {
   const goalId = task.links.goalId;
   const goal = goalId ? goals.find((g) => g.id === goalId) : undefined;
   const projectId = task.links.projectId;
@@ -99,7 +99,7 @@ export function handoverContext(
  * a reward for genuine completion rather than a step in the workflow, and a
  * blocked agent is told to leave the card where it is.
  */
-export function handoverKickoff(task: Task, ctx: HandoverContext): string {
+export function sendToAgentKickoff(task: Task, ctx: SendToAgentContext): string {
   const notes = task.notes.trim();
   const linkLines = [
     ctx.goalName ? `Goal: ${ctx.goalName}` : null,
@@ -108,7 +108,7 @@ export function handoverKickoff(task: Task, ctx: HandoverContext): string {
   ].filter((line): line is string => line !== null);
 
   const lines = [
-    "The operator handed this task over to you from the Act board. Work it as your own.",
+    "The operator sent this task to you from the Act board. Work it as your own.",
     "",
     `Task id: ${task.id}`,
     `Title: ${task.title}`,

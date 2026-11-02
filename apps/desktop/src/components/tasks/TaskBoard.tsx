@@ -10,6 +10,7 @@ import {
   MoreVertical,
   PencilLine,
   Plus,
+  Send,
   Target,
   Trash2,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import type {
 import { resolveWeek } from "@lifequest/vault-core/map";
 import type { Goal, Project } from "@lifequest/vault-core/pure";
 import { Button } from "@/components/ui/Button";
+import { useConfirm } from "@/components/ui/useConfirm";
 import { groupTasks } from "./groupTasks";
 import { useTaskDrag } from "./useTaskDrag";
 
@@ -34,7 +36,7 @@ import { useTaskDrag } from "./useTaskDrag";
  * own state while the request is in flight; the page owns the request itself,
  * because creating a chat and opening the dock is the page's business.
  */
-export type HandoverResult = { ok: true } | { ok: false; error: string };
+export type SendToAgentResult = { ok: true } | { ok: false; error: string };
 
 type Props = {
   state: StoreState;
@@ -43,9 +45,9 @@ type Props = {
   onCommand: (command: MapCommand) => void;
   /**
    * Put one task in front of an agent in a new chat and open that chat. The page
-   * supplies this; a board rendered without it has no hand-over control.
+   * supplies this; a board rendered without it has no send-to-agent control.
    */
-  onHandOver?: (task: Task) => Promise<HandoverResult>;
+  onSendToAgent?: (task: Task) => Promise<SendToAgentResult>;
   initialOpenId?: string | null;
 };
 
@@ -77,7 +79,7 @@ const COLUMNS: { id: TaskColumn; label: string; hint: string }[] = [
 /**
  * The columns' labels, by id.
  *
- * Exported so the hand-over prompt can name a card's column in the same words
+ * Exported so the send-to-agent prompt can name a card's column in the same words
  * the board prints above it; the id list itself stays module-private because
  * every reader here wants the label.
  */
@@ -194,7 +196,7 @@ export function TaskBoard({
   goals,
   projects,
   onCommand,
-  onHandOver,
+  onSendToAgent,
   initialOpenId = null,
 }: Props) {
   const grouped = useMemo(() => groupTasks(state.tasks), [state.tasks]);
@@ -204,13 +206,14 @@ export function TaskBoard({
     column: TaskColumn;
     title: string;
   } | null>(null);
-  /** The card whose hand-over request is in flight, if any. */
-  const [handingOverId, setHandingOverId] = useState<string | null>(null);
-  const [handoverError, setHandoverError] = useState<string | null>(null);
+  /** The card whose send-to-agent request is in flight, if any. */
+  const [sendingId, setSendingId] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const revealBacklogRef = useRef(false);
   const composerRef = useRef<HTMLFormElement | null>(null);
   const composerOpen = composer !== null;
+  const confirm = useConfirm();
 
   const drag = useTaskDrag({
     tasks: state.tasks,
@@ -290,28 +293,49 @@ export function TaskBoard({
   }, [composerOpen]);
 
   /**
-   * Hand one card to an agent.
+   * Send one card to an agent, after the operator has said yes.
    *
    * The press says what it is doing while the page creates the chat, and a
-   * failure is printed on the board rather than swallowed: a hand-over that
+   * failure is printed on the board rather than swallowed: a send-to-agent that
    * silently did nothing would leave the operator believing an agent had the
    * task. The card's menu is not involved — this is a first-class action, not a
    * destructive one behind a deliberate step.
    */
-  async function handOver(task: Task) {
-    if (!onHandOver || handingOverId) return;
-    setHandoverError(null);
-    setHandingOverId(task.id);
+  async function sendToAgent(task: Task) {
+    if (!onSendToAgent || sendingId) return;
+    setSendError(null);
+    setSendingId(task.id);
     try {
-      const result = await onHandOver(task);
-      if (!result.ok) setHandoverError(result.error);
+      const result = await onSendToAgent(task);
+      if (!result.ok) setSendError(result.error);
     } catch (err) {
-      setHandoverError(
-        err instanceof Error ? err.message : "Could not hand the task to an agent",
+      setSendError(
+        err instanceof Error ? err.message : "Could not send the task to an agent",
       );
     } finally {
-      setHandingOverId(null);
+      setSendingId(null);
     }
+  }
+
+  /**
+   * Ask before starting a session.
+   *
+   * Sending a card starts work outside the board — a new chat that reads the
+   * card's context and begins acting on it — so the press asks the app's own
+   * confirmation first. The question says exactly that in the operator's words:
+   * a new session, the card's context handed over, the agent starting work. The
+   * task itself stays on the board until the agent moves it, which the message
+   * also says; nothing is created until the operator confirms.
+   */
+  function requestSendToAgent(task: Task) {
+    if (!onSendToAgent || sendingId) return;
+    confirm.ask({
+      title: "Send to agent",
+      message:
+        "This starts a new session, hands this card's context to the agent, and lets it start working. The task stays on the board until the agent moves it to Done.",
+      confirmLabel: "Send to agent",
+      run: () => void sendToAgent(task),
+    });
   }
 
   const total = state.tasks.length;
@@ -358,11 +382,13 @@ export function TaskBoard({
         </form>
       </div>
 
-      {handoverError ? (
-        <p className="form-error task-board__error" role="alert" data-testid="handover-error">
-          {handoverError}
+      {sendError ? (
+        <p className="form-error task-board__error" role="alert" data-testid="send-agent-error">
+          {sendError}
         </p>
       ) : null}
+
+      {confirm.dialog}
 
       <p className="visually-hidden" id="task-board-drag-hint">
         Drag a card to move it between columns. Open a card&apos;s menu and choose
@@ -437,9 +463,9 @@ export function TaskBoard({
                           setOpenId((id) => (id === task.id ? null : task.id))
                         }
                         onCommand={onCommand}
-                        onHandOver={onHandOver ? () => void handOver(task) : undefined}
-                        handoverBusy={handingOverId === task.id}
-                        handoverBlocked={handingOverId !== null}
+                        onSendToAgent={onSendToAgent ? () => requestSendToAgent(task) : undefined}
+                        sendBusy={sendingId === task.id}
+                        sendBlocked={sendingId !== null}
                       />
                     </li>
                   ))}
@@ -543,9 +569,9 @@ function TaskCard({
   state,
   onToggle,
   onCommand,
-  onHandOver,
-  handoverBusy,
-  handoverBlocked,
+  onSendToAgent,
+  sendBusy,
+  sendBlocked,
 }: {
   task: Task;
   open: boolean;
@@ -557,15 +583,15 @@ function TaskCard({
   state: StoreState;
   onToggle: () => void;
   onCommand: (command: MapCommand) => void;
-  onHandOver?: () => void;
+  onSendToAgent?: () => void;
   /** This card's own request is in flight: it says so and is disabled. */
-  handoverBusy: boolean;
+  sendBusy: boolean;
   /**
-   * Any card's request is in flight. Handing over is one chat at a time, so
-   * every other card's control is disabled too rather than looking pressable
-   * and silently doing nothing.
+   * Any card's request is in flight. Sending is one chat at a time, so every
+   * other card's control is disabled too rather than looking pressable and
+   * silently doing nothing.
    */
-  handoverBlocked: boolean;
+  sendBlocked: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const goal = task.links.goalId
@@ -680,35 +706,42 @@ function TaskCard({
 
       {!open && notes ? <p className="task-card__notes">{notes}</p> : null}
 
-      {onHandOver ? (
+      {onSendToAgent ? (
         /*
-         * Hand-over is a first-class card action, so it is visible on the card
+         * Send-to-agent is a first-class card action, so it is visible on the card
          * face rather than behind the 3-dot the destructive Delete lives in.
          *
          * It sits on its own line under the card's reading content, not in the
          * title's row: the columns are narrow, and a second control up there
          * squeezed four- and five-letter words into mid-word breaks. The label
-         * is the action's own words, and the card's title rides in the
-         * accessible name so screen readers and tooltips say which task.
+         * is the action's own words, with the Send glyph before them, and the
+         * card's title rides in the accessible name so screen readers and
+         * tooltips say which task.
+         *
+         * It uses the app's raised button primitive rather than a bare text
+         * control: sending is the one act on the card that leaves the board, and
+         * the bevelled key reads as pressable on a surface that is otherwise a
+         * reading card.
          */
         <div className="task-card__foot">
-          <button
-            type="button"
-            className="task-card__handover"
-            data-testid="task-handover"
-            title="Hand over to agent"
+          <Button
+            variant="raised"
+            className="task-card__send-agent"
+            data-testid="task-send-agent"
+            title="Send to agent"
             /*
              * The visible label comes first in the accessible name (WCAG
              * "Label in Name"): speech input says what the eye reads. The task's
              * own title follows, because the dock opens on that task.
              */
-            aria-label={`Hand over to agent: ${task.title}`}
-            aria-busy={handoverBusy || undefined}
-            disabled={handoverBlocked}
-            onClick={onHandOver}
+            aria-label={`Send to agent: ${task.title}`}
+            aria-busy={sendBusy || undefined}
+            disabled={sendBlocked}
+            onClick={onSendToAgent}
           >
-            <span className="task-card__handover-label">Hand over to agent</span>
-          </button>
+            <Send size={12} aria-hidden />
+            <span className="task-card__send-agent-label">Send to agent</span>
+          </Button>
         </div>
       ) : null}
 

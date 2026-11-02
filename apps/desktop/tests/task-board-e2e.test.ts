@@ -41,11 +41,12 @@ import { describe, it } from "node:test";
  *   by agent" — exactly the agent-seeded card wears the mark, and its tooltip and
  *   accessible name both say "Added by agent";
  *
- *   "hand over to agent" — every card offers a button whose accessible name names
- *   its own task; pressing it creates ONE new chat, hands that chat the task's id
- *   and details, and instructs the agent to call `move_task` into Done only when
- *   the work is genuinely complete. The hand-over writes no map command: the
- *   agent moves the card, not the person handing it over;
+ *   "send to agent" — every card offers a raised button whose visible label names
+ *   its own task; pressing it asks a confirmation that explains the new session
+ *   and the card's context, cancelling starts nothing, and confirming creates ONE
+ *   new chat, gives it the task's id and details, and instructs the agent to call
+ *   `move_task` into Done only when the work is genuinely complete. Sending
+ *   writes no map command: the agent moves the card, not the person sending it;
  *
  *   "when I click add a task under a column... when I click outside the column the
  *   modal does not disappear as it should" — the column composer is open, a press
@@ -74,6 +75,7 @@ const SHOTS = [
   path.join(desktopRoot, "e2e/artifacts/task-board-menu.png"),
   path.join(desktopRoot, "e2e/artifacts/task-board-editor.png"),
   path.join(desktopRoot, "e2e/artifacts/task-board-drag.png"),
+  path.join(desktopRoot, "e2e/artifacts/task-board-send-confirm.png"),
   path.join(desktopRoot, "e2e/artifacts/task-board-light.png"),
 ];
 
@@ -86,12 +88,14 @@ const SCENARIOS = [
   "card-anatomy",
   "card-title-scale",
   "agent-origin",
-  "handover-control",
+  "send-agent-control",
   "menu",
   "menu-outside",
   "menu-escape",
-  "handover",
-  "handover-failure",
+  "send-agent-confirm",
+  "send-agent-cancel",
+  "send-agent",
+  "send-agent-failure",
   "delete",
   "edit-open",
   "edit-move",
@@ -143,21 +147,49 @@ type Chip = { label: string; danger: boolean };
 
 type Mark = { label: string | null; title: string | null };
 
-type HandoverControl = {
+type DialogState = {
+  role: string | null;
+  modal: string | null;
+  title: string | null;
+  message: string | null;
+  confirm: string | null;
+  cancel: string | null;
+};
+
+type SendAgentControl = {
   label: string | null;
   title: string | null;
   text: string | null;
   tag: string;
   inFoot: boolean;
+  iconFirst: boolean;
+  style: { backgroundImage: string; boxShadow: string };
 };
 
-type HandoverReport = {
+type SendAgentReport = {
   sessions: { id: string; title: string }[];
   dock: {
     requestedSessionId: string | null;
     requestedKickoff: string | null;
   } | null;
   mapCommands: { type?: string }[];
+  confirmation: {
+    dialog: DialogState | null;
+    sessions: { id: string; title: string }[];
+    dock: {
+      requestedSessionId: string | null;
+      requestedKickoff: string | null;
+    } | null;
+  };
+  cancelled: {
+    dialog: DialogState | null;
+    sessions: { id: string; title: string }[];
+    dock: {
+      requestedSessionId: string | null;
+      requestedKickoff: string | null;
+    } | null;
+    mapCommands: { type?: string }[];
+  };
   failure: {
     error: string | null;
     sessions: { id: string; title: string }[];
@@ -186,8 +218,9 @@ type Report = {
       cardTitlePx: (number | null)[];
       columnTitlePx: (number | null)[];
       agentBadges: { id: string; badge: Mark | null }[];
-      handoverControls: { id: string; title: string; control: HandoverControl | null }[];
-      handover: HandoverReport;
+      sendAgentControls: { id: string; title: string; control: SendAgentControl | null }[];
+      sendAgent: SendAgentReport;
+      dialog: DialogState | null;
       bareDeletes: number;
       menu: {
         role: string;
@@ -325,42 +358,95 @@ describe("Act task board e2e", () => {
     assert.equal(marked[0]?.badge?.label, "Added by agent", "the mark's accessible name moved");
     assert.equal(marked[0]?.badge?.title, "Added by agent", "the mark's hover text moved");
 
-    // ── Hand-over: a first-class control, a new chat, a completion gate ───────
+    // ── Send-to-agent: a first-class control, a new chat, a completion gate ───────
     assert.equal(
-      report.checks.dom.handoverControls.length,
+      report.checks.dom.sendAgentControls.length,
       report.checks.dom.cardCount,
-      "not every card offers a hand-over control",
+      "not every card offers a send-to-agent control",
     );
-    for (const entry of report.checks.dom.handoverControls) {
-      assert.equal(entry.control?.tag, "button", `${entry.id}'s hand-over is not a button`);
+    for (const entry of report.checks.dom.sendAgentControls) {
+      assert.equal(entry.control?.tag, "button", `${entry.id}'s send-to-agent is not a button`);
       assert.equal(
         entry.control?.title,
-        "Hand over to agent",
-        `${entry.id}'s hand-over tooltip moved`,
+        "Send to agent",
+        `${entry.id}'s send-to-agent tooltip moved`,
+      );
+      assert.equal(
+        entry.control?.text,
+        "Send to agent",
+        `${entry.id}'s send-to-agent visible label moved`,
       );
       assert.equal(
         entry.control?.label,
-        `Hand over to agent: ${entry.title}`,
-        `${entry.id}'s hand-over accessible name does not lead with its visible label`,
+        `Send to agent: ${entry.title}`,
+        `${entry.id}'s send-to-agent accessible name does not lead with its visible label`,
+      );
+      assert.equal(
+        entry.control?.iconFirst,
+        true,
+        `${entry.id}'s send-to-agent has no Send glyph before the words`,
+      );
+      // "Shading and a 3D effect": the raised key's gradient face and its drop
+      // shadow, read as computed values rather than as a class name.
+      assert.match(
+        entry.control?.style.backgroundImage ?? "",
+        /gradient/,
+        `${entry.id}'s send-to-agent has no shaded face`,
+      );
+      assert.notEqual(
+        entry.control?.style.boxShadow,
+        "none",
+        `${entry.id}'s send-to-agent has no lift off the card`,
       );
     }
-    const handover = report.checks.dom.handover;
-    assert.equal(handover.sessions.length, 1, "hand-over did not create exactly one chat");
+    // ── The press asks first, and the question explains the session ──────────
+    const confirmation = report.checks.dom.sendAgent.confirmation;
+    assert.equal(confirmation.dialog?.role, "dialog", "the confirmation is not a dialog");
+    assert.equal(confirmation.dialog?.modal, "true", "the confirmation is not modal");
+    assert.equal(confirmation.dialog?.title, "Send to agent", "the question's heading moved");
+    assert.equal(confirmation.dialog?.confirm, "Send to agent", "the confirming control moved");
+    assert.equal(confirmation.dialog?.cancel, "Cancel", "the cancelling control moved");
+    for (const phrase of ["starts a new session", "context", "start working"]) {
+      assert.ok(
+        (confirmation.dialog?.message ?? "").includes(phrase),
+        `the confirmation does not explain ${JSON.stringify(phrase)}: ${confirmation.dialog?.message}`,
+      );
+    }
+    assert.equal(confirmation.sessions.length, 0, "asking started a chat before the answer");
+    assert.equal(
+      confirmation.dock?.requestedSessionId ?? null,
+      null,
+      "asking re-pointed the dock before the answer",
+    );
+
+    // ── Cancelling starts nothing ─────────────────────────────────────────────
+    const cancelled = report.checks.dom.sendAgent.cancelled;
+    assert.equal(cancelled.dialog, null, "the question stayed up after cancel");
+    assert.equal(cancelled.sessions.length, 0, "cancelling still created a chat");
+    assert.equal(
+      cancelled.dock?.requestedSessionId ?? null,
+      null,
+      "cancelling still re-pointed the dock",
+    );
+    assert.deepEqual(cancelled.mapCommands, [], "cancelling wrote a map command");
+
+    const sendAgent = report.checks.dom.sendAgent;
+    assert.equal(sendAgent.sessions.length, 1, "send-to-agent did not create exactly one chat");
     assert.ok(
-      handover.sessions[0]?.title.includes("Ship the redesigned Act board"),
-      `the chat is not named for the task: ${handover.sessions[0]?.title}`,
+      sendAgent.sessions[0]?.title.includes("Ship the redesigned Act board"),
+      `the chat is not named for the task: ${sendAgent.sessions[0]?.title}`,
     );
     assert.equal(
-      handover.dock?.requestedSessionId,
-      handover.sessions[0]?.id,
+      sendAgent.dock?.requestedSessionId,
+      sendAgent.sessions[0]?.id,
       "the dock was not asked to open the new chat",
     );
-    const kickoff = handover.dock?.requestedKickoff ?? "";
+    const kickoff = sendAgent.dock?.requestedKickoff ?? "";
     for (const required of [
       "Task id: t-ship",
       "Ship the redesigned Act board",
       "Menus, column rhythm, responsive widths.",
-      // The board-resolved link labels, not ids: a broken handoverContext
+      // The board-resolved link labels, not ids: a broken sendToAgentContext
       // cannot pass by handing the agent a well-formed prompt about nothing.
       "Column: This week",
       "Goal: Ship a calmer operating system",
@@ -372,22 +458,22 @@ describe("Act task board e2e", () => {
       assert.ok(kickoff.includes(required), `the kickoff is missing ${JSON.stringify(required)}`);
     }
     assert.deepEqual(
-      handover.mapCommands,
+      sendAgent.mapCommands,
       [],
-      "handing a task over wrote a map command; only the agent moves the card",
+      "sending a task wrote a map command; only the agent moves the card",
     );
 
     // A failure is reported, and creates no chat and no card movement.
-    assert.equal(handover.failure.error, "gateway down", "a failed hand-over is not reported");
+    assert.equal(sendAgent.failure.error, "gateway down", "a failed send-to-agent is not reported");
     assert.equal(
-      handover.failure.sessions.length,
+      sendAgent.failure.sessions.length,
       1,
-      "a failed hand-over still created a chat",
+      "a failed send-to-agent still created a chat",
     );
     assert.equal(
-      handover.failure.dock?.requestedSessionId,
-      handover.sessions[0]?.id,
-      "a failed hand-over still re-pointed the dock at a chat",
+      sendAgent.failure.dock?.requestedSessionId,
+      sendAgent.sessions[0]?.id,
+      "a failed send-to-agent still re-pointed the dock at a chat",
     );
 
     // ── The 3-dot holds the destructive action ────────────────────────────────

@@ -16,10 +16,10 @@ import {
 import type { MapCommand, Task } from "@lifequest/vault-core/map";
 import { api } from "@/lib/ipc";
 import {
-  handoverContext,
-  handoverKickoff,
-  handoverTitle,
-} from "@/lib/task-handover";
+  sendToAgentContext,
+  sendToAgentKickoff,
+  sendToAgentTitle,
+} from "@/lib/task-send";
 import { useChatDock } from "@/state/ChatDockProvider";
 import {
   documentsToUnlockDocs,
@@ -217,22 +217,22 @@ function ActContent() {
    * The chat is created first so the dock can open onto its real session id;
    * the kickoff then travels as that chat's first message, built from the same
    * board data the card is drawn from. The board keeps the card where it is
-   * until the agent itself moves it — a hand-over is a promise to work the task,
+   * until the agent itself moves it — a send-to-agent is a promise to work the task,
    * not a claim that it is done.
    */
-  const onHandOver = useCallback(
+  const onSendToAgent = useCallback(
     async (task: Task): Promise<{ ok: true } | { ok: false; error: string }> => {
       if (!snapshot?.map) {
         return { ok: false, error: "The task board is still loading." };
       }
       try {
-        const created = await api().companionSessionCreate(handoverTitle(task));
+        const created = await api().companionSessionCreate(sendToAgentTitle(task));
         if (!created.ok) return { ok: false, error: created.error };
         chatDock.requestSession(
           created.value.id,
-          handoverKickoff(
+          sendToAgentKickoff(
             task,
-            handoverContext(snapshot.map, task, snapshot.goals, projects),
+            sendToAgentContext(snapshot.map, task, snapshot.goals, projects),
           ),
         );
         return { ok: true };
@@ -262,7 +262,7 @@ function ActContent() {
           goals={snapshot.goals}
           projects={projects}
           onCommand={(c) => void onMapCommand(c)}
-          onHandOver={onHandOver}
+          onSendToAgent={onSendToAgent}
           initialOpenId={taskParam}
         />
       ) : snapshot?.mapError ? (

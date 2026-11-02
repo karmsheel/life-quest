@@ -1174,12 +1174,20 @@ body.is-task-dragging * {
   cursor: help;
 }
 
-/* Hand-over is a quiet ghost action on the card's own line under its reading
-   content. It is NOT a control in the title's row: the columns are narrow, and
-   a second glyph up there starved the title into mid-word breaks ("banki ng").
-   The action row bleeds a little past the reading measure so the eighteen-
-   character label fits whole inside the narrowest column — a truncated action
-   ("Hand over to ag…") is not the button the operator asked for. */
+/* Send-to-agent is the card's one raised key.
+ *
+ * It is NOT a control in the title's row: the columns are narrow, and a second
+ * glyph up there starved the title into mid-word breaks ("banki ng"). It sits on
+ * its own line under the reading content, and the row bleeds slightly past the
+ * reading measure so the label fits whole inside the narrowest column.
+ *
+ * The face, bevel, hard lip and press travel are the app's raised button
+ * primitive (.btn-raised) — sending is the one act on the card that leaves the
+ * board, so it stands proud of a surface that is otherwise a reading card. This
+ * class only resizes that primitive to the card's measure. The .btn prefix is
+ * deliberate: global.css loads after map.css, so a bare class would lose the
+ * padding and font-size to .btn.
+ */
 .task-card__foot {
   display: flex;
   align-items: center;
@@ -1187,51 +1195,33 @@ body.is-task-dragging * {
   margin: -0.1rem -0.3rem -0.15rem;
 }
 
-.task-card__handover {
-  appearance: none;
+.btn.task-card__send-agent {
   display: inline-flex;
   align-items: center;
-  gap: 0.28rem;
+  gap: 0.3rem;
   max-width: 100%;
-  padding: 0.18rem 0.35rem 0.18rem 0.28rem;
-  border: 1px solid transparent;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
+  padding: 0.24rem 0.55rem 0.24rem 0.4rem;
   font-size: 0.68rem;
   font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
-  cursor: pointer;
-  transition:
-    color var(--dur-quick) ease,
-    border-color var(--dur-quick) ease,
-    background var(--dur-quick) ease;
-}
-
-.task-card__handover:hover {
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
-  background: var(--bg-subtle);
-  color: var(--accent);
 }
 
 /* The label may never paint past the card, even if a column is squeezed below
    the board's own floor or the wording grows. */
-.task-card__handover-label {
+.task-card__send-agent-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.task-card__handover:disabled {
+.btn.task-card__send-agent:disabled {
   cursor: progress;
-  opacity: 0.6;
 }
 
-.task-card__handover:focus-visible {
+.btn.task-card__send-agent:focus-visible {
   outline: 2px solid var(--ring);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 .task-board__error {
