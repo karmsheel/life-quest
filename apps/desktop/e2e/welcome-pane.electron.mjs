@@ -205,12 +205,13 @@ async function main() {
       `titlebar ${JSON.stringify(state.titlebar)} vs height ${titlebarHeight}px`,
     );
 
-    // 2 — the frame: one pane gap under the strip, and no mat at all on the
-    // other three sides, where the pane reaches the window's own edges.
+    // 2 — the frame: the pane meets the strip directly (no mat between them), and
+    // no mat at all on the other three sides, where the pane reaches the window's
+    // own edges.
     check(
-      "the pane keeps one pane gap under the strip",
-      box?.top === titlebarHeight + frame,
-      `pane top ${box?.top}px vs strip ${titlebarHeight}px + gap ${frame}px`,
+      "the pane meets the strip with no gap",
+      box?.top === titlebarHeight,
+      `pane top ${box?.top}px vs strip bottom ${titlebarHeight}px`,
     );
     check(
       "the pane reaches the window's leading edge",

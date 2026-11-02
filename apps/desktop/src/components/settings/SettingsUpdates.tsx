@@ -78,8 +78,8 @@ export function SettingsUpdates() {
         The release feed is public, so this check holds no token and nothing is
         stored for it. LifeQuest asks at launch and then every hour while it is
         open, so a new release is reported without a click;{" "}
-        <em>Check now</em> — like the version number at the foot of the rail — is
-        you asking by hand.
+        <em>Check now</em> — like the version number in the chat dock's bottom
+        bar — is you asking by hand.
       </p>
     </SettingsSection>
   );

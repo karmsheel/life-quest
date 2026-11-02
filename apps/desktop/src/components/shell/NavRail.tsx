@@ -7,7 +7,6 @@ import { useVault } from "@/state/VaultProvider";
 import { ChatsSidebar } from "@/components/hermes/ChatsSidebar";
 import { NavCollapseButton } from "./NavCollapseButton";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
-import { UpdateBadge } from "./UpdateBadge";
 import { useWing } from "./WingProvider";
 import { WingTabs } from "./WingTabs";
 
@@ -200,10 +199,6 @@ export function NavRail() {
             </div>
           </>
         ) : null}
-        {/* The build number, and the app's manual update check. Quiet text until
-            the feed names something newer, when it also carries the glow; a
-            click always opens the update panel. */}
-        <UpdateBadge />
       </div>
     </nav>
   );

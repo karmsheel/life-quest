@@ -64,11 +64,23 @@ function overlayColor(value: string): string | null {
   return null;
 }
 
-function syncTitleBarOverlay() {
+/**
+ * Hand the native caption strip the fill the CSS titlebar is wearing. Exported for
+ * the E2E harnesses that stand in for `ThemeProvider`'s stored-preference path:
+ * they apply a skin directly (`applySkin`), and the overlay has to follow the same
+ * way it does when the provider itself repaints.
+ */
+export function syncTitleBarOverlay() {
   const chrome = window.lifequest?.windowChrome;
   if (!chrome) return;
   const styles = getComputedStyle(document.documentElement);
-  const color = overlayColor(styles.getPropertyValue("--canvas-base"));
+  // The native caption buttons sit in the same strip the CSS paints, so the
+  // overlay takes the titlebar's own fill — not the mat, which the rail wears.
+  // `--canvas-base` is the fallback for a document whose skin never landed (the
+  // day rule makes the two the same ink anyway).
+  const color =
+    overlayColor(styles.getPropertyValue("--titlebar-bg")) ??
+    overlayColor(styles.getPropertyValue("--canvas-base"));
   const symbolColor = overlayColor(styles.getPropertyValue("--foreground"));
   if (!color || !symbolColor) return;
   void chrome.setTitleBarOverlay({ color, symbolColor }).catch(() => {

@@ -93,6 +93,9 @@ const SAMPLE = `(() => {
   const launcher = document.querySelector(".chat-launcher");
   const actions = document.querySelector(".chat-panel__actions");
   const collapseAction = document.querySelector(".chat-panel__action--collapse");
+  // The build number now lives in the dock's bottom bar, right of the collapse
+  // control: the bar's last control holds the window's bottom-right end.
+  const versionBadge = document.querySelector(".update-badge");
   const shell = document.querySelector(".shell");
   const titlebar = document.querySelector(".window-titlebar");
   const vault = document.querySelector(".window-titlebar__vault");
@@ -203,11 +206,21 @@ const SAMPLE = `(() => {
     actions: actions
       ? {
           box: box(actions),
-          controls: Array.from(actions.querySelectorAll("button")).map((el) => ({
+          // The bar's own action buttons; the version badge is a control in the
+          // same row but not one of the dock's surface actions, so it is measured
+          // separately below.
+          controls: Array.from(actions.querySelectorAll(".chat-panel__action")).map((el) => ({
             label: el.getAttribute("aria-label"),
             icon: iconClass(el),
             disabled: el.disabled
-          }))
+          })),
+          badge: versionBadge
+            ? {
+                label: versionBadge.getAttribute("aria-label"),
+                text: (versionBadge.textContent || "").trim(),
+                box: box(versionBadge)
+              }
+            : null
         }
       : null,
     collapseAction: collapseAction
@@ -373,15 +386,15 @@ function checkArrangement(label, state, side) {
     `${side === "left" ? "sheet" : "dock"} right ${last?.box.right}px vs window ${viewportWidth}px`,
   );
 
-  // One pane gap under the strip, and both panes reach the window's bottom edge.
+  // Both panes meet the strip directly and reach the window's bottom edge.
   for (const [name, pane] of [
     ["sheet", main],
     ["dock", chat],
   ]) {
     check(
-      `${label}: the ${name} keeps one pane gap under the strip`,
-      pane?.box.top === titlebarHeight + frame,
-      `${name} top ${pane?.box.top}px vs strip ${titlebarHeight}px + gap ${frame}px`,
+      `${label}: the ${name} meets the strip with no gap`,
+      pane?.box.top === titlebarHeight,
+      `${name} top ${pane?.box.top}px vs strip bottom ${titlebarHeight}px`,
     );
     check(
       `${label}: the ${name} reaches the window's bottom edge`,
@@ -413,15 +426,10 @@ function checkArrangement(label, state, side) {
     `dock borders t/r/b/l ${chat?.border?.top}/${chat?.border?.right}/${chat?.border?.bottom}/${chat?.border?.left}`,
   );
 
-  // The sheet's one rounded corner stays on its leading top; the corner that sits
-  // on the window's own edge stays square, because a curve there notches the pane
-  // gap open against the window.
-  check(
-    `${label}: the sheet keeps its leading top corner`,
-    main?.radius?.topLeft === state.tokens.radiusSm,
-    `top-left radius ${main?.radius?.topLeft} vs --radius-sm ${state.tokens.radiusSm}`,
-  );
+  // The sheet is square on every corner: it is a pane, not a card, and no corner
+  // of it is notched out of the mat — in either arrangement.
   for (const [corner, radius] of [
+    ["leading top", main?.radius?.topLeft],
     ["trailing top (on the window's edge)", main?.radius?.topRight],
     ["bottom right", main?.radius?.bottomRight],
     ["bottom left", main?.radius?.bottomLeft],
@@ -698,8 +706,8 @@ async function main() {
     left.vaultName = vaultName;
     const leftShot = await shot("chat-side-left.png");
     // The same seam, one column to the right and now between the dock and the
-    // sheet: the arrangement's two visual claims — the one hairline and the one
-    // rounded corner — in a single crop.
+    // sheet: the arrangement's two visual claims — the one hairline and the
+    // square corner above it — in a single crop.
     const leftSeamShot = await shot("chat-side-left-seam.png", {
       x: Math.max(0, left.tokens.track + left.tokens.chatTrack - 90),
       y: Math.max(0, left.tokens.titlebarHeight - 10),
@@ -984,26 +992,38 @@ async function main() {
     );
     const restoredShot = await shot("chat-side-restored.png");
 
-    // 6 — the dock's own way out: the trailing action of the bottom bar. It has
-    // to be in the bottom-right corner, wear the arrow that points out of the
-    // side the dock is on, and do exactly what the titlebar control does.
+    // 6 — the dock's own way out: the second-to-trailing action of the bottom bar,
+    // with the build number beyond it at the window's own bottom-right end. It has
+    // to wear the arrow that points out of the side the dock is on, and do exactly
+    // what the titlebar control does.
     at("bottom bar collapse");
     const barBox = restored.actions?.box;
     const collapseBox = restored.collapseAction?.box;
+    const badgeBox = restored.actions?.badge?.box;
     check(
       "restored: the bottom bar carries a collapse control",
       Boolean(restored.collapseAction),
       `collapse action ${JSON.stringify(restored.collapseAction)}`,
     );
     check(
-      "restored: the collapse control is the bar's trailing action",
-      Boolean(barBox && collapseBox) &&
+      "restored: the version badge holds the bar's trailing end",
+      Boolean(barBox && badgeBox) &&
+        badgeBox.left > (collapseBox?.right ?? 0) &&
+        badgeBox.right <= barBox.right &&
+        barBox.right - badgeBox.right <= 10 &&
+        badgeBox.top >= barBox.top &&
+        badgeBox.bottom <= barBox.bottom,
+      `badge ${JSON.stringify(badgeBox)} in bar ${JSON.stringify(barBox)}, collapse ends at ${collapseBox?.right}px`,
+    );
+    check(
+      "restored: the collapse control sits just left of the version badge",
+      Boolean(collapseBox && badgeBox) &&
         collapseBox.left > barBox.left + barBox.width / 2 &&
-        collapseBox.right <= barBox.right &&
-        barBox.right - collapseBox.right <= 10 &&
+        collapseBox.right <= badgeBox.left &&
+        badgeBox.left - collapseBox.right <= 12 &&
         collapseBox.top >= barBox.top &&
         collapseBox.bottom <= barBox.bottom,
-      `action ${JSON.stringify(collapseBox)} in bar ${JSON.stringify(barBox)}`,
+      `action ${JSON.stringify(collapseBox)} vs badge ${JSON.stringify(badgeBox)} in bar ${JSON.stringify(barBox)}`,
     );
     check(
       "restored: the bottom-bar collapse names its move and its side",

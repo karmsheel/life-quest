@@ -21,6 +21,12 @@
 
   --canvas-base: #faf9f7;
   --background: #fffefc;
+  /* The window's top strip, from the rail's trailing edge to the window's
+     trailing edge. By day it wears the mat, so the chrome above and beside the
+     sheet reads as one band; at night the skin steps it down between the mat and
+     the page (see `forgeVarsFromColors`). The rail's own column stays the mat all
+     the way to the top edge. */
+  --titlebar-bg: var(--canvas-base);
   --foreground: #1a1916;
   --card: #fffefc;
   --card-foreground: var(--foreground);
@@ -164,10 +170,15 @@
   color-scheme: dark;
 
   /* Night inverts the ladder: the page canvas is the deepest ink, the cards step
-     up off it, and the mat — the rail, the titlebar, the window frame — wears the
-     same quiet band as the chat dock's bottom action row. */
+     up off it, and the mat — the rail and the window frame — wears the same quiet
+     band as `--muted-surface`. The titlebar and the dock's bottom action row are
+     the one surface that takes its own step: darker than the mat they cap, still
+     clear of the page canvas, so the window strip and the dock's bar read as
+     chrome above and below the rail. */
   --canvas-base: #1f1e1c;
   --background: #1a1917;
+  /* The no-skin stand-in; `forgeVarsFromColors` writes the palette's own blend. */
+  --titlebar-bg: color-mix(in srgb, var(--canvas-base) 50%, var(--background));
   --foreground: #e8e4dc;
   --card: #222120;
   --card-foreground: var(--foreground);
@@ -250,10 +261,13 @@
     color-scheme: dark;
 
     /* Night inverts the ladder: the page canvas is the deepest ink, the cards step
-       up off it, and the mat — the rail, the titlebar, the window frame — wears the
-       same quiet band as the chat dock's bottom action row. */
+       up off it, and the mat — the rail and the window frame — wears the same quiet
+       band as `--muted-surface`; the titlebar and the dock's action row step below
+       it, still clear of the page. */
     --canvas-base: #1f1e1c;
     --background: #1a1917;
+    /* The no-skin stand-in; `forgeVarsFromColors` writes the palette's own blend. */
+    --titlebar-bg: color-mix(in srgb, var(--canvas-base) 50%, var(--background));
     --foreground: #e8e4dc;
     --card: #222120;
     --card-foreground: var(--foreground);

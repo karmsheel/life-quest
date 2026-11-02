@@ -164,13 +164,20 @@ export function forgeVarsFromColors(c: SkinColors): ForgeSkinVars {
 
   // Night inverts the day ladder for every dark palette: the page canvas — the
   // sheet, the dock, the boot pane — is the palette's deepest ink, the cards and
-  // the panels step up off it, and the mat the rail and the titlebar wear is the
-  // palette's quiet band, the very ink `--muted-surface` gives the dock's bottom
-  // action row. The frame and that row are then one material in every skin, and
-  // nothing in the window paints below the page.
+  // the panels step up off it, and the mat the rail and the window frame wear is
+  // the palette's quiet band, `--muted-surface`. Nothing in the window paints
+  // below the page.
+  //
+  // The titlebar and the dock's bottom action row are the exception: at night they
+  // step halfway from the mat toward the page — darker than the rail they cap,
+  // still lighter than the page — so the window strip above and the dock's bar
+  // below read as chrome rather than another stretch of the mat. Day keeps the
+  // one-band rule: there the strip and the bar stay the mat.
+  const canvasBase = dark ? muted : canvasBaseFromColors(c, elevated, dark);
   const vars: ForgeSkinVars = {
     "--background": dark ? bg : elevated,
-    "--canvas-base": dark ? muted : canvasBaseFromColors(c, elevated, dark),
+    "--canvas-base": canvasBase,
+    "--titlebar-bg": dark ? mix(canvasBase, bg, 0.5) : canvasBase,
     "--foreground": c.foreground,
     "--card": elevated,
     "--card-foreground": c.cardForeground ?? c.foreground,
@@ -272,6 +279,7 @@ export function clearSkinVars(el: HTMLElement = document.documentElement): void 
   const toRemove = [
     "--background",
     "--canvas-base",
+    "--titlebar-bg",
     "--foreground",
     "--card",
     "--card-foreground",

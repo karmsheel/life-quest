@@ -466,7 +466,7 @@ const stubs: Record<string, (...args: unknown[]) => Promise<unknown> | unknown> 
     // holding on to what it was given, and `decisionResolve` is the only writer.
     return ok(vault.decisions.map((decision) => ({ ...decision })));
   },
-  // The rail renders the real `UpdateBadge`, so the real `UpdateProvider` asks
+  // The dock renders the real `UpdateBadge`, so the real `UpdateProvider` asks
   // its own channel at mount, and subscribes to the watch's push channel (the
   // app's clock is not this page's business). Answering both here is what keeps
   // "unexpected bridge calls" an assertion about the badge rather than about the
