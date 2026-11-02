@@ -13,7 +13,7 @@ import { isTaskColumn } from "./tasks.ts";
 import { isMapEvent } from "./events.ts";
 import { mapLogEvent } from "./log-event.ts";
 import { isIsoDate, todayLocalIso } from "./dates.ts";
-import type { Actor as MapActor, Command, IsoDate, LiveBlock, LiveDay, LiveLeftoverItem, LiveSource, StoreState, Task, TaskColumn, YearRecord } from "./types.ts";
+import type { Actor as MapActor, Command, IsoDate, LiveBlock, LiveDay, LiveLeftoverItem, LiveSource, StoreState, Task, TaskColumn, TaskOrigin, YearRecord } from "./types.ts";
 import { ensureCurrentYear, rollover } from "./years.ts";
 
 type MapFile = Omit<StoreState, "aboutMe">;
@@ -75,6 +75,17 @@ function normalizeYear(raw: Record<string, unknown>): YearRecord {
   };
 }
 
+/**
+ * Who a task on disk came from.
+ *
+ * Only the exact literal `agent` survives; every other value — a hand-typed
+ * string, a stale fixture with no origin at all — reads as `operator`, because
+ * the board's default claim is that a human added the card.
+ */
+function normalizeTaskOrigin(value: unknown): TaskOrigin {
+  return value === "agent" ? "agent" : "operator";
+}
+
 function fromFile(file: MapFile, aboutMe: string): StoreState {
   return {
     dayTypes: file.dayTypes,
@@ -88,6 +99,7 @@ function fromFile(file: MapFile, aboutMe: string): StoreState {
       // draws, rather than making its column key undefined.
       column: normalizeTaskColumn(t.column),
       links: normalizeLinks(t.links as unknown as Record<string, unknown>),
+      origin: normalizeTaskOrigin(t.origin),
     })),
     liveDays: normalizeLiveDays(file.liveDays),
     aboutMe,

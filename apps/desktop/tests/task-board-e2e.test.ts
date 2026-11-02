@@ -31,6 +31,27 @@ import { describe, it } from "node:test";
  *
  *   the Strategy badge and the Execution brief section are gone from the page.
  *
+ * The second request this rig grew is measured here too:
+ *
+ *   "the heading size of the various cards is too big — reduce it to the heading
+ *   size in the columns" — both sizes are read as computed pixels and compared,
+ *   card by card, against the column heading above it;
+ *
+ *   "add an icon that signifies the card was added by the agent, hover says added
+ *   by agent" — exactly the agent-seeded card wears the mark, and its tooltip and
+ *   accessible name both say "Added by agent";
+ *
+ *   "send to agent" — every card offers a raised button whose visible label names
+ *   its own task; pressing it asks a confirmation that explains the new session
+ *   and the card's context, cancelling starts nothing, and confirming creates ONE
+ *   new chat, gives it the task's id and details, and instructs the agent to call
+ *   `move_task` into Done only when the work is genuinely complete. Sending
+ *   writes no map command: the agent moves the card, not the person sending it;
+ *
+ *   "when I click add a task under a column... when I click outside the column the
+ *   modal does not disappear as it should" — the column composer is open, a press
+ *   inside it keeps it open, and a press outside it closes it without writing.
+ *
  * The rig needs the Vite dev server. With the server down the test skips;
  * `npm run dev` in another terminal brings it up. `LIFEQUEST_DEV_PORT` lets the
  * rig point at a server other than 5173 (the port the operator's own dev holds).
@@ -54,6 +75,7 @@ const SHOTS = [
   path.join(desktopRoot, "e2e/artifacts/task-board-menu.png"),
   path.join(desktopRoot, "e2e/artifacts/task-board-editor.png"),
   path.join(desktopRoot, "e2e/artifacts/task-board-drag.png"),
+  path.join(desktopRoot, "e2e/artifacts/task-board-send-confirm.png"),
   path.join(desktopRoot, "e2e/artifacts/task-board-light.png"),
 ];
 
@@ -64,9 +86,16 @@ const SCENARIOS = [
   "page-trimmed",
   "columns",
   "card-anatomy",
+  "card-title-scale",
+  "agent-origin",
+  "send-agent-control",
   "menu",
   "menu-outside",
   "menu-escape",
+  "send-agent-confirm",
+  "send-agent-cancel",
+  "send-agent",
+  "send-agent-failure",
   "delete",
   "edit-open",
   "edit-move",
@@ -75,6 +104,7 @@ const SCENARIOS = [
   "drag-reorder",
   "drag-cancel",
   "column-add",
+  "composer-outside",
   "drag-scroll",
   "width-growth",
   "width-cap",
@@ -115,6 +145,61 @@ type Scenario = { name: string; pass: boolean; detail: string | null };
 
 type Chip = { label: string; danger: boolean };
 
+type Mark = { label: string | null; title: string | null };
+
+type DialogState = {
+  role: string | null;
+  modal: string | null;
+  title: string | null;
+  message: string | null;
+  confirm: string | null;
+  cancel: string | null;
+};
+
+type SendAgentControl = {
+  label: string | null;
+  title: string | null;
+  text: string | null;
+  tag: string;
+  inFoot: boolean;
+  iconFirst: boolean;
+  style: { backgroundImage: string; boxShadow: string };
+};
+
+type SendAgentReport = {
+  sessions: { id: string; title: string }[];
+  dock: {
+    requestedSessionId: string | null;
+    requestedKickoff: string | null;
+  } | null;
+  mapCommands: { type?: string }[];
+  confirmation: {
+    dialog: DialogState | null;
+    sessions: { id: string; title: string }[];
+    dock: {
+      requestedSessionId: string | null;
+      requestedKickoff: string | null;
+    } | null;
+  };
+  cancelled: {
+    dialog: DialogState | null;
+    sessions: { id: string; title: string }[];
+    dock: {
+      requestedSessionId: string | null;
+      requestedKickoff: string | null;
+    } | null;
+    mapCommands: { type?: string }[];
+  };
+  failure: {
+    error: string | null;
+    sessions: { id: string; title: string }[];
+    dock: {
+      requestedSessionId: string | null;
+      requestedKickoff: string | null;
+    } | null;
+  };
+};
+
 type Report = {
   pass: boolean;
   failures: string[];
@@ -130,6 +215,12 @@ type Report = {
       cardRadii: number[];
       columnRadii: number[];
       chips: { id: string; chips: Chip[] }[];
+      cardTitlePx: (number | null)[];
+      columnTitlePx: (number | null)[];
+      agentBadges: { id: string; badge: Mark | null }[];
+      sendAgentControls: { id: string; title: string; control: SendAgentControl | null }[];
+      sendAgent: SendAgentReport;
+      dialog: DialogState | null;
       bareDeletes: number;
       menu: {
         role: string;
@@ -240,6 +331,149 @@ describe("Act task board e2e", () => {
       legacy?.chips.filter((chip) => chip.danger).map((chip) => chip.label),
       ["Missing goal"],
       "a dangling goal is not marked as missing",
+    );
+
+    // ── Cards are titled at the columns' own heading size ─────────────────────
+    const columnSizes = [...new Set(report.checks.dom.columnTitlePx)];
+    assert.equal(columnSizes.length, 1, `column headings disagree: ${JSON.stringify(columnSizes)}`);
+    const headingPx = columnSizes[0];
+    assert.ok(typeof headingPx === "number" && headingPx > 0, "no column heading size was measured");
+    assert.equal(
+      report.checks.dom.cardTitlePx.length,
+      report.checks.dom.cardCount,
+      "not every card's title was measured",
+    );
+    for (const size of report.checks.dom.cardTitlePx) {
+      assert.equal(
+        size,
+        headingPx,
+        `a card title is not the column heading's size: ${size}px vs ${headingPx}px`,
+      );
+    }
+
+    // ── Provenance: one agent-added card, marked and labelled ─────────────────
+    const marked = report.checks.dom.agentBadges.filter((entry) => entry.badge);
+    assert.equal(marked.length, 1, `an agent mark is on ${marked.length} cards, not one`);
+    assert.equal(marked[0]?.id, "t-banking", "the mark is on the wrong card");
+    assert.equal(marked[0]?.badge?.label, "Added by agent", "the mark's accessible name moved");
+    assert.equal(marked[0]?.badge?.title, "Added by agent", "the mark's hover text moved");
+
+    // ── Send-to-agent: a first-class control, a new chat, a completion gate ───────
+    assert.equal(
+      report.checks.dom.sendAgentControls.length,
+      report.checks.dom.cardCount,
+      "not every card offers a send-to-agent control",
+    );
+    for (const entry of report.checks.dom.sendAgentControls) {
+      assert.equal(entry.control?.tag, "button", `${entry.id}'s send-to-agent is not a button`);
+      assert.equal(
+        entry.control?.title,
+        "Send to agent",
+        `${entry.id}'s send-to-agent tooltip moved`,
+      );
+      assert.equal(
+        entry.control?.text,
+        "Send to agent",
+        `${entry.id}'s send-to-agent visible label moved`,
+      );
+      assert.equal(
+        entry.control?.label,
+        `Send to agent: ${entry.title}`,
+        `${entry.id}'s send-to-agent accessible name does not lead with its visible label`,
+      );
+      assert.equal(
+        entry.control?.iconFirst,
+        true,
+        `${entry.id}'s send-to-agent has no Send glyph before the words`,
+      );
+      // "Shading and a 3D effect": the raised key's gradient face and its drop
+      // shadow, read as computed values rather than as a class name.
+      assert.match(
+        entry.control?.style.backgroundImage ?? "",
+        /gradient/,
+        `${entry.id}'s send-to-agent has no shaded face`,
+      );
+      assert.notEqual(
+        entry.control?.style.boxShadow,
+        "none",
+        `${entry.id}'s send-to-agent has no lift off the card`,
+      );
+    }
+    // ── The press asks first, and the question explains the session ──────────
+    const confirmation = report.checks.dom.sendAgent.confirmation;
+    assert.equal(confirmation.dialog?.role, "dialog", "the confirmation is not a dialog");
+    assert.equal(confirmation.dialog?.modal, "true", "the confirmation is not modal");
+    assert.equal(confirmation.dialog?.title, "Send to agent", "the question's heading moved");
+    assert.equal(confirmation.dialog?.confirm, "Send to agent", "the confirming control moved");
+    assert.equal(confirmation.dialog?.cancel, "Cancel", "the cancelling control moved");
+    for (const phrase of ["starts a new session", "context", "start working"]) {
+      assert.ok(
+        (confirmation.dialog?.message ?? "").includes(phrase),
+        `the confirmation does not explain ${JSON.stringify(phrase)}: ${confirmation.dialog?.message}`,
+      );
+    }
+    assert.equal(confirmation.sessions.length, 0, "asking started a chat before the answer");
+    assert.equal(
+      confirmation.dock?.requestedSessionId ?? null,
+      null,
+      "asking re-pointed the dock before the answer",
+    );
+
+    // ── Cancelling starts nothing ─────────────────────────────────────────────
+    const cancelled = report.checks.dom.sendAgent.cancelled;
+    assert.equal(cancelled.dialog, null, "the question stayed up after cancel");
+    assert.equal(cancelled.sessions.length, 0, "cancelling still created a chat");
+    assert.equal(
+      cancelled.dock?.requestedSessionId ?? null,
+      null,
+      "cancelling still re-pointed the dock",
+    );
+    assert.deepEqual(cancelled.mapCommands, [], "cancelling wrote a map command");
+
+    const sendAgent = report.checks.dom.sendAgent;
+    assert.equal(sendAgent.sessions.length, 1, "send-to-agent did not create exactly one chat");
+    assert.ok(
+      sendAgent.sessions[0]?.title.includes("Ship the redesigned Act board"),
+      `the chat is not named for the task: ${sendAgent.sessions[0]?.title}`,
+    );
+    assert.equal(
+      sendAgent.dock?.requestedSessionId,
+      sendAgent.sessions[0]?.id,
+      "the dock was not asked to open the new chat",
+    );
+    const kickoff = sendAgent.dock?.requestedKickoff ?? "";
+    for (const required of [
+      "Task id: t-ship",
+      "Ship the redesigned Act board",
+      "Menus, column rhythm, responsive widths.",
+      // The board-resolved link labels, not ids: a broken sendToAgentContext
+      // cannot pass by handing the agent a well-formed prompt about nothing.
+      "Column: This week",
+      "Goal: Ship a calmer operating system",
+      "Project: Act board redesign",
+      "Week item: Weekly review",
+      "move_task",
+      'column: "done"',
+    ]) {
+      assert.ok(kickoff.includes(required), `the kickoff is missing ${JSON.stringify(required)}`);
+    }
+    assert.deepEqual(
+      sendAgent.mapCommands,
+      [],
+      "sending a task wrote a map command; only the agent moves the card",
+    );
+
+    // A failure is reported, and creates no chat and no card movement.
+    assert.equal(sendAgent.failure.error, "gateway down", "a failed send-to-agent is not reported");
+    assert.equal(
+      sendAgent.failure.sessions.length,
+      1,
+      "a failed send-to-agent still created a chat",
+    );
+    assert.equal(
+      sendAgent.failure.dock?.requestedSessionId,
+      sendAgent.sessions[0]?.id,
+      "a failed send-to-agent still re-pointed the dock at a chat",
     );
 
     // ── The 3-dot holds the destructive action ────────────────────────────────

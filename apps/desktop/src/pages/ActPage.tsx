@@ -13,8 +13,14 @@ import {
   DOCTRINE_ORDER,
   recordVisible,
 } from "@lifequest/vault-core/pure";
-import type { MapCommand } from "@lifequest/vault-core/map";
+import type { MapCommand, Task } from "@lifequest/vault-core/map";
 import { api } from "@/lib/ipc";
+import {
+  sendToAgentContext,
+  sendToAgentKickoff,
+  sendToAgentTitle,
+} from "@/lib/task-send";
+import { useChatDock } from "@/state/ChatDockProvider";
 import {
   documentsToUnlockDocs,
   useActiveDomain,
@@ -69,6 +75,7 @@ function ActContent() {
   const taskParam = params.get("task");
   const lens = useDomainLens();
   const activeDomain = useActiveDomain();
+  const chatDock = useChatDock();
 
   const liveDomains = useMemo(
     () =>
@@ -204,6 +211,42 @@ function ActContent() {
     if (result.ok) await refresh();
   }
 
+  /**
+   * Give a task to a fresh companion chat.
+   *
+   * The chat is created first so the dock can open onto its real session id;
+   * the kickoff then travels as that chat's first message, built from the same
+   * board data the card is drawn from. The board keeps the card where it is
+   * until the agent itself moves it — a send-to-agent is a promise to work the task,
+   * not a claim that it is done.
+   */
+  const onSendToAgent = useCallback(
+    async (task: Task): Promise<{ ok: true } | { ok: false; error: string }> => {
+      if (!snapshot?.map) {
+        return { ok: false, error: "The task board is still loading." };
+      }
+      try {
+        const created = await api().companionSessionCreate(sendToAgentTitle(task));
+        if (!created.ok) return { ok: false, error: created.error };
+        chatDock.requestSession(
+          created.value.id,
+          sendToAgentKickoff(
+            task,
+            sendToAgentContext(snapshot.map, task, snapshot.goals, projects),
+          ),
+        );
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error ? err.message : "Failed to hand the task over",
+        };
+      }
+    },
+    [chatDock, projects, snapshot],
+  );
+
   return (
     <div className="act-page">
       <header className="act-page__header">
@@ -219,6 +262,7 @@ function ActContent() {
           goals={snapshot.goals}
           projects={projects}
           onCommand={(c) => void onMapCommand(c)}
+          onSendToAgent={onSendToAgent}
           initialOpenId={taskParam}
         />
       ) : snapshot?.mapError ? (

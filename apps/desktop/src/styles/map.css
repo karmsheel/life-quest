@@ -1128,8 +1128,12 @@ body.is-task-dragging * {
   background: none;
   color: var(--fg);
   font: inherit;
-  font-size: 0.86rem;
+  /* The column heading's own step: a card is a row inside its column, not a
+     louder thing than the column it belongs to. These two sizes moving apart
+     is how the board started reading as a wall of headings. */
+  font-size: 0.82rem;
   font-weight: 600;
+  letter-spacing: -0.005em;
   line-height: 1.35;
   text-align: left;
   /* Break only a word that is genuinely wider than the card; ordinary words
@@ -1147,6 +1151,81 @@ body.is-task-dragging * {
   outline: 2px solid var(--ring);
   outline-offset: 1px;
   border-radius: 3px;
+}
+
+/*
+ * The provenance mark: an agent added this card.
+ *
+ * It sits on the card's own title row, not in the metadata chips below — the
+ * chips are the card's links, and a provenance fact is about the card itself.
+ * The colour is the accent because the mark is worth finding, but the glyph is
+ * small and the tooltip carries the sentence, so the card face stays calm.
+ */
+.task-card__agent {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-top: 0.08rem;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent);
+  cursor: help;
+}
+
+/* Send-to-agent is the card's one raised key.
+ *
+ * It is NOT a control in the title's row: the columns are narrow, and a second
+ * glyph up there starved the title into mid-word breaks ("banki ng"). It sits on
+ * its own line under the reading content, and the row bleeds slightly past the
+ * reading measure so the label fits whole inside the narrowest column.
+ *
+ * The face, bevel, hard lip and press travel are the app's raised button
+ * primitive (.btn-raised) — sending is the one act on the card that leaves the
+ * board, so it stands proud of a surface that is otherwise a reading card. This
+ * class only resizes that primitive to the card's measure. The .btn prefix is
+ * deliberate: global.css loads after map.css, so a bare class would lose the
+ * padding and font-size to .btn.
+ */
+.task-card__foot {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: -0.1rem -0.3rem -0.15rem;
+}
+
+.btn.task-card__send-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  padding: 0.24rem 0.55rem 0.24rem 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* The label may never paint past the card, even if a column is squeezed below
+   the board's own floor or the wording grows. */
+.task-card__send-agent-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn.task-card__send-agent:disabled {
+  cursor: progress;
+}
+
+.btn.task-card__send-agent:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.task-board__error {
+  margin: 0 0 0.5rem;
 }
 
 .task-card__actions {

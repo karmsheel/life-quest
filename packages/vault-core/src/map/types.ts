@@ -129,12 +129,22 @@ export type TaskLinks = {
   signalId?: string;
 };
 
+/**
+ * Who put a task on the board.
+ *
+ * Optional on purpose: map files written before provenance existed — and
+ * hand-edited ones — carry no origin, and the loader fills them in as
+ * `operator`. A freshly created task always gets one from the command's actor.
+ */
+export type TaskOrigin = "agent" | "operator";
+
 export type Task = {
   id: string;
   title: string;
   notes: string;
   column: TaskColumn;
   links: TaskLinks;
+  origin?: TaskOrigin;
 };
 
 export type StoreState = {
