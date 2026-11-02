@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   AlertTriangle,
+  Bot,
   CalendarDays,
   CalendarRange,
   FolderKanban,
@@ -26,11 +27,25 @@ import { Button } from "@/components/ui/Button";
 import { groupTasks } from "./groupTasks";
 import { useTaskDrag } from "./useTaskDrag";
 
+/**
+ * What handing one card to an agent answered.
+ *
+ * The board owns the press's busy and error state, because those are the card's
+ * own state while the request is in flight; the page owns the request itself,
+ * because creating a chat and opening the dock is the page's business.
+ */
+export type HandoverResult = { ok: true } | { ok: false; error: string };
+
 type Props = {
   state: StoreState;
   goals: Goal[];
   projects: Project[];
   onCommand: (command: MapCommand) => void;
+  /**
+   * Put one task in front of an agent in a new chat and open that chat. The page
+   * supplies this; a board rendered without it has no hand-over control.
+   */
+  onHandOver?: (task: Task) => Promise<HandoverResult>;
   initialOpenId?: string | null;
 };
 
@@ -59,7 +74,14 @@ const COLUMNS: { id: TaskColumn; label: string; hint: string }[] = [
   { id: "backlog", label: "Backlog", hint: "Unscheduled work" },
 ];
 
-const COLUMN_LABELS = Object.fromEntries(
+/**
+ * The columns' labels, by id.
+ *
+ * Exported so the hand-over prompt can name a card's column in the same words
+ * the board prints above it; the id list itself stays module-private because
+ * every reader here wants the label.
+ */
+export const COLUMN_LABELS = Object.fromEntries(
   COLUMNS.map((column) => [column.id, column.label]),
 ) as Record<TaskColumn, string>;
 
@@ -172,6 +194,7 @@ export function TaskBoard({
   goals,
   projects,
   onCommand,
+  onHandOver,
   initialOpenId = null,
 }: Props) {
   const grouped = useMemo(() => groupTasks(state.tasks), [state.tasks]);
@@ -181,8 +204,13 @@ export function TaskBoard({
     column: TaskColumn;
     title: string;
   } | null>(null);
+  /** The card whose hand-over request is in flight, if any. */
+  const [handingOverId, setHandingOverId] = useState<string | null>(null);
+  const [handoverError, setHandoverError] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const revealBacklogRef = useRef(false);
+  const composerRef = useRef<HTMLFormElement | null>(null);
+  const composerOpen = composer !== null;
 
   const drag = useTaskDrag({
     tasks: state.tasks,
@@ -232,6 +260,60 @@ export function TaskBoard({
     setComposer({ column, title: "" });
   }
 
+  /**
+   * Dismiss the inline composer on a press anywhere outside it.
+   *
+   * The composer is a small form pinned under its column, and it used to stay
+   * open when the hand went somewhere else on the page — the one thing a
+   * popup-shaped editor must not do. The press is read in the capture phase so
+   * a click that starts something else (a card menu, a drag) both closes the
+   * composer and does its own work. A press inside the composer is left alone,
+   * so typing, Add, and Cancel behave exactly as before.
+   */
+  useEffect(() => {
+    if (!composerOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && composerRef.current?.contains(target)) return;
+      setComposer(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setComposer(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [composerOpen]);
+
+  /**
+   * Hand one card to an agent.
+   *
+   * The press says what it is doing while the page creates the chat, and a
+   * failure is printed on the board rather than swallowed: a hand-over that
+   * silently did nothing would leave the operator believing an agent had the
+   * task. The card's menu is not involved — this is a first-class action, not a
+   * destructive one behind a deliberate step.
+   */
+  async function handOver(task: Task) {
+    if (!onHandOver || handingOverId) return;
+    setHandoverError(null);
+    setHandingOverId(task.id);
+    try {
+      const result = await onHandOver(task);
+      if (!result.ok) setHandoverError(result.error);
+    } catch (err) {
+      setHandoverError(
+        err instanceof Error ? err.message : "Could not hand the task to an agent",
+      );
+    } finally {
+      setHandingOverId(null);
+    }
+  }
+
   const total = state.tasks.length;
   const draggingId = drag.drag?.id ?? null;
   const drop = drag.drop;
@@ -275,6 +357,12 @@ export function TaskBoard({
           </Button>
         </form>
       </div>
+
+      {handoverError ? (
+        <p className="form-error task-board__error" role="alert" data-testid="handover-error">
+          {handoverError}
+        </p>
+      ) : null}
 
       <p className="visually-hidden" id="task-board-drag-hint">
         Drag a card to move it between columns. Open a card&apos;s menu and choose
@@ -349,6 +437,9 @@ export function TaskBoard({
                           setOpenId((id) => (id === task.id ? null : task.id))
                         }
                         onCommand={onCommand}
+                        onHandOver={onHandOver ? () => void handOver(task) : undefined}
+                        handoverBusy={handingOverId === task.id}
+                        handoverBlocked={handingOverId !== null}
                       />
                     </li>
                   ))}
@@ -357,7 +448,9 @@ export function TaskBoard({
 
               {composer?.column === col.id ? (
                 <form
+                  ref={composerRef}
                   className="task-composer"
+                  data-testid="task-composer"
                   onSubmit={(event) => {
                     event.preventDefault();
                     createInColumn(col.id);
@@ -450,6 +543,9 @@ function TaskCard({
   state,
   onToggle,
   onCommand,
+  onHandOver,
+  handoverBusy,
+  handoverBlocked,
 }: {
   task: Task;
   open: boolean;
@@ -461,6 +557,15 @@ function TaskCard({
   state: StoreState;
   onToggle: () => void;
   onCommand: (command: MapCommand) => void;
+  onHandOver?: () => void;
+  /** This card's own request is in flight: it says so and is disabled. */
+  handoverBusy: boolean;
+  /**
+   * Any card's request is in flight. Handing over is one chat at a time, so
+   * every other card's control is disabled too rather than looking pressable
+   * and silently doing nothing.
+   */
+  handoverBlocked: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const goal = task.links.goalId
@@ -494,6 +599,23 @@ function TaskCard({
         >
           {task.title}
         </button>
+        {task.origin === "agent" ? (
+          /*
+           * A card an agent added says so where the card's own identity lives.
+           * The mark is a plain glyph with the sentence on its tooltip and its
+           * accessible name, so the fact is available to a pointer and to a
+           * screen reader, and the card face stays a reading surface.
+           */
+          <span
+            className="task-card__agent"
+            data-testid="task-card-agent"
+            role="img"
+            aria-label="Added by agent"
+            title="Added by agent"
+          >
+            <Bot size={11} aria-hidden />
+          </span>
+        ) : null}
         <TaskCardMenu
           task={task}
           open={menuOpen}
@@ -557,6 +679,38 @@ function TaskCard({
       ) : null}
 
       {!open && notes ? <p className="task-card__notes">{notes}</p> : null}
+
+      {onHandOver ? (
+        /*
+         * Hand-over is a first-class card action, so it is visible on the card
+         * face rather than behind the 3-dot the destructive Delete lives in.
+         *
+         * It sits on its own line under the card's reading content, not in the
+         * title's row: the columns are narrow, and a second control up there
+         * squeezed four- and five-letter words into mid-word breaks. The label
+         * is the action's own words, and the card's title rides in the
+         * accessible name so screen readers and tooltips say which task.
+         */
+        <div className="task-card__foot">
+          <button
+            type="button"
+            className="task-card__handover"
+            data-testid="task-handover"
+            title="Hand over to agent"
+            /*
+             * The visible label comes first in the accessible name (WCAG
+             * "Label in Name"): speech input says what the eye reads. The task's
+             * own title follows, because the dock opens on that task.
+             */
+            aria-label={`Hand over to agent: ${task.title}`}
+            aria-busy={handoverBusy || undefined}
+            disabled={handoverBlocked}
+            onClick={onHandOver}
+          >
+            <span className="task-card__handover-label">Hand over to agent</span>
+          </button>
+        </div>
+      ) : null}
 
       {open ? (
         <TaskEditor

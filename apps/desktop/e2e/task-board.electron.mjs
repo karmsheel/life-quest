@@ -56,8 +56,27 @@
  * 10. `no-overflow`  — at every width the board fits its scroller: no column and
  *                      no card paints past the sheet.
  *
+ * The second request this rig grew — card heading size, the agent-added mark, the
+ * column composer's outside press, and handing a card to an agent — adds:
+ *
+ * 11. `card-title-scale` — a card's title renders at exactly the column heading's
+ *                      computed size, card by card, and every column agrees.
+ * 12. `agent-origin` — exactly one card (the agent-seeded one) wears the
+ *                      provenance mark, whose tooltip and accessible name both
+ *                      say "Added by agent".
+ * 13. `handover-control` — every card offers a button named "Hand over <task> to
+ *                      agent" with the tooltip "Hand over to agent".
+ * 14. `handover`    — pressing it creates ONE companion chat named for the task,
+ *                      asks the dock to open that chat, and hands it a kickoff
+ *                      carrying the task id, title, notes, column and links plus
+ *                      an explicit `move_task` -> `column: "done"` completion
+ *                      gate; it writes no map command itself.
+ * 15. `composer-outside` — a column composer stays open on a press inside it and
+ *                      closes on a press outside it, with no map write either way.
+ *
  * NOT covered here: the board's persistence beyond `mapApply` (that is
- * `map`'s own rig), and the agent composer on the rest of the page.
+ * `map`'s own rig), the map store's provenance write (that is
+ * `task-origin-e2e`), and the agent composer on the rest of the page.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -150,10 +169,15 @@ const SAMPLE = `(() => {
 
   const columns = [...document.querySelectorAll(".task-column")].map((col) => {
     const colStyle = getComputedStyle(col);
+    const colTitle = col.querySelector(".task-column__title");
     const colCards = [...col.querySelectorAll(".task-list > li > .task-card")];
     return {
       id: col.dataset.column ?? null,
-      label: text(col.querySelector(".task-column__title")),
+      label: text(colTitle),
+      // The column heading's rendered size: the cards' titles are judged against
+      // this number, because "the same size as the column heading" is a claim
+      // about the screen, not about a class name.
+      titlePx: colTitle ? round(px(getComputedStyle(colTitle).fontSize)) : null,
       headerCount: text(col.querySelector(".task-column__count")),
       width: round(col.getBoundingClientRect().width),
       radius: px(colStyle.borderTopLeftRadius),
@@ -206,18 +230,66 @@ const SAMPLE = `(() => {
       : null,
     bodyWidth: document.body.scrollWidth,
     columns,
+    // The inline composer under a column, by the column it belongs to: the
+    // dismissal claim is "a press outside it closes it", so the driver needs to
+    // see which column, if any, is composing right now.
+    composer: (() => {
+      const form = document.querySelector('[data-testid="task-composer"]');
+      return form ? (form.closest("[data-column]")?.dataset.column ?? null) : null;
+    })(),
+    // The hand-over request as the dock received it (the harness probes the
+    // context, because this rig has no ChatPanel) and the chats it created.
+    dock: window.taskBoardDock ?? null,
+    sessions: window.taskBoardSessions ?? [],
     cards: cards.map((card) => {
       const style = getComputedStyle(card);
       const menu = card.querySelector('[data-testid="task-menu"]');
       const trigger = card.querySelector('[data-testid="task-menu-toggle"]');
+      const titleEl = card.querySelector(".task-card__title");
+      const agent = card.querySelector('[data-testid="task-card-agent"]');
+      const handover = card.querySelector('[data-testid="task-handover"]');
       return {
         id: card.dataset.taskId ?? null,
-        title: text(card.querySelector(".task-card__title")),
-        titleTag: card.querySelector(".task-card__title")?.tagName.toLowerCase() ?? null,
+        column: card.closest("[data-column]")?.dataset.column ?? null,
+        title: text(titleEl),
+        titleTag: titleEl?.tagName.toLowerCase() ?? null,
+        titlePx: titleEl ? round(px(getComputedStyle(titleEl).fontSize)) : null,
         width: round(card.getBoundingClientRect().width),
         radius: px(style.borderTopLeftRadius),
         shadow: style.boxShadow,
         expanded: card.classList.contains("is-open"),
+        // The provenance mark: absent unless an agent added the card, and its
+        // tooltip is the sentence the requirement names.
+        agentBadge: agent
+          ? {
+              label: agent.getAttribute("aria-label"),
+              title: agent.getAttribute("title"),
+            }
+          : null,
+        // The hand-over control's own words: the verb the operator reads, and
+        // the accessible name that says which task it would hand over.
+        handover: handover
+          ? {
+              label: handover.getAttribute("aria-label"),
+              title: handover.getAttribute("title"),
+              text: text(handover),
+              tag: handover.tagName.toLowerCase(),
+              // A visible control in the title's row squeezed narrow-card titles
+              // into mid-word breaks; the foot is where it has to stay.
+              inFoot: Boolean(handover.closest(".task-card__foot")),
+              // The label has to fit on one line inside the card: a truncated
+              // action label ("Hand over to ag…") is not the requested button.
+              box: (() => {
+                const label = handover.querySelector(".task-card__handover-label");
+                return {
+                  button: round(handover.getBoundingClientRect().width),
+                  card: round(card.getBoundingClientRect().width),
+                  labelClient: label ? label.clientWidth : null,
+                  labelScroll: label ? label.scrollWidth : null,
+                };
+              })(),
+            }
+          : null,
         chips: [...card.querySelectorAll(".task-chip")].map((chip) => ({
           label: text(chip),
           danger: chip.classList.contains("task-chip--danger"),
@@ -596,6 +668,60 @@ async function main() {
       `bare deletes ${standard.cards.reduce((n, card) => n + card.bareDeletes, 0)}`,
   );
 
+  // ── The card's title is the column heading's size, not louder than it ──────
+  step("card-title-scale");
+  const columnTitlePx = standard.columns.map((column) => column.titlePx);
+  const cardTitlePx = standard.cards.map((card) => card.titlePx);
+  const cardMatchesColumn = standard.cards.every((card) => {
+    const column = standard.columns.find((entry) => entry.id === card.column);
+    return Boolean(column) && card.titlePx === column.titlePx;
+  });
+  check(
+    "card-title-scale",
+    new Set(columnTitlePx).size === 1 &&
+      cardTitlePx.length === standard.cards.length &&
+      cardMatchesColumn &&
+      cardTitlePx.every((size) => typeof size === "number" && size > 0),
+    `column headings ${JSON.stringify(columnTitlePx)}; ` +
+      `card titles ${JSON.stringify(cardTitlePx)}; ` +
+      `card/column pairs ${JSON.stringify(
+        standard.cards.map((card) => [card.id, card.titlePx, card.column]),
+      )}`,
+  );
+
+  // ── Provenance: exactly the agent-added card wears the mark ────────────────
+  step("agent-origin");
+  const marked = standard.cards.filter((card) => card.agentBadge);
+  check(
+    "agent-origin",
+    marked.length === 1 &&
+      marked[0]?.id === "t-banking" &&
+      marked[0]?.agentBadge?.label === "Added by agent" &&
+      marked[0]?.agentBadge?.title === "Added by agent",
+    `${marked.length} marked card(s): ` +
+      `${JSON.stringify(marked.map((card) => [card.id, card.agentBadge]))}`,
+  );
+
+  // ── Every card offers the first-class hand-over control ────────────────────
+  step("handover-control");
+  check(
+    "handover-control",
+    standard.cards.every(
+      (card) =>
+        card.handover?.tag === "button" &&
+        card.handover?.inFoot === true &&
+        card.handover?.title === "Hand over to agent" &&
+        card.handover?.text === "Hand over to agent" &&
+        // The visible label leads the accessible name (WCAG Label in Name).
+        card.handover?.label === `Hand over to agent: ${card.title}` &&
+        // And the action's own words are readable, not ellipsized away.
+        typeof card.handover?.box?.labelClient === "number" &&
+        typeof card.handover?.box?.labelScroll === "number" &&
+        card.handover.box.labelScroll <= card.handover.box.labelClient,
+    ),
+    `controls ${JSON.stringify(standard.cards.map((card) => [card.id, card.handover]))}`,
+  );
+
   // ── The menu holds the destructive action, and gets out of the way ──────────
   step("menu");
   await openMenu(win, "t-ship");
@@ -634,6 +760,66 @@ async function main() {
     afterEscape.menuCount === 0 && afterEscape.activeLabel === "task-menu-toggle",
     `after Escape: menus=${afterEscape.menuCount}, focus=${JSON.stringify(afterEscape.activeLabel)}`,
   );
+
+  // ── Hand over: a new chat is created and the task goes into its kickoff ────
+  step("handover");
+  const beforeHandover = await win.webContents.executeJavaScript(
+    "window.taskBoardCommands.length",
+  );
+  await clickSelector(win, `[data-task-id="t-ship"] [data-testid="task-handover"]`);
+  await waitFor(
+    win,
+    `window.taskBoardDock?.requestedSessionId === "sess-handover-1"`,
+    "the hand-over chat to reach the dock",
+  );
+  const handed = await sample(win, "handover");
+  const handoverCommands = (
+    await win.webContents.executeJavaScript("window.taskBoardCommands")
+  ).slice(beforeHandover);
+  const handedKickoff = handed.dock?.requestedKickoff ?? "";
+  check(
+    "handover",
+    handed.sessions.length === 1 &&
+      handed.sessions[0]?.title === "Task · Ship the redesigned Act board" &&
+      handed.dock?.requestedSessionId === handed.sessions[0]?.id &&
+      handedKickoff.includes("Task id: t-ship") &&
+      handedKickoff.includes("Ship the redesigned Act board") &&
+      handedKickoff.includes("Menus, column rhythm, responsive widths.") &&
+      // The links the board resolved (its own words, not ids) travel too.
+      handedKickoff.includes("Column: This week") &&
+      handedKickoff.includes("Goal: Ship a calmer operating system") &&
+      handedKickoff.includes("Project: Act board redesign") &&
+      handedKickoff.includes("Week item: Weekly review") &&
+      handedKickoff.includes("move_task") &&
+      handedKickoff.includes('column: "done"') &&
+      handoverCommands.length === 0,
+    `sessions ${JSON.stringify(handed.sessions)}; ` +
+      `kickoff ${JSON.stringify(handedKickoff)}; ` +
+      `commands ${JSON.stringify(handoverCommands)}`,
+  );
+
+  // ── A failed hand-over says so instead of pretending it was sent ───────────
+  step("handover-failure");
+  await win.webContents.executeJavaScript("window.taskBoardFailHandover = true");
+  await clickSelector(win, `[data-task-id="t-receipts"] [data-testid="task-handover"]`);
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="handover-error"]') !== null`,
+    "the hand-over failure to be reported on the board",
+  );
+  const failedHandover = await sample(win, "handover-failure");
+  const failureText = await win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="handover-error"]')?.textContent?.trim() ?? ""`,
+  );
+  check(
+    "handover-failure",
+    failureText === "gateway down" &&
+      failedHandover.sessions.length === 1 &&
+      failedHandover.dock?.requestedSessionId === "sess-handover-1",
+    `banner ${JSON.stringify(failureText)}; sessions ${JSON.stringify(failedHandover.sessions)}; ` +
+      `dock ${JSON.stringify(failedHandover.dock?.requestedSessionId)}`,
+  );
+  await win.webContents.executeJavaScript("window.taskBoardFailHandover = false");
 
   // ── Delete is one deliberate step behind the 3-dot, and it lands ────────────
   step("delete");
@@ -884,6 +1070,34 @@ async function main() {
       `backlog=${columnOf(added, "backlog")?.headerCount}`,
   );
 
+  // ── A press outside the composer closes it; a press inside does not ───────
+  step("composer-outside");
+  const composing = await sample(win, "composer-open");
+  await clickSelector(win, '[data-column="next-30-days"] .task-composer input');
+  await settleFrames(win);
+  const afterInsidePress = await sample(win, "composer-inside");
+  await clickSelector(win, ".task-board h2");
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="task-composer"]') === null`,
+    "the composer to close on an outside press",
+  );
+  const afterOutsidePress = await sample(win, "composer-outside");
+  const commandsAfterDismiss = await win.webContents.executeJavaScript(
+    "window.taskBoardCommands.length",
+  );
+  check(
+    "composer-outside",
+    composing.composer === "next-30-days" &&
+      afterInsidePress.composer === "next-30-days" &&
+      afterOutsidePress.composer === null &&
+      commandsAfterDismiss === beforeColumnAdd + 1,
+    `composing ${JSON.stringify(composing.composer)}; ` +
+      `after inside press ${JSON.stringify(afterInsidePress.composer)}; ` +
+      `after outside press ${JSON.stringify(afterOutsidePress.composer)}; ` +
+      `commands ${commandsAfterDismiss - beforeColumnAdd}`,
+  );
+
   // ── The standard sheet scrolls the board under a drag at its edge ──────────
   step("drag-scroll");
   win.setContentSize(WIDTHS[0].width, WIDTHS[0].height);
@@ -1100,9 +1314,12 @@ async function main() {
     failures: errors,
     what:
       "the Act page's task board: header before board, six titled and counted columns through " +
-      "In-progress and Next 30 days, cards that can be dragged across columns or reordered in place, columns " +
-      "that widen with the sheet up to the board's own ceiling, and a page without the Strategy badge " +
-      "or Execution brief",
+      "In-progress and Next 30 days, card titles at the column heading's own size, the agent-added " +
+      "mark on exactly the card an agent created, a hand-over control that creates a chat and hands " +
+      "it the task id with a move_task-to-done gate, a column composer that closes on an outside " +
+      "press, cards that can be dragged across columns or reordered in place, columns that widen " +
+      "with the sheet up to the board's own ceiling, and a page without the Strategy badge or " +
+      "Execution brief",
     skin,
     checks: {
       scenarios,
@@ -1125,6 +1342,32 @@ async function main() {
         cardRadii: standard.cards.map((card) => card.radius),
         columnRadii: standard.columns.map((column) => column.radius),
         chips: standard.cards.map((card) => ({ id: card.id, chips: card.chips })),
+        // The two sizes the operator compared, as rendered pixels.
+        cardTitlePx,
+        columnTitlePx,
+        // The provenance mark, and the hand-over control on every card.
+        agentBadges: standard.cards.map((card) => ({
+          id: card.id,
+          badge: card.agentBadge,
+        })),
+        handoverControls: standard.cards.map((card) => ({
+          id: card.id,
+          title: card.title,
+          control: card.handover,
+        })),
+        // What the one hand-over press created and told the dock.
+        handover: {
+          sessions: handed.sessions,
+          dock: handed.dock,
+          mapCommands: handoverCommands,
+          // The failed press: the banner the operator reads, and the proof that
+          // a failure created no chat and moved no card.
+          failure: {
+            error: failureText,
+            sessions: failedHandover.sessions,
+            dock: failedHandover.dock,
+          },
+        },
         bareDeletes: standard.cards.reduce((n, card) => n + card.bareDeletes, 0),
         menu: ship?.menu ?? null,
       },

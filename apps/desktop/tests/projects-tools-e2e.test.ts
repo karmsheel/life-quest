@@ -408,12 +408,22 @@ describe("projects and harness tools over the real MCP door", () => {
         "create_task",
       );
       const mapState = asRecord(taskApplied.state, "create_task.state");
-      const taskId = String(
-        (mapState.tasks as { id: string; title: string }[]).find(
-          (task) => task.title === "Write the MCP door test",
-        )?.id ?? "",
-      );
+      const createdTask = (mapState.tasks as {
+        id: string;
+        title: string;
+        origin?: string;
+      }[]).find((task) => task.title === "Write the MCP door test");
+      const taskId = String(createdTask?.id ?? "");
       assert.ok(taskId, `create_task did not apply: ${JSON.stringify(taskApplied).slice(0, 300)}`);
+      // The Act board's "Added by agent" mark reads the task's origin. This door
+      // is the only real path by which an agent adds a card, so the stamp has to
+      // be proved here: a door that passed "user" would mark every agent card as
+      // the operator's and every other rig would stay green.
+      scenario(
+        "agent-created-task-origin",
+        createdTask?.origin === "agent",
+        `create_task stored origin ${JSON.stringify(createdTask?.origin)} for ${taskId}`,
+      );
 
       const readCollated = asRecord(await callTool(bearer, "get_project", { id: projectId }), "get_project");
       scenario(

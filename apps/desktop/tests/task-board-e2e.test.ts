@@ -31,6 +31,26 @@ import { describe, it } from "node:test";
  *
  *   the Strategy badge and the Execution brief section are gone from the page.
  *
+ * The second request this rig grew is measured here too:
+ *
+ *   "the heading size of the various cards is too big — reduce it to the heading
+ *   size in the columns" — both sizes are read as computed pixels and compared,
+ *   card by card, against the column heading above it;
+ *
+ *   "add an icon that signifies the card was added by the agent, hover says added
+ *   by agent" — exactly the agent-seeded card wears the mark, and its tooltip and
+ *   accessible name both say "Added by agent";
+ *
+ *   "hand over to agent" — every card offers a button whose accessible name names
+ *   its own task; pressing it creates ONE new chat, hands that chat the task's id
+ *   and details, and instructs the agent to call `move_task` into Done only when
+ *   the work is genuinely complete. The hand-over writes no map command: the
+ *   agent moves the card, not the person handing it over;
+ *
+ *   "when I click add a task under a column... when I click outside the column the
+ *   modal does not disappear as it should" — the column composer is open, a press
+ *   inside it keeps it open, and a press outside it closes it without writing.
+ *
  * The rig needs the Vite dev server. With the server down the test skips;
  * `npm run dev` in another terminal brings it up. `LIFEQUEST_DEV_PORT` lets the
  * rig point at a server other than 5173 (the port the operator's own dev holds).
@@ -64,9 +84,14 @@ const SCENARIOS = [
   "page-trimmed",
   "columns",
   "card-anatomy",
+  "card-title-scale",
+  "agent-origin",
+  "handover-control",
   "menu",
   "menu-outside",
   "menu-escape",
+  "handover",
+  "handover-failure",
   "delete",
   "edit-open",
   "edit-move",
@@ -75,6 +100,7 @@ const SCENARIOS = [
   "drag-reorder",
   "drag-cancel",
   "column-add",
+  "composer-outside",
   "drag-scroll",
   "width-growth",
   "width-cap",
@@ -115,6 +141,33 @@ type Scenario = { name: string; pass: boolean; detail: string | null };
 
 type Chip = { label: string; danger: boolean };
 
+type Mark = { label: string | null; title: string | null };
+
+type HandoverControl = {
+  label: string | null;
+  title: string | null;
+  text: string | null;
+  tag: string;
+  inFoot: boolean;
+};
+
+type HandoverReport = {
+  sessions: { id: string; title: string }[];
+  dock: {
+    requestedSessionId: string | null;
+    requestedKickoff: string | null;
+  } | null;
+  mapCommands: { type?: string }[];
+  failure: {
+    error: string | null;
+    sessions: { id: string; title: string }[];
+    dock: {
+      requestedSessionId: string | null;
+      requestedKickoff: string | null;
+    } | null;
+  };
+};
+
 type Report = {
   pass: boolean;
   failures: string[];
@@ -130,6 +183,11 @@ type Report = {
       cardRadii: number[];
       columnRadii: number[];
       chips: { id: string; chips: Chip[] }[];
+      cardTitlePx: (number | null)[];
+      columnTitlePx: (number | null)[];
+      agentBadges: { id: string; badge: Mark | null }[];
+      handoverControls: { id: string; title: string; control: HandoverControl | null }[];
+      handover: HandoverReport;
       bareDeletes: number;
       menu: {
         role: string;
@@ -240,6 +298,96 @@ describe("Act task board e2e", () => {
       legacy?.chips.filter((chip) => chip.danger).map((chip) => chip.label),
       ["Missing goal"],
       "a dangling goal is not marked as missing",
+    );
+
+    // ── Cards are titled at the columns' own heading size ─────────────────────
+    const columnSizes = [...new Set(report.checks.dom.columnTitlePx)];
+    assert.equal(columnSizes.length, 1, `column headings disagree: ${JSON.stringify(columnSizes)}`);
+    const headingPx = columnSizes[0];
+    assert.ok(typeof headingPx === "number" && headingPx > 0, "no column heading size was measured");
+    assert.equal(
+      report.checks.dom.cardTitlePx.length,
+      report.checks.dom.cardCount,
+      "not every card's title was measured",
+    );
+    for (const size of report.checks.dom.cardTitlePx) {
+      assert.equal(
+        size,
+        headingPx,
+        `a card title is not the column heading's size: ${size}px vs ${headingPx}px`,
+      );
+    }
+
+    // ── Provenance: one agent-added card, marked and labelled ─────────────────
+    const marked = report.checks.dom.agentBadges.filter((entry) => entry.badge);
+    assert.equal(marked.length, 1, `an agent mark is on ${marked.length} cards, not one`);
+    assert.equal(marked[0]?.id, "t-banking", "the mark is on the wrong card");
+    assert.equal(marked[0]?.badge?.label, "Added by agent", "the mark's accessible name moved");
+    assert.equal(marked[0]?.badge?.title, "Added by agent", "the mark's hover text moved");
+
+    // ── Hand-over: a first-class control, a new chat, a completion gate ───────
+    assert.equal(
+      report.checks.dom.handoverControls.length,
+      report.checks.dom.cardCount,
+      "not every card offers a hand-over control",
+    );
+    for (const entry of report.checks.dom.handoverControls) {
+      assert.equal(entry.control?.tag, "button", `${entry.id}'s hand-over is not a button`);
+      assert.equal(
+        entry.control?.title,
+        "Hand over to agent",
+        `${entry.id}'s hand-over tooltip moved`,
+      );
+      assert.equal(
+        entry.control?.label,
+        `Hand over to agent: ${entry.title}`,
+        `${entry.id}'s hand-over accessible name does not lead with its visible label`,
+      );
+    }
+    const handover = report.checks.dom.handover;
+    assert.equal(handover.sessions.length, 1, "hand-over did not create exactly one chat");
+    assert.ok(
+      handover.sessions[0]?.title.includes("Ship the redesigned Act board"),
+      `the chat is not named for the task: ${handover.sessions[0]?.title}`,
+    );
+    assert.equal(
+      handover.dock?.requestedSessionId,
+      handover.sessions[0]?.id,
+      "the dock was not asked to open the new chat",
+    );
+    const kickoff = handover.dock?.requestedKickoff ?? "";
+    for (const required of [
+      "Task id: t-ship",
+      "Ship the redesigned Act board",
+      "Menus, column rhythm, responsive widths.",
+      // The board-resolved link labels, not ids: a broken handoverContext
+      // cannot pass by handing the agent a well-formed prompt about nothing.
+      "Column: This week",
+      "Goal: Ship a calmer operating system",
+      "Project: Act board redesign",
+      "Week item: Weekly review",
+      "move_task",
+      'column: "done"',
+    ]) {
+      assert.ok(kickoff.includes(required), `the kickoff is missing ${JSON.stringify(required)}`);
+    }
+    assert.deepEqual(
+      handover.mapCommands,
+      [],
+      "handing a task over wrote a map command; only the agent moves the card",
+    );
+
+    // A failure is reported, and creates no chat and no card movement.
+    assert.equal(handover.failure.error, "gateway down", "a failed hand-over is not reported");
+    assert.equal(
+      handover.failure.sessions.length,
+      1,
+      "a failed hand-over still created a chat",
+    );
+    assert.equal(
+      handover.failure.dock?.requestedSessionId,
+      handover.sessions[0]?.id,
+      "a failed hand-over still re-pointed the dock at a chat",
     );
 
     // ── The 3-dot holds the destructive action ────────────────────────────────

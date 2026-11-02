@@ -15,6 +15,7 @@ export type {
   Priority,
   GridBlock,
   Task,
+  TaskOrigin,
   TaskColumn,
   TaskLinks,
   ColorId,
