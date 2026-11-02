@@ -9,9 +9,9 @@
  * Exit code 0 = every invariant held. The JSON report is the repeatable
  * artifact: same command, same numbers, no eyeballing the app required. It
  * carries the glow itself — the halo's own layers, the two tokens they are drawn
- * with, and the distance the halo reaches against the room the rail gives it — so
- * "the build number glows when a newer release exists" is a set of numbers in a
- * file rather than a screenshot to squint at.
+ * with, and the distance the halo reaches against the room the dock's action bar
+ * gives it — so "the build number glows when a newer release exists" is a set of
+ * numbers in a file rather than a screenshot to squint at.
  *
  * It also drives the click that makes the glow unnecessary to wait for: the build
  * number is a control at launch, so the operator can force the feed themselves.
@@ -81,10 +81,28 @@ const SAMPLE = `(() => {
     };
   };
   const root = getComputedStyle(document.documentElement);
-  const chip = document.querySelector(".nav-rail__version");
-  const label = document.querySelector(".nav-rail__update-label");
-  const logRow = document.querySelector('.nav-rail__link[href="/log"]');
+  const chip = document.querySelector(".update-badge");
+  const label = document.querySelector(".update-badge__label");
+  // The chip's new home: the dock's bottom action bar. It is the last control in
+  // that row, after the collapse button, and the row's own box is what the halo
+  // has to fit inside.
+  const bar = document.querySelector(".chat-panel__actions");
+  const collapse = document.querySelector('[data-testid="chat-collapse"]');
+  const barControls = bar ? Array.from(bar.querySelectorAll("button")) : [];
+  const lastBarControl = barControls.length
+    ? barControls[barControls.length - 1]
+    : null;
+  const barStyle = bar ? getComputedStyle(bar) : null;
+  const barPadding = barStyle
+    ? {
+        top: parseFloat(barStyle.paddingTop) || 0,
+        right: parseFloat(barStyle.paddingRight) || 0,
+        bottom: parseFloat(barStyle.paddingBottom) || 0,
+        left: parseFloat(barStyle.paddingLeft) || 0
+      }
+    : null;
   const rail = document.querySelector(".nav-rail");
+  const railHeader = document.querySelector(".nav-rail__header");
   const dialog = document.querySelector(".update-dialog");
   const progressBar = document.querySelector(".update-dialog__bar[role=progressbar]");
   const fill = document.querySelector(".update-dialog__bar-fill");
@@ -154,6 +172,8 @@ const SAMPLE = `(() => {
           ariaExpanded: chip.getAttribute("aria-expanded"),
           title: chip.getAttribute("title"),
           type: chip.getAttribute("type"),
+          inBar: Boolean(bar && bar.contains(chip)),
+          inRail: Boolean(rail && rail.contains(chip)),
           box: box(chip),
           color: chipStyle.color,
           background: chipStyle.backgroundColor,
@@ -177,22 +197,63 @@ const SAMPLE = `(() => {
           }
         }
       : null,
+    // The dock's own bottom bar, read as a row: its box and padding say where the
+    // chip sits inside it, and its control list says whether the chip is really
+    // the trailing one. The bar paints --titlebar-bg, the window strip's fill.
+    bar: bar
+      ? {
+          box: box(bar),
+          padding: barPadding,
+          background: barStyle.backgroundColor,
+          display: barStyle.display,
+          alignItems: barStyle.alignItems,
+          gap: barStyle.gap,
+          containsChip: Boolean(chip && bar.contains(chip)),
+          lastChildIsChip: bar.lastElementChild === chip,
+          lastControlIsChip: lastBarControl === chip,
+          lastControlAriaLabel: lastBarControl
+            ? lastBarControl.getAttribute("aria-label")
+            : null,
+          controls: barControls.map((el) => ({
+            tag: el.tagName.toLowerCase(),
+            ariaLabel: el.getAttribute("aria-label"),
+            testId: el.getAttribute("data-testid"),
+            className: el.className,
+            box: box(el)
+          }))
+        }
+      : null,
+    collapse: collapse
+      ? {
+          ariaLabel: collapse.getAttribute("aria-label"),
+          testId: collapse.getAttribute("data-testid"),
+          box: box(collapse)
+        }
+      : null,
     rail: rail
       ? {
           box: box(rail),
           scrollTop: rail.scrollTop,
           scrollHeight: rail.scrollHeight,
           clientHeight: rail.clientHeight,
+          display: getComputedStyle(rail).display,
+          direction: getComputedStyle(rail).flexDirection,
           background: getComputedStyle(rail).backgroundColor
         }
       : null,
+    railHeader: railHeader ? { box: box(railHeader) } : null,
     // The words that come with the glow. Read as a paragraph, not as a control:
-    // what makes this line safe in a column of nav rows is that it is not one.
+    // what makes this line safe in a bar of action buttons is that it is not one.
     label: label
       ? {
           tag: label.tagName.toLowerCase(),
           text: (label.textContent || "").trim(),
           dataLabel: label.getAttribute("data-update-label"),
+          inBar: Boolean(bar && bar.contains(label)),
+          nextToChip: label.nextElementSibling === chip,
+          focusables: label.querySelectorAll(
+            "button, a[href], input, select, textarea, [tabindex], [role=button], [role=link]"
+          ).length,
           box: box(label),
           color: getComputedStyle(label).color,
           fontSize: getComputedStyle(label).fontSize,
@@ -209,9 +270,6 @@ const SAMPLE = `(() => {
           }
         }
       : null,
-    // The row directly above the foot. The caption takes its height out of this
-    // column, so what it must NOT do is land on top of the Log row.
-    logRow: logRow ? { box: box(logRow), text: (logRow.textContent || "").trim() } : null,
     dialog: dialog
       ? {
           box: box(dialog),
@@ -338,10 +396,12 @@ const SAMPLE = `(() => {
     })(),
     dom: {
       hasRail: Boolean(rail),
+      hasBar: Boolean(bar),
       hasChip: Boolean(chip),
       hasShell: Boolean(document.querySelector(".shell")),
       errors: Array.isArray(window.__harnessErrors) ? window.__harnessErrors : null,
       railHtml: rail ? rail.innerHTML.slice(0, 600) : null,
+      barHtml: bar ? bar.innerHTML.slice(0, 600) : null,
       bodyText: (document.body.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 200)
     },
     overflow: {
@@ -358,6 +418,13 @@ const check = (label, condition, detail) => {
   if (!condition) failures.push(`${label}: ${detail}`);
   return Boolean(condition);
 };
+
+/** Two measured boxes as the same box, to within a rounding pixel. */
+const sameBox = (a, b) =>
+  Boolean(a && b) &&
+  ["left", "top", "right", "bottom", "width", "height"].every(
+    (key) => Math.abs(a[key] - b[key]) <= 1,
+  );
 
 /**
  * A colour as `{ rgb, alpha }`, where `rgb` is the 0-255 triple.
@@ -490,21 +557,21 @@ async function main() {
     }
   };
 
-  const loadScenario = async (scenario, view = "rail", preview = null) => {
+  const loadScenario = async (scenario, view = "badge", preview = null) => {
     // The scenario rides the page's own query string rather than localStorage:
     // the driver has to choose one before this page has ever been loaded, and
     // there is no origin to write to until then. `view` picks which harness page
-    // mounts — the rail's chip, or a Settings panel. Pages rather than one branch,
-    // because a page's module graph is evaluated once per load and a flag read off
-    // its query string decides what that one page mounts.
+    // mounts — the dock's badge, or a Settings panel. Pages rather than one
+    // branch, because a page's module graph is evaluated once per load and a flag
+    // read off its query string decides what that one page mounts.
     //
     // `preview` seeds the Developer switch, through the same storage key the switch
     // itself writes. It is written on *every* load — `null` means off — so one pass
     // cannot inherit the last one's state and turn a later assertion green for the
     // wrong reason.
-    const page = view === "rail" ? "update-badge.html" : "update-settings.html";
+    const page = view === "badge" ? "update-badge.html" : "update-settings.html";
     const params = new URLSearchParams({ scenario, preview: preview ? "1" : "0" });
-    if (view !== "rail") {
+    if (view !== "badge") {
       params.set("view", view === "developer" ? "developer" : "updates");
     }
     const target = `${url.replace(/[^/]*$/, page)}?${params.toString()}`;
@@ -564,18 +631,22 @@ async function main() {
     return file;
   };
 
-  const shootRailFoot = async (name) => {
-    const chip = await run(SAMPLE);
-    // Tall enough for the whole foot: the Log row, the caption, and the pill —
-    // the crop is what the operator would call "the bottom of the sidebar".
-    const height = 200;
-    const y = Math.max(0, (chip.rail?.box.bottom ?? DEFAULT_SIZE.height) - height);
-    const image = await win.webContents.capturePage({
-      x: 0,
-      y,
-      width: Math.max(240, chip.rail?.box.width ?? 240),
-      height,
-    });
+  const shootActionBar = async (name) => {
+    const state = await run(SAMPLE);
+    // The crop the operator would call "the bottom of the dock": the bar, the
+    // pill at its trailing end, and a little of the pane above it for context.
+    const barBox = state.bar?.box;
+    const x = Math.max(0, Math.round((barBox?.left ?? DEFAULT_SIZE.width - 420) - 8));
+    const y = Math.max(0, Math.round((barBox?.top ?? DEFAULT_SIZE.height - 120) - 72));
+    const width = Math.min(
+      DEFAULT_SIZE.width - x,
+      Math.max(240, Math.round((barBox?.width ?? 420) + 16)),
+    );
+    const height = Math.min(
+      DEFAULT_SIZE.height - y,
+      Math.round((barBox?.height ?? 48) + 88),
+    );
+    const image = await win.webContents.capturePage({ x, y, width, height });
     const file = path.join(artifactsDir, name);
     fs.writeFileSync(file, image.toPNG());
     return file;
@@ -602,15 +673,82 @@ async function main() {
     await loadScenario("available");
     const resting = await settle();
 
-    if (!check("chip exists", Boolean(resting.chip), "no .nav-rail__version in the rail")) {
+    if (
+      !check(
+        "chip exists",
+        Boolean(resting.chip),
+        "no .update-badge in the dock's action bar",
+      )
+    ) {
       console.error(`[update-badge] dom: ${JSON.stringify(resting.dom, null, 2)}`);
       throw new Error("no version chip rendered");
     }
+
+    // The rail is no longer the chip's home. It is still the column it was: one
+    // flex column whose topband carries the window's top strip in this track, and
+    // it still does not scroll. The badge is not claimed about the rail any more.
     check(
-      "the rail is still one column with the topband in it",
+      "the rail is still one column with its topband and does not scroll",
       resting.rail?.scrollTop === 0 &&
-        (resting.rail?.scrollHeight ?? 0) <= (resting.rail?.clientHeight ?? 0),
-      `scrollTop ${resting.rail?.scrollTop}, content ${resting.rail?.scrollHeight}px in ${resting.rail?.clientHeight}px`,
+        (resting.rail?.scrollHeight ?? 0) <= (resting.rail?.clientHeight ?? 0) &&
+        resting.rail?.display === "flex" &&
+        resting.rail?.direction === "column" &&
+        Boolean(resting.railHeader?.box) &&
+        Math.abs(
+          (resting.railHeader?.box.width ?? -1) - (resting.rail?.box.width ?? 0),
+        ) <= 2,
+      `scrollTop ${resting.rail?.scrollTop}, content ${resting.rail?.scrollHeight}px in ${resting.rail?.clientHeight}px, display ${resting.rail?.display}/${resting.rail?.direction}, topband ${JSON.stringify(resting.railHeader?.box)} vs rail ${JSON.stringify(resting.rail?.box)}`,
+    );
+    check(
+      "the badge has left the rail for the dock's action bar",
+      resting.chip.inRail === false &&
+        resting.chip.inBar === true &&
+        resting.bar?.containsChip === true,
+      `in rail ${resting.chip.inRail}, in bar ${resting.chip.inBar}, bar contains ${resting.bar?.containsChip}`,
+    );
+
+    // Where it sits in that bar: the last element and the last control, after the
+    // collapse button, inside the row's own box and padding.
+    const barBox = resting.bar?.box;
+    const barPadding = resting.bar?.padding;
+    check(
+      "the chip is the last control in the dock's action bar",
+      resting.bar?.lastControlIsChip === true &&
+        resting.bar?.lastChildIsChip === true,
+      `last control ${JSON.stringify(resting.bar?.lastControlAriaLabel)}, last child is chip ${resting.bar?.lastChildIsChip}`,
+    );
+    check(
+      "the chip trails the collapse control",
+      resting.collapse?.ariaLabel === "Collapse chat" &&
+        resting.collapse?.testId === "chat-collapse" &&
+        Boolean(resting.collapse?.box && resting.chip.box) &&
+        resting.chip.box.left >= resting.collapse.box.right,
+      `collapse ${JSON.stringify(resting.collapse)}, chip ${JSON.stringify(resting.chip.box)}`,
+    );
+    check(
+      "the chip sits inside the bar's own padding",
+      Boolean(barBox && barPadding && resting.chip.box) &&
+        resting.chip.box.left >= barBox.left + barPadding.left &&
+        resting.chip.box.right <= barBox.right - barPadding.right &&
+        resting.chip.box.top >= barBox.top + barPadding.top &&
+        resting.chip.box.bottom <= barBox.bottom - barPadding.bottom,
+      `chip ${JSON.stringify(resting.chip.box)} vs bar ${JSON.stringify(barBox)} padding ${JSON.stringify(barPadding)}`,
+    );
+    check(
+      "the bar ends at the window's bottom-right corner",
+      Boolean(barBox) &&
+        barBox.right >= resting.viewport.width - 2 &&
+        barBox.bottom >= resting.viewport.height - 2 &&
+        resting.chip.box.right >= resting.viewport.width - 48 &&
+        resting.chip.box.bottom >= resting.viewport.height - 48,
+      `bar ${JSON.stringify(barBox)}, chip ${JSON.stringify(resting.chip.box)}, window ${JSON.stringify(resting.viewport)}`,
+    );
+    check(
+      "the chip is no taller than the bar's own row",
+      Boolean(barBox && barPadding && resting.chip.box) &&
+        resting.chip.box.height <=
+          barBox.height - barPadding.top - barPadding.bottom + 1,
+      `chip ${resting.chip.box?.height}px, row ${((barBox?.height ?? 0) - (barPadding?.top ?? 0) - (barPadding?.bottom ?? 0)).toFixed(1)}px`,
     );
 
     // The line itself: still the build number, now a control.
@@ -622,7 +760,7 @@ async function main() {
     check(
       "the chip wears the available state",
       resting.chip.dataState === "available" &&
-        resting.chip.className.includes("nav-rail__version--available"),
+        resting.chip.className.includes("update-badge--available"),
       `state ${resting.chip.dataState}, class ${resting.chip.className}`,
     );
     check(
@@ -649,11 +787,11 @@ async function main() {
       `radius ${resting.chip.borderRadius}`,
     );
 
-    // ── the words above the pill ────────────────────────────────────────────
+    // ── the words beside the pill ───────────────────────────────────────────
     // A glowing `v0.1.4` is a state without a sentence. The words have to say
-    // what it means, sit above it, leave the Log row above themselves, and stay
-    // a paragraph — a second focus stop in the rail with nothing to do would be
-    // worse than the glow alone.
+    // what it means, sit inline on the same bar row immediately left of the
+    // pill, and stay a paragraph — a second focus stop in a bar of action
+    // controls with nothing to do would be worse than the glow alone.
     const labelInk = resting.chip.tokens.resolved.accent;
     check(
       "the glow is explained in words",
@@ -661,23 +799,38 @@ async function main() {
       `caption ${JSON.stringify(resting.label?.text)} as <${resting.label?.tag}>`,
     );
     check(
-      "the caption sits above the build number, not below it",
+      "the caption is inline in the same bar row, immediately left of the chip",
       Boolean(resting.label?.box && resting.chip.box) &&
-        resting.label.box.bottom <= resting.chip.box.top,
-      `caption ${JSON.stringify(resting.label?.box)} vs chip ${JSON.stringify(resting.chip.box)}`,
+        resting.label.inBar === true &&
+        resting.label.nextToChip === true &&
+        resting.label.box.right <= resting.chip.box.left &&
+        resting.chip.box.left - resting.label.box.right <= 24 &&
+        resting.label.box.top < resting.chip.box.bottom &&
+        resting.label.box.bottom > resting.chip.box.top,
+      `caption ${JSON.stringify(resting.label?.box)} vs chip ${JSON.stringify(resting.chip.box)}, in bar ${resting.label?.inBar}, next to chip ${resting.label?.nextToChip}`,
     );
     check(
-      "the Log row stayed above the caption",
-      Boolean(resting.logRow?.box && resting.label?.box) &&
-        resting.logRow.box.bottom <= resting.label.box.top,
-      `log ${JSON.stringify(resting.logRow?.box)} vs caption ${JSON.stringify(resting.label?.box)}`,
+      "the caption's centre rides the chip's own row",
+      Boolean(resting.label?.box && resting.chip.box) &&
+        Math.abs(
+          (resting.label.box.top + resting.label.box.bottom) / 2 -
+            (resting.chip.box.top + resting.chip.box.bottom) / 2,
+        ) <= 2,
+      `caption centre ${(
+        ((resting.label?.box?.top ?? 0) + (resting.label?.box?.bottom ?? 0)) /
+        2
+      ).toFixed(1)} vs chip centre ${(
+        ((resting.chip?.box?.top ?? 0) + (resting.chip?.box?.bottom ?? 0)) /
+        2
+      ).toFixed(1)}`,
     );
     check(
       "the caption is text, not a second control",
       resting.label?.tag === "p" &&
         resting.label?.tabIndex === null &&
-        resting.label?.role === null,
-      `tag ${resting.label?.tag}, tabindex ${JSON.stringify(resting.label?.tabIndex)}, role ${JSON.stringify(resting.label?.role)}`,
+        resting.label?.role === null &&
+        resting.label?.focusables === 0,
+      `tag ${resting.label?.tag}, tabindex ${JSON.stringify(resting.label?.tabIndex)}, role ${JSON.stringify(resting.label?.role)}, focusables ${resting.label?.focusables}`,
     );
     check(
       "the caption wears the state ink",
@@ -685,9 +838,13 @@ async function main() {
       `color ${resting.label?.color} vs --accent ${labelInk}`,
     );
     check(
-      "the caption fits the rail's width",
-      (resting.label?.overflow?.scrollWidth ?? 0) <= (resting.label?.overflow?.clientWidth ?? 0),
-      `scrollWidth ${resting.label?.overflow?.scrollWidth} vs clientWidth ${resting.label?.overflow?.clientWidth}`,
+      "the caption fits inside the bar",
+      (resting.label?.overflow?.scrollWidth ?? 0) <=
+        (resting.label?.overflow?.clientWidth ?? 0) &&
+        Boolean(resting.label?.box && barBox && barPadding) &&
+        resting.label.box.left >= barBox.left + barPadding.left &&
+        resting.label.box.right <= barBox.right - barPadding.right,
+      `scrollWidth ${resting.label?.overflow?.scrollWidth} vs clientWidth ${resting.label?.overflow?.clientWidth}, caption ${JSON.stringify(resting.label?.box)} vs bar ${JSON.stringify(barBox)}`,
     );
 
     // ── the glow ────────────────────────────────────────────────────────────
@@ -727,25 +884,32 @@ async function main() {
         ),
       `layers ${JSON.stringify(layers)}`,
     );
-    // The halo has to fit the room the rail gives it. `.nav-rail` clips its
-    // overflow at its own edge, so a bloom wider than the padding around the chip
-    // does not fade out — it is sliced off flat, which reads as a box rather than
-    // as light. The chip is centred for exactly this reason.
+    // The halo has to fit the room the dock's action bar gives it. The bar runs
+    // to the window's corner and its pane clips at that edge, so a bloom wider
+    // than the slack between the pill and the bar's own edge is sliced off flat,
+    // which reads as a box rather than as light. Measured from the bar's box —
+    // where the bar's trailing padding and the chip's margin are the room — not
+    // from the rail, which no longer contains the chip.
     const reach = Math.max(...layers.map((layer) => layer.blur + layer.spread));
-    const room = Math.min(
-      (resting.chip.box?.left ?? 0) - (resting.rail?.box.left ?? 0),
-      (resting.rail?.box.right ?? 0) - (resting.chip.box?.right ?? 0),
-    );
+    const room =
+      barBox && resting.chip.box
+        ? Math.min(
+            resting.chip.box.left - barBox.left,
+            barBox.right - resting.chip.box.right,
+            resting.chip.box.top - barBox.top,
+            barBox.bottom - resting.chip.box.bottom,
+          )
+        : 0;
     check(
-      "the halo fits inside the rail's own clip",
+      "the halo fits inside the bar's own box",
       layers.length > 0 && reach <= room,
-      `the halo reaches ${reach.toFixed(1)}px into ${room}px of room — the rail would slice it flat`,
+      `the halo reaches ${reach.toFixed(1)}px into the ${room}px the bar gives it — the dock's edge would slice it flat`,
     );
     check(
       "the halo breathes, unless the operator asked for stillness",
       resting.reducedMotion
         ? halo?.animationName === "none"
-        : halo?.animationName === "nav-rail-version-breathe",
+        : halo?.animationName === "update-badge-breathe",
       `reduced motion ${resting.reducedMotion}, animation ${halo?.animationName}`,
     );
     check(
@@ -779,11 +943,11 @@ async function main() {
       `scrollWidth ${resting.overflow.scrollWidth} vs ${resting.overflow.clientWidth}`,
     );
 
-    screenshots.push(await shootRailFoot("update-badge-rail-glow.png"));
+    screenshots.push(await shootActionBar("update-badge-action-bar-glow.png"));
     screenshots.push(await shoot("update-badge-resting.png"));
 
     // ── 2 — the popup ───────────────────────────────────────────────────────
-    const clicked = await click(".nav-rail__version");
+    const clicked = await click(".update-badge");
     check("the glowing build number is clickable", clicked, "no chip to click");
     const opened = await settle();
 
@@ -897,7 +1061,7 @@ async function main() {
 
     // ── 4 — an install that fails is reported, and the popup reopens ────────
     await loadScenario("install-fails");
-    await click(".nav-rail__version");
+    await click(".update-badge");
     await settle();
     await click('.update-dialog button[aria-label="Download and install"]');
     const failed = await settle(400);
@@ -923,7 +1087,7 @@ async function main() {
 
     // ── 5 — the operator's manual check: quiet at launch, offered after a click
     // The flow the version number exists for. The launch's check finds nothing,
-    // so the rail is quiet — and still a control. The click forces the feed, the
+    // so the bar is quiet — and still a control. The click forces the feed, the
     // popup says it is asking, and the answer that comes back is the usual offer.
     await loadScenario("slow");
     const manualRest = await settle();
@@ -958,7 +1122,7 @@ async function main() {
       `update:check called ${manualRest.calls?.check} times`,
     );
 
-    await click(".nav-rail__version");
+    await click(".update-badge");
     const asking = await settle(320);
     check(
       "clicking the build number checks the feed by hand",
@@ -1030,20 +1194,20 @@ async function main() {
       upToDate.chip?.dataVersion === null,
       `data ${JSON.stringify(upToDate.chip?.dataVersion)}`,
     );
-    // The words are a claim about this launch, so a rail with nothing to install
+    // The words are a claim about this launch, so a bar with nothing to install
     // must not carry them: they would be chrome that is always there, saying
     // something that is never true.
     check(
       "an up-to-date build says nothing about an update",
       upToDate.label === null,
-      `caption ${JSON.stringify(upToDate.label)}, rail foot ${JSON.stringify(upToDate.chip?.text)}`,
+      `caption ${JSON.stringify(upToDate.label)}, chip ${JSON.stringify(upToDate.chip?.text)}`,
     );
+    // The chip is a quiet line in the bar, not something that changes the bar's
+    // size: the available state adds ink and a caption, never a taller row.
     check(
-      "an up-to-date build keeps its Log row where it was",
-      Boolean(upToDate.logRow?.box) &&
-        Boolean(upToDate.chip?.box) &&
-        upToDate.logRow.box.bottom <= upToDate.chip.box.top,
-      `log ${JSON.stringify(upToDate.logRow?.box)} vs chip ${JSON.stringify(upToDate.chip?.box)}`,
+      "the available state did not change the bar's box",
+      sameBox(resting.bar?.box, upToDate.bar?.box),
+      `available ${JSON.stringify(resting.bar?.box)} vs up-to-date ${JSON.stringify(upToDate.bar?.box)}`,
     );
     check(
       "an up-to-date build still asks the feed once",
@@ -1051,7 +1215,7 @@ async function main() {
       `update:check called ${upToDate.calls?.check} times`,
     );
 
-    await click(".nav-rail__version");
+    await click(".update-badge");
     const afterClick = await settle(360);
     check(
       "clicking a quiet build number checks the feed again",
@@ -1103,9 +1267,9 @@ async function main() {
     await loadScenario("junk");
     const junk = await settle();
     check(
-      "an unreadable answer leaves the rail standing",
-      Boolean(junk.rail) && junk.chip?.tag === "button",
-      `rail ${JSON.stringify(junk.rail?.box)}, chip ${junk.chip?.tag}`,
+      "an unreadable answer leaves the dock's action bar standing",
+      Boolean(junk.bar) && junk.bar?.containsChip === true && junk.chip?.tag === "button",
+      `bar ${JSON.stringify(junk.bar?.box)}, chip ${junk.chip?.tag}`,
     );
     check(
       "an unreadable answer is never treated as an update",
@@ -1127,7 +1291,7 @@ async function main() {
 
     // The operator can still ask, and still gets an answer: a failed check is
     // reported in the same panel, with a way to try again and a way out.
-    await click(".nav-rail__version");
+    await click(".update-badge");
     const junkClicked = await settle(360);
     check(
       "a failed launch check can be asked again by hand",
@@ -1169,9 +1333,11 @@ async function main() {
       `errors ${JSON.stringify(afterRemount.dom?.errors)}`,
     );
     check(
-      "the rail survives the remount",
-      Boolean(afterRemount.rail) && afterRemount.chip?.tag === "button",
-      `rail ${Boolean(afterRemount.rail)}, chip ${afterRemount.chip?.tag}`,
+      "the dock's action bar survives the remount",
+      Boolean(afterRemount.bar) &&
+        afterRemount.bar?.containsChip === true &&
+        afterRemount.chip?.tag === "button",
+      `bar ${Boolean(afterRemount.bar)}, chip ${afterRemount.chip?.tag}`,
     );
     screenshots.push(await shoot("update-badge-junk.png"));
 
@@ -1309,40 +1475,43 @@ async function main() {
 
     screenshots.push(await shoot("update-badge-developer.png"));
 
-    // ── 10 — and the rail really glows from it ─────────────────────────────
+    // ── 10 — and the dock's bar really glows from it ────────────────────────
     // The feed says "up to date"; the only reason for a glow is the switch.
-    await loadScenario("current", "rail", true);
-    const previewRail = await settle();
+    await loadScenario("current", "badge", true);
+    const previewBar = await settle();
     check(
       "the preview makes the build number glow",
-      previewRail.chip?.tag === "button" &&
-        previewRail.chip?.dataPreview === "true" &&
-        previewRail.chip?.boxShadow === "none",
-      `tag ${previewRail.chip?.tag}, preview ${previewRail.chip?.dataPreview}, halo ${JSON.stringify(previewRail.chip?.halo?.boxShadow)}`,
+      previewBar.chip?.tag === "button" &&
+        previewBar.chip?.dataPreview === "true" &&
+        previewBar.chip?.boxShadow === "none",
+      `tag ${previewBar.chip?.tag}, preview ${previewBar.chip?.dataPreview}, halo ${JSON.stringify(previewBar.chip?.halo?.boxShadow)}`,
     );
     check(
       "the preview's halo rests on its own layer, like a real one",
-      parseShadowLayers(previewRail.chip?.halo?.boxShadow ?? "").length === 2,
-      `halo ${JSON.stringify(previewRail.chip?.halo?.boxShadow)}`,
+      parseShadowLayers(previewBar.chip?.halo?.boxShadow ?? "").length === 2,
+      `halo ${JSON.stringify(previewBar.chip?.halo?.boxShadow)}`,
     );
     // The preview exists to show the whole affordance, words included: a preview
     // missing the caption would let a layout bug through the very surface built
     // to catch it.
     check(
       "the preview shows the caption too, and marks it as a preview",
-      previewRail.label?.text === "Update available" &&
-        previewRail.label?.dataLabel === "preview" &&
-        previewRail.label?.box != null &&
-        previewRail.label.box.bottom <= (previewRail.chip?.box?.top ?? 0),
-      `caption ${JSON.stringify(previewRail.label?.text)} (${previewRail.label?.dataLabel}), box ${JSON.stringify(previewRail.label?.box)}, chip ${JSON.stringify(previewRail.chip?.box)}`,
+      previewBar.label?.text === "Update available" &&
+        previewBar.label?.dataLabel === "preview" &&
+        previewBar.label?.inBar === true &&
+        Boolean(previewBar.label?.box && previewBar.chip?.box) &&
+        previewBar.label.box.right <= previewBar.chip.box.left &&
+        previewBar.label.box.top < previewBar.chip.box.bottom &&
+        previewBar.label.box.bottom > previewBar.chip.box.top,
+      `caption ${JSON.stringify(previewBar.label?.text)} (${previewBar.label?.dataLabel}), box ${JSON.stringify(previewBar.label?.box)}, chip ${JSON.stringify(previewBar.chip?.box)}`,
     );
     check(
       "the preview glow keeps the feed's answer quiet",
-      previewRail.calls?.check === 1,
-      `update:check called ${previewRail.calls?.check} times`,
+      previewBar.calls?.check === 1,
+      `update:check called ${previewBar.calls?.check} times`,
     );
 
-    await click(".nav-rail__version");
+    await click(".update-badge");
     const previewDialog = await settle();
     check(
       "the preview opens the popup",
@@ -1381,7 +1550,7 @@ async function main() {
     // The switch on, and the feed offering something: the popup must be the
     // release, not the preview. A switch that could hide an upgrade would be
     // worse than no switch.
-    await loadScenario("available", "rail", true);
+    await loadScenario("available", "badge", true);
     const shadowed = await settle();
     check(
       "a real release wins over the preview",
@@ -1395,7 +1564,7 @@ async function main() {
         shadowed.label?.dataLabel === "available",
       `caption ${JSON.stringify(shadowed.label?.text)} (${shadowed.label?.dataLabel})`,
     );
-    await click(".nav-rail__version");
+    await click(".update-badge");
     const shadowedDialog = await settle();
     check(
       "and its popup is the real one",
@@ -1455,7 +1624,7 @@ async function main() {
       checked,
       developer,
       previewOn,
-      previewRail,
+      previewBar,
       previewDialog,
       shadowed,
       shadowedDialog,
@@ -1493,7 +1662,7 @@ async function main() {
         checked,
         developer,
         previewOn,
-        previewRail,
+        previewBar,
         previewDialog,
         shadowed,
         shadowedDialog,
@@ -1624,7 +1793,7 @@ async function main() {
       `       bloom ${JSON.stringify(report.glow.layers?.[1]?.color)} vs --accent-fill ${JSON.stringify(report.glow.resolved?.accentFill)}`,
     );
     console.log(
-      `room:  the halo reaches ${report.glow.reach.toFixed(1)}px into the ${report.glow.room}px the rail gives it`,
+      `room:  the halo reaches ${report.glow.reach.toFixed(1)}px into the ${report.glow.room}px the action bar gives it`,
     );
   }
 

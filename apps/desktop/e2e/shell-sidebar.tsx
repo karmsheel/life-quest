@@ -34,15 +34,19 @@
  *     stepping up off it.
  * 14. Day knocked over — the shared sheet rule dragging the night ladder into the
  *     light theme, where the mat and the panels must keep sinking below the sheet.
- * 15. The mat drifting off the dock's own band — the sidebar and the strip a
- *     near-miss grey beside the `.chat-panel__actions` row they are meant to match.
+ * 15. The dock's action band drifting off the strip — the bottom icon row a
+ *     near-miss grey instead of the titlebar's own fill, so the dock stops being
+ *     capped top and bottom by one material.
  * 16. Lines creeping back between the panes — a hairline on the sheet's top,
  *     leading or bottom edge, on the rail's trailing edge, or on any edge of the
  *     dock. The studio has exactly one: the sheet's trailing edge, the seam with
  *     the dock. The line under the strip belongs to the top bar, and it must
  *     survive: lose it and the domain lens loses its underline. The rail's own
  *     band paints nothing of its own, so the line stops at the pane seam.
- * 17. Native bar left in place — a scroller whose gutter is the platform's own
+ * 17a. Mats creeping back under the strip — the titlebar's night fill starting at
+ *     the window's leading edge instead of at the rail's trailing edge, or a pane
+ *     gap reopening between the strip and the sheet/dock.
+ * 18. Native bar left in place — a scroller whose gutter is the platform's own
  *     15-17px instead of the app's 8px, which is what a `::-webkit-scrollbar`
  *     rule that never applied looks like.
  * 18. Scrollbar ink off the palette — a thumb reading a colour from another skin,
@@ -79,7 +83,10 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
-import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import {
+  ThemeProvider,
+  syncTitleBarOverlay,
+} from "@/components/theme/ThemeProvider";
 import { applySkin } from "@/lib/themes/apply-skin";
 import { BUILTIN_SKINS, DEFAULT_SKIN_NAME } from "@/lib/themes/presets";
 import { applyThemePreference } from "@/lib/theme";
@@ -127,6 +134,9 @@ const SESSION = {
   lastActive: 1_700_000_000,
 };
 
+/** Every `setTitleBarOverlay` the provider made, oldest first. */
+const overlayCalls: { color: string; symbolColor: string }[] = [];
+
 const bridge: Record<string, unknown> = {
   vaultGetSnapshot: () => ok(SNAPSHOT),
   vaultListRecent: () => Promise.resolve([]),
@@ -147,9 +157,15 @@ const bridge: Record<string, unknown> = {
   onCompanionStream: () => () => {},
   // Mirrors the shipped window: overlay caption buttons, so the titlebar shows
   // its trailing cluster (theme, settings, chat) and not the fallback controls.
+  // The overlay calls are kept: the native strip the OS paints beside the web
+  // content has to wear the same fill the CSS titlebar does, and that hand-off is
+  // the one part of the strip no computed style can answer for.
   windowChrome: {
     get: () => Promise.resolve({ overlay: true, platform: "win32" }),
-    setTitleBarOverlay: () => Promise.resolve(),
+    setTitleBarOverlay: (opts: { color: string; symbolColor: string }) => {
+      overlayCalls.push(opts);
+      return Promise.resolve();
+    },
     minimize: () => {},
     toggleMaximize: () => {},
     close: () => {},
@@ -286,6 +302,9 @@ requestAnimationFrame(waitForShell);
   const skin = BUILTIN_SKINS[skinName] ?? BUILTIN_SKINS[DEFAULT_SKIN_NAME]!;
   applyThemePreference(mode);
   applySkin(skin, mode);
+  // The provider's third call after a repaint: the native caption strip takes the
+  // same fill the CSS titlebar just did.
+  syncTitleBarOverlay();
   return skin.name;
 };
 
@@ -302,3 +321,15 @@ requestAnimationFrame(waitForShell);
 ).shellHarnessDarkLadder = (skinName) =>
   (BUILTIN_SKINS[skinName] ?? BUILTIN_SKINS[DEFAULT_SKIN_NAME]!)?.darkLadder ??
   "standard";
+
+/**
+ * The overlay hand-offs the provider made on mount. The rig compares the last one
+ * with the computed `.window-titlebar` fill: the OS paints its caption buttons in
+ * the strip beside the web content, so a mismatch there is a titlebar in two
+ * colours on the one edge the operator's window controls sit on.
+ */
+(
+  window as unknown as {
+    shellHarnessOverlayCalls: () => { color: string; symbolColor: string }[];
+  }
+).shellHarnessOverlayCalls = () => overlayCalls.slice();

@@ -3,8 +3,8 @@ import { useUpdate } from "@/state/UpdateProvider";
 import { UpdateDialog } from "./UpdateDialog";
 
 /**
- * The build number at the foot of the rail, and the app's one manual update
- * affordance.
+ * The build number in the dock's bottom action bar, and the app's one manual
+ * update affordance.
  *
  * It is a control at all times, so the operator can always ask. What it opens
  * depends on what is already known:
@@ -15,8 +15,8 @@ import { UpdateDialog } from "./UpdateDialog";
  *    with `force`, and the popup becomes whichever answer came back: the offer,
  *    "you're up to date", or why the check could not answer.
  *
- * At rest it stays the quiet line it has always been — the rail's muted ink, no
- * fill, no halo. It gains the glow (and the words above it) only when there is
+ * At rest it stays the quiet line it has always been — the bar's muted ink, no
+ * fill, no halo. It gains the glow (and the words beside it) only when there is
  * something to install, because the glow is a state, not a button style. The one
  * thing it gains from being a control everywhere is the affordance a control
  * needs: hover ink, a focus ring, and a pointer.
@@ -50,7 +50,7 @@ export function UpdateBadge() {
     <>
       {available ? (
         <p
-          className="nav-rail__update-label"
+          className="update-badge__label"
           data-update-label={previewing ? "preview" : "available"}
         >
           Update available
@@ -61,8 +61,8 @@ export function UpdateBadge() {
         ref={trigger}
         className={
           available
-            ? "nav-rail__version nav-rail__version--available"
-            : "nav-rail__version"
+            ? "update-badge update-badge--available"
+            : "update-badge"
         }
         data-update-state={available ? "available" : phase}
         {...(latest === null ? {} : { "data-update-version": latest })}

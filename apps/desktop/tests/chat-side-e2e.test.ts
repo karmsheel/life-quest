@@ -88,6 +88,7 @@ type Arrangement = {
   actions: {
     box: Box;
     controls: { label: string | null; icon: string | null; disabled: boolean }[];
+    badge: { label: string | null; text: string; box: Box } | null;
   } | null;
   collapseAction: {
     label: string | null;
@@ -262,11 +263,20 @@ describe("chat dock side switch", () => {
     for (const [edge, width] of Object.entries(right.chat?.border ?? {})) {
       assert.equal(isZero(width), true, `the dock grew a ${edge} border (${width})`);
     }
-    assert.equal(
-      right.main?.radius.topLeft,
-      radiusSm,
-      `the sheet's leading top corner is not the system radius (${right.main?.radius.topLeft})`,
-    );
+    // The sheet is square on every corner in both arrangements: it is a pane, not
+    // a card, and no corner of it is notched out of the mat.
+    for (const [corner, radius] of [
+      ["top left", right.main?.radius.topLeft],
+      ["top right", right.main?.radius.topRight],
+      ["bottom right", right.main?.radius.bottomRight],
+      ["bottom left", right.main?.radius.bottomLeft],
+    ] as const) {
+      assert.equal(
+        isZero(radius),
+        true,
+        `the sheet rounded its ${corner} corner (${radius})`,
+      );
+    }
     assert.equal(
       right.owners.bottomRight,
       "dock",
@@ -366,18 +376,18 @@ describe("chat dock side switch", () => {
       true,
       `the swapped panes grew lines: sheet t/b ${left.main?.border.top}/${left.main?.border.bottom}, dock t/r/b/l ${left.chat?.border.top}/${left.chat?.border.right}/${left.chat?.border.bottom}/${left.chat?.border.left}`,
     );
-    assert.equal(
-      left.main?.radius.topLeft,
-      radiusSm,
-      `the swapped sheet lost its leading top corner (${left.main?.radius.topLeft})`,
-    );
-    assert.equal(
-      isZero(left.main?.radius.topRight) &&
-        isZero(left.main?.radius.bottomRight) &&
-        isZero(left.main?.radius.bottomLeft),
-      true,
-      `the swapped sheet rounded a corner on the window's own edge: tr/br/bl ${left.main?.radius.topRight}/${left.main?.radius.bottomRight}/${left.main?.radius.bottomLeft}`,
-    );
+    for (const [corner, radius] of [
+      ["top left", left.main?.radius.topLeft],
+      ["top right", left.main?.radius.topRight],
+      ["bottom right", left.main?.radius.bottomRight],
+      ["bottom left", left.main?.radius.bottomLeft],
+    ] as const) {
+      assert.equal(
+        isZero(radius),
+        true,
+        `the swapped sheet rounded its ${corner} corner (${radius})`,
+      );
+    }
     assert.equal(
       left.chat?.background,
       left.main?.background,
@@ -656,14 +666,33 @@ describe("chat dock side switch", () => {
       `the bottom bar still carries an unassigned action: ${JSON.stringify(restored.actions?.controls)}`,
     );
     assert.ok(bar && collapseBox, "the bottom bar or its collapse control was not found");
+    // The build number moved into this bar, to the right of the collapse control:
+    // the version badge, not the collapse control, holds the window's bottom-right
+    // end now.
+    const badgeBox = restored.actions?.badge?.box;
+    assert.ok(badgeBox, "the bottom bar carries no version badge");
+    assert.match(
+      restored.actions?.badge?.text ?? "",
+      /^v\d+\.\d+\.\d+/,
+      `the badge does not show the build number (${restored.actions?.badge?.text})`,
+    );
+    assert.equal(
+      badgeBox.left > collapseBox.right &&
+        badgeBox.right <= bar.right &&
+        bar.right - badgeBox.right <= 10 &&
+        badgeBox.top >= bar.top &&
+        badgeBox.bottom <= bar.bottom,
+      true,
+      `the version badge does not hold the bar's trailing end (${JSON.stringify(badgeBox)} in ${JSON.stringify(bar)}, collapse ends at ${collapseBox.right}px)`,
+    );
     assert.equal(
       collapseBox.left > bar.left + bar.width / 2 &&
-        collapseBox.right <= bar.right &&
-        bar.right - collapseBox.right <= 10 &&
+        collapseBox.right <= badgeBox.left &&
+        badgeBox.left - collapseBox.right <= 12 &&
         collapseBox.top >= bar.top &&
         collapseBox.bottom <= bar.bottom,
       true,
-      `the collapse control is not the bottom-right action (${JSON.stringify(collapseBox)} in ${JSON.stringify(bar)})`,
+      `the collapse control does not sit just left of the badge (${JSON.stringify(collapseBox)} vs ${JSON.stringify(badgeBox)} in ${JSON.stringify(bar)})`,
     );
     assert.equal(
       barCollapsed.chat,

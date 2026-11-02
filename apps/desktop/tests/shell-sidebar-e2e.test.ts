@@ -34,6 +34,7 @@ type State = {
     dataTheme: string | null;
     skin: string | null;
     canvasBase: string;
+    titlebarBg: string;
     background: string;
     card: string;
     bgPanel: string;
@@ -56,6 +57,7 @@ type State = {
   railDisplay: string | null;
   header: {
     box: Box;
+    background: string;
     appRegion: string;
     controls: { tag: string; label: string | null }[];
   } | null;
@@ -202,6 +204,8 @@ type Report = {
   wingSwitch: { defined: State; home: State };
   day: State;
   ladder: { night: Ladder; day: Ladder; skins: Record<string, Ladder> };
+  /** Every native-titlebar hand-off the provider made, oldest first. */
+  overlay: { color: string; symbolColor: string }[];
   scroll: {
     day: ScrollChrome;
     night: Record<string, ScrollChrome>;
@@ -294,7 +298,7 @@ describe("shell sidebar (docked rail)", () => {
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
 
     const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
-    const { track, frame, titlebarHeight } = report.tokens;
+    const { track, titlebarHeight } = report.tokens;
 
     assert.deepEqual(report.failures, []);
     assert.equal(exitCode, 0, "driver exited non-zero");
@@ -521,31 +525,64 @@ describe("shell sidebar (docked rail)", () => {
       "the chip's leading border does not line up with the sheet's",
     );
 
-    // The chrome is one band of mat: the rail that wraps the sheet's leading edge
-    // wears the very fill the titlebar across the top does, with no frost of its
-    // own left between them.
+    // The rail's box reaches over the titlebar row and paints the mat there, so
+    // the sidebar runs to the window's top and the titlebar's own fill begins only
+    // at the rail's trailing edge — where the sheet and its vault chip start. The
+    // night ladder asserts the strip's own step below the mat; this is the
+    // paint-order half of the claim.
+    assert.equal(
+      expanded.header?.background,
+      "rgba(0, 0, 0, 0)",
+      `the rail's topband drew a fill of its own (${expanded.header?.background}) instead of showing the rail's mat`,
+    );
+    assert.equal(
+      expanded.header?.box.top,
+      0,
+      `the rail's topband starts at ${expanded.header?.box.top}px, not the window's top`,
+    );
+    assert.equal(
+      expanded.header?.box.bottom,
+      titlebarHeight,
+      `the rail's topband ends at ${expanded.header?.box.bottom}px, not the titlebar's ${titlebarHeight}px`,
+    );
+    assert.equal(
+      expanded.vault?.box.left,
+      expanded.rail?.box.right,
+      `the titlebar's fill starts at the chip (${expanded.vault?.box.left}px) but the rail ends at ${expanded.rail?.box.right}px`,
+    );
+    assert.notEqual(
+      expanded.titlebarBackground,
+      expanded.rail?.background,
+      `the titlebar still wears the mat's ink (${expanded.titlebarBackground}) at night`,
+    );
     assert.equal(
       expanded.rail?.background,
-      expanded.titlebarBackground,
-      `the rail (${expanded.rail?.background}) is not wearing the titlebar's fill (${expanded.titlebarBackground})`,
+      computedHex(report.ladder.night.tokens.canvasBase),
+      `the rail (${expanded.rail?.background}) is not painting --canvas-base (${report.ladder.night.tokens.canvasBase})`,
     );
     assert.equal(
       expanded.rail?.backdropFilter,
       "none",
       `the rail is still frosted (${expanded.rail?.backdropFilter})`,
     );
+    // The native caption strip is painted by the OS in the same row: the provider
+    // (and the harness's stand-in for its stored-preference repaint) must hand it
+    // the titlebar's own fill, or the window controls sit on the old ink.
+    const lastOverlay = report.overlay?.at(-1) ?? null;
+    assert.ok(lastOverlay, "the provider never handed the native overlay a fill");
+    assert.equal(
+      computedHex(lastOverlay.color),
+      expanded.titlebarBackground,
+      `the native caption strip (${lastOverlay.color}) is not wearing the titlebar's fill (${expanded.titlebarBackground})`,
+    );
 
     // The sheet's own chrome: square, and carrying the studio's one hairline —
     // its trailing edge, the seam with the dock.
     assert.ok(expanded.sheet, "the shell rendered no workspace sheet");
-    // One rounded corner — the leading top, beside the wing selector's first tab —
-    // and three square ones.
-    assert.equal(
-      expanded.sheet.borderTopLeftRadius,
-      expanded.tokens.radiusSm,
-      `the sheet's leading top corner is not the system radius (${expanded.sheet.borderTopLeftRadius} vs ${expanded.tokens.radiusSm})`,
-    );
+    // Square on all four corners: the sheet is a pane, not a card, and no corner
+    // of it is notched out of the mat.
     for (const [corner, radius] of [
+      ["top left", expanded.sheet.borderTopLeftRadius],
       ["top right", expanded.sheet.borderTopRightRadius],
       ["bottom right", expanded.sheet.borderBottomRightRadius],
       ["bottom left", expanded.sheet.borderBottomLeftRadius],
@@ -574,8 +611,8 @@ describe("shell sidebar (docked rail)", () => {
     }
     assert.equal(
       expanded.sheet.box.top,
-      titlebarHeight + frame,
-      `the sheet's top edge is not one pane gap under the strip (${expanded.sheet.box.top}px vs ${titlebarHeight + frame}px)`,
+      titlebarHeight,
+      `the sheet's top edge is not directly under the strip (${expanded.sheet.box.top}px vs ${titlebarHeight}px)`,
     );
     // The rail meets the sheet with no line between them, and the dock paints none
     // of its own on any edge.
@@ -805,8 +842,8 @@ describe("shell sidebar (docked rail)", () => {
     }
     assert.equal(
       expanded.chat.box.top,
-      titlebarHeight + frame,
-      `the panel's top edge is not level with the sheet's (${expanded.chat.box.top}px vs ${titlebarHeight + frame}px)`,
+      titlebarHeight,
+      `the panel's top edge is not level with the sheet's (${expanded.chat.box.top}px vs ${titlebarHeight}px)`,
     );
     assert.equal(
       expanded.chat.backdropFilter,
@@ -822,7 +859,7 @@ describe("shell sidebar (docked rail)", () => {
 
     // The night ladder, restated on the numbers the driver wrote down: the studio
     // is a frame around the darkest page. The page canvas is the floor, the cards
-    // step up off it, and the chrome band wears the dock's own quiet band. A skin
+    // step up off it, and the chrome band wears the palette's quiet band. A skin
     // may move the inks; it may not move them in this order.
     const { ladder } = report;
     assert.ok(ladder, "report carries no colour ladder");
@@ -851,6 +888,24 @@ describe("shell sidebar (docked rail)", () => {
       ladder.night.luminance.titlebar > ladder.night.luminance.page,
       `the titlebar is not lighter than the page canvas: ${ladder.night.surfaces.titlebar} (${ladder.night.luminance.titlebar}) vs ${ladder.night.luminance.page}`,
     );
+    // The strip's and the bar's own step: below the mat they cap and above the page
+    // they open onto. The mat is still the rail's ink — the strip and the dock's
+    // action band are the surfaces that leave the band, so they must not be equal
+    // to it any more, and they wear each other's ink.
+    assert.ok(
+      ladder.night.luminance.titlebar < ladder.night.luminance.chrome,
+      `the titlebar is not darker than the mat: ${ladder.night.surfaces.titlebar} (${ladder.night.luminance.titlebar}) vs mat ${ladder.night.surfaces.chrome} (${ladder.night.luminance.chrome})`,
+    );
+    assert.notEqual(
+      ladder.night.surfaces.titlebar,
+      ladder.night.surfaces.chrome,
+      `the titlebar still wears the mat's ink (${ladder.night.surfaces.titlebar})`,
+    );
+    assert.ok(
+      ladder.night.luminance.dockActions < ladder.night.luminance.chrome &&
+        ladder.night.luminance.dockActions > ladder.night.luminance.page,
+      `the dock's action band does not take the strip's step: bar ${ladder.night.surfaces.dockActions} (${ladder.night.luminance.dockActions}) vs mat ${ladder.night.surfaces.chrome} (${ladder.night.luminance.chrome}) / page ${ladder.night.luminance.page}`,
+    );
     // Forge OS's own band sits *under* its cards, so its sidebar and strip are the
     // darker chrome and the cards stay the lighter grey. That ordering is this
     // palette's — a palette whose quiet band sits above its cards is held only to
@@ -862,9 +917,9 @@ describe("shell sidebar (docked rail)", () => {
       );
     }
     assert.equal(
-      ladder.night.surfaces.chrome,
       ladder.night.surfaces.dockActions,
-      `the mat does not wear the dock's action band: mat ${ladder.night.surfaces.chrome} vs .chat-panel__actions ${ladder.night.surfaces.dockActions}`,
+      ladder.night.surfaces.titlebar,
+      `the dock's action band does not wear the strip's fill: bar ${ladder.night.surfaces.dockActions} vs titlebar ${ladder.night.surfaces.titlebar}`,
     );
     assert.equal(
       ladder.night.tokens.canvasBase,
@@ -900,6 +955,23 @@ describe("shell sidebar (docked rail)", () => {
         ladder.day.luminance.titlebar < ladder.day.luminance.page,
       `day lost the sunk mat: mat ${ladder.day.surfaces.chrome} (${ladder.day.luminance.chrome}) and titlebar (${ladder.day.luminance.titlebar}) vs sheet ${ladder.day.surfaces.page} (${ladder.day.luminance.page})`,
     );
+    // By day the strip stays the mat: the night step is a mode decision, not a
+    // restyle that followed the token into daylight.
+    assert.equal(
+      ladder.day.luminance.titlebar,
+      ladder.day.luminance.chrome,
+      `day gave the strip its own ink: titlebar ${ladder.day.surfaces.titlebar} (${ladder.day.luminance.titlebar}) vs mat ${ladder.day.surfaces.chrome} (${ladder.day.luminance.chrome})`,
+    );
+    assert.equal(
+      ladder.day.surfaces.titlebar,
+      ladder.day.surfaces.chrome,
+      `day: the titlebar (${ladder.day.surfaces.titlebar}) is not wearing the mat (${ladder.day.surfaces.chrome})`,
+    );
+    assert.equal(
+      ladder.day.surfaces.dockActions,
+      ladder.day.surfaces.titlebar,
+      `day: the dock's action band (${ladder.day.surfaces.dockActions}) is not wearing the mat like the strip (${ladder.day.surfaces.titlebar})`,
+    );
     assert.ok(
       ladder.day.luminance.card < ladder.day.luminance.page,
       `day lost its recessed panels: ${ladder.day.surfaces.card} (${ladder.day.luminance.card}) vs sheet (${ladder.day.luminance.page})`,
@@ -925,9 +997,10 @@ describe("shell sidebar (docked rail)", () => {
 
     // And the same ladder on every other dark palette — not just the default one.
     // The sweep is cross-checked against the skin registry, so a new night skin
-    // cannot land without being measured, and each palette is held to the four
-    // claims: the page canvas is the deepest surface, the cards step up off it, the
-    // mat is its own ink, and the mat and the dock's action row are one material.
+    // cannot land without being measured, and each palette is held to the same
+    // claims: the page canvas is the deepest surface, the cards step up off it,
+    // the mat is its own ink, and the titlebar strip and the dock's action row
+    // wear one step below it.
     const swept = ladder.skins ?? {};
     const darkSkins = filterSkinsForMode(BUILTIN_SKIN_LIST, "dark")
       .map((skin) => skin.name)
@@ -957,14 +1030,34 @@ describe("shell sidebar (docked rail)", () => {
         );
       }
       assert.equal(
-        skin.surfaces.chrome,
         skin.surfaces.dockActions,
-        `${name}: the mat does not wear the dock's action band (${skin.surfaces.chrome} vs ${skin.surfaces.dockActions})`,
+        skin.surfaces.titlebar,
+        `${name}: the dock's action band does not wear the strip's fill (${skin.surfaces.dockActions} vs ${skin.surfaces.titlebar})`,
       );
       assert.equal(
         skin.tokens.canvasBase,
         skin.tokens.mutedSurface,
         `${name}: --canvas-base and --muted-surface are different inks (${skin.tokens.canvasBase} vs ${skin.tokens.mutedSurface})`,
+      );
+      // The strip's and the bar's own step holds in every night palette: darker
+      // than the mat, lighter than the page, and never the same ink as either.
+      assert.notEqual(
+        skin.surfaces.titlebar,
+        skin.surfaces.chrome,
+        `${name}: the titlebar still wears the mat's ink (${skin.surfaces.titlebar})`,
+      );
+      assert.ok(
+        skin.luminance.titlebar < skin.luminance.chrome,
+        `${name}: the titlebar does not step below the mat (${skin.surfaces.titlebar} vs mat ${skin.surfaces.chrome})`,
+      );
+      assert.ok(
+        skin.luminance.titlebar > skin.luminance.page,
+        `${name}: the titlebar sinks to or below the page canvas (${skin.surfaces.titlebar} vs page ${skin.surfaces.page})`,
+      );
+      assert.ok(
+        skin.luminance.dockActions < skin.luminance.chrome &&
+          skin.luminance.dockActions > skin.luminance.page,
+        `${name}: the dock's action band is not one step below the mat (${skin.surfaces.dockActions} vs mat ${skin.surfaces.chrome} / page ${skin.surfaces.page})`,
       );
       // A skin may declare that its night ladder runs inverted: a faithful copy
       // of an upstream theme that puts its cards *below* its page. GitHub Dark

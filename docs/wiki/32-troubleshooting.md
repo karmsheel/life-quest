@@ -228,7 +228,7 @@ what was there before.
 
 ### The release check failed
 
-The version number at the foot of the rail glows when a newer release exists;
+The version number in the chat dock's bottom bar glows when a newer release exists;
 clicking it opens the update dialog. Settings → Updates runs the same check by hand
 (**Check now**). A check that did not happen is reported as a failure,
 never as "up to date".

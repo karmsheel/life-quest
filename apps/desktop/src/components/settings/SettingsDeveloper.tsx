@@ -42,7 +42,7 @@ export function SettingsDeveloper() {
       <div className="settings-developer" data-developer-settings>
         <SettingsRow
           label="Preview the update badge"
-          description="Makes the build number at the foot of the rail glow, and opens the upgrade popup from it, as if a newer LifeQuest had been published. Nothing is downloaded: the preview carries no installer, so the popup offers the release page instead. It stays on until you turn it back off, and a real release always wins over it."
+          description="Makes the build number in the chat dock's bottom bar glow, and opens the upgrade popup from it, as if a newer LifeQuest had been published. Nothing is downloaded: the preview carries no installer, so the popup offers the release page instead. It stays on until you turn it back off, and a real release always wins over it."
           action={
             <Toggle
               label="Preview the update badge"

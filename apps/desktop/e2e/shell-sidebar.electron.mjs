@@ -97,6 +97,7 @@ const SAMPLE = `(() => {
       dataTheme: document.documentElement.getAttribute("data-theme"),
       skin: document.documentElement.getAttribute("data-skin"),
       canvasBase: root.getPropertyValue("--canvas-base").trim(),
+      titlebarBg: root.getPropertyValue("--titlebar-bg").trim(),
       background: root.getPropertyValue("--background").trim(),
       card: root.getPropertyValue("--card").trim(),
       bgPanel: root.getPropertyValue("--bg-panel").trim(),
@@ -133,6 +134,7 @@ const SAMPLE = `(() => {
     header: header
       ? {
           box: box(header),
+          background: getComputedStyle(header).backgroundColor,
           appRegion: getComputedStyle(header).getPropertyValue("-webkit-app-region"),
           controls: controls.map((el) => ({
             tag: el.tagName.toLowerCase(),
@@ -378,6 +380,19 @@ const luminance = (color) => {
     .map((part) => parseFloat(part) / 255);
   const linear = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
   return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+};
+
+/**
+ * The `rgb()` Chromium computes for one of the palette's `#rrggbb` tokens, so a
+ * token read off `<html>` can be compared with a computed background without
+ * guessing at its serialisation. Any other token text — a `color-mix()` a skin
+ * never resolved, for instance — is returned untouched and will simply not match.
+ */
+const rgbOf = (hex) => {
+  const clean = (hex ?? "").trim().replace(/^#/, "");
+  if (!/^[0-9a-f]{6}$/i.test(clean)) return hex ?? null;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(clean.slice(i, i + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
 };
 
 /** The ladder as numbers, for the report and the stdout table. */
@@ -687,8 +702,24 @@ async function main() {
     await applyTheme("forge-os", "dark");
 
     const expanded = await settled();
-    const { track, frame, titlebarHeight } = expanded.tokens;
+    const { track, titlebarHeight } = expanded.tokens;
     const { height: viewportHeight, width: viewportWidth } = expanded.viewport;
+
+    // The native caption strip is painted by the OS, beside the web content and in
+    // the same row the CSS titlebar fills. The provider hands it the titlebar token
+    // on every repaint; the harness makes the same third call the provider makes
+    // after a skin change, so this read covers the night palette the rig pins.
+    const overlayCalls = await run(
+      "window.shellHarnessOverlayCalls?.() ?? []",
+    );
+    check(
+      "the native caption strip wears the titlebar's fill",
+      Array.isArray(overlayCalls) &&
+        overlayCalls.length > 0 &&
+        rgbOf(overlayCalls[overlayCalls.length - 1]?.color) ===
+          expanded.titlebarBackground,
+      `overlay ${JSON.stringify(overlayCalls[overlayCalls.length - 1] ?? null)} vs titlebar ${expanded.titlebarBackground}`,
+    );
 
     // 1 — flush: the rail owns the window's top, left and bottom edges.
     check("rail exists", Boolean(expanded.rail), "no .nav-rail in the shell");
@@ -853,9 +884,6 @@ async function main() {
       `rail toggle ends at ${expanded.railToggle?.box.right}px, sidebar ends at ${expanded.rail?.box.right}px`,
     );
 
-    // 5 — the workspace sheet is flush to the rail and the dock, and keeps its
-    // one pane gap only under the strip. The chrome around it is a single band of
-    // mat: the rail wears the titlebar's own fill with no frost in between.
     check(
       "the chats section lives inside the sidebar",
       Boolean(expanded.chats?.inRail) &&
@@ -878,11 +906,32 @@ async function main() {
       expanded.main?.left === expanded.rail?.box.right,
       `sheet left ${expanded.main?.left}px vs sidebar right ${expanded.rail?.box.right}px`,
     );
+
+    // 5 — the workspace sheet is flush to the rail and the dock, and meets the
+    // strip with no mat between them. The rail's box reaches over the titlebar row
+    // and paints the mat there, so the sidebar runs to the window's top; the
+    // titlebar's own fill begins only where the rail ends, at the sheet's leading
+    // edge. The topband draws no fill of its own — it is the rail's mat showing.
     check(
-      "the chrome is one band: the rail wears the titlebar's fill, unfrosted",
-      expanded.rail?.background === expanded.titlebarBackground &&
-        expanded.rail?.backdropFilter === "none",
-      `rail ${expanded.rail?.background} backdrop ${expanded.rail?.backdropFilter} vs titlebar ${expanded.titlebarBackground}`,
+      "the sidebar runs to the window's top wearing the mat",
+      expanded.header?.background === "rgba(0, 0, 0, 0)" &&
+        expanded.rail?.background === rgbOf(expanded.theme?.canvasBase) &&
+        expanded.header?.box.top === 0 &&
+        expanded.header?.box.bottom === titlebarHeight &&
+        expanded.titlebarBackground !== expanded.rail?.background,
+      `rail topband ${expanded.header?.background} vs rail ${expanded.rail?.background} vs --canvas-base ${expanded.theme?.canvasBase}; topband ${JSON.stringify(expanded.header?.box)}`,
+    );
+    check(
+      "the rail is unfrosted",
+      expanded.rail?.backdropFilter === "none",
+      `backdrop ${expanded.rail?.backdropFilter}`,
+    );
+    check(
+      "the titlebar's fill starts at the rail's trailing edge",
+      expanded.vault?.box.left === expanded.rail?.box.right &&
+        expanded.vault?.box.left === expanded.main?.left &&
+        expanded.header?.box.right === expanded.rail?.box.right,
+      `rail ends at ${expanded.rail?.box.right}px, chip starts at ${expanded.vault?.box.left}px, sheet starts at ${expanded.main?.left}px`,
     );
     check(
       "the sheet closes the gap to the dock and the window's bottom",
@@ -916,8 +965,8 @@ async function main() {
     );
     check(
       "the panel's top edge is level with the sheet's",
-      expanded.chat?.box.top === titlebarHeight + frame,
-      `panel top ${expanded.chat?.box.top}px vs sheet top ${titlebarHeight + frame}px`,
+      expanded.chat?.box.top === titlebarHeight,
+      `panel top ${expanded.chat?.box.top}px vs sheet top ${titlebarHeight}px`,
     );
     check(
       "the chat panel wears the sheet's own surface, unfrosted",
@@ -931,25 +980,24 @@ async function main() {
       `shadow ${expanded.chat?.boxShadow}`,
     );
     check(
-      "the sheet keeps its pane gap under the strip",
-      expanded.main?.top === titlebarHeight + frame,
-      `sheet top ${expanded.main?.top}px (want ${titlebarHeight + frame}px)`,
+      "the sheet meets the strip with no pane gap",
+      expanded.main?.top === titlebarHeight,
+      `sheet top ${expanded.main?.top}px (want ${titlebarHeight}px)`,
     );
-    // One rounded corner: the leading top, next to the sidebar's wing switcher,
-    // where the mat is on both sides of the corner. The other three stay square —
-    // a radius there would notch the rail's seam or the window's own edge.
+    // Square on all four corners: the sheet is a pane, not a card, and no corner
+    // of it is notched out of the mat — in either arrangement.
     check(
-      "the sheet's leading top corner is the only rounded one",
-      expanded.sheet?.borderTopLeftRadius === expanded.tokens?.radiusSm &&
+      "the sheet is square on all four corners",
+      expanded.sheet?.borderTopLeftRadius === "0px" &&
         expanded.sheet?.borderTopRightRadius === "0px" &&
         expanded.sheet?.borderBottomRightRadius === "0px" &&
         expanded.sheet?.borderBottomLeftRadius === "0px",
-      `corners tl/tr/br/bl ${expanded.sheet?.borderTopLeftRadius}/${expanded.sheet?.borderTopRightRadius}/${expanded.sheet?.borderBottomRightRadius}/${expanded.sheet?.borderBottomLeftRadius} vs --radius-sm ${expanded.tokens?.radiusSm}`,
+      `corners tl/tr/br/bl ${expanded.sheet?.borderTopLeftRadius}/${expanded.sheet?.borderTopRightRadius}/${expanded.sheet?.borderBottomRightRadius}/${expanded.sheet?.borderBottomLeftRadius}`,
     );
     // One line between panes, and only one: the sheet's trailing hairline, the
     // seam with the dock. The sheet's top and leading edges paint nothing — the
-    // rail meets it as a change of fill, and the pane gap is what separates it from
-    // the strip — and neither neighbour draws an edge of its own.
+    // rail meets it as a change of fill and the strip as a change of tone, and
+    // neither neighbour draws an edge of its own.
     check(
       "the sheet wears one hairline, on its trailing edge",
       parseFloat(expanded.sheet?.borderRightWidth ?? "0") > 0 &&
@@ -966,9 +1014,9 @@ async function main() {
       `rail right ${expanded.rail?.borderRightWidth}, sheet left ${expanded.sheet?.borderLeftWidth}`,
     );
     check(
-      "the sheet's top edge sits one pane gap under the strip",
-      expanded.sheet?.box.top === titlebarHeight + frame,
-      `sheet top at y=${expanded.sheet?.box.top}px, strip ends at ${titlebarHeight}px, pane gap ${frame}px`,
+      "the sheet's top edge sits directly under the strip",
+      expanded.sheet?.box.top === titlebarHeight,
+      `sheet top at y=${expanded.sheet?.box.top}px, strip ends at ${titlebarHeight}px`,
     );
     // The line the strip reads as its own is the top bar's, under the domain lens, and
     // not a frame on the sheet's top edge.
@@ -987,7 +1035,7 @@ async function main() {
       Boolean(expanded.topBar && expanded.chatHeader) &&
         expanded.topBar.box.top === expanded.chatHeader.box.top &&
         expanded.topBar.box.bottom === expanded.chatHeader.box.bottom &&
-        expanded.topBar.box.top === titlebarHeight + frame &&
+        expanded.topBar.box.top === titlebarHeight &&
         parseFloat(expanded.chatHeader.borderBottomWidth || "0") > 0,
       `top bar ${JSON.stringify(expanded.topBar?.box)} vs dock header ${JSON.stringify(expanded.chatHeader?.box)}, header underline ${expanded.chatHeader?.borderBottomWidth}`,
     );
@@ -998,11 +1046,12 @@ async function main() {
     );
 
     // The night ladder: the studio is a frame around the darkest page. The page
-    // canvas is the floor, the cards step up off it, and the chrome band — the rail
-    // and the strip — wears the dock's own quiet band, under the cards and clear of
-    // the floor.
+    // canvas is the floor, the cards step up off it, and the mat — the rail and
+    // the window frame — wears the palette's quiet band, under the cards and clear
+    // of the floor. The titlebar and the dock's action band are the one surface
+    // off that band: their own step, darker than the mat and lighter than the page.
     const night = ladderOf(expanded);
-    const { chrome, page, card, viewCard } = night.luminance;
+    const { chrome, titlebar, page, card, viewCard } = night.luminance;
     const band = night.luminance.dockActions;
     check(
       "the rig is painted in the night skin",
@@ -1015,16 +1064,21 @@ async function main() {
       `probe fills ${JSON.stringify(expanded.cards)}`,
     );
     check(
-      "night: the chrome band wears the dock's own action band",
+      "night: the dock's action band wears the strip's fill",
       Number.isFinite(band) &&
-        night.surfaces.chrome === night.surfaces.dockActions &&
+        night.surfaces.dockActions === night.surfaces.titlebar &&
         night.tokens.canvasBase === night.tokens.mutedSurface,
-      `mat ${night.surfaces.chrome} vs .chat-panel__actions ${night.surfaces.dockActions}; tokens ${night.tokens.canvasBase} vs ${night.tokens.mutedSurface}`,
+      `bar ${night.surfaces.dockActions} vs strip ${night.surfaces.titlebar}; tokens ${night.tokens.canvasBase} vs ${night.tokens.mutedSurface}`,
     );
     check(
       "night: the chrome band sits under the cards and off the page",
       chrome > page && chrome < card && chrome < viewCard,
       `mat ${chrome.toFixed(4)} between page ${page.toFixed(4)} and card ${card.toFixed(4)}/${viewCard.toFixed(4)}`,
+    );
+    check(
+      "night: the titlebar and the dock's bar take one step below the mat",
+      titlebar < chrome && titlebar > page && band < chrome && band > page,
+      `strip ${night.surfaces.titlebar} (${titlebar.toFixed(4)}) / bar ${night.surfaces.dockActions} (${band.toFixed(4)}) between mat ${night.surfaces.chrome} (${chrome.toFixed(4)}) and page ${night.surfaces.page} (${page.toFixed(4)})`,
     );
     check(
       "night: the cards step up off the page canvas",
@@ -1033,7 +1087,7 @@ async function main() {
     );
     check(
       "night: the page canvas is the darkest surface in the window",
-      [chrome, night.luminance.titlebar, page, night.luminance.dock, band, card, viewCard].every(
+      [chrome, titlebar, page, night.luminance.dock, band, card, viewCard].every(
         (lum) => Number.isFinite(lum) && lum >= page,
       ),
       `page ${page.toFixed(4)} against ${JSON.stringify(night.luminance)}`,
@@ -1298,6 +1352,19 @@ async function main() {
       `mat ${dawn.surfaces.chrome} (${dawn.luminance.chrome.toFixed(4)}) and titlebar ${dawn.luminance.titlebar.toFixed(4)} vs sheet ${dawn.surfaces.page} (${dawn.luminance.page.toFixed(4)})`,
     );
     check(
+      "day: the strip keeps the one-band rule",
+      day.titlebarBackground === day.rail?.background &&
+        day.header?.background === "rgba(0, 0, 0, 0)" &&
+        dawn.luminance.titlebar === dawn.luminance.chrome,
+      `strip ${day.titlebarBackground} vs rail ${day.rail?.background} / topband ${day.header?.background}; day lum ${dawn.luminance.titlebar.toFixed(4)} vs ${dawn.luminance.chrome.toFixed(4)}`,
+    );
+    check(
+      "day: the dock's action band keeps the one-band rule too",
+      day.dockActions === day.titlebarBackground &&
+        dawn.luminance.dockActions === dawn.luminance.titlebar,
+      `bar ${day.dockActions} vs strip ${day.titlebarBackground}; day lum ${dawn.luminance.dockActions.toFixed(4)} vs ${dawn.luminance.titlebar.toFixed(4)}`,
+    );
+    check(
       "day: the panels still recess below the sheet",
       dawn.luminance.card < dawn.luminance.page,
       `card ${dawn.surfaces.card} (${dawn.luminance.card.toFixed(4)}) vs sheet ${dawn.luminance.page.toFixed(4)}`,
@@ -1445,9 +1512,9 @@ async function main() {
     }
 
     // 9 — the night ladder holds for every dark palette, not just the default one.
-    // The same four claims per skin: the page canvas is the deepest surface in the
+    // The same claims per palette: the page canvas is the deepest surface in the
     // window, the cards step up off it, the mat is its own ink and not the page,
-    // and the mat and the dock's action row are one material.
+    // and the titlebar strip and the dock's action row take one step below the mat.
     const skins = {};
     const scrolls = {};
     const skinShots = [];
@@ -1465,6 +1532,35 @@ async function main() {
       const skinShot = await win.webContents.capturePage();
       const skinFile = path.join(artifactsDir, `shell-sidebar-night-${skinName}.png`);
       fs.writeFileSync(skinFile, skinShot.toPNG());
+      // The strip and the sheet's leading corner, 1:1, in this palette: the two
+      // surfaces the corner change and the titlebar token are about, side by side
+      // where they meet.
+      const skinCornerShot = await win.webContents.capturePage({
+        x: 0,
+        y: 0,
+        width: 420,
+        height: 260,
+      });
+      const skinCornerFile = path.join(
+        artifactsDir,
+        `shell-sidebar-night-${skinName}-corner.png`,
+      );
+      fs.writeFileSync(skinCornerFile, skinCornerShot.toPNG());
+      skinShots.push(skinCornerFile);
+      // The dock's bottom bar, 1:1, in this palette: the strip's fill on the
+      // action row, the collapse control and the build number at the trailing end.
+      const skinDockShot = await win.webContents.capturePage({
+        x: Math.max(0, viewportWidth - 440),
+        y: Math.max(0, viewportHeight - 120),
+        width: Math.min(440, viewportWidth),
+        height: 120,
+      });
+      const skinDockFile = path.join(
+        artifactsDir,
+        `shell-sidebar-night-${skinName}-dock-bar.png`,
+      );
+      fs.writeFileSync(skinDockFile, skinDockShot.toPNG());
+      skinShots.push(skinDockFile);
       skinShots.push(skinFile);
 
       const { luminance, surfaces, tokens } = ladder;
@@ -1488,10 +1584,22 @@ async function main() {
         `fills ${JSON.stringify(surfaces)}`,
       );
       check(
-        `night[${skinName}]: the mat and the dock's action band are one ink`,
-        surfaces.chrome === surfaces.dockActions &&
+        `night[${skinName}]: the dock's action band wears the strip's fill`,
+        surfaces.dockActions === surfaces.titlebar &&
           tokens.canvasBase === tokens.mutedSurface,
-        `mat ${surfaces.chrome} vs .chat-panel__actions ${surfaces.dockActions}; tokens ${tokens.canvasBase} vs ${tokens.mutedSurface}`,
+        `bar ${surfaces.dockActions} vs strip ${surfaces.titlebar}; tokens ${tokens.canvasBase} vs ${tokens.mutedSurface}`,
+      );
+      // Every night palette gets the strip's and the bar's own step, whatever its
+      // mat is: darker than the rail, still clear of the page they cap.
+      check(
+        `night[${skinName}]: the titlebar and the dock's bar step below the mat`,
+        surfaces.titlebar !== surfaces.chrome &&
+          surfaces.dockActions !== surfaces.chrome &&
+          luminance.titlebar < luminance.chrome &&
+          luminance.titlebar > luminance.page &&
+          luminance.dockActions < luminance.chrome &&
+          luminance.dockActions > luminance.page,
+        `strip ${surfaces.titlebar} (${lum("titlebar")}) / bar ${surfaces.dockActions} (${lum("dockActions")}) between mat ${surfaces.chrome} (${lum("chrome")}) and page ${surfaces.page} (${lum("page")})`,
       );
       // An imported theme can carry its own elevation direction. `nous` is a
       // faithful copy of GitHub Dark Default, whose cards sit *below* its page.
@@ -1546,6 +1654,9 @@ async function main() {
       wingSwitch: { defined, home: homeAgain },
       day,
       ladder: { night, day: dawn, skins },
+      // Every overlay hand-off the provider (and the harness's repaint stand-in)
+      // made, oldest first: the native caption strip's fill is the titlebar's.
+      overlay: overlayCalls,
       scroll: {
         day: dayScroll,
         night: scrolls,

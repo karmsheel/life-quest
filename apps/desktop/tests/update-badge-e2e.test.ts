@@ -62,6 +62,7 @@ type Box = {
 };
 
 type State = {
+  viewport: { width: number; height: number };
   reducedMotion: boolean;
   calls: {
     check: number;
@@ -79,6 +80,8 @@ type State = {
     ariaLabel: string | null;
     ariaHaspopup: string | null;
     ariaExpanded: string | null;
+    inBar: boolean;
+    inRail: boolean;
     boxShadow: string;
     color: string;
     background: string;
@@ -106,10 +109,37 @@ type State = {
       resolved: { accent: string; accentFill: string };
     };
   } | null;
+  bar: {
+    box: Box;
+    padding: { top: number; right: number; bottom: number; left: number };
+    background: string;
+    display: string;
+    alignItems: string;
+    gap: string;
+    containsChip: boolean;
+    lastChildIsChip: boolean;
+    lastControlIsChip: boolean;
+    lastControlAriaLabel: string | null;
+    controls: {
+      tag: string;
+      ariaLabel: string | null;
+      testId: string | null;
+      className: string;
+      box: Box | null;
+    }[];
+  } | null;
+  collapse: {
+    ariaLabel: string | null;
+    testId: string | null;
+    box: Box;
+  } | null;
   label: {
     tag: string;
     text: string;
     dataLabel: string | null;
+    inBar: boolean;
+    nextToChip: boolean;
+    focusables: number;
     box: { left: number; right: number; top: number; bottom: number } | null;
     color: string;
     fontSize: string;
@@ -118,21 +148,20 @@ type State = {
     role: string | null;
     overflow: { scrollWidth: number; clientWidth: number };
   } | null;
-  logRow: {
-    box: { left: number; right: number; top: number; bottom: number } | null;
-    text: string;
-  } | null;
   rail: {
-    box: { left: number; right: number };
+    box: { left: number; right: number; width: number; height: number };
     scrollTop: number;
     scrollHeight: number;
     clientHeight: number;
+    display: string;
+    direction: string;
   } | null;
+  railHeader: { box: Box } | null;
   dialog: Dialog | null;
   backdropPresent: boolean;
   chipFocused: boolean | null;
   listenerAttached: boolean | null;
-  dom: { hasRail: boolean; hasChip: boolean; errors: string[] | null };
+  dom: { hasRail: boolean; hasBar: boolean; hasChip: boolean; errors: string[] | null };
   settings: {
     summaryState: string | null;
     summaryText: string | null;
@@ -198,6 +227,17 @@ function rgbKey(color: string): string | null {
     return `rgb(${nums.join(", ")})`;
   }
   return null;
+}
+
+/** Two measured boxes as the same box, to within a rounding pixel. */
+function sameBox(
+  a: { left: number; top: number; right: number; bottom: number; width: number; height: number } | null | undefined,
+  b: { left: number; top: number; right: number; bottom: number; width: number; height: number } | null | undefined,
+): boolean {
+  if (!a || !b) return false;
+  return (["left", "top", "right", "bottom", "width", "height"] as const).every(
+    (key) => Math.abs(a[key] - b[key]) <= 1,
+  );
 }
 
 /**
@@ -270,6 +310,71 @@ describe("auto-update badge", () => {
       afterRemount,
     } = report.states;
 
+    // The badge's home is the dock's bottom action bar, not the rail. It is the
+    // bar's last control — after the collapse button — inside the bar's padding
+    // and at the window's bottom-right corner, and it never resizes that bar.
+    const bar = available.bar;
+    assert.ok(bar, "the dock's action bar rendered nothing");
+    assert.equal(available.chip?.inBar, true, "the chip left the dock's action bar");
+    assert.equal(available.chip?.inRail, false, "the chip is still painted by the rail");
+    assert.equal(bar?.containsChip, true, "the bar does not contain the chip");
+    assert.equal(
+      bar?.lastControlIsChip,
+      true,
+      `the chip is not the bar's last control: ${JSON.stringify(bar?.controls.map((control) => control.ariaLabel))}`,
+    );
+    assert.equal(
+      bar?.lastChildIsChip,
+      true,
+      "something is still painted after the chip in the bar",
+    );
+    assert.equal(
+      available.collapse?.testId,
+      "chat-collapse",
+      "the control the chip should trail is not the collapse control",
+    );
+    assert.equal(
+      available.collapse?.ariaLabel,
+      "Collapse chat",
+      `the collapse control is labelled ${JSON.stringify(available.collapse?.ariaLabel)}`,
+    );
+    assert.ok(
+      (available.chip?.box.left ?? -Infinity) >=
+        (available.collapse?.box.right ?? Infinity),
+      `the chip is not to the right of the collapse control: chip ${JSON.stringify(available.chip?.box)}, collapse ${JSON.stringify(available.collapse?.box)}`,
+    );
+    // Inside the bar's own padding: the chip is a row's content, not something
+    // bleeding into the bar's gutter.
+    assert.ok(
+      available.chip &&
+        bar &&
+        available.chip.box.left >= bar.box.left + bar.padding.left &&
+        available.chip.box.right <= bar.box.right - bar.padding.right &&
+        available.chip.box.top >= bar.box.top + bar.padding.top &&
+        available.chip.box.bottom <= bar.box.bottom - bar.padding.bottom,
+      `the chip spills past the bar's padding: chip ${JSON.stringify(available.chip?.box)}, bar ${JSON.stringify(bar?.box)}, padding ${JSON.stringify(bar?.padding)}`,
+    );
+    // The bar reaches the window's bottom-right corner, and the chip holds that
+    // end of it.
+    assert.ok(
+      bar &&
+        bar.box.right >= available.viewport.width - 2 &&
+        bar.box.bottom >= available.viewport.height - 2 &&
+        (available.chip?.box.right ?? -Infinity) >= available.viewport.width - 48 &&
+        (available.chip?.box.bottom ?? -Infinity) >=
+          available.viewport.height - 48,
+      `the bar or the chip is not at the window's bottom-right corner: bar ${JSON.stringify(bar?.box)}, chip ${JSON.stringify(available.chip?.box)}, window ${JSON.stringify(available.viewport)}`,
+    );
+    // And the chip is shorter than the row it lives in: the bar's height is
+    // decided by its action buttons and its padding, never by the badge.
+    assert.ok(
+      available.chip &&
+        bar &&
+        available.chip.box.height <=
+          bar.box.height - bar.padding.top - bar.padding.bottom + 1,
+      `the chip is taller than the bar's own row: chip ${available.chip?.box.height}px, bar ${JSON.stringify(bar?.box)}`,
+    );
+
     // The version line is the operator's manual way in, so it is a control in
     // every state — but a quiet one: no glow, no caption, no release named until
     // the feed has one.
@@ -306,6 +411,12 @@ describe("auto-update badge", () => {
       upToDate.label,
       null,
       `an up-to-date build says an update is available: ${JSON.stringify(upToDate.label?.text)}`,
+    );
+    // The caption is a state, not a size: the bar with the glowing pill and its
+    // words is the same box as the bar with neither.
+    assert.ok(
+      sameBox(available.bar?.box, upToDate.bar?.box),
+      `the available state resized the bar: available ${JSON.stringify(available.bar?.box)}, up-to-date ${JSON.stringify(upToDate.bar?.box)}`,
     );
 
     // The manual check at rest: one launch check, then the operator's click
@@ -419,9 +530,10 @@ describe("auto-update badge", () => {
       "the build number stopped reading the running version",
     );
 
-    // The caption: a glowing pill is a state without a sentence, so the rail says
-    // what it means — above the pill, only while it is true, and never as a
-    // second focus stop in a column of nav rows.
+    // The caption: a glowing pill is a state without a sentence, so the bar says
+    // what it means — inline on the same row, immediately left of the pill, only
+    // while it is true, and never as a second focus stop in a bar of action
+    // controls.
     assert.equal(
       available.label?.text,
       "Update available",
@@ -434,18 +546,46 @@ describe("auto-update badge", () => {
       "the caption became a focus stop with nothing to do",
     );
     assert.equal(available.label?.role, null, "the caption claims a role it does not have");
+    assert.equal(
+      available.label?.focusables,
+      0,
+      "the caption grew a control of its own",
+    );
+    assert.equal(
+      available.label?.inBar,
+      true,
+      "the caption is not inside the dock's action bar",
+    );
+    assert.equal(
+      available.label?.nextToChip,
+      true,
+      "the caption is not immediately before the chip in DOM order",
+    );
+    // Same row, immediately left: its box overlaps the chip vertically, its right
+    // edge ends at or before the chip's left edge, and the gap between them is
+    // the row's own spacing rather than a second column.
     assert.ok(
-      (available.label?.box?.bottom ?? Infinity) <= (available.chip?.box?.top ?? -Infinity),
-      `the caption is not above the build number: ${JSON.stringify(available.label?.box)} vs ${JSON.stringify(available.chip?.box)}`,
+      available.label?.box &&
+        available.chip?.box &&
+        available.label.box.right <= available.chip.box.left &&
+        available.chip.box.left - available.label.box.right <= 24 &&
+        available.label.box.top < available.chip.box.bottom &&
+        available.label.box.bottom > available.chip.box.top,
+      `the caption is not inline to the chip's left: caption ${JSON.stringify(available.label?.box)} vs chip ${JSON.stringify(available.chip?.box)}`,
     );
     assert.ok(
-      (available.logRow?.box?.bottom ?? Infinity) <= (available.label?.box?.top ?? -Infinity),
-      `the caption landed on the Log row: ${JSON.stringify(available.logRow?.box)} vs ${JSON.stringify(available.label?.box)}`,
+      available.label?.box &&
+        available.chip?.box &&
+        Math.abs(
+          (available.label.box.top + available.label.box.bottom) / 2 -
+            (available.chip.box.top + available.chip.box.bottom) / 2,
+        ) <= 2,
+      `the caption does not ride the chip's row: caption ${JSON.stringify(available.label?.box)} vs chip ${JSON.stringify(available.chip?.box)}`,
     );
     assert.ok(
       (available.label?.overflow.scrollWidth ?? Infinity) <=
         (available.label?.overflow.clientWidth ?? 0),
-      `the caption bleeds out of the rail: ${JSON.stringify(available.label?.overflow)}`,
+      `the caption bleeds out of the bar: ${JSON.stringify(available.label?.overflow)}`,
     );
     assert.equal(
       rgbKey(available.label?.color ?? ""),
@@ -474,7 +614,7 @@ describe("auto-update badge", () => {
     );
     assert.equal(
       available.chip?.halo.animationName,
-      "nav-rail-version-breathe",
+      "update-badge-breathe",
       "the halo does not breathe",
     );
 
@@ -501,11 +641,12 @@ describe("auto-update badge", () => {
       assert.equal(layer.x, 0, `a halo layer is offset horizontally by ${layer.x}px`);
       assert.equal(layer.y, 0, `a halo layer is offset vertically by ${layer.y}px — that is a drop shadow`);
     }
-    // And it has to fit: the rail clips its overflow at its own edge, so a bloom
-    // reaching past the padding around the chip would be sliced off flat.
+    // And it has to fit: the bar runs to the window's corner and the dock clips
+    // at that edge, so a bloom reaching past the bar's own box would be sliced
+    // off flat.
     assert.ok(
       report.glow.reach <= report.glow.room,
-      `the halo reaches ${report.glow.reach}px into the ${report.glow.room}px the rail gives it — it would be clipped`,
+      `the halo reaches ${report.glow.reach}px into the ${report.glow.room}px the action bar gives it — it would be clipped`,
     );
 
     // The chip wears the palette's own inks, not new ones.
@@ -520,11 +661,22 @@ describe("auto-update badge", () => {
       `the chip is not on the accent's translucent fill: ${available.chip?.background}`,
     );
 
-    // The glow must not break the rail's own contract: a halo is not a reflow.
-    assert.equal(available.rail?.scrollTop, 0, "the glow scrolled the rail's topband away");
+    // The rail's own contract still holds — it is one column with its topband in
+    // the window's top strip, and it does not scroll — but the badge no longer
+    // lives in it, so no claim here says the rail grows for the glow.
+    assert.equal(available.rail?.scrollTop, 0, "the rail scrolled its topband away");
     assert.ok(
       (available.rail?.scrollHeight ?? 0) <= (available.rail?.clientHeight ?? 0),
-      `the glow made the rail taller than its column: ${available.rail?.scrollHeight}px in ${available.rail?.clientHeight}px`,
+      `the rail is taller than its column: ${available.rail?.scrollHeight}px in ${available.rail?.clientHeight}px`,
+    );
+    assert.equal(available.rail?.display, "flex", "the rail is not a flex column");
+    assert.equal(available.rail?.direction, "column", "the rail stopped being one column");
+    assert.ok(
+      available.railHeader?.box &&
+        Math.abs(
+          available.railHeader.box.width - (available.rail?.box.width ?? 0),
+        ) <= 2,
+      `the rail's topband no longer spans its column: topband ${JSON.stringify(available.railHeader?.box)}, rail ${JSON.stringify(available.rail?.box)}`,
     );
 
     // One check per launch, even under StrictMode's second mount effect.
@@ -603,6 +755,11 @@ describe("auto-update badge", () => {
     assert.equal(junk.chip?.boxShadow, "none", "a junk answer produced a glow");
     assert.equal(junk.dialog, null, "a junk answer opened the popup unasked");
     assert.equal(
+      junk.chip?.inBar,
+      true,
+      "a junk answer took the chip out of the dock's action bar",
+    );
+    assert.equal(
       junk.label,
       null,
       `a junk answer claimed an update was available: ${JSON.stringify(junk.label?.text)}`,
@@ -641,9 +798,9 @@ describe("auto-update badge", () => {
       `unmounting with a junk progress handle threw: ${JSON.stringify(afterRemount.dom.errors)}`,
     );
     assert.equal(
-      afterRemount.rail !== null && afterRemount.chip?.tag === "button",
+      afterRemount.bar?.containsChip === true && afterRemount.chip?.tag === "button",
       true,
-      "the rail did not survive the provider's remount",
+      "the dock's action bar did not survive the provider's remount",
     );
 
     for (const file of report.screenshots) {
@@ -687,7 +844,7 @@ describe("auto-update badge", () => {
     const {
       developer,
       previewOn,
-      previewRail,
+      previewBar,
       previewDialog,
       shadowed,
       shadowedDialog,
@@ -795,36 +952,44 @@ describe("auto-update badge", () => {
     assert.equal(
       previewOn.settings?.storedPreview,
       "1",
-      "turning the switch on did not write the preference the rail reads",
+      "turning the switch on did not write the preference the badge reads",
     );
     assert.equal(
       previewOn.settings?.previewState,
       "previewing",
-      `the page misreported what the rail is showing: ${previewOn.settings?.previewState}`,
+      `the page misreported what the badge is showing: ${previewOn.settings?.previewState}`,
     );
 
-    // And the rail really glows from it, with the feed offering nothing.
+    // And the dock's bar really glows from it, with the feed offering nothing.
     assert.equal(
-      previewRail.chip?.tag,
+      previewBar.chip?.tag,
       "button",
       "the preview did not turn the build number into a control",
     );
     assert.equal(
-      previewRail.chip?.dataPreview,
+      previewBar.chip?.dataPreview,
       "true",
       "the glowing chip does not say it is a preview",
     );
     // The preview is the surface built to catch a broken affordance before a
     // release, so it has to show the caption the release will.
     assert.equal(
-      previewRail.label?.dataLabel,
+      previewBar.label?.dataLabel,
       "preview",
-      `the preview does not say the caption is a preview: ${JSON.stringify(previewRail.label)}`,
+      `the preview does not say the caption is a preview: ${JSON.stringify(previewBar.label)}`,
     );
     assert.equal(
-      previewRail.label?.text,
+      previewBar.label?.text,
       "Update available",
-      `the preview dropped the caption: ${JSON.stringify(previewRail.label?.text)}`,
+      `the preview dropped the caption: ${JSON.stringify(previewBar.label?.text)}`,
+    );
+    assert.ok(
+      previewBar.label?.inBar === true &&
+        Boolean(previewBar.label?.box && previewBar.chip?.box) &&
+        previewBar.label.box.right <= previewBar.chip.box.left &&
+        previewBar.label.box.top < previewBar.chip.box.bottom &&
+        previewBar.label.box.bottom > previewBar.chip.box.top,
+      `the preview's caption is not inline to the chip's left: ${JSON.stringify(previewBar.label?.box)} vs ${JSON.stringify(previewBar.chip?.box)}`,
     );
     assert.equal(
       report.glow.layers.length,
@@ -884,7 +1049,7 @@ describe("auto-update badge", () => {
     );
 
     // The switch clears up after itself: a preference left behind would glow the
-    // rail on the next launch with no visible cause.
+    // badge on the next launch with no visible cause.
     assert.equal(
       developerOn.settings?.previewChecked,
       true,
