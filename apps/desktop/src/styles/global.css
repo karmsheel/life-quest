@@ -2297,7 +2297,15 @@ a {
 /* —— Confirm dialog —— */
 /* The app's own confirmation, centred in the application window. A
    `window.confirm` is owned by the platform and centres on the display instead,
-   which a half-width window shows as a dialog floating over the desktop. */
+   which a half-width window shows as a dialog floating over the desktop.
+
+   The scrim is the settings sheet's glass — the same canvas veil and 7px blur
+   (`.sheet-overlay`) — because the two are the app's one "the page steps back"
+   answer, and a question is the lighter of them. It is not `--fg` at 35%: that
+   token is the ink, so at night the veil was paper-white (a struck-out page
+   rather than a dimmed one) and by day it was a grey wash. The backdrop lives on
+   `body` (see `ConfirmDialog`), so its z-index orders it in the window's stack
+   rather than in the column of whatever pane asked the question. */
 .confirm-dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -2306,7 +2314,9 @@ a {
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  background: color-mix(in srgb, var(--fg) 35%, transparent);
+  background: color-mix(in srgb, var(--canvas-base) 38%, transparent);
+  -webkit-backdrop-filter: blur(7px) saturate(0.94);
+  backdrop-filter: blur(7px) saturate(0.94);
 }
 
 .confirm-dialog {
