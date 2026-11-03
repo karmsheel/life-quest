@@ -325,7 +325,11 @@ const SAMPLE = `(() => {
       const selected = wingTabs.find((tab) => tab.selected);
       return selected ? selected.label : null;
     })(),
-    vaultText: text(document.querySelector(".window-titlebar__vault")),
+    // The vault chip lives in the rail's foot now, one half of the footer row
+    // beside Log. Its name is read from the chip's own name span, not the
+    // button's text: the collapsed initials are always in the DOM, so the
+    // button's textContent would join the two words together.
+    vaultText: text(document.querySelector(".nav-rail__vault-name")),
     focused: document.activeElement
       ? {
           tag: document.activeElement.tagName.toLowerCase(),
@@ -689,7 +693,7 @@ async function main() {
       `storage ${JSON.stringify(landing.storage)}`,
     );
     check(
-      "the titlebar wears the harness vault's name",
+      "the rail's vault chip wears the harness vault's name",
       landing.vaultText === vaultName,
       `chip ${JSON.stringify(landing.vaultText)} vs ${JSON.stringify(vaultName)}`,
     );
@@ -1879,9 +1883,9 @@ async function main() {
 
     at("the dock-recorded key toggles the sidebar");
     // Home is two real moves from the Define wing: Ctrl+1 returns to Home's last
-    // page, then the rail's Dashboard row goes to /home. The titlebar's vault
-    // chip is no longer a link there — it raises the vault switcher — so the
-    // page's own rail is the way in.
+    // page, then the rail's Dashboard row goes to /home. The rail foot's vault
+    // chip is not a link either — it raises the vault switcher — so the page's
+    // own rail is the way in.
     await press("1", ["control"]);
     await waitFor(
       'Boolean(document.querySelector(\'.nav-rail__link[href="/home"]\'))',

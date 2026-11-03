@@ -13,13 +13,47 @@
  *     row, but the titlebar wins paint order, so the rail's topband and its one
  *     control are covered by the titlebar's background.
  *  4. Topband shows more than the collapse toggle (or nothing) — a second
- *     control crept into the header, or the toggle never rendered.
- *  5. Dead toggle — clicking it leaves the rail on screen.
- *  6. One-way door — collapsed with no control left anywhere to reopen.
- *  7. Column not returned — collapsing leaves the 4.25rem track (and its gap)
- *     behind, so the workspace sheet never reclaims the width.
- *  8. Titlebar text still in the rail's corner — the LQ badge and title not
- *     stepping aside by the track width, so they sit on top of the sidebar.
+ *     control crept into the header, or the toggle never rendered at one of the
+ *     rail's two widths.
+ *  5. Dead toggle — clicking it leaves the shell in the arrangement it was in:
+ *     the rail does not narrow to the icon column and the sheet does not move
+ *     to meet it.
+ *  6. One-way door — collapsed with no control left to expand, or the way back
+ *     placed somewhere other than the rail's own header (the titlebar toggle the
+ *     reported bug put over the vault chip).
+ *  7. Column not narrowed — the shell's first track changes but the sheet or the
+ *     chip keeps the wide rail's offset, so the page starts in a column the rail
+ *     does not fill. The rail and the page must share one edge at both widths.
+ *  7a. Rail unmounted on collapse — `display: none` on the rail (or no
+ *     `.nav-rail` at all), the old behaviour that gave the column back to the
+ *     sheet and slid the chip to the window's leading edge.
+ *  7b. A second toggle in the titlebar — the reported bug: a
+ *     `.window-titlebar__nav-toggle` rendered in the strip when the rail
+ *     collapsed, overlapping the Personal chip. No such element may exist in
+ *     either state; the rail keeps its one toggle, and the chip lives in the
+ *     rail's foot, out of the strip entirely (round 2).
+ *  7c. Contents left behind in the thin rail — the labelled chats section, the
+ *     divider above it or the row labels still rendered in the 56px column; or
+ *     the rows themselves hidden with them, leaving an icon column with no pages
+ *     in it.
+ *  7d. The wing switcher abandoned on collapse — the five-wing band hidden when
+ *     the rail narrows (round 1's behaviour), or left horizontal/overflowing
+ *     instead of a vertical stack of all five wings inside the icon column, or
+ *     the wing's page rows rendered above it. The wings must stay reachable at
+ *     both widths.
+ *  7e. The vault chip still in the titlebar — a `.window-titlebar__vault` in the
+ *     strip. Round 2 moved it into the rail's foot: the strip's leading half is
+ *     an empty drag handle and the titlebar carries no nav-column classes.
+ *  7f. The chip outside the rail's foot — a chip floating somewhere else in the
+ *     rail, or a `.nav-rail__foot[data-nav-group="footer"]` that is not exactly
+ *     the Log row and the chip.
+ *  7g. The wide foot not split — the chip hugging its text or taking the whole
+ *     row, so the Log is not half the footer, or the two not sharing one height.
+ *  7h. The thin chip not reduced — the full name or the chevron still drawn in
+ *     the 56px column, no initials mark, the wrong initials (the harness vault
+ *     "Harness Vault" must read "HV"), or the chip not the rail's last control.
+ *  8. Titlebar text still in the strip — the LQ badge, title or a vault chip
+ *     still rendered in the window's top row, which round 2 leaves empty.
  *  9. Rail scrolls its own topband away, or spills past the window box.
  * 10. Bridge stubs masking real calls — anything the shell reaches for that is
  *     not named here must not throw.
@@ -38,9 +72,12 @@
  *     near-miss grey instead of the titlebar's own fill, so the dock stops being
  *     capped top and bottom by one material.
  * 16. Lines creeping back between the panes — a hairline on the sheet's top,
- *     leading or bottom edge, on the rail's trailing edge, or on any edge of the
- *     dock. The studio has exactly one: the sheet's trailing edge, the seam with
- *     the dock. The line under the strip belongs to the top bar, and it must
+ *     leading or bottom edge, on the rail's top, leading or bottom edge, or on
+ *     any edge of the dock. The studio has exactly two: the rail's trailing edge
+ *     (the rail|sheet seam, inside the rail's width at both widths) and the
+ *     sheet's trailing edge, the seam with the dock. The sheet's leading edge
+ *     must stay unpainted so the rail's line is a line and not a two-pixel band.
+ *     The line under the strip belongs to the top bar, and it must
  *     survive: lose it and the domain lens loses its underline. The rail's own
  *     band paints nothing of its own, so the line stops at the pane seam.
  * 17a. Mats creeping back under the strip — the titlebar's night fill starting at
@@ -63,9 +100,10 @@
  *     measured, so "frameless" cannot be satisfied by a control that stopped
  *     rendering its fill or its tab.
  * 20a. The wing switcher back in the sheet — five tabs in the top bar again, or a
- *     switcher in the rail's band that does not sit on the top bar's row, above
- *     the wing's rows, or does not navigate. Its band is measured against the top
- *     bar's box, and its trip (Home → Define → Home) against the rail's rows.
+ *     switcher in the rail's band that does not sit on the top bar's row (wide),
+ *     above the wing's rows, or does not navigate. Its band is measured against
+ *     the top bar's box, its options' boxes prove the collapsed stack, and its
+ *     trip (Home → Define → Home) is read off the rail's rows.
  * 20b. The domain lens off-centre — one selector left in the sheet, so the band
  *     must centre it; measured by comparing the lens's box to the band's.
  *
@@ -97,7 +135,7 @@ import "@/styles/global.css";
 
 const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value });
 
-/** The vault name the titlebar chip must wear — the driver reads it off the page
+/** The vault name the rail's chip must wear — the driver reads it off the page
  *  rather than hard-coding the same string twice. */
 const VAULT_NAME = "Harness Vault";
 

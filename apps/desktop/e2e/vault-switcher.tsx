@@ -1,6 +1,6 @@
 /**
- * E2E harness for the titlebar vault switcher (driven by
- * `vault-switcher.electron.mjs`).
+ * E2E harness for the sidebar's vault switcher — the chip in the rail's foot
+ * (driven by `vault-switcher.electron.mjs`).
  *
  * A system-in-isolation rig, so the ways it can fail are written down first:
  *  1. The chip is still a NavLink (or an inert button): the dead control the
@@ -26,16 +26,21 @@
  *     mid-flight, when the answer has nowhere to be shown.
  * 11. Focus is not moved into the dialog on open, or is not handed back to the
  *     chip on close, stranding a keyboard operator at the top of the page.
- * 12. The dialog is not portalled to the body, so the titlebar's `overflow:
- *     hidden` strip and its drag band clip or swallow it.
+ * 12. The dialog is not portalled to the body, so the rail's clipped column
+ *     cuts it off: the chip lives at the bottom edge of a scrolling sidebar now,
+ *     not in the titlebar's strip.
+ * 13. The chip is not in the rail at all (or a second one is still in the
+ *     titlebar): the control the operator was told moved to the sidebar's foot
+ *     sits somewhere else, or is drawn twice.
  *
  * The IPC bridge is stubbed (there is no Electron preload on a dev-server page);
- * the titlebar, the dialog, the shell's own provider chain, the real CSS and the
- * real layout engine are all shipping code.
+ * the real AppShell (rail and foot included), the dialog, the shell's own
+ * provider chain, the real CSS and the real layout engine are all shipping code.
  */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
@@ -149,6 +154,12 @@ const bridge: Record<string, unknown> = {
     return Promise.resolve(RECENT);
   },
   onVaultFileChanged: () => () => {},
+  // The real AppShell mounts the chat store and the rail's chat list, so those
+  // reads have to answer. They carry nothing: this rig is about the vault chip,
+  // and an empty session list is the shell with no conversations.
+  companionSessionsList: () => ok([]),
+  companionSessionMessages: () => ok([]),
+  onCompanionStream: () => () => {},
   domainGetActive: () => Promise.resolve(null),
   domainSetActive: () => ok(null),
   dialogOpenDirectory: () => {
@@ -259,7 +270,31 @@ createRoot(root).render(
               <div className="app-root">
                 <WindowTitleBar />
                 <div className="app-root__body">
-                  <HarnessProbe />
+                  {/*
+                    The real shell, because the chip under test lives in the
+                    rail's foot now: a page with only a titlebar would have no
+                    chip at all. One route for every path — the shell really
+                    navigates on a switch, and a pathless layout route with no
+                    matching child would unmount the rail instead of leaving it
+                    on screen.
+                  */}
+                  <Routes>
+                    <Route element={<AppShell />}>
+                      <Route
+                        path="*"
+                        element={
+                          <div className="stub-page">
+                            {/*
+                              The driver's two windows onto state the DOM alone
+                              cannot show stay inside the shell's page, so the
+                              probes measure the same render tree as the chip.
+                            */}
+                            <HarnessProbe />
+                          </div>
+                        }
+                      />
+                    </Route>
+                  </Routes>
                 </div>
               </div>
             </NavDockProvider>
@@ -275,14 +310,17 @@ const ready = new Promise<void>((resolve) => {
   settle = resolve;
 });
 
-// Both halves have to be up before the driver measures: the chip (the control
-// under test) and the provider's boot (the recent list it is supposed to read).
+// Both halves have to be up before the driver measures: the shell (the rail the
+// chip lives in) and the provider's boot (the recent list it is supposed to
+// read). Waiting on the rail rather than on the chip: a chip that is missing —
+// or still painted in the titlebar — must be reported by a check, not mistaken
+// for a page that never loaded.
 const waitForPage = () => {
-  const chip = document.querySelector(".window-titlebar__vault");
+  const rail = document.querySelector(".nav-rail");
   const probe = document.querySelector("#harness-probe");
   const recents = Number(probe?.getAttribute("data-recents") ?? "-1");
   const booting = probe?.getAttribute("data-booting");
-  if (!chip || booting !== "false" || recents !== RECENT.length) {
+  if (!rail || booting !== "false" || recents !== RECENT.length) {
     requestAnimationFrame(waitForPage);
     return;
   }

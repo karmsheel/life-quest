@@ -6,6 +6,7 @@ import { useLiveData } from "@/state/LiveDataProvider";
 import { useVault } from "@/state/VaultProvider";
 import { ChatsSidebar } from "@/components/hermes/ChatsSidebar";
 import { NavCollapseButton } from "./NavCollapseButton";
+import { VaultChip } from "./VaultChip";
 import { NAV_ITEMS, type NavItem } from "./nav-items";
 import { useWing } from "./WingProvider";
 import { WingTabs } from "./WingTabs";
@@ -150,10 +151,14 @@ export function NavRail() {
         <NavCollapseButton />
       </div>
       {/*
-        The sidebar's own band, on the same row as the sheet's top bar: the five
-        wings, and under them the active wing's pages. The rail is the first
-        level of navigation, so the switcher belongs here rather than in the
-        sheet, where it also crowded the domain lens off the band's centre.
+        The sidebar's own band: the five wings, and under them the active wing's
+        pages. The rail is the first level of navigation, so the switcher belongs
+        here rather than in the sheet, where it also crowded the domain lens off
+        the band's centre.
+
+        Wide, it is one horizontal segmented control. Thin, it turns vertical and
+        keeps all five wings reachable in the icon column — the rail cannot swap
+        wings out of the operator's reach just because it narrowed.
       */}
       <div className="nav-rail__wings-band" data-nav-group="wings">
         <WingTabs />
@@ -172,15 +177,27 @@ export function NavRail() {
         operator is in, above the governed shelf and the Log. The section takes
         whatever height those two fixed groups leave and scrolls inside it, so a
         long history never pushes the icons at the foot off the column.
+
+        The divider above them is its own class because the thin rail hides the
+        list: the swimlane between the wing's pages and the shelf would otherwise
+        be two hairlines with nothing between them.
       */}
-      <div className="nav-rail__divider" role="separator" />
+      <div
+        className="nav-rail__divider nav-rail__divider--chats"
+        role="separator"
+      />
       <ChatsSidebar />
       {/*
-        The governed shelf and the Log are two groups, not one list. The rail
+        The governed shelf and the foot are two groups, not one list. The rail
         draws a divider above the shelf and another between the shelf and the
-        Log, so the four pages that belong to no wing read as their own cordoned
-        section at the foot of the sidebar — with the Log closing the rail just
-        below them.
+        foot, so the four pages that belong to no wing read as their own cordoned
+        section at the foot of the sidebar.
+
+        The foot is the Log and the vault chip on one line: the Log closes the
+        rail's navigation, and the chip that names the open vault sits beside it,
+        taking the row's other half. In the thin rail the two stack — the Log's
+        icon with the vault's initials directly under it — so the vault is still
+        one click away without leaving the icon column.
       */}
       <div className="nav-rail__section nav-rail__section--bottom">
         {bottomPinned.length > 0 ? (
@@ -194,8 +211,9 @@ export function NavRail() {
         {footerPinned.length > 0 ? (
           <>
             <div className="nav-rail__divider" role="separator" />
-            <div className="nav-rail__section" data-nav-group="footer">
+            <div className="nav-rail__foot" data-nav-group="footer">
               {footerPinned.map(renderItem)}
+              <VaultChip />
             </div>
           </>
         ) : null}

@@ -439,7 +439,6 @@ a {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  position: relative; /* anchor for the toggle floating in the rail's column */
   min-width: 0;
   height: 100%;
   margin-left: env(titlebar-area-x, 0px);
@@ -453,71 +452,10 @@ a {
   flex: 1 1 auto;
 }
 
-.window-titlebar__vault {
-  /* no-drag: the strip it sits in is a window drag handle. */
-  -webkit-app-region: no-drag;
-  flex: 0 1 auto;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-  /* Full strip height: the chip hangs off the window's top edge with no margin
-     at either end, and only its own padding keeps the text off the chrome. */
-  align-self: stretch;
-  /* Lines the chip's leading border up with the sheet's: the strip indents by
-     the rail's column and nothing else, so the chip starts exactly where the
-     sheet starts. */
-  margin-left: 0;
-  padding: 0 0.6rem;
-  border-radius: 0;
-  background: var(--accent-tint);
-  color: var(--accent);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  text-decoration: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.window-titlebar__vault:hover {
-  background: var(--accent-hover);
-  color: var(--accent-hover-fg);
-}
-
-/* The whole shell — rail open or closed — reserves the rail's column, so the
-   toggle and the chip hold their places instead of sliding when it toggles. */
-.window-titlebar--nav-column .window-titlebar__leading {
-  padding-left: var(--shell-nav-width);
-}
-
-/* The toggle is out of flow inside that reserved column: it floats there whether
-   it is standing in for the rail or sitting in the rail itself, and nothing
-   downstream is laid out after it — which is what makes the chip's x a constant.
-   Two classes on purpose — `.nav-toggle`'s own `margin: 0` is later in the sheet
-   and would win at equal specificity. */
-.window-titlebar__leading .window-titlebar__nav-toggle {
-  position: absolute;
-  left: calc((var(--shell-nav-width) - var(--nav-toggle-size)) / 2);
-  top: 50%;
-  margin: 0;
-  transform: translateY(-50%);
-}
-
-/* Collapsed, there is no sidebar for the strip to sit above: the chip takes the
-   window's own leading edge, and the re-open toggle steps in front of it. The
-   chip moves here — the alternative is a wide empty band where the sidebar was,
-   which is the thing a collapsed sidebar is meant to give back. */
-.window-titlebar--nav-column.window-titlebar--nav-collapsed .window-titlebar__leading {
-  padding-left: calc(var(--nav-toggle-size) + 0.9rem);
-}
-
-.window-titlebar--nav-column.window-titlebar--nav-collapsed
-  .window-titlebar__leading
-  .window-titlebar__nav-toggle {
-  left: 0.55rem;
-}
+/* The strip's leading half is the window's drag handle and nothing else: the
+   vault that used to be named here lives at the foot of the sidebar now, so the
+   strip no longer reserves the rail's column for a chip and no control sits in
+   it to be overlapped. */
 
 .window-titlebar__trailing {
   -webkit-app-region: no-drag;
@@ -631,9 +569,10 @@ a {
   grid-template-columns: var(--nav-column) 1fr var(--chat-column);
   height: 100%;
   color: var(--fg);
-  /* No gap: the panes abut, and each seam is the sheet's own hairline. The mat
-     is not this tray's business — the rail carries it to the window's top in its
-     own column, and the sheet and dock meet the strip directly. */
+  /* No gap: the panes abut, and each pane's own trailing hairline is its seam —
+     the rail's between sidebar and sheet, the sheet's between page and dock. The
+     mat is not this tray's business — the rail carries it to the window's top in
+     its own column, and the sheet and dock meet the strip directly. */
   gap: 0;
   /* The seam's handle is positioned against this tray, and the tracks above are
      exactly the geometry it is placed from. */
@@ -657,23 +596,17 @@ a {
   grid-template-columns: var(--nav-column) var(--chat-column) 1fr;
 }
 
-/* Collapsed sidebar: its column goes back to the workspace sheet and the
-   re-open toggle moves to the titlebar's leading edge. With no gap in the tray
-   the sheet then starts at zero, flush to the window's own left edge — the same
-   edge the boot surfaces start from. */
+/* Collapsed sidebar: not gone, narrowed. The rail keeps its column at the icon
+   column's width and every other pane starts one hairline past it — the same
+   arrangement as the wide rail, with the icons alone left in the column. Nothing
+   is given back to the page: a collapsed sidebar here is a way of looking at the
+   same shell, not a way to take the sidebar away. */
 .shell--nav-collapsed {
-  --nav-column: 0px;
+  --nav-column: var(--shell-nav-width-collapsed);
 }
 
-.shell--nav-collapsed > .nav-rail {
-  display: none;
-}
-
-/* Explicit tracks: a collapsed pane leaves the grid entirely, and auto-placed
-   items would otherwise slide one track left — handing the sidebar's column to
-   the chat panel. The row is pinned to the first one for the same reason read
-   the other way round: the panes are placed by column, and the swapped
-   arrangement's last two tracks are the reverse of the shipped one. */
+/* The rail sits in the first track at either width; the collapse only changes
+   the track, never whether the rail is a pane. */
 .shell > .nav-rail {
   grid-column: 1;
   grid-row: 1;
@@ -701,12 +634,13 @@ a {
 }
 
 /* Square, and wearing a single hairline: the one on its trailing edge, the seam
-   with the dock. That is the studio's only divider between panes — the rail meets
-   this pane with no line at all, and the sheet's top and bottom edges are read by
-   the fill alone. The top edge meets the titlebar strip with no mat between them;
-   the other edges run to the rail, to the dock's leading edge, and to the
-   window's bottom. The bottom escape lives in the box the way the dock's does: the
-   pane gap goes into the height.
+   with the dock. The other seam, the rail's trailing hairline, belongs to the
+   rail: each pane paints exactly the line it leads into, so no seam is drawn
+   twice. The sheet's top and bottom edges are read by the fill alone. The top
+   edge meets the titlebar strip with no mat between them; the other edges run to
+   the rail, to the dock's leading edge, and to the window's bottom. The bottom
+   escape lives in the box the way the dock's does: the pane gap goes into the
+   height.
 
    Square on every corner like the rail and the dock: the sheet is a pane, not a
    card, so no corner of it is notched out of the mat. `overflow: hidden` still
@@ -857,12 +791,17 @@ a {
    escapes the bottom with a negative margin and reaches over the titlebar row by
    its height — so the sidebar runs to the window's top, and the titlebar's own
    fill begins only at the sheet's leading edge. The left edge has no frame to
-   escape, so the rail's box starts at zero. Its trailing edge carries no line of
-   its own — the sheet's frame is the seam's single divider — and no radius or
-   shadow survives a flush panel. */
+   escape, so the rail's box starts at zero. Its trailing edge carries the one
+   hairline between the sidebar and the workspace — the pane seam the page starts
+   from — and no radius or shadow survives a flush panel.
+
+   The width is the shell's track, not the token, so the same pane can stand in
+   the wide column or in the thin icon column: the collapse narrows this box
+   instead of unmounting it. */
 .nav-rail {
   background: var(--canvas-base);
   border: 0;
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -873,9 +812,9 @@ a {
   margin-right: 0;
   margin-bottom: calc(-1 * var(--shell-frame));
   margin-left: 0;
-  /* Explicit: the rail's box is the column itself, so its trailing edge lands
-     exactly on the sheet's leading hairline. */
-  width: var(--shell-nav-width);
+  /* Explicit: the rail's box is the column itself (border-box, so the hairline
+     lives inside the track and lands exactly on the sheet's leading edge). */
+  width: var(--nav-column);
   height: calc(100% + var(--window-titlebar-height) + var(--shell-frame));
   /* Positioned so the rail's topband paints over the titlebar it overlaps: the
      sidebar runs to the window's top wearing the mat, and the strip's own fill
@@ -885,10 +824,12 @@ a {
 }
 
 /* The band the sidebar shares with the titlebar: one control at its trailing
-   edge, and the rest of the strip stays a window drag handle. A wide column puts
-   a centred chevron in the middle of nowhere; at the edge it points at the seam
-   it moves. It paints the rail's own mat, so the sidebar runs to the window's top
-   and the titlebar's fill begins only at the sheet's leading edge. */
+   edge while the rail is wide, and the rest of the strip stays a window drag
+   handle. A wide column puts a centred chevron in the middle of nowhere; at the
+   edge it points at the seam it moves. Collapsed, the band's own rule centres the
+   same control in the thin column (see "The thin rail"). It paints the rail's own
+   mat, so the sidebar runs to the window's top and the titlebar's fill begins
+   only at the sheet's leading edge. */
 .nav-rail__header {
   display: flex;
   align-items: center;
@@ -909,7 +850,11 @@ a {
 /* The sidebar's own band: the five-wing switcher sits on the same row as the
    sheet's top bar, one `--shell-topbar-height` under the window's top. The band
    paints no line of its own — that hairline belongs to the sheet's top bar, under
-   the domain lens, and stops at the pane seam. */
+   the domain lens, and stops at the pane seam.
+
+   The band adds no inset of its own: the rail's own padding is the thin, equal
+   margin on either side of the switcher, so the block is centred in the column
+   without a second set of numbers to keep in step with it. */
 .nav-rail__wings-band {
   display: flex;
   align-items: center;
@@ -919,18 +864,25 @@ a {
      strip's bottom edge too: the header's own bottom margin plus the rail's flex
      gap (0.1rem + 0.2rem) are pulled back off it. */
   margin: -0.3rem 0 0;
-  padding: 0 0.45rem;
+  padding: 0;
 }
 
-/* Five labels in a 16rem column. The control's shape is `.ui-segmented`'s; the
-   rail only tightens the option padding and steps the type down so the longest
-   wing name fits the fifth of the column it is given. */
-.nav-rail__wings {
+/* Five labels in a 16rem column: a square block, not a pill. The rail overrides
+   `.ui-segmented`'s rounded frame so the switcher reads as a rectangular control
+   set into the rail, and gives every option enough padding that the active tab's
+   rule never crowds its word. The frame's even margin is the band's own gap
+   above; the rail's padding is the margin at its sides. Two classes on purpose:
+   `.ui-segmented`'s own rule is later in the sheet and would win at equal
+   specificity. */
+.nav-rail .nav-rail__wings {
   width: 100%;
+  border-radius: 0;
+  padding: 0.15rem;
 }
 
 .nav-rail__wings .ui-segmented__option {
-  padding: 0.375rem 0.2rem;
+  padding: 0.45rem 0.25rem;
+  border-radius: 0;
   font-size: 0.625rem;
   white-space: nowrap;
 }
@@ -944,6 +896,76 @@ a {
 
 .nav-rail__section--bottom {
   margin-top: auto;
+}
+
+/* The rail's foot: the Log closes the navigation, and the vault chip that names
+   the workspace takes the row's other half. One row, two equal halves — the Log
+   stays the last page control, and the chip that changes vaults travels with the
+   navigation instead of sitting in the titlebar. */
+.nav-rail__foot {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
+.nav-rail__foot > .nav-rail__link {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* The vault chip in the foot of the rail. A chip rather than the old square
+   strip tab: it now sits inside the sidebar, on the rail's own mat, so it wears
+   the one accent-tinted shape the panel affords. It raises the vault switcher —
+   the only control that changes which folder the window is writing. */
+.nav-rail__vault {
+  appearance: none;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0 0.55rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nav-rail__vault:hover {
+  background: var(--accent-hover);
+  color: var(--accent-hover-fg);
+}
+
+/* The name is a flex item so a long vault ellipsizes against the caret instead
+   of shoving it out of the chip. */
+.nav-rail__vault-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The caret reads as "this opens something"; it is quiet at rest so the name
+   keeps the chip. */
+.nav-rail__vault-chevron {
+  flex: 0 0 auto;
+  margin-left: auto;
+  opacity: 0.72;
+}
+
+/* The icon rail's mark: initials only, never the name. Its accessible name
+   still spells the whole vault out (see VaultChip), so this paint is purely
+   for the narrow column. */
+.nav-rail__vault-initials {
+  display: none;
 }
 
 .nav-rail__divider {
@@ -1042,6 +1064,101 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* —— The thin rail —— */
+/* Collapsed, the rail is an icon column, not a hidden sidebar: the same pane at
+   --shell-nav-width-collapsed, its rows reduced to the icons and the counts.
+   The chats list leaves the column rather than crowding it — it cannot be said
+   in one icon — while the toggle, the five-wing switcher, the page rows, the
+   governed shelf and the foot all stay reachable. */
+.shell--nav-collapsed .nav-rail__header {
+  /* A one-control-wide column centres its one control: the trailing edge is where
+     a wide rail puts the toggle, and at this width it would read as an accident. */
+  justify-content: center;
+  padding-right: 0;
+}
+
+.shell--nav-collapsed .chats-rail,
+.shell--nav-collapsed .nav-rail__divider--chats {
+  display: none;
+}
+
+/* The wing switcher turns vertical instead of disappearing: five square tabs in
+   the icon column, same order and same active mark, directly under the header.
+   The rail is still the first level of navigation at its narrow width — hiding
+   the wings here would take the first level away.
+
+   The block keeps the rail's own padding as its even margin, and each tab is
+   given vertical padding so its rule sits clear of the word: in 56px the words
+   are the tight dimension, so the breathing room is spent there. */
+.shell--nav-collapsed .nav-rail__wings-band {
+  height: auto;
+  margin: 0.1rem 0 0;
+  padding: 0;
+}
+
+.shell--nav-collapsed .nav-rail .nav-rail__wings {
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.1rem;
+}
+
+.shell--nav-collapsed .nav-rail__wings .ui-segmented__option {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 0.42rem 0.1rem;
+  border-radius: 0;
+  font-size: 0.5625rem;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell--nav-collapsed .nav-rail__label {
+  display: none;
+}
+
+/* One icon per row, centred in the column. The title still names the page on
+   hover and for the keyboard, and the badge still counts what is waiting. */
+.shell--nav-collapsed .nav-rail__link {
+  justify-content: center;
+}
+
+/* The foot stacks in the thin rail: the Log's icon, then the vault's initials
+   directly underneath. Both centred in the column, and the chip no longer takes
+   half a row that does not exist. */
+.shell--nav-collapsed .nav-rail__foot {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.2rem;
+}
+
+.shell--nav-collapsed .nav-rail__foot > .nav-rail__link {
+  flex: 0 0 auto;
+}
+
+.shell--nav-collapsed .nav-rail__vault {
+  flex: 0 0 auto;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: 0 auto;
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+}
+
+.shell--nav-collapsed .nav-rail__vault-name,
+.shell--nav-collapsed .nav-rail__vault-chevron {
+  display: none;
+}
+
+.shell--nav-collapsed .nav-rail__vault-initials {
+  display: inline;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 /* The words that come with the glow: `Update available`, beside the build number

@@ -11,3 +11,23 @@ export function windowTitleLabel(vaultName?: string | null): string {
 export function vaultTitleName(vaultName?: string | null): string {
   return vaultName?.trim() || "LifeQuest";
 }
+
+/**
+ * The vault's mark in the thin rail: the vault name reduced to its initials.
+ *
+ * A one-word name gives one letter ("Personal" → "P"); two or three words give
+ * their initials ("Harness Vault" → "HV", "My Life Vault" → "MLV"). A longer name
+ * keeps the first three words' initials, because a fourth letter would stop
+ * fitting the icon column and the mark has to stay one glyph. The empty state is
+ * the fallback name's letter, so the chip is never blank.
+ */
+export function vaultInitials(vaultName?: string | null): string {
+  const initials = (vaultName ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((word) => word[0]!.toUpperCase())
+    .join("");
+  return initials || "L";
+}

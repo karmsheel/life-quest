@@ -9,8 +9,10 @@
  * Exit code 0 = every invariant held. The JSON report is the repeatable
  * artifact: same command, same geometry, no eyeballing the app required. It
  * carries both arrangements — dock right and dock left — plus the compositions
- * the swap has to survive (a collapsed dock on either side, a collapsed rail, and
- * both at once) and the round trip back to where it started.
+ * the swap has to survive (a collapsed dock on either side, the rail shrunk to
+ * its thin icon column, and both at once) and the round trip back to where it
+ * started. The rail never leaves the layout, so a collapsed rail is measured as
+ * a 56px track the dock follows, not as a window edge the dock inherits.
  *
  * NOT covered here: whether Windows lets the click through the titlebar's drag
  * band. Synthetic DOM clicks bypass the OS hit test, so the `-webkit-app-region:
@@ -69,6 +71,11 @@ const SAMPLE = `(() => {
   probe.style.cssText = "position:absolute;left:-9999px;top:0;height:0;width:var(--shell-nav-width)";
   document.body.appendChild(probe);
   const track = probe.offsetWidth;
+  // The rail's collapsed track, read the same way: a collapsed rail keeps a
+  // column of its own, so the rig compares the dock's start against a number
+  // rather than assuming the first track is zero.
+  probe.style.width = "var(--shell-nav-width-collapsed)";
+  const collapsedTrack = probe.offsetWidth;
   probe.style.width = "var(--chatbar-width)";
   const chatTrack = probe.offsetWidth;
   probe.remove();
@@ -98,7 +105,11 @@ const SAMPLE = `(() => {
   const versionBadge = document.querySelector(".update-badge");
   const shell = document.querySelector(".shell");
   const titlebar = document.querySelector(".window-titlebar");
-  const vault = document.querySelector(".window-titlebar__vault");
+  // The vault chip lives in the rail's foot now, one half of the footer row
+  // beside Log. Its name is read from the chip's own name span, not the button's
+  // text: the collapsed initials are in the DOM in both states, so the button's
+  // textContent would join the two words together.
+  const vault = document.querySelector(".nav-rail__vault");
   const trailing = document.querySelector(".window-titlebar__trailing");
   const sideSwitch = document.querySelector(".window-titlebar__side-switch");
   const chatToggle = document.querySelector(".window-titlebar__chat-toggle");
@@ -132,6 +143,7 @@ const SAMPLE = `(() => {
     viewport: { width: vw, height: vh },
     tokens: {
       track,
+      collapsedTrack,
       chatTrack,
       frame,
       rootFontSize,
@@ -142,7 +154,7 @@ const SAMPLE = `(() => {
       dataTheme: document.documentElement.getAttribute("data-theme"),
       skin: document.documentElement.getAttribute("data-skin")
     },
-    vaultText: (vault?.textContent || "").trim(),
+    vaultText: (vault?.querySelector(".nav-rail__vault-name")?.textContent || "").trim(),
     accentBackground,
     paperBackground,
     shell: shell
@@ -335,7 +347,7 @@ function checkArrangement(label, state, side) {
   check(`${label}: the sheet exists`, Boolean(main), "no .shell__main in the shell");
   check(`${label}: the dock exists`, Boolean(chat), "no .chat-panel in the shell");
   check(
-    `${label}: the titlebar chip wears the vault's name`,
+    `${label}: the rail's vault chip wears the vault's name`,
     state.vaultText === state.vaultName,
     `chip "${state.vaultText}" vs vault "${state.vaultName}"`,
   );
@@ -880,20 +892,40 @@ async function main() {
       `sheet ${JSON.stringify(dockReopened.main.box)} vs ${JSON.stringify(left.main.box)}, dock ${JSON.stringify(dockReopened.chat.box)} vs ${JSON.stringify(left.chat.box)}, launcher ${JSON.stringify(dockReopened.launcher)}`,
     );
 
-    // 4 — and with the rail gone the dock inherits the window's leading edge, so
-    // the two swaps do not fight over the first track.
+    // 4 — the rail collapses to its icon column; it does not leave the grid. The
+    // dock therefore does not inherit the window's leading edge: it keeps starting
+    // at the rail's trailing edge, which is now the collapsed track rather than
+    // 256px. Only the first track moves, so the panes must still abut and the sheet
+    // must still own the window's trailing edge. Measuring the dock against the
+    // window instead of the rail is exactly the old doctrine this protects.
     at("collapsed rail");
     await click(".nav-rail .nav-toggle");
     const railCollapsed = await settled();
+    // The composition that says what the thin rail is: the dock still open, the
+    // rail still painting its icons beside it. A rail that had left the grid would
+    // put the dock on the window's own edge, and this shot would show the page's
+    // icons crowding the window frame instead.
+    const railCollapsedShot = await shot("chat-side-left-rail-collapsed.png");
     check(
-      "left/collapsed rail: the rail leaves the grid",
-      railCollapsed.rail === null || railCollapsed.rail.display === "none",
+      "left/collapsed rail: the rail is still on screen",
+      Boolean(railCollapsed.rail) && railCollapsed.rail.display !== "none",
       `rail ${JSON.stringify(railCollapsed.rail)}`,
     );
     check(
-      "left/collapsed rail: the dock takes the window's leading edge",
-      railCollapsed.chat.box.left === 0,
-      `dock left ${railCollapsed.chat.box.left}px`,
+      "left/collapsed rail: the rail wears the collapsed track the token asks for",
+      railCollapsed.rail?.box.width === railCollapsed.tokens.collapsedTrack,
+      `rail width ${railCollapsed.rail?.box.width}px vs --shell-nav-width-collapsed ${railCollapsed.tokens.collapsedTrack}px`,
+    );
+    check(
+      "left/collapsed rail: the shell reports the collapsed rail",
+      railCollapsed.shell?.className?.includes("shell--nav-collapsed") === true,
+      `shell classes ${JSON.stringify(railCollapsed.shell?.className)}`,
+    );
+    check(
+      "left/collapsed rail: the dock starts at the rail's trailing edge",
+      railCollapsed.chat.box.left === railCollapsed.rail?.box.right &&
+        railCollapsed.chat.box.left === railCollapsed.tokens.collapsedTrack,
+      `dock left ${railCollapsed.chat.box.left}px vs rail right ${railCollapsed.rail?.box.right}px, collapsed track ${railCollapsed.tokens.collapsedTrack}px`,
     );
     check(
       "left/collapsed rail: the panes still abut",
@@ -911,18 +943,23 @@ async function main() {
       `dock width ${railCollapsed.chat.box.width}px vs ${railCollapsed.tokens.chatTrack}px`,
     );
 
-    // 4b — both gone: the mark still follows the dock's column, and that column
-    // now starts at the window's own leading edge. This is the case a constant
-    // inset would get wrong: the rail's width has left the sum.
+    // 4b — both collapsed: the mark still follows the dock's column, and that
+    // column now starts at the collapsed rail's trailing edge — 56px — rather than
+    // at the window's own edge. The rail's width is still in the sum, only smaller;
+    // a constant inset would be wrong in both states.
     at("collapsed rail and dock");
     await click(".window-titlebar__chat-toggle");
     const railAndDockCollapsed = await settled();
     const bothCollapsedShot = await shot("chat-side-collapsed-both.png");
     check(
-      "left/collapsed rail + dock: the mark takes the window's leading edge",
+      "left/collapsed rail + dock: the mark sits one rem inside the collapsed rail",
       Boolean(railAndDockCollapsed.launcher) &&
         railAndDockCollapsed.launcher.box.left ===
-          railAndDockCollapsed.tokens.rootFontSize &&
+          railAndDockCollapsed.tokens.collapsedTrack +
+            railAndDockCollapsed.tokens.rootFontSize &&
+        railAndDockCollapsed.launcher.box.left ===
+          railAndDockCollapsed.rail?.box.right +
+            railAndDockCollapsed.tokens.rootFontSize &&
         railAndDockCollapsed.launcher.box.top >
           railAndDockCollapsed.viewport.height / 2 &&
         railAndDockCollapsed.viewport.height -
@@ -935,16 +972,32 @@ async function main() {
     await click(".chat-launcher");
     const dockBackUnderCollapsedRail = await settled();
     check(
-      "reopening under a collapsed rail lands back on the leading geometry",
+      "reopening under a collapsed rail lands back on the rail-adjacent geometry",
       same(dockBackUnderCollapsedRail.chat.box, railCollapsed.chat.box) &&
         same(dockBackUnderCollapsedRail.main.box, railCollapsed.main.box) &&
         dockBackUnderCollapsedRail.launcher === null,
       `dock ${JSON.stringify(dockBackUnderCollapsedRail.chat.box)} vs ${JSON.stringify(railCollapsed.chat.box)}, sheet ${JSON.stringify(dockBackUnderCollapsedRail.main.box)} vs ${JSON.stringify(railCollapsed.main.box)}`,
     );
 
+    // 4c — restoring the rail is the same control that collapsed it, because the
+    // toggle stayed in the rail: the way back out is where the way in was. The
+    // expanded arrangement comes back — rail 256, dock at the rail's trailing
+    // edge, sheet on the window's trailing edge — with the rail's own box stated
+    // rather than only the panes it moved.
     at("restored rail");
-    await click(".window-titlebar__nav-toggle");
+    await click(".nav-rail .nav-toggle");
     const railRestored = await settled();
+    check(
+      "restoring the rail drops the collapsed class",
+      railRestored.shell?.className?.includes("shell--nav-collapsed") === false,
+      `shell classes ${JSON.stringify(railRestored.shell?.className)}`,
+    );
+    check(
+      "restoring the rail gives the dock back the expanded track",
+      railRestored.rail?.box.width === railRestored.tokens.track &&
+        railRestored.chat.box.left === railRestored.rail?.box.right,
+      `rail width ${railRestored.rail?.box.width}px vs ${railRestored.tokens.track}px, dock left ${railRestored.chat.box.left}px`,
+    );
     check(
       "restoring the rail lands back on the swapped geometry",
       same(railRestored.rail?.box, left.rail?.box) &&
@@ -1138,6 +1191,7 @@ async function main() {
         collapsedShot,
         hoverShot,
         lightShot,
+        railCollapsedShot,
         bothCollapsedShot,
         restoredShot,
         barCollapsedShot,

@@ -10,11 +10,11 @@ import {
 /**
  * The left sidebar's dock state — the nav rail's twin of ChatDockProvider.
  *
- * `collapsed` is a shell-level fact, not a NavRail one: collapsing gives the
- * rail's grid column back to the workspace, so the shell owns it and the
- * titlebar reads it to place its own toggle. `present` marks whether the shell
- * (and therefore the rail) is mounted at all — the welcome flow has no rail, so
- * the titlebar must not reserve its column.
+ * `collapsed` is a shell-level fact, not a NavRail one: collapsing narrows the
+ * rail's grid column to the icon column — the sidebar stays, so the shell owns
+ * the width and the titlebar reads it to place the vault chip past the rail.
+ * `present` marks whether the shell (and therefore the rail) is mounted at all —
+ * the welcome flow has no rail, so the titlebar must not reserve its column.
  */
 type NavDockContextValue = {
   collapsed: boolean;
