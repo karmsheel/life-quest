@@ -119,6 +119,19 @@ type State = {
       items: { label: string; checked: boolean }[];
     } | null;
     listOptions: ({ includeArchived?: boolean } | null)[];
+    list: {
+      box: Box | null;
+      scrollTop: number;
+      scrollHeight: number;
+      clientHeight: number;
+    } | null;
+    menu: {
+      box: Box | null;
+      placement: string | null;
+      items: number;
+      rowLabel: string | null;
+      rowBox: Box | null;
+    } | null;
   } | null;
   composer: { value: string; disabled: boolean; focused: boolean } | null;
   messages: { role: string; content: string }[];
@@ -235,6 +248,10 @@ describe("chat dock tabs and sidebar chats", () => {
       newChatActive,
       equalTabs,
       narrowTabs,
+      longList,
+      atFoot,
+      menuFlipped,
+      menuDownward,
     } = report.states;
 
     // The sidebar is one flat list of the profile's chats, pinned first; the
@@ -927,6 +944,79 @@ describe("chat dock tabs and sidebar chats", () => {
         (width, index) => width < (equalWidths[index] ?? Number.NEGATIVE_INFINITY),
       ),
       `the tabs did not shrink with the dock: ${JSON.stringify(equalWidths)} → ${JSON.stringify(narrowWidths)}`,
+    );
+
+    // The row menu opens into the space that exists. With the history grown past
+    // the list's scroll port and scrolled to its last chat, the three-dot menu
+    // has to open above its row — a menu hanging below the row would be cut by
+    // the list's own edge, which is the reported fault. It must sit wholly
+    // inside the list and opening it must not move the list. A row at the top,
+    // with the room under it, still opens downward.
+    assert.ok(
+      (longList.rail?.list?.scrollHeight ?? 0) >
+        (longList.rail?.list?.clientHeight ?? 0) + 40,
+      `the seeded history does not overflow the chats list, so the menu is never clipped (${JSON.stringify(longList.rail?.list)})`,
+    );
+    const footMax =
+      (atFoot.rail?.list?.scrollHeight ?? 0) - (atFoot.rail?.list?.clientHeight ?? 0);
+    assert.ok(
+      footMax > 0 &&
+        Math.abs((atFoot.rail?.list?.scrollTop ?? 0) - footMax) <= 1,
+      `the chats list did not reach its last row (scrollTop ${atFoot.rail?.list?.scrollTop}, max ${footMax})`,
+    );
+    const footRow = atFoot.rows.at(-1);
+    assert.ok(footRow, "the scrolled list has no last row");
+    assert.ok(
+      (footRow.box?.bottom ?? 0) <= (atFoot.rail?.list?.box?.bottom ?? 0) + 1 &&
+        (footRow.box?.bottom ?? 0) >= (atFoot.rail?.list?.box?.bottom ?? 0) - 48,
+      `the last row is not at the foot of the list (${JSON.stringify({ row: footRow.box, list: atFoot.rail?.list?.box })})`,
+    );
+    assert.equal(
+      menuFlipped.rail?.menu?.placement,
+      "above",
+      `the last chat's row menu did not flip upward (${JSON.stringify(menuFlipped.rail?.menu)})`,
+    );
+    assert.equal(
+      menuFlipped.rail?.menu?.rowLabel,
+      footRow.label,
+      "the opened menu belongs to a row other than the last chat",
+    );
+    assert.equal(
+      menuFlipped.rail?.menu?.items,
+      5,
+      `the flipped menu lost its items (${menuFlipped.rail?.menu?.items})`,
+    );
+    assert.ok(
+      (menuFlipped.rail?.menu?.box?.bottom ?? Number.POSITIVE_INFINITY) <=
+        (menuFlipped.rail?.menu?.rowBox?.top ?? Number.NEGATIVE_INFINITY) + 1,
+      `the flipped menu is not drawn over its row: ${JSON.stringify(menuFlipped.rail?.menu)}`,
+    );
+    assert.ok(
+      (menuFlipped.rail?.menu?.box?.top ?? Number.NEGATIVE_INFINITY) >=
+        (menuFlipped.rail?.list?.box?.top ?? Number.POSITIVE_INFINITY) - 1 &&
+        (menuFlipped.rail?.menu?.box?.bottom ?? Number.POSITIVE_INFINITY) <=
+          (menuFlipped.rail?.list?.box?.bottom ?? Number.NEGATIVE_INFINITY) + 1,
+      `the flipped menu is clipped by the chats list: ${JSON.stringify({ menu: menuFlipped.rail?.menu?.box, list: menuFlipped.rail?.list?.box })}`,
+    );
+    assert.ok(
+      (menuFlipped.rail?.menu?.box?.height ?? 0) > 60,
+      `the flipped menu was squeezed to ${menuFlipped.rail?.menu?.box?.height}px`,
+    );
+    assert.ok(
+      Math.abs((menuFlipped.rail?.list?.scrollTop ?? -1) - footMax) <= 1,
+      `opening the menu moved the list (scrollTop ${menuFlipped.rail?.list?.scrollTop}, expected ${footMax})`,
+    );
+    assert.equal(
+      menuDownward.rail?.menu?.placement,
+      "below",
+      `a roomy row's menu did not open downward (${JSON.stringify(menuDownward.rail?.menu)})`,
+    );
+    assert.ok(
+      (menuDownward.rail?.menu?.box?.top ?? Number.NEGATIVE_INFINITY) >=
+        (menuDownward.rail?.menu?.rowBox?.bottom ?? Number.POSITIVE_INFINITY) - 1 &&
+        (menuDownward.rail?.menu?.box?.bottom ?? Number.POSITIVE_INFINITY) <=
+          (menuDownward.rail?.list?.box?.bottom ?? Number.NEGATIVE_INFINITY) + 1,
+      `the downward menu is not wholly under its row and inside the list: ${JSON.stringify({ menu: menuDownward.rail?.menu, list: menuDownward.rail?.list?.box })}`,
     );
 
     for (const file of report.screenshots) {

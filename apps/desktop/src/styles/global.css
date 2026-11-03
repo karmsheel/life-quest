@@ -10016,6 +10016,22 @@ button.chat-panel__activity-line:hover {
   border-radius: var(--radius-sm);
   background: var(--card);
   box-shadow: var(--shadow-sm);
+  /* Only bites when the measurement below had to clamp the menu to the room a
+     very short list leaves: the menu then scrolls itself rather than painting
+     past the list's edge. */
+  overflow-y: auto;
+}
+
+/* The row menu opens into the space that exists, not always below: a row at the
+   foot of the scrolled list has the list's clip edge under it and the whole
+   history over it, so its menu is measured on open and flips over the row
+   (`data-menu-placement="above"`, written by `ChatsSidebar`). Without this a
+   three-dot press on the last chat left half the menu outside the scroll port,
+   and the operator had to scroll to reach it. The view menu never wears the
+   attribute: it opens from the header, which is never at the foot. */
+.chats-rail__menu[data-menu-placement="above"] {
+  top: auto;
+  bottom: 100%;
 }
 
 /* The view menu is wider than a row menu: it names the option it is on and
