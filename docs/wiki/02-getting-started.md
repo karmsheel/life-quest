@@ -10,7 +10,8 @@ the install.
 ## Where it lives
 
 The welcome screen is its own route outside the studio shell: `#/welcome`. It has
-no rail, no top bar and no chat pane — only the custom window title bar above it.
+no rail, no domain tab and no chat pane — only the custom window title bar above
+it.
 Inside its card you find the app name, the two vault buttons and the recent-vault
 list.
 

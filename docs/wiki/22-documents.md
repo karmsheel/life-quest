@@ -11,9 +11,9 @@ rewrites — by you or by the companion.
 **Home** wing → **Documents** (route `/documents`). It opens in the centre pane
 as a page with the composer at the top and the library below it.
 
-- The top-bar lens filters the list: **Overview** shows every note; a domain lens
-  shows the notes tagged with that domain. A note with no tags appears only on
-  **Overview**.
+- The domain lens in the window title bar filters the list: **Overview** shows
+  every note; a domain lens shows the notes tagged with that domain. A note with
+  no tags appears only on **Overview**.
 - There is no per-note route. Clicking a note opens it in the composer on the
   same page.
 

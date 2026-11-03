@@ -48,7 +48,7 @@ const SHOTS = [
 const SCENARIOS = [
   "skin",
   "rail-execute",
-  "top-bar-tabs",
+  "rail-wing-tabs",
   "page-eyebrow",
   "new-project-inline",
   "modal-closed-by-default",

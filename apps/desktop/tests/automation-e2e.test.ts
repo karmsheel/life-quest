@@ -131,7 +131,12 @@ type Sample = {
     dividerRole: boolean;
     wingBox: Box | null;
     firstWingBox: Box | null;
-    topBarBox: Box | null;
+    /**
+     * The rail's wing-switcher band, directly above the wing's rows. It replaced
+     * the sheet's retired `.top-bar` as the chrome row the first icon starts
+     * below: the band still begins at the window strip's bottom edge.
+     */
+    wingsBandBox: Box | null;
     shelfBox: Box | null;
     footerBox: Box | null;
   };
@@ -254,9 +259,9 @@ describe("automations e2e", () => {
     );
     assert.ok(
       landing.rail.firstWingBox &&
-        landing.rail.topBarBox &&
-        landing.rail.firstWingBox.top >= landing.rail.topBarBox.bottom,
-      `the wing's first icon starts at ${landing.rail.firstWingBox?.top}px, above the top bar's bottom at ${landing.rail.topBarBox?.bottom}px`,
+        landing.rail.wingsBandBox &&
+        landing.rail.firstWingBox.top >= landing.rail.wingsBandBox.bottom,
+      `the wing's first icon starts at ${landing.rail.firstWingBox?.top}px, above the rail's wing band bottom at ${landing.rail.wingsBandBox?.bottom}px`,
     );
 
     // ── the page groups by trigger type ─────────────────────────────────────

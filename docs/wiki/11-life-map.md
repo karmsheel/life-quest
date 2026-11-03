@@ -83,7 +83,7 @@ The **Add event** and **Add** buttons are shown only on a live year. On an archi
 
 **The domain lens.** The lens filters the event marks and the **Events** panel; the year grid, quarter layout, month text, objectives, and notes stay unfiltered. Unassigned events are visible on Overview and hidden in a domain lens; a new event's **Domain** defaults to the active lens. This is the filter law for domain-scoped lists: [LAWS/DOMAIN-FILTER.md](../../LAWS/DOMAIN-FILTER.md). The wings themselves never filter data: [LAWS/WINGS.md](../../LAWS/WINGS.md).
 
-**Navigation.** There is no zoom control: the page scrolls vertically, the month calendar and quarter grids fit the content width, and the browser's own scrolling moves you through it. There is no calendar-specific keyboard navigation; the arrow keys belong to the rail's wing and lens switching. Mouse paths are the month-name button, the day cell, the **Back to dashboard** button, and the year's delete and add buttons. There is no drag-to-paint range on the year grid.
+**Navigation.** There is no zoom control: the page scrolls vertically, the month calendar and quarter grids fit the content width, and the browser's own scrolling moves you through it. There is no calendar-specific keyboard navigation; the arrow keys belong to the wing switcher and the domain lens. Mouse paths are the month-name button, the day cell, the **Back to dashboard** button, and the year's delete and add buttons. There is no drag-to-paint range on the year grid.
 
 **What the vault refuses.** Every edit is a map command validated against the store:
 

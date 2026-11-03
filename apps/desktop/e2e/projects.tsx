@@ -4,8 +4,8 @@
  *
  * The page under test is the real page, not a copy: `ProjectsPage` and
  * `ProjectPage` are mounted on their real routes under the real `AppShell` —
- * real `NavRail` with its wing switcher, real `TopBar`, real
- * `WingProvider`/`wingForPath`,
+ * real `NavRail` with its wing switcher, real `WindowTitleBar` with its domain
+ * tab, real `WingProvider`/`wingForPath`,
  * real CSS and real layout engine. The rail claim ("Projects is under Execute,
  * not Plan") is only meaningful in the shipped shell, so the harness renders the
  * shell the app renders.

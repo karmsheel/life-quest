@@ -2,15 +2,16 @@
 
 Domains are the life areas LifeQuest organises around. A domain owns doctrine, a
 database, pages, saved views and its own Dashboard board, all in one folder in the
-vault. The **domain lens** in the top bar chooses which life area the domain-scoped
-screens are showing, and **Overview** is the virtual lens that shows all of them
-together. A new vault seeds four domains; you can add, rename, archive and delete
-them. [The wiki home](./index.md) has the full page index.
+vault. The **domain lens** in the window title bar chooses which life area the
+domain-scoped screens are showing, and **Overview** is the virtual lens that shows
+all of them together. A new vault seeds four domains; you can add, rename, archive
+and delete them. [The wiki home](./index.md) has the full page index.
 
 ## Where it lives
 
-- **The lens**: in the top bar, immediately right of the wing tabs. It reads
-  **Overview** followed by every live domain.
+- **The lens**: in the window title bar's domain tab, at its leading edge just
+  past the rail. It reads **Overview** followed by every live domain, and it
+  moves with the rail when the rail is collapsed.
 - **Managing domains**: the **Settings** sheet, tab **Domains**, at
   `/settings?tab=domains`. The legacy path `/domains` redirects there.
 - **Domain content**: each domain's folder in the vault is
@@ -72,8 +73,8 @@ and Pages lists span every live domain.
 
 ### Switch the lens
 
-1. Click **Overview** or a domain name in the top bar. The current page stays the
-   same; the data it lists changes.
+1. Click **Overview** or a domain name in the window title bar's domain tab. The
+   current page stays the same; the data it lists changes.
 2. **←** and **→** move between lens options when the lens has focus.
 3. The choice is remembered per vault, so the app reopens on the lens you left it
    on.
@@ -99,8 +100,8 @@ and Pages lists span every live domain.
 ### Activate a domain
 
 Each live card has an **Activate** button. It sets the lens to that domain, which
-is the same as choosing it in the top bar. The card of the active domain wears an
-**Active** badge and hides its **Activate** button.
+is the same as choosing it in the window title bar. The card of the active domain
+wears an **Active** badge and hides its **Activate** button.
 
 ### Archive a domain
 
@@ -109,7 +110,7 @@ is the same as choosing it in the top bar. The card of the active domain wears a
    *The domain leaves the active switcher list. Its folder and everything in it
    stay in the vault.* Press **Archive domain** to confirm, or cancel.
 
-Archiving is the soft removal. The domain leaves the top-bar lens list, the
+Archiving is the soft removal. The domain leaves the lens list, the
 doctrine index and every domain-scoped list, but its folder, doctrine, pages,
 database and history stay in the vault. If the archived domain was the active
 lens, the app returns to **Overview**.
@@ -147,9 +148,9 @@ the deleted domain was the active lens, the app returns to **Overview**.
 - **Archived** — only when something is archived: rows with **Unarchive** and
   **Delete**, plus the confirmation dialog.
 
-The top-bar lens itself is a segmented control: **Overview**, then each live
-domain by name. It shows a loading state (*Loading domains…*) while the vault is
-still booting, and a domain-switch failure appears beside it rather than as a
+The lens in the window title bar is a segmented control: **Overview**, then each
+live domain by name. It shows a loading state (*Loading domains…*) while the vault
+is still booting, and a domain-switch failure appears beside it rather than as a
 dialog.
 
 ## Overview and the lens as a filter

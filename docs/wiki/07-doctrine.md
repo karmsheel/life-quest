@@ -28,7 +28,7 @@ The four kinds are fixed. Their on-disk names are shorter than their rail labels
 
 ## How to use it
 
-1. Pick a lens in the top bar: **Overview** or one domain. On Overview, Dream and Vision group their cards by every live domain, in domain sort order. With a domain lens, only that domain's group is shown.
+1. Pick a lens in the window title bar: **Overview** or one domain. On Overview, Dream and Vision group their cards by every live domain, in domain sort order. With a domain lens, only that domain's group is shown.
 2. Open **Dream** from the rail. Each live domain shows three cards: **Beliefs & Premise**, **Purpose**, and **Strategy (How)**. A card shows the document label, its **Locked** or **Unlocked** badge, and either the rendered markdown or, while the body is empty, that kind's coaching paragraph.
 3. Click a card to open its editor. The top line reads **Back** · domain name · document label; **Back** returns to the Dream index.
 4. Write in the **Title** field and in the body box. The body box is one continuous page: everything except the paragraph under the caret is rendered as markdown, and the paragraph under the caret is its own raw markdown. Clicking a rendered paragraph opens it for editing.

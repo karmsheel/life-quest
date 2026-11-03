@@ -13,9 +13,10 @@
  *
  * NOT covered here: whether Windows lets the click through the titlebar's drag
  * band. Synthetic DOM clicks bypass the OS hit test, so the `-webkit-app-region:
- * no-drag` carve-out on the toggle can only be confirmed by clicking it in the
- * real window. Nothing asserts that carve-out any more — the source-text
- * contract that read it out of the CSS went with the unit tests.
+ * no-drag` carve-outs — on the rail's collapse toggle and on the raised domain
+ * lens — are measured as computed style but can only be confirmed by clicking
+ * them in the real window. The source-text contract that read the carve-out out
+ * of the CSS went with the unit tests.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -56,6 +57,30 @@ const SAMPLE = `(() => {
     : [];
   const titlebar = document.querySelector(".window-titlebar");
   const leading = document.querySelector(".window-titlebar__leading");
+  // The domain lens, raised into the window's strip. It replaced the sheet's
+  // .top-bar; the retired selector is queried here only to prove it is gone.
+  const lens = document.querySelector(".window-titlebar__lens");
+  const main = document.querySelector(".shell__main");
+  const shellContent = document.querySelector(".shell__content");
+  const legacyTopBar = Boolean(document.querySelector(".top-bar"));
+  // Where the rail's own column ends: the lens must start a breath (12px) past
+  // it, wide or thin.
+  const railBoxNow = rail ? rail.getBoundingClientRect() : null;
+  const lensBoxNow = lens ? lens.getBoundingClientRect() : null;
+  /** One pseudo-element's painted box and fill, as Chromium computes it. */
+  const pseudo = (el, which) => {
+    if (!el) return null;
+    const style = getComputedStyle(el, which);
+    return {
+      content: style.content,
+      backgroundImage: style.backgroundImage,
+      width: style.width,
+      height: style.height,
+      bottom: style.bottom,
+      left: style.left,
+      right: style.right
+    };
+  };
   // Round 2: the vault chip left the titlebar for the rail's foot. The old
   // selector is queried only to prove that nothing renders it any more.
   const titlebarVault = document.querySelector(".window-titlebar__vault");
@@ -73,17 +98,32 @@ const SAMPLE = `(() => {
   // hides the labels; it must not hide the rows, their icons or their names.
   const railLabels = Array.from(document.querySelectorAll(".nav-rail__label"));
   const navRows = Array.from(document.querySelectorAll(".nav-rail__link"));
-  const main = document.querySelector(".shell__main");
   const chat = document.querySelector(".chat-panel");
   const dockActions = document.querySelector(".chat-panel__actions");
-  const topBar = document.querySelector(".top-bar");
   const chatHeader = document.querySelector(".chat-panel__header");
   const shell = document.querySelector(".shell");
   const wings = document.querySelector(".nav-rail__wings");
   const wingsBand = document.querySelector(".nav-rail__wings-band");
   const wingRows = document.querySelector(".nav-rail__section--wing");
-  const domainSwitcher = document.querySelector(".domain-switcher");
+  const domainSwitcher = document.querySelector(".window-titlebar__lens .domain-switcher");
+  const lensTabsEl = lens ? lens.querySelector(".domain-switcher__tabs") : null;
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
+  // The band the rail's wing switcher and the dock's header still wear under the
+  // strip — the 44px the page gave back. Measured through a probe box, not rounded
+  // from the token text: --shell-topbar-height is 2.75rem, and parseFloat on
+  // that string is 2.75, not 44.
+  const measureHeight = (value) => {
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:absolute;left:-9999px;top:0;width:0;height:" + value;
+    document.body.appendChild(probe);
+    const measured = probe.offsetHeight;
+    probe.remove();
+    return measured;
+  };
+  const topbarHeight = measureHeight("var(--shell-topbar-height)");
+  const titlebarNavCollapsed = titlebar
+    ? titlebar.getAttribute("data-nav-collapsed")
+    : null;
 
   // The accent ink the chip wears, read through a probe so a color-mix() or a
   // skin-specific serialisation still compares as the computed colour.
@@ -113,7 +153,6 @@ const SAMPLE = `(() => {
   // would collide with if nothing had stepped aside. Measured at the CURRENT
   // rail's half-width — a thin rail is only 56px wide, so the expanded track's
   // midpoint would land in the sheet and read the wrong pane.
-  const railBoxNow = rail ? rail.getBoundingClientRect() : null;
   const cornerEl = document.elementFromPoint(
     Math.round((railBoxNow ? railBoxNow.width : track) / 2),
     Math.round(titlebarHeight / 2)
@@ -126,6 +165,7 @@ const SAMPLE = `(() => {
       collapsedTrack,
       frame: px(root.getPropertyValue("--shell-frame")),
       titlebarHeight,
+      topbarHeight,
       radiusSm: root.getPropertyValue("--radius-sm").trim()
     },
     theme: {
@@ -329,54 +369,92 @@ const SAMPLE = `(() => {
     }),
     main: box(main),
     mainBackground: main ? getComputedStyle(main).backgroundColor : null,
-    topBar: topBar
+    // The sheet's first element child: the page column, not a band. A .top-bar
+    // still at the top of the sheet would show up here instead.
+    mainFirstChild: main
       ? {
-          box: box(topBar),
-          borderBottomWidth: getComputedStyle(topBar).borderBottomWidth,
-          borderBottomColor: getComputedStyle(topBar).borderBottomColor,
-          background: getComputedStyle(topBar).backgroundColor
+          tag: main.firstElementChild
+            ? main.firstElementChild.tagName.toLowerCase()
+            : null,
+          className:
+            main.firstElementChild &&
+            typeof main.firstElementChild.className === "string"
+              ? main.firstElementChild.className
+              : ""
         }
       : null,
-    // The sheet's band now carries one selector only — the domain lens — and the
-    // band centres it. The wing switcher moved to the rail's own band above it,
-    // so this list is the lens alone. Measured by selector rather than by a
-    // single class so the report names the control that regressed.
-    topBarSelectors: [".domain-switcher__tabs"].map((selector) => {
-      const el = document.querySelector(selector);
-      if (!el) return { selector, optionCount: 0 };
-      const style = getComputedStyle(el);
-      const active = el.querySelector(".ui-segmented__option.is-active");
-      return {
-        selector,
-        borderTopWidth: style.borderTopWidth,
-        borderRightWidth: style.borderRightWidth,
-        borderBottomWidth: style.borderBottomWidth,
-        borderLeftWidth: style.borderLeftWidth,
-        background: style.backgroundColor,
-        activeBorderWidth: active ? getComputedStyle(active).borderTopWidth : null,
-        activeBackground: active
-          ? getComputedStyle(active).backgroundColor
-          : null,
-        optionCount: el.querySelectorAll(".ui-segmented__option").length
-      };
-    }),
-    // One control on the sheet's band, and it is the domain lens — the wing
-    // switcher must not have left a copy behind in the sheet.
-    bandControlCount: topBar
-      ? topBar.querySelectorAll(".ui-segmented").length
-      : 0,
+    // Negative regression claim: the retired top bar is gone from the DOM, not
+    // merely restyled.
+    legacyTopBar,
+    // data-nav-collapsed on the strip is what moves the lens with the rail, so
+    // the rig reads it off the header rather than inferring the state from a box.
+    titlebarNavCollapsed,
+    // The domain tab raised into the window's strip: its box, its page ink, its
+    // no-drag carve-out, the two page-coloured fillets at its bottom corners, and
+    // how far it starts past the rail's trailing hairline.
+    lens: lens
+      ? {
+          box: box(lens),
+          background: getComputedStyle(lens).backgroundColor,
+          appRegion: getComputedStyle(lens).getPropertyValue("-webkit-app-region"),
+          inTitlebar: Boolean(titlebar && titlebar.contains(lens)),
+          firstChild: Boolean(titlebar && titlebar.firstElementChild === lens),
+          fromRail:
+            lensBoxNow && railBoxNow
+              ? Math.round(lensBoxNow.left - railBoxNow.right)
+              : null,
+          before: pseudo(lens, "::before"),
+          after: pseudo(lens, "::after")
+        }
+      : null,
+    // The page column under the strip: its top is the reclaimed edge (32px, where
+    // the retired band's 44px used to sit).
+    shellContent: box(shellContent),
+    // The real switcher inside the lens, and the band it is set into. The outer
+    // .ui-segmented frame is gone inside the tab; the fill and the active tab's
+    // line are what still make it read as a control.
+    lensTabs: lensTabsEl
+      ? (() => {
+          const style = getComputedStyle(lensTabsEl);
+          const active = lensTabsEl.querySelector(".ui-segmented__option.is-active");
+          return {
+            selector: ".window-titlebar__lens .domain-switcher__tabs",
+            box: box(lensTabsEl),
+            borderTopWidth: style.borderTopWidth,
+            borderRightWidth: style.borderRightWidth,
+            borderBottomWidth: style.borderBottomWidth,
+            borderLeftWidth: style.borderLeftWidth,
+            background: style.backgroundColor,
+            activeBorderWidth: active
+              ? getComputedStyle(active).borderTopWidth
+              : null,
+            activeBackground: active
+              ? getComputedStyle(active).backgroundColor
+              : null,
+            optionCount: lensTabsEl.querySelectorAll(".ui-segmented__option")
+              .length
+          };
+        })()
+      : null,
     domainLens: domainSwitcher
       ? {
           box: box(domainSwitcher),
+          inLens: Boolean(lens && lens.contains(domainSwitcher)),
           labels: Array.from(
             domainSwitcher.querySelectorAll(".ui-segmented__option")
-          ).map((el) => (el.textContent || "").trim())
+          ).map((el) => (el.textContent || "").trim()),
+          optionCount: domainSwitcher.querySelectorAll(".ui-segmented__option")
+            .length,
+          // The compacted control must fit inside the strip rather than pushing
+          // the band open: its own height is the number that proves it.
+          height:
+            domainSwitcher.getBoundingClientRect().height
         }
       : null,
     // The rail's first level: the five-wing switcher, in a band of its own above
-    // the active wing's pages. Wide, the band sits on the sheet's top-bar row and
-    // the control is horizontal; thin, the control turns vertical and stays in the
-    // icon column — the wings must never leave the operator's reach.
+    // the active wing's pages, under the window strip. Wide, the control is
+    // horizontal; thin, it turns vertical and stays in the icon column — the
+    // wings must never leave the operator's reach.
     wingsBand: wingsBand
       ? {
           box: box(wingsBand),
@@ -571,6 +649,19 @@ const rgbOf = (hex) => {
   if (!/^[0-9a-f]{6}$/i.test(clean)) return hex ?? null;
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(clean.slice(i, i + 2), 16));
   return `rgb(${r}, ${g}, ${b})`;
+};
+
+/**
+ * Whether a computed `background-image` paints `ink` — the page canvas, in the
+ * fillets' case. The gradient's stops serialise as their own colour strings
+ * (`rgb(...)`/`rgba(...)`/`color(...)`), so the ink is looked for among them rather
+ * than substring-matched against the whole gradient (whose stop positions would
+ * make a naive `includes` pass on geometry alone).
+ */
+const gradientPaints = (image, ink) => {
+  if (!image || !ink || image === "none") return false;
+  const stops = String(image).match(/rgba?\([^)]*\)|color\([^)]*\)/g) ?? [];
+  return stops.includes(ink);
 };
 
 /** The ladder as numbers, for the report and the stdout table. */
@@ -880,8 +971,16 @@ async function main() {
     await applyTheme("forge-os", "dark");
 
     const expanded = await settled();
-    const { track, collapsedTrack, titlebarHeight } = expanded.tokens;
+    const { track, collapsedTrack, titlebarHeight, topbarHeight } =
+      expanded.tokens;
     const { height: viewportHeight, width: viewportWidth } = expanded.viewport;
+    // The live domains the harness handed the shell; the lens must name them.
+    const domainNames = await run("window.shellHarnessDomainNames ?? null");
+    check(
+      "the harness seeded live domains for the lens to offer",
+      Array.isArray(domainNames) && domainNames.length >= 3,
+      `harness domains ${JSON.stringify(domainNames)}`,
+    );
 
     // The native caption strip is painted by the OS, beside the web content and in
     // the same row the CSS titlebar fills. The provider hands it the titlebar token
@@ -1009,8 +1108,8 @@ async function main() {
     );
 
     // 2b — the sidebar's first level: the five-wing switcher in its own band,
-    // above the wing's pages and on the sheet's top-bar row. The band paints no
-    // line of its own: the strip's hairline stays in the sheet, under the lens.
+    // above the wing's pages and directly under the window strip. The band paints
+    // no line of its own: the hairline in that row is the dock's own header rule.
     const wingBand = expanded.wingsBand;
     const switcher = expanded.wingSwitcher;
     check(
@@ -1080,18 +1179,25 @@ async function main() {
         ),
       `padding ${JSON.stringify(switcher?.options?.map((option) => option.padding))}, widths ${JSON.stringify(switcher?.options?.map((option) => [option.scrollWidth, option.clientWidth]))}`,
     );
+    // The sheet gave its band back: the page now starts at the strip's bottom
+    // edge, 44px higher than it did when `.top-bar` sat in the sheet. The rail's
+    // wing band and the dock's header did NOT give theirs back — they still start
+    // at the strip's bottom and keep the 44px band, so the two chrome rows stay
+    // level across the pane seam.
     check(
-      "the rail's band shares the top bar's row",
-      Boolean(wingBand && expanded.topBar) &&
-        wingBand.box.top === expanded.topBar.box.top &&
-        wingBand.box.bottom === expanded.topBar.box.bottom,
-      `rail band ${JSON.stringify(wingBand)} vs top bar ${JSON.stringify(expanded.topBar?.box)}`,
+      "the rail's band and the dock's header keep their 44px band under the strip",
+      Boolean(wingBand && expanded.chatHeader) &&
+        wingBand.box.top === titlebarHeight &&
+        wingBand.box.bottom === titlebarHeight + expanded.tokens.topbarHeight &&
+        expanded.chatHeader.box.top === titlebarHeight &&
+        expanded.chatHeader.box.bottom ===
+          titlebarHeight + expanded.tokens.topbarHeight,
+      `rail band ${JSON.stringify(wingBand?.box)}, dock header ${JSON.stringify(expanded.chatHeader?.box)}, strip ${titlebarHeight}px + band ${expanded.tokens.topbarHeight}px`,
     );
     check(
-      "the sidebar band paints no line of its own",
-      wingBand?.borderBottomWidth === "0px" &&
-        parseFloat(expanded.topBar?.borderBottomWidth ?? "0") > 0,
-      `rail band border ${wingBand?.borderBottomWidth}, top bar border ${expanded.topBar?.borderBottomWidth}`,
+      "the rail's band paints no line of its own",
+      wingBand?.borderBottomWidth === "0px",
+      `rail band border ${wingBand?.borderBottomWidth}`,
     );
 
     // 3 — paint order: the rail's topband, not the titlebar, owns the corner.
@@ -1378,26 +1484,16 @@ async function main() {
       expanded.sheet?.box.top === titlebarHeight,
       `sheet top at y=${expanded.sheet?.box.top}px, strip ends at ${titlebarHeight}px`,
     );
-    // The line the strip reads as its own is the top bar's, under the domain lens, and
-    // not a frame on the sheet's top edge.
+    // The dock's header keeps its hairline. That line is the dock's own now — the
+    // sheet has no band under the strip to share it with — and it still sits in
+    // the same 44px band as the rail's wing switcher, so the two chrome rows stay
+    // level across the pane seam while the page reclaims its band.
     check(
-      "the line under the domain lens is the top bar's own",
-      parseFloat(expanded.topBar?.borderBottomWidth ?? "0") > 0 &&
-        parseFloat(expanded.topBar?.borderBottomWidth ?? "0") <= 1 &&
-        expanded.topBar?.background === expanded.mainBackground,
-      `top bar bottom ${expanded.topBar?.borderBottomWidth} on ${expanded.topBar?.background} vs page ${expanded.mainBackground}`,
-    );
-    // ...and it is one line across both panes: the dock's header wears the same
-    // band height, so the two underlines land on the same row rather than stepping
-    // a pixel apart where they meet.
-    check(
-      "the sheet's top bar and the dock's header are one band",
-      Boolean(expanded.topBar && expanded.chatHeader) &&
-        expanded.topBar.box.top === expanded.chatHeader.box.top &&
-        expanded.topBar.box.bottom === expanded.chatHeader.box.bottom &&
-        expanded.topBar.box.top === titlebarHeight &&
-        parseFloat(expanded.chatHeader.borderBottomWidth || "0") > 0,
-      `top bar ${JSON.stringify(expanded.topBar?.box)} vs dock header ${JSON.stringify(expanded.chatHeader?.box)}, header underline ${expanded.chatHeader?.borderBottomWidth}`,
+      "the dock's header keeps its own hairline",
+      Boolean(expanded.chatHeader) &&
+        parseFloat(expanded.chatHeader.borderBottomWidth || "0") > 0 &&
+        parseFloat(expanded.chatHeader.borderBottomWidth || "0") <= 1,
+      `dock header underline ${expanded.chatHeader?.borderBottomWidth}, band ${JSON.stringify(expanded.chatHeader?.box)}`,
     );
     // The chip can no longer be measured against the sheet's leading edge — it
     // lives at the foot of the rail now, not on the titlebar row. What replaces
@@ -1471,50 +1567,150 @@ async function main() {
       `scrollTop ${expanded.rail?.scrollTop}, content ${expanded.rail?.scrollHeight}px in ${expanded.rail?.clientHeight}px`,
     );
 
-    // The sheet's band carries one control now — the domain lens — with no frame
-    // of its own, centred in the pane. The frame only doubled the pair's outlines
-    // when the wing switcher shared the row; dropping it must not cost the
-    // control its shape — the fill sets it off the band, and the active tab keeps
-    // the line that makes it the current one.
-    const selectors = expanded.topBarSelectors ?? [];
+    // The domain tab. The sheet's top band is gone: the page now starts at the
+    // strip's bottom edge, and the domain lens is raised into the window's strip
+    // as the strip's first child — painted on the page canvas, starting a breath
+    // past the rail's trailing hairline, filling the 32px strip and reaching the
+    // page's top edge. The two 8px fillets at its bottom corners are the page
+    // flaring into the strip, so the connection is a curve rather than two hard
+    // inside corners.
+    at("titlebar lens");
     check(
-      "the sheet's band carries the domain lens alone",
-      selectors.length === 1 &&
-        selectors[0].selector === ".domain-switcher__tabs" &&
-        expanded.bandControlCount === 1,
-      `selectors ${JSON.stringify(selectors.map((entry) => entry.selector))}, controls ${expanded.bandControlCount}`,
+      "the retired top bar is gone from the sheet",
+      expanded.legacyTopBar === false,
+      "a .top-bar is still in the tree",
     );
     check(
-      "the domain lens wears no frame of its own",
-      selectors.length === 1 &&
-        selectors.every(
-          (entry) =>
-            entry.borderTopWidth === "0px" &&
-            entry.borderRightWidth === "0px" &&
-            entry.borderBottomWidth === "0px" &&
-            entry.borderLeftWidth === "0px",
-        ),
-      `borders ${JSON.stringify(selectors.map((entry) => [entry.selector, entry.borderTopWidth, entry.borderRightWidth, entry.borderBottomWidth, entry.borderLeftWidth]))}`,
+      "the sheet's first child is the page, not a band",
+      Boolean(expanded.mainFirstChild) &&
+        expanded.mainFirstChild.className.includes("shell__content"),
+      `sheet's first child ${JSON.stringify(expanded.mainFirstChild)}`,
     );
     check(
-      "the domain lens still reads as a control without it",
-      selectors.length === 1 &&
-        selectors.every(
-          (entry) =>
-            entry.optionCount > 0 &&
-            isHighlighted(entry.background) &&
-            entry.activeBorderWidth !== "0px",
-        ),
-      `fills ${JSON.stringify(selectors.map((entry) => [entry.selector, entry.background, entry.optionCount, entry.activeBorderWidth]))}`,
+      "the page starts at the strip's bottom edge",
+      Boolean(expanded.shellContent && expanded.titlebar) &&
+        expanded.shellContent.top === expanded.titlebar.bottom &&
+        expanded.shellContent.top === titlebarHeight,
+      `page top ${expanded.shellContent?.top}px vs strip bottom ${expanded.titlebar?.bottom}px; with the retired ${topbarHeight}px band it used to start at ${titlebarHeight + topbarHeight}px`,
     );
     check(
-      "the domain lens is centred in the sheet",
-      Boolean(expanded.domainLens && expanded.topBar) &&
-        Math.abs(
-          (expanded.domainLens.box.left + expanded.domainLens.box.right) / 2 -
-            (expanded.topBar.box.left + expanded.topBar.box.right) / 2,
-        ) <= 1,
-      `lens centre ${((expanded.domainLens?.box.left ?? 0) + (expanded.domainLens?.box.right ?? 0)) / 2} vs band centre ${((expanded.topBar?.box.left ?? 0) + (expanded.topBar?.box.right ?? 0)) / 2}`,
+      "the strip signals the wide rail",
+      expanded.titlebarNavCollapsed === null,
+      `data-nav-collapsed ${JSON.stringify(expanded.titlebarNavCollapsed)}`,
+    );
+    check(
+      "the domain lens is the strip's first child",
+      Boolean(expanded.lens && expanded.titlebar) &&
+        expanded.lens.inTitlebar === true &&
+        expanded.lens.firstChild === true,
+      `lens ${JSON.stringify(expanded.lens?.box)}, in strip ${expanded.lens?.inTitlebar}, first child ${expanded.lens?.firstChild}`,
+    );
+    check(
+      "the lens fills the strip from its top to the page's top edge",
+      Boolean(expanded.lens && expanded.titlebar) &&
+        expanded.lens.box.top === expanded.titlebar.top &&
+        expanded.lens.box.height === titlebarHeight &&
+        expanded.lens.box.bottom === titlebarHeight,
+      `lens ${JSON.stringify(expanded.lens?.box)} vs strip ${JSON.stringify(expanded.titlebar)} (${titlebarHeight}px)`,
+    );
+    check(
+      "the lens reaches the page's top edge",
+      Boolean(expanded.lens && expanded.shellContent) &&
+        expanded.lens.box.bottom === expanded.shellContent.top,
+      `lens bottom ${expanded.lens?.box.bottom}px vs page top ${expanded.shellContent?.top}px`,
+    );
+    check(
+      "the lens starts 12px past the rail's trailing hairline",
+      Boolean(expanded.lens && expanded.rail) &&
+        expanded.lens.fromRail === 12 &&
+        expanded.lens.box.left === expanded.rail.box.right + 12,
+      `lens left ${expanded.lens?.box.left}px, rail right ${expanded.rail?.box.right}px, gap ${expanded.lens?.fromRail}px`,
+    );
+    check(
+      "the lens wears the page canvas",
+      expanded.lens?.background === expanded.mainBackground,
+      `lens ${expanded.lens?.background} vs page ${expanded.mainBackground}`,
+    );
+    check(
+      "the lens is no-drag so its tab takes clicks",
+      expanded.lens?.appRegion === "no-drag",
+      `app-region ${JSON.stringify(expanded.lens?.appRegion)}`,
+    );
+    for (const [side, fillet] of [
+      ["leading", expanded.lens?.before],
+      ["trailing", expanded.lens?.after],
+    ]) {
+      check(
+        `the lens's ${side} bottom fillet is an 8x8 curve at the strip's base`,
+        Boolean(fillet) &&
+          fillet.content !== "none" &&
+          fillet.width === "8px" &&
+          fillet.height === "8px" &&
+          fillet.bottom === "0px",
+        `${side} fillet ${JSON.stringify(fillet)}`,
+      );
+      check(
+        `the lens's ${side} bottom fillet paints the page ink`,
+        Boolean(fillet) &&
+          String(fillet.backgroundImage).includes("radial-gradient") &&
+          gradientPaints(fillet.backgroundImage, expanded.mainBackground),
+        `${side} fillet image ${JSON.stringify(fillet?.backgroundImage)} vs page ink ${expanded.mainBackground}`,
+      );
+    }
+    const lensSwitcher = expanded.domainLens;
+    check(
+      "the real domain switcher lives inside the lens",
+      Boolean(lensSwitcher?.inLens) && Boolean(lensSwitcher?.box),
+      `switcher ${JSON.stringify(lensSwitcher)}`,
+    );
+    check(
+      "the lens's switcher fits inside the strip",
+      Boolean(lensSwitcher && expanded.lens) &&
+        lensSwitcher.box.top >= expanded.lens.box.top &&
+        lensSwitcher.box.bottom <= expanded.lens.box.bottom &&
+        lensSwitcher.box.height <= titlebarHeight &&
+        lensSwitcher.box.height > 0,
+      `switcher ${JSON.stringify(lensSwitcher?.box)} in lens ${JSON.stringify(expanded.lens?.box)}`,
+    );
+    check(
+      "the lens is a real multi-option domain tab",
+      Boolean(lensSwitcher) &&
+        Array.isArray(domainNames) &&
+        lensSwitcher.optionCount === domainNames.length + 1 &&
+        JSON.stringify(lensSwitcher.labels) ===
+          JSON.stringify(["Overview", ...domainNames]),
+      `labels ${JSON.stringify(lensSwitcher?.labels)} for harness domains ${JSON.stringify(domainNames)}`,
+    );
+    // The lens's own segmented control: no outer frame inside the page-ink tab,
+    // with the fill and the active tab's line still carrying it. The frame only
+    // doubled the outlines when the wing switcher shared a band with the lens;
+    // dropping it must not cost the control its shape.
+    const lensTabs = expanded.lensTabs;
+    check(
+      "the lens's segmented control wears no outer frame",
+      Boolean(lensTabs) &&
+        lensTabs.borderTopWidth === "0px" &&
+        lensTabs.borderRightWidth === "0px" &&
+        lensTabs.borderBottomWidth === "0px" &&
+        lensTabs.borderLeftWidth === "0px",
+      `borders ${JSON.stringify(
+        lensTabs && [
+          lensTabs.borderTopWidth,
+          lensTabs.borderRightWidth,
+          lensTabs.borderBottomWidth,
+          lensTabs.borderLeftWidth,
+        ],
+      )}`,
+    );
+    check(
+      "the lens's control still reads as tabs without it",
+      Boolean(lensTabs) &&
+        lensTabs.optionCount ===
+          (Array.isArray(domainNames) ? domainNames.length + 1 : 0) &&
+        isHighlighted(lensTabs.background) &&
+        lensTabs.activeBorderWidth !== "0px" &&
+        isHighlighted(lensTabs.activeBackground),
+      `fill ${JSON.stringify(lensTabs?.background)}, active border ${JSON.stringify(lensTabs?.activeBorderWidth)}, active fill ${JSON.stringify(lensTabs?.activeBackground)}, options ${lensTabs?.optionCount}`,
     );
 
     const expandedShot = await win.webContents.capturePage();
@@ -1528,8 +1724,8 @@ async function main() {
     });
     const cornerFile = path.join(artifactsDir, "shell-sidebar-corner.png");
     fs.writeFileSync(cornerFile, cornerShot.toPNG());
-    // The seam where the two bands meet, zoomed to the one line they should share —
-    // the claim the colour and border checks make, in pixels.
+    // The seam where the sheet and the dock meet under the strip, zoomed to the
+    // line they should share — the dock header's own hairline, in pixels.
     const seamShot = await win.webContents.capturePage({
       x: Math.max(0, (expanded.chat?.box.left ?? 0) - 140),
       y: titlebarHeight,
@@ -1538,25 +1734,20 @@ async function main() {
     });
     const seamFile = path.join(artifactsDir, "shell-sidebar-seam.png");
     fs.writeFileSync(seamFile, seamShot.toPNG());
-    // The band itself, cropped to the sheet's width: the pixel reading of the two
-    // border checks above — one outline per control (the active tab's), none
-    // around the control, fill still doing the separating.
-    const bandShot = await win.webContents.capturePage({
-      x: expanded.main?.left ?? 0,
-      y: expanded.topBar?.box.top ?? 0,
-      width: Math.max(
-        1,
-        (expanded.chat?.box.left ?? 0) - (expanded.main?.left ?? 0),
-      ),
-      height: Math.max(
-        1,
-        (expanded.topBar?.box.bottom ?? 0) -
-          (expanded.topBar?.box.top ?? 0) +
-          1,
-      ),
+    // The tab itself, 1:1, in the strip: the page-ink lens, the compacted
+    // segmented control inside it, and both bottom fillets where the page leans
+    // into the strip. This is the pixel reading of the geometry and the fillet
+    // claims above.
+    const lensLeft = expanded.lens?.box.left ?? 0;
+    const lensWidth = expanded.lens?.box.width ?? 0;
+    const lensShot = await win.webContents.capturePage({
+      x: Math.max(0, lensLeft - 24),
+      y: 0,
+      width: Math.max(1, Math.min(viewportWidth - Math.max(0, lensLeft - 24), lensWidth + 48)),
+      height: Math.min(viewportHeight, titlebarHeight + 24),
     });
-    const bandFile = path.join(artifactsDir, "shell-sidebar-band.png");
-    fs.writeFileSync(bandFile, bandShot.toPNG());
+    const lensFile = path.join(artifactsDir, "shell-sidebar-lens.png");
+    fs.writeFileSync(lensFile, lensShot.toPNG());
 
     // 5b — the switcher is live where it now sits: Define moves the rail to the
     // Define pages, and Home brings them back. Both are read off the rail itself,
@@ -1675,6 +1866,31 @@ async function main() {
       "no titlebar toggle appears when the rail narrows",
       collapsed.titlebarToggle === null,
       `titlebar toggle present: ${JSON.stringify(collapsed.titlebarToggle)}`,
+    );
+    // The lens is part of the chrome, not the sheet, so it follows the rail when
+    // the rail narrows: the strip signals the state on the header, which pulls the
+    // tab in to 68px — the 56px icon column plus the same 12px breath.
+    check(
+      "the strip signals the collapsed rail",
+      collapsed.titlebarNavCollapsed === "true",
+      `data-nav-collapsed ${JSON.stringify(collapsed.titlebarNavCollapsed)}`,
+    );
+    check(
+      "the lens follows the collapsed rail",
+      Boolean(collapsed.lens && collapsed.rail) &&
+        collapsed.lens.fromRail === 12 &&
+        collapsed.lens.box.left === collapsedTrack + 12 &&
+        collapsed.lens.box.left === collapsed.rail.box.right + 12,
+      `lens left ${collapsed.lens?.box.left}px, thin rail right ${collapsed.rail?.box.right}px, gap ${collapsed.lens?.fromRail}px`,
+    );
+    check(
+      "the collapsed lens still fills the strip and reaches the page",
+      Boolean(collapsed.lens && collapsed.shellContent) &&
+        collapsed.lens.box.top === 0 &&
+        collapsed.lens.box.bottom === titlebarHeight &&
+        collapsed.lens.box.bottom === collapsed.shellContent.top &&
+        collapsed.lens.background === collapsed.mainBackground,
+      `lens ${JSON.stringify(collapsed.lens?.box)} on ${collapsed.lens?.background}, page top ${collapsed.shellContent?.top}px`,
     );
     // The chip travels with the rail: in the thin rail it stacks under the Log's
     // icon and reduces to the vault's initials. It is still the same button — the
@@ -2266,6 +2482,9 @@ async function main() {
       ranAt: new Date().toISOString(),
       window: { ...DEFAULT_SIZE },
       vaultName,
+      // The live domains the harness handed the shell: the lens's option list is
+      // asserted against these, so the report names what the tab should offer.
+      domains: domainNames,
       tokens: expanded.tokens,
       expanded,
       collapsed,
@@ -2304,7 +2523,7 @@ async function main() {
         expandedFile,
         cornerFile,
         seamFile,
-        bandFile,
+        lensFile,
         collapsedFile,
         dayFile,
         ...skinShots,
@@ -2339,7 +2558,7 @@ async function main() {
   const railToggleLeft = (state) =>
     state.railToggle?.box ? String(state.railToggle.box.left) : "—";
   const table = [
-    ["state", "rail L/T/B", "rail size", "band ctrls", "toggle L", "foot dir", "chip L/W", "sheet L", "corner"],
+    ["state", "rail L/T/B", "rail size", "band ctrls", "toggle L", "foot dir", "chip L/W", "sheet L", "lens L/off", "page T", "corner"],
   ];
   for (let i = 0; i < rows.length; i += 1) {
     const state = rows[i];
@@ -2354,6 +2573,10 @@ async function main() {
         ? `${state.vaultChip.box.left}x${state.vaultChip.box.width}`
         : "—",
       String(state.main?.left ?? "—"),
+      state.lens
+        ? `${state.lens.box.left}/${state.lens.fromRail}`
+        : "—",
+      String(state.shellContent?.top ?? "—"),
       state.corner ? (state.corner.insideRail ? "rail" : "titlebar") : "—",
     ]);
   }

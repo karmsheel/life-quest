@@ -18,8 +18,10 @@
   --shell-sidebar-width-collapsed: 3.5rem;
   --shell-chatbar-height: 3rem;
   --shell-max-width: 80rem;
-  /* The band across the top of the studio: one height for the sheet's top bar and
-     the dock's header, so their underlines land on the same line at the seam. */
+  /* The band under the window strip: one height for the rail's wing switcher and
+     the dock's header, so the two chrome rows stay level across the pane seam.
+     The sheet carries no band of its own — its page starts at the strip's bottom
+     edge, under the titlebar's domain tab. */
   --shell-topbar-height: 2.75rem;
   --window-titlebar-height: 32px;
   --shell-frame: 12px;

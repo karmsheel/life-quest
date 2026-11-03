@@ -26,7 +26,7 @@ Return to [Wiki home](./index.md).
 
 ## Define a domain
 
-1. Select the domain in the top-bar lens.
+1. Select the domain in the window title bar's domain tab.
 2. **Define → Dream**: open **Beliefs & Premise**, **Purpose** and **Strategy
    (How)** one at a time. Write, then **Save**. **Lock** a document when it is
    settled; a locked document is read-only in place.

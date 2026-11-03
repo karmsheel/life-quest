@@ -10,10 +10,10 @@
  * repeatable artifact; the test file `tests/projects-e2e.test.ts` refuses a
  * report that does not hold.
  *
- * The rig mounts the real `AppShell` (real `NavRail` with its wing switcher, real `TopBar`,
- * `WingProvider`/`wingForPath`) with the real `ProjectsPage` and `ProjectPage` on
- * their routes, against a recording stub vault. The claims, and what makes each
- * falsifiable:
+ * The rig mounts the real `AppShell` (real `NavRail` with its wing switcher, real
+ * `WindowTitleBar` with its domain tab, `WingProvider`/`wingForPath`) with the
+ * real `ProjectsPage` and `ProjectPage` on their routes, against a recording stub
+ * vault. The claims, and what makes each falsifiable:
  *
  *  1. `rail-execute` — a cold load of `/projects` selects Execute, and the rail's
  *     wing group reads Projects, Daily Schedule, Act with Projects active. This
@@ -498,7 +498,7 @@ async function main() {
       )}`,
     );
     check(
-      "top-bar-tabs",
+      "rail-wing-tabs",
       same(initial.tabs.map((tab) => tab.label), WING_TABS),
       `tabs ${JSON.stringify(initial.tabs.map((tab) => tab.label))}`,
     );
