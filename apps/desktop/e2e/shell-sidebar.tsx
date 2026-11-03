@@ -13,11 +13,28 @@
  *     row, but the titlebar wins paint order, so the rail's topband and its one
  *     control are covered by the titlebar's background.
  *  4. Topband shows more than the collapse toggle (or nothing) — a second
- *     control crept into the header, or the toggle never rendered.
- *  5. Dead toggle — clicking it leaves the rail on screen.
- *  6. One-way door — collapsed with no control left anywhere to reopen.
- *  7. Column not returned — collapsing leaves the 4.25rem track (and its gap)
- *     behind, so the workspace sheet never reclaims the width.
+ *     control crept into the header, or the toggle never rendered at one of the
+ *     rail's two widths.
+ *  5. Dead toggle — clicking it leaves the shell in the arrangement it was in:
+ *     the rail does not narrow to the icon column and the sheet does not move
+ *     to meet it.
+ *  6. One-way door — collapsed with no control left to expand, or the way back
+ *     placed somewhere other than the rail's own header (the titlebar toggle the
+ *     reported bug put over the vault chip).
+ *  7. Column not narrowed — the shell's first track changes but the sheet or the
+ *     chip keeps the wide rail's offset, so the page starts in a column the rail
+ *     does not fill. The rail and the page must share one edge at both widths.
+ *  7a. Rail unmounted on collapse — `display: none` on the rail (or no
+ *     `.nav-rail` at all), the old behaviour that gave the column back to the
+ *     sheet and slid the chip to the window's leading edge.
+ *  7b. A second toggle in the titlebar — the reported bug: a
+ *     `.window-titlebar__nav-toggle` rendered in the strip when the rail
+ *     collapsed, overlapping the Personal chip. No such element may exist in
+ *     either state; the rail keeps its one toggle and the chip clears it.
+ *  7c. Contents left behind in the thin rail — the labelled five-wing switcher,
+ *     the chats section, the divider above it or the row labels still rendered
+ *     in the 56px column; or the rows themselves hidden with them, leaving an
+ *     icon column with no pages in it.
  *  8. Titlebar text still in the rail's corner — the LQ badge and title not
  *     stepping aside by the track width, so they sit on top of the sidebar.
  *  9. Rail scrolls its own topband away, or spills past the window box.
@@ -38,9 +55,12 @@
  *     near-miss grey instead of the titlebar's own fill, so the dock stops being
  *     capped top and bottom by one material.
  * 16. Lines creeping back between the panes — a hairline on the sheet's top,
- *     leading or bottom edge, on the rail's trailing edge, or on any edge of the
- *     dock. The studio has exactly one: the sheet's trailing edge, the seam with
- *     the dock. The line under the strip belongs to the top bar, and it must
+ *     leading or bottom edge, on the rail's top, leading or bottom edge, or on
+ *     any edge of the dock. The studio has exactly two: the rail's trailing edge
+ *     (the rail|sheet seam, inside the rail's width at both widths) and the
+ *     sheet's trailing edge, the seam with the dock. The sheet's leading edge
+ *     must stay unpainted so the rail's line is a line and not a two-pixel band.
+ *     The line under the strip belongs to the top bar, and it must
  *     survive: lose it and the domain lens loses its underline. The rail's own
  *     band paints nothing of its own, so the line stops at the pane seam.
  * 17a. Mats creeping back under the strip — the titlebar's night fill starting at

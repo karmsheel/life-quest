@@ -16,7 +16,6 @@ import { SettingsMenu } from "@/components/settings/SettingsMenu";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useNavDock } from "@/state/NavDockProvider";
 import { useVault } from "@/state/VaultProvider";
-import { NavCollapseButton } from "./NavCollapseButton";
 import { NavThemeModeToggle } from "./NavThemeModeToggle";
 import { VaultSwitcherDialog } from "./VaultSwitcherDialog";
 import { vaultTitleName, windowTitleLabel } from "./window-title";
@@ -54,12 +53,12 @@ export function WindowTitleBar() {
     switcherWasOpen.current = switcherOpen;
   }, [switcherOpen]);
 
-  // The sidebar's column is reserved while it is up, so the chip starts where the
-  // sheet does. Collapsed, the column goes back and the chip takes the window's
-  // leading edge with the re-open toggle in front of it. The welcome flow has no
-  // sidebar, so nothing is reserved there.
+  // The sidebar's column is reserved at the rail's current width, so the chip
+  // starts exactly where the sheet does and keeps its place when the rail narrows
+  // to its icon column. The rail keeps its own toggle at every width, so the strip
+  // never needs to draw one — which is what used to land a re-open icon on top of
+  // the vault chip. The welcome flow has no sidebar, so nothing is reserved there.
   const navColumn = navPresent;
-  const navToggle = navPresent && navCollapsed;
 
   useEffect(() => {
     document.title = label;
@@ -102,9 +101,6 @@ export function WindowTitleBar() {
           .join(" ")}
       >
         <div className="window-titlebar__leading">
-          {navToggle ? (
-            <NavCollapseButton className="window-titlebar__nav-toggle" />
-          ) : null}
           {/*
             The chip names the open vault and is the one control that changes it.
             It used to be a NavLink to /home, which made the app's answer to "am I

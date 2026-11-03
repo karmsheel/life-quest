@@ -37,6 +37,7 @@ type Arrangement = {
   viewport: { width: number; height: number };
   tokens: {
     track: number;
+    collapsedTrack: number;
     chatTrack: number;
     frame: number;
     rootFontSize: number;
@@ -218,10 +219,17 @@ describe("chat dock side switch", () => {
       collapsedSwappedBack,
       barReopened,
     } = report;
-    const { track, chatTrack, frame, rootFontSize, titlebarHeight, radiusSm } =
+    const { track, collapsedTrack, chatTrack, frame, rootFontSize, titlebarHeight, radiusSm } =
       report.tokens;
 
-    assert.ok(track > 0 && chatTrack > track && frame > 0, "tokens were not read");
+    assert.ok(
+      track > 0 && chatTrack > track && frame > 0,
+      "tokens were not read",
+    );
+    assert.ok(
+      collapsedTrack > 0 && collapsedTrack < track,
+      `the collapsed rail track was not read as a thin column (${collapsedTrack}px vs ${track}px expanded)`,
+    );
     assert.ok(
       titlebarHeight > 0 && rootFontSize > 0 && parseFloat(radiusSm) > 0,
       "the strip, the root type size or the radius token was not read",
@@ -451,7 +459,8 @@ describe("chat dock side switch", () => {
       `the bottom-bar collapse arrow does not follow the dock to the left (${left.collapseAction?.icon})`,
     );
 
-    // —— The compositions: a collapsed dock, a collapsed rail. ——
+    // —— The compositions: the dock collapsed with the rail expanded, then the
+    // rail collapsed to its icon column under the dock. ——
     assert.equal(
       dockCollapsed.chat,
       null,
@@ -579,10 +588,44 @@ describe("chat dock side switch", () => {
       null,
       "the floating mark survived the dock opening",
     );
+    // —— The rail's collapsed state: it stays in the layout as a thin icon
+    // column, so the dock keeps starting at its trailing edge instead of taking
+    // the window's own leading edge. The claimed 56px is the rail's own track,
+    // not the sheet's, and the dock follows it. ——
+    assert.equal(
+      Boolean(railCollapsed.rail) && railCollapsed.rail.display !== "none",
+      true,
+      `the rail left the layout instead of shrinking to its icon column (${JSON.stringify(railCollapsed.rail)})`,
+    );
+    assert.equal(
+      railCollapsed.rail?.box.width,
+      collapsedTrack,
+      `the collapsed rail is not the collapsed track (${railCollapsed.rail?.box.width}px vs ${collapsedTrack}px)`,
+    );
+    assert.equal(
+      railCollapsed.shell?.className.includes("shell--nav-collapsed"),
+      true,
+      `the collapsed shell does not wear the collapsed-rail class: ${railCollapsed.shell?.className}`,
+    );
     assert.equal(
       railCollapsed.chat.box.left,
-      0,
-      "with the rail gone the dock did not take the window's leading edge",
+      railCollapsed.rail?.box.right,
+      "the dock did not start at the collapsed rail's trailing edge",
+    );
+    assert.equal(
+      railCollapsed.chat.box.left,
+      collapsedTrack,
+      `the dock starts at ${railCollapsed.chat.box.left}px instead of the collapsed track (${collapsedTrack}px)`,
+    );
+    assert.equal(
+      railCollapsed.chat.box.right,
+      railCollapsed.main.box.left,
+      "the dock and the sheet stopped abutting under a collapsed rail",
+    );
+    assert.equal(
+      railCollapsed.chat.box.width,
+      chatTrack,
+      `the dock lost its chat column under a collapsed rail (${railCollapsed.chat.box.width}px vs ${chatTrack}px)`,
     );
     assert.equal(
       railCollapsed.main.box.right,
@@ -590,36 +633,65 @@ describe("chat dock side switch", () => {
       "with the rail and the dock swapped the sheet left the window's trailing edge",
     );
 
-    // —— Both gone: the mark follows the dock's column, which now starts at the
-    // window's own leading edge. ——
+    // —— Both collapsed: the mark follows the dock's column, which now starts at
+    // the collapsed rail's trailing edge. The rail's width is still in the sum —
+    // at 56px rather than 256px — so the mark sits one rem inside the rail. ——
     assert.ok(
       railAndDockCollapsed.launcher,
       "collapsing the dock under a collapsed rail left no floating mark",
     );
     assert.equal(
       railAndDockCollapsed.launcher.box.left,
-      rootFontSize,
-      `the floating mark did not take the window's leading edge (${railAndDockCollapsed.launcher.box.left}px vs 1rem = ${rootFontSize}px)`,
+      collapsedTrack + rootFontSize,
+      `the floating mark is not beside the collapsed rail's trailing edge (${railAndDockCollapsed.launcher.box.left}px vs ${collapsedTrack}px + ${rootFontSize}px)`,
+    );
+    assert.equal(
+      railAndDockCollapsed.launcher.box.left,
+      (railAndDockCollapsed.rail?.box.right ?? NaN) + rootFontSize,
+      `the floating mark is not measured from the rail it still has (${railAndDockCollapsed.launcher.box.left}px vs rail right ${railAndDockCollapsed.rail?.box.right}px + ${rootFontSize}px)`,
     );
     assert.equal(
       railAndDockCollapsed.viewport.height - railAndDockCollapsed.launcher.box.bottom,
       frame + rootFontSize,
-      `the floating mark lost its bottom inset with the rail gone (${railAndDockCollapsed.launcher.box.bottom}px of ${railAndDockCollapsed.viewport.height}px)`,
+      `the floating mark lost its bottom inset with the rail collapsed (${railAndDockCollapsed.launcher.box.bottom}px of ${railAndDockCollapsed.viewport.height}px)`,
     );
     assert.deepEqual(
       report.dockBackUnderCollapsedRail.chat.box,
       railCollapsed.chat.box,
-      "reopening the dock under a collapsed rail did not restore the leading geometry",
+      "reopening the dock under a collapsed rail did not restore the rail-adjacent geometry",
     );
     assert.equal(
       report.dockBackUnderCollapsedRail.launcher,
       null,
       "the floating mark survived the reopen under a collapsed rail",
     );
+    // —— The rail comes back through the control that collapsed it: the toggle
+    // stayed in the rail, so expanding is the same button, and the expanded
+    // arrangement — rail 256, dock at its trailing edge — has to return. ——
+    assert.equal(
+      report.railRestored.shell?.className.includes("shell--nav-collapsed"),
+      false,
+      `the restored shell still wears the collapsed-rail class: ${report.railRestored.shell?.className}`,
+    );
+    assert.equal(
+      report.railRestored.rail?.box.width,
+      track,
+      `restoring the rail did not give it the expanded track (${report.railRestored.rail?.box.width}px vs ${track}px)`,
+    );
+    assert.deepEqual(
+      report.railRestored.rail?.box,
+      left.rail?.box,
+      "restoring the rail did not restore the rail's box",
+    );
     assert.deepEqual(
       report.railRestored.main.box,
       left.main.box,
       "restoring the rail did not restore the swapped sheet",
+    );
+    assert.deepEqual(
+      report.railRestored.chat.box,
+      left.chat.box,
+      "restoring the rail did not restore the dock beside it",
     );
 
     // —— The round trip: the same click again, and nothing moved. ——

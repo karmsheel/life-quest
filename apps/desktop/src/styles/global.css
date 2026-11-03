@@ -486,37 +486,19 @@ a {
   color: var(--accent-hover-fg);
 }
 
-/* The whole shell — rail open or closed — reserves the rail's column, so the
-   toggle and the chip hold their places instead of sliding when it toggles. */
+/* The whole shell — rail wide or thin — reserves the rail's column, so the chip
+   holds its place at the rail's trailing edge and never slides under the toggle.
+   The chip's leading border lands exactly where the sheet does, in both states. */
 .window-titlebar--nav-column .window-titlebar__leading {
   padding-left: var(--shell-nav-width);
 }
 
-/* The toggle is out of flow inside that reserved column: it floats there whether
-   it is standing in for the rail or sitting in the rail itself, and nothing
-   downstream is laid out after it — which is what makes the chip's x a constant.
-   Two classes on purpose — `.nav-toggle`'s own `margin: 0` is later in the sheet
-   and would win at equal specificity. */
-.window-titlebar__leading .window-titlebar__nav-toggle {
-  position: absolute;
-  left: calc((var(--shell-nav-width) - var(--nav-toggle-size)) / 2);
-  top: 50%;
-  margin: 0;
-  transform: translateY(-50%);
-}
-
-/* Collapsed, there is no sidebar for the strip to sit above: the chip takes the
-   window's own leading edge, and the re-open toggle steps in front of it. The
-   chip moves here — the alternative is a wide empty band where the sidebar was,
-   which is the thing a collapsed sidebar is meant to give back. */
+/* A thin rail reserves only its icon column: the chip starts one hairline past
+   the rail's trailing edge, exactly as it does when the rail is wide. No toggle
+   moves into the strip any more — the rail keeps its own toggle at every width,
+   so nothing has to stand in for it here. */
 .window-titlebar--nav-column.window-titlebar--nav-collapsed .window-titlebar__leading {
-  padding-left: calc(var(--nav-toggle-size) + 0.9rem);
-}
-
-.window-titlebar--nav-column.window-titlebar--nav-collapsed
-  .window-titlebar__leading
-  .window-titlebar__nav-toggle {
-  left: 0.55rem;
+  padding-left: var(--shell-nav-width-collapsed);
 }
 
 .window-titlebar__trailing {
@@ -631,9 +613,10 @@ a {
   grid-template-columns: var(--nav-column) 1fr var(--chat-column);
   height: 100%;
   color: var(--fg);
-  /* No gap: the panes abut, and each seam is the sheet's own hairline. The mat
-     is not this tray's business — the rail carries it to the window's top in its
-     own column, and the sheet and dock meet the strip directly. */
+  /* No gap: the panes abut, and each pane's own trailing hairline is its seam —
+     the rail's between sidebar and sheet, the sheet's between page and dock. The
+     mat is not this tray's business — the rail carries it to the window's top in
+     its own column, and the sheet and dock meet the strip directly. */
   gap: 0;
   /* The seam's handle is positioned against this tray, and the tracks above are
      exactly the geometry it is placed from. */
@@ -657,23 +640,17 @@ a {
   grid-template-columns: var(--nav-column) var(--chat-column) 1fr;
 }
 
-/* Collapsed sidebar: its column goes back to the workspace sheet and the
-   re-open toggle moves to the titlebar's leading edge. With no gap in the tray
-   the sheet then starts at zero, flush to the window's own left edge — the same
-   edge the boot surfaces start from. */
+/* Collapsed sidebar: not gone, narrowed. The rail keeps its column at the icon
+   column's width and every other pane starts one hairline past it — the same
+   arrangement as the wide rail, with the icons alone left in the column. Nothing
+   is given back to the page: a collapsed sidebar here is a way of looking at the
+   same shell, not a way to take the sidebar away. */
 .shell--nav-collapsed {
-  --nav-column: 0px;
+  --nav-column: var(--shell-nav-width-collapsed);
 }
 
-.shell--nav-collapsed > .nav-rail {
-  display: none;
-}
-
-/* Explicit tracks: a collapsed pane leaves the grid entirely, and auto-placed
-   items would otherwise slide one track left — handing the sidebar's column to
-   the chat panel. The row is pinned to the first one for the same reason read
-   the other way round: the panes are placed by column, and the swapped
-   arrangement's last two tracks are the reverse of the shipped one. */
+/* The rail sits in the first track at either width; the collapse only changes
+   the track, never whether the rail is a pane. */
 .shell > .nav-rail {
   grid-column: 1;
   grid-row: 1;
@@ -701,12 +678,13 @@ a {
 }
 
 /* Square, and wearing a single hairline: the one on its trailing edge, the seam
-   with the dock. That is the studio's only divider between panes — the rail meets
-   this pane with no line at all, and the sheet's top and bottom edges are read by
-   the fill alone. The top edge meets the titlebar strip with no mat between them;
-   the other edges run to the rail, to the dock's leading edge, and to the
-   window's bottom. The bottom escape lives in the box the way the dock's does: the
-   pane gap goes into the height.
+   with the dock. The other seam, the rail's trailing hairline, belongs to the
+   rail: each pane paints exactly the line it leads into, so no seam is drawn
+   twice. The sheet's top and bottom edges are read by the fill alone. The top
+   edge meets the titlebar strip with no mat between them; the other edges run to
+   the rail, to the dock's leading edge, and to the window's bottom. The bottom
+   escape lives in the box the way the dock's does: the pane gap goes into the
+   height.
 
    Square on every corner like the rail and the dock: the sheet is a pane, not a
    card, so no corner of it is notched out of the mat. `overflow: hidden` still
@@ -857,12 +835,17 @@ a {
    escapes the bottom with a negative margin and reaches over the titlebar row by
    its height — so the sidebar runs to the window's top, and the titlebar's own
    fill begins only at the sheet's leading edge. The left edge has no frame to
-   escape, so the rail's box starts at zero. Its trailing edge carries no line of
-   its own — the sheet's frame is the seam's single divider — and no radius or
-   shadow survives a flush panel. */
+   escape, so the rail's box starts at zero. Its trailing edge carries the one
+   hairline between the sidebar and the workspace — the pane seam the page starts
+   from — and no radius or shadow survives a flush panel.
+
+   The width is the shell's track, not the token, so the same pane can stand in
+   the wide column or in the thin icon column: the collapse narrows this box
+   instead of unmounting it. */
 .nav-rail {
   background: var(--canvas-base);
   border: 0;
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -873,9 +856,9 @@ a {
   margin-right: 0;
   margin-bottom: calc(-1 * var(--shell-frame));
   margin-left: 0;
-  /* Explicit: the rail's box is the column itself, so its trailing edge lands
-     exactly on the sheet's leading hairline. */
-  width: var(--shell-nav-width);
+  /* Explicit: the rail's box is the column itself (border-box, so the hairline
+     lives inside the track and lands exactly on the sheet's leading edge). */
+  width: var(--nav-column);
   height: calc(100% + var(--window-titlebar-height) + var(--shell-frame));
   /* Positioned so the rail's topband paints over the titlebar it overlaps: the
      sidebar runs to the window's top wearing the mat, and the strip's own fill
@@ -885,10 +868,12 @@ a {
 }
 
 /* The band the sidebar shares with the titlebar: one control at its trailing
-   edge, and the rest of the strip stays a window drag handle. A wide column puts
-   a centred chevron in the middle of nowhere; at the edge it points at the seam
-   it moves. It paints the rail's own mat, so the sidebar runs to the window's top
-   and the titlebar's fill begins only at the sheet's leading edge. */
+   edge while the rail is wide, and the rest of the strip stays a window drag
+   handle. A wide column puts a centred chevron in the middle of nowhere; at the
+   edge it points at the seam it moves. Collapsed, the band's own rule centres the
+   same control in the thin column (see "The thin rail"). It paints the rail's own
+   mat, so the sidebar runs to the window's top and the titlebar's fill begins
+   only at the sheet's leading edge. */
 .nav-rail__header {
   display: flex;
   align-items: center;
@@ -1042,6 +1027,35 @@ a {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* —— The thin rail —— */
+/* Collapsed, the rail is an icon column, not a hidden sidebar: the same pane at
+   --shell-nav-width-collapsed, its rows reduced to the icons and the counts.
+   Everything that cannot be said in one icon leaves the column rather than
+   crowding it — the labelled wing switcher and the chats list — while the toggle,
+   the page rows, the governed shelf and the Log all stay reachable. */
+.shell--nav-collapsed .nav-rail__header {
+  /* A one-control-wide column centres its one control: the trailing edge is where
+     a wide rail puts the toggle, and at this width it would read as an accident. */
+  justify-content: center;
+  padding-right: 0;
+}
+
+.shell--nav-collapsed .nav-rail__wings-band,
+.shell--nav-collapsed .chats-rail,
+.shell--nav-collapsed .nav-rail__divider--chats {
+  display: none;
+}
+
+.shell--nav-collapsed .nav-rail__label {
+  display: none;
+}
+
+/* One icon per row, centred in the column. The title still names the page on
+   hover and for the keyboard, and the badge still counts what is waiting. */
+.shell--nav-collapsed .nav-rail__link {
+  justify-content: center;
 }
 
 /* The words that come with the glow: `Update available`, beside the build number

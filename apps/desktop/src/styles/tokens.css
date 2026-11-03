@@ -10,6 +10,12 @@
      a single column, the way Hermes Desktop's does. */
   --shell-nav-width: var(--shell-sidebar-width);
   --shell-sidebar-width: 16rem;
+  /* The rail collapsed to its icon column: one control wide — the icons, the
+     header's toggle and the rail's own insets — rather than nothing. The sidebar
+     never leaves the layout, so its column stays reserved at this width and the
+     page starts beside it. */
+  --shell-nav-width-collapsed: var(--shell-sidebar-width-collapsed);
+  --shell-sidebar-width-collapsed: 3.5rem;
   --shell-chatbar-height: 3rem;
   --shell-max-width: 80rem;
   /* The band across the top of the studio: one height for the sheet's top bar and

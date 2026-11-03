@@ -162,7 +162,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     id: "panel.sidebar.toggle",
     group: "panels",
     label: "Toggle sidebar",
-    description: "Collapse or expand the nav rail, giving its column back to the page.",
+    description: "Collapse the nav rail to its icon column, or expand it again.",
     defaultBinding: "Mod+B",
   },
   {

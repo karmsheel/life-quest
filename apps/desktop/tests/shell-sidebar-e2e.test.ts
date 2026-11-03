@@ -29,7 +29,13 @@ type Box = {
 
 type State = {
   viewport: { width: number; height: number };
-  tokens: { track: number; frame: number; titlebarHeight: number; radiusSm: string };
+  tokens: {
+    track: number;
+    collapsedTrack: number;
+    frame: number;
+    titlebarHeight: number;
+    radiusSm: string;
+  };
   theme: {
     dataTheme: string | null;
     skin: string | null;
@@ -46,6 +52,8 @@ type State = {
     box: Box;
     marginTop: string;
     borderRightWidth: string;
+    borderTopWidth: string;
+    borderBottomWidth: string;
     borderLeftWidth: string;
     borderRadius: string;
     background: string;
@@ -61,8 +69,20 @@ type State = {
     appRegion: string;
     controls: { tag: string; label: string | null }[];
   } | null;
-  railToggle: { label: string | null; box: Box; appRegion: string } | null;
+  railToggle: {
+    label: string | null;
+    box: Box;
+    ariaExpanded: string | null;
+    ariaControls: string | null;
+    /** The lucide icon class currently drawn in the toggle. */
+    icon: string | null;
+    appRegion: string;
+  } | null;
   titlebarToggle: { label: string | null; box: Box } | null;
+  titlebarClass: string | null;
+  /** The shell's arrangement class, and the first grid track it laid out. */
+  shellClass: string | null;
+  shellNavCollapsed: boolean;
   firstLink: Box | null;
   vault: {
     box: Box;
@@ -78,11 +98,27 @@ type State = {
   titlebarBackground: string | null;
   chats: {
     box: Box;
+    display: string;
     inRail: boolean;
     title: string;
     newChat: boolean;
     scrollRegion: string;
   } | null;
+  /** The divider directly above the chats section: a wide-rail fixture. */
+  chatsDivider: { display: string; box: Box } | null;
+  /** The rail's text labels, and the rows that carry them. */
+  railLabels: { count: number; display: string | null };
+  railRows: {
+    title: string | null;
+    ariaLabel: string | null;
+    label: string;
+    labelDisplay: string | null;
+    icon: string | null;
+    iconBox: Box | null;
+    badge: boolean;
+    justifyContent: string;
+    box: Box;
+  }[];
   wingSection: Box | null;
   bottomSection: Box | null;
   main: Box | null;
@@ -119,7 +155,7 @@ type State = {
    * The band's own bottom border is measured because it must stay unpainted —
    * the hairline under the strip belongs to the sheet's top bar alone.
    */
-  wingsBand: { box: Box; borderBottomWidth: string } | null;
+  wingsBand: { box: Box; display: string; borderBottomWidth: string } | null;
   wingSwitcher: {
     box: Box;
     inRail: boolean;
@@ -149,6 +185,14 @@ type State = {
     boxShadow: string;
   } | null;
   corner: { insideRail: boolean; insideTitlebar: boolean } | null;
+  /** The tray's tracks: the collapse narrows the first, it does not remove a pane. */
+  shell: {
+    className: string;
+    gridTemplateColumns: string;
+    gridColumns: number[];
+    gap: string;
+    box: Box;
+  } | null;
   overflow: { scrollWidth: number; clientWidth: number };
 };
 
@@ -285,7 +329,7 @@ function runDriver(): Promise<number> {
 }
 
 describe("shell sidebar (docked rail)", () => {
-  it("docks the rail flush to the window and collapses back into the titlebar", async (t) => {
+  it("docks the rail flush to the window and narrows it to the icon column in place", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
@@ -298,11 +342,15 @@ describe("shell sidebar (docked rail)", () => {
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
 
     const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
-    const { track, titlebarHeight } = report.tokens;
 
+    // The driver's own failures first: a report that threw before the first
+    // sample has no geometry to destructure, and the TypeError would hide the
+    // step it broke on.
     assert.deepEqual(report.failures, []);
     assert.equal(exitCode, 0, "driver exited non-zero");
     assert.equal(report.pass, true);
+
+    const { track, collapsedTrack, titlebarHeight } = report.tokens;
 
     // Restated here so the numbers are asserted by the suite, not only inside
     // the driver — and so a regression names the geometry it broke.
@@ -318,23 +366,33 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.equal(expanded.rail.box.width, track, "rail width left the track");
     assert.equal(expanded.rail.borderRadius, "0px", "rail kept a rounded corner");
-    // Border widths are read back in CSS px, which Chromium snaps to whole
-    // device px — on a 125%-scaled display a 1px hairline computes as 0.8px.
-    // The rail is a flush, square pane that paints no line of its own: the
-    // sheet's frame is the seam's single divider, so a trailing hairline here
-    // would double it.
+    // The rail is a pane, not a card, and it draws exactly one line: the
+    // rail|sheet seam on its trailing edge, inside its own box. Border widths
+    // are read back in CSS px, which Chromium snaps to whole device px — on a
+    // 125%-scaled display a 1px hairline computes as 0.8px — so the claim is
+    // "greater than zero, at most 1". Its other three edges paint nothing: a line
+    // there would box the sidebar in or double the seam.
+    assert.ok(
+      parseFloat(expanded.rail.borderRightWidth) > 0 &&
+        parseFloat(expanded.rail.borderRightWidth) <= 1,
+      `the rail lost the seam with the sheet (${expanded.rail.borderRightWidth})`,
+    );
     for (const [side, width] of [
       ["top", expanded.rail.borderTopWidth],
-      ["right", expanded.rail.borderRightWidth],
       ["bottom", expanded.rail.borderBottomWidth],
       ["left", expanded.rail.borderLeftWidth],
     ] as const) {
       assert.equal(
         width,
         "0px",
-        `rail grew a ${side} border (${width}) — the sheet draws that seam`,
+        `rail grew a ${side} border (${width}) — only the trailing edge draws the rail|sheet seam`,
       );
     }
+    assert.equal(
+      expanded.tokens.collapsedTrack,
+      56,
+      `--shell-nav-width-collapsed resolved to ${expanded.tokens.collapsedTrack}px, not the 56px icon column`,
+    );
 
     assert.ok(expanded.header, "rail rendered no topband");
     assert.equal(expanded.header.box.top, 0, "topband left the window edge");
@@ -352,6 +410,54 @@ describe("shell sidebar (docked rail)", () => {
       expanded.railToggle?.label,
       "Collapse sidebar",
       "the single topband control is not the collapse toggle",
+    );
+    assert.equal(
+      expanded.railToggle?.ariaExpanded,
+      "true",
+      `the rail's toggle reports aria-expanded=${JSON.stringify(expanded.railToggle?.ariaExpanded)} while the rail is wide`,
+    );
+    assert.equal(
+      expanded.railToggle?.ariaControls,
+      "nav-rail",
+      "the rail's toggle does not name the rail it controls",
+    );
+    assert.match(
+      expanded.railToggle?.icon ?? "",
+      /lucide-panel-left-close/,
+      `the wide rail's toggle is not the collapse icon (${JSON.stringify(expanded.railToggle?.icon)})`,
+    );
+    assert.ok(
+      (expanded.railToggle?.box.right ?? 0) <= (expanded.rail?.box.right ?? 0),
+      `the rail's toggle (${JSON.stringify(expanded.railToggle?.box)}) leaves the rail's box (${JSON.stringify(expanded.rail?.box)})`,
+    );
+    // The reported bug: a second toggle in the titlebar, over the vault chip.
+    // There is no such element in the wide state either — the rail keeps its own.
+    assert.equal(
+      expanded.titlebarToggle,
+      null,
+      `a titlebar toggle exists while the rail is wide (${JSON.stringify(expanded.titlebarToggle)})`,
+    );
+    // The wide rail is the full column: its labels, the wing switcher's band and
+    // the chats section are on screen. A thin-rail rule leaking into this state
+    // would hide them while the geometry checks above still passed.
+    assert.ok(
+      expanded.railLabels.count > 0 && expanded.railLabels.display !== "none",
+      `the wide rail has no text labels (${expanded.railLabels.count} labels, display ${JSON.stringify(expanded.railLabels.display)})`,
+    );
+    assert.notEqual(
+      expanded.wingsBand?.display,
+      "none",
+      "the wide rail hid the wing switcher's band",
+    );
+    assert.notEqual(
+      expanded.chats?.display,
+      "none",
+      "the wide rail hid the chats section",
+    );
+    assert.notEqual(
+      expanded.chatsDivider?.display,
+      "none",
+      "the wide rail hid the divider above the chats section",
     );
     assert.ok(expanded.firstLink, "rail rendered no nav rows");
     assert.ok(
@@ -429,6 +535,10 @@ describe("shell sidebar (docked rail)", () => {
     assert.ok(
       expanded.vault.box.left >= expanded.rail.box.right,
       `titlebar text (${expanded.vault.box.left}px) did not clear the rail (${expanded.rail.box.right}px)`,
+    );
+    assert.ok(
+      (expanded.railToggle?.box.right ?? 0) <= expanded.vault.box.left,
+      `the rail's toggle (${JSON.stringify(expanded.railToggle?.box)}) overlaps the vault chip starting at ${expanded.vault.box.left}px`,
     );
     assert.equal(
       expanded.vault.text,
@@ -614,17 +724,22 @@ describe("shell sidebar (docked rail)", () => {
       titlebarHeight,
       `the sheet's top edge is not directly under the strip (${expanded.sheet.box.top}px vs ${titlebarHeight}px)`,
     );
-    // The rail meets the sheet with no line between them, and the dock paints none
-    // of its own on any edge.
+    // The rail|sheet seam is one line, drawn by the rail's trailing edge; the
+    // sheet's leading edge stays unpainted so the seam is not a two-pixel band.
+    // The dock paints none of its own on any edge.
+    assert.ok(
+      parseFloat(expanded.rail.borderRightWidth) > 0 &&
+        parseFloat(expanded.rail.borderRightWidth) <= 1 &&
+        expanded.sheet.borderLeftWidth === "0px",
+      `rail right ${expanded.rail.borderRightWidth}, sheet left ${expanded.sheet.borderLeftWidth}`,
+    );
     assert.equal(
-      expanded.rail.borderRightWidth === "0px" &&
-        expanded.sheet.borderLeftWidth === "0px" &&
-        expanded.chat.borderTopWidth === "0px" &&
+      expanded.chat.borderTopWidth === "0px" &&
         expanded.chat.borderRightWidth === "0px" &&
         expanded.chat.borderBottomWidth === "0px" &&
         expanded.chat.borderLeftWidth === "0px",
       true,
-      `rail right ${expanded.rail.borderRightWidth}, sheet left ${expanded.sheet.borderLeftWidth}, dock t/r/b/l ${expanded.chat.borderTopWidth}/${expanded.chat.borderRightWidth}/${expanded.chat.borderBottomWidth}/${expanded.chat.borderLeftWidth}`,
+      `dock t/r/b/l ${expanded.chat.borderTopWidth}/${expanded.chat.borderRightWidth}/${expanded.chat.borderBottomWidth}/${expanded.chat.borderLeftWidth}`,
     );
     // And the line under the strip is still there — it is the top bar's own, under
     // the wing and domain selectors, not a frame on the sheet — and it is one line
@@ -745,57 +860,200 @@ describe("shell sidebar (docked rail)", () => {
       "the Home wing's rows did not come back",
     );
 
-    // Collapsed: rail gone, its width back to the sheet, a toggle left behind.
+    // Collapsed: the rail narrows to the icon column IN PLACE and keeps its one
+    // toggle. The reported bug — a second toggle in the titlebar over the vault
+    // chip — is a negative claim now: that element must not exist in either state.
     assert.ok(
-      collapsed.rail === null || collapsed.railDisplay === "none",
-      "collapsing left the rail on screen",
+      collapsed.rail !== null && collapsed.railDisplay !== "none",
+      `collapsing left the rail off the layout (rail ${collapsed.rail ? `display:${collapsed.railDisplay}` : "missing"})`,
     );
-    // The sidebar's column is reclaimed, and the chip comes to the window's own
-    // leading edge with the re-open toggle in front of it.
     assert.equal(
-      collapsed.main?.left,
-      0,
-      "the sheet did not reclaim the collapsed sidebar's column",
+      collapsed.rail!.box.width,
+      collapsedTrack,
+      `the thin rail is ${collapsed.rail!.box.width}px, not the ${collapsedTrack}px icon column`,
+    );
+    assert.equal(
+      collapsed.shellNavCollapsed,
+      true,
+      "the shell did not take the nav-collapsed arrangement",
+    );
+    assert.equal(
+      collapsed.shell?.gridColumns[0],
+      collapsedTrack,
+      `the shell's first track is ${collapsed.shell?.gridColumns[0]}px, not the ${collapsedTrack}px icon column`,
+    );
+    // Same pane, same three window edges, same single trailing hairline: the
+    // collapse changes the column's width and nothing about the panel's shape.
+    assert.equal(collapsed.rail!.box.left, 0, "the thin rail kept a left inset");
+    assert.equal(collapsed.rail!.box.top, 0, "the thin rail kept a top inset");
+    assert.equal(
+      collapsed.rail!.box.bottom,
+      expanded.viewport.height,
+      "the thin rail stopped short of the window bottom",
+    );
+    assert.equal(
+      collapsed.rail!.borderRadius,
+      "0px",
+      "the thin rail kept a rounded corner",
     );
     assert.ok(
-      collapsed.vault && expanded.vault,
+      parseFloat(collapsed.rail!.borderRightWidth) > 0 &&
+        parseFloat(collapsed.rail!.borderRightWidth) <= 1 &&
+        collapsed.rail!.borderLeftWidth === "0px" &&
+        collapsed.rail!.borderTopWidth === "0px" &&
+        collapsed.rail!.borderBottomWidth === "0px",
+      `the thin rail's borders t/r/b/l are ${collapsed.rail!.borderTopWidth}/${collapsed.rail!.borderRightWidth}/${collapsed.rail!.borderBottomWidth}/${collapsed.rail!.borderLeftWidth}`,
+    );
+    // The toggle stays in the rail's header at both widths; collapsed it is the
+    // expand icon, centred in the icon column.
+    assert.equal(
+      collapsed.header?.controls.length,
+      1,
+      `the thin rail's topband holds ${collapsed.header?.controls.length} controls, expected its one toggle`,
+    );
+    assert.equal(
+      collapsed.railToggle?.label,
+      "Expand sidebar",
+      `the thin rail's one control is not the expand toggle (${JSON.stringify(collapsed.railToggle?.label)})`,
+    );
+    assert.equal(
+      collapsed.railToggle?.ariaExpanded,
+      "false",
+      `the rail's toggle reports aria-expanded=${JSON.stringify(collapsed.railToggle?.ariaExpanded)} while the rail is thin`,
+    );
+    assert.equal(
+      collapsed.railToggle?.ariaControls,
+      "nav-rail",
+      "the thin rail's toggle does not name the rail it controls",
+    );
+    assert.match(
+      collapsed.railToggle?.icon ?? "",
+      /lucide-panel-left-open/,
+      `the thin rail's toggle is not the expand icon (${JSON.stringify(collapsed.railToggle?.icon)})`,
+    );
+    assert.ok(
+      Math.abs(
+        ((collapsed.railToggle?.box.left ?? 0) +
+          (collapsed.railToggle?.box.right ?? 0)) /
+          2 -
+          (collapsed.rail!.box.left + collapsed.rail!.box.right) / 2,
+      ) <= 1,
+      `the toggle (${JSON.stringify(collapsed.railToggle?.box)}) is not centred in the ${collapsedTrack}px rail (${JSON.stringify(collapsed.rail!.box)})`,
+    );
+    assert.equal(
+      collapsed.titlebarToggle,
+      null,
+      `a titlebar toggle re-appeared when the rail narrowed (${JSON.stringify(collapsed.titlebarToggle)})`,
+    );
+    // The chip holds its place at the rail's trailing edge in both states: it
+    // starts where the sheet does, never at the window's leading edge and never
+    // under the rail's toggle.
+    assert.ok(
+      collapsed.vault && collapsed.rail,
       "the strip lost the vault chip in one of the two states",
     );
-    assert.ok(
-      collapsed.vault!.box.left < expanded.vault!.box.left,
-      `the chip stayed at ${collapsed.vault!.box.left}px instead of coming to the leading edge`,
-    );
-    assert.ok(
-      collapsed.vault!.box.left <= 48,
-      `the chip sits ${collapsed.vault!.box.left}px in, not at the window's leading edge`,
+    assert.equal(
+      collapsed.vault!.box.left,
+      collapsed.rail!.box.right,
+      `the chip starts at ${collapsed.vault!.box.left}px but the rail ends at ${collapsed.rail!.box.right}px`,
     );
     assert.equal(
-      collapsed.titlebarToggle?.label,
-      "Expand sidebar",
-      "no reopen toggle in the titlebar",
-    );
-    assert.notDeepEqual(
-      collapsed.vault?.box,
-      expanded.vault?.box,
-      "the vault chip did not take the leading edge when the sidebar went",
+      collapsed.vault!.box.left,
+      collapsedTrack,
+      `the chip starts at ${collapsed.vault!.box.left}px, not the thin rail's ${collapsedTrack}px`,
     );
     assert.equal(
-      collapsed.vault?.text,
+      collapsed.main?.left,
+      collapsedTrack,
+      `the sheet starts at ${collapsed.main?.left}px, not the thin rail's ${collapsedTrack}px`,
+    );
+    assert.ok(
+      (collapsed.railToggle?.box.right ?? Infinity) <= collapsed.vault!.box.left,
+      `the rail's toggle (${JSON.stringify(collapsed.railToggle?.box)}) overlaps the vault chip starting at ${collapsed.vault!.box.left}px`,
+    );
+    assert.equal(
+      collapsed.vault!.text,
       report.vaultName,
-      "the vault name left the strip when the rail collapsed",
+      "the vault name left the strip when the rail narrowed",
     );
     assert.equal(
-      collapsed.corner?.insideTitlebar,
+      collapsed.vault!.box.width,
+      expanded.vault!.box.width,
+      "the chip changed width when the rail narrowed",
+    );
+    assert.equal(
+      collapsed.corner?.insideRail,
       true,
-      "the window's top-left corner is not painted by the titlebar once collapsed",
+      "the window's top-left corner is not painted by the thin rail",
     );
     assert.equal(
       report.reclaimedPx,
-      track,
-      "unexpected reclaimed width",
+      track - collapsedTrack,
+      `unexpected reclaimed width ${report.reclaimedPx}px, expected the rail's own difference ${track - collapsedTrack}px`,
+    );
+    assert.equal(
+      collapsed.chat.box.left - (collapsed.main?.right ?? 0),
+      0,
+      "collapsing the rail opened a gap between the sheet and the dock",
     );
 
-    // Round trip: same rail box, same offsets.
+    // The thin rail is icon-only: the labelled wing switcher, the chats section,
+    // the divider above it and the row labels leave. The rows themselves stay —
+    // an icon column with no pages in it would be the rail leaving in disguise.
+    assert.equal(
+      collapsed.wingsBand?.display,
+      "none",
+      `the thin rail still shows the wing switcher's band (${collapsed.wingsBand?.display})`,
+    );
+    assert.equal(
+      collapsed.chats?.display,
+      "none",
+      `the thin rail still shows the chats section (${collapsed.chats?.display})`,
+    );
+    assert.equal(
+      collapsed.chatsDivider?.display,
+      "none",
+      `the thin rail still shows the divider above the chats section (${collapsed.chatsDivider?.display})`,
+    );
+    assert.equal(
+      collapsed.railLabels.display,
+      "none",
+      `the thin rail still shows its row labels (${collapsed.railLabels.count} labels, display ${JSON.stringify(collapsed.railLabels.display)})`,
+    );
+    assert.ok(collapsed.railRows.length > 0, "the thin rail has no nav rows");
+    assert.equal(
+      collapsed.railRows.length,
+      expanded.railRows.length,
+      `the thin rail kept ${collapsed.railRows.length} of the wide rail's ${expanded.railRows.length} rows`,
+    );
+    for (const row of collapsed.railRows) {
+      assert.notEqual(
+        row.icon,
+        null,
+        `the thin rail's row "${row.ariaLabel}" lost its icon`,
+      );
+      assert.equal(
+        row.labelDisplay,
+        "none",
+        `the row "${row.ariaLabel}" still draws its label`,
+      );
+      assert.ok(row.title, `the thin rail's row "${row.label}" lost its title`);
+      assert.ok(
+        row.ariaLabel,
+        `the thin rail's row "${row.label}" lost its accessible name`,
+      );
+      assert.ok(row.iconBox, `the thin rail's row "${row.ariaLabel}" has no icon`);
+      assert.ok(
+        Math.abs(
+          (row.iconBox!.left + row.iconBox!.right) / 2 -
+            (collapsed.rail!.box.left + collapsed.rail!.box.right) / 2,
+        ) <= 1,
+        `the row "${row.ariaLabel}" does not centre its icon in the ${collapsedTrack}px column`,
+      );
+    }
+
+    // Round trip: same rail box, same offsets, from the rail's own toggle — the
+    // way back is where the way in was.
     assert.deepEqual(
       restored.rail?.box,
       expanded.rail?.box,
@@ -806,11 +1064,30 @@ describe("shell sidebar (docked rail)", () => {
       expanded.main?.left,
       "reopening did not restore the sheet offset",
     );
-
     assert.equal(
-      collapsed.chat.box.left - (collapsed.main?.right ?? 0),
-      0,
-      "collapsing the rail opened a gap between the sheet and the dock",
+      restored.vault?.box.left,
+      expanded.vault?.box.left,
+      "reopening did not restore the chip's offset",
+    );
+    assert.equal(
+      restored.shellNavCollapsed,
+      false,
+      "reopening did not leave the nav-collapsed arrangement",
+    );
+    assert.equal(
+      restored.shell?.gridColumns[0],
+      track,
+      `reopening left the shell's first track at ${restored.shell?.gridColumns[0]}px, not ${track}px`,
+    );
+    assert.equal(
+      restored.railToggle?.label,
+      "Collapse sidebar",
+      "reopening left the rail's toggle in the expand state",
+    );
+    assert.notEqual(
+      restored.railLabels.display,
+      "none",
+      "reopening did not bring the rail's labels back",
     );
 
     // The dock's own contract: square, flush right and bottom, on the sheet's

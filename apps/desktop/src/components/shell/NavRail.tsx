@@ -172,8 +172,15 @@ export function NavRail() {
         operator is in, above the governed shelf and the Log. The section takes
         whatever height those two fixed groups leave and scrolls inside it, so a
         long history never pushes the icons at the foot off the column.
+
+        The divider above them is its own class because the thin rail hides the
+        list: the swimlane between the wing's pages and the shelf would otherwise
+        be two hairlines with nothing between them.
       */}
-      <div className="nav-rail__divider" role="separator" />
+      <div
+        className="nav-rail__divider nav-rail__divider--chats"
+        role="separator"
+      />
       <ChatsSidebar />
       {/*
         The governed shelf and the Log are two groups, not one list. The rail
