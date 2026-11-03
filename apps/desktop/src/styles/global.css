@@ -6895,6 +6895,27 @@ a.home-mini-list__link:hover {
   list-style: none;
 }
 
+/**
+ * The always-present way out of the saved questions and into the page that
+ * writes them. It sits under the list rather than in the header so the last
+ * thing above it is the question the operator may want to change; the padding
+ * gives it a hit target taller than the icon it carries.
+ */
+.chat-panel__starters-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.45rem;
+  padding: 0.2rem 0;
+  border-radius: 0.25rem;
+  line-height: 1.2;
+}
+
+.chat-panel__starters-edit:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
 .chat-panel__starter {
   display: flex;
   flex-wrap: wrap;

@@ -30,6 +30,12 @@
  *      vault's own `settings.json` cannot reopen what it wrote. The driver also
  *      runs the shipping create/update/open functions against a throwaway vault
  *      and records what came back.
+ *  11. **The link is only there while there is nothing to link from.** The
+ *      blank thread shows no way to reach the page that writes the prompts, or
+ *      shows it only when the list is empty — so an operator looking at saved
+ *      questions cannot change or add one without hunting through Settings.
+ *      The rig looks for that link in every blank-thread state, not just the
+ *      empty one, and follows it.
  *
  * The driver reads only shipping UI (data-testid attributes are part of the
  * rendered surface) and writes its report to `e2e/artifacts/chat-questions.json`.
