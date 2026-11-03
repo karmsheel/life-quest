@@ -189,7 +189,19 @@ type State = {
     optionCount: number;
     /** Wide the control is horizontal; thin it stacks its options. */
     flexDirection: string;
-    options: { label: string; active: boolean; box: Box }[];
+    /** Square block: the frame and every tab carry no corner radius. */
+    borderRadius: string;
+    padding: { top: number; right: number; bottom: number; left: number };
+    options: {
+      label: string;
+      active: boolean;
+      box: Box;
+      borderRadius: string;
+      padding: { top: number; right: number; bottom: number; left: number };
+      /** Overflow test: a word wider than its content box scrolls. */
+      scrollWidth: number;
+      clientWidth: number;
+    }[];
     background: string;
   } | null;
   /** The active wing's rows, as the rail renders them under the switcher. */
@@ -553,6 +565,46 @@ describe("shell sidebar (docked rail)", () => {
       "0px",
       `the sidebar's band paints a line across the rail (${expanded.wingsBand.borderBottomWidth}); the strip's hairline belongs to the sheet's top bar`,
     );
+    // The switcher is a rectangular block, not the shared pill: square corners
+    // on the frame and on every tab, the rail's own padding as its only margin —
+    // one thin gap either side, equal — which is what centres it in the column.
+    assert.equal(
+      expanded.wingSwitcher.borderRadius,
+      "0px",
+      `the wide wing switcher kept a rounded frame (${expanded.wingSwitcher.borderRadius})`,
+    );
+    for (const option of expanded.wingSwitcher.options) {
+      assert.equal(
+        option.borderRadius,
+        "0px",
+        `the wide wing switcher's "${option.label}" tab kept a rounded corner (${option.borderRadius})`,
+      );
+    }
+    assert.ok(
+      Math.abs(
+        expanded.wingSwitcher.box.left -
+          expanded.rail!.box.left -
+          (expanded.rail!.box.right - expanded.wingSwitcher.box.right),
+      ) <= 1 &&
+        expanded.wingSwitcher.box.left - expanded.rail!.box.left >= 3 &&
+        expanded.rail!.box.right - expanded.wingSwitcher.box.right >= 3 &&
+        expanded.wingSwitcher.box.left === expanded.wingsBand.box.left &&
+        expanded.wingSwitcher.box.right === expanded.wingsBand.box.right,
+      `the switcher (${JSON.stringify(expanded.wingSwitcher.box)}) is not the band's centred block in the rail (${JSON.stringify(expanded.rail!.box)}), band ${JSON.stringify(expanded.wingsBand.box)}`,
+    );
+    for (const option of expanded.wingSwitcher.options) {
+      assert.ok(
+        option.padding.top >= 5 &&
+          option.padding.bottom >= 5 &&
+          option.padding.left >= 3 &&
+          option.padding.right >= 3,
+        `the wide wing switcher's "${option.label}" tab has tight padding (${JSON.stringify(option.padding)})`,
+      );
+      assert.ok(
+        option.scrollWidth <= option.clientWidth,
+        `the wide wing switcher's "${option.label}" word overflows its ${option.clientWidth}px tab (${option.scrollWidth}px)`,
+      );
+    }
     assert.ok(
       (expanded.railToggle?.box.right ?? 0) > track * 0.7 &&
         (expanded.railToggle?.box.right ?? 0) <= track,
@@ -1271,6 +1323,47 @@ describe("shell sidebar (docked rail)", () => {
       1,
       "the thin wing switcher marks more than one wing as active",
     );
+    // Square in the thin layout too, and still centred: the icon column's own
+    // padding is the thin, equal margin on either side of the block.
+    assert.equal(
+      collapsed.wingSwitcher!.borderRadius,
+      "0px",
+      `the thin wing switcher kept a rounded frame (${collapsed.wingSwitcher!.borderRadius})`,
+    );
+    for (const option of stacked) {
+      assert.equal(
+        option.borderRadius,
+        "0px",
+        `the thin wing switcher's "${option.label}" tab kept a rounded corner (${option.borderRadius})`,
+      );
+    }
+    assert.ok(
+      Math.abs(
+        collapsed.wingSwitcher!.box.left -
+          collapsed.rail!.box.left -
+          (collapsed.rail!.box.right - collapsed.wingSwitcher!.box.right),
+      ) <= 1 &&
+        collapsed.wingSwitcher!.box.left - collapsed.rail!.box.left >= 3 &&
+        collapsed.rail!.box.right - collapsed.wingSwitcher!.box.right >= 3 &&
+        collapsed.wingSwitcher!.box.left === collapsed.wingsBand!.box.left &&
+        collapsed.wingSwitcher!.box.right === collapsed.wingsBand!.box.right,
+      `the thin switcher (${JSON.stringify(collapsed.wingSwitcher!.box)}) is not the band's centred block in the rail (${JSON.stringify(collapsed.rail!.box)}), band ${JSON.stringify(collapsed.wingsBand!.box)}`,
+    );
+    // In 56px the words are the tight dimension: every tab must keep enough
+    // padding for its rule to sit clear of its label, and no label may overflow.
+    for (const option of stacked) {
+      assert.ok(
+        option.padding.top >= 5 &&
+          option.padding.bottom >= 5 &&
+          option.padding.left >= 1 &&
+          option.padding.right >= 1,
+        `the thin wing switcher's "${option.label}" tab has tight padding (${JSON.stringify(option.padding)})`,
+      );
+      assert.ok(
+        option.scrollWidth <= option.clientWidth,
+        `the thin wing switcher's "${option.label}" word overflows its ${option.clientWidth}px tab (${option.scrollWidth}px)`,
+      );
+    }
     // The band sits under the rail's header, and the active wing's page icons
     // begin underneath it.
     assert.ok(collapsed.firstLink, "the thin rail rendered no page rows");

@@ -403,13 +403,40 @@ const SAMPLE = `(() => {
           // boxes prove the five tabs really stack in the icon column rather
           // than merely having a column flex-direction.
           flexDirection: getComputedStyle(wings).flexDirection,
+          // The switcher is a square block set inside the rail's own padding, and
+          // its options must not crowd their words: both are read off the
+          // shipping control rather than inferred from the stylesheet.
+          borderRadius: getComputedStyle(wings).borderRadius,
+          padding: (() => {
+            const style = getComputedStyle(wings);
+            return {
+              top: parseFloat(style.paddingTop),
+              right: parseFloat(style.paddingRight),
+              bottom: parseFloat(style.paddingBottom),
+              left: parseFloat(style.paddingLeft)
+            };
+          })(),
           options: Array.from(
             wings.querySelectorAll(".ui-segmented__option")
-          ).map((el) => ({
-            label: (el.textContent || "").trim(),
-            active: el.classList.contains("is-active"),
-            box: box(el)
-          })),
+          ).map((el) => {
+            const style = getComputedStyle(el);
+            return {
+              label: (el.textContent || "").trim(),
+              active: el.classList.contains("is-active"),
+              box: box(el),
+              borderRadius: style.borderRadius,
+              padding: {
+                top: parseFloat(style.paddingTop),
+                right: parseFloat(style.paddingRight),
+                bottom: parseFloat(style.paddingBottom),
+                left: parseFloat(style.paddingLeft)
+              },
+              // A word wider than the option's content box overflows its rule;
+              // the numbers say whether the label really fits.
+              scrollWidth: el.scrollWidth,
+              clientWidth: el.clientWidth
+            };
+          }),
           background: getComputedStyle(wings).backgroundColor
         }
       : null,
@@ -1014,6 +1041,44 @@ async function main() {
         switcher.box.bottom <= wingBand.box.bottom &&
         wingBand.box.bottom <= expanded.firstLink.top + 1,
       `band ${JSON.stringify(wingBand)}, control ${JSON.stringify(switcher?.box)}, first row ${JSON.stringify(expanded.firstLink)}`,
+    );
+    // The switcher is a rectangular block, not the shared pill: every corner is
+    // square, and the rail's own padding is its only margin — one thin gap either
+    // side, equal, which is what centres the block in the column.
+    check(
+      "the wide wing switcher is a square block, not a pill",
+      switcher?.borderRadius === "0px" &&
+        (switcher?.options ?? []).every(
+          (option) => option.borderRadius === "0px",
+        ),
+      `frame ${JSON.stringify(switcher?.borderRadius)}, tabs ${JSON.stringify(switcher?.options?.map((option) => option.borderRadius))}`,
+    );
+    check(
+      "the wide wing switcher sits centred with one thin margin each side",
+      Boolean(switcher && wingBand && expanded.rail) &&
+        Math.abs(
+          switcher.box.left -
+            expanded.rail.box.left -
+            (expanded.rail.box.right - switcher.box.right),
+        ) <= 1 &&
+        switcher.box.left - expanded.rail.box.left >= 3 &&
+        expanded.rail.box.right - switcher.box.right >= 3 &&
+        switcher.box.left === wingBand.box.left &&
+        switcher.box.right === wingBand.box.right,
+      `rail ${JSON.stringify(expanded.rail?.box)}, band ${JSON.stringify(wingBand?.box)}, switcher ${JSON.stringify(switcher?.box)}`,
+    );
+    check(
+      "the wide wing switcher's words are clear of its rules",
+      Boolean(switcher) &&
+        (switcher?.options ?? []).every(
+          (option) =>
+            option.padding.top >= 5 &&
+            option.padding.bottom >= 5 &&
+            option.padding.left >= 3 &&
+            option.padding.right >= 3 &&
+            option.scrollWidth <= option.clientWidth,
+        ),
+      `padding ${JSON.stringify(switcher?.options?.map((option) => option.padding))}, widths ${JSON.stringify(switcher?.options?.map((option) => [option.scrollWidth, option.clientWidth]))}`,
     );
     check(
       "the rail's band shares the top bar's row",
@@ -1739,6 +1804,45 @@ async function main() {
       collapsed.wingSwitcher?.active === "Home" &&
         collapsed.wingSwitcher.options.filter((option) => option.active).length === 1,
       `active ${JSON.stringify(collapsed.wingSwitcher?.active)}, active options ${JSON.stringify(collapsed.wingSwitcher?.options.filter((option) => option.active).map((option) => option.label))}`,
+    );
+    // Square in the thin layout too, and still centred: the icon column's own
+    // padding is the thin, equal margin on either side of the block.
+    check(
+      "the thin wing switcher is a square block, not a pill",
+      collapsed.wingSwitcher?.borderRadius === "0px" &&
+        (collapsed.wingSwitcher?.options ?? []).every(
+          (option) => option.borderRadius === "0px",
+        ),
+      `frame ${JSON.stringify(collapsed.wingSwitcher?.borderRadius)}, tabs ${JSON.stringify(collapsed.wingSwitcher?.options?.map((option) => option.borderRadius))}`,
+    );
+    check(
+      "the thin wing switcher is centred with one thin margin each side",
+      Boolean(collapsed.wingSwitcher && collapsed.wingsBand && collapsed.rail) &&
+        Math.abs(
+          collapsed.wingSwitcher.box.left -
+            collapsed.rail.box.left -
+            (collapsed.rail.box.right - collapsed.wingSwitcher.box.right),
+        ) <= 1 &&
+        collapsed.wingSwitcher.box.left - collapsed.rail.box.left >= 3 &&
+        collapsed.rail.box.right - collapsed.wingSwitcher.box.right >= 3 &&
+        collapsed.wingSwitcher.box.left === collapsed.wingsBand.box.left &&
+        collapsed.wingSwitcher.box.right === collapsed.wingsBand.box.right,
+      `rail ${JSON.stringify(collapsed.rail?.box)}, band ${JSON.stringify(collapsed.wingsBand?.box)}, switcher ${JSON.stringify(collapsed.wingSwitcher?.box)}`,
+    );
+    // The words are the tight dimension in 56px: every tab keeps enough vertical
+    // padding for its rule to sit clear of its label, and no label overflows.
+    check(
+      "the thin wing switcher's words are clear of its rules",
+      Boolean(collapsed.wingSwitcher) &&
+        (collapsed.wingSwitcher?.options ?? []).every(
+          (option) =>
+            option.padding.top >= 5 &&
+            option.padding.bottom >= 5 &&
+            option.padding.left >= 1 &&
+            option.padding.right >= 1 &&
+            option.scrollWidth <= option.clientWidth,
+        ),
+      `padding ${JSON.stringify(collapsed.wingSwitcher?.options?.map((option) => option.padding))}, widths ${JSON.stringify(collapsed.wingSwitcher?.options?.map((option) => [option.scrollWidth, option.clientWidth]))}`,
     );
     check(
       "the thin rail's pages sit under the wing switcher",
