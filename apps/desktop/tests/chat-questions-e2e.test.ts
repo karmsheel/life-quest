@@ -37,6 +37,7 @@ const SCREENSHOTS = [
   "chat-questions-empty-questions-link.png",
   "chat-questions-settings-list.png",
   "chat-questions-starters-home.png",
+  "chat-questions-questions-link-from-starters.png",
   "chat-questions-sent.png",
   "chat-questions-starters-review.png",
   "chat-questions-sent-review.png",
@@ -74,6 +75,12 @@ type EmptyQuestions = {
   linkHref: string | null;
 };
 
+type QuestionsSettingsLink = {
+  text: string;
+  href: string | null;
+  box: { left: number; right: number; width: number; height: number } | null;
+};
+
 type Call = {
   sessionId: string;
   input: string;
@@ -96,6 +103,7 @@ type State = {
   messages: { role: string; text: string }[];
   emptyTitle: string | null;
   emptyQuestions: EmptyQuestions | null;
+  questionsSettingsLinks: QuestionsSettingsLink[];
   companionStatusLinks: number;
   panel: { left: number; right: number; width: number; height: number } | null;
   composer: { width: number; height: number } | null;
@@ -181,6 +189,7 @@ describe("saved chat questions", () => {
       added,
       afterEdit,
       home,
+      startersLink,
       sent,
       review,
       goals,
@@ -211,6 +220,16 @@ describe("saved chat questions", () => {
       "the empty chat link does not target the Questions settings page",
     );
     assert.equal(empty.emptyQuestions?.linkText, "here");
+    assert.equal(
+      empty.questionsSettingsLinks.length,
+      1,
+      "the empty chat lost its link to the questions settings",
+    );
+    assert.equal(
+      empty.questionsSettingsLinks[0]?.href,
+      "/settings?tab=questions",
+      "the empty chat's link does not target the Questions settings page",
+    );
     assert.equal(
       emptyLink.settingsView,
       "questions",
@@ -272,6 +291,38 @@ describe("saved chat questions", () => {
       "a starter painted with no height to click",
     );
 
+    // ── the link to the page that writes them, with questions on screen ─────
+    assert.equal(
+      home.questionsSettingsLinks.length,
+      1,
+      "the new chat with saved questions has no link to the questions settings",
+    );
+    assert.equal(
+      home.questionsSettingsLinks[0]?.href,
+      "/settings?tab=questions",
+      "the new chat's link does not target the Questions settings page",
+    );
+    assert.equal(
+      home.questionsSettingsLinks[0]?.text,
+      "Edit questions",
+      "the new chat's link does not say what it does",
+    );
+    assert.ok(
+      (home.questionsSettingsLinks[0]?.box?.height ?? 0) > 18,
+      "the questions settings link painted with no height to click",
+    );
+    assert.ok(
+      (home.questionsSettingsLinks[0]?.box?.right ?? Number.POSITIVE_INFINITY) <=
+        (home.panel?.right ?? Number.NEGATIVE_INFINITY) + 1,
+      "the questions settings link sits outside the dock",
+    );
+    assert.equal(
+      startersLink.settingsView,
+      "questions",
+      "the new chat's link did not open the Questions panel",
+    );
+    assert.equal(startersLink.activeNav, "Questions");
+
     // ── one click sends the question itself ─────────────────────────────────
     assert.equal(sent.streamCalls.length, 1, "the click did not send one turn");
     assert.equal(sent.streamCalls[0]?.input, FINANCIAL, "the wire got different text");
@@ -296,6 +347,27 @@ describe("saved chat questions", () => {
     );
     assert.equal(goals.starters.some((row) => row.text === REVIEW), false);
     assert.equal(goals.starters.some((row) => row.text === HEALTH), true);
+
+    // The link to the questions page is part of the blank thread, not of the
+    // page it happens to be drawn over.
+    assert.equal(
+      review.questionsSettingsLinks.length,
+      1,
+      "the link vanished in the other wing's new chat",
+    );
+    assert.equal(
+      review.questionsSettingsLinks[0]?.href,
+      "/settings?tab=questions",
+    );
+    assert.equal(
+      goals.questionsSettingsLinks.length,
+      1,
+      "the link vanished after a page change kept the new chat open",
+    );
+    assert.equal(
+      goals.questionsSettingsLinks[0]?.href,
+      "/settings?tab=questions",
+    );
 
     // ── the second one-click starts its own chat in its own context ─────────
     assert.equal(second.streamCalls.length, 2);

@@ -1576,6 +1576,22 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                         </li>
                       ))}
                     </ul>
+                    {/*
+                      The way back to the page that writes these prompts. The
+                      operator is looking at saved questions, so editing one —
+                      or adding another — should not mean hunting through the
+                      settings root for them. The link stays under the list,
+                      where the choice was just made.
+                    */}
+                    <Link
+                      to="/settings?tab=questions"
+                      className="chat-panel__link chat-panel__starters-edit"
+                      data-testid="chat-questions-settings-link"
+                      aria-label="Edit the saved questions in Settings"
+                    >
+                      <Pencil size={12} aria-hidden />
+                      Edit questions
+                    </Link>
                   </div>
                 ) : null}
                 {/*
@@ -1597,7 +1613,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                       <Link
                         to="/settings?tab=questions"
                         className="chat-panel__link"
-                        data-testid="chat-empty-questions-link"
+                        data-testid="chat-questions-settings-link"
                         aria-label="Set your custom questions in Settings"
                       >
                         here

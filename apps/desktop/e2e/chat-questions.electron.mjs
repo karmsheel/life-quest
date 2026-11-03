@@ -74,8 +74,18 @@ const SAMPLE = `(() => {
   const composer = document.querySelector(".chat-panel__composer-input");
   const emptyQuestionsBlock = document.querySelector('[data-testid="chat-empty-questions"]');
   const emptyQuestionsLink = emptyQuestionsBlock
-    ? emptyQuestionsBlock.querySelector('[data-testid="chat-empty-questions-link"]')
+    ? emptyQuestionsBlock.querySelector('[data-testid="chat-questions-settings-link"]')
     : null;
+  // The link to the page that writes the prompts, in whichever of the two empty
+  // states is on screen: with saved questions under the list, without them
+  // inside the "No questions set" block. It has to be there in both.
+  const questionsSettingsLinks = Array.from(
+    document.querySelectorAll('[data-testid="chat-questions-settings-link"]'),
+  ).map((link) => ({
+    text: text(link),
+    href: link.getAttribute("href"),
+    box: box(link),
+  }));
   return {
     route: document.body.dataset.rigRoute || null,
     settingsView:
@@ -115,6 +125,7 @@ const SAMPLE = `(() => {
             : null,
         }
       : null,
+    questionsSettingsLinks,
     companionStatusLinks: Array.from(document.querySelectorAll(".chat-panel a")).filter(
       (link) => text(link) === "Companion status",
     ).length,
@@ -341,9 +352,15 @@ async function main() {
       empty.emptyQuestions?.linkText === "here",
       `link text is "${empty.emptyQuestions?.linkText}"`,
     );
+    check(
+      "the empty chat carries the questions-settings link",
+      empty.questionsSettingsLinks.length === 1 &&
+        empty.questionsSettingsLinks[0]?.href === "/settings?tab=questions",
+      JSON.stringify(empty.questionsSettingsLinks),
+    );
     await shot("empty-questions");
 
-    await click('[data-testid="chat-empty-questions-link"]');
+    await click('[data-testid="chat-questions-settings-link"]');
     await waitFor(
       "document.body.dataset.rigRoute === '/settings?tab=questions' && Boolean(document.querySelector('[data-settings-view=\"questions\"]'))",
       "the Questions page opened from the empty chat",
@@ -521,6 +538,59 @@ async function main() {
     );
     await shot("starters-home");
 
+    // ── 11. the link to the page that writes them, with the questions up ────
+    check(
+      "the questions link is there once questions exist",
+      home.questionsSettingsLinks.length === 1 &&
+        home.questionsSettingsLinks[0]?.href === "/settings?tab=questions",
+      JSON.stringify(home.questionsSettingsLinks),
+    );
+    check(
+      "the questions link reads as the way to change them",
+      home.questionsSettingsLinks[0]?.text === "Edit questions",
+      `link text is "${home.questionsSettingsLinks[0]?.text}"`,
+    );
+    check(
+      "the questions link has a real hit target",
+      (home.questionsSettingsLinks[0]?.box?.height ?? 0) > 18,
+      `link height is ${home.questionsSettingsLinks[0]?.box?.height}`,
+    );
+    check(
+      "the questions link sits inside the dock",
+      (home.questionsSettingsLinks[0]?.box?.right ?? Number.POSITIVE_INFINITY) <=
+        (home.panel?.right ?? Number.NEGATIVE_INFINITY) + 1,
+      JSON.stringify({
+        link: home.questionsSettingsLinks[0]?.box,
+        panel: home.panel,
+      }),
+    );
+
+    await click('[data-testid="chat-questions-settings-link"]');
+    await waitFor(
+      "document.body.dataset.rigRoute === '/settings?tab=questions' && Boolean(document.querySelector('[data-settings-view=\"questions\"]'))",
+      "the Questions page opened from the starters",
+    );
+    const startersLink = await sample();
+    check(
+      "the questions link opens Settings -> Questions",
+      startersLink.settingsView === "questions" &&
+        startersLink.activeNav === "Questions",
+      `view is ${startersLink.settingsView}, nav is "${startersLink.activeNav}"`,
+    );
+    await shot("questions-link-from-starters");
+
+    // Closing the sheet puts the operator back on the blank chat they left.
+    await click(".settings-overlay__close");
+    await waitFor(
+      "document.body.dataset.rigRoute === '/home' && Boolean(document.querySelector('.chat-panel'))",
+      "the Dashboard after closing Settings",
+    );
+    await click('[aria-label="New chat"]');
+    await waitFor(
+      "document.querySelectorAll('[data-testid=\"chat-starter\"]').length > 0",
+      "the saved questions back in the new chat",
+    );
+
     await clickStarter(FINANCIAL);
     await waitFor("(window.__lqStreamCalls || []).length === 1", "the first turn to be sent");
     await waitFor(
@@ -592,6 +662,12 @@ async function main() {
       review.starters.every((row) => row.text !== FINANCIAL),
       "the Financial question was offered in Health",
     );
+    check(
+      "the questions link is there in the other wing's new chat",
+      review.questionsSettingsLinks.length === 1 &&
+        review.questionsSettingsLinks[0]?.href === "/settings?tab=questions",
+      JSON.stringify(review.questionsSettingsLinks),
+    );
     await shot("starters-review");
 
     // A live route change while the blank chat stays open: the page rule is
@@ -611,6 +687,12 @@ async function main() {
       "the domain question stays in its domain",
       goals.starters.some((row) => row.text === HEALTH),
       JSON.stringify(goals.starters),
+    );
+    check(
+      "the questions link survives a page change with the chat open",
+      goals.questionsSettingsLinks.length === 1 &&
+        goals.questionsSettingsLinks[0]?.href === "/settings?tab=questions",
+      JSON.stringify(goals.questionsSettingsLinks),
     );
 
     await run("window.__lqNavigate('/review/weekly')");
@@ -649,6 +731,7 @@ async function main() {
       added,
       afterEdit,
       home,
+      startersLink,
       sent,
       review,
       goals,
