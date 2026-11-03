@@ -30,13 +30,30 @@
  *  7b. A second toggle in the titlebar — the reported bug: a
  *     `.window-titlebar__nav-toggle` rendered in the strip when the rail
  *     collapsed, overlapping the Personal chip. No such element may exist in
- *     either state; the rail keeps its one toggle and the chip clears it.
- *  7c. Contents left behind in the thin rail — the labelled five-wing switcher,
- *     the chats section, the divider above it or the row labels still rendered
- *     in the 56px column; or the rows themselves hidden with them, leaving an
- *     icon column with no pages in it.
- *  8. Titlebar text still in the rail's corner — the LQ badge and title not
- *     stepping aside by the track width, so they sit on top of the sidebar.
+ *     either state; the rail keeps its one toggle, and the chip lives in the
+ *     rail's foot, out of the strip entirely (round 2).
+ *  7c. Contents left behind in the thin rail — the labelled chats section, the
+ *     divider above it or the row labels still rendered in the 56px column; or
+ *     the rows themselves hidden with them, leaving an icon column with no pages
+ *     in it.
+ *  7d. The wing switcher abandoned on collapse — the five-wing band hidden when
+ *     the rail narrows (round 1's behaviour), or left horizontal/overflowing
+ *     instead of a vertical stack of all five wings inside the icon column, or
+ *     the wing's page rows rendered above it. The wings must stay reachable at
+ *     both widths.
+ *  7e. The vault chip still in the titlebar — a `.window-titlebar__vault` in the
+ *     strip. Round 2 moved it into the rail's foot: the strip's leading half is
+ *     an empty drag handle and the titlebar carries no nav-column classes.
+ *  7f. The chip outside the rail's foot — a chip floating somewhere else in the
+ *     rail, or a `.nav-rail__foot[data-nav-group="footer"]` that is not exactly
+ *     the Log row and the chip.
+ *  7g. The wide foot not split — the chip hugging its text or taking the whole
+ *     row, so the Log is not half the footer, or the two not sharing one height.
+ *  7h. The thin chip not reduced — the full name or the chevron still drawn in
+ *     the 56px column, no initials mark, the wrong initials (the harness vault
+ *     "Harness Vault" must read "HV"), or the chip not the rail's last control.
+ *  8. Titlebar text still in the strip — the LQ badge, title or a vault chip
+ *     still rendered in the window's top row, which round 2 leaves empty.
  *  9. Rail scrolls its own topband away, or spills past the window box.
  * 10. Bridge stubs masking real calls — anything the shell reaches for that is
  *     not named here must not throw.
@@ -83,9 +100,10 @@
  *     measured, so "frameless" cannot be satisfied by a control that stopped
  *     rendering its fill or its tab.
  * 20a. The wing switcher back in the sheet — five tabs in the top bar again, or a
- *     switcher in the rail's band that does not sit on the top bar's row, above
- *     the wing's rows, or does not navigate. Its band is measured against the top
- *     bar's box, and its trip (Home → Define → Home) against the rail's rows.
+ *     switcher in the rail's band that does not sit on the top bar's row (wide),
+ *     above the wing's rows, or does not navigate. Its band is measured against
+ *     the top bar's box, its options' boxes prove the collapsed stack, and its
+ *     trip (Home → Define → Home) is read off the rail's rows.
  * 20b. The domain lens off-centre — one selector left in the sheet, so the band
  *     must centre it; measured by comparing the lens's box to the band's.
  *
@@ -117,7 +135,7 @@ import "@/styles/global.css";
 
 const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value });
 
-/** The vault name the titlebar chip must wear — the driver reads it off the page
+/** The vault name the rail's chip must wear — the driver reads it off the page
  *  rather than hard-coding the same string twice. */
 const VAULT_NAME = "Harness Vault";
 

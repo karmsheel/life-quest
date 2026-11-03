@@ -439,7 +439,6 @@ a {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  position: relative; /* anchor for the toggle floating in the rail's column */
   min-width: 0;
   height: 100%;
   margin-left: env(titlebar-area-x, 0px);
@@ -453,53 +452,10 @@ a {
   flex: 1 1 auto;
 }
 
-.window-titlebar__vault {
-  /* no-drag: the strip it sits in is a window drag handle. */
-  -webkit-app-region: no-drag;
-  flex: 0 1 auto;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-  /* Full strip height: the chip hangs off the window's top edge with no margin
-     at either end, and only its own padding keeps the text off the chrome. */
-  align-self: stretch;
-  /* Lines the chip's leading border up with the sheet's: the strip indents by
-     the rail's column and nothing else, so the chip starts exactly where the
-     sheet starts. */
-  margin-left: 0;
-  padding: 0 0.6rem;
-  border-radius: 0;
-  background: var(--accent-tint);
-  color: var(--accent);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  text-decoration: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.window-titlebar__vault:hover {
-  background: var(--accent-hover);
-  color: var(--accent-hover-fg);
-}
-
-/* The whole shell — rail wide or thin — reserves the rail's column, so the chip
-   holds its place at the rail's trailing edge and never slides under the toggle.
-   The chip's leading border lands exactly where the sheet does, in both states. */
-.window-titlebar--nav-column .window-titlebar__leading {
-  padding-left: var(--shell-nav-width);
-}
-
-/* A thin rail reserves only its icon column: the chip starts one hairline past
-   the rail's trailing edge, exactly as it does when the rail is wide. No toggle
-   moves into the strip any more — the rail keeps its own toggle at every width,
-   so nothing has to stand in for it here. */
-.window-titlebar--nav-column.window-titlebar--nav-collapsed .window-titlebar__leading {
-  padding-left: var(--shell-nav-width-collapsed);
-}
+/* The strip's leading half is the window's drag handle and nothing else: the
+   vault that used to be named here lives at the foot of the sidebar now, so the
+   strip no longer reserves the rail's column for a chip and no control sits in
+   it to be overlapped. */
 
 .window-titlebar__trailing {
   -webkit-app-region: no-drag;
@@ -931,6 +887,76 @@ a {
   margin-top: auto;
 }
 
+/* The rail's foot: the Log closes the navigation, and the vault chip that names
+   the workspace takes the row's other half. One row, two equal halves — the Log
+   stays the last page control, and the chip that changes vaults travels with the
+   navigation instead of sitting in the titlebar. */
+.nav-rail__foot {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
+.nav-rail__foot > .nav-rail__link {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* The vault chip in the foot of the rail. A chip rather than the old square
+   strip tab: it now sits inside the sidebar, on the rail's own mat, so it wears
+   the one accent-tinted shape the panel affords. It raises the vault switcher —
+   the only control that changes which folder the window is writing. */
+.nav-rail__vault {
+  appearance: none;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0 0.55rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nav-rail__vault:hover {
+  background: var(--accent-hover);
+  color: var(--accent-hover-fg);
+}
+
+/* The name is a flex item so a long vault ellipsizes against the caret instead
+   of shoving it out of the chip. */
+.nav-rail__vault-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The caret reads as "this opens something"; it is quiet at rest so the name
+   keeps the chip. */
+.nav-rail__vault-chevron {
+  flex: 0 0 auto;
+  margin-left: auto;
+  opacity: 0.72;
+}
+
+/* The icon rail's mark: initials only, never the name. Its accessible name
+   still spells the whole vault out (see VaultChip), so this paint is purely
+   for the narrow column. */
+.nav-rail__vault-initials {
+  display: none;
+}
+
 .nav-rail__divider {
   height: 1px;
   background: var(--border);
@@ -1032,9 +1058,9 @@ a {
 /* —— The thin rail —— */
 /* Collapsed, the rail is an icon column, not a hidden sidebar: the same pane at
    --shell-nav-width-collapsed, its rows reduced to the icons and the counts.
-   Everything that cannot be said in one icon leaves the column rather than
-   crowding it — the labelled wing switcher and the chats list — while the toggle,
-   the page rows, the governed shelf and the Log all stay reachable. */
+   The chats list leaves the column rather than crowding it — it cannot be said
+   in one icon — while the toggle, the five-wing switcher, the page rows, the
+   governed shelf and the foot all stay reachable. */
 .shell--nav-collapsed .nav-rail__header {
   /* A one-control-wide column centres its one control: the trailing edge is where
      a wide rail puts the toggle, and at this width it would read as an accident. */
@@ -1042,10 +1068,36 @@ a {
   padding-right: 0;
 }
 
-.shell--nav-collapsed .nav-rail__wings-band,
 .shell--nav-collapsed .chats-rail,
 .shell--nav-collapsed .nav-rail__divider--chats {
   display: none;
+}
+
+/* The wing switcher turns vertical instead of disappearing: five stacked tabs in
+   the icon column, same order and same active mark, directly under the header.
+   The rail is still the first level of navigation at its narrow width — hiding
+   the wings here would take the first level away. */
+.shell--nav-collapsed .nav-rail__wings-band {
+  height: auto;
+  margin: 0.1rem 0 0;
+  padding: 0 0.1rem;
+}
+
+.shell--nav-collapsed .nav-rail__wings {
+  flex-direction: column;
+  gap: 0.1rem;
+  width: 100%;
+  padding: 0.125rem;
+}
+
+.shell--nav-collapsed .nav-rail__wings .ui-segmented__option {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 0.22rem 0.05rem;
+  font-size: 0.5625rem;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .shell--nav-collapsed .nav-rail__label {
@@ -1056,6 +1108,41 @@ a {
    hover and for the keyboard, and the badge still counts what is waiting. */
 .shell--nav-collapsed .nav-rail__link {
   justify-content: center;
+}
+
+/* The foot stacks in the thin rail: the Log's icon, then the vault's initials
+   directly underneath. Both centred in the column, and the chip no longer takes
+   half a row that does not exist. */
+.shell--nav-collapsed .nav-rail__foot {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.2rem;
+}
+
+.shell--nav-collapsed .nav-rail__foot > .nav-rail__link {
+  flex: 0 0 auto;
+}
+
+.shell--nav-collapsed .nav-rail__vault {
+  flex: 0 0 auto;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: 0 auto;
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+}
+
+.shell--nav-collapsed .nav-rail__vault-name,
+.shell--nav-collapsed .nav-rail__vault-chevron {
+  display: none;
+}
+
+.shell--nav-collapsed .nav-rail__vault-initials {
+  display: inline;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 /* The words that come with the glow: `Update available`, beside the build number

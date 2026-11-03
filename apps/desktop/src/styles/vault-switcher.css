@@ -1,47 +1,17 @@
 /* —— Vault switcher ————————————————————————————————————————————————
-   The popup raised by the titlebar's vault chip. Styles live here rather than
-   in global.css so the two writers of this branch never touch the same sheet:
-   the settings polish owns global.css, this file owns the switcher. */
+   The popup raised by the rail's vault chip. Styles live here rather than in
+   global.css so the two writers of this branch never touch the same sheet: the
+   settings polish owns global.css, this file owns the switcher.
 
-/* The chip became a button in this change, and its shape is declared in
-   global.css. The `@import` that pulls this sheet in sits above those rules, so
-   a plain `.window-titlebar__vault` here would lose the cascade to the chip's
-   own rule; the extra `.window-titlebar` step lets the button-only resets win.
-   What is reset is exactly the platform button chrome the old link never wore:
-   the UA's outset border and its UI font. Everything else — the accent fill, the
-   full strip height, the square corners — is the chip's own recipe in global.css
-   and stays there. */
-.window-titlebar .window-titlebar__vault {
-  border: 0;
-  font-family: inherit;
-  cursor: pointer;
-  appearance: none;
-}
-
-/* The caret reads as "this opens something" beside a name that would otherwise
-   look like a label. Quiet at rest so the vault's name keeps the chip. */
-.window-titlebar__vault-chevron {
-  flex: 0 0 auto;
-  margin-left: 0.28rem;
-  opacity: 0.72;
-}
-
-/* The name is now a flex item inside the chip rather than the chip's own text,
-   so the cut-off that used to happen at the chip's edge has to be asked for on
-   the name itself: a long vault name ellipsizes instead of shoving the caret
-   out of the chip. */
-.window-titlebar__vault-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+   The chip itself is part of the rail's foot now, so its shape — the accent
+   tint, the half-width row, the initials the thin rail shows — belongs with the
+   rail in global.css. What is left here is the window alone. */
 
 /* Above the shell's panes and their sheets (50) and above the app's confirm
-   dialog (60): the chip that raises this sits in the window chrome, so the
-   popup has to clear every surface the window itself can paint under it. Below
-   the update dialog (70), the one modal that owns the window while an installer
-   runs and must never be covered. */
+   dialog (60): the chip that raises this sits in the sidebar, and the popup has
+   to clear every surface the window itself can paint over that column. Below the
+   update dialog (70), the one modal that owns the window while an installer runs
+   and must never be covered. */
 .vault-switcher-backdrop {
   position: fixed;
   inset: 0;

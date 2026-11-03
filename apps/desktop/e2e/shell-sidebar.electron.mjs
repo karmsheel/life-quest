@@ -56,7 +56,11 @@ const SAMPLE = `(() => {
     : [];
   const titlebar = document.querySelector(".window-titlebar");
   const leading = document.querySelector(".window-titlebar__leading");
-  const vault = document.querySelector(".window-titlebar__vault");
+  // Round 2: the vault chip left the titlebar for the rail's foot. The old
+  // selector is queried only to prove that nothing renders it any more.
+  const titlebarVault = document.querySelector(".window-titlebar__vault");
+  const railVault = document.querySelector(".nav-rail__vault");
+  const foot = document.querySelector('.nav-rail__foot[data-nav-group="footer"]');
   const railToggle = document.querySelector(".nav-rail .nav-toggle");
   // The reported bug's second toggle: queried only to prove that it no longer
   // exists in EITHER state — the rail keeps its own toggle in its header.
@@ -80,6 +84,15 @@ const SAMPLE = `(() => {
   const wingRows = document.querySelector(".nav-rail__section--wing");
   const domainSwitcher = document.querySelector(".domain-switcher");
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
+
+  // The accent ink the chip wears, read through a probe so a color-mix() or a
+  // skin-specific serialisation still compares as the computed colour.
+  const colorProbe = document.createElement("span");
+  colorProbe.style.cssText = "position:absolute;left:-9999px;top:0";
+  colorProbe.style.color = "var(--accent)";
+  document.body.appendChild(colorProbe);
+  const accent = getComputedStyle(colorProbe).color;
+  colorProbe.remove();
 
   // Read a track width from a token rather than assuming a pixel value: the rail
   // is 16rem wide when expanded and one icon column (3.5rem) when collapsed, and
@@ -119,6 +132,7 @@ const SAMPLE = `(() => {
       dataTheme: document.documentElement.getAttribute("data-theme"),
       skin: document.documentElement.getAttribute("data-skin"),
       canvasBase: root.getPropertyValue("--canvas-base").trim(),
+      accent,
       titlebarBg: root.getPropertyValue("--titlebar-bg").trim(),
       background: root.getPropertyValue("--background").trim(),
       card: root.getPropertyValue("--card").trim(),
@@ -194,19 +208,69 @@ const SAMPLE = `(() => {
     bottomSection: box(document.querySelector(".nav-rail__section--bottom")),
     titlebar: box(titlebar),
     leading: box(leading),
-    vault: vault
+    // Negative regression claim: the chip is not in the titlebar any more.
+    titlebarVault: titlebarVault
+      ? { box: box(titlebarVault), text: (titlebarVault.textContent || "").trim() }
+      : null,
+    // The rail's foot: the Log row and the vault chip on one line when the rail
+    // is wide, stacked when it is thin.
+    foot: foot
       ? {
-          box: box(vault),
-          text: (vault.textContent || "").trim(),
-          background: getComputedStyle(vault).backgroundColor,
-          color: getComputedStyle(vault).color,
-          radius: getComputedStyle(vault).borderRadius,
-          // The chip raises the vault switcher now instead of linking home: it
-          // is a button with a dialog behind it, and the rig reads both facts
-          // rather than the href it used to carry.
-          tag: vault.tagName.toLowerCase(),
-          haspopup: vault.getAttribute("aria-haspopup"),
-          appRegion: getComputedStyle(vault).getPropertyValue("-webkit-app-region")
+          box: box(foot),
+          display: getComputedStyle(foot).display,
+          flexDirection: getComputedStyle(foot).flexDirection,
+          children: Array.from(foot.children).map((el) => ({
+            tag: el.tagName.toLowerCase(),
+            className: typeof el.className === "string" ? el.className : "",
+            box: box(el)
+          })),
+          logRow: box(foot.querySelector(".nav-rail__link"))
+        }
+      : null,
+    // The vault chip's new home. Every claim the titlebar chip used to carry is
+    // made here instead: its full name, its accent fill, its dialog, and — in
+    // the thin rail — the initials-only mark that keeps it in the icon column.
+    vaultChip: railVault
+      ? {
+          box: box(railVault),
+          tag: railVault.tagName.toLowerCase(),
+          title: railVault.getAttribute("title"),
+          ariaLabel: railVault.getAttribute("aria-label"),
+          haspopup: railVault.getAttribute("aria-haspopup"),
+          ariaExpanded: railVault.getAttribute("aria-expanded"),
+          background: getComputedStyle(railVault).backgroundColor,
+          color: getComputedStyle(railVault).color,
+          radius: getComputedStyle(railVault).borderRadius,
+          name: (() => {
+            const el = railVault.querySelector(".nav-rail__vault-name");
+            return el
+              ? { text: (el.textContent || "").trim(), display: getComputedStyle(el).display }
+              : null;
+          })(),
+          initials: (() => {
+            const el = railVault.querySelector(".nav-rail__vault-initials");
+            return el
+              ? { text: (el.textContent || "").trim(), display: getComputedStyle(el).display }
+              : null;
+          })(),
+          chevronDisplay: (() => {
+            const el = railVault.querySelector(".nav-rail__vault-chevron");
+            return el ? getComputedStyle(el).display : null;
+          })(),
+          inRail: Boolean(rail && rail.contains(railVault)),
+          inFoot: Boolean(foot && foot.contains(railVault)),
+          // The chip is the last visible control in the rail: no button or link
+          // after it may still be on screen. That is what makes it the foot.
+          isLastControl: (() => {
+            if (!rail) return false;
+            const visible = Array.from(
+              rail.querySelectorAll("button, a, [role=button]")
+            ).filter((el) => {
+              const r = el.getBoundingClientRect();
+              return r.width > 0 && r.height > 0;
+            });
+            return visible.length > 0 && visible[visible.length - 1] === railVault;
+          })()
         }
       : null,
     legacyBrand: Boolean(
@@ -309,9 +373,10 @@ const SAMPLE = `(() => {
           ).map((el) => (el.textContent || "").trim())
         }
       : null,
-    // The rail's first level: the five-wing switcher, in a band of its own on the
-    // sheet's top-bar row, above the active wing's pages. The band is a wide-rail
-    // fixture: a thin rail hides it rather than trying to fit five labels in 56px.
+    // The rail's first level: the five-wing switcher, in a band of its own above
+    // the active wing's pages. Wide, the band sits on the sheet's top-bar row and
+    // the control is horizontal; thin, the control turns vertical and stays in the
+    // icon column — the wings must never leave the operator's reach.
     wingsBand: wingsBand
       ? {
           box: box(wingsBand),
@@ -334,6 +399,17 @@ const SAMPLE = `(() => {
                 ?.textContent || ""
             ).trim() || null,
           optionCount: wings.querySelectorAll(".ui-segmented__option").length,
+          // The collapsed band turns the segmented control vertical; the option
+          // boxes prove the five tabs really stack in the icon column rather
+          // than merely having a column flex-direction.
+          flexDirection: getComputedStyle(wings).flexDirection,
+          options: Array.from(
+            wings.querySelectorAll(".ui-segmented__option")
+          ).map((el) => ({
+            label: (el.textContent || "").trim(),
+            active: el.classList.contains("is-active"),
+            box: box(el)
+          })),
           background: getComputedStyle(wings).backgroundColor
         }
       : null,
@@ -916,6 +992,11 @@ async function main() {
       `switcher ${JSON.stringify(switcher?.box)} in rail ${JSON.stringify(expanded.rail?.box)}`,
     );
     check(
+      "the wide wing switcher is horizontal",
+      expanded.wingSwitcher?.flexDirection === "row",
+      `wings flex-direction ${JSON.stringify(expanded.wingSwitcher?.flexDirection)}`,
+    );
+    check(
       "the wing switcher is the five wings, in order",
       Boolean(switcher) &&
         switcher.role === "tablist" &&
@@ -955,46 +1036,25 @@ async function main() {
       `corner element ${JSON.stringify(expanded.corner)}`,
     );
 
-    // 4 — the strip wears the vault's own name on a highlighted chip, stepped
-    // aside by the track width; the app mark and wordmark are gone.
+    // 4 — the titlebar no longer names the vault. Round 2 moved the chip into the
+    // rail's foot: the strip's leading half is an empty drag handle and it no
+    // longer reserves the rail's column with `--nav-column` classes. The chip
+    // keeps every part of its old contract (a button, the vault's name, an accent
+    // fill, a dialog) but it now lives with the navigation it belongs to.
     check(
-      "titlebar text clears the rail",
-      (expanded.vault?.box.left ?? 0) >= (expanded.rail?.box.right ?? track),
-      `vault chip starts at ${expanded.vault?.box.left}px, rail ends at ${expanded.rail?.box.right}px`,
+      "the titlebar renders no vault chip",
+      expanded.titlebarVault === null,
+      `a .window-titlebar__vault is still in the strip: ${JSON.stringify(expanded.titlebarVault)}`,
     );
     check(
-      "strip shows the vault name and nothing else",
-      expanded.vault?.text === vaultName && expanded.leadingText === vaultName,
-      `chip "${expanded.vault?.text}" / leading "${expanded.leadingText}" vs vault "${vaultName}"`,
+      "the titlebar's leading strip is empty",
+      expanded.leadingText === "",
+      `the strip still carries text: ${JSON.stringify(expanded.leadingText)}`,
     );
     check(
       "the app mark and wordmark are gone",
       expanded.legacyBrand === false,
       "a brand/logo/label element is still in the titlebar",
-    );
-    check(
-      "the vault chip is highlighted",
-      isHighlighted(expanded.vault?.background) &&
-        expanded.vault?.background !== expanded.titlebarBackground,
-      `chip background ${expanded.vault?.background} on ${expanded.titlebarBackground}`,
-    );
-    check(
-      "the chip has square corners",
-      expanded.vault?.radius === "0px",
-      `radius ${expanded.vault?.radius}`,
-    );
-    check(
-      "the chip fills the strip with no margin at the top",
-      expanded.vault?.box.top === 0 &&
-        expanded.vault?.box.height === titlebarHeight,
-      `chip top ${expanded.vault?.box.top}px, height ${expanded.vault?.box.height}px vs strip ${titlebarHeight}px`,
-    );
-    check(
-      "the chip opens the vault switcher and stays clickable",
-      expanded.vault?.tag === "button" &&
-        expanded.vault?.haspopup === "dialog" &&
-        expanded.vault?.appRegion === "no-drag",
-      `tag ${expanded.vault?.tag}, popup ${expanded.vault?.haspopup}, app-region ${expanded.vault?.appRegion}`,
     );
     // The reported bug: a second toggle rendered in the titlebar when the rail
     // collapsed, on top of the vault chip. There is no titlebar toggle in either
@@ -1011,11 +1071,107 @@ async function main() {
         expanded.railToggle.box.right <= expanded.rail.box.right,
       `rail toggle ends at ${expanded.railToggle?.box.right}px, sidebar ends at ${expanded.rail?.box.right}px`,
     );
+
+    // The chip's new home: the rail's foot. Wide, the foot is one row — the Log
+    // row and the chip split it in half — and the chip shows the vault's full
+    // name. A chip that stayed behind in the strip, or a chip that did not take
+    // the row's other half, is the feature missing rather than moved.
     check(
-      "the rail's toggle never reaches the vault chip",
-      Boolean(expanded.railToggle && expanded.vault) &&
-        expanded.railToggle.box.right <= expanded.vault.box.left,
-      `toggle ends at ${expanded.railToggle?.box.right}px, chip starts at ${expanded.vault?.box.left}px`,
+      "the rail foot renders the vault chip",
+      Boolean(expanded.vaultChip),
+      "no .nav-rail__vault in the rail",
+    );
+    check(
+      "the chip lives in the rail, in its foot group",
+      expanded.vaultChip?.inRail === true && expanded.vaultChip?.inFoot === true,
+      `in rail ${expanded.vaultChip?.inRail}, in foot ${expanded.vaultChip?.inFoot}`,
+    );
+    check(
+      "the foot's two controls are the Log row and the vault chip",
+      Boolean(expanded.foot) &&
+        expanded.foot.children.length === 2 &&
+        expanded.foot.children[0].className.includes("nav-rail__link") &&
+        expanded.foot.children[1].className.includes("nav-rail__vault"),
+      `foot children ${JSON.stringify(expanded.foot?.children)}`,
+    );
+    check(
+      "the wide foot is one row",
+      expanded.foot?.display === "flex" &&
+        expanded.foot?.flexDirection === "row",
+      `foot display ${JSON.stringify(expanded.foot?.display)} direction ${JSON.stringify(expanded.foot?.flexDirection)}`,
+    );
+    check(
+      "the Log and the vault chip split the foot in half",
+      Boolean(expanded.foot?.logRow && expanded.vaultChip) &&
+        expanded.foot.logRow.width > 0 &&
+        Math.abs(expanded.foot.logRow.width - expanded.vaultChip.box.width) <= 1 &&
+        expanded.foot.logRow.width >= expanded.foot.box.width * 0.4,
+      `log ${JSON.stringify(expanded.foot?.logRow)} chip ${JSON.stringify(expanded.vaultChip?.box)} foot ${JSON.stringify(expanded.foot?.box)}`,
+    );
+    check(
+      "the Log and the vault chip share the foot's row",
+      Boolean(expanded.foot?.logRow && expanded.vaultChip) &&
+        Math.abs(
+          (expanded.foot.logRow.top + expanded.foot.logRow.bottom) / 2 -
+            (expanded.vaultChip.box.top + expanded.vaultChip.box.bottom) / 2,
+        ) <= 1 &&
+        Math.abs(expanded.foot.logRow.height - expanded.vaultChip.box.height) <= 1,
+      `log ${JSON.stringify(expanded.foot?.logRow)} chip ${JSON.stringify(expanded.vaultChip?.box)}`,
+    );
+    check(
+      "the wide chip shows the vault's name and hides the initials",
+      expanded.vaultChip?.name?.text === vaultName &&
+        expanded.vaultChip?.name?.display !== "none" &&
+        expanded.vaultChip?.initials?.display === "none",
+      `name ${JSON.stringify(expanded.vaultChip?.name)} initials ${JSON.stringify(expanded.vaultChip?.initials)}`,
+    );
+    check(
+      "the wide chip shows its chevron",
+      Boolean(expanded.vaultChip?.chevronDisplay) &&
+        expanded.vaultChip?.chevronDisplay !== "none",
+      `chevron display ${JSON.stringify(expanded.vaultChip?.chevronDisplay)}`,
+    );
+    check(
+      "the chip is a button that opens the vault switcher",
+      expanded.vaultChip?.tag === "button" &&
+        expanded.vaultChip?.haspopup === "dialog" &&
+        expanded.vaultChip?.ariaExpanded === "false" &&
+        expanded.vaultChip?.title === "Switch vault",
+      `tag ${expanded.vaultChip?.tag}, popup ${expanded.vaultChip?.haspopup}, expanded ${JSON.stringify(expanded.vaultChip?.ariaExpanded)}, title ${JSON.stringify(expanded.vaultChip?.title)}`,
+    );
+    check(
+      "the chip's accessible name carries the full vault name",
+      (expanded.vaultChip?.ariaLabel ?? "").includes(vaultName),
+      `aria-label ${JSON.stringify(expanded.vaultChip?.ariaLabel)} vs vault ${JSON.stringify(vaultName)}`,
+    );
+    check(
+      "the chip wears a highlighted accent fill",
+      isHighlighted(expanded.vaultChip?.background) &&
+        expanded.vaultChip?.background !== expanded.rail?.background,
+      `chip background ${expanded.vaultChip?.background} on rail ${expanded.rail?.background}`,
+    );
+    check(
+      "the chip's ink is the accent, not the rail's text ink",
+      expanded.vaultChip?.color === expanded.theme?.accent,
+      `chip ink ${expanded.vaultChip?.color} vs --accent ${expanded.theme?.accent}`,
+    );
+    check(
+      "the chip is a rounded chip, not the old square strip tab",
+      expanded.vaultChip?.radius !== "0px" &&
+        expanded.vaultChip?.radius === expanded.tokens.radiusSm,
+      `radius ${expanded.vaultChip?.radius} vs --radius-sm ${expanded.tokens.radiusSm}`,
+    );
+    check(
+      "the chip sits inside the rail's column",
+      Boolean(expanded.vaultChip && expanded.rail) &&
+        expanded.vaultChip.box.left >= expanded.rail.box.left &&
+        expanded.vaultChip.box.right <= expanded.rail.box.right,
+      `chip ${JSON.stringify(expanded.vaultChip?.box)} in rail ${JSON.stringify(expanded.rail?.box)}`,
+    );
+    check(
+      "the chip is the last control in the rail",
+      expanded.vaultChip?.isLastControl === true,
+      "a visible control follows the vault chip in the rail",
     );
 
     check(
@@ -1060,18 +1216,16 @@ async function main() {
       expanded.rail?.backdropFilter === "none",
       `backdrop ${expanded.rail?.backdropFilter}`,
     );
+    // The strip used to reserve the rail's column so the vault chip could start
+    // where the sheet does. Round 2 deleted that reservation with the chip: the
+    // titlebar carries no nav-column classes. The rail still paints over the
+    // strip's leading column, so the studio's top-left corner stays its mat.
     check(
-      "the titlebar's fill starts at the rail's trailing edge",
-      expanded.vault?.box.left === expanded.rail?.box.right &&
-        expanded.vault?.box.left === expanded.main?.left &&
-        // The topband runs the rail's full width up TO the hairline, which lives
-        // inside the rail's box — so it may stop one pixel short of the rail's
-        // outer edge, never less and never past it.
-        (expanded.rail?.box.right ?? 0) -
-          (expanded.header?.box.right ?? 0) >= 0 &&
-        (expanded.rail?.box.right ?? 0) -
-          (expanded.header?.box.right ?? 0) <= 1,
-      `rail ends at ${expanded.rail?.box.right}px, topband ends at ${expanded.header?.box.right}px, chip starts at ${expanded.vault?.box.left}px, sheet starts at ${expanded.main?.left}px`,
+      "the titlebar reserves no rail column and the rail still paints its corner",
+      !String(expanded.titlebarClass ?? "").includes("window-titlebar--nav-column") &&
+        !String(expanded.titlebarClass ?? "").includes("window-titlebar--nav-collapsed") &&
+        expanded.corner?.insideRail === true,
+      `titlebar ${JSON.stringify(expanded.titlebarClass)}, corner ${JSON.stringify(expanded.corner)}`,
     );
     check(
       "the sheet closes the gap to the dock and the window's bottom",
@@ -1180,10 +1334,17 @@ async function main() {
         parseFloat(expanded.chatHeader.borderBottomWidth || "0") > 0,
       `top bar ${JSON.stringify(expanded.topBar?.box)} vs dock header ${JSON.stringify(expanded.chatHeader?.box)}, header underline ${expanded.chatHeader?.borderBottomWidth}`,
     );
+    // The chip can no longer be measured against the sheet's leading edge — it
+    // lives at the foot of the rail now, not on the titlebar row. What replaces
+    // that claim is where the foot sits: the rail's last band, under the chats.
     check(
-      "the chip lines up with the sheet's leading edge",
-      expanded.vault?.box.left === expanded.main?.left,
-      `chip at ${expanded.vault?.box.left}px vs sheet at ${expanded.main?.left}px`,
+      "the rail foot closes the rail under the chats section",
+      Boolean(expanded.foot && expanded.chats && expanded.rail) &&
+        expanded.foot.box.top >= expanded.chats.box.bottom - 1 &&
+        expanded.foot.box.bottom <= expanded.rail.box.bottom + 1 &&
+        expanded.foot.box.left >= expanded.rail.box.left &&
+        expanded.foot.box.right <= expanded.rail.box.right,
+      `foot ${JSON.stringify(expanded.foot?.box)}, chats ${JSON.stringify(expanded.chats?.box)}, rail ${JSON.stringify(expanded.rail?.box)}`,
     );
 
     // The night ladder: the studio is a frame around the darkest page. The page
@@ -1450,16 +1611,61 @@ async function main() {
       collapsed.titlebarToggle === null,
       `titlebar toggle present: ${JSON.stringify(collapsed.titlebarToggle)}`,
     );
-    // The chip holds its place at the rail's trailing edge in BOTH states: it
-    // starts exactly where the sheet does, never at the window's leading edge and
-    // never under the toggle.
+    // The chip travels with the rail: in the thin rail it stacks under the Log's
+    // icon and reduces to the vault's initials. It is still the same button — the
+    // full vault name stays in its accessible name, so nothing is lost but paint.
     check(
-      "the vault chip stays at the rail's trailing edge",
-      Boolean(collapsed.vault && collapsed.rail && collapsed.main) &&
-        collapsed.vault.box.left === collapsed.rail.box.right &&
-        collapsed.vault.box.left === collapsed.main.left &&
-        collapsed.vault.box.left === collapsedTrack,
-      `chip starts at ${collapsed.vault?.box.left}px, rail ends at ${collapsed.rail?.box.right}px, sheet starts at ${collapsed.main?.left}px, track ${collapsedTrack}px`,
+      "the titlebar renders no vault chip when the rail is thin",
+      collapsed.titlebarVault === null && collapsed.leadingText === "",
+      `titlebar chip ${JSON.stringify(collapsed.titlebarVault)}, leading text ${JSON.stringify(collapsed.leadingText)}`,
+    );
+    check(
+      "the thin rail's foot stacks the Log above the chip",
+      Boolean(collapsed.foot?.logRow && collapsed.vaultChip) &&
+        collapsed.foot.display === "flex" &&
+        collapsed.foot.flexDirection === "column" &&
+        collapsed.foot.logRow.bottom <= collapsed.vaultChip.box.top + 1,
+      `foot direction ${JSON.stringify(collapsed.foot?.flexDirection)}, log ${JSON.stringify(collapsed.foot?.logRow)}, chip ${JSON.stringify(collapsed.vaultChip?.box)}`,
+    );
+    check(
+      "the thin chip is a small square mark in the icon column",
+      Boolean(collapsed.vaultChip && collapsed.rail) &&
+        collapsed.vaultChip.box.width > 0 &&
+        collapsed.vaultChip.box.height > 0 &&
+        Math.abs(collapsed.vaultChip.box.width - collapsed.vaultChip.box.height) <= 1 &&
+        collapsed.vaultChip.box.width >= 24 &&
+        collapsed.vaultChip.box.width <= 32 &&
+        collapsed.vaultChip.box.left >= collapsed.rail.box.left &&
+        collapsed.vaultChip.box.right <= collapsed.rail.box.right,
+      `chip ${JSON.stringify(collapsed.vaultChip?.box)} in rail ${JSON.stringify(collapsed.rail?.box)}`,
+    );
+    check(
+      "the thin chip keeps its full accessible name and its dialog",
+      collapsed.vaultChip?.tag === "button" &&
+        collapsed.vaultChip?.haspopup === "dialog" &&
+        collapsed.vaultChip?.ariaExpanded === "false" &&
+        collapsed.vaultChip?.title === "Switch vault" &&
+        (collapsed.vaultChip?.ariaLabel ?? "").includes(vaultName),
+      `tag ${collapsed.vaultChip?.tag}, popup ${collapsed.vaultChip?.haspopup}, label ${JSON.stringify(collapsed.vaultChip?.ariaLabel)}, title ${JSON.stringify(collapsed.vaultChip?.title)}`,
+    );
+    check(
+      "the thin chip shows the vault's initials and hides the name",
+      collapsed.vaultChip?.initials?.text === "HV" &&
+        collapsed.vaultChip?.initials?.display !== "none" &&
+        collapsed.vaultChip?.name?.display === "none",
+      `initials ${JSON.stringify(collapsed.vaultChip?.initials)} name ${JSON.stringify(collapsed.vaultChip?.name)}`,
+    );
+    check(
+      "the thin chip keeps its accent fill and rounded corners",
+      isHighlighted(collapsed.vaultChip?.background) &&
+        collapsed.vaultChip?.background !== collapsed.rail?.background &&
+        collapsed.vaultChip?.radius !== "0px",
+      `background ${collapsed.vaultChip?.background} on rail ${collapsed.rail?.background}, radius ${collapsed.vaultChip?.radius}`,
+    );
+    check(
+      "the chip is the last control in the thin rail",
+      collapsed.vaultChip?.isLastControl === true,
+      "a visible control follows the vault chip in the thin rail",
     );
     check(
       "the sheet starts at the thin rail, not the window's edge",
@@ -1467,24 +1673,10 @@ async function main() {
       `sheet left ${collapsed.main?.left}px vs collapsed track ${collapsedTrack}px`,
     );
     check(
-      "the rail's toggle never overlaps the vault chip",
-      Boolean(collapsed.railToggle && collapsed.vault) &&
-        collapsed.railToggle.box.right <= collapsed.vault.box.left,
-      `toggle ends at ${collapsed.railToggle?.box.right}px, chip starts at ${collapsed.vault?.box.left}px`,
-    );
-    check(
       "the collapse gives back only the rail's own difference",
       Boolean(expanded.main && collapsed.main) &&
         expanded.main.left - collapsed.main.left === track - collapsedTrack,
       `reclaimed ${(expanded.main?.left ?? 0) - (collapsed.main?.left ?? 0)}px, rail difference ${track - collapsedTrack}px`,
-    );
-    check(
-      "the chip keeps its box and its name while the rail narrows",
-      Boolean(collapsed.vault && expanded.vault) &&
-        collapsed.vault.box.width === expanded.vault.box.width &&
-        collapsed.vault.box.height === expanded.vault.box.height &&
-        collapsed.vault.text === vaultName,
-      `expanded ${JSON.stringify(expanded.vault?.box)} vs collapsed ${JSON.stringify(collapsed.vault?.box)}, name "${collapsed.vault?.text}"`,
     );
     check(
       "the collapse leaves the sheet flush to the dock",
@@ -1504,13 +1696,56 @@ async function main() {
       `chat ${JSON.stringify(collapsed.chat?.box)} vs ${JSON.stringify(expanded.chat?.box)}`,
     );
 
-    // The thin rail is icon-only: the labelled wing switcher, the chats section,
-    // the divider above it and the row labels all leave. The ROWS themselves
-    // stay — an icon column with no pages in it is the rail leaving in disguise.
+    // The thin rail keeps its first level of navigation: the five-wing switcher
+    // turns vertical in the icon column rather than disappearing. The labelled
+    // chats section and the row labels still leave, and the page rows stay.
     check(
-      "the thin rail hides the wing switcher's band",
-      collapsed.wingsBand === null || collapsed.wingsBand.display === "none",
+      "the thin rail keeps the wing switcher's band",
+      collapsed.wingsBand !== null && collapsed.wingsBand.display !== "none",
       `band display ${JSON.stringify(collapsed.wingsBand?.display)}`,
+    );
+    check(
+      "the thin wing switcher is vertical",
+      collapsed.wingSwitcher?.flexDirection === "column",
+      `wings flex-direction ${JSON.stringify(collapsed.wingSwitcher?.flexDirection)}`,
+    );
+    check(
+      "the thin rail stacks all five wings in one column",
+      Boolean(collapsed.wingSwitcher && collapsed.rail) &&
+        collapsed.wingSwitcher.optionCount === 5 &&
+        JSON.stringify(collapsed.wingSwitcher.labels) ===
+          JSON.stringify(["Home", "Define", "Plan", "Act", "Review"]) &&
+        collapsed.wingSwitcher.options.length === 5 &&
+        collapsed.wingSwitcher.options.every(
+          (option) =>
+            option.box.width > 0 &&
+            option.box.height > 0 &&
+            option.box.left >= collapsed.rail.box.left &&
+            option.box.right <= collapsed.rail.box.right &&
+            Math.abs(
+              option.box.left - collapsed.wingSwitcher.options[0].box.left,
+            ) <= 1 &&
+            Math.abs(
+              option.box.right - collapsed.wingSwitcher.options[0].box.right,
+            ) <= 1,
+        ) &&
+        collapsed.wingSwitcher.options.every(
+          (option, index, all) => index === 0 || option.box.top >= all[index - 1].box.bottom,
+        ),
+      `direction ${JSON.stringify(collapsed.wingSwitcher?.flexDirection)}, options ${JSON.stringify(collapsed.wingSwitcher?.options)}`,
+    );
+    check(
+      "the thin wing switcher keeps Home marked as the active wing",
+      collapsed.wingSwitcher?.active === "Home" &&
+        collapsed.wingSwitcher.options.filter((option) => option.active).length === 1,
+      `active ${JSON.stringify(collapsed.wingSwitcher?.active)}, active options ${JSON.stringify(collapsed.wingSwitcher?.options.filter((option) => option.active).map((option) => option.label))}`,
+    );
+    check(
+      "the thin rail's pages sit under the wing switcher",
+      Boolean(collapsed.wingsBand && collapsed.firstLink) &&
+        collapsed.wingsBand.box.top >= (collapsed.header?.box.bottom ?? 0) - 1 &&
+        collapsed.firstLink.top >= collapsed.wingsBand.box.bottom - 1,
+      `band ${JSON.stringify(collapsed.wingsBand?.box)}, first row ${JSON.stringify(collapsed.firstLink)}, header bottom ${collapsed.header?.box.bottom}`,
     );
     check(
       "the thin rail hides the chats section and the divider above it",
@@ -1576,9 +1811,10 @@ async function main() {
       `sheet left ${restored.main?.left}px vs ${expanded.main?.left}px`,
     );
     check(
-      "reopen restores the titlebar offset",
-      restored.vault?.box.left === expanded.vault?.box.left,
-      `vault chip left ${restored.vault?.box.left}px vs ${expanded.vault?.box.left}px`,
+      "reopen restores the chip's box in the rail foot",
+      JSON.stringify(restored.vaultChip?.box) ===
+        JSON.stringify(expanded.vaultChip?.box),
+      `restored chip ${JSON.stringify(restored.vaultChip?.box)} vs ${JSON.stringify(expanded.vaultChip?.box)}`,
     );
     check(
       "reopen restores the shell's wide arrangement",
@@ -1600,6 +1836,18 @@ async function main() {
         restored.railToggle?.ariaExpanded === "true" &&
         (restored.railToggle?.icon ?? "").includes("lucide-panel-left-close"),
       `label ${JSON.stringify(restored.railToggle?.label)}, aria-expanded ${JSON.stringify(restored.railToggle?.ariaExpanded)}, icon ${JSON.stringify(restored.railToggle?.icon)}`,
+    );
+    check(
+      "reopen restores the foot's single row and the chip's full name",
+      restored.foot?.flexDirection === "row" &&
+        restored.vaultChip?.name?.display !== "none" &&
+        restored.vaultChip?.initials?.display === "none",
+      `foot direction ${JSON.stringify(restored.foot?.flexDirection)}, name ${JSON.stringify(restored.vaultChip?.name)}, initials ${JSON.stringify(restored.vaultChip?.initials)}`,
+    );
+    check(
+      "reopen restores the horizontal wing switcher",
+      restored.wingSwitcher?.flexDirection === "row",
+      `wings flex-direction ${JSON.stringify(restored.wingSwitcher?.flexDirection)}`,
     );
 
     // 8 — the ladder is a *night* ladder. Day keeps its own order, where the mat
@@ -1987,7 +2235,7 @@ async function main() {
   const railToggleLeft = (state) =>
     state.railToggle?.box ? String(state.railToggle.box.left) : "—";
   const table = [
-    ["state", "rail L/T/B", "rail size", "band ctrls", "toggle L", "chip L", "sheet L", "corner"],
+    ["state", "rail L/T/B", "rail size", "band ctrls", "toggle L", "foot dir", "chip L/W", "sheet L", "corner"],
   ];
   for (let i = 0; i < rows.length; i += 1) {
     const state = rows[i];
@@ -1997,7 +2245,10 @@ async function main() {
       state.rail ? `${state.rail.box.width}x${state.rail.box.height}` : "—",
       state.header ? String(state.header.controls.length) : "—",
       railToggleLeft(state),
-      String(state.vault?.box.left ?? "—"),
+      String(state.foot?.flexDirection ?? "—"),
+      state.vaultChip
+        ? `${state.vaultChip.box.left}x${state.vaultChip.box.width}`
+        : "—",
       String(state.main?.left ?? "—"),
       state.corner ? (state.corner.insideRail ? "rail" : "titlebar") : "—",
     ]);

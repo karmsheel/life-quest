@@ -6,18 +6,18 @@ import { Button } from "@/components/ui/Button";
 import { useVault } from "@/state/VaultProvider";
 
 /**
- * The window that answers "which vault am I in?". The titlebar's vault chip
- * raises it; every known vault is one click away.
+ * The window that answers "which vault am I in?". The rail's vault chip raises
+ * it; every known vault is one click away.
  *
  * The chip used to be a link to /home, so the one control naming the workspace
  * did nothing an operator could see — the app's own answer to "am I in the right
  * vault?" was a no-op. Switching vaults is the thing the chip should do, and the
  * recents the provider already keeps are the list it should offer.
  *
- * Drawn in a portal on `document.body`, like the update dialog. The titlebar is
- * a fixed-height strip with `overflow: hidden` and is the window's drag region
- * besides: a popup left inside it would be clipped by the strip and its clicks
- * swallowed by the drag band.
+ * Drawn in a portal on `document.body`, like the update dialog. The rail is a
+ * fixed-width column with `overflow: hidden`: a popup left inside it would be
+ * clipped by the column, and the chip's own window is the only surface that may
+ * own the whole screen while a folder is chosen.
  *
  * Dismissal is refused while a switch is in flight. The open is one atomic act —
  * ask the picker, open the folder — and a dialog that vanished in the middle of

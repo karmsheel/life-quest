@@ -105,7 +105,11 @@ const SAMPLE = `(() => {
   const versionBadge = document.querySelector(".update-badge");
   const shell = document.querySelector(".shell");
   const titlebar = document.querySelector(".window-titlebar");
-  const vault = document.querySelector(".window-titlebar__vault");
+  // The vault chip lives in the rail's foot now, one half of the footer row
+  // beside Log. Its name is read from the chip's own name span, not the button's
+  // text: the collapsed initials are in the DOM in both states, so the button's
+  // textContent would join the two words together.
+  const vault = document.querySelector(".nav-rail__vault");
   const trailing = document.querySelector(".window-titlebar__trailing");
   const sideSwitch = document.querySelector(".window-titlebar__side-switch");
   const chatToggle = document.querySelector(".window-titlebar__chat-toggle");
@@ -150,7 +154,7 @@ const SAMPLE = `(() => {
       dataTheme: document.documentElement.getAttribute("data-theme"),
       skin: document.documentElement.getAttribute("data-skin")
     },
-    vaultText: (vault?.textContent || "").trim(),
+    vaultText: (vault?.querySelector(".nav-rail__vault-name")?.textContent || "").trim(),
     accentBackground,
     paperBackground,
     shell: shell
@@ -343,7 +347,7 @@ function checkArrangement(label, state, side) {
   check(`${label}: the sheet exists`, Boolean(main), "no .shell__main in the shell");
   check(`${label}: the dock exists`, Boolean(chat), "no .chat-panel in the shell");
   check(
-    `${label}: the titlebar chip wears the vault's name`,
+    `${label}: the rail's vault chip wears the vault's name`,
     state.vaultText === state.vaultName,
     `chip "${state.vaultText}" vs vault "${state.vaultName}"`,
   );
