@@ -208,7 +208,37 @@ const SAMPLE = `(() => {
                 }))
               }
             : null,
-          listOptions: window.__lqListOptions ?? []
+          listOptions: window.__lqListOptions ?? [],
+          // The scroll port the rows (and their menus) live in: its box, where
+          // it is scrolled to, and whether the rows are longer than it. A menu
+          // claim is about this port, so the driver reads it rather than
+          // assuming the list is long enough to clip anything.
+          list: (() => {
+            const el = rail.querySelector(".chats-rail__list");
+            if (!el) return null;
+            return {
+              box: box(el),
+              scrollTop: Math.round(el.scrollTop),
+              scrollHeight: Math.round(el.scrollHeight),
+              clientHeight: Math.round(el.clientHeight)
+            };
+          })(),
+          // The one open row menu, with the row it hangs off and the side it was
+          // measured onto (the sidebar writes data-menu-placement).
+          menu: (() => {
+            const el = document.querySelector(
+              ".chats-rail__row[data-menu-open] .chats-rail__menu"
+            );
+            if (!el) return null;
+            const row = el.closest(".chats-rail__row");
+            return {
+              box: box(el),
+              placement: el.getAttribute("data-menu-placement"),
+              items: el.querySelectorAll("button").length,
+              rowLabel: text(row && row.querySelector(".chats-rail__label")),
+              rowBox: box(row)
+            };
+          })()
         }
       : null,
     rows,
@@ -379,6 +409,45 @@ async function main() {
     `Array.from(document.querySelectorAll(".chats-rail__rows .chats-rail__row")).find(
       (li) => (li.querySelector(".chats-rail__label")?.textContent || "").trim() === ${JSON.stringify(label)}
     )`;
+
+  /**
+   * Open the menu of the row at `index` in the rendered list, in document order.
+   * The history rig walks rows by position (the foot of a long list) rather than
+   * by label, and seeded chats share a label shape.
+   */
+  const openSidebarMenuAt = (index) =>
+    run(`(async () => {
+      const row = Array.from(document.querySelectorAll(".chats-rail__rows .chats-rail__row"))[${index}];
+      const button = row?.querySelector(".chats-rail__menu-btn");
+      if (!button) return false;
+      button.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** Scroll the chats list to its top or its foot, and answer where it landed. */
+  const scrollRailList = (where) =>
+    run(`(async () => {
+      const list = document.querySelector(".chats-rail__list");
+      if (!list) return null;
+      list.scrollTop = ${where === "top" ? "0" : "list.scrollHeight"};
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return Math.round(list.scrollTop);
+    })()`);
+
+  /**
+   * Grow the profile's chat table by `count` rows and have the shipping store
+   * re-read it: the sidebar's list only clips a menu once the history is longer
+   * than its scroll port, which the fixture's five chats are not.
+   */
+  const seedRailHistory = (count) =>
+    run(`(async () => {
+      if (!window.__lqSeedChats || !window.__lqChat) return -1;
+      const total = window.__lqSeedChats(${count});
+      await window.__lqChat.loadSessions();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return total;
+    })()`);
 
   /** The row's centre in window content coordinates, from a live layout read. */
   const rowCenter = (label) =>
@@ -652,14 +721,56 @@ async function main() {
 
   let report;
   const screenshots = [];
+  /**
+   * Where the run had got to, in order, for the report a watchdog has to write
+   * when it kills a driver that never reaches the end: a timeout with no artifact
+   * tells the next person nothing about which step hung.
+   */
+  const startedAt = Date.now();
+  const marks = [];
+  const mark = (label) => {
+    marks.push({ ms: Date.now() - startedAt, label });
+  };
   const timeout = setTimeout(() => {
-    console.error("chat-tabs: timed out after 90s");
+    fs.writeFileSync(
+      path.join(artifactsDir, "chat-tabs.json"),
+      `${JSON.stringify(
+        {
+          url,
+          ranAt: new Date().toISOString(),
+          window: DEFAULT_SIZE,
+          screenshots,
+          states: {},
+          marks,
+          failures: [...failures, "timed out after 90s"],
+          pass: false,
+        },
+        null,
+        2,
+      )}\n`,
+    );
     app.exit(1);
   }, 90_000);
 
+  // A page that never finishes loading must say so rather than sit until the
+  // watchdog: the renderer's own events are the only account of why it did not.
+  win.webContents.on("did-finish-load", () => mark("did-finish-load"));
+  win.webContents.on("did-fail-load", (_event, code, description, failedUrl) =>
+    mark(`did-fail-load ${code} ${description} ${failedUrl}`),
+  );
+  win.webContents.on("render-process-gone", (_event, details) =>
+    mark(`render-process-gone ${details.reason}`),
+  );
+  win.webContents.on("console-message", (_event, level, message) => {
+    if (level >= 3) mark(`console ${level}: ${String(message).slice(0, 240)}`);
+  });
+
   try {
+    mark("load:start");
     await win.loadURL(url);
+    mark("load:done");
     await run("window.chatTabsHarnessReady.then(() => true)");
+    mark("harness:ready");
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
     await new Promise((resolve) => setTimeout(resolve, 250));
     // The window is shown so a REAL pointer can drive `:hover`; slide it so the
@@ -676,6 +787,7 @@ async function main() {
 
     // 1 — the sidebar lists every live chat in one flat list, pinned first, and
     // the dock lands on a thread with one tab (so the strip is not noise).
+    mark("landing");
     const landing = await settle(300);
     check("the left sidebar lists the chats", landing.rowCount === 5, `${landing.rowCount} rows`);
     check(
@@ -1608,12 +1720,106 @@ async function main() {
       JSON.stringify(narrowTabs.tabs.map((tab) => tab.label)),
     );
     screenshots.push(await shot("narrow-tabs"));
+    mark("narrow-tabs");
 
+    // 20 — the row menu opens into the room that exists. A long history is
+    // scrolled to its foot and the three-dot pressed on the last chat: the list
+    // is a scroll port, so a menu hung downward there was half outside the port,
+    // and the operator had to scroll to reach it. The menu must open above the
+    // row, wholly inside the list, without moving the list; and a row that has
+    // the room under it must still open downward.
+    mark("seeding");
+    const seeded = await seedRailHistory(20);
+    mark("seeded");
+    await settle(420);
+    const longList = await sample();
+    check(
+      "the seeded history overflows the chats list",
+      seeded > 0 &&
+        Boolean(longList.rail?.list) &&
+        (longList.rail?.list?.scrollHeight ?? 0) >
+          (longList.rail?.list?.clientHeight ?? 0) + 40,
+      JSON.stringify({ seeded, list: longList.rail?.list, rows: longList.rowCount }),
+    );
+    // Scroll to the foot, the way the operator reaches the last chat.
+    const footTop = await scrollRailList("bottom");
+    const atFoot = await sample();
+    const footMax =
+      (atFoot.rail?.list?.scrollHeight ?? 0) - (atFoot.rail?.list?.clientHeight ?? 0);
+    check(
+      "the chats list is scrolled to its last row",
+      typeof footTop === "number" &&
+        footTop > 0 &&
+        Math.abs(footTop - footMax) <= 1 &&
+        Math.abs((atFoot.rail?.list?.scrollTop ?? 0) - footMax) <= 1,
+      JSON.stringify({ footTop, footMax, list: atFoot.rail?.list }),
+    );
+    mark("scrolled");
+    const lastIndex = atFoot.rowCount - 1;
+    const lastLabel = atFoot.rows[lastIndex]?.label ?? null;
+    const lastRowBox = atFoot.rows[lastIndex]?.box ?? null;
+    check(
+      "the last row sits at the foot of the list",
+      Boolean(lastRowBox && atFoot.rail?.list?.box) &&
+        lastRowBox.bottom <= (atFoot.rail?.list?.box.bottom ?? 0) + 1 &&
+        lastRowBox.bottom >= (atFoot.rail?.list?.box.bottom ?? 0) - 48,
+      JSON.stringify({ lastLabel, lastRowBox, list: atFoot.rail?.list?.box }),
+    );
+    check("opened the last row's menu", await openSidebarMenuAt(lastIndex), "no menu control");
+    const flipped = await settle();
+    check(
+      "the last row's menu opens upward, into the room above it",
+      flipped.rail?.menu?.placement === "above" &&
+        flipped.rail.menu.rowLabel === lastLabel &&
+        flipped.rail.menu.items === 5 &&
+        flipped.rail.menu.box.bottom <= flipped.rail.menu.rowBox.top + 1,
+      JSON.stringify({ menu: flipped.rail?.menu, lastLabel }),
+    );
+    check(
+      "the flipped menu is wholly inside the list, so no scroll is needed",
+      Boolean(flipped.rail?.menu && flipped.rail?.list?.box) &&
+        flipped.rail.menu.box.top >= (flipped.rail.list.box.top ?? 0) - 1 &&
+        flipped.rail.menu.box.bottom <= (flipped.rail.list.box.bottom ?? 0) + 1 &&
+        flipped.rail.menu.box.height > 60,
+      JSON.stringify({ menu: flipped.rail?.menu?.box, list: flipped.rail?.list?.box }),
+    );
+    check(
+      "opening the flipped menu did not scroll the list",
+      Math.abs((flipped.rail?.list?.scrollTop ?? -1) - footTop) <= 1,
+      JSON.stringify({ before: footTop, after: flipped.rail?.list?.scrollTop }),
+    );
+    mark("flipped");
+    screenshots.push(await shot("menu-flipped"));
+    check("closed the flipped menu", await openSidebarMenuAt(lastIndex), "no menu control");
+    await settle();
+
+    // The other half of the rule: roomy rows still open their menu downward.
+    const topTop = await scrollRailList("top");
+    const atTop = await sample();
+    check(
+      "the chats list is back at its top",
+      topTop === 0 && (atTop.rail?.list?.scrollTop ?? -1) === 0,
+      JSON.stringify({ topTop, list: atTop.rail?.list }),
+    );
+    check("opened the first row's menu", await openSidebarMenuAt(0), "no menu control");
+    const downward = await settle();
+    check(
+      "a row with the room under it still opens its menu downward",
+      downward.rail?.menu?.placement === "below" &&
+        downward.rail.menu.items === 5 &&
+        downward.rail.menu.box.top >= downward.rail.menu.rowBox.bottom - 1 &&
+        downward.rail.menu.box.top >= (downward.rail.list?.box.top ?? 0) - 1 &&
+        downward.rail.menu.box.bottom <= (downward.rail.list?.box.bottom ?? 0) + 1,
+      JSON.stringify({ menu: downward.rail?.menu, list: downward.rail?.list?.box }),
+    );
+
+    mark("done");
     report = {
       url,
       ranAt: new Date().toISOString(),
       window: DEFAULT_SIZE,
       screenshots,
+      marks,
       states: {
         landing,
         hovered,
@@ -1664,6 +1870,10 @@ async function main() {
         newChatActive,
         equalTabs,
         narrowTabs,
+        longList,
+        atFoot,
+        menuFlipped: flipped,
+        menuDownward: downward,
       },
       failures,
       pass: failures.length === 0,
@@ -1719,6 +1929,33 @@ async function main() {
         state.narrowTabs.heading,
         "",
         `widths ${JSON.stringify(state.narrowTabs.tabs.map((tab) => tab.box?.width ?? null))}`,
+      ],
+      [
+        "long history",
+        state.longList.rowCount,
+        state.longList.tabCount,
+        "",
+        state.longList.heading,
+        "",
+        `list ${JSON.stringify(state.longList.rail?.list)}`,
+      ],
+      [
+        "menu at foot",
+        state.menuFlipped.rowCount,
+        state.menuFlipped.tabCount,
+        "",
+        state.menuFlipped.heading,
+        "",
+        `placement ${state.menuFlipped.rail?.menu?.placement} ${JSON.stringify(state.menuFlipped.rail?.menu?.box)}`,
+      ],
+      [
+        "menu at top",
+        state.menuDownward.rowCount,
+        state.menuDownward.tabCount,
+        "",
+        state.menuDownward.heading,
+        "",
+        `placement ${state.menuDownward.rail?.menu?.placement}`,
       ],
     ];
     console.log(table.map((row) => row.join(" | ")).join("\n"));
