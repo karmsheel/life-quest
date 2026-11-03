@@ -7012,6 +7012,27 @@ a.home-mini-list__link:hover {
   list-style: none;
 }
 
+/**
+ * The always-present way out of the saved questions and into the page that
+ * writes them. It sits under the list rather than in the header so the last
+ * thing above it is the question the operator may want to change; the padding
+ * gives it a hit target taller than the icon it carries.
+ */
+.chat-panel__starters-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.45rem;
+  padding: 0.2rem 0;
+  border-radius: 0.25rem;
+  line-height: 1.2;
+}
+
+.chat-panel__starters-edit:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
 .chat-panel__starter {
   display: flex;
   flex-wrap: wrap;
@@ -10112,6 +10133,22 @@ button.chat-panel__activity-line:hover {
   border-radius: var(--radius-sm);
   background: var(--card);
   box-shadow: var(--shadow-sm);
+  /* Only bites when the measurement below had to clamp the menu to the room a
+     very short list leaves: the menu then scrolls itself rather than painting
+     past the list's edge. */
+  overflow-y: auto;
+}
+
+/* The row menu opens into the space that exists, not always below: a row at the
+   foot of the scrolled list has the list's clip edge under it and the whole
+   history over it, so its menu is measured on open and flips over the row
+   (`data-menu-placement="above"`, written by `ChatsSidebar`). Without this a
+   three-dot press on the last chat left half the menu outside the scroll port,
+   and the operator had to scroll to reach it. The view menu never wears the
+   attribute: it opens from the header, which is never at the foot. */
+.chats-rail__menu[data-menu-placement="above"] {
+  top: auto;
+  bottom: 100%;
 }
 
 /* The view menu is wider than a row menu: it names the option it is on and
