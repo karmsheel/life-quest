@@ -586,6 +586,10 @@ function Harness() {
   );
 }
 
+// The dock remembers its tab strip between runs; an earlier rig's strip would
+// open tabs this one never made.
+window.localStorage.removeItem("lifequest.companion.openTabs");
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <MemoryRouter initialEntries={["/decisions"]}>
