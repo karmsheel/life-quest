@@ -10,9 +10,10 @@ See also [Wiki home](./index.md).
 
 ## Where it lives
 
-- The **chat dock** is the right-hand pane of the three-pane studio; the titlebar
-  can swap it to the left. It is present on every page, collapses to a launcher
-  button, and its width is dragged with the divider between it and the page.
+- The **chat dock** is the right-hand pane of the three-pane studio; the two-panes
+  control in its bottom action bar swaps it to the left. It is present on every
+  page, collapses to a launcher button, and its width is dragged with the divider
+  between it and the page.
 - The **Chats** list is the middle of the rail, under the wing's pages and above
   the governed shelf. It lists every conversation on the companion profile.
 - **Settings → Hermes** is the connection and health page: status, profile
@@ -83,7 +84,7 @@ not send an API key to the renderer.
    and every tab comes back in the same order, with the chat that was in front
    still in front. A remembered chat that has been archived or deleted in Hermes
    Desktop in the meantime loses its tab, and if every tab was closed before
-   quitting the dock opens on the Chats list rather than reopening one.
+   quitting the dock opens on a blank thread rather than reopening one.
 4. Hover a chat for its own controls: the row menu has **Open in new tab**,
    **Pin** / **Unpin**, **Rename**, **Archive**, and **Delete**. Pinned chats sit
    in their own **Pinned** group above **Recent**. A chat streaming a turn shows a
@@ -91,13 +92,14 @@ not send an API key to the renderer.
    Archiving the chat that is in front closes its tab and brings the tab that
    takes its place to the front — or the one before it, when it was last. If it
    was the last open chat, the dock stays on the thread and opens a blank
-   **New chat** instead of falling back to the Chats list. Archiving a chat that
-   is not in front leaves the open thread exactly where it was.
+   **New chat**, so an archive never throws you out of the dock. Archiving a chat
+   that is not in front leaves the open thread exactly where it was.
 5. **Delete** asks first: "Delete "<name>"? Its messages leave Hermes everywhere,
    and this cannot be undone." Renaming, pinning and archiving are durable Hermes
    flags, so Hermes Desktop and other channels see them too.
-6. Choose **Collapse chat** at the foot of the dock to put it away, and the same
-   control in the titlebar to move it to the other side of the page.
+6. Choose **Collapse chat** at the foot of the dock to put it away, or the
+   two-panes control beside it (*Move chat to the left of the page* / *Move chat
+   to the right of the page*) to move it to the other side of the page.
 
 ### Talk to it
 
@@ -140,12 +142,12 @@ path. Attaching a receipt to a vault without the Finance kit is refused with
 
 | Part | What it does |
 |---|---|
-| Chats list (rail) | **New chat**; rows for **Pinned** and **Recent**; per-row **Chat actions** menu; a running dot; a **Dismiss** for a failed list read. |
-| Dock header | The active chat's name and **Pin chat** / **Rename chat** / **Archive chat**; **All chats** steps back to the list. |
+| Chats list (rail) | **New chat**; rows for **Pinned** and **Recent**; per-row **Chat actions** menu; a running dot; a **Dismiss** for a failed list read. The rail is the window's only chat history. |
+| Dock header | The active chat's name and **Pin chat** / **Rename chat** / **Archive chat**. |
 | Tab strip | One tab per open chat, each closable, with a live dot while it streams and an amber dot while it waits on an approval. |
 | Transcript | Bubbles with **You** / **Hermes** labels, times, copy controls; the tool activity line; approval and error panels. |
 | Composer | The field, send/stop, the page pill, the card pill, the receipt controls, the model and thinking pills. |
-| Dock actions | **Chat history**, **New chat**, **Life-Chain**, **Collapse chat**. |
+| Dock actions | **New chat**, **Life-Chain**, the two-panes side switch, **Collapse chat**, and the version badge (*Check for updates*). |
 
 ## Rules and behaviour
 

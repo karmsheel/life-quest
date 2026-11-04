@@ -1,11 +1,16 @@
 /**
- * The chat-panel harness page (`e2e/chat-panel.{html,tsx}`) and the three rigs
+ * The chat-panel harness page (`e2e/chat-panel.{html,tsx}`) and the four rigs
  * that drive it: composer sizing (`composer-autogrow.electron.mjs`), the
- * composer's runtime row (`composer-model-pills.electron.mjs`) and how tool
- * activity is shown (`tool-run.electron.mjs`). They are wrapped together
- * because they share one page, one dev-server probe and one shape of report
- * read back; each rig is still its own Electron process writing its own
- * artifact, so a failure names the concern it belongs to.
+ * composer's runtime row (`composer-model-pills.electron.mjs`), how tool
+ * activity is shown (`tool-run.electron.mjs`) and the receipt the composer
+ * attaches (`receipt-attach.electron.mjs`). They are wrapped together because
+ * they share one page, one dev-server probe and one shape of report read back;
+ * each rig is still its own Electron process writing its own artifact, so a
+ * failure names the concern it belongs to.
+ *
+ * The page mounts the real sidebar beside the dock, because the dock's history
+ * picker is gone: a rig that switches chats clicks the sidebar's row, which is
+ * the gesture the app ships.
  */
 
 import assert from "node:assert/strict";

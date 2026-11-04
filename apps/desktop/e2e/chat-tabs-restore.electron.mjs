@@ -90,7 +90,9 @@ const SAMPLE = `(() => {
     tabs,
     tabCount: tabs.length,
     thread: Boolean(document.querySelector(".chat-panel__header--thread")),
-    list: Boolean(document.querySelector(".chat-panel__list")),
+    // The blank "Ask Hermes" slate the thread shows when there is no chat in
+    // front: a closed strip lands there, never on a history page.
+    emptySlate: text(document.querySelector(".chat-panel__empty-title")),
     railLabels: Array.from(document.querySelectorAll(".chats-rail__label"))
       .map(text)
       .filter(Boolean),
@@ -436,7 +438,8 @@ async function main() {
       // Put the working set away the way an operator does: archiving the front
       // chat closes its tab and hands the front to the one beside it, staying on
       // the thread; archiving the last open chat opens a blank New chat. Neither
-      // lands on the history list — that fallback is the reported fault.
+      // leaves the thread: the dock shows the blank slate, never a history page
+      // to pick another chat from — that fallback is the reported fault.
       mark("verify:archive-front-tab");
       check("archive the front chat from the sidebar", await archiveFromSidebar("Bravo budget"));
       const oneLeft = await settle(360);
@@ -453,10 +456,8 @@ async function main() {
         JSON.stringify(oneLeft.railLabels),
       );
       check(
-        "archiving the front chat stays on the thread, not the list",
-        oneLeft.surface === "thread" &&
-          oneLeft.list === false &&
-          oneLeft.heading === "Alpha planning",
+        "archiving the front chat stays on the thread",
+        oneLeft.surface === "thread" && oneLeft.heading === "Alpha planning",
         `${oneLeft.surface} / ${oneLeft.heading}`,
       );
 
@@ -465,9 +466,8 @@ async function main() {
       const blankChat = await settle(420);
       states.blankChat = blankChat;
       check(
-        "archiving the last open chat leaves a blank New chat, not the list",
+        "archiving the last open chat leaves a blank New chat on the thread",
         blankChat.surface === "thread" &&
-          blankChat.list === false &&
           blankChat.tabCount === 0 &&
           blankChat.heading === "New chat",
         JSON.stringify({
@@ -486,22 +486,23 @@ async function main() {
       await shot("blank-chat");
 
       // The other memory: a deliberately emptied strip. Deleting the last chat
-      // (the blank one just opened) closes its tab and lands on the list, and a
-      // restart must not undo that decision.
+      // (the blank one just opened) closes its tab and lands on the thread's
+      // blank slate, and a restart must not undo that decision.
       mark("verify:delete-last-tab");
       check("delete the blank chat from the sidebar", await deleteFromSidebar("New chat"));
       const closed = await settle(360);
       states.closed = closed;
       check(
-        "deleting the last open chat lands on the list",
+        "deleting the last open chat lands on the thread's blank slate",
         closed.tabCount === 0 &&
-          closed.surface === "list" &&
-          closed.list &&
-          closed.heading === "Chats",
+          closed.surface === "thread" &&
+          closed.emptySlate === "Ask Hermes" &&
+          closed.heading === "Chat",
         JSON.stringify({
           tabs: closed.tabCount,
           surface: closed.surface,
           heading: closed.heading,
+          slate: closed.emptySlate,
         }),
       );
       const emptied = readStored(closed);
@@ -512,21 +513,22 @@ async function main() {
       );
 
       // The last boot: same profile, full fixture again. A closed strip must stay
-      // closed — the landing is the list, not a chat reopened behind the
-      // operator's back.
+      // closed — the landing is the thread's blank slate, not a chat reopened
+      // behind the operator's back and not a history page.
       mark("verify:closed-relaunch");
       const relaunch = await boot(url("keep=1"));
       states.relaunch = relaunch;
       check(
         "a closed strip stays closed across a restart",
         relaunch.tabCount === 0 &&
-          relaunch.surface === "list" &&
-          relaunch.list &&
-          relaunch.heading === "Chats",
+          relaunch.surface === "thread" &&
+          relaunch.emptySlate === "Ask Hermes" &&
+          relaunch.heading === "Chat",
         JSON.stringify({
           tabs: relaunch.tabCount,
           surface: relaunch.surface,
           heading: relaunch.heading,
+          slate: relaunch.emptySlate,
         }),
       );
       check(

@@ -258,7 +258,10 @@ const SAMPLE = `(() => {
       document.querySelector(".chat-panel__heading--thread") ??
         document.querySelector(".chat-panel__heading")
     ),
-    list: Boolean(document.querySelector(".chat-panel__list")),
+    // Which surface the dock is on, read off the shipped attribute. There is no
+    // history list among them: the dock shows a thread, the chain or the
+    // shortcuts reference, and the chats themselves live in the sidebar.
+    surface: panel ? panel.getAttribute("data-chat-surface") : null,
     thread: Boolean(threadHeader),
     panel: box(panel),
     composer: composer
@@ -415,8 +418,8 @@ async function main() {
 
   /**
    * Open the menu of the row at `index` in the rendered list, in document order.
-   * The history rig walks rows by position (the foot of a long list) rather than
-   * by label, and seeded chats share a label shape.
+   * The row-menu checks walk rows by position (the foot of a long list) rather
+   * than by label, and seeded chats share a label shape.
    */
   const openSidebarMenuAt = (index) =>
     run(`(async () => {
@@ -858,8 +861,10 @@ async function main() {
     );
     check(
       "the dock lands on the newest chat",
-      landing.heading === "Alpha planning" && landing.thread && !landing.list,
-      `heading "${landing.heading}", list ${landing.list}`,
+      landing.heading === "Alpha planning" &&
+        landing.thread &&
+        landing.surface === "thread",
+      `heading "${landing.heading}", surface ${landing.surface}`,
     );
     check("one open chat draws no tab strip", landing.tabCount === 0, `${landing.tabCount} tabs`);
     check(
@@ -1865,8 +1870,8 @@ async function main() {
     const activeArchived = await settle();
     check(
       "archiving the chat in front keeps the thread up",
-      activeArchived.list === false && activeArchived.thread === true,
-      JSON.stringify({ list: activeArchived.list, heading: activeArchived.heading }),
+      activeArchived.surface === "thread" && activeArchived.thread === true,
+      JSON.stringify({ surface: activeArchived.surface, heading: activeArchived.heading }),
     );
     check(
       "the next tab takes the archived tab's place",
@@ -1896,7 +1901,7 @@ async function main() {
       "the previous tab takes the front when the last one is archived",
       previousTabArchived.tabCount === 0 &&
         previousTabArchived.heading === "Bravo budget" &&
-        previousTabArchived.list === false,
+        previousTabArchived.surface === "thread",
       JSON.stringify({
         tabs: previousTabArchived.tabs,
         heading: previousTabArchived.heading,
@@ -1913,8 +1918,8 @@ async function main() {
     );
     const lastArchived = await settle(420);
     check(
-      "archiving the last open chat leaves a blank New chat, not the list",
-      lastArchived.list === false &&
+      "archiving the last open chat leaves a blank New chat on the thread",
+      lastArchived.surface === "thread" &&
         lastArchived.thread === true &&
         lastArchived.tabCount === 0 &&
         lastArchived.heading === "New chat" &&
@@ -1923,7 +1928,7 @@ async function main() {
         lastArchived.rows.some((row) => row.label === "New chat") &&
         lastArchived.createCalls.length === createsBeforeLastArchive + 1,
       JSON.stringify({
-        list: lastArchived.list,
+        surface: lastArchived.surface,
         tabs: lastArchived.tabs,
         heading: lastArchived.heading,
         messages: lastArchived.messages,
@@ -1959,7 +1964,7 @@ async function main() {
     const blankArchived = await settle(420);
     check(
       "archiving a blank in the archived view opens a live blank, not the archived one",
-      blankArchived.list === false &&
+      blankArchived.surface === "thread" &&
         blankArchived.thread === true &&
         blankArchived.heading === "New chat" &&
         blankArchived.createCalls.length === createsBeforeBlankArchive + 1 &&
@@ -1975,36 +1980,57 @@ async function main() {
     );
     screenshots.push(await shot("archived-blank-not-reused"));
 
-    // 23 — archiving the chat in front while the dock is on the history list
-    // keeps the list up: the operator is picking a chat there, and the archive
-    // must not drag them into the thread.
-    check("opened the history list", await clickDockControl("All chats"), "no All chats control");
-    const listUp = await settle();
+    // 22b — the New chat slot lands on a blank chat that already exists instead
+    // of minting a second one. The live blank above is in front, so the slot's
+    // press changes no state at all — the case a rule hung on state changes
+    // misses entirely — and the bridge must see no create.
+    const createsBeforeReuse = blankArchived.createCalls.length;
+    check("pressed New chat on its own blank chat", await clickNewChat(), "no New chat control");
+    const blankReused = await settle(320);
     check(
-      "the history list is the surface",
-      listUp.list === true && listUp.thread === false,
-      JSON.stringify({ list: listUp.list, heading: listUp.heading }),
+      "the New chat slot reuses the blank chat already open",
+      blankReused.surface === "thread" &&
+        blankReused.heading === "New chat" &&
+        blankReused.tabCount === 0 &&
+        blankReused.createCalls.length === createsBeforeReuse,
+      JSON.stringify({
+        surface: blankReused.surface,
+        heading: blankReused.heading,
+        creates: blankReused.createCalls.length,
+      }),
     );
-    const createsBeforeListArchive = listUp.createCalls.length;
+
+    // 23 — an archive made from the sidebar while the dock is on the chain keeps
+    // the chain up and mints no blank chat: the operator asked to put a chat
+    // away, not to be handed a new one. There is no history page in the dock for
+    // that archive to land on any more — the whole history is the sidebar's.
+    check("switched the dock to the chain", await clickDockControl("Life-Chain"), "no Life-Chain control");
+    const chainUp = await settle();
     check(
-      "archived the chat in front from the list",
+      "the chain is the surface",
+      chainUp.surface === "chain" && chainUp.thread === false,
+      JSON.stringify({ surface: chainUp.surface, heading: chainUp.heading }),
+    );
+    const createsBeforeChainArchive = chainUp.createCalls.length;
+    check(
+      "archived the chat in front from the chain",
       await clickRowControl("New chat", ".chats-rail__archive-btn"),
       "no archive control",
     );
-    const archivedFromList = await settle(420);
+    const archivedFromChain = await settle(420);
     check(
-      "archiving from the list keeps the list up and opens no blank chat",
-      archivedFromList.list === true &&
-        archivedFromList.thread === false &&
-        archivedFromList.tabCount === 0 &&
-        archivedFromList.createCalls.length === createsBeforeListArchive,
+      "archiving from the chain keeps the chain up and opens no blank chat",
+      archivedFromChain.surface === "chain" &&
+        archivedFromChain.thread === false &&
+        archivedFromChain.tabCount === 0 &&
+        archivedFromChain.createCalls.length === createsBeforeChainArchive,
       JSON.stringify({
-        list: archivedFromList.list,
-        heading: archivedFromList.heading,
-        creates: archivedFromList.createCalls.length,
+        surface: archivedFromChain.surface,
+        heading: archivedFromChain.heading,
+        creates: archivedFromChain.createCalls.length,
       }),
     );
-    screenshots.push(await shot("archived-from-list"));
+    screenshots.push(await shot("archived-from-chain"));
 
     // 24 — a rename field belongs to the chat it was opened on. Archiving that
     // chat from the sidebar hands the header to another chat; the field must
@@ -2114,8 +2140,9 @@ async function main() {
         lastArchived,
         archivedViewOpen,
         blankArchived,
-        listUp,
-        archivedFromList,
+        blankReused,
+        chainUp,
+        archivedFromChain,
         renameOpen,
         renameArchived,
       },
@@ -2229,13 +2256,22 @@ async function main() {
         `creates ${state.blankArchived.createCalls.length}`,
       ],
       [
-        "archived from the list",
-        state.archivedFromList.rowCount,
-        state.archivedFromList.tabCount,
+        "blank reused",
+        state.blankReused.rowCount,
+        state.blankReused.tabCount,
         "",
-        state.archivedFromList.heading,
+        state.blankReused.heading,
         "",
-        `list ${state.archivedFromList.list}, creates ${state.archivedFromList.createCalls.length}`,
+        `surface ${state.blankReused.surface}, creates ${state.blankReused.createCalls.length}`,
+      ],
+      [
+        "archived from the chain",
+        state.archivedFromChain.rowCount,
+        state.archivedFromChain.tabCount,
+        "",
+        state.archivedFromChain.heading,
+        "",
+        `surface ${state.archivedFromChain.surface}, creates ${state.archivedFromChain.createCalls.length}`,
       ],
       [
         "archived while renaming",

@@ -1,10 +1,12 @@
 /**
- * The chat-sessions harness page (`e2e/chat-sessions.{html,tsx}`) and the two
- * rigs that drive it: the dock's session list (`chat-sessions.electron.mjs`)
- * and its chain view (`chat-chain.electron.mjs`). They are wrapped together
- * because they share one page, one dev-server probe and one shape of report
- * read back; each rig is still its own Electron process writing its own
- * artifact, so a failure names the concern it belongs to.
+ * The chat-sessions harness page (`e2e/chat-sessions.{html,tsx}`) and the chain
+ * rig that drives it (`e2e/chat-chain.electron.mjs`). The page used to have a
+ * second driver for the dock's chat list; the dock no longer carries that list —
+ * the whole history is the sidebar's — so the chain rig is the page's one
+ * driver now.
+ *
+ * The driver is still its own Electron process writing its own artifact, so a
+ * failure names the concern it belongs to.
  */
 
 import assert from "node:assert/strict";
@@ -25,128 +27,6 @@ const electron = require("electron") as string;
 
 const DEV_PORT = 5173;
 
-const REPORT = path.join(desktopRoot, "e2e/artifacts/chat-sessions.json");
-
-type Box = {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-  width: number;
-  height: number;
-};
-
-type Row = {
-  label: string;
-  when: string;
-  pinned: boolean;
-  active: boolean;
-};
-
-type State = {
-  viewport: { width: number; height: number };
-  panel: Box;
-  heading: string;
-  list: {
-    box: Box;
-    clientHeight: number;
-    scrollHeight: number;
-    overflowY: string;
-  } | null;
-  listMaxHeight: string | null;
-  groups: string[];
-  rowCount: number;
-  rows: Row[];
-  lastRow: Box | null;
-  body: { box: Box; display: string; hidden: boolean } | null;
-  footer: { box: Box; display: string; hidden: boolean } | null;
-  composer: { box: Box; display: string; focused: boolean } | null;
-  /** What holds the caret, so a failure can say where it went. */
-  active: { tag: string; label: string | null; composer: boolean } | null;
-  threadHeader: { box: Box; label: string; actions: string[] } | null;
-  renaming: boolean;
-  renameValue: string | null;
-  rowMenu: string[] | null;
-  rowMenuRowIndex: number | null;
-  rowMenuBtnCount: number;
-  rowMenuBox: Box | null;
-  rowMenuItems: { label: string | null; color: string }[];
-  rowMenuBackground: string | null;
-  rowRename: boolean;
-  rowRenameValue: string | null;
-  lastChatStored: string | null;
-  messages: string[];
-  actionsBar: Box | null;
-  actionsBarBackground: string | null;
-  footerBackground: string | null;
-  headerIconSize: number | null;
-  actions: {
-    label: string | null;
-    pressed: boolean;
-    disabled: boolean;
-    opacity: number;
-    background: string;
-    iconSize: number;
-    icon: string | null;
-  }[];
-  patchCalls: { id: string; patch: Record<string, unknown> }[];
-  createCalls: string[];
-  deleteCalls: string[];
-  confirmDialog: {
-    title: string;
-    message: string;
-    confirmLabel: string | null;
-    cancelLabel: string | null;
-    box: Box | null;
-    backdrop: Box | null;
-    /** The scrim's computed fill: a scrim that paints nothing is not a scrim. */
-    backdropBackground: string;
-    /** Card centre minus the window's centre: the contract is that it is ~0. */
-    offsetFromWindowX: number;
-    offsetFromWindowY: number;
-    /** Card centre minus the dock's centre: what it must NOT be. */
-    offsetFromPanelX: number | null;
-  } | null;
-  messageCalls: string[];
-  listCalls: number;
-  overflow: { scrollWidth: number; clientWidth: number };
-  /**
-   * The thread transcript's own geometry, when a thread is up with bubbles in
-   * it: where the first and last bubbles sit relative to the content box of
-   * the scroll area they are painted in, and how the scroll reads. The
-   * short-chat contract (KAR-67) is a last bubble flush with that floor and a
-   * first bubble with the room the chat grew into above it; the long-chat
-   * contract is the first bubble reading from the ceiling, with both ends
-   * reachable by scrolling.
-   */
-  transcript: {
-    bodyBox: Box | null;
-    paddingTop: number;
-    paddingBottom: number;
-    firstTopRelContent: number | null;
-    lastBottomRelContent: number | null;
-    firstTop: number | null;
-    lastBottom: number | null;
-    bodyScrollTop: number;
-    bodyScrollHeight: number;
-    bodyClientHeight: number;
-    bubbleCount: number;
-  } | null;
-};
-
-type Report = {
-  pass: boolean;
-  failures: string[];
-  fixture: { rows: number; archived: number; hidden: number; newestLabel: string };
-  states: Record<string, State>;
-  screenshots: string[];
-};
-
-/**
- * The rig measures the real dock in a real Electron window, so it needs the Vite
- * dev server. With the server down the test skips; `npm run dev` in another
- * shell turns it on.
- */
 /** RGB channels of a computed colour in 0–255, whatever syntax it resolved to. */
 function channels(color: string | null): number[] {
   const raw = ((color ?? "").match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
@@ -155,12 +35,6 @@ function channels(color: string | null): number[] {
   return raw.length === 3 && raw.every((value) => value <= 1.0001)
     ? raw.map((value) => value * 255)
     : raw;
-}
-
-/** Alpha of a computed colour: 1 when it carries none. */
-function alphaOf(color: string | null): number {
-  const raw = ((color ?? "").match(/[\d.]+/g) ?? []).map(Number);
-  return raw.length >= 4 ? raw[3] : 1;
 }
 
 /** Largest per-channel gap between two computed colours; NaN when unparseable. */
@@ -183,522 +57,7 @@ function devServerUp(): Promise<boolean> {
   });
 }
 
-function runDriver(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      electron,
-      [path.join(desktopRoot, "e2e/chat-sessions.electron.mjs")],
-      { cwd: desktopRoot, timeout: 120_000 },
-      (error) => {
-        if (error && typeof error.code !== "number") {
-          reject(error);
-          return;
-        }
-        resolve(error ? (error.code as number) : 0);
-      },
-    );
-  });
-}
-
-describe("chat sessions rigs", { concurrency: true }, () => {
-  describe("chat sessions (dock list, row menu, pin, rename, archive, delete)", () => {
-    it("lists every live chat, and carries pin/rename/archive through the bridge", async (t) => {
-      if (!(await devServerUp())) {
-        t.skip(
-          `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,
-        );
-        return;
-      }
-
-      fs.rmSync(REPORT, { force: true });
-      const exitCode = await runDriver();
-      assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
-
-      const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
-      assert.deepEqual(report.failures, []);
-      assert.equal(exitCode, 0, "driver exited non-zero");
-      assert.equal(report.pass, true);
-
-      // Restated here so the numbers are asserted by the suite, not only inside
-      // the driver — and so a regression names the surface it broke.
-      const { landing, list, thread, pinnedList, unpinnedList, renamed, renamedList, archived } =
-        report.states;
-      const created = report.states.created;
-      const live = report.fixture.rows;
-
-      // The bottom action bar: four live slots, and it rides the bottom edge in
-      // both views.
-      const slots = ["Chat history", "New chat", "Life-Chain", "Collapse chat"];
-      assert.deepEqual(
-        landing.actions.map((slot) => slot.label),
-        slots,
-        "the action bar lost a slot",
-      );
-      assert.deepEqual(
-        landing.actions.map((slot) => slot.disabled),
-        [false, false, false, false],
-        "an action slot is inert",
-      );
-      assert.equal(
-        new Set(landing.actions.map((slot) => slot.icon)).size,
-        slots.length,
-        "two slots wear the same icon",
-      );
-      assert.ok(
-        Math.abs((landing.actionsBar?.bottom ?? 0) - landing.panel.bottom) <= 2,
-        `the action bar does not ride the bottom edge: ${landing.actionsBar?.bottom}px vs ${landing.panel.bottom}px`,
-      );
-      assert.ok(
-        (landing.actionsBar?.top ?? 0) >= (landing.footer?.box.bottom ?? 0) - 1,
-        "the action bar overlaps the composer",
-      );
-      assert.deepEqual(
-        list.actions.map((slot) => slot.label),
-        slots,
-        "the action bar did not survive the swap to the list",
-      );
-      assert.equal(list.actions[0]?.pressed, true, "history is not marked active in the list");
-      assert.equal(landing.actions[0]?.pressed, false, "history is marked active on a thread");
-      assert.deepEqual(
-        landing.actions.map((slot) => slot.opacity < 1),
-        [false, false, false, false],
-        "an action slot is dimmed",
-      );
-      assert.equal(
-        new Set(landing.actions.map((slot) => slot.iconSize)).size,
-        1,
-        "the action icons are not all one size",
-      );
-      assert.ok(
-        landing.actions[0].iconSize >= 18,
-        `the action icons did not grow: ${landing.actions[0].iconSize}px`,
-      );
-      assert.ok(
-        landing.actions[0].iconSize > (landing.headerIconSize ?? 0),
-        `the bar's icons (${landing.actions[0].iconSize}px) are not larger than the header's (${landing.headerIconSize}px)`,
-      );
-      assert.ok(
-        channelDelta(landing.actionsBarBackground, landing.footerBackground) >= 8,
-        `the action bar shares the composer's surface: ${landing.actionsBarBackground} vs ${landing.footerBackground}`,
-      );
-      assert.ok(
-        alphaOf(list.actions[0].background) > 0.05 &&
-          alphaOf(list.actions[0].background) <= 0.5,
-        `the active slot is not a tint: ${list.actions[0].background}`,
-      );
-      assert.equal(alphaOf(list.actions[1].background), 0, "an idle slot paints a fill");
-      assert.ok(
-        (list.list?.box.bottom ?? 0) <= (list.actionsBar?.top ?? 0) + 1,
-        "the list runs under the action bar",
-      );
-
-      assert.ok(landing.threadHeader, "the dock did not land on a thread");
-      assert.equal(
-        landing.threadHeader.label,
-        report.fixture.newestLabel,
-        "the landing thread is not the newest chat",
-      );
-      assert.deepEqual(
-        landing.messages.length,
-        4,
-        "the transcript is not the four chat rows of the seeded newest chat",
-      );
-      assert.equal(landing.list, null, "the list painted behind the thread");
-
-      assert.ok(list.list, "the All chats control opened no list");
-      assert.equal(
-        list.listMaxHeight,
-        "none",
-        "list view is still capped by the thread strip's max-height",
-      );
-      assert.ok(
-        list.list.box.height >= list.panel.height * 0.6,
-        `the list is a strip again: ${list.list.box.height}px in a ${list.panel.height}px panel`,
-      );
-      assert.equal(list.rowCount, live, `listed ${list.rowCount} of ${live} live chats`);
-      assert.equal(
-        list.rows.some((row) => row.label === "Old scratch pad"),
-        false,
-        "an archived chat is in the list",
-      );
-      assert.equal(
-        list.rows.some((row) => row.label === "Debug: tool loop"),
-        false,
-        "a hidden chat is in the list",
-      );
-      assert.deepEqual(list.groups, [], "group headers appeared with nothing pinned");
-      assert.equal(
-        list.body?.display,
-        "none",
-        "the transcript still paints in list view",
-      );
-      assert.equal(
-        list.composer?.box.height,
-        0,
-        "the composer still paints in list view",
-      );
-      assert.equal(
-        list.panel.width,
-        landing.panel.width,
-        "the panel changed width across the swap",
-      );
-
-      assert.ok(thread.threadHeader, "a row click did not open a thread");
-      assert.notEqual(
-        thread.threadHeader.label,
-        report.fixture.newestLabel,
-        "the row click reopened the resumed chat",
-      );
-      assert.equal(thread.list, null, "the list stayed up behind the thread");
-      assert.equal(
-        thread.composer?.focused,
-        true,
-        `opening a chat left the caret on ${JSON.stringify(thread.active)}`,
-      );
-
-      const pin = pinnedList.patchCalls.at(-1);
-      assert.equal(pin?.patch.pinned, true, "pin never reached the bridge");
-      assert.deepEqual(
-        pinnedList.groups,
-        ["Pinned", "Recent"],
-        "the pinned chat got no section",
-      );
-      assert.equal(pinnedList.rows[0]?.pinned, true, "the pinned row is unmarked");
-      assert.equal(
-        pinnedList.rows[0]?.label,
-        thread.threadHeader?.label,
-        "the pinned row is not the chat that was pinned",
-      );
-      assert.equal(pinnedList.rowCount, live, "pinning lost chats");
-
-      const unpin = unpinnedList.patchCalls.at(-1);
-      assert.equal(unpin?.patch.pinned, false, "unpin never reached the bridge");
-      assert.deepEqual(unpinnedList.groups, [], "the Pinned section outlived the unpin");
-
-      const rename = renamed.patchCalls.at(-1);
-      assert.equal(rename?.patch.title, "Lisbon trip planning", "rename never reached the bridge");
-      assert.equal(
-        renamed.threadHeader?.label,
-        "Lisbon trip planning",
-        "the thread kept the old name",
-      );
-      assert.equal(renamed.renaming, false, "the rename field stayed open");
-      assert.ok(
-        renamedList.rows.some((row) => row.label === "Lisbon trip planning"),
-        "the list kept the old name",
-      );
-      assert.equal(
-        renamedList.rows.some((row) => row.label === report.fixture.newestLabel),
-        true,
-        "the other chats left the list when one was renamed",
-      );
-
-      const archive = archived.patchCalls.at(-1);
-      assert.equal(archive?.patch.archived, true, "archive never reached the bridge");
-      assert.equal(archive?.id, rename?.id, "archive hit a different chat than the rename");
-      // Archiving the only open chat closes its tab and leaves the dock on a
-      // blank New chat. Falling back to the history list is the reported fault:
-      // the operator should not be sent to pick another chat to keep working.
-      assert.equal(archived.list, null, "archiving the last chat fell back to the history list");
-      assert.ok(archived.threadHeader, "archiving the last chat left no thread up");
-      assert.equal(
-        archived.threadHeader.label,
-        "New chat",
-        "archiving the last chat did not open a blank New chat",
-      );
-      assert.deepEqual(archived.messages, [], "the blank chat archiving opened has a transcript");
-      assert.equal(
-        archived.createCalls.length,
-        1,
-        "archiving the last chat never asked the bridge for a blank chat",
-      );
-      assert.equal(
-        archived.composer?.focused,
-        true,
-        `archiving the last chat left the caret on ${JSON.stringify(archived.active)}`,
-      );
-
-      // The blank chat the archive opened is the New chat slot's destination
-      // too: pressing the slot reuses it instead of minting a second empty chat.
-      assert.equal(
-        created.createCalls.length,
-        archived.createCalls.length,
-        "the New chat slot minted another chat instead of reusing the blank one",
-      );
-      assert.equal(created.threadHeader?.label, "New chat", "the new chat did not open as a thread");
-      assert.deepEqual(created.messages, [], "the new chat opened with a transcript");
-      assert.equal(
-        created.patchCalls.length,
-        archived.patchCalls.length,
-        "creating a chat wrote session flags",
-      );
-      assert.equal(
-        created.composer?.focused,
-        true,
-        `the New chat slot left the caret on ${JSON.stringify(created.active)}`,
-      );
-
-      // An empty chat is where the New chat slot goes, not what it makes: clicking
-      // the slot with a blank chat already listed must reopen that chat, not mint
-      // a second "New chat" row.
-      const reused = report.states.reused;
-      assert.equal(
-        reused.createCalls.length,
-        created.createCalls.length,
-        "the New chat slot minted a second empty chat",
-      );
-      assert.equal(
-        reused.threadHeader?.label,
-        "New chat",
-        "the reused empty chat did not reopen as a thread",
-      );
-      assert.deepEqual(reused.messages, [], "the reused chat opened with a transcript");
-      assert.equal(
-        reused.composer?.focused,
-        true,
-        `reusing a chat left the caret on ${JSON.stringify(reused.active)}`,
-      );
-
-      // The slot's own blank chat, already open: no create, no load, no view
-      // swap. A hand-back hung only on state changes misses this one entirely.
-      const again = report.states.again;
-      assert.equal(
-        again.createCalls.length,
-        reused.createCalls.length,
-        "pressing New chat on its own open chat minted another",
-      );
-      assert.equal(
-        again.composer?.focused,
-        true,
-        `pressing New chat on the chat it already opened left the caret on ${JSON.stringify(again.active)}`,
-      );
-      assert.equal(
-        report.states.reusedList.rowCount,
-        report.fixture.rows,
-        "reusing an empty chat added a row to the list",
-      );
-      assert.equal(
-        report.states.reusedList.rows.some(
-          (row) => row.label === "Lisbon trip planning",
-        ),
-        false,
-        "the archived chat is still listed",
-      );
-      assert.equal(
-        report.states.reusedList.rows.some((row) => row.label === "New chat"),
-        true,
-        "the blank chat archiving opened is not listed",
-      );
-
-      // The list's own row management: a 3-dot menu per row and the three writes
-      // behind it — Edit and Archive through PATCH, Delete through the gateway's
-      // DELETE. The HTTP hop itself is not exercised here (no bearer key), so what
-      // is pinned is that each choice reaches the bridge, and with what.
-      const {
-        menuState,
-        rowRenameStarted,
-        rowRenamed,
-        rowArchived,
-        deleteAsked,
-        deleteDeclined,
-        deleted,
-        openDeleted,
-      } = report.states;
-
-      assert.equal(
-        menuState.rowMenuBtnCount,
-        menuState.rowCount,
-        "a listed chat has no 3-dot control",
-      );
-      assert.deepEqual(
-        menuState.rowMenu,
-        ["Edit chat", "Archive chat", "Delete chat"],
-        "the row menu does not offer Edit / Archive / Delete",
-      );
-      assert.equal(
-        menuState.rowMenuRowIndex,
-        1,
-        "the menu opened on a different row than the control that was clicked",
-      );
-      assert.ok(
-        (menuState.rowMenuBox?.height ?? 0) > 0 && alphaOf(menuState.rowMenuBackground) > 0.9,
-        `the row menu paints no surface: ${menuState.rowMenuBackground}`,
-      );
-      assert.ok(
-        channelDelta(menuState.rowMenuItems[2]?.color, menuState.rowMenuItems[0]?.color) >= 8 &&
-          channelDelta(menuState.rowMenuItems[1]?.color, menuState.rowMenuItems[0]?.color) <= 2,
-        `only Delete is destructive: ${JSON.stringify(menuState.rowMenuItems.map((item) => item.color))}`,
-      );
-      assert.equal(
-        menuState.patchCalls.length,
-        report.states.reusedList.patchCalls.length,
-        "opening the row menu wrote a session flag",
-      );
-
-      assert.equal(rowRenameStarted.rowRename, true, "Edit did not put the row into rename");
-      assert.equal(
-        rowRenameStarted.threadHeader,
-        null,
-        "Edit opened the chat it was supposed to rename in place",
-      );
-      const rowRename = rowRenamed.patchCalls.at(-1);
-      assert.equal(
-        rowRename?.patch.title,
-        "Kitchen reno quotes",
-        "the row's rename never reached the bridge",
-      );
-      assert.ok(
-        rowRenamed.rows.some((row) => row.label === "Kitchen reno quotes"),
-        "the list kept the old name for the renamed row",
-      );
-      assert.equal(rowRenamed.rowRename, false, "the row's rename field stayed open");
-
-      const rowArchive = rowArchived.patchCalls.at(-1);
-      assert.equal(rowArchive?.patch.archived, true, "the row's archive never reached the bridge");
-      assert.equal(
-        rowArchive?.id,
-        rowRename?.id,
-        "the row's archive hit a different chat than its rename did",
-      );
-      assert.equal(
-        rowArchived.rowCount,
-        rowRenamed.rowCount - 1,
-        "the row's archive left the chat listed",
-      );
-      assert.equal(rowArchived.threadHeader, null, "the row's archive opened a thread");
-
-      // The ask is the dock's own dialog, measured rather than assumed: it has to
-      // sit on the window's centre (a platform `window.confirm` put it on the
-      // display's) and it must not be the dock's centre either.
-      assert.ok(deleteAsked.confirmDialog, "delete never asked before it wrote");
-      assert.equal(
-        deleteAsked.confirmDialog.title,
-        "Delete chat",
-        "the question is not named for the delete it guards",
-      );
-      assert.match(
-        deleteAsked.confirmDialog.message,
-        /Delete/,
-        "the question does not name the delete",
-      );
-      assert.deepEqual(deleteAsked.deleteCalls, [], "the delete wrote before it was answered");
-      assert.ok(
-        Math.abs(deleteAsked.confirmDialog.offsetFromWindowX) <= 2 &&
-          Math.abs(deleteAsked.confirmDialog.offsetFromWindowY) <= 2,
-        `the dialog is not centred in the window: ${deleteAsked.confirmDialog.offsetFromWindowX}px across, ${deleteAsked.confirmDialog.offsetFromWindowY}px down`,
-      );
-      assert.ok(
-        Math.abs(deleteAsked.confirmDialog.offsetFromPanelX ?? 0) > 40,
-        `the dialog is centred on the dock rather than the window: ${deleteAsked.confirmDialog.offsetFromPanelX}px`,
-      );
-      assert.equal(
-        deleteAsked.confirmDialog.backdrop?.width,
-        deleteAsked.viewport.width,
-        "the scrim does not cover the window",
-      );
-      assert.ok(
-        deleteAsked.confirmDialog.backdropBackground !== "transparent" &&
-          !/\/\s*0(?:\.0+)?\)/.test(deleteAsked.confirmDialog.backdropBackground),
-        `the scrim does not paint: ${deleteAsked.confirmDialog.backdropBackground}`,
-      );
-      assert.deepEqual(deleteDeclined.deleteCalls, [], "a cancelled delete wrote anyway");
-      assert.equal(
-        deleteDeclined.rowCount,
-        rowArchived.rowCount,
-        "a declined delete lost the row",
-      );
-
-      assert.equal(deleted.deleteCalls.length, 1, "an accepted delete never reached the bridge");
-      // The row below the archived one shifts up: the delete has to hit the chat
-      // whose menu was used, not the one archived just before it.
-      assert.notEqual(
-        deleted.deleteCalls[0],
-        rowArchive?.id,
-        "the delete re-hit the archived chat instead of the row it was asked from",
-      );
-      assert.equal(
-        deleted.rowCount,
-        deleteDeclined.rowCount - 1,
-        "the deleted chat is still listed",
-      );
-      assert.equal(
-        deleted.patchCalls.length,
-        deleteDeclined.patchCalls.length,
-        "the delete wrote session flags too",
-      );
-
-      assert.equal(
-        openDeleted.lastChatStored,
-        null,
-        "the deleted chat is still the stored last chat",
-      );
-      assert.equal(
-        openDeleted.rows.some((row) => row.active),
-        false,
-        "a chat is still marked open after its row was deleted",
-      );
-
-      // A short transcript rests on the composer and reads from the bottom up,
-      // the way the chat happened (KAR-67) — measured against the scroll
-      // area's content box, since the stack itself is only ever as tall as the
-      // chat inside it. The shortest chat of all is measured at full size, and
-      // resting the transcript on the composer must not cost the scroll, so the
-      // same chat is measured again in a window it cannot fit.
-      const shortChat = report.states.landing;
-      assert.ok(shortChat.transcript, "the landing thread exposed no transcript geometry");
-      assert.ok(
-        (shortChat.transcript!.lastBottomRelContent ?? -99) >= -2,
-        `the last bubble of a short chat sits ${shortChat.transcript!.lastBottomRelContent}px above the scroll area's floor`,
-      );
-      assert.ok(
-        (shortChat.transcript!.firstTopRelContent ?? 0) > 100,
-        `a short chat hangs under the header: its first bubble is ${shortChat.transcript!.firstTopRelContent}px below the scroll area's ceiling`,
-      );
-
-      const tooTall = report.states.tooTall;
-      assert.ok(tooTall.transcript, "the small-window thread exposed no transcript geometry");
-      assert.ok(
-        tooTall.transcript!.bodyScrollHeight > tooTall.transcript!.bodyClientHeight,
-        `the small window did not overflow the transcript: ${tooTall.transcript!.bodyScrollHeight}px in ${tooTall.transcript!.bodyClientHeight}px`,
-      );
-      assert.ok(
-        (tooTall.transcript!.firstTopRelContent ?? 99) <= 2,
-        `an overflowing transcript is not stacked from the top: first bubble ${tooTall.transcript!.firstTopRelContent}px below the scroll area's ceiling`,
-      );
-      const scrolledTop = report.states.atTop;
-      assert.ok(
-        (scrolledTop.transcript!.firstTop ?? -999) >=
-          (scrolledTop.transcript!.bodyBox?.top ?? 999) - 2 &&
-          (scrolledTop.transcript!.firstTop ?? -999) <=
-            (scrolledTop.transcript!.bodyBox?.bottom ?? -999),
-        `the top of a long transcript is unreachable: first bubble at ${scrolledTop.transcript!.firstTop}px, scroll area spans ${scrolledTop.transcript!.bodyBox?.top}–${scrolledTop.transcript!.bodyBox?.bottom}px`,
-      );
-      const scrolledBottom = report.states.atBottom;
-      assert.ok(
-        (scrolledBottom.transcript!.lastBottom ?? -999) <=
-          (scrolledBottom.transcript!.bodyBox?.bottom ?? 999) + 2 &&
-          (scrolledBottom.transcript!.lastBottom ?? 999) >=
-            (scrolledBottom.transcript!.bodyBox?.top ?? -999),
-        `the newest message of a long transcript is unreachable: last bubble ends at ${scrolledBottom.transcript!.lastBottom}px, scroll area spans ${scrolledBottom.transcript!.bodyBox?.top}–${scrolledBottom.transcript!.bodyBox?.bottom}px`,
-      );
-
-      const single = report.states.oneBubble;
-      assert.equal(
-        single.transcript?.bubbleCount,
-        1,
-        `the last scenario did not open a one-bubble chat: ${single.transcript?.bubbleCount} bubbles`,
-      );
-      assert.ok(
-        (single.transcript!.lastBottomRelContent ?? -99) >= -2 &&
-          (single.transcript!.firstTopRelContent ?? 0) > 16,
-        `a one-bubble chat does not rest on the composer: last bubble ${single.transcript!.lastBottomRelContent}px from the floor, first ${single.transcript!.firstTopRelContent}px from the ceiling`,
-      );
-
-      for (const file of report.screenshots) {
-        assert.equal(fs.existsSync(file), true, `driver wrote no screenshot ${file}`);
-      }
-    });
-  });
+describe("chat sessions harness", () => {
 
   const CHAIN_REPORT = path.join(desktopRoot, "e2e/artifacts/chat-chain.json");
 
@@ -731,7 +90,8 @@ describe("chat sessions rigs", { concurrency: true }, () => {
   type ChainState = {
     heading: string;
     threadHeader: boolean;
-    chatListPresent: boolean;
+    /** Which surface the dock is on: "thread" | "chain" | "shortcuts". */
+    surface: string | null;
     chatBody: { box: ChainBox; display: string; hidden: boolean } | null;
     chainBody: {
       box: ChainBox;
@@ -770,7 +130,18 @@ describe("chat sessions rigs", { concurrency: true }, () => {
     /** What holds the caret, so a failure can say where it went. */
     active: { tag: string; label: string | null; composer: boolean } | null;
     send: { present: boolean; disabled?: boolean; type?: string; state?: string };
-    actions: { label: string | null; pressed: boolean; disabled: boolean }[];
+    actionsBar: ChainBox | null;
+    actionsBarBackground: string | null;
+    footerBackground: string | null;
+    headerIconSize: number | null;
+    actions: {
+      label: string | null;
+      pressed: boolean;
+      disabled: boolean;
+      opacity: number;
+      iconSize: number;
+      icon: string | null;
+    }[];
     transcript: string[];
     createCalls: Record<string, unknown>[];
     updateCalls: { id: string; patch: Record<string, unknown> }[];
@@ -857,7 +228,7 @@ describe("chat sessions rigs", { concurrency: true }, () => {
         assigned,
         deleted,
         short,
-        chatList,
+        chainClosed,
         reread,
       } = report.states;
       const total = report.fixture.total;
@@ -865,11 +236,65 @@ describe("chat sessions rigs", { concurrency: true }, () => {
 
       assert.equal(landing.chainBody?.hidden, true, "the chain painted on landing");
       assert.equal(landing.signalListCalls, 0, "the chain was read before it was asked for");
-      assert.equal(landing.actions[2]?.label, "Life-Chain", "the chain slot is not the third slot");
-      assert.equal(landing.actions[2]?.pressed, false, "the chain slot starts active");
+
+      // The dock's bottom action bar: four slots in order, the chain second. The
+      // history slot that used to lead the bar is gone with the dock's list.
+      const slots = [
+        "New chat",
+        "Life-Chain",
+        "Move chat to the left of the page",
+        "Collapse chat",
+      ];
+      assert.deepEqual(
+        landing.actions.map((slot) => slot.label),
+        slots,
+        "the action bar lost a slot or changed its order",
+      );
+      assert.deepEqual(
+        landing.actions.map((slot) => slot.disabled),
+        [false, false, false, false],
+        "an action slot is inert",
+      );
+      assert.deepEqual(
+        landing.actions.map((slot) => slot.opacity),
+        [1, 1, 1, 1],
+        "an action slot is dimmed",
+      );
+      assert.equal(
+        new Set(landing.actions.map((slot) => slot.icon)).size,
+        slots.length,
+        "two slots wear the same icon",
+      );
+      assert.equal(
+        new Set(landing.actions.map((slot) => slot.iconSize)).size,
+        1,
+        "the action icons are not all one size",
+      );
+      assert.ok(
+        landing.actions[0].iconSize >= 18,
+        `the action icons did not grow: ${landing.actions[0].iconSize}px`,
+      );
+      assert.ok(
+        landing.actions[0].iconSize > (landing.headerIconSize ?? 0),
+        `the bar's icons (${landing.actions[0].iconSize}px) are not larger than the header's (${landing.headerIconSize}px)`,
+      );
+      assert.ok(
+        landing.actionsBar !== null,
+        `the action bar is missing: ${JSON.stringify(landing.actionsBar)}`,
+      );
+      assert.ok(
+        Math.abs((landing.actionsBar?.bottom ?? 0) - landing.panel.bottom) <= 2,
+        `the action bar does not ride the bottom edge: ${landing.actionsBar?.bottom}px vs ${landing.panel.bottom}px`,
+      );
+      assert.ok(
+        channelDelta(landing.actionsBarBackground, landing.footerBackground) >= 8,
+        `the action bar shares the composer's surface: ${landing.actionsBarBackground} vs ${landing.footerBackground}`,
+      );
+      assert.equal(landing.actions[1]?.label, "Life-Chain", "the chain slot is not the second slot");
+      assert.equal(landing.actions[1]?.pressed, false, "the chain slot starts active");
 
       assert.equal(chain.heading, "Life-Chain", "the chain header names the wrong surface");
-      assert.equal(chain.actions[2]?.pressed, true, "the chain slot is not marked active");
+      assert.equal(chain.actions[1]?.pressed, true, "the chain slot is not marked active");
       assert.equal(chain.chatField.present, false, "both composers are mounted at once");
       assert.equal(chain.transcript.length, 0, "the chat transcript paints behind the chain");
       assert.equal(chain.items.length, total, `listed ${chain.items.length} of ${total} signals`);
@@ -1066,12 +491,17 @@ describe("chat sessions rigs", { concurrency: true }, () => {
         "the short chain does not rest on the composer",
       );
 
-      assert.equal(chatList.chatListPresent, true, "the chats list is not reachable from the chain");
-      assert.equal(chatList.chainBody?.hidden, true, "the chain stayed up behind the chats list");
       assert.equal(
-        chatList.signalListCalls,
+        chainClosed.surface,
+        "thread",
+        "the chain slot did not hand the surface back to the thread",
+      );
+      assert.equal(chainClosed.threadHeader, true, "leaving the chain left no thread up");
+      assert.equal(chainClosed.chainBody?.hidden, true, "the chain stayed up behind the thread");
+      assert.equal(
+        chainClosed.signalListCalls,
         short.signalListCalls,
-        "the chats list asked the vault for the chain",
+        "leaving the chain asked the vault for it again",
       );
       assert.equal(
         reread.items.length,

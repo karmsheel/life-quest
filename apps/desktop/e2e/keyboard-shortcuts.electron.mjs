@@ -733,8 +733,18 @@ async function main() {
     );
     check(
       "the trailing cluster keeps its shipped order",
-      ["theme-mode-toggle", "window-titlebar__shortcuts", "settings-menu", "window-titlebar__side-switch", "window-titlebar__chat-toggle"].every(
+      ["theme-mode-toggle", "window-titlebar__shortcuts", "settings-menu"].every(
         (needle, index) => String(trailingClasses[index] ?? "").includes(needle),
+      ) &&
+        trailingClasses.length === 3,
+      `trailing cluster ${JSON.stringify(trailingClasses)}`,
+    );
+    check(
+      "the trailing cluster no longer carries the chat controls",
+      !trailingClasses.some(
+        (name) =>
+          name.includes("window-titlebar__side-switch") ||
+          name.includes("window-titlebar__chat-toggle"),
       ),
       `trailing cluster ${JSON.stringify(trailingClasses)}`,
     );
@@ -1240,16 +1250,17 @@ async function main() {
       `overlay ${conflictClosed.overlayOpen}, path ${conflictClosed.path}`,
     );
 
-    // —— 2 (dock) — a collapsed dock opens ON the reference from the titlebar,
-    //        and the chat-resume effect must not paint a thread over it.
+    // —— 2 (dock) — the dock's own collapse control empties the pane, then the
+    //        titlebar's shortcuts control opens it ON the reference, and the
+    //        chat-resume effect must not paint a thread over it.
     at("collapsed dock opens on the reference");
-    await clickSelector(".window-titlebar__chat-toggle");
+    await clickSelector('[data-testid="chat-collapse"]');
     const dockCollapsed = await record(
       "dockCollapsedForShortcuts",
       '!document.querySelector("aside.chat-panel") && document.querySelector(".shell").classList.contains("shell--chat-collapsed")',
     );
     check(
-      "the chat toggle collapses the dock",
+      "the dock's own collapse control collapses the dock",
       dockCollapsed.chatPanel === false &&
         String(dockCollapsed.shellClass).includes("shell--chat-collapsed") &&
         dockCollapsed.titlebar.shortcuts.pressed === "false",

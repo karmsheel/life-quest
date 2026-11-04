@@ -109,7 +109,8 @@ type Arrangement = {
     icon?: string | null;
     box?: Box;
   };
-  chatToggle: { label: string | null; icon: string | null; box: Box } | null;
+  /** A stale copy of either chat control in the titlebar: both must be gone. */
+  staleTitlebar: { side: boolean; collapse: boolean };
   owners: {
     topLeft: string | null;
     bottomLeft: string | null;
@@ -137,7 +138,9 @@ type Report = {
   railRestored: Arrangement;
   restored: Arrangement;
   barCollapsed: Arrangement;
+  collapsedSwapOpen: Arrangement;
   collapsedSwapped: Arrangement;
+  collapsedSwapBackOpen: Arrangement;
   collapsedSwappedBack: Arrangement;
   barReopened: Arrangement;
   screenshots: string[];
@@ -215,7 +218,9 @@ describe("chat dock side switch", () => {
       railAndDockCollapsed,
       restored,
       barCollapsed,
+      collapsedSwapOpen,
       collapsedSwapped,
+      collapsedSwapBackOpen,
       collapsedSwappedBack,
       barReopened,
     } = report;
@@ -296,9 +301,40 @@ describe("chat dock side switch", () => {
       `the window's bottom-left corner is not the rail's (${right.owners.bottomLeft})`,
     );
 
-    // The control itself: in the trailing cluster, beside the settings, wearing
-    // the swap icon and naming the move it makes.
-    assert.equal(right.sideSwitch.found, true, "no switch in the titlebar");
+    // The control itself: in the dock's bottom action bar, immediately before the
+    // collapse it belongs with, wearing the swap icon and naming the move it
+    // makes. The titlebar no longer carries a copy of either chat control.
+    const rightTrailing = (right.trailing?.controls ?? []).map((row) => row.className);
+    assert.deepEqual(
+      rightTrailing.length,
+      3,
+      `the titlebar's trailing cluster kept a chat control: ${JSON.stringify(rightTrailing)}`,
+    );
+    for (const [index, needle] of [
+      "theme-mode-toggle",
+      "window-titlebar__shortcuts",
+      "settings-menu",
+    ].entries()) {
+      assert.ok(
+        String(rightTrailing[index] ?? "").includes(needle),
+        `the titlebar's trailing child ${index} is not ${needle}: ${JSON.stringify(rightTrailing)}`,
+      );
+    }
+    assert.equal(
+      right.staleTitlebar.side,
+      false,
+      "a .window-titlebar__side-switch is still in the strip",
+    );
+    assert.equal(
+      right.staleTitlebar.collapse,
+      false,
+      "a .window-titlebar__chat-toggle is still in the strip",
+    );
+    assert.equal(
+      right.sideSwitch.found,
+      true,
+      "no switch in the dock's bottom action bar",
+    );
     assert.equal(
       right.sideSwitch.icon,
       "lucide-arrow-left-right",
@@ -314,18 +350,30 @@ describe("chat dock side switch", () => {
       "false",
       "the switch reports a swapped shell while the dock is on the right",
     );
-    const classes = (right.trailing?.controls ?? []).map((row) => row.className);
-    const settingsAt = classes.findIndex((name) => name.includes("settings-menu"));
-    const switchAt = classes.findIndex((name) => name.includes("side-switch"));
-    assert.equal(
-      switchAt,
-      settingsAt + 1,
-      `the switch is not beside the settings: ${JSON.stringify(classes)}`,
+    // The bar's own order, and the slot that left with the chat list.
+    assert.deepEqual(
+      right.actions?.controls.map((control) => control.label),
+      ["New chat", "Life-Chain", "Move chat to the left of the page", "Collapse chat"],
+      `the bottom bar's actions are not in their shipped order: ${JSON.stringify(right.actions?.controls)}`,
+    );
+    const switchBox = right.sideSwitch.box;
+    const rightCollapseBox = right.collapseAction?.box;
+    assert.ok(
+      switchBox && rightCollapseBox && right.actions?.box,
+      "the switch, the collapse control or the bar was not found",
     );
     assert.equal(
-      right.chatToggle?.icon,
+      switchBox.right < rightCollapseBox.left &&
+        rightCollapseBox.left - switchBox.right <= 8 &&
+        switchBox.top >= right.actions.box.top &&
+        switchBox.bottom <= right.actions.box.bottom,
+      true,
+      `the switch does not sit immediately before the collapse control (${JSON.stringify(switchBox)} vs ${JSON.stringify(rightCollapseBox)} in ${JSON.stringify(right.actions?.box)})`,
+    );
+    assert.equal(
+      right.collapseAction?.icon,
       "lucide-panel-right-close",
-      `the collapse arrow does not point at the right-hand dock (${right.chatToggle?.icon})`,
+      `the collapse arrow does not point out of the right-hand dock (${right.collapseAction?.icon})`,
     );
 
     // —— The swap: one click, and the two panes trade places. ——
@@ -449,14 +497,14 @@ describe("chat dock side switch", () => {
       "the switch does not report the swapped shell",
     );
     assert.equal(
-      left.chatToggle?.icon,
-      "lucide-panel-left-close",
-      `the collapse arrow does not follow the dock to the left (${left.chatToggle?.icon})`,
-    );
-    assert.equal(
       left.collapseAction?.icon,
       "lucide-panel-left-close",
       `the bottom-bar collapse arrow does not follow the dock to the left (${left.collapseAction?.icon})`,
+    );
+    assert.deepEqual(
+      left.actions?.controls.map((control) => control.label),
+      ["New chat", "Life-Chain", "Move chat to the right of the page", "Collapse chat"],
+      `the swapped bar's actions are not in their shipped order: ${JSON.stringify(left.actions?.controls)}`,
     );
 
     // —— The compositions: the dock collapsed with the rail expanded, then the
@@ -523,10 +571,23 @@ describe("chat dock side switch", () => {
       frame + rootFontSize,
       `the floating mark lost its bottom inset (${dockCollapsed.launcher?.box.bottom}px of ${dockCollapsed.viewport.height}px)`,
     );
+    // Collapsed, the dock renders only its launcher: the bar — and with it the
+    // switch and the collapse control — is not on screen, so the swap is not
+    // reachable from here and the mark is the only way back in.
     assert.equal(
-      dockCollapsed.chatToggle?.label,
-      "Expand chat",
-      "the titlebar lost its second way back into the dock",
+      dockCollapsed.sideSwitch?.found,
+      false,
+      "the side switch is still reachable while the dock is collapsed",
+    );
+    assert.equal(
+      dockCollapsed.collapseAction,
+      null,
+      "the collapse control is still on screen while the dock is collapsed",
+    );
+    assert.equal(
+      dockCollapsed.actions,
+      null,
+      "the dock's bottom action bar is still on screen while the dock is collapsed",
     );
     assert.notEqual(
       dockCollapsed.launcher?.background,
@@ -714,8 +775,8 @@ describe("chat dock side switch", () => {
       "the panes are not painted where they started",
     );
     assert.equal(
-      restored.chatToggle?.icon,
-      right.chatToggle?.icon,
+      restored.collapseAction?.icon,
+      right.collapseAction?.icon,
       "the collapse arrow did not come back",
     );
 
@@ -734,7 +795,7 @@ describe("chat dock side switch", () => {
     );
     assert.deepEqual(
       restored.actions?.controls.map((control) => control.label),
-      ["Chat history", "New chat", "Life-Chain", "Collapse chat"],
+      ["New chat", "Life-Chain", "Move chat to the left of the page", "Collapse chat"],
       `the bottom bar still carries an unassigned action: ${JSON.stringify(restored.actions?.controls)}`,
     );
     assert.ok(bar && collapseBox, "the bottom bar or its collapse control was not found");
@@ -794,13 +855,30 @@ describe("chat dock side switch", () => {
       `a trailing dock's mark lost its trailing inset (${barCollapsed.launcher.box.right}px of ${barCollapsed.viewport.width}px)`,
     );
 
-    // —— The reported gesture: swap the side while the dock is already
-    // collapsed, so the mark is the only thing on screen that says where the
-    // chat is. It has to move, and move back, with no reopen in between. ——
+    // —— The reported gesture: the switch lives in the dock's bar, so the swap is
+    // driven from the open dock — open, swap, collapse — and the mark has to
+    // follow the side it was swapped to and come back the same way. Collapsed,
+    // the bar is not rendered at all, which is why the swap cannot be attempted
+    // from there. ——
+    assert.equal(
+      collapsedSwapOpen.shell?.className.includes("shell--chat-left"),
+      true,
+      `reopening then swapping did not put the dock on the leading side: ${collapsedSwapOpen.shell?.className}`,
+    );
+    assert.equal(
+      collapsedSwapOpen.sideSwitch?.label,
+      "Move chat to the right of the page",
+      `the switch did not turn around with the open dock (${collapsedSwapOpen.sideSwitch?.label})`,
+    );
     assert.equal(
       collapsedSwapped.chat,
       null,
-      "swapping the side while collapsed opened the dock",
+      "collapsing the swapped dock left it in the grid",
+    );
+    assert.equal(
+      collapsedSwapped.sideSwitch?.found,
+      false,
+      "the side switch is still reachable with the dock collapsed",
     );
     assert.equal(
       collapsedSwapped.shell?.className.includes("shell--chat-left"),
@@ -820,6 +898,11 @@ describe("chat dock side switch", () => {
       true,
       `the mark is not in the bottom-left half after the collapsed swap: ${JSON.stringify(collapsedSwapped.launcher?.box)}`,
     );
+    assert.equal(
+      collapsedSwapBackOpen.shell?.className.includes("shell--chat-right"),
+      true,
+      `reopening then swapping back did not return the dock to the trailing side: ${collapsedSwapBackOpen.shell?.className}`,
+    );
     assert.deepEqual(
       collapsedSwappedBack.launcher?.box,
       barCollapsed.launcher.box,
@@ -828,7 +911,7 @@ describe("chat dock side switch", () => {
     assert.equal(
       collapsedSwappedBack.chat,
       null,
-      "swapping back while collapsed reopened the dock",
+      "collapsing the dock again after swapping back reopened it",
     );
     assert.deepEqual(
       barReopened.main.box,

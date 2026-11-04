@@ -12,15 +12,23 @@
  *    exercised in that rig's other leg, against a real vault. Failure modes
  *    listed there.
  *
- * This is a system-in-isolation rig: the real ChatPanel, the real CSS, the real
- * layout engine and ResizeObserver, with only the IPC bridge stubbed (there is
- * no Electron preload on a dev-server page). The bridge records what the panel
- * calls and hands the driver a handle to push stream events back in, so nothing
- * here asserts against a mock of the panel's own logic.
+ * This is a system-in-isolation rig: the real ChatPanel, the real sidebar, the
+ * real CSS, the real layout engine and ResizeObserver, with only the IPC bridge
+ * stubbed (there is no Electron preload on a dev-server page). The bridge
+ * records what the panel calls and hands the driver a handle to push stream
+ * events back in, so nothing here asserts against a mock of the panel's own
+ * logic.
+ *
+ * The sidebar is mounted because the dock no longer carries a history picker:
+ * the chats live in `ChatsSidebar` (the rail's list), so a rig that switches
+ * chats picks the row the way the operator does. The provider sits above both
+ * surfaces so the row and the dock share one store — the same arrangement
+ * `AppShell` gives them.
  *
  * Stub rules:
- *  1. Bridge stubs masking real calls — anything ChatPanel reaches for that is
- *     not named here must not throw (hence the Proxy fallback).
+ *  1. Bridge stubs masking real calls — anything ChatPanel or ChatsSidebar
+ *     reaches for that is not named here must not throw (hence the Proxy
+ *     fallback).
  *  2. One session only — a second one exists so a driver can prove that opening
  *     another chat clears the previous turn's in-flight evidence, and each
  *     session answers with its own transcript so the switch is visible.
@@ -32,7 +40,9 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
+import { ChatsSidebar } from "@/components/hermes/ChatsSidebar";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
+import { ChatSessionsProvider } from "@/state/ChatSessionsProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import type { ChatStreamEvent, CompanionStreamFrame } from "@/vite-env";
 import "@/styles/global.css";
@@ -240,9 +250,14 @@ const stubbed = new Proxy(bridge, {
 
 (window as unknown as { lifequest: unknown }).lifequest = stubbed;
 
-// The dock remembers its tab strip between runs; an earlier rig's strip would
-// open tabs this one never made.
+// The dock remembers the chat it opened last and its tab strip between runs, and
+// this page is shared by four rigs. A chat left in front by the previous run
+// would decide the landing before a rig clicked anything — enough to make the
+// same rig pass on a fresh profile and fail on the next one. Pins are
+// deliberately NOT cleared: that memory is what the pills rig proves survives a
+// launch, from this same profile.
 window.localStorage.removeItem("lifequest.companion.openTabs");
+window.localStorage.removeItem("lifequest.companion.lastSessionId");
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from chat-panel.html");
@@ -252,11 +267,19 @@ createRoot(root).render(
     <MemoryRouter>
       <VaultProvider>
         <ChatDockProvider>
-          <div className="shell">
-            <div className="nav-rail" />
-            <div className="shell__main" />
-            <ChatPanel open onOpenChange={() => {}} />
-          </div>
+          <ChatSessionsProvider>
+            <div className="shell">
+              {/* The rail's own column, with the real list in it: switching
+                  chats is a sidebar row now, and a driver that reached into
+                  the dock for a history picker would be measuring a surface
+                  the app no longer ships. */}
+              <div className="nav-rail">
+                <ChatsSidebar />
+              </div>
+              <div className="shell__main" />
+              <ChatPanel open onOpenChange={() => {}} />
+            </div>
+          </ChatSessionsProvider>
         </ChatDockProvider>
       </VaultProvider>
     </MemoryRouter>
@@ -264,20 +287,23 @@ createRoot(root).render(
 );
 
 // The runner waits on this rather than on a timer, so a slow first Vite
-// transform cannot be mistaken for "the panel never rendered".
+// transform cannot be mistaken for "the panel never rendered". The sidebar rows
+// are part of the surface now: a rig that clicks one must not race the list's
+// first read, which is the bridge call this page answers from a fixture.
 let settle: () => void = () => {};
 const ready = new Promise<void>((resolve) => {
   settle = resolve;
 });
 
-const waitForComposer = () => {
-  const el = document.querySelector(".chat-panel__composer-input");
-  if (!el) {
-    requestAnimationFrame(waitForComposer);
+const waitForSurface = () => {
+  const composer = document.querySelector(".chat-panel__composer-input");
+  const rows = document.querySelectorAll(".chats-rail__row-main").length;
+  if (!composer || rows === 0) {
+    requestAnimationFrame(waitForSurface);
     return;
   }
   requestAnimationFrame(() => requestAnimationFrame(() => settle()));
 };
-requestAnimationFrame(waitForComposer);
+requestAnimationFrame(waitForSurface);
 
 (window as unknown as { chatPanelHarnessReady: Promise<void> }).chatPanelHarnessReady = ready;

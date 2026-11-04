@@ -39,7 +39,8 @@ type State = {
   tabs: Tab[];
   tabCount: number;
   thread: boolean;
-  list: boolean;
+  /** The blank "Ask Hermes" slate the thread shows with no chat in front. */
+  emptySlate: string;
   railLabels: string[];
   messageCalls: string[];
   stored: string | null;
@@ -200,8 +201,8 @@ describe("the dock's tab strip across a restart", () => {
 
     // Archiving the front chat closes its tab and hands the front to the other
     // one, staying on the thread. Archiving the last open chat opens a blank New
-    // chat — the history list is the landing for neither. Deleting the last chat
-    // is the gesture that empties the strip deliberately.
+    // chat — neither leaves the thread for a history page. Deleting the last
+    // chat is the gesture that empties the strip deliberately.
     assert.deepEqual(readStored(oneLeft), {
       tabs: ["chat-alpha"],
       activeId: "chat-alpha",
@@ -227,23 +228,38 @@ describe("the dock's tab strip across a restart", () => {
       "thread",
       "archiving the last open chat fell back to the history list",
     );
-    assert.equal(blankChat.list, false, "the list painted behind the blank New chat");
     assert.equal(blankChat.heading, "New chat");
     const blankStored = readStored(blankChat);
     assert.equal(blankStored.tabs.length, 1, "the blank New chat was not remembered");
     assert.equal(blankStored.activeId, blankStored.tabs[0]);
     assert.equal(closed.tabCount, 0);
-    assert.equal(closed.surface, "list");
-    assert.equal(closed.list, true);
-    assert.equal(closed.heading, "Chats");
+    assert.equal(
+      closed.surface,
+      "thread",
+      "deleting the last chat left the thread for a history page",
+    );
+    assert.equal(
+      closed.emptySlate,
+      "Ask Hermes",
+      "the dock did not show its blank slate after the strip emptied",
+    );
+    assert.equal(closed.heading, "Chat");
     assert.deepEqual(readStored(closed), { tabs: [], activeId: null });
 
     // A closed strip stays closed through another restart, and no chat is
     // resumed over it.
     assert.equal(relaunch.tabCount, 0);
-    assert.equal(relaunch.surface, "list");
-    assert.equal(relaunch.list, true);
-    assert.equal(relaunch.heading, "Chats");
+    assert.equal(
+      relaunch.surface,
+      "thread",
+      "a closed strip landed on a history page instead of the blank slate",
+    );
+    assert.equal(
+      relaunch.emptySlate,
+      "Ask Hermes",
+      "a closed strip did not restore the dock's blank slate",
+    );
+    assert.equal(relaunch.heading, "Chat");
     assert.deepEqual(relaunch.messageCalls, []);
     assert.deepEqual(readStored(relaunch), { tabs: [], activeId: null });
 

@@ -1,78 +1,37 @@
 /**
- * E2E harness for the chat dock's session management (run by
- * `chat-sessions.electron.mjs`).
+ * E2E harness for the dock's Life-Chain surface (run by
+ * `chat-chain.electron.mjs`).
  *
- * This is a system-in-isolation rig, so the ways it can fail are written down
- * before the assertions:
+ * The page was built for the dock's chat list, which used to be a surface of
+ * this pane with a rig of its own. The list is the sidebar's now — a pane-wide
+ * history page inside the dock no longer exists — so the list rig and its page
+ * half went with it, and the chain rig is the driver that remains. The page
+ * still carries the whole dock (thread, chain, composer, action bar) on one
+ * stubbed bridge, which is what the chain rig needs: it starts by landing on a
+ * thread and then swaps the pane to the chain.
  *
- *  1. The list stays a strip — list view does not own the panel's height, so
- *     twenty chats still live in the old 11rem box instead of a page (the bug
- *     this rig was built for).
- *  2. The swap does not happen — clicking a row leaves the list up, the back
- *     control never returns to it, or the thread and the list paint at once.
- *  3. The composer keeps painting in list view (or the transcript does), so the
- *     list is never actually the panel's page.
- *  4. Archived rows stay listed — the client filter, or the local removal after
- *     archiving, regressed.
- *  5. Hidden rows are listed (same family, different flag).
- *  6. Pin is local-only — the bridge never sees `{pinned: true}` for that chat,
- *     so Hermes Desktop would never show it.
- *  7. The pinned section is wrong: no group header, the pinned row outside it,
- *     or no marker on the row itself.
- *  8. Rename is local-only, cannot be committed (dead Enter/submit), or the
- *     label does not change in both the thread and the list.
- *  9. Archive does not remove the row, leaves the panel showing a thread for a
- *     chat that is no longer listed, or — archiving the only open chat — drops
- *     the dock on the history list instead of the blank New chat the operator
- *     keeps working in.
- * 10. The thread header loses its identity — no label for the open chat, or its
- *     actions (pin / rename / archive) unreachable.
- * 11. Wrong chat opened — the row click loads an id other than the row's.
- * 12. Tool rows painted as chat bubbles: Hermes stores tool traffic in the same
- *     message table, and only user/assistant rows are chat.
- * 13. Bridge stubs masking real calls — anything ChatPanel reaches for that is
- *     not named here must not throw.
- * 14. The New chat slot mints a second empty chat — with an empty chat already
- *     in the list, clicking it stacks another "New chat" row instead of
- *     returning to the blank one.
- * 15. A row's 3-dot menu is decorative — the control opens nothing, or the menu
- *     offers Edit / Archive / Delete but no bridge write follows the choice.
- * 16. The row's Edit drags the user into the chat it is editing (the point of the
- *     control is that the list manages a chat without opening it), or it renames
- *     locally-only, so the next list call answers with the old name.
- * 17. The row's Archive leaves the row listed, or leaves the panel showing the
- *     thread of a chat that is no longer there.
- * 18. Delete writes without asking, or asks and writes anyway: a cancelled ask has
- *     to leave both the row and the store untouched. The ask is the dock's own
- *     dialog, centred in the application window — a platform `window.confirm`
- *     centres on the display and a rig cannot click it at all.
- * 19. Deleting the open chat leaves the panel on a thread for a chat that no
- *     longer exists, or leaves the stored last-chat pointer aimed at it.
- * 20. The dock is handed a chat and does not hand back the caret: "New chat"
- *     opens (or reopens) a thread whose field is not focused, so the first
- *     keystroke after the press goes to the button that was pressed instead of
- *     into the composer. The worst case changes no state at all — the slot's own
- *     blank chat is already open — so a rule hung only on state changes misses
- *     it.
- * 21. A write takes the caret and never gives it back. Every composer in the
- *     dock disables its field while its write is in flight (the arrow becomes
- *     the stop square; the chain's field goes inert), and a disabled field
- *     cannot hold the caret: the browser drops it on `body`. Capture is one
- *     gesture — type, Enter, type again — so a field that comes back enabled
- *     with the caret elsewhere costs the next thought a click.
- * 22. A short transcript hangs under the header instead of resting on the
- *     composer (KAR-67): a previous session with a few bubbles in it is
- *     painted from the top down, with the composer a screen below the last
- *     word, where a chat that happened reads from the bottom up. The fix has
- *     to survive its own success: resting the stack on the composer must not
- *     park the oldest bubble outside the scroll once the transcript
- *     overflows, so the rig measures the transcript both short (at the landing
- *     window size) and too tall for the window.
+ * The chain rig's own failure modes are written down in its header
+ * (`chat-chain.electron.mjs`); what this page guarantees to it is:
+ *
+ *  1. A landing thread is up: a chat to resume is seeded in the fixture, so the
+ *     dock opens on a thread rather than on a blank slate, and the chain has a
+ *     chat to come back to.
+ *  2. The dock's surface is the shipped `data-chat-surface` attribute
+ *     ("thread" | "chain" | "shortcuts") — a rig reads which surface is up from
+ *     the markup instead of inferring it from a selector that might paint
+ *     underneath.
+ *  3. Bridge stubs masking real calls — anything ChatPanel reaches for that is
+ *     not named here must not throw (the Proxy fallback).
+ *  4. The chain fixture answers from `fixtures/signal-chain.json` through the
+ *     same bridge calls the main process exposes, so "the write reached the
+ *     gateway" is asserted at the bridge boundary, not against a mock of the
+ *     panel's logic.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
- * page) and answers from `fixtures/companion-sessions.json`, which was seeded
- * out of the lifequest profile's real state.db. Everything else — the real
- * ChatPanel, the real CSS, the real layout engine — is shipping code.
+ * page) and the session fixture answers from `fixtures/companion-sessions.json`,
+ * which was seeded out of the lifequest profile's real state.db. Everything
+ * else — the real ChatPanel, the real CSS, the real layout engine — is shipping
+ * code.
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -452,17 +411,16 @@ createRoot(root).render(
 );
 
 // The runner waits on this rather than on a timer, so a slow first Vite
-// transform cannot be mistaken for "the panel never rendered". Either surface
-// counts as settled: which one came up is an assertion, not a precondition.
+// transform cannot be mistaken for "the panel never rendered". The landing is a
+// thread — the fixture always has a chat to resume, and a dock with nothing to
+// resume would show the blank slate on the same surface.
 let settle: () => void = () => {};
 const ready = new Promise<void>((resolve) => {
   settle = resolve;
 });
 
 const waitForPanel = () => {
-  const settled =
-    document.querySelector(".chat-panel__header--thread") ??
-    document.querySelector(".chat-panel__list");
+  const settled = document.querySelector(".chat-panel__header--thread");
   if (!settled) {
     requestAnimationFrame(waitForPanel);
     return;

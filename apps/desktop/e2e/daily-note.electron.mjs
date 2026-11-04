@@ -1864,9 +1864,10 @@ async function main() {
   );
 
   // Swap the dock to the leading edge: the strip changes sides with it, so the
-  // box stays between the companion and the journal rather than under it.
+  // box stays between the companion and the journal rather than under it. The
+  // switch lives in the dock's own bottom action bar.
   await win.webContents.executeJavaScript(
-    `document.querySelector(".window-titlebar__side-switch").click()`,
+    `document.querySelector('[data-testid="chat-side-switch"]').click()`,
   );
   await waitFor(
     win,
@@ -1887,7 +1888,7 @@ async function main() {
 
   // Put the workspace back the way the rest of the run found it.
   await win.webContents.executeJavaScript(
-    `document.querySelector(".window-titlebar__side-switch").click()`,
+    `document.querySelector('[data-testid="chat-side-switch"]').click()`,
   );
   await waitFor(
     win,
