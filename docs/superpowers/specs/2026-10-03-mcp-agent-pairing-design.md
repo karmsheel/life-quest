@@ -135,6 +135,8 @@ With at least one assigned live domain, the agent may read doctrine, databases, 
 
 A library note is included only when it has at least one domain and every one of those domains is assigned. A goal, event, or project with no domain stays with the companion. A review tool or period pack whose scope is `overall` stays with the companion. `list_decisions` returns decisions whose domain list is non-empty and entirely inside the assignment. Pairing decisions and decisions with no domain are omitted.
 
+Projects, pages, and Life-Chain signals follow that same rule (added 2026-11-04; the tools shipped 2026-10-27 but were never classified, so a granted agent could not see them at all). `list_projects`, `list_pages`, and `list_signals` omit records outside the assignment, and a project, page, or signal with no domain stays with the companion; scoped to an ungranted `domainSlug` they answer `NOT_FOUND`. `get_project`, `get_page`, and `get_signal` answer `NOT_FOUND` for one record outside the grant. `get_project` collates only what the agent could read on its own: tasks and the signals reached through them only when Schedule is on, Decisions only when their own domain list is non-empty and inside the assignment, and log lines only from assigned domains.
+
 A read of one record outside the grant returns `NOT_FOUND`. List tools omit those rows.
 
 `get_state` for a connected agent returns events in the assigned domains. It includes tasks and the live week only when Schedule is on. It omits About me, years, month objectives and notes, the day-type catalog, and events with no domain.
@@ -152,6 +154,8 @@ Event create, update, and delete run immediately when the event's domain is an a
 Capture, undo, and correct run immediately, and only when Write is on and `financial` is an assigned live domain.
 
 Script-block application still writes the page directly, as it does for the companion, and only when Write is on and the page's domain is assigned. A script-block read requires the page's domain to be assigned.
+
+A Life-Chain capture (`create_signal`) runs immediately, like adding database data: a capture is adding data, and a Decision per captured thought would turn the chain into an approval queue. It requires Write and the signal's `domainSlug` to be an assigned live domain; a capture with no domain stays with the companion and is refused.
 
 Creating a record, or moving one, onto a missing domain, a null domain, an archived domain, or a domain outside the assignment returns `FORBIDDEN` and files nothing.
 

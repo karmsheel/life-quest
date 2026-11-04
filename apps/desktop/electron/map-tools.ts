@@ -40,10 +40,12 @@ import {
   connectedGoalVisible,
   connectedReviewVisible,
   connectedLibraryVisible,
+  connectedSignalVisible,
   connectedBoardAllowed,
   connectedWriteDomainsAllowed,
   connectedWriteKind,
   projectConnectedPack,
+  projectConnectedProjectRead,
   projectConnectedReview,
   projectConnectedState,
   reviewHeadingSlugs,
@@ -58,6 +60,7 @@ import {
   type MapCommand,
   type MapToolDef,
   type Result,
+  type SignalRecord,
   type Actor as VaultActor,
 } from "@lifequest/vault-core";
 import { noteDataChanged, toolMayChangeData } from "./data-revision.ts";
@@ -392,6 +395,7 @@ async function executeConnectedTool(
     name === "get_database" ||
     name === "list_rows" ||
     name === "get_row" ||
+    name === "get_page" ||
     name === "run_script_block"
   ) {
     if (!granted(rec.domainSlug)) return grantRefusal("NOT_FOUND");
@@ -400,7 +404,14 @@ async function executeConnectedTool(
   // A list scoped to one domain is still a read of that domain: an ungranted
   // domain answers as missing rather than as a successful empty list, which
   // would confirm the domain exists.
-  if (name === "list_databases" && rec.domainSlug !== undefined && rec.domainSlug !== null) {
+  if (
+    (name === "list_databases" ||
+      name === "list_pages" ||
+      name === "list_projects" ||
+      name === "list_signals") &&
+    rec.domainSlug !== undefined &&
+    rec.domainSlug !== null
+  ) {
     if (!granted(rec.domainSlug)) return grantRefusal("NOT_FOUND");
   }
 
@@ -418,6 +429,32 @@ async function executeConnectedTool(
     } else if (rec.domainSlug !== undefined && rec.domainSlug !== null) {
       if (!granted(rec.domainSlug)) return grantRefusal("NOT_FOUND");
     }
+  }
+
+  if (name === "get_project") {
+    const result = await executeProjectReadTool(root, name, rec);
+    // A project the grant does not cover and a project that does not exist are
+    // the same answer, as they are for every other single-record read here. The
+    // engine's own "Project not found" string is not distinguishable from an
+    // out-of-grant project, so a miss is answered in the grant's own words.
+    if (isGrantError(result)) {
+      const code = (result as { error?: { code?: string } }).error?.code;
+      return code === "NOT_FOUND" ? grantRefusal("NOT_FOUND") : result;
+    }
+    const projected = projectConnectedProjectRead(result as Record<string, unknown>, grant);
+    return projected ?? grantRefusal("NOT_FOUND");
+  }
+
+  if (name === "get_signal") {
+    const result = await executeSignalTool(root, actor, name, rec);
+    if (isGrantError(result)) {
+      const code = (result as { error?: { code?: string } }).error?.code;
+      return code === "NOT_FOUND" ? grantRefusal("NOT_FOUND") : result;
+    }
+    const signal = (result as { signal?: SignalRecord }).signal;
+    return signal && connectedSignalVisible(signal, grant)
+      ? { signal }
+      : grantRefusal("NOT_FOUND");
   }
 
   if (name === "get_review" || name === "list_reviews") {
@@ -536,6 +573,45 @@ async function executeConnectedTool(
     };
   }
 
+  if (name === "list_projects") {
+    const result = await executeProjectReadTool(root, name, rec);
+    if (isGrantError(result)) return result;
+    const { projects } = result as { projects: Array<Record<string, unknown>> };
+    // A project with no domain stays with the companion, and a list is defined
+    // by its scope: the rows outside the assignment are dropped, not refused.
+    const visible = projects.filter(
+      (project) => typeof project.domainSlug === "string" && granted(project.domainSlug),
+    );
+    return { projects: visible, total: visible.length };
+  }
+
+  if (name === "list_pages" || name === "get_page") {
+    // `get_page`'s domain was checked above, before the tool ran: a page in a
+    // domain the grant does not cover is `NOT_FOUND`, never "no such page".
+    const result = await executePageTool(root, actor, name, rec);
+    if (isGrantError(result)) return result;
+    if (name === "get_page") return result;
+    const { pages } = result as { pages: Array<{ domainSlug: string }> };
+    const visible = pages.filter((entry) => granted(entry.domainSlug));
+    return { pages: visible, total: visible.length };
+  }
+
+  if (name === "list_signals") {
+    const result = await executeSignalTool(root, actor, name, rec);
+    if (isGrantError(result)) return result;
+    const listed = result as {
+      signals: SignalRecord[];
+      total: number;
+      skipped?: number;
+    };
+    const visible = listed.signals.filter((signal) => connectedSignalVisible(signal, grant));
+    // `total` is the filtered count, not the companion's: the agent's chain is
+    // the assigned domains' slice, and the unfiltered number would count
+    // signals it may not read. `skipped` stays the reader's own malformed-file
+    // count, which names no record.
+    return { signals: visible, total: visible.length, skipped: listed.skipped ?? 0 };
+  }
+
   if (name === "list_goals") {
     const snap = await openVault(root);
     if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
@@ -621,6 +697,14 @@ async function executeConnectedTool(
   // Capture, undo, and correct apply at once, as they do for the companion.
   if (CAPTURE_TOOL_DEFS.some((t) => t.name === name)) {
     return executeCaptureTool(root, actor, name, rec);
+  }
+
+  // A Life-Chain capture applies at once, as it does for the companion: the
+  // capture is adding data, and `create_signal` is the only signal write the
+  // gate lets through. Its domain was checked before this point, so a capture
+  // with no domain never arrives.
+  if (name === "create_signal") {
+    return executeSignalTool(root, actor, name, rec);
   }
 
   // A goal or project write files a Decision and does not touch goals.json or
@@ -838,6 +922,14 @@ async function connectedWriteRefusal(
     // a real board, so it is judged as a domain name — and a grant that does
     // not cover it refuses, which is the right call: Overview is everything.
     return allow([rec.domainSlug === undefined ? undefined : (rec.domainSlug as string | null)]);
+  }
+
+  // ── the Life-Chain ───────────────────────────────────────────────────────
+  if (name === "create_signal") {
+    // A capture is a write, and a write names the domain it lands in. An
+    // unassigned capture reads as `[undefined]`, which `allow` refuses: a
+    // signal with no domain is the operator's own and stays with the companion.
+    return allow([rec.domainSlug as string | null | undefined]);
   }
 
   // The capture tools name no domain argument; `toolAllowed` has already

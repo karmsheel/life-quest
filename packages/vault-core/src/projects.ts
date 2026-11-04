@@ -1077,6 +1077,11 @@ async function executeGetProject(
     .map((decision) => ({
       id: decision.id,
       target: decision.target,
+      // The Decision's own domain list, not the project's: a connected agent's
+      // projection filters the collated Decisions by the same rule
+      // `list_decisions` applies, and it cannot do that from the target alone —
+      // an update that moves a project touches both the old and the new domain.
+      domainSlugs: decision.domainSlugs ?? [],
       status: decision.status,
       title: decision.title,
       proposedTitle: decision.proposedTitle,
