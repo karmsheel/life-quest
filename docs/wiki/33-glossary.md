@@ -78,9 +78,9 @@ which real weeks are planned.
 Financial. A domain owns doctrine, databases, pages, pins and views. See
 [Domains](./05-domains.md).
 
-**Domain lens** — the top-bar filter that scopes domain-owned lists to Overview
-or one domain. The wing tabs are navigation; the lens is the data filter. See
-[The studio](./03-the-studio.md).
+**Domain lens** — the filter in the window title bar's domain tab that scopes
+domain-owned lists to Overview or one domain. The rail's wing switcher is
+navigation; the lens is the data filter. See [The studio](./03-the-studio.md).
 
 **Doctrine** — the four documents that define a domain: Beliefs & Premise,
 Vision & Desire, Purpose, and Strategy (How). See [Doctrine](./07-doctrine.md).

@@ -10,8 +10,9 @@ pinned to a Dashboard so one click gets you back to it.
 
 **Home** wing → **Pages** (route `/pages`). It opens in the centre pane as a page.
 
-- The top-bar lens filters the list: **Overview** shows pages from every live
-  domain, a domain lens shows that domain's pages and creates into it.
+- The domain lens in the window title bar filters the list: **Overview** shows
+  pages from every live domain, a domain lens shows that domain's pages and
+  creates into it.
 - Clicking a page opens `/pages/:slug/:pageId` — the page canvas.
 - A page pin appears on a Dashboard board and opens the same canvas. Pins are
   added from the Dashboard, not from the Pages page.

@@ -16,8 +16,8 @@ Return to [Wiki home](./index.md).
 
 - Rail: **Home → Dashboard**, route `/home`.
 - The main pane. It is a page, not a sheet.
-- The board follows the **domain lens** in the top bar: Overview has its own
-  board; each domain has its own.
+- The board follows the **domain lens** in the window title bar: Overview has its
+  own board; each domain has its own.
 
 ## What it is for
 
@@ -35,9 +35,9 @@ watch; the board does not grade you.
 ### Read the board
 
 1. Open **Dashboard** on the Home wing.
-2. Choose a lens in the top bar: **Overview** or a domain. The title under
-   **Dashboard** changes to the lens name, with a **Locked** or **Unlocked** badge
-   beside it.
+2. Choose a lens in the window title bar: **Overview** or a domain. The title
+   under **Dashboard** changes to the lens name, with a **Locked** or **Unlocked**
+   badge beside it.
 3. Read the cards. Built-in cards update themselves when the vault changes, when
    a Decision is approved, and when the local day turns over.
 

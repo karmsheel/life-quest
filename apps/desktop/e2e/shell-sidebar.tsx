@@ -53,7 +53,9 @@
  *     the 56px column, no initials mark, the wrong initials (the harness vault
  *     "Harness Vault" must read "HV"), or the chip not the rail's last control.
  *  8. Titlebar text still in the strip — the LQ badge, title or a vault chip
- *     still rendered in the window's top row, which round 2 leaves empty.
+ *     still rendered in the window's top row. The strip's leading half is the
+ *     window's drag handle; the only thing in its row now is the domain tab
+ *     (20b-20f).
  *  9. Rail scrolls its own topband away, or spills past the window box.
  * 10. Bridge stubs masking real calls — anything the shell reaches for that is
  *     not named here must not throw.
@@ -77,12 +79,15 @@
  *     (the rail|sheet seam, inside the rail's width at both widths) and the
  *     sheet's trailing edge, the seam with the dock. The sheet's leading edge
  *     must stay unpainted so the rail's line is a line and not a two-pixel band.
- *     The line under the strip belongs to the top bar, and it must
- *     survive: lose it and the domain lens loses its underline. The rail's own
- *     band paints nothing of its own, so the line stops at the pane seam.
+ *     The sheet has no band of its own any more, so no line runs across it
+ *     under the strip: the page starts at the strip's bottom edge. The dock's
+ *     header keeps its own hairline — that line is the dock's, not a shared
+ *     band's — and the rail's own band paints nothing of its own, so the line
+ *     stops at the dock's leading edge.
  * 17a. Mats creeping back under the strip — the titlebar's night fill starting at
- *     the window's leading edge instead of at the rail's trailing edge, or a pane
- *     gap reopening between the strip and the sheet/dock.
+ *     the window's leading edge instead of at the rail's trailing edge, a pane
+ *     gap reopening between the strip and the sheet/dock, or the raised domain
+ *     tab failing to reach the page's top edge so a mat line separates them.
  * 18. Native bar left in place — a scroller whose gutter is the platform's own
  *     15-17px instead of the app's 8px, which is what a `::-webkit-scrollbar`
  *     rule that never applied looks like.
@@ -92,20 +97,46 @@
  *     cannot find, or one that never responds to the pointer. It is quiet at rest
  *     on purpose and must still be DRAWN; a custom scrollbar also follows its own
  *     region, not hover anywhere in the app.
- * 20. A frame back around the band's selector — `.ui-segmented`'s shared hairline,
+ * 20. A frame back around the lens's selector — `.ui-segmented`'s shared hairline,
  *     sitting one pixel outside the active tab's own, is what made the old pair
- *     (wing switcher + domain lens) read as concentric outlines in a row. The
- *     domain lens carries no outer frame now; the fill is what sets it off the
- *     band, and the active tab keeps its line. Both the frame and the fill are
- *     measured, so "frameless" cannot be satisfied by a control that stopped
- *     rendering its fill or its tab.
- * 20a. The wing switcher back in the sheet — five tabs in the top bar again, or a
- *     switcher in the rail's band that does not sit on the top bar's row (wide),
- *     above the wing's rows, or does not navigate. Its band is measured against
- *     the top bar's box, its options' boxes prove the collapsed stack, and its
- *     trip (Home → Define → Home) is read off the rail's rows.
- * 20b. The domain lens off-centre — one selector left in the sheet, so the band
- *     must centre it; measured by comparing the lens's box to the band's.
+ *     (wing switcher + domain lens) read as concentric outlines in a row. Inside
+ *     the raised page-ink tab the lens carries no outer frame; the fill is what
+ *     sets it off the strip, and the active tab keeps its line. Both the frame and
+ *     the fill are measured, so "frameless" cannot be satisfied by a control that
+ *     stopped rendering its fill or its tab.
+ * 20a. The wing switcher back in the sheet — five tabs in the sheet again, or a
+ *     switcher in the rail's band that does not start at the strip's bottom edge
+ *     (32px) in its 44px band, above the wing's rows, or does not navigate. Its
+ *     band is measured against the strip and the dock's header, its options' boxes
+ *     prove the collapsed stack, and its trip (Home → Define → Home) is read off
+ *     the rail's rows.
+ * 20b. The lens still in the sheet — a `.top-bar` band back at the top of
+ *     `.shell__main`, or the real `.domain-switcher` never raised into
+ *     `.window-titlebar__lens`. The strip's first element child must be the lens,
+ *     it must hold the real switcher, and the page must start at the strip's
+ *     bottom edge (32px) rather than 44px below it.
+ * 20c. The lens not part of the page — the wrong fill (not the page canvas), a
+ *     mat gap between the tab's bottom edge and the sheet's top, a tab that stops
+ *     short of the strip's top, a drag-region tab the operator cannot click, or a
+ *     tab off the rail's trailing edge: 12px past the sidebar at both widths
+ *     (268px absolute wide, 68px thin), following the rail when it collapses.
+ * 20d. The tab's connection square — the two bottom fillets missing, not 8×8,
+ *     or painted in the wrong ink, so the page meets the strip on two hard inside
+ *     corners instead of flaring into it. The top corners must be rounded by the
+ *     same 8px step (and the bottom corners must stay square on the box — their
+ *     rounding is the flare, not a radius), so the silhouette reads as a tab at
+ *     both ends rather than a block with one softened edge.
+ * 20e. The lens overflowing the strip — the segmented control taller than
+ *     `--window-titlebar-height`, poking out of the lens, or the lens shoving the
+ *     trailing cluster (theme, shortcuts, settings, side and chat toggles) off
+ *     the window.
+ * 20f. The lens list wrong — the tab not naming the vault's live domains, an
+ *     archived domain offered, or the "Overview" option missing. The harness seeds
+ *     three domains so "a tab" cannot be satisfied by a control with nothing to
+ *     choose.
+ * 20g. The band row broken by the reclaim — the rail's wing band or the dock's
+ *     header dragged up with the page (losing the 44px band), or the dock's
+ *     header losing its own hairline.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page); everything else — the real AppShell, the real NavRail, the real
@@ -119,6 +150,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import type { DocumentKind, DomainRecord } from "@lifequest/vault-core";
 import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
 import {
@@ -139,6 +171,51 @@ const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value });
  *  rather than hard-coding the same string twice. */
 const VAULT_NAME = "Harness Vault";
 
+const SEEDED_AT = "2026-01-01T00:00:00.000Z";
+
+/**
+ * The live domains the titlebar's lens must offer. The tab is a real choice, not
+ * a decoration: with an empty list the switcher renders "Overview" alone and every
+ * "it is a tab" claim would pass on a control with nothing to pick. Three of them,
+ * so the compacted segmented control also has to fit more than one label inside
+ * the 32px strip. The driver reads the same names off `window.shellHarnessDomainNames`.
+ */
+const DOMAIN_NAMES = ["Health", "Financial", "Craft"];
+
+function domainDocuments(name: string): DomainRecord["documents"] {
+  const doc = (
+    kind: DocumentKind,
+    title: string,
+  ): DomainRecord["documents"][DocumentKind] => ({
+    kind,
+    title,
+    locked: false,
+    bodyMarkdown: `${name}: ${title.toLowerCase()}.`,
+    updatedAt: SEEDED_AT,
+    mtimeMs: 0,
+  });
+  return {
+    premise: doc("premise", "Beliefs & Premise"),
+    what: doc("what", "Vision & Desire"),
+    why: doc("why", "Purpose"),
+    how: doc("how", "Strategy (How)"),
+  };
+}
+
+const DOMAINS: DomainRecord[] = DOMAIN_NAMES.map((name, index) => ({
+  slug: name.toLowerCase(),
+  meta: {
+    name,
+    description: null,
+    color: null,
+    sortOrder: index,
+    archivedAt: null,
+    createdAt: SEEDED_AT,
+    updatedAt: SEEDED_AT,
+  },
+  documents: domainDocuments(name),
+}));
+
 const SNAPSHOT = {
   rootPath: "C:/harness-vault",
   lifequest: {
@@ -152,7 +229,7 @@ const SNAPSHOT = {
     theme: "dark" as const,
     weekStartDay: "monday" as const,
   },
-  domains: [],
+  domains: DOMAINS,
   agents: [],
   decisions: [],
   log: [],
@@ -314,6 +391,12 @@ requestAnimationFrame(waitForShell);
 (
   window as unknown as { shellHarnessVaultName: string }
 ).shellHarnessVaultName = VAULT_NAME;
+
+// ...and the titlebar lens's claims need the domain list it was handed: the tab
+// must name them, in order, after "Overview".
+(
+  window as unknown as { shellHarnessDomainNames: string[] }
+).shellHarnessDomainNames = DOMAIN_NAMES.slice();
 
 /**
  * Switch the harness's skin and mode for the rig's night sweep — the same two

@@ -133,7 +133,12 @@ const SAMPLE = `(() => {
         : false,
       wingBox: box(wing),
       firstWingBox: box(wing ? wing.querySelector(".nav-rail__link") : null),
-      topBarBox: box(document.querySelector(".top-bar")),
+      // The band directly above the wing's rows: the honest reference for "the
+      // wing's first icon starts below the chrome". The sheet's top bar this used
+      // to be measured against was retired — the domain lens moved up into the
+      // window strip — while the rail's band still starts at the strip's bottom
+      // and keeps its 44px height.
+      wingsBandBox: box(document.querySelector(".nav-rail__wings-band")),
       shelfBox: box(shelf),
       footerBox: box(footer),
       bottomBox: box(bottom),
@@ -394,12 +399,12 @@ async function main() {
       JSON.stringify({ wingBox, shelfBox, footerBox }),
     );
     check(
-      "the wing's first icon starts below the top bar's bottom hairline",
-      Boolean(landing.rail.firstWingBox && landing.rail.topBarBox) &&
-        landing.rail.firstWingBox.top >= landing.rail.topBarBox.bottom,
+      "the wing's first icon starts below the rail's wing band",
+      Boolean(landing.rail.firstWingBox && landing.rail.wingsBandBox) &&
+        landing.rail.firstWingBox.top >= landing.rail.wingsBandBox.bottom,
       JSON.stringify({
         first: landing.rail.firstWingBox,
-        topBar: landing.rail.topBarBox,
+        wingsBand: landing.rail.wingsBandBox,
       }),
     );
 

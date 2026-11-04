@@ -93,8 +93,8 @@ travel with the folder.
 ## Domains
 
 **Domains** manages the life areas: create, activate, rename, archive and delete.
-It carries the same information as the top-bar lens. The full procedure, the exact
-confirmation titles and the archive-versus-delete rule are on
+It carries the same information as the window title bar's domain lens. The full
+procedure, the exact confirmation titles and the archive-versus-delete rule are on
 [Domains](./05-domains.md).
 
 Its subtitle is *Activate a domain to filter the app. Overview shows everything.*

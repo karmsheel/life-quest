@@ -34,9 +34,9 @@ state. The Log is the record of how they got there.
 1. Choose **Log** at the foot of the rail.
 2. Read newest first. Each row is: when, an entry type, a one-line summary, the
    actor, and the domain slug (`unassigned` when the entry belongs to no domain).
-3. Use the lens in the top bar to scope the feed. **Overview** shows every entry;
-   a domain lens shows only that domain's rows. The toolbar names what you are
-   looking at: "Overview" or "Scoped to: <domain name>".
+3. Use the lens in the window title bar to scope the feed. **Overview** shows every
+   entry; a domain lens shows only that domain's rows. The toolbar names what you
+   are looking at: "Overview" or "Scoped to: <domain name>".
 4. Choose **Refresh** after a write to re-read the feed. The page reads on
    arrival and when the lens changes; it is not a live tail.
 5. With no events at all the page says "No events yet." While a read is in

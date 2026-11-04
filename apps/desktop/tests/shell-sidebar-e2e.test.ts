@@ -27,6 +27,17 @@ type Box = {
   height: number;
 };
 
+/** A computed `::before`/`::after` as the driver read it off the lens. */
+type Fillet = {
+  content: string;
+  backgroundImage: string;
+  width: string;
+  height: string;
+  bottom: string;
+  left: string;
+  right: string;
+};
+
 type State = {
   viewport: { width: number; height: number };
   tokens: {
@@ -34,6 +45,7 @@ type State = {
     collapsedTrack: number;
     frame: number;
     titlebarHeight: number;
+    topbarHeight: number;
     radiusSm: string;
   };
   theme: {
@@ -146,20 +158,46 @@ type State = {
   bottomSection: Box | null;
   main: Box | null;
   mainBackground: string | null;
-  topBar: {
-    box: Box;
-    borderBottomWidth: string;
-    borderBottomColor: string;
-    background: string;
-  } | null;
   /**
-   * The sheet's band now carries one selector, the domain lens. It is a
-   * `.ui-segmented`, whose shared rule framed the whole control one pixel outside
-   * the active tab's own line. The wing switcher moved to the rail, and is
-   * measured separately below.
+   * The sheet's first element child. It must be the page column: the retired
+   * `.top-bar` used to sit here, between the strip and the page.
    */
-  topBarSelectors: {
+  mainFirstChild: { tag: string | null; className: string } | null;
+  /** Negative regression claim: the retired `.top-bar` is gone from the DOM. */
+  legacyTopBar: boolean;
+  /** The window's strip, from the window's leading edge to its trailing edge. */
+  titlebar: Box | null;
+  /**
+   * The domain tab raised into the window strip: its page ink, its no-drag
+   * carve-out, its two bottom fillets where the page flares into the strip, its
+   * rounded top corners matching them, and how far it starts past the rail's
+   * trailing hairline.
+   */
+  lens: {
+    box: Box;
+    background: string;
+    appRegion: string;
+    inTitlebar: boolean;
+    firstChild: boolean;
+    fromRail: number | null;
+    borderTopLeftRadius: string;
+    borderTopRightRadius: string;
+    borderBottomLeftRadius: string;
+    borderBottomRightRadius: string;
+    before: Fillet | null;
+    after: Fillet | null;
+  } | null;
+  /** `data-nav-collapsed` on the strip: what moves the lens with the rail. */
+  titlebarNavCollapsed: string | null;
+  /** The page column: its top edge is where the retired band used to end. */
+  shellContent: Box | null;
+  /**
+   * The lens's segmented control. Its outer `.ui-segmented` frame is gone inside
+   * the page-ink tab; the fill and the active tab's line still carry it.
+   */
+  lensTabs: {
     selector: string;
+    box: Box;
     borderTopWidth: string;
     borderRightWidth: string;
     borderBottomWidth: string;
@@ -168,15 +206,19 @@ type State = {
     activeBorderWidth: string | null;
     activeBackground: string | null;
     optionCount: number;
-  }[];
-  /** How many `.ui-segmented` controls the sheet's band carries. */
-  bandControlCount: number;
-  /** The domain lens as the band lays it out, for the centring claim. */
-  domainLens: { box: Box; labels: string[] } | null;
+  } | null;
+  /** The real domain switcher inside the lens, and the options it offers. */
+  domainLens: {
+    box: Box;
+    inLens: boolean;
+    labels: string[];
+    optionCount: number;
+    height: number;
+  } | null;
   /**
    * The rail's first level: the five-wing switcher and the band it sits in.
    * The band's own bottom border is measured because it must stay unpainted —
-   * the hairline under the strip belongs to the sheet's top bar alone.
+   * the hairline in that row belongs to the dock's header.
    */
   wingsBand: { box: Box; display: string; borderBottomWidth: string } | null;
   wingSwitcher: {
@@ -278,6 +320,8 @@ type Report = {
   pass: boolean;
   failures: string[];
   vaultName: string;
+  /** The live domains the harness handed the shell, in lens order. */
+  domains: string[];
   tokens: State["tokens"];
   expanded: State;
   collapsed: State;
@@ -315,6 +359,19 @@ function alphaOf(value: string | null): number {
     .map(Number);
   if (!parts) return Number.NaN;
   return parts.length > 3 ? parts[3] : 1;
+}
+
+/**
+ * Whether a computed `background-image` paints `ink` — the page canvas, for the
+ * lens's bottom fillets. The gradient's stops serialise as their own colour
+ * strings, so the ink is looked for among them rather than substring-matched
+ * against the whole gradient (whose stop positions would let a naive `includes`
+ * pass on geometry alone).
+ */
+function gradientPaints(image: string | null, ink: string): boolean {
+  if (!image || !ink || image === "none") return false;
+  const stops = image.match(/rgba?\([^)]*\)|color\([^)]*\)/g) ?? [];
+  return stops.includes(ink);
 }
 
 /**
@@ -388,7 +445,7 @@ describe("shell sidebar (docked rail)", () => {
     assert.equal(exitCode, 0, "driver exited non-zero");
     assert.equal(report.pass, true);
 
-    const { track, collapsedTrack, titlebarHeight } = report.tokens;
+    const { track, collapsedTrack, titlebarHeight, topbarHeight } = report.tokens;
 
     // Restated here so the numbers are asserted by the suite, not only inside
     // the driver — and so a regression names the geometry it broke.
@@ -504,8 +561,8 @@ describe("shell sidebar (docked rail)", () => {
     );
 
     // The rail's first level: the five-wing switcher in a band of its own, above
-    // the wing's rows and on the sheet's top-bar row. The band paints no line of
-    // its own — the strip's hairline stays in the sheet, under the domain lens.
+    // the wing's rows and directly under the window strip. The band paints no
+    // line of its own — the hairline in that row is the dock's own header rule.
     assert.ok(expanded.wingSwitcher, "the rail rendered no wing switcher");
     assert.equal(
       expanded.wingSwitcher.inRail,
@@ -540,16 +597,18 @@ describe("shell sidebar (docked rail)", () => {
       `the wide wing switcher is ${expanded.wingSwitcher.flexDirection}, not one row`,
     );
     assert.ok(expanded.wingsBand, "the rail drew no band for the wing switcher");
-    assert.ok(expanded.topBar, "the sheet rendered no top bar");
+    // The rail's band did not give its height back with the sheet's band: it
+    // starts at the strip's bottom edge and keeps the 44px band the dock's header
+    // wears, so the two chrome rows stay level across the pane seam.
     assert.equal(
       expanded.wingsBand.box.top,
-      expanded.topBar.box.top,
-      `the rail's band starts at ${expanded.wingsBand.box.top}px, not on the top bar's row (${expanded.topBar.box.top}px)`,
+      titlebarHeight,
+      `the rail's band starts at ${expanded.wingsBand.box.top}px, not at the strip's bottom edge (${titlebarHeight}px)`,
     );
     assert.equal(
       expanded.wingsBand.box.bottom,
-      expanded.topBar.box.bottom,
-      `the rail's band ends at ${expanded.wingsBand.box.bottom}px, not on the top bar's line (${expanded.topBar.box.bottom}px)`,
+      titlebarHeight + topbarHeight,
+      `the rail's band ends at ${expanded.wingsBand.box.bottom}px, not ${titlebarHeight + topbarHeight}px down`,
     );
     assert.ok(
       expanded.wingSwitcher.box.top >= expanded.wingsBand.box.top &&
@@ -563,7 +622,7 @@ describe("shell sidebar (docked rail)", () => {
     assert.equal(
       expanded.wingsBand.borderBottomWidth,
       "0px",
-      `the sidebar's band paints a line across the rail (${expanded.wingsBand.borderBottomWidth}); the strip's hairline belongs to the sheet's top bar`,
+      `the sidebar's band paints a line across the rail (${expanded.wingsBand.borderBottomWidth}); the hairline in that row is the dock's own header rule`,
     );
     // The switcher is a rectangular block, not the shared pill: square corners
     // on the frame and on every tab, the rail's own padding as its only margin —
@@ -918,29 +977,20 @@ describe("shell sidebar (docked rail)", () => {
       true,
       `dock t/r/b/l ${expanded.chat.borderTopWidth}/${expanded.chat.borderRightWidth}/${expanded.chat.borderBottomWidth}/${expanded.chat.borderLeftWidth}`,
     );
-    // And the line under the strip is still there — it is the top bar's own, under
-    // the wing and domain selectors, not a frame on the sheet — and it is one line
-    // across both panes: the dock's header wears the same band height.
-    assert.ok(
-      parseFloat(expanded.topBar?.borderBottomWidth ?? "0") > 0 &&
-        parseFloat(expanded.topBar?.borderBottomWidth ?? "0") <= 1,
-      `the wing and domain selectors lost their underline (${expanded.topBar?.borderBottomWidth})`,
-    );
-    assert.equal(
-      expanded.topBar?.background,
-      expanded.mainBackground,
-      `the top bar is not on the page canvas: ${expanded.topBar?.background} vs ${expanded.mainBackground}`,
-    );
+    // The sheet's retired band. The page now starts at the strip's bottom edge,
+    // and the dock's header keeps the hairline that is now its own — in the same
+    // 44px band as the rail's wing switcher, so the chrome rows stay level across
+    // the pane seam while the page reclaims its band.
     assert.ok(expanded.chatHeader, "the dock rendered no header band");
     assert.equal(
-      expanded.topBar.box.top,
       expanded.chatHeader.box.top,
-      `the two bands do not start on the same row: ${expanded.topBar.box.top}px vs ${expanded.chatHeader.box.top}px`,
+      titlebarHeight,
+      `the dock header starts at ${expanded.chatHeader.box.top}px, not the strip's bottom edge (${titlebarHeight}px)`,
     );
     assert.equal(
-      expanded.topBar.box.bottom,
       expanded.chatHeader.box.bottom,
-      `the top bar's underline and the dock header's do not meet on one line: ${expanded.topBar.box.bottom}px vs ${expanded.chatHeader.box.bottom}px`,
+      titlebarHeight + topbarHeight,
+      `the dock header ends at ${expanded.chatHeader.box.bottom}px, not ${titlebarHeight + topbarHeight}px down`,
     );
     assert.ok(
       parseFloat(expanded.chatHeader.borderBottomWidth) > 0 &&
@@ -948,63 +998,194 @@ describe("shell sidebar (docked rail)", () => {
       `the dock header lost its underline (${expanded.chatHeader.borderBottomWidth})`,
     );
 
-    // The sheet's band carries one control now — the domain lens — with no frame
-    // of its own, centred in the pane. The frame doubled the pair's outlines back
-    // when the wing switcher shared the row; the control must still read as one
-    // without it — its fill separates it from the band, and the active tab keeps
-    // its line.
+    // The domain tab raised into the window strip. The sheet's `.top-bar` is gone
+    // from the DOM, the page begins where the strip ends (44px higher than it did),
+    // and the strip's first child is the page-ink lens holding the real switcher:
+    // no-drag, flush top and bottom, 12px past the rail's trailing hairline.
+    assert.equal(expanded.legacyTopBar, false, "a .top-bar is still in the tree");
+    assert.ok(expanded.mainFirstChild, "the sheet rendered no first child");
+    assert.match(
+      expanded.mainFirstChild!.className,
+      /shell__content/,
+      `the sheet's first child is not the page column (${JSON.stringify(expanded.mainFirstChild)})`,
+    );
+    assert.ok(expanded.titlebar, "the shell rendered no .window-titlebar");
+    assert.ok(expanded.shellContent, "the shell rendered no page column");
     assert.equal(
-      expanded.bandControlCount,
-      1,
-      `the sheet's band carries ${expanded.bandControlCount} .ui-segmented controls, expected the lens alone`,
+      expanded.shellContent!.top,
+      expanded.titlebar!.bottom,
+      `the page starts at ${expanded.shellContent!.top}px, not at the strip's bottom edge (${expanded.titlebar!.bottom}px)`,
     );
     assert.equal(
-      expanded.topBarSelectors?.length,
-      1,
-      `the rig did not measure the band's one selector: ${JSON.stringify(expanded.topBarSelectors)}`,
+      expanded.shellContent!.top,
+      titlebarHeight,
+      `the page still starts ${expanded.shellContent!.top - titlebarHeight}px below the strip; the retired band used to put it ${topbarHeight}px further down`,
     );
     assert.equal(
-      expanded.topBarSelectors?.[0]?.selector,
-      ".domain-switcher__tabs",
-      "the sheet's band is not carrying the domain lens",
+      expanded.titlebarNavCollapsed,
+      null,
+      `the wide strip reports data-nav-collapsed=${JSON.stringify(expanded.titlebarNavCollapsed)}`,
     );
-    for (const entry of expanded.topBarSelectors ?? []) {
-      assert.equal(
-        [
-          entry.borderTopWidth,
-          entry.borderRightWidth,
-          entry.borderBottomWidth,
-          entry.borderLeftWidth,
-        ].join("/"),
-        "0px/0px/0px/0px",
-        `${entry.selector} still wears an outer frame`,
-      );
-      assert.ok(
-        alphaOf(entry.background) > 0.05,
-        `${entry.selector} lost its fill too, so it vanishes into the band (${entry.background})`,
-      );
-      assert.ok(
-        entry.optionCount > 0,
-        `${entry.selector} rendered no options`,
-      );
+    assert.ok(expanded.lens, "the strip rendered no .window-titlebar__lens");
+    const lens = expanded.lens!;
+    assert.equal(lens.inTitlebar, true, "the lens is not inside the strip");
+    assert.equal(lens.firstChild, true, "the lens is not the strip's first child");
+    assert.equal(
+      lens.box.top,
+      expanded.titlebar!.top,
+      `the lens starts at ${lens.box.top}px, not at the strip's top (${expanded.titlebar!.top}px)`,
+    );
+    assert.equal(
+      lens.box.height,
+      titlebarHeight,
+      `the lens is ${lens.box.height}px high, not the strip's ${titlebarHeight}px`,
+    );
+    assert.equal(
+      lens.box.bottom,
+      expanded.shellContent!.top,
+      `the lens ends at ${lens.box.bottom}px, not at the page's top edge (${expanded.shellContent!.top}px)`,
+    );
+    assert.equal(
+      lens.fromRail,
+      12,
+      `the lens starts ${lens.fromRail}px past the rail, not the 12px breath`,
+    );
+    assert.equal(
+      lens.box.left,
+      expanded.rail!.box.right + 12,
+      `the lens starts at ${lens.box.left}px, not 12px past the rail's ${expanded.rail!.box.right}px edge`,
+    );
+    assert.equal(
+      lens.background,
+      expanded.mainBackground,
+      `the lens paints ${lens.background}, not the page canvas (${expanded.mainBackground})`,
+    );
+    assert.equal(
+      lens.appRegion,
+      "no-drag",
+      `the lens is ${lens.appRegion}; a click in the tab would start a window drag`,
+    );
+    // The tab's connection: 8px page-ink fillets at the two bottom corners, so the
+    // page flares into the strip instead of meeting it on two hard inside corners.
+    for (const [side, fillet] of [
+      ["leading", lens.before],
+      ["trailing", lens.after],
+    ] as const) {
+      assert.ok(fillet, `the lens's ${side} bottom fillet is missing`);
       assert.notEqual(
-        entry.activeBorderWidth,
+        fillet!.content,
+        "none",
+        `the lens's ${side} fillet renders no box`,
+      );
+      assert.equal(
+        fillet!.width,
+        "8px",
+        `the ${side} fillet is ${fillet!.width} wide, not 8px`,
+      );
+      assert.equal(
+        fillet!.height,
+        "8px",
+        `the ${side} fillet is ${fillet!.height} high, not 8px`,
+      );
+      assert.equal(
+        fillet!.bottom,
         "0px",
-        `${entry.selector}'s active tab lost the line that marks it as the current one`,
+        `the ${side} fillet does not sit on the strip's bottom edge (${fillet!.bottom})`,
+      );
+      assert.match(
+        fillet!.backgroundImage,
+        /radial-gradient/,
+        `the ${side} fillet is not a radial curve (${fillet!.backgroundImage})`,
       );
       assert.ok(
-        alphaOf(entry.activeBackground) > 0.05,
-        `${entry.selector}'s active tab lost its fill (${entry.activeBackground})`,
+        gradientPaints(fillet!.backgroundImage, expanded.mainBackground!),
+        `the ${side} fillet does not paint the page ink (${fillet!.backgroundImage} vs ${expanded.mainBackground})`,
       );
     }
-    assert.ok(expanded.domainLens, "the band rendered no domain lens");
-    assert.ok(expanded.topBar, "the sheet rendered no top bar");
+    // The other end of the tab: the top corners are rounded by the same 8px step
+    // as the fillets, with the strip visible through the notches above them. The
+    // bottom corners stay square on the box because their rounding is the concave
+    // flare, not a radius carved into the tab.
+    assert.equal(
+      lens.borderTopLeftRadius,
+      "8px",
+      `the lens's top-left corner is ${lens.borderTopLeftRadius}, not the 8px of its base`,
+    );
+    assert.equal(
+      lens.borderTopRightRadius,
+      "8px",
+      `the lens's top-right corner is ${lens.borderTopRightRadius}, not the 8px of its base`,
+    );
+    assert.equal(
+      lens.borderBottomLeftRadius,
+      "0px",
+      `the lens's bottom-left corner wears a ${lens.borderBottomLeftRadius} radius on top of its fillet`,
+    );
+    assert.equal(
+      lens.borderBottomRightRadius,
+      "0px",
+      `the lens's bottom-right corner wears a ${lens.borderBottomRightRadius} radius on top of its fillet`,
+    );
+    const lensSwitcher = expanded.domainLens;
+    assert.ok(lensSwitcher, "the lens rendered no domain switcher");
+    assert.equal(
+      lensSwitcher!.inLens,
+      true,
+      "the domain switcher is not inside the lens",
+    );
     assert.ok(
-      Math.abs(
-        (expanded.domainLens.box.left + expanded.domainLens.box.right) / 2 -
-          (expanded.topBar.box.left + expanded.topBar.box.right) / 2,
-      ) <= 1,
-      `the domain lens is not centred: its centre is ${(expanded.domainLens.box.left + expanded.domainLens.box.right) / 2}px, the band's is ${(expanded.topBar.box.left + expanded.topBar.box.right) / 2}px`,
+      lensSwitcher!.box.top >= lens.box.top &&
+        lensSwitcher!.box.bottom <= lens.box.bottom,
+      `the switcher (${JSON.stringify(lensSwitcher!.box)}) leaves the lens (${JSON.stringify(lens.box)})`,
+    );
+    assert.ok(
+      lensSwitcher!.height > 0 && lensSwitcher!.height <= titlebarHeight,
+      `the switcher is ${lensSwitcher!.height}px high, over the ${titlebarHeight}px strip`,
+    );
+    assert.deepEqual(
+      lensSwitcher!.labels,
+      ["Overview", ...report.domains],
+      `the lens offers ${JSON.stringify(lensSwitcher!.labels)}, not Overview then the vault's domains ${JSON.stringify(report.domains)}`,
+    );
+    assert.equal(
+      lensSwitcher!.optionCount,
+      report.domains.length + 1,
+      `the lens exposes ${lensSwitcher!.optionCount} options, not Overview plus the vault's ${report.domains.length} domains`,
+    );
+    // The lens's own segmented control: no outer frame inside the page-ink tab,
+    // with the fill and the active tab's line still carrying it.
+    assert.ok(
+      expanded.lensTabs,
+      "the rig did not measure the lens's segmented control",
+    );
+    const lensTabs = expanded.lensTabs!;
+    assert.equal(
+      [
+        lensTabs.borderTopWidth,
+        lensTabs.borderRightWidth,
+        lensTabs.borderBottomWidth,
+        lensTabs.borderLeftWidth,
+      ].join("/"),
+      "0px/0px/0px/0px",
+      "the lens's control still wears the shared .ui-segmented outer frame",
+    );
+    assert.ok(
+      alphaOf(lensTabs.background) > 0.05,
+      `the lens's control lost its fill too, so it vanishes into the tab (${lensTabs.background})`,
+    );
+    assert.equal(
+      lensTabs.optionCount,
+      report.domains.length + 1,
+      `the lens's control renders ${lensTabs.optionCount} options, expected Overview plus the vault's ${report.domains.length} domains`,
+    );
+    assert.notEqual(
+      lensTabs.activeBorderWidth,
+      "0px",
+      "the lens's active tab lost the line that marks it as the current one",
+    );
+    assert.ok(
+      alphaOf(lensTabs.activeBackground) > 0.05,
+      `the lens's active tab lost its fill (${lensTabs.activeBackground})`,
     );
 
     // The switcher is live where it now sits: clicking Define in the rail turns
@@ -1121,6 +1302,45 @@ describe("shell sidebar (docked rail)", () => {
       collapsed.titlebarToggle,
       null,
       `a titlebar toggle re-appeared when the rail narrowed (${JSON.stringify(collapsed.titlebarToggle)})`,
+    );
+    // The lens is chrome, so it follows the rail: the strip signals the collapsed
+    // state on the header and the tab pulls in to 68px — the 56px icon column plus
+    // the same 12px breath — still flush with the strip and the page's top edge.
+    assert.equal(
+      collapsed.titlebarNavCollapsed,
+      "true",
+      `the collapsed strip does not report data-nav-collapsed (${JSON.stringify(collapsed.titlebarNavCollapsed)})`,
+    );
+    assert.ok(collapsed.lens, "the thin strip rendered no domain lens");
+    assert.equal(
+      collapsed.lens!.fromRail,
+      12,
+      `the collapsed lens starts ${collapsed.lens!.fromRail}px past the rail, not the 12px breath`,
+    );
+    assert.equal(
+      collapsed.lens!.box.left,
+      collapsedTrack + 12,
+      `the collapsed lens starts at ${collapsed.lens!.box.left}px, not ${collapsedTrack + 12}px`,
+    );
+    assert.equal(
+      collapsed.lens!.box.left,
+      collapsed.rail!.box.right + 12,
+      `the collapsed lens starts at ${collapsed.lens!.box.left}px, not 12px past the thin rail's ${collapsed.rail!.box.right}px edge`,
+    );
+    assert.equal(
+      collapsed.lens!.box.top,
+      0,
+      `the collapsed lens starts at ${collapsed.lens!.box.top}px, not the strip's top`,
+    );
+    assert.equal(
+      collapsed.lens!.box.bottom,
+      collapsed.shellContent!.top,
+      `the collapsed lens ends at ${collapsed.lens!.box.bottom}px, not at the page's top edge (${collapsed.shellContent!.top}px)`,
+    );
+    assert.equal(
+      collapsed.lens!.background,
+      collapsed.mainBackground,
+      `the collapsed lens paints ${collapsed.lens!.background}, not the page canvas (${collapsed.mainBackground})`,
     );
     // The chip travels with the rail: thin, it stacks under the Log's icon and
     // reduces to the vault's initials. It is still the same button — the full
@@ -1433,6 +1653,18 @@ describe("shell sidebar (docked rail)", () => {
       restored.main?.left,
       expanded.main?.left,
       "reopening did not restore the sheet offset",
+    );
+    // The strip's state signal and the lens's offset come back with the rail: the
+    // tab travels with the chrome in both directions.
+    assert.equal(
+      restored.titlebarNavCollapsed,
+      null,
+      `reopening left data-nav-collapsed=${JSON.stringify(restored.titlebarNavCollapsed)} on the strip`,
+    );
+    assert.deepEqual(
+      restored.lens?.box,
+      expanded.lens?.box,
+      "reopening did not restore the lens's wide offset",
     );
     assert.deepEqual(
       restored.vaultChip?.box,
