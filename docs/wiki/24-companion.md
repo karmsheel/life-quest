@@ -74,7 +74,8 @@ not send an API key to the renderer.
 1. The dock is open on launch. If it is collapsed, click the launcher mark on the
    edge of the page (**Open Hermes chat**).
 2. Choose **New chat** in the Chats list (or the **New chat** button at the foot
-   of the dock). A blank chat is reused rather than piling up empty ones.
+   of the dock). A live blank chat is reused rather than piling up empty ones; an
+   archived blank stays in the archived view and is not reopened as the new chat.
 3. Click any row in **Chats** to load that conversation into the dock. A
    middle-click on the row — or **Chat actions** then **Open in new tab** — keeps
    the current chat on screen and opens a second tab. The tab strip appears when
@@ -87,6 +88,11 @@ not send an API key to the renderer.
    **Pin** / **Unpin**, **Rename**, **Archive**, and **Delete**. Pinned chats sit
    in their own **Pinned** group above **Recent**. A chat streaming a turn shows a
    dot on its row; the header counts how many are running.
+   Archiving the chat that is in front closes its tab and brings the tab that
+   takes its place to the front — or the one before it, when it was last. If it
+   was the last open chat, the dock stays on the thread and opens a blank
+   **New chat** instead of falling back to the Chats list. Archiving a chat that
+   is not in front leaves the open thread exactly where it was.
 5. **Delete** asks first: "Delete "<name>"? Its messages leave Hermes everywhere,
    and this cannot be undone." Renaming, pinning and archiving are durable Hermes
    flags, so Hermes Desktop and other channels see them too.

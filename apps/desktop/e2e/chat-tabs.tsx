@@ -80,6 +80,7 @@ type HarnessWindow = {
   __lqPatchCalls?: PatchCall[];
   __lqDeleteCalls?: string[];
   __lqMessageCalls?: string[];
+  __lqCreateCalls?: string[];
   __lqStopCalls?: string[];
   __lqListOptions?: ({ includeArchived?: boolean } | null)[];
   __lqFinishChat?: (sessionId: string) => void;
@@ -98,6 +99,7 @@ harness.__lqCalls = [];
 harness.__lqPatchCalls = [];
 harness.__lqDeleteCalls = [];
 harness.__lqMessageCalls = [];
+harness.__lqCreateCalls = [];
 harness.__lqStopCalls = [];
 harness.__lqListOptions = [];
 
@@ -328,8 +330,12 @@ const bridge: Record<string, unknown> = {
     return ok((MESSAGES[id] ?? []).map((message) => ({ ...message })));
   },
   companionSessionCreate: (title: string) => {
+    harness.__lqCreateCalls = [...(harness.__lqCreateCalls ?? []), title];
+    // A fresh id per create: the store keys tabs, transcripts and runs by it, so
+    // a second blank chat reusing the first one's id would make two tabs share a
+    // chat. The driver archives and re-creates, so this path runs twice.
     const row: FixtureRow = {
-      id: "chat-new",
+      id: `chat-created-${harness.__lqCreateCalls.length}`,
       title: title || null,
       preview: null,
       last_active: Date.now() / 1000,

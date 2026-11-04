@@ -149,6 +149,7 @@ describe("the dock's tab strip across a restart", () => {
       third,
       neighbour,
       oneLeft,
+      blankChat,
       closed,
       relaunch,
     } = report.states;
@@ -198,8 +199,9 @@ describe("the dock's tab strip across a restart", () => {
     });
 
     // Archiving the front chat closes its tab and hands the front to the other
-    // one; archiving the last open chat lands on the list and remembers the
-    // strip as deliberately empty.
+    // one, staying on the thread. Archiving the last open chat opens a blank New
+    // chat — the history list is the landing for neither. Deleting the last chat
+    // is the gesture that empties the strip deliberately.
     assert.deepEqual(readStored(oneLeft), {
       tabs: ["chat-alpha"],
       activeId: "chat-alpha",
@@ -209,7 +211,27 @@ describe("the dock's tab strip across a restart", () => {
       false,
       "the archived chat is still listed",
     );
-    assert.equal(oneLeft.surface, "list");
+    assert.equal(
+      oneLeft.surface,
+      "thread",
+      "archiving the front chat fell back to the history list",
+    );
+    assert.equal(oneLeft.heading, "Alpha planning");
+    assert.equal(
+      blankChat.tabCount,
+      0,
+      "the blank New chat drew a tab strip for a single tab",
+    );
+    assert.equal(
+      blankChat.surface,
+      "thread",
+      "archiving the last open chat fell back to the history list",
+    );
+    assert.equal(blankChat.list, false, "the list painted behind the blank New chat");
+    assert.equal(blankChat.heading, "New chat");
+    const blankStored = readStored(blankChat);
+    assert.equal(blankStored.tabs.length, 1, "the blank New chat was not remembered");
+    assert.equal(blankStored.activeId, blankStored.tabs[0]);
     assert.equal(closed.tabCount, 0);
     assert.equal(closed.surface, "list");
     assert.equal(closed.list, true);
@@ -231,6 +253,7 @@ describe("the dock's tab strip across a restart", () => {
       "chat-tabs-restore-seeded.png",
       "chat-tabs-restore-restored.png",
       "chat-tabs-restore-neighbour.png",
+      "chat-tabs-restore-blank-chat.png",
       "chat-tabs-restore-closed.png",
     ]) {
       assert.equal(
@@ -242,6 +265,7 @@ describe("the dock's tab strip across a restart", () => {
     assert.deepEqual(report.screenshots, [
       "chat-tabs-restore-restored.png",
       "chat-tabs-restore-neighbour.png",
+      "chat-tabs-restore-blank-chat.png",
       "chat-tabs-restore-closed.png",
     ]);
   });

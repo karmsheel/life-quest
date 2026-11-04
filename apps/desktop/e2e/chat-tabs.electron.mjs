@@ -279,6 +279,8 @@ const SAMPLE = `(() => {
       };
     })(),
     messages,
+    renaming: Boolean(document.querySelector(".chat-panel__rename-input")),
+    renameValue: document.querySelector(".chat-panel__rename-input")?.value ?? null,
     dialog: dialog
       ? {
           title: text(dialog.querySelector(".confirm-dialog__title")),
@@ -290,6 +292,7 @@ const SAMPLE = `(() => {
     patchCalls: window.__lqPatchCalls ?? [],
     deleteCalls: window.__lqDeleteCalls ?? [],
     messageCalls: window.__lqMessageCalls ?? [],
+    createCalls: window.__lqCreateCalls ?? [],
     stopCalls: window.__lqStopCalls ?? []
   };
 })()`;
@@ -645,6 +648,28 @@ async function main() {
       const button = document.querySelector('.chat-panel__actions [aria-label="New chat"]');
       if (!button) return false;
       button.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** Type into the thread header's rename field, through React's own input. */
+  const typeThreadRename = (text) =>
+    run(`(async () => {
+      const el = document.querySelector(".chat-panel__rename-input");
+      if (!el) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      setter.call(el, ${JSON.stringify(text)});
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return true;
+    })()`);
+
+  /** Any control in the dock, by its accessible name. */
+  const clickDockControl = (label) =>
+    run(`(async () => {
+      const el = document.querySelector('.chat-panel [aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']');
+      if (!el) return false;
+      el.click();
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
       return true;
     })()`);
@@ -1813,6 +1838,215 @@ async function main() {
       JSON.stringify({ menu: downward.rail?.menu, list: downward.rail?.list?.box }),
     );
 
+    // 21 — archiving the chat in front is a tab close, not a trip to the history
+    // page. The strip hands the screen to the tab that takes its place (or to
+    // the one before it, when the archived tab was last), and archiving the last
+    // open chat leaves a blank New chat on the thread. The reported fault was the
+    // dock falling back to the Chats list and making the operator pick a chat.
+    check("closed the open row menu", await openSidebarMenuAt(0), "no menu control");
+    const menuShutBeforeArchive = await settle();
+    check(
+      "the row menu is gone before the archive starts",
+      menuShutBeforeArchive.rail?.menu === null,
+      JSON.stringify(menuShutBeforeArchive.rail?.menu),
+    );
+    check("brought the middle tab to the front", await clickTab("New chat"), "no New chat tab");
+    const beforeActiveArchive = await settle();
+    check(
+      "the middle tab is the one in front before the archive",
+      beforeActiveArchive.heading === "New chat" && beforeActiveArchive.tabCount === 3,
+      JSON.stringify({ heading: beforeActiveArchive.heading, tabs: beforeActiveArchive.tabs }),
+    );
+    check(
+      "archived the chat in front",
+      await clickRowControl("New chat", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const activeArchived = await settle();
+    check(
+      "archiving the chat in front keeps the thread up",
+      activeArchived.list === false && activeArchived.thread === true,
+      JSON.stringify({ list: activeArchived.list, heading: activeArchived.heading }),
+    );
+    check(
+      "the next tab takes the archived tab's place",
+      activeArchived.tabCount === 2 &&
+        activeArchived.tabs.map((tab) => tab.label).join("/") === "Bravo budget/Delta automation" &&
+        activeArchived.heading === "Delta automation" &&
+        activeArchived.tabs.find((tab) => tab.label === "Delta automation")?.active === true,
+      JSON.stringify({ tabs: activeArchived.tabs, heading: activeArchived.heading }),
+    );
+    check(
+      "the archived chat left the sidebar",
+      !activeArchived.rows.some((row) => row.label === "New chat"),
+      JSON.stringify(activeArchived.rows.map((row) => row.label)),
+    );
+    screenshots.push(await shot("archived-active-tab"));
+
+    // The archived tab was the last of the strip: the tab before it takes the
+    // front, still without a view swap. One tab draws no strip, so the count is
+    // zero — the heading is what says which chat is in front.
+    check(
+      "archived the tab that was last in the strip",
+      await clickRowControl("Delta automation", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const previousTabArchived = await settle();
+    check(
+      "the previous tab takes the front when the last one is archived",
+      previousTabArchived.tabCount === 0 &&
+        previousTabArchived.heading === "Bravo budget" &&
+        previousTabArchived.list === false,
+      JSON.stringify({
+        tabs: previousTabArchived.tabs,
+        heading: previousTabArchived.heading,
+      }),
+    );
+
+    // Only one chat left: archiving it closes the strip and opens a blank New
+    // chat on the thread, the blank slate the New chat slot lands on.
+    const createsBeforeLastArchive = previousTabArchived.createCalls.length;
+    check(
+      "archived the last open chat",
+      await clickRowControl("Bravo budget", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const lastArchived = await settle(420);
+    check(
+      "archiving the last open chat leaves a blank New chat, not the list",
+      lastArchived.list === false &&
+        lastArchived.thread === true &&
+        lastArchived.tabCount === 0 &&
+        lastArchived.heading === "New chat" &&
+        lastArchived.messages.length === 0 &&
+        lastArchived.composer?.disabled === false &&
+        lastArchived.rows.some((row) => row.label === "New chat") &&
+        lastArchived.createCalls.length === createsBeforeLastArchive + 1,
+      JSON.stringify({
+        list: lastArchived.list,
+        tabs: lastArchived.tabs,
+        heading: lastArchived.heading,
+        messages: lastArchived.messages,
+        composer: lastArchived.composer,
+        creates: lastArchived.createCalls,
+      }),
+    );
+    screenshots.push(await shot("archived-last-tab"));
+
+    // 22 — the archived view must not offer an archived blank back as the new
+    // chat. With the archived band showing, archiving the blank chat in front
+    // opens a live blank; reopening the archived one would resurrect a chat the
+    // operator just put away.
+    check("opened view options", await clickRailControl("View options"), "no view control");
+    await settle();
+    check(
+      "showed the archived chats",
+      await clickViewOption("Show archived chats"),
+      "no Show archived item",
+    );
+    const archivedViewOpen = await settle(420);
+    check(
+      "the archived view lists an archived blank",
+      archivedViewOpen.rows.some((row) => row.label === "New chat" && row.archived),
+      JSON.stringify(archivedViewOpen.rows.filter((row) => row.label === "New chat")),
+    );
+    const createsBeforeBlankArchive = archivedViewOpen.createCalls.length;
+    check(
+      "archived the live blank chat in front",
+      await clickRowControl("New chat", ".chats-rail__archive-btn"),
+      "no archive control on the live New chat row",
+    );
+    const blankArchived = await settle(420);
+    check(
+      "archiving a blank in the archived view opens a live blank, not the archived one",
+      blankArchived.list === false &&
+        blankArchived.thread === true &&
+        blankArchived.heading === "New chat" &&
+        blankArchived.createCalls.length === createsBeforeBlankArchive + 1 &&
+        blankArchived.rows.some((row) => row.label === "New chat" && !row.archived) &&
+        blankArchived.rows.some((row) => row.label === "New chat" && row.archived),
+      JSON.stringify({
+        heading: blankArchived.heading,
+        creates: blankArchived.createCalls.length,
+        newChats: blankArchived.rows
+          .filter((row) => row.label === "New chat")
+          .map((row) => row.archived),
+      }),
+    );
+    screenshots.push(await shot("archived-blank-not-reused"));
+
+    // 23 — archiving the chat in front while the dock is on the history list
+    // keeps the list up: the operator is picking a chat there, and the archive
+    // must not drag them into the thread.
+    check("opened the history list", await clickDockControl("All chats"), "no All chats control");
+    const listUp = await settle();
+    check(
+      "the history list is the surface",
+      listUp.list === true && listUp.thread === false,
+      JSON.stringify({ list: listUp.list, heading: listUp.heading }),
+    );
+    const createsBeforeListArchive = listUp.createCalls.length;
+    check(
+      "archived the chat in front from the list",
+      await clickRowControl("New chat", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const archivedFromList = await settle(420);
+    check(
+      "archiving from the list keeps the list up and opens no blank chat",
+      archivedFromList.list === true &&
+        archivedFromList.thread === false &&
+        archivedFromList.tabCount === 0 &&
+        archivedFromList.createCalls.length === createsBeforeListArchive,
+      JSON.stringify({
+        list: archivedFromList.list,
+        heading: archivedFromList.heading,
+        creates: archivedFromList.createCalls.length,
+      }),
+    );
+    screenshots.push(await shot("archived-from-list"));
+
+    // 24 — a rename field belongs to the chat it was opened on. Archiving that
+    // chat from the sidebar hands the header to another chat; the field must
+    // close with its chat, not follow the header and write one chat's name onto
+    // the next one.
+    check("opened Pinned note", await clickSidebarRow("Pinned note"), "no row");
+    const renameTargetOpen = await settle();
+    check(
+      "the chat to rename is open",
+      renameTargetOpen.heading === "Pinned note" && renameTargetOpen.renaming === false,
+      JSON.stringify({ heading: renameTargetOpen.heading, renaming: renameTargetOpen.renaming }),
+    );
+    check("opened the rename field", await clickDockControl("Rename chat"), "no Rename chat control");
+    check("typed a name", await typeThreadRename("Wrong chat name"), "no rename field");
+    const renameOpen = await settle();
+    check(
+      "the rename field is open on the chat it was opened for",
+      renameOpen.renaming === true && renameOpen.renameValue === "Wrong chat name",
+      JSON.stringify({ renaming: renameOpen.renaming, value: renameOpen.renameValue }),
+    );
+    const patchesBeforeRenameArchive = renameOpen.patchCalls.length;
+    check(
+      "archived the chat being renamed from the sidebar",
+      await clickRowControl("Pinned note", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const renameArchived = await settle(420);
+    check(
+      "archiving the renamed chat closes the field instead of moving it to the next chat",
+      renameArchived.renaming === false &&
+        renameArchived.heading === "New chat" &&
+        renameArchived.patchCalls.length === patchesBeforeRenameArchive + 1 &&
+        !renameArchived.patchCalls.some((call) => typeof call.patch.title === "string"),
+      JSON.stringify({
+        renaming: renameArchived.renaming,
+        value: renameArchived.renameValue,
+        heading: renameArchived.heading,
+        patches: renameArchived.patchCalls.slice(-2),
+      }),
+    );
+    screenshots.push(await shot("archived-while-renaming"));
+
     mark("done");
     report = {
       url,
@@ -1874,6 +2108,16 @@ async function main() {
         atFoot,
         menuFlipped: flipped,
         menuDownward: downward,
+        beforeActiveArchive,
+        activeArchived,
+        previousTabArchived,
+        lastArchived,
+        archivedViewOpen,
+        blankArchived,
+        listUp,
+        archivedFromList,
+        renameOpen,
+        renameArchived,
       },
       failures,
       pass: failures.length === 0,
@@ -1956,6 +2200,51 @@ async function main() {
         state.menuDownward.heading,
         "",
         `placement ${state.menuDownward.rail?.menu?.placement}`,
+      ],
+      [
+        "active tab archived",
+        state.activeArchived.rowCount,
+        state.activeArchived.tabCount,
+        "",
+        state.activeArchived.heading,
+        "",
+        `tabs ${JSON.stringify(state.activeArchived.tabs.map((tab) => tab.label))}`,
+      ],
+      [
+        "last tab archived",
+        state.lastArchived.rowCount,
+        state.lastArchived.tabCount,
+        "",
+        state.lastArchived.heading,
+        "",
+        `messages ${state.lastArchived.messages.length}, creates ${state.lastArchived.createCalls.length}`,
+      ],
+      [
+        "blank archived (archived view)",
+        state.blankArchived.rowCount,
+        state.blankArchived.tabCount,
+        "",
+        state.blankArchived.heading,
+        "",
+        `creates ${state.blankArchived.createCalls.length}`,
+      ],
+      [
+        "archived from the list",
+        state.archivedFromList.rowCount,
+        state.archivedFromList.tabCount,
+        "",
+        state.archivedFromList.heading,
+        "",
+        `list ${state.archivedFromList.list}, creates ${state.archivedFromList.createCalls.length}`,
+      ],
+      [
+        "archived while renaming",
+        state.renameArchived.rowCount,
+        state.renameArchived.tabCount,
+        "",
+        state.renameArchived.heading,
+        "",
+        `renaming ${state.renameArchived.renaming}`,
       ],
     ];
     console.log(table.map((row) => row.join(" | ")).join("\n"));

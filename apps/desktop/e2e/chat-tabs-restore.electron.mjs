@@ -198,9 +198,9 @@ async function main() {
   /**
    * Archive a chat from its sidebar row, the way an operator puts a chat away.
    *
-   * This is how a tab reaches zero: the strip only draws with more than one tab,
-   * so the last open tab is closed by archiving (or deleting) the chat behind it,
-   * which is the gesture this path exercises.
+   * Archiving the chat in front closes its tab and hands the front to its
+   * neighbour; archiving the last open chat opens a blank New chat instead. A
+   * tab therefore reaches zero by deleting the last chat, not by archiving it.
    */
   const archiveFromSidebar = (label) =>
     run(`(async () => {
@@ -215,6 +215,31 @@ async function main() {
       const item = row.querySelector('[role=menuitem][aria-label="Archive chat"]');
       if (!item) return false;
       item.click();
+      await frame(); await frame(); await frame();
+      return true;
+    })()`);
+
+  /**
+   * Delete a chat from its sidebar row, answering the dock's own confirmation.
+   * Deleting the last open chat is the gesture that leaves the strip empty.
+   */
+  const deleteFromSidebar = (label) =>
+    run(`(async () => {
+      const row = Array.from(document.querySelectorAll(".chats-rail__row")).find(
+        (li) => (li.querySelector(".chats-rail__label")?.textContent || "").trim() === ${JSON.stringify(label)}
+      );
+      const menuButton = row?.querySelector(".chats-rail__menu-btn");
+      if (!menuButton) return false;
+      menuButton.click();
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      await frame(); await frame(); await frame();
+      const item = row.querySelector('[role=menuitem][aria-label="Delete chat"]');
+      if (!item) return false;
+      item.click();
+      await frame(); await frame(); await frame();
+      const confirm = document.querySelector(".confirm-dialog__confirm");
+      if (!confirm) return false;
+      confirm.click();
       await frame(); await frame(); await frame();
       return true;
     })()`);
@@ -408,10 +433,10 @@ async function main() {
       );
       await shot("neighbour");
 
-      // Put the working set away the way an operator does: archive the chats.
-      // The first archive closes the front tab and hands the front to the other
-      // one; the second closes the last tab and lands on the list, remembering
-      // the strip as deliberately empty.
+      // Put the working set away the way an operator does: archiving the front
+      // chat closes its tab and hands the front to the one beside it, staying on
+      // the thread; archiving the last open chat opens a blank New chat. Neither
+      // lands on the history list — that fallback is the reported fault.
       mark("verify:archive-front-tab");
       check("archive the front chat from the sidebar", await archiveFromSidebar("Bravo budget"));
       const oneLeft = await settle(360);
@@ -428,17 +453,47 @@ async function main() {
         JSON.stringify(oneLeft.railLabels),
       );
       check(
-        "archiving the front chat lands on the list",
-        oneLeft.surface === "list" && oneLeft.list && oneLeft.heading === "Chats",
+        "archiving the front chat stays on the thread, not the list",
+        oneLeft.surface === "thread" &&
+          oneLeft.list === false &&
+          oneLeft.heading === "Alpha planning",
         `${oneLeft.surface} / ${oneLeft.heading}`,
       );
 
       mark("verify:archive-last-tab");
       check("archive the last open chat from the sidebar", await archiveFromSidebar("Alpha planning"));
+      const blankChat = await settle(420);
+      states.blankChat = blankChat;
+      check(
+        "archiving the last open chat leaves a blank New chat, not the list",
+        blankChat.surface === "thread" &&
+          blankChat.list === false &&
+          blankChat.tabCount === 0 &&
+          blankChat.heading === "New chat",
+        JSON.stringify({
+          tabs: blankChat.tabCount,
+          surface: blankChat.surface,
+          heading: blankChat.heading,
+        }),
+      );
+      const blankStored = readStored(blankChat);
+      check(
+        "the blank New chat is the remembered strip",
+        blankStored?.tabs.length === 1 &&
+          blankStored?.activeId === blankStored?.tabs[0],
+        blankChat.stored ?? "nothing stored",
+      );
+      await shot("blank-chat");
+
+      // The other memory: a deliberately emptied strip. Deleting the last chat
+      // (the blank one just opened) closes its tab and lands on the list, and a
+      // restart must not undo that decision.
+      mark("verify:delete-last-tab");
+      check("delete the blank chat from the sidebar", await deleteFromSidebar("New chat"));
       const closed = await settle(360);
       states.closed = closed;
       check(
-        "the last open tab is gone and the list is the surface",
+        "deleting the last open chat lands on the list",
         closed.tabCount === 0 &&
           closed.surface === "list" &&
           closed.list &&
