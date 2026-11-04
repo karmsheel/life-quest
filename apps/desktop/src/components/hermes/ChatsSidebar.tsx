@@ -219,7 +219,10 @@ export function ChatsSidebar() {
     });
   }
 
-  /** Archive takes the chat out of the list; leaving that list is the gesture. */
+  /**
+   * Archive takes the chat out of the list; if it had a tab, that tab closes
+   * with it and the strip hands the front to its neighbour.
+   */
   function archiveChat(s: HermesSession) {
     setMenuId(null);
     void chat.patchSession(s.id, { archived: true });

@@ -21,8 +21,10 @@
  *     or no marker on the row itself.
  *  8. Rename is local-only, cannot be committed (dead Enter/submit), or the
  *     label does not change in both the thread and the list.
- *  9. Archive does not remove the row, or leaves the panel showing a thread for
- *     a chat that is no longer listed.
+ *  9. Archive does not remove the row, leaves the panel showing a thread for a
+ *     chat that is no longer listed, or — archiving the only open chat — drops
+ *     the dock on the history list instead of the blank New chat the operator
+ *     keeps working in.
  * 10. The thread header loses its identity — no label for the open chat, or its
  *     actions (pin / rename / archive) unreachable.
  * 11. Wrong chat opened — the row click loads an id other than the row's.
@@ -301,8 +303,10 @@ const bridge: Record<string, unknown> = {
   },
   companionSessionCreate: (title: string) => {
     harness.__lqCreateCalls = [...(harness.__lqCreateCalls ?? []), title];
+    // A fresh id per create, the same way the gateway mints one: the store keys
+    // tabs and transcripts by it, and the archive path can create more than once.
     const row: FixtureRow = {
-      id: "harness-created",
+      id: `harness-created-${harness.__lqCreateCalls.length}`,
       title: title || null,
       preview: null,
       last_active: Date.now() / 1000,
