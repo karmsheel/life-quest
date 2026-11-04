@@ -104,6 +104,7 @@ type DockState = {
   editingError: string | null;
   groups: Array<{ id: string | null; rows: string[] }>;
   rows: DockRowState[];
+  bar: Array<{ label: string | null; pressed: string | null; icon: string | null }>;
 };
 
 type TitlebarChild = {
@@ -115,15 +116,18 @@ type TitlebarChild = {
 };
 
 type TitlebarState = {
-  shortcuts: {
-    present: boolean;
-    label: string | null;
-    title: string | null;
-    pressed: string | null;
-    icon: string | null;
-    inTrailing: boolean;
-  };
   trailing: TitlebarChild[];
+};
+
+/** The dock bar's keyboard-shortcuts control, and where it is anchored. */
+type ShortcutsControl = {
+  present: boolean;
+  label: string | null;
+  title: string | null;
+  pressed: string | null;
+  icon: string | null;
+  inDockBar: boolean;
+  inTrailing: boolean;
 };
 
 type State = {
@@ -149,6 +153,7 @@ type State = {
   shellClass: string | null;
   chatPanel: boolean;
   dock: DockState | null;
+  shortcuts: ShortcutsControl;
   titlebar: TitlebarState;
   wingTabs: Array<{ label: string; selected: boolean }>;
   selectedWing: string | null;
@@ -287,7 +292,7 @@ describe("keyboard shortcuts settings and runner", () => {
       "the home stub has no [data-rig-input] for the typing guard",
     );
 
-    // —— The dock's keyboard-shortcuts reference: the titlebar control, the
+    // —— The dock's keyboard-shortcuts reference: the bar's control, the
     //       read-only page it opens, and Back to the thread.
     const dockThread = state(report, "dockThread");
     assert.equal(
@@ -301,45 +306,58 @@ describe("keyboard shortcuts settings and runner", () => {
       "the thread surface has no visible composer",
     );
     assert.equal(
-      dockThread.titlebar.shortcuts.present,
+      dockThread.shortcuts.present,
       true,
-      "the titlebar carries no shortcuts control",
+      "the dock's bottom bar carries no shortcuts control",
     );
     assert.equal(
-      dockThread.titlebar.shortcuts.label,
+      dockThread.shortcuts.label,
       "Keyboard shortcuts",
-      `the control's aria-label is ${JSON.stringify(dockThread.titlebar.shortcuts.label)}`,
+      `the control's aria-label is ${JSON.stringify(dockThread.shortcuts.label)}`,
     );
     assert.equal(
-      dockThread.titlebar.shortcuts.title,
+      dockThread.shortcuts.title,
       "Keyboard shortcuts",
-      `the control's title is ${JSON.stringify(dockThread.titlebar.shortcuts.title)}`,
+      `the control's title is ${JSON.stringify(dockThread.shortcuts.title)}`,
     );
     assert.equal(
-      dockThread.titlebar.shortcuts.pressed,
+      dockThread.shortcuts.pressed,
       "false",
       "the control reports pressed while the dock is on a thread",
     );
     assert.equal(
-      dockThread.titlebar.shortcuts.inTrailing,
+      dockThread.shortcuts.icon,
+      "lucide-keyboard",
+      `the control is not wearing the keyboard icon (${dockThread.shortcuts.icon})`,
+    );
+    assert.equal(
+      dockThread.shortcuts.inDockBar,
       true,
-      "the control is not in the titlebar's trailing cluster",
+      "the control is not in the dock's bottom action bar",
+    );
+    assert.equal(
+      dockThread.shortcuts.inTrailing,
+      false,
+      "a shortcuts control is still riding the titlebar",
+    );
+    assert.deepEqual(
+      (dockThread.dock?.bar ?? []).map((entry) => entry.label),
+      [
+        "New chat",
+        "Life-Chain",
+        "Keyboard shortcuts",
+        "Move chat to the left of the page",
+        "Collapse chat",
+      ],
+      `the bottom bar's actions are not in their shipped order: ${JSON.stringify(dockThread.dock?.bar)}`,
+    );
+    assert.deepEqual(
+      (dockThread.dock?.bar ?? []).filter((entry) => entry.label === "Keyboard shortcuts")[0]?.pressed,
+      "false",
+      "the bar's shortcuts action reports pressed on a thread",
     );
     const trailingClasses = dockThread.titlebar.trailing.map((child) => child.className);
-    const shortcutsAt = trailingClasses.findIndex((name) =>
-      name.includes("window-titlebar__shortcuts"),
-    );
-    const settingsAt = trailingClasses.findIndex((name) => name.includes("settings-menu"));
-    assert.equal(
-      shortcutsAt,
-      settingsAt - 1,
-      `the shortcuts control is not immediately before the settings menu: ${JSON.stringify(trailingClasses)}`,
-    );
-    const expectedTrailing = [
-      "theme-mode-toggle",
-      "window-titlebar__shortcuts",
-      "settings-menu",
-    ];
+    const expectedTrailing = ["theme-mode-toggle", "settings-menu"];
     expectedTrailing.forEach((needle, index) => {
       assert.ok(
         String(trailingClasses[index] ?? "").includes(needle),
@@ -349,9 +367,13 @@ describe("keyboard shortcuts settings and runner", () => {
     assert.equal(
       trailingClasses.length,
       expectedTrailing.length,
-      `the titlebar's trailing cluster kept a chat control: ${JSON.stringify(trailingClasses)}`,
+      `the titlebar's trailing cluster kept a moved control: ${JSON.stringify(trailingClasses)}`,
     );
-    for (const stale of ["window-titlebar__side-switch", "window-titlebar__chat-toggle"]) {
+    for (const stale of [
+      "window-titlebar__shortcuts",
+      "window-titlebar__side-switch",
+      "window-titlebar__chat-toggle",
+    ]) {
       assert.equal(
         trailingClasses.some((name) => name.includes(stale)),
         false,
@@ -361,7 +383,7 @@ describe("keyboard shortcuts settings and runner", () => {
 
     const dockDefaults = state(report, "dockDefaults");
     const dock = dockDefaults.dock;
-    assert.ok(dock, "the titlebar control did not open the dock onto its page");
+    assert.ok(dock, "the dock-bar control did not open the reference");
     assert.equal(dock.surface, "shortcuts", `dock surface ${dock.surface}`);
     assert.equal(
       dock.shortcutsHeading,
@@ -411,18 +433,18 @@ describe("keyboard shortcuts settings and runner", () => {
     assert.equal(dock.composerVisible, false, "the reference kept a visible composer");
     assert.equal(dock.bodyVisible, true, "the reference body is not painted");
     assert.equal(
-      dockDefaults.titlebar.shortcuts.pressed,
+      dockDefaults.shortcuts.pressed,
       "true",
-      "the titlebar control does not report pressed on its page",
+      "the dock-bar shortcuts control does not report pressed on its page",
     );
 
     const dockBack = state(report, "dockBackToThread");
     assert.equal(dockBack.dock?.surface, "thread", "Back did not return the dock to the thread");
     assert.equal(dockBack.dock?.composerVisible, true, "the thread did not get its composer back");
     assert.equal(
-      dockBack.titlebar.shortcuts.pressed,
+      dockBack.shortcuts.pressed,
       "false",
-      "the titlebar control stayed pressed after Back",
+      "the dock-bar shortcuts control stayed pressed after Back",
     );
 
     // —— 1. Settings nav shows "Keyboard"; the page has all 14 rows in four
@@ -579,9 +601,9 @@ describe("keyboard shortcuts settings and runner", () => {
       "Escape took the dock off its reference instead of just closing the sheet",
     );
     assert.equal(
-      dockAfterSettings.titlebar.shortcuts.pressed,
+      dockAfterSettings.shortcuts.pressed,
       "true",
-      "the titlebar control stopped reporting pressed while the dock stayed on the page",
+      "the dock-bar shortcuts control stopped reporting pressed while the dock stayed on the page",
     );
 
     const dockBackAfterSettings = state(report, "dockBackAfterSettings");
@@ -631,8 +653,10 @@ describe("keyboard shortcuts settings and runner", () => {
     assert.equal(conflictCancelled.promptCount, 0, "a prompt survived Escape");
     assert.equal(conflictCancelled.error, null, "the error banner survived the cancel");
 
-    // —— A collapsed dock opens straight onto the reference, and the
-    //       chat-resume effect does not replace the requested surface.
+    // —— A collapsed dock takes its bar's controls with it; reopening it from
+    //       the floating mark and pressing the shortcuts control puts the
+    //       reference in front, and the chat-resume effect does not replace the
+    //       requested surface.
     const dockCollapsed = state(report, "dockCollapsedForShortcuts");
     assert.equal(dockCollapsed.chatPanel, false, "the collapse control left the dock mounted");
     assert.equal(
@@ -641,13 +665,13 @@ describe("keyboard shortcuts settings and runner", () => {
       "the dock's own collapse control did not collapse the dock",
     );
     assert.equal(
-      dockCollapsed.titlebar.shortcuts.pressed,
-      "false",
-      "the titlebar control reports pressed while the dock is collapsed",
+      dockCollapsed.shortcuts.present,
+      false,
+      "the collapsed dock still carries a shortcuts control",
     );
 
     const dockReopened = state(report, "dockReopenedOnShortcuts");
-    assert.equal(dockReopened.chatPanel, true, "the control did not open the collapsed dock");
+    assert.equal(dockReopened.chatPanel, true, "the dock did not reopen from its floating mark");
     assert.equal(
       String(dockReopened.shellClass).includes("shell--chat-open"),
       true,
@@ -655,9 +679,9 @@ describe("keyboard shortcuts settings and runner", () => {
     );
     assert.equal(dockReopened.dock?.surface, "shortcuts", "the reopened dock is not on the reference");
     assert.equal(
-      dockReopened.titlebar.shortcuts.pressed,
+      dockReopened.shortcuts.pressed,
       "true",
-      "the titlebar control does not report pressed on the reopened page",
+      "the shortcuts control does not report pressed on the reopened page",
     );
     assert.equal(dockReopened.dock?.footerHidden, true, "the reopened reference kept its footer");
     assert.equal(dockReopened.dock?.composerVisible, false, "the reopened reference kept a composer");
@@ -667,7 +691,7 @@ describe("keyboard shortcuts settings and runner", () => {
     assert.equal(
       dockReopenedSettled.dock?.surface,
       "shortcuts",
-      "the chat-resume effect replaced the surface the titlebar control asked for",
+      "the chat-resume effect replaced the surface the operator asked for",
     );
     assert.equal(
       dockReopenedSettled.path,

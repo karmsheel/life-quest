@@ -99,11 +99,14 @@ The window title bar:
   screens there is none. There the strip is the window's drag area, with its window
   controls when the overlay is unavailable, and with no vault the window title is
   `LifeQuest`.
-- The trailing controls, for a vault window: the theme toggle (only on themes with
-  both day and night palettes — *Switch to day mode* / *Switch to night mode*), the
-  **Keyboard shortcuts** control, which opens the reference on the dock, and the
-  **Settings** gear (*Open settings*). The dock's own controls are not here: its
-  side switch and collapse control live in its bottom action bar.
+- The trailing controls, for a vault window: the day/night control (only on themes
+  with both palettes — *Switch to day mode* / *Switch to night mode*), and the
+  **Settings** gear (*Open settings*). The day/night control is two controls on one
+  icon: a click switches the palette between day and night, and hovering it opens a
+  quick menu with the **System** / **Light** / **Dark** switcher first and the
+  starred themes underneath for quick selection. The dock's own controls are not
+  here: its side switch, collapse control and the **Keyboard shortcuts** control
+  live in its bottom action bar.
 - When the platform overlay is unavailable, the same strip carries **Minimize**,
   **Maximize** / **Restore** and **Close** instead of drawing over the native
   frame.
@@ -137,9 +140,10 @@ The chat dock:
 - The thread, a Life-Chain view, and the keyboard-shortcuts reference. The history
   is not a dock surface: the whole chat list lives in the rail's **Chats** section.
 - The composer at the foot (*Message Hermes…*) with the bottom action row:
-  **New chat**, **Life-Chain**, the two-panes side switch (*Move chat to the left
-  of the page* / *Move chat to the right of the page*), **Collapse chat**, and the
-  version badge (*Check for updates*).
+  **New chat**, **Life-Chain**, **Keyboard shortcuts** (opens the reference as a
+  dock surface), the two-panes side switch (*Move chat to the left of the page* /
+  *Move chat to the right of the page*), **Collapse chat**, and the version badge
+  (*Check for updates*).
 - The divider between page and dock: an invisible strip at rest, an accent bar
   under the hand or focus.
 
@@ -198,8 +202,11 @@ Window-level keys:
   means "make this pane bigger" on both sides. Arrow keys follow the same rule.
 - The sheet scrim closes on a press that starts on the scrim, so a drag that
   begins inside the panel and ends outside does not dismiss it.
-- The theme toggle disappears on themes that do not ship both palettes; the
+- The day/night control disappears on themes that do not ship both palettes; the
   Appearance page still lets you choose a mode, but some themes only exist in one.
+- Clicking the day/night control switches the palette immediately; hovering it
+  opens the quick menu. The menu's starred grid is the same list the Settings
+  popover shows, and stars are set on the Appearance page.
 - If the window falls back to LifeQuest's own minimize/maximize/close buttons, the
   native overlay was unavailable; everything else in the title bar behaves the
   same.

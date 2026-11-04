@@ -20,6 +20,7 @@ import {
   Eye,
   EyeOff,
   ImagePlus,
+  Keyboard,
   MessageCircleQuestion,
   MessageSquare,
   MoreVertical,
@@ -164,8 +165,8 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     // The two-pane move, in the bottom bar beside the collapse control: the
     // titlebar no longer carries a copy of it.
     swapSide,
-    // What the pane is showing. It sits on the dock because the titlebar's
-    // shortcuts control opens the dock onto that page from above this store.
+    // What the pane is showing. The dock's own bottom bar switches it, so the
+    // store sits above the panel whose bar reads it.
     surface: view,
     setSurface: setView,
   } = useChatDock();
@@ -489,7 +490,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * recent one, else show the list. The store guards the "already landed" case,
    * so a run's deltas re-rendering this panel cannot resume it a second time.
    *
-   * A surface the operator asked for by name — the titlebar's shortcuts
+   * A surface the operator asked for by name — the dock bar's shortcuts
    * reference — is not a landing: opening the dock onto it must not have a chat
    * resume over the top of it. The check reads a ref rather than a dependency:
    * landing is "the dock opened", not "the surface changed", and re-running
@@ -1083,7 +1084,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             </div>
           ) : view === "shortcuts" ? (
             /*
-              The titlebar's shortcuts control opens the dock onto this page. It
+              The dock's bottom bar opens this page onto the panel. It
               shares the thread's header shape — a way back, the page's name, and
               the one control the page needs — but its body is a reference, not a
               conversation, so there is no composer under it and no tab strip
@@ -1832,6 +1833,24 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               onClick={() => setView(view === "chain" ? "thread" : "chain")}
             >
               <Radio size={20} aria-hidden />
+            </button>
+            {/*
+              The keyboard-shortcuts reference, at the head of the trailing
+              group and beside the switch it now shares the corner with: it is a
+              surface selector like the chain, and the dock is the only place it
+              belongs now that the titlebar no longer carries it. Pressed while
+              the reference is the surface in front of the operator.
+            */}
+            <button
+              type="button"
+              className="chat-panel__icon-btn chat-panel__action chat-panel__action--shortcuts"
+              data-testid="chat-shortcuts-action"
+              aria-label="Keyboard shortcuts"
+              title="Keyboard shortcuts"
+              aria-pressed={view === "shortcuts"}
+              onClick={() => setView("shortcuts")}
+            >
+              <Keyboard size={20} aria-hidden />
             </button>
             {/*
               The switch-position control, beside the collapse it belongs with:
