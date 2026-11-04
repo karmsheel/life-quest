@@ -390,8 +390,9 @@ const SAMPLE = `(() => {
     // the rig reads it off the header rather than inferring the state from a box.
     titlebarNavCollapsed,
     // The domain tab raised into the window's strip: its box, its page ink, its
-    // no-drag carve-out, the two page-coloured fillets at its bottom corners, and
-    // how far it starts past the rail's trailing hairline.
+    // no-drag carve-out, the two page-coloured fillets at its bottom corners, the
+    // rounded top corners that match them, and how far it starts past the rail's
+    // trailing hairline.
     lens: lens
       ? {
           box: box(lens),
@@ -403,6 +404,10 @@ const SAMPLE = `(() => {
             lensBoxNow && railBoxNow
               ? Math.round(lensBoxNow.left - railBoxNow.right)
               : null,
+          borderTopLeftRadius: getComputedStyle(lens).borderTopLeftRadius,
+          borderTopRightRadius: getComputedStyle(lens).borderTopRightRadius,
+          borderBottomLeftRadius: getComputedStyle(lens).borderBottomLeftRadius,
+          borderBottomRightRadius: getComputedStyle(lens).borderBottomRightRadius,
           before: pseudo(lens, "::before"),
           after: pseudo(lens, "::after")
         }
@@ -1657,6 +1662,24 @@ async function main() {
         `${side} fillet image ${JSON.stringify(fillet?.backgroundImage)} vs page ink ${expanded.mainBackground}`,
       );
     }
+    // The other end of the tab: the top corners are rounded by the same 8px step,
+    // with the strip showing through the two notches above them. The bottom
+    // corners keep a zero radius on purpose — their rounding is the concave flare
+    // the pseudos draw into the strip, not a curve cut out of the tab's own box.
+    check(
+      "the lens's top corners are rounded by the same step as its base",
+      Boolean(expanded.lens) &&
+        expanded.lens.borderTopLeftRadius === "8px" &&
+        expanded.lens.borderTopRightRadius === "8px" &&
+        expanded.lens.borderBottomLeftRadius === "0px" &&
+        expanded.lens.borderBottomRightRadius === "0px",
+      `radii ${JSON.stringify([
+        expanded.lens?.borderTopLeftRadius,
+        expanded.lens?.borderTopRightRadius,
+        expanded.lens?.borderBottomLeftRadius,
+        expanded.lens?.borderBottomRightRadius,
+      ])}`,
+    );
     const lensSwitcher = expanded.domainLens;
     check(
       "the real domain switcher lives inside the lens",

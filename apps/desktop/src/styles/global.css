@@ -465,9 +465,12 @@ a {
    surface raised through the strip. The two `::before`/`::after` pieces are the
    rounded connection at the bottom: a small page-coloured flare outside each
    bottom corner whose inner quarter-circle is cut away, so the strip's ink curves
-   into the tab's sides instead of meeting them on two square inside corners. It
-   is `no-drag` because a control inside the window's drag band must still take a
-   click; the empty leading half of the strip remains the handle.
+   into the tab's sides instead of meeting them on two square inside corners. The
+   top corners are rounded by the same step — the strip shows through the two
+   notches above them — so the silhouette is a tab at both ends rather than a
+   block with only its base softened. It is `no-drag` because a control inside the
+   window's drag band must still take a click; the empty leading half of the strip
+   remains the handle.
 
    Placement is the rail's own column plus a breath of mat: wide or thin, the tab
    starts just past the sidebar's trailing hairline, so the flare on its leading
@@ -485,6 +488,9 @@ a {
   margin-left: calc(var(--shell-nav-width) + 0.75rem);
   padding: 0 0.6rem;
   background: var(--background);
+  /* The bottom corners stay square: their rounding is the concave flare the two
+     pseudo-elements draw into the strip, not a radius carved out of this box. */
+  border-radius: var(--lens-fillet) var(--lens-fillet) 0 0;
   -webkit-app-region: no-drag;
 }
 

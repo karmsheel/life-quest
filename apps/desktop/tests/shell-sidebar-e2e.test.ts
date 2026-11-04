@@ -169,8 +169,9 @@ type State = {
   titlebar: Box | null;
   /**
    * The domain tab raised into the window strip: its page ink, its no-drag
-   * carve-out, its two bottom fillets where the page flares into the strip, and
-   * how far it starts past the rail's trailing hairline.
+   * carve-out, its two bottom fillets where the page flares into the strip, its
+   * rounded top corners matching them, and how far it starts past the rail's
+   * trailing hairline.
    */
   lens: {
     box: Box;
@@ -179,6 +180,10 @@ type State = {
     inTitlebar: boolean;
     firstChild: boolean;
     fromRail: number | null;
+    borderTopLeftRadius: string;
+    borderTopRightRadius: string;
+    borderBottomLeftRadius: string;
+    borderBottomRightRadius: string;
     before: Fillet | null;
     after: Fillet | null;
   } | null;
@@ -1097,6 +1102,30 @@ describe("shell sidebar (docked rail)", () => {
         `the ${side} fillet does not paint the page ink (${fillet!.backgroundImage} vs ${expanded.mainBackground})`,
       );
     }
+    // The other end of the tab: the top corners are rounded by the same 8px step
+    // as the fillets, with the strip visible through the notches above them. The
+    // bottom corners stay square on the box because their rounding is the concave
+    // flare, not a radius carved into the tab.
+    assert.equal(
+      lens.borderTopLeftRadius,
+      "8px",
+      `the lens's top-left corner is ${lens.borderTopLeftRadius}, not the 8px of its base`,
+    );
+    assert.equal(
+      lens.borderTopRightRadius,
+      "8px",
+      `the lens's top-right corner is ${lens.borderTopRightRadius}, not the 8px of its base`,
+    );
+    assert.equal(
+      lens.borderBottomLeftRadius,
+      "0px",
+      `the lens's bottom-left corner wears a ${lens.borderBottomLeftRadius} radius on top of its fillet`,
+    );
+    assert.equal(
+      lens.borderBottomRightRadius,
+      "0px",
+      `the lens's bottom-right corner wears a ${lens.borderBottomRightRadius} radius on top of its fillet`,
+    );
     const lensSwitcher = expanded.domainLens;
     assert.ok(lensSwitcher, "the lens rendered no domain switcher");
     assert.equal(

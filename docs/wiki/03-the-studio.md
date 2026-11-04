@@ -85,10 +85,10 @@ Decisions without losing the page you were reading.
 The window title bar:
 
 - The **domain tab** at the leading edge, just past the rail. It is painted on the
-  page canvas, flush with the window's top edge and the full height of the strip,
-  and its two bottom corners flare into the page with small concave fillets — the
-  rounded connection that makes it read as the page's own tab rather than a control
-  floating in the chrome. It carries the domain lens:
+  page canvas, flush with the window's top edge and the full height of the strip;
+  its top corners are rounded and its two bottom corners flare into the page with
+  small concave fillets of the same step — the rounded ends make it read as the
+  page's own tab rather than a control floating in the chrome. It carries the domain lens:
   **Overview** followed by every live domain, in sort order, as a compact segmented
   control that moves with **←** and **→**. The tab moves with the rail as it
   collapses. The window title is `LifeQuest — <vault name>`.

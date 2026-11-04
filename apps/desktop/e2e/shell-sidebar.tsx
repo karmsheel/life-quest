@@ -122,7 +122,10 @@
  *     (268px absolute wide, 68px thin), following the rail when it collapses.
  * 20d. The tab's connection square — the two bottom fillets missing, not 8×8,
  *     or painted in the wrong ink, so the page meets the strip on two hard inside
- *     corners instead of flaring into it.
+ *     corners instead of flaring into it. The top corners must be rounded by the
+ *     same 8px step (and the bottom corners must stay square on the box — their
+ *     rounding is the flare, not a radius), so the silhouette reads as a tab at
+ *     both ends rather than a block with one softened edge.
  * 20e. The lens overflowing the strip — the segmented control taller than
  *     `--window-titlebar-height`, poking out of the lens, or the lens shoving the
  *     trailing cluster (theme, shortcuts, settings, side and chat toggles) off
