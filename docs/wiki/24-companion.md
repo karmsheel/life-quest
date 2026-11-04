@@ -78,7 +78,11 @@ not send an API key to the renderer.
 3. Click any row in **Chats** to load that conversation into the dock. A
    middle-click on the row — or **Chat actions** then **Open in new tab** — keeps
    the current chat on screen and opens a second tab. The tab strip appears when
-   more than one chat is open.
+   more than one chat is open. The strip is remembered: quit and reopen the app
+   and every tab comes back in the same order, with the chat that was in front
+   still in front. A remembered chat that has been archived or deleted in Hermes
+   Desktop in the meantime loses its tab, and if every tab was closed before
+   quitting the dock opens on the Chats list rather than reopening one.
 4. Hover a chat for its own controls: the row menu has **Open in new tab**,
    **Pin** / **Unpin**, **Rename**, **Archive**, and **Delete**. Pinned chats sit
    in their own **Pinned** group above **Recent**. A chat streaming a turn shows a

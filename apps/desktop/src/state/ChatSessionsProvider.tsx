@@ -13,6 +13,11 @@ import { AUTOMATIONS_CHANGED_EVENT } from "@/lib/automations";
 import { readPageContext } from "@/lib/page-context";
 import { useActiveDomain, useDashboardBoard } from "@/components/shell/useActiveDomain";
 import { useChatDock, type ChatCardContext } from "@/state/ChatDockProvider";
+import {
+  readStoredChatTabs,
+  restoredChatTabs,
+  writeStoredChatTabs,
+} from "@/state/chat-tabs-persistence";
 import { useVault } from "@/state/VaultProvider";
 import type {
   CompanionRuntimeOverride,
@@ -250,6 +255,14 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   const automationContexts = useRef(new Map<string, string>());
   const receiptPreviews = useRef(new Map<string, string>());
   const resuming = useRef(false);
+  /**
+   * Whether the landing has read the profile's remembered tab strip. Writes are
+   * held off until it has: the first commit of a fresh mount has no tabs yet, and
+   * persisting that would erase the very strip the landing is about to restore.
+   * A failed list read leaves it false, so a gateway hiccup cannot cost the memory
+   * either.
+   */
+  const tabsHydrated = useRef(false);
 
   const runOf = useCallback(
     (id: string | null | undefined): SessionRun =>
@@ -440,9 +453,16 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   );
 
   /**
-   * Landing behaviour, once per mount: resume the chat this dock opened last,
-   * else the most recent one, else show the list. Never mints a session — an
-   * empty chat made on every open is how the list filled with "New chat" rows.
+   * Landing behaviour, once per mount: bring back the tab strip the operator
+   * left (every open chat, in tab order, with the tab that was in front), else
+   * resume the chat this dock opened last, else the most recent one, else show
+   * the list. Never mints a session — an empty chat made on every open is how the
+   * list filled with "New chat" rows.
+   *
+   * The remembered strip is reconciled against the list just read, so a chat
+   * deleted or archived elsewhere while the app was shut cannot come back as a
+   * tab pointing at nothing. The rest of the restored transcripts are read when
+   * their tab is clicked, as any other unopened chat's is.
    */
   const resumeLast = useCallback(async () => {
     if (resuming.current || activeIdRef.current) return;
@@ -451,15 +471,45 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       const listed = sessionsRef.current.length
         ? sessionsRef.current
         : await loadSessions();
+      // No list, no landing: leave the memory alone and let the store finish the
+      // mount it already started rather than clearing the strip over a hiccup.
       if (!listed) return;
-      const stored = window.localStorage.getItem(LAST_SESSION_KEY);
-      const resume = listed.find((s) => s.id === stored) ?? listed[0] ?? null;
+      const stored = readStoredChatTabs();
+      const lastSessionId = window.localStorage.getItem(LAST_SESSION_KEY);
+      const landing = restoredChatTabs(
+        stored,
+        new Set(listed.map((s) => s.id)),
+        { openNow: openTabsRef.current, lastSessionId },
+      );
+      if (landing.closedStrip) {
+        // Every tab was closed before the app quit. That is a decision about the
+        // working set, so the landing is the list — not a chat resumed over the
+        // top of it, which is what made a closed chat look reopened.
+        tabsHydrated.current = true;
+        setSurface("list");
+        return;
+      }
+      if (landing.activeId) {
+        tabsHydrated.current = true;
+        setOpenTabs(landing.tabs);
+        setActiveId(landing.activeId);
+        setSurface("thread");
+        setListError(null);
+        window.localStorage.setItem(LAST_SESSION_KEY, landing.activeId);
+        await loadMessages(landing.activeId);
+        return;
+      }
+      // No strip to restore: a first landing, or a profile from before the strip
+      // was remembered. The old rule still holds — the last chat, the most
+      // recent one, or the list.
+      tabsHydrated.current = true;
+      const resume = listed.find((s) => s.id === lastSessionId) ?? listed[0] ?? null;
       if (resume) await openChat(resume.id);
       else setSurface("list");
     } finally {
       resuming.current = false;
     }
-  }, [loadSessions, openChat]);
+  }, [loadMessages, loadSessions, openChat, setSurface]);
 
   const closeTab = useCallback(
     (id: string) => {
@@ -954,6 +1004,23 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void loadSessions();
   }, [loadSessions]);
+
+  /**
+   * Remember the strip for the next run: the chats that were open, in tab order,
+   * and the one in front.
+   *
+   * Written here rather than from each gesture so every path that changes the
+   * strip is covered — opening, navigating, splitting, closing, deleting,
+   * archiving, a run opening a tab of its own. The pair is written together: an
+   * active id naming a tab the strip does not carry is not a memory to restore,
+   * it is a landing into nothing. Held off until the first landing has read the
+   * profile (`tabsHydrated`), because the mount before it has no tabs yet.
+   */
+  useEffect(() => {
+    if (!tabsHydrated.current) return;
+    writeStoredChatTabs(openTabs, activeId);
+    if (activeId) window.localStorage.setItem(LAST_SESSION_KEY, activeId);
+  }, [openTabs, activeId]);
 
   useEffect(() => {
     // A scheduled automation writes its run to the vault and fires the shelf's

@@ -114,6 +114,30 @@ function parseOptionalLine(value: unknown, field: string): Result<string | null>
   return ok(trimmed);
 }
 
+/**
+ * A source link: an absolute `http`/`https` URL, or null.
+ *
+ * The project page renders this as a link, so anything that is not a real web
+ * address is refused by name instead of being stored and rendered as a dead
+ * anchor. A relative path, `ftp:`, `javascript:` and plain prose all fail here.
+ */
+function parseSourceUrl(value: unknown, field: string): Result<string | null> {
+  if (value === undefined || value === null) return ok(null);
+  if (typeof value !== "string") return fail(`${field} must be a string or null`);
+  const trimmed = value.trim();
+  if (!trimmed) return ok(null);
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return fail(`${field} must be an absolute http or https URL`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return fail(`${field} must be an absolute http or https URL`);
+  }
+  return ok(trimmed);
+}
+
 function parseBody(value: unknown): Result<string> {
   if (value === undefined || value === null) return ok("");
   if (typeof value !== "string") return fail("bodyMarkdown must be a string");
@@ -247,6 +271,22 @@ function parseProjectFile(id: string, raw: string): Project | null {
   const targetDate = readDate(data.targetDate);
   if (targetDate === undefined) return null;
 
+  // The three idea-provenance fields. Old files carry none of them and read as
+  // null; a file that carries something that is not a string (or a sourceUrl
+  // that is not an absolute http(s) URL) is malformed, the same as any other
+  // field that cannot round-trip.
+  const readOptionalText = (value: unknown): string | null | undefined => {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== "string") return undefined;
+    return value.trim() || null;
+  };
+  const projectType = readOptionalText(data.projectType);
+  if (projectType === undefined) return null;
+  const source = readOptionalText(data.source);
+  if (source === undefined) return null;
+  const sourceUrl = parseSourceUrl(data.sourceUrl, "sourceUrl");
+  if (!sourceUrl.ok) return null;
+
   // serializeFrontmatter writes numbers as bare scalars and parseFrontmatter
   // hands every bare scalar back as a string, so a written `progress: 40` reads
   // as "40". Coercing here is what keeps the round trip numeric.
@@ -283,6 +323,9 @@ function parseProjectFile(id: string, raw: string): Project | null {
     id,
     title: data.title.trim(),
     summary: typeof data.summary === "string" ? data.summary.trim() : "",
+    projectType,
+    source,
+    sourceUrl: sourceUrl.value,
     bodyMarkdown: body,
     stateNote: typeof data.stateNote === "string" ? data.stateNote.trim() : "",
     goalId,
@@ -331,6 +374,9 @@ async function writeProjectFile(rootPath: string, record: Project): Promise<void
     {
       title: record.title,
       summary: record.summary,
+      projectType: record.projectType,
+      source: record.source,
+      sourceUrl: record.sourceUrl,
       stateNote: record.stateNote,
       goalId: record.goalId,
       domain: record.domainSlug,
@@ -349,6 +395,9 @@ async function writeProjectFile(rootPath: string, record: Project): Promise<void
   let raw = serialized;
   for (const [key, value] of [
     ["summary", record.summary],
+    ["projectType", record.projectType ?? ""],
+    ["source", record.source ?? ""],
+    ["sourceUrl", record.sourceUrl ?? ""],
     ["stateNote", record.stateNote],
     ["nextAction", record.nextAction ?? ""],
   ] as const) {
@@ -441,6 +490,12 @@ export async function projectCreate(
     if (!title.ok) return title;
     const summary = parseDefaultLine(raw.summary, "summary");
     if (!summary.ok) return summary;
+    const projectType = parseOptionalLine(raw.projectType, "projectType");
+    if (!projectType.ok) return projectType;
+    const source = parseOptionalLine(raw.source, "source");
+    if (!source.ok) return source;
+    const sourceUrl = parseSourceUrl(raw.sourceUrl, "sourceUrl");
+    if (!sourceUrl.ok) return sourceUrl;
     const stateNote = parseDefaultLine(raw.stateNote, "stateNote");
     if (!stateNote.ok) return stateNote;
     const bodyMarkdown = parseBody(raw.bodyMarkdown);
@@ -494,6 +549,9 @@ export async function projectCreate(
       id,
       title: title.value,
       summary: summary.value,
+      projectType: projectType.value,
+      source: source.value,
+      sourceUrl: sourceUrl.value,
       bodyMarkdown: bodyMarkdown.value,
       stateNote: stateNote.value,
       goalId: goalId.value,
@@ -551,6 +609,24 @@ export async function projectUpdate(
         const summary = parseDefaultLine(raw.summary, "summary");
         if (!summary.ok) return summary;
         next.summary = summary.value;
+        changed = true;
+      }
+      if (raw.projectType !== undefined) {
+        const projectType = parseOptionalLine(raw.projectType, "projectType");
+        if (!projectType.ok) return projectType;
+        next.projectType = projectType.value;
+        changed = true;
+      }
+      if (raw.source !== undefined) {
+        const source = parseOptionalLine(raw.source, "source");
+        if (!source.ok) return source;
+        next.source = source.value;
+        changed = true;
+      }
+      if (raw.sourceUrl !== undefined) {
+        const sourceUrl = parseSourceUrl(raw.sourceUrl, "sourceUrl");
+        if (!sourceUrl.ok) return sourceUrl;
+        next.sourceUrl = sourceUrl.value;
         changed = true;
       }
       if (raw.stateNote !== undefined) {
@@ -724,15 +800,17 @@ export const PROJECT_TOOL_DEFS: MapToolDef[] = [
     name: "list_projects",
     description:
       "List the operator's Projects as compact records: status, priority, progress, summary, " +
-      "current state note, next action, goal and domain, dates. No bodies and no progress " +
-      "timelines are included; use get_project for one project in full. Filter by status, " +
-      "goalId or domainSlug. Reads the vault directly and creates nothing.",
+      "type, source and source link, current state note, next action, goal and domain, dates. " +
+      "No bodies and no progress timelines are included; use get_project for one project in " +
+      "full. Filter by status, goalId, domainSlug or projectType (case-insensitive). " +
+      "Reads the vault directly and creates nothing.",
     parameters: {
       type: "object",
       properties: {
         status: { type: "string", enum: [...PROJECT_STATUSES] },
         goalId: { type: "string" },
         domainSlug: { type: "string" },
+        projectType: { type: "string", description: "Case-insensitive exact projectType." },
       },
     },
   },
@@ -762,6 +840,18 @@ export const PROJECT_TOOL_DEFS: MapToolDef[] = [
       properties: {
         title: { type: "string" },
         summary: { type: "string", description: "One line: what this is." },
+        projectType: {
+          type: ["string", "null"],
+          description: 'What kind of thing this is, e.g. "Mobile App", "Desktop/web", "YouTube".',
+        },
+        source: {
+          type: ["string", "null"],
+          description: "The person or place the idea came from.",
+        },
+        sourceUrl: {
+          type: ["string", "null"],
+          description: "An absolute http or https URL the idea came from.",
+        },
         goalId: { type: ["string", "null"], description: "Optional live goal id." },
         domainSlug: { type: ["string", "null"], description: "Optional live domain slug." },
         body: { type: "string", description: "The project's context document." },
@@ -788,6 +878,18 @@ export const PROJECT_TOOL_DEFS: MapToolDef[] = [
         id: { type: "string" },
         title: { type: "string" },
         summary: { type: "string" },
+        projectType: {
+          type: ["string", "null"],
+          description: 'What kind of thing this is, e.g. "Mobile App", "Desktop/web", "YouTube".',
+        },
+        source: {
+          type: ["string", "null"],
+          description: "The person or place the idea came from.",
+        },
+        sourceUrl: {
+          type: ["string", "null"],
+          description: "An absolute http or https URL the idea came from.",
+        },
         goalId: { type: ["string", "null"] },
         domainSlug: { type: ["string", "null"] },
         body: { type: "string" },
@@ -842,6 +944,9 @@ function toListEntry(project: Project): ProjectListEntry {
     id: project.id,
     title: project.title,
     summary: project.summary,
+    projectType: project.projectType,
+    source: project.source,
+    sourceUrl: project.sourceUrl,
     stateNote: project.stateNote,
     goalId: project.goalId,
     domainSlug: project.domainSlug,
@@ -923,6 +1028,15 @@ async function executeListProjects(
     }
     const domainSlug = args.domainSlug.trim();
     records = records.filter((record) => record.domainSlug === domainSlug);
+  }
+  if (args.projectType !== undefined) {
+    if (typeof args.projectType !== "string" || !args.projectType.trim()) {
+      return toolError("MALFORMED", "projectType must be a non-empty string");
+    }
+    const projectType = args.projectType.trim().toLowerCase();
+    records = records.filter(
+      (record) => (record.projectType ?? "").toLowerCase() === projectType,
+    );
   }
 
   return { projects: records.map(toListEntry), total: records.length };
@@ -1031,6 +1145,32 @@ export function commandForProjectTool(
   }
 }
 
+/**
+ * Why a project write tool's arguments cannot become a command, or null.
+ *
+ * `commandForProjectTool` answers null for a malformed call, and the dispatcher
+ * would then report "Unknown tool create_project" — which says nothing about
+ * the argument the caller typed. The three idea-provenance fields are checked
+ * here first so their refusal names the field ("sourceUrl must be an absolute
+ * http or https URL"), and nothing is filed or written.
+ */
+export function projectToolArgumentError(
+  name: string,
+  args: Record<string, unknown>,
+): string | null {
+  if (name !== "create_project" && name !== "update_project") return null;
+  const rec = args && typeof args === "object" ? args : {};
+  const checks = [
+    parseOptionalLine(rec.projectType, "projectType"),
+    parseOptionalLine(rec.source, "source"),
+    parseSourceUrl(rec.sourceUrl, "sourceUrl"),
+  ];
+  for (const check of checks) {
+    if (!check.ok) return check.error;
+  }
+  return null;
+}
+
 function createProjectCommand(raw: Record<string, unknown>): ProjectCommand | null {
   const title = parseRequiredLine(raw.title, "title");
   if (!title.ok) return null;
@@ -1057,6 +1197,21 @@ function createProjectCommand(raw: Record<string, unknown>): ProjectCommand | nu
     const summary = parseDefaultLine(raw.summary, "summary");
     if (!summary.ok) return null;
     command.summary = summary.value;
+  }
+  if (raw.projectType !== undefined) {
+    const projectType = parseOptionalLine(raw.projectType, "projectType");
+    if (!projectType.ok) return null;
+    command.projectType = projectType.value;
+  }
+  if (raw.source !== undefined) {
+    const source = parseOptionalLine(raw.source, "source");
+    if (!source.ok) return null;
+    command.source = source.value;
+  }
+  if (raw.sourceUrl !== undefined) {
+    const sourceUrl = parseSourceUrl(raw.sourceUrl, "sourceUrl");
+    if (!sourceUrl.ok) return null;
+    command.sourceUrl = sourceUrl.value;
   }
   if (raw.stateNote !== undefined) {
     const stateNote = parseDefaultLine(raw.stateNote, "stateNote");
@@ -1110,6 +1265,21 @@ function updateProjectCommand(raw: Record<string, unknown>): ProjectCommand | nu
     const summary = parseDefaultLine(raw.summary, "summary");
     if (!summary.ok) return null;
     patch.summary = summary.value;
+  }
+  if (raw.projectType !== undefined) {
+    const projectType = parseOptionalLine(raw.projectType, "projectType");
+    if (!projectType.ok) return null;
+    patch.projectType = projectType.value;
+  }
+  if (raw.source !== undefined) {
+    const source = parseOptionalLine(raw.source, "source");
+    if (!source.ok) return null;
+    patch.source = source.value;
+  }
+  if (raw.sourceUrl !== undefined) {
+    const sourceUrl = parseSourceUrl(raw.sourceUrl, "sourceUrl");
+    if (!sourceUrl.ok) return null;
+    patch.sourceUrl = sourceUrl.value;
   }
   if (raw.stateNote !== undefined) {
     const stateNote = parseDefaultLine(raw.stateNote, "stateNote");

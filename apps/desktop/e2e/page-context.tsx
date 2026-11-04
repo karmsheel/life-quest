@@ -252,6 +252,10 @@ const bridge: Record<string, unknown> = {
   has: () => true,
 });
 
+// The dock remembers its tab strip between runs; an earlier rig's strip would
+// open tabs this one never made.
+window.localStorage.removeItem("lifequest.companion.openTabs");
+
 /**
  * The second screen, kept deliberately small: a heading, a sentence, a list and
  * a table are one of each thing the outline knows how to say, so a reader can

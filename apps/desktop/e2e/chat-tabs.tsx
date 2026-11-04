@@ -49,6 +49,10 @@
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page); everything else — the real ChatsSidebar, the real ChatPanel, the real
  * ChatSessionsProvider, the real CSS and layout engine — is shipping code.
+ *
+ * The restore rig (`chat-tabs-restore.electron.mjs`) drives this same page: it
+ * boots it twice as two Electron processes over one profile with `?keep=1` (do
+ * not clear the remembered tab strip) and reads the landing each time.
  */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
@@ -96,6 +100,25 @@ harness.__lqDeleteCalls = [];
 harness.__lqMessageCalls = [];
 harness.__lqStopCalls = [];
 harness.__lqListOptions = [];
+
+/**
+ * How this boot treats the profile's remembered chat state.
+ *
+ * `keep=1` is the restore rig's switch: it boots the same profile twice (twice
+ * as two real Electron processes) and needs the tab strip the first boot wrote,
+ * so it must not be cleared. Every other boot clears the profile-local chat
+ * memory so the landing is deterministic — a leftover strip from an earlier rig
+ * would otherwise decide how many tabs are drawn before the rig clicks anything.
+ *
+ * `archived=id,id` makes the fixture answer as if Hermes archived those rows
+ * while the app was shut; it is how the restore rig proves a remembered tab for
+ * a chat that no longer exists is dropped instead of resurrected.
+ */
+const query = new URLSearchParams(window.location.search);
+const keepChatMemory = query.get("keep") === "1";
+const archivedWhileShut = new Set(
+  (query.get("archived") ?? "").split(",").filter(Boolean),
+);
 
 const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value });
 
@@ -240,7 +263,10 @@ const MESSAGES: Record<string, { role: "user" | "assistant"; content: string }[]
   "chat-delta": [{ role: "user", content: "Delta seed" }],
 };
 
-const rows: FixtureRow[] = ROWS.map((row) => ({ ...row }));
+const rows: FixtureRow[] = ROWS.map((row) => ({
+  ...row,
+  archived: archivedWhileShut.has(row.id) ? 1 : row.archived,
+}));
 const listeners = new Set<(frame: CompanionStreamFrame) => void>();
 /** The pending `companionChatStream` promise per chat, so the driver owns time. */
 const chatResolvers = new Map<string, (value: { ok: true }) => void>();
@@ -368,12 +394,16 @@ const stubbed = new Proxy(bridge, {
 
 (window as unknown as { lifequest: unknown }).lifequest = stubbed;
 
-// A previous run's last chat would decide the landing view; clear it so the rig
-// always starts on the same chat. The pinned order is client-side state too, so
-// a leftover order from an earlier run would reorder the list under the rig.
-window.localStorage.removeItem("lifequest.companion.lastSessionId");
-window.localStorage.removeItem("lifequest.companion.runtimePins");
-window.localStorage.removeItem("lifequest.companion.pinnedOrder");
+// A previous run's last chat would decide the landing view, and a remembered
+// tab strip would decide the strip before the rig has clicked anything; clear
+// both so the harness always starts from the same place. The restore rig keeps
+// them on purpose.
+if (!keepChatMemory) {
+  window.localStorage.removeItem("lifequest.companion.lastSessionId");
+  window.localStorage.removeItem("lifequest.companion.runtimePins");
+  window.localStorage.removeItem("lifequest.companion.pinnedOrder");
+  window.localStorage.removeItem("lifequest.companion.openTabs");
+}
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from chat-tabs.html");
@@ -429,10 +459,14 @@ const ready = new Promise<void>((resolve) => {
 });
 
 const waitForSurface = () => {
+  // Either surface counts: a fresh landing opens a thread, while a profile whose
+  // operator closed every tab before quitting lands on the list. The restore rig
+  // visits both in one run, so the ready signal must not insist on a thread.
   const settled =
     document.querySelector(".nav-rail") &&
     document.querySelector(".chats-rail") &&
-    document.querySelector(".chat-panel__header--thread");
+    (document.querySelector(".chat-panel__header--thread") ||
+      document.querySelector(".chat-panel__list"));
   if (!settled) {
     requestAnimationFrame(waitForSurface);
     return;
