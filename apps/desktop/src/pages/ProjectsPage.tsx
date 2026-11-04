@@ -25,6 +25,7 @@ import {
   formatProjectDay,
   PROJECT_PRIORITY_LABELS,
   PROJECT_STATUS_LABELS,
+  PROJECT_TYPE_SUGGESTIONS,
 } from "@/lib/projects";
 import { useLiveData } from "@/state/LiveDataProvider";
 import { useVault } from "@/state/VaultProvider";
@@ -45,6 +46,9 @@ type StatusFilter = "all" | ProjectStatus;
 type Composer = {
   title: string;
   summary: string;
+  projectType: string;
+  source: string;
+  sourceUrl: string;
   goalId: string;
   domainSlug: string;
   status: ProjectStatus;
@@ -60,6 +64,9 @@ function emptyComposer(domainSlug: string): Composer {
   return {
     title: "",
     summary: "",
+    projectType: "",
+    source: "",
+    sourceUrl: "",
     goalId: "",
     domainSlug,
     status: "open",
@@ -214,6 +221,9 @@ export default function ProjectsPage() {
       const result = await api().projectsCreate({
         title: composer.title.trim(),
         summary: composer.summary.trim(),
+        projectType: composer.projectType.trim() || null,
+        source: composer.source.trim() || null,
+        sourceUrl: composer.sourceUrl.trim() || null,
         bodyMarkdown: composer.context,
         stateNote: composer.stateNote.trim(),
         goalId: composer.goalId || null,
@@ -330,6 +340,14 @@ export default function ProjectsPage() {
                 <span className="projects-row__main">
                   <span className="projects-row__head">
                     <span className="projects-row__title">{project.title}</span>
+                    {project.projectType ? (
+                      <span
+                        className="projects-row__type muted"
+                        data-testid="project-row-type"
+                      >
+                        {project.projectType}
+                      </span>
+                    ) : null}
                     <span
                       className={`projects-chip projects-chip--${project.status}`}
                     >
@@ -443,6 +461,44 @@ export default function ProjectsPage() {
                     aria-label="Project summary"
                     data-testid="project-create-summary"
                     placeholder="One line: what this is"
+                  />
+                </label>
+                <label className="field">
+                  <span>Type</span>
+                  <input
+                    value={composer.projectType}
+                    onChange={(e) => setField("projectType", e.target.value)}
+                    aria-label="Project type"
+                    data-testid="project-create-type"
+                    list="project-type-suggestions"
+                    placeholder="e.g. Mobile App"
+                  />
+                  <datalist id="project-type-suggestions">
+                    {PROJECT_TYPE_SUGGESTIONS.map((value) => (
+                      <option key={value} value={value} />
+                    ))}
+                  </datalist>
+                </label>
+                <label className="field">
+                  <span>Source</span>
+                  <input
+                    value={composer.source}
+                    onChange={(e) => setField("source", e.target.value)}
+                    aria-label="Project source"
+                    data-testid="project-create-source"
+                    placeholder="The person or place the idea came from"
+                  />
+                </label>
+                <label className="field projects-page__span2">
+                  <span>Source link</span>
+                  <input
+                    type="text"
+                    inputMode="url"
+                    value={composer.sourceUrl}
+                    onChange={(e) => setField("sourceUrl", e.target.value)}
+                    aria-label="Project source URL"
+                    data-testid="project-create-source-url"
+                    placeholder="https://…"
                   />
                 </label>
                 <label className="field">

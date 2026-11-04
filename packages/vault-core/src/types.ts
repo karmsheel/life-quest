@@ -616,6 +616,16 @@ export type Project = {
   title: string;
   /** One line: what this is. */
   summary: string;
+  /**
+   * Free text: what kind of thing this is — "Mobile App", "Desktop/web",
+   * "YouTube", "Physical product", "Service". Null when the project does not
+   * say. Captured with an idea so the register knows what was written down.
+   */
+  projectType: string | null;
+  /** Free text: the person or place the idea came from, or null. */
+  source: string | null;
+  /** An absolute http(s) URL the idea came from, or null. Never any other scheme. */
+  sourceUrl: string | null;
   /** The context document (the markdown body of the file). */
   bodyMarkdown: string;
   /** Where it stands right now, in the operator's own words. */
@@ -641,6 +651,9 @@ export type Project = {
 export type ProjectFields = {
   title?: string;
   summary?: string;
+  projectType?: string | null;
+  source?: string | null;
+  sourceUrl?: string | null;
   bodyMarkdown?: string;
   stateNote?: string;
   goalId?: string | null;
@@ -674,6 +687,9 @@ export type ProjectListEntry = {
   id: string;
   title: string;
   summary: string;
+  projectType: string | null;
+  source: string | null;
+  sourceUrl: string | null;
   stateNote: string;
   goalId: string | null;
   domainSlug: string | null;
@@ -696,6 +712,9 @@ export type ProjectCommand =
       domainSlug: string | null;
       bodyMarkdown?: string;
       summary?: string;
+      projectType?: string | null;
+      source?: string | null;
+      sourceUrl?: string | null;
       stateNote?: string;
       status?: ProjectStatus;
       priority?: ProjectPriority | null;
