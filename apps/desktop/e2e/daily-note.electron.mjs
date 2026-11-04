@@ -94,13 +94,13 @@
  *     box, and the gutter between the two as wide as the room between the box and
  *     the dock. Swapping the dock swaps only the strip's side. The header and
  *     pager keep their place over the box.
- * 22. The day's own automation — the built-in Analyze note control — sits under
- *     the box on its trailing edge, not in the header above it, and it is a key
- *     rather than an outline chip: the page's own square step, the skin's accent
- *     as a filled face and the primitive's bevel and lip. The whole run is judged
- *     in Nous, the palette the operator asked about, because a control that reads
- *     black-on-black in the theme they run is the defect this claim exists to
- *     catch.
+ * 22. The day's own automation — the built-in Analyze note control — sits in the
+ *     header on the heading's own line, at the box's trailing edge and above it,
+ *     and it is a key rather than an outline chip: the page's own square step,
+ *     the skin's accent as a filled face and the primitive's bevel and lip. The
+ *     whole run is judged in Nous, the palette the operator asked about, because
+ *     a control that reads black-on-black in the theme they run is the defect
+ *     this claim exists to catch.
  *
  * NOT covered here: that the note reaches disk as `notes/daily/{date}.md`, that a
  * second write edits one file, and that a review's period pack reads the window
@@ -1930,17 +1930,18 @@ async function main() {
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
 
-  // ── 10. the day's act sits under the box, and reads as a key ──────────────
-  // The operator's report was that the Analyze note control read black-on-black
-  // in Nous and sat up with the pager. Both are measured here, in the palette
-  // the page is actually painted in, and the screenshot beside this claim is the
-  // screen they will see: under the prose it commits, on the box's trailing edge,
-  // filled with the skin's accent and lifted by the primitive's bevel and lip.
+  // ── 10. the day's act sits level with the heading, above the box ──────────
+  // The operator asked for the Analyze note control above the box, in line with
+  // the page's heading, where it had been left under the prose. The position is
+  // measured here — inside the header, above the box, on the heading's own line
+  // — and the face is still measured in the palette the page is painted in, so
+  // the key stays legible wherever it sits.
   const automation = await win.webContents.executeJavaScript(`(() => {
     const row = document.querySelector(".daily-note__automations");
     const editor = document.querySelector(".daily-note__editor");
     const compose = document.querySelector(".daily-note__compose");
     const header = document.querySelector(".daily-note__header");
+    const heading = document.querySelector(".daily-note__header h1");
     const button = document.querySelector('[data-testid="daily-note-analyze"]');
     if (!row || !editor || !button) return { present: false };
     const rect = (el) => {
@@ -1973,6 +1974,17 @@ async function main() {
       inCompose: Boolean(compose && compose.contains(row)),
       belowBox: rowBox.top >= editorBox.bottom - 1,
       gapBelowBox: Math.round(rowBox.top - editorBox.bottom),
+      aboveBox: rowBox.bottom <= editorBox.top + 1,
+      gapAboveBox: Math.round(editorBox.top - rowBox.bottom),
+      levelWithHeading: Boolean(
+        heading &&
+          Math.abs(
+            (rowBox.top + rowBox.bottom) / 2 -
+              (heading.getBoundingClientRect().top +
+                heading.getBoundingClientRect().bottom) /
+                2,
+          ) <= 4,
+      ),
       rightEdgeOffBy: Math.round(rowBox.right - editorBox.right),
       insideBoxColumn:
         rowBox.left >= editorBox.left - 1 && rowBox.right <= editorBox.right + 1,
@@ -2002,16 +2014,19 @@ async function main() {
   if (!automation.present) {
     failure("the day's Analyze note button is not on the page at all");
   } else {
-    if (automation.inHeader) {
-      failure("the day's automation still sits in the header, above the box");
+    if (!automation.inHeader) {
+      failure("the day's automation is not in the header, level with the heading");
     }
-    if (!automation.inCompose) {
-      failure("the day's automation is not inside the box's own column");
-    }
-    if (!automation.belowBox) {
+    if (!automation.aboveBox) {
       failure(
-        `the day's automation sits ${automation.gapBelowBox}px above the box's bottom edge, not under it`,
+        `the day's automation sits ${automation.gapAboveBox}px below the box's top edge, not above it`,
       );
+    }
+    if (!automation.levelWithHeading) {
+      failure("the day's automation is not on the heading's own line");
+    }
+    if (automation.inCompose) {
+      failure("the day's automation is still down in the box's own column");
     }
     if (Math.abs(automation.rightEdgeOffBy) > 2) {
       failure(
@@ -2055,7 +2070,7 @@ async function main() {
   }
 
   // The artifact for this claim: the day's page with the note written, the act
-  // under it, in the operator's own palette.
+  // beside the heading, in the operator's own palette.
   await win.webContents.executeJavaScript(
     `document.querySelector(".daily-note__automations").scrollIntoView({ block: "nearest" })`,
   );

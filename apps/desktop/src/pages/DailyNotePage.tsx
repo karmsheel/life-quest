@@ -558,7 +558,34 @@ export default function DailyNotePage() {
     <div className="daily-note">
       <div className="daily-note__layout">
         <header className="daily-note__header">
-          <h1>Daily Note</h1>
+          {/* The title row: the page's name and the day's own act on one line.
+              The automations sit here, level with the heading, so the day's verb
+              reads as the page's own rather than as a stray control under the
+              prose — above the box it commits rather than below it. */}
+          <div className="daily-note__title-row">
+            <h1>Daily Note</h1>
+            {manualAutomations.length > 0 ? (
+              <div className="daily-note__automations">
+                {manualAutomations.map((automation) => (
+                  <Button
+                    key={automation.id}
+                    variant="raised"
+                    className="daily-note__analyze"
+                    data-testid={dailyNoteAutomationTestId(automation.id)}
+                    onClick={() => void onRunAutomation(automation)}
+                    disabled={!canRunAutomation}
+                    title={
+                      automation.description ||
+                      "Open a new chat with this note in context"
+                    }
+                  >
+                    <Sparkles size={14} aria-hidden />
+                    {runningId === automation.id ? "Opening chat…" : automation.name}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <div className="daily-note__pager">
             <div className="daily-note__pager-start">
               <Button
@@ -635,9 +662,8 @@ export default function DailyNotePage() {
                 />
               </div>
 
-              {/* The box's foot: the autosave line, and the day's own act on the
-                  trailing edge — under the prose it commits rather than up with
-                  the pager, where it read as another navigation control. */}
+              {/* The box's foot: the autosave line, and nothing else. The day's own
+                  act moved up to the title row, level with the heading. */}
               <div className="daily-note__footer">
                 <p
                   className="daily-note__status muted"
@@ -646,29 +672,6 @@ export default function DailyNotePage() {
                 >
                   {status}
                 </p>
-                {manualAutomations.length > 0 ? (
-                  <div className="daily-note__automations">
-                    {manualAutomations.map((automation) => (
-                      <Button
-                        key={automation.id}
-                        variant="raised"
-                        className="daily-note__analyze"
-                        data-testid={dailyNoteAutomationTestId(automation.id)}
-                        onClick={() => void onRunAutomation(automation)}
-                        disabled={!canRunAutomation}
-                        title={
-                          automation.description ||
-                          "Open a new chat with this note in context"
-                        }
-                      >
-                        <Sparkles size={14} aria-hidden />
-                        {runningId === automation.id
-                          ? "Opening chat…"
-                          : automation.name}
-                      </Button>
-                    ))}
-                  </div>
-                ) : null}
               </div>
             </div>
           )}

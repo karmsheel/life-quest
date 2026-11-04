@@ -54,6 +54,19 @@
   letter-spacing: -0.02em;
 }
 
+/* The title row: the page's name and the day's own act on one line. The heading
+   keeps the leading edge and the automations take the trailing one, so the day's
+   verb reads level with the title, over the box it commits, rather than as a
+   control left under the prose. It wraps instead of squeezing the button when
+   the column is narrow. */
+.daily-note__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+
 /* The pager is two edges and a centre. The box's own leading and trailing edges
    are the buttons' edges — Prev day opens the row, Next day closes it — and the
    day's date sits in the middle column, over the prose the box holds. The two
@@ -86,10 +99,8 @@
   color: var(--fg);
 }
 
-/* The box's foot: the autosave line on the leading edge and the day's own
-   automations on the trailing one. The day's act belongs under the prose it
-   commits — down here it reads as the page's own verb, where above the box it
-   sat in the pager's row and read as another navigation control. */
+/* The box's foot: the autosave line alone. The day's own automations live up in
+   the title row now, level with the heading. */
 .daily-note__footer {
   display: flex;
   flex-wrap: wrap;
@@ -148,9 +159,8 @@
 }
 
 /* The autosave line. There is no Save control: this one quiet line is the whole
-   of what the page says about the day reaching the vault. It shares the foot
-   with the day's automations, so it takes the slack the buttons leave rather
-   than the whole row. */
+   of what the page says about the day reaching the vault. It has the box's foot
+   to itself now, so it simply fills the row beneath the prose. */
 .daily-note__status {
   margin: 0;
   min-height: 1.1rem;

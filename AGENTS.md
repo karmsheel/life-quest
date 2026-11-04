@@ -1,3 +1,7 @@
+## Use the CLI first
+
+- Use `./bin/agent-cli` first: prefer it over re-reading files or guessing commands. `agent-cli --help` shows the command set; `status`, `git`, `bench`, `e2e`, `check`, `flow`, `docs`, `find`, `where`, `map`, `db`, `logs`, `env` and `layout` answer the lookups past sessions repeated, and `--json` gives the same data for parsing.
+
 \- Never write unit tests after you write code.
 
 
