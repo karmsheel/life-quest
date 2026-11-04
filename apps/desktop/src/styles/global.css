@@ -2988,14 +2988,54 @@ a {
   color: var(--accent);
 }
 
+/* The switcher's own row: the pill switcher, the line the page speaks through,
+   and the one control that answers the whole queue. They share a row, so a
+   message appearing never changes the height above the cards. */
+.decisions-inbox__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.35rem;
+}
+
 .decisions-inbox__tabs {
   display: inline-flex;
-  align-self: flex-start;
+  flex: 0 0 auto;
   gap: 0.15rem;
   padding: 0.2rem;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-pill);
   background: var(--bg-subtle);
+}
+
+/* Beside the switcher, not under it. The slot takes the room between the
+   switcher and the approve-all control, and never adds a line to the row. */
+.decisions-inbox__notices {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* One line, always. A refusal may be clipped by a narrow sheet; it may not grow
+   the bar and move every card under it. */
+.decisions-inbox__notice {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Sized to the switcher's pills rather than the form's buttons: this control is
+   part of the switcher's row, and a taller button would set the row's height. */
+.decisions-inbox__approve-all {
+  flex: 0 0 auto;
+  padding: 0.38rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .decisions-inbox__tab {
