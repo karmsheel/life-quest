@@ -11,9 +11,9 @@ your data is a file in your vault, and nothing posts until you accept it.
 
 **Home** wing → **Data** (route `/data`). It opens in the centre pane as a page.
 
-- The top-bar lens filters the list: **Overview** shows every database in every
-  live domain; a domain lens shows that domain's databases and lets you create
-  into it without picking a domain each time.
+- The domain lens in the window title bar filters the list: **Overview** shows
+  every database in every live domain; a domain lens shows that domain's
+  databases and lets you create into it without picking a domain each time.
 - Clicking a database opens `/data/:slug/:dbId` — the database page.
 - **Install Finance kit** and the **Capture** default-account selector also live
   on this page when the Financial domain is live; the kit itself is covered in

@@ -12,7 +12,16 @@ import { api } from "@/lib/ipc";
 import { AUTOMATIONS_CHANGED_EVENT } from "@/lib/automations";
 import { readPageContext } from "@/lib/page-context";
 import { useActiveDomain, useDashboardBoard } from "@/components/shell/useActiveDomain";
-import { useChatDock, type ChatCardContext } from "@/state/ChatDockProvider";
+import {
+  useChatDock,
+  type ChatCardContext,
+  type ChatSurface,
+} from "@/state/ChatDockProvider";
+import {
+  readStoredChatTabs,
+  restoredChatTabs,
+  writeStoredChatTabs,
+} from "@/state/chat-tabs-persistence";
 import { useVault } from "@/state/VaultProvider";
 import type {
   CompanionRuntimeOverride,
@@ -210,6 +219,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     contextCard,
     setLivePinId,
     pageContext,
+    surface,
     setSurface,
   } = useChatDock();
 
@@ -236,6 +246,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   runtimePinsRef.current = runtimePins;
   const showArchivedRef = useRef(showArchived);
   showArchivedRef.current = showArchived;
+  const surfaceRef = useRef(surface);
+  surfaceRef.current = surface;
   const contextCardRef = useRef<ChatCardContext | null>(contextCard);
   contextCardRef.current = contextCard;
   /**
@@ -250,6 +262,20 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   const automationContexts = useRef(new Map<string, string>());
   const receiptPreviews = useRef(new Map<string, string>());
   const resuming = useRef(false);
+  /**
+   * The blank-chat request in flight, shared by every gesture that asks for one.
+   * Two archives whose replies land before React commits — or a press of New
+   * chat during one — would otherwise each mint a blank chat.
+   */
+  const newChatInFlight = useRef<Promise<string | null> | null>(null);
+  /**
+   * Whether the landing has read the profile's remembered tab strip. Writes are
+   * held off until it has: the first commit of a fresh mount has no tabs yet, and
+   * persisting that would erase the very strip the landing is about to restore.
+   * A failed list read leaves it false, so a gateway hiccup cannot cost the memory
+   * either.
+   */
+  const tabsHydrated = useRef(false);
 
   const runOf = useCallback(
     (id: string | null | undefined): SessionRun =>
@@ -440,9 +466,16 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   );
 
   /**
-   * Landing behaviour, once per mount: resume the chat this dock opened last,
-   * else the most recent one, else show the list. Never mints a session — an
-   * empty chat made on every open is how the list filled with "New chat" rows.
+   * Landing behaviour, once per mount: bring back the tab strip the operator
+   * left (every open chat, in tab order, with the tab that was in front), else
+   * resume the chat this dock opened last, else the most recent one, else show
+   * the list. Never mints a session — an empty chat made on every open is how the
+   * list filled with "New chat" rows.
+   *
+   * The remembered strip is reconciled against the list just read, so a chat
+   * deleted or archived elsewhere while the app was shut cannot come back as a
+   * tab pointing at nothing. The rest of the restored transcripts are read when
+   * their tab is clicked, as any other unopened chat's is.
    */
   const resumeLast = useCallback(async () => {
     if (resuming.current || activeIdRef.current) return;
@@ -451,18 +484,112 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       const listed = sessionsRef.current.length
         ? sessionsRef.current
         : await loadSessions();
+      // No list, no landing: leave the memory alone and let the store finish the
+      // mount it already started rather than clearing the strip over a hiccup.
       if (!listed) return;
-      const stored = window.localStorage.getItem(LAST_SESSION_KEY);
-      const resume = listed.find((s) => s.id === stored) ?? listed[0] ?? null;
+      const stored = readStoredChatTabs();
+      const lastSessionId = window.localStorage.getItem(LAST_SESSION_KEY);
+      const landing = restoredChatTabs(
+        stored,
+        new Set(listed.map((s) => s.id)),
+        { openNow: openTabsRef.current, lastSessionId },
+      );
+      if (landing.closedStrip) {
+        // Every tab was closed before the app quit. That is a decision about the
+        // working set, so the landing is the list — not a chat resumed over the
+        // top of it, which is what made a closed chat look reopened.
+        tabsHydrated.current = true;
+        setSurface("list");
+        return;
+      }
+      if (landing.activeId) {
+        tabsHydrated.current = true;
+        setOpenTabs(landing.tabs);
+        setActiveId(landing.activeId);
+        setSurface("thread");
+        setListError(null);
+        window.localStorage.setItem(LAST_SESSION_KEY, landing.activeId);
+        await loadMessages(landing.activeId);
+        return;
+      }
+      // No strip to restore: a first landing, or a profile from before the strip
+      // was remembered. The old rule still holds — the last chat, the most
+      // recent one, or the list.
+      tabsHydrated.current = true;
+      const resume = listed.find((s) => s.id === lastSessionId) ?? listed[0] ?? null;
       if (resume) await openChat(resume.id);
       else setSurface("list");
     } finally {
       resuming.current = false;
     }
-  }, [loadSessions, openChat]);
+  }, [loadMessages, loadSessions, openChat, setSurface]);
 
+  /**
+   * The "New chat" slot: a blank conversation, always in a tab of its own.
+   *
+   * Asking for a new chat is the gesture that keeps the one in front — a fresh
+   * conversation is a second thing to work in, not a replacement for the thread
+   * on screen. So this takes the same path as a middle click, `openChatInNewTab`,
+   * and not the navigating `openChat` a plain row click uses. A blank chat that
+   * already exists still wins: it is a "New chat" row with an empty transcript
+   * and no preview, and the slot lands on the tab it already has rather than
+   * minting a second empty chat beside it. An archived blank chat does not
+   * count: the archived view is where it is restorable, not where it is opened.
+   *
+   * `excludeId` is the chat being archived when this call is the archive's
+   * landing. A list read that still carries it — a stale answer, or a second
+   * archive racing this one — must not hand it back as the blank to open.
+   */
+  const newChat = useCallback(
+    async (excludeId?: string): Promise<string | null> => {
+      // One blank chat at a time: every gesture asking while the first request
+      // is still out shares its answer instead of minting a second blank.
+      if (newChatInFlight.current) return newChatInFlight.current;
+      const work = (async (): Promise<string | null> => {
+        const listed = await loadSessions();
+        const blank = listed?.find(
+          (s) => s.id !== excludeId && !s.archived && !s.preview?.trim(),
+        );
+        if (blank) {
+          await openChatInNewTab(blank.id);
+          return blank.id;
+        }
+
+        const created = await api().companionSessionCreate("");
+        if (!created.ok) {
+          setListError(created.error);
+          return null;
+        }
+        setSessions((prev) => [
+          created.value,
+          ...prev.filter((s) => s.id !== created.value.id),
+        ]);
+        await openChatInNewTab(created.value.id);
+        return created.value.id;
+      })();
+      newChatInFlight.current = work;
+      try {
+        return await work;
+      } finally {
+        newChatInFlight.current = null;
+      }
+    },
+    [loadSessions, openChatInNewTab],
+  );
+
+  /**
+   * Close one chat's tab.
+   *
+   * When the tab closed was the one in front, the strip hands the screen to its
+   * neighbour — the tab that takes its place, or the one before it when it was
+   * last — and the operator keeps working. With no tab left the dock falls back
+   * to `emptySurface`, which is the list for a plain close: the working set is
+   * empty, and the history page is where another chat is picked. An archive
+   * passes the surface the operator was already on instead, so it can land on
+   * the thread's blank slate rather than being thrown out of the dock.
+   */
   const closeTab = useCallback(
-    (id: string) => {
+    (id: string, emptySurface: ChatSurface = "list") => {
       // A run left behind a closed tab would keep streaming into a chat nobody
       // can see, so closing one stops it. The frame stream continues until the
       // gateway acknowledges, which is why `closedTabs` also suppresses the
@@ -487,7 +614,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         void loadMessages(neighbor);
       } else {
         setActiveId(null);
-        setSurface("list");
+        setSurface(emptySurface);
         window.localStorage.removeItem(LAST_SESSION_KEY);
       }
     },
@@ -536,16 +663,34 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       );
       if (patch.archived === true) {
         const wasActive = activeIdRef.current === id;
-        closeTab(id);
-        // Archiving the chat on screen puts the list up, as it always has: the
-        // chat is no longer part of the working set, and the list is where the
-        // remaining ones are managed. A non-active row's archive leaves the open
-        // thread exactly where it was.
-        if (wasActive) setSurface("list");
+        // Read the strip and the surface before the close: this callback's own
+        // state updates are not visible until the next render.
+        const remaining = openTabsRef.current.filter((tab) => tab !== id);
+        const landingSurface = surfaceRef.current;
+        // The archived chat leaves the working set, and its tab goes with it.
+        // When it was the tab in front, the strip hands the screen to the tab
+        // that takes its place; a background row's archive leaves the open
+        // thread exactly where it was. Either way the dock does not jump to the
+        // history page — that page is for picking a chat, and the operator did
+        // not ask for one.
+        closeTab(id, landingSurface);
+        if (wasActive && remaining.length === 0 && landingSurface === "thread") {
+          // The last chat in the strip was the one archived. The thread stays
+          // up and opens a blank conversation: the blank slate the New chat
+          // slot lands on, rather than a history page to pick from. The archived
+          // chat is excluded from the blank search, and a gateway that refuses
+          // to make one has no blank slate to show — the list is then the honest
+          // fallback rather than an inert thread.
+          void newChat(id)
+            .then((blank) => {
+              if (!blank) setSurface("list");
+            })
+            .catch(() => setSurface("list"));
+        }
       }
       return true;
     },
-    [closeTab],
+    [closeTab, newChat],
   );
 
   const deleteChat = useCallback(
@@ -590,35 +735,6 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     },
     [setReceiptFor],
   );
-
-  /**
-   * The "New chat" slot: a blank conversation, always in a tab of its own.
-   *
-   * Asking for a new chat is the gesture that keeps the one in front — a fresh
-   * conversation is a second thing to work in, not a replacement for the thread
-   * on screen. So this takes the same path as a middle click, `openChatInNewTab`,
-   * and not the navigating `openChat` a plain row click uses. A blank chat that
-   * already exists still wins: it is a "New chat" row with an empty transcript
-   * and no preview, and the slot lands on the tab it already has rather than
-   * minting a second empty chat beside it.
-   */
-  const newChat = useCallback(async (): Promise<string | null> => {
-    const listed = await loadSessions();
-    const blank = listed?.find((s) => !s.preview?.trim());
-    if (blank) {
-      await openChatInNewTab(blank.id);
-      return blank.id;
-    }
-
-    const created = await api().companionSessionCreate("");
-    if (!created.ok) {
-      setListError(created.error);
-      return null;
-    }
-    setSessions((prev) => [created.value, ...prev.filter((s) => s.id !== created.value.id)]);
-    await openChatInNewTab(created.value.id);
-    return created.value.id;
-  }, [loadSessions, openChatInNewTab]);
 
   const setAutomationContext = useCallback((id: string, context: string) => {
     if (context.trim()) automationContexts.current.set(id, context);
@@ -954,6 +1070,23 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void loadSessions();
   }, [loadSessions]);
+
+  /**
+   * Remember the strip for the next run: the chats that were open, in tab order,
+   * and the one in front.
+   *
+   * Written here rather than from each gesture so every path that changes the
+   * strip is covered — opening, navigating, splitting, closing, deleting,
+   * archiving, a run opening a tab of its own. The pair is written together: an
+   * active id naming a tab the strip does not carry is not a memory to restore,
+   * it is a landing into nothing. Held off until the first landing has read the
+   * profile (`tabsHydrated`), because the mount before it has no tabs yet.
+   */
+  useEffect(() => {
+    if (!tabsHydrated.current) return;
+    writeStoredChatTabs(openTabs, activeId);
+    if (activeId) window.localStorage.setItem(LAST_SESSION_KEY, activeId);
+  }, [openTabs, activeId]);
 
   useEffect(() => {
     // A scheduled automation writes its run to the vault and fires the shelf's

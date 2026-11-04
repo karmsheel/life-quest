@@ -2,10 +2,12 @@
 
 The studio is the desktop app: one window made of three paper panes on a canvas —
 the rail, the main pane and the chat dock — with the app's own title bar above
-them and a top bar inside the main column. The rail navigates, the top bar
-switches wings and the domain lens, and the chat pane keeps the companion beside
-whatever you are doing. Settings and Decisions are not pages in this layout; they
-are sheets drawn over it. This page explains that layout; [the wiki
+them. The title bar carries the window controls and the **domain tab**: the
+domain lens, raised out of the old top bar into the strip and painted in the
+page's own colour, so it reads as part of the page below it. The rail navigates
+and switches wings, and the chat pane keeps the companion beside whatever you are
+doing. Settings and Decisions are not pages in this layout; they are sheets drawn
+over it. This page explains that layout; [the wiki
 home](./index.md) has the full page index.
 
 ## Where it lives
@@ -15,9 +17,13 @@ Reviews, plus the governance pages. The shell is not a route — it wraps the
 routes:
 
 - The **window title bar** spans the top of the whole window, including the
-  welcome and companion screens.
-- The **rail** is the left column of the shell grid.
-- The **top bar** sits above the main pane, inside the middle column.
+  welcome and companion screens. Inside the shell it carries the **domain tab**
+  at its leading edge, just past the rail; on the welcome and companion screens
+  the tab is absent.
+- The **rail** is the left column of the shell grid; its wing switcher band and
+  the active wing's pages sit under the title bar.
+- The **main pane** begins directly under the title bar. It has no band of its
+  own — the sheet's top bar is gone, and the page gains that height back.
 - The **chat dock** is the trailing column, or the middle column when you swap
   sides.
 - **Settings** (`/settings?tab=<view>`) and **Decisions** (`/decisions`) are
@@ -37,22 +43,26 @@ Decisions without losing the page you were reading.
 
 ## How to use it
 
-1. **Switch wings.** Click a wing in the top bar: **Home**, **Define**, **Plan**,
-   **Execute**, **Review**. The rail's page list changes and the app takes you to
-   that wing's last page — or to the wing's default page the first time. Each wing remembers
+1. **Switch wings.** Click a wing in the rail's wing switcher, the square block
+   directly under the title bar: **Home**, **Define**, **Plan**, **Execute**,
+   **Review**. The rail's page list changes and the app takes you to that wing's
+   last page — or to the wing's default page the first time. Each wing remembers
    its last page, so returning to a wing returns you to where you were. **←** and
    **→** move between wings.
-2. **Change the lens.** At the top right of the top bar, choose **Overview** or a
-   domain name. This is the data filter for domain-scoped lists (Dashboard boards,
-   Data, Pages, Life-Chain and others). **←** and **→** move between lens options
-   as well.
+2. **Change the lens.** Choose **Overview** or a domain name in the **domain
+   tab**, at the leading edge of the window title bar, just past the rail. This
+   is the data filter for domain-scoped lists (Dashboard boards, Data, Pages,
+   Life-Chain and others). **←** and **→** move between lens options as well.
+   The tab follows the rail: it starts 12px past the wide rail, and 12px past the
+   collapsed icon rail.
 3. **Navigate the rail.** Click a page under the active wing. The rail's middle
    section lists your **Chats** with **New chat** and the recent threads.
    Life-Chain, Decisions, Daily Note and Automations sit on a shelf near the foot;
    the **Log** closes the rail; the version number sits at the very bottom.
 4. **Collapse and restore the rail.** Press the panel icon at the top of the rail
-   (**Collapse sidebar** / **Expand sidebar**). Collapsed, the page takes the
-   rail's column and the same toggle moves to the leading edge of the title bar.
+   (**Collapse sidebar** / **Expand sidebar**). Collapsed, the rail narrows to its
+   icon column and the page widens; the same toggle stays at the top of the thin
+   rail and turns around, and the title bar's domain tab slides in with the rail.
 5. **Collapse and restore the chat.** Press the panel icon at the trailing end of
    the title bar (**Collapse chat** / **Expand chat**). A collapsed dock is not a
    narrow pane: it becomes one floating mark, **Open Hermes chat**, at the page's
@@ -74,9 +84,20 @@ Decisions without losing the page you were reading.
 
 The window title bar:
 
-- The vault chip at the leading edge shows the open vault's name; clicking it goes
-  to the Dashboard. With no vault it reads `LifeQuest`, and the window title is
-  `LifeQuest — <vault name>`.
+- The **domain tab** at the leading edge, just past the rail. It is painted on the
+  page canvas, flush with the window's top edge and the full height of the strip;
+  its top corners are rounded and its two bottom corners flare into the page with
+  small concave fillets of the same step — the rounded ends make it read as the
+  page's own tab rather than a control floating in the chrome. It carries the domain lens:
+  **Overview** followed by every live domain, in sort order, as a compact segmented
+  control that moves with **←** and **→**. The tab moves with the rail as it
+  collapses. The window title is `LifeQuest — <vault name>`.
+- The leading half of the strip is the window's drag handle — empty apart from the
+  tab, which stays clickable — with the window controls on the trailing edge.
+- The tab exists only while the shell is mounted: on the welcome and companion
+  screens there is none. There the strip is the window's drag area, with its window
+  controls when the overlay is unavailable, and with no vault the window title is
+  `LifeQuest`.
 - The trailing controls, for a vault window: the theme toggle (only on themes with
   both day and night palettes — *Switch to day mode* / *Switch to night mode*), the
   **Settings** gear (*Open settings*), the side switch, and the chat toggle.
@@ -87,6 +108,8 @@ The window title bar:
 The rail:
 
 - A collapse toggle at the top.
+- The five-wing switcher — **Home**, **Define**, **Plan**, **Execute**,
+  **Review** — a square block directly under the title bar.
 - The active wing's pages, each with an icon and its label.
 - A divider, then the **Chats** section: **New chat**, then pinned and recent
   chats. With none it says *No chats yet*.
@@ -99,15 +122,12 @@ The rail:
   control (*Check for updates*). When a release is offered it gains an
   **Update available** line and a glow. See [Updates](./27-updates.md).
 
-The top bar:
-
-- The wing tabs (**Home**, **Define**, **Plan**, **Execute**, **Review**).
-- The domain lens: **Overview** followed by every live domain, in sort order.
-
-The main pane is the page's own column. It is the element the chat reads as the
-current page (`data-page-context-root`), so what the companion is told about the
-screen is exactly the page — never the rail, the title bar or the chat panel. The
-`/chart` route opts into a full-bleed variant for the Life Map.
+The main pane is the page's own column, beginning directly under the title bar:
+there is no band between the strip and the page, so the page gains the 44px the
+old top bar held. It is the element the chat reads as the current page
+(`data-page-context-root`), so what the companion is told about the screen is
+exactly the page — never the rail, the title bar or the chat panel. The `/chart`
+route opts into a full-bleed variant for the Life Map.
 
 The chat dock:
 
@@ -162,9 +182,9 @@ Window-level keys:
 
 ## Tips and edge cases
 
-- Collapsing the rail gives its whole column back to the page, so the toggle has
-  to live in the title bar while it is collapsed. That toggle and the rail's own
-  are the same control in two places.
+- Collapsing the rail never takes it away: it narrows to its icon column, so the
+  one collapse toggle stays at the top of the rail at either width. The title
+  bar's domain tab moves in with the rail rather than staying over the old column.
 - The chat's collapsed state keeps the component mounted: a streaming turn keeps
   streaming, and a draft survives a collapse. It is a hide, not a reset.
 - Dragging the divider towards the page widens a left-hand dock and narrows a

@@ -22,6 +22,15 @@ const REFUSAL = "No LifeQuest vault in that folder.";
 
 type Calls = { dialog: (string | null)[]; open: string[]; recent: number };
 
+type Box = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+
 type Row = {
   path: string;
   name: string;
@@ -36,11 +45,19 @@ type State = {
   chip: {
     tag: string;
     text: string;
+    initials: string;
+    nameVisible: boolean;
+    ariaLabel: string | null;
+    title: string | null;
     haspopup: string | null;
     expanded: string | null;
     focused: boolean;
-    appRegion: string;
+    inRail: boolean;
+    inFoot: boolean;
+    footGroup: string | null;
+    box: Box | null;
   } | null;
+  titlebarChip: boolean;
   dialog: {
     title: string;
     alert: string;
@@ -51,7 +68,12 @@ type State = {
     folder: { label: string; disabled: boolean; className: string } | null;
     close: { label: string | null; disabled: boolean } | null;
   } | null;
-  rects: Record<string, { left: number; top: number; width: number; height: number } | null>;
+  rects: {
+    backdrop: Box | null;
+    dialog: Box | null;
+    rail: Box | null;
+    foot: Box | null;
+  };
   probe: { vault: string | null; recents: number } | null;
   location: { pathname: string | null; key: string | null } | null;
   trail: string[];
@@ -102,7 +124,21 @@ const currentRows = (state: State) =>
 const otherRows = (state: State) =>
   (state.dialog?.rows ?? []).filter((row) => !row.current);
 
-describe("the titlebar vault switcher", () => {
+/**
+ * Whether one measured box sits inside another. The driver rounds every edge, so
+ * a shared edge may differ by the rounding pixel and still be the same edge.
+ */
+const insideBox = (inner: Box | null | undefined, outer: Box | null | undefined) =>
+  Boolean(
+    inner &&
+      outer &&
+      inner.left >= outer.left - 1 &&
+      inner.top >= outer.top - 1 &&
+      inner.right <= outer.right + 1 &&
+      inner.bottom <= outer.bottom + 1,
+  );
+
+describe("the sidebar's vault switcher", () => {
   it("switches the open vault from the chip, and survives a cancelled and a refused folder", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
@@ -152,9 +188,33 @@ describe("the titlebar vault switcher", () => {
     // asked before it is clicked.
     assert.equal(landing.chip?.tag, "BUTTON", "the chip is not a button");
     assert.equal(landing.chip?.text, VAULT_A.name, "the chip lost the vault's name");
+    assert.equal(landing.chip?.nameVisible, true, "the wide rail hides the vault's name");
     assert.equal(landing.chip?.haspopup, "dialog", "the chip does not announce a dialog");
     assert.equal(landing.chip?.expanded, "false", "the chip claims an open dialog");
-    assert.equal(landing.chip?.appRegion, "no-drag", "the chip is not clickable");
+    assert.equal(
+      landing.chip?.ariaLabel,
+      `LifeQuest — ${VAULT_A.name}`,
+      "the chip lost the vault's accessible name",
+    );
+    assert.equal(landing.chip?.title, "Switch vault", "the chip's tooltip does not name its action");
+
+    // The chip moved out of the titlebar into the rail's foot. The old titlebar
+    // rig proved this with `app-region: no-drag`, which only meant "clickable in
+    // the drag band"; the chip is no longer in the band at all. What replaces it
+    // is where the control is mounted and drawn.
+    assert.equal(landing.chip?.inRail, true, "the chip is not inside the rail");
+    assert.equal(landing.chip?.inFoot, true, "the chip is not inside the rail's footer group");
+    assert.equal(landing.chip?.footGroup, "footer", "the rail's foot is not the footer group");
+    assert.equal(landing.titlebarChip, false, "a vault chip is still drawn in the titlebar");
+    assert.ok(
+      insideBox(landing.chip?.box, landing.rects.foot),
+      `the chip's box is outside the rail's foot: chip ${JSON.stringify(landing.chip?.box)}, foot ${JSON.stringify(landing.rects.foot)}`,
+    );
+    assert.ok(
+      insideBox(landing.chip?.box, landing.rects.rail),
+      `the chip's box is outside the rail: chip ${JSON.stringify(landing.chip?.box)}, rail ${JSON.stringify(landing.rects.rail)}`,
+    );
+
     assert.equal(landing.dialog, null, "a dialog was drawn before the click");
     assert.equal(landing.probe?.vault, VAULT_A.path, "the page did not boot on vault A");
     assert.equal(landing.probe?.recents, 3, "the provider never read its recents");
@@ -196,7 +256,7 @@ describe("the titlebar vault switcher", () => {
     assert.match(opened.dialog?.folder?.className ?? "", /\bbtn\b/, "the folder action is not the app's Button");
     assert.equal(opened.dialog?.close?.label, "Close vault switcher", "the close control is unlabelled");
     assert.equal(opened.dialog?.activeInside, true, "focus did not move into the dialog");
-    assert.equal(opened.dialog?.portal, true, "the dialog is not portalled out of the titlebar");
+    assert.equal(opened.dialog?.portal, true, "the dialog is not portalled out of the rail");
     assert.deepEqual(opened.calls.dialog, [], "opening the dialog asked the picker");
     assert.deepEqual(opened.calls.open, [], "opening the dialog opened a vault");
 

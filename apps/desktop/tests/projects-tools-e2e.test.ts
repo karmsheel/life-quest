@@ -10,6 +10,7 @@ import {
   listDecisions,
   listDomains,
   loadGoals,
+  projectCreate,
   resolveDecision,
 } from "@lifequest/vault-core";
 import { startPairingDoors } from "../electron/pairing-door.ts";
@@ -31,6 +32,10 @@ import { ensureCompanionToken } from "../electron/pairing-secrets.ts";
  *   1. `list_projects` on a fresh vault answers an empty list.
  *   2. `create_project` with every attribute files ONE Decision and writes no
  *      file; after approve, `list_projects` and `get_project` carry every field.
+ *      The idea-provenance fields (type, source, source link) survive the file
+ *      round trip even when their text would read as YAML (`[]`, `true`), an
+ *      invalid `sourceUrl` is refused by name and writes nothing, and
+ *      `list_projects` filters by type case-insensitively.
  *   3. `update_project` with `stateNote` + `addUpdate` files a Decision; after
  *      approve the progress percent and the timeline entry are there.
  *   4. `close_project` files a Decision; after approve the status is `closed`.
@@ -227,6 +232,9 @@ describe("projects and harness tools over the real MCP door", () => {
       const CREATE_ARGS = {
         title: "Ship the Execute wing",
         summary: "Move Projects to Execute and make it agent-readable",
+        projectType: "Mobile App",
+        source: "A friend's recommendation",
+        sourceUrl: "https://example.com/ideas/execute-wing",
         stateNote: "Kickoff done; the tools are half-written",
         goalId,
         domainSlug: "health",
@@ -276,6 +284,9 @@ describe("projects and harness tools over the real MCP door", () => {
           entries.length === 1 &&
           entries[0]?.title === CREATE_ARGS.title &&
           entries[0]?.summary === CREATE_ARGS.summary &&
+          entries[0]?.projectType === CREATE_ARGS.projectType &&
+          entries[0]?.source === CREATE_ARGS.source &&
+          entries[0]?.sourceUrl === CREATE_ARGS.sourceUrl &&
           entries[0]?.stateNote === CREATE_ARGS.stateNote &&
           entries[0]?.status === "active" &&
           entries[0]?.priority === "high" &&
@@ -301,6 +312,9 @@ describe("projects and harness tools over the real MCP door", () => {
         readCreate.id === projectId &&
           readCreate.title === CREATE_ARGS.title &&
           readCreate.summary === CREATE_ARGS.summary &&
+          readCreate.projectType === CREATE_ARGS.projectType &&
+          readCreate.source === CREATE_ARGS.source &&
+          readCreate.sourceUrl === CREATE_ARGS.sourceUrl &&
           readCreate.stateNote === CREATE_ARGS.stateNote &&
           // The file's body gains the trailing newline the frontmatter
           // serializer writes; the content is what the tool must carry back.
@@ -330,11 +344,147 @@ describe("projects and harness tools over the real MCP door", () => {
         ).slice(0, 300)}`,
       );
 
+      // ── 2b. the idea-provenance fields ────────────────────────────────────
+      // "[]" and "true" are the values that would read back as a YAML array or
+      // boolean if the writer left them bare. The file itself must carry them
+      // quoted, and both the compact list and the full read must hand the text
+      // back as strings — that is the whole point of quoteTextScalar.
+      const AWKWARD_TYPE = "[]";
+      const AWKWARD_SOURCE = "true";
+      const AWKWARD_URL = "https://example.com/ideas/awkward";
+      const awkwardFiled = asRecord(
+        await callTool(bearer, "create_project", {
+          title: "Idea with awkward text",
+          projectType: AWKWARD_TYPE,
+          source: AWKWARD_SOURCE,
+          sourceUrl: AWKWARD_URL,
+        }),
+        "create_project",
+      );
+      const awkwardDecisionId = String(awkwardFiled.decisionId ?? "");
+      scenario(
+        "create-project-awkward-scalars-decision",
+        awkwardFiled.status === "pending" && awkwardDecisionId.length > 0,
+        `create_project answered ${JSON.stringify(awkwardFiled).slice(0, 240)}`,
+      );
+      const approveAwkward = await resolveDecision(vaultRoot, awkwardDecisionId, "approved");
+      assert.equal(
+        approveAwkward.ok,
+        true,
+        `approving the awkward-text project failed: ${approveAwkward.ok ? "" : approveAwkward.error}`,
+      );
+      const listedAwkward = asRecord(await callTool(bearer, "list_projects", {}), "list_projects");
+      const awkwardEntry = ((listedAwkward.projects ?? []) as Record<string, unknown>[]).find(
+        (entry) => entry.title === "Idea with awkward text",
+      );
+      const awkwardId = String(awkwardEntry?.id ?? "");
+      assert.ok(awkwardId, "the awkward-text project is not in list_projects");
+      // Read the file the approve path actually wrote, not the object in memory.
+      const awkwardText = fs.readFileSync(path.join(vaultRoot, "projects", `${awkwardId}.md`), "utf8");
+      const awkwardRead = asRecord(
+        await callTool(bearer, "get_project", { id: awkwardId }),
+        "get_project",
+      );
+      scenario(
+        "provenance-round-trip",
+        awkwardEntry?.projectType === AWKWARD_TYPE &&
+          awkwardEntry?.source === AWKWARD_SOURCE &&
+          awkwardEntry?.sourceUrl === AWKWARD_URL &&
+          awkwardRead.projectType === AWKWARD_TYPE &&
+          awkwardRead.source === AWKWARD_SOURCE &&
+          awkwardRead.sourceUrl === AWKWARD_URL &&
+          awkwardText.includes(`projectType: "${AWKWARD_TYPE}"`) &&
+          awkwardText.includes(`source: "${AWKWARD_SOURCE}"`) &&
+          awkwardText.includes(`sourceUrl: "${AWKWARD_URL}"`),
+        `entry ${JSON.stringify(awkwardEntry)}, read ${JSON.stringify({
+          projectType: awkwardRead.projectType,
+          source: awkwardRead.source,
+          sourceUrl: awkwardRead.sourceUrl,
+        })}, file ${JSON.stringify(awkwardText.slice(0, 500))}`,
+      );
+
+      // The type filter is case-insensitive, and it filters rather than guesses.
+      const filteredByType = asRecord(
+        await callTool(bearer, "list_projects", { projectType: "mobile app" }),
+        "list_projects",
+      );
+      const typeRows = (filteredByType.projects ?? []) as Record<string, unknown>[];
+      scenario(
+        "list-projects-type-filter",
+        filteredByType.total === 1 && typeRows.length === 1 && typeRows[0]?.id === projectId,
+        `the case-insensitive projectType filter answered ${JSON.stringify(filteredByType).slice(0, 300)}`,
+      );
+
+      // A source link that is not an absolute http(s) URL is refused by name
+      // and writes nothing: no file, no pending Decision, no half-applied update.
+      const filesBeforeBadUrl = projectFiles(vaultRoot).length;
+      const badUrlFiled = asRecord(
+        await callTool(bearer, "create_project", {
+          title: "Bad link",
+          sourceUrl: "example.com/not-a-url",
+        }),
+        "create_project",
+      );
+      scenario(
+        "invalid-source-url-refused",
+        /sourceUrl/.test(
+          String((badUrlFiled.error as { message?: string } | undefined)?.message ?? ""),
+        ) &&
+          projectFiles(vaultRoot).length === filesBeforeBadUrl &&
+          (await pendingFor(vaultRoot, "project")).length === 0,
+        `create_project with a bad sourceUrl answered ${JSON.stringify(badUrlFiled).slice(0, 300)}`,
+      );
+      const directBadUrl = await projectCreate(vaultRoot, {
+        title: "Bad direct link",
+        sourceUrl: "javascript:alert(1)",
+      });
+      scenario(
+        "invalid-source-url-operator",
+        !directBadUrl.ok &&
+          /sourceUrl/.test(directBadUrl.error) &&
+          projectFiles(vaultRoot).length === filesBeforeBadUrl,
+        `projectCreate with a bad sourceUrl answered ${
+          directBadUrl.ok ? "ok" : directBadUrl.error
+        }`,
+      );
+      const beforeBadUpdate = asRecord(
+        await callTool(bearer, "get_project", { id: projectId }),
+        "get_project",
+      );
+      const badUrlUpdate = asRecord(
+        await callTool(bearer, "update_project", {
+          id: projectId,
+          stateNote: "Should never land",
+          sourceUrl: "ftp://example.com/not-web",
+        }),
+        "update_project",
+      );
+      const afterBadUpdate = asRecord(
+        await callTool(bearer, "get_project", { id: projectId }),
+        "get_project",
+      );
+      scenario(
+        "invalid-source-url-update-refused",
+        /sourceUrl/.test(
+          String((badUrlUpdate.error as { message?: string } | undefined)?.message ?? ""),
+        ) &&
+          afterBadUpdate.stateNote === beforeBadUpdate.stateNote &&
+          afterBadUpdate.sourceUrl === beforeBadUpdate.sourceUrl &&
+          (await pendingFor(vaultRoot, "project")).length === 0,
+        `update_project with a bad sourceUrl answered ${JSON.stringify(badUrlUpdate).slice(0, 300)}`,
+      );
+
       // ── 3. update: stateNote + addUpdate → Decision → approve ────────────
+      const UPDATE_PROVENANCE = {
+        projectType: "Desktop/web",
+        source: "First noticed on a YouTube channel",
+        sourceUrl: "https://example.com/watch?v=execute-wing",
+      };
       const updateFiled = asRecord(
         await callTool(bearer, "update_project", {
           id: projectId,
           stateNote: "The companion tools landed",
+          ...UPDATE_PROVENANCE,
           addUpdate: { note: "Wired the MCP door test", progress: 60 },
         }),
         "update_project",
@@ -368,6 +518,17 @@ describe("projects and harness tools over the real MCP door", () => {
         progress?: number | null;
         actorName?: string | null;
       }[];
+      scenario(
+        "update-project-provenance",
+        readAfterUpdate.projectType === UPDATE_PROVENANCE.projectType &&
+          readAfterUpdate.source === UPDATE_PROVENANCE.source &&
+          readAfterUpdate.sourceUrl === UPDATE_PROVENANCE.sourceUrl,
+        `update_project carried ${JSON.stringify({
+          projectType: readAfterUpdate.projectType,
+          source: readAfterUpdate.source,
+          sourceUrl: readAfterUpdate.sourceUrl,
+        })}`,
+      );
       scenario(
         "update-project-approve",
         readAfterUpdate.stateNote === "The companion tools landed" && readAfterUpdate.progress === 60,
@@ -408,12 +569,22 @@ describe("projects and harness tools over the real MCP door", () => {
         "create_task",
       );
       const mapState = asRecord(taskApplied.state, "create_task.state");
-      const taskId = String(
-        (mapState.tasks as { id: string; title: string }[]).find(
-          (task) => task.title === "Write the MCP door test",
-        )?.id ?? "",
-      );
+      const createdTask = (mapState.tasks as {
+        id: string;
+        title: string;
+        origin?: string;
+      }[]).find((task) => task.title === "Write the MCP door test");
+      const taskId = String(createdTask?.id ?? "");
       assert.ok(taskId, `create_task did not apply: ${JSON.stringify(taskApplied).slice(0, 300)}`);
+      // The Act board's "Added by agent" mark reads the task's origin. This door
+      // is the only real path by which an agent adds a card, so the stamp has to
+      // be proved here: a door that passed "user" would mark every agent card as
+      // the operator's and every other rig would stay green.
+      scenario(
+        "agent-created-task-origin",
+        createdTask?.origin === "agent",
+        `create_task stored origin ${JSON.stringify(createdTask?.origin)} for ${taskId}`,
+      );
 
       const readCollated = asRecord(await callTool(bearer, "get_project", { id: projectId }), "get_project");
       scenario(

@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -117,8 +118,18 @@ export function ChatsSidebar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  /**
+   * Which side of its row the open menu hangs on. The list is the scroll port
+   * that clips the menu, so a menu drawn under a row near the foot of that port
+   * would be half outside it and reachable only by scrolling. The side is
+   * measured when the menu opens; see the layout effect below.
+   */
+  const [menuPlacement, setMenuPlacement] = useState<"below" | "above">("below");
+  const [menuMaxHeight, setMenuMaxHeight] = useState<number | null>(null);
   const searchBoxRef = useRef<HTMLDivElement | null>(null);
   const searchButtonRef = useRef<HTMLButtonElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const needle = query.trim().toLowerCase();
   const matches = (s: HermesSession) => {
@@ -208,7 +219,10 @@ export function ChatsSidebar() {
     });
   }
 
-  /** Archive takes the chat out of the list; leaving that list is the gesture. */
+  /**
+   * Archive takes the chat out of the list; if it had a tab, that tab closes
+   * with it and the strip hands the front to its neighbour.
+   */
   function archiveChat(s: HermesSession) {
     setMenuId(null);
     void chat.patchSession(s.id, { archived: true });
@@ -246,6 +260,51 @@ export function ChatsSidebar() {
     return () =>
       document.removeEventListener("pointerdown", onPointerDown, true);
   }, [searchOpen, closeSearch]);
+
+  /**
+   * Open the row menu on whichever side of the row has room for it.
+   *
+   * The list scrolls inside itself, and a scroll port clips its contents: the
+   * menu is drawn against its row, so the last row's menu used to hang below the
+   * foot of the port — half of it out of sight, and the operator had to scroll
+   * to reach the rest. That is backwards: a menu opens into the space that
+   * exists, and the space that exists at the foot of a scrolled list is above
+   * the row.
+   *
+   * The menu is measured after it mounts (a layout effect, so no frame paints in
+   * the wrong place). It stays below whenever it fits there, which is the
+   * common case and the one the pointer expects; only a menu that would not fit
+   * under the row is flipped over it, and only when the room overhead is the
+   * larger of the two. If neither side can hold the whole menu — a very short
+   * window — the winning side's room becomes the menu's max height, so the menu
+   * scrolls itself instead of being clipped by the list.
+   */
+  useLayoutEffect(() => {
+    if (!menuId) {
+      setMenuPlacement("below");
+      setMenuMaxHeight(null);
+      return;
+    }
+    const menu = menuRef.current;
+    const list = listRef.current;
+    const row = menu?.closest<HTMLElement>(".chats-rail__row") ?? null;
+    if (!menu || !list || !row) return;
+    const listBox = list.getBoundingClientRect();
+    const rowBox = row.getBoundingClientRect();
+    // The menu's natural height, not the drawn one: a menu clamped by the last
+    // pass must still report the room it really needs, or the clamp and the
+    // unclamp would trade places on every pass.
+    const border = menu.offsetHeight - menu.clientHeight;
+    const menuHeight = menu.scrollHeight + border;
+    const below = Math.max(0, listBox.bottom - rowBox.bottom);
+    const above = Math.max(0, rowBox.top - listBox.top);
+    // Downward unless it does not fit there and the overhead is roomier.
+    const placement =
+      below >= menuHeight || below >= above ? "below" : "above";
+    const room = placement === "below" ? below : above;
+    setMenuPlacement(placement);
+    setMenuMaxHeight(menuHeight > room ? Math.max(0, Math.floor(room)) : null);
+  }, [menuId, menuPlacement]);
 
   function startRename(s: HermesSession) {
     setMenuId(null);
@@ -434,7 +493,13 @@ export function ChatsSidebar() {
               )}
             </span>
             {menuOpen ? (
-              <div className="chats-rail__menu" role="menu">
+              <div
+                className="chats-rail__menu"
+                role="menu"
+                ref={menuRef}
+                data-menu-placement={menuPlacement}
+                style={menuMaxHeight === null ? undefined : { maxHeight: menuMaxHeight }}
+              >
                 {archived ? (
                   <button
                     type="button"
@@ -655,7 +720,7 @@ export function ChatsSidebar() {
         </div>
       ) : null}
 
-      <div className="chats-rail__list">
+      <div className="chats-rail__list" ref={listRef}>
         {chat.sessionsLoaded && chat.sessions.length === 0 ? (
           <p className="chats-rail__empty">No chats yet</p>
         ) : (

@@ -48,12 +48,13 @@ const SHOTS = [
 const SCENARIOS = [
   "skin",
   "rail-execute",
-  "top-bar-tabs",
+  "rail-wing-tabs",
   "page-eyebrow",
   "new-project-inline",
   "modal-closed-by-default",
   "list-count",
   "list-attributes",
+  "list-type",
   "list-filter",
   "list-filter-closed",
   "wing-tab-plan",
@@ -62,6 +63,7 @@ const SCENARIOS = [
   "wing-switch",
   "detail-route",
   "detail-header",
+  "detail-source",
   "detail-progress",
   "detail-context",
   "detail-attributes",
@@ -82,6 +84,7 @@ const SCENARIOS = [
   "modal-create-context",
   "modal-create-submit",
   "modal-create",
+  "modal-create-attrs",
   "clean",
 ];
 
@@ -120,6 +123,7 @@ type Scenario = { name: string; pass: boolean; detail: string | null };
 type ListRow = {
   id: string | null;
   title: string | null;
+  type: string | null;
   status: string | null;
   priority: string | null;
   summary: string | null;
@@ -130,12 +134,29 @@ type ListRow = {
   progress: string | null;
 };
 type TimelineRow = { note: string | null; progress: string | null; actor: string | null };
+type SourceLink = { text: string | null; href: string | null; target: string | null };
+type Details = {
+  title: string | null;
+  summary: string | null;
+  status: string | null;
+  priority: string | null;
+  goal: string | null;
+  domain: string | null;
+  start: string | null;
+  target: string | null;
+  projectType: string | null;
+  source: string | null;
+  sourceUrl: string | null;
+};
 type Detail = {
   title: string | null;
   status: string | null;
   statusData: string | null;
   summary: string | null;
   meta: string[];
+  type: string | null;
+  source: string | null;
+  sourceLink: SourceLink | null;
   stateNote: string | null;
   nextAction: string | null;
   progress: string | null;
@@ -143,7 +164,7 @@ type Detail = {
   timeline: TimelineRow[];
   contextPresent: boolean;
   contextText: string | null;
-  details: Record<string, string | null> | null;
+  details: Details | null;
   tasks: { type: string | null; summary: string | null }[];
   signals: { type: string | null; summary: string | null }[];
   decisions: { type: string | null; summary: string | null }[];
@@ -336,6 +357,11 @@ describe("Projects on the Execute wing e2e", () => {
       ["p-exec", "p-paused", "p-closed", "p-trip"],
       "the register's rows moved",
     );
+    assert.deepEqual(
+      report.checks.initial.rows.map((row) => row.type),
+      ["Desktop/web", "Service", "Mobile App", "Physical product"],
+      "the register does not show each project's type",
+    );
     const [exec, paused, closed, trip] = report.checks.initial.rows;
     assert.equal(exec?.title, "Ship the Execute wing");
     assert.equal(exec?.status, "Active", "the active row's status chip is wrong");
@@ -373,6 +399,25 @@ describe("Projects on the Execute wing e2e", () => {
     assert.equal(detail?.progress, "60%");
     assert.equal(detail?.progressData, "60");
 
+    // The idea's provenance, read off the detail header and its link.
+    assert.equal(detail?.type, "Desktop/web", "the detail header does not show the project type");
+    assert.equal(detail?.source, "From Hermes", "the detail header does not show where the idea came from");
+    assert.equal(
+      detail?.sourceLink?.href,
+      "https://example.com/execute-wing",
+      "the detail header's source link points elsewhere",
+    );
+    assert.equal(
+      detail?.sourceLink?.text,
+      "https://example.com/execute-wing",
+      "the detail header's source link does not read as the URL",
+    );
+    assert.equal(
+      detail?.sourceLink?.target,
+      "_blank",
+      "the detail header's source link does not open in a new tab",
+    );
+
     assert.deepEqual(
       detail?.timeline.map((row) => row.note),
       ["Companion tools landed", "Kickoff and the schema landed"],
@@ -394,6 +439,9 @@ describe("Projects on the Execute wing e2e", () => {
       domain: "health",
       start: "2026-10-01",
       target: "2026-12-31",
+      projectType: "Desktop/web",
+      source: "Hermes",
+      sourceUrl: "https://example.com/execute-wing",
     });
 
     // ── The collated context ────────────────────────────────────────────────
@@ -475,6 +523,9 @@ describe("Projects on the Execute wing e2e", () => {
       title?: string;
       summary?: string;
       bodyMarkdown?: string;
+      projectType?: string | null;
+      source?: string | null;
+      sourceUrl?: string | null;
     };
     assert.ok(creation.call, "submitting the modal wrote no projectsCreate call");
     assert.equal(creation.call?.method, "projectsCreate");
@@ -483,6 +534,14 @@ describe("Projects on the Execute wing e2e", () => {
     assert.ok(
       String(createArg?.bodyMarkdown).includes("Book the flights before the fare rises."),
       "the context document was not carried",
+    );
+    assert.equal(createArg?.projectType, "YouTube", "the created project's type was not carried");
+    assert.equal(createArg?.source, "A friend's channel", "the created project's source was not carried");
+    assert.equal(createArg?.sourceUrl, "https://example.com/winter-plan", "the created project's source link was not carried");
+    assert.equal(
+      creation.newRow?.type,
+      "YouTube",
+      "the new first row does not show the created project's type",
     );
     // ── Nothing paints sideways at the sheet width ─────────────────────────
     for (const [label, overflow] of Object.entries(report.checks.overflow)) {

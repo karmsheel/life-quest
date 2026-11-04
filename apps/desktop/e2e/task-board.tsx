@@ -21,7 +21,7 @@
  * nothing about the card's own hierarchy, and an empty horizon would not prove
  * that its column reads at all.
  */
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import type {
@@ -39,6 +39,7 @@ import type {
 } from "@lifequest/vault-core/map";
 import ActPage from "@/pages/ActPage";
 import { VaultProvider } from "@/state/VaultProvider";
+import { ChatDockProvider, useChatDock } from "@/state/ChatDockProvider";
 import { applyAppSkin } from "./apply-app-skin";
 import "@/styles/global.css";
 
@@ -80,6 +81,9 @@ const SEED_TASKS: Task[] = [
     notes: "Compare fees, transfer limits and how quickly each one clears.",
     column: "backlog",
     links: { goalId: "g-money" },
+    // Added by an agent: the only card on this board that wears the mark, so the
+    // driver can tell "the mark is drawn" from "the mark is drawn on everything".
+    origin: "agent",
   },
   {
     id: "t-legacy",
@@ -283,6 +287,9 @@ function applyMapCommand(state: StoreState, command: MapCommand): StoreState {
             notes: command.notes ?? "",
             column: command.column ?? "backlog",
             links: command.links ?? {},
+            // Every write this harness sees comes from the operator's board, and
+            // the real store stamps the command's actor the same way.
+            origin: "operator",
           },
         ],
       };
@@ -378,12 +385,26 @@ type HarnessWindow = Window & {
   taskBoardUnexpectedCalls?: string[];
   taskBoardCommands?: MapCommand[];
   taskBoardTasks?: () => Task[];
+  /** The chats this run created, in order. */
+  taskBoardSessions?: { id: string; title: string }[];
+  /**
+   * When true, the next send-to-agent's session creation fails. This is the one
+   * failure path the board has to report to the operator rather than swallow.
+   */
+  taskBoardFailSendAgent?: boolean;
+  /** What the dock was asked to open, as the board sent it. */
+  taskBoardDock?: {
+    requestedSessionId: string | null;
+    requestedKickoff: string | null;
+  } | null;
 };
 
 const harness = window as HarnessWindow;
 harness.taskBoardCalls = [];
 harness.taskBoardUnexpectedCalls = [];
 harness.taskBoardCommands = [];
+harness.taskBoardSessions = [];
+harness.taskBoardDock = null;
 harness.taskBoardTasks = () => structuredClone(mapState.tasks);
 
 const stubs: Record<string, (...args: unknown[]) => unknown> = {
@@ -399,6 +420,24 @@ const stubs: Record<string, (...args: unknown[]) => unknown> = {
     harness.taskBoardCommands!.push(typed);
     mapState = applyMapCommand(mapState, typed);
     return ok(snapshot());
+  },
+  // A send-to-agent creates a real companion chat before the dock is asked to open
+  // it; the harness answers with a session shaped like the gateway's, so the
+  // board and the dock are exercised without a Hermes behind them.
+  companionSessionCreate: async (title: unknown) => {
+    if (harness.taskBoardFailSendAgent) {
+      return { ok: false, error: "gateway down" };
+    }
+    const session = {
+      id: `sess-send-agent-${harness.taskBoardSessions!.length + 1}`,
+      title: typeof title === "string" ? title : "Task",
+      preview: null,
+      lastActive: null,
+      pinned: false,
+      archived: false,
+    };
+    harness.taskBoardSessions!.push({ id: session.id, title: session.title });
+    return ok(session);
   },
   // The agent composer is not exercised by this rig; it is modelled anyway so a
   // stray call is a wrong answer rather than an unmodelled bridge method.
@@ -422,6 +461,25 @@ const stubs: Record<string, (...args: unknown[]) => unknown> = {
   },
 });
 
+/**
+ * What the dock was told, kept where the driver can read it.
+ *
+ * The real dock consumes a session request by opening the chat and sending the
+ * kickoff; this rig has no ChatPanel, so the request is observed at the context
+ * boundary instead. That is the seam the send-to-agent feature actually owns — the
+ * rest is the chat panel's own job, covered by its rig.
+ */
+function DockProbe() {
+  const dock = useChatDock();
+  useEffect(() => {
+    harness.taskBoardDock = {
+      requestedSessionId: dock.requestedSessionId,
+      requestedKickoff: dock.requestedKickoff,
+    };
+  }, [dock.requestedSessionId, dock.requestedKickoff]);
+  return null;
+}
+
 function Harness() {
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -429,9 +487,12 @@ function Harness() {
           the width (and with the edges) the operator's sheet actually gives it. */}
       <div className="shell__content">
         <MemoryRouter initialEntries={["/act"]}>
-          <VaultProvider>
-            <ActPage />
-          </VaultProvider>
+          <ChatDockProvider>
+            <VaultProvider>
+              <ActPage />
+            </VaultProvider>
+            <DockProbe />
+          </ChatDockProvider>
         </MemoryRouter>
       </div>
     </div>

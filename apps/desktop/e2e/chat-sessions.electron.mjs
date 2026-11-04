@@ -790,7 +790,10 @@ async function main() {
     );
     screenshots.push(await shot("renamed"));
 
-    // 7 — archive: the write reaches the bridge and the chat leaves the list.
+    // 7 — archive: the write reaches the bridge, the tab closes, and the dock
+    // stays on the thread with a blank New chat. Falling back to the history
+    // list here is the reported fault: archiving the chat in front must not make
+    // the operator pick another one.
     await clickRow(2);
     await settle();
     const archiveClicked = await clickAria("Archive chat");
@@ -803,28 +806,38 @@ async function main() {
       `bridge saw ${JSON.stringify(last(archived.patchCalls))} for ${thirdId}`,
     );
     check(
-      "archiving leaves the list up",
-      archived.list !== null && archived.threadHeader === null,
+      "archiving the last open chat keeps the dock on a thread",
+      archived.list === null && archived.threadHeader !== null,
       `list ${Boolean(archived.list)}, thread ${Boolean(archived.threadHeader)}`,
     );
     check(
-      "the archived chat is gone from the list",
-      archived.rowCount === expected.rows - 1 &&
-        !archived.rows.some((row) => row.label === "Lisbon trip planning"),
-      `${archived.rowCount} rows, names ${JSON.stringify(archived.rows.map((row) => row.label))}`,
+      "archiving the last open chat opens a blank New chat",
+      archived.threadHeader?.label === "New chat" &&
+        archived.messages.length === 0 &&
+        archived.composer?.focused === true,
+      `header "${archived.threadHeader?.label}", ${archived.messages.length} bubbles, caret on ${JSON.stringify(archived.active)}`,
+    );
+    check(
+      "the blank chat archiving opened came from the bridge",
+      archived.createCalls.length === 1 &&
+        (last(archived.messageCalls) ?? "").startsWith("harness-created"),
+      `creates ${JSON.stringify(archived.createCalls)}, reads ${JSON.stringify(archived.messageCalls.slice(-2))}`,
     );
     screenshots.push(await shot("archived"));
 
-    // 8 — the new-chat slot creates one chat through the bridge and opens its
-    // (empty) thread. The chain slot swaps the panel and `chat-chain.electron.mjs`
-    // owns that; the collapse slot closes the dock and the side rig owns that.
+    // 8 — the new-chat slot opens the (empty) thread it is aimed at. The blank
+    // chat the archive just opened is already there, so the slot reuses it
+    // rather than minting another. The chain slot swaps the panel and
+    // `chat-chain.electron.mjs` owns that; the collapse slot closes the dock and
+    // the side rig owns that.
     const newClicked = await pressAria("New chat");
     const created = await settle();
     check("clicked New chat", newClicked, "no New chat slot in the action bar");
     check(
-      "the New chat slot created a session through the bridge",
-      created.createCalls.length === 1,
-      `bridge saw ${JSON.stringify(created.createCalls)}`,
+      "the New chat slot reuses the blank chat archiving opened",
+      created.createCalls.length === archived.createCalls.length &&
+        last(created.messageCalls) === last(archived.messageCalls),
+      `creates ${JSON.stringify(created.createCalls)}, reads ${JSON.stringify(created.messageCalls.slice(-2))}`,
     );
     check(
       "the New chat slot opened its empty thread",

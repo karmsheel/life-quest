@@ -8,17 +8,18 @@ import { UpdateDialog } from "./UpdateDialog";
 /**
  * The in-app notice for a release the app learned about while it was open.
  *
- * THE FAULT THIS REPAIRS (reported, not imagined): the rail's build number glows
- * when a newer release exists, but it sits at the foot of a column of icons and
- * is easy to miss — the operator only found out about an update if they happened
- * to click it. And until main read the feed on a clock, a release published while
- * the studio was open produced no glow at all until the next launch.
+ * THE FAULT THIS REPAIRS (reported, not imagined): the dock's build number glows
+ * when a newer release exists, but it sits at the trailing end of the bottom bar
+ * and is easy to miss — the operator only found out about an update if they
+ * happened to click it. And until main read the feed on a clock, a release
+ * published while the studio was open produced no glow at all until the next
+ * launch.
  *
  * So this is the unmissable half: a card at the foot of the content column, shown
  * once per release, with the one action that matters (open the offer) and a
  * dismissal for the operator who is in the middle of something. It is news, not a
  * decision: it never takes focus, never covers the composer, and never blocks the
- * page. The rail stays the quiet, always-there sign; this is the tap on the
+ * page. The bar stays the quiet, always-there sign; this is the tap on the
  * shoulder.
  *
  * It draws the same `UpdateDialog` the build number opens, from the same provider

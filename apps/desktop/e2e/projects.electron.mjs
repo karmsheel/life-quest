@@ -10,10 +10,10 @@
  * repeatable artifact; the test file `tests/projects-e2e.test.ts` refuses a
  * report that does not hold.
  *
- * The rig mounts the real `AppShell` (real `NavRail` with its wing switcher, real `TopBar`,
- * `WingProvider`/`wingForPath`) with the real `ProjectsPage` and `ProjectPage` on
- * their routes, against a recording stub vault. The claims, and what makes each
- * falsifiable:
+ * The rig mounts the real `AppShell` (real `NavRail` with its wing switcher, real
+ * `WindowTitleBar` with its domain tab, `WingProvider`/`wingForPath`) with the
+ * real `ProjectsPage` and `ProjectPage` on their routes, against a recording stub
+ * vault. The claims, and what makes each falsifiable:
  *
  *  1. `rail-execute` — a cold load of `/projects` selects Execute, and the rail's
  *     wing group reads Projects, Daily Schedule, Act with Projects active. This
@@ -136,6 +136,7 @@ const SAMPLE = `(() => {
       id: row.dataset.projectId ?? null,
       statusAttr: row.dataset.status ?? null,
       title: text(row.querySelector(".projects-row__title")),
+      type: text(row.querySelector('[data-testid="project-row-type"]')),
       status: text(row.querySelector(".projects-chip")),
       statusClass: row.querySelector(".projects-chip")?.className ?? null,
       priority: text(row.querySelector(".projects-row__priority")),
@@ -174,6 +175,9 @@ const SAMPLE = `(() => {
         domain: value(byTestId("project-detail-domain")),
         start: value(byTestId("project-detail-start")),
         target: value(byTestId("project-detail-target")),
+        projectType: value(byTestId("project-detail-type")),
+        source: value(byTestId("project-detail-source")),
+        sourceUrl: value(byTestId("project-detail-source-url")),
       }
     : null;
 
@@ -249,6 +253,14 @@ const SAMPLE = `(() => {
           statusData: attr(byTestId("project-status"), "data-status"),
           summary: text(document.querySelector(".project-detail__summary")),
           meta: Array.from(document.querySelectorAll(".project-detail__meta > span")).map(text),
+          type: text(byTestId("project-type")),
+          source: text(byTestId("project-source")),
+          sourceLink: (() => {
+            const link = byTestId("project-source-link");
+            return link
+              ? { text: text(link), href: attr(link, "href"), target: attr(link, "target") }
+              : null;
+          })(),
           stateNote: text(document.querySelector(".project-detail__state-note")),
           nextAction: text(document.querySelector(".project-detail__next-text")),
           progress: text(byTestId("project-progress-value")),
@@ -498,7 +510,7 @@ async function main() {
       )}`,
     );
     check(
-      "top-bar-tabs",
+      "rail-wing-tabs",
       same(initial.tabs.map((tab) => tab.label), WING_TABS),
       `tabs ${JSON.stringify(initial.tabs.map((tab) => tab.label))}`,
     );
@@ -568,6 +580,14 @@ async function main() {
         initial.rows[3]?.status === "Open" &&
         initial.rows[3]?.priority === "Low priority",
       `rows ${JSON.stringify(initial.rows)}`,
+    );
+    check(
+      "list-type",
+      same(
+        initial.rows.map((row) => row.type),
+        ["Desktop/web", "Service", "Mobile App", "Physical product"],
+      ),
+      `row types ${JSON.stringify(initial.rows.map((row) => row.type))}`,
     );
     const listShot = await shoot(SHOTS.list);
 
@@ -640,6 +660,19 @@ async function main() {
         view?.progress === "60%" &&
         view?.progressData === "60",
       `header ${JSON.stringify(view)}`,
+    );
+    check(
+      "detail-source",
+      view?.type === "Desktop/web" &&
+        view?.source === "From Hermes" &&
+        view?.sourceLink?.href === "https://example.com/execute-wing" &&
+        view?.sourceLink?.text === "https://example.com/execute-wing" &&
+        view?.sourceLink?.target === "_blank",
+      `provenance ${JSON.stringify({
+        type: view?.type,
+        source: view?.source,
+        sourceLink: view?.sourceLink,
+      })}`,
     );
     check(
       "detail-progress",
@@ -827,6 +860,9 @@ async function main() {
     const NEW_TITLE = "Draft the winter plan";
     const NEW_SUMMARY = "Three weeks, one bag, no laptop";
     const NEW_CONTEXT = "Book the flights before the fare rises.";
+    const NEW_TYPE = "YouTube";
+    const NEW_SOURCE = "A friend's channel";
+    const NEW_URL = "https://example.com/winter-plan";
     await openModal();
     const callsBeforeCreate = (await sample()).calls.length;
     check(
@@ -839,6 +875,9 @@ async function main() {
       await typeInto('[data-testid="project-create-summary"]', NEW_SUMMARY),
       "the summary field would not take the one attribute",
     );
+    const typedType = await typeInto('[data-testid="project-create-type"]', NEW_TYPE);
+    const typedSource = await typeInto('[data-testid="project-create-source"]', NEW_SOURCE);
+    const typedUrl = await typeInto('[data-testid="project-create-source-url"]', NEW_URL);
     check(
       "modal-create-context-open",
       await run(`(() => {
@@ -887,6 +926,22 @@ async function main() {
         String(createArg?.bodyMarkdown ?? "").includes(NEW_CONTEXT),
       `modal ${JSON.stringify(created.modal)}, count ${JSON.stringify(created.count)}, ` +
         `rows ${JSON.stringify(created.rows.slice(0, 1))}, calls ${JSON.stringify(createCalls)}`,
+    );
+    check(
+      "modal-create-attrs",
+      typedType === true &&
+        typedSource === true &&
+        typedUrl === true &&
+        createArg?.projectType === NEW_TYPE &&
+        createArg?.source === NEW_SOURCE &&
+        createArg?.sourceUrl === NEW_URL &&
+        created.rows[0]?.type === NEW_TYPE,
+      `typed ${JSON.stringify({ type: typedType, source: typedSource, url: typedUrl })}, ` +
+        `call ${JSON.stringify({
+          projectType: createArg?.projectType,
+          source: createArg?.source,
+          sourceUrl: createArg?.sourceUrl,
+        })}, row type ${JSON.stringify(created.rows[0]?.type)}`,
     );
 
     // ── clean: no page errors, and nothing outside the chat surface unmodelled

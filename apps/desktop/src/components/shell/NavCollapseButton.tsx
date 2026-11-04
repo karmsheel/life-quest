@@ -2,11 +2,13 @@ import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useNavDock } from "@/state/NavDockProvider";
 
 /**
- * The one icon at the top of the sidebar — and, once the rail is collapsed, the
- * same icon at the leading edge of the titlebar. Both ends of the toggle share
- * this component so the icon, label and state cannot disagree.
+ * The one icon at the top of the sidebar, at either width. Collapsing narrows the
+ * rail to its icon column but never removes it, so this control stays where the
+ * operator left it and simply turns around: collapse while the rail is wide,
+ * expand while it is thin. There is no second copy in the titlebar — the old one
+ * landed on top of the vault chip once the column went away.
  *
- * `no-drag` because both placements overlap the window's drag band: without the
+ * `no-drag` because the header sits inside the window's drag band: without the
  * carve-out the region swallows the click on Windows and the button never fires.
  */
 export function NavCollapseButton({ className }: { className?: string }) {

@@ -41,6 +41,7 @@ export {
   projectCreate,
   projectGet,
   projectList,
+  projectToolArgumentError,
   projectUpdate,
   PROJECT_TOOL_DEFS,
 } from "./projects.ts";

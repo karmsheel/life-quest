@@ -75,10 +75,11 @@ the governance shelf, with the **Log** closing the rail.
 
 ## The five wings
 
-The top bar switches the rail between five wings. A wing filters navigation, not
-data: switching wings never changes what a page is showing, and each wing
-remembers the last page you were on. The domain lens in the top bar is the data
-filter for domain-scoped lists.
+The rail's wing switcher — the square block just under the window title bar —
+switches the rail between five wings. A wing filters navigation, not data:
+switching wings never changes what a page is showing, and each wing remembers the
+last page you were on. The domain lens, in the window title bar's domain tab, is
+the data filter for domain-scoped lists.
 
 | Wing | Pages | The question it answers |
 |---|---|---|

@@ -396,15 +396,35 @@ describe("chat sessions rigs", { concurrency: true }, () => {
       const archive = archived.patchCalls.at(-1);
       assert.equal(archive?.patch.archived, true, "archive never reached the bridge");
       assert.equal(archive?.id, rename?.id, "archive hit a different chat than the rename");
-      assert.ok(archived.list, "archiving did not fall back to the list");
-      assert.equal(archived.threadHeader, null, "the archived chat's thread is still up");
+      // Archiving the only open chat closes its tab and leaves the dock on a
+      // blank New chat. Falling back to the history list is the reported fault:
+      // the operator should not be sent to pick another chat to keep working.
+      assert.equal(archived.list, null, "archiving the last chat fell back to the history list");
+      assert.ok(archived.threadHeader, "archiving the last chat left no thread up");
       assert.equal(
-        archived.rowCount,
-        live - 1,
-        "the archived chat is still listed",
+        archived.threadHeader.label,
+        "New chat",
+        "archiving the last chat did not open a blank New chat",
+      );
+      assert.deepEqual(archived.messages, [], "the blank chat archiving opened has a transcript");
+      assert.equal(
+        archived.createCalls.length,
+        1,
+        "archiving the last chat never asked the bridge for a blank chat",
+      );
+      assert.equal(
+        archived.composer?.focused,
+        true,
+        `archiving the last chat left the caret on ${JSON.stringify(archived.active)}`,
       );
 
-      assert.equal(created.createCalls.length, 1, "the New chat slot never reached the bridge");
+      // The blank chat the archive opened is the New chat slot's destination
+      // too: pressing the slot reuses it instead of minting a second empty chat.
+      assert.equal(
+        created.createCalls.length,
+        archived.createCalls.length,
+        "the New chat slot minted another chat instead of reusing the blank one",
+      );
       assert.equal(created.threadHeader?.label, "New chat", "the new chat did not open as a thread");
       assert.deepEqual(created.messages, [], "the new chat opened with a transcript");
       assert.equal(
@@ -456,6 +476,18 @@ describe("chat sessions rigs", { concurrency: true }, () => {
         report.states.reusedList.rowCount,
         report.fixture.rows,
         "reusing an empty chat added a row to the list",
+      );
+      assert.equal(
+        report.states.reusedList.rows.some(
+          (row) => row.label === "Lisbon trip planning",
+        ),
+        false,
+        "the archived chat is still listed",
+      );
+      assert.equal(
+        report.states.reusedList.rows.some((row) => row.label === "New chat"),
+        true,
+        "the blank chat archiving opened is not listed",
       );
 
       // The list's own row management: a 3-dot menu per row and the three writes

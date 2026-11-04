@@ -33,6 +33,7 @@ import {
   executeProjectReadTool,
   isProjectReadTool,
   projectGet,
+  projectToolArgumentError,
   listDecisions,
   libraryGet,
   connectedDecisionVisible,
@@ -305,6 +306,8 @@ async function executeToolInner(
     };
   }
   if (name === "list_goals") return { goals: snap.value.goals, goalsError: snap.value.goalsError };
+  const projectArgError = projectToolArgumentError(name, rec);
+  if (projectArgError) return { error: { code: "MALFORMED", message: projectArgError } };
   const projectCmd = commandForProjectTool(name, rec);
   if (projectCmd) {
     // KAR-7: agent project create and close wait for approval. File a pending
@@ -622,6 +625,10 @@ async function executeConnectedTool(
 
   // A goal or project write files a Decision and does not touch goals.json or
   // the project file, exactly as the companion's does.
+  const connectedProjectArgError = projectToolArgumentError(name, rec);
+  if (connectedProjectArgError) {
+    return { error: { code: "MALFORMED", message: connectedProjectArgError } };
+  }
   const connectedProjectCmd = commandForProjectTool(name, rec);
   if (connectedProjectCmd) {
     return proposeProjectDecision(root, connectedProjectCmd, actor);

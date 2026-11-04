@@ -118,9 +118,9 @@ export function useChatColumn(
 
   /**
    * The shell's own content width, and the sidebar's column standing in it.
-   * Measured off the box rather than derived from a token, because a collapsed
-   * sidebar is `display: none` and its box is the honest answer for "how much
-   * of the frame is not the page and not the dock".
+   * Measured off the box rather than derived from a token, because the rail
+   * changes width when it collapses and its box is the honest answer for "how
+   * much of the frame is not the page and not the dock".
    */
   const measureFrame = useCallback((): ChatColumnFrame => {
     const el = shellRef.current;

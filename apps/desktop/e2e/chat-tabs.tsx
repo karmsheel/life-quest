@@ -39,16 +39,27 @@
  *     or unarchive failing to rejoin the working list.
  * 15. Archived chats leaking into the default view — the archived rows are only
  *     drawn when the view asks for them, and never while the view is off.
+ * 16. A row menu clipped by the list it lives in — with a long history scrolled
+ *     to the last chat, the three-dot menu hangs below its row, past the foot of
+ *     the scrolling list, so half the menu is out of sight and reaching it means
+ *     scrolling. The menu has to open into the room above the row instead, stay
+ *     wholly inside the list's viewport without moving it, and still open
+ *     downward for a row that has the room under it.
  *
  * The IPC bridge is stubbed (there is no Electron preload on the dev-server
  * page); everything else — the real ChatsSidebar, the real ChatPanel, the real
  * ChatSessionsProvider, the real CSS and layout engine — is shipping code.
+ *
+ * The restore rig (`chat-tabs-restore.electron.mjs`) drives this same page: it
+ * boots it twice as two Electron processes over one profile with `?keep=1` (do
+ * not clear the remembered tab strip) and reads the landing each time.
  */
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/shell/AppShell";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
+import { useChatSessions } from "@/state/ChatSessionsProvider";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import type { CompanionStreamFrame } from "@/vite-env";
@@ -69,9 +80,17 @@ type HarnessWindow = {
   __lqPatchCalls?: PatchCall[];
   __lqDeleteCalls?: string[];
   __lqMessageCalls?: string[];
+  __lqCreateCalls?: string[];
   __lqStopCalls?: string[];
   __lqListOptions?: ({ includeArchived?: boolean } | null)[];
   __lqFinishChat?: (sessionId: string) => void;
+  /**
+   * Grow the profile's session table by this many chats, oldest last, so the
+   * driver can scroll the sidebar to a real foot. Answers with the row total.
+   */
+  __lqSeedChats?: (count: number) => number;
+  /** The live store, so the driver can re-read the list after seeding it. */
+  __lqChat?: { loadSessions: () => Promise<unknown> };
   chatTabsHarnessReady?: Promise<void>;
 };
 
@@ -80,8 +99,28 @@ harness.__lqCalls = [];
 harness.__lqPatchCalls = [];
 harness.__lqDeleteCalls = [];
 harness.__lqMessageCalls = [];
+harness.__lqCreateCalls = [];
 harness.__lqStopCalls = [];
 harness.__lqListOptions = [];
+
+/**
+ * How this boot treats the profile's remembered chat state.
+ *
+ * `keep=1` is the restore rig's switch: it boots the same profile twice (twice
+ * as two real Electron processes) and needs the tab strip the first boot wrote,
+ * so it must not be cleared. Every other boot clears the profile-local chat
+ * memory so the landing is deterministic — a leftover strip from an earlier rig
+ * would otherwise decide how many tabs are drawn before the rig clicks anything.
+ *
+ * `archived=id,id` makes the fixture answer as if Hermes archived those rows
+ * while the app was shut; it is how the restore rig proves a remembered tab for
+ * a chat that no longer exists is dropped instead of resurrected.
+ */
+const query = new URLSearchParams(window.location.search);
+const keepChatMemory = query.get("keep") === "1";
+const archivedWhileShut = new Set(
+  (query.get("archived") ?? "").split(",").filter(Boolean),
+);
 
 const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value });
 
@@ -226,10 +265,43 @@ const MESSAGES: Record<string, { role: "user" | "assistant"; content: string }[]
   "chat-delta": [{ role: "user", content: "Delta seed" }],
 };
 
-const rows: FixtureRow[] = ROWS.map((row) => ({ ...row }));
+const rows: FixtureRow[] = ROWS.map((row) => ({
+  ...row,
+  archived: archivedWhileShut.has(row.id) ? 1 : row.archived,
+}));
 const listeners = new Set<(frame: CompanionStreamFrame) => void>();
 /** The pending `companionChatStream` promise per chat, so the driver owns time. */
 const chatResolvers = new Map<string, (value: { ok: true }) => void>();
+
+/**
+ * Append `count` live chats to the profile table, oldest last, and answer with
+ * the row total.
+ *
+ * The sidebar's list is a scroll port, and the reported fault only exists once
+ * the history is longer than it: the driver grows the table at the end of the
+ * run and then scrolls the sidebar to a foot that really has been reached. The
+ * rows are pushed (not unshifted) so they land under the fixture's own chats,
+ * where the last of them is the row at the foot of the scrolled list.
+ */
+harness.__lqSeedChats = (count) => {
+  const start = rows.length;
+  const now = Math.floor(Date.now() / 1000);
+  for (let index = 0; index < count; index += 1) {
+    const at = now - 10_000 - index * 60;
+    rows.push({
+      id: `chat-seed-${start + index}`,
+      title: `Seed chat ${String(start + index + 1).padStart(2, "0")}`,
+      preview: "Seeded history",
+      last_active: at,
+      started_at: at,
+      message_count: 2,
+      pinned: 0,
+      archived: 0,
+      hidden: 0,
+    });
+  }
+  return rows.length;
+};
 
 harness.__lqEmit = (sessionId, event) => {
   for (const listener of [...listeners]) {
@@ -258,8 +330,12 @@ const bridge: Record<string, unknown> = {
     return ok((MESSAGES[id] ?? []).map((message) => ({ ...message })));
   },
   companionSessionCreate: (title: string) => {
+    harness.__lqCreateCalls = [...(harness.__lqCreateCalls ?? []), title];
+    // A fresh id per create: the store keys tabs, transcripts and runs by it, so
+    // a second blank chat reusing the first one's id would make two tabs share a
+    // chat. The driver archives and re-creates, so this path runs twice.
     const row: FixtureRow = {
-      id: "chat-new",
+      id: `chat-created-${harness.__lqCreateCalls.length}`,
       title: title || null,
       preview: null,
       last_active: Date.now() / 1000,
@@ -324,15 +400,33 @@ const stubbed = new Proxy(bridge, {
 
 (window as unknown as { lifequest: unknown }).lifequest = stubbed;
 
-// A previous run's last chat would decide the landing view; clear it so the rig
-// always starts on the same chat. The pinned order is client-side state too, so
-// a leftover order from an earlier run would reorder the list under the rig.
-window.localStorage.removeItem("lifequest.companion.lastSessionId");
-window.localStorage.removeItem("lifequest.companion.runtimePins");
-window.localStorage.removeItem("lifequest.companion.pinnedOrder");
+// A previous run's last chat would decide the landing view, and a remembered
+// tab strip would decide the strip before the rig has clicked anything; clear
+// both so the harness always starts from the same place. The restore rig keeps
+// them on purpose.
+if (!keepChatMemory) {
+  window.localStorage.removeItem("lifequest.companion.lastSessionId");
+  window.localStorage.removeItem("lifequest.companion.runtimePins");
+  window.localStorage.removeItem("lifequest.companion.pinnedOrder");
+  window.localStorage.removeItem("lifequest.companion.openTabs");
+}
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from chat-tabs.html");
+
+/**
+ * Hands the driver the shipping store's own `loadSessions`, so a table it seeded
+ * through the bridge is re-read by the real provider instead of the driver
+ * waiting for some unrelated refresh. It has to sit INSIDE the shell, where
+ * `AppShell` mounts `ChatSessionsProvider` — the page route is that place.
+ */
+function HarnessChatHandle() {
+  const chat = useChatSessions();
+  useEffect(() => {
+    harness.__lqChat = chat;
+  }, [chat]);
+  return null;
+}
 
 createRoot(root).render(
   <StrictMode>
@@ -347,7 +441,14 @@ createRoot(root).render(
               <Route element={<AppShell />}>
                 <Route
                   path="/home"
-                  element={<div className="chat-tabs-harness-page" />}
+                  element={
+                    <>
+                      <div className="chat-tabs-harness-page" />
+                      {/* Inside the shell's own store, which the driver reaches
+                          through this handle. */}
+                      <HarnessChatHandle />
+                    </>
+                  }
                 />
               </Route>
             </Routes>
@@ -364,10 +465,14 @@ const ready = new Promise<void>((resolve) => {
 });
 
 const waitForSurface = () => {
+  // Either surface counts: a fresh landing opens a thread, while a profile whose
+  // operator closed every tab before quitting lands on the list. The restore rig
+  // visits both in one run, so the ready signal must not insist on a thread.
   const settled =
     document.querySelector(".nav-rail") &&
     document.querySelector(".chats-rail") &&
-    document.querySelector(".chat-panel__header--thread");
+    (document.querySelector(".chat-panel__header--thread") ||
+      document.querySelector(".chat-panel__list"));
   if (!settled) {
     requestAnimationFrame(waitForSurface);
     return;

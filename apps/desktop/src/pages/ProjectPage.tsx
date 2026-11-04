@@ -17,6 +17,7 @@ import {
   formatProjectWhen,
   PROJECT_PRIORITY_LABELS,
   PROJECT_STATUS_LABELS,
+  PROJECT_TYPE_SUGGESTIONS,
   TASK_COLUMN_LABELS,
 } from "@/lib/projects";
 import { useLiveData } from "@/state/LiveDataProvider";
@@ -41,6 +42,9 @@ const DECISION_STATUS_LABELS: Record<string, string> = {
 type Attrs = {
   title: string;
   summary: string;
+  projectType: string;
+  source: string;
+  sourceUrl: string;
   status: ProjectStatus;
   priority: "" | ProjectPriority;
   goalId: string;
@@ -57,6 +61,9 @@ type Standing = {
 const EMPTY_ATTRS: Attrs = {
   title: "",
   summary: "",
+  projectType: "",
+  source: "",
+  sourceUrl: "",
   status: "open",
   priority: "",
   goalId: "",
@@ -69,6 +76,9 @@ function attrsFrom(project: Project): Attrs {
   return {
     title: project.title,
     summary: project.summary ?? "",
+    projectType: project.projectType ?? "",
+    source: project.source ?? "",
+    sourceUrl: project.sourceUrl ?? "",
     status: project.status,
     priority: project.priority ?? "",
     goalId: project.goalId ?? "",
@@ -253,6 +263,9 @@ export default function ProjectPage() {
     project !== null &&
     (attrs.title !== project.title ||
       attrs.summary !== (project.summary ?? "") ||
+      attrs.projectType !== (project.projectType ?? "") ||
+      attrs.source !== (project.source ?? "") ||
+      attrs.sourceUrl !== (project.sourceUrl ?? "") ||
       attrs.status !== project.status ||
       attrs.priority !== (project.priority ?? "") ||
       attrs.goalId !== (project.goalId ?? "") ||
@@ -297,6 +310,9 @@ export default function ProjectPage() {
     const next = await save({
       title: attrs.title.trim(),
       summary: attrs.summary.trim(),
+      projectType: attrs.projectType.trim() || null,
+      source: attrs.source.trim() || null,
+      sourceUrl: attrs.sourceUrl.trim() || null,
       status: attrs.status,
       priority: attrs.priority || null,
       goalId: attrs.goalId || null,
@@ -382,6 +398,23 @@ export default function ProjectPage() {
       <div className="project-detail__meta">
         <span>{goalLabel}</span>
         <span>{domainLabel}</span>
+        {project.projectType ? (
+          <span data-testid="project-type">{project.projectType}</span>
+        ) : null}
+        {project.source ? (
+          <span data-testid="project-source">From {project.source}</span>
+        ) : null}
+        {project.sourceUrl ? (
+          <a
+            className="project-detail__source-link"
+            data-testid="project-source-link"
+            href={project.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {project.sourceUrl}
+          </a>
+        ) : null}
         {project.priority ? (
           <span>{PROJECT_PRIORITY_LABELS[project.priority]}</span>
         ) : null}
@@ -625,6 +658,50 @@ export default function ProjectPage() {
               }
               aria-label="Project summary"
               data-testid="project-detail-summary"
+            />
+          </label>
+          <label className="field">
+            <span>Type</span>
+            <input
+              value={attrs.projectType}
+              onChange={(e) =>
+                setAttrs((prev) => ({ ...prev, projectType: e.target.value }))
+              }
+              aria-label="Project type"
+              data-testid="project-detail-type"
+              list="project-type-suggestions"
+              placeholder="e.g. Mobile App"
+            />
+            <datalist id="project-type-suggestions">
+              {PROJECT_TYPE_SUGGESTIONS.map((value) => (
+                <option key={value} value={value} />
+              ))}
+            </datalist>
+          </label>
+          <label className="field">
+            <span>Source</span>
+            <input
+              value={attrs.source}
+              onChange={(e) =>
+                setAttrs((prev) => ({ ...prev, source: e.target.value }))
+              }
+              aria-label="Project source"
+              data-testid="project-detail-source"
+              placeholder="The person or place the idea came from"
+            />
+          </label>
+          <label className="field project-detail__span2">
+            <span>Source link</span>
+            <input
+              type="text"
+              inputMode="url"
+              value={attrs.sourceUrl}
+              onChange={(e) =>
+                setAttrs((prev) => ({ ...prev, sourceUrl: e.target.value }))
+              }
+              aria-label="Project source URL"
+              data-testid="project-detail-source-url"
+              placeholder="https://…"
             />
           </label>
           <label className="field">

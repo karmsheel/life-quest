@@ -10,7 +10,7 @@
  *
  * NOT covered here: whether the folder the picker returns really holds the vault
  * it claims. The rig answers from a stubbed bridge, so it asserts what the
- * titlebar and the switcher DO with the payload they are handed — the control
+ * rail's foot and the switcher DO with the payload they are handed — the control
  * that is clicked, the path the answer carries, the name the chip ends up
  * wearing, and what stays on screen when the open is refused.
  */
@@ -55,7 +55,11 @@ const SAMPLE = `(() => {
     };
   };
   const active = document.activeElement;
-  const chip = document.querySelector(".window-titlebar__vault");
+  const rail = document.querySelector(".nav-rail");
+  const foot = document.querySelector('.nav-rail__foot[data-nav-group="footer"]');
+  const chip = document.querySelector(".nav-rail__vault");
+  const chipName = chip ? chip.querySelector(".nav-rail__vault-name") : null;
+  const chipInitials = chip ? chip.querySelector(".nav-rail__vault-initials") : null;
   const dialog = document.querySelector('[role="dialog"][aria-modal="true"]');
   const backdrop = document.querySelector(".vault-switcher-backdrop");
   const rows = Array.from(document.querySelectorAll(".vault-switcher__row")).map((row) => ({
@@ -76,13 +80,31 @@ const SAMPLE = `(() => {
     chip: chip
       ? {
           tag: chip.tagName,
-          text: text(chip),
+          // The chip's paint carries the full name beside a chevron, plus the
+          // initials the thin rail shows. The name span is the text under test;
+          // the initials span is display:none while the rail is wide.
+          text: text(chipName),
+          initials: text(chipInitials),
+          nameVisible: chipName
+            ? getComputedStyle(chipName).display !== "none"
+            : false,
+          ariaLabel: chip.getAttribute("aria-label"),
+          title: chip.getAttribute("title"),
           haspopup: chip.getAttribute("aria-haspopup"),
           expanded: chip.getAttribute("aria-expanded"),
           focused: active === chip,
-          appRegion: getComputedStyle(chip).getPropertyValue("-webkit-app-region")
+          // Where the chip is mounted, not just what it is: the control moved
+          // out of the titlebar into the rail's foot, and both halves of that
+          // sentence are measured.
+          inRail: Boolean(rail && rail.contains(chip)),
+          inFoot: Boolean(foot && foot.contains(chip)),
+          footGroup: foot ? foot.getAttribute("data-nav-group") : null,
+          box: rect(chip)
         }
       : null,
+    // The element that no longer exists anywhere, sampled so its absence is a
+    // check and not an assumption.
+    titlebarChip: Boolean(document.querySelector(".window-titlebar__vault")),
     dialog: dialog
       ? {
           title: text(dialog.querySelector(".vault-switcher__title")),
@@ -103,7 +125,12 @@ const SAMPLE = `(() => {
             : null
         }
       : null,
-    rects: { backdrop: rect(backdrop), dialog: rect(dialog) },
+    rects: {
+      backdrop: rect(backdrop),
+      dialog: rect(dialog),
+      rail: rect(rail),
+      foot: rect(foot)
+    },
     probe: probe
       ? {
           vault: probe.getAttribute("data-vault"),
@@ -126,6 +153,20 @@ const failures = [];
 const check = (name, ok, detail) => {
   if (!ok) failures.push(`${name}: ${detail}`);
 };
+
+/**
+ * Whether one measured box sits inside another. The sampler rounds every edge,
+ * so a shared edge may differ by the rounding pixel and still be the same edge.
+ */
+const insideBox = (inner, outer) =>
+  Boolean(
+    inner &&
+      outer &&
+      inner.left >= outer.left - 1 &&
+      inner.top >= outer.top - 1 &&
+      inner.right <= outer.right + 1 &&
+      inner.bottom <= outer.bottom + 1,
+  );
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -289,8 +330,8 @@ async function main() {
     );
     check(
       "the chip still wears the open vault's name",
-      landing.chip?.text === VAULT_A.name,
-      `chip text ${JSON.stringify(landing.chip?.text)} vs ${JSON.stringify(VAULT_A.name)}`,
+      landing.chip?.text === VAULT_A.name && landing.chip?.nameVisible === true,
+      `chip name ${JSON.stringify(landing.chip?.text)} vs ${JSON.stringify(VAULT_A.name)}, name visible ${JSON.stringify(landing.chip?.nameVisible)}`,
     );
     check(
       "the chip announces the dialog it opens, and that it is closed",
@@ -298,9 +339,28 @@ async function main() {
       `aria-haspopup ${JSON.stringify(landing.chip?.haspopup)}, aria-expanded ${JSON.stringify(landing.chip?.expanded)}`,
     );
     check(
-      "the chip stays clickable in the window's drag band",
-      landing.chip?.appRegion === "no-drag",
-      `app-region ${JSON.stringify(landing.chip?.appRegion)}`,
+      "the chip carries the vault's accessible name and its action",
+      landing.chip?.ariaLabel === `LifeQuest — ${VAULT_A.name}` &&
+        landing.chip?.title === "Switch vault",
+      `aria-label ${JSON.stringify(landing.chip?.ariaLabel)}, title ${JSON.stringify(landing.chip?.title)}`,
+    );
+    // The old claim here was `app-region: no-drag`, because the chip used to sit
+    // in the titlebar's drag band. It left the strip: what matters now is that it
+    // is mounted in the rail's footer group, drawn inside that row, and that no
+    // titlebar copy of it survived the move.
+    check(
+      "the chip lives in the rail's footer, not the titlebar",
+      landing.chip?.inRail === true &&
+        landing.chip?.inFoot === true &&
+        landing.chip?.footGroup === "footer" &&
+        landing.titlebarChip === false,
+      `in rail ${JSON.stringify(landing.chip?.inRail)}, in foot ${JSON.stringify(landing.chip?.inFoot)}, foot group ${JSON.stringify(landing.chip?.footGroup)}, titlebar chip ${JSON.stringify(landing.titlebarChip)}`,
+    );
+    check(
+      "the chip's box is drawn inside the rail's footer row",
+      insideBox(landing.chip?.box, landing.rects?.foot) &&
+        insideBox(landing.chip?.box, landing.rects?.rail),
+      `chip ${JSON.stringify(landing.chip?.box)}, foot ${JSON.stringify(landing.rects?.foot)}, rail ${JSON.stringify(landing.rects?.rail)}`,
     );
     check(
       "no dialog is drawn before the chip is clicked",
@@ -323,7 +383,7 @@ async function main() {
 
     // 2 — clicking the chip opens the modal, listing the provider's recents with
     //     the open vault marked.
-    await click(".window-titlebar__vault");
+    await click(".nav-rail__vault");
     const opened = await settle();
     check(
       "clicking the chip opens the Switch vault dialog",
@@ -381,7 +441,7 @@ async function main() {
       "focus stayed outside the dialog",
     );
     check(
-      "the dialog is portalled to the body, so the titlebar cannot clip it",
+      "the dialog is portalled to the body, so the rail cannot clip it",
       opened.dialog?.portal === true,
       "the backdrop is not a child of document.body",
     );
@@ -414,7 +474,7 @@ async function main() {
     );
 
     // 4 — the scrim dismisses too, through a real press on a scrim pixel.
-    await click(".window-titlebar__vault");
+    await click(".nav-rail__vault");
     await settle(140);
     const scrim = await scrimPoint();
     mouse("mouseDown", scrim.x, scrim.y);
@@ -433,7 +493,7 @@ async function main() {
     );
 
     // 5 — a cancelled picker: the dialog stays up, and nothing else is asked.
-    await click(".window-titlebar__vault");
+    await click(".nav-rail__vault");
     await settle(140);
     await setKnob("setDialogAnswer", null);
     await click("[data-vault-open-folder]");
@@ -554,7 +614,7 @@ async function main() {
 
     // 8 — a refused folder: the refusal is named inside the dialog, the old
     //     vault stays, and the operator can try again without reopening it.
-    await click(".window-titlebar__vault");
+    await click(".nav-rail__vault");
     await settle(140);
     await setKnob("setOpenRefuses", true);
     await setKnob("setOpenDelay", 0);
@@ -600,7 +660,7 @@ async function main() {
       dismissed.dialog === null && dismissed.chip?.focused === true,
       `dialog ${dismissed.dialog === null ? "gone" : "still up"}, chip focused ${JSON.stringify(dismissed.chip?.focused)}`,
     );
-    await click(".window-titlebar__vault");
+    await click(".nav-rail__vault");
     const reopened = await settle(160);
     check(
       "the next opening starts without the last refusal",

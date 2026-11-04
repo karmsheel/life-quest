@@ -48,6 +48,7 @@ import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
 import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
 import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
+import { UpdateBadge } from "@/components/shell/UpdateBadge";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
 import {
@@ -506,7 +507,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * reference — is not a landing: opening the dock onto it must not have a chat
    * resume over the top of it. The check reads a ref rather than a dependency:
    * landing is "the dock opened", not "the surface changed", and re-running
-   * when the surface changes would make archiving the last chat resume it
+   * when the surface changes would make closing the last tab resume a chat
    * again off a list that has not been re-read yet.
    */
   const viewRef = useRef(view);
@@ -515,6 +516,17 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     if (!open || requestedSessionId || viewRef.current === "shortcuts") return;
     void chatRef.current.resumeLast();
   }, [open, requestedSessionId]);
+
+  /**
+   * A rename field belongs to the chat it was opened on. When the chat in front
+   * changes — another row is clicked, a tab closes, or an archive hands the
+   * header to its neighbour — the field must not follow the header onto the new
+   * chat: saving it would write one chat's name onto another.
+   */
+  useEffect(() => {
+    setRenaming(false);
+    setRenameDraft("");
+  }, [sessionId]);
 
   /**
    * Leaving the list drops its row UI: a menu, or a rename field, left open on a
@@ -1575,6 +1587,22 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                         </li>
                       ))}
                     </ul>
+                    {/*
+                      The way back to the page that writes these prompts. The
+                      operator is looking at saved questions, so editing one —
+                      or adding another — should not mean hunting through the
+                      settings root for them. The link stays under the list,
+                      where the choice was just made.
+                    */}
+                    <Link
+                      to="/settings?tab=questions"
+                      className="chat-panel__link chat-panel__starters-edit"
+                      data-testid="chat-questions-settings-link"
+                      aria-label="Edit the saved questions in Settings"
+                    >
+                      <Pencil size={12} aria-hidden />
+                      Edit questions
+                    </Link>
                   </div>
                 ) : null}
                 {/*
@@ -1596,7 +1624,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                       <Link
                         to="/settings?tab=questions"
                         className="chat-panel__link"
-                        data-testid="chat-empty-questions-link"
+                        data-testid="chat-questions-settings-link"
                         aria-label="Set your custom questions in Settings"
                       >
                         here
@@ -2083,6 +2111,13 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 <PanelRightClose size={20} aria-hidden />
               )}
             </button>
+            {/*
+              The build number, and the app's manual update check, at the bar's
+              trailing end: the operator's hand is already here when they are done
+              with the dock, and the number is chrome, not a page. It stays a
+              control in every state; the glow is what says a release is waiting.
+            */}
+            <UpdateBadge />
           </nav>
         </div>
 

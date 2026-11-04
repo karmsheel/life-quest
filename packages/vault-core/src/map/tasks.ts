@@ -42,6 +42,10 @@ export function createTask(
     notes,
     column,
     links,
+    // Provenance is written once, here, from the command that created the task:
+    // later updates and moves must carry it untouched, so the board can keep
+    // showing who added the card after it has been renamed or dragged.
+    origin: ctx.actor === "agent" ? "agent" : "operator",
   };
   return ok({ ...state, tasks: [...state.tasks, task] });
 }

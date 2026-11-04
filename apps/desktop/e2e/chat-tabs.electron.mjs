@@ -208,7 +208,37 @@ const SAMPLE = `(() => {
                 }))
               }
             : null,
-          listOptions: window.__lqListOptions ?? []
+          listOptions: window.__lqListOptions ?? [],
+          // The scroll port the rows (and their menus) live in: its box, where
+          // it is scrolled to, and whether the rows are longer than it. A menu
+          // claim is about this port, so the driver reads it rather than
+          // assuming the list is long enough to clip anything.
+          list: (() => {
+            const el = rail.querySelector(".chats-rail__list");
+            if (!el) return null;
+            return {
+              box: box(el),
+              scrollTop: Math.round(el.scrollTop),
+              scrollHeight: Math.round(el.scrollHeight),
+              clientHeight: Math.round(el.clientHeight)
+            };
+          })(),
+          // The one open row menu, with the row it hangs off and the side it was
+          // measured onto (the sidebar writes data-menu-placement).
+          menu: (() => {
+            const el = document.querySelector(
+              ".chats-rail__row[data-menu-open] .chats-rail__menu"
+            );
+            if (!el) return null;
+            const row = el.closest(".chats-rail__row");
+            return {
+              box: box(el),
+              placement: el.getAttribute("data-menu-placement"),
+              items: el.querySelectorAll("button").length,
+              rowLabel: text(row && row.querySelector(".chats-rail__label")),
+              rowBox: box(row)
+            };
+          })()
         }
       : null,
     rows,
@@ -249,6 +279,8 @@ const SAMPLE = `(() => {
       };
     })(),
     messages,
+    renaming: Boolean(document.querySelector(".chat-panel__rename-input")),
+    renameValue: document.querySelector(".chat-panel__rename-input")?.value ?? null,
     dialog: dialog
       ? {
           title: text(dialog.querySelector(".confirm-dialog__title")),
@@ -260,6 +292,7 @@ const SAMPLE = `(() => {
     patchCalls: window.__lqPatchCalls ?? [],
     deleteCalls: window.__lqDeleteCalls ?? [],
     messageCalls: window.__lqMessageCalls ?? [],
+    createCalls: window.__lqCreateCalls ?? [],
     stopCalls: window.__lqStopCalls ?? []
   };
 })()`;
@@ -379,6 +412,45 @@ async function main() {
     `Array.from(document.querySelectorAll(".chats-rail__rows .chats-rail__row")).find(
       (li) => (li.querySelector(".chats-rail__label")?.textContent || "").trim() === ${JSON.stringify(label)}
     )`;
+
+  /**
+   * Open the menu of the row at `index` in the rendered list, in document order.
+   * The history rig walks rows by position (the foot of a long list) rather than
+   * by label, and seeded chats share a label shape.
+   */
+  const openSidebarMenuAt = (index) =>
+    run(`(async () => {
+      const row = Array.from(document.querySelectorAll(".chats-rail__rows .chats-rail__row"))[${index}];
+      const button = row?.querySelector(".chats-rail__menu-btn");
+      if (!button) return false;
+      button.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
+  /** Scroll the chats list to its top or its foot, and answer where it landed. */
+  const scrollRailList = (where) =>
+    run(`(async () => {
+      const list = document.querySelector(".chats-rail__list");
+      if (!list) return null;
+      list.scrollTop = ${where === "top" ? "0" : "list.scrollHeight"};
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return Math.round(list.scrollTop);
+    })()`);
+
+  /**
+   * Grow the profile's chat table by `count` rows and have the shipping store
+   * re-read it: the sidebar's list only clips a menu once the history is longer
+   * than its scroll port, which the fixture's five chats are not.
+   */
+  const seedRailHistory = (count) =>
+    run(`(async () => {
+      if (!window.__lqSeedChats || !window.__lqChat) return -1;
+      const total = window.__lqSeedChats(${count});
+      await window.__lqChat.loadSessions();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return total;
+    })()`);
 
   /** The row's centre in window content coordinates, from a live layout read. */
   const rowCenter = (label) =>
@@ -580,6 +652,28 @@ async function main() {
       return true;
     })()`);
 
+  /** Type into the thread header's rename field, through React's own input. */
+  const typeThreadRename = (text) =>
+    run(`(async () => {
+      const el = document.querySelector(".chat-panel__rename-input");
+      if (!el) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      setter.call(el, ${JSON.stringify(text)});
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return true;
+    })()`);
+
+  /** Any control in the dock, by its accessible name. */
+  const clickDockControl = (label) =>
+    run(`(async () => {
+      const el = document.querySelector('.chat-panel [aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']');
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return true;
+    })()`);
+
   /**
    * Walk the dock's divider down to its floor with ArrowRight presses, the way a
    * keyboard resizes the column: the trailing dock narrows one 16px step per
@@ -652,14 +746,56 @@ async function main() {
 
   let report;
   const screenshots = [];
+  /**
+   * Where the run had got to, in order, for the report a watchdog has to write
+   * when it kills a driver that never reaches the end: a timeout with no artifact
+   * tells the next person nothing about which step hung.
+   */
+  const startedAt = Date.now();
+  const marks = [];
+  const mark = (label) => {
+    marks.push({ ms: Date.now() - startedAt, label });
+  };
   const timeout = setTimeout(() => {
-    console.error("chat-tabs: timed out after 90s");
+    fs.writeFileSync(
+      path.join(artifactsDir, "chat-tabs.json"),
+      `${JSON.stringify(
+        {
+          url,
+          ranAt: new Date().toISOString(),
+          window: DEFAULT_SIZE,
+          screenshots,
+          states: {},
+          marks,
+          failures: [...failures, "timed out after 90s"],
+          pass: false,
+        },
+        null,
+        2,
+      )}\n`,
+    );
     app.exit(1);
   }, 90_000);
 
+  // A page that never finishes loading must say so rather than sit until the
+  // watchdog: the renderer's own events are the only account of why it did not.
+  win.webContents.on("did-finish-load", () => mark("did-finish-load"));
+  win.webContents.on("did-fail-load", (_event, code, description, failedUrl) =>
+    mark(`did-fail-load ${code} ${description} ${failedUrl}`),
+  );
+  win.webContents.on("render-process-gone", (_event, details) =>
+    mark(`render-process-gone ${details.reason}`),
+  );
+  win.webContents.on("console-message", (_event, level, message) => {
+    if (level >= 3) mark(`console ${level}: ${String(message).slice(0, 240)}`);
+  });
+
   try {
+    mark("load:start");
     await win.loadURL(url);
+    mark("load:done");
     await run("window.chatTabsHarnessReady.then(() => true)");
+    mark("harness:ready");
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
     await new Promise((resolve) => setTimeout(resolve, 250));
     // The window is shown so a REAL pointer can drive `:hover`; slide it so the
@@ -676,6 +812,7 @@ async function main() {
 
     // 1 — the sidebar lists every live chat in one flat list, pinned first, and
     // the dock lands on a thread with one tab (so the strip is not noise).
+    mark("landing");
     const landing = await settle(300);
     check("the left sidebar lists the chats", landing.rowCount === 5, `${landing.rowCount} rows`);
     check(
@@ -1608,12 +1745,315 @@ async function main() {
       JSON.stringify(narrowTabs.tabs.map((tab) => tab.label)),
     );
     screenshots.push(await shot("narrow-tabs"));
+    mark("narrow-tabs");
 
+    // 20 — the row menu opens into the room that exists. A long history is
+    // scrolled to its foot and the three-dot pressed on the last chat: the list
+    // is a scroll port, so a menu hung downward there was half outside the port,
+    // and the operator had to scroll to reach it. The menu must open above the
+    // row, wholly inside the list, without moving the list; and a row that has
+    // the room under it must still open downward.
+    mark("seeding");
+    const seeded = await seedRailHistory(20);
+    mark("seeded");
+    await settle(420);
+    const longList = await sample();
+    check(
+      "the seeded history overflows the chats list",
+      seeded > 0 &&
+        Boolean(longList.rail?.list) &&
+        (longList.rail?.list?.scrollHeight ?? 0) >
+          (longList.rail?.list?.clientHeight ?? 0) + 40,
+      JSON.stringify({ seeded, list: longList.rail?.list, rows: longList.rowCount }),
+    );
+    // Scroll to the foot, the way the operator reaches the last chat.
+    const footTop = await scrollRailList("bottom");
+    const atFoot = await sample();
+    const footMax =
+      (atFoot.rail?.list?.scrollHeight ?? 0) - (atFoot.rail?.list?.clientHeight ?? 0);
+    check(
+      "the chats list is scrolled to its last row",
+      typeof footTop === "number" &&
+        footTop > 0 &&
+        Math.abs(footTop - footMax) <= 1 &&
+        Math.abs((atFoot.rail?.list?.scrollTop ?? 0) - footMax) <= 1,
+      JSON.stringify({ footTop, footMax, list: atFoot.rail?.list }),
+    );
+    mark("scrolled");
+    const lastIndex = atFoot.rowCount - 1;
+    const lastLabel = atFoot.rows[lastIndex]?.label ?? null;
+    const lastRowBox = atFoot.rows[lastIndex]?.box ?? null;
+    check(
+      "the last row sits at the foot of the list",
+      Boolean(lastRowBox && atFoot.rail?.list?.box) &&
+        lastRowBox.bottom <= (atFoot.rail?.list?.box.bottom ?? 0) + 1 &&
+        lastRowBox.bottom >= (atFoot.rail?.list?.box.bottom ?? 0) - 48,
+      JSON.stringify({ lastLabel, lastRowBox, list: atFoot.rail?.list?.box }),
+    );
+    check("opened the last row's menu", await openSidebarMenuAt(lastIndex), "no menu control");
+    const flipped = await settle();
+    check(
+      "the last row's menu opens upward, into the room above it",
+      flipped.rail?.menu?.placement === "above" &&
+        flipped.rail.menu.rowLabel === lastLabel &&
+        flipped.rail.menu.items === 5 &&
+        flipped.rail.menu.box.bottom <= flipped.rail.menu.rowBox.top + 1,
+      JSON.stringify({ menu: flipped.rail?.menu, lastLabel }),
+    );
+    check(
+      "the flipped menu is wholly inside the list, so no scroll is needed",
+      Boolean(flipped.rail?.menu && flipped.rail?.list?.box) &&
+        flipped.rail.menu.box.top >= (flipped.rail.list.box.top ?? 0) - 1 &&
+        flipped.rail.menu.box.bottom <= (flipped.rail.list.box.bottom ?? 0) + 1 &&
+        flipped.rail.menu.box.height > 60,
+      JSON.stringify({ menu: flipped.rail?.menu?.box, list: flipped.rail?.list?.box }),
+    );
+    check(
+      "opening the flipped menu did not scroll the list",
+      Math.abs((flipped.rail?.list?.scrollTop ?? -1) - footTop) <= 1,
+      JSON.stringify({ before: footTop, after: flipped.rail?.list?.scrollTop }),
+    );
+    mark("flipped");
+    screenshots.push(await shot("menu-flipped"));
+    check("closed the flipped menu", await openSidebarMenuAt(lastIndex), "no menu control");
+    await settle();
+
+    // The other half of the rule: roomy rows still open their menu downward.
+    const topTop = await scrollRailList("top");
+    const atTop = await sample();
+    check(
+      "the chats list is back at its top",
+      topTop === 0 && (atTop.rail?.list?.scrollTop ?? -1) === 0,
+      JSON.stringify({ topTop, list: atTop.rail?.list }),
+    );
+    check("opened the first row's menu", await openSidebarMenuAt(0), "no menu control");
+    const downward = await settle();
+    check(
+      "a row with the room under it still opens its menu downward",
+      downward.rail?.menu?.placement === "below" &&
+        downward.rail.menu.items === 5 &&
+        downward.rail.menu.box.top >= downward.rail.menu.rowBox.bottom - 1 &&
+        downward.rail.menu.box.top >= (downward.rail.list?.box.top ?? 0) - 1 &&
+        downward.rail.menu.box.bottom <= (downward.rail.list?.box.bottom ?? 0) + 1,
+      JSON.stringify({ menu: downward.rail?.menu, list: downward.rail?.list?.box }),
+    );
+
+    // 21 — archiving the chat in front is a tab close, not a trip to the history
+    // page. The strip hands the screen to the tab that takes its place (or to
+    // the one before it, when the archived tab was last), and archiving the last
+    // open chat leaves a blank New chat on the thread. The reported fault was the
+    // dock falling back to the Chats list and making the operator pick a chat.
+    check("closed the open row menu", await openSidebarMenuAt(0), "no menu control");
+    const menuShutBeforeArchive = await settle();
+    check(
+      "the row menu is gone before the archive starts",
+      menuShutBeforeArchive.rail?.menu === null,
+      JSON.stringify(menuShutBeforeArchive.rail?.menu),
+    );
+    check("brought the middle tab to the front", await clickTab("New chat"), "no New chat tab");
+    const beforeActiveArchive = await settle();
+    check(
+      "the middle tab is the one in front before the archive",
+      beforeActiveArchive.heading === "New chat" && beforeActiveArchive.tabCount === 3,
+      JSON.stringify({ heading: beforeActiveArchive.heading, tabs: beforeActiveArchive.tabs }),
+    );
+    check(
+      "archived the chat in front",
+      await clickRowControl("New chat", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const activeArchived = await settle();
+    check(
+      "archiving the chat in front keeps the thread up",
+      activeArchived.list === false && activeArchived.thread === true,
+      JSON.stringify({ list: activeArchived.list, heading: activeArchived.heading }),
+    );
+    check(
+      "the next tab takes the archived tab's place",
+      activeArchived.tabCount === 2 &&
+        activeArchived.tabs.map((tab) => tab.label).join("/") === "Bravo budget/Delta automation" &&
+        activeArchived.heading === "Delta automation" &&
+        activeArchived.tabs.find((tab) => tab.label === "Delta automation")?.active === true,
+      JSON.stringify({ tabs: activeArchived.tabs, heading: activeArchived.heading }),
+    );
+    check(
+      "the archived chat left the sidebar",
+      !activeArchived.rows.some((row) => row.label === "New chat"),
+      JSON.stringify(activeArchived.rows.map((row) => row.label)),
+    );
+    screenshots.push(await shot("archived-active-tab"));
+
+    // The archived tab was the last of the strip: the tab before it takes the
+    // front, still without a view swap. One tab draws no strip, so the count is
+    // zero — the heading is what says which chat is in front.
+    check(
+      "archived the tab that was last in the strip",
+      await clickRowControl("Delta automation", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const previousTabArchived = await settle();
+    check(
+      "the previous tab takes the front when the last one is archived",
+      previousTabArchived.tabCount === 0 &&
+        previousTabArchived.heading === "Bravo budget" &&
+        previousTabArchived.list === false,
+      JSON.stringify({
+        tabs: previousTabArchived.tabs,
+        heading: previousTabArchived.heading,
+      }),
+    );
+
+    // Only one chat left: archiving it closes the strip and opens a blank New
+    // chat on the thread, the blank slate the New chat slot lands on.
+    const createsBeforeLastArchive = previousTabArchived.createCalls.length;
+    check(
+      "archived the last open chat",
+      await clickRowControl("Bravo budget", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const lastArchived = await settle(420);
+    check(
+      "archiving the last open chat leaves a blank New chat, not the list",
+      lastArchived.list === false &&
+        lastArchived.thread === true &&
+        lastArchived.tabCount === 0 &&
+        lastArchived.heading === "New chat" &&
+        lastArchived.messages.length === 0 &&
+        lastArchived.composer?.disabled === false &&
+        lastArchived.rows.some((row) => row.label === "New chat") &&
+        lastArchived.createCalls.length === createsBeforeLastArchive + 1,
+      JSON.stringify({
+        list: lastArchived.list,
+        tabs: lastArchived.tabs,
+        heading: lastArchived.heading,
+        messages: lastArchived.messages,
+        composer: lastArchived.composer,
+        creates: lastArchived.createCalls,
+      }),
+    );
+    screenshots.push(await shot("archived-last-tab"));
+
+    // 22 — the archived view must not offer an archived blank back as the new
+    // chat. With the archived band showing, archiving the blank chat in front
+    // opens a live blank; reopening the archived one would resurrect a chat the
+    // operator just put away.
+    check("opened view options", await clickRailControl("View options"), "no view control");
+    await settle();
+    check(
+      "showed the archived chats",
+      await clickViewOption("Show archived chats"),
+      "no Show archived item",
+    );
+    const archivedViewOpen = await settle(420);
+    check(
+      "the archived view lists an archived blank",
+      archivedViewOpen.rows.some((row) => row.label === "New chat" && row.archived),
+      JSON.stringify(archivedViewOpen.rows.filter((row) => row.label === "New chat")),
+    );
+    const createsBeforeBlankArchive = archivedViewOpen.createCalls.length;
+    check(
+      "archived the live blank chat in front",
+      await clickRowControl("New chat", ".chats-rail__archive-btn"),
+      "no archive control on the live New chat row",
+    );
+    const blankArchived = await settle(420);
+    check(
+      "archiving a blank in the archived view opens a live blank, not the archived one",
+      blankArchived.list === false &&
+        blankArchived.thread === true &&
+        blankArchived.heading === "New chat" &&
+        blankArchived.createCalls.length === createsBeforeBlankArchive + 1 &&
+        blankArchived.rows.some((row) => row.label === "New chat" && !row.archived) &&
+        blankArchived.rows.some((row) => row.label === "New chat" && row.archived),
+      JSON.stringify({
+        heading: blankArchived.heading,
+        creates: blankArchived.createCalls.length,
+        newChats: blankArchived.rows
+          .filter((row) => row.label === "New chat")
+          .map((row) => row.archived),
+      }),
+    );
+    screenshots.push(await shot("archived-blank-not-reused"));
+
+    // 23 — archiving the chat in front while the dock is on the history list
+    // keeps the list up: the operator is picking a chat there, and the archive
+    // must not drag them into the thread.
+    check("opened the history list", await clickDockControl("All chats"), "no All chats control");
+    const listUp = await settle();
+    check(
+      "the history list is the surface",
+      listUp.list === true && listUp.thread === false,
+      JSON.stringify({ list: listUp.list, heading: listUp.heading }),
+    );
+    const createsBeforeListArchive = listUp.createCalls.length;
+    check(
+      "archived the chat in front from the list",
+      await clickRowControl("New chat", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const archivedFromList = await settle(420);
+    check(
+      "archiving from the list keeps the list up and opens no blank chat",
+      archivedFromList.list === true &&
+        archivedFromList.thread === false &&
+        archivedFromList.tabCount === 0 &&
+        archivedFromList.createCalls.length === createsBeforeListArchive,
+      JSON.stringify({
+        list: archivedFromList.list,
+        heading: archivedFromList.heading,
+        creates: archivedFromList.createCalls.length,
+      }),
+    );
+    screenshots.push(await shot("archived-from-list"));
+
+    // 24 — a rename field belongs to the chat it was opened on. Archiving that
+    // chat from the sidebar hands the header to another chat; the field must
+    // close with its chat, not follow the header and write one chat's name onto
+    // the next one.
+    check("opened Pinned note", await clickSidebarRow("Pinned note"), "no row");
+    const renameTargetOpen = await settle();
+    check(
+      "the chat to rename is open",
+      renameTargetOpen.heading === "Pinned note" && renameTargetOpen.renaming === false,
+      JSON.stringify({ heading: renameTargetOpen.heading, renaming: renameTargetOpen.renaming }),
+    );
+    check("opened the rename field", await clickDockControl("Rename chat"), "no Rename chat control");
+    check("typed a name", await typeThreadRename("Wrong chat name"), "no rename field");
+    const renameOpen = await settle();
+    check(
+      "the rename field is open on the chat it was opened for",
+      renameOpen.renaming === true && renameOpen.renameValue === "Wrong chat name",
+      JSON.stringify({ renaming: renameOpen.renaming, value: renameOpen.renameValue }),
+    );
+    const patchesBeforeRenameArchive = renameOpen.patchCalls.length;
+    check(
+      "archived the chat being renamed from the sidebar",
+      await clickRowControl("Pinned note", ".chats-rail__archive-btn"),
+      "no archive control",
+    );
+    const renameArchived = await settle(420);
+    check(
+      "archiving the renamed chat closes the field instead of moving it to the next chat",
+      renameArchived.renaming === false &&
+        renameArchived.heading === "New chat" &&
+        renameArchived.patchCalls.length === patchesBeforeRenameArchive + 1 &&
+        !renameArchived.patchCalls.some((call) => typeof call.patch.title === "string"),
+      JSON.stringify({
+        renaming: renameArchived.renaming,
+        value: renameArchived.renameValue,
+        heading: renameArchived.heading,
+        patches: renameArchived.patchCalls.slice(-2),
+      }),
+    );
+    screenshots.push(await shot("archived-while-renaming"));
+
+    mark("done");
     report = {
       url,
       ranAt: new Date().toISOString(),
       window: DEFAULT_SIZE,
       screenshots,
+      marks,
       states: {
         landing,
         hovered,
@@ -1664,6 +2104,20 @@ async function main() {
         newChatActive,
         equalTabs,
         narrowTabs,
+        longList,
+        atFoot,
+        menuFlipped: flipped,
+        menuDownward: downward,
+        beforeActiveArchive,
+        activeArchived,
+        previousTabArchived,
+        lastArchived,
+        archivedViewOpen,
+        blankArchived,
+        listUp,
+        archivedFromList,
+        renameOpen,
+        renameArchived,
       },
       failures,
       pass: failures.length === 0,
@@ -1719,6 +2173,78 @@ async function main() {
         state.narrowTabs.heading,
         "",
         `widths ${JSON.stringify(state.narrowTabs.tabs.map((tab) => tab.box?.width ?? null))}`,
+      ],
+      [
+        "long history",
+        state.longList.rowCount,
+        state.longList.tabCount,
+        "",
+        state.longList.heading,
+        "",
+        `list ${JSON.stringify(state.longList.rail?.list)}`,
+      ],
+      [
+        "menu at foot",
+        state.menuFlipped.rowCount,
+        state.menuFlipped.tabCount,
+        "",
+        state.menuFlipped.heading,
+        "",
+        `placement ${state.menuFlipped.rail?.menu?.placement} ${JSON.stringify(state.menuFlipped.rail?.menu?.box)}`,
+      ],
+      [
+        "menu at top",
+        state.menuDownward.rowCount,
+        state.menuDownward.tabCount,
+        "",
+        state.menuDownward.heading,
+        "",
+        `placement ${state.menuDownward.rail?.menu?.placement}`,
+      ],
+      [
+        "active tab archived",
+        state.activeArchived.rowCount,
+        state.activeArchived.tabCount,
+        "",
+        state.activeArchived.heading,
+        "",
+        `tabs ${JSON.stringify(state.activeArchived.tabs.map((tab) => tab.label))}`,
+      ],
+      [
+        "last tab archived",
+        state.lastArchived.rowCount,
+        state.lastArchived.tabCount,
+        "",
+        state.lastArchived.heading,
+        "",
+        `messages ${state.lastArchived.messages.length}, creates ${state.lastArchived.createCalls.length}`,
+      ],
+      [
+        "blank archived (archived view)",
+        state.blankArchived.rowCount,
+        state.blankArchived.tabCount,
+        "",
+        state.blankArchived.heading,
+        "",
+        `creates ${state.blankArchived.createCalls.length}`,
+      ],
+      [
+        "archived from the list",
+        state.archivedFromList.rowCount,
+        state.archivedFromList.tabCount,
+        "",
+        state.archivedFromList.heading,
+        "",
+        `list ${state.archivedFromList.list}, creates ${state.archivedFromList.createCalls.length}`,
+      ],
+      [
+        "archived while renaming",
+        state.renameArchived.rowCount,
+        state.renameArchived.tabCount,
+        "",
+        state.renameArchived.heading,
+        "",
+        `renaming ${state.renameArchived.renaming}`,
       ],
     ];
     console.log(table.map((row) => row.join(" | ")).join("\n"));

@@ -119,14 +119,30 @@ type State = {
       items: { label: string; checked: boolean }[];
     } | null;
     listOptions: ({ includeArchived?: boolean } | null)[];
+    list: {
+      box: Box | null;
+      scrollTop: number;
+      scrollHeight: number;
+      clientHeight: number;
+    } | null;
+    menu: {
+      box: Box | null;
+      placement: string | null;
+      items: number;
+      rowLabel: string | null;
+      rowBox: Box | null;
+    } | null;
   } | null;
   composer: { value: string; disabled: boolean; focused: boolean } | null;
   messages: { role: string; content: string }[];
+  renaming: boolean;
+  renameValue: string | null;
   dialog: { title: string; message: string; confirm: boolean } | null;
   calls: { sessionId: string; input: string }[];
   patchCalls: { id: string; patch: Record<string, unknown> }[];
   deleteCalls: string[];
   messageCalls: string[];
+  createCalls: string[];
   stopCalls: string[];
 };
 
@@ -235,6 +251,20 @@ describe("chat dock tabs and sidebar chats", () => {
       newChatActive,
       equalTabs,
       narrowTabs,
+      longList,
+      atFoot,
+      menuFlipped,
+      menuDownward,
+      beforeActiveArchive,
+      activeArchived,
+      previousTabArchived,
+      lastArchived,
+      archivedViewOpen,
+      blankArchived,
+      listUp,
+      archivedFromList,
+      renameOpen,
+      renameArchived,
     } = report.states;
 
     // The sidebar is one flat list of the profile's chats, pinned first; the
@@ -838,6 +868,11 @@ describe("chat dock tabs and sidebar chats", () => {
       "the new blank chat never joined the sidebar list",
     );
     assert.equal(
+      newChatTab.createCalls.length,
+      archivedHidden.createCalls.length + 1,
+      "the New chat slot never asked the bridge for a chat",
+    );
+    assert.equal(
       newChatKept.heading,
       "Bravo budget",
       `the previous chat's tab did not bring its thread back ("${newChatKept.heading}")`,
@@ -927,6 +962,264 @@ describe("chat dock tabs and sidebar chats", () => {
         (width, index) => width < (equalWidths[index] ?? Number.NEGATIVE_INFINITY),
       ),
       `the tabs did not shrink with the dock: ${JSON.stringify(equalWidths)} → ${JSON.stringify(narrowWidths)}`,
+    );
+
+    // The row menu opens into the space that exists. With the history grown past
+    // the list's scroll port and scrolled to its last chat, the three-dot menu
+    // has to open above its row — a menu hanging below the row would be cut by
+    // the list's own edge, which is the reported fault. It must sit wholly
+    // inside the list and opening it must not move the list. A row at the top,
+    // with the room under it, still opens downward.
+    assert.ok(
+      (longList.rail?.list?.scrollHeight ?? 0) >
+        (longList.rail?.list?.clientHeight ?? 0) + 40,
+      `the seeded history does not overflow the chats list, so the menu is never clipped (${JSON.stringify(longList.rail?.list)})`,
+    );
+    const footMax =
+      (atFoot.rail?.list?.scrollHeight ?? 0) - (atFoot.rail?.list?.clientHeight ?? 0);
+    assert.ok(
+      footMax > 0 &&
+        Math.abs((atFoot.rail?.list?.scrollTop ?? 0) - footMax) <= 1,
+      `the chats list did not reach its last row (scrollTop ${atFoot.rail?.list?.scrollTop}, max ${footMax})`,
+    );
+    const footRow = atFoot.rows.at(-1);
+    assert.ok(footRow, "the scrolled list has no last row");
+    assert.ok(
+      (footRow.box?.bottom ?? 0) <= (atFoot.rail?.list?.box?.bottom ?? 0) + 1 &&
+        (footRow.box?.bottom ?? 0) >= (atFoot.rail?.list?.box?.bottom ?? 0) - 48,
+      `the last row is not at the foot of the list (${JSON.stringify({ row: footRow.box, list: atFoot.rail?.list?.box })})`,
+    );
+    assert.equal(
+      menuFlipped.rail?.menu?.placement,
+      "above",
+      `the last chat's row menu did not flip upward (${JSON.stringify(menuFlipped.rail?.menu)})`,
+    );
+    assert.equal(
+      menuFlipped.rail?.menu?.rowLabel,
+      footRow.label,
+      "the opened menu belongs to a row other than the last chat",
+    );
+    assert.equal(
+      menuFlipped.rail?.menu?.items,
+      5,
+      `the flipped menu lost its items (${menuFlipped.rail?.menu?.items})`,
+    );
+    assert.ok(
+      (menuFlipped.rail?.menu?.box?.bottom ?? Number.POSITIVE_INFINITY) <=
+        (menuFlipped.rail?.menu?.rowBox?.top ?? Number.NEGATIVE_INFINITY) + 1,
+      `the flipped menu is not drawn over its row: ${JSON.stringify(menuFlipped.rail?.menu)}`,
+    );
+    assert.ok(
+      (menuFlipped.rail?.menu?.box?.top ?? Number.NEGATIVE_INFINITY) >=
+        (menuFlipped.rail?.list?.box?.top ?? Number.POSITIVE_INFINITY) - 1 &&
+        (menuFlipped.rail?.menu?.box?.bottom ?? Number.POSITIVE_INFINITY) <=
+          (menuFlipped.rail?.list?.box?.bottom ?? Number.NEGATIVE_INFINITY) + 1,
+      `the flipped menu is clipped by the chats list: ${JSON.stringify({ menu: menuFlipped.rail?.menu?.box, list: menuFlipped.rail?.list?.box })}`,
+    );
+    assert.ok(
+      (menuFlipped.rail?.menu?.box?.height ?? 0) > 60,
+      `the flipped menu was squeezed to ${menuFlipped.rail?.menu?.box?.height}px`,
+    );
+    assert.ok(
+      Math.abs((menuFlipped.rail?.list?.scrollTop ?? -1) - footMax) <= 1,
+      `opening the menu moved the list (scrollTop ${menuFlipped.rail?.list?.scrollTop}, expected ${footMax})`,
+    );
+    assert.equal(
+      menuDownward.rail?.menu?.placement,
+      "below",
+      `a roomy row's menu did not open downward (${JSON.stringify(menuDownward.rail?.menu)})`,
+    );
+    assert.ok(
+      (menuDownward.rail?.menu?.box?.top ?? Number.NEGATIVE_INFINITY) >=
+        (menuDownward.rail?.menu?.rowBox?.bottom ?? Number.POSITIVE_INFINITY) - 1 &&
+        (menuDownward.rail?.menu?.box?.bottom ?? Number.POSITIVE_INFINITY) <=
+          (menuDownward.rail?.list?.box?.bottom ?? Number.NEGATIVE_INFINITY) + 1,
+      `the downward menu is not wholly under its row and inside the list: ${JSON.stringify({ menu: menuDownward.rail?.menu, list: menuDownward.rail?.list?.box })}`,
+    );
+
+    // Archiving the chat in front closes its tab and hands the screen to the tab
+    // that takes its place — never the history page, which is where the operator
+    // used to be dumped and made to pick another chat.
+    assert.equal(
+      activeArchived.list,
+      false,
+      "archiving the chat in front fell back to the history list",
+    );
+    assert.equal(
+      activeArchived.thread,
+      true,
+      "archiving the chat in front left no thread up",
+    );
+    assert.deepEqual(
+      activeArchived.tabs.map((tab) => tab.label),
+      ["Bravo budget", "Delta automation"],
+      "the archived tab's neighbour did not take its place in the strip",
+    );
+    assert.equal(
+      activeArchived.heading,
+      "Delta automation",
+      `archiving the chat in front did not land on its neighbour ("${activeArchived.heading}")`,
+    );
+    assert.equal(
+      activeArchived.tabs.find((tab) => tab.label === "Delta automation")?.active,
+      true,
+      "the neighbour that took the place is not the tab in front",
+    );
+    assert.equal(
+      activeArchived.rows.some((row) => row.label === "New chat"),
+      false,
+      "the archived chat stayed in the sidebar",
+    );
+
+    // The archived tab was last in the strip: the tab before it takes the front.
+    // A single tab draws no strip, so the count is zero; the heading says which
+    // chat is in front.
+    assert.equal(
+      previousTabArchived.tabCount,
+      0,
+      `a single tab drew a strip (${previousTabArchived.tabCount} tabs)`,
+    );
+    assert.equal(
+      previousTabArchived.heading,
+      "Bravo budget",
+      `archiving the last tab did not hand the front to the tab before it ("${previousTabArchived.heading}")`,
+    );
+    assert.equal(
+      previousTabArchived.list,
+      false,
+      "archiving the last tab fell back to the history list",
+    );
+
+    // Archiving the last open chat leaves a blank New chat on the thread: the
+    // blank slate the New chat slot lands on, not a history page to pick from.
+    assert.equal(
+      lastArchived.list,
+      false,
+      "archiving the last open chat fell back to the history list",
+    );
+    assert.equal(
+      lastArchived.thread,
+      true,
+      "archiving the last open chat left no thread up",
+    );
+    assert.equal(
+      lastArchived.tabCount,
+      0,
+      "the blank New chat drew a tab strip for a single tab",
+    );
+    assert.equal(
+      lastArchived.heading,
+      "New chat",
+      `archiving the last open chat did not open a blank New chat ("${lastArchived.heading}")`,
+    );
+    assert.deepEqual(
+      lastArchived.messages,
+      [],
+      "the blank New chat archiving opened has a transcript",
+    );
+    assert.equal(
+      lastArchived.composer?.disabled,
+      false,
+      "the blank New chat archiving opened cannot be typed in",
+    );
+    assert.equal(
+      lastArchived.rows.some((row) => row.label === "New chat"),
+      true,
+      "the blank New chat archiving opened is not listed",
+    );
+    assert.equal(
+      lastArchived.createCalls.length,
+      previousTabArchived.createCalls.length + 1,
+      `archiving the last open chat did not ask the bridge for a blank chat (${JSON.stringify(lastArchived.createCalls)})`,
+    );
+
+    // The archived view must not hand an archived blank back as the new chat:
+    // with the band showing, archiving the blank in front opens a live one.
+    assert.equal(
+      archivedViewOpen.rows.some((row) => row.label === "New chat" && row.archived),
+      true,
+      "the archived view did not list the archived blank chat",
+    );
+    assert.equal(
+      blankArchived.list,
+      false,
+      "archiving a blank in the archived view fell back to the history list",
+    );
+    assert.equal(
+      blankArchived.thread,
+      true,
+      "archiving a blank in the archived view left no thread up",
+    );
+    assert.equal(
+      blankArchived.heading,
+      "New chat",
+      `archiving a blank in the archived view did not open a blank New chat ("${blankArchived.heading}")`,
+    );
+    assert.equal(
+      blankArchived.createCalls.length,
+      archivedViewOpen.createCalls.length + 1,
+      "archiving a blank in the archived view reopened the archived chat instead of making a live blank",
+    );
+    assert.equal(
+      blankArchived.rows.some((row) => row.label === "New chat" && !row.archived),
+      true,
+      "the live blank chat archiving opened is not listed",
+    );
+    assert.equal(
+      blankArchived.rows.some((row) => row.label === "New chat" && row.archived),
+      true,
+      "the archived blank chat left the archived view",
+    );
+
+    // Archiving the chat in front while the dock shows the history list keeps
+    // the list up and opens nothing: that surface is for picking a chat.
+    assert.equal(
+      listUp.list,
+      true,
+      "the history list never came up for the archive-from-list case",
+    );
+    assert.equal(
+      archivedFromList.list,
+      true,
+      "archiving from the history list moved the dock off the list",
+    );
+    assert.equal(
+      archivedFromList.thread,
+      false,
+      "archiving from the history list opened a thread",
+    );
+    assert.equal(
+      archivedFromList.tabCount,
+      0,
+      "archiving from the history list drew a tab strip",
+    );
+    assert.equal(
+      archivedFromList.createCalls.length,
+      listUp.createCalls.length,
+      "archiving from the history list minted a blank chat",
+    );
+
+    // A rename field belongs to the chat it was opened on: archiving that chat
+    // hands the header to another chat, and the field must close with its chat
+    // rather than follow the header and write one chat's name onto the next.
+    assert.equal(renameOpen.renaming, true, "the thread rename field never opened");
+    assert.equal(renameOpen.renameValue, "Wrong chat name");
+    assert.equal(
+      renameArchived.renaming,
+      false,
+      "the rename field followed the header onto the next chat",
+    );
+    assert.equal(
+      renameArchived.heading,
+      "New chat",
+      `archiving the renamed chat did not land on the blank New chat ("${renameArchived.heading}")`,
+    );
+    assert.equal(
+      renameArchived.patchCalls.some(
+        (call) => typeof call.patch.title === "string",
+      ),
+      false,
+      "a rename was written to the wrong chat",
     );
 
     for (const file of report.screenshots) {

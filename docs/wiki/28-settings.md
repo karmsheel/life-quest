@@ -93,8 +93,8 @@ travel with the folder.
 ## Domains
 
 **Domains** manages the life areas: create, activate, rename, archive and delete.
-It carries the same information as the top-bar lens. The full procedure, the exact
-confirmation titles and the archive-versus-delete rule are on
+It carries the same information as the window title bar's domain lens. The full
+procedure, the exact confirmation titles and the archive-versus-delete rule are on
 [Domains](./05-domains.md).
 
 Its subtitle is *Activate a domain to filter the app. Overview shows everything.*
@@ -235,8 +235,8 @@ not as instructions.
 ## Developer
 
 **Developer** — *Switches that show what the app normally waits for*. It holds one
-switch, **Preview the update badge**: *Makes the build number at the foot of the
-rail glow, and opens the upgrade popup from it, as if a newer LifeQuest had been
+switch, **Preview the update badge**: *Makes the build number in the chat dock's
+bottom bar glow, and opens the upgrade popup from it, as if a newer LifeQuest had been
 published. Nothing is downloaded: the preview carries no installer, so the popup
 offers the release page instead.* The switch persists (it is stored locally) and is
 off to begin with.

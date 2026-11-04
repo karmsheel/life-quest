@@ -13,9 +13,10 @@
  *
  * NOT covered here: whether Windows lets the click through the titlebar's drag
  * band. Synthetic DOM clicks bypass the OS hit test, so the `-webkit-app-region:
- * no-drag` carve-out on the toggle can only be confirmed by clicking it in the
- * real window. Nothing asserts that carve-out any more — the source-text
- * contract that read it out of the CSS went with the unit tests.
+ * no-drag` carve-outs — on the rail's collapse toggle and on the raised domain
+ * lens — are measured as computed style but can only be confirmed by clicking
+ * them in the real window. The source-text contract that read the carve-out out
+ * of the CSS went with the unit tests.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -56,32 +57,104 @@ const SAMPLE = `(() => {
     : [];
   const titlebar = document.querySelector(".window-titlebar");
   const leading = document.querySelector(".window-titlebar__leading");
-  const vault = document.querySelector(".window-titlebar__vault");
+  // The domain lens, raised into the window's strip. It replaced the sheet's
+  // .top-bar; the retired selector is queried here only to prove it is gone.
+  const lens = document.querySelector(".window-titlebar__lens");
+  const main = document.querySelector(".shell__main");
+  const shellContent = document.querySelector(".shell__content");
+  const legacyTopBar = Boolean(document.querySelector(".top-bar"));
+  // Where the rail's own column ends: the lens must start a breath (12px) past
+  // it, wide or thin.
+  const railBoxNow = rail ? rail.getBoundingClientRect() : null;
+  const lensBoxNow = lens ? lens.getBoundingClientRect() : null;
+  /** One pseudo-element's painted box and fill, as Chromium computes it. */
+  const pseudo = (el, which) => {
+    if (!el) return null;
+    const style = getComputedStyle(el, which);
+    return {
+      content: style.content,
+      backgroundImage: style.backgroundImage,
+      width: style.width,
+      height: style.height,
+      bottom: style.bottom,
+      left: style.left,
+      right: style.right
+    };
+  };
+  // Round 2: the vault chip left the titlebar for the rail's foot. The old
+  // selector is queried only to prove that nothing renders it any more.
+  const titlebarVault = document.querySelector(".window-titlebar__vault");
+  const railVault = document.querySelector(".nav-rail__vault");
+  const foot = document.querySelector('.nav-rail__foot[data-nav-group="footer"]');
   const railToggle = document.querySelector(".nav-rail .nav-toggle");
+  // The reported bug's second toggle: queried only to prove that it no longer
+  // exists in EITHER state — the rail keeps its own toggle in its header.
   const titlebarToggle = document.querySelector(".window-titlebar__nav-toggle");
   const chats = document.querySelector(".chats-rail");
-  const main = document.querySelector(".shell__main");
+  // The divider directly above the chats: it belongs to the wide rail's middle
+  // section and must leave with it when the rail narrows.
+  const chatsDivider = document.querySelector(".nav-rail__divider--chats");
+  // Every text label in the rail, and every row that carries one. A thin rail
+  // hides the labels; it must not hide the rows, their icons or their names.
+  const railLabels = Array.from(document.querySelectorAll(".nav-rail__label"));
+  const navRows = Array.from(document.querySelectorAll(".nav-rail__link"));
   const chat = document.querySelector(".chat-panel");
   const dockActions = document.querySelector(".chat-panel__actions");
-  const topBar = document.querySelector(".top-bar");
   const chatHeader = document.querySelector(".chat-panel__header");
   const shell = document.querySelector(".shell");
   const wings = document.querySelector(".nav-rail__wings");
   const wingsBand = document.querySelector(".nav-rail__wings-band");
   const wingRows = document.querySelector(".nav-rail__section--wing");
-  const domainSwitcher = document.querySelector(".domain-switcher");
+  const domainSwitcher = document.querySelector(".window-titlebar__lens .domain-switcher");
+  const lensTabsEl = lens ? lens.querySelector(".domain-switcher__tabs") : null;
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
+  // The band the rail's wing switcher and the dock's header still wear under the
+  // strip — the 44px the page gave back. Measured through a probe box, not rounded
+  // from the token text: --shell-topbar-height is 2.75rem, and parseFloat on
+  // that string is 2.75, not 44.
+  const measureHeight = (value) => {
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:absolute;left:-9999px;top:0;width:0;height:" + value;
+    document.body.appendChild(probe);
+    const measured = probe.offsetHeight;
+    probe.remove();
+    return measured;
+  };
+  const topbarHeight = measureHeight("var(--shell-topbar-height)");
+  const titlebarNavCollapsed = titlebar
+    ? titlebar.getAttribute("data-nav-collapsed")
+    : null;
 
-  const probe = document.createElement("div");
-  probe.style.cssText = "position:absolute;left:-9999px;top:0;height:0;width:var(--shell-nav-width)";
-  document.body.appendChild(probe);
-  const track = probe.offsetWidth;
-  probe.remove();
+  // The accent ink the chip wears, read through a probe so a color-mix() or a
+  // skin-specific serialisation still compares as the computed colour.
+  const colorProbe = document.createElement("span");
+  colorProbe.style.cssText = "position:absolute;left:-9999px;top:0";
+  colorProbe.style.color = "var(--accent)";
+  document.body.appendChild(colorProbe);
+  const accent = getComputedStyle(colorProbe).color;
+  colorProbe.remove();
+
+  // Read a track width from a token rather than assuming a pixel value: the rail
+  // is 16rem wide when expanded and one icon column (3.5rem) when collapsed, and
+  // the rig names the column the shell actually gave it. A hard-coded 56 here
+  // would pass even if the CSS never read the collapsed token.
+  const measure = (width) => {
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:absolute;left:-9999px;top:0;height:0;width:" + width;
+    document.body.appendChild(probe);
+    const value = probe.offsetWidth;
+    probe.remove();
+    return value;
+  };
+  const track = measure("var(--shell-nav-width)");
+  const collapsedTrack = measure("var(--shell-nav-width-collapsed)");
 
   // Who owns the window's top-left corner right now: the point titlebar text
-  // would collide with if nothing had stepped aside.
+  // would collide with if nothing had stepped aside. Measured at the CURRENT
+  // rail's half-width — a thin rail is only 56px wide, so the expanded track's
+  // midpoint would land in the sheet and read the wrong pane.
   const cornerEl = document.elementFromPoint(
-    Math.round(track / 2),
+    Math.round((railBoxNow ? railBoxNow.width : track) / 2),
     Math.round(titlebarHeight / 2)
   );
 
@@ -89,14 +162,18 @@ const SAMPLE = `(() => {
     viewport: { width: window.innerWidth, height: window.innerHeight },
     tokens: {
       track,
+      collapsedTrack,
       frame: px(root.getPropertyValue("--shell-frame")),
       titlebarHeight,
+      topbarHeight,
       radiusSm: root.getPropertyValue("--radius-sm").trim()
     },
     theme: {
       dataTheme: document.documentElement.getAttribute("data-theme"),
       skin: document.documentElement.getAttribute("data-skin"),
       canvasBase: root.getPropertyValue("--canvas-base").trim(),
+      accent,
+      titlebarBg: root.getPropertyValue("--titlebar-bg").trim(),
       background: root.getPropertyValue("--background").trim(),
       card: root.getPropertyValue("--card").trim(),
       bgPanel: root.getPropertyValue("--bg-panel").trim(),
@@ -133,6 +210,7 @@ const SAMPLE = `(() => {
     header: header
       ? {
           box: box(header),
+          background: getComputedStyle(header).backgroundColor,
           appRegion: getComputedStyle(header).getPropertyValue("-webkit-app-region"),
           controls: controls.map((el) => ({
             tag: el.tagName.toLowerCase(),
@@ -145,6 +223,16 @@ const SAMPLE = `(() => {
       ? {
           label: railToggle.getAttribute("aria-label"),
           box: box(railToggle),
+          // The rail's toggle is the only collapse control at either width, so
+          // its own state pair is measured rather than a titlebar stand-in's.
+          ariaExpanded: railToggle.getAttribute("aria-expanded"),
+          ariaControls: railToggle.getAttribute("aria-controls"),
+          // Lucide names the icon in the svg's class list, so the expand/collapse
+          // pair is read off the shipping icon and not inferred from the label.
+          icon: (() => {
+            const svg = railToggle.querySelector("svg");
+            return svg ? svg.getAttribute("class") || "" : null;
+          })(),
           appRegion: getComputedStyle(railToggle).getPropertyValue("-webkit-app-region")
         }
       : null,
@@ -154,24 +242,75 @@ const SAMPLE = `(() => {
           box: box(titlebarToggle)
         }
       : null,
+    titlebarClass: titlebar ? titlebar.className : null,
     firstLink: box(document.querySelector(".nav-rail__link")),
     wingSection: box(document.querySelector(".nav-rail__section--wing")),
     bottomSection: box(document.querySelector(".nav-rail__section--bottom")),
     titlebar: box(titlebar),
     leading: box(leading),
-    vault: vault
+    // Negative regression claim: the chip is not in the titlebar any more.
+    titlebarVault: titlebarVault
+      ? { box: box(titlebarVault), text: (titlebarVault.textContent || "").trim() }
+      : null,
+    // The rail's foot: the Log row and the vault chip on one line when the rail
+    // is wide, stacked when it is thin.
+    foot: foot
       ? {
-          box: box(vault),
-          text: (vault.textContent || "").trim(),
-          background: getComputedStyle(vault).backgroundColor,
-          color: getComputedStyle(vault).color,
-          radius: getComputedStyle(vault).borderRadius,
-          // The chip raises the vault switcher now instead of linking home: it
-          // is a button with a dialog behind it, and the rig reads both facts
-          // rather than the href it used to carry.
-          tag: vault.tagName.toLowerCase(),
-          haspopup: vault.getAttribute("aria-haspopup"),
-          appRegion: getComputedStyle(vault).getPropertyValue("-webkit-app-region")
+          box: box(foot),
+          display: getComputedStyle(foot).display,
+          flexDirection: getComputedStyle(foot).flexDirection,
+          children: Array.from(foot.children).map((el) => ({
+            tag: el.tagName.toLowerCase(),
+            className: typeof el.className === "string" ? el.className : "",
+            box: box(el)
+          })),
+          logRow: box(foot.querySelector(".nav-rail__link"))
+        }
+      : null,
+    // The vault chip's new home. Every claim the titlebar chip used to carry is
+    // made here instead: its full name, its accent fill, its dialog, and — in
+    // the thin rail — the initials-only mark that keeps it in the icon column.
+    vaultChip: railVault
+      ? {
+          box: box(railVault),
+          tag: railVault.tagName.toLowerCase(),
+          title: railVault.getAttribute("title"),
+          ariaLabel: railVault.getAttribute("aria-label"),
+          haspopup: railVault.getAttribute("aria-haspopup"),
+          ariaExpanded: railVault.getAttribute("aria-expanded"),
+          background: getComputedStyle(railVault).backgroundColor,
+          color: getComputedStyle(railVault).color,
+          radius: getComputedStyle(railVault).borderRadius,
+          name: (() => {
+            const el = railVault.querySelector(".nav-rail__vault-name");
+            return el
+              ? { text: (el.textContent || "").trim(), display: getComputedStyle(el).display }
+              : null;
+          })(),
+          initials: (() => {
+            const el = railVault.querySelector(".nav-rail__vault-initials");
+            return el
+              ? { text: (el.textContent || "").trim(), display: getComputedStyle(el).display }
+              : null;
+          })(),
+          chevronDisplay: (() => {
+            const el = railVault.querySelector(".nav-rail__vault-chevron");
+            return el ? getComputedStyle(el).display : null;
+          })(),
+          inRail: Boolean(rail && rail.contains(railVault)),
+          inFoot: Boolean(foot && foot.contains(railVault)),
+          // The chip is the last visible control in the rail: no button or link
+          // after it may still be on screen. That is what makes it the foot.
+          isLastControl: (() => {
+            if (!rail) return false;
+            const visible = Array.from(
+              rail.querySelectorAll("button, a, [role=button]")
+            ).filter((el) => {
+              const r = el.getBoundingClientRect();
+              return r.width > 0 && r.height > 0;
+            });
+            return visible.length > 0 && visible[visible.length - 1] === railVault;
+          })()
         }
       : null,
     legacyBrand: Boolean(
@@ -180,71 +319,151 @@ const SAMPLE = `(() => {
         document.querySelector(".window-titlebar__label")
     ),
     leadingText: (leading?.textContent || "").trim(),
+    // Which arrangement the shell is in, and the tracks it actually laid out:
+    // the collapse narrows the first track, it does not remove a pane.
+    shellClass: shell ? shell.className : null,
+    shellNavCollapsed: Boolean(shell?.classList.contains("shell--nav-collapsed")),
     titlebarBackground: titlebar
       ? getComputedStyle(titlebar).backgroundColor
       : null,
     // The chats section, inside the one wide sidebar: between the wing's rows
-    // and the governed shelf at the foot.
+    // and the governed shelf at the foot. A thin rail hides the whole section —
+    // and the divider above it — rather than squeezing it into the icon column.
     chats: chats
       ? {
           box: box(chats),
+          display: getComputedStyle(chats).display,
           inRail: Boolean(rail && rail.contains(chats)),
           title: (chats.querySelector(".chats-rail__title")?.textContent || "").trim(),
           newChat: Boolean(chats.querySelector(".chats-rail__new")),
           scrollRegion: getComputedStyle(chats.querySelector(".chats-rail__list")).overflowY
         }
       : null,
-    main: box(main),
-    mainBackground: main ? getComputedStyle(main).backgroundColor : null,
-    topBar: topBar
+    chatsDivider: chatsDivider
       ? {
-          box: box(topBar),
-          borderBottomWidth: getComputedStyle(topBar).borderBottomWidth,
-          borderBottomColor: getComputedStyle(topBar).borderBottomColor,
-          background: getComputedStyle(topBar).backgroundColor
+          display: getComputedStyle(chatsDivider).display,
+          box: box(chatsDivider)
         }
       : null,
-    // The sheet's band now carries one selector only — the domain lens — and the
-    // band centres it. The wing switcher moved to the rail's own band above it,
-    // so this list is the lens alone. Measured by selector rather than by a
-    // single class so the report names the control that regressed.
-    topBarSelectors: [".domain-switcher__tabs"].map((selector) => {
-      const el = document.querySelector(selector);
-      if (!el) return { selector, optionCount: 0 };
-      const style = getComputedStyle(el);
-      const active = el.querySelector(".ui-segmented__option.is-active");
+    // The rail's text labels and its rows. The collapse hides the labels and
+    // keeps the rows, so both are measured separately: a rail that hid the rows
+    // too would leave an empty column and still pass a label-only claim.
+    railLabels: {
+      count: railLabels.length,
+      display: railLabels.length ? getComputedStyle(railLabels[0]).display : null
+    },
+    railRows: navRows.map((row) => {
+      const label = row.querySelector(".nav-rail__label");
+      const svg = row.querySelector("svg");
       return {
-        selector,
-        borderTopWidth: style.borderTopWidth,
-        borderRightWidth: style.borderRightWidth,
-        borderBottomWidth: style.borderBottomWidth,
-        borderLeftWidth: style.borderLeftWidth,
-        background: style.backgroundColor,
-        activeBorderWidth: active ? getComputedStyle(active).borderTopWidth : null,
-        activeBackground: active
-          ? getComputedStyle(active).backgroundColor
-          : null,
-        optionCount: el.querySelectorAll(".ui-segmented__option").length
+        title: row.getAttribute("title"),
+        ariaLabel: row.getAttribute("aria-label"),
+        label: (label?.textContent || "").trim(),
+        labelDisplay: label ? getComputedStyle(label).display : null,
+        icon: svg ? svg.getAttribute("class") || "" : null,
+        iconBox: box(svg),
+        badge: Boolean(row.querySelector(".nav-rail__badge")),
+        justifyContent: getComputedStyle(row).justifyContent,
+        box: box(row)
       };
     }),
-    // One control on the sheet's band, and it is the domain lens — the wing
-    // switcher must not have left a copy behind in the sheet.
-    bandControlCount: topBar
-      ? topBar.querySelectorAll(".ui-segmented").length
-      : 0,
+    main: box(main),
+    mainBackground: main ? getComputedStyle(main).backgroundColor : null,
+    // The sheet's first element child: the page column, not a band. A .top-bar
+    // still at the top of the sheet would show up here instead.
+    mainFirstChild: main
+      ? {
+          tag: main.firstElementChild
+            ? main.firstElementChild.tagName.toLowerCase()
+            : null,
+          className:
+            main.firstElementChild &&
+            typeof main.firstElementChild.className === "string"
+              ? main.firstElementChild.className
+              : ""
+        }
+      : null,
+    // Negative regression claim: the retired top bar is gone from the DOM, not
+    // merely restyled.
+    legacyTopBar,
+    // data-nav-collapsed on the strip is what moves the lens with the rail, so
+    // the rig reads it off the header rather than inferring the state from a box.
+    titlebarNavCollapsed,
+    // The domain tab raised into the window's strip: its box, its page ink, its
+    // no-drag carve-out, the two page-coloured fillets at its bottom corners, the
+    // rounded top corners that match them, and how far it starts past the rail's
+    // trailing hairline.
+    lens: lens
+      ? {
+          box: box(lens),
+          background: getComputedStyle(lens).backgroundColor,
+          appRegion: getComputedStyle(lens).getPropertyValue("-webkit-app-region"),
+          inTitlebar: Boolean(titlebar && titlebar.contains(lens)),
+          firstChild: Boolean(titlebar && titlebar.firstElementChild === lens),
+          fromRail:
+            lensBoxNow && railBoxNow
+              ? Math.round(lensBoxNow.left - railBoxNow.right)
+              : null,
+          borderTopLeftRadius: getComputedStyle(lens).borderTopLeftRadius,
+          borderTopRightRadius: getComputedStyle(lens).borderTopRightRadius,
+          borderBottomLeftRadius: getComputedStyle(lens).borderBottomLeftRadius,
+          borderBottomRightRadius: getComputedStyle(lens).borderBottomRightRadius,
+          before: pseudo(lens, "::before"),
+          after: pseudo(lens, "::after")
+        }
+      : null,
+    // The page column under the strip: its top is the reclaimed edge (32px, where
+    // the retired band's 44px used to sit).
+    shellContent: box(shellContent),
+    // The real switcher inside the lens, and the band it is set into. The outer
+    // .ui-segmented frame is gone inside the tab; the fill and the active tab's
+    // line are what still make it read as a control.
+    lensTabs: lensTabsEl
+      ? (() => {
+          const style = getComputedStyle(lensTabsEl);
+          const active = lensTabsEl.querySelector(".ui-segmented__option.is-active");
+          return {
+            selector: ".window-titlebar__lens .domain-switcher__tabs",
+            box: box(lensTabsEl),
+            borderTopWidth: style.borderTopWidth,
+            borderRightWidth: style.borderRightWidth,
+            borderBottomWidth: style.borderBottomWidth,
+            borderLeftWidth: style.borderLeftWidth,
+            background: style.backgroundColor,
+            activeBorderWidth: active
+              ? getComputedStyle(active).borderTopWidth
+              : null,
+            activeBackground: active
+              ? getComputedStyle(active).backgroundColor
+              : null,
+            optionCount: lensTabsEl.querySelectorAll(".ui-segmented__option")
+              .length
+          };
+        })()
+      : null,
     domainLens: domainSwitcher
       ? {
           box: box(domainSwitcher),
+          inLens: Boolean(lens && lens.contains(domainSwitcher)),
           labels: Array.from(
             domainSwitcher.querySelectorAll(".ui-segmented__option")
-          ).map((el) => (el.textContent || "").trim())
+          ).map((el) => (el.textContent || "").trim()),
+          optionCount: domainSwitcher.querySelectorAll(".ui-segmented__option")
+            .length,
+          // The compacted control must fit inside the strip rather than pushing
+          // the band open: its own height is the number that proves it.
+          height:
+            domainSwitcher.getBoundingClientRect().height
         }
       : null,
-    // The rail's first level: the five-wing switcher, in a band of its own on the
-    // sheet's top-bar row, above the active wing's pages.
+    // The rail's first level: the five-wing switcher, in a band of its own above
+    // the active wing's pages, under the window strip. Wide, the control is
+    // horizontal; thin, it turns vertical and stays in the icon column — the
+    // wings must never leave the operator's reach.
     wingsBand: wingsBand
       ? {
           box: box(wingsBand),
+          display: getComputedStyle(wingsBand).display,
           borderBottomWidth: getComputedStyle(wingsBand).borderBottomWidth
         }
       : null,
@@ -263,6 +482,44 @@ const SAMPLE = `(() => {
                 ?.textContent || ""
             ).trim() || null,
           optionCount: wings.querySelectorAll(".ui-segmented__option").length,
+          // The collapsed band turns the segmented control vertical; the option
+          // boxes prove the five tabs really stack in the icon column rather
+          // than merely having a column flex-direction.
+          flexDirection: getComputedStyle(wings).flexDirection,
+          // The switcher is a square block set inside the rail's own padding, and
+          // its options must not crowd their words: both are read off the
+          // shipping control rather than inferred from the stylesheet.
+          borderRadius: getComputedStyle(wings).borderRadius,
+          padding: (() => {
+            const style = getComputedStyle(wings);
+            return {
+              top: parseFloat(style.paddingTop),
+              right: parseFloat(style.paddingRight),
+              bottom: parseFloat(style.paddingBottom),
+              left: parseFloat(style.paddingLeft)
+            };
+          })(),
+          options: Array.from(
+            wings.querySelectorAll(".ui-segmented__option")
+          ).map((el) => {
+            const style = getComputedStyle(el);
+            return {
+              label: (el.textContent || "").trim(),
+              active: el.classList.contains("is-active"),
+              box: box(el),
+              borderRadius: style.borderRadius,
+              padding: {
+                top: parseFloat(style.paddingTop),
+                right: parseFloat(style.paddingRight),
+                bottom: parseFloat(style.paddingBottom),
+                left: parseFloat(style.paddingLeft)
+              },
+              // A word wider than the option's content box overflows its rule;
+              // the numbers say whether the label really fits.
+              scrollWidth: el.scrollWidth,
+              clientWidth: el.clientWidth
+            };
+          }),
           background: getComputedStyle(wings).backgroundColor
         }
       : null,
@@ -316,6 +573,12 @@ const SAMPLE = `(() => {
       ? {
           className: shell.className,
           gridTemplateColumns: getComputedStyle(shell).gridTemplateColumns,
+          // The first track as laid out. The collapse must change THIS number
+          // from the expanded track to the icon column, and leave the others.
+          gridColumns: getComputedStyle(shell).gridTemplateColumns
+            .split(" ")
+            .filter(Boolean)
+            .map((value) => Math.round(parseFloat(value))),
           gap: getComputedStyle(shell).gap,
           box: box(shell)
         }
@@ -378,6 +641,32 @@ const luminance = (color) => {
     .map((part) => parseFloat(part) / 255);
   const linear = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
   return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+};
+
+/**
+ * The `rgb()` Chromium computes for one of the palette's `#rrggbb` tokens, so a
+ * token read off `<html>` can be compared with a computed background without
+ * guessing at its serialisation. Any other token text — a `color-mix()` a skin
+ * never resolved, for instance — is returned untouched and will simply not match.
+ */
+const rgbOf = (hex) => {
+  const clean = (hex ?? "").trim().replace(/^#/, "");
+  if (!/^[0-9a-f]{6}$/i.test(clean)) return hex ?? null;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(clean.slice(i, i + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
+};
+
+/**
+ * Whether a computed `background-image` paints `ink` — the page canvas, in the
+ * fillets' case. The gradient's stops serialise as their own colour strings
+ * (`rgb(...)`/`rgba(...)`/`color(...)`), so the ink is looked for among them rather
+ * than substring-matched against the whole gradient (whose stop positions would
+ * make a naive `includes` pass on geometry alone).
+ */
+const gradientPaints = (image, ink) => {
+  if (!image || !ink || image === "none") return false;
+  const stops = String(image).match(/rgba?\([^)]*\)|color\([^)]*\)/g) ?? [];
+  return stops.includes(ink);
 };
 
 /** The ladder as numbers, for the report and the stdout table. */
@@ -687,8 +976,32 @@ async function main() {
     await applyTheme("forge-os", "dark");
 
     const expanded = await settled();
-    const { track, frame, titlebarHeight } = expanded.tokens;
+    const { track, collapsedTrack, titlebarHeight, topbarHeight } =
+      expanded.tokens;
     const { height: viewportHeight, width: viewportWidth } = expanded.viewport;
+    // The live domains the harness handed the shell; the lens must name them.
+    const domainNames = await run("window.shellHarnessDomainNames ?? null");
+    check(
+      "the harness seeded live domains for the lens to offer",
+      Array.isArray(domainNames) && domainNames.length >= 3,
+      `harness domains ${JSON.stringify(domainNames)}`,
+    );
+
+    // The native caption strip is painted by the OS, beside the web content and in
+    // the same row the CSS titlebar fills. The provider hands it the titlebar token
+    // on every repaint; the harness makes the same third call the provider makes
+    // after a skin change, so this read covers the night palette the rig pins.
+    const overlayCalls = await run(
+      "window.shellHarnessOverlayCalls?.() ?? []",
+    );
+    check(
+      "the native caption strip wears the titlebar's fill",
+      Array.isArray(overlayCalls) &&
+        overlayCalls.length > 0 &&
+        rgbOf(overlayCalls[overlayCalls.length - 1]?.color) ===
+          expanded.titlebarBackground,
+      `overlay ${JSON.stringify(overlayCalls[overlayCalls.length - 1] ?? null)} vs titlebar ${expanded.titlebarBackground}`,
+    );
 
     // 1 — flush: the rail owns the window's top, left and bottom edges.
     check("rail exists", Boolean(expanded.rail), "no .nav-rail in the shell");
@@ -713,18 +1026,33 @@ async function main() {
       `height ${expanded.rail?.box.height}px vs window ${viewportHeight}px`,
     );
     check(
+      "the collapsed track token is the icon column",
+      expanded.tokens.collapsedTrack === 56,
+      `--shell-nav-width-collapsed resolved to ${expanded.tokens.collapsedTrack}px, not the 56px icon column`,
+    );
+    check(
       "rail keeps the track width",
       expanded.rail?.box.width === track,
       `rail ${expanded.rail?.box.width}px vs --shell-nav-width ${track}px`,
     );
+    // The rail is a pane, not a card: square, flush, and carrying exactly one
+    // hairline — on its trailing edge, inside its own width, so the sheet starts
+    // on the line rather than one pixel past it. Its other three edges paint
+    // nothing; a line there would either box the sidebar in or double the seam
+    // the sheet already reads.
     check(
-      "rail stays square and paints no line of its own",
-      expanded.rail?.borderRadius === "0px" &&
+      "rail stays square",
+      expanded.rail?.borderRadius === "0px",
+      `radius ${expanded.rail?.borderRadius}`,
+    );
+    check(
+      "the rail draws one hairline on its trailing edge and no other edge",
+      parseFloat(expanded.rail?.borderRightWidth ?? "0") > 0 &&
+        parseFloat(expanded.rail?.borderRightWidth ?? "0") <= 1 &&
         expanded.rail?.borderLeftWidth === "0px" &&
         expanded.rail?.borderTopWidth === "0px" &&
-        expanded.rail?.borderBottomWidth === "0px" &&
-        expanded.rail?.borderRightWidth === "0px",
-      `radius ${expanded.rail?.borderRadius}, borders ${expanded.rail?.borderTopWidth}/${expanded.rail?.borderRightWidth}/${expanded.rail?.borderBottomWidth}/${expanded.rail?.borderLeftWidth}`,
+        expanded.rail?.borderBottomWidth === "0px",
+      `borders t/r/b/l ${expanded.rail?.borderTopWidth}/${expanded.rail?.borderRightWidth}/${expanded.rail?.borderBottomWidth}/${expanded.rail?.borderLeftWidth}`,
     );
 
     // 2 — the topband: the titlebar row, carrying exactly one control.
@@ -744,20 +1072,60 @@ async function main() {
       `label ${JSON.stringify(expanded.railToggle?.label)}`,
     );
     check(
+      "the toggle is the rail's own, wearing the collapse state",
+      expanded.railToggle?.ariaExpanded === "true" &&
+        expanded.railToggle?.ariaControls === "nav-rail" &&
+        (expanded.railToggle?.icon ?? "").includes("lucide-panel-left-close"),
+      `aria-expanded ${JSON.stringify(expanded.railToggle?.ariaExpanded)}, controls ${JSON.stringify(expanded.railToggle?.ariaControls)}, icon ${JSON.stringify(expanded.railToggle?.icon)}`,
+    );
+    check(
+      "the toggle stays inside the rail's box",
+      Boolean(expanded.railToggle && expanded.rail) &&
+        expanded.railToggle.box.left >= expanded.rail.box.left &&
+        expanded.railToggle.box.right <= expanded.rail.box.right,
+      `toggle ${JSON.stringify(expanded.railToggle?.box)} in rail ${JSON.stringify(expanded.rail?.box)}`,
+    );
+    // The wide rail is the full column: labels, the five-wing band, the chats
+    // section and the divider above it. Hiding any of them is a thin-rail rule
+    // leaking into the expanded state.
+    check(
+      "the wide rail keeps its text labels",
+      expanded.railLabels?.count > 0 && expanded.railLabels?.display !== "none",
+      `labels ${expanded.railLabels?.count} display ${JSON.stringify(expanded.railLabels?.display)}`,
+    );
+    check(
+      "the wide rail keeps the wing switcher's band",
+      expanded.wingsBand !== null && expanded.wingsBand?.display !== "none",
+      `band display ${JSON.stringify(expanded.wingsBand?.display)}`,
+    );
+    check(
+      "the wide rail keeps the chats section and the divider above it",
+      expanded.chats !== null &&
+        expanded.chats?.display !== "none" &&
+        expanded.chatsDivider !== null &&
+        expanded.chatsDivider?.display !== "none",
+      `chats display ${JSON.stringify(expanded.chats?.display)}, divider ${JSON.stringify(expanded.chatsDivider?.display)}`,
+    );
+    check(
       "nav rows start under the topband",
       (expanded.firstLink?.top ?? 0) >= (expanded.header?.box.bottom ?? 0),
       `first row top ${expanded.firstLink?.top}px vs band bottom ${expanded.header?.box.bottom}px`,
     );
 
     // 2b — the sidebar's first level: the five-wing switcher in its own band,
-    // above the wing's pages and on the sheet's top-bar row. The band paints no
-    // line of its own: the strip's hairline stays in the sheet, under the lens.
+    // above the wing's pages and directly under the window strip. The band paints
+    // no line of its own: the hairline in that row is the dock's own header rule.
     const wingBand = expanded.wingsBand;
     const switcher = expanded.wingSwitcher;
     check(
       "the wing switcher lives in the rail",
       Boolean(switcher?.inRail),
       `switcher ${JSON.stringify(switcher?.box)} in rail ${JSON.stringify(expanded.rail?.box)}`,
+    );
+    check(
+      "the wide wing switcher is horizontal",
+      expanded.wingSwitcher?.flexDirection === "row",
+      `wings flex-direction ${JSON.stringify(expanded.wingSwitcher?.flexDirection)}`,
     );
     check(
       "the wing switcher is the five wings, in order",
@@ -778,18 +1146,63 @@ async function main() {
         wingBand.box.bottom <= expanded.firstLink.top + 1,
       `band ${JSON.stringify(wingBand)}, control ${JSON.stringify(switcher?.box)}, first row ${JSON.stringify(expanded.firstLink)}`,
     );
+    // The switcher is a rectangular block, not the shared pill: every corner is
+    // square, and the rail's own padding is its only margin — one thin gap either
+    // side, equal, which is what centres the block in the column.
     check(
-      "the rail's band shares the top bar's row",
-      Boolean(wingBand && expanded.topBar) &&
-        wingBand.box.top === expanded.topBar.box.top &&
-        wingBand.box.bottom === expanded.topBar.box.bottom,
-      `rail band ${JSON.stringify(wingBand)} vs top bar ${JSON.stringify(expanded.topBar?.box)}`,
+      "the wide wing switcher is a square block, not a pill",
+      switcher?.borderRadius === "0px" &&
+        (switcher?.options ?? []).every(
+          (option) => option.borderRadius === "0px",
+        ),
+      `frame ${JSON.stringify(switcher?.borderRadius)}, tabs ${JSON.stringify(switcher?.options?.map((option) => option.borderRadius))}`,
     );
     check(
-      "the sidebar band paints no line of its own",
-      wingBand?.borderBottomWidth === "0px" &&
-        parseFloat(expanded.topBar?.borderBottomWidth ?? "0") > 0,
-      `rail band border ${wingBand?.borderBottomWidth}, top bar border ${expanded.topBar?.borderBottomWidth}`,
+      "the wide wing switcher sits centred with one thin margin each side",
+      Boolean(switcher && wingBand && expanded.rail) &&
+        Math.abs(
+          switcher.box.left -
+            expanded.rail.box.left -
+            (expanded.rail.box.right - switcher.box.right),
+        ) <= 1 &&
+        switcher.box.left - expanded.rail.box.left >= 3 &&
+        expanded.rail.box.right - switcher.box.right >= 3 &&
+        switcher.box.left === wingBand.box.left &&
+        switcher.box.right === wingBand.box.right,
+      `rail ${JSON.stringify(expanded.rail?.box)}, band ${JSON.stringify(wingBand?.box)}, switcher ${JSON.stringify(switcher?.box)}`,
+    );
+    check(
+      "the wide wing switcher's words are clear of its rules",
+      Boolean(switcher) &&
+        (switcher?.options ?? []).every(
+          (option) =>
+            option.padding.top >= 5 &&
+            option.padding.bottom >= 5 &&
+            option.padding.left >= 3 &&
+            option.padding.right >= 3 &&
+            option.scrollWidth <= option.clientWidth,
+        ),
+      `padding ${JSON.stringify(switcher?.options?.map((option) => option.padding))}, widths ${JSON.stringify(switcher?.options?.map((option) => [option.scrollWidth, option.clientWidth]))}`,
+    );
+    // The sheet gave its band back: the page now starts at the strip's bottom
+    // edge, 44px higher than it did when `.top-bar` sat in the sheet. The rail's
+    // wing band and the dock's header did NOT give theirs back — they still start
+    // at the strip's bottom and keep the 44px band, so the two chrome rows stay
+    // level across the pane seam.
+    check(
+      "the rail's band and the dock's header keep their 44px band under the strip",
+      Boolean(wingBand && expanded.chatHeader) &&
+        wingBand.box.top === titlebarHeight &&
+        wingBand.box.bottom === titlebarHeight + expanded.tokens.topbarHeight &&
+        expanded.chatHeader.box.top === titlebarHeight &&
+        expanded.chatHeader.box.bottom ===
+          titlebarHeight + expanded.tokens.topbarHeight,
+      `rail band ${JSON.stringify(wingBand?.box)}, dock header ${JSON.stringify(expanded.chatHeader?.box)}, strip ${titlebarHeight}px + band ${expanded.tokens.topbarHeight}px`,
+    );
+    check(
+      "the rail's band paints no line of its own",
+      wingBand?.borderBottomWidth === "0px",
+      `rail band border ${wingBand?.borderBottomWidth}`,
     );
 
     // 3 — paint order: the rail's topband, not the titlebar, owns the corner.
@@ -799,49 +1212,31 @@ async function main() {
       `corner element ${JSON.stringify(expanded.corner)}`,
     );
 
-    // 4 — the strip wears the vault's own name on a highlighted chip, stepped
-    // aside by the track width; the app mark and wordmark are gone.
+    // 4 — the titlebar no longer names the vault. Round 2 moved the chip into the
+    // rail's foot: the strip's leading half is an empty drag handle and it no
+    // longer reserves the rail's column with `--nav-column` classes. The chip
+    // keeps every part of its old contract (a button, the vault's name, an accent
+    // fill, a dialog) but it now lives with the navigation it belongs to.
     check(
-      "titlebar text clears the rail",
-      (expanded.vault?.box.left ?? 0) >= (expanded.rail?.box.right ?? track),
-      `vault chip starts at ${expanded.vault?.box.left}px, rail ends at ${expanded.rail?.box.right}px`,
+      "the titlebar renders no vault chip",
+      expanded.titlebarVault === null,
+      `a .window-titlebar__vault is still in the strip: ${JSON.stringify(expanded.titlebarVault)}`,
     );
     check(
-      "strip shows the vault name and nothing else",
-      expanded.vault?.text === vaultName && expanded.leadingText === vaultName,
-      `chip "${expanded.vault?.text}" / leading "${expanded.leadingText}" vs vault "${vaultName}"`,
+      "the titlebar's leading strip is empty",
+      expanded.leadingText === "",
+      `the strip still carries text: ${JSON.stringify(expanded.leadingText)}`,
     );
     check(
       "the app mark and wordmark are gone",
       expanded.legacyBrand === false,
       "a brand/logo/label element is still in the titlebar",
     );
+    // The reported bug: a second toggle rendered in the titlebar when the rail
+    // collapsed, on top of the vault chip. There is no titlebar toggle in either
+    // state any more — the rail keeps its own in its header at both widths.
     check(
-      "the vault chip is highlighted",
-      isHighlighted(expanded.vault?.background) &&
-        expanded.vault?.background !== expanded.titlebarBackground,
-      `chip background ${expanded.vault?.background} on ${expanded.titlebarBackground}`,
-    );
-    check(
-      "the chip has square corners",
-      expanded.vault?.radius === "0px",
-      `radius ${expanded.vault?.radius}`,
-    );
-    check(
-      "the chip fills the strip with no margin at the top",
-      expanded.vault?.box.top === 0 &&
-        expanded.vault?.box.height === titlebarHeight,
-      `chip top ${expanded.vault?.box.top}px, height ${expanded.vault?.box.height}px vs strip ${titlebarHeight}px`,
-    );
-    check(
-      "the chip opens the vault switcher and stays clickable",
-      expanded.vault?.tag === "button" &&
-        expanded.vault?.haspopup === "dialog" &&
-        expanded.vault?.appRegion === "no-drag",
-      `tag ${expanded.vault?.tag}, popup ${expanded.vault?.haspopup}, app-region ${expanded.vault?.appRegion}`,
-    );
-    check(
-      "no toggle doubles up while the rail is open",
+      "no titlebar toggle exists while the rail is open",
       expanded.titlebarToggle === null,
       `titlebar toggle present: ${JSON.stringify(expanded.titlebarToggle)}`,
     );
@@ -853,9 +1248,108 @@ async function main() {
       `rail toggle ends at ${expanded.railToggle?.box.right}px, sidebar ends at ${expanded.rail?.box.right}px`,
     );
 
-    // 5 — the workspace sheet is flush to the rail and the dock, and keeps its
-    // one pane gap only under the strip. The chrome around it is a single band of
-    // mat: the rail wears the titlebar's own fill with no frost in between.
+    // The chip's new home: the rail's foot. Wide, the foot is one row — the Log
+    // row and the chip split it in half — and the chip shows the vault's full
+    // name. A chip that stayed behind in the strip, or a chip that did not take
+    // the row's other half, is the feature missing rather than moved.
+    check(
+      "the rail foot renders the vault chip",
+      Boolean(expanded.vaultChip),
+      "no .nav-rail__vault in the rail",
+    );
+    check(
+      "the chip lives in the rail, in its foot group",
+      expanded.vaultChip?.inRail === true && expanded.vaultChip?.inFoot === true,
+      `in rail ${expanded.vaultChip?.inRail}, in foot ${expanded.vaultChip?.inFoot}`,
+    );
+    check(
+      "the foot's two controls are the Log row and the vault chip",
+      Boolean(expanded.foot) &&
+        expanded.foot.children.length === 2 &&
+        expanded.foot.children[0].className.includes("nav-rail__link") &&
+        expanded.foot.children[1].className.includes("nav-rail__vault"),
+      `foot children ${JSON.stringify(expanded.foot?.children)}`,
+    );
+    check(
+      "the wide foot is one row",
+      expanded.foot?.display === "flex" &&
+        expanded.foot?.flexDirection === "row",
+      `foot display ${JSON.stringify(expanded.foot?.display)} direction ${JSON.stringify(expanded.foot?.flexDirection)}`,
+    );
+    check(
+      "the Log and the vault chip split the foot in half",
+      Boolean(expanded.foot?.logRow && expanded.vaultChip) &&
+        expanded.foot.logRow.width > 0 &&
+        Math.abs(expanded.foot.logRow.width - expanded.vaultChip.box.width) <= 1 &&
+        expanded.foot.logRow.width >= expanded.foot.box.width * 0.4,
+      `log ${JSON.stringify(expanded.foot?.logRow)} chip ${JSON.stringify(expanded.vaultChip?.box)} foot ${JSON.stringify(expanded.foot?.box)}`,
+    );
+    check(
+      "the Log and the vault chip share the foot's row",
+      Boolean(expanded.foot?.logRow && expanded.vaultChip) &&
+        Math.abs(
+          (expanded.foot.logRow.top + expanded.foot.logRow.bottom) / 2 -
+            (expanded.vaultChip.box.top + expanded.vaultChip.box.bottom) / 2,
+        ) <= 1 &&
+        Math.abs(expanded.foot.logRow.height - expanded.vaultChip.box.height) <= 1,
+      `log ${JSON.stringify(expanded.foot?.logRow)} chip ${JSON.stringify(expanded.vaultChip?.box)}`,
+    );
+    check(
+      "the wide chip shows the vault's name and hides the initials",
+      expanded.vaultChip?.name?.text === vaultName &&
+        expanded.vaultChip?.name?.display !== "none" &&
+        expanded.vaultChip?.initials?.display === "none",
+      `name ${JSON.stringify(expanded.vaultChip?.name)} initials ${JSON.stringify(expanded.vaultChip?.initials)}`,
+    );
+    check(
+      "the wide chip shows its chevron",
+      Boolean(expanded.vaultChip?.chevronDisplay) &&
+        expanded.vaultChip?.chevronDisplay !== "none",
+      `chevron display ${JSON.stringify(expanded.vaultChip?.chevronDisplay)}`,
+    );
+    check(
+      "the chip is a button that opens the vault switcher",
+      expanded.vaultChip?.tag === "button" &&
+        expanded.vaultChip?.haspopup === "dialog" &&
+        expanded.vaultChip?.ariaExpanded === "false" &&
+        expanded.vaultChip?.title === "Switch vault",
+      `tag ${expanded.vaultChip?.tag}, popup ${expanded.vaultChip?.haspopup}, expanded ${JSON.stringify(expanded.vaultChip?.ariaExpanded)}, title ${JSON.stringify(expanded.vaultChip?.title)}`,
+    );
+    check(
+      "the chip's accessible name carries the full vault name",
+      (expanded.vaultChip?.ariaLabel ?? "").includes(vaultName),
+      `aria-label ${JSON.stringify(expanded.vaultChip?.ariaLabel)} vs vault ${JSON.stringify(vaultName)}`,
+    );
+    check(
+      "the chip wears a highlighted accent fill",
+      isHighlighted(expanded.vaultChip?.background) &&
+        expanded.vaultChip?.background !== expanded.rail?.background,
+      `chip background ${expanded.vaultChip?.background} on rail ${expanded.rail?.background}`,
+    );
+    check(
+      "the chip's ink is the accent, not the rail's text ink",
+      expanded.vaultChip?.color === expanded.theme?.accent,
+      `chip ink ${expanded.vaultChip?.color} vs --accent ${expanded.theme?.accent}`,
+    );
+    check(
+      "the chip is a rounded chip, not the old square strip tab",
+      expanded.vaultChip?.radius !== "0px" &&
+        expanded.vaultChip?.radius === expanded.tokens.radiusSm,
+      `radius ${expanded.vaultChip?.radius} vs --radius-sm ${expanded.tokens.radiusSm}`,
+    );
+    check(
+      "the chip sits inside the rail's column",
+      Boolean(expanded.vaultChip && expanded.rail) &&
+        expanded.vaultChip.box.left >= expanded.rail.box.left &&
+        expanded.vaultChip.box.right <= expanded.rail.box.right,
+      `chip ${JSON.stringify(expanded.vaultChip?.box)} in rail ${JSON.stringify(expanded.rail?.box)}`,
+    );
+    check(
+      "the chip is the last control in the rail",
+      expanded.vaultChip?.isLastControl === true,
+      "a visible control follows the vault chip in the rail",
+    );
+
     check(
       "the chats section lives inside the sidebar",
       Boolean(expanded.chats?.inRail) &&
@@ -878,11 +1372,36 @@ async function main() {
       expanded.main?.left === expanded.rail?.box.right,
       `sheet left ${expanded.main?.left}px vs sidebar right ${expanded.rail?.box.right}px`,
     );
+
+    // 5 — the workspace sheet is flush to the rail and the dock, and meets the
+    // strip with no mat between them. The rail's box reaches over the titlebar row
+    // and paints the mat there, so the sidebar runs to the window's top; the
+    // titlebar's own fill begins only where the rail ends, at the sheet's leading
+    // edge. The topband draws no fill of its own — it is the rail's mat showing.
     check(
-      "the chrome is one band: the rail wears the titlebar's fill, unfrosted",
-      expanded.rail?.background === expanded.titlebarBackground &&
-        expanded.rail?.backdropFilter === "none",
-      `rail ${expanded.rail?.background} backdrop ${expanded.rail?.backdropFilter} vs titlebar ${expanded.titlebarBackground}`,
+      "the sidebar runs to the window's top wearing the mat",
+      expanded.header?.background === "rgba(0, 0, 0, 0)" &&
+        expanded.rail?.background === rgbOf(expanded.theme?.canvasBase) &&
+        expanded.header?.box.top === 0 &&
+        expanded.header?.box.bottom === titlebarHeight &&
+        expanded.titlebarBackground !== expanded.rail?.background,
+      `rail topband ${expanded.header?.background} vs rail ${expanded.rail?.background} vs --canvas-base ${expanded.theme?.canvasBase}; topband ${JSON.stringify(expanded.header?.box)}`,
+    );
+    check(
+      "the rail is unfrosted",
+      expanded.rail?.backdropFilter === "none",
+      `backdrop ${expanded.rail?.backdropFilter}`,
+    );
+    // The strip used to reserve the rail's column so the vault chip could start
+    // where the sheet does. Round 2 deleted that reservation with the chip: the
+    // titlebar carries no nav-column classes. The rail still paints over the
+    // strip's leading column, so the studio's top-left corner stays its mat.
+    check(
+      "the titlebar reserves no rail column and the rail still paints its corner",
+      !String(expanded.titlebarClass ?? "").includes("window-titlebar--nav-column") &&
+        !String(expanded.titlebarClass ?? "").includes("window-titlebar--nav-collapsed") &&
+        expanded.corner?.insideRail === true,
+      `titlebar ${JSON.stringify(expanded.titlebarClass)}, corner ${JSON.stringify(expanded.corner)}`,
     );
     check(
       "the sheet closes the gap to the dock and the window's bottom",
@@ -916,8 +1435,8 @@ async function main() {
     );
     check(
       "the panel's top edge is level with the sheet's",
-      expanded.chat?.box.top === titlebarHeight + frame,
-      `panel top ${expanded.chat?.box.top}px vs sheet top ${titlebarHeight + frame}px`,
+      expanded.chat?.box.top === titlebarHeight,
+      `panel top ${expanded.chat?.box.top}px vs sheet top ${titlebarHeight}px`,
     );
     check(
       "the chat panel wears the sheet's own surface, unfrosted",
@@ -931,25 +1450,24 @@ async function main() {
       `shadow ${expanded.chat?.boxShadow}`,
     );
     check(
-      "the sheet keeps its pane gap under the strip",
-      expanded.main?.top === titlebarHeight + frame,
-      `sheet top ${expanded.main?.top}px (want ${titlebarHeight + frame}px)`,
+      "the sheet meets the strip with no pane gap",
+      expanded.main?.top === titlebarHeight,
+      `sheet top ${expanded.main?.top}px (want ${titlebarHeight}px)`,
     );
-    // One rounded corner: the leading top, next to the sidebar's wing switcher,
-    // where the mat is on both sides of the corner. The other three stay square —
-    // a radius there would notch the rail's seam or the window's own edge.
+    // Square on all four corners: the sheet is a pane, not a card, and no corner
+    // of it is notched out of the mat — in either arrangement.
     check(
-      "the sheet's leading top corner is the only rounded one",
-      expanded.sheet?.borderTopLeftRadius === expanded.tokens?.radiusSm &&
+      "the sheet is square on all four corners",
+      expanded.sheet?.borderTopLeftRadius === "0px" &&
         expanded.sheet?.borderTopRightRadius === "0px" &&
         expanded.sheet?.borderBottomRightRadius === "0px" &&
         expanded.sheet?.borderBottomLeftRadius === "0px",
-      `corners tl/tr/br/bl ${expanded.sheet?.borderTopLeftRadius}/${expanded.sheet?.borderTopRightRadius}/${expanded.sheet?.borderBottomRightRadius}/${expanded.sheet?.borderBottomLeftRadius} vs --radius-sm ${expanded.tokens?.radiusSm}`,
+      `corners tl/tr/br/bl ${expanded.sheet?.borderTopLeftRadius}/${expanded.sheet?.borderTopRightRadius}/${expanded.sheet?.borderBottomRightRadius}/${expanded.sheet?.borderBottomLeftRadius}`,
     );
-    // One line between panes, and only one: the sheet's trailing hairline, the
-    // seam with the dock. The sheet's top and leading edges paint nothing — the
-    // rail meets it as a change of fill, and the pane gap is what separates it from
-    // the strip — and neither neighbour draws an edge of its own.
+    // Two seams, one line each, and no doubles. The sheet's trailing hairline is
+    // the seam with the dock. The rail draws the rail|sheet seam on its own
+    // trailing edge, inside its width; the sheet's leading edge paints nothing,
+    // so the operator reads one hairline and not a two-pixel band.
     check(
       "the sheet wears one hairline, on its trailing edge",
       parseFloat(expanded.sheet?.borderRightWidth ?? "0") > 0 &&
@@ -960,49 +1478,48 @@ async function main() {
       `borders t/r/b/l ${expanded.sheet?.borderTopWidth}/${expanded.sheet?.borderRightWidth}/${expanded.sheet?.borderBottomWidth}/${expanded.sheet?.borderLeftWidth}`,
     );
     check(
-      "the rail meets the sheet with no line between them",
-      expanded.rail?.borderRightWidth === "0px" &&
+      "the rail|sheet seam is one line, drawn by the rail",
+      parseFloat(expanded.rail?.borderRightWidth ?? "0") > 0 &&
+        parseFloat(expanded.rail?.borderRightWidth ?? "0") <= 1 &&
         expanded.sheet?.borderLeftWidth === "0px",
       `rail right ${expanded.rail?.borderRightWidth}, sheet left ${expanded.sheet?.borderLeftWidth}`,
     );
     check(
-      "the sheet's top edge sits one pane gap under the strip",
-      expanded.sheet?.box.top === titlebarHeight + frame,
-      `sheet top at y=${expanded.sheet?.box.top}px, strip ends at ${titlebarHeight}px, pane gap ${frame}px`,
+      "the sheet's top edge sits directly under the strip",
+      expanded.sheet?.box.top === titlebarHeight,
+      `sheet top at y=${expanded.sheet?.box.top}px, strip ends at ${titlebarHeight}px`,
     );
-    // The line the strip reads as its own is the top bar's, under the domain lens, and
-    // not a frame on the sheet's top edge.
+    // The dock's header keeps its hairline. That line is the dock's own now — the
+    // sheet has no band under the strip to share it with — and it still sits in
+    // the same 44px band as the rail's wing switcher, so the two chrome rows stay
+    // level across the pane seam while the page reclaims its band.
     check(
-      "the line under the domain lens is the top bar's own",
-      parseFloat(expanded.topBar?.borderBottomWidth ?? "0") > 0 &&
-        parseFloat(expanded.topBar?.borderBottomWidth ?? "0") <= 1 &&
-        expanded.topBar?.background === expanded.mainBackground,
-      `top bar bottom ${expanded.topBar?.borderBottomWidth} on ${expanded.topBar?.background} vs page ${expanded.mainBackground}`,
+      "the dock's header keeps its own hairline",
+      Boolean(expanded.chatHeader) &&
+        parseFloat(expanded.chatHeader.borderBottomWidth || "0") > 0 &&
+        parseFloat(expanded.chatHeader.borderBottomWidth || "0") <= 1,
+      `dock header underline ${expanded.chatHeader?.borderBottomWidth}, band ${JSON.stringify(expanded.chatHeader?.box)}`,
     );
-    // ...and it is one line across both panes: the dock's header wears the same
-    // band height, so the two underlines land on the same row rather than stepping
-    // a pixel apart where they meet.
+    // The chip can no longer be measured against the sheet's leading edge — it
+    // lives at the foot of the rail now, not on the titlebar row. What replaces
+    // that claim is where the foot sits: the rail's last band, under the chats.
     check(
-      "the sheet's top bar and the dock's header are one band",
-      Boolean(expanded.topBar && expanded.chatHeader) &&
-        expanded.topBar.box.top === expanded.chatHeader.box.top &&
-        expanded.topBar.box.bottom === expanded.chatHeader.box.bottom &&
-        expanded.topBar.box.top === titlebarHeight + frame &&
-        parseFloat(expanded.chatHeader.borderBottomWidth || "0") > 0,
-      `top bar ${JSON.stringify(expanded.topBar?.box)} vs dock header ${JSON.stringify(expanded.chatHeader?.box)}, header underline ${expanded.chatHeader?.borderBottomWidth}`,
-    );
-    check(
-      "the chip lines up with the sheet's leading edge",
-      expanded.vault?.box.left === expanded.main?.left,
-      `chip at ${expanded.vault?.box.left}px vs sheet at ${expanded.main?.left}px`,
+      "the rail foot closes the rail under the chats section",
+      Boolean(expanded.foot && expanded.chats && expanded.rail) &&
+        expanded.foot.box.top >= expanded.chats.box.bottom - 1 &&
+        expanded.foot.box.bottom <= expanded.rail.box.bottom + 1 &&
+        expanded.foot.box.left >= expanded.rail.box.left &&
+        expanded.foot.box.right <= expanded.rail.box.right,
+      `foot ${JSON.stringify(expanded.foot?.box)}, chats ${JSON.stringify(expanded.chats?.box)}, rail ${JSON.stringify(expanded.rail?.box)}`,
     );
 
     // The night ladder: the studio is a frame around the darkest page. The page
-    // canvas is the floor, the cards step up off it, and the chrome band — the rail
-    // and the strip — wears the dock's own quiet band, under the cards and clear of
-    // the floor.
+    // canvas is the floor, the cards step up off it, and the mat — the rail and
+    // the window frame — wears the palette's quiet band, under the cards and clear
+    // of the floor. The titlebar and the dock's action band are the one surface
+    // off that band: their own step, darker than the mat and lighter than the page.
     const night = ladderOf(expanded);
-    const { chrome, page, card, viewCard } = night.luminance;
+    const { chrome, titlebar, page, card, viewCard } = night.luminance;
     const band = night.luminance.dockActions;
     check(
       "the rig is painted in the night skin",
@@ -1015,16 +1532,21 @@ async function main() {
       `probe fills ${JSON.stringify(expanded.cards)}`,
     );
     check(
-      "night: the chrome band wears the dock's own action band",
+      "night: the dock's action band wears the strip's fill",
       Number.isFinite(band) &&
-        night.surfaces.chrome === night.surfaces.dockActions &&
+        night.surfaces.dockActions === night.surfaces.titlebar &&
         night.tokens.canvasBase === night.tokens.mutedSurface,
-      `mat ${night.surfaces.chrome} vs .chat-panel__actions ${night.surfaces.dockActions}; tokens ${night.tokens.canvasBase} vs ${night.tokens.mutedSurface}`,
+      `bar ${night.surfaces.dockActions} vs strip ${night.surfaces.titlebar}; tokens ${night.tokens.canvasBase} vs ${night.tokens.mutedSurface}`,
     );
     check(
       "night: the chrome band sits under the cards and off the page",
       chrome > page && chrome < card && chrome < viewCard,
       `mat ${chrome.toFixed(4)} between page ${page.toFixed(4)} and card ${card.toFixed(4)}/${viewCard.toFixed(4)}`,
+    );
+    check(
+      "night: the titlebar and the dock's bar take one step below the mat",
+      titlebar < chrome && titlebar > page && band < chrome && band > page,
+      `strip ${night.surfaces.titlebar} (${titlebar.toFixed(4)}) / bar ${night.surfaces.dockActions} (${band.toFixed(4)}) between mat ${night.surfaces.chrome} (${chrome.toFixed(4)}) and page ${night.surfaces.page} (${page.toFixed(4)})`,
     );
     check(
       "night: the cards step up off the page canvas",
@@ -1033,7 +1555,7 @@ async function main() {
     );
     check(
       "night: the page canvas is the darkest surface in the window",
-      [chrome, night.luminance.titlebar, page, night.luminance.dock, band, card, viewCard].every(
+      [chrome, titlebar, page, night.luminance.dock, band, card, viewCard].every(
         (lum) => Number.isFinite(lum) && lum >= page,
       ),
       `page ${page.toFixed(4)} against ${JSON.stringify(night.luminance)}`,
@@ -1050,50 +1572,168 @@ async function main() {
       `scrollTop ${expanded.rail?.scrollTop}, content ${expanded.rail?.scrollHeight}px in ${expanded.rail?.clientHeight}px`,
     );
 
-    // The sheet's band carries one control now — the domain lens — with no frame
-    // of its own, centred in the pane. The frame only doubled the pair's outlines
-    // when the wing switcher shared the row; dropping it must not cost the
-    // control its shape — the fill sets it off the band, and the active tab keeps
-    // the line that makes it the current one.
-    const selectors = expanded.topBarSelectors ?? [];
+    // The domain tab. The sheet's top band is gone: the page now starts at the
+    // strip's bottom edge, and the domain lens is raised into the window's strip
+    // as the strip's first child — painted on the page canvas, starting a breath
+    // past the rail's trailing hairline, filling the 32px strip and reaching the
+    // page's top edge. The two 8px fillets at its bottom corners are the page
+    // flaring into the strip, so the connection is a curve rather than two hard
+    // inside corners.
+    at("titlebar lens");
     check(
-      "the sheet's band carries the domain lens alone",
-      selectors.length === 1 &&
-        selectors[0].selector === ".domain-switcher__tabs" &&
-        expanded.bandControlCount === 1,
-      `selectors ${JSON.stringify(selectors.map((entry) => entry.selector))}, controls ${expanded.bandControlCount}`,
+      "the retired top bar is gone from the sheet",
+      expanded.legacyTopBar === false,
+      "a .top-bar is still in the tree",
     );
     check(
-      "the domain lens wears no frame of its own",
-      selectors.length === 1 &&
-        selectors.every(
-          (entry) =>
-            entry.borderTopWidth === "0px" &&
-            entry.borderRightWidth === "0px" &&
-            entry.borderBottomWidth === "0px" &&
-            entry.borderLeftWidth === "0px",
-        ),
-      `borders ${JSON.stringify(selectors.map((entry) => [entry.selector, entry.borderTopWidth, entry.borderRightWidth, entry.borderBottomWidth, entry.borderLeftWidth]))}`,
+      "the sheet's first child is the page, not a band",
+      Boolean(expanded.mainFirstChild) &&
+        expanded.mainFirstChild.className.includes("shell__content"),
+      `sheet's first child ${JSON.stringify(expanded.mainFirstChild)}`,
     );
     check(
-      "the domain lens still reads as a control without it",
-      selectors.length === 1 &&
-        selectors.every(
-          (entry) =>
-            entry.optionCount > 0 &&
-            isHighlighted(entry.background) &&
-            entry.activeBorderWidth !== "0px",
-        ),
-      `fills ${JSON.stringify(selectors.map((entry) => [entry.selector, entry.background, entry.optionCount, entry.activeBorderWidth]))}`,
+      "the page starts at the strip's bottom edge",
+      Boolean(expanded.shellContent && expanded.titlebar) &&
+        expanded.shellContent.top === expanded.titlebar.bottom &&
+        expanded.shellContent.top === titlebarHeight,
+      `page top ${expanded.shellContent?.top}px vs strip bottom ${expanded.titlebar?.bottom}px; with the retired ${topbarHeight}px band it used to start at ${titlebarHeight + topbarHeight}px`,
     );
     check(
-      "the domain lens is centred in the sheet",
-      Boolean(expanded.domainLens && expanded.topBar) &&
-        Math.abs(
-          (expanded.domainLens.box.left + expanded.domainLens.box.right) / 2 -
-            (expanded.topBar.box.left + expanded.topBar.box.right) / 2,
-        ) <= 1,
-      `lens centre ${((expanded.domainLens?.box.left ?? 0) + (expanded.domainLens?.box.right ?? 0)) / 2} vs band centre ${((expanded.topBar?.box.left ?? 0) + (expanded.topBar?.box.right ?? 0)) / 2}`,
+      "the strip signals the wide rail",
+      expanded.titlebarNavCollapsed === null,
+      `data-nav-collapsed ${JSON.stringify(expanded.titlebarNavCollapsed)}`,
+    );
+    check(
+      "the domain lens is the strip's first child",
+      Boolean(expanded.lens && expanded.titlebar) &&
+        expanded.lens.inTitlebar === true &&
+        expanded.lens.firstChild === true,
+      `lens ${JSON.stringify(expanded.lens?.box)}, in strip ${expanded.lens?.inTitlebar}, first child ${expanded.lens?.firstChild}`,
+    );
+    check(
+      "the lens fills the strip from its top to the page's top edge",
+      Boolean(expanded.lens && expanded.titlebar) &&
+        expanded.lens.box.top === expanded.titlebar.top &&
+        expanded.lens.box.height === titlebarHeight &&
+        expanded.lens.box.bottom === titlebarHeight,
+      `lens ${JSON.stringify(expanded.lens?.box)} vs strip ${JSON.stringify(expanded.titlebar)} (${titlebarHeight}px)`,
+    );
+    check(
+      "the lens reaches the page's top edge",
+      Boolean(expanded.lens && expanded.shellContent) &&
+        expanded.lens.box.bottom === expanded.shellContent.top,
+      `lens bottom ${expanded.lens?.box.bottom}px vs page top ${expanded.shellContent?.top}px`,
+    );
+    check(
+      "the lens starts 12px past the rail's trailing hairline",
+      Boolean(expanded.lens && expanded.rail) &&
+        expanded.lens.fromRail === 12 &&
+        expanded.lens.box.left === expanded.rail.box.right + 12,
+      `lens left ${expanded.lens?.box.left}px, rail right ${expanded.rail?.box.right}px, gap ${expanded.lens?.fromRail}px`,
+    );
+    check(
+      "the lens wears the page canvas",
+      expanded.lens?.background === expanded.mainBackground,
+      `lens ${expanded.lens?.background} vs page ${expanded.mainBackground}`,
+    );
+    check(
+      "the lens is no-drag so its tab takes clicks",
+      expanded.lens?.appRegion === "no-drag",
+      `app-region ${JSON.stringify(expanded.lens?.appRegion)}`,
+    );
+    for (const [side, fillet] of [
+      ["leading", expanded.lens?.before],
+      ["trailing", expanded.lens?.after],
+    ]) {
+      check(
+        `the lens's ${side} bottom fillet is an 8x8 curve at the strip's base`,
+        Boolean(fillet) &&
+          fillet.content !== "none" &&
+          fillet.width === "8px" &&
+          fillet.height === "8px" &&
+          fillet.bottom === "0px",
+        `${side} fillet ${JSON.stringify(fillet)}`,
+      );
+      check(
+        `the lens's ${side} bottom fillet paints the page ink`,
+        Boolean(fillet) &&
+          String(fillet.backgroundImage).includes("radial-gradient") &&
+          gradientPaints(fillet.backgroundImage, expanded.mainBackground),
+        `${side} fillet image ${JSON.stringify(fillet?.backgroundImage)} vs page ink ${expanded.mainBackground}`,
+      );
+    }
+    // The other end of the tab: the top corners are rounded by the same 8px step,
+    // with the strip showing through the two notches above them. The bottom
+    // corners keep a zero radius on purpose — their rounding is the concave flare
+    // the pseudos draw into the strip, not a curve cut out of the tab's own box.
+    check(
+      "the lens's top corners are rounded by the same step as its base",
+      Boolean(expanded.lens) &&
+        expanded.lens.borderTopLeftRadius === "8px" &&
+        expanded.lens.borderTopRightRadius === "8px" &&
+        expanded.lens.borderBottomLeftRadius === "0px" &&
+        expanded.lens.borderBottomRightRadius === "0px",
+      `radii ${JSON.stringify([
+        expanded.lens?.borderTopLeftRadius,
+        expanded.lens?.borderTopRightRadius,
+        expanded.lens?.borderBottomLeftRadius,
+        expanded.lens?.borderBottomRightRadius,
+      ])}`,
+    );
+    const lensSwitcher = expanded.domainLens;
+    check(
+      "the real domain switcher lives inside the lens",
+      Boolean(lensSwitcher?.inLens) && Boolean(lensSwitcher?.box),
+      `switcher ${JSON.stringify(lensSwitcher)}`,
+    );
+    check(
+      "the lens's switcher fits inside the strip",
+      Boolean(lensSwitcher && expanded.lens) &&
+        lensSwitcher.box.top >= expanded.lens.box.top &&
+        lensSwitcher.box.bottom <= expanded.lens.box.bottom &&
+        lensSwitcher.box.height <= titlebarHeight &&
+        lensSwitcher.box.height > 0,
+      `switcher ${JSON.stringify(lensSwitcher?.box)} in lens ${JSON.stringify(expanded.lens?.box)}`,
+    );
+    check(
+      "the lens is a real multi-option domain tab",
+      Boolean(lensSwitcher) &&
+        Array.isArray(domainNames) &&
+        lensSwitcher.optionCount === domainNames.length + 1 &&
+        JSON.stringify(lensSwitcher.labels) ===
+          JSON.stringify(["Overview", ...domainNames]),
+      `labels ${JSON.stringify(lensSwitcher?.labels)} for harness domains ${JSON.stringify(domainNames)}`,
+    );
+    // The lens's own segmented control: no outer frame inside the page-ink tab,
+    // with the fill and the active tab's line still carrying it. The frame only
+    // doubled the outlines when the wing switcher shared a band with the lens;
+    // dropping it must not cost the control its shape.
+    const lensTabs = expanded.lensTabs;
+    check(
+      "the lens's segmented control wears no outer frame",
+      Boolean(lensTabs) &&
+        lensTabs.borderTopWidth === "0px" &&
+        lensTabs.borderRightWidth === "0px" &&
+        lensTabs.borderBottomWidth === "0px" &&
+        lensTabs.borderLeftWidth === "0px",
+      `borders ${JSON.stringify(
+        lensTabs && [
+          lensTabs.borderTopWidth,
+          lensTabs.borderRightWidth,
+          lensTabs.borderBottomWidth,
+          lensTabs.borderLeftWidth,
+        ],
+      )}`,
+    );
+    check(
+      "the lens's control still reads as tabs without it",
+      Boolean(lensTabs) &&
+        lensTabs.optionCount ===
+          (Array.isArray(domainNames) ? domainNames.length + 1 : 0) &&
+        isHighlighted(lensTabs.background) &&
+        lensTabs.activeBorderWidth !== "0px" &&
+        isHighlighted(lensTabs.activeBackground),
+      `fill ${JSON.stringify(lensTabs?.background)}, active border ${JSON.stringify(lensTabs?.activeBorderWidth)}, active fill ${JSON.stringify(lensTabs?.activeBackground)}, options ${lensTabs?.optionCount}`,
     );
 
     const expandedShot = await win.webContents.capturePage();
@@ -1107,8 +1747,8 @@ async function main() {
     });
     const cornerFile = path.join(artifactsDir, "shell-sidebar-corner.png");
     fs.writeFileSync(cornerFile, cornerShot.toPNG());
-    // The seam where the two bands meet, zoomed to the one line they should share —
-    // the claim the colour and border checks make, in pixels.
+    // The seam where the sheet and the dock meet under the strip, zoomed to the
+    // line they should share — the dock header's own hairline, in pixels.
     const seamShot = await win.webContents.capturePage({
       x: Math.max(0, (expanded.chat?.box.left ?? 0) - 140),
       y: titlebarHeight,
@@ -1117,25 +1757,20 @@ async function main() {
     });
     const seamFile = path.join(artifactsDir, "shell-sidebar-seam.png");
     fs.writeFileSync(seamFile, seamShot.toPNG());
-    // The band itself, cropped to the sheet's width: the pixel reading of the two
-    // border checks above — one outline per control (the active tab's), none
-    // around the control, fill still doing the separating.
-    const bandShot = await win.webContents.capturePage({
-      x: expanded.main?.left ?? 0,
-      y: expanded.topBar?.box.top ?? 0,
-      width: Math.max(
-        1,
-        (expanded.chat?.box.left ?? 0) - (expanded.main?.left ?? 0),
-      ),
-      height: Math.max(
-        1,
-        (expanded.topBar?.box.bottom ?? 0) -
-          (expanded.topBar?.box.top ?? 0) +
-          1,
-      ),
+    // The tab itself, 1:1, in the strip: the page-ink lens, the compacted
+    // segmented control inside it, and both bottom fillets where the page leans
+    // into the strip. This is the pixel reading of the geometry and the fillet
+    // claims above.
+    const lensLeft = expanded.lens?.box.left ?? 0;
+    const lensWidth = expanded.lens?.box.width ?? 0;
+    const lensShot = await win.webContents.capturePage({
+      x: Math.max(0, lensLeft - 24),
+      y: 0,
+      width: Math.max(1, Math.min(viewportWidth - Math.max(0, lensLeft - 24), lensWidth + 48)),
+      height: Math.min(viewportHeight, titlebarHeight + 24),
     });
-    const bandFile = path.join(artifactsDir, "shell-sidebar-band.png");
-    fs.writeFileSync(bandFile, bandShot.toPNG());
+    const lensFile = path.join(artifactsDir, "shell-sidebar-lens.png");
+    fs.writeFileSync(lensFile, lensShot.toPNG());
 
     // 5b — the switcher is live where it now sits: Define moves the rail to the
     // Define pages, and Home brings them back. Both are read off the rail itself,
@@ -1177,73 +1812,185 @@ async function main() {
       `active ${JSON.stringify(homeAgain.wingSwitcher?.active)}, rows ${JSON.stringify(homeAgain.wingRows?.map((row) => row.label))}`,
     );
 
-    // 6 — the toggle collapses: rail gone, column given back, way back in place.
+    // 6 — the toggle collapses the rail IN PLACE: the same pane, one icon column
+    // wide. The rail never leaves the layout, so the sheet and the chip start
+    // beside it rather than under a titlebar toggle — the reported bug was a
+    // second toggle at the window's leading edge sitting on the vault chip.
     const clickedCollapse = await clickToggle(".nav-rail .nav-toggle");
     check("collapse toggle clicked", clickedCollapse, "no rail toggle to click");
     const collapsed = await settled();
 
     check(
-      "collapse removes the rail",
-      collapsed.rail === null || collapsed.railDisplay === "none",
-      `rail ${collapsed.rail ? `display:${collapsed.railDisplay}` : "kept in the tree"}`,
+      "collapse narrows the rail instead of removing it",
+      collapsed.rail !== null && collapsed.railDisplay !== "none",
+      `rail ${collapsed.rail ? `display:${collapsed.railDisplay}` : "left the tree"}`,
     );
     check(
-      "collapse gives the sidebar's column back",
-      collapsed.main?.left === 0,
-      `sheet left ${collapsed.main?.left}px — with no sidebar the sheet starts on the window's own edge`,
+      "the thin rail keeps the icon column's width",
+      collapsed.rail?.box.width === collapsedTrack,
+      `rail ${collapsed.rail?.box.width}px vs --shell-nav-width-collapsed ${collapsedTrack}px`,
     );
     check(
-      "the vault chip takes the window's leading edge when the sidebar goes",
-      Boolean(collapsed.vault && expanded.vault) &&
-        collapsed.vault.box.left < expanded.vault.box.left &&
-        collapsed.vault.box.left <= titlebarHeight + 8,
-      `collapsed chip at ${collapsed.vault?.box.left}px vs expanded ${expanded.vault?.box.left}px`,
+      "collapse puts the shell in the nav-collapsed arrangement",
+      collapsed.shellNavCollapsed === true &&
+        collapsed.shell?.gridColumns?.[0] === collapsedTrack,
+      `shell class ${JSON.stringify(collapsed.shellClass)}, first track ${JSON.stringify(collapsed.shell?.gridColumns?.[0])}px vs ${collapsedTrack}px`,
+    );
+    check(
+      "the thin rail is still flush and square at the window's edges",
+      collapsed.rail?.box.left === 0 &&
+        collapsed.rail?.box.top === 0 &&
+        collapsed.rail?.box.bottom === viewportHeight &&
+        collapsed.rail?.box.height === viewportHeight &&
+        collapsed.rail?.borderRadius === "0px",
+      `box ${JSON.stringify(collapsed.rail?.box)} vs window ${viewportWidth}x${viewportHeight}, radius ${collapsed.rail?.borderRadius}`,
+    );
+    check(
+      "the thin rail still draws one hairline on its trailing edge and no other edge",
+      parseFloat(collapsed.rail?.borderRightWidth ?? "0") > 0 &&
+        parseFloat(collapsed.rail?.borderRightWidth ?? "0") <= 1 &&
+        collapsed.rail?.borderLeftWidth === "0px" &&
+        collapsed.rail?.borderTopWidth === "0px" &&
+        collapsed.rail?.borderBottomWidth === "0px",
+      `borders t/r/b/l ${collapsed.rail?.borderTopWidth}/${collapsed.rail?.borderRightWidth}/${collapsed.rail?.borderBottomWidth}/${collapsed.rail?.borderLeftWidth}`,
+    );
+    check(
+      "the thin rail is painted on the same mat as the wide one",
+      collapsed.rail?.background === rgbOf(collapsed.theme?.canvasBase),
+      `rail ${collapsed.rail?.background} vs --canvas-base ${collapsed.theme?.canvasBase}`,
+    );
+    // The rail keeps its one control at every width; when it is thin the same
+    // header toggle turns into the expand icon and centres in the 56px column.
+    check(
+      "the thin rail's topband still holds exactly one control",
+      collapsed.header?.controls.length === 1 &&
+        collapsed.header?.box.top === 0 &&
+        collapsed.header?.box.bottom === titlebarHeight,
+      `controls ${JSON.stringify(collapsed.header?.controls)}, band ${JSON.stringify(collapsed.header?.box)}`,
+    );
+    check(
+      "that control is the expand toggle in the rail",
+      collapsed.railToggle?.label === "Expand sidebar" &&
+        collapsed.railToggle?.ariaExpanded === "false" &&
+        collapsed.railToggle?.ariaControls === "nav-rail" &&
+        (collapsed.railToggle?.icon ?? "").includes("lucide-panel-left-open"),
+      `label ${JSON.stringify(collapsed.railToggle?.label)}, aria-expanded ${JSON.stringify(collapsed.railToggle?.ariaExpanded)}, controls ${JSON.stringify(collapsed.railToggle?.ariaControls)}, icon ${JSON.stringify(collapsed.railToggle?.icon)}`,
+    );
+    check(
+      "the rail toggle centres in the icon column",
+      Boolean(collapsed.railToggle && collapsed.rail) &&
+        Math.abs(
+          (collapsed.railToggle.box.left + collapsed.railToggle.box.right) / 2 -
+            (collapsed.rail.box.left + collapsed.rail.box.right) / 2,
+        ) <= 1,
+      `toggle ${JSON.stringify(collapsed.railToggle?.box)} in rail ${JSON.stringify(collapsed.rail?.box)}`,
+    );
+    check(
+      "no titlebar toggle appears when the rail narrows",
+      collapsed.titlebarToggle === null,
+      `titlebar toggle present: ${JSON.stringify(collapsed.titlebarToggle)}`,
+    );
+    // The lens is part of the chrome, not the sheet, so it follows the rail when
+    // the rail narrows: the strip signals the state on the header, which pulls the
+    // tab in to 68px — the 56px icon column plus the same 12px breath.
+    check(
+      "the strip signals the collapsed rail",
+      collapsed.titlebarNavCollapsed === "true",
+      `data-nav-collapsed ${JSON.stringify(collapsed.titlebarNavCollapsed)}`,
+    );
+    check(
+      "the lens follows the collapsed rail",
+      Boolean(collapsed.lens && collapsed.rail) &&
+        collapsed.lens.fromRail === 12 &&
+        collapsed.lens.box.left === collapsedTrack + 12 &&
+        collapsed.lens.box.left === collapsed.rail.box.right + 12,
+      `lens left ${collapsed.lens?.box.left}px, thin rail right ${collapsed.rail?.box.right}px, gap ${collapsed.lens?.fromRail}px`,
+    );
+    check(
+      "the collapsed lens still fills the strip and reaches the page",
+      Boolean(collapsed.lens && collapsed.shellContent) &&
+        collapsed.lens.box.top === 0 &&
+        collapsed.lens.box.bottom === titlebarHeight &&
+        collapsed.lens.box.bottom === collapsed.shellContent.top &&
+        collapsed.lens.background === collapsed.mainBackground,
+      `lens ${JSON.stringify(collapsed.lens?.box)} on ${collapsed.lens?.background}, page top ${collapsed.shellContent?.top}px`,
+    );
+    // The chip travels with the rail: in the thin rail it stacks under the Log's
+    // icon and reduces to the vault's initials. It is still the same button — the
+    // full vault name stays in its accessible name, so nothing is lost but paint.
+    check(
+      "the titlebar renders no vault chip when the rail is thin",
+      collapsed.titlebarVault === null && collapsed.leadingText === "",
+      `titlebar chip ${JSON.stringify(collapsed.titlebarVault)}, leading text ${JSON.stringify(collapsed.leadingText)}`,
+    );
+    check(
+      "the thin rail's foot stacks the Log above the chip",
+      Boolean(collapsed.foot?.logRow && collapsed.vaultChip) &&
+        collapsed.foot.display === "flex" &&
+        collapsed.foot.flexDirection === "column" &&
+        collapsed.foot.logRow.bottom <= collapsed.vaultChip.box.top + 1,
+      `foot direction ${JSON.stringify(collapsed.foot?.flexDirection)}, log ${JSON.stringify(collapsed.foot?.logRow)}, chip ${JSON.stringify(collapsed.vaultChip?.box)}`,
+    );
+    check(
+      "the thin chip is a small square mark in the icon column",
+      Boolean(collapsed.vaultChip && collapsed.rail) &&
+        collapsed.vaultChip.box.width > 0 &&
+        collapsed.vaultChip.box.height > 0 &&
+        Math.abs(collapsed.vaultChip.box.width - collapsed.vaultChip.box.height) <= 1 &&
+        collapsed.vaultChip.box.width >= 24 &&
+        collapsed.vaultChip.box.width <= 32 &&
+        collapsed.vaultChip.box.left >= collapsed.rail.box.left &&
+        collapsed.vaultChip.box.right <= collapsed.rail.box.right,
+      `chip ${JSON.stringify(collapsed.vaultChip?.box)} in rail ${JSON.stringify(collapsed.rail?.box)}`,
+    );
+    check(
+      "the thin chip keeps its full accessible name and its dialog",
+      collapsed.vaultChip?.tag === "button" &&
+        collapsed.vaultChip?.haspopup === "dialog" &&
+        collapsed.vaultChip?.ariaExpanded === "false" &&
+        collapsed.vaultChip?.title === "Switch vault" &&
+        (collapsed.vaultChip?.ariaLabel ?? "").includes(vaultName),
+      `tag ${collapsed.vaultChip?.tag}, popup ${collapsed.vaultChip?.haspopup}, label ${JSON.stringify(collapsed.vaultChip?.ariaLabel)}, title ${JSON.stringify(collapsed.vaultChip?.title)}`,
+    );
+    check(
+      "the thin chip shows the vault's initials and hides the name",
+      collapsed.vaultChip?.initials?.text === "HV" &&
+        collapsed.vaultChip?.initials?.display !== "none" &&
+        collapsed.vaultChip?.name?.display === "none",
+      `initials ${JSON.stringify(collapsed.vaultChip?.initials)} name ${JSON.stringify(collapsed.vaultChip?.name)}`,
+    );
+    check(
+      "the thin chip keeps its accent fill and rounded corners",
+      isHighlighted(collapsed.vaultChip?.background) &&
+        collapsed.vaultChip?.background !== collapsed.rail?.background &&
+        collapsed.vaultChip?.radius !== "0px",
+      `background ${collapsed.vaultChip?.background} on rail ${collapsed.rail?.background}, radius ${collapsed.vaultChip?.radius}`,
+    );
+    check(
+      "the chip is the last control in the thin rail",
+      collapsed.vaultChip?.isLastControl === true,
+      "a visible control follows the vault chip in the thin rail",
+    );
+    check(
+      "the sheet starts at the thin rail, not the window's edge",
+      collapsed.main?.left === collapsedTrack,
+      `sheet left ${collapsed.main?.left}px vs collapsed track ${collapsedTrack}px`,
+    );
+    check(
+      "the collapse gives back only the rail's own difference",
+      Boolean(expanded.main && collapsed.main) &&
+        expanded.main.left - collapsed.main.left === track - collapsedTrack,
+      `reclaimed ${(expanded.main?.left ?? 0) - (collapsed.main?.left ?? 0)}px, rail difference ${track - collapsedTrack}px`,
     );
     check(
       "the collapse leaves the sheet flush to the dock",
-      Boolean(
-        collapsed.main &&
-          collapsed.chat &&
-          collapsed.main.right === collapsed.chat.box.left,
-      ),
+      Boolean(collapsed.main && collapsed.chat) &&
+        collapsed.main.right === collapsed.chat.box.left,
       `sheet right ${collapsed.main?.right}px vs dock left ${collapsed.chat?.box.left}px`,
     );
     check(
-      "reopen toggle lands on the titlebar",
-      collapsed.titlebarToggle?.label === "Expand sidebar",
-      `titlebar toggle ${JSON.stringify(collapsed.titlebarToggle)}`,
-    );
-    check(
-      "the strip gives the sidebar's column back with it",
-      (collapsed.vault?.box.left ?? track) < track,
-      `vault chip starts at ${collapsed.vault?.box.left}px — it did not come to the leading edge`,
-    );
-    check(
-      "the re-open toggle steps in at the window's leading edge",
-      Boolean(
-        collapsed.titlebarToggle &&
-          collapsed.titlebarToggle.box.left < (expanded.railToggle?.box.left ?? 0),
-      ),
-      `rail ${JSON.stringify(expanded.railToggle?.box)} vs titlebar ${JSON.stringify(collapsed.titlebarToggle?.box)}`,
-    );
-    check(
-      "the vault chip follows the sidebar in",
-      Boolean(
-        collapsed.vault &&
-          expanded.vault &&
-          collapsed.vault.box.left < expanded.vault.box.left &&
-          collapsed.vault.box.width === expanded.vault.box.width,
-      ),
-      `expanded ${JSON.stringify(expanded.vault?.box)} vs collapsed ${JSON.stringify(collapsed.vault?.box)}`,
-    );
-    check(
-      "the vault chip keeps its name once collapsed",
-      collapsed.vault?.text === vaultName,
-      `chip "${collapsed.vault?.text}"`,
-    );
-    check(
-      "corner belongs to the titlebar once collapsed",
-      collapsed.corner?.insideTitlebar === true,
+      "corner still belongs to the rail once collapsed",
+      collapsed.corner?.insideRail === true,
       `corner element ${JSON.stringify(collapsed.corner)}`,
     );
     check(
@@ -1253,13 +2000,147 @@ async function main() {
       `chat ${JSON.stringify(collapsed.chat?.box)} vs ${JSON.stringify(expanded.chat?.box)}`,
     );
 
+    // The thin rail keeps its first level of navigation: the five-wing switcher
+    // turns vertical in the icon column rather than disappearing. The labelled
+    // chats section and the row labels still leave, and the page rows stay.
+    check(
+      "the thin rail keeps the wing switcher's band",
+      collapsed.wingsBand !== null && collapsed.wingsBand.display !== "none",
+      `band display ${JSON.stringify(collapsed.wingsBand?.display)}`,
+    );
+    check(
+      "the thin wing switcher is vertical",
+      collapsed.wingSwitcher?.flexDirection === "column",
+      `wings flex-direction ${JSON.stringify(collapsed.wingSwitcher?.flexDirection)}`,
+    );
+    check(
+      "the thin rail stacks all five wings in one column",
+      Boolean(collapsed.wingSwitcher && collapsed.rail) &&
+        collapsed.wingSwitcher.optionCount === 5 &&
+        JSON.stringify(collapsed.wingSwitcher.labels) ===
+          JSON.stringify(["Home", "Define", "Plan", "Act", "Review"]) &&
+        collapsed.wingSwitcher.options.length === 5 &&
+        collapsed.wingSwitcher.options.every(
+          (option) =>
+            option.box.width > 0 &&
+            option.box.height > 0 &&
+            option.box.left >= collapsed.rail.box.left &&
+            option.box.right <= collapsed.rail.box.right &&
+            Math.abs(
+              option.box.left - collapsed.wingSwitcher.options[0].box.left,
+            ) <= 1 &&
+            Math.abs(
+              option.box.right - collapsed.wingSwitcher.options[0].box.right,
+            ) <= 1,
+        ) &&
+        collapsed.wingSwitcher.options.every(
+          (option, index, all) => index === 0 || option.box.top >= all[index - 1].box.bottom,
+        ),
+      `direction ${JSON.stringify(collapsed.wingSwitcher?.flexDirection)}, options ${JSON.stringify(collapsed.wingSwitcher?.options)}`,
+    );
+    check(
+      "the thin wing switcher keeps Home marked as the active wing",
+      collapsed.wingSwitcher?.active === "Home" &&
+        collapsed.wingSwitcher.options.filter((option) => option.active).length === 1,
+      `active ${JSON.stringify(collapsed.wingSwitcher?.active)}, active options ${JSON.stringify(collapsed.wingSwitcher?.options.filter((option) => option.active).map((option) => option.label))}`,
+    );
+    // Square in the thin layout too, and still centred: the icon column's own
+    // padding is the thin, equal margin on either side of the block.
+    check(
+      "the thin wing switcher is a square block, not a pill",
+      collapsed.wingSwitcher?.borderRadius === "0px" &&
+        (collapsed.wingSwitcher?.options ?? []).every(
+          (option) => option.borderRadius === "0px",
+        ),
+      `frame ${JSON.stringify(collapsed.wingSwitcher?.borderRadius)}, tabs ${JSON.stringify(collapsed.wingSwitcher?.options?.map((option) => option.borderRadius))}`,
+    );
+    check(
+      "the thin wing switcher is centred with one thin margin each side",
+      Boolean(collapsed.wingSwitcher && collapsed.wingsBand && collapsed.rail) &&
+        Math.abs(
+          collapsed.wingSwitcher.box.left -
+            collapsed.rail.box.left -
+            (collapsed.rail.box.right - collapsed.wingSwitcher.box.right),
+        ) <= 1 &&
+        collapsed.wingSwitcher.box.left - collapsed.rail.box.left >= 3 &&
+        collapsed.rail.box.right - collapsed.wingSwitcher.box.right >= 3 &&
+        collapsed.wingSwitcher.box.left === collapsed.wingsBand.box.left &&
+        collapsed.wingSwitcher.box.right === collapsed.wingsBand.box.right,
+      `rail ${JSON.stringify(collapsed.rail?.box)}, band ${JSON.stringify(collapsed.wingsBand?.box)}, switcher ${JSON.stringify(collapsed.wingSwitcher?.box)}`,
+    );
+    // The words are the tight dimension in 56px: every tab keeps enough vertical
+    // padding for its rule to sit clear of its label, and no label overflows.
+    check(
+      "the thin wing switcher's words are clear of its rules",
+      Boolean(collapsed.wingSwitcher) &&
+        (collapsed.wingSwitcher?.options ?? []).every(
+          (option) =>
+            option.padding.top >= 5 &&
+            option.padding.bottom >= 5 &&
+            option.padding.left >= 1 &&
+            option.padding.right >= 1 &&
+            option.scrollWidth <= option.clientWidth,
+        ),
+      `padding ${JSON.stringify(collapsed.wingSwitcher?.options?.map((option) => option.padding))}, widths ${JSON.stringify(collapsed.wingSwitcher?.options?.map((option) => [option.scrollWidth, option.clientWidth]))}`,
+    );
+    check(
+      "the thin rail's pages sit under the wing switcher",
+      Boolean(collapsed.wingsBand && collapsed.firstLink) &&
+        collapsed.wingsBand.box.top >= (collapsed.header?.box.bottom ?? 0) - 1 &&
+        collapsed.firstLink.top >= collapsed.wingsBand.box.bottom - 1,
+      `band ${JSON.stringify(collapsed.wingsBand?.box)}, first row ${JSON.stringify(collapsed.firstLink)}, header bottom ${collapsed.header?.box.bottom}`,
+    );
+    check(
+      "the thin rail hides the chats section and the divider above it",
+      (collapsed.chats === null || collapsed.chats.display === "none") &&
+        (collapsed.chatsDivider === null ||
+          collapsed.chatsDivider.display === "none"),
+      `chats display ${JSON.stringify(collapsed.chats?.display)}, divider ${JSON.stringify(collapsed.chatsDivider?.display)}`,
+    );
+    check(
+      "the thin rail hides the row labels",
+      collapsed.railLabels?.count > 0 && collapsed.railLabels?.display === "none",
+      `labels ${collapsed.railLabels?.count} display ${JSON.stringify(collapsed.railLabels?.display)}`,
+    );
+    check(
+      "the thin rail keeps every nav row",
+      Boolean(collapsed.railRows?.length) &&
+        collapsed.railRows.length === expanded.railRows?.length,
+      `${collapsed.railRows?.length} rows vs ${expanded.railRows?.length}`,
+    );
+    check(
+      "the kept rows stay icon-only and keep their names",
+      (collapsed.railRows ?? []).every(
+        (row) =>
+          row.icon !== null &&
+          row.labelDisplay === "none" &&
+          Boolean(row.title) &&
+          Boolean(row.ariaLabel),
+      ),
+      `rows ${JSON.stringify(collapsed.railRows?.map((row) => ({ title: row.title, icon: row.icon, label: row.labelDisplay })))}`,
+    );
+    check(
+      "the kept rows centre their icons in the icon column",
+      Boolean(collapsed.rail) &&
+        (collapsed.railRows ?? []).every(
+          (row) =>
+            row.iconBox !== null &&
+            Math.abs(
+              (row.iconBox.left + row.iconBox.right) / 2 -
+                (collapsed.rail.box.left + collapsed.rail.box.right) / 2,
+            ) <= 1,
+        ),
+      `icon centres ${JSON.stringify(collapsed.railRows?.map((row) => (row.iconBox ? (row.iconBox.left + row.iconBox.right) / 2 : null)))} vs rail centre ${((collapsed.rail?.box.left ?? 0) + (collapsed.rail?.box.right ?? 0)) / 2}`,
+    );
+
     const collapsedShot = await win.webContents.capturePage();
     const collapsedFile = path.join(artifactsDir, "shell-sidebar-collapsed.png");
     fs.writeFileSync(collapsedFile, collapsedShot.toPNG());
 
-    // 7 — and it expands again to exactly the box it started from.
-    const clickedExpand = await clickToggle(".window-titlebar__nav-toggle");
-    check("reopen toggle clicked", clickedExpand, "no titlebar toggle to click");
+    // 7 — expand from the rail's own toggle: the rail never lost the control, so
+    // the way back is exactly where the way in was, not in the titlebar.
+    const clickedExpand = await clickToggle(".nav-rail .nav-toggle");
+    check("expand toggle clicked", clickedExpand, "no rail toggle to click");
     const restored = await settled();
 
     check(
@@ -1273,9 +2154,43 @@ async function main() {
       `sheet left ${restored.main?.left}px vs ${expanded.main?.left}px`,
     );
     check(
-      "reopen restores the titlebar offset",
-      restored.vault?.box.left === expanded.vault?.box.left,
-      `vault chip left ${restored.vault?.box.left}px vs ${expanded.vault?.box.left}px`,
+      "reopen restores the chip's box in the rail foot",
+      JSON.stringify(restored.vaultChip?.box) ===
+        JSON.stringify(expanded.vaultChip?.box),
+      `restored chip ${JSON.stringify(restored.vaultChip?.box)} vs ${JSON.stringify(expanded.vaultChip?.box)}`,
+    );
+    check(
+      "reopen restores the shell's wide arrangement",
+      restored.shellNavCollapsed === false &&
+        restored.shell?.gridColumns?.[0] === track,
+      `shell class ${JSON.stringify(restored.shellClass)}, first track ${JSON.stringify(restored.shell?.gridColumns?.[0])}px vs ${track}px`,
+    );
+    check(
+      "reopen re-shows the rail's contents",
+      restored.railLabels?.display !== "none" &&
+        restored.chats?.display !== "none" &&
+        restored.chatsDivider?.display !== "none" &&
+        restored.wingsBand?.display !== "none",
+      `labels ${JSON.stringify(restored.railLabels?.display)}, chats ${JSON.stringify(restored.chats?.display)}, divider ${JSON.stringify(restored.chatsDivider?.display)}, wing band ${JSON.stringify(restored.wingsBand?.display)}`,
+    );
+    check(
+      "reopen turns the rail's toggle back into the collapse control",
+      restored.railToggle?.label === "Collapse sidebar" &&
+        restored.railToggle?.ariaExpanded === "true" &&
+        (restored.railToggle?.icon ?? "").includes("lucide-panel-left-close"),
+      `label ${JSON.stringify(restored.railToggle?.label)}, aria-expanded ${JSON.stringify(restored.railToggle?.ariaExpanded)}, icon ${JSON.stringify(restored.railToggle?.icon)}`,
+    );
+    check(
+      "reopen restores the foot's single row and the chip's full name",
+      restored.foot?.flexDirection === "row" &&
+        restored.vaultChip?.name?.display !== "none" &&
+        restored.vaultChip?.initials?.display === "none",
+      `foot direction ${JSON.stringify(restored.foot?.flexDirection)}, name ${JSON.stringify(restored.vaultChip?.name)}, initials ${JSON.stringify(restored.vaultChip?.initials)}`,
+    );
+    check(
+      "reopen restores the horizontal wing switcher",
+      restored.wingSwitcher?.flexDirection === "row",
+      `wings flex-direction ${JSON.stringify(restored.wingSwitcher?.flexDirection)}`,
     );
 
     // 8 — the ladder is a *night* ladder. Day keeps its own order, where the mat
@@ -1296,6 +2211,19 @@ async function main() {
       dawn.luminance.chrome < dawn.luminance.page &&
         dawn.luminance.titlebar < dawn.luminance.page,
       `mat ${dawn.surfaces.chrome} (${dawn.luminance.chrome.toFixed(4)}) and titlebar ${dawn.luminance.titlebar.toFixed(4)} vs sheet ${dawn.surfaces.page} (${dawn.luminance.page.toFixed(4)})`,
+    );
+    check(
+      "day: the strip keeps the one-band rule",
+      day.titlebarBackground === day.rail?.background &&
+        day.header?.background === "rgba(0, 0, 0, 0)" &&
+        dawn.luminance.titlebar === dawn.luminance.chrome,
+      `strip ${day.titlebarBackground} vs rail ${day.rail?.background} / topband ${day.header?.background}; day lum ${dawn.luminance.titlebar.toFixed(4)} vs ${dawn.luminance.chrome.toFixed(4)}`,
+    );
+    check(
+      "day: the dock's action band keeps the one-band rule too",
+      day.dockActions === day.titlebarBackground &&
+        dawn.luminance.dockActions === dawn.luminance.titlebar,
+      `bar ${day.dockActions} vs strip ${day.titlebarBackground}; day lum ${dawn.luminance.dockActions.toFixed(4)} vs ${dawn.luminance.titlebar.toFixed(4)}`,
     );
     check(
       "day: the panels still recess below the sheet",
@@ -1445,9 +2373,9 @@ async function main() {
     }
 
     // 9 — the night ladder holds for every dark palette, not just the default one.
-    // The same four claims per skin: the page canvas is the deepest surface in the
+    // The same claims per palette: the page canvas is the deepest surface in the
     // window, the cards step up off it, the mat is its own ink and not the page,
-    // and the mat and the dock's action row are one material.
+    // and the titlebar strip and the dock's action row take one step below the mat.
     const skins = {};
     const scrolls = {};
     const skinShots = [];
@@ -1465,6 +2393,35 @@ async function main() {
       const skinShot = await win.webContents.capturePage();
       const skinFile = path.join(artifactsDir, `shell-sidebar-night-${skinName}.png`);
       fs.writeFileSync(skinFile, skinShot.toPNG());
+      // The strip and the sheet's leading corner, 1:1, in this palette: the two
+      // surfaces the corner change and the titlebar token are about, side by side
+      // where they meet.
+      const skinCornerShot = await win.webContents.capturePage({
+        x: 0,
+        y: 0,
+        width: 420,
+        height: 260,
+      });
+      const skinCornerFile = path.join(
+        artifactsDir,
+        `shell-sidebar-night-${skinName}-corner.png`,
+      );
+      fs.writeFileSync(skinCornerFile, skinCornerShot.toPNG());
+      skinShots.push(skinCornerFile);
+      // The dock's bottom bar, 1:1, in this palette: the strip's fill on the
+      // action row, the collapse control and the build number at the trailing end.
+      const skinDockShot = await win.webContents.capturePage({
+        x: Math.max(0, viewportWidth - 440),
+        y: Math.max(0, viewportHeight - 120),
+        width: Math.min(440, viewportWidth),
+        height: 120,
+      });
+      const skinDockFile = path.join(
+        artifactsDir,
+        `shell-sidebar-night-${skinName}-dock-bar.png`,
+      );
+      fs.writeFileSync(skinDockFile, skinDockShot.toPNG());
+      skinShots.push(skinDockFile);
       skinShots.push(skinFile);
 
       const { luminance, surfaces, tokens } = ladder;
@@ -1488,10 +2445,22 @@ async function main() {
         `fills ${JSON.stringify(surfaces)}`,
       );
       check(
-        `night[${skinName}]: the mat and the dock's action band are one ink`,
-        surfaces.chrome === surfaces.dockActions &&
+        `night[${skinName}]: the dock's action band wears the strip's fill`,
+        surfaces.dockActions === surfaces.titlebar &&
           tokens.canvasBase === tokens.mutedSurface,
-        `mat ${surfaces.chrome} vs .chat-panel__actions ${surfaces.dockActions}; tokens ${tokens.canvasBase} vs ${tokens.mutedSurface}`,
+        `bar ${surfaces.dockActions} vs strip ${surfaces.titlebar}; tokens ${tokens.canvasBase} vs ${tokens.mutedSurface}`,
+      );
+      // Every night palette gets the strip's and the bar's own step, whatever its
+      // mat is: darker than the rail, still clear of the page they cap.
+      check(
+        `night[${skinName}]: the titlebar and the dock's bar step below the mat`,
+        surfaces.titlebar !== surfaces.chrome &&
+          surfaces.dockActions !== surfaces.chrome &&
+          luminance.titlebar < luminance.chrome &&
+          luminance.titlebar > luminance.page &&
+          luminance.dockActions < luminance.chrome &&
+          luminance.dockActions > luminance.page,
+        `strip ${surfaces.titlebar} (${lum("titlebar")}) / bar ${surfaces.dockActions} (${lum("dockActions")}) between mat ${surfaces.chrome} (${lum("chrome")}) and page ${surfaces.page} (${lum("page")})`,
       );
       // An imported theme can carry its own elevation direction. `nous` is a
       // faithful copy of GitHub Dark Default, whose cards sit *below* its page.
@@ -1536,6 +2505,9 @@ async function main() {
       ranAt: new Date().toISOString(),
       window: { ...DEFAULT_SIZE },
       vaultName,
+      // The live domains the harness handed the shell: the lens's option list is
+      // asserted against these, so the report names what the tab should offer.
+      domains: domainNames,
       tokens: expanded.tokens,
       expanded,
       collapsed,
@@ -1546,6 +2518,9 @@ async function main() {
       wingSwitch: { defined, home: homeAgain },
       day,
       ladder: { night, day: dawn, skins },
+      // Every overlay hand-off the provider (and the harness's repaint stand-in)
+      // made, oldest first: the native caption strip's fill is the titlebar's.
+      overlay: overlayCalls,
       scroll: {
         day: dayScroll,
         night: scrolls,
@@ -1571,7 +2546,7 @@ async function main() {
         expandedFile,
         cornerFile,
         seamFile,
-        bandFile,
+        lensFile,
         collapsedFile,
         dayFile,
         ...skinShots,
@@ -1600,16 +2575,13 @@ async function main() {
     (state) => state && state.tokens,
   );
   const labels = ["expanded", "collapsed", "restored"];
-  // The collapsed shell keeps a `display: none` rail in the tree, so its toggle
-  // measures 0x0 — report the toggle that is actually on screen.
-  const visibleToggleLeft = (state) => {
-    const boxes = [state.railToggle?.box, state.titlebarToggle?.box].filter(
-      (box) => box && box.width > 0,
-    );
-    return boxes.length ? String(boxes[0].left) : "—";
-  };
+  // The rail keeps the same single toggle in its own header at both widths, so
+  // the column is always the toggle's box — there is no second, titlebar-placed
+  // control to fall back to.
+  const railToggleLeft = (state) =>
+    state.railToggle?.box ? String(state.railToggle.box.left) : "—";
   const table = [
-    ["state", "rail L/T/B", "rail size", "band ctrls", "toggle L", "chip L", "sheet L", "corner"],
+    ["state", "rail L/T/B", "rail size", "band ctrls", "toggle L", "foot dir", "chip L/W", "sheet L", "lens L/off", "page T", "corner"],
   ];
   for (let i = 0; i < rows.length; i += 1) {
     const state = rows[i];
@@ -1618,9 +2590,16 @@ async function main() {
       state.rail ? `${state.rail.box.left}/${state.rail.box.top}/${state.rail.box.bottom}` : "none",
       state.rail ? `${state.rail.box.width}x${state.rail.box.height}` : "—",
       state.header ? String(state.header.controls.length) : "—",
-      visibleToggleLeft(state),
-      String(state.vault?.box.left ?? "—"),
+      railToggleLeft(state),
+      String(state.foot?.flexDirection ?? "—"),
+      state.vaultChip
+        ? `${state.vaultChip.box.left}x${state.vaultChip.box.width}`
+        : "—",
       String(state.main?.left ?? "—"),
+      state.lens
+        ? `${state.lens.box.left}/${state.lens.fromRail}`
+        : "—",
+      String(state.shellContent?.top ?? "—"),
       state.corner ? (state.corner.insideRail ? "rail" : "titlebar") : "—",
     ]);
   }

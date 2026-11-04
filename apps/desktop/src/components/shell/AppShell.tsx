@@ -6,7 +6,6 @@ import { useChatDock } from "@/state/ChatDockProvider";
 import { useNavDock } from "@/state/NavDockProvider";
 import { ChatDivider } from "./ChatDivider";
 import { NavRail } from "./NavRail";
-import { TopBar } from "./TopBar";
 import { WingProvider } from "./WingProvider";
 import { useChatColumn } from "./useChatColumn";
 import { MapYearProvider } from "@/state/MapYearProvider";
@@ -72,7 +71,6 @@ export function AppShell() {
           >
             <NavRail />
             <div className="shell__main">
-              <TopBar />
               <div
                 className={[
                   "shell__content",

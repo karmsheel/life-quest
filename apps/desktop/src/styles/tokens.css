@@ -10,10 +10,18 @@
      a single column, the way Hermes Desktop's does. */
   --shell-nav-width: var(--shell-sidebar-width);
   --shell-sidebar-width: 16rem;
+  /* The rail collapsed to its icon column: one control wide — the icons, the
+     header's toggle and the rail's own insets — rather than nothing. The sidebar
+     never leaves the layout, so its column stays reserved at this width and the
+     page starts beside it. */
+  --shell-nav-width-collapsed: var(--shell-sidebar-width-collapsed);
+  --shell-sidebar-width-collapsed: 3.5rem;
   --shell-chatbar-height: 3rem;
   --shell-max-width: 80rem;
-  /* The band across the top of the studio: one height for the sheet's top bar and
-     the dock's header, so their underlines land on the same line at the seam. */
+  /* The band under the window strip: one height for the rail's wing switcher and
+     the dock's header, so the two chrome rows stay level across the pane seam.
+     The sheet carries no band of its own — its page starts at the strip's bottom
+     edge, under the titlebar's domain tab. */
   --shell-topbar-height: 2.75rem;
   --window-titlebar-height: 32px;
   --shell-frame: 12px;
@@ -21,6 +29,12 @@
 
   --canvas-base: #faf9f7;
   --background: #fffefc;
+  /* The window's top strip, from the rail's trailing edge to the window's
+     trailing edge. By day it wears the mat, so the chrome above and beside the
+     sheet reads as one band; at night the skin steps it down between the mat and
+     the page (see `forgeVarsFromColors`). The rail's own column stays the mat all
+     the way to the top edge. */
+  --titlebar-bg: var(--canvas-base);
   --foreground: #1a1916;
   --card: #fffefc;
   --card-foreground: var(--foreground);
@@ -164,10 +178,15 @@
   color-scheme: dark;
 
   /* Night inverts the ladder: the page canvas is the deepest ink, the cards step
-     up off it, and the mat — the rail, the titlebar, the window frame — wears the
-     same quiet band as the chat dock's bottom action row. */
+     up off it, and the mat — the rail and the window frame — wears the same quiet
+     band as `--muted-surface`. The titlebar and the dock's bottom action row are
+     the one surface that takes its own step: darker than the mat they cap, still
+     clear of the page canvas, so the window strip and the dock's bar read as
+     chrome above and below the rail. */
   --canvas-base: #1f1e1c;
   --background: #1a1917;
+  /* The no-skin stand-in; `forgeVarsFromColors` writes the palette's own blend. */
+  --titlebar-bg: color-mix(in srgb, var(--canvas-base) 50%, var(--background));
   --foreground: #e8e4dc;
   --card: #222120;
   --card-foreground: var(--foreground);
@@ -250,10 +269,13 @@
     color-scheme: dark;
 
     /* Night inverts the ladder: the page canvas is the deepest ink, the cards step
-       up off it, and the mat — the rail, the titlebar, the window frame — wears the
-       same quiet band as the chat dock's bottom action row. */
+       up off it, and the mat — the rail and the window frame — wears the same quiet
+       band as `--muted-surface`; the titlebar and the dock's action row step below
+       it, still clear of the page. */
     --canvas-base: #1f1e1c;
     --background: #1a1917;
+    /* The no-skin stand-in; `forgeVarsFromColors` writes the palette's own blend. */
+    --titlebar-bg: color-mix(in srgb, var(--canvas-base) 50%, var(--background));
     --foreground: #e8e4dc;
     --card: #222120;
     --card-foreground: var(--foreground);

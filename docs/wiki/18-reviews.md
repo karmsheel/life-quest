@@ -10,8 +10,8 @@ that helped write it.
 
 ## Where it lives
 
-The Review wing is the last wing in the top bar, after Execute. Its rail has five
-rows, each a page at its own route:
+The Review wing is the last wing in the rail's wing switcher, after Execute. Its
+rail has five rows, each a page at its own route:
 
 | Rail label | Route | Period it covers |
 |---|---|---|
@@ -22,9 +22,9 @@ rows, each a page at its own route:
 | **Yearly** | `/review/yearly` | A calendar year |
 
 Each opens in the centre pane as a page, not a sheet. Any other cadence segment
-under `/review/` redirects to `/review/weekly`. The top bar lens still applies:
-with **Overview** selected the active scope is the overall review; with a domain
-selected the active scope is that domain's section.
+under `/review/` redirects to `/review/weekly`. The domain lens in the window
+title bar still applies: with **Overview** selected the active scope is the
+overall review; with a domain selected the active scope is that domain's section.
 
 Back to [Wiki home](./index.md).
 
