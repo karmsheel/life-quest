@@ -64,7 +64,7 @@ Decisions without losing the page you were reading.
    icon column and the page widens; the same toggle stays at the top of the thin
    rail and turns around, and the title bar's domain tab slides in with the rail.
 5. **Collapse and restore the chat.** Press the panel icon at the trailing end of
-   the title bar (**Collapse chat** / **Expand chat**). A collapsed dock is not a
+   the dock's bottom action bar (**Collapse chat**). A collapsed dock is not a
    narrow pane: it becomes one floating mark, **Open Hermes chat**, at the page's
    trailing corner (bottom-right in the shipped right-hand arrangement), and the
    thread, draft and pending receipt are kept while it is hidden.
@@ -72,9 +72,10 @@ Decisions without losing the page you were reading.
    (*Drag to resize the chat dock*). With the divider focused, **←** and **→**
    move it 16px per press. **Escape** during a drag cancels it and restores the
    width you had.
-7. **Swap the chat's side.** Press the two-panes icon in the title bar (*Move chat
-   to the left of the page* / *Move chat to the right of the page*). The rail never
-   moves; the dock and the page trade columns.
+7. **Swap the chat's side.** Press the two-panes icon in the dock's bottom action
+   bar, immediately left of the collapse control (*Move chat to the left of the
+   page* / *Move chat to the right of the page*). The rail never moves; the dock
+   and the page trade columns.
 8. **Open a sheet and leave it.** Press the gear in the title bar, then **All
    settings**, or open **Decisions** from the rail. Close with the cross
    (**Close settings** / **Close decisions**), a click on the dimmed background, or
@@ -100,7 +101,9 @@ The window title bar:
   `LifeQuest`.
 - The trailing controls, for a vault window: the theme toggle (only on themes with
   both day and night palettes — *Switch to day mode* / *Switch to night mode*), the
-  **Settings** gear (*Open settings*), the side switch, and the chat toggle.
+  **Keyboard shortcuts** control, which opens the reference on the dock, and the
+  **Settings** gear (*Open settings*). The dock's own controls are not here: its
+  side switch and collapse control live in its bottom action bar.
 - When the platform overlay is unavailable, the same strip carries **Minimize**,
   **Maximize** / **Restore** and **Close** instead of drawing over the native
   frame.
@@ -131,9 +134,12 @@ route opts into a full-bleed variant for the Life Map.
 
 The chat dock:
 
-- The thread, a **Chats** list that can replace it, and a Life-Chain view.
+- The thread, a Life-Chain view, and the keyboard-shortcuts reference. The history
+  is not a dock surface: the whole chat list lives in the rail's **Chats** section.
 - The composer at the foot (*Message Hermes…*) with the bottom action row:
-  **Chat history**, **New chat**, **Life-Chain**, **Collapse chat**.
+  **New chat**, **Life-Chain**, the two-panes side switch (*Move chat to the left
+  of the page* / *Move chat to the right of the page*), **Collapse chat**, and the
+  version badge (*Check for updates*).
 - The divider between page and dock: an invisible strip at rest, an accent bar
   under the hand or focus.
 

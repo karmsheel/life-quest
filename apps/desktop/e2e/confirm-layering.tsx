@@ -262,7 +262,7 @@ const waitForShell = () => {
   const chat = document.querySelector(".chat-panel");
   const main = document.querySelector(".shell__main");
   const row = document.querySelector(".chats-rail__row");
-  const sideSwitch = document.querySelector(".window-titlebar__side-switch");
+  const sideSwitch = document.querySelector('[data-testid="chat-side-switch"]');
   if (!chat || !main || !row || !sideSwitch) {
     requestAnimationFrame(waitForShell);
     return;

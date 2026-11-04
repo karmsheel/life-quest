@@ -696,10 +696,11 @@ async function composerLeg() {
     );
 
     // 7 — switching chats drops the pending receipt with the chat it was
-    // attached in. The row is picked as "not the one already open": this rig's
-    // Electron profile keeps localStorage between runs, so the panel can come up
-    // on either chat, and a fixed row would sometimes be a no-op click that
-    // looked like the panel keeping the chip.
+    // attached in. The other chat is opened from the sidebar, where the whole
+    // history lives: the dock carries no list of its own to pick a row from.
+    // The row is "the one that is not open", not a fixed label: what is under
+    // test is the switch, so the rig must make one whatever the profile left in
+    // front.
     const switched = await run(`(async () => { ${PRELUDE}
       const input = document.querySelector(".chat-panel__receipt-input");
       const dt = new DataTransfer();
@@ -711,21 +712,49 @@ async function composerLeg() {
         Array.from(document.querySelectorAll(".chat-panel__message-content"))
           .map((el) => el.textContent || "")
           .join(" | ");
+      const readRows = () =>
+        Array.from(document.querySelectorAll(".chats-rail__row")).map((li) => ({
+          label: (li.querySelector(".chats-rail__label")?.textContent || "").trim(),
+          active: Boolean(li.querySelector("[aria-current='true']")),
+        }));
       const before = readTranscript();
-      document.querySelector('[aria-label="Chat history"]').click();
+      const rows = readRows();
+      const target = rows.find((row) => !row.active) ?? null;
+      if (!target) return { attached, rowFound: false, gone: false, switchedNow: false, rows };
       const other = await until(
-        () => Array.from(document.querySelectorAll(".chat-panel__session"))
-          .find((el) => !el.classList.contains("chat-panel__session--active")) ?? null,
+        () => {
+          const row = Array.from(document.querySelectorAll(".chats-rail__row")).find(
+            (li) =>
+              (li.querySelector(".chats-rail__label")?.textContent || "").trim() ===
+              target.label,
+          );
+          return row?.querySelector(".chats-rail__row-main") ?? null;
+        },
         8000,
       );
-      if (!other) return { attached, rowFound: false, gone: false, switchedNow: false };
+      if (!other) return { attached, rowFound: false, gone: false, switchedNow: false, rows };
       other.click();
+      const switchedNow = Boolean(
+        await until(
+          () =>
+            readRows().some((row) => row.active && row.label === target.label) ||
+            null,
+          8000,
+        ),
+      );
       const gone = await until(() => (chipCount() === 0 ? true : null), 8000);
       return {
         attached,
         rowFound: true,
         gone: gone === true,
-        switchedNow: before !== readTranscript(),
+        switchedNow,
+        rows: readRows(),
+        heading: (
+          document.querySelector(".chat-panel__heading--thread")?.textContent || ""
+        ).trim(),
+        chip: chip()?.name ?? null,
+        before,
+        after: readTranscript(),
       };
     })()`);
     check(
@@ -734,7 +763,7 @@ async function composerLeg() {
         switched.rowFound === true &&
         switched.switchedNow === true &&
         switched.gone === true,
-      `attached ${switched.attached} / other chat found ${switched.rowFound} / switched ${switched.switchedNow} / cleared ${switched.gone}`,
+      `attached ${switched.attached} / other chat found ${switched.rowFound} / switched ${switched.switchedNow} / cleared ${switched.gone} / heading "${switched.heading}" / chip ${switched.chip} / rows ${JSON.stringify(switched.rows)}`,
     );
 
     const chipShot = path.join(artifactsDir, "receipt-attach-chip.png");

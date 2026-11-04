@@ -678,19 +678,20 @@ async function main() {
     const afterNextFrame = await state();
 
     // --- opening another chat drops the turn's evidence ---------------------
-    // The chat rows live in the list view, and they are disabled while a turn is
-    // live — exactly as in the app — so the last stream is waited out first.
+    // The chats live in the sidebar now, so that is where another chat is
+    // opened — the dock's own history picker is gone. Its rows are disabled
+    // while a turn is live, exactly as in the app, so the last stream is waited
+    // out first.
     await settle();
     const switched = await run(`(async () => {
       const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      document.querySelector('.chat-panel__icon-btn[aria-label="All chats"]').click();
-      await wait(160);
-      const rows = [...document.querySelectorAll(".chat-panel__session")];
-      // Select by the chat's own title, not by which row looks unselected: the
+      const rows = [...document.querySelectorAll(".chats-rail__row")];
+      // Select by the chat's own label, not by which row looks unselected: the
       // active marker depends on state the rig should not have to guess at.
-      const other = rows.find((el) =>
-        (el.getAttribute("title") || el.textContent).includes("Second chat")
+      const otherRow = rows.find((li) =>
+        (li.querySelector(".chats-rail__label")?.textContent || "").includes("Second chat")
       );
+      const other = otherRow?.querySelector(".chats-rail__row-main") ?? null;
       if (!other) {
         return { clicked: false, reason: "no second chat among " + rows.length + " rows" };
       }

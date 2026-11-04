@@ -43,6 +43,18 @@ app.setPath("userData", path.join(artifactsDir, "userdata", "chat-chain"));
 const url = process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/chat-sessions.html";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
+/**
+ * The dock's bottom action bar, in order: the new-chat slot, the chain, the
+ * side-switch (the dock starts on the right, so its label asks for the left),
+ * and the way out. There is no history slot: the whole history is the sidebar's.
+ */
+const ACTION_SLOTS = [
+  "New chat",
+  "Life-Chain",
+  "Move chat to the left of the page",
+  "Collapse chat"
+];
+
 const SAMPLE = `(() => {
   const box = (el) => {
     if (!el) return null;
@@ -73,7 +85,10 @@ const SAMPLE = `(() => {
     panel: box(panel),
     heading: text(document.querySelector(".chat-panel__heading")),
     threadHeader: Boolean(document.querySelector(".chat-panel__header--thread")),
-    chatListPresent: document.querySelector(".chat-panel__list") !== null,
+    // Which surface the dock is on, read off the shipped attribute. The dock has
+    // three: a thread, the chain, the shortcuts reference — the chat list is the
+    // sidebar's, not a surface of this pane.
+    surface: panel ? panel.getAttribute("data-chat-surface") : null,
     chatBody: chatBody
       ? { box: box(chatBody), display: style(chatBody, "display"), hidden: chatBody.hidden }
       : null,
@@ -196,11 +211,33 @@ const SAMPLE = `(() => {
       : { present: false },
     footer: footer ? { box: box(footer), hidden: footer.hidden } : null,
     actionsBar: box(document.querySelector(".chat-panel__actions")),
-    actions: Array.from(document.querySelectorAll(".chat-panel__action")).map((b) => ({
-      label: b.getAttribute("aria-label"),
-      pressed: b.getAttribute("aria-pressed") === "true",
-      disabled: b.disabled === true
-    })),
+    actionsBarBackground: (() => {
+      const el = document.querySelector(".chat-panel__actions");
+      return el ? getComputedStyle(el).backgroundColor : null;
+    })(),
+    footerBackground: (() => {
+      const el = document.querySelector(".chat-panel__footer");
+      return el ? getComputedStyle(el).backgroundColor : null;
+    })(),
+    headerIconSize: (() => {
+      const svg = document.querySelector(".chat-panel__header--thread button svg");
+      return svg ? Math.round(svg.getBoundingClientRect().width) : null;
+    })(),
+    actions: Array.from(document.querySelectorAll(".chat-panel__action")).map((b) => {
+      const svg = b.querySelector("svg");
+      return {
+        label: b.getAttribute("aria-label"),
+        pressed: b.getAttribute("aria-pressed") === "true",
+        disabled: b.disabled === true,
+        opacity: Number(getComputedStyle(b).opacity),
+        iconSize: svg ? Math.round(svg.getBoundingClientRect().width) : 0,
+        icon: svg
+          ? Array.from(svg.classList)
+              .filter((c) => c.indexOf("lucide-") === 0)
+              .join(" ")
+          : null
+      };
+    }),
     // Painted bubbles only: the thread's bubbles stay in the DOM while another
     // surface is up (the body is hidden, not unmounted), and a display:none row
     // has a 0x0 box — counting nodes reports a transcript that is not on screen.
@@ -414,9 +451,39 @@ async function main() {
       `${landing.signalListCalls} list calls`,
     );
     check(
+      "the action bar holds its four slots, in order",
+      JSON.stringify(landing.actions.map((slot) => slot.label)) ===
+        JSON.stringify(ACTION_SLOTS),
+      `slots ${JSON.stringify(landing.actions.map((slot) => slot.label))}`,
+    );
+    check(
+      "every action slot is live",
+      landing.actions.every((slot) => slot.disabled === false),
+      `disabled ${JSON.stringify(landing.actions.map((slot) => slot.disabled))}`,
+    );
+    check(
+      "the slots wear four distinct icons, all one size and undimmed",
+      new Set(landing.actions.map((slot) => slot.icon)).size === ACTION_SLOTS.length &&
+        new Set(landing.actions.map((slot) => slot.iconSize)).size === 1 &&
+        (landing.actions[0]?.iconSize ?? 0) >= 18 &&
+        landing.actions.every((slot) => slot.opacity === 1),
+      `icons ${JSON.stringify(landing.actions.map((slot) => [slot.icon, slot.iconSize, slot.opacity]))}`,
+    );
+    check(
+      "the action icons are larger than the thread header's",
+      (landing.actions[0]?.iconSize ?? 0) > (landing.headerIconSize ?? 99),
+      `${landing.actions[0]?.iconSize}px in the bar vs ${landing.headerIconSize}px in the header`,
+    );
+    check(
+      "the action bar rides the bottom edge, clear of the composer",
+      Math.abs((landing.actionsBar?.bottom ?? 0) - (landing.panel?.bottom ?? -99)) <= 2 &&
+        (landing.actionsBar?.top ?? 0) >= (landing.footer?.box.bottom ?? 0) - 1,
+      `bar ${JSON.stringify(landing.actionsBar)} in panel ${JSON.stringify(landing.panel)}, composer ends ${landing.footer?.box.bottom}px`,
+    );
+    check(
       "the chain slot is live on landing, and not marked active",
-      landing.actions[2]?.disabled === false && landing.actions[2]?.pressed === false,
-      `slot ${JSON.stringify(landing.actions[2])}`,
+      landing.actions[1]?.disabled === false && landing.actions[1]?.pressed === false,
+      `slot ${JSON.stringify(landing.actions[1])}`,
     );
 
     // 2 — the slot swaps the panel to the chain and reads it.
@@ -432,8 +499,8 @@ async function main() {
       `heading "${chain.heading}"`,
     );
     check(
-      "the chain slot is marked active, and history is not",
-      chain.actions[2]?.pressed === true && chain.actions[0]?.pressed === false,
+      "the chain slot is marked active, and the new-chat slot is not",
+      chain.actions[1]?.pressed === true && chain.actions[0]?.pressed === false,
       `slots ${JSON.stringify(chain.actions.map((slot) => [slot.label, slot.pressed]))}`,
     );
     check(
@@ -931,24 +998,29 @@ async function main() {
     );
     screenshots.push(await shot("short"));
 
-    // 7 — the chat list is still one click away, and the chain's own read is
-    // what puts the logged signals back on screen.
+    // 7 — leaving the chain lands back on the thread, and coming back is the
+    // chain's own read: that is what puts the logged signals back on screen.
+    // There is no chats list to leave for — the history is the sidebar's — so
+    // the slot toggles between the chain and the thread it was opened from.
     await run("window.__lqSignalLimit = null");
-    const historyClicked = await clickAria("Chat history");
-    const chatList = await waitFor(
-      (state) => state.chatListPresent === true,
-      "the chats list opens from the chain",
+    const backClicked = await clickAria("Life-Chain");
+    const chainClosed = await waitFor(
+      (state) => state.surface === "thread" && state.threadHeader === true,
+      "the chain slot toggles back to the thread",
     );
-    check("clicked Chat history", historyClicked, "no Chat history slot");
+    check("clicked the chain slot to leave the chain", backClicked, "no Life-Chain slot");
     check(
-      "the chats list replaces the chain",
-      chatList.chatListPresent === true && chatList.chainBody?.hidden === true,
-      `list ${chatList.chatListPresent}, chain hidden ${chatList.chainBody?.hidden}`,
+      "the thread replaces the chain",
+      chainClosed.surface === "thread" &&
+        chainClosed.threadHeader === true &&
+        chainClosed.chatField.present === true &&
+        chainClosed.chainBody?.hidden === true,
+      `surface ${chainClosed.surface}, chain hidden ${chainClosed.chainBody?.hidden}`,
     );
     check(
-      "the chats list did not ask for the chain",
-      chatList.signalListCalls === short.signalListCalls,
-      `${chatList.signalListCalls} list calls vs ${short.signalListCalls}`,
+      "leaving the chain did not ask for it again",
+      chainClosed.signalListCalls === short.signalListCalls,
+      `${chainClosed.signalListCalls} list calls vs ${short.signalListCalls}`,
     );
 
     await clickAria("Life-Chain");
@@ -1001,7 +1073,7 @@ async function main() {
         deleted,
         backToThread,
         short,
-        chatList,
+        chainClosed,
         reread,
       },
       screenshots,
@@ -1044,7 +1116,7 @@ async function main() {
       ["assigned", states.assigned],
       ["deleted", states.deleted],
       ["chain (short)", states.short],
-      ["chat list", states.chatList],
+      ["left the chain", states.chainClosed],
       ["re-read", states.reread],
     ];
     for (const [name, state] of rows) {
@@ -1052,7 +1124,7 @@ async function main() {
       const newest = items[items.length - 1];
       table.push([
         name,
-        state.threadHeader ? "thread" : state.chatListPresent ? "list" : state.chainBody?.hidden === false ? "chain" : "—",
+        state.surface ?? (state.threadHeader ? "thread" : "—"),
         String(items.length),
         String(state.chainBody?.clientHeight ?? "—"),
         String(state.chainBody?.scrollHeight ?? "—"),

@@ -339,8 +339,6 @@ describe("keyboard shortcuts settings and runner", () => {
       "theme-mode-toggle",
       "window-titlebar__shortcuts",
       "settings-menu",
-      "window-titlebar__side-switch",
-      "window-titlebar__chat-toggle",
     ];
     expectedTrailing.forEach((needle, index) => {
       assert.ok(
@@ -348,6 +346,18 @@ describe("keyboard shortcuts settings and runner", () => {
         `trailing child ${index} is not ${needle}: ${JSON.stringify(trailingClasses)}`,
       );
     });
+    assert.equal(
+      trailingClasses.length,
+      expectedTrailing.length,
+      `the titlebar's trailing cluster kept a chat control: ${JSON.stringify(trailingClasses)}`,
+    );
+    for (const stale of ["window-titlebar__side-switch", "window-titlebar__chat-toggle"]) {
+      assert.equal(
+        trailingClasses.some((name) => name.includes(stale)),
+        false,
+        `${stale} is still in the titlebar's trailing cluster: ${JSON.stringify(trailingClasses)}`,
+      );
+    }
 
     const dockDefaults = state(report, "dockDefaults");
     const dock = dockDefaults.dock;
@@ -624,11 +634,11 @@ describe("keyboard shortcuts settings and runner", () => {
     // —— A collapsed dock opens straight onto the reference, and the
     //       chat-resume effect does not replace the requested surface.
     const dockCollapsed = state(report, "dockCollapsedForShortcuts");
-    assert.equal(dockCollapsed.chatPanel, false, "the chat toggle left the dock mounted");
+    assert.equal(dockCollapsed.chatPanel, false, "the collapse control left the dock mounted");
     assert.equal(
       String(dockCollapsed.shellClass).includes("shell--chat-collapsed"),
       true,
-      "the chat toggle did not collapse the dock",
+      "the dock's own collapse control did not collapse the dock",
     );
     assert.equal(
       dockCollapsed.titlebar.shortcuts.pressed,

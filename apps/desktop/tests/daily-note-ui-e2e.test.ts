@@ -197,8 +197,9 @@ type AutomationSample =
       present: true;
       inHeader: boolean;
       inCompose: boolean;
-      belowBox: boolean;
-      gapBelowBox: number;
+      aboveBox: boolean;
+      gapAboveBox: number;
+      levelWithHeading: boolean;
       rightEdgeOffBy: number;
       insideBoxColumn: boolean;
       buttonRadius: number;
@@ -368,21 +369,31 @@ describe("daily note ui e2e", () => {
       );
     }
 
-    // ── the day's act: under the box, on its trailing edge, and a key ───────
+    // ── the day's act: in the header's title row, above the box, a key ──────
     // The operator's report was a control that read black-on-black in Nous and
-    // sat up with the pager. The driver measures both against the painted DOM —
-    // a gradient face is a fill, an inset shadow is a bevel, a hue off grey is
-    // the skin's accent actually arriving — and its picture is the screen they
-    // will see.
+    // sat up with the pager. It now stands level with the day's heading, above
+    // the prose it commits. The driver measures both the placement and the face
+    // against the painted DOM — a gradient face is a fill, an inset shadow is a
+    // bevel, a hue off grey is the skin's accent actually arriving — and its
+    // picture is the screen they will see.
     const automation = report.checks.automation;
     assert.equal(automation.present, true, "the Analyze note control is not on the page");
     if (!automation.present) return;
-    assert.equal(automation.inHeader, false, "the Analyze note control is still in the header");
-    assert.equal(automation.inCompose, true, "the Analyze note control is not under the box");
+    assert.equal(automation.inHeader, true, "the Analyze note control is not in the header");
     assert.equal(
-      automation.belowBox,
+      automation.inCompose,
+      false,
+      "the Analyze note control is still down in the box's own column",
+    );
+    assert.equal(
+      automation.aboveBox,
       true,
-      `the Analyze note control sits ${automation.gapBelowBox}px above the box's bottom edge`,
+      `the Analyze note control sits ${automation.gapAboveBox}px below the box's top edge`,
+    );
+    assert.equal(
+      automation.levelWithHeading,
+      true,
+      "the Analyze note control is not on the heading's own line",
     );
     assert.ok(
       Math.abs(automation.rightEdgeOffBy) <= 2,

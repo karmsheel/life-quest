@@ -319,6 +319,11 @@ const bridge: Record<string, unknown> = {
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
   pinsList: () => ok({ locked: false, pins: [] }),
+  // The chain surface reads this the moment it is opened. The rig only claims
+  // that the chain STAYS up through a sidebar archive, so an empty chain is
+  // enough — but it has to be an answer, not the Proxy's `null`, or the pane
+  // would paint a failed read instead of the surface under test.
+  signalChainList: () => ok({ records: [], skipped: 0 }),
   companionSessionsList: (options?: { includeArchived?: boolean }) => {
     harness.__lqListOptions = [...(harness.__lqListOptions ?? []), options ?? null];
     // The shipping parser and filter decide what the sidebar receives; hidden
@@ -465,14 +470,14 @@ const ready = new Promise<void>((resolve) => {
 });
 
 const waitForSurface = () => {
-  // Either surface counts: a fresh landing opens a thread, while a profile whose
-  // operator closed every tab before quitting lands on the list. The restore rig
-  // visits both in one run, so the ready signal must not insist on a thread.
+  // The thread header is the whole settlement test: every landing is a thread
+  // now. A profile whose operator closed every tab before quitting lands on the
+  // thread's blank slate, not on a history list, and the restore rig takes it
+  // through both in one run.
   const settled =
     document.querySelector(".nav-rail") &&
     document.querySelector(".chats-rail") &&
-    (document.querySelector(".chat-panel__header--thread") ||
-      document.querySelector(".chat-panel__list"));
+    document.querySelector(".chat-panel__header--thread");
   if (!settled) {
     requestAnimationFrame(waitForSurface);
     return;

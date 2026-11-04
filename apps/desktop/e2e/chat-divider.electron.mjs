@@ -717,7 +717,7 @@ async function main() {
 
     // ── 6. The swap: a width the operator chose travels with the dock ──────
     at("swapped arrangement");
-    await click(".window-titlebar__side-switch");
+    await click('[data-testid="chat-side-switch"]');
     const swapped = await settled();
     swapped.vaultName = vaultName;
     checkArrangement("swapped", swapped, "left");
@@ -791,7 +791,7 @@ async function main() {
 
     // ── 8. The collapse: the tab does not throw the width away ─────────────
     at("collapsed dock");
-    await click(".window-titlebar__chat-toggle");
+    await click('[data-testid="chat-collapse"]');
     const collapsed = await settled();
     collapsed.vaultName = vaultName;
     check(
@@ -934,7 +934,7 @@ async function main() {
 
     // ── 11. And the round trip: the same click, the same pane, the width kept ─
     at("round trip");
-    await click(".window-titlebar__side-switch");
+    await click('[data-testid="chat-side-switch"]');
     const restored = await settled();
     restored.vaultName = vaultName;
     checkArrangement("restored", restored, "right");

@@ -539,10 +539,11 @@ async function main() {
       `dock point ${JSON.stringify(shipped.idle?.dock)}`,
     );
 
-    // 2 — the reported gesture: swap the dock and the sheet, so the chat bar now
-    //     stands on the leading side beside the sidebar.
+    // 2 — the reported gesture: swap the dock and the sheet from the dock's own
+    //     bottom action bar, so the chat bar now stands on the leading side
+    //     beside the sidebar.
     at("swapped arrangement");
-    await click(".window-titlebar__side-switch");
+    await click('[data-testid="chat-side-switch"]');
     const swapped = await settled();
     const swappedShot = await shot("confirm-layering-swapped.png");
     check(

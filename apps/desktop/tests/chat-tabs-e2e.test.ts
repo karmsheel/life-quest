@@ -89,7 +89,8 @@ type State = {
     box: Box | null;
   } | null;
   heading: string;
-  list: boolean;
+  /** Which surface the dock is on: "thread" | "chain" | "shortcuts". */
+  surface: string | null;
   thread: boolean;
   rail: {
     box: Box | null;
@@ -261,8 +262,9 @@ describe("chat dock tabs and sidebar chats", () => {
       lastArchived,
       archivedViewOpen,
       blankArchived,
-      listUp,
-      archivedFromList,
+      blankReused,
+      chainUp,
+      archivedFromChain,
       renameOpen,
       renameArchived,
     } = report.states;
@@ -1038,12 +1040,12 @@ describe("chat dock tabs and sidebar chats", () => {
     );
 
     // Archiving the chat in front closes its tab and hands the screen to the tab
-    // that takes its place — never the history page, which is where the operator
-    // used to be dumped and made to pick another chat.
+    // that takes its place — never out of the dock, which is where the operator
+    // used to be dumped on a history page to pick another chat.
     assert.equal(
-      activeArchived.list,
-      false,
-      "archiving the chat in front fell back to the history list",
+      activeArchived.surface,
+      "thread",
+      "archiving the chat in front left the thread",
     );
     assert.equal(
       activeArchived.thread,
@@ -1085,17 +1087,18 @@ describe("chat dock tabs and sidebar chats", () => {
       `archiving the last tab did not hand the front to the tab before it ("${previousTabArchived.heading}")`,
     );
     assert.equal(
-      previousTabArchived.list,
-      false,
-      "archiving the last tab fell back to the history list",
+      previousTabArchived.surface,
+      "thread",
+      "archiving the last tab left the thread",
     );
 
     // Archiving the last open chat leaves a blank New chat on the thread: the
-    // blank slate the New chat slot lands on, not a history page to pick from.
+    // blank slate the New chat slot lands on, not a page to pick another chat
+    // from.
     assert.equal(
-      lastArchived.list,
-      false,
-      "archiving the last open chat fell back to the history list",
+      lastArchived.surface,
+      "thread",
+      "archiving the last open chat left the thread",
     );
     assert.equal(
       lastArchived.thread,
@@ -1141,9 +1144,9 @@ describe("chat dock tabs and sidebar chats", () => {
       "the archived view did not list the archived blank chat",
     );
     assert.equal(
-      blankArchived.list,
-      false,
-      "archiving a blank in the archived view fell back to the history list",
+      blankArchived.surface,
+      "thread",
+      "archiving a blank in the archived view left the thread",
     );
     assert.equal(
       blankArchived.thread,
@@ -1171,32 +1174,56 @@ describe("chat dock tabs and sidebar chats", () => {
       "the archived blank chat left the archived view",
     );
 
-    // Archiving the chat in front while the dock shows the history list keeps
-    // the list up and opens nothing: that surface is for picking a chat.
+    // The New chat slot lands on the blank chat that is already open: pressing it
+    // with a live blank in front must change nothing and mint no second chat.
     assert.equal(
-      listUp.list,
-      true,
-      "the history list never came up for the archive-from-list case",
+      blankReused.surface,
+      "thread",
+      `the New chat slot left the thread ("${blankReused.surface}")`,
     );
     assert.equal(
-      archivedFromList.list,
-      true,
-      "archiving from the history list moved the dock off the list",
+      blankReused.heading,
+      "New chat",
+      `the New chat slot opened something other than the blank chat ("${blankReused.heading}")`,
     );
     assert.equal(
-      archivedFromList.thread,
-      false,
-      "archiving from the history list opened a thread",
-    );
-    assert.equal(
-      archivedFromList.tabCount,
+      blankReused.tabCount,
       0,
-      "archiving from the history list drew a tab strip",
+      "reusing the blank chat drew a tab strip",
     );
     assert.equal(
-      archivedFromList.createCalls.length,
-      listUp.createCalls.length,
-      "archiving from the history list minted a blank chat",
+      blankReused.createCalls.length,
+      blankArchived.createCalls.length,
+      "pressing New chat on its own blank chat minted a second chat",
+    );
+
+    // Archiving the chat in front while the dock shows the chain keeps the chain
+    // up and opens nothing: the operator asked to put a chat away, not to be
+    // handed a new one.
+    assert.equal(
+      chainUp.surface,
+      "chain",
+      "the chain never came up for the archive-from-chain case",
+    );
+    assert.equal(
+      archivedFromChain.surface,
+      "chain",
+      "archiving from the chain moved the dock off the chain",
+    );
+    assert.equal(
+      archivedFromChain.thread,
+      false,
+      "archiving from the chain opened a thread",
+    );
+    assert.equal(
+      archivedFromChain.tabCount,
+      0,
+      "archiving from the chain drew a tab strip",
+    );
+    assert.equal(
+      archivedFromChain.createCalls.length,
+      chainUp.createCalls.length,
+      "archiving from the chain minted a blank chat",
     );
 
     // A rename field belongs to the chat it was opened on: archiving that chat

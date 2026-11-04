@@ -466,22 +466,23 @@ async function main() {
     // The pin belongs to the *chat*, not the client: the other chat opens on its
     // own — absent — pin, and each chat's turn carries only what its own chat was
     // left on. This is the whole point of following Desktop's per-chat model.
-    const switchToChat = async (index) => {
-      await run(`(async () => {
-        const el = document.querySelector('[aria-label="Chat history"]');
+    //
+    // The chat is switched from the sidebar, where the history lives now: the
+    // dock no longer carries a list of chats to pick a row from. The rows are
+    // named, and this rig has only two.
+    const SIDEBAR_LABELS = ["Harness", "Second chat"];
+    const switchToChat = (index) =>
+      run(`(async () => {
+        const label = ${JSON.stringify(SIDEBAR_LABELS)}[${index}];
+        const row = Array.from(document.querySelectorAll(".chats-rail__row")).find(
+          (li) => (li.querySelector(".chats-rail__label")?.textContent || "").trim() === label
+        );
+        const el = row?.querySelector(".chats-rail__row-main");
         if (!el) return false;
         el.click();
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
         return true;
       })()`);
-      return run(`(async () => {
-        const el = document.querySelectorAll(".chat-panel__session")[${index}];
-        if (!el) return false;
-        el.click();
-        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
-        return true;
-      })()`);
-    };
 
     await switchToChat(1);
     const secondRow = await run(readRow);

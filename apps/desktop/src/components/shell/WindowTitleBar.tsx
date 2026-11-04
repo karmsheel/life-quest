@@ -1,16 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  ArrowLeftRight,
-  Copy,
-  Keyboard,
-  Minus,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
-  Square,
-  X,
-} from "lucide-react";
+import { Copy, Keyboard, Minus, Square, X } from "lucide-react";
 import { SettingsMenu } from "@/components/settings/SettingsMenu";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useNavDock } from "@/state/NavDockProvider";
@@ -26,10 +15,8 @@ export function WindowTitleBar() {
     open: chatOpen,
     setOpen: setChatOpen,
     present: chatPresent,
-    side: chatSide,
     surface: chatSurface,
     setSurface: setChatSurface,
-    swapSide,
   } = useChatDock();
   const label = windowTitleLabel(snapshot?.lifequest.name);
   const [fallbackControls, setFallbackControls] = useState(false);
@@ -62,7 +49,6 @@ export function WindowTitleBar() {
 
   const chrome = window.lifequest?.windowChrome;
   const showTrailing = chatPresent || (fallbackControls && Boolean(chrome));
-  const chatOnLeft = chatSide === "left";
 
   return (
     <header
@@ -98,9 +84,9 @@ export function WindowTitleBar() {
               {/*
                 The shortcuts reference, beside the settings it belongs with.
                 The dock is where the page lives — the same bar that carries the
-                chat list and the Life-Chain — so this control opens the dock if
-                it is collapsed and puts the reference on it. Pressed when the
-                dock is already showing it.
+                Life-Chain and the dock's own controls — so this control opens
+                the dock if it is collapsed and puts the reference on it. Pressed
+                when the dock is already showing it.
               */}
               <button
                 type="button"
@@ -119,51 +105,6 @@ export function WindowTitleBar() {
                 className="window-titlebar__settings"
                 placement="bottom-end"
               />
-              {/*
-                The switch position control, beside the settings it belongs
-                with: one click trades the dock's column for the sheet's, so the
-                chat panel sits just past the rail and the page takes the
-                window's trailing edge. The icon is the two panes swapping sides
-                rather than the side they are on — the state it is in is read
-                off the layout in front of the operator.
-              */}
-              <button
-                type="button"
-                className="window-titlebar__btn window-titlebar__side-switch"
-                aria-label={
-                  chatOnLeft
-                    ? "Move chat to the right of the page"
-                    : "Move chat to the left of the page"
-                }
-                title={
-                  chatOnLeft
-                    ? "Move chat to the right of the page"
-                    : "Move chat to the left of the page"
-                }
-                aria-pressed={chatOnLeft}
-                onClick={swapSide}
-              >
-                <ArrowLeftRight size={14} aria-hidden />
-              </button>
-              <button
-                type="button"
-                className="window-titlebar__btn window-titlebar__chat-toggle"
-                aria-label={chatOpen ? "Collapse chat" : "Expand chat"}
-                title={chatOpen ? "Collapse chat" : "Expand chat"}
-                onClick={() => setChatOpen(!chatOpen)}
-              >
-                {chatOpen ? (
-                  chatOnLeft ? (
-                    <PanelLeftClose size={14} aria-hidden />
-                  ) : (
-                    <PanelRightClose size={14} aria-hidden />
-                  )
-                ) : chatOnLeft ? (
-                  <PanelLeftOpen size={14} aria-hidden />
-                ) : (
-                  <PanelRightOpen size={14} aria-hidden />
-                )}
-              </button>
             </>
           ) : null}
           {fallbackControls && chrome ? (

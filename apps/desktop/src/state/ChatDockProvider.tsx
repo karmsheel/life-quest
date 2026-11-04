@@ -39,21 +39,26 @@ export type ChatCardContext = {
  *
  * Like the rail's own collapse, this is session state rather than a stored
  * preference: it is a way of looking at the workspace for a moment, and the
- * titlebar control that flips it is one click away.
+ * dock's bottom action bar puts the control one click away.
  */
 export type ChatDockSide = "left" | "right";
 
 /**
- * What the dock is showing: the all-chats list, the open thread, the Life-Chain
- * the dock can carry, or the keyboard-shortcuts reference.
+ * What the dock is showing: the open thread, the Life-Chain the dock can carry,
+ * or the keyboard-shortcuts reference.
+ *
+ * The all-chats list is not one of them: it lives in the sidebar, where the
+ * whole history belongs and where it stays visible beside every page. The dock
+ * keeps one chat in front of the operator rather than a second copy of the
+ * history.
  *
  * It lives on the dock rather than in the chat store because the titlebar's
  * shortcuts control opens the dock straight onto the reference, and the titlebar
  * stands above the chat store's provider. The chat store still moves it — a
- * chat opening or closing lands the dock on its thread or list — but the fact
- * itself is "what is this pane showing", which is the dock's business.
+ * chat opening or closing lands the dock on its thread — but the fact itself is
+ * "what is this pane showing", which is the dock's business.
  */
-export type ChatSurface = "list" | "thread" | "chain" | "shortcuts";
+export type ChatSurface = "thread" | "chain" | "shortcuts";
 
 type ChatDockContextValue = {
   open: boolean;
@@ -64,7 +69,7 @@ type ChatDockContextValue = {
   surface: ChatSurface;
   setSurface: (surface: ChatSurface) => void;
   /**
-   * The titlebar's one control over it: the two panes trade places. There is no
+   * The dock's one control over it: the two panes trade places. There is no
    * setter beside it — nothing else in the app has an opinion about which side
    * the dock is on, and a side the operator cannot see is not worth a second
    * entry point.

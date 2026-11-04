@@ -12,13 +12,13 @@ import { Link } from "react-router-dom";
 import {
   Archive,
   ArrowLeft,
+  ArrowLeftRight,
   ArrowUp,
   Check,
   ChevronRight,
   Copy,
   Eye,
   EyeOff,
-  History,
   ImagePlus,
   MessageCircleQuestion,
   MessageSquare,
@@ -62,11 +62,9 @@ import { useVault } from "@/state/VaultProvider";
 import type {
   CompanionModelCatalog,
   CompanionRuntimeOverride,
-  HermesSession,
 } from "@/vite-env";
 import {
   formatMessageWhen,
-  formatSessionWhen,
   sessionLabel,
 } from "../../../electron/companion-client.ts";
 
@@ -127,13 +125,6 @@ function isTypingTarget(el: Element | null): boolean {
   return el instanceof HTMLElement && el.isContentEditable;
 }
 
-function sessionTimeValue(lastActive: number | null): string | undefined {
-  if (lastActive == null || !Number.isFinite(lastActive)) return undefined;
-  const date = new Date(lastActive * 1000);
-  if (Number.isNaN(date.getTime())) return undefined;
-  return date.toISOString();
-}
-
 /**
  * The dock, with the chats it shares with the sidebar and the tabs.
  *
@@ -170,6 +161,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     // two panes — but the bottom bar's collapse arrow points out of the side it
     // collapses toward, so it reads the side too.
     side: dockSide,
+    // The two-pane move, in the bottom bar beside the collapse control: the
+    // titlebar no longer carries a copy of it.
+    swapSide,
     // What the pane is showing. It sits on the dock because the titlebar's
     // shortcuts control opens the dock onto that page from above this store.
     surface: view,
@@ -177,7 +171,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   } = useChatDock();
   const chat = useChatSessions();
   const sessions = chat.sessions;
-  const sessionsLoaded = chat.sessionsLoaded;
   const sessionId = chat.activeId;
   const openTabs = chat.openTabs;
   const run = chat.runOf(sessionId);
@@ -291,19 +284,15 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const [modelCatalog, setModelCatalog] = useState<CompanionModelCatalog | null>(null);
   const runtimePick = (sessionId && chat.runtimePins[sessionId]) || NO_RUNTIME_PICK;
   /**
-   * The list's own row UI: the row the 3-dot menu is open on, and the row being
-   * renamed in place. One row at a time, the same rule the chain's rows follow.
-   * `renameDraft` is shared with the thread header's rename because the two
-   * fields never coexist — one lives in the list, the other in the thread.
+   * The thread header's rename field. The list is not this dock's surface any
+   * more, so this is the only rename field it carries.
    */
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
-  const [sessionMenuId, setSessionMenuId] = useState<string | null>(null);
-  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   /**
    * The dock's questions — a chat delete, a signal delete — are asked in the
    * app's own dialog, and gated on the dock being open: a question asked from
-   * the list cannot float over the window once the panel is collapsed.
+   * the dock cannot float over the window once the panel is collapsed.
    */
   const { ask, dialog, asking } = useConfirm(open);
   /** Drives the inline control: the arrow needs text, the stop square needs a run. */
@@ -356,15 +345,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   }, []);
 
   /**
-   * The dock's working set: archived chats are the sidebar's recovery view, so
-   * they are not drawn here even while the sidebar is showing them. The open
-   * chat's row is always live (archiving it closes its tab).
+   * The chat in front. It is read from the store's list rather than held here:
+   * the sidebar is where the history is picked, so this panel only needs the
+   * row for the open chat's header (its name, pin and archive state).
    */
-  const liveSessions = sessions.filter((s) => !s.archived);
-  const activeSession = liveSessions.find((s) => s.id === sessionId) ?? null;
+  const activeSession = sessions.find((s) => s.id === sessionId) ?? null;
   const activeLabel = activeSession ? sessionLabel(activeSession) : "Chat";
-  const pinnedSessions = liveSessions.filter((s) => s.pinned);
-  const recentSessions = liveSessions.filter((s) => !s.pinned);
 
   /**
    * The chain, lensed the way the Life-Chain page lenses it: everything in
@@ -519,7 +505,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
   /**
    * A rename field belongs to the chat it was opened on. When the chat in front
-   * changes — another row is clicked, a tab closes, or an archive hands the
+   * changes — another chat is opened, a tab closes, or an archive hands the
    * header to its neighbour — the field must not follow the header onto the new
    * chat: saving it would write one chat's name onto another.
    */
@@ -527,18 +513,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     setRenaming(false);
     setRenameDraft("");
   }, [sessionId]);
-
-  /**
-   * Leaving the list drops its row UI: a menu, or a rename field, left open on a
-   * row that has since moved is worse than making the user open it again — the
-   * same rule the chain's landing reset follows.
-   */
-  useEffect(() => {
-    if (view === "list") return;
-    setSessionMenuId(null);
-    setRenamingSessionId(null);
-    setRenameDraft("");
-  }, [view]);
 
   useEffect(() => {
     if (!open || view !== "thread" || !listRef.current) return;
@@ -571,7 +545,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * it for a caret the operator has already given to the answer.
    */
   useEffect(() => {
-    if (!open || view === "list" || view === "shortcuts" || asking) return;
+    if (!open || view === "shortcuts" || asking) return;
     if (view === "thread" && (sending || !sessionId)) return;
     if (view === "chain" && chainBusy) return;
     focusComposer();
@@ -584,11 +558,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   /**
    * A card handed over from the Dashboard brings the chat with it.
    *
-   * The pill lives above the composer, so a dock sitting on the chat list would
-   * take the card and show the operator nothing — the click would look like it
-   * did nothing at all. The thread takes over, and a vault with no chats gets
-   * the empty one "New chat" would have made, because a composer with no session
-   * cannot be typed in.
+   * The pill lives above the thread's composer, so a dock sitting on the chain
+   * or the shortcuts reference would take the card and show the operator
+   * nothing — the click would look like it did nothing at all. The thread takes
+   * over, and a vault with no chats gets the empty one "New chat" would have
+   * made, because a composer with no session cannot be typed in.
    *
    * Only the arrival is reacted to. Taking the card off, or leaving it there,
    * changes no surface: the operator is already where they need to be.
@@ -596,7 +570,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   useEffect(() => {
     if (!contextCard) return;
     onOpenChange(true);
-    if (view !== "list") return;
+    if (view === "thread") return;
     if (sessionId) setView("thread");
     else void newSession();
     // Deliberately keyed on the card alone: this is "a card arrived", not "the
@@ -899,52 +873,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     await patchSession(id, { title });
   }
 
-  /** Open the 3-dot menu on a chat row, or close the one already open. */
-  function toggleSessionMenu(id: string) {
-    setSessionMenuId((current) => (current === id ? null : id));
-  }
-
-  /**
-   * Rename starts on the row, not in the thread header: the list is where chats
-   * are managed, and the name it edits is the name the row shows.
-   */
-  function startSessionRename(s: HermesSession) {
-    setSessionMenuId(null);
-    setRenamingSessionId(s.id);
-    setRenameDraft(sessionLabel(s));
-  }
-
-  function cancelSessionRename() {
-    setRenamingSessionId(null);
-    setRenameDraft("");
-  }
-
-  async function commitSessionRename(e: FormEvent, id: string) {
-    e.preventDefault();
-    const title = renameDraft.trim();
-    cancelSessionRename();
-    await patchSession(id, { title });
-  }
-
-  /**
-   * Delete one chat outright. Unlike archive — a flag Hermes Desktop can bring
-   * the chat back from — this drops the row and every message under it, so it
-   * asks first, through the dock's own dialog. The row menu closes on the way in:
-   * the question is the surface now, and it names the chat it will take.
-   */
-  function deleteSession(id: string) {
-    const row = sessions.find((s) => s.id === id);
-    const label = row ? sessionLabel(row) : "this chat";
-    setSessionMenuId(null);
-    ask({
-      title: "Delete chat",
-      message: `Delete "${label}"? Its messages leave Hermes everywhere, and this cannot be undone.`,
-      confirmLabel: "Delete chat",
-      destructive: true,
-      run: () => void chat.deleteChat(id),
-    });
-  }
-
   /**
    * The id of the blank chat the "New chat" slot lands on, or null when the
    * gateway refused to make one. Returning the id is what lets a saved question
@@ -1094,142 +1022,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     );
   }
 
-  /**
-   * One chat row: the chat itself, its 3-dot menu, and — while the menu's Edit
-   * is up — the field the name is edited in. Clicking the open chat comes back
-   * to its thread; the row's own management lives behind the 3-dot control,
-   * because the list is the surface that can see every chat at once.
-   */
-  function sessionRow(s: HermesSession) {
-    const label = sessionLabel(s);
-    const when = formatSessionWhen(s.lastActive);
-    const active = s.id === sessionId;
-    const menuOpen = sessionMenuId === s.id;
-    const renamingRow = renamingSessionId === s.id;
-    return (
-      <li key={s.id} className="chat-panel__session-item">
-        {renamingRow ? (
-          <form
-            className="chat-panel__session-rename"
-            onSubmit={(e) => void commitSessionRename(e, s.id)}
-          >
-            <input
-              className="chat-panel__rename-input"
-              value={renameDraft}
-              onChange={(e) => setRenameDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  cancelSessionRename();
-                }
-              }}
-              aria-label="Chat name"
-              autoFocus
-            />
-            <button
-              type="submit"
-              className="chat-panel__text-btn"
-              aria-label="Save chat name"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              className="chat-panel__text-btn"
-              aria-label="Cancel rename"
-              onClick={cancelSessionRename}
-            >
-              Cancel
-            </button>
-          </form>
-        ) : (
-          <>
-            <button
-              type="button"
-              className={
-                active
-                  ? "chat-panel__session chat-panel__session--active"
-                  : "chat-panel__session"
-              }
-              aria-current={active ? "true" : undefined}
-              title={`${label} — middle-click to open in a new tab`}
-              onClick={() => {
-                if (s.id === sessionId) setView("thread");
-                else void openSession(s.id);
-              }}
-              onAuxClick={(e) => {
-                // The same gesture the sidebar's rows take: keep the chat in
-                // front and give this one its own tab.
-                if (e.button !== 1) return;
-                e.preventDefault();
-                if (!sessionId) return;
-                void chat.openChatInNewTab(s.id);
-              }}
-              onMouseDown={(e) => {
-                if (e.button === 1) e.preventDefault();
-              }}
-            >
-              {s.pinned ? (
-                <span className="chat-panel__session-pin" title="Pinned">
-                  <Pin size={12} aria-hidden />
-                </span>
-              ) : null}
-              <span className="chat-panel__session-label">{label}</span>
-              {when ? (
-                <time className="chat-panel__session-when" dateTime={sessionTimeValue(s.lastActive)}>
-                  {when}
-                </time>
-              ) : null}
-            </button>
-            <button
-              type="button"
-              className="chat-panel__session-menu-btn"
-              aria-label="Chat actions"
-              title="Chat actions"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={() => toggleSessionMenu(s.id)}
-            >
-              <MoreVertical size={14} aria-hidden />
-            </button>
-            {menuOpen ? (
-              <div className="chat-panel__session-menu" role="menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label="Edit chat"
-                  onClick={() => startSessionRename(s)}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label="Archive chat"
-                  onClick={() => {
-                    setSessionMenuId(null);
-                    void patchSession(s.id, { archived: true });
-                  }}
-                >
-                  Archive
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label="Delete chat"
-                  className="chat-panel__session-menu-danger"
-                  onClick={() => void deleteSession(s.id)}
-                >
-                  Delete
-                </button>
-              </div>
-            ) : null}
-          </>
-        )}
-      </li>
-    );
-  }
-
   const errorBanner = error ? (
     <div className="chat-panel__error" role="alert">
       <p>{error}</p>
@@ -1285,39 +1077,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
       data-chat-surface={view}
     >
         <div className="chat-panel__open">
-          {view === "list" ? (
-            <>
-              <div className="chat-panel__header">
-                <p className="chat-panel__heading">Chats</p>
-              </div>
-              <div className="chat-panel__list">
-                {errorBanner}
-                {sessionsLoaded && liveSessions.length === 0 ? (
-                  <p className="chat-panel__sessions-empty">No chats yet</p>
-                ) : (
-                  <ul
-                    className="chat-panel__sessions chat-panel__sessions--full"
-                    aria-label="Previous chats"
-                  >
-                    {pinnedSessions.length > 0 ? (
-                      <>
-                        <li className="chat-panel__sessions-group">Pinned</li>
-                        {pinnedSessions.map(sessionRow)}
-                      </>
-                    ) : null}
-                    {recentSessions.length > 0 ? (
-                      <>
-                        {pinnedSessions.length > 0 ? (
-                          <li className="chat-panel__sessions-group">Recent</li>
-                        ) : null}
-                        {recentSessions.map(sessionRow)}
-                      </>
-                    ) : null}
-                  </ul>
-                )}
-              </div>
-            </>
-          ) : view === "chain" ? (
+          {view === "chain" ? (
             <div className="chat-panel__header">
               <p className="chat-panel__heading">Life-Chain</p>
             </div>
@@ -1335,7 +1095,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 className="chat-panel__icon-btn"
                 aria-label="Back to chat"
                 title="Back to chat"
-                onClick={() => setView(sessionId ? "thread" : "list")}
+                onClick={() => setView("thread")}
               >
                 <ArrowLeft size={16} aria-hidden />
               </button>
@@ -1355,15 +1115,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             </div>
           ) : (
             <div className="chat-panel__header chat-panel__header--thread">
-              <button
-                type="button"
-                className="chat-panel__icon-btn"
-                aria-label="All chats"
-                title="All chats"
-                onClick={() => setView("list")}
-              >
-                <ArrowLeft size={16} aria-hidden />
-              </button>
               {renaming ? (
                 <form
                   className="chat-panel__rename"
@@ -1797,7 +1548,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
           <div
             className="chat-panel__footer"
-            hidden={view === "list" || view === "shortcuts"}
+            hidden={view === "shortcuts"}
           >
             {view === "chain" ? (
               /*
@@ -2056,22 +1807,13 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
           {/*
             The dock's own actions, pinned to the bottom of the bar and shared by
-            every surface: the list is where most navigation happens, so its
-            entry point cannot live inside the thread it replaces. The chain is
-            the dock's second way into the Life-Chain, alongside the rail's, and
-            the collapse control trails the group at the bar's far right.
+            every surface. The bar leads with the new-chat slot: the whole
+            history lives in the sidebar, so this bar does not carry a second
+            entry point to it. The chain is the dock's second way into the
+            Life-Chain, alongside the rail's, and the side-switch and collapse
+            controls trail the group at the bar's far right.
           */}
           <nav className="chat-panel__actions" aria-label="Dock actions">
-            <button
-              type="button"
-              className="chat-panel__icon-btn chat-panel__action"
-              aria-label="Chat history"
-              title="Chat history"
-              aria-pressed={view === "list"}
-              onClick={() => setView(view === "list" ? "thread" : "list")}
-            >
-              <History size={20} aria-hidden />
-            </button>
             <button
               type="button"
               className="chat-panel__icon-btn chat-panel__action"
@@ -2092,9 +1834,35 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               <Radio size={20} aria-hidden />
             </button>
             {/*
-              The way out, at the trailing end of the bar. It is the same move as
-              the titlebar's collapse control, put where the operator's hand
-              already is when they are done with the dock: the bottom-right
+              The switch-position control, beside the collapse it belongs with:
+              one click trades the dock's column for the sheet's, so the chat
+              panel sits just past the rail and the page takes the window's
+              trailing edge. The icon is the two panes swapping sides rather
+              than the side they are on — the state it is in is read off the
+              layout in front of the operator.
+            */}
+            <button
+              type="button"
+              className="chat-panel__icon-btn chat-panel__action chat-panel__action--side"
+              data-testid="chat-side-switch"
+              aria-label={
+                dockSide === "left"
+                  ? "Move chat to the right of the page"
+                  : "Move chat to the left of the page"
+              }
+              title={
+                dockSide === "left"
+                  ? "Move chat to the right of the page"
+                  : "Move chat to the left of the page"
+              }
+              aria-pressed={dockSide === "left"}
+              onClick={swapSide}
+            >
+              <ArrowLeftRight size={20} aria-hidden />
+            </button>
+            {/*
+              The way out, at the trailing end of the bar: where the operator's
+              hand already is when they are done with the dock, the bottom-right
               corner, one click from the icon that brings it back.
             */}
             <button

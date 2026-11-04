@@ -468,9 +468,9 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   /**
    * Landing behaviour, once per mount: bring back the tab strip the operator
    * left (every open chat, in tab order, with the tab that was in front), else
-   * resume the chat this dock opened last, else the most recent one, else show
-   * the list. Never mints a session — an empty chat made on every open is how the
-   * list filled with "New chat" rows.
+   * resume the chat this dock opened last, else the most recent one, else the
+   * thread's blank slate. Never mints a session — an empty chat made on every
+   * open is how the working set filled with "New chat" tabs nobody wrote in.
    *
    * The remembered strip is reconciled against the list just read, so a chat
    * deleted or archived elsewhere while the app was shut cannot come back as a
@@ -496,10 +496,11 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       );
       if (landing.closedStrip) {
         // Every tab was closed before the app quit. That is a decision about the
-        // working set, so the landing is the list — not a chat resumed over the
-        // top of it, which is what made a closed chat look reopened.
+        // working set, so the landing is the thread's blank slate — not a chat
+        // resumed over the top of it, which is what made a closed chat look
+        // reopened.
         tabsHydrated.current = true;
-        setSurface("list");
+        setSurface("thread");
         return;
       }
       if (landing.activeId) {
@@ -514,11 +515,11 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       }
       // No strip to restore: a first landing, or a profile from before the strip
       // was remembered. The old rule still holds — the last chat, the most
-      // recent one, or the list.
+      // recent one, else the thread's blank slate.
       tabsHydrated.current = true;
       const resume = listed.find((s) => s.id === lastSessionId) ?? listed[0] ?? null;
       if (resume) await openChat(resume.id);
-      else setSurface("list");
+      else setSurface("thread");
     } finally {
       resuming.current = false;
     }
@@ -583,13 +584,13 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    * When the tab closed was the one in front, the strip hands the screen to its
    * neighbour — the tab that takes its place, or the one before it when it was
    * last — and the operator keeps working. With no tab left the dock falls back
-   * to `emptySurface`, which is the list for a plain close: the working set is
-   * empty, and the history page is where another chat is picked. An archive
+   * to `emptySurface`, which is the thread's blank slate for a plain close: the
+   * working set is empty, and the next step is the New chat slot. An archive
    * passes the surface the operator was already on instead, so it can land on
-   * the thread's blank slate rather than being thrown out of the dock.
+   * that same blank slate rather than being thrown out of the dock.
    */
   const closeTab = useCallback(
-    (id: string, emptySurface: ChatSurface = "list") => {
+    (id: string, emptySurface: ChatSurface = "thread") => {
       // A run left behind a closed tab would keep streaming into a chat nobody
       // can see, so closing one stops it. The frame stream continues until the
       // gateway acknowledges, which is why `closedTabs` also suppresses the
@@ -670,22 +671,17 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         // The archived chat leaves the working set, and its tab goes with it.
         // When it was the tab in front, the strip hands the screen to the tab
         // that takes its place; a background row's archive leaves the open
-        // thread exactly where it was. Either way the dock does not jump to the
-        // history page — that page is for picking a chat, and the operator did
-        // not ask for one.
+        // thread exactly where it was. Either way the dock stays on the thread:
+        // the history is the sidebar's, and the operator did not ask to be sent
+        // there.
         closeTab(id, landingSurface);
         if (wasActive && remaining.length === 0 && landingSurface === "thread") {
           // The last chat in the strip was the one archived. The thread stays
           // up and opens a blank conversation: the blank slate the New chat
-          // slot lands on, rather than a history page to pick from. The archived
-          // chat is excluded from the blank search, and a gateway that refuses
-          // to make one has no blank slate to show — the list is then the honest
-          // fallback rather than an inert thread.
-          void newChat(id)
-            .then((blank) => {
-              if (!blank) setSurface("list");
-            })
-            .catch(() => setSurface("list"));
+          // slot lands on. The archived chat is excluded from the blank search;
+          // a gateway that refuses to make one leaves the thread empty, which is
+          // the honest state — the New chat slot is right there in the bar.
+          void newChat(id);
         }
       }
       return true;
@@ -727,7 +723,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         const remaining = openTabsRef.current.filter((tab) => tab !== id);
         setActiveId(remaining[remaining.length - 1] ?? null);
         if (remaining.length === 0) {
-          setSurface("list");
+          setSurface("thread");
           window.localStorage.removeItem(LAST_SESSION_KEY);
         }
       }
