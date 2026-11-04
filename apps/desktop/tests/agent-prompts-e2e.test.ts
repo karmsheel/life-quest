@@ -254,7 +254,86 @@ describe("companion prompts e2e", () => {
       "the instructions do not require the chat's agreement before a direct write",
     );
 
-    // The locked board says the other thing, and the two must not both be true.
+    // ── 6c. the three surfaces the agent reads instead of guessing ────────
+    // Projects, the Life-Chain and Pages have read tools since 2026-10-27, but
+    // neither the SOUL nor the per-turn instructions ever named them, so the
+    // companion still reached for get_document and list_documents and concluded
+    // it could not see the operator's projects or pages. A tool the agent is
+    // never told about is a tool it does not use: the prompt half of the same
+    // fix is asserted here, in both texts, because the SOUL reaches every
+    // channel (Hermes Desktop included) and the per-turn block reaches only the
+    // app's own chat.
+    const surfaceTools = [
+      "list_projects",
+      "get_project",
+      "list_signals",
+      "get_signal",
+      "create_signal",
+      "list_pages",
+      "get_page",
+    ];
+    checks.soulNamesSurfaces = {
+      projects: COMPANION_SOUL.includes("PROJECTS are first-class records"),
+      lifeChain: COMPANION_SOUL.includes("THE LIFE-CHAIN"),
+      pages: COMPANION_SOUL.includes("PAGES are each domain's own document"),
+      tools: surfaceTools.filter((tool) => COMPANION_SOUL.includes(tool)),
+      notADocument: COMPANION_SOUL.includes("first-class records, not documents"),
+      projectWritesFileADecision: COMPANION_SOUL.includes("close_project change nothing until the operator approves"),
+      pagesReadOnly: COMPANION_SOUL.includes("the one page change you apply yourself is a script block"),
+    };
+    assert.equal(checks.soulNamesSurfaces.projects, true, "the SOUL never names Projects as first-class records");
+    assert.equal(checks.soulNamesSurfaces.lifeChain, true, "the SOUL never names the Life-Chain");
+    assert.equal(checks.soulNamesSurfaces.pages, true, "the SOUL never names Pages");
+    assert.deepEqual(
+      checks.soulNamesSurfaces.tools,
+      surfaceTools,
+      "the SOUL does not name every surface tool it now has",
+    );
+    assert.equal(checks.soulNamesSurfaces.notADocument, true, "the SOUL does not say a project is not a document");
+    assert.equal(
+      checks.soulNamesSurfaces.projectWritesFileADecision,
+      true,
+      "the SOUL does not say project writes file a Decision",
+    );
+    assert.equal(
+      checks.soulNamesSurfaces.pagesReadOnly,
+      true,
+      "the SOUL does not say pages are read-only apart from a script block",
+    );
+    assert.equal(
+      COMPANION_SOUL.includes(SOUL_STAMP),
+      true,
+      "the seed that names the surfaces carries no stamp",
+    );
+
+    const textSurfaceTools = surfaceTools.filter((tool) => text.includes(tool));
+    checks.instructionsNameSurfaces = {
+      tools: textSurfaceTools,
+      notADocument: text.includes("a project is not a document"),
+      captureAppliesAtOnce: text.includes("create_signal, which applies at once"),
+      pagesReadOnly: text.includes("read-only apart from apply_script_block"),
+    };
+    assert.deepEqual(
+      checks.instructionsNameSurfaces.tools,
+      surfaceTools,
+      "the per-turn instructions do not name every surface tool",
+    );
+    assert.equal(
+      checks.instructionsNameSurfaces.notADocument,
+      true,
+      "the instructions do not say a project is not a document",
+    );
+    assert.equal(
+      checks.instructionsNameSurfaces.captureAppliesAtOnce,
+      true,
+      "the instructions do not say a capture applies at once",
+    );
+    assert.equal(
+      checks.instructionsNameSurfaces.pagesReadOnly,
+      true,
+      "the instructions do not say pages are read-only apart from a script block",
+    );
+    // A locked board says the other thing, and the two must not both be true.
     const lockedText = buildInstructions({ ...context, viewingBoardLocked: true });
     checks.lockedLine = /LOCKED/.test(lockedText);
     assert.equal(checks.lockedLine, true, "a locked board is not named as locked in the instructions");

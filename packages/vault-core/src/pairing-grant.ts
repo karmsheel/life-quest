@@ -25,10 +25,12 @@ import type {
   DecisionRecord,
   DocumentTarget,
   Goal,
+  LifeEvent,
   MapEvent,
   PeriodPack,
   ReviewRecord,
   ReviewScopeState,
+  SignalRecord,
   Task,
 } from "./types.ts";
 import type { MapStoreState, ResolvedWeek } from "./map/public.ts";
@@ -45,6 +47,16 @@ export type ConnectedGrant = {
 /**
  * KAR-70: the tools a grant allows at all. Every one of these is a read inside
  * the assigned domains; none of them names the operator's own settings.
+ *
+ * Projects, pages and the Life-Chain are here since 2026-11-04. The pairing
+ * design already promised a connected agent pages and projects (§Domain reads);
+ * the read tools that shipped on 2026-10-27 added `list_projects` /
+ * `get_project`, `list_pages` / `get_page`, and the Life-Chain's
+ * `list_signals` / `get_signal`, but none of them was classified, so an agent
+ * with a domain grant was refused them by name and never saw them in
+ * `tools/list`. Classifying them is only half the fix: each is filtered per
+ * call in `executeConnectedTool`, because the grant is what decides which
+ * domains a record may come from.
  */
 export const CONNECTED_READ_TOOLS: ReadonlySet<string> = new Set([
   "get_doctrine",
@@ -67,6 +79,15 @@ export const CONNECTED_READ_TOOLS: ReadonlySet<string> = new Set([
   "preview_view",
   "list_views",
   "get_dashboard",
+  // Operator surfaces whose records carry a domain: a project, a page and a
+  // signal are each visible only from an assigned domain, and a record with no
+  // domain stays with the companion.
+  "list_projects",
+  "get_project",
+  "list_pages",
+  "get_page",
+  "list_signals",
+  "get_signal",
 ]);
 
 /**
@@ -159,10 +180,15 @@ export const CONNECTED_DECISION_WRITE_TOOLS: ReadonlySet<string> = new Set([
  * KAR-70: the writes that apply immediately, as they do for the companion:
  * events, script blocks on a page, the capture thread, and — since the
  * 2026-10-28 policy — adding database data (`create_database`,
- * `insert_rows`). A new row through `upsert_row` is not named here because the
- * same tool also updates existing rows; it is classified with the Decision
- * writes above and the per-call domain check runs either way. Each tool here
- * still needs its domain inside the assignment.
+ * `insert_rows`). `create_signal` is here for the same reason as those: a
+ * Life-Chain capture is adding data, the companion writes it at once and logs
+ * it under the agent's name, and a Decision per captured thought would turn the
+ * chain into an approval queue. A new row through `upsert_row` is not named
+ * here because the same tool also updates existing rows; it is classified with
+ * the Decision writes above and the per-call domain check runs either way. Each
+ * tool here still needs its domain inside the assignment — which is why a
+ * connected agent may not file an unassigned signal: there is no domain to
+ * check.
  *
  * Fort-Knox AGENT-10: `mark_review_done` belongs here — it applies the scope's
  * `done` status at once, with no Decision (`review-tools.ts`), so classifying it
@@ -181,6 +207,7 @@ export const CONNECTED_IMMEDIATE_WRITE_TOOLS: ReadonlySet<string> = new Set([
   "mark_review_done",
   "create_database",
   "insert_rows",
+  "create_signal",
 ]);
 
 /**
@@ -336,6 +363,18 @@ export function connectedGoalVisible(
 }
 
 /**
+ * KAR-70: a captured signal is visible only from an assigned domain. A signal
+ * with no domain is the companion's, exactly as an unassigned event or goal is:
+ * it is the operator's own capture, not part of any assignment.
+ */
+export function connectedSignalVisible(
+  signal: Pick<SignalRecord, "domainSlug">,
+  grant: ConnectedGrant,
+): boolean {
+  return signal.domainSlug !== null && grant.domainSlugs.includes(signal.domainSlug);
+}
+
+/**
  * KAR-70: a library note is visible only when it has at least one domain and
  * every one of those domains is assigned. A note tagged across an assigned and
  * an unassigned domain is not visible: it would carry the other domain's
@@ -394,6 +433,50 @@ export function projectConnectedState(
     tasks: state.tasks,
     week: currentWeek(state),
   };
+}
+
+/**
+ * KAR-70: one project and the work collated around it, as a connected agent may
+ * read it. `get_project` is one read that reaches several surfaces, so each part
+ * is projected by the rule its own tool would apply:
+ *
+ *  - the project only from an assigned domain; `null` means the caller answers
+ *    `NOT_FOUND`, the same answer as a project that does not exist;
+ *  - the collated tasks — and the signals reached through them — only when
+ *    Schedule is on, because the board belongs to no domain and Schedule is its
+ *    switch. The keys are omitted rather than emptied, exactly as `get_state`
+ *    does, so an empty array cannot read as "this project has no work";
+ *  - a linked signal only from an assigned domain; a signal with no domain is
+ *    the operator's own capture and stays with the companion;
+ *  - a Decision only when its own domain list is non-empty and entirely inside
+ *    the assignment, the same rule `list_decisions` applies;
+ *  - a log line only from an assigned domain, so a project moved between
+ *    domains does not leak the domain it came from through its own history.
+ */
+export function projectConnectedProjectRead(
+  project: Record<string, unknown>,
+  grant: ConnectedGrant,
+): Record<string, unknown> | null {
+  const domainSlug = project.domainSlug;
+  if (typeof domainSlug !== "string" || !grant.domainSlugs.includes(domainSlug)) {
+    return null;
+  }
+  const out: Record<string, unknown> = { ...project };
+  if (grant.schedule) {
+    out.signals = ((project.signals ?? []) as SignalRecord[]).filter((signal) =>
+      connectedSignalVisible(signal, grant),
+    );
+  } else {
+    delete out.tasks;
+    delete out.signals;
+  }
+  out.decisions = (
+    (project.decisions ?? []) as Pick<DecisionRecord, "target" | "domainSlugs">[]
+  ).filter((decision) => connectedDecisionVisible(decision, grant));
+  out.log = ((project.log ?? []) as LifeEvent[]).filter((event) =>
+    connectedEventVisible(event, grant),
+  );
+  return out;
 }
 
 /**
