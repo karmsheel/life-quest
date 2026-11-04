@@ -53,9 +53,9 @@
  *     the 56px column, no initials mark, the wrong initials (the harness vault
  *     "Harness Vault" must read "HV"), or the chip not the rail's last control.
  *  8. Titlebar text still in the strip — the LQ badge, title or a vault chip
- *     still rendered in the window's top row. The strip's leading half is the
- *     window's drag handle; the only thing in its row now is the domain tab
- *     (20b-20f).
+ *     still rendered in the window's top row. The strip's open room on either
+ *     side of the domain tab is the window's drag handle; the only control in
+ *     its row now is that tab (20b-20f).
  *  9. Rail scrolls its own topband away, or spills past the window box.
  * 10. Bridge stubs masking real calls — anything the shell reaches for that is
  *     not named here must not throw.
@@ -117,9 +117,14 @@
  *     bottom edge (32px) rather than 44px below it.
  * 20c. The lens not part of the page — the wrong fill (not the page canvas), a
  *     mat gap between the tab's bottom edge and the sheet's top, a tab that stops
- *     short of the strip's top, a drag-region tab the operator cannot click, or a
- *     tab off the rail's trailing edge: 12px past the sidebar at both widths
- *     (268px absolute wide, 68px thin), following the rail when it collapses.
+ *     short of the strip's top, a drag-region tab the operator cannot click.
+ * 20c. The lens off the strip's centre — the tab pinned to the strip's leading
+ *     edge (the old placement, 12px past the rail), or centred by absolute
+ *     positioning that lets it cover the rail or push into the trailing cluster.
+ *     It must hold the strip's centre line at both rail widths rather than
+ *     sliding with the rail when it collapses, and the gaps to the rail and to
+ *     the trailing cluster must both stay positive — a tab is not centred if
+ *     centring took an operator's controls with it.
  * 20d. The tab's connection square — the two bottom fillets missing, not 8×8,
  *     or painted in the wrong ink, so the page meets the strip on two hard inside
  *     corners instead of flaring into it. The top corners must be rounded by the

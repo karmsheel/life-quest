@@ -9,9 +9,9 @@ and delete them. [The wiki home](./index.md) has the full page index.
 
 ## Where it lives
 
-- **The lens**: in the window title bar's domain tab, at its leading edge just
-  past the rail. It reads **Overview** followed by every live domain, and it
-  moves with the rail when the rail is collapsed.
+- **The lens**: in the window title bar's domain tab, centred on the strip
+  between the rail and the trailing controls. It reads **Overview** followed by
+  every live domain; the tab keeps its centre line when the rail collapses.
 - **Managing domains**: the **Settings** sheet, tab **Domains**, at
   `/settings?tab=domains`. The legacy path `/domains` redirects there.
 - **Domain content**: each domain's folder in the vault is

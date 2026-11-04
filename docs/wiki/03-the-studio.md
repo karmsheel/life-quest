@@ -18,8 +18,8 @@ routes:
 
 - The **window title bar** spans the top of the whole window, including the
   welcome and companion screens. Inside the shell it carries the **domain tab**
-  at its leading edge, just past the rail; on the welcome and companion screens
-  the tab is absent.
+  centred on the strip, between the rail and the trailing controls; on the
+  welcome and companion screens the tab is absent.
 - The **rail** is the left column of the shell grid; its wing switcher band and
   the active wing's pages sit under the title bar.
 - The **main pane** begins directly under the title bar. It has no band of its
@@ -50,11 +50,10 @@ Decisions without losing the page you were reading.
    its last page, so returning to a wing returns you to where you were. **←** and
    **→** move between wings.
 2. **Change the lens.** Choose **Overview** or a domain name in the **domain
-   tab**, at the leading edge of the window title bar, just past the rail. This
-   is the data filter for domain-scoped lists (Dashboard boards, Data, Pages,
-   Life-Chain and others). **←** and **→** move between lens options as well.
-   The tab follows the rail: it starts 12px past the wide rail, and 12px past the
-   collapsed icon rail.
+   tab**, centred in the window title bar. This is the data filter for
+   domain-scoped lists (Dashboard boards, Data, Pages, Life-Chain and others).
+   **←** and **→** move between lens options as well. The tab is centred on the
+   strip, so it holds its place when the rail collapses.
 3. **Navigate the rail.** Click a page under the active wing. The rail's middle
    section lists your **Chats** with **New chat** and the recent threads.
    Life-Chain, Decisions, Daily Note and Automations sit on a shelf near the foot;
@@ -62,7 +61,8 @@ Decisions without losing the page you were reading.
 4. **Collapse and restore the rail.** Press the panel icon at the top of the rail
    (**Collapse sidebar** / **Expand sidebar**). Collapsed, the rail narrows to its
    icon column and the page widens; the same toggle stays at the top of the thin
-   rail and turns around, and the title bar's domain tab slides in with the rail.
+   rail and turns around. The title bar's domain tab holds its centre line; only
+   the empty drag room beside it grows.
 5. **Collapse and restore the chat.** Press the panel icon at the trailing end of
    the dock's bottom action bar (**Collapse chat**). A collapsed dock is not a
    narrow pane: it becomes one floating mark, **Open Hermes chat**, at the page's
@@ -85,16 +85,18 @@ Decisions without losing the page you were reading.
 
 The window title bar:
 
-- The **domain tab** at the leading edge, just past the rail. It is painted on the
-  page canvas, flush with the window's top edge and the full height of the strip;
-  its top corners are rounded and its two bottom corners flare into the page with
-  small concave fillets of the same step — the rounded ends make it read as the
-  page's own tab rather than a control floating in the chrome. It carries the domain lens:
-  **Overview** followed by every live domain, in sort order, as a compact segmented
-  control that moves with **←** and **→**. The tab moves with the rail as it
+- The **domain tab** centred on the strip, between the rail and the trailing
+  controls. It is painted on the page canvas, flush with the window's top edge
+  and the full height of the strip; its top corners are rounded and its two
+  bottom corners flare into the page with small concave fillets of the same step
+  — the rounded ends make it read as the page's own tab rather than a control
+  floating in the chrome. It carries the domain lens: **Overview** followed by
+  every live domain, in sort order, as a compact segmented control that moves
+  with **←** and **→**. The tab keeps the strip's centre line when the rail
   collapses. The window title is `LifeQuest — <vault name>`.
-- The leading half of the strip is the window's drag handle — empty apart from the
-  tab, which stays clickable — with the window controls on the trailing edge.
+- The open room on either side of the tab is the window's drag handle — empty
+  apart from the tab itself, which stays clickable — with the window controls on
+  the trailing edge.
 - The tab exists only while the shell is mounted: on the welcome and companion
   screens there is none. There the strip is the window's drag area, with its window
   controls when the overlay is unavailable, and with no vault the window title is
@@ -190,7 +192,8 @@ Window-level keys:
 
 - Collapsing the rail never takes it away: it narrows to its icon column, so the
   one collapse toggle stays at the top of the rail at either width. The title
-  bar's domain tab moves in with the rail rather than staying over the old column.
+  bar's domain tab holds the strip's centre line, so the room beside it grows
+  rather than the tab sliding along with the rail.
 - The chat's collapsed state keeps the component mounted: a streaming turn keeps
   streaming, and a draft survives a collapse. It is a hide, not a reset.
 - Dragging the divider towards the page widens a left-hand dock and narrows a
