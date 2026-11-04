@@ -80,24 +80,33 @@ not send an API key to the renderer.
 3. Click any row in **Chats** to load that conversation into the dock. A
    middle-click on the row — or **Chat actions** then **Open in new tab** — keeps
    the current chat on screen and opens a second tab. The tab strip appears when
-   more than one chat is open. The strip is remembered: quit and reopen the app
-   and every tab comes back in the same order, with the chat that was in front
-   still in front. A remembered chat that has been archived or deleted in Hermes
-   Desktop in the meantime loses its tab, and if every tab was closed before
-   quitting the dock opens on a blank thread rather than reopening one.
+   more than one chat is open, or whenever a pinned chat exists. The strip is
+   remembered: quit and reopen the app and every tab comes back in the same order,
+   with the chat that was in front still in front. A remembered chat that has been
+   archived or deleted in Hermes Desktop in the meantime loses its tab, and if
+   every tab was closed before quitting the dock opens on a blank thread rather
+   than reopening one — unless a pinned chat remains, whose tab is permanent.
 4. Hover a chat for its own controls: the row menu has **Open in new tab**,
    **Pin** / **Unpin**, **Rename**, **Archive**, and **Delete**. Pinned chats sit
-   in their own **Pinned** group above **Recent**. A chat streaming a turn shows a
-   dot on its row; the header counts how many are running.
+   at the top of the one list, above the recent chats. A chat streaming a turn
+   shows a dot on its row; the header counts how many are running.
+5. A pinned chat is always a tab in the dock's strip. Pinned tabs lead the strip
+   and are drawn small, like browser pinned tabs: a square with the chat name's
+   first letter and a pin, and no close control. Right-click a pinned tab for
+   **Unpin**; right-click any other tab for **Pin**, **Rename**, **Archive** and
+   **Delete**. Unpinning turns the square back into an ordinary closable tab.
+   While a chat is pinned the row hides its archive control and both **Archive**
+   and **Delete** disappear from the row menu (and from the dock header's archive
+   control): unpin first, then archive or delete.
    Archiving the chat that is in front closes its tab and brings the tab that
    takes its place to the front — or the one before it, when it was last. If it
    was the last open chat, the dock stays on the thread and opens a blank
    **New chat**, so an archive never throws you out of the dock. Archiving a chat
    that is not in front leaves the open thread exactly where it was.
-5. **Delete** asks first: "Delete "<name>"? Its messages leave Hermes everywhere,
+6. **Delete** asks first: "Delete "<name>"? Its messages leave Hermes everywhere,
    and this cannot be undone." Renaming, pinning and archiving are durable Hermes
    flags, so Hermes Desktop and other channels see them too.
-6. Choose **Collapse chat** at the foot of the dock to put it away, or the
+7. Choose **Collapse chat** at the foot of the dock to put it away, or the
    two-panes control beside it (*Move chat to the left of the page* / *Move chat
    to the right of the page*) to move it to the other side of the page.
 
@@ -142,9 +151,9 @@ path. Attaching a receipt to a vault without the Finance kit is refused with
 
 | Part | What it does |
 |---|---|
-| Chats list (rail) | **New chat**; rows for **Pinned** and **Recent**; per-row **Chat actions** menu; a running dot; a **Dismiss** for a failed list read. The rail is the window's only chat history. |
-| Dock header | The active chat's name and **Pin chat** / **Rename chat** / **Archive chat**. |
-| Tab strip | One tab per open chat, each closable, with a live dot while it streams and an amber dot while it waits on an approval. |
+| Chats list (rail) | **New chat**; rows pinned first, then recent (archived rows in their own greyed band when the view shows them); per-row **Chat actions** menu; a running dot; a **Dismiss** for a failed list read. The rail is the window's only chat history. |
+| Dock header | The active chat's name and **Pin chat** / **Rename chat** / **Archive chat** — the archive control steps away while the chat is pinned. |
+| Tab strip | One tab per open chat, each closable, with a live dot while it streams and an amber dot while it waits on an approval. Pinned chats lead as squares (first letter + pin, no close control) and are unpinned from their right-click menu; any tab's right-click menu carries the chat's own verbs. |
 | Transcript | Bubbles with **You** / **Hermes** labels, times, copy controls; the tool activity line; approval and error panels. |
 | Composer | The field, send/stop, the page pill, the card pill, the receipt controls, the model and thinking pills. |
 | Dock actions | **New chat**, **Life-Chain**, the two-panes side switch, **Collapse chat**, and the version badge (*Check for updates*). |

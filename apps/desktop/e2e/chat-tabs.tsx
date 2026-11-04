@@ -115,9 +115,16 @@ harness.__lqListOptions = [];
  * `archived=id,id` makes the fixture answer as if Hermes archived those rows
  * while the app was shut; it is how the restore rig proves a remembered tab for
  * a chat that no longer exists is dropped instead of resurrected.
+ *
+ * `pinned=0` is the restore rig's switch: a pinned chat is always a tab in the
+ * dock's strip, so the fixture's default pinned row would draw a square at every
+ * boot and the restore assertions would be about the pin instead of the memory.
+ * With the switch the profile has no pinned chats and the strip is exactly the
+ * remembered one. The default (no param) keeps "Pinned note" pinned.
  */
 const query = new URLSearchParams(window.location.search);
 const keepChatMemory = query.get("keep") === "1";
+const forceUnpinned = query.get("pinned") === "0";
 const archivedWhileShut = new Set(
   (query.get("archived") ?? "").split(",").filter(Boolean),
 );
@@ -268,6 +275,9 @@ const MESSAGES: Record<string, { role: "user" | "assistant"; content: string }[]
 const rows: FixtureRow[] = ROWS.map((row) => ({
   ...row,
   archived: archivedWhileShut.has(row.id) ? 1 : row.archived,
+  // The restore rig drives this page as a profile with no pinned chats; every
+  // other rig keeps the fixture's own pin.
+  pinned: forceUnpinned ? 0 : row.pinned,
 }));
 const listeners = new Set<(frame: CompanionStreamFrame) => void>();
 /** The pending `companionChatStream` promise per chat, so the driver owns time. */
