@@ -414,9 +414,11 @@ const stubbed = new Proxy(bridge, {
 
 (window as unknown as { lifequest: unknown }).lifequest = stubbed;
 
-// A previous run's "last chat" would decide the landing view; clear it so the
-// harness always starts from the same place.
+// A previous run's "last chat" would decide the landing view, and a remembered
+// tab strip would decide how many tabs the dock opens; clear both so the harness
+// always starts from the same place.
 window.localStorage.removeItem("lifequest.companion.lastSessionId");
+window.localStorage.removeItem("lifequest.companion.openTabs");
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from chat-sessions.html");

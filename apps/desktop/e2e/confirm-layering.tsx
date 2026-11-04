@@ -191,9 +191,11 @@ const stubbed = new Proxy(bridge, {
 
 (window as unknown as { lifequest: unknown }).lifequest = stubbed;
 
-// A previous run's "last chat" would decide the landing view; clear it so the
-// harness always starts from the same place.
+// A previous run's "last chat" would decide the landing view, and a remembered
+// tab strip would decide how many tabs the dock opens; clear both so the harness
+// always starts from the same place.
 window.localStorage.removeItem("lifequest.companion.lastSessionId");
+window.localStorage.removeItem("lifequest.companion.openTabs");
 
 /*
  * The reference glass: the settings sheet's own class, off screen and out of the

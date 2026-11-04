@@ -240,6 +240,10 @@ const stubbed = new Proxy(bridge, {
 
 (window as unknown as { lifequest: unknown }).lifequest = stubbed;
 
+// The dock remembers its tab strip between runs; an earlier rig's strip would
+// open tabs this one never made.
+window.localStorage.removeItem("lifequest.companion.openTabs");
+
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from chat-panel.html");
 

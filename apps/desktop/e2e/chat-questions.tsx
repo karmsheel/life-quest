@@ -227,6 +227,9 @@ const stubbed = new Proxy(bridge, {
 
 (window as unknown as { lifequest: unknown }).lifequest = stubbed;
 window.localStorage.removeItem("lifequest.companion.lastSessionId");
+// The dock now remembers its tab strip; an earlier boot's would open tabs this
+// rig never made.
+window.localStorage.removeItem("lifequest.companion.openTabs");
 
 function Shell() {
   return (
