@@ -23,6 +23,7 @@ import {
   EyeOff,
   ImagePlus,
   Keyboard,
+  Link2,
   MessageCircleQuestion,
   MessageSquare,
   MoreVertical,
@@ -45,9 +46,14 @@ import { copyText } from "@/lib/clipboard";
 import { api } from "@/lib/ipc";
 import { pageLabelFor } from "@/lib/page-context";
 import { WING_LABELS, wingForPath } from "@/components/shell/wing";
-import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
+import {
+  linkHost,
+  signalStampWhen,
+  signalVisible,
+} from "@/lib/signal-chain";
 import { summarizeToolRun, toolRowLabel } from "@/lib/tool-run";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
+import { useSignalImageUrls } from "@/components/signal-chain/useSignalImageUrls";
 import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
 import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
@@ -154,6 +160,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const {
     requestedSessionId,
     requestedKickoff,
+    requestedSession,
     requestedAutomationContext,
     clearRequestedSession,
     contextCards,
@@ -358,6 +365,21 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   /** The same two-state rule as the chat field: the arrow needs some text. */
   const chainSendable = chainDraft.trim().length > 0;
   const chainControlVisible = chainBusy || chainSendable;
+  /**
+   * A capture may be a picture; the dock draws the same records the page does,
+   * so it reads their bytes through the same blob-URL path.
+   */
+  const signalImagePaths = useMemo(
+    () =>
+      signals
+        .map((s) =>
+          s.attachment?.kind === "image" ? s.attachment.relPath : null,
+        )
+        .filter((path): path is string => path !== null),
+    [signals],
+  );
+  const { urls: signalImageUrls, missing: missingSignalImages } =
+    useSignalImageUrls(signalImagePaths);
   const listRef = useRef<HTMLDivElement | null>(null);
   const activityRef = useRef<HTMLUListElement | null>(null);
   /** The chain's own scroller: the view follows the newest signal. */
@@ -745,9 +767,16 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
   /**
    * An automation, a review or a saved question hands the dock a chat outside
-   * the panel's own navigation. The request is cleared only after the kickoff,
-   * so the landing pass cannot replace the prompt bubble with a transcript the
-   * gateway has not written yet.
+   * the panel's own navigation.
+   *
+   * The chat gets a tab of its own, beside the conversation on screen, rather
+   * than taking that tab over: the page asked the dock to start a conversation,
+   * and the one the operator was reading is not the price of it. A chat the page
+   * has just created also hands its own row along, so the tab and the sidebar
+   * carry its name from the first paint instead of showing a bare "Chat".
+   *
+   * The request is cleared only after the kickoff, so the landing pass cannot
+   * replace the prompt bubble with a transcript the gateway has not written yet.
    */
   useEffect(() => {
     if (!requestedSessionId) return;
@@ -756,7 +785,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     const kickoff = requestedKickoff;
     (async () => {
       onOpenChange(true);
-      await chatRef.current.openChat(targetId);
+      await chatRef.current.openChatInNewTab(targetId, requestedSession ?? undefined);
       if (cancelled) return;
       // Bind the automation's page material before the first turn is sent, so
       // that turn carries the same context every later turn in the chat will.
@@ -1163,7 +1192,41 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             </form>
           ) : (
             <>
-              <p className="chat-panel__chain-body">{s.body}</p>
+              {s.attachment?.kind === "image" ? (
+                <span className="chat-panel__chain-image-wrap">
+                  {signalImageUrls[s.attachment.relPath] ? (
+                    <img
+                      className="chat-panel__chain-image"
+                      src={signalImageUrls[s.attachment.relPath]}
+                      alt={s.body.trim() || s.attachment.name}
+                      loading="lazy"
+                      width={s.attachment.width ?? undefined}
+                      height={s.attachment.height ?? undefined}
+                    />
+                  ) : (
+                    <span className="chat-panel__chain-image-missing muted">
+                      {missingSignalImages[s.attachment.relPath]
+                        ? "Picture missing from the vault."
+                        : "Loading picture…"}
+                    </span>
+                  )}
+                </span>
+              ) : null}
+              {s.attachment?.kind === "link" ? (
+                <a
+                  className="chat-panel__chain-link"
+                  href={s.attachment.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={s.attachment.url}
+                >
+                  <Link2 size={13} aria-hidden />
+                  <span>{linkHost(s.attachment.url) || s.attachment.url}</span>
+                </a>
+              ) : null}
+              {s.body ? (
+                <p className="chat-panel__chain-body">{s.body}</p>
+              ) : null}
               <button
                 type="button"
                 className="chat-panel__chain-menu-btn"

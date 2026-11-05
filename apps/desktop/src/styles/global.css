@@ -422,10 +422,23 @@ a {
    edge. It wears `--titlebar-bg`: the mat by day, and at night one step darker
    than the mat the rail wears, still clear of the page canvas. The rail's box
    reaches over the titlebar row and paints the mat there, so the sidebar runs to
-   the window's top and the strip starts where the sheet does. */
+   the window's top and the strip starts where the sheet does.
+
+   The strip is three tracks: the empty drag handle over the rail's column, the
+   domain tab, and the trailing cluster. The two outer tracks are flex tracks of
+   the same weight, so each takes the same share of the space the tab leaves and
+   the tab lands on the strip's centre line instead of at its leading edge. Each
+   outer track also holds a floor of the chrome it must clear — the rail on the
+   leading side, the trailing cluster's own width on the trailing side — which
+   only bites on a window too narrow for the share, where the tab shifts aside
+   rather than covering either. */
 .window-titlebar {
   flex: 0 0 auto;
-  display: flex;
+  display: grid;
+  grid-template-columns:
+    minmax(var(--shell-nav-width), 1fr)
+    minmax(0, auto)
+    minmax(max-content, 1fr);
   align-items: center;
   height: env(titlebar-area-height, var(--window-titlebar-height));
   background: var(--titlebar-bg);
@@ -433,29 +446,38 @@ a {
   -webkit-app-region: drag;
   user-select: none;
   overflow: hidden;
+  /* Windows and Linux draw the window's caption buttons over the strip; the
+     `titlebar-area-*` env vars say how much of the trailing edge they own. It
+     is reserved as padding so the trailing cluster clears them and the strip
+     the operator sees is the box the tab centres in. Undefined env vars fall
+     back to 0px / 100%, which cancel to nothing. */
+  padding-right: calc(
+    100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%)
+  );
 }
 
+/* Thin rail: the leading track's floor is the icon column, so the tab keeps the
+   same centre line as the strip it sits in. */
+.window-titlebar[data-nav-collapsed] {
+  grid-template-columns:
+    minmax(var(--shell-nav-width-collapsed), 1fr)
+    minmax(0, auto)
+    minmax(max-content, 1fr);
+}
+
+/* The leading track is the window's drag handle and nothing else: the vault that
+   used to be named here lives at the foot of the sidebar now, so no control sits
+   in the strip's open room to be overlapped. The box stays because it is one
+   half of the pair whose equal share centres the tab. */
 .window-titlebar__leading {
+  grid-column: 1;
+  grid-row: 1;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   min-width: 0;
   height: 100%;
-  margin-left: env(titlebar-area-x, 0px);
-  width: env(titlebar-area-width, 100%);
-  max-width: 100%;
 }
-
-.window-titlebar:has(.window-titlebar__trailing) .window-titlebar__leading,
-.window-titlebar:has(.window-titlebar__controls) .window-titlebar__leading {
-  width: auto;
-  flex: 1 1 auto;
-}
-
-/* The strip's leading half is the window's drag handle and nothing else: the
-   vault that used to be named here lives at the foot of the sidebar now, so the
-   strip no longer reserves the rail's column for a chip and no control sits in
-   it to be overlapped. */
 
 /* —— The titlebar's domain tab —— */
 /* The domain lens left the sheet's top bar for the window's own strip. It is not
@@ -469,33 +491,37 @@ a {
    top corners are rounded by the same step — the strip shows through the two
    notches above them — so the silhouette is a tab at both ends rather than a
    block with only its base softened. It is `no-drag` because a control inside the
-   window's drag band must still take a click; the empty leading half of the strip
-   remains the handle.
+   window's drag band must still take a click; the open room on either side of it
+   is the handle.
 
-   Placement is the rail's own column plus a breath of mat: wide or thin, the tab
-   starts just past the sidebar's trailing hairline, so the flare on its leading
-   corner has strip to sit in rather than the rail's paint. The rail's collapse
-   moves the tab with it — the sidebar is the same chrome at both widths. */
+   Placement is the strip's middle track, flush with the window's top edge: the
+   tab sits on the window's centre line, with the rail's column on one side and
+   the trailing cluster on the other. The rail's floor keeps it off the sidebar
+   and the trailing floor keeps the controls clear, so it is never pushed against
+   either one; those floors only bite on a window too narrow to hold the centre.
+   Collapsing the rail widens the drag room beside the tab and leaves the tab where
+   it is. The side margins are the breath the bottom flares sit in: with them the
+   tab keeps 12px of strip on either side even when a narrow window squeezes it
+   against the rail, so the page still curves into the tab and never meets it on a
+   hard corner. */
 .window-titlebar__lens {
   --lens-fillet: 8px;
+  grid-column: 2;
+  grid-row: 1;
   position: relative;
   align-self: stretch;
+  justify-self: center;
   display: flex;
   align-items: center;
-  flex: 0 1 auto;
   min-width: 0;
   max-width: 40rem;
-  margin-left: calc(var(--shell-nav-width) + 0.75rem);
+  margin: 0 0.75rem;
   padding: 0 0.6rem;
   background: var(--background);
   /* The bottom corners stay square: their rounding is the concave flare the two
      pseudo-elements draw into the strip, not a radius carved out of this box. */
   border-radius: var(--lens-fillet) var(--lens-fillet) 0 0;
   -webkit-app-region: no-drag;
-}
-
-.window-titlebar[data-nav-collapsed] .window-titlebar__lens {
-  margin-left: calc(var(--shell-nav-width-collapsed) + 0.75rem);
 }
 
 .window-titlebar__lens::before,
@@ -549,14 +575,13 @@ a {
 }
 
 .window-titlebar__trailing {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
   -webkit-app-region: no-drag;
   display: flex;
   align-items: stretch;
   height: 100%;
-  flex: 0 0 auto;
-  margin-right: calc(
-    100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%)
-  );
 }
 
 .window-titlebar__controls {
@@ -1010,9 +1035,11 @@ a {
 }
 
 /* The vault chip in the foot of the rail. A chip rather than the old square
-   strip tab: it now sits inside the sidebar, on the rail's own mat, so it wears
-   the one accent-tinted shape the panel affords. It raises the vault switcher —
-   the only control that changes which folder the window is writing. */
+   strip tab: it sits inside the sidebar, on the rail's own mat, so it wears the
+   rail's quiet neutral fill rather than the page's accent. Changing the vault is
+   a control the operator reaches for rarely; the chip has to be findable at the
+   foot without being the loudest thing in the column. The hairline is what keeps
+   it a shape on the mat at night, where the fill is only a step off the rail. */
 .nav-rail__vault {
   appearance: none;
   flex: 1 1 0;
@@ -1024,8 +1051,12 @@ a {
   padding: 0 0.55rem;
   border: 0;
   border-radius: var(--radius-sm);
-  background: var(--accent-tint);
-  color: var(--accent);
+  background: var(--bg-subtle);
+  color: var(--muted);
+  /* The hairline is a shadow, not a border: the foot's two halves are flex
+     items with a 0 basis, and a 1px border would grow the chip's box by the
+     border while leaving the Log's alone — no longer equal halves. */
+  box-shadow: inset 0 0 0 1px var(--border-soft);
   font-family: inherit;
   font-size: 0.72rem;
   font-weight: 600;
@@ -1035,9 +1066,11 @@ a {
   cursor: pointer;
 }
 
+/* A quiet lift, not the brand: the chip is one of the rail's rows, so under the
+   pointer it darkens like one instead of lighting up with the accent. */
 .nav-rail__vault:hover {
-  background: var(--accent-hover);
-  color: var(--accent-hover-fg);
+  background: var(--bg-fill-secondary);
+  color: var(--fg);
 }
 
 /* The name is a flex item so a long vault ellipsizes against the caret instead
@@ -3011,14 +3044,54 @@ a {
   color: var(--accent);
 }
 
+/* The switcher's own row: the pill switcher, the line the page speaks through,
+   and the one control that answers the whole queue. They share a row, so a
+   message appearing never changes the height above the cards. */
+.decisions-inbox__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.35rem;
+}
+
 .decisions-inbox__tabs {
   display: inline-flex;
-  align-self: flex-start;
+  flex: 0 0 auto;
   gap: 0.15rem;
   padding: 0.2rem;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-pill);
   background: var(--bg-subtle);
+}
+
+/* Beside the switcher, not under it. The slot takes the room between the
+   switcher and the approve-all control, and never adds a line to the row. */
+.decisions-inbox__notices {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* One line, always. A refusal may be clipped by a narrow sheet; it may not grow
+   the bar and move every card under it. */
+.decisions-inbox__notice {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Sized to the switcher's pills rather than the form's buttons: this control is
+   part of the switcher's row, and a taller button would set the row's height. */
+.decisions-inbox__approve-all {
+  flex: 0 0 auto;
+  padding: 0.38rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .decisions-inbox__tab {
@@ -5148,6 +5221,60 @@ a.home-mini-list__link:hover {
   flex: 0 1 72rem;
   width: 72rem;
   max-width: 100%;
+}
+
+/* Focus mode is neither a workbench nor an inbox: it is the Daily Note's own
+   writing column, opened over the page it came from. The measure is narrower
+   than the decisions inbox's reading column on purpose — the operator asked for
+   the note and nothing around it, so the page behind is blur and mat and the
+   panel is one page of prose. The panel takes the frame's height rather than its
+   own: the box is what the operator came for, and it fills the panel under the
+   title. */
+.sheet-overlay--focus {
+  justify-content: center;
+}
+
+.sheet-overlay__panel--focus {
+  flex: 0 1 40rem;
+  width: 40rem;
+  max-width: 100%;
+}
+
+/* The page behind focus mode is texture, not context: it is blurred harder than
+   the surfaces an operator reads over, because nothing under this sheet is meant
+   to be read. The dim is a little heavier for the same reason. */
+.sheet-overlay--focus {
+  background: color-mix(in srgb, var(--canvas-base) 46%, transparent);
+  -webkit-backdrop-filter: blur(11px) saturate(0.9);
+  backdrop-filter: blur(11px) saturate(0.9);
+}
+
+/* One centred title, and the cross pinned into the corner rather than riding
+   the heading's row: a cross in the flow would push the title off the panel's
+   true centre, which is the whole of what focus mode's chrome has to be. The
+   selector carries the panel's variant class because the frame's own chrome
+   rule is declared after this block and would otherwise take the padding and
+   the border back. */
+.sheet-overlay__panel--focus .focus-overlay__chrome {
+  position: relative;
+  justify-content: center;
+  padding: 1.4rem 3.5rem 0.75rem;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.sheet-overlay__panel--focus .focus-overlay__chrome .sheet-overlay__heading {
+  align-items: center;
+}
+
+.sheet-overlay__panel--focus .focus-overlay__chrome .sheet-overlay__title {
+  font-size: 1.15rem;
+}
+
+.focus-overlay__close {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
 }
 
 .sheet-overlay__chrome {
@@ -8307,6 +8434,52 @@ button.chat-panel__activity-line:hover {
   word-break: break-word;
 }
 
+/* A chain row's picture, scaled for a 20rem column: enough to recognise the
+   capture, not enough to take the dock over. */
+.chat-panel__chain-image-wrap {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.chat-panel__chain-image {
+  display: block;
+  max-width: 100%;
+  max-height: 9rem;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--muted-surface);
+}
+
+.chat-panel__chain-image-missing {
+  font-size: 0.75rem;
+}
+
+.chat-panel__chain-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  margin-bottom: 0.3rem;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.chat-panel__chain-link span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel__chain-link:hover {
+  text-decoration: underline;
+}
+
 /* A titled signal keeps its title: the panel's composer never writes one, so a
    row that has one came from somewhere else — an import, or Hermes itself — and
    dropping it would hide data the record carries. */
@@ -8489,6 +8662,120 @@ button.chat-panel__activity-line:hover {
   min-height: 8rem;
 }
 
+/* A picture dropped on the box lights the box rather than a page-wide overlay:
+   the composer is the target, and the gesture lands where the capture does. */
+.signal-chain__composer--dragging {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm), 0 0 0 2px var(--accent-tint);
+}
+
+/* The picture waiting to be logged: the preview is what the drop was for, so it
+   leads the box and sits above the field the operator types into. */
+.signal-chain__attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.signal-chain__attachment-image {
+  display: block;
+  width: 5rem;
+  height: 5rem;
+  flex: none;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted-surface);
+}
+
+.signal-chain__attachment-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.signal-chain__attachment-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-chain__attachment-hint {
+  font-size: 0.72rem;
+}
+
+.signal-chain__attachment-remove {
+  padding: 0.3rem;
+  line-height: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The link's own line: the input only appears while the operator is adding a
+   link, and the chip replaces it once the URL is real. */
+.signal-chain__link-form {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.signal-chain__link-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.55rem;
+  background: var(--bg);
+  font: inherit;
+}
+
+.signal-chain__link-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-tint) 45%, transparent);
+  font-size: 0.82rem;
+}
+
+.signal-chain__link-host {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.signal-chain__link-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
+.signal-chain__composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.signal-chain__tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+
 .signal-chain__empty {
   margin: 0.25rem 0 0;
 }
@@ -8569,6 +8856,70 @@ button.chat-panel__activity-line:hover {
   margin: 0;
   white-space: pre-wrap;
   line-height: 1.45;
+}
+
+/* A captured picture is the row's content, so it takes the column's width up to
+   a reading size rather than a thumbnail's. The name under it is the file's,
+   kept as the label because the description may be empty. */
+.signal-row__figure {
+  margin: 0 0 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.signal-row__image {
+  display: block;
+  max-width: min(100%, 32rem);
+  max-height: 22rem;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted-surface);
+}
+
+.signal-row__image-name {
+  font-size: 0.72rem;
+}
+
+.signal-row__image-missing {
+  font-size: 0.8rem;
+}
+
+/* A captured link is a card, not a run of text: the host is the label and the
+   address is the evidence, and one click opens the operator's own browser. */
+.signal-row__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  margin-bottom: 0.35rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--selected) 45%, transparent);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.82rem;
+}
+
+.signal-row__link:hover {
+  border-color: var(--accent);
+}
+
+.signal-row__link-host {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.signal-row__link-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
 }
 
 .signal-row--editing {

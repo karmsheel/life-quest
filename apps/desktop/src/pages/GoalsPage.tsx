@@ -266,7 +266,7 @@ export default function GoalsPage() {
         return;
       }
       const kickoff = plan.value.created ? plan.value.kickoff : undefined;
-      chatDock.requestSession(plan.value.sessionId, kickoff);
+      chatDock.requestSession({ id: plan.value.sessionId, kickoff });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

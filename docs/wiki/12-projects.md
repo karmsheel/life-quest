@@ -47,6 +47,9 @@ Decisions that already point at it. The companion reads projects directly, so it
      is appended to the project's timeline and the percent is set in the same write.
    - **Context** — edit the markdown body, then **Save context**, or **Discard** the draft.
    - **Details** — change any attribute and choose **Save details**.
+   - **Repositories** — when the project carries repository URLs (the companion's
+     **create_project** and **update_project** tools write them), each is listed as a
+     link that opens in a new tab.
 6. To put a task against the project, open [Act](./14-act.md), expand a card, and set its
    **Project** field. The task then appears in the project page's **Tasks** section, and
    choosing its title opens the board with that card expanded.
@@ -69,6 +72,7 @@ becomes a markdown file in the vault the moment you create it."
 | **Progress** | Percent control, note box, **Log progress**, and the timeline of updates (each with its time, note, percent and actor). |
 | **Context** | The project's markdown body in a live markdown editor, with **Save context** and **Discard**. |
 | **Details** | Title, summary, status, priority, goal, domain, start date, target date, with **Save details**. |
+| **Repositories** | The project's repository links, one per line, each opening in a new tab. The section appears only when the project carries repository URLs. |
 | **Around this project** | The collated sections: **Tasks**, **Signals**, **Decisions**, **Activity**. |
 
 The collated sections show exactly four kinds of material:
@@ -90,10 +94,12 @@ The project page does not collate Daily Notes or library documents.
 
 A project is a vault file at `projects/<id>.md`. The id is the filename and is not written
 into the frontmatter. The frontmatter carries the fixed schema (title, summary, stateNote,
-goalId, domain, status, priority, startDate, targetDate, progress, nextAction, updates,
-createdAt, updatedAt); the markdown body is the context document. The `updates` timeline is
-stored as a one-line JSON array in the frontmatter. Older project files with only the
-first fields read with every new field defaulted, so opening an old vault migrates nothing.
+goalId, domain, status, priority, startDate, targetDate, progress, nextAction, repoUrls,
+updates, createdAt, updatedAt); the markdown body is the context document. The `repoUrls`
+list is a YAML block sequence, one `- https://…` line per repository; the `updates`
+timeline is stored as a one-line JSON array in the frontmatter. Older project files with
+only the first fields read with every new field defaulted, so opening an old vault
+migrates nothing.
 
 ### Operator writes are direct; agent writes wait for approval
 
@@ -115,6 +121,10 @@ first fields read with every new field defaulted, so opening an old vault migrat
 - Progress is a whole number from 0 to 100. Logging progress with a percent sets the bar;
   the timeline and the bar never disagree.
 - Dates must be real `YYYY-MM-DD` days, not strings that merely parse as a date.
+- A repository URL must be an absolute `http`/`https` URL. Each entry is checked the
+  same way the source link is, and a **create_project** or **update_project** call with a
+  bad entry is refused by name (`repoUrls[1] must be an absolute http or https URL`);
+  nothing is filed or written.
 - A goal or domain is checked for liveness only when you set it. If the goal or domain is
   later deleted, the project keeps the id and the page shows it as "(missing)" or
   "(archived)" rather than clearing it.

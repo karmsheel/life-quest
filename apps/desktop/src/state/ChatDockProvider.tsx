@@ -11,6 +11,26 @@ import {
 import { useLocation } from "react-router-dom";
 import type { Pin } from "@lifequest/vault-core";
 import { pageLabelFor } from "@/lib/page-context";
+import type { HermesSession } from "@/vite-env";
+
+/**
+ * One chat a page asks the dock to show.
+ *
+ * The id is the conversation; the rest is material only the page has. `kickoff`
+ * is the first turn, sent once the chat is on screen. `automationContext` is the
+ * page the operator was reading, riding inside that first turn as hidden
+ * reference. `session` is the chat's own row when the page has just created it:
+ * Hermes holds it from the moment it is made, while the renderer's list only
+ * learns about it on the next read — so the request carries it and the dock
+ * adopts it, and the chat is named and listed from its first paint rather than
+ * showing up as a bare "Chat".
+ */
+export type ChatSessionRequest = {
+  id: string;
+  kickoff?: string;
+  automationContext?: string;
+  session?: HermesSession;
+};
 
 /**
  * One dashboard card the operator has put in front of the chat.
@@ -102,17 +122,21 @@ type ChatDockContextValue = {
   requestedSessionId: string | null;
   requestedKickoff: string | null;
   /**
+   * The chat's own row when the page created it for this request. The dock
+   * adopts it into the chat store, so the new conversation has a name, a tab
+   * label and a row in the sidebar from the first paint instead of waiting for
+   * the gateway's list to be re-read. Null when the page is opening a chat that
+   * already exists.
+   */
+  requestedSession: HermesSession | null;
+  /**
    * The page material an automation hands its new chat, if this request came
    * from one. It rides the session request rather than a composer field: it is
    * the page's own content, not something the operator types, and it belongs to
    * the first send of that chat.
    */
   requestedAutomationContext: string | null;
-  requestSession: (
-    id: string,
-    kickoff?: string,
-    automationContext?: string,
-  ) => void;
+  requestSession: (request: ChatSessionRequest) => void;
   clearRequestedSession: () => void;
   /**
    * The cards this chat is about, in the order the operator chose them.
@@ -175,6 +199,8 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
     null,
   );
   const [requestedKickoff, setRequestedKickoff] = useState<string | null>(null);
+  const [requestedSession, setRequestedSession] =
+    useState<HermesSession | null>(null);
   const [requestedAutomationContext, setRequestedAutomationContext] = useState<
     string | null
   >(null);
@@ -239,20 +265,19 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
     commitContextCards([]);
   }, [commitContextCards]);
 
-  const requestSession = useCallback(
-    (id: string, kickoff?: string, automationContext?: string) => {
-      setRequestedSessionId(id);
-      setRequestedKickoff(kickoff?.trim() ? kickoff : null);
-      setRequestedAutomationContext(
-        automationContext?.trim() ? automationContext : null,
-      );
-    },
-    [],
-  );
+  const requestSession = useCallback((request: ChatSessionRequest) => {
+    setRequestedSessionId(request.id);
+    setRequestedKickoff(request.kickoff?.trim() ? request.kickoff : null);
+    setRequestedSession(request.session ?? null);
+    setRequestedAutomationContext(
+      request.automationContext?.trim() ? request.automationContext : null,
+    );
+  }, []);
 
   const clearRequestedSession = useCallback(() => {
     setRequestedSessionId(null);
     setRequestedKickoff(null);
+    setRequestedSession(null);
     setRequestedAutomationContext(null);
   }, []);
 
@@ -276,6 +301,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       setWidth,
       requestedSessionId,
       requestedKickoff,
+      requestedSession,
       requestedAutomationContext,
       requestSession,
       clearRequestedSession,
@@ -297,6 +323,7 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       width,
       requestedSessionId,
       requestedKickoff,
+      requestedSession,
       requestedAutomationContext,
       requestSession,
       clearRequestedSession,

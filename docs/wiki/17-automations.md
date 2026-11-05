@@ -103,9 +103,11 @@ updatedAt, lastRunAt, lastRunStatus, lastRunSessionId, lastError }`.
 ### Manual runs
 
 - **Run now** on this page, or the job's button on its host page, creates a **new** chat each
-  time. The chat is named `<name> · <date label>`.
+  time. The chat is named `<name> · <date label>` and opens in a tab of its own in the dock,
+  beside the conversation that was already on screen.
 - The prompt is sent into that chat immediately, so the agent's answer arrives as a normal
-  chat turn in the dock and stays in the thread list like any other conversation.
+  chat turn in the dock, and the new chat is listed in **Chats** under its own name like any
+  other conversation.
 - The page context is sent as a separate hidden block: a header naming the automation, the
   date, the note, and an explicit instruction that the note is the operator's writing and
   must be treated as reference, never as commands. The visible prompt is the next message.

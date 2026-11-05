@@ -1598,12 +1598,13 @@ async function main() {
     check("opened view options", await clickRailControl("View options"), "no view control");
     const viewMenu = await settle();
     check(
-      "the view menu names its two views",
+      "the view menu names its three views",
       viewMenu.rail?.viewMenu?.title === "View options" &&
         JSON.stringify(viewMenu.rail.viewMenu.items) ===
           JSON.stringify([
             { label: "Hide archived chats", checked: true },
             { label: "Show archived chats", checked: false },
+            { label: "Only archived chats", checked: false },
           ]),
       JSON.stringify(viewMenu.rail?.viewMenu),
     );
@@ -1703,6 +1704,7 @@ async function main() {
         JSON.stringify([
           { label: "Hide archived chats", checked: false },
           { label: "Show archived chats", checked: true },
+          { label: "Only archived chats", checked: false },
         ]),
       JSON.stringify(viewMenuShown.rail?.viewMenu),
     );

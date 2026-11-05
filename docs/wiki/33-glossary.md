@@ -36,8 +36,8 @@ page, a document, a log card, and so on. Clicking a card puts it in the companio
 chat's context, up to three at once, and clicking it again takes that card out.
 See [Dashboard](./06-dashboard.md).
 
-**Capture** — a thought logged in Life-Chain before it evaporates. Capture is not
-the studio; it is a signal that can become a task. See
+**Capture** — a thought, a picture or a link logged in Life-Chain before it evaporates.
+Capture is not the studio; it is a signal that can become a task. See
 [Life-Chain](./15-life-chain.md).
 
 **Chat thread** — one conversation with the companion, listed in the rail's

@@ -53,6 +53,10 @@ type State = {
     skin: string | null;
     canvasBase: string;
     accent: string;
+    /** The palette's mid ink, which the vault chip's quiet label wears. */
+    muted: string;
+    /** The rail's soft neutral surface, which the vault chip's fill wears. */
+    bgSubtle: string;
     titlebarBg: string;
     background: string;
     card: string;
@@ -170,8 +174,8 @@ type State = {
   /**
    * The domain tab raised into the window strip: its page ink, its no-drag
    * carve-out, its two bottom fillets where the page flares into the strip, its
-   * rounded top corners matching them, and how far it starts past the rail's
-   * trailing hairline.
+   * rounded top corners matching them, and the two gaps that hold it clear of the
+   * rail and of the trailing cluster.
    */
   lens: {
     box: Box;
@@ -180,6 +184,7 @@ type State = {
     inTitlebar: boolean;
     firstChild: boolean;
     fromRail: number | null;
+    toTrailing: number | null;
     borderTopLeftRadius: string;
     borderTopRightRadius: string;
     borderBottomLeftRadius: string;
@@ -187,8 +192,10 @@ type State = {
     before: Fillet | null;
     after: Fillet | null;
   } | null;
-  /** `data-nav-collapsed` on the strip: what moves the lens with the rail. */
+  /** `data-nav-collapsed` on the strip: the rail's width the strip reports. */
   titlebarNavCollapsed: string | null;
+  /** The trailing cluster (theme, shortcuts, settings, window controls). */
+  trailing: Box | null;
   /** The page column: its top edge is where the retired band used to end. */
   shellContent: Box | null;
   /**
@@ -779,17 +786,21 @@ describe("shell sidebar (docked rail)", () => {
       (chip.ariaLabel ?? "").includes(report.vaultName),
       `the chip's accessible name (${JSON.stringify(chip.ariaLabel)}) does not carry the vault's name`,
     );
-    // Accent-tinted fill and accent ink: a chip on the mat, not the rail's own
-    // surface and not the old square strip tab.
+    // Quiet neutral fill and the palette's mid ink: the chip is still a shape on
+    // the mat — not the rail's own surface, not the old square strip tab — but
+    // changing the vault is a rare errand, so it must not wear the accent the
+    // page's real actions wear.
     assert.ok(
       alpha(chip.background) > 0.05 &&
-        chip.background !== expanded.rail!.background,
-      `the chip paints no fill on the rail (${chip.background} on ${expanded.rail!.background})`,
+        chip.background === expanded.theme.bgSubtle &&
+        chip.background !== expanded.rail!.background &&
+        chip.background !== expanded.theme.accent,
+      `the chip's fill (${chip.background}) is not the quiet --bg-subtle (${expanded.theme.bgSubtle}) on the rail (${expanded.rail!.background})`,
     );
     assert.equal(
       chip.color,
-      expanded.theme.accent,
-      `the chip's ink (${chip.color}) is not --accent (${expanded.theme.accent})`,
+      expanded.theme.muted,
+      `the chip's ink (${chip.color}) is not the muted ink (${expanded.theme.muted}), not the accent (${expanded.theme.accent})`,
     );
     assert.notEqual(
       chip.radius,
@@ -1001,7 +1012,8 @@ describe("shell sidebar (docked rail)", () => {
     // The domain tab raised into the window strip. The sheet's `.top-bar` is gone
     // from the DOM, the page begins where the strip ends (44px higher than it did),
     // and the strip's first child is the page-ink lens holding the real switcher:
-    // no-drag, flush top and bottom, 12px past the rail's trailing hairline.
+    // no-drag, flush top and bottom, centred on the strip between the rail and
+    // the trailing controls.
     assert.equal(expanded.legacyTopBar, false, "a .top-bar is still in the tree");
     assert.ok(expanded.mainFirstChild, "the sheet rendered no first child");
     assert.match(
@@ -1045,15 +1057,36 @@ describe("shell sidebar (docked rail)", () => {
       expanded.shellContent!.top,
       `the lens ends at ${lens.box.bottom}px, not at the page's top edge (${expanded.shellContent!.top}px)`,
     );
-    assert.equal(
-      lens.fromRail,
-      12,
-      `the lens starts ${lens.fromRail}px past the rail, not the 12px breath`,
+    // The tab is centred on the strip, not pinned to the rail. Its own box is
+    // the claim: the lens's centre and the strip's centre must be the same line
+    // (a box has no integer centre, so one pixel of rounding is allowed).
+    const lensCentre = (lens.box.left + lens.box.right) / 2;
+    const stripCentre = (expanded.titlebar!.left + expanded.titlebar!.right) / 2;
+    assert.ok(
+      Math.abs(lensCentre - stripCentre) <= 1,
+      `the lens's centre is at ${lensCentre}px, not on the strip's ${stripCentre}px centre line`,
     );
-    assert.equal(
-      lens.box.left,
-      expanded.rail!.box.right + 12,
-      `the lens starts at ${lens.box.left}px, not 12px past the rail's ${expanded.rail!.box.right}px edge`,
+    // Centred, not merely overlapping: the tab keeps positive slack to the rail
+    // beside it and to the trailing controls it must not bury.
+    assert.ok(
+      lens.fromRail !== null && lens.fromRail > 0,
+      `the lens runs into the rail (gap ${lens.fromRail}px)`,
+    );
+    assert.ok(
+      lens.toTrailing !== null && lens.toTrailing > 0,
+      `the lens runs into the trailing controls (gap ${lens.toTrailing}px)`,
+    );
+    assert.ok(
+      lens.box.left >= expanded.rail!.box.right,
+      `the lens starts at ${lens.box.left}px, left of the rail's ${expanded.rail!.box.right}px edge`,
+    );
+    assert.ok(
+      expanded.trailing,
+      "the strip rendered no trailing cluster to measure the tab against",
+    );
+    assert.ok(
+      lens.box.right <= expanded.trailing!.left,
+      `the lens ends at ${lens.box.right}px, past the trailing cluster's ${expanded.trailing!.left}px edge`,
     );
     assert.equal(
       lens.background,
@@ -1303,29 +1336,34 @@ describe("shell sidebar (docked rail)", () => {
       null,
       `a titlebar toggle re-appeared when the rail narrowed (${JSON.stringify(collapsed.titlebarToggle)})`,
     );
-    // The lens is chrome, so it follows the rail: the strip signals the collapsed
-    // state on the header and the tab pulls in to 68px — the 56px icon column plus
-    // the same 12px breath — still flush with the strip and the page's top edge.
+    // The lens is centred on the strip, so narrowing the rail does not drag it
+    // along: the tab holds the window's centre line at both widths, still flush
+    // with the strip and the page's top edge.
     assert.equal(
       collapsed.titlebarNavCollapsed,
       "true",
       `the collapsed strip does not report data-nav-collapsed (${JSON.stringify(collapsed.titlebarNavCollapsed)})`,
     );
     assert.ok(collapsed.lens, "the thin strip rendered no domain lens");
-    assert.equal(
-      collapsed.lens!.fromRail,
-      12,
-      `the collapsed lens starts ${collapsed.lens!.fromRail}px past the rail, not the 12px breath`,
+    const collapsedLensCentre =
+      (collapsed.lens!.box.left + collapsed.lens!.box.right) / 2;
+    const collapsedStripCentre =
+      (collapsed.titlebar!.left + collapsed.titlebar!.right) / 2;
+    assert.ok(
+      Math.abs(collapsedLensCentre - collapsedStripCentre) <= 1,
+      `the collapsed lens's centre is at ${collapsedLensCentre}px, not on the strip's ${collapsedStripCentre}px centre line`,
     );
-    assert.equal(
-      collapsed.lens!.box.left,
-      collapsedTrack + 12,
-      `the collapsed lens starts at ${collapsed.lens!.box.left}px, not ${collapsedTrack + 12}px`,
+    assert.ok(
+      Math.abs(collapsed.lens!.box.left - lens.box.left) <= 1,
+      `the lens slid from ${lens.box.left}px to ${collapsed.lens!.box.left}px when the rail narrowed; a centred tab holds still`,
     );
-    assert.equal(
-      collapsed.lens!.box.left,
-      collapsed.rail!.box.right + 12,
-      `the collapsed lens starts at ${collapsed.lens!.box.left}px, not 12px past the thin rail's ${collapsed.rail!.box.right}px edge`,
+    assert.ok(
+      collapsed.lens!.fromRail !== null && collapsed.lens!.fromRail > 0,
+      `the collapsed lens runs into the thin rail (gap ${collapsed.lens!.fromRail}px)`,
+    );
+    assert.ok(
+      collapsed.lens!.toTrailing !== null && collapsed.lens!.toTrailing > 0,
+      `the collapsed lens runs into the trailing controls (gap ${collapsed.lens!.toTrailing}px)`,
     );
     assert.equal(
       collapsed.lens!.box.top,
@@ -1436,8 +1474,9 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.ok(
       alpha(collapsed.vaultChip!.background) > 0.05 &&
+        collapsed.vaultChip!.background === collapsed.theme.bgSubtle &&
         collapsed.vaultChip!.background !== collapsed.rail!.background,
-      `the thin chip paints no fill on the rail (${collapsed.vaultChip!.background} on ${collapsed.rail!.background})`,
+      `the thin chip's fill (${collapsed.vaultChip!.background}) is not the quiet --bg-subtle (${collapsed.theme.bgSubtle}) on the rail (${collapsed.rail!.background})`,
     );
     assert.notEqual(
       collapsed.vaultChip!.radius,

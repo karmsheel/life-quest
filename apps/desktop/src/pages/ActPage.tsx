@@ -228,13 +228,14 @@ function ActContent() {
       try {
         const created = await api().companionSessionCreate(sendToAgentTitle(task));
         if (!created.ok) return { ok: false, error: created.error };
-        chatDock.requestSession(
-          created.value.id,
-          sendToAgentKickoff(
+        chatDock.requestSession({
+          id: created.value.id,
+          kickoff: sendToAgentKickoff(
             task,
             sendToAgentContext(snapshot.map, task, snapshot.goals, projects),
           ),
-        );
+          session: created.value,
+        });
         return { ok: true };
       } catch (err) {
         return {

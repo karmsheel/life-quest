@@ -86,10 +86,19 @@ not send an API key to the renderer.
    archived or deleted in Hermes Desktop in the meantime loses its tab, and if
    every tab was closed before quitting the dock opens on a blank thread rather
    than reopening one — unless a pinned chat remains, whose tab is permanent.
+   A chat a page starts — an automation's button, a review's or plan's interview,
+   a task sent to the agent — arrives the same way: a tab of its own beside the
+   conversation on screen, named after the job that started it and listed in
+   **Chats** under that name.
 4. Hover a chat for its own controls: the row menu has **Open in new tab**,
    **Pin** / **Unpin**, **Rename**, **Archive**, and **Delete**. Pinned chats sit
    at the top of the one list, above the recent chats. A chat streaming a turn
    shows a dot on its row; the header counts how many are running.
+   The **View options** control in the list header decides how archived chats are
+   listed: **Hide archived** (the default working list), **Show archived** (live
+   chats, then the archived ones in a greyed band tagged **Archived**), or
+   **Only archived** (the archive alone). An archived row can be restored from
+   its row menu (**Unarchive**), never opened while it is archived.
 5. A pinned chat is always a tab in the dock's strip. Pinned tabs lead the strip
    and are drawn small, like browser pinned tabs: a square with the chat name's
    first letter and a pin, and no close control. Right-click a pinned tab for
@@ -156,7 +165,7 @@ path. Attaching a receipt to a vault without the Finance kit is refused with
 
 | Part | What it does |
 |---|---|
-| Chats list (rail) | **New chat**; rows pinned first, then recent (archived rows in their own greyed band when the view shows them); per-row **Chat actions** menu; a running dot; a **Dismiss** for a failed list read. The rail is the window's only chat history. |
+| Chats list (rail) | **New chat**; rows pinned first, then recent, with archived rows in their own greyed band under **Show archived** or alone under **Only archived** (both from **View options**); per-row **Chat actions** menu; a running dot; a **Dismiss** for a failed list read. The rail is the window's only chat history. |
 | Dock header | The active chat's name and **Pin chat** / **Rename chat** / **Archive chat** — the archive control steps away while the chat is pinned. |
 | Tab strip | One tab per open chat, each closable, with a live dot while it streams and an amber dot while it waits on an approval. Pinned chats lead as squares (first letter + pin, no close control) and are unpinned from their right-click menu; any tab's right-click menu carries the chat's own verbs. |
 | Transcript | Bubbles with **You** / **Hermes** labels, times, copy controls; the tool activity line; approval and error panels. |
@@ -221,6 +230,11 @@ path. Attaching a receipt to a vault without the Finance kit is refused with
   [Life-Chain](./15-life-chain.md).
 - **A chat you open in Hermes Desktop is the same chat.** Renames, pins and
   archives are Hermes-side; do not expect a LifeQuest-only copy.
+- **The archived view reads the profile's own store.** The host gateway's
+  Sessions API lists live chats only, so the app reads the profile's archived
+  rows from its Hermes session store (read-only) for the archived band.
+  **Unarchive** still writes the durable Hermes flag back through the gateway,
+  so Hermes Desktop and other channels see the restore too.
 
 ## Related
 

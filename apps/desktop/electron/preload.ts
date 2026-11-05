@@ -243,6 +243,10 @@ const lifequest = {
     >,
   signalChainDelete: (id: string) =>
     ipcRenderer.invoke("signalChain:delete", id) as Promise<Result<unknown>>,
+  signalChainReadImage: (relPath: string) =>
+    ipcRenderer.invoke("signalChain:readImage", relPath) as Promise<
+      Result<unknown>
+    >,
 
   libraryList: () => ipcRenderer.invoke("library:list"),
   libraryCreate: (input: Record<string, unknown>) =>
