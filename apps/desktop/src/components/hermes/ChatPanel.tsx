@@ -2164,7 +2164,10 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               panel sits just past the rail and the page takes the window's
               trailing edge. The icon is the two panes swapping sides rather
               than the side they are on — the state it is in is read off the
-              layout in front of the operator.
+              layout in front of the operator. It is a move, not a toggle, so
+              it carries no pressed state: a dock living on the leading edge is
+              an arrangement to work in, not a mode left switched on, and the
+              bar must rest as plain chrome on either side.
             */}
             <button
               type="button"
@@ -2180,7 +2183,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   ? "Move chat to the right of the page"
                   : "Move chat to the left of the page"
               }
-              aria-pressed={dockSide === "left"}
               onClick={swapSide}
             >
               <ArrowLeftRight size={20} aria-hidden />
