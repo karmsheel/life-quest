@@ -292,11 +292,22 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
   },
 ];
 
+/**
+ * Run one view tool call the way the app's MCP door runs it.
+ *
+ * `now` is the instant the tools draw relative windows at. It is injectable for
+ * the same reason `runViewBlocks` takes one: a relative window's numbers are a
+ * claim about the clock, and a test that cannot say which day it is drawing on
+ * is a test that starts lying the month after it was written. Production calls
+ * omit it and get the real clock; the two draws below (save_view's pre-write
+ * check and preview_view) are the only paths that read it.
+ */
 export async function executeViewTool(
   root: string,
   actor: Actor,
   name: string,
   args: Record<string, unknown>,
+  now: Date = new Date(),
 ): Promise<unknown> {
   switch (name) {
     case "get_dashboard": {
@@ -379,7 +390,7 @@ export async function executeViewTool(
       // showed nothing and the companion — told `applied: true` — made a SECOND
       // card with the fix instead of correcting the first. Nothing is written
       // until the card is known to run.
-      const run = await runViewBlocks(root, slug, spec);
+      const run = await runViewBlocks(root, slug, spec, now);
       if (!run.ok) {
         return toolError(run.error, specFix(check.db, slug));
       }
@@ -438,7 +449,7 @@ export async function executeViewTool(
       if (!specRes.ok) return toolError(specRes.error);
       const check = await checkSpec(root, slug, specRes.value);
       if (!check.ok) return check.reply;
-      const run = await runViewBlocks(root, slug, specRes.value);
+      const run = await runViewBlocks(root, slug, specRes.value, now);
       if (!run.ok) return toolError(run.error);
       const boardSlug = parseBoardSlug(args.boardSlug);
       const shape = previewShape(run.value);
