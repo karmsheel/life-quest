@@ -110,9 +110,26 @@ export async function readArchivedSessions(
       ? "COALESCE(s.last_activity_at, s.started_at)"
       : "s.started_at";
     const pinned = hasColumn(db, "sessions", "pinned") ? "s.pinned" : "0";
-    const hiddenClause = hasColumn(db, "sessions", "hidden")
-      ? "AND s.hidden = 0"
-      : "";
+    /**
+     * The same admissions the gateway's list applies before it pages: hidden
+     * rows never cross, tool sessions are scaffolding, and a compression
+     * continuation is not a second conversation. Archiving a chat stamps its
+     * whole compression lineage (Hermes' `set_session_archived`), so without the
+     * continuation clause a long chat would appear once per segment.
+     */
+    const filters: string[] = [];
+    if (hasColumn(db, "sessions", "hidden")) filters.push("AND s.hidden = 0");
+    if (hasColumn(db, "sessions", "source")) {
+      filters.push("AND COALESCE(s.source, '') != 'tool'");
+    }
+    if (
+      hasColumn(db, "sessions", "parent_session_id") &&
+      hasColumn(db, "sessions", "end_reason")
+    ) {
+      filters.push(
+        "AND NOT EXISTS (SELECT 1 FROM sessions p WHERE p.id = s.parent_session_id AND p.end_reason = 'compression')",
+      );
+    }
     const messages = hasTable(db, "messages") &&
       hasColumn(db, "messages", "session_id") &&
       hasColumn(db, "messages", "role") &&
@@ -128,7 +145,7 @@ export async function readArchivedSessions(
         `SELECT s.id AS id, s.title AS title, ${lastActive} AS last_active,
                 ${pinned} AS pinned, ${preview}
            FROM sessions s
-          WHERE s.archived = 1 ${hiddenClause}
+          WHERE s.archived = 1 ${filters.join(" ")}
           ORDER BY last_active DESC, s.started_at DESC
           LIMIT ${LIMIT}`,
       )
