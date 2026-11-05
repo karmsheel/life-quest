@@ -785,16 +785,17 @@ describe("chat dock tabs and sidebar chats", () => {
       "Escape did not restore the header",
     );
 
-    // The view menu is the filter: hide the archived chats (the default), or
-    // show them as a greyed, restorable group.
+    // The view menu is the filter: hide the archived chats (the default), show
+    // them as a greyed, restorable group, or show the archive alone.
     assert.equal(viewMenu.rail?.viewMenu?.title, "View options");
     assert.deepEqual(
       viewMenu.rail?.viewMenu?.items,
       [
         { label: "Hide archived chats", checked: true },
         { label: "Show archived chats", checked: false },
+        { label: "Only archived chats", checked: false },
       ],
-      "the view menu does not offer hide/show archived, or marks the wrong one",
+      "the view menu does not offer hide/show/only archived, or marks the wrong one",
     );
     assert.equal(
       archivedShown.rowCount,
@@ -865,6 +866,7 @@ describe("chat dock tabs and sidebar chats", () => {
       [
         { label: "Hide archived chats", checked: false },
         { label: "Show archived chats", checked: true },
+        { label: "Only archived chats", checked: false },
       ],
       "the view menu does not mark the shown-archived view as current",
     );
