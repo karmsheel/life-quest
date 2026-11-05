@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -47,6 +48,16 @@ export type ChatCardContext = {
   label: string;
   boardSlug: string | null;
 };
+
+/**
+ * How many cards the chat can hold in front of one conversation.
+ *
+ * The number lives here and nowhere else: the toggle refuses a fourth card, the
+ * pill row draws at most this many, and the turn's instruction names them all.
+ * A renderer that invented its own ceiling would be a second answer to a
+ * question this one already answers.
+ */
+export const MAX_CONTEXT_CARDS = 3;
 
 /**
  * Which side of the workspace the dock sits on.
@@ -128,29 +139,42 @@ type ChatDockContextValue = {
   requestSession: (request: ChatSessionRequest) => void;
   clearRequestedSession: () => void;
   /**
-   * The card this chat is about, or null. It is the dock's live state like the
-   * pending receipt: it belongs to the conversation in front of the operator,
-   * not to a file, and it lasts until they take it off the composer.
-   */
-  contextCard: ChatCardContext | null;
-  setContextCard: (card: ChatCardContext | null) => void;
-  /**
-   * The card a running companion turn is working on, by pin id, or null.
+   * The cards this chat is about, in the order the operator chose them.
    *
-   * This is the donut, not the filling: it says a turn is under way and which card
-   * it is about, and it changes nothing about the card's content. The card redraws
+   * It is the dock's live state like the pending receipt: it belongs to the
+   * conversation in front of the operator, not to a file, and it lasts until
+   * they take the cards off the composer. The board derives its rings from this
+   * array and keeps no copy of its own, so there is nothing that can disagree
+   * with the chat.
+   */
+  contextCards: ChatCardContext[];
+  /**
+   * Put a card in the chat's context, or take it back out when it is already
+   * there. `full` is the third answer: the ceiling refused the add and nothing
+   * changed.
+   */
+  toggleCardContext: (card: ChatCardContext) => "added" | "removed" | "full";
+  /** Take one card out of context, by pin id — the pill's own door. */
+  removeCardContext: (pinId: string) => void;
+  /** Take every card out of context — the empty board's own door. */
+  clearCardContext: () => void;
+  /**
+   * The cards a running companion turn is working on, by pin id.
+   *
+   * This is the donut, not the filling: it says a turn is under way and which
+   * cards it is about, and it changes nothing about their content. A card redraws
    * itself off the vault's own change signal, exactly as it does for any other
-   * write — so a board that was told "this one is being edited" and a board that
-   * was not are drawing the same picture. This exists so the operator can see that
-   * the quiet card in front of them is the one being worked on rather than one
-   * that failed to update.
+   * write — so a board that was told "these are being edited" and a board that
+   * was not are drawing the same picture. This exists so the operator can see
+   * that the quiet card in front of them is the one being worked on rather than
+   * one that failed to update.
    *
    * It is set from the chat's own turn events rather than from the vault: the turn
    * begins before any write and ends after the last one, which is the window the
    * operator actually waits through.
    */
-  livePinId: string | null;
-  setLivePinId: (pinId: string | null) => void;
+  livePinIds: string[];
+  setLivePinIds: (pinIds: string[]) => void;
   /**
    * The screen the operator is on, and whether the next turn will quote it.
    *
@@ -180,8 +204,18 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
   const [requestedAutomationContext, setRequestedAutomationContext] = useState<
     string | null
   >(null);
-  const [contextCard, setContextCard] = useState<ChatCardContext | null>(null);
-  const [livePinId, setLivePinId] = useState<string | null>(null);
+  const [contextCards, setContextCards] = useState<ChatCardContext[]>([]);
+  /**
+   * The same array, synchronously.
+   *
+   * The toggle has to answer what it just did (`added` / `removed` / `full`) in
+   * the same press that changed the array, and a `setState` updater runs after
+   * the handler has returned. One ref is written by the three actions and then
+   * mirrored into state, so two presses in one tick still see each other and the
+   * answer is about the array the operator is actually getting.
+   */
+  const contextCardsRef = useRef<ChatCardContext[]>([]);
+  const [livePinIds, setLivePinIds] = useState<string[]>([]);
   const { pathname } = useLocation();
   const [pageContextOn, setPageContextOn] = useState(true);
 
@@ -190,6 +224,46 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setPageContextOn(true);
   }, [pathname]);
+
+  const commitContextCards = useCallback((next: ChatCardContext[]) => {
+    contextCardsRef.current = next;
+    setContextCards(next);
+  }, []);
+
+  /**
+   * Put a card in the context, or take it out; refuse a fourth card.
+   *
+   * Identity is the pin id: the same card cannot be held twice, and a second
+   * press on a held card is the operator changing their mind about that card —
+   * not about the other one or two beside it.
+   */
+  const toggleCardContext = useCallback(
+    (card: ChatCardContext): "added" | "removed" | "full" => {
+      const current = contextCardsRef.current;
+      if (current.some((held) => held.pin.id === card.pin.id)) {
+        commitContextCards(current.filter((held) => held.pin.id !== card.pin.id));
+        return "removed";
+      }
+      if (current.length >= MAX_CONTEXT_CARDS) return "full";
+      commitContextCards([...current, card]);
+      return "added";
+    },
+    [commitContextCards],
+  );
+
+  const removeCardContext = useCallback(
+    (pinId: string) => {
+      const current = contextCardsRef.current;
+      if (!current.some((held) => held.pin.id === pinId)) return;
+      commitContextCards(current.filter((held) => held.pin.id !== pinId));
+    },
+    [commitContextCards],
+  );
+
+  const clearCardContext = useCallback(() => {
+    if (contextCardsRef.current.length === 0) return;
+    commitContextCards([]);
+  }, [commitContextCards]);
 
   const requestSession = useCallback((request: ChatSessionRequest) => {
     setRequestedSessionId(request.id);
@@ -231,10 +305,12 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       requestedAutomationContext,
       requestSession,
       clearRequestedSession,
-      contextCard,
-      setContextCard,
-      livePinId,
-      setLivePinId,
+      contextCards,
+      toggleCardContext,
+      removeCardContext,
+      clearCardContext,
+      livePinIds,
+      setLivePinIds,
       pageContext: { route: pathname, label: pageLabel, on: pageContextOn },
       setPageContextOn,
     }),
@@ -251,8 +327,11 @@ export function ChatDockProvider({ children }: { children: ReactNode }) {
       requestedAutomationContext,
       requestSession,
       clearRequestedSession,
-      contextCard,
-      livePinId,
+      contextCards,
+      toggleCardContext,
+      removeCardContext,
+      clearCardContext,
+      livePinIds,
       pathname,
       pageLabel,
       pageContextOn,

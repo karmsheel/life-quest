@@ -4213,6 +4213,15 @@ a {
   flex-wrap: wrap;
 }
 
+/* The fourth-card answer, said where the board can be seen. It is a status
+   line, not a dialog: nothing is blocked, and the cards already in the chat
+   stay exactly where they were. */
+.home-dashboard__context-status {
+  margin: -0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
 .home-dashboard__intro {
   min-width: 0;
   max-width: 46rem;
@@ -4495,6 +4504,14 @@ a.home-mini-list__link:hover {
   align-self: start;
 }
 
+/* The card body is the chat-context toggle now: it is the board's one pointer
+   surface that is neither a link nor a button. Controls inside it keep their own
+   cursors, because their presses are their own. The static card wrapper at the
+   grid's end has no pin id and is not a toggle. */
+.home-pin[data-pin-id] {
+  cursor: pointer;
+}
+
 /* Edit mode's height is a floor on the wrapper. The card inside has to take the
    extra room, or the operator would drag the bottom border and watch a gap open
    under a card whose frame never moved. The growth is zero unless the wrapper is
@@ -4595,12 +4612,11 @@ a.home-mini-list__link:hover {
   border-radius: var(--home-radius);
 }
 
-/* The card's control row, in the corner. It is the positioned box, and the
-   chrome is a row inside it, because the row now holds two different kinds of
-   control: the board-editing chrome (`PinChrome`, which the lock takes away) and
-   the chat control, which survives the lock. `.home-pin__chrome` therefore still
-   means "board-editing chrome" — a locked board draws none of them — while the
-   operator keeps a way to ask about the card in front of them. */
+/* The card's editing chrome, in the corner. The context control is not here: it
+   is a hidden button in the card itself (`home-pin__context-toggle`), because
+   asking the companion about a card is not editing the board and the lock takes
+   only the chrome. `.home-pin__chrome` therefore still means "board-editing
+   chrome", and a locked board draws no tools row at all. */
 .home-pin__tools {
   position: absolute;
   z-index: 1;
@@ -4616,6 +4632,48 @@ a.home-mini-list__link:hover {
   position: relative;
   display: flex;
   gap: 0.2rem;
+}
+
+/* The card's context toggle, for the keyboard and the screen reader.
+
+   The card body is the pointer target, but it holds links, tables and its own
+   chrome, so it cannot be a button. This real button carries the same toggle:
+   named with the card's heading and the action it will take, `aria-pressed` for
+   the state, invisible until it is focused. A locked board draws no chrome and
+   the card is not an arrange tab stop, but this control is still there — asking
+   about a card is not editing it. */
+.home-pin__context-toggle {
+  position: absolute;
+  z-index: 2;
+  top: 0.5rem;
+  left: 0.5rem;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Focused, it becomes the control it is: a pill in the card's top-left corner,
+   where the eye already goes for a card's own controls. It is the same kind of
+   thing as the corner row, so it wears the same hairline and radius. */
+.home-pin__context-toggle:focus-visible {
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
 }
 
 /* The card's actions, under the 3-dot that opened them and over the cards below.
@@ -4843,10 +4901,10 @@ a.home-mini-list__link:hover {
   }
 }
 
-/* Two icon buttons wide (chat, menu) plus the row's own inset: the title clears
-   them instead of running underneath. The reserve follows the row rather than the
-   chrome, because the chat control is the one button that is still there when the
-   chrome is not — 1.55rem a button, 0.2rem between them, 0.5rem of inset.
+/* One icon button wide (the menu) plus the row's own inset: the title clears it
+   instead of running underneath. The chat icon that used to share this row is
+   gone, so the reserve is one button, not two — 1.55rem for the menu, 0.5rem of
+   inset, and the row's own gap.
    A view card's title is in this rule too, and for two reasons that are the same
    reason: its heading is as long as any card's, so without the reserve the chrome
    sat on top of it — and since `useTileSpans` sizes a card by its min-content
@@ -4855,7 +4913,7 @@ a.home-mini-list__link:hover {
 .home-pin:has(.home-pin__tools) .home-card__title,
 .home-pin:has(.home-pin__tools) .view-card__title,
 .home-pin:has(.home-pin__tools) .home-dashboard__progress {
-  padding-right: 3.85rem;
+  padding-right: 2.1rem;
 }
 
 /* The deadline banner is not a card: it has no padded shell for a corner row to
@@ -7738,7 +7796,17 @@ button.chat-panel__activity-line:hover {
   font-style: italic;
 }
 
-/* The card this chat is about, above the field. It wears the receipt's own
+/* The cards this chat is about, stacked above the field. Three pills can arrive
+   at once, and the composer column is narrower than the board, so the row wraps
+   instead of squeezing the field or pushing the send control off the edge. */
+.chat-panel__contexts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+/* One card this chat is about, above the field. It wears the receipt's own
    shape — a pill with a hairline tinted by the accent, one icon, one ellipsized
    name and a small remove — because it is the same kind of thing: something the
    operator put in front of the turn and can take back. */

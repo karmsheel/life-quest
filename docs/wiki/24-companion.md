@@ -23,8 +23,8 @@ See also [Wiki home](./index.md).
   screen reports the companion's boot: title **LifeQuest companion**, what it is
   looking for, a profile picker and **Recheck**.
 - There is no page route for chat. The dock is chrome, like the rail; its state
-  (which chats are open, the pending receipt, the card in context) belongs to the
-  session, not to a file in the vault.
+  (which chats are open, the pending receipt, the dashboard cards in context)
+  belongs to the session, not to a file in the vault.
 
 ## What it is for
 
@@ -146,10 +146,15 @@ not send an API key to the renderer.
 | **Message Hermes…** field | Sends on Enter, newline on Shift+Enter. Grows with the text up to a cap. |
 | Send / **Stop this run** | Sends the turn, or stops the live run cooperatively. |
 | Page pill (**in context** / **off**) | Whether the screen in front of you rides the next turn. On by default; click to take the page out of context. |
-| Card pill (**in context**) | The dashboard card this chat is about, added from the card's chat control. The `x` is **Remove card from context**. |
+| Card pills (**in context**) | One pill per dashboard card in context, in the order added, up to three. Clicking a card on the Dashboard adds or removes it. Each pill's `x` is **Remove "<card name>" from context**. |
 | **Attach a receipt** | Attach one JPEG or PNG, up to 25 MB, by picker, drag-and-drop, or a pasted screenshot. One at a time; a second attach replaces the first. **Remove receipt** drops it. |
 | Model pill | Which model the next turn runs on, chosen from the profile's own catalog with its provider names, or **Automatic** for the profile default. Absent when the gateway serves no catalog. |
 | Thinking-level pill | How hard the model should think, from **Default** (gateway default) through the ladder to **Off** where the model allows it. Appears only for a model whose catalog entry supports reasoning. |
+
+The card pills are made on the Dashboard: click a card to put it in the chat's
+context, click it again to take that card out, and click empty board space to
+clear them all. The context holds at most three cards, and a fourth click is
+refused on the board — see [Dashboard](./06-dashboard.md).
 
 The receipt bytes never come back to the renderer: main stores the original for
 the vault, builds a smaller copy for the model, and the turn cites the stored
@@ -164,7 +169,7 @@ path. Attaching a receipt to a vault without the Finance kit is refused with
 | Dock header | The active chat's name and **Pin chat** / **Rename chat** / **Archive chat** — the archive control steps away while the chat is pinned. |
 | Tab strip | One tab per open chat, each closable, with a live dot while it streams and an amber dot while it waits on an approval. Pinned chats lead as squares (first letter + pin, no close control) and are unpinned from their right-click menu; any tab's right-click menu carries the chat's own verbs. |
 | Transcript | Bubbles with **You** / **Hermes** labels, times, copy controls; the tool activity line; approval and error panels. |
-| Composer | The field, send/stop, the page pill, the card pill, the receipt controls, the model and thinking pills. |
+| Composer | The field, send/stop, the page pill, the card pills, the receipt controls, the model and thinking pills. |
 | Dock actions | **New chat**, **Life-Chain**, the two-panes side switch, **Collapse chat**, and the version badge (*Check for updates*). |
 
 ## Rules and behaviour
@@ -214,9 +219,9 @@ path. Attaching a receipt to a vault without the Finance kit is refused with
   pane is the boot surface, not an error. **Recheck** is always safe to press.
 - **The page pill is about the screen, not the chat.** Turning it off lasts until
   you navigate; the next page you open is in context again.
-- **A card in context is named before the turn is sent**, and the board marks the
-  card as in-context. Taking the card off the composer is the same control as
-  pressing the card's chat control a second time.
+- **Cards in context are named before the turn is sent**, and the board marks
+  each held card as in-context. Up to three ride a turn; a pill's `x` removes only
+  its card, and clicking that card on the board does the same.
 - **Receipts are for the ledger.** Attach a photo of a purchase only when the
   Finance kit exists and you want a transaction logged; the companion will ask
   about anything it cannot read as an amount and an account.

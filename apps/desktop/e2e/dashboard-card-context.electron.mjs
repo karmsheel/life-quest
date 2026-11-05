@@ -10,64 +10,62 @@
  * Exit code 0 = every claim held. The JSON report is the repeatable artifact:
  * same command, same claims, no eyeballing the app required.
  *
- * What this rig claims, and what makes each claim falsifiable:
+ * The feature, in one line: the card IS the chat control now — a press anywhere
+ * on it puts it in front of the chat (up to three), a press on a held card takes
+ * only that card back out, and a press on the board's own empty space takes them
+ * all out. A card's own controls, a drag, a hold and Edit mode keep their own
+ * presses. The claims, and what makes each falsifiable:
  *
- *  1. `the-header-drops-the-doctrine-line` — the Dashboard's header says what the
- *     page is, what it is called and whether it is editable, and nothing else.
- *     The `Premise → Vision → Purpose → Strategy (How)` line under the title is
- *     gone, and the claim is made twice: no `.home-dashboard__subtitle` anywhere
- *     in the header, and the header's only paragraphs are the eyebrow and the
- *     lock hint. A doctrine line that came back — under a new class, even —
- *     fails the second half.
- *  2. `add-toggle-is-closed-on-landing` — the pin board is not furniture, and it
- *     is not a header control any more: the page's three-dot menu is shut, no
- *     popover or item is in the document, and the Add-pin row is absent. A page
- *     that still renders the row permanently, or a menu that renders closed,
- *     fails on the sample, not on a glance.
- *  3. `add-toggle-opens-and-closes` — choosing the menu's Pin board item is a
- *     control, not a one-way door: the menu closes, the row appears with the
- *     board's own add buttons, and reopening the menu shows the item as "Hide
- *     pin board" with `aria-expanded="true"`; choosing it again closes the menu
- *     and takes the row away.
- *  4. `pin-board-sits-above-the-grid` — proven with `compareDocumentPosition`,
- *     so "at the top" is a fact about the document and not about a screenshot.
- *  5. `locked-board-has-no-add-path` — a locked board has no row and no add
- *     button anywhere, and its menu holds ONLY the lock item, so there is no
- *     second, hidden way to propose what Lock says is not editable. The menu
- *     itself stays reachable, because that is the only way back.
- *  6. `add-pin-still-writes` — the moved row still does its job: one `pinsSet`,
- *     carrying the board plus exactly the pin that was asked for.
- *  7. `every-card-offers-the-chat-control` — every pinned card, of every kind,
- *     carries exactly one chat control that draws one icon, has no text, and has
- *     both an accessible name and a tooltip. A card that quietly lost the
- *     control fails by id.
- *  8. `the-chat-control-is-not-editing-chrome` — it is not inside
- *     `.home-pin__chrome`, and the chrome's own buttons are unchanged. This is
- *     what keeps "chrome" meaning *editing chrome*, which `dashboard-lock-ui`
- *     counts on.
- *  9. `chat-control-hands-over-the-card` — clicking hands that exact pin, with
- *     the board slug, to the dock, and opens the dock. A control that set nothing
- *     fails on the probe's own report.
- * 10. `the-name-comes-off-the-heading` — the handed-over name is read off the
- *     rendered card: "Weekly expenses" for the view, "Ledger" for the page,
- *     "Today & this week" for the built-in, and "Goals" — never "Goals1" — for
- *     the card that paints a count badge inside its own heading.
- * 11. `a-locked-board-still-offers-it` — asking about a card is not changing it,
- *     so the control survives the lock while every editing control is gone, and
- *     using it writes nothing.
- * 12. `the-chat-control-does-not-lift-the-card` — a 400 ms hold on it neither
- *     lifts the card nor writes; the arrange gesture's press guard refuses a
- *     press that starts on a control rather than on the card itself.
- * 13. `the-card-in-context-wears-a-highlight` / `the-highlight-follows-the-card-
- *     the-chat-is-about` / `pressing-the-control-again-takes-the-card-off-the-
- *     chat` — the card the chat holds is marked on the board, and the control is
- *     a toggle. The ring is read as the browser paints it, so a class that draws
- *     nothing fails: no card wears one before the press, exactly the pressed
- *     card wears one after it, the ring moves rather than accumulating when
- *     another card's control is pressed, and the second press on the same
- *     control empties the dock, clears the ring, and writes nothing.
+ *  1. `no-chat-icon-remains` — the old corner control is gone from every card of
+ *     every kind: no `[data-testid="pin-chat"]`, no `.home-pin__chat`, and not a
+ *     single `MessageSquare` glyph inside a pin. A half-removed control fails by
+ *     name, not by look.
+ *  2. `every-card-is-a-click-target` — each pin carries exactly one hidden
+ *     keyboard/AT toggle named with its own heading and the action, and the card
+ *     itself paints `cursor: pointer`. The static card with no pin id is not a
+ *     click target, so "the card" means the pins and not their wrapper.
+ *  3. `clicking-a-card-adds-it` — a real press on the card's own heading puts
+ *     that pin, with the board slug, into the dock's `contextCards`, opens the
+ *     dock, names the card off the heading, and draws the ring as a line. A
+ *     press on a table cell inside the card does the same, so "anywhere on the
+ *     card" is a claim about its content too.
+ *  4. `three-cards-hold-at-once` — three presses for three different cards give
+ *     exactly three dock entries in press order, three rings and three pressed
+ *     toggles, and write nothing.
+ *  5. `a-second-click-removes-only-that-card` — pressing a held card while three
+ *     are held takes that card and only that card out; the other two keep their
+ *     order and their rings. The dock stays open.
+ *  6. `a-fourth-card-is-refused-with-a-status-line` — the fourth press changes
+ *     nothing (no fourth entry, no fourth ring, no write) and puts the exact
+ *     refusal line on the board as a `role="status"`; the next successful toggle
+ *     clears it.
+ *  7. `empty-board-clicks-clear-all` — a real press on the gap between cards and
+ *     one on the board's header text both empty the context at once; a press on
+ *     another app surface leaves it held, because the operator is allowed to work
+ *     while the context is kept.
+ *  8. `a-cards-own-controls-do-not-toggle` — the card's 3-dot trigger, its Edit
+ *     card item, the card body while Edit mode is on, a size handle and the page
+ *     menu are all their own presses: none adds or removes the card.
+ *  9. `a-drag-does-not-toggle` — a 220 ms hold and release, a real drag that
+ *     reorders the board, and a press that drifts before the hold all leave the
+ *     context alone; the next plain press still toggles, so the suppression is
+ *     consumed rather than stuck.
+ * 10. `the-locked-board-still-selects-and-removes` — a locked board draws no
+ *     editing chrome at all, yet its cards still add, hold and remove context,
+ *     and the empty board still clears it, with zero pin writes and zero deletes.
+ * 11. `the-keyboard-toggle-works` — the hidden control is a real button: focus it
+ *     and press Enter and the card goes in; press Enter again and it comes out.
+ *     On a locked board the card is not a tab stop but this control still is.
+ * 12. `the-name-comes-off-the-heading` — the handed-over name is the card's own
+ *     heading words for all three kinds, "Goals" and never "Goals2" for the card
+ *     that paints a count badge inside its heading, and never the pin id.
  *
- * The bridge is a stub (a dev-server page has no preload), so claim 5 ends at
+ * The pre-existing dashboard claims — the pin board behind the page menu, its
+ * write, a locked board's missing add path and menu, the per-card menu's
+ * Archive/Delete, the confirm dialog, and the deadline pin's own control layout —
+ * are kept, because this feature must not have cost the board its other gestures.
+ *
+ * The bridge is a stub (a dev-server page has no preload), so this rig ends at
  * the recorded call. That a pin write reaches the vault is `dashboard-lock-e2e`'s
  * half, and the wired-app half is `dashboard-live-app`'s.
  */
@@ -137,6 +135,9 @@ const MENU = {
   "page:financial:ledger": ["Edit card", "Archive", "Delete"],
 };
 
+/** The exact words the fourth card is answered with. */
+const FULL_NOTICE = "Three cards are already in the chat context — take one out first.";
+
 /**
  * The board and the page menu's controls, read straight off the rendered page.
  *
@@ -164,6 +165,45 @@ const SAMPLE = `(() => {
     const svg = el ? el.querySelector('svg') : null;
     return svg ? [...svg.classList].join(' ') : null;
   };
+  const svgNames = (el) =>
+    [...(el ? el.querySelectorAll('svg') : [])].map((svg) => [...svg.classList].join(' '));
+  const statusEl = document.querySelector('[data-testid="pin-context-status"]');
+  const statusRect = statusEl ? statusEl.getBoundingClientRect() : null;
+  const cardState = (card) => {
+    const toggle = card.querySelector(':scope > [data-testid="pin-context-toggle"]');
+    const toggleRect = toggle ? toggle.getBoundingClientRect() : null;
+    const style = getComputedStyle(card);
+    return {
+      id: card.dataset.pinId ?? null,
+      heading: heading(card),
+      inContext: card.classList.contains('is-in-context'),
+      outline: { style: style.outlineStyle, width: style.outlineWidth },
+      cursor: style.cursor,
+      tabIndex: card.tabIndex,
+      tools: card.querySelectorAll(':scope > .home-pin__tools').length,
+      chrome: card.querySelectorAll(':scope > .home-pin__tools > .home-pin__chrome').length,
+      chromeButtons: [...card.querySelectorAll(':scope > .home-pin__tools > .home-pin__chrome .home-pin__btn')]
+        .map((b) => b.dataset.testid || null)
+        .sort(),
+      chat: card.querySelectorAll('[data-testid="pin-chat"]').length,
+      chatClasses: card.querySelectorAll('.home-pin__chat').length,
+      chatIcons: svgNames(card).filter((name) => name.includes('lucide-message-square')).length,
+      toggle: toggle
+        ? {
+            pinId: toggle.dataset.contextPinId ?? null,
+            pressed: toggle.getAttribute('aria-pressed'),
+            label: toggle.getAttribute('aria-label'),
+            text: (toggle.textContent || '').trim(),
+            svgs: toggle.querySelectorAll('svg').length,
+            tabIndex: toggle.tabIndex,
+            disabled: toggle.disabled,
+            width: toggleRect ? toggleRect.width : 0,
+            height: toggleRect ? toggleRect.height : 0,
+            inChrome: Boolean(toggle.closest('.home-pin__chrome')),
+          }
+        : null,
+    };
+  };
   return {
     header: (() => {
       const header = document.querySelector('.home-dashboard__header');
@@ -172,9 +212,6 @@ const SAMPLE = `(() => {
       const badge = header.querySelector('[data-testid="board-lock-badge"]');
       return {
         eyebrow: (header.querySelector('.home-dashboard__eyebrow') || {}).textContent?.trim() ?? null,
-        // The title is the page's name and nothing else: the lock badge now
-        // rides the heading and the lock itself is the menu's first item, so a
-        // text-node read still says exactly the words the heading paints.
         title: title
           ? [...title.childNodes]
               .filter((node) => node.nodeType === 3)
@@ -183,9 +220,6 @@ const SAMPLE = `(() => {
           : null,
         badge: badge ? (badge.textContent || '').trim() : null,
         hint: Boolean(header.querySelector('[data-testid="board-lock-hint"]')),
-        // The doctrine line that used to sit under the title. Both halves are
-        // read: a subtitle element that came back fails by name, and any other
-        // paragraph under the title fails as a paragraph.
         subtitles: header.querySelectorAll('.home-dashboard__subtitle').length,
         paragraphs: [...header.querySelectorAll('p')].map((p) => ({
           cls: p.className,
@@ -193,7 +227,6 @@ const SAMPLE = `(() => {
         })),
       };
     })(),
-    // The page's menu trigger: always there, whether the menu is open or closed.
     pageMenu: trigger
       ? {
           label: trigger.getAttribute('aria-label'),
@@ -204,7 +237,6 @@ const SAMPLE = `(() => {
           testid: trigger.dataset.testid || null,
         }
       : null,
-    // The popover and its items, only while the menu is open.
     pageMenuPopover: popover
       ? {
           role: popover.getAttribute('role'),
@@ -237,11 +269,7 @@ const SAMPLE = `(() => {
         }
       : null,
     sectionBeforeGrid: follows(section, grid),
-    // The add control lives in the header's menu; the row it opens still has to
-    // sit above the grid it adds to.
     triggerBeforeSection: follows(trigger, section),
-    // A closed menu puts no items in the document. Read over the whole document,
-    // so an item that leaked out of its popover is caught too.
     addItemsInDocument: document.querySelectorAll('[data-testid="board-add-toggle"]').length,
     lockItemsInDocument: document.querySelectorAll('[data-testid="board-lock-toggle"]').length,
     gridCards: cards.length,
@@ -271,39 +299,33 @@ const SAMPLE = `(() => {
         cancel: Boolean(box.querySelector('.confirm-dialog__cancel')),
       };
     })(),
+    // ── the feature's own surface ──────────────────────────────────────────
     chatControls: document.querySelectorAll('[data-testid="pin-chat"]').length,
-    // The cards the chat is holding, by id, and the line each one draws. The
-    // outline is read as the browser paints it: a class that lands on the
-    // element but draws no line is not a highlight, and only this half can tell.
+    chatClasses: document.querySelectorAll('.home-pin__chat').length,
+    messageIcons: document.querySelectorAll('[data-pin-id] svg.lucide-message-square').length,
+    contextToggles: document.querySelectorAll('[data-testid="pin-context-toggle"]').length,
     inContextCards: [...document.querySelectorAll('.home-dashboard__grid > .home-pin.is-in-context')]
       .map((card) => card.dataset.pinId ?? null),
+    status: statusEl
+      ? {
+          present: true,
+          role: statusEl.getAttribute('role'),
+          text: (statusEl.textContent || '').trim(),
+          height: statusRect ? statusRect.height : 0,
+          display: getComputedStyle(statusEl).display,
+        }
+      : { present: false },
+    staticPins: [...document.querySelectorAll('.home-dashboard__grid > .home-pin:not([data-pin-id])')].map(
+      (el) => ({
+        cursor: getComputedStyle(el).cursor,
+        toggles: el.querySelectorAll('[data-testid="pin-context-toggle"]').length,
+        tools: el.querySelectorAll(':scope > .home-pin__tools').length,
+      }),
+    ),
     lifted: document.querySelectorAll('.home-pin.is-lifted').length,
-    cards: cards.map((card) => {
-      const chat = card.querySelector(':scope > .home-pin__tools > [data-testid="pin-chat"]');
-      const style = getComputedStyle(card);
-      return {
-        id: card.dataset.pinId,
-        heading: heading(card),
-        inContext: card.classList.contains('is-in-context'),
-        chatPressed: chat ? chat.getAttribute('aria-pressed') : null,
-        outline: { style: style.outlineStyle, width: style.outlineWidth },
-        tools: card.querySelectorAll(':scope > .home-pin__tools').length,
-        chat: card.querySelectorAll(':scope > .home-pin__tools > [data-testid="pin-chat"]').length,
-        chatInChrome: card.querySelectorAll('.home-pin__chrome [data-testid="pin-chat"]').length,
-        chatText: chat ? (chat.textContent || '').trim() : null,
-        chatLabel: chat ? chat.getAttribute('aria-label') : null,
-        chatTitle: chat ? chat.getAttribute('title') : null,
-        chatSvgs: chat ? chat.querySelectorAll('svg').length : 0,
-        chatIcon: icon(chat),
-        chrome: card.querySelectorAll(':scope > .home-pin__tools > .home-pin__chrome').length,
-        chromeButtons: [...card.querySelectorAll(':scope > .home-pin__tools > .home-pin__chrome .home-pin__btn')]
-          .map((b) => b.dataset.testid || null)
-          .sort(),
-        // The pin-off glyph this replaced is gone, and its absence is part of
-        // the claim: one removal vocabulary, in the menu.
-        unpinGlyphs: card.querySelectorAll('[data-testid="pin-unpin"]').length,
-      };
-    }),
+    editing: document.querySelectorAll('.home-pin.is-editing').length,
+    resizeHandles: document.querySelectorAll('.home-pin__resize').length,
+    cards: cards.map(cardState),
     menuToggle: (() => {
       const el = document.querySelector('[data-pin-id="sys:today-week"] [data-testid="pin-menu-toggle"]');
       return el
@@ -321,9 +343,6 @@ const SAMPLE = `(() => {
   };
 })()`;
 
-const errors = [];
-const scenarios = [];
-
 /**
  * The deadline pin, which is not a card: it has no padded shell for a corner row
  * to sit in, so its controls take a line of their own above the banner. That is
@@ -336,7 +355,6 @@ const DEADLINE_SAMPLE = `(() => {
   if (!pin) return { present: false };
   const banner = pin.querySelector('.deadline-banner');
   const tools = pin.querySelector(':scope > .home-pin__tools');
-  const chat = tools ? tools.querySelector('[data-testid="pin-chat"]') : null;
   const rect = (el) => (el ? el.getBoundingClientRect() : null);
   const pinRect = rect(pin);
   const bannerRect = rect(banner);
@@ -350,11 +368,17 @@ const DEADLINE_SAMPLE = `(() => {
     pinRight: Math.round(pinRect.right),
     toolsBottom: toolsRect ? Math.round(toolsRect.bottom) : null,
     bannerTop: bannerRect ? Math.round(bannerRect.top) : null,
-    chatSvgs: chat ? chat.querySelectorAll('svg').length : 0,
-    chatLabel: chat ? chat.getAttribute('aria-label') : null,
+    chatControls: pin.querySelectorAll('[data-testid="pin-chat"]').length,
+    messageIcons: [...pin.querySelectorAll('svg')].filter((svg) =>
+      [...svg.classList].join(' ').includes('lucide-message-square'),
+    ).length,
+    contextToggles: pin.querySelectorAll('[data-testid="pin-context-toggle"]').length,
     chrome: pin.querySelectorAll('.home-pin__chrome').length,
   };
 })()`;
+
+const errors = [];
+const scenarios = [];
 
 function failure(message) {
   errors.push(message);
@@ -393,6 +417,11 @@ function waitFor(win, expression, label, timeoutMs = 10_000) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Say where the rig is, so a hang names itself instead of timing out dumb. */
+function step(name) {
+  console.log(`… ${name}`);
+}
+
 /**
  * Wait for a card to be lifted, or give up.
  *
@@ -413,13 +442,27 @@ async function waitForLift(win, timeoutMs = 2_000) {
   }
 }
 
+/** Wait for a frame pair, so a reflow the rig caused has painted. */
+function settleFrames(win) {
+  return win.webContents.executeJavaScript(
+    `new Promise((resolve) => {
+       let frames = 0;
+       const tick = () => { frames += 1; if (frames >= 2) resolve(true); else requestAnimationFrame(tick); };
+       requestAnimationFrame(tick);
+       setTimeout(() => resolve(false), 400);
+     })`,
+  );
+}
+
 let generation = 0;
 
 /**
  * Install a board, re-render the page, and wait for the lock badge to settle.
  * `HomePage` is keyed on the generation, so every render lands the pin board
  * back in its landing state — which is what makes "closed on landing" a claim
- * about every render rather than about the first one.
+ * about every render rather than about the first one. The DOCK sits above the
+ * keyed page, so the chat's context deliberately survives a re-render; the
+ * driver clears it explicitly where a claim starts from an empty context.
  */
 async function render(win, locked, pins = SEED) {
   generation += 1;
@@ -478,10 +521,10 @@ async function closePageMenu(win) {
 /**
  * Ask the board for its Add-pin row.
  *
- * The row is behind the page menu's second item now: open the three-dot menu,
- * choose Pin board (which closes the menu before it toggles the row), and wait
- * for the row. Every render lands with the menu closed and the row closed — the
- * page is keyed on the generation — so this is the only way to the row.
+ * The row is behind the page menu's second item: open the three-dot menu, choose
+ * Pin board (which closes the menu before it toggles the row), and wait for the
+ * row. Every render lands with the menu closed and the row closed — the page is
+ * keyed on the generation — so this is the only way to the row.
  */
 async function openPinBoard(win) {
   await openPageMenu(win);
@@ -512,7 +555,7 @@ async function pointAt(win, selector) {
   return point;
 }
 
-/** A real mouse, through the browser's own pipeline. */
+/** Real input, through the browser's own pipeline. */
 function mouse(win, type, x, y) {
   win.webContents.sendInputEvent({
     type,
@@ -523,6 +566,95 @@ function mouse(win, type, x, y) {
   });
 }
 
+/** Press, hold briefly, release — a plain click as a browser delivers it. */
+async function press(win, point, holdMs = 40) {
+  mouse(win, "mouseDown", point.x, point.y);
+  await sleep(holdMs);
+  mouse(win, "mouseUp", point.x, point.y);
+  await sleep(120);
+}
+
+/**
+ * A press point inside a card that is NOT on one of its controls.
+ *
+ * Tried in priority order — heading, a table cell, then the middle of the card —
+ * and each candidate is hit-tested with `elementFromPoint`, so a press that
+ * would land on a control is never mistaken for a press on the body.
+ */
+async function cardBodyPoint(win, pinId) {
+  const point = await win.webContents.executeJavaScript(`(() => {
+    const card = document.querySelector('[data-pin-id=${JSON.stringify(pinId)}]');
+    if (!card) return null;
+    const excluded = 'a, button, input, select, textarea, [role="button"], [role="menu"], [role="menuitem"], [role="separator"], [data-pin-handle]';
+    const candidates = [];
+    const heading = card.querySelector('.home-card__title, .view-card__title');
+    if (heading) {
+      const h = heading.getBoundingClientRect();
+      candidates.push({ x: h.left + Math.min(40, h.width / 3), y: h.top + h.height / 2 });
+    }
+    const cell = card.querySelector('.view-card__table tbody td');
+    if (cell) {
+      const c = cell.getBoundingClientRect();
+      candidates.push({ x: c.left + c.width / 2, y: c.top + c.height / 2 });
+    }
+    const r = card.getBoundingClientRect();
+    candidates.push({ x: r.left + r.width / 2, y: r.top + Math.min(r.height / 2, 80) });
+    for (const candidate of candidates) {
+      const el = document.elementFromPoint(candidate.x, candidate.y);
+      if (!el || !card.contains(el)) continue;
+      if (el.closest(excluded)) continue;
+      return candidate;
+    }
+    return null;
+  })()`);
+  if (!point) throw new Error(`no pressable body point inside ${pinId}`);
+  return point;
+}
+
+/** A point on a card's own table cell, for "anywhere on the card" claims. */
+async function cardCellPoint(win, pinId) {
+  const point = await win.webContents.executeJavaScript(`(() => {
+    const cell = document.querySelector('[data-pin-id=${JSON.stringify(pinId)}] .view-card__table tbody td');
+    if (!cell) return null;
+    const r = cell.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`);
+  if (!point) throw new Error(`no table cell inside ${pinId}`);
+  return point;
+}
+
+/**
+ * A point on the board's own empty space: the gap between two cards in the same
+ * row, with no card and no control under it. "The board's background" is a fact
+ * about hit-testing, so it is hit-tested.
+ */
+async function emptyBoardPoint(win) {
+  const point = await win.webContents.executeJavaScript(`(() => {
+    const excluded = 'a, button, input, select, textarea, [role="button"], [role="menu"], [role="menuitem"], [role="separator"], [data-pin-handle]';
+    const grid = document.querySelector('.home-dashboard__grid');
+    if (!grid) return null;
+    const cards = [...grid.querySelectorAll(':scope > .home-pin[data-pin-id]')].map((c) => c.getBoundingClientRect());
+    for (let i = 0; i < cards.length; i += 1) {
+      for (let j = i + 1; j < cards.length; j += 1) {
+        const a = cards[i];
+        const b = cards[j];
+        if (Math.abs(a.top - b.top) > 2) continue;
+        const left = a.right;
+        const right = b.left;
+        if (right - left < 4) continue;
+        const x = (left + right) / 2;
+        const y = a.top + Math.min(30, a.height / 2);
+        const el = document.elementFromPoint(x, y);
+        if (!el || el.closest('[data-pin-id]') || el.closest(excluded)) continue;
+        return { x, y, via: 'gap' };
+      }
+    }
+    return null;
+  })()`);
+  if (!point) throw new Error("no empty board gap to press");
+  return point;
+}
+
 const dock = (win) =>
   win.webContents.executeJavaScript("window.dashboardCardContextDock ?? null");
 const pinWrites = (win) =>
@@ -530,23 +662,42 @@ const pinWrites = (win) =>
 const deletes = (win) =>
   win.webContents.executeJavaScript("window.dashboardCardContextDeletes ?? []");
 
+const contextIds = async (win) =>
+  ((await dock(win))?.contextCards ?? []).map((card) => card.pin.id);
+
+/** Empty the dock through the probe's clear action and wait for it to land. */
+async function clearContext(win) {
+  await win.webContents.executeJavaScript("window.dashboardCardContextClearCards()");
+  await waitFor(
+    win,
+    `((window.dashboardCardContextDock ?? {}).contextCards ?? []).length === 0`,
+    "the dock to empty",
+  );
+}
+
+/** Press a card's body and wait for the dock to reach `expected` cards. */
+async function pressCard(win, pinId, expected) {
+  const point = await cardBodyPoint(win, pinId);
+  mouse(win, "mouseDown", point.x, point.y);
+  await sleep(40);
+  mouse(win, "mouseUp", point.x, point.y);
+  await waitFor(
+    win,
+    `((window.dashboardCardContextDock ?? {}).contextCards ?? []).length === ${expected}`,
+    `the dock to hold ${expected} card(s) after pressing ${pinId}`,
+  );
+  await sleep(60);
+}
+
 /**
  * Whether a card, as the sample read it, draws a ring.
  *
  * The browser's own answer, not the class name: a mark that lands on the element
  * but paints no line is not a highlight, and this is the half of that claim a
- * class-name check cannot make. The un-ringed half is written as the negation of
- * this, so a browser reporting a default width for `outline-style: none` cannot
- * quietly turn "no ring anywhere" into a pass. The width is read as at least a
- * hairline rather than as the 2px the rule asks for, because the rig renders
- * under the window's own scale factor and the claim is "a line is drawn", not
- * "the line is exactly two CSS pixels".
+ * class-name check cannot make.
  */
 const drawnRing = (card) =>
-  card?.outline?.style === "solid" && parseFloat(card.outline.width ?? "0") >= 1;
-
-/** Whether the control says, in ARIA, that the chat is holding this card. */
-const chatReadsPressed = (card) => card?.inContext === true && card?.chatPressed === "true";
+  card?.outline?.style === "solid" && parseFloat(card.outline?.width ?? "0") >= 1;
 
 /** Open one card's 3-dot menu and wait for the popup. */
 async function openMenu(win, pinId) {
@@ -568,6 +719,40 @@ async function clickMenuItem(win, pinId, testid) {
   await sleep(60);
 }
 
+/**
+ * Pick a card up by its heading and put it down on a point.
+ *
+ * There is one way to start a drag — hold the card — and `waitForLift` is the
+ * hold. The pointer travels in steps rather than jumping: the slot resolver runs
+ * on every move, so a single jump would only prove the last position was read.
+ */
+async function dragCard(win, pinId, aim) {
+  const source = await pointAt(win, `[data-pin-id="${pinId}"] .home-card__title, [data-pin-id="${pinId}"] .view-card__title`);
+  mouse(win, "mouseDown", source.x, source.y);
+  const lifted = await waitForLift(win);
+  if (!lifted) {
+    mouse(win, "mouseUp", source.x, source.y);
+    throw new Error(`${pinId} never lifted, so it could not be dragged`);
+  }
+  mouse(win, "mouseMove", source.x + 12, source.y + 12);
+  await settleFrames(win);
+  const target = await aim();
+  const steps = 3;
+  for (let step = 1; step <= steps; step += 1) {
+    mouse(
+      win,
+      "mouseMove",
+      source.x + 12 + ((target.x - source.x - 12) * step) / steps,
+      source.y + 12 + ((target.y - source.y - 12) * step) / steps,
+    );
+    await sleep(40);
+  }
+  await settleFrames(win);
+  const release = await aim();
+  mouse(win, "mouseUp", release.x, release.y);
+  await sleep(150);
+}
+
 async function main() {
   const sessionPartition = `dashboard-card-context-${Date.now()}`;
   nativeTheme.themeSource = "dark";
@@ -583,8 +768,7 @@ async function main() {
       partition: sessionPartition,
       // The lift is a real 220 ms timer, and this rig runs beside every other
       // Electron window in the suite: a throttled background window would make
-      // "a hold on the chat control does not lift the card" pass for the wrong
-      // reason.
+      // "a hold does not toggle" pass for the wrong reason.
       backgroundThrottling: false,
     },
   });
@@ -609,6 +793,7 @@ async function main() {
     failure(`the harness did not paint in the app's skin: ${JSON.stringify(checks.skin)}`);
   }
 
+  step("header");
   // ── 0. the header says what the page is, and what it is called ────────────
   await render(win, false);
   const landing = await sample(win);
@@ -630,6 +815,7 @@ async function main() {
     `the header read ${JSON.stringify(landing.header)}`,
   );
 
+  step("landing");
   // ── 1. closed on landing ──────────────────────────────────────────────────
   // The page's actions live behind one three-dot trigger now: the row is absent,
   // the menu is shut, and a closed menu puts no items in the document at all.
@@ -654,6 +840,7 @@ async function main() {
     })}`,
   );
 
+  step("pin-board");
   // ── 2. it opens and closes, from inside the menu ──────────────────────────
   await openPinBoard(win);
   const opened = await sample(win);
@@ -696,6 +883,7 @@ async function main() {
       `closed stray=${closedAgain.strayAddButtons} menu=${JSON.stringify(closedAgain.pageMenuPopover)}`,
   );
 
+  step("above-grid");
   // ── 3. the row sits above the grid it adds to ─────────────────────────────
   await openPinBoard(win);
   const above = await sample(win);
@@ -709,7 +897,8 @@ async function main() {
     `document order was ${JSON.stringify(checks.above)}`,
   );
 
-  // ── 5. the moved row still writes ─────────────────────────────────────────
+  step("add-write");
+  // ── 4. the moved row still writes ─────────────────────────────────────────
   const writesBefore = (await pinWrites(win)).length;
   await click(win, ".home-pin-add__btn");
   await waitFor(
@@ -730,7 +919,8 @@ async function main() {
     `the add button wrote ${JSON.stringify(addWrites)}`,
   );
 
-  // ── 4. a locked board has no add path ─────────────────────────────────────
+  step("locked-add-path");
+  // ── 5. a locked board has no add path ─────────────────────────────────────
   // The board is read-only; the honest place to check for a hidden add path is
   // the menu itself, because a closed menu hides every item by design. The menu
   // must still open — it is the only surface that can unlock the board.
@@ -763,264 +953,658 @@ async function main() {
     })}`,
   );
 
-  // ── 6/7. the chat control, on every card, outside the editing chrome ──────
+  step("locked-chrome");
+  // ── 6. a locked board has no editing chrome, menu or tools row ────────────
+  checks.lockedMenus = {
+    menuToggles: lockedBoard.menuToggles,
+    menus: lockedBoard.menus.length,
+    chromeBars: lockedBoard.chromeBars,
+    toolsRows: lockedBoard.cards.reduce((total, card) => total + card.tools, 0),
+    contextToggles: lockedBoard.contextToggles,
+  };
+  check(
+    "a-locked-board-has-no-menu",
+    lockedBoard.menuToggles === 0 &&
+      lockedBoard.menus.length === 0 &&
+      lockedBoard.chromeBars === 0 &&
+      lockedBoard.chromeButtons === 0 &&
+      lockedBoard.cards.every((card) => card.tools === 0 && card.chrome === 0) &&
+      // The context control is NOT editing chrome: it survives the lock, one per
+      // card, so the card can still be asked about on a read-only board.
+      lockedBoard.contextToggles === SEED.length &&
+      lockedBoard.cards.every((card) => card.toggle !== null),
+    `the locked board read ${JSON.stringify(checks.lockedMenus)}`,
+  );
+
+  step("no-chat-icon");
+  // ── 7. the chat icon is gone from every card ──────────────────────────────
   await render(win, false);
+  await clearContext(win);
   const board = await sample(win);
   checks.board = board;
-  const nameFor = (id) => NAMES.find((n) => n.id === id);
-  const badControl = board.cards.filter((card) => {
+  check(
+    "no-chat-icon-remains",
+    board.chatControls === 0 &&
+      board.chatClasses === 0 &&
+      board.messageIcons === 0 &&
+      board.cards.every(
+        (card) => card.chat === 0 && card.chatClasses === 0 && card.chatIcons === 0,
+      ) &&
+      board.cards.every((card) => (card.toggle?.svgs ?? 0) === 0),
+    `${board.chatControls} chat control(s), ${board.chatClasses} chat class(es), ` +
+      `${board.messageIcons} MessageSquare glyph(s) across ${board.cards.length} card(s)`,
+  );
+
+  step("click-target");
+  // ── 8. every card is a click target, with one keyboard toggle ─────────────
+  const nameFor = (id) => NAMES.find((entry) => entry.id === id);
+  const badTargets = board.cards.filter((card) => {
     const expected = nameFor(card.id);
     return (
-      card.tools !== 1 ||
-      card.chat !== 1 ||
-      card.chatSvgs !== 1 ||
-      card.chatText !== "" ||
-      !card.chatLabel ||
-      !card.chatTitle ||
-      !(card.chatIcon ?? "").includes("lucide-message-square") ||
-      card.heading !== expected?.heading
+      card.toggle === null ||
+      card.toggle.pinId !== card.id ||
+      card.toggle.pressed !== "false" ||
+      card.toggle.label !== `Add "${expected.label}" to the chat context` ||
+      card.toggle.inChrome !== false ||
+      card.toggle.svgs !== 0 ||
+      card.toggle.width > 2 ||
+      card.toggle.height > 2 ||
+      card.cursor !== "pointer" ||
+      card.inContext !== false
     );
   });
   check(
-    "every-card-offers-the-chat-control",
+    "every-card-is-a-click-target",
     board.cards.length === SEED.length &&
-      board.chatControls === SEED.length &&
-      badControl.length === 0,
-    `${board.chatControls} chat control(s) over ${board.cards.length} card(s); ` +
-      `offending: ${JSON.stringify(badControl)}`,
+      board.contextToggles === SEED.length &&
+      board.cards.every((card) => card.heading === nameFor(card.id)?.heading) &&
+      badTargets.length === 0 &&
+      // The static card with no pin id is not a click target: "the card" means
+      // the pins, and the wrapper around the agents panel is not one.
+      board.staticPins.length === 1 &&
+      board.staticPins[0].toggles === 0 &&
+      board.staticPins[0].tools === 0 &&
+      board.staticPins[0].cursor !== "pointer",
+    `${board.contextToggles} toggle(s) over ${board.cards.length} card(s); ` +
+      `offending: ${JSON.stringify(badTargets)}; static ${JSON.stringify(board.staticPins)}`,
   );
 
-  const badChrome = board.cards.filter(
-    (card) =>
-      card.chatInChrome !== 0 ||
-      card.chrome !== 1 ||
-      JSON.stringify(card.chromeButtons) !== JSON.stringify(CHROME[card.id]),
-  );
+  step("press-adds");
+  // ── 9. a press anywhere on the card adds it ───────────────────────────────
+  const writesBeforePress = (await pinWrites(win)).length;
+  await pressCard(win, "view:financial:v-weekly", 1);
+  const pressed = await sample(win);
+  const pressedCard = pressed.cards.find((card) => card.id === "view:financial:v-weekly");
+  const pressedDock = await dock(win);
+  checks.pressedCard = {
+    dock: pressedDock,
+    card: pressedCard,
+    inContextCards: pressed.inContextCards,
+  };
   check(
-    "the-chat-control-is-not-editing-chrome",
-    badChrome.length === 0 &&
-      board.chromeBars === SEED.length &&
-      board.chromeButtons === Object.values(CHROME).flat().length,
-    `chrome drifted: ${JSON.stringify(badChrome)}; ` +
-      `${board.chromeBars} bar(s), ${board.chromeButtons} button(s)`,
+    "clicking-a-card-adds-it",
+    pressedDock.open === true &&
+      pressedDock.contextCards?.length === 1 &&
+      pressedDock.contextCards[0]?.label === "Weekly expenses" &&
+      pressedDock.contextCards[0]?.boardSlug === null &&
+      pressedDock.contextCards[0]?.pin?.id === "view:financial:v-weekly" &&
+      pressedDock.contextCards[0]?.pin?.viewId === "v-weekly" &&
+      pressedDock.contextCards[0]?.pin?.domainSlug === "financial" &&
+      JSON.stringify(pressed.inContextCards) === JSON.stringify(["view:financial:v-weekly"]) &&
+      pressedCard?.inContext === true &&
+      drawnRing(pressedCard) &&
+      pressedCard?.toggle?.pressed === "true" &&
+      pressedCard?.toggle?.label === 'Take "Weekly expenses" out of the chat context' &&
+      (await pinWrites(win)).length === writesBeforePress,
+    `the press left ${JSON.stringify(checks.pressedCard)}`,
   );
 
-  // ── 8. clicking hands the card over ───────────────────────────────────────
-  await click(win, '[data-pin-id="view:financial:v-weekly"] [data-testid="pin-chat"]');
+  // The same claim about a card's content, not just its chrome-free margins: a
+  // table cell inside the card is a press on the card.
+  await press(win, await cardBodyPoint(win, "view:financial:v-weekly"));
   await waitFor(
     win,
-    `Boolean((window.dashboardCardContextDock ?? {}).contextCard)`,
-    "the dock to take the card",
+    `((window.dashboardCardContextDock ?? {}).contextCards ?? []).length === 0`,
+    "a second body press to take the card back out",
   );
-  const handed = await dock(win);
-  checks.handed = handed;
+  await press(win, await cardCellPoint(win, "view:financial:v-weekly"));
+  await waitFor(
+    win,
+    `((window.dashboardCardContextDock ?? {}).contextCards ?? []).length === 1`,
+    "a press on the card's table cell to add it",
+  );
+  const fromCell = await sample(win);
   check(
-    "chat-control-hands-over-the-card",
-    handed.open === true &&
-      handed.contextCard?.label === "Weekly expenses" &&
-      handed.contextCard?.boardSlug === null &&
-      handed.contextCard?.pin?.id === "view:financial:v-weekly" &&
-      handed.contextCard?.pin?.viewId === "v-weekly" &&
-      handed.contextCard?.pin?.domainSlug === "financial",
-    `the dock holds ${JSON.stringify(handed)}`,
+    "a-press-on-the-cards-content-is-a-press-on-the-card",
+    JSON.stringify(fromCell.inContextCards) === JSON.stringify(["view:financial:v-weekly"]) &&
+      fromCell.cards.find((card) => card.id === "view:financial:v-weekly")?.inContext === true &&
+      (await contextIds(win))[0] === "view:financial:v-weekly",
+    `the table-cell press left ${JSON.stringify(fromCell.inContextCards)}`,
+  );
+  await clearContext(win);
+
+  step("three-hold");
+  // ── 10. three cards hold at once, in press order ──────────────────────────
+  await pressCard(win, "view:financial:v-weekly", 1);
+  await pressCard(win, "page:financial:ledger", 2);
+  await pressCard(win, "sys:today-week", 3);
+  const threeHeld = await sample(win);
+  const expectedIds = ["view:financial:v-weekly", "page:financial:ledger", "sys:today-week"];
+  const expectedLabels = ["Weekly expenses", "Ledger", "Today & this week"];
+  checks.threeHeld = {
+    ids: await contextIds(win),
+    cards: (await dock(win)).contextCards?.map((card) => ({ label: card.label, boardSlug: card.boardSlug })),
+    inContextCards: threeHeld.inContextCards,
+    toggles: threeHeld.cards
+      .filter((card) => expectedIds.includes(card.id))
+      .map((card) => ({ id: card.id, pressed: card.toggle?.pressed, label: card.toggle?.label })),
+  };
+  check(
+    "three-cards-hold-at-once",
+    JSON.stringify(checks.threeHeld.ids) === JSON.stringify(expectedIds) &&
+      JSON.stringify(checks.threeHeld.cards?.map((card) => card.label)) === JSON.stringify(expectedLabels) &&
+      checks.threeHeld.cards?.every((card) => card.boardSlug === null) &&
+      JSON.stringify(threeHeld.inContextCards) === JSON.stringify(expectedIds) &&
+      threeHeld.cards
+        .filter((card) => expectedIds.includes(card.id))
+        .every(
+          (card) =>
+            drawnRing(card) &&
+            card.toggle?.pressed === "true" &&
+            card.toggle?.label === `Take "${nameFor(card.id).label}" out of the chat context`,
+        ) &&
+      threeHeld.cards
+        .filter((card) => !expectedIds.includes(card.id))
+        .every((card) => !card.inContext && !drawnRing(card) && card.toggle?.pressed === "false"),
+    `three presses left ${JSON.stringify(checks.threeHeld)}`,
   );
 
-  // ── 9. the name comes off the card, not out of the pin ────────────────────
-  const handedNames = {};
-  for (const wanted of NAMES) {
-    await click(win, `[data-pin-id="${wanted.id}"] [data-testid="pin-chat"]`);
-    await waitFor(
-      win,
-      `(window.dashboardCardContextDock ?? {}).contextCard?.pin?.id === ${JSON.stringify(wanted.id)}`,
-      `the dock to take ${wanted.id}`,
-    );
-    handedNames[wanted.id] = (await dock(win)).contextCard?.label ?? null;
-  }
-  checks.handedNames = handedNames;
-  const wrongNames = NAMES.filter((n) => handedNames[n.id] !== n.label);
+  step("second-press");
+  // ── 11. a second press takes only that card out ───────────────────────────
+  const writesBeforeSecond = (await pinWrites(win)).length;
+  await pressCard(win, "page:financial:ledger", 2);
+  const afterSecond = await sample(win);
+  const secondIds = await contextIds(win);
+  const ledger = afterSecond.cards.find((card) => card.id === "page:financial:ledger");
+  const stillHeld = afterSecond.cards.filter((card) =>
+    ["view:financial:v-weekly", "sys:today-week"].includes(card.id),
+  );
+  checks.afterSecond = { ids: secondIds, inContextCards: afterSecond.inContextCards, ledger };
   check(
-    "the-name-comes-off-the-heading",
-    wrongNames.length === 0,
-    `the dock took ${JSON.stringify(handedNames)}; expected ${JSON.stringify(
-      Object.fromEntries(NAMES.map((n) => [n.id, n.label])),
-    )}`,
+    "a-second-click-removes-only-that-card",
+    JSON.stringify(secondIds) ===
+      JSON.stringify(["view:financial:v-weekly", "sys:today-week"]) &&
+      JSON.stringify(afterSecond.inContextCards) ===
+        JSON.stringify(["view:financial:v-weekly", "sys:today-week"]) &&
+      ledger?.inContext === false &&
+      !drawnRing(ledger) &&
+      ledger?.toggle?.pressed === "false" &&
+      stillHeld.every((card) => drawnRing(card) && card.toggle?.pressed === "true") &&
+      (await dock(win))?.open === true &&
+      (await pinWrites(win)).length === writesBeforeSecond,
+    `the second press left ${JSON.stringify(checks.afterSecond)}`,
   );
 
-  // ── 17. the card in context wears a ring, and the control toggles it ───────
-  // The dock's card is the dock's own state and it outlives a re-render of the
-  // board, so this section does not assume it starts empty: whatever the name
-  // sweep above left in the chat is read first, and then taken off through the
-  // operator's own door. A rig that began from an empty dock it had arranged
-  // itself would be claiming about its own bookkeeping.
+  step("fourth-refused");
+  // ── 12. a fourth card is refused, visibly ─────────────────────────────────
+  // The preceding claim left two cards held and took the middle one out; put it
+  // back so the fourth press really is a fourth press.
+  await pressCard(win, "page:financial:ledger", 3);
+  const writesBeforeFourth = (await pinWrites(win)).length;
+  const fourthPoint = await cardBodyPoint(win, "view:financial:v-summary");
+  mouse(win, "mouseDown", fourthPoint.x, fourthPoint.y);
+  await sleep(40);
+  mouse(win, "mouseUp", fourthPoint.x, fourthPoint.y);
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="pin-context-status"]'))`,
+    "the fourth-card status line",
+  );
+  const refused = await sample(win);
+  const refusedIds = await contextIds(win);
+  const fourthCard = refused.cards.find((card) => card.id === "view:financial:v-summary");
+  checks.refused = {
+    ids: refusedIds,
+    status: refused.status,
+    card: fourthCard,
+    inContextCards: refused.inContextCards,
+  };
+  check(
+    "a-fourth-card-is-refused-with-a-status-line",
+    JSON.stringify(refusedIds) ===
+      JSON.stringify(["view:financial:v-weekly", "sys:today-week", "page:financial:ledger"]) &&
+      refused.status.present === true &&
+      refused.status.role === "status" &&
+      refused.status.text === FULL_NOTICE &&
+      refused.status.height > 0 &&
+      refused.status.display !== "none" &&
+      fourthCard?.inContext === false &&
+      !drawnRing(fourthCard) &&
+      fourthCard?.toggle?.pressed === "false" &&
+      refused.inContextCards.length === 3 &&
+      (await pinWrites(win)).length === writesBeforeFourth,
+    `the fourth press left ${JSON.stringify(checks.refused)}`,
+  );
+
+  // The next successful toggle clears the line: it is an answer, not a state.
+  await pressCard(win, "view:financial:v-weekly", 2);
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="pin-context-status"]')`,
+    "the status line to clear after a successful toggle",
+  );
+  const afterNotice = await sample(win);
+  checks.noticeCleared = afterNotice.status;
+  check(
+    "the-refusal-line-clears-on-the-next-toggle",
+    afterNotice.status.present === false &&
+      JSON.stringify(await contextIds(win)) ===
+        JSON.stringify(["sys:today-week", "page:financial:ledger"]),
+    `after a successful toggle the status read ${JSON.stringify(afterNotice.status)}`,
+  );
+  await clearContext(win);
+
+  step("empty-clear");
+  // ── 13. empty board space clears every card at once ───────────────────────
+  const seedThree = async () => {
+    await pressCard(win, "view:financial:v-weekly", 1);
+    await pressCard(win, "page:financial:ledger", 2);
+    await pressCard(win, "sys:today-week", 3);
+  };
+  await seedThree();
+  const gapPoint = await emptyBoardPoint(win);
+  mouse(win, "mouseDown", gapPoint.x, gapPoint.y);
+  await sleep(40);
+  mouse(win, "mouseUp", gapPoint.x, gapPoint.y);
+  await waitFor(
+    win,
+    `((window.dashboardCardContextDock ?? {}).contextCards ?? []).length === 0`,
+    "the gap press to clear the context",
+  );
+  const afterGap = await sample(win);
+  checks.emptyGap = { point: gapPoint, inContextCards: afterGap.inContextCards, status: afterGap.status };
+
+  await seedThree();
+  const headerPoint = await pointAt(win, ".home-dashboard__eyebrow");
+  mouse(win, "mouseDown", headerPoint.x, headerPoint.y);
+  await sleep(40);
+  mouse(win, "mouseUp", headerPoint.x, headerPoint.y);
+  await waitFor(
+    win,
+    `((window.dashboardCardContextDock ?? {}).contextCards ?? []).length === 0`,
+    "the header-text press to clear the context",
+  );
+  const afterHeader = await sample(win);
+
+  // And the other half of the rule: a press on another app surface leaves the
+  // context held. The operator works while the context is kept.
+  await seedThree();
+  const outside = await pointAt(win, '[data-testid="outside-the-dashboard"]');
+  mouse(win, "mouseDown", outside.x, outside.y);
+  await sleep(40);
+  mouse(win, "mouseUp", outside.x, outside.y);
+  await sleep(200);
+  const afterOutside = await sample(win);
+  checks.emptyClear = {
+    afterGap: afterGap.inContextCards,
+    afterHeader: afterHeader.inContextCards,
+    afterOutside: afterOutside.inContextCards,
+    outsidePoint: outside,
+  };
+  check(
+    "empty-board-clicks-clear-all",
+    afterGap.inContextCards.length === 0 &&
+      afterHeader.inContextCards.length === 0 &&
+      // The third press was NOT on the Dashboard, so nothing was cleared.
+      JSON.stringify(afterOutside.inContextCards) ===
+        JSON.stringify(["view:financial:v-weekly", "page:financial:ledger", "sys:today-week"]) &&
+      (await contextIds(win)).length === 3,
+    `the empty-board presses read ${JSON.stringify(checks.emptyClear)}`,
+  );
+  await clearContext(win);
+
+  step("controls");
+  // ── 14. a card's own controls keep their presses ──────────────────────────
   await render(win, false);
-  const heldBeforeRing = (await dock(win)).contextCard?.pin?.id ?? null;
-  if (heldBeforeRing) {
-    await click(win, `[data-pin-id="${heldBeforeRing}"] [data-testid="pin-chat"]`);
-    await waitFor(
-      win,
-      `!((window.dashboardCardContextDock ?? {}).contextCard)`,
-      "the dock to let its card go",
-    );
-  }
-  const unringed = await sample(win);
-  await click(win, '[data-pin-id="view:financial:v-weekly"] [data-testid="pin-chat"]');
+  await clearContext(win);
+  const writesBeforeControls = (await pinWrites(win)).length;
+  const contextBeforeControls = (await contextIds(win)).length;
+
+  // The 3-dot trigger opens the menu and does not touch the context.
+  const menuPoint = await pointAt(win, '[data-pin-id="sys:today-week"] [data-testid="pin-menu-toggle"]');
+  await press(win, menuPoint);
   await waitFor(
     win,
-    `document.querySelector('[data-pin-id="view:financial:v-weekly"]').classList.contains('is-in-context')`,
-    "the ring on the card the chat took",
+    `Boolean(document.querySelector('[data-pin-id="sys:today-week"] [data-testid="pin-menu"]'))`,
+    "the card menu to open from a real press",
   );
-  const ringed = await sample(win);
-  const ringedCard = ringed.cards.find((c) => c.id === "view:financial:v-weekly");
-  const otherCards = ringed.cards.filter((c) => c.id !== "view:financial:v-weekly");
-  checks.ring = {
-    before: unringed.cards.map((c) => ({ id: c.id, ring: drawnRing(c), pressed: c.chatPressed })),
-    after: ringed.inContextCards,
-    card: ringedCard,
+  const afterMenuPress = await sample(win);
+
+  // Edit card is a menu item: it opens Edit mode and does not touch the context.
+  await press(win, await pointAt(win, '[data-pin-id="sys:today-week"] [data-testid="pin-edit"]'));
+  await waitFor(
+    win,
+    `document.querySelectorAll('.home-pin.is-editing').length === 1`,
+    "Edit mode to open from the menu",
+  );
+  const afterEdit = await sample(win);
+
+  // A press on the card body while Edit mode is on is about the size, not the
+  // chat.
+  await press(win, await cardBodyPoint(win, "sys:today-week"));
+
+  // A size handle is its own control.
+  const handlePoint = await pointAt(win, '[data-pin-id="sys:today-week"] [data-pin-handle-axis="width"]');
+  await press(win, handlePoint);
+
+  // Escape leaves Edit mode; the page menu is another one of the board's own
+  // controls and must not clear or add anything either.
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+  await waitFor(
+    win,
+    `document.querySelectorAll('.home-pin.is-editing').length === 0`,
+    "Escape to leave Edit mode",
+  );
+  const pageMenuPoint = await pointAt(win, '[data-testid="board-page-menu"]');
+  await press(win, pageMenuPoint);
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="board-page-menu-popover"]'))`,
+    "the page menu to open",
+  );
+  await press(win, pageMenuPoint);
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="board-page-menu-popover"]')`,
+    "the page menu to close",
+  );
+  const afterControls = await sample(win);
+  checks.controls = {
+    before: contextBeforeControls,
+    afterMenuPress: (await win.webContents.executeJavaScript(
+      "((window.dashboardCardContextDock ?? {}).contextCards ?? []).length",
+    )),
+    afterEdit,
+    after: afterControls,
+    menus: afterMenuPress.menus.length,
   };
   check(
-    "the-card-in-context-wears-a-highlight",
-    unringed.inContextCards.length === 0 &&
-      unringed.cards.every((c) => !c.inContext && !drawnRing(c) && c.chatPressed === "false") &&
-      JSON.stringify(ringed.inContextCards) === JSON.stringify(["view:financial:v-weekly"]) &&
-      chatReadsPressed(ringedCard) &&
-      drawnRing(ringedCard) &&
-      otherCards.every((c) => !c.inContext && !drawnRing(c) && c.chatPressed === "false"),
-    `the board read ${JSON.stringify(checks.ring)}`,
+    "a-cards-own-controls-do-not-toggle",
+    afterMenuPress.menus.length === 1 &&
+      afterEdit.editing === 1 &&
+      afterEdit.resizeHandles === 2 &&
+      afterControls.editing === 0 &&
+      (await contextIds(win)).length === 0 &&
+      afterControls.inContextCards.length === 0 &&
+      (await pinWrites(win)).length === writesBeforeControls,
+    `the card's own controls left ${JSON.stringify({
+      menu: afterMenuPress.menus.length,
+      editing: afterEdit.editing,
+      handles: afterEdit.resizeHandles,
+      context: await contextIds(win),
+    })} and ${(await pinWrites(win)).length - writesBeforeControls} write(s)`,
   );
 
-  // Another card's control moves the ring rather than growing a second one: the
-  // chat holds one card, and the board must draw exactly one.
-  await click(win, '[data-pin-id="sys:today-week"] [data-testid="pin-chat"]');
+  step("gestures");
+  // ── 15. a hold, a drag and a drift are not a press on the card ────────────
+  await render(win, false);
+  await clearContext(win);
+  const writesBeforeGesture = (await pinWrites(win)).length;
+
+  // A hold that lifts the card and drops it where it stood: the click the
+  // browser delivers at the end belongs to the gesture.
+  const holdPoint = await cardBodyPoint(win, "sys:today-week");
+  mouse(win, "mouseDown", holdPoint.x, holdPoint.y);
+  const holdLifted = await waitForLift(win);
+  mouse(win, "mouseUp", holdPoint.x, holdPoint.y);
+  await sleep(220);
+  const afterHold = await sample(win);
+  checks.hold = { liftedDuringHold: holdLifted, context: await contextIds(win), lifted: afterHold.lifted };
+
+  // A real drag, aimed at the first slot: one write, no context.
+  await dragCard(win, "view:financial:v-summary", async () =>
+    pointAt(win, '[data-pin-id="sys:goal-progress"] .home-card__title'),
+  );
   await waitFor(
     win,
-    `document.querySelector('[data-pin-id="sys:today-week"]').classList.contains('is-in-context') && ` +
-      `!document.querySelector('[data-pin-id="view:financial:v-weekly"]').classList.contains('is-in-context')`,
-    "the ring to move to the second card",
+    `(window.dashboardCardContextPinWrites ?? []).length > ${writesBeforeGesture}`,
+    "the drag to write the new order",
   );
-  const moved = await sample(win);
-  const movedCard = moved.cards.find((c) => c.id === "sys:today-week");
-  const vacated = moved.cards.find((c) => c.id === "view:financial:v-weekly");
-  checks.ringMoved = { cards: moved.inContextCards, card: movedCard, vacated };
-  check(
-    "the-highlight-follows-the-card-the-chat-is-about",
-    JSON.stringify(moved.inContextCards) === JSON.stringify(["sys:today-week"]) &&
-      chatReadsPressed(movedCard) &&
-      drawnRing(movedCard) &&
-      !vacated?.inContext &&
-      vacated?.chatPressed === "false" &&
-      !drawnRing(vacated) &&
-      (await dock(win)).contextCard?.pin?.id === "sys:today-week",
-    `after pressing the second card's control the board read ${JSON.stringify(checks.ringMoved)}`,
-  );
+  const afterDrag = await sample(win);
+  const dragWrites = (await pinWrites(win)).length - writesBeforeGesture;
+  checks.drag = { writes: dragWrites, context: await contextIds(win), lifted: afterDrag.lifted };
 
-  // And the second press on the same control takes it off. Nothing is closed and
-  // nothing is written: the board is not what the context lives in.
-  const writesBeforeToggleOff = (await pinWrites(win)).length;
-  await click(win, '[data-pin-id="sys:today-week"] [data-testid="pin-chat"]');
-  await waitFor(
-    win,
-    `!((window.dashboardCardContextDock ?? {}).contextCard)`,
-    "the dock to let the card go on the second press",
-  );
-  const toggledOff = await sample(win);
-  const afterToggleOff = await dock(win);
-  checks.ringToggledOff = {
-    cards: toggledOff.inContextCards,
-    pressed: toggledOff.cards.map((c) => c.chatPressed),
-    dock: afterToggleOff,
-  };
-  check(
-    "pressing-the-control-again-takes-the-card-off-the-chat",
-    toggledOff.inContextCards.length === 0 &&
-      toggledOff.cards.every((c) => !c.inContext && !drawnRing(c) && c.chatPressed === "false") &&
-      afterToggleOff.contextCard === null &&
-      afterToggleOff.open === true &&
-      (await pinWrites(win)).length === writesBeforeToggleOff,
-    `the second press left ${JSON.stringify(checks.ringToggledOff)} and ` +
-      `${(await pinWrites(win)).length - writesBeforeToggleOff} write(s)`,
-  );
+  // A press that drifts before the hold is disarmed: it is a text selection or a
+  // nudge, not a click.
+  const driftPoint = await cardBodyPoint(win, "page:financial:ledger");
+  mouse(win, "mouseDown", driftPoint.x, driftPoint.y);
+  mouse(win, "mouseMove", driftPoint.x + 20, driftPoint.y + 4);
+  await sleep(60);
+  mouse(win, "mouseUp", driftPoint.x + 20, driftPoint.y + 4);
+  await sleep(200);
+  const afterDrift = await sample(win);
+  checks.drift = { context: await contextIds(win), lifted: afterDrift.lifted };
 
-  // ── 10. a locked board still lets the card be asked about ─────────────────
+  // ...and the next real press still toggles, so the suppression was consumed
+  // by the gesture rather than left stuck on the board.
+  await pressCard(win, "view:financial:v-weekly", 1);
+  const afterGestureThenPress = await sample(win);
+  const writesAfterGestures = (await pinWrites(win)).length;
+  check(
+    "a-drag-does-not-toggle",
+    holdLifted === true &&
+      afterHold.lifted === 0 &&
+      checks.hold.context.length === 0 &&
+      dragWrites === 1 &&
+      afterDrag.lifted === 0 &&
+      checks.drag.context.length === 0 &&
+      checks.drift.context.length === 0 &&
+      afterDrift.lifted === 0 &&
+      JSON.stringify(afterGestureThenPress.inContextCards) === JSON.stringify(["view:financial:v-weekly"]) &&
+      writesAfterGestures === writesBeforeGesture + 1,
+    `the gestures read ${JSON.stringify({
+      hold: checks.hold,
+      drag: checks.drag,
+      drift: checks.drift,
+      afterPress: afterGestureThenPress.inContextCards,
+      writes: writesAfterGestures - writesBeforeGesture,
+    })}`,
+  );
+  await clearContext(win);
+
+  step("locked-select");
+  // ── 16. the locked board still selects, holds and removes, writing nothing ─
   await render(win, true);
   const lockedRead = await sample(win);
   const lockedWritesBefore = (await pinWrites(win)).length;
-  await click(win, '[data-pin-id="sys:today-week"] [data-testid="pin-chat"]');
+  const lockedDeletesBefore = (await deletes(win)).length;
+  await pressCard(win, "view:financial:v-weekly", 1);
+  const lockedOne = await sample(win);
+  await pressCard(win, "page:financial:ledger", 2);
+  const lockedTwo = await sample(win);
+  await pressCard(win, "view:financial:v-weekly", 1);
+  const lockedRemoved = await sample(win);
+  await press(win, await pointAt(win, ".home-dashboard__eyebrow"));
   await waitFor(
     win,
-    `(window.dashboardCardContextDock ?? {}).contextCard?.pin?.id === "sys:today-week"`,
-    "the locked board's chat control to hand the card over",
+    `((window.dashboardCardContextDock ?? {}).contextCards ?? []).length === 0`,
+    "the locked board's empty space to clear the context",
   );
-  const lockedRinged = await sample(win);
-  const lockedHanded = await dock(win);
-  checks.lockedRead = lockedRead;
-  checks.lockedHanded = lockedHanded;
-  checks.lockedRing = {
-    cards: lockedRinged.inContextCards,
-    card: lockedRinged.cards.find((c) => c.id === "sys:today-week"),
+  const lockedCleared = await sample(win);
+  checks.lockedSelection = {
+    chrome: { bars: lockedRead.chromeBars, buttons: lockedRead.chromeButtons, tools: lockedRead.cards.map((card) => card.tools) },
+    cursor: lockedRead.cards.map((card) => card.cursor),
+    one: { ids: ["view:financial:v-weekly"], rings: lockedOne.inContextCards },
+    two: lockedTwo.inContextCards,
+    removed: lockedRemoved.inContextCards,
+    cleared: lockedCleared.inContextCards,
+    writes: (await pinWrites(win)).length - lockedWritesBefore,
+    deletes: (await deletes(win)).length - lockedDeletesBefore,
   };
   check(
-    "a-locked-board-still-offers-it",
+    "the-locked-board-still-selects-and-removes",
     lockedRead.chromeBars === 0 &&
       lockedRead.chromeButtons === 0 &&
-      lockedRead.chatControls === SEED.length &&
-      lockedRead.cards.every((c) => c.chat === 1) &&
-      lockedHanded.contextCard?.label === "Today & this week" &&
-      // The ring is not an edit either: a locked board marks the card the chat
-      // took exactly as an unlocked one does, and still writes nothing.
-      JSON.stringify(lockedRinged.inContextCards) === JSON.stringify(["sys:today-week"]) &&
-      chatReadsPressed(checks.lockedRing.card) &&
-      drawnRing(checks.lockedRing.card) &&
-      (await pinWrites(win)).length === lockedWritesBefore,
-    `the locked board read ${JSON.stringify({
-      chromeBars: lockedRead.chromeBars,
-      chromeButtons: lockedRead.chromeButtons,
-      chatControls: lockedRead.chatControls,
-    })} and handed ${JSON.stringify(lockedHanded.contextCard)} with ring ` +
-      `${JSON.stringify(checks.lockedRing)}`,
+      lockedRead.cards.every((card) => card.tools === 0 && card.chrome === 0) &&
+      lockedRead.cards.every((card) => card.cursor === "pointer") &&
+      JSON.stringify(lockedOne.inContextCards) === JSON.stringify(["view:financial:v-weekly"]) &&
+      drawnRing(lockedOne.cards.find((card) => card.id === "view:financial:v-weekly")) &&
+      JSON.stringify(lockedTwo.inContextCards) ===
+        JSON.stringify(["view:financial:v-weekly", "page:financial:ledger"]) &&
+      JSON.stringify(lockedRemoved.inContextCards) === JSON.stringify(["page:financial:ledger"]) &&
+      lockedCleared.inContextCards.length === 0 &&
+      (await pinWrites(win)).length === lockedWritesBefore &&
+      (await deletes(win)).length === lockedDeletesBefore,
+    `the locked board read ${JSON.stringify(checks.lockedSelection)}`,
   );
 
-  // ── 11. asking about a card is not picking one up ─────────────────────────
+  step("keyboard");
+  // ── 17. the keyboard toggle works, locked or not ──────────────────────────
   await render(win, false);
-  const gripWritesBefore = (await pinWrites(win)).length;
-  const point = await pointAt(win, '[data-pin-id="sys:today-week"] [data-testid="pin-chat"]');
-  mouse(win, "mouseDown", point.x, point.y);
-  await sleep(420);
-  const held = await sample(win);
-  mouse(win, "mouseUp", point.x, point.y);
-  await sleep(120);
-  // The same hold on the card's own heading DOES lift it. Without this, "a hold
-  // on the chat control does nothing" would also pass on a board where the hold
-  // gesture was broken outright — the claim has to distinguish the two. It is
-  // polled rather than slept at: the hold is a real 220 ms timer, and a stalled
-  // renderer missing a fixed sleep would fail a claim that is not about timing.
-  const headingPoint = await pointAt(win, '[data-pin-id="sys:today-week"] .home-card__title');
-  mouse(win, "mouseDown", headingPoint.x, headingPoint.y);
-  const liftedByTheHold = (await waitForLift(win)) ? 1 : 0;
-  mouse(win, "mouseUp", headingPoint.x, headingPoint.y);
-  await sleep(120);
-  checks.heldOnChatControl = { lifted: held.lifted, liftedByTheHold };
-  check(
-    "the-chat-control-does-not-lift-the-card",
-    held.lifted === 0 &&
-      liftedByTheHold === 1 &&
-      (await pinWrites(win)).length === gripWritesBefore,
-    `a hold on the chat control left ${held.lifted} card(s) lifted (the same hold on the ` +
-      `heading lifted ${liftedByTheHold}) and ` +
-      `${(await pinWrites(win)).length - gripWritesBefore} write(s)`,
+  await clearContext(win);
+  const focusToggle = async (pinId) =>
+    win.webContents.executeJavaScript(
+      `(() => {
+         const toggle = document.querySelector('[data-pin-id="${pinId}"] [data-testid="pin-context-toggle"]');
+         if (!toggle) return false;
+         toggle.focus();
+         return document.activeElement === toggle;
+       })()`,
+    );
+  const pressEnter = async () => {
+    win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Enter" });
+    win.webContents.sendInputEvent({ type: "char", keyCode: "Enter" });
+    win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
+    await sleep(150);
+  };
+  const focusedToggle = await focusToggle("view:financial:v-weekly");
+  await sleep(60);
+  const activeAfterFocus = await win.webContents.executeJavaScript(
+    `(() => { const el = document.activeElement; return el ? { tag: el.tagName, testid: el.dataset.testid ?? null } : null; })()`,
   );
+  const beforeEnter = await sample(win);
+  await pressEnter();
+  const activeAfterEnter = await win.webContents.executeJavaScript(
+    `(() => { const el = document.activeElement; return el ? { tag: el.tagName, testid: el.dataset.testid ?? null } : null; })()`,
+  );
+  const contextAfterFirstEnter = await contextIds(win);
+  await waitFor(
+    win,
+    `((window.dashboardCardContextDock ?? {}).contextCards ?? []).length === 1`,
+    "the keyboard toggle to add the card",
+  );
+  const afterEnter = await sample(win);
+  await focusToggle("view:financial:v-weekly");
+  await pressEnter();
+  await waitFor(
+    win,
+    `((window.dashboardCardContextDock ?? {}).contextCards ?? []).length === 0`,
+    "the keyboard toggle to remove the card",
+  );
+  const afterSecondEnter = await sample(win);
 
-  // ── 12. the menu, and the two removals it holds ───────────────────────────
+  // On a locked board the card is not a tab stop, but the context control is:
+  // that is the whole reason it exists outside the editing chrome.
+  await render(win, true);
+  await clearContext(win);
+  const lockedBeforeKeyboard = await sample(win);
+  const lockedWritesBeforeKeyboard = (await pinWrites(win)).length;
+  const lockedFocused = await focusToggle("view:financial:v-weekly");
+  await pressEnter();
+  await waitFor(
+    win,
+    `((window.dashboardCardContextDock ?? {}).contextCards ?? []).length === 1`,
+    "the locked board's keyboard toggle to add the card",
+  );
+  const lockedAfterEnter = await sample(win);
+  await focusToggle("view:financial:v-weekly");
+  await pressEnter();
+  await waitFor(
+    win,
+    `((window.dashboardCardContextDock ?? {}).contextCards ?? []).length === 0`,
+    "the locked board's keyboard toggle to remove the card",
+  );
+  checks.keyboard = {
+    focused: focusedToggle,
+    activeAfterFocus,
+    activeAfterEnter,
+    contextAfterFirstEnter,
+    before: { pressed: beforeEnter.cards.find((card) => card.id === "view:financial:v-weekly")?.toggle?.pressed },
+    afterEnter: {
+      rings: afterEnter.inContextCards,
+      pressed: afterEnter.cards.find((card) => card.id === "view:financial:v-weekly")?.toggle?.pressed,
+      label: afterEnter.cards.find((card) => card.id === "view:financial:v-weekly")?.toggle?.label,
+    },
+    afterSecondEnter: {
+      rings: afterSecondEnter.inContextCards,
+      pressed: afterSecondEnter.cards.find((card) => card.id === "view:financial:v-weekly")?.toggle?.pressed,
+    },
+    locked: {
+      cardTabIndex: lockedBeforeKeyboard.cards.map((card) => card.tabIndex),
+      toggleTabIndex: lockedBeforeKeyboard.cards.map((card) => card.toggle?.tabIndex),
+      focused: lockedFocused,
+      rings: lockedAfterEnter.inContextCards,
+      writes: (await pinWrites(win)).length - lockedWritesBeforeKeyboard,
+    },
+  };
+  check(
+    "the-keyboard-toggle-works",
+    focusedToggle === true &&
+      checks.keyboard.afterEnter.rings.length === 1 &&
+      checks.keyboard.afterEnter.rings[0] === "view:financial:v-weekly" &&
+      checks.keyboard.afterEnter.pressed === "true" &&
+      checks.keyboard.afterEnter.label === 'Take "Weekly expenses" out of the chat context' &&
+      checks.keyboard.afterSecondEnter.rings.length === 0 &&
+      checks.keyboard.afterSecondEnter.pressed === "false" &&
+      checks.keyboard.locked.cardTabIndex.every((value) => value === -1) &&
+      checks.keyboard.locked.toggleTabIndex.every((value) => value === 0) &&
+      lockedFocused === true &&
+      JSON.stringify(checks.keyboard.locked.rings) === JSON.stringify(["view:financial:v-weekly"]) &&
+      checks.keyboard.locked.writes === 0,
+    `the keyboard read ${JSON.stringify(checks.keyboard)}`,
+  );
+  await clearContext(win);
+
+  step("names");
+  // ── 18. the name comes off the heading ────────────────────────────────────
+  await render(win, false);
+  const handedNames = {};
+  for (const wanted of NAMES) {
+    await clearContext(win);
+    await pressCard(win, wanted.id, 1);
+    const held = await dock(win);
+    handedNames[wanted.id] = held.contextCards?.[0]?.label ?? null;
+  }
+  const wrongNames = NAMES.filter((entry) => handedNames[entry.id] !== entry.label);
+  checks.handedNames = handedNames;
+  check(
+    "the-name-comes-off-the-heading",
+    wrongNames.length === 0 &&
+      handedNames["sys:goal-progress"] === "Goals" &&
+      // The heading node's whole subtree says "Goals2" because of the count
+      // badge; the name is the heading's own words, never the id.
+      NAMES[0].heading === "Goals2",
+    `the dock took ${JSON.stringify(handedNames)}; expected ${JSON.stringify(
+      Object.fromEntries(NAMES.map((entry) => [entry.id, entry.label])),
+    )}`,
+  );
+  await clearContext(win);
+
+  step("menus");
+  // ── 19. the per-card menu still does its job ──────────────────────────────
   await render(win, false);
   const menuBoard = await sample(win);
-  const badToggles = menuBoard.cards.filter((card) => card.chromeButtons.includes("pin-menu-toggle") === false);
+  const badToggles = menuBoard.cards.filter(
+    (card) => card.chromeButtons.includes("pin-menu-toggle") === false,
+  );
   checks.menuToggle = menuBoard.menuToggle;
-  checks.menuBoard = { menuToggles: menuBoard.menuToggles, unpinGlyphs: menuBoard.cards.map((c) => c.unpinGlyphs) };
+  checks.menuBoard = { menuToggles: menuBoard.menuToggles };
   check(
     "every-card-offers-the-menu",
     menuBoard.cards.length === SEED.length &&
       menuBoard.menuToggles === SEED.length &&
       badToggles.length === 0 &&
-      menuBoard.cards.every((c) => c.unpinGlyphs === 0) &&
       menuBoard.menuToggle?.text === "" &&
       menuBoard.menuToggle?.svgs === 1 &&
       (menuBoard.menuToggle?.icon ?? "").includes("lucide-ellipsis-vertical") &&
@@ -1029,8 +1613,7 @@ async function main() {
       menuBoard.menuToggle?.haspopup === "menu" &&
       menuBoard.menuToggle?.expanded === "false",
     `${menuBoard.menuToggles} trigger(s) over ${menuBoard.cards.length} card(s); ` +
-      `toggle ${JSON.stringify(menuBoard.menuToggle)}; stray unpin glyphs ` +
-      `${JSON.stringify(checks.menuBoard.unpinGlyphs)}`,
+      `toggle ${JSON.stringify(menuBoard.menuToggle)}`,
   );
 
   const menuHeld = {};
@@ -1040,7 +1623,11 @@ async function main() {
     menuHeld[pinId] = open.menus[0] ?? null;
     // Press the trigger again: the menu closes, and one popup is all there is.
     await click(win, `[data-pin-id="${pinId}"] [data-testid="pin-menu-toggle"]`);
-    await waitFor(win, `document.querySelectorAll('[data-testid="pin-menu"]').length === 0`, "the menu to close");
+    await waitFor(
+      win,
+      `document.querySelectorAll('[data-testid="pin-menu"]').length === 0`,
+      "the menu to close",
+    );
     if ((await sample(win)).menus.length !== 0) {
       menuHeld[`${pinId}:stayedOpen`] = true;
     }
@@ -1075,14 +1662,18 @@ async function main() {
   check(
     "one-menu-at-a-time",
     twoMenus.menus.length === 1 && twoMenus.menus[0]?.pinId === "sys:recent-log",
-    `${twoMenus.menus.length} menu(s) open: ${JSON.stringify(twoMenus.menus.map((m) => m.pinId))}`,
+    `${twoMenus.menus.length} menu(s) open: ${JSON.stringify(twoMenus.menus.map((menu) => menu.pinId))}`,
   );
 
   // Escape closes it.
   await win.webContents.executeJavaScript(
     `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
   );
-  await waitFor(win, `document.querySelectorAll('[data-testid="pin-menu"]').length === 0`, "Escape to close the menu");
+  await waitFor(
+    win,
+    `document.querySelectorAll('[data-testid="pin-menu"]').length === 0`,
+    "Escape to close the menu",
+  );
   const afterEscape = await sample(win);
   check("escape-closes-the-menu", afterEscape.menus.length === 0, `${afterEscape.menus.length} menu(s) still open`);
 
@@ -1103,7 +1694,8 @@ async function main() {
     `${afterPress.menus.length} menu(s) survived a press on the header`,
   );
 
-  // ── 13. Archive takes the card off this board, and deletes nothing ────────
+  step("archive");
+  // ── 20. Archive takes the card off this board, and deletes nothing ────────
   const archiveWritesBefore = (await pinWrites(win)).length;
   await openMenu(win, "sys:today-week");
   await clickMenuItem(win, "sys:today-week", "pin-archive");
@@ -1113,7 +1705,7 @@ async function main() {
     "the archived card to leave the board",
   );
   const archiveWrites = (await pinWrites(win)).slice(archiveWritesBefore);
-  const expectedArchive = SEED.filter((p) => p.id !== "sys:today-week");
+  const expectedArchive = SEED.filter((pin) => pin.id !== "sys:today-week");
   checks.archiveWrites = archiveWrites;
   check(
     "archive-takes-the-card-off-the-board",
@@ -1125,10 +1717,9 @@ async function main() {
 
   /**
    * And Archive is not a delete, on the card where the difference is real: a
-   * view card has a saved view behind it, and taking the card off must leave
-   * that view alone — still in the vault, still offered by the pin board, so the
-   * operator can put the card back. This is the pair the two laws make: the
-   * reversible act and the irreversible one must not be the same act.
+   * view card has a saved view behind it, and taking the card off must leave the
+   * view alone — still in the vault, still offered by the pin board, so the
+   * operator can put the card back.
    */
   const viewArchiveBefore = (await pinWrites(win)).length;
   const deletesBeforeArchive = (await deletes(win)).length;
@@ -1155,19 +1746,8 @@ async function main() {
     `archiving a view card read ${JSON.stringify(checks.viewArchive)}`,
   );
 
-  // ── 14. a locked board has no menu at all ─────────────────────────────────
-  await render(win, true);
-  const lockedMenus = await sample(win);
-  checks.lockedMenus = { menuToggles: lockedMenus.menuToggles, menus: lockedMenus.menus.length, chat: lockedMenus.chatControls };
-  check(
-    "a-locked-board-has-no-menu",
-    lockedMenus.menuToggles === 0 &&
-      lockedMenus.menus.length === 0 &&
-      lockedMenus.chatControls === SEED.length,
-    `the locked board read ${JSON.stringify(checks.lockedMenus)}`,
-  );
-
-  // ── 15. Delete asks first, and only then writes ───────────────────────────
+  step("delete-ask");
+  // ── 21. Delete asks first, and only then writes ───────────────────────────
   await render(win, false);
   const deleteWritesBefore = (await deletes(win)).length;
   const pinWritesBeforeDelete = (await pinWrites(win)).length;
@@ -1200,7 +1780,7 @@ async function main() {
     "cancelling-deletes-nothing",
     afterCancel.dialog === null &&
       (await deletes(win)).length === deleteWritesBefore &&
-      afterCancel.cards.some((c) => c.id === "view:financial:v-weekly"),
+      afterCancel.cards.some((card) => card.id === "view:financial:v-weekly"),
     `Cancel left ${(await deletes(win)).length - deleteWritesBefore} delete(s) and ` +
       `${afterCancel.cards.length} card(s)`,
   );
@@ -1228,13 +1808,14 @@ async function main() {
       deleteWrites[0]?.slug === "financial" &&
       deleteWrites[0]?.id === "v-weekly" &&
       afterDelete.dialog === null &&
-      afterDelete.cards.every((c) => c.id !== "view:financial:v-weekly") &&
+      afterDelete.cards.every((card) => card.id !== "view:financial:v-weekly") &&
       afterDelete.gridCards === SEED.length - 1,
     `the delete sent ${JSON.stringify(deleteWrites)} and left ` +
-      `${JSON.stringify(afterDelete.cards.map((c) => c.id))}`,
+      `${JSON.stringify(afterDelete.cards.map((card) => card.id))}`,
   );
 
-  // ── 16. the same, through a page pin ──────────────────────────────────────
+  step("delete-page");
+  // ── 22. the same, through a page pin ──────────────────────────────────────
   await render(win, false);
   const pageDeleteBefore = (await deletes(win)).length;
   await openMenu(win, "page:financial:ledger");
@@ -1259,12 +1840,13 @@ async function main() {
       pageDeletes.length === 1 &&
       pageDeletes[0]?.kind === "page" &&
       pageDeletes[0]?.id === "ledger" &&
-      (await sample(win)).cards.every((c) => c.id !== "page:financial:ledger"),
+      (await sample(win)).cards.every((card) => card.id !== "page:financial:ledger"),
     `the page question read ${JSON.stringify(pageQuestion.dialog)} and the delete sent ` +
       `${JSON.stringify(pageDeletes)}`,
   );
 
-  // ── 12. the deadline pin is not a card, and lays its controls out its own way
+  step("deadline");
+  // ── 23. the deadline pin is not a card, and lays its controls out its own way
   await render(win, false, [...SEED, DEADLINE_PIN]);
   await waitFor(
     win,
@@ -1279,8 +1861,8 @@ async function main() {
       deadline.banner === true &&
       deadline.tools === true &&
       deadline.toolsPosition === "static" &&
-      deadline.chatSvgs === 1 &&
-      Boolean(deadline.chatLabel) &&
+      deadline.chatControls === 0 &&
+      deadline.messageIcons === 0 &&
       deadline.chrome === 1 &&
       Math.abs(deadline.toolsRight - deadline.pinRight) <= 2 &&
       deadline.toolsBottom <= deadline.bannerTop,
@@ -1288,6 +1870,7 @@ async function main() {
   );
 
   // ── nothing unexpected, nothing on fire ───────────────────────────────────
+  await clearContext(win);
   const unexpected = await win.webContents.executeJavaScript(
     "window.dashboardCardContextUnexpectedCalls",
   );
@@ -1298,19 +1881,16 @@ async function main() {
   checks.consoleErrors = consoleErrors;
   if (consoleErrors.length > 0) failure(`console errors: ${consoleErrors.join(" | ")}`);
 
-  // The artifact screenshot is the board with the pin board open, a card's menu
-  // open, and a card in the chat's context: the page's subjects in one frame, so
-  // that is what a reader should see. The card is the surviving view — the two
-  // this run deleted are really gone from the harness's vault, so the board draws
-  // six cards, which is what the app would draw too.
+  // The artifact screenshot is the board with the pin board open, three cards in
+  // the chat's context and one card's menu open: the page's subjects in one
+  // frame. The view this run deleted is really gone from the harness's vault, so
+  // the board draws one card fewer than the seed, which is what the app would do
+  // too.
   await render(win, false);
   await openPinBoard(win);
-  await click(win, '[data-pin-id="view:financial:v-summary"] [data-testid="pin-chat"]');
-  await waitFor(
-    win,
-    `document.querySelector('[data-pin-id="view:financial:v-summary"]').classList.contains('is-in-context')`,
-    "the ring on the card the screenshot hands to the chat",
-  );
+  await pressCard(win, "view:financial:v-summary", 1);
+  await pressCard(win, "sys:today-week", 2);
+  await pressCard(win, "sys:pending-decisions", 3);
   await openMenu(win, "view:financial:v-summary");
   await win.webContents.executeJavaScript(
     `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
@@ -1334,8 +1914,8 @@ async function main() {
       `above-grid=${above.sectionBeforeGrid} lockedAddItem=${lockedBoard.addItem === null ? "none" : "present"}`,
   );
   console.log(
-    `cards: ${board.cards.length} cards, ${board.chatControls} chat control(s), ` +
-      `${board.chromeBars} chrome bar(s)${lockedRead.chromeBars === 0 ? ", none while locked" : ""}`,
+    `cards: ${board.cards.length} cards, ${board.contextToggles} context toggle(s), ` +
+      `${board.chatControls} chat control(s)`,
   );
   console.log(`names:  ${JSON.stringify(handedNames)}`);
   console.log(`failures: ${errors.length === 0 ? "none" : errors.join("; ")}`);

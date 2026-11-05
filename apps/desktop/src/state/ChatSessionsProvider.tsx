@@ -272,8 +272,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   const { slug: boardSlug, locked: boardLocked } = useDashboardBoard();
   const {
     requestedAutomationContext,
-    contextCard,
-    setLivePinId,
+    contextCards,
+    setLivePinIds,
     pageContext,
     surface,
     setSurface,
@@ -304,8 +304,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   archivedViewRef.current = archivedView;
   const surfaceRef = useRef(surface);
   surfaceRef.current = surface;
-  const contextCardRef = useRef<ChatCardContext | null>(contextCard);
-  contextCardRef.current = contextCard;
+  const contextCardsRef = useRef<ChatCardContext[]>(contextCards);
+  contextCardsRef.current = contextCards;
   /**
    * The assistant bubble each chat's live turn is writing into. A delta carries
    * no message id, so the first one mints the bubble and the rest append to it;
@@ -957,8 +957,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
             domainSlug: activeDomain?.slug ?? null,
             viewingBoard: boardSlug,
             viewingBoardLocked: boardLocked,
-            ...(contextCardRef.current
-              ? { focusedCard: focusedCardOf(contextCardRef.current) }
+            ...(contextCardsRef.current.length > 0
+              ? { focusedCards: contextCardsRef.current.map(focusedCardOf) }
               : {}),
             ...(page ? { pageContext: page } : {}),
             ...(automationContext ? { automationContext } : {}),
@@ -1076,7 +1076,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
           turnNote: null,
           approval: null,
         }));
-        if (isActive()) setLivePinId(contextCardRef.current?.pin.id ?? null);
+        if (isActive()) setLivePinIds(contextCardsRef.current.map((card) => card.pin.id));
         return;
       }
       if (evt.type === "assistant.delta") {
@@ -1142,7 +1142,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
           turnNote: "Stopped — the reply above is only what arrived before the interrupt",
         }));
         closedTabs.current.delete(id);
-        if (isActive()) setLivePinId(null);
+        if (isActive()) setLivePinIds([]);
         return;
       }
       if (evt.type === "run.incomplete") {
@@ -1155,7 +1155,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
             : "Ended before finishing",
         }));
         closedTabs.current.delete(id);
-        if (isActive()) setLivePinId(null);
+        if (isActive()) setLivePinIds([]);
         return;
       }
       if (evt.type === "error") {
@@ -1169,7 +1169,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
           runId: null,
         }));
         closedTabs.current.delete(id);
-        if (isActive()) setLivePinId(null);
+        if (isActive()) setLivePinIds([]);
         void refresh();
         return;
       }
@@ -1210,7 +1210,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       }
     });
     return off;
-  }, [ensureTab, refresh, setLivePinId, updateRun]);
+  }, [ensureTab, refresh, setLivePinIds, updateRun]);
 
   /**
    * The dock's landing is the provider's to arrange: the sidebar lists chats

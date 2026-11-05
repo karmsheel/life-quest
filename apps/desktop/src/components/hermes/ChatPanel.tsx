@@ -163,8 +163,8 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     requestedSession,
     requestedAutomationContext,
     clearRequestedSession,
-    contextCard,
-    setContextCard,
+    contextCards,
+    removeCardContext,
     pageContext,
     setPageContextOn,
     // The dock's side is the shell's business — it is the shell that swaps the
@@ -671,6 +671,15 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   }, [open, view, chainItems, chainBusy]);
 
   /**
+   * How many cards are in front of this conversation, and whether the latest
+   * render brought one in. The effects below react to a card *arriving* — the
+   * operator pressed a card and expects the chat to come to them — and not to a
+   * card leaving, which must not reopen or re-surface anything.
+   */
+  const contextCount = contextCards.length;
+  const lastContextCount = useRef(0);
+
+  /**
    * When the composer is handed the caret: the panel opens, a surface swaps in,
    * a chat finishes loading, or a write that disabled the field settles. Those
    * are exactly the moments the field goes from unusable to usable, which is why
@@ -683,35 +692,37 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     if (view === "thread" && (sending || !sessionId)) return;
     if (view === "chain" && chainBusy) return;
     focusComposer();
-    // `contextCard` is in the list because a card handed over from the Dashboard
-    // is that same moment: the field goes from "not what I am writing in" to
-    // "where I describe this card", and the operator should not have to click
-    // twice to start.
-  }, [open, view, sessionId, sending, chainBusy, asking, focusComposer, contextCard]);
+    // The number of cards is in the list because a card handed over from the
+    // Dashboard is that same moment: the field goes from "not what I am writing
+    // in" to "where I describe these cards", and the operator should not have to
+    // click twice to start.
+  }, [open, view, sessionId, sending, chainBusy, asking, focusComposer, contextCount]);
 
   /**
-   * A card handed over from the Dashboard brings the chat with it.
+   * Cards handed over from the Dashboard bring the chat with them.
    *
-   * The pill lives above the thread's composer, so a dock sitting on the chain
-   * or the shortcuts reference would take the card and show the operator
+   * The pills live above the thread's composer, so a dock sitting on the chain
+   * or the shortcuts reference would take the cards and show the operator
    * nothing — the click would look like it did nothing at all. The thread takes
    * over, and a vault with no chats gets the empty one "New chat" would have
    * made, because a composer with no session cannot be typed in.
    *
-   * Only the arrival is reacted to. Taking the card off, or leaving it there,
-   * changes no surface: the operator is already where they need to be.
+   * Only the arrival is reacted to. Taking a card off, or leaving the rest
+   * there, changes no surface: the operator is already where they need to be.
    */
   useEffect(() => {
-    if (!contextCard) return;
+    const arrived = contextCount > lastContextCount.current;
+    lastContextCount.current = contextCount;
+    if (!arrived) return;
     onOpenChange(true);
     if (view === "thread") return;
     if (sessionId) setView("thread");
     else void newSession();
-    // Deliberately keyed on the card alone: this is "a card arrived", not "the
+    // Deliberately keyed on the count alone: this is "a card arrived", not "the
     // view or the session changed" — reacting to those would fight the
     // operator's own navigation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contextCard]);
+  }, [contextCount]);
 
   /**
    * Read the model inventory once, when the dock is first opened.
@@ -1981,32 +1992,42 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 }}
               >
                 {/*
-                  The card this chat is about, above the field.
+                  The cards this chat is about, above the field.
 
-                  It sits here rather than in the transcript because it is not
-                  something either side said: it is what the next turn will be
-                  about, and it stays until the operator takes it off. The field
-                  below keeps the placeholder it always had — a card in context
-                  does not change what the composer is for, only what "this card"
-                  means inside it.
+                  They sit here rather than in the transcript because they are
+                  not something either side said: they are what the next turn
+                  will be about, and they stay until the operator takes each off.
+                  The field below keeps the placeholder it always had — cards in
+                  context do not change what the composer is for, only what
+                  "this card" means inside it.
                 */}
-                {contextCard ? (
-                  <div className="chat-panel__context" data-testid="chat-context-pill">
-                    <MessageSquare size={12} aria-hidden />
-                    <span className="chat-panel__context-label" title={contextCard.label}>
-                      {contextCard.label}
-                    </span>
-                    <span className="chat-panel__context-kind">in context</span>
-                    <button
-                      type="button"
-                      className="chat-panel__context-remove"
-                      data-testid="chat-context-remove"
-                      aria-label="Remove card from context"
-                      title="Remove card from context"
-                      onClick={() => setContextCard(null)}
-                    >
-                      <X size={12} aria-hidden />
-                    </button>
+                {contextCards.length > 0 ? (
+                  <div className="chat-panel__contexts" data-testid="chat-context-pills">
+                    {contextCards.map((card) => (
+                      <div
+                        key={card.pin.id}
+                        className="chat-panel__context"
+                        data-testid="chat-context-pill"
+                        data-context-pin-id={card.pin.id}
+                      >
+                        <MessageSquare size={12} aria-hidden />
+                        <span className="chat-panel__context-label" title={card.label}>
+                          {card.label}
+                        </span>
+                        <span className="chat-panel__context-kind">in context</span>
+                        <button
+                          type="button"
+                          className="chat-panel__context-remove"
+                          data-testid="chat-context-remove"
+                          data-context-pin-id={card.pin.id}
+                          aria-label={`Remove "${card.label}" from context`}
+                          title="Remove card from context"
+                          onClick={() => removeCardContext(card.pin.id)}
+                        >
+                          <X size={12} aria-hidden />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 ) : null}
                 <div

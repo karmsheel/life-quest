@@ -1,15 +1,23 @@
 /**
- * E2E harness page for a dashboard card in the chat's context.
+ * E2E harness page for dashboard cards in the chat's context.
  *
  * This page renders BOTH ends of the feature at once — the real `HomePage` in the
  * shell's main column and the real `ChatPanel` in its dock column — because the
- * claim that matters is the one that crosses them: clicking a card's chat control
- * is what puts the card in the pill and on the next turn. Two rigs, one per page,
- * would each prove their own half and neither would prove the join.
+ * claim that matters is the one that crosses them: clicking a card is what puts
+ * it in a pill and on the next turn. Two rigs, one per page, would each prove
+ * their own half and neither would prove the join.
  *
- * The Dashboard is still judged on its own page (`dashboard-card-context`), where
- * the pin board's toggle and the control on every card kind are the subject. Here
- * the board is one saved view, because that is all the join needs.
+ * THE BOARD IS THREE CARDS ON PURPOSE. The chat holds at most three, so a board
+ * of one could not tell "one pill per card" from "one pill"; a board of three
+ * makes the order claim, the per-pill removal claim and the three-card turn all
+ * falsifiable against a board that really has that many cards on it. Each card is
+ * a saved view with a DIFFERENT title, so a pill that read the wrong heading —
+ * or the pin id instead of the heading — fails by name.
+ *
+ * The Dashboard's own card-as-control claims (no icon, the keyboard toggle, the
+ * fourth-card status, empty-board clears) live on `dashboard-card-context`, where
+ * the board is the subject. Here the board is the way in and the chat is the
+ * subject.
  *
  * This is a system-in-isolation rig: the real pages, the real dock provider, the
  * real CSS and layout engine, with only the IPC bridge stubbed (there is no
@@ -28,6 +36,7 @@ import type {
   PinBoardRead,
   SavedView,
   VaultSnapshot,
+  ViewBlock,
 } from "@lifequest/vault-core";
 import { ChatPanel } from "@/components/hermes/ChatPanel";
 import HomePage from "@/pages/HomePage";
@@ -51,30 +60,71 @@ const SESSION = {
 
 const NOW = "2026-10-09T00:00:00.000Z";
 
-/** The board the Dashboard column reads: one saved view, and nothing else. */
-const BOARD: Pin[] = [
-  { id: "view:financial:v-weekly", kind: "view", domainSlug: "financial", viewId: "v-weekly", span: 1 },
+/**
+ * The three cards the board offers, in the order the board draws them. Every
+ * title is different so a pill's name is a fact about the card it was clicked
+ * on, not about the only card there is.
+ */
+const V_WEEKLY = "v-weekly";
+const V_SUMMARY = "v-summary";
+const V_CASHFLOW = "v-cashflow";
+
+export const BOARD: Pin[] = [
+  { id: "view:financial:v-weekly", kind: "view", domainSlug: "financial", viewId: V_WEEKLY, span: 1 },
+  { id: "view:financial:v-summary", kind: "view", domainSlug: "financial", viewId: V_SUMMARY, span: 1 },
+  { id: "view:financial:v-cashflow", kind: "view", domainSlug: "financial", viewId: V_CASHFLOW, span: 1 },
 ];
 
-const VIEW_WEEKLY: SavedView = {
-  schemaVersion: 1,
-  id: "v-weekly",
-  title: "Weekly expenses",
-  presentation: "table",
-  databaseId: "finance:transactions",
-  groupBy: "week",
-  timeBucket: "week",
-  timeColumnId: "occurred_on",
-  timeWindow: { kind: "last-weeks", weeks: 5 },
-  filters: [],
-  measure: "sum",
-  measureColumnId: "amount",
-  sort: { by: "label", dir: "asc" },
-  limit: 12,
-  convertToZar: true,
-  createdAt: NOW,
-  updatedAt: NOW,
-};
+function savedView(id: string, title: string): SavedView {
+  return {
+    schemaVersion: 1,
+    id,
+    title,
+    presentation: "table",
+    databaseId: "finance:transactions",
+    groupBy: "week",
+    timeBucket: "week",
+    timeColumnId: "occurred_on",
+    timeWindow: { kind: "last-weeks", weeks: 5 },
+    filters: [],
+    measure: "sum",
+    measureColumnId: "amount",
+    sort: { by: "label", dir: "asc" },
+    limit: 12,
+    convertToZar: true,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+}
+
+const VIEWS: SavedView[] = [
+  savedView(V_WEEKLY, "Weekly expenses"),
+  savedView(V_SUMMARY, "Spending by month"),
+  savedView(V_CASHFLOW, "Cash flow"),
+];
+
+function runOf(view: SavedView): ComposedViewRunResult {
+  return {
+    title: view.title,
+    blocks: [
+      {
+        id: "week-by-week",
+        title: "Week by week",
+        presentation: "table",
+        result: {
+          columns: ["label", "value"],
+          rows: [
+            ["2026-W36", 1111],
+            ["2026-W37", 1114],
+          ],
+          warnings: [],
+          currency: "ZAR",
+        },
+      } as ViewBlock & { result: unknown },
+    ],
+    warnings: [],
+  } as ComposedViewRunResult;
+}
 
 const DATABASE: DatabaseMeta = {
   id: "finance:transactions",
@@ -88,27 +138,6 @@ const DATABASE: DatabaseMeta = {
   ],
   createdAt: NOW,
   updatedAt: NOW,
-};
-
-const RUN: ComposedViewRunResult = {
-  title: VIEW_WEEKLY.title,
-  blocks: [
-    {
-      id: "week-by-week",
-      title: "Week by week",
-      presentation: "table",
-      result: {
-        columns: ["label", "value"],
-        rows: [
-          ["2026-W36", 1111],
-          ["2026-W37", 1114],
-        ],
-        warnings: [],
-        currency: "ZAR",
-      },
-    },
-  ],
-  warnings: [],
 };
 
 /** One live domain, so the Dashboard's lens lines have something to read. */
@@ -178,9 +207,15 @@ const bridge: Record<string, unknown> = {
   pinsSet: () => ok({ applied: true, pins: BOARD, locked: false }),
   pinsSetLocked: () => ok({ pins: BOARD, locked: false } satisfies PinBoardRead),
   pageList: () => ok([]),
-  viewList: () => ok([VIEW_WEEKLY]),
-  viewGet: () => ok(VIEW_WEEKLY),
-  viewRunSaved: () => ok(RUN),
+  viewList: () => ok(VIEWS),
+  viewGet: (_slug: unknown, viewId: unknown) => {
+    const view = VIEWS.find((entry) => entry.id === viewId);
+    return view ? ok(view) : { ok: false as const, error: `View not found: ${String(viewId)}` };
+  },
+  viewRunSaved: (_slug: unknown, viewId: unknown) => {
+    const view = VIEWS.find((entry) => entry.id === viewId);
+    return view ? ok(runOf(view)) : { ok: false as const, error: `View not found: ${String(viewId)}` };
+  },
   dbGet: () => ok(DATABASE),
   decisionList: () => ok([]),
   logList: () => ok([]),
@@ -249,7 +284,8 @@ harness.cardContextSkin = skinName;
 
 // The runner waits on this rather than on a timer, so a slow first Vite
 // transform cannot be mistaken for "the page never rendered". It waits for both
-// ends: the composer, and the card whose chat control is clicked.
+// ends and for the whole board: three cards, because a board of one makes this
+// rig's cap and pill claims unfalsifiable.
 let settle: () => void = () => {};
 const ready = new Promise<void>((resolve) => {
   settle = resolve;
@@ -257,8 +293,8 @@ const ready = new Promise<void>((resolve) => {
 
 const waitForBoth = () => {
   const composer = document.querySelector(".chat-panel__composer-input");
-  const control = document.querySelector('[data-testid="pin-chat"]');
-  if (!composer || !control) {
+  const cards = document.querySelectorAll('.home-dashboard__grid > .home-pin[data-pin-id]');
+  if (!composer || cards.length < BOARD.length) {
     requestAnimationFrame(waitForBoth);
     return;
   }

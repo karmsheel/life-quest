@@ -562,16 +562,17 @@ async function main() {
     //
     // Everything above is about the card, and a card cannot be "the one the
     // companion is working on" unless the chat knows it is. This leg is the
-    // operator's half: press the card's own chat control, which is the app's one
-    // path from a card to the dock, and then send the turn frames the main process
+    // operator's half: press the card itself (its body is the control now, not a corner
+    // icon), which is the app's one path from a card to the dock, and then send
+    // the turn frames the main process
     // would send. The ring is read off the DOM, because a class on the pin is what
     // the operator sees.
     const focused = await win.webContents.executeJavaScript(
       `window.dashboardCompanionEditFocusCard(${JSON.stringify(EDIT_PIN)})`,
     );
     checks.focused = focused;
-    if (!focused) failure(`the card's chat control was not on the board for ${EDIT_PIN}`);
-    // The control hands the card over and opens the dock; the context pill is that
+    if (!focused) failure(`the card was not on the board for ${EDIT_PIN}`);
+    // The card press hands the card over and opens the dock; the context pill is
     // same fact in the chat, and its presence is what makes the ring mean anything.
     try {
       await waitFor(win, `Boolean(document.querySelector('[data-testid="chat-context-pill"]'))`, "the card to reach the chat", 5_000);

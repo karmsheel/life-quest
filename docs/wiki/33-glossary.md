@@ -32,8 +32,9 @@ without a Decision. Off by default; stored in vault settings.
 Overview and one for each live domain. See [Dashboard](./03-the-studio.md).
 
 **Card** — one pinned item on a Dashboard board: a goals card, a database view, a
-page, a document, a log card, and so on. Cards can be added to companion chat as
-context. See [The studio](./03-the-studio.md).
+page, a document, a log card, and so on. Clicking a card puts it in the companion
+chat's context, up to three at once, and clicking it again takes that card out.
+See [Dashboard](./06-dashboard.md).
 
 **Capture** — a thought, a picture or a link logged in Life-Chain before it evaporates.
 Capture is not the studio; it is a signal that can become a task. See

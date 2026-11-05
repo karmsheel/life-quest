@@ -148,8 +148,12 @@ type CompanionInstructionsContext = {
    * view, which gates nothing.
    */
   viewingBoardLocked?: boolean;
-  /** The one dashboard card the operator put in front of this chat, if any. */
-  focusedCard?: FocusedCardContext | null;
+  /**
+   * The dashboard cards the operator put in front of this chat, in the order
+   * they were chosen. Absent means nobody pointed at a card, and the turn is the
+   * turn it always was.
+   */
+  focusedCards?: FocusedCardContext[] | null;
   /**
    * The page the operator has open, when the composer's page-context pill is
    * on. Absent means the pill is off, and the turn is the turn it always was.
