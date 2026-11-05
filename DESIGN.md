@@ -49,6 +49,8 @@ ThemeProvider may apply a named skin and light/dark/system. It must not generate
 
 The settings sheet is a workbench and stops at its own measure: `72rem`, centred in the scrim. On a window wider than that — an ultra-wide monitor — the extra width is mat on both sides, not more form: the nav keeps its column and the page keeps its line, and neither stretches because the display did. The decisions sheet does the same at its 56rem reading column. A narrow window still shrinks either panel to fit.
 
+Focus mode is the journal's own surface and stops narrower still, at a `40rem` writing column: the operator opened it to write the day, so the page behind is blurred harder than behind the other sheets and is texture rather than context. Its chrome is one centred title — no title band, no subtitle, no pager — with the cross pinned into the panel's top-right corner rather than riding that line, so the title is centred in the panel itself. The note box is the surface: it takes the panel's remaining height under the title, and a long day scrolls inside it while the title stays put.
+
 The settings search is Hermes Desktop's floating field: a short pill (`20rem`, not a full-width top strip) centred over the panel with the panel's top border running through its horizontal axis — half in the sheet, half over the scrim. It is the one control in the app whose shape is its own outline rather than a box, because it has no panel corner to agree with. There is no title band above the page: the cross is pinned over the page's own top-right padding and takes no layout height, so the section nav and the page start at the panel's top edge, immediately under the floating bar. Only the search crosses that edge; every other piece of chrome stays inside the frame.
 
 A settings row is a flex pair: the label and its description on the leading edge, the control on the trailing edge, a real gap between them, and a hairline between one row and the next. Do not go back to stacking them: the copy and the control pressed against each other is the layout this rule exists to prevent.
@@ -67,32 +69,32 @@ The rail's collapse narrows it to an icon column (`--shell-sidebar-width-collaps
 
 Do not add dot-grid, Inter/Geist as default UI fonts, a pill composer, `PageShell`, or reclaim `--accent` as hover.
 
-## Nous and Nous Classic
+## Nous
 
-Both are **copies of Hermes Desktop's bundled presets**, taken from
-`apps/shared/src/theme-presets.ts` in the Hermes install. Hermes ships them as its
+`nous` is a **copy of Hermes Desktop's bundled preset**, taken from
+`apps/shared/src/theme-presets.ts` in the Hermes install. Hermes ships it as its
 product identity — `nous` is its `DEFAULT_SKIN_NAME` — so LifeQuest carries the
-same two names and the same palettes rather than a re-derivation of them, and a
-user moving between the two apps sees one look. Re-import from Hermes rather than
+same name and the same palette rather than a re-derivation of them, and a user
+moving between the two apps sees one look. Re-import from Hermes rather than
 hand-editing hexes here.
 
-Neither is a special skin. Both are **palettes and nothing else**: Hermes's theme
-model keeps layout, sizing, radius and typography out of the palette, and both
-themes declare only the system font stacks, no imagery and no second accent. So
-neither has a `[data-skin]` CSS layer, and the type treatment, orbit art and mat
+It is not a special skin. It is a **palette and nothing else**: Hermes's theme
+model keeps layout, sizing, radius and typography out of the palette, and the
+theme declares only the system font stacks, no imagery and no second accent. So
+it has no `[data-skin]` CSS layer, and the type treatment, orbit art and mat
 texture that this file once specified for Nous are retired.
 
-| | **Nous** | **Nous Classic** |
-| --- | --- | --- |
-| Hermes id | `nous` | `nous-alt` |
-| Idea | "GitHub chrome, Nous blue accent" | "Glass neutrals, cream on mission-blue" |
-| Light | GitHub Light Default + `#0053fd` | `#f8faff` glass + `#0053fd` |
-| Dark | GitHub Dark Default + `#4a84fe` | `#ffe6cb` cream on `#0d2f86` |
-| Brand blue | the accent only | the surface itself |
+| | **Nous** |
+| --- | --- |
+| Hermes id | `nous` |
+| Idea | "GitHub chrome, Nous blue accent" |
+| Light | GitHub Light Default + `#0053fd` |
+| Dark | GitHub Dark Default + `#4a84fe` |
+| Brand blue | the accent only |
 
 Two mapping notes, both deliberate:
 
-- **`background` and `card` are swapped in the light palettes.** LifeQuest's light
+- **`background` and `card` are swapped in the light palette.** LifeQuest's light
   ladder sinks the mat below the sheet: `background` becomes `--canvas-base` (the
   rail, and the titlebar by day) and `card` becomes `--background` (the sheet).
   Hermes has no such ladder. Read straight across, Nous would paint a white rail
@@ -101,10 +103,6 @@ Two mapping notes, both deliberate:
 - **`nous` declares `darkLadder: "inverted"`.** GitHub Dark Default puts its cards
   (`#010409`) below its page (`#0d1117`). See the exemption under Dark Ladder
   above.
-
-Classic's declared `color-mix(in srgb, …)` values are resolved to hex **in sRGB**,
-faithfully, so the violet cast Hermes's own preset carries is preserved rather
-than corrected. Fixing it would be a re-derivation, not a copy.
 
 ### Blending: OKLab, not sRGB
 

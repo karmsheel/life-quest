@@ -48,6 +48,7 @@ type Arrangement = {
   vaultName?: string;
   accentBackground: string;
   paperBackground: string;
+  mutedBackground: string;
   shell: { className: string; gridTemplateColumns: string; box: Box } | null;
   rail: { box: Box; display: string; background: string } | null;
   main: {
@@ -106,11 +107,22 @@ type Arrangement = {
     label?: string | null;
     title?: string | null;
     pressed?: string | null;
+    background?: string;
+    color?: string;
     icon?: string | null;
     box?: Box;
   };
-  /** A stale copy of either chat control in the titlebar: both must be gone. */
-  staleTitlebar: { side: boolean; collapse: boolean };
+  shortcutsAction: {
+    found?: boolean;
+    label?: string | null;
+    title?: string | null;
+    pressed?: string | null;
+    icon?: string | null;
+    box?: Box;
+  };
+  /** A stale copy of any control that moved into the dock's bar: all must be
+   *  gone from the titlebar. */
+  staleTitlebar: { side: boolean; collapse: boolean; shortcuts: boolean };
   owners: {
     topLeft: string | null;
     bottomLeft: string | null;
@@ -307,14 +319,10 @@ describe("chat dock side switch", () => {
     const rightTrailing = (right.trailing?.controls ?? []).map((row) => row.className);
     assert.deepEqual(
       rightTrailing.length,
-      3,
-      `the titlebar's trailing cluster kept a chat control: ${JSON.stringify(rightTrailing)}`,
+      2,
+      `the titlebar's trailing cluster kept a moved control: ${JSON.stringify(rightTrailing)}`,
     );
-    for (const [index, needle] of [
-      "theme-mode-toggle",
-      "window-titlebar__shortcuts",
-      "settings-menu",
-    ].entries()) {
+    for (const [index, needle] of ["theme-mode-toggle", "settings-menu"].entries()) {
       assert.ok(
         String(rightTrailing[index] ?? "").includes(needle),
         `the titlebar's trailing child ${index} is not ${needle}: ${JSON.stringify(rightTrailing)}`,
@@ -331,6 +339,11 @@ describe("chat dock side switch", () => {
       "a .window-titlebar__chat-toggle is still in the strip",
     );
     assert.equal(
+      right.staleTitlebar.shortcuts,
+      false,
+      "a .window-titlebar__shortcuts is still in the strip",
+    );
+    assert.equal(
       right.sideSwitch.found,
       true,
       "no switch in the dock's bottom action bar",
@@ -345,16 +358,50 @@ describe("chat dock side switch", () => {
       "Move chat to the left of the page",
       `the switch names the wrong move: ${right.sideSwitch.label}`,
     );
+    // The switch is a move, not a toggle: no side may give it a pressed state,
+    // because a dock that lives on the leading edge is an arrangement, not a
+    // switch the operator left on.
     assert.equal(
       right.sideSwitch.pressed,
-      "false",
-      "the switch reports a swapped shell while the dock is on the right",
+      null,
+      `the switch wears a pressed state on the trailing side (${right.sideSwitch.pressed})`,
+    );
+    assert.equal(
+      right.sideSwitch.background,
+      "rgba(0, 0, 0, 0)",
+      `the switch wears a fill at rest on the trailing side (${right.sideSwitch.background})`,
+    );
+    assert.equal(
+      right.sideSwitch.color,
+      right.mutedBackground,
+      `the switch's ink is not the bar's muted rest on the trailing side (${right.sideSwitch.color} vs ${right.mutedBackground})`,
     );
     // The bar's own order, and the slot that left with the chat list.
     assert.deepEqual(
       right.actions?.controls.map((control) => control.label),
-      ["New chat", "Life-Chain", "Move chat to the left of the page", "Collapse chat"],
+      [
+        "New chat",
+        "Life-Chain",
+        "Keyboard shortcuts",
+        "Move chat to the left of the page",
+        "Collapse chat",
+      ],
       `the bottom bar's actions are not in their shipped order: ${JSON.stringify(right.actions?.controls)}`,
+    );
+    assert.equal(
+      right.shortcutsAction?.found,
+      true,
+      "no keyboard-shortcuts action in the dock's bottom bar",
+    );
+    assert.equal(
+      right.shortcutsAction?.label,
+      "Keyboard shortcuts",
+      `the shortcuts action names the wrong destination (${right.shortcutsAction?.label})`,
+    );
+    assert.equal(
+      right.shortcutsAction?.icon,
+      "lucide-keyboard",
+      `the shortcuts action is not wearing the keyboard icon (${right.shortcutsAction?.icon})`,
     );
     const switchBox = right.sideSwitch.box;
     const rightCollapseBox = right.collapseAction?.box;
@@ -369,6 +416,16 @@ describe("chat dock side switch", () => {
         switchBox.bottom <= right.actions.box.bottom,
       true,
       `the switch does not sit immediately before the collapse control (${JSON.stringify(switchBox)} vs ${JSON.stringify(rightCollapseBox)} in ${JSON.stringify(right.actions?.box)})`,
+    );
+    const shortcutsBox = right.shortcutsAction?.box;
+    assert.ok(switchBox && shortcutsBox, "the shortcuts action or the switch was not found");
+    assert.equal(
+      shortcutsBox.right < switchBox.left &&
+        switchBox.left - shortcutsBox.right <= 8 &&
+        shortcutsBox.top >= (right.actions?.box.top ?? 0) &&
+        shortcutsBox.bottom <= (right.actions?.box.bottom ?? 0),
+      true,
+      `the shortcuts action does not sit immediately before the switch (${JSON.stringify(shortcutsBox)} vs ${JSON.stringify(switchBox)})`,
     );
     assert.equal(
       right.collapseAction?.icon,
@@ -491,10 +548,22 @@ describe("chat dock side switch", () => {
       "Move chat to the right of the page",
       `the switch names the wrong move after the swap: ${left.sideSwitch.label}`,
     );
+    // The same neutral rest after the swap: the operator swapped to their side,
+    // not into a mode the control announces as on.
     assert.equal(
       left.sideSwitch.pressed,
-      "true",
-      "the switch does not report the swapped shell",
+      null,
+      `the switch wears a pressed state on the leading side (${left.sideSwitch.pressed})`,
+    );
+    assert.equal(
+      left.sideSwitch.background,
+      "rgba(0, 0, 0, 0)",
+      `the switch wears a fill at rest on the leading side (${left.sideSwitch.background})`,
+    );
+    assert.equal(
+      left.sideSwitch.color,
+      left.mutedBackground,
+      `the switch's ink is not the bar's muted rest on the leading side (${left.sideSwitch.color} vs ${left.mutedBackground})`,
     );
     assert.equal(
       left.collapseAction?.icon,
@@ -503,7 +572,13 @@ describe("chat dock side switch", () => {
     );
     assert.deepEqual(
       left.actions?.controls.map((control) => control.label),
-      ["New chat", "Life-Chain", "Move chat to the right of the page", "Collapse chat"],
+      [
+        "New chat",
+        "Life-Chain",
+        "Keyboard shortcuts",
+        "Move chat to the right of the page",
+        "Collapse chat",
+      ],
       `the swapped bar's actions are not in their shipped order: ${JSON.stringify(left.actions?.controls)}`,
     );
 
@@ -795,7 +870,13 @@ describe("chat dock side switch", () => {
     );
     assert.deepEqual(
       restored.actions?.controls.map((control) => control.label),
-      ["New chat", "Life-Chain", "Move chat to the left of the page", "Collapse chat"],
+      [
+        "New chat",
+        "Life-Chain",
+        "Keyboard shortcuts",
+        "Move chat to the left of the page",
+        "Collapse chat",
+      ],
       `the bottom bar still carries an unassigned action: ${JSON.stringify(restored.actions?.controls)}`,
     );
     assert.ok(bar && collapseBox, "the bottom bar or its collapse control was not found");

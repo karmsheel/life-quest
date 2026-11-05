@@ -29,6 +29,10 @@ import {
   type CompanionPrompts,
 } from "./companion-prompts.ts";
 import {
+  mergeArchivedSessions,
+  readArchivedSessions,
+} from "./companion-archived.ts";
+import {
   buildInstructions,
   buildTurnInput,
   createdSessionFromPayload,
@@ -1067,6 +1071,12 @@ async function errorDetail(res: Response, fallback: string): Promise<string> {
  * `includeArchived` is the sidebar's view option: archived rows come back
  * instead of being dropped, so the operator can see and restore them. Hidden
  * rows never cross the boundary either way.
+ *
+ * The gateway list cannot carry an archived row: its Sessions API lists with
+ * `include_archived=False` and has no query parameter that changes that (see
+ * `companion-archived.ts`). So the archived half of that view is read from the
+ * attached profile's own store and folded in here. The read only happens when
+ * the view asks for it, so the working list pays nothing for it.
  */
 export async function companionSessionsList(
   options: { includeArchived?: boolean } = {},
@@ -1074,6 +1084,7 @@ export async function companionSessionsList(
   { ok: true; value: HermesSession[] } | { ok: false; error: string }
 > {
   try {
+    const includeArchived = options.includeArchived === true;
     const res = await gatewayCall("Listing chats", () =>
       hermesFetch("/api/sessions?limit=200"),
     );
@@ -1081,12 +1092,11 @@ export async function companionSessionsList(
     if (unreachable) return { ok: false, error: unreachable };
     const response = res as Response;
     if (!response.ok) return { ok: false, error: `Sessions list failed (${response.status})` };
-    return {
-      ok: true,
-      value: sessionsFromPayload(await response.json(), {
-        includeArchived: options.includeArchived === true,
-      }),
-    };
+    const live = sessionsFromPayload(await response.json(), { includeArchived });
+    if (!includeArchived) return { ok: true, value: live };
+    const profilePath = current.kind === "ready" ? current.profilePath : "";
+    const archived = await readArchivedSessions(profilePath);
+    return { ok: true, value: mergeArchivedSessions(live, archived) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

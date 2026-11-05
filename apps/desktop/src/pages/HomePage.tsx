@@ -5,7 +5,7 @@ import type { DecisionRecord, LifeEvent, PageListEntry, Pin } from "@lifequest/v
 import { SYSTEM_PIN_KINDS, type SystemPinKind } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { Button } from "@/components/ui/Button";
-import { LockSwitch } from "@/components/ui/LockSwitch";
+import { PageMenu } from "@/components/ui/PageMenu";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useVault } from "@/state/VaultProvider";
 import { useLiveData } from "@/state/LiveDataProvider";
@@ -94,9 +94,10 @@ export default function HomePage() {
    *
    * The row is furniture for a control used once in a while, and below a board of
    * seven cards it sat off the bottom of the window — so the operator had to
-   * scroll past everything they own to add anything. It is a header control now,
-   * closed on landing, and the board is the page. Live state, not a preference:
-   * there is no file that says how somebody left a row, and this adds none.
+   * scroll past everything they own to add anything. It is an item in the page's
+   * menu now, closed on landing, and the board is the page. Live state, not a
+   * preference: there is no file that says how somebody left a row, and this
+   * adds none.
    */
   const [addOpen, setAddOpen] = useState(false);
   /**
@@ -757,7 +758,7 @@ export default function HomePage() {
    *
    * A locked board has none: the board is read-only, and an "Add pin" that
    * silently filed a Decision would be a second, hidden way to propose what the
-   * Lock button already says is not editable. A board with everything already
+   * page's lock already says is not editable. A board with everything already
    * pinned has none either — there is nothing to offer.
    */
   const canAdd =
@@ -788,33 +789,38 @@ export default function HomePage() {
               : "This dashboard is unlocked. You and the companion change it in place."}
           </p>
         </div>
-        {/* The page's controls, in a row at the title's own top-right edge: the
-            lock switch and, when there is anything left to pin, the pin board's
-            menu beside it. Both wear the same height so the pair reads as one
-            row of controls, and the pin board is absent exactly when the row
-            would be empty: a locked board is not editable here, and a board
-            with everything pinned has nothing left to offer. */}
+        {/* The page's own actions, behind one three-dot menu at the title's
+            top-right edge. The lock is the menu's first item — it is the page
+            setting every lockable page shares — and the pin board follows it,
+            offered exactly when there is something left to pin: a locked board
+            is not editable here, and a board with everything pinned has nothing
+            left to offer. The menu is the board's one control, so the corner
+            does not grow a second row as actions accrue. */}
         <div className="page-corner" data-testid="home-page-corner">
-          <LockSwitch
-            locked={locked}
-            busy={lockBusy}
-            onToggle={() => void onToggleLock()}
-            label={locked ? "Unlock this dashboard" : "Lock this dashboard"}
-            testId="board-lock-toggle"
-            className="page-corner__action"
+          <PageMenu
+            label="Dashboard actions"
+            testId="board-page-menu"
+            lock={{
+              testId: "board-lock-toggle",
+              locked,
+              busy: lockBusy,
+              label: locked ? "Unlock this dashboard" : "Lock this dashboard",
+              onToggle: () => void onToggleLock(),
+            }}
+            actions={
+              canAdd
+                ? [
+                    {
+                      testId: "board-add-toggle",
+                      label: addOpen ? "Hide pin board" : "Pin board",
+                      icon: <PinIcon size={13} aria-hidden />,
+                      expanded: addOpen,
+                      onSelect: () => setAddOpen((wasOpen) => !wasOpen),
+                    },
+                  ]
+                : []
+            }
           />
-          {canAdd ? (
-            <Button
-              variant="ghost"
-              className="page-corner__pinboard page-corner__action"
-              aria-expanded={addOpen}
-              data-testid="board-add-toggle"
-              onClick={() => setAddOpen((wasOpen) => !wasOpen)}
-            >
-              <PinIcon size={13} aria-hidden />
-              {addOpen ? "Hide pin board" : "Pin board"}
-            </Button>
-          ) : null}
         </div>
       </header>
 

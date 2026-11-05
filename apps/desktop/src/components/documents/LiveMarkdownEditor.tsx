@@ -313,6 +313,13 @@ export type LiveMarkdownEditorProps = {
   testId?: string;
   /** Open the caret on an empty note: an empty page is an invitation to write. */
   autoFocusEmpty?: boolean;
+  /**
+   * Open the caret in the note when the box mounts. Focus mode is the caller:
+   * the operator opened the box to write, so the last paragraph is the writing
+   * line and the caret lands at the end of it — on an empty note that is the
+   * same empty line `autoFocusEmpty` opens.
+   */
+  autoEdit?: boolean;
   /** Read the note and never write it: a locked document. */
   readOnly?: boolean;
   /**
@@ -332,6 +339,7 @@ export function LiveMarkdownEditor({
   placeholder,
   testId,
   autoFocusEmpty = false,
+  autoEdit = false,
   readOnly = false,
   onInsertFile,
   className,
@@ -386,6 +394,19 @@ export function LiveMarkdownEditor({
     caret.current = 0;
     setEditing(0);
   }, [autoFocusEmpty, blocks, readOnly]);
+
+  // A box mounted to be written in opens on the writing line. `autoFocusEmpty`
+  // above is the page's invitation on an empty day; this is focus mode's, on a
+  // day that already has prose: the caret goes to the end of the last paragraph,
+  // because the operator opened this box to continue the note rather than to
+  // read it and then find the box.
+  useEffect(() => {
+    if (!autoEdit || autoFocused.current || readOnly) return;
+    if (blocks.length === 0) return;
+    autoFocused.current = true;
+    caret.current = null;
+    setEditing(blocks.length - 1);
+  }, [autoEdit, blocks, readOnly]);
 
   // A document that locks while its line is open closes the line: there is no
   // writing surface on a locked document at all, rather than a disabled one.

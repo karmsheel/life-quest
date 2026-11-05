@@ -237,11 +237,13 @@ describe("chat sessions harness", () => {
       assert.equal(landing.chainBody?.hidden, true, "the chain painted on landing");
       assert.equal(landing.signalListCalls, 0, "the chain was read before it was asked for");
 
-      // The dock's bottom action bar: four slots in order, the chain second. The
-      // history slot that used to lead the bar is gone with the dock's list.
+      // The dock's bottom action bar: five slots in order, the chain second and
+      // the shortcuts reference third. The history slot that used to lead the
+      // bar is gone with the dock's list.
       const slots = [
         "New chat",
         "Life-Chain",
+        "Keyboard shortcuts",
         "Move chat to the left of the page",
         "Collapse chat",
       ];
@@ -252,12 +254,12 @@ describe("chat sessions harness", () => {
       );
       assert.deepEqual(
         landing.actions.map((slot) => slot.disabled),
-        [false, false, false, false],
+        [false, false, false, false, false],
         "an action slot is inert",
       );
       assert.deepEqual(
         landing.actions.map((slot) => slot.opacity),
-        [1, 1, 1, 1],
+        [1, 1, 1, 1, 1],
         "an action slot is dimmed",
       );
       assert.equal(
