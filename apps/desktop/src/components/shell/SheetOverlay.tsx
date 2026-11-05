@@ -52,9 +52,10 @@ function noop(): void {
  * where they were, out of reach behind the scrim.
  *
  * The frame is shared; the measure is not. Each sheet caps its own width in
- * global.css (`--settings` at its workbench measure, `--decisions` at its
- * reading column), so a window wider than that measure grows mat around the
- * surface instead of stretching a form across it.
+ * global.css (settings at its workbench measure, the decisions inbox at its
+ * reading column, focus mode at the Daily Note's writing column), so a window
+ * wider than that measure grows mat around the surface instead of stretching a
+ * form across it.
  *
  * Three ways out, because a sheet this large has no close-button muscle memory
  * yet: the cross at the top right, a click on the scrim, and Escape.
@@ -97,7 +98,7 @@ export function SheetOverlay({
   bodyClassName,
   children,
 }: {
-  sheet: "settings" | "decisions";
+  sheet: "settings" | "decisions" | "focus";
   title: string;
   subtitle?: ReactNode;
   /** Settings keeps its heading hidden: the search bar is its one top field. */
@@ -230,6 +231,13 @@ export function SheetOverlay({
   }, [onKeyDown]);
 
   useEffect(() => {
+    // A body that put the caret somewhere itself keeps it: focus mode opens its
+    // note on the writing line, and the frame is the landing place for a sheet
+    // with no field of its own, not a claim on every arrival. Without this the
+    // frame's own focus (a parent effect, so it runs after the body's) would
+    // take the caret straight back out of the note that just opened it.
+    const panel = panelRef.current;
+    if (panel && panel.contains(document.activeElement)) return;
     focusTarget()?.focus();
   }, [focusTarget]);
 
@@ -277,7 +285,9 @@ export function SheetOverlay({
       data-sheet-overlay=""
       {...(sheet === "settings"
         ? { "data-settings-overlay": "" }
-        : { "data-decisions-overlay": "" })}
+        : sheet === "decisions"
+          ? { "data-decisions-overlay": "" }
+          : { "data-focus-overlay": "" })}
       onMouseDown={onScrimMouseDown}
     >
       <div

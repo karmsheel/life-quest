@@ -7,9 +7,10 @@ import {
   shiftLocalIsoDate,
   type IsoWeek,
 } from "@lifequest/vault-core/pure";
-import { Sparkles } from "lucide-react";
+import { Focus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
+import { FocusModeOverlay } from "@/components/notes/FocusModeOverlay";
 import {
   automationContextFor,
   dailyNoteAutomationTestId,
@@ -157,6 +158,12 @@ function weekTitle(week: IsoWeek): string {
  * and opens the paragraph under the caret as its own markdown. There is no
  * second pane to keep in step, because there is no second surface at all — the
  * draft this page holds is the note, on every keystroke.
+ *
+ * Focus mode is the page stepping back: the day in a narrow sheet over a blurred
+ * page, the title centred above the box and nothing else on the surface. It edits
+ * the same draft through the same box, so it is a way of looking at the day
+ * rather than a second note — closing it lands back on the page with the prose
+ * wherever the operator left it.
  */
 export default function DailyNotePage() {
   const { snapshot } = useVault();
@@ -180,6 +187,8 @@ export default function DailyNotePage() {
   const [history, setHistory] = useState<DailyNoteIndexEntry[]>([]);
   /** The earlier weeks whose days are on screen; every other week is folded. */
   const [openWeeks, setOpenWeeks] = useState<string[]>([]);
+  /** Whether the day is being written in focus mode, over the page. */
+  const [focusMode, setFocusMode] = useState(false);
 
   // A load for a day the operator has already left must not land in the editor.
   const loadToken = useRef(0);
@@ -351,6 +360,19 @@ export default function DailyNotePage() {
   // the one exit that is not gated on the write.
   useEffect(() => () => void flush(), [flush]);
 
+  /**
+   * Leave focus mode.
+   *
+   * The modal's box is the page's own draft, so closing it is not a save step —
+   * but the last keystroke may still be inside the autosave debounce while the
+   * surface that holds it is leaving, so the day is written on the way out, the
+   * same way it is written when the pointer leaves the page's box.
+   */
+  const closeFocusMode = useCallback(() => {
+    setFocusMode(false);
+    void flush();
+  }, [flush]);
+
   const goToDay = useCallback(
     async (target: string) => {
       if (target === date) return;
@@ -459,6 +481,11 @@ export default function DailyNotePage() {
     runningId === null &&
     draft.trim().length > 0;
 
+  // Focus mode writes the day the page is showing, so it waits for that day to
+  // be in the box: opening a blank surface over a day still loading would look
+  // like an empty page and then rewrite itself under the operator's hands.
+  const canFocus = !loading && loadedDate === date;
+
   // The journal's own strip: days up to today, newest first. A file dated in the
   // future is on disk but is not offered — a note is written, not scheduled —
   // and a file that names no usable day is shown as unreadable, not as a link.
@@ -558,33 +585,50 @@ export default function DailyNotePage() {
     <div className="daily-note">
       <div className="daily-note__layout">
         <header className="daily-note__header">
-          {/* The title row: the page's name and the day's own act on one line.
+          {/* The title row: the page's name and the day's own acts on one line.
               The automations sit here, level with the heading, so the day's verb
               reads as the page's own rather than as a stray control under the
-              prose — above the box it commits rather than below it. */}
+              prose — above the box it commits rather than below it. Focus mode
+              is the day's second act and sits beside them, at the leading end of
+              the cluster: the page stays one line of chrome, and the box keeps
+              the trailing edge for what commits it. */}
           <div className="daily-note__title-row">
             <h1>Daily Note</h1>
-            {manualAutomations.length > 0 ? (
-              <div className="daily-note__automations">
-                {manualAutomations.map((automation) => (
-                  <Button
-                    key={automation.id}
-                    variant="raised"
-                    className="daily-note__analyze"
-                    data-testid={dailyNoteAutomationTestId(automation.id)}
-                    onClick={() => void onRunAutomation(automation)}
-                    disabled={!canRunAutomation}
-                    title={
-                      automation.description ||
-                      "Open a new chat with this note in context"
-                    }
-                  >
-                    <Sparkles size={14} aria-hidden />
-                    {runningId === automation.id ? "Opening chat…" : automation.name}
-                  </Button>
-                ))}
-              </div>
-            ) : null}
+            <div className="daily-note__actions">
+              <Button
+                variant="ghost"
+                className="daily-note__focus-mode"
+                data-testid="daily-note-focus"
+                aria-label="Focus mode"
+                aria-haspopup="dialog"
+                title="Focus mode — write the day on its own"
+                onClick={() => setFocusMode(true)}
+                disabled={!canFocus}
+              >
+                <Focus size={16} aria-hidden />
+              </Button>
+              {manualAutomations.length > 0 ? (
+                <div className="daily-note__automations">
+                  {manualAutomations.map((automation) => (
+                    <Button
+                      key={automation.id}
+                      variant="raised"
+                      className="daily-note__analyze"
+                      data-testid={dailyNoteAutomationTestId(automation.id)}
+                      onClick={() => void onRunAutomation(automation)}
+                      disabled={!canRunAutomation}
+                      title={
+                        automation.description ||
+                        "Open a new chat with this note in context"
+                      }
+                    >
+                      <Sparkles size={14} aria-hidden />
+                      {runningId === automation.id ? "Opening chat…" : automation.name}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
           <div className="daily-note__pager">
             <div className="daily-note__pager-start">
@@ -758,6 +802,20 @@ export default function DailyNotePage() {
           </section>
         </div>
       </div>
+      {/* Focus mode is the same day in the same draft, without the page around
+          it: a sheet over this one, so the page stays where it was behind the
+          blurred scrim and closing hands it back untouched. */}
+      {focusMode ? (
+        <FocusModeOverlay
+          date={date}
+          dateLabel={label}
+          value={draft}
+          onChange={onDraftChange}
+          status={status}
+          error={error}
+          onClose={closeFocusMode}
+        />
+      ) : null}
     </div>
   );
 }

@@ -124,6 +124,34 @@
   gap: 0.35rem;
 }
 
+/* The day's acts share the header's trailing end: focus mode's key, then the
+   automation that commits the note. The cluster takes the row's free space so
+   the acts stay on the box's trailing edge, which the automations' own right
+   edge has to keep matching. */
+.daily-note__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+/* The icon-only key beside Analyze note. It is the ghost primitive at the
+   page's square step, square rather than a pill because a control with no word
+   in it should read as the same family as the pager beside it, and it takes the
+   height of a control rather than the width of a word. The selector carries the
+   page's class so the size wins over `.btn`'s own padding: notes.css is imported
+   ahead of the primitive in global.css, so one class here would lose. */
+.daily-note .daily-note__focus-mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  padding: 0;
+}
+
 /* The box and the strip are one workspace: a column while the page is narrow,
    two columns once it is wide enough to hold them side by side. */
 .daily-note__workspace {
@@ -434,6 +462,43 @@
   .shell--chat-left .daily-note__history {
     grid-column: 4;
   }
+}
+
+/* —— Focus mode: the day alone, over the page ——
+   The frame, the scrim and the narrow measure live in global.css with the app's
+   other sheets. This is the note's half of it: one writing surface filling the
+   panel under the centred title, because focus mode is the one surface with
+   nothing under the note to leave room for. The body is a column so the box can
+   take the height the title leaves, and the error/status lines sit under it
+   rather than pushing the prose down. */
+.focus-overlay__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 0;
+  padding: 0.15rem 2.25rem 1.75rem;
+}
+
+.focus-overlay__note {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The box is the page here: it takes the panel's remaining height instead of
+   the page's 32rem window. A long day scrolls inside the box, so the title and
+   the surface's edges stay where they are while the prose moves. */
+.focus-overlay__note .note-live {
+  max-width: none;
+  min-height: 0;
+  max-height: none;
+}
+
+.focus-overlay__error,
+.focus-overlay__status {
+  flex: 0 0 auto;
+  margin: 0;
+  text-align: center;
 }
 
 /* Ideal State — the operator's titled documents about the life they are

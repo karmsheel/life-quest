@@ -45,6 +45,11 @@ so a second note for a day cannot exist.
 6. If you have a manual automation hosted on the Daily Note — the built-in one is called
    **Analyze note** — choose it to open a new chat with the day in context. While the chat
    opens, the button reads **Opening chat…**.
+7. Choose the **Focus mode** icon beside **Analyze note** to write the day on its own. The
+   page blurs behind a narrow sheet with the day's title centred over one editor — the same
+   note, in the same draft, without the pager, the status line or the journal around it.
+   Close it with the cross in the top-right corner, a click outside the sheet, or
+   **Escape**; the day is written on the way out, and the page is exactly where you left it.
 
 With no notes at all, **Earlier notes** shows: "No notes yet. Today's page is the first one."
 An empty day is an empty editor, not an error and not a page of instructions.
@@ -56,6 +61,7 @@ An empty day is an empty editor, not an error and not a page of instructions.
 | **Daily Note** heading | The page title. |
 | Pager | **‹ Prev day**, the date and weekday with "(Today)" on today, **Next day ›**, and a **Today** button when you are away from today. |
 | Automation buttons | One button per enabled manual automation whose page is **Daily Note**; the built-in is **Analyze note**. Disabled while there is no prose. |
+| **Focus mode** | The icon beside **Analyze note**. Opens the day in a narrow sheet over the blurred page — one centred title and one editor, nothing else — for writing without the page around it. |
 | Editor | A live markdown box opening at twice the height of the studio's other note boxes, focused on an empty day. |
 | Status line | **Saving…**, **Saved**, **Not saved**, or **No note for this day yet**. |
 | **Earlier notes** | The journal index: **Date**, **Day**, **Last edited**; this week open, earlier weeks folded; unreadable files shown in place as "unreadable". |
