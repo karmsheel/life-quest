@@ -63,11 +63,11 @@ export function WindowTitleBar() {
         </div>
       ) : null}
       {/*
-        What is left of the strip's leading half is the window's drag handle: the
-        vault that used to be named here lives at the foot of the sidebar, with
-        the rest of the navigation. The box stays because the macOS titlebar area
-        is carved out of this half with `env(titlebar-area-*)`, and because it
-        keeps the trailing controls on the trailing edge.
+        The leading track is the window's drag handle and nothing else: the vault
+        that used to be named here lives at the foot of the sidebar, with the rest
+        of the navigation. The box stays because the tab is centred by the two
+        outer tracks sharing the slack equally, and this is the leading one of
+        that pair.
       */}
       <div className="window-titlebar__leading" />
       {showTrailing ? (
