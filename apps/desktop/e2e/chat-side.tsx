@@ -64,13 +64,13 @@ import { applyAppSkin } from "./apply-app-skin";
 import "@/styles/global.css";
 
 /*
- * The palette this rig measures: Forge OS in its night palette. Rigs share the
+ * The palette this rig measures: Forge in its night palette. Rigs share the
  * dev-server origin's localStorage, so a skin left by a concurrent rig would
  * otherwise decide the colours asserted below. Painting the shipped default
  * here, and writing the preference key `ThemeProvider` reads, makes the run
  * self-contained.
  */
-applyAppSkin("dark", "forge-os");
+applyAppSkin("dark", "forge");
 try {
   localStorage.setItem("lifequest-theme", "dark");
 } catch {

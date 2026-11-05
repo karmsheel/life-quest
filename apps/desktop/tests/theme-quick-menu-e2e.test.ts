@@ -21,8 +21,8 @@ const REPORT = path.join(
 );
 
 /** The themes the app ships, in registry order; all three ship both palettes. */
-const ALL_THEMES = ["Forge OS", "Nous", "Grayscale"];
-const DUAL_PALETTE_THEMES = ["Forge OS", "Nous", "Grayscale"];
+const ALL_THEMES = ["Forge", "Nous", "Graphite"];
+const DUAL_PALETTE_THEMES = ["Forge", "Nous", "Graphite"];
 
 type Box = {
   left: number;
@@ -205,7 +205,7 @@ describe("titlebar theme quick menu", () => {
     assert.equal(night.hint, "Night palette · LifeQuest themes");
     assert.deepEqual(tileLabels(night), ALL_THEMES, "an uncurated install does not star every theme");
     assert.equal(night.gridPresent, true, "the starred grid is missing");
-    assert.equal(activeTiles(night), "forge-os", "the worn theme's tile is not marked active");
+    assert.equal(activeTiles(night), "forge", "the worn theme's tile is not marked active");
     assert.deepEqual(
       tileLabels(night),
       ALL_THEMES,
@@ -227,14 +227,14 @@ describe("titlebar theme quick menu", () => {
     );
     assert.equal(dayToggle.menu?.hint, "Day palette · LifeQuest themes");
 
-    // —— 3b. Grayscale ships both palettes now: picked in daylight it wears the
+    // —— 3b. Graphite ships both palettes now: picked in daylight it wears the
     //        paper half, and the same theme survives the switch to night.
-    const grayscaleDay = state("grayscaleDay");
-    assert.equal(grayscaleDay.skin.attr, "grayscale", "Grayscale has no day palette to wear");
-    assert.equal(grayscaleDay.skin.stored, "grayscale", "the day-time Grayscale pick was not stored");
-    assert.equal(grayscaleDay.theme.attr, "light", "Grayscale did not stay in the day palette");
-    assert.equal(grayscaleDay.menu?.hint, "Day palette · LifeQuest themes");
-    assert.equal(activeTiles(grayscaleDay.menu), "grayscale");
+    const graphiteDay = state("graphiteDay");
+    assert.equal(graphiteDay.skin.attr, "graphite", "Graphite has no day palette to wear");
+    assert.equal(graphiteDay.skin.stored, "graphite", "the day-time Graphite pick was not stored");
+    assert.equal(graphiteDay.theme.attr, "light", "Graphite did not stay in the day palette");
+    assert.equal(graphiteDay.menu?.hint, "Day palette · LifeQuest themes");
+    assert.equal(activeTiles(graphiteDay.menu), "graphite");
 
     // —— 4. The mode switcher writes the explicit preference: System clears the
     //       attribute, Dark pins the night palette again.
@@ -252,8 +252,8 @@ describe("titlebar theme quick menu", () => {
     assert.equal(darkMode.theme.attr, "dark", "Dark did not pin the night palette");
     assert.equal(darkMode.theme.stored, "dark");
     assert.equal(activeModes(darkMode.menu), "Dark");
-    assert.equal(darkMode.skin.attr, "grayscale", "the two-palette Grayscale theme fell off at night");
-    assert.equal(darkMode.skin.stored, "grayscale");
+    assert.equal(darkMode.skin.attr, "graphite", "the two-palette Graphite theme fell off at night");
+    assert.equal(darkMode.skin.stored, "graphite");
 
     // —— 5. A tile is a quick choice: it applies the theme, persists it, and
     //       reports itself active.
@@ -310,7 +310,7 @@ describe("titlebar theme quick menu", () => {
     assert.equal(nightOnly.theme.attr, "dark", "the installed theme left the night palette");
     assert.deepEqual(
       tileLabels(nightOnly.menu),
-      ["Forge OS", "Nous", "Grayscale", "Night Only"],
+      ["Forge", "Nous", "Graphite", "Night Only"],
       "the installed theme is not in the quick grid under the night palette",
     );
     assert.equal(
@@ -349,19 +349,36 @@ describe("titlebar theme quick menu", () => {
     assert.equal(fallbackSwitcher.theme.attr, "light", "the switcher did not change the mode");
     assert.equal(fallbackSwitcher.theme.stored, "light", "the switcher's mode was not persisted");
 
-    // —— 10. The rename survives storage: a saved "mono" skin and star open on
-    //        Grayscale, so removing the old id does not reset the operator.
-    const legacyMono = state("legacyMono");
-    assert.equal(legacyMono.skin.attr, "grayscale", "a stored mono skin did not migrate to Grayscale");
-    assert.equal(legacyMono.theme.attr, "dark", "the migrated skin left the night palette");
+    // —— 10. The renames survive storage: a saved `grayscale`/`mono` id opens on
+    //        Graphite and a saved `forge-os` id opens on Forge, with old starred
+    //        names following them — removing an old id never resets the operator.
+    const legacyGraphite = state("legacyGraphite");
+    assert.equal(
+      legacyGraphite.skin.attr,
+      "graphite",
+      "a stored grayscale skin did not migrate to Graphite",
+    );
+    assert.equal(legacyGraphite.theme.attr, "dark", "the migrated skin left the night palette");
 
-    const legacyMonoMenu = state("legacyMonoMenu");
+    const legacyGraphiteMenu = state("legacyGraphiteMenu");
     assert.deepEqual(
-      tileLabels(legacyMonoMenu.menu),
-      ["Grayscale"],
+      tileLabels(legacyGraphiteMenu.menu),
+      ["Graphite"],
       "a starred mono name did not migrate into the quick grid",
     );
-    assert.equal(activeTiles(legacyMonoMenu.menu), "grayscale");
+    assert.equal(activeTiles(legacyGraphiteMenu.menu), "graphite");
+
+    const legacyForge = state("legacyForge");
+    assert.equal(legacyForge.skin.attr, "forge", "a stored forge-os skin did not migrate to Forge");
+    assert.equal(legacyForge.theme.attr, "dark", "the migrated skin left the night palette");
+
+    const legacyForgeMenu = state("legacyForgeMenu");
+    assert.deepEqual(
+      tileLabels(legacyForgeMenu.menu),
+      ["Forge"],
+      "a starred forge-os name did not migrate into the quick grid",
+    );
+    assert.equal(activeTiles(legacyForgeMenu.menu), "forge");
 
     for (const file of report.screenshots) {
       assert.equal(fs.existsSync(path.join(desktopRoot, "e2e/artifacts", file)), true, `driver wrote no screenshot ${file}`);

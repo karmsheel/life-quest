@@ -361,7 +361,7 @@ describe("the settings sheet over the app", () => {
     );
     assert.equal(
       searchedTheme.nav[0].match,
-      "gray",
+      "graphite",
       "the row does not say which word it matched",
     );
     assert.equal(
@@ -485,13 +485,13 @@ describe("the settings sheet over the app", () => {
       "more than one theme is still starred",
     );
     assert.equal(
-      curatedOne.themes.find((theme) => theme.name === "grayscale")?.starred,
+      curatedOne.themes.find((theme) => theme.name === "graphite")?.starred,
       true,
       "the theme the driver kept is not the starred one",
     );
     assert.equal(
       curatedOne.storedFavorites,
-      JSON.stringify(["grayscale"]),
+      JSON.stringify(["graphite"]),
       `curating did not write the star list: ${curatedOne.storedFavorites}`,
     );
     assert.match(
@@ -507,7 +507,7 @@ describe("the settings sheet over the app", () => {
     assert.equal(menuCurated.menuOpen, true, "the settings menu did not open");
     assert.deepEqual(
       menuCurated.menu?.labels,
-      ["Grayscale"],
+      ["Graphite"],
       `the quick menu offers more than the starred theme: ${JSON.stringify(menuCurated.menu?.labels)}`,
     );
     assert.equal(menuCurated.menu?.empty, null, "the quick menu shows an empty state and a tile");
@@ -529,7 +529,7 @@ describe("the settings sheet over the app", () => {
 
     // 15 — installing a theme from a file: it lands in the grid, starred, and in
     //      the menu. The curated single star is kept.
-    assert.equal(report.steps.reStarred, true, "the driver could not star Grayscale again");
+    assert.equal(report.steps.reStarred, true, "the driver could not star Graphite again");
     assert.equal(report.steps.installPick, true, "the driver could not pick a theme file");
     assert.equal(installed.installInput, true, "the Appearance page has no theme file input");
     assert.equal(
@@ -556,7 +556,7 @@ describe("the settings sheet over the app", () => {
     assert.equal(installed.installError, null, `installing reported an error: ${installed.installError}`);
     assert.equal(
       installed.storedFavorites,
-      JSON.stringify(["grayscale", report.fixture.installedTheme.name]),
+      JSON.stringify(["graphite", report.fixture.installedTheme.name]),
       `installing did not star the theme: ${installed.storedFavorites}`,
     );
 
@@ -605,7 +605,7 @@ describe("the settings sheet over the app", () => {
     assert.deepEqual(removed.installed, [], "the installed list still carries the removed theme");
     assert.equal(
       removed.storedFavorites,
-      JSON.stringify(["grayscale"]),
+      JSON.stringify(["graphite"]),
       `removing did not unstar the theme: ${removed.storedFavorites}`,
     );
 
@@ -613,17 +613,17 @@ describe("the settings sheet over the app", () => {
     //      both survive the window reloading.
     assert.deepEqual(
       menuAfterInstall.menu?.labels,
-      ["Grayscale"],
+      ["Graphite"],
       "the quick menu lost the curated theme after an install",
     );
     assert.equal(
       menuAfterReload.storedFavorites,
-      JSON.stringify(["grayscale"]),
+      JSON.stringify(["graphite"]),
       "the curated list did not survive a reload",
     );
     assert.deepEqual(
       menuAfterReload.menu?.labels,
-      ["Grayscale"],
+      ["Graphite"],
       "the quick menu lost the curated theme across a reload",
     );
 

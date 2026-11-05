@@ -76,8 +76,8 @@ only reaches tabs and themes; it does not search the values inside a vault.
   settings menu shows only these*, or explains that none of your starred themes
   fits this colour mode, or that none are starred.
 
-The shipped themes are **Forge OS** (the startup default), **Nous**, and
-**Grayscale**. All three ship both day and night palettes. **System** shows themes
+The shipped themes are **Forge** (the startup default), **Nous**, and
+**Graphite**. All three ship both day and night palettes. **System** shows themes
 with both palettes; Light and Dark show the skins that match the mode.
 
 The day/night control in the titlebar is always there. A theme with only one
@@ -292,7 +292,7 @@ real feed, and a real release outranks the preview.
 - A cold start that opens `/settings` directly has no page behind it; closing the
   sheet falls back to the Dashboard.
 - Installing a theme only adds it to this window's list. Uninstalling the one you
-  are wearing leaves the app on Forge OS, the startup default.
+  are wearing leaves the app on Forge, the startup default.
 - The **Hermes** tab's "Apply assistant inserts immediately" list contains only
   databases that exist now. A checked entry whose database was deleted shows as a
   stale `domain / database` row so you can uncheck it.

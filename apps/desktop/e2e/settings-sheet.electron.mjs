@@ -36,7 +36,7 @@ const url =
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
 /** The theme the driver stars, and the query that finds its page. */
-const STARRED_SKIN = "Grayscale";
+const STARRED_SKIN = "Graphite";
 const SECTION_COUNT = 11;
 
 /**
@@ -484,7 +484,7 @@ async function main() {
     record("searchedVault", await settle());
 
     // 4 — a theme name finds the page that holds the themes.
-    await typeQuery("gray");
+    await typeQuery("graphite");
     record("searchedTheme", await settle());
     await shot("search-theme");
 

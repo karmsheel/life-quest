@@ -45,8 +45,8 @@ const url =
   "http://127.0.0.1:5173/e2e/theme-quick-menu.html";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
-const ALL_THEMES = ["Forge OS", "Nous", "Grayscale"];
-const DUAL_PALETTE_THEMES = ["Forge OS", "Nous", "Grayscale"];
+const ALL_THEMES = ["Forge", "Nous", "Graphite"];
+const DUAL_PALETTE_THEMES = ["Forge", "Nous", "Graphite"];
 
 /**
  * A dark-only theme, in the shape the Appearance page installs: every colour
@@ -431,7 +431,7 @@ async function main() {
     win.showInactive();
 
     // A clean install: no preference, no skin, no curation.
-    await seedAndReload({ theme: "dark", skin: "forge-os", favorites: null });
+    await seedAndReload({ theme: "dark", skin: "forge", favorites: null });
 
     // —— 1 — the resting control: day/night on the titlebar, no menu, and the
     //        keyboard-shortcuts control no longer riding the strip.
@@ -515,7 +515,7 @@ async function main() {
       ) &&
         nightMenu.menu.gridPresent === true &&
         nightMenu.menu.tiles.filter((tile) => tile.active).map((tile) => tile.name).join(",") ===
-          "forge-os",
+          "forge",
       `tiles ${JSON.stringify(nightMenu.menu.tiles)}`,
     );
 
@@ -547,24 +547,24 @@ async function main() {
       `tiles ${JSON.stringify(dayToggle.menu.tiles)}, hint ${JSON.stringify(dayToggle.menu.hint)}`,
     );
 
-    // —— 3b — the renamed Grayscale theme wears a day palette now; pick it in
+    // —— 3b — the renamed Graphite theme wears a day palette now; pick it in
     //         daylight and photograph the paper-and-graphite half of the pair.
-    at("Grayscale has a day palette");
-    await click('[data-skin="grayscale"] .settings-menu__skin-option');
-    const grayscaleDay = await record(
-      "grayscaleDay",
-      'document.documentElement.getAttribute("data-skin") === "grayscale"',
+    at("Graphite has a day palette");
+    await click('[data-skin="graphite"] .settings-menu__skin-option');
+    const graphiteDay = await record(
+      "graphiteDay",
+      'document.documentElement.getAttribute("data-skin") === "graphite"',
     );
-    await shot("theme-quick-menu-grayscale-day.png");
+    await shot("theme-quick-menu-graphite-day.png");
     check(
-      "the Grayscale theme wears a light palette by day",
-      grayscaleDay.skin.attr === "grayscale" &&
-        grayscaleDay.skin.stored === "grayscale" &&
-        grayscaleDay.theme.attr === "light" &&
-        grayscaleDay.menu.hint === "Day palette · LifeQuest themes" &&
-        grayscaleDay.menu.tiles.filter((tile) => tile.active).map((tile) => tile.name).join(",") ===
-          "grayscale",
-      `skin ${JSON.stringify(grayscaleDay.skin)}, theme ${JSON.stringify(grayscaleDay.theme)}`,
+      "the Graphite theme wears a light palette by day",
+      graphiteDay.skin.attr === "graphite" &&
+        graphiteDay.skin.stored === "graphite" &&
+        graphiteDay.theme.attr === "light" &&
+        graphiteDay.menu.hint === "Day palette · LifeQuest themes" &&
+        graphiteDay.menu.tiles.filter((tile) => tile.active).map((tile) => tile.name).join(",") ===
+          "graphite",
+      `skin ${JSON.stringify(graphiteDay.skin)}, theme ${JSON.stringify(graphiteDay.theme)}`,
     );
 
     // —— 4 — the menu's mode switcher writes the preference the click left
@@ -588,7 +588,7 @@ async function main() {
     );
     await clickText(".theme-quick-menu__popover .ui-segmented", "Dark");
     const darkMode = await record("darkMode", 'document.documentElement.getAttribute("data-theme") === "dark"');
-    await shot("theme-quick-menu-grayscale-night.png");
+    await shot("theme-quick-menu-graphite-night.png");
     check(
       "choosing Dark pins the night palette",
       darkMode.theme.attr === "dark" &&
@@ -598,8 +598,8 @@ async function main() {
       `theme ${JSON.stringify(darkMode.theme)}, mode ${JSON.stringify(darkMode.menu.mode)}`,
     );
     check(
-      "the two-palette Grayscale theme survives the mode switch",
-      darkMode.skin.attr === "grayscale" && darkMode.skin.stored === "grayscale",
+      "the two-palette Graphite theme survives the mode switch",
+      darkMode.skin.attr === "graphite" && darkMode.skin.stored === "graphite",
       `skin ${JSON.stringify(darkMode.skin)}, theme ${JSON.stringify(darkMode.theme)}`,
     );
 
@@ -707,7 +707,7 @@ async function main() {
     at("an empty curation shows the empty state");
     await seedAndReload({
       theme: "dark",
-      skin: "forge-os",
+      skin: "forge",
       favorites: [],
     });
     await hover(".theme-mode-toggle");
@@ -729,7 +729,7 @@ async function main() {
     at("a one-palette theme keeps the switch, and the switch falls back");
     await seedAndReload({
       theme: "dark",
-      skin: "forge-os",
+      skin: "forge",
       favorites: null,
       installed: [NIGHT_ONLY_THEME],
     });
@@ -794,29 +794,53 @@ async function main() {
       `skin ${JSON.stringify(fallbackSwitcher.skin)}, theme ${JSON.stringify(fallbackSwitcher.theme)}`,
     );
 
-    // —— 13 — the rename is storage, not only the registry: a window that stored
-    //         `mono` opens on Grayscale, and an old starred list follows it.
-    at("a stored mono name opens on Grayscale");
+    // —— 13 — the renames are storage, not only the registry: a window that
+    //         stored `mono`/`grayscale` opens on Graphite, and one that stored
+    //         `forge-os` opens on Forge; old starred names follow them.
+    at("an old theme id opens on its renamed theme");
     await seedAndReload({
       theme: "dark",
-      skin: "mono",
+      skin: "grayscale",
       favorites: ["mono"],
     });
-    const legacyMono = await record("legacyMono");
+    const legacyGraphite = await record("legacyGraphite");
     await hover(".theme-mode-toggle");
-    const legacyMonoMenu = await record("legacyMonoMenu", menuOpen);
+    const legacyGraphiteMenu = await record("legacyGraphiteMenu", menuOpen);
     check(
-      "a stored mono selection opens on the renamed Grayscale theme",
-      legacyMono.skin.attr === "grayscale" && legacyMono.theme.attr === "dark",
-      `skin ${JSON.stringify(legacyMono.skin)}, theme ${JSON.stringify(legacyMono.theme)}`,
+      "a stored grayscale selection opens on the renamed Graphite theme",
+      legacyGraphite.skin.attr === "graphite" && legacyGraphite.theme.attr === "dark",
+      `skin ${JSON.stringify(legacyGraphite.skin)}, theme ${JSON.stringify(legacyGraphite.theme)}`,
     );
     check(
-      "an old starred mono name becomes the Grayscale tile",
+      "an old starred mono name becomes the Graphite tile",
       same(
-        legacyMonoMenu.menu.tiles.map((tile) => tile.label),
-        ["Grayscale"],
-      ) && legacyMonoMenu.menu.tiles[0].active === true,
-      `tiles ${JSON.stringify(legacyMonoMenu.menu.tiles)}`,
+        legacyGraphiteMenu.menu.tiles.map((tile) => tile.label),
+        ["Graphite"],
+      ) && legacyGraphiteMenu.menu.tiles[0].active === true,
+      `tiles ${JSON.stringify(legacyGraphiteMenu.menu.tiles)}`,
+    );
+
+    at("a stored forge-os id opens on Forge");
+    await seedAndReload({
+      theme: "dark",
+      skin: "forge-os",
+      favorites: ["forge-os"],
+    });
+    const legacyForge = await record("legacyForge");
+    await hover(".theme-mode-toggle");
+    const legacyForgeMenu = await record("legacyForgeMenu", menuOpen);
+    check(
+      "a stored forge-os selection opens on Forge",
+      legacyForge.skin.attr === "forge" && legacyForge.theme.attr === "dark",
+      `skin ${JSON.stringify(legacyForge.skin)}, theme ${JSON.stringify(legacyForge.theme)}`,
+    );
+    check(
+      "an old starred forge-os name becomes the Forge tile",
+      same(
+        legacyForgeMenu.menu.tiles.map((tile) => tile.label),
+        ["Forge"],
+      ) && legacyForgeMenu.menu.tiles[0].active === true,
+      `tiles ${JSON.stringify(legacyForgeMenu.menu.tiles)}`,
     );
 
     report = {
