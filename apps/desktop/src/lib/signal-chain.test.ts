@@ -28,6 +28,7 @@ function signal(
     sourceRef: null,
     title: null,
     domainSlug: null,
+    attachment: null,
     ...partial,
   };
 }

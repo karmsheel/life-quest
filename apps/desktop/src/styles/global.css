@@ -8239,6 +8239,52 @@ button.chat-panel__activity-line:hover {
   word-break: break-word;
 }
 
+/* A chain row's picture, scaled for a 20rem column: enough to recognise the
+   capture, not enough to take the dock over. */
+.chat-panel__chain-image-wrap {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.chat-panel__chain-image {
+  display: block;
+  max-width: 100%;
+  max-height: 9rem;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--muted-surface);
+}
+
+.chat-panel__chain-image-missing {
+  font-size: 0.75rem;
+}
+
+.chat-panel__chain-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  margin-bottom: 0.3rem;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.chat-panel__chain-link span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel__chain-link:hover {
+  text-decoration: underline;
+}
+
 /* A titled signal keeps its title: the panel's composer never writes one, so a
    row that has one came from somewhere else — an import, or Hermes itself — and
    dropping it would hide data the record carries. */
@@ -8421,6 +8467,120 @@ button.chat-panel__activity-line:hover {
   min-height: 8rem;
 }
 
+/* A picture dropped on the box lights the box rather than a page-wide overlay:
+   the composer is the target, and the gesture lands where the capture does. */
+.signal-chain__composer--dragging {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm), 0 0 0 2px var(--accent-tint);
+}
+
+/* The picture waiting to be logged: the preview is what the drop was for, so it
+   leads the box and sits above the field the operator types into. */
+.signal-chain__attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.signal-chain__attachment-image {
+  display: block;
+  width: 5rem;
+  height: 5rem;
+  flex: none;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted-surface);
+}
+
+.signal-chain__attachment-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.signal-chain__attachment-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-chain__attachment-hint {
+  font-size: 0.72rem;
+}
+
+.signal-chain__attachment-remove {
+  padding: 0.3rem;
+  line-height: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The link's own line: the input only appears while the operator is adding a
+   link, and the chip replaces it once the URL is real. */
+.signal-chain__link-form {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.signal-chain__link-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.55rem;
+  background: var(--bg);
+  font: inherit;
+}
+
+.signal-chain__link-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-tint) 45%, transparent);
+  font-size: 0.82rem;
+}
+
+.signal-chain__link-host {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.signal-chain__link-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
+.signal-chain__composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.signal-chain__tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+
 .signal-chain__empty {
   margin: 0.25rem 0 0;
 }
@@ -8501,6 +8661,70 @@ button.chat-panel__activity-line:hover {
   margin: 0;
   white-space: pre-wrap;
   line-height: 1.45;
+}
+
+/* A captured picture is the row's content, so it takes the column's width up to
+   a reading size rather than a thumbnail's. The name under it is the file's,
+   kept as the label because the description may be empty. */
+.signal-row__figure {
+  margin: 0 0 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.signal-row__image {
+  display: block;
+  max-width: min(100%, 32rem);
+  max-height: 22rem;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted-surface);
+}
+
+.signal-row__image-name {
+  font-size: 0.72rem;
+}
+
+.signal-row__image-missing {
+  font-size: 0.8rem;
+}
+
+/* A captured link is a card, not a run of text: the host is the label and the
+   address is the evidence, and one click opens the operator's own browser. */
+.signal-row__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  margin-bottom: 0.35rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--selected) 45%, transparent);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.82rem;
+}
+
+.signal-row__link:hover {
+  border-color: var(--accent);
+}
+
+.signal-row__link-host {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.signal-row__link-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
 }
 
 .signal-row--editing {
