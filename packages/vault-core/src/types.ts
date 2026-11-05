@@ -671,6 +671,12 @@ export type Project = {
   source: string | null;
   /** An absolute http(s) URL the idea came from, or null. Never any other scheme. */
   sourceUrl: string | null;
+  /**
+   * Absolute http(s) URLs of the project's repositories, in the order the
+   * operator or companion named them. Empty when the project has none; stored
+   * as a YAML block sequence in the frontmatter.
+   */
+  repoUrls: string[];
   /** The context document (the markdown body of the file). */
   bodyMarkdown: string;
   /** Where it stands right now, in the operator's own words. */
@@ -699,6 +705,7 @@ export type ProjectFields = {
   projectType?: string | null;
   source?: string | null;
   sourceUrl?: string | null;
+  repoUrls?: string[] | null;
   bodyMarkdown?: string;
   stateNote?: string;
   goalId?: string | null;
@@ -735,6 +742,7 @@ export type ProjectListEntry = {
   projectType: string | null;
   source: string | null;
   sourceUrl: string | null;
+  repoUrls: string[];
   stateNote: string;
   goalId: string | null;
   domainSlug: string | null;
@@ -760,6 +768,7 @@ export type ProjectCommand =
       projectType?: string | null;
       source?: string | null;
       sourceUrl?: string | null;
+      repoUrls?: string[] | null;
       stateNote?: string;
       status?: ProjectStatus;
       priority?: ProjectPriority | null;
