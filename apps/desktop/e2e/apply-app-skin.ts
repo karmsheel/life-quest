@@ -7,7 +7,7 @@
  * colors the operator never sees — which is how a card can pass a design check
  * and still look wrong in the app.
  *
- * `applySkin` is the product function, given the product defaults (Forge OS,
+ * `applySkin` is the product function, given the product defaults (Forge,
  * dark). It runs at module scope, before the first React render, so nothing is
  * ever painted in the wrong palette.
  *

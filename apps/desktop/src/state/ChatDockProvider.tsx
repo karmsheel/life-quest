@@ -52,11 +52,11 @@ export type ChatDockSide = "left" | "right";
  * keeps one chat in front of the operator rather than a second copy of the
  * history.
  *
- * It lives on the dock rather than in the chat store because the titlebar's
- * shortcuts control opens the dock straight onto the reference, and the titlebar
- * stands above the chat store's provider. The chat store still moves it — a
- * chat opening or closing lands the dock on its thread — but the fact itself is
- * "what is this pane showing", which is the dock's business.
+ * It lives on the dock rather than in the chat store because the dock's own
+ * bottom bar switches it between the surfaces, and a bar inside the panel is
+ * the panel's business. The chat store still moves it — a chat opening or
+ * closing lands the dock on its thread — but the fact itself is "what is this
+ * pane showing".
  */
 export type ChatSurface = "thread" | "chain" | "shortcuts";
 

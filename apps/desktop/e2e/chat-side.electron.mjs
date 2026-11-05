@@ -115,9 +115,13 @@ const SAMPLE = `(() => {
   // carries it or the old collapse toggle, and the SAMPLE keeps both facts so
   // the assertions can say "here" and "not there" rather than only one.
   const sideSwitch = document.querySelector('[data-testid="chat-side-switch"]');
+  // The shortcuts reference moved into this same bar, beside the switch: the
+  // titlebar carries it no more, so both facts are sampled.
+  const shortcutsAction = document.querySelector('[data-testid="chat-shortcuts-action"]');
   const staleTitlebar = {
     side: Boolean(document.querySelector(".window-titlebar__side-switch")),
     collapse: Boolean(document.querySelector(".window-titlebar__chat-toggle")),
+    shortcuts: Boolean(document.querySelector(".window-titlebar__shortcuts")),
   };
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
   const frame = px(root.getPropertyValue("--shell-frame"));
@@ -275,6 +279,16 @@ const SAMPLE = `(() => {
           pressed: sideSwitch.getAttribute("aria-pressed"),
           icon: iconClass(sideSwitch),
           box: box(sideSwitch)
+        }
+      : { found: false },
+    shortcutsAction: shortcutsAction
+      ? {
+          found: true,
+          label: shortcutsAction.getAttribute("aria-label"),
+          title: shortcutsAction.getAttribute("title"),
+          pressed: shortcutsAction.getAttribute("aria-pressed"),
+          icon: iconClass(shortcutsAction),
+          box: box(shortcutsAction)
         }
       : { found: false },
     staleTitlebar,
@@ -514,15 +528,12 @@ function checkControls(label, state, side) {
       ? "Move chat to the right of the page"
       : "Move chat to the left of the page";
 
-  // The titlebar's trailing cluster: the theme toggle, the keyboard-shortcuts
-  // control, the settings menu. The two chat controls that used to follow the
-  // settings are gone; a stale copy anywhere in the strip is the regression this
-  // guards, because a "contained" control is not a correctly placed one.
-  const expectedTrailing = [
-    "theme-mode-toggle",
-    "window-titlebar__shortcuts",
-    "settings-menu",
-  ];
+  // The titlebar's trailing cluster is the theme control and the settings menu.
+  // The keyboard-shortcuts control, like the two chat controls that left before
+  // it, now lives in the dock's own bar; a stale copy anywhere in the strip is
+  // the regression this guards, because a "contained" control is not a correctly
+  // placed one.
+  const expectedTrailing = ["theme-mode-toggle", "settings-menu"];
   check(
     `${label}: the titlebar's trailing cluster is theme, shortcuts, settings`,
     controls.length === expectedTrailing.length &&
@@ -540,6 +551,11 @@ function checkControls(label, state, side) {
     `${label}: the titlebar carries no chat collapse toggle`,
     state.staleTitlebar?.collapse === false,
     "a .window-titlebar__chat-toggle is still in the strip",
+  );
+  check(
+    `${label}: the titlebar carries no keyboard-shortcuts control`,
+    state.staleTitlebar?.shortcuts === false,
+    "a .window-titlebar__shortcuts is still in the strip",
   );
 
   // The switch itself, inside the open dock's bottom bar.
@@ -565,13 +581,33 @@ function checkControls(label, state, side) {
   );
 
   // The bar's order, read off the DOM rather than off the pixels: the new-chat
-  // slot, the chain, then the trailing pair. "Chat history" left the bar with
-  // the list surface, so its return is a stale slot rather than a shipped one.
+  // slot, the chain, then the trailing trio — the shortcuts reference, the side
+  // switch and the way out. "Chat history" left the bar with the list surface,
+  // so its return is a stale slot rather than a shipped one.
   const barLabels = (state.actions?.controls ?? []).map((control) => control.label);
   check(
-    `${label}: the bar carries its four actions in order`,
-    same(barLabels, ["New chat", "Life-Chain", expectedSwitchLabel, "Collapse chat"]),
+    `${label}: the bar carries its five actions in order`,
+    same(barLabels, [
+      "New chat",
+      "Life-Chain",
+      "Keyboard shortcuts",
+      expectedSwitchLabel,
+      "Collapse chat",
+    ]),
     `bar ${JSON.stringify(barLabels)}`,
+  );
+  check(
+    `${label}: the shortcuts control sits immediately before the switch`,
+    state.shortcutsAction?.found === true &&
+      state.shortcutsAction?.label === "Keyboard shortcuts" &&
+      state.shortcutsAction?.icon === "lucide-keyboard" &&
+      Boolean(state.shortcutsAction?.box && state.sideSwitch?.box) &&
+      state.shortcutsAction.box.right < state.sideSwitch.box.left &&
+      state.sideSwitch.box.left - state.shortcutsAction.box.right <= 8 &&
+      Boolean(state.actions?.box) &&
+      state.shortcutsAction.box.top >= state.actions.box.top &&
+      state.shortcutsAction.box.bottom <= state.actions.box.bottom,
+    `shortcuts ${JSON.stringify(state.shortcutsAction)} vs switch ${JSON.stringify(state.sideSwitch?.box)}`,
   );
   check(
     `${label}: the switch sits immediately before the collapse control`,

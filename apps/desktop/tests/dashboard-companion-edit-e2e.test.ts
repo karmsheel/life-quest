@@ -116,7 +116,7 @@ describe("dashboard companion edit e2e", () => {
 
     // The rig is a real board in the app's own skin, and it reached nothing the
     // stub does not model: a page that grew a new dependency fails loudly.
-    assert.equal(checks.skin, "forge-os", "the harness did not paint in the app's skin");
+    assert.equal(checks.skin, "forge", "the harness did not paint in the app's skin");
     assert.deepEqual(checks.unexpectedBridgeCalls, []);
     assert.deepEqual(report.consoleErrors, []);
 
