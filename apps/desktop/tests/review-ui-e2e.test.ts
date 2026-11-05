@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 /**
- * The Review page: the document, the snapshot rules and the interview.
+ * The Review page: the document, the snapshot rules, the interview, and the
+ * centred reading column the page stands in.
  *
  * The claims themselves live in `e2e/review.electron.mjs`, which drives the
  * harness; this file runs that driver and refuses a report that does not hold.
@@ -18,7 +19,7 @@ import { describe, it } from "node:test";
  * The rig needs the Vite dev server. With the server down the test skips;
  * `npm run dev` in another terminal brings it up.
  *
- * The artifact is `e2e/artifacts/review.json` plus the three `.png`s the driver
+ * The artifact is `e2e/artifacts/review.json` plus the four `.png`s the driver
  * captures: same command, same claims, no eyeballing the app required.
  */
 
@@ -35,6 +36,7 @@ const SHOTS = [
   "review-document.png",
   "review-started.png",
   "review-rules.png",
+  "review-wide.png",
 ].map((name) => path.join(desktopRoot, "e2e/artifacts", name));
 
 function devServerUp(): Promise<boolean> {
@@ -66,6 +68,40 @@ function runDriver(): Promise<number> {
   });
 }
 
+type Rect = { left: number; top: number; width: number; height: number };
+
+/** How the page stands in the sheet: its column and the parts that ride it. */
+type Layout = {
+  shellClass: string | null;
+  content: (Rect & { clientWidth: number; centerX: number }) | null;
+  page: Rect | null;
+  pageMaxWidth: string | null;
+  header: Rect | null;
+  modes: Rect | null;
+  editor: Rect | null;
+  pageActions: Rect | null;
+  notes: Rect | null;
+};
+
+/** The numbers the driver claims the centred column with. */
+type Column = {
+  contentCentre: number | null;
+  pageCentre: number | null;
+  offBy: number | null;
+  pageWidth: number | null;
+  pageLeft: number | null;
+  pageRight: number | null;
+  pageMaxWidth: string | null;
+  contentLeft: number | null;
+  contentClientWidth: number | null;
+  contentRight: number | null;
+  headerLeft: number | null;
+  editorLeft: number | null;
+  actionsLeft: number | null;
+  notesLeft: number | null;
+  shellClass: string | null;
+};
+
 type Page = {
   boxes: number;
   blockCount: number;
@@ -91,6 +127,7 @@ type Page = {
   previewShown: boolean;
   skillOpen: boolean;
   skillValue: string | null;
+  layout: Layout;
 };
 
 type Report = {
@@ -99,6 +136,8 @@ type Report = {
   generatedAt: string;
   checks: {
     opened: Page;
+    /** The page's column at the default window. */
+    centering: Column;
     blankLineBody: string;
     blankLineBlocks: number;
     bolded: { value: string; start: number; end: number; prevented: boolean };
@@ -115,6 +154,10 @@ type Report = {
     previewText: string;
     rules: Page;
     skillWrites: string[];
+    /** The page in a window wider than its reading column. */
+    wide: Page;
+    wideCentering: Column;
+    wideGaps: { before: number; after: number };
     kickoffs: string[];
     unexpectedBridgeCalls: string[];
     calls: string[];
@@ -163,6 +206,60 @@ describe("review ui e2e", () => {
       opened.actions.includes("Save"),
       false,
       "the review document is behind a Save control again",
+    );
+
+    // ── the page is one centred reading column ─────────────────────────────
+    // All five cadences render this page component, so this is the claim for
+    // Daily through Yearly: the column is centred in the sheet's own content
+    // box, its measure is the shared note box's 48rem, and every part of the
+    // page starts on it instead of running from the leading edge.
+    const centred = report.checks.centering;
+    assert.ok(centred.pageLeft !== null, "the page column's leading edge could not be read");
+    assert.ok(centred.pageWidth !== null, "the page column's width could not be read");
+    assert.ok(centred.contentCentre !== null, "the sheet's centre could not be read");
+    assert.ok(
+      Math.abs(centred.offBy ?? Infinity) <= 2,
+      `the page column's centre is ${centred.pageCentre}, ${centred.offBy}px from the sheet's ${centred.contentCentre}`,
+    );
+    assert.ok(
+      Number(centred.pageWidth) <= 48 * 16 + 1,
+      `the page column is ${centred.pageWidth}px wide, past its 48rem measure`,
+    );
+    for (const [part, left] of [
+      ["header", centred.headerLeft],
+      ["editor", centred.editorLeft],
+      ["actions", centred.actionsLeft],
+      ["daily-notes strip", centred.notesLeft],
+    ] as const) {
+      assert.ok(
+        left !== null &&
+          centred.pageLeft !== null &&
+          Math.abs(left - centred.pageLeft) <= 1,
+        `the ${part} does not start on the page's column`,
+      );
+    }
+
+    // ── a wide window: the same narrow column, with room on both sides ─────
+    const wide = report.checks.wideCentering;
+    assert.ok(wide.pageLeft !== null, "the wide page column's leading edge could not be read");
+    assert.ok(wide.pageWidth !== null, "the wide page column's width could not be read");
+    assert.ok(wide.contentCentre !== null, "the wide sheet's centre could not be read");
+    assert.ok(
+      Math.abs(wide.offBy ?? Infinity) <= 2,
+      `in a wide window the page column is ${wide.offBy}px off the sheet's centre`,
+    );
+    assert.ok(
+      Number(wide.pageWidth) >= 48 * 16 - 1 && Number(wide.pageWidth) <= 48 * 16 + 1,
+      `in a wide window the page column is ${wide.pageWidth}px wide, not its 48rem measure`,
+    );
+    const gaps = report.checks.wideGaps;
+    assert.ok(
+      gaps.before > 100 && gaps.after > 100,
+      `the wide window left no page either side of the column: ${JSON.stringify(gaps)}`,
+    );
+    assert.ok(
+      Math.abs(gaps.before - gaps.after) <= 2,
+      `the wide window's room around the column is lopsided: ${JSON.stringify(gaps)}`,
     );
 
     // ── a blank line the operator typed reaches the file ────────────────────
