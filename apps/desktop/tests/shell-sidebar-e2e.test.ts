@@ -53,6 +53,10 @@ type State = {
     skin: string | null;
     canvasBase: string;
     accent: string;
+    /** The palette's mid ink, which the vault chip's quiet label wears. */
+    muted: string;
+    /** The rail's soft neutral surface, which the vault chip's fill wears. */
+    bgSubtle: string;
     titlebarBg: string;
     background: string;
     card: string;
@@ -779,17 +783,21 @@ describe("shell sidebar (docked rail)", () => {
       (chip.ariaLabel ?? "").includes(report.vaultName),
       `the chip's accessible name (${JSON.stringify(chip.ariaLabel)}) does not carry the vault's name`,
     );
-    // Accent-tinted fill and accent ink: a chip on the mat, not the rail's own
-    // surface and not the old square strip tab.
+    // Quiet neutral fill and the palette's mid ink: the chip is still a shape on
+    // the mat — not the rail's own surface, not the old square strip tab — but
+    // changing the vault is a rare errand, so it must not wear the accent the
+    // page's real actions wear.
     assert.ok(
       alpha(chip.background) > 0.05 &&
-        chip.background !== expanded.rail!.background,
-      `the chip paints no fill on the rail (${chip.background} on ${expanded.rail!.background})`,
+        chip.background === expanded.theme.bgSubtle &&
+        chip.background !== expanded.rail!.background &&
+        chip.background !== expanded.theme.accent,
+      `the chip's fill (${chip.background}) is not the quiet --bg-subtle (${expanded.theme.bgSubtle}) on the rail (${expanded.rail!.background})`,
     );
     assert.equal(
       chip.color,
-      expanded.theme.accent,
-      `the chip's ink (${chip.color}) is not --accent (${expanded.theme.accent})`,
+      expanded.theme.muted,
+      `the chip's ink (${chip.color}) is not the muted ink (${expanded.theme.muted}), not the accent (${expanded.theme.accent})`,
     );
     assert.notEqual(
       chip.radius,
@@ -1436,8 +1444,9 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.ok(
       alpha(collapsed.vaultChip!.background) > 0.05 &&
+        collapsed.vaultChip!.background === collapsed.theme.bgSubtle &&
         collapsed.vaultChip!.background !== collapsed.rail!.background,
-      `the thin chip paints no fill on the rail (${collapsed.vaultChip!.background} on ${collapsed.rail!.background})`,
+      `the thin chip's fill (${collapsed.vaultChip!.background}) is not the quiet --bg-subtle (${collapsed.theme.bgSubtle}) on the rail (${collapsed.rail!.background})`,
     );
     assert.notEqual(
       collapsed.vaultChip!.radius,

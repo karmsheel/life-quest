@@ -1008,9 +1008,11 @@ a {
 }
 
 /* The vault chip in the foot of the rail. A chip rather than the old square
-   strip tab: it now sits inside the sidebar, on the rail's own mat, so it wears
-   the one accent-tinted shape the panel affords. It raises the vault switcher —
-   the only control that changes which folder the window is writing. */
+   strip tab: it sits inside the sidebar, on the rail's own mat, so it wears the
+   rail's quiet neutral fill rather than the page's accent. Changing the vault is
+   a control the operator reaches for rarely; the chip has to be findable at the
+   foot without being the loudest thing in the column. The hairline is what keeps
+   it a shape on the mat at night, where the fill is only a step off the rail. */
 .nav-rail__vault {
   appearance: none;
   flex: 1 1 0;
@@ -1022,8 +1024,12 @@ a {
   padding: 0 0.55rem;
   border: 0;
   border-radius: var(--radius-sm);
-  background: var(--accent-tint);
-  color: var(--accent);
+  background: var(--bg-subtle);
+  color: var(--muted);
+  /* The hairline is a shadow, not a border: the foot's two halves are flex
+     items with a 0 basis, and a 1px border would grow the chip's box by the
+     border while leaving the Log's alone — no longer equal halves. */
+  box-shadow: inset 0 0 0 1px var(--border-soft);
   font-family: inherit;
   font-size: 0.72rem;
   font-weight: 600;
@@ -1033,9 +1039,11 @@ a {
   cursor: pointer;
 }
 
+/* A quiet lift, not the brand: the chip is one of the rail's rows, so under the
+   pointer it darkens like one instead of lighting up with the accent. */
 .nav-rail__vault:hover {
-  background: var(--accent-hover);
-  color: var(--accent-hover-fg);
+  background: var(--bg-fill-secondary);
+  color: var(--fg);
 }
 
 /* The name is a flex item so a long vault ellipsizes against the caret instead
