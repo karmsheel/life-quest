@@ -591,10 +591,12 @@ a {
   color: #fff;
 }
 
-/* The shortcuts control is a page selector, like the dock's own bar: while the
-   dock is showing that page it reads as the current surface. */
-.window-titlebar__shortcuts[aria-pressed="true"] {
+/* The day/night control opens its quick menu on hover: while the menu is up the
+   control keeps the same wash the window controls take under the pointer, so
+   the trigger and its menu read as one thing. */
+.window-titlebar__trailing .theme-mode-toggle[aria-expanded="true"] {
   background: var(--selected-soft);
+  color: var(--fg);
 }
 
 .window-titlebar__settings {
@@ -5345,7 +5347,7 @@ a.home-mini-list__link:hover {
   white-space: nowrap;
 }
 
-/* What the search landed on, when it was not the row's own label: "ember"
+/* What the search landed on, when it was not the row's own label: "gray"
    appearing under Appearance is the difference between a filter that looks
    arbitrary and one the operator can read. */
 .settings-nav-item__match {
@@ -7407,12 +7409,13 @@ button.chat-panel__activity-line:hover {
   border-radius: 0.45rem;
 }
 
-/* The side switch and the way out sit at the trailing end of the bar: the new
-   chat and the chain controls stay one group on the left, and the pair holds
-   the bottom-right corner, where the collapse control is one click from the
-   icon that brings the dock back. The auto margin is on the switch so the pair
-   travels together rather than splitting across the bar. */
-.chat-panel__action--side {
+/* The shortcuts control, the side switch and the way out sit at the trailing end
+   of the bar: the new chat and the chain controls stay one group on the left,
+   and this trio holds the bottom-right corner, where the collapse control is
+   one click from the icon that brings the dock back. The auto margin is on the
+   first of the three so they travel together rather than splitting across the
+   bar. */
+.chat-panel__action--shortcuts {
   margin-left: auto;
 }
 
@@ -8501,6 +8504,18 @@ button.chat-panel__activity-line:hover {
 }
 
 /* —— Theme switcher + settings popover (Hermes Forge) —— */
+/* The day/night control's quick menu reuses the settings popover's shell and
+   tile grid; only its two headings need spacing of their own, because the mode
+   switcher leads this menu where the skin grid leads the settings one. */
+.theme-quick-menu__starred-title {
+  margin-top: 0.75rem;
+  margin-bottom: 0.375rem;
+}
+
+.theme-quick-menu__popover .settings-menu__skin-hint {
+  margin-top: 0.4rem;
+}
+
 .theme-mode-toggle {
   display: inline-flex;
   align-items: center;

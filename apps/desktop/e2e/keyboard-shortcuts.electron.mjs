@@ -184,8 +184,12 @@ const SAMPLE = `(() => {
     '.chat-panel__header--shortcuts a[aria-label="Change keyboard shortcuts in Settings"]',
   );
   const trailing = document.querySelector(".window-titlebar__trailing");
-  const shortcutsButton = document.querySelector(
-    "button.window-titlebar__shortcuts",
+  // The shortcuts reference is a dock-bar control now: the sample keeps both the
+  // control and the bar it belongs to, so "here" and "not in the strip" are both
+  // facts the assertions can name.
+  const dockBar = document.querySelector(".chat-panel__actions");
+  const dockShortcuts = document.querySelector(
+    '[data-testid="chat-shortcuts-action"]',
   );
 
   const chatShortcutGroups = Array.from(
@@ -298,26 +302,35 @@ const SAMPLE = `(() => {
           ) || null,
           groups: chatShortcutGroups,
           rows: chatShortcutRows,
+          bar: dockBar
+            ? Array.from(dockBar.querySelectorAll(".chat-panel__action")).map((el) => ({
+                label: attr(el, "aria-label"),
+                pressed: attr(el, "aria-pressed"),
+                icon: iconClass(el),
+              }))
+            : [],
         }
       : null,
+    shortcuts: dockShortcuts
+      ? {
+          present: true,
+          label: attr(dockShortcuts, "aria-label"),
+          title: attr(dockShortcuts, "title"),
+          pressed: attr(dockShortcuts, "aria-pressed"),
+          icon: iconClass(dockShortcuts),
+          inDockBar: Boolean(dockBar && dockBar.contains(dockShortcuts)),
+          inTrailing: Boolean(trailing && trailing.contains(dockShortcuts)),
+        }
+      : {
+          present: false,
+          label: null,
+          title: null,
+          pressed: null,
+          icon: null,
+          inDockBar: false,
+          inTrailing: false,
+        },
     titlebar: {
-      shortcuts: shortcutsButton
-        ? {
-            present: true,
-            label: attr(shortcutsButton, "aria-label"),
-            title: attr(shortcutsButton, "title"),
-            pressed: attr(shortcutsButton, "aria-pressed"),
-            icon: iconClass(shortcutsButton),
-            inTrailing: Boolean(trailing && trailing.contains(shortcutsButton)),
-          }
-        : {
-            present: false,
-            label: null,
-            title: null,
-            pressed: null,
-            icon: null,
-            inTrailing: false,
-          },
       trailing: trailingChildren,
     },
     wingTabs,
@@ -698,10 +711,11 @@ async function main() {
       `chip ${JSON.stringify(landing.vaultText)} vs ${JSON.stringify(vaultName)}`,
     );
 
-    // —— 1 (dock) — the titlebar's shortcuts control opens the dock onto its
-    //        read-only reference: the shared table, every movement on its
-    //        default, Back to the thread, and no composer under it.
-    at("dock shortcuts from the titlebar");
+    // —— 1 (dock) — the dock bar's shortcuts control opens the reference: the
+    //        shared table, every movement on its default, Back to the thread,
+    //        and no composer under it. The control lives in the dock's bottom
+    //        bar now, beside the side switch; the titlebar carries it no more.
+    at("dock shortcuts from the dock bar");
     const dockThread = await record(
       "dockThread",
       'document.querySelector(".chat-panel").getAttribute("data-chat-surface") === "thread"',
@@ -717,32 +731,45 @@ async function main() {
       `surface ${JSON.stringify(dockThread.dock && dockThread.dock.surface)}, composer ${JSON.stringify(dockThread.dock && dockThread.dock.composerVisible)}`,
     );
     check(
-      "the titlebar carries a Keyboard shortcuts control",
-      dockThread.titlebar.shortcuts.present === true &&
-        dockThread.titlebar.shortcuts.label === "Keyboard shortcuts" &&
-        dockThread.titlebar.shortcuts.title === "Keyboard shortcuts" &&
-        dockThread.titlebar.shortcuts.pressed === "false" &&
-        dockThread.titlebar.shortcuts.inTrailing === true,
-      `control ${JSON.stringify(dockThread.titlebar.shortcuts)}`,
+      "the dock's bottom bar carries a Keyboard shortcuts control",
+      dockThread.shortcuts.present === true &&
+        dockThread.shortcuts.label === "Keyboard shortcuts" &&
+        dockThread.shortcuts.title === "Keyboard shortcuts" &&
+        dockThread.shortcuts.pressed === "false" &&
+        dockThread.shortcuts.icon === "lucide-keyboard" &&
+        dockThread.shortcuts.inDockBar === true &&
+        dockThread.shortcuts.inTrailing === false,
+      `control ${JSON.stringify(dockThread.shortcuts)}`,
     );
     check(
-      "the shortcuts control sits immediately before the settings menu",
-      trailingClasses.findIndex((name) => name.includes("window-titlebar__shortcuts")) ===
-        trailingClasses.findIndex((name) => name.includes("settings-menu")) - 1,
+      "the shortcuts control sits next to the switch in the bar",
+      same(
+        (dockThread.dock && dockThread.dock.bar
+          ? dockThread.dock.bar.map((entry) => entry.label)
+          : []),
+        [
+          "New chat",
+          "Life-Chain",
+          "Keyboard shortcuts",
+          "Move chat to the left of the page",
+          "Collapse chat",
+        ],
+      ),
+      `bar ${JSON.stringify(dockThread.dock && dockThread.dock.bar)}`,
+    );
+    check(
+      "the titlebar's trailing cluster is the theme control and settings",
+      trailingClasses.length === 2 &&
+        ["theme-mode-toggle", "settings-menu"].every((needle, index) =>
+          String(trailingClasses[index] ?? "").includes(needle),
+        ),
       `trailing cluster ${JSON.stringify(trailingClasses)}`,
     );
     check(
-      "the trailing cluster keeps its shipped order",
-      ["theme-mode-toggle", "window-titlebar__shortcuts", "settings-menu"].every(
-        (needle, index) => String(trailingClasses[index] ?? "").includes(needle),
-      ) &&
-        trailingClasses.length === 3,
-      `trailing cluster ${JSON.stringify(trailingClasses)}`,
-    );
-    check(
-      "the trailing cluster no longer carries the chat controls",
+      "the titlebar no longer carries the shortcuts or chat controls",
       !trailingClasses.some(
         (name) =>
+          name.includes("window-titlebar__shortcuts") ||
           name.includes("window-titlebar__side-switch") ||
           name.includes("window-titlebar__chat-toggle"),
       ),
@@ -750,7 +777,7 @@ async function main() {
     );
 
     at("the dock renders the shortcuts reference");
-    await clickSelector(".window-titlebar__shortcuts");
+    await clickSelector('[data-testid="chat-shortcuts-action"]');
     const dockDefaults = await record(
       "dockDefaults",
       'document.querySelector("aside.chat-panel").getAttribute("data-chat-surface") === "shortcuts"',
@@ -758,7 +785,7 @@ async function main() {
     await shot("dock");
     const dock = dockDefaults.dock;
     check(
-      "the titlebar control turns the dock onto the shortcuts surface",
+      "the dock bar's shortcuts control turns the dock onto the reference",
       dock !== null && dock.surface === "shortcuts",
       `surface ${JSON.stringify(dock && dock.surface)}`,
     );
@@ -815,9 +842,9 @@ async function main() {
       `footer hidden ${dock.footerHidden}, footer visible ${dock.footerVisible}, composer ${dock.composerVisible}, body ${dock.bodyVisible}`,
     );
     check(
-      "the titlebar control reports itself pressed on the page",
-      dockDefaults.titlebar.shortcuts.pressed === "true",
-      `pressed ${JSON.stringify(dockDefaults.titlebar.shortcuts.pressed)}`,
+      "the shortcuts control reports itself pressed on the page",
+      dockDefaults.shortcuts.pressed === "true",
+      `pressed ${JSON.stringify(dockDefaults.shortcuts.pressed)}`,
     );
 
     at("dock Back returns to the thread");
@@ -835,9 +862,9 @@ async function main() {
       `surface ${JSON.stringify(dockBack.dock.surface)}, composer ${dockBack.dock.composerVisible}`,
     );
     check(
-      "the titlebar control stops reporting pressed off the page",
-      dockBack.titlebar.shortcuts.pressed === "false",
-      `pressed ${JSON.stringify(dockBack.titlebar.shortcuts.pressed)}`,
+      "the shortcuts control stops reporting pressed off the page",
+      dockBack.shortcuts.pressed === "false",
+      `pressed ${JSON.stringify(dockBack.shortcuts.pressed)}`,
     );
 
     // —— 1 — the shipped surface shortcut opens settings over the page, and the
@@ -1066,7 +1093,7 @@ async function main() {
     // —— 3 (dock) — the dock reads the same provider the Settings page writes:
     //        the row it just rebound shows its new keys, and the hint counts it.
     at("the dock reflects the live binding");
-    await clickSelector(".window-titlebar__shortcuts");
+    await clickSelector('[data-testid="chat-shortcuts-action"]');
     const dockLive = await record(
       "dockLive",
       'document.querySelector("aside.chat-panel").getAttribute("data-chat-surface") === "shortcuts"',
@@ -1250,10 +1277,12 @@ async function main() {
       `overlay ${conflictClosed.overlayOpen}, path ${conflictClosed.path}`,
     );
 
-    // —— 2 (dock) — the dock's own collapse control empties the pane, then the
-    //        titlebar's shortcuts control opens it ON the reference, and the
-    //        chat-resume effect must not paint a thread over it.
-    at("collapsed dock opens on the reference");
+    // —— 2 (dock) — the dock's own collapse control empties the pane and takes
+    //        the bar's controls with it. The shortcuts control lives in that
+    //        bar, so the dock is reopened by its floating mark first and the
+    //        reference is then put in front; the chat-resume effect must not
+    //        paint a thread over the surface the operator asked for.
+    at("collapsed dock reopens, then shows the reference");
     await clickSelector('[data-testid="chat-collapse"]');
     const dockCollapsed = await record(
       "dockCollapsedForShortcuts",
@@ -1262,23 +1291,32 @@ async function main() {
     check(
       "the dock's own collapse control collapses the dock",
       dockCollapsed.chatPanel === false &&
-        String(dockCollapsed.shellClass).includes("shell--chat-collapsed") &&
-        dockCollapsed.titlebar.shortcuts.pressed === "false",
-      `panel ${dockCollapsed.chatPanel}, shell ${JSON.stringify(dockCollapsed.shellClass)}, pressed ${JSON.stringify(dockCollapsed.titlebar.shortcuts.pressed)}`,
+        String(dockCollapsed.shellClass).includes("shell--chat-collapsed"),
+      `panel ${dockCollapsed.chatPanel}, shell ${JSON.stringify(dockCollapsed.shellClass)}`,
+    );
+    check(
+      "the collapsed dock leaves its shortcuts control behind with the bar",
+      dockCollapsed.shortcuts.present === false,
+      `control ${JSON.stringify(dockCollapsed.shortcuts)}`,
     );
 
-    await clickSelector(".window-titlebar__shortcuts");
+    await clickSelector('[data-testid="chat-launcher"]');
+    await waitFor(
+      'document.querySelector(".shell").classList.contains("shell--chat-open") && Boolean(document.querySelector("aside.chat-panel"))',
+      "the dock to reopen from its floating mark",
+    );
+    await clickSelector('[data-testid="chat-shortcuts-action"]');
     const dockReopened = await record(
       "dockReopenedOnShortcuts",
       'document.querySelector(".shell").classList.contains("shell--chat-open") && Boolean(document.querySelector("aside.chat-panel")) && document.querySelector("aside.chat-panel").getAttribute("data-chat-surface") === "shortcuts"',
     );
     check(
-      "the control opens the collapsed dock onto the shortcuts surface",
+      "the reopened dock's shortcuts control puts the reference in front",
       dockReopened.chatPanel === true &&
         String(dockReopened.shellClass).includes("shell--chat-open") &&
         dockReopened.dock.surface === "shortcuts" &&
-        dockReopened.titlebar.shortcuts.pressed === "true",
-      `panel ${dockReopened.chatPanel}, shell ${JSON.stringify(dockReopened.shellClass)}, surface ${JSON.stringify(dockReopened.dock && dockReopened.dock.surface)}, pressed ${JSON.stringify(dockReopened.titlebar.shortcuts.pressed)}`,
+        dockReopened.shortcuts.pressed === "true",
+      `panel ${dockReopened.chatPanel}, shell ${JSON.stringify(dockReopened.shellClass)}, surface ${JSON.stringify(dockReopened.dock && dockReopened.dock.surface)}, pressed ${JSON.stringify(dockReopened.shortcuts.pressed)}`,
     );
     check(
       "the reopened reference keeps its composer hidden",
@@ -1296,7 +1334,7 @@ async function main() {
       'document.querySelector("aside.chat-panel").getAttribute("data-chat-surface") === "shortcuts"',
     );
     check(
-      "the chat-resume effect does not replace the surface the control asked for",
+      "the chat-resume effect does not replace the surface the operator asked for",
       dockReopenedSettled.dock.surface === "shortcuts" &&
         dockReopenedSettled.path === "/dream",
       `surface ${JSON.stringify(dockReopenedSettled.dock.surface)}, path ${dockReopenedSettled.path}`,
@@ -1769,7 +1807,7 @@ async function main() {
     );
 
     at("the dock page carries a pencil on every row");
-    await clickSelector(".window-titlebar__shortcuts");
+    await clickSelector('[data-testid="chat-shortcuts-action"]');
     const dockEditReady = await record(
       "dockEditReady",
       'document.querySelector("aside.chat-panel").getAttribute("data-chat-surface") === "shortcuts"',
