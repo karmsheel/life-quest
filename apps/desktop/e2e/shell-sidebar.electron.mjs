@@ -125,14 +125,26 @@ const SAMPLE = `(() => {
     ? titlebar.getAttribute("data-nav-collapsed")
     : null;
 
-  // The accent ink the chip wears, read through a probe so a color-mix() or a
-  // skin-specific serialisation still compares as the computed colour.
-  const colorProbe = document.createElement("span");
-  colorProbe.style.cssText = "position:absolute;left:-9999px;top:0";
-  colorProbe.style.color = "var(--accent)";
-  document.body.appendChild(colorProbe);
-  const accent = getComputedStyle(colorProbe).color;
-  colorProbe.remove();
+  // The inks and fills the chrome is compared against, read through a probe so
+  // a color-mix() or a skin-specific serialisation still compares as the
+  // computed colour. The accent ink is the brand; the muted ink and the subtle
+  // fill are the vault chip's quiet neutral pair — the rail's mid ink and its
+  // soft surface.
+  const probeStyle = (property, value) => {
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;left:-9999px;top:0";
+    probe.style[property] = value;
+    document.body.appendChild(probe);
+    const computed =
+      property === "color"
+        ? getComputedStyle(probe).color
+        : getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return computed;
+  };
+  const accent = probeStyle("color", "var(--accent)");
+  const muted = probeStyle("color", "var(--muted)");
+  const bgSubtle = probeStyle("background", "var(--bg-subtle)");
 
   // Read a track width from a token rather than assuming a pixel value: the rail
   // is 16rem wide when expanded and one icon column (3.5rem) when collapsed, and
@@ -173,6 +185,8 @@ const SAMPLE = `(() => {
       skin: document.documentElement.getAttribute("data-skin"),
       canvasBase: root.getPropertyValue("--canvas-base").trim(),
       accent,
+      muted,
+      bgSubtle,
       titlebarBg: root.getPropertyValue("--titlebar-bg").trim(),
       background: root.getPropertyValue("--background").trim(),
       card: root.getPropertyValue("--card").trim(),
@@ -268,8 +282,9 @@ const SAMPLE = `(() => {
         }
       : null,
     // The vault chip's new home. Every claim the titlebar chip used to carry is
-    // made here instead: its full name, its accent fill, its dialog, and — in
-    // the thin rail — the initials-only mark that keeps it in the icon column.
+    // made here instead: its full name, its quiet neutral fill, its dialog, and
+    // — in the thin rail — the initials-only mark that keeps it in the icon
+    // column.
     vaultChip: railVault
       ? {
           box: box(railVault),
@@ -1207,7 +1222,7 @@ async function main() {
     // 4 — the titlebar no longer names the vault. Round 2 moved the chip into the
     // rail's foot: the strip's leading half is an empty drag handle and it no
     // longer reserves the rail's column with `--nav-column` classes. The chip
-    // keeps every part of its old contract (a button, the vault's name, an accent
+    // keeps every part of its old contract (a button, the vault's name, a quiet
     // fill, a dialog) but it now lives with the navigation it belongs to.
     check(
       "the titlebar renders no vault chip",
@@ -1313,15 +1328,18 @@ async function main() {
       `aria-label ${JSON.stringify(expanded.vaultChip?.ariaLabel)} vs vault ${JSON.stringify(vaultName)}`,
     );
     check(
-      "the chip wears a highlighted accent fill",
+      "the chip wears the quiet surface fill, not the accent tint",
       isHighlighted(expanded.vaultChip?.background) &&
-        expanded.vaultChip?.background !== expanded.rail?.background,
-      `chip background ${expanded.vaultChip?.background} on rail ${expanded.rail?.background}`,
+        expanded.vaultChip?.background === expanded.theme?.bgSubtle &&
+        expanded.vaultChip?.background !== expanded.rail?.background &&
+        expanded.vaultChip?.background !== expanded.theme?.accent,
+      `chip background ${expanded.vaultChip?.background} vs --bg-subtle ${expanded.theme?.bgSubtle}, rail ${expanded.rail?.background}, --accent ${expanded.theme?.accent}`,
     );
     check(
-      "the chip's ink is the accent, not the rail's text ink",
-      expanded.vaultChip?.color === expanded.theme?.accent,
-      `chip ink ${expanded.vaultChip?.color} vs --accent ${expanded.theme?.accent}`,
+      "the chip's ink is the palette's mid ink, not the accent",
+      expanded.vaultChip?.color === expanded.theme?.muted &&
+        expanded.vaultChip?.color !== expanded.theme?.accent,
+      `chip ink ${expanded.vaultChip?.color} vs --muted ${expanded.theme?.muted}, --accent ${expanded.theme?.accent}`,
     );
     check(
       "the chip is a rounded chip, not the old square strip tab",
@@ -1952,11 +1970,12 @@ async function main() {
       `initials ${JSON.stringify(collapsed.vaultChip?.initials)} name ${JSON.stringify(collapsed.vaultChip?.name)}`,
     );
     check(
-      "the thin chip keeps its accent fill and rounded corners",
+      "the thin chip keeps its quiet fill and rounded corners",
       isHighlighted(collapsed.vaultChip?.background) &&
+        collapsed.vaultChip?.background === collapsed.theme?.bgSubtle &&
         collapsed.vaultChip?.background !== collapsed.rail?.background &&
         collapsed.vaultChip?.radius !== "0px",
-      `background ${collapsed.vaultChip?.background} on rail ${collapsed.rail?.background}, radius ${collapsed.vaultChip?.radius}`,
+      `background ${collapsed.vaultChip?.background} vs --bg-subtle ${collapsed.theme?.bgSubtle}, rail ${collapsed.rail?.background}, radius ${collapsed.vaultChip?.radius}`,
     );
     check(
       "the chip is the last control in the thin rail",

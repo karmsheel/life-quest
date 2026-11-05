@@ -3,9 +3,9 @@
    global.css so the two writers of this branch never touch the same sheet: the
    settings polish owns global.css, this file owns the switcher.
 
-   The chip itself is part of the rail's foot now, so its shape — the accent
-   tint, the half-width row, the initials the thin rail shows — belongs with the
-   rail in global.css. What is left here is the window alone. */
+   The chip itself is part of the rail's foot now, so its shape — the quiet
+   neutral fill, the half-width row, the initials the thin rail shows — belongs
+   with the rail in global.css. What is left here is the window alone. */
 
 /* Above the shell's panes and their sheets (50) and above the app's confirm
    dialog (60): the chip that raises this sits in the sidebar, and the popup has
