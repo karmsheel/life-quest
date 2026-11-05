@@ -231,6 +231,11 @@ export async function listPinBoard(
     const validPins: Pin[] = [];
     for (const pin of board.pins) {
       if (pin.kind === "system") {
+        // A system card the app no longer ships — a board file written by an
+        // older build can name one — leaves the board on read, exactly as a
+        // deleted view or page does below. Keeping it would draw a pin with no
+        // card in it, whose chrome floats over nothing.
+        if (!isSystemPinKind(pin.system)) continue;
         validPins.push(pin);
       } else if (pin.kind === "view") {
         // A view pin needs a live domain and an existing view file; a deleted

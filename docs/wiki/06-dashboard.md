@@ -3,8 +3,8 @@
 The Dashboard is the home pin board: a page of live cards for one lens. There is
 one board for **Overview** and one for each live domain. It is the surface you
 land on and the surface you arrange: goals, deadline pressure, the week, pending
-Decisions, recent activity, doctrine progress, saved database views and your own
-pages, all as cards you can move, resize, lock and hand to the companion.
+Decisions, recent activity, saved database views and your own pages, all as cards
+you can move, resize, lock and hand to the companion.
 
 The board is a control the operator can open and close, not a fixed layout. A new
 board starts with the built-in cards, and everything on it is meant to be
@@ -48,8 +48,8 @@ watch; the board does not grade you.
    and when every available card is already pinned.)
 3. The **Add pin** row opens. Press a built-in card name, a page title, or a saved
    view title to pin it. Built-in cards appear under their internal names —
-   `goal-progress`, `deadline`, `today-week`, `pending-decisions`, `recent-log`,
-   `doctrine-progress` — because they are app furniture, not records.
+   `goal-progress`, `deadline`, `today-week`, `pending-decisions`, `recent-log` —
+   because they are app furniture, not records.
 4. The card appears on the board. Press **Hide pin board** to close the row.
 
 ### Move a card
@@ -124,7 +124,7 @@ watch; the board does not grade you.
 | **Pin board** / **Hide pin board** | Opens the **Add pin** row; absent on a locked or fully-pinned board |
 | **Lock** / **Unlock** | Flips the board's page lock |
 | **Add pin** row | Built-in cards, page titles and saved views not yet on this board |
-| Cards | The pinned content: goals, deadline, today & this week, pending decisions, recent activity, doctrine progress, views, pages |
+| Cards | The pinned content: goals, deadline, today & this week, pending decisions, recent activity, views, pages |
 | Card context | Click a card to add or remove it as companion chat context, up to three; empty board space clears them all |
 | **Card actions** menu | **Edit card**, **Archive**, **Delete** (where applicable) |
 | Card borders in Edit mode | Width (right) and height (bottom) handles |
@@ -139,7 +139,6 @@ watch; the board does not grade you.
 | Today & this week (`today-week`) | Tasks scheduled for today and queued this week |
 | Pending decisions (`pending-decisions`) | Pending Decisions visible in this lens, linked to the inbox |
 | Recent activity (`recent-log`) | The newest Life log entries |
-| Doctrine (`doctrine-progress`) | How much of the lens's doctrine is filled and locked |
 
 A saved **view** card draws its blocks — a number, a table, a trend — from a
 domain database and re-runs when the vault changes. A **page** card shows a page's
@@ -180,7 +179,8 @@ the contract.
 - The context is live dock state, not a saved setting: it survives turns while you
   hold it, and nothing about it is written to the vault.
 - If a card's saved view or page is deleted from the vault, the card leaves every
-  board that showed it on the next read. You do not have to unpin it by hand.
+  board that showed it on the next read. You do not have to unpin it by hand. A
+  built-in card the app no longer ships leaves the board the same way.
 - The board keeps your place when cards reflow: a write that changes a card's
   height does not scroll you away from what you were reading.
 - A locked board is read-only *here*; the operator can still unlock it. Locking is

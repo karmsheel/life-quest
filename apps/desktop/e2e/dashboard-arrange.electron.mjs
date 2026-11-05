@@ -101,6 +101,19 @@ const SEED = [
 ];
 
 /**
+ * The pins a brand-new board seeds — the app's current built-in cards. The still
+ * this rig leaves behind is of THIS board, not of the fixture above: it is what
+ * the operator sees on a vault whose board has never been edited.
+ */
+const DEFAULT_PINS = [
+  { id: "sys:goal-progress", kind: "system", system: "goal-progress" },
+  { id: "sys:deadline", kind: "system", system: "deadline" },
+  { id: "sys:today-week", kind: "system", system: "today-week" },
+  { id: "sys:pending-decisions", kind: "system", system: "pending-decisions" },
+  { id: "sys:recent-log", kind: "system", system: "recent-log" },
+];
+
+/**
  * Everything the rig reads off the board in one pass: the cards in DOM order,
  * each card's chrome buttons with the icon each draws, the chrome's whole text
  * (which must hold no glyph), and the Add-pin heading's icon.
@@ -1603,6 +1616,18 @@ async function main() {
   const image = await win.webContents.capturePage();
   fs.mkdirSync(artifactsDir, { recursive: true });
   fs.writeFileSync(path.join(artifactsDir, "dashboard-arrange.png"), image.toPNG());
+
+  // The board a vault that has never been arranged opens on: the app's current
+  // built-in pins, drawn by the same page. This still is the artifact for "what a
+  // new Dashboard looks like", so an app that still ships a card the feature
+  // removed would show it here.
+  await renderBoard(win, DEFAULT_PINS, false);
+  await settleFrames(win);
+  const defaultImage = await win.webContents.capturePage();
+  fs.writeFileSync(
+    path.join(artifactsDir, "dashboard-arrange-default-board.png"),
+    defaultImage.toPNG(),
+  );
 
   const report = {
     pass: errors.length === 0,

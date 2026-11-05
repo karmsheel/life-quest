@@ -4257,33 +4257,6 @@ a {
   line-height: 1.45;
 }
 
-.home-dashboard__progress {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-width: 12rem;
-}
-
-.home-dashboard__progress-label {
-  font-size: 0.8rem;
-  white-space: nowrap;
-}
-
-.home-progress-bar {
-  flex: 1;
-  height: 0.35rem;
-  border-radius: var(--home-radius);
-  background: var(--bg-subtle);
-  border: 1px solid var(--border-soft);
-  overflow: hidden;
-}
-
-.home-progress-bar__fill {
-  height: 100%;
-  background: var(--accent);
-  transition: width 0.25s ease;
-}
-
 /* The board's tiles.
    `--home-tile-unit-rem` is the layout step a card's width is a whole number of,
    and it is written down exactly once: the tracks below are sized from it, and
@@ -4376,7 +4349,6 @@ a {
   font-weight: 600;
 }
 
-.home-doctrine-list,
 .home-mini-list,
 .home-activity-list {
   list-style: none;
@@ -4385,51 +4357,6 @@ a {
   display: flex;
   flex-direction: column;
   gap: 0;
-}
-
-.home-doctrine-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.6rem 0.95rem;
-  border: 0;
-  border-top: 1px solid var(--border-soft);
-  border-left: 2px solid transparent;
-  border-radius: 0;
-  background: transparent;
-}
-
-.home-doctrine-list > .home-doctrine-row:first-child {
-  border-top: 0;
-}
-
-.home-doctrine-row:hover {
-  border-left-color: var(--accent);
-  background: var(--bg-subtle);
-}
-
-.home-doctrine-row__main {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  text-decoration: none;
-  color: var(--fg);
-  flex: 1;
-  min-width: 0;
-}
-
-a.home-doctrine-row__main:hover .home-doctrine-row__label {
-  color: var(--accent);
-}
-
-.home-doctrine-row__label {
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-
-.home-doctrine-row__meta {
-  font-size: 0.75rem;
 }
 
 .home-mini-list__item {
@@ -4518,7 +4445,6 @@ a.home-mini-list__link:hover {
    taller than the content, so an untouched card is laid out exactly as before. */
 .home-pin > .view-card,
 .home-pin > .home-card,
-.home-pin > .home-doctrine-pin,
 .home-pin > .deadline-banner {
   flex: 1 1 auto;
 }
@@ -4911,8 +4837,7 @@ a.home-mini-list__link:hover {
    width, a title that ignored the corner row would be a title the measurement did
    not know about. */
 .home-pin:has(.home-pin__tools) .home-card__title,
-.home-pin:has(.home-pin__tools) .view-card__title,
-.home-pin:has(.home-pin__tools) .home-dashboard__progress {
+.home-pin:has(.home-pin__tools) .view-card__title {
   padding-right: 2.1rem;
 }
 
@@ -4922,13 +4847,6 @@ a.home-mini-list__link:hover {
   position: static;
   justify-content: flex-end;
   margin-bottom: 0.35rem;
-}
-
-.home-doctrine-pin {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-  min-width: 0;
 }
 
 .home-dashboard .doc-status-badge {
