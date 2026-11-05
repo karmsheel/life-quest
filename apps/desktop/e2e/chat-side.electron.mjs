@@ -94,6 +94,15 @@ const SAMPLE = `(() => {
   const paperBackground = getComputedStyle(paperProbe).backgroundColor;
   paperProbe.remove();
 
+  // The muted ink the bottom bar's actions rest in, resolved the same way as the
+  // fills above so the side switch is compared against the token the CSS uses
+  // rather than a hard-coded colour.
+  const mutedProbe = document.createElement("div");
+  mutedProbe.style.background = "var(--muted)";
+  document.body.appendChild(mutedProbe);
+  const mutedBackground = getComputedStyle(mutedProbe).backgroundColor;
+  mutedProbe.remove();
+
   const rail = document.querySelector(".nav-rail");
   const main = document.querySelector(".shell__main");
   const chat = document.querySelector(".chat-panel");
@@ -167,6 +176,7 @@ const SAMPLE = `(() => {
     vaultText: (vault?.querySelector(".nav-rail__vault-name")?.textContent || "").trim(),
     accentBackground,
     paperBackground,
+    mutedBackground,
     shell: shell
       ? {
           className: shell.className,
@@ -277,6 +287,8 @@ const SAMPLE = `(() => {
           label: sideSwitch.getAttribute("aria-label"),
           title: sideSwitch.getAttribute("title"),
           pressed: sideSwitch.getAttribute("aria-pressed"),
+          background: getComputedStyle(sideSwitch).backgroundColor,
+          color: getComputedStyle(sideSwitch).color,
           icon: iconClass(sideSwitch),
           box: box(sideSwitch)
         }
@@ -574,10 +586,20 @@ function checkControls(label, state, side) {
     state.sideSwitch?.label === expectedSwitchLabel,
     `switch label ${JSON.stringify(state.sideSwitch?.label)}`,
   );
+  // The switch is a move, not a toggle: it names the direction the next click
+  // takes the dock and must rest as bar chrome on either side. A highlighted
+  // switch would read as "active" for an operator whose dock simply lives on
+  // the leading edge, so no side may carry a pressed fill.
   check(
-    `${label}: the switch reads its own state`,
-    state.sideSwitch?.pressed === String(side === "left"),
+    `${label}: the switch carries no pressed state`,
+    state.sideSwitch?.pressed === null,
     `aria-pressed ${JSON.stringify(state.sideSwitch?.pressed)} with the dock on the ${side}`,
+  );
+  check(
+    `${label}: the switch rests neutral`,
+    state.sideSwitch?.background === "rgba(0, 0, 0, 0)" &&
+      state.sideSwitch?.color === state.mutedBackground,
+    `background ${JSON.stringify(state.sideSwitch?.background)} (want transparent), ink ${JSON.stringify(state.sideSwitch?.color)} vs muted ${JSON.stringify(state.mutedBackground)}`,
   );
 
   // The bar's order, read off the DOM rather than off the pixels: the new-chat
@@ -659,6 +681,21 @@ async function main() {
     const file = path.join(artifactsDir, name);
     fs.writeFileSync(file, image.toPNG());
     return file;
+  };
+
+  // The dock's bottom action bar, 1:1: the side switch lives here and nowhere
+  // else, so this crop is the picture the neutral-rest claim is about.
+  const barCrop = (state) => {
+    const bar = state.actions?.box;
+    if (!bar) return undefined;
+    const x = Math.max(0, bar.left);
+    const y = Math.max(0, bar.top);
+    return {
+      x,
+      y,
+      width: Math.min(bar.width, state.viewport.width - x),
+      height: Math.min(bar.height, state.viewport.height - y),
+    };
   };
 
   // Vite re-optimises dependencies the first time a new import appears and
@@ -753,12 +790,16 @@ async function main() {
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
     await new Promise((resolve) => setTimeout(resolve, 250));
     win.showInactive();
+    // The switch is checked for its resting look, not a hover: park the pointer
+    // in the window's leading corner before the first sample.
+    await parkPointer();
 
     at("shipped arrangement");
     const right = await settled();
     right.vaultName = vaultName;
     const { height: viewportHeight, width: viewportWidth } = right.viewport;
     const rightShot = await shot("chat-side-right.png");
+    const rightBarShot = await shot("chat-side-right-bar.png", barCrop(right));
     // A 1:1 crop of the shipped seam: the sheet's leading top corner, beside the
     // rail, on the arrangement every operator starts from.
     const rightSeamShot = await shot("chat-side-right-seam.png", {
@@ -782,6 +823,7 @@ async function main() {
     const left = await settled();
     left.vaultName = vaultName;
     const leftShot = await shot("chat-side-left.png");
+    const leftBarShot = await shot("chat-side-left-bar.png", barCrop(left));
     // The same seam, one column to the right and now between the dock and the
     // sheet: the arrangement's two visual claims — the one hairline and the
     // square corner above it — in a single crop.
@@ -1196,7 +1238,7 @@ async function main() {
       "collapsed swap: reopening returns the bar's switch",
       swappedOpenFromBar.launcher === null &&
         swappedOpenFromBar.sideSwitch?.found === true &&
-        swappedOpenFromBar.sideSwitch?.pressed === "false",
+        swappedOpenFromBar.sideSwitch?.pressed === null,
       `launcher ${JSON.stringify(swappedOpenFromBar.launcher)}, switch ${JSON.stringify(swappedOpenFromBar.sideSwitch)}`,
     );
     await click('[data-testid="chat-side-switch"]');
@@ -1291,8 +1333,10 @@ async function main() {
       barReopened,
       screenshots: [
         rightShot,
+        rightBarShot,
         rightSeamShot,
         leftShot,
+        leftBarShot,
         leftSeamShot,
         collapsedShot,
         hoverShot,

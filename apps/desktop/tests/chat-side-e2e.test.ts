@@ -48,6 +48,7 @@ type Arrangement = {
   vaultName?: string;
   accentBackground: string;
   paperBackground: string;
+  mutedBackground: string;
   shell: { className: string; gridTemplateColumns: string; box: Box } | null;
   rail: { box: Box; display: string; background: string } | null;
   main: {
@@ -106,6 +107,8 @@ type Arrangement = {
     label?: string | null;
     title?: string | null;
     pressed?: string | null;
+    background?: string;
+    color?: string;
     icon?: string | null;
     box?: Box;
   };
@@ -355,10 +358,23 @@ describe("chat dock side switch", () => {
       "Move chat to the left of the page",
       `the switch names the wrong move: ${right.sideSwitch.label}`,
     );
+    // The switch is a move, not a toggle: no side may give it a pressed state,
+    // because a dock that lives on the leading edge is an arrangement, not a
+    // switch the operator left on.
     assert.equal(
       right.sideSwitch.pressed,
-      "false",
-      "the switch reports a swapped shell while the dock is on the right",
+      null,
+      `the switch wears a pressed state on the trailing side (${right.sideSwitch.pressed})`,
+    );
+    assert.equal(
+      right.sideSwitch.background,
+      "rgba(0, 0, 0, 0)",
+      `the switch wears a fill at rest on the trailing side (${right.sideSwitch.background})`,
+    );
+    assert.equal(
+      right.sideSwitch.color,
+      right.mutedBackground,
+      `the switch's ink is not the bar's muted rest on the trailing side (${right.sideSwitch.color} vs ${right.mutedBackground})`,
     );
     // The bar's own order, and the slot that left with the chat list.
     assert.deepEqual(
@@ -532,10 +548,22 @@ describe("chat dock side switch", () => {
       "Move chat to the right of the page",
       `the switch names the wrong move after the swap: ${left.sideSwitch.label}`,
     );
+    // The same neutral rest after the swap: the operator swapped to their side,
+    // not into a mode the control announces as on.
     assert.equal(
       left.sideSwitch.pressed,
-      "true",
-      "the switch does not report the swapped shell",
+      null,
+      `the switch wears a pressed state on the leading side (${left.sideSwitch.pressed})`,
+    );
+    assert.equal(
+      left.sideSwitch.background,
+      "rgba(0, 0, 0, 0)",
+      `the switch wears a fill at rest on the leading side (${left.sideSwitch.background})`,
+    );
+    assert.equal(
+      left.sideSwitch.color,
+      left.mutedBackground,
+      `the switch's ink is not the bar's muted rest on the leading side (${left.sideSwitch.color} vs ${left.mutedBackground})`,
     );
     assert.equal(
       left.collapseAction?.icon,

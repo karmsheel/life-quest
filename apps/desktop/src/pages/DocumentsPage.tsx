@@ -19,7 +19,7 @@ import { containMarkdownLink } from "@/lib/markdown-links";
 import { createWikiResolver } from "@/lib/wiki-links";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
-import { LockSwitch } from "@/components/ui/LockSwitch";
+import { PageMenu } from "@/components/ui/PageMenu";
 import { DocumentLockBadge } from "@/components/documents/DocumentLockBadge";
 import { ProposeChangeDialog } from "@/components/documents/ProposeChangeDialog";
 
@@ -327,21 +327,46 @@ export default function DocumentsPage() {
             Overview only.
           </p>
         </div>
-        {/* The open note's lock sits in the page's corner. This page has no
-            document heading — the note's title is a field in the composer — so
-            the state badge stays beside the switch rather than beside
-            "Documents", where it would mislabel the page. It is absent while
-            the composer is empty: there is no note to lock yet. */}
+        {/* The open note's actions, behind one three-dot menu in the page's
+            corner. This page has no document heading — the note's title is a
+            field in the composer — so the state badge stays beside the menu
+            rather than beside "Documents", where it would mislabel the page. The
+            corner is absent while the composer is empty: there is no note to
+            lock, propose on, or delete yet. The lock leads the menu; the note's
+            own acts (Propose change while locked, then Delete) follow it, so the
+            composer below is the note and not a row of commands about it. */}
         {editingId ? (
           <div className="page-corner" data-testid="documents-page-corner">
             <DocumentLockBadge locked={editingLocked} />
-            <LockSwitch
-              locked={editingLocked}
-              busy={busy}
-              onToggle={() => void (editingLocked ? onUnlock() : onLock())}
-              label={editingLocked ? "Unlock this note" : "Lock this note"}
-              testId="note-lock-toggle"
-              className="page-corner__action"
+            <PageMenu
+              label="Note actions"
+              testId="note-page-menu"
+              lock={{
+                testId: "note-lock-toggle",
+                locked: editingLocked,
+                busy,
+                label: editingLocked ? "Unlock this note" : "Lock this note",
+                onToggle: () => void (editingLocked ? onUnlock() : onLock()),
+              }}
+              actions={[
+                ...(editingLocked
+                  ? [
+                      {
+                        testId: "note-propose",
+                        label: "Propose change",
+                        disabled: busy,
+                        onSelect: () => void onProposeOpen(),
+                      },
+                    ]
+                  : []),
+                {
+                  testId: "note-delete",
+                  label: "Delete note",
+                  disabled: busy,
+                  danger: true,
+                  onSelect: () => void onDelete(),
+                },
+              ]}
             />
           </div>
         ) : null}
@@ -413,28 +438,10 @@ export default function DocumentsPage() {
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                className="btn btn-danger"
-                onClick={() => void onDelete()}
-                disabled={busy}
-              >
-                Delete
-              </button>
               {editingLocked ? (
-                <>
-                  <span className="muted library-lock-hint">
-                    Unlock to edit, or propose a change.
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => void onProposeOpen()}
-                    disabled={busy}
-                  >
-                    Propose change
-                  </button>
-                </>
+                <span className="muted library-lock-hint">
+                  Unlock to edit, or propose a change.
+                </span>
               ) : null}
             </>
           ) : null}

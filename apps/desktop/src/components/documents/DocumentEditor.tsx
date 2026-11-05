@@ -15,7 +15,7 @@ import {
 import { DOCUMENT_KIND_COACHING } from "@/lib/doctrine-copy";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
-import { LockSwitch } from "@/components/ui/LockSwitch";
+import { PageMenu } from "@/components/ui/PageMenu";
 import { DocumentLockBadge } from "./DocumentLockBadge";
 import { LiveMarkdownEditor } from "./LiveMarkdownEditor";
 import { ProposeChangeDialog } from "./ProposeChangeDialog";
@@ -277,17 +277,35 @@ export function DocumentEditor({
             </p>
           ) : null}
         </div>
-        {/* The lock is a setting of this document, so the switch belongs with
-            the document's name rather than at the bottom of the page beside
-            Save; the badge beside the name says what the switch is set to. */}
+        {/* The document's own actions, behind one three-dot menu at the title's
+            top-right edge. The lock leads — it is the setting every lockable
+            page shares — and the badge beside the name says what it is set to.
+            Propose change is the locked document's action, so it follows the
+            lock in the same menu rather than sitting under the document as a
+            second, primary-looking button. */}
         <div className="page-corner" data-testid="document-page-corner">
-          <LockSwitch
-            locked={locked}
-            busy={lockPending}
-            onToggle={() => void onLock(!locked)}
-            label={locked ? "Unlock this document" : "Lock this document"}
-            testId="document-lock-toggle"
-            className="page-corner__action"
+          <PageMenu
+            label="Document actions"
+            testId="document-page-menu"
+            lock={{
+              testId: "document-lock-toggle",
+              locked,
+              busy: lockPending,
+              label: locked ? "Unlock this document" : "Lock this document",
+              onToggle: () => void onLock(!locked),
+            }}
+            actions={
+              locked
+                ? [
+                    {
+                      testId: "document-propose",
+                      label: "Propose change",
+                      disabled: busy,
+                      onSelect: () => setProposeOpen(true),
+                    },
+                  ]
+                : []
+            }
           />
         </div>
       </header>
@@ -325,8 +343,12 @@ export function DocumentEditor({
         </p>
       ) : null}
 
-      <div className="doc-editor__actions">
-        {!locked ? (
+      {/* An unlocked document keeps Save as the page's own primary act. A
+          locked one has no writing surface to save; its action is Propose
+          change, which lives in the menu above so the page does not wear a
+          primary button that cannot commit anything. */}
+      {!locked ? (
+        <div className="doc-editor__actions">
           <button
             type="button"
             className="btn btn-primary"
@@ -335,17 +357,8 @@ export function DocumentEditor({
           >
             {saving ? "Saving…" : "Save"}
           </button>
-        ) : (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setProposeOpen(true)}
-            disabled={busy}
-          >
-            Propose change
-          </button>
-        )}
-      </div>
+        </div>
+      ) : null}
 
       <ProposeChangeDialog
         open={proposeOpen}

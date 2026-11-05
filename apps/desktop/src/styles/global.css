@@ -2261,10 +2261,12 @@ a {
 }
 
 /* —— A page's corner: the controls in a row ——
-   Every lockable page puts its lock switch at the title's own top-right edge,
-   with the Dashboard's pin board menu beside it. Both are one height so the
-   pair reads as one row of controls rather than two objects that happen to
-   share a corner. */
+   Every lockable page keeps one control at the title's own top-right edge: the
+   three-dot menu that holds the page's actions, with the lock as its first item.
+   The corner stays a row so a page can set its state badge beside the menu (the
+   Documents library does: its note has no heading of its own), and both wear one
+   height so they read as one row of controls rather than two objects that happen
+   to share a corner. */
 .page-corner {
   display: flex;
   flex-direction: row;
@@ -2280,90 +2282,115 @@ a {
   height: 2.25rem;
 }
 
-/* The pin board's menu is the page's only "add" path, so it is the one control
-   in the corner that wears the accent rather than the neutral border. It steps
-   off the page on hover with a shadow tinted by its own colour. */
-.page-corner__pinboard.btn {
+/* —— Page menu ——
+   The trigger is the ghost button primitive squared to the corner's height: an
+   icon well rather than a labelled pill, because the menu is a place actions
+   live and not an action of its own. The popover hangs under it, right-aligned
+   to the corner so its edge agrees with the page's, and floats over the content
+   like the card and settings menus do. */
+.page-menu {
+  position: relative;
+  display: flex;
+}
+
+.page-menu__trigger.btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  padding-block: 0;
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
-  background: color-mix(in srgb, var(--accent) 10%, var(--bg-panel));
-  color: var(--accent);
-  box-shadow: var(--shadow-xs);
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    border-color var(--dur-quick) var(--ease-out),
-    color var(--dur-quick) var(--ease-out),
-    box-shadow var(--dur-quick) var(--ease-out),
-    transform var(--dur-quick) var(--ease-out);
-}
-
-.page-corner__pinboard.btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 18%, var(--bg-panel));
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  box-shadow:
-    0 0.5rem 1.25rem color-mix(in srgb, var(--accent) 26%, transparent),
-    0 0.125rem 0.35rem color-mix(in srgb, var(--accent) 18%, transparent);
-  transform: translateY(-1px);
-}
-
-.page-corner__pinboard.btn:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow: var(--shadow-xs);
-}
-
-/* —— Lock switch ——
-   The page lock as one control: a caption and a track. At rest the thumb sits
-   left, the track is the page's own muted step and the caption is quiet; locked,
-   the thumb crosses, and the track and caption take the amber that means "held".
-   The badge beside the page's name says the same state in words, which is why
-   the caption can stay "Lock" in both positions. */
-.lock-switch.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.55rem;
-  padding: 0.3rem 0.42rem 0.3rem 0.62rem;
-  border-color: var(--border);
-  background: var(--bg-panel);
+  width: 2.25rem;
+  padding: 0;
   color: var(--text-muted);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  line-height: 1;
-  text-transform: uppercase;
-  box-shadow: var(--shadow-xs);
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    border-color var(--dur-quick) var(--ease-out),
-    color var(--dur-quick) var(--ease-out),
-    box-shadow var(--dur-quick) var(--ease-out);
 }
 
-.lock-switch.btn:hover:not(:disabled) {
-  border-color: var(--border-strong);
+.page-menu__trigger.btn:hover:not(:disabled),
+.page-menu__trigger.btn[aria-expanded="true"] {
   color: var(--fg);
-  box-shadow: var(--shadow-sm);
+  background: var(--selected-soft);
+  border-color: var(--border-strong);
 }
 
-.lock-switch.btn:focus-visible {
+.page-menu__trigger.btn:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
-.lock-switch.btn:disabled {
+.page-menu__popover {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 12rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-md);
+}
+
+/* One item's shape: an icon (when it has one), the words, and — for the lock —
+   its track. The label takes the free space so a switch sits at the far edge. */
+.page-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.page-menu__item:hover:not(:disabled) {
+  background: var(--selected-soft);
+}
+
+.page-menu__item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.page-menu__item:disabled {
   opacity: 0.55;
   cursor: progress;
 }
 
-.lock-switch__caption {
-  padding-left: 0.06rem;
+.page-menu__item svg {
+  flex: none;
 }
 
-.lock-switch__track {
+.page-menu__item-label {
+  flex: 1 1 auto;
+}
+
+/* Delete is the one item a note cannot be brought back from through this page, so
+   it wears the destructive ink while every other action stays plain. */
+.page-menu__item--danger {
+  color: var(--danger);
+}
+
+/* The lock row: the words left, the switch's track right. The caption stays
+   "Lock" in both positions — the track's position and the badge beside the
+   page's name carry the state, and a caption that changed with it would say the
+   state twice. Locked, the track and the caption take the amber that means
+   "held". */
+.page-menu__lock {
+  justify-content: space-between;
+}
+
+.page-menu__lock[data-locked="true"] {
+  color: var(--amber);
+}
+
+.page-menu__track {
   position: relative;
   display: block;
   width: 2.05rem;
@@ -2377,7 +2404,7 @@ a {
     border-color var(--dur-quick) var(--ease-out);
 }
 
-.lock-switch__thumb {
+.page-menu__thumb {
   position: absolute;
   top: 50%;
   left: 0.14rem;
@@ -2392,31 +2419,18 @@ a {
     background var(--dur-quick) var(--ease-out);
 }
 
-.lock-switch--on.btn {
-  color: var(--amber);
-  border-color: color-mix(in srgb, var(--amber) 38%, var(--border));
-  background: color-mix(in srgb, var(--amber-bg) 80%, var(--bg-panel));
-}
-
-.lock-switch--on.btn:hover:not(:disabled) {
-  color: var(--amber);
-  border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
-  background: var(--amber-bg);
-}
-
-.lock-switch--on .lock-switch__track {
+.page-menu__lock[data-locked="true"] .page-menu__track {
   border-color: color-mix(in srgb, var(--amber) 62%, var(--border));
   background: color-mix(in srgb, var(--amber) 44%, var(--bg-panel));
 }
 
-.lock-switch--on .lock-switch__thumb {
+.page-menu__lock[data-locked="true"] .page-menu__thumb {
   transform: translate(0.92rem, -50%);
   background: var(--background);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lock-switch__thumb,
-  .page-corner__pinboard.btn {
+  .page-menu__thumb {
     transition: none;
   }
 }
@@ -2803,7 +2817,14 @@ a {
   flex-wrap: wrap;
 }
 
+/* The intro is a flex item with a basis, so the page's corner shares its line:
+   the header is 48rem wide at most, and an auto-sized 40rem intro plus the
+   corner overflowed it, wrapping the menu under the title. A 18rem basis (the
+   same one .doc-editor__intro uses) lets the intro grow into the free space
+   while the corner keeps the title's right edge; at a genuinely narrow window
+   the header still wraps rather than squashing either one. */
 .documents-page__intro {
+  flex: 1 1 18rem;
   min-width: 0;
   max-width: 40rem;
 }
@@ -4781,7 +4802,7 @@ a.home-mini-list__link:hover {
 
 .home-dashboard .doc-status-badge {
   /* The badge keeps the pill the page's controls wear: the title and the
-     top-right row are read together, so a square badge beside a round switch
+     top-right menu are read together, so a square badge beside a round trigger
      would read as two vocabularies. */
   border-radius: var(--radius-pill);
 }
@@ -7419,6 +7440,11 @@ button.chat-panel__activity-line:hover {
   margin-left: auto;
 }
 
+/* The selected surface, which in this bar is the chain or the shortcuts
+   reference. The side switch is a move rather than a state and carries no
+   `aria-pressed` at all: the dock living on the leading edge is not a mode the
+   operator switched on, so a pressed fill there would read as "active" for the
+   rest of the session. */
 .chat-panel__action[aria-pressed="true"] {
   background: var(--selected-soft);
   color: var(--fg);
