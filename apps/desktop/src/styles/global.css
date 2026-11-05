@@ -4173,6 +4173,15 @@ a {
   gap: 0.15rem;
 }
 
+/* The banner's first row: the label and the built-in marker beside it, on one
+   line. The banner is a built-in card with a different shape, and this is where
+   its heading sits. */
+.deadline-banner__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .deadline-banner__label {
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -4558,6 +4567,33 @@ a.home-mini-list__link:hover {
   position: relative;
   display: flex;
   gap: 0.2rem;
+}
+
+/* The built-in marker: a small blocks glyph in the card's first row, after the
+   heading, saying this card shipped with the app rather than being a view or
+   page the operator made. A card the operator created wears none, so the
+   marker's absence is the other half of the fact.
+
+   It is INFORMATION, not editing chrome, which is why it lives in the heading
+   rather than in the tools row: a locked board hides the menu and keeps this.
+   It is not a control — `pointer-events: none` makes a press here a press on the
+   card, so clicking the marker asks the companion about the card like the rest
+   of the body. The heading is a flex row, so the marker is one more item in it;
+   it stays on the baseline of the words it follows and never widens the card by
+   more than its glyph. */
+.home-pin__builtin {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--muted-foreground);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.home-pin__builtin svg {
+  width: 0.8rem;
+  height: 0.8rem;
+  display: block;
 }
 
 /* The card's context toggle, for the keyboard and the screen reader.

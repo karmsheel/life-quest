@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useVault } from "@/state/VaultProvider";
+import { BuiltInBadge } from "@/components/home/BuiltInBadge";
 
 export function TodayWeekCard() {
   const { snapshot } = useVault();
@@ -16,7 +17,7 @@ export function TodayWeekCard() {
 
   return (
     <section className="home-card home-card--wide">
-      <h2 className="home-card__title">Today &amp; this week</h2>
+      <h2 className="home-card__title">Today &amp; this week<BuiltInBadge /></h2>
       <div className="home-task-cols">
         <div>
           <h3 className="home-task-cols__head">Today</h3>

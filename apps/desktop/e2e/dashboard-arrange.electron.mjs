@@ -32,7 +32,15 @@
  *                        gone: removal lives in the 3-dot menu now, as Archive
  *                        and Delete, and `dashboard-card-context` claims what
  *                        the menu holds.
- *  3. `card-shell`     — every pin draws exactly ONE card frame. A view pin is a
+ *  3. `builtin-badge`  — the cards that came with the app say so: each built-in
+ *                        card wears a `lucide-blocks` marker in its first row,
+ *                        after the heading's words, and a view or page the
+ *                        operator created wears none. The marker is a labelled
+ *                        `role="img"`, not a button, it is pointer-transparent,
+ *                        and it is in the heading's row rather than absolutely
+ *                        positioned in the corner. A fixture card on the wrong
+ *                        side of the line fails by id.
+ *  4. `card-shell`     — every pin draws exactly ONE card frame. A view pin is a
  *                        `ViewCard`, which renders `section.view-card` itself, and
  *                        `HomePage`'s span wrapper used to wear that same class —
  *                        so the pin nested two shells and the operator got a frame
@@ -138,6 +146,48 @@ const SAMPLE = `(() => {
         svgs: b.querySelectorAll("svg").length,
         icon: [...((b.querySelector("svg") ? b.querySelector("svg").classList : []) || [])].join(" "),
       })),
+      // The built-in marker, if this card wears one: what it is, what it says,
+      // and where it sits — in the card's first row, after the heading's words.
+      builtinAnywhere: Boolean(card.querySelector(".home-pin__builtin")),
+      builtin: (() => {
+        const badge = card.querySelector(
+          ":scope > .home-card > .home-card__title > .home-pin__builtin",
+        );
+        if (!badge) return null;
+        const svg = badge.querySelector("svg");
+        const heading = badge.parentElement;
+        const badgeBox = badge.getBoundingClientRect();
+        const headingBox = heading.getBoundingClientRect();
+        const firstChild = heading.firstChild;
+        return {
+          tag: badge.tagName,
+          role: badge.getAttribute("role"),
+          label: badge.getAttribute("aria-label"),
+          title: badge.getAttribute("title"),
+          svgs: svg ? 1 : 0,
+          icon: [...((svg ? svg.classList : []) || [])].join(" "),
+          buttons: badge.querySelectorAll("button").length,
+          pointerEvents: getComputedStyle(badge).pointerEvents,
+          position: getComputedStyle(badge).position,
+          placement: {
+            inHeading: heading.classList.contains("home-card__title"),
+            // The heading's words come first in its own text node; the marker is
+            // the next thing in the same row, not the heading's other edge.
+            wordsFirst: Boolean(
+              firstChild &&
+                firstChild.nodeType === 3 &&
+                (firstChild.textContent || "").trim(),
+            ),
+            sameRow:
+              Math.abs(
+                (badgeBox.top + badgeBox.bottom) / 2 -
+                  (headingBox.top + headingBox.bottom) / 2,
+              ) <= 2,
+            afterHeadingStart: badgeBox.left > headingBox.left,
+            insideHeading: badgeBox.right <= headingBox.right + 0.5,
+          },
+        };
+      })(),
     })),
     chromeText: [...document.querySelectorAll(".home-pin__chrome")].map((el) => el.textContent || "").join(""),
     lifted: document.querySelectorAll(".home-pin.is-lifted").length,
@@ -658,6 +708,67 @@ function checkChromeIdentity(sample) {
 }
 
 /**
+ * Which cards came with the app.
+ *
+ * The Dashboard's cards are two kinds, and the operator can see which is which:
+ * a built-in card (goals, deadline, today & this week, pending decisions, recent
+ * activity) is app furniture with no record behind it and no Delete in its menu,
+ * while a view or page card is something the operator made. The built-in cards
+ * wear a blocks marker in their first row, after the heading's words; the
+ * operator's cards wear none.
+ *
+ * The claim is made from the rendered board rather than the pin list, and it is
+ * exact in both directions: every system pin must carry the marker and every
+ * view/page pin must not, so a marker that leaked onto the operator's own cards
+ * fails the same way a missing one does. The marker must also BE a marker — a
+ * labelled image, not a control — and it must sit where the request put it: in
+ * the heading element, in the same row as the heading, after the words, and not
+ * absolutely positioned in the card's corner where it used to hang.
+ */
+function checkBuiltinBadge(sample) {
+  const problems = [];
+  const systemPins = new Set(
+    SEED.filter((pin) => pin.kind === "system").map((pin) => pin.id),
+  );
+  for (const card of sample.cards) {
+    const wantsMarker = systemPins.has(card.id);
+    if (!wantsMarker && card.builtinAnywhere) {
+      problems.push(`${card.id} is not a built-in card but wears the marker`);
+      continue;
+    }
+    if (wantsMarker && card.builtin === null) {
+      problems.push(`${card.id} is a built-in card but wears no marker in its heading`);
+      continue;
+    }
+    if (!card.builtin) continue;
+    const where = `${card.id}'s marker`;
+    if (card.builtin.tag !== "SPAN") problems.push(`${where} is a ${card.builtin.tag}, expected a span`);
+    if (card.builtin.role !== "img") problems.push(`${where} has role ${JSON.stringify(card.builtin.role)}, expected "img"`);
+    if (card.builtin.label !== "Built-in card") {
+      problems.push(`${where} is named ${JSON.stringify(card.builtin.label)}, expected "Built-in card"`);
+    }
+    if (!card.builtin.title) problems.push(`${where} has no title`);
+    if (card.builtin.buttons !== 0) problems.push(`${where} holds ${card.builtin.buttons} button(s), so it became a control`);
+    if (card.builtin.svgs !== 1 || !card.builtin.icon.includes("lucide-blocks")) {
+      problems.push(`${where} draws ${card.builtin.svgs} icon(s) (${JSON.stringify(card.builtin.icon)}), expected lucide-blocks`);
+    }
+    if (card.builtin.pointerEvents !== "none") {
+      problems.push(`${where} takes presses of its own (pointer-events: ${card.builtin.pointerEvents})`);
+    }
+    if (card.builtin.position === "absolute") {
+      problems.push(`${where} is absolutely positioned — it belongs in the heading row, not the corner`);
+    }
+    const placement = card.builtin.placement;
+    if (!placement.inHeading) problems.push(`${where} is not inside the card's heading`);
+    if (!placement.wordsFirst) problems.push(`${where} does not follow the heading's words`);
+    if (!placement.sameRow) problems.push(`${where} is not on the heading's row`);
+    if (!placement.afterHeadingStart) problems.push(`${where} starts before the heading does`);
+    if (!placement.insideHeading) problems.push(`${where} runs past the heading's right edge`);
+  }
+  return check("builtin-badge", problems.length === 0, problems.join("; "));
+}
+
+/**
  * The activation claims: what lifts a card, and — just as important — what does
  * not. A hold that fires on any press would break every link on the board, so
  * each of these is a claim about restraint as much as about the lift.
@@ -800,7 +911,11 @@ async function checkActivation(win) {
   mouse(win, "mouseUp", lockedPoint.x, lockedPoint.y);
   await sleep(80);
   const lockedChrome = await chromeCount(win);
+  const lockedBuiltin = await win.webContents.executeJavaScript(
+    `document.querySelectorAll(".home-dashboard__grid > .home-pin[data-pin-id] .home-pin__builtin").length`,
+  );
   const lockedWrites = (await pinWrites(win)).length;
+  const systemPinCount = SEED.filter((pin) => pin.kind === "system").length;
   check(
     "locked-is-inert",
     lockedLifted.length === 0 &&
@@ -808,8 +923,13 @@ async function checkActivation(win) {
       lockedWrites === 0 &&
       lockedTabStop !== null &&
       lockedTabStop.tabIndex < 0 &&
-      lockedTabStop.focused === false,
-    `a locked board drew ${lockedChrome} chrome bar(s), lifted ${JSON.stringify(lockedLifted)}, ` +
+      lockedTabStop.focused === false &&
+      // The built-in marker is information, not editing chrome: the lock takes
+      // the menu away and keeps the marker, so a locked board still says which
+      // cards are the app's own.
+      lockedBuiltin === systemPinCount,
+    `a locked board drew ${lockedChrome} chrome bar(s) and ${lockedBuiltin} built-in marker(s) ` +
+      `(expected ${systemPinCount}), lifted ${JSON.stringify(lockedLifted)}, ` +
       `wrote ${lockedWrites} time(s), and its card was ${JSON.stringify(lockedTabStop)}`,
   );
 
@@ -1585,6 +1705,7 @@ async function main() {
 
   const sample = await win.webContents.executeJavaScript(SAMPLE);
   checkChromeIdentity(sample);
+  checkBuiltinBadge(sample);
   // The cards' own frames, read off the same fresh board: a pin that drew its
   // shell twice is a claim about the render, so it is measured here rather than
   // inferred from the markup.

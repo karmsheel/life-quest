@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { recordVisible } from "@lifequest/vault-core/pure";
 import type { LifeEvent } from "@lifequest/vault-core";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { BuiltInBadge } from "@/components/home/BuiltInBadge";
 
 function formatWhen(iso: string): string {
   try {
@@ -28,7 +29,7 @@ export function RecentLogCard({ events }: { events: LifeEvent[] }) {
 
   return (
     <section className="home-card home-card--wide">
-      <h2 className="home-card__title">Recent activity</h2>
+      <h2 className="home-card__title">Recent activity<BuiltInBadge /></h2>
       {scoped.length === 0 ? (
         <p className="muted home-card__empty">No activity yet.</p>
       ) : (

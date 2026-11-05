@@ -127,6 +127,7 @@ watch; the board does not grade you.
 | Cards | The pinned content: goals, deadline, today & this week, pending decisions, recent activity, views, pages |
 | Card context | Click a card to add or remove it as companion chat context, up to three; empty board space clears them all |
 | **Card actions** menu | **Edit card**, **Archive**, **Delete** (where applicable) |
+| **Built-in** marker | A small blocks icon in the card's first row, next to its heading, on the cards the app ships; a view or page you created yourself has none |
 | Card borders in Edit mode | Width (right) and height (bottom) handles |
 | **Finance** install card | Shown on Overview and the Financial board when the kit is not installed yet |
 
@@ -142,7 +143,9 @@ watch; the board does not grade you.
 
 A saved **view** card draws its blocks — a number, a table, a trend — from a
 domain database and re-runs when the vault changes. A **page** card shows a page's
-title and domain and opens it.
+title and domain and opens it. The built-in cards wear a small blocks marker in
+their heading row, so you can tell the app's own furniture from a card you
+created; a view or page card has no marker and its menu offers **Delete**.
 
 ## Rules and behaviour
 
@@ -186,6 +189,9 @@ the contract.
 - A locked board is read-only *here*; the operator can still unlock it. Locking is
   not encryption and not a permission system — it is a statement that this board
   is finished for now.
+- The blocks marker on a built-in card is information, not chrome: a locked board
+  keeps it while the card menu goes away, so you can still tell the app's own
+  cards from the ones you created.
 - The lens is the filter, not the wing. Switching to another wing and back returns
   you to the same board.
 

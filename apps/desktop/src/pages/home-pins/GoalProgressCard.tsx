@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { BuiltInBadge } from "@/components/home/BuiltInBadge";
 
 export function GoalProgressCard() {
   const { snapshot, refresh } = useVault();
@@ -69,6 +70,7 @@ export function GoalProgressCard() {
     <section className="home-card home-card--wide">
       <h2 className="home-card__title">
         Goals
+        <BuiltInBadge />
         {openGoals.length > 0 ? (
           <span className="home-card__count">{openGoals.length}</span>
         ) : null}

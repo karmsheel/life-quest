@@ -18,6 +18,7 @@ const REPORT = path.join(desktopRoot, "e2e/artifacts/dashboard-arrange.json");
 const SCENARIOS = [
   "skin",
   "chrome-identity",
+  "builtin-badge",
   "card-shell",
   "short-press-is-not-a-drag",
   "movement-cancels-the-hold",
