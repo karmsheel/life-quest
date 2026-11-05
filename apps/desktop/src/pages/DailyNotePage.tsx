@@ -439,11 +439,22 @@ export default function DailyNotePage() {
           setError(created.error);
           return;
         }
-        chatDock.requestSession(
-          created.value.id,
-          renderAutomationPrompt(automation.prompt, { date, dateLabel: label }),
-          automationContextFor(automation, { date, dateLabel: label, body }),
-        );
+        chatDock.requestSession({
+          id: created.value.id,
+          kickoff: renderAutomationPrompt(automation.prompt, {
+            date,
+            dateLabel: label,
+          }),
+          automationContext: automationContextFor(automation, {
+            date,
+            dateLabel: label,
+            body,
+          }),
+          // The row Hermes just made: the dock names the new chat's tab and
+          // lists it in Chats from its first paint, rather than waiting for the
+          // next session-list read and showing "Chat" until then.
+          session: created.value,
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {

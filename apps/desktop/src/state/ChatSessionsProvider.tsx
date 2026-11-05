@@ -235,8 +235,15 @@ type ChatSessionsContextValue = {
   loadSessions: () => Promise<HermesSession[] | null>;
   /** Navigate the active tab to a chat, the way a link navigates a browser tab. */
   openChat: (id: string) => Promise<void>;
-  /** Give a chat a tab of its own, keeping the one in front. */
-  openChatInNewTab: (id: string) => Promise<void>;
+  /**
+   * Give a chat a tab of its own, keeping the one in front.
+   *
+   * `session` is the chat's own row for a chat the caller has just created. The
+   * store lists it under that name from the first paint, because the gateway's
+   * list has not been re-read yet — without it the new chat's tab would be a
+   * bare "Chat" and its row would be missing from the sidebar.
+   */
+  openChatInNewTab: (id: string, session?: HermesSession) => Promise<void>;
   resumeLast: () => Promise<void>;
   newChat: () => Promise<string | null>;
   closeTab: (id: string) => void;
@@ -530,10 +537,22 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     [loadMessages, runs],
   );
 
-  /** Give one chat a tab of its own, without disturbing the one in front. */
+  /**
+   * Give one chat a tab of its own, without disturbing the one in front.
+   *
+   * A caller that has just created the chat hands its row along: the row is
+   * adopted into the list before the strip draws, so the tab wears the chat's
+   * own name and the sidebar carries it at once. Re-reading the gateway's list
+   * instead would leave both blank for as long as that round trip takes.
+   */
   const openChatInNewTab = useCallback(
-    async (id: string) => {
+    async (id: string, session?: HermesSession) => {
       closedTabs.current.delete(id);
+      if (session) {
+        setSessions((prev) =>
+          prev.some((s) => s.id === id) ? prev : [session, ...prev],
+        );
+      }
       setOpenTabs((prev) => (prev.includes(id) ? prev : [...prev, id]));
       setActiveId(id);
       setSurface("thread");

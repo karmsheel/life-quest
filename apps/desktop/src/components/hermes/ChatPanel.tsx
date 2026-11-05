@@ -153,6 +153,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const {
     requestedSessionId,
     requestedKickoff,
+    requestedSession,
     requestedAutomationContext,
     clearRequestedSession,
     contextCard,
@@ -733,9 +734,16 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
   /**
    * An automation, a review or a saved question hands the dock a chat outside
-   * the panel's own navigation. The request is cleared only after the kickoff,
-   * so the landing pass cannot replace the prompt bubble with a transcript the
-   * gateway has not written yet.
+   * the panel's own navigation.
+   *
+   * The chat gets a tab of its own, beside the conversation on screen, rather
+   * than taking that tab over: the page asked the dock to start a conversation,
+   * and the one the operator was reading is not the price of it. A chat the page
+   * has just created also hands its own row along, so the tab and the sidebar
+   * carry its name from the first paint instead of showing a bare "Chat".
+   *
+   * The request is cleared only after the kickoff, so the landing pass cannot
+   * replace the prompt bubble with a transcript the gateway has not written yet.
    */
   useEffect(() => {
     if (!requestedSessionId) return;
@@ -744,7 +752,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     const kickoff = requestedKickoff;
     (async () => {
       onOpenChange(true);
-      await chatRef.current.openChat(targetId);
+      await chatRef.current.openChatInNewTab(targetId, requestedSession ?? undefined);
       if (cancelled) return;
       // Bind the automation's page material before the first turn is sent, so
       // that turn carries the same context every later turn in the chat will.
