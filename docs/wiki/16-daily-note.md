@@ -47,7 +47,8 @@ so a second note for a day cannot exist.
    opens, the button reads **Opening chat…**.
 7. Choose the **Focus mode** icon beside **Analyze note** to write the day on its own. The
    page blurs behind a narrow sheet with the day's title centred over one editor — the same
-   note, in the same draft, without the pager, the status line or the journal around it.
+   note, in the same draft, without the pager, the automation or the earlier-notes journal
+   around it; the autosave line appears under the box only while there is something to say.
    Close it with the cross in the top-right corner, a click outside the sheet, or
    **Escape**; the day is written on the way out, and the page is exactly where you left it.
 
