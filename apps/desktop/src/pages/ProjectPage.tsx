@@ -112,6 +112,18 @@ function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, Math.trunc(value)));
 }
 
+/**
+ * A linked signal's one-line summary. An attachment-only capture has no body to
+ * clip, so it names itself the way the Life-Chain row does: the file or the
+ * address. The task made from it already carries the same fallback.
+ */
+function signalSummary(signal: SignalRecord): string {
+  if (signal.body.trim()) return clip(signal.body);
+  if (signal.attachment?.kind === "link") return clip(signal.attachment.url);
+  if (signal.attachment?.kind === "image") return clip(signal.attachment.name);
+  return "";
+}
+
 function clip(value: string, max = 180): string {
   const line = value.trim().replace(/\s+/g, " ");
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
@@ -830,6 +842,32 @@ export default function ProjectPage() {
         </form>
       </section>
 
+      {(project.repoUrls ?? []).length > 0 ? (
+        <section
+          className="project-detail__section"
+          data-testid="project-repositories"
+        >
+          <div className="project-detail__section-head">
+            <h2 className="project-detail__section-title">Repositories</h2>
+          </div>
+          <ul className="project-detail__repos">
+            {(project.repoUrls ?? []).map((url) => (
+              <li key={url}>
+                <a
+                  className="project-detail__repo-link"
+                  data-testid="project-repo-link"
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <h2 className="project-detail__group-title">Around this project</h2>
 
       <section className="project-detail__section" data-testid="project-tasks">
@@ -897,7 +935,7 @@ export default function ProjectPage() {
                     </strong>
                   ) : null}
                   {signal.title ? " — " : null}
-                  {clip(signal.body)}
+                  {signalSummary(signal)}
                   <span className="project-detail__signal-meta muted">
                     {formatProjectWhen(signal.createdAt)}
                   </span>

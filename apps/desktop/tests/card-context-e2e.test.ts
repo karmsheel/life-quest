@@ -16,8 +16,8 @@ const DEV_PORT = 5173;
 /**
  * The card-context rigs, in two halves over two pages.
  *
- * `dashboard-card-context` judges the Dashboard: the pin board as a header
- * control above the grid, and the chat control every pinned card wears. `card-
+ * `dashboard-card-context` judges the Dashboard: the pin board as the page
+ * menu's second item, and the chat control every pinned card wears. `card-
  * context` judges the chat: the pill above the composer and the instruction
  * context the turn carries. They are wrapped together because they are one
  * feature seen from its two ends, and neither half means anything alone — a
@@ -132,13 +132,21 @@ describe("dashboard card context e2e", () => {
       "the-deadline-pin-keeps-its-controls-out-of-the-way",
     ]);
 
-    // Landing: closed, and above the grid the moment it is opened.
-    const landing = report.checks.landing as { section: unknown; toggle: { expanded: string } | null };
+    // Landing: the page menu is shut (no popover, no items), and the row sits
+    // above the grid the moment it is opened from the menu.
+    const landing = report.checks.landing as {
+      section: unknown;
+      pageMenu: { expanded: string } | null;
+      pageMenuPopover: unknown;
+      addItem: unknown;
+    };
     assert.equal(landing.section, null, "the pin board was open on landing");
-    assert.equal(landing.toggle?.expanded, "false");
+    assert.equal(landing.pageMenu?.expanded, "false", "the page menu was open on landing");
+    assert.equal(landing.pageMenuPopover, null, "a closed menu left its popover in the document");
+    assert.equal(landing.addItem, null, "a closed menu left its pin-board item in the document");
     assert.deepEqual(
       report.checks.above,
-      { sectionBeforeGrid: true, toggleBeforeSection: true },
+      { sectionBeforeGrid: true, triggerBeforeSection: true },
       "the pin board is not above the grid it adds to",
     );
 
@@ -151,11 +159,28 @@ describe("dashboard card context e2e", () => {
       system: "deadline",
     });
 
-    // A locked board is still the claim the whole lock rests on.
-    const locked = report.checks.lockedBoard as { toggle: unknown; section: unknown; strayAddButtons: number };
-    assert.equal(locked.toggle, null, "a locked board still offered the pin board");
+    // A locked board is still the claim the whole lock rests on: no row, no add
+    // button, and its open menu holds only the lock item — no hidden add path.
+    const locked = report.checks.lockedBoard as {
+      addItem: unknown;
+      section: unknown;
+      strayAddButtons: number;
+      pageMenu: unknown;
+    };
+    const lockedMenu = report.checks.lockedMenu as {
+      pageMenuPopover: { items: (string | null)[] } | null;
+      addItem: unknown;
+    };
+    assert.equal(locked.addItem, null, "a locked board still offered the pin-board item");
     assert.equal(locked.section, null);
     assert.equal(locked.strayAddButtons, 0);
+    assert.ok(locked.pageMenu, "a locked board lost its page-menu trigger");
+    assert.deepEqual(
+      lockedMenu.pageMenuPopover?.items,
+      ["board-lock-toggle"],
+      "a locked board's menu grew an add path",
+    );
+    assert.equal(lockedMenu.addItem, null, "a locked board's menu still held the pin-board item");
 
     // The names the dock took: the card's own heading, for all three kinds.
     assert.deepEqual(report.checks.handedNames, {

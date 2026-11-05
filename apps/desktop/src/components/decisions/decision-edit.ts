@@ -106,6 +106,7 @@ export const FIELD_LABELS: Record<string, string> = {
   projectType: "Type",
   source: "Source",
   sourceUrl: "Source link",
+  repoUrls: "Repositories",
   bodyMarkdown: "Notes",
   notes: "Notes",
   stateNote: "State note",

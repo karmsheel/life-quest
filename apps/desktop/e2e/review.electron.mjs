@@ -7,10 +7,12 @@
  *   node e2e/review.electron.mjs
  *
  * Exit code 0 = every invariant held. The JSON report is the repeatable
- * artifact: same command, same claims. It ships with three pictures of the same
+ * artifact: same command, same claims. It ships with four pictures of the same
  * run: the review document as the page opens (`review-document.png`), the same
- * page after Start filled it in (`review-started.png`), and the cadence's rules
- * panel open (`review-rules.png`).
+ * page after Start filled it in (`review-started.png`), the cadence's rules
+ * panel open (`review-rules.png`), and the same page in a window far wider than
+ * its reading column (`review-wide.png`) — the column centred with empty page on
+ * both sides.
  *
  * What this rig claims, and what makes each claim falsifiable:
  *
@@ -33,7 +35,12 @@
  *     rule over time" does not depend on the agent being reachable.
  *  7. The snapshot markers the app writes are not printed: they are comments,
  *     and a review that showed them would be showing its own bookkeeping.
- *  8. No bridge call this rig does not model, and no console error.
+ *  8. The page is ONE CENTRED READING COLUMN: capped at its 48rem measure and
+ *     centred in the sheet's own content box, with the header, body, actions and
+ *     daily-notes strip all riding that column. A window wider than the column
+ *     gets the leftover width as empty page on both sides, split evenly, rather
+ *     than one long line run from the leading edge.
+ *  9. No bridge call this rig does not model, and no console error.
  *
  * NOT covered here: that any of it reaches disk (that is the vault-core half,
  * `tests/review-snapshot-e2e.test.ts`) and the companion's own transport rules
@@ -54,6 +61,12 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
 const url = process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/review.html";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
+/**
+ * A window with more room than the reading column needs. 1800px leaves the
+ * 768px column roughly a third of the sheet on either side, which is the shape
+ * the operator asked about: a wide monitor should not stretch the prose.
+ */
+const WIDE_SIZE = { width: 1800, height: 1000 };
 
 const INPUT = ".note-live textarea";
 
@@ -109,6 +122,40 @@ const SAMPLE = `(() => {
         .map((n) => n.textContent || "")
         .join("\\n\\n")
         .trim();
+    })(),
+    // How the page is standing, read off the boxes rather than computed styles:
+    // the sheet's own content box, the page's column, and the parts that must
+    // ride it. The centre is solved from the content box's client width so a
+    // vertical scrollbar does not read as an off-centre page.
+    layout: (() => {
+      const rect = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { left: r.left, top: r.top, width: r.width, height: r.height };
+      };
+      const content = document.querySelector(".shell__content");
+      const page = document.querySelector(".review-page");
+      return {
+        shellClass: (() => {
+          const shell = document.querySelector(".shell");
+          return shell ? shell.className : null;
+        })(),
+        content: content
+          ? {
+              ...rect(content),
+              clientWidth: content.clientWidth,
+              centerX:
+                content.getBoundingClientRect().left + content.clientWidth / 2,
+            }
+          : null,
+        page: rect(page),
+        pageMaxWidth: page ? getComputedStyle(page).maxWidth : null,
+        header: rect(document.querySelector(".review-page__header")),
+        modes: rect(document.querySelector(".review-page__modes")),
+        editor: rect(document.querySelector(".review-page__editor")),
+        pageActions: rect(document.querySelector(".review-page__actions")),
+        notes: rect(document.querySelector(".review-notes")),
+      };
     })(),
   };
 })()`;
@@ -270,6 +317,9 @@ function frames(win) {
 
 async function shot(win, name) {
   await frames(win);
+  // A fresh checkout has no artifacts directory: it is gitignored, so the first
+  // run in a worktree is the one that has to make it.
+  fs.mkdirSync(artifactsDir, { recursive: true });
   const image = await win.webContents.capturePage();
   fs.writeFileSync(path.join(artifactsDir, name), image.toPNG());
 }
@@ -277,6 +327,105 @@ async function shot(win, name) {
 /** How many times a literal appears — the count, not a boolean. */
 function occurrences(haystack, needle) {
   return haystack.split(needle).length - 1;
+}
+
+/**
+ * The review page is one reading column. These are its numbers, read off the
+ * boxes rather than the stylesheet: where the column sits against the sheet's
+ * own centre, how wide it is, and whether every part of the page starts on it.
+ * `offBy` is the one that matters — positive means the column sits towards the
+ * dock, negative towards the rail.
+ */
+function columnReport(layout) {
+  const page = layout?.page ?? null;
+  const content = layout?.content ?? null;
+  const pageCentre = page ? page.left + page.width / 2 : null;
+  const contentCentre = content ? content.centerX : null;
+  return {
+    contentCentre,
+    pageCentre,
+    offBy:
+      pageCentre === null || contentCentre === null ? null : pageCentre - contentCentre,
+    pageWidth: page ? page.width : null,
+    pageLeft: page ? page.left : null,
+    pageRight: page ? page.left + page.width : null,
+    pageMaxWidth: layout?.pageMaxWidth ?? null,
+    contentLeft: content ? content.left : null,
+    contentClientWidth: content ? content.clientWidth : null,
+    contentRight: content ? content.left + content.clientWidth : null,
+    headerLeft: layout?.header?.left ?? null,
+    editorLeft: layout?.editor?.left ?? null,
+    actionsLeft: layout?.pageActions?.left ?? null,
+    notesLeft: layout?.notes?.left ?? null,
+    shellClass: layout?.shellClass ?? null,
+  };
+}
+
+/** The measure the shared note box and the Daily Note column are drawn for. */
+const READING_MEASURE = 48 * 16;
+
+/**
+ * Claim the centred column, and return the numbers whether they hold or not.
+ *
+ * `expectRoom` is for a window wider than the column: there, the column must be
+ * exactly its measure and the leftover width must be empty page on both sides,
+ * split evenly. Without it, the window may be narrower than the column, so only
+ * the centre and the shared leading edge are claimed.
+ */
+function assertCentredColumn(layout, when, { expectRoom = false } = {}) {
+  const report = columnReport(layout);
+  if (report.pageWidth === null || report.contentCentre === null) {
+    failure(`${when}: the page's own layout boxes could not be read`);
+    return report;
+  }
+  // The measure: a page wider than the column is the page stretched to the
+  // window, which is the layout this claim exists to keep out.
+  if (report.pageWidth > READING_MEASURE + 1) {
+    failure(
+      `${when}: the page column is ${report.pageWidth}px wide, past its ${READING_MEASURE}px measure`,
+    );
+  }
+  if (expectRoom) {
+    if (report.pageWidth < READING_MEASURE - 1) {
+      failure(
+        `${when}: the page column narrowed to ${report.pageWidth}px although the sheet had room for its ${READING_MEASURE}px measure`,
+      );
+    }
+    const before = report.pageLeft - report.contentLeft;
+    const after = report.contentRight - report.pageRight;
+    checks.wideGaps = { before, after };
+    if (!(before > 100) || !(after > 100)) {
+      failure(
+        `${when}: the column left no page either side (${before}px before, ${after}px after)`,
+      );
+    }
+    if (Math.abs(before - after) > 2) {
+      failure(
+        `${when}: the room around the column is lopsided — ${before}px before it and ${after}px after it`,
+      );
+    }
+  }
+  if (Math.abs(report.offBy ?? Infinity) > 2) {
+    failure(
+      `${when}: the page column's centre is ${report.pageCentre}, ${report.offBy}px from the sheet's ${report.contentCentre}`,
+    );
+  }
+  // Every part of the page is the same column: a centred title over a body run
+  // from the leading edge would be a page divided against itself.
+  for (const [part, left] of [
+    ["header", report.headerLeft],
+    ["editor", report.editorLeft],
+    ["actions", report.actionsLeft],
+    ["daily notes", report.notesLeft],
+  ]) {
+    if (left === null) continue;
+    if (Math.abs(left - report.pageLeft) > 1) {
+      failure(
+        `${when}: the ${part} starts at ${left}, ${left - report.pageLeft}px off the page column's ${report.pageLeft}`,
+      );
+    }
+  }
+  return report;
 }
 
 async function main() {
@@ -327,6 +476,11 @@ async function main() {
   if (opened.title !== "Weekly review") {
     failure(`the review's title read ${JSON.stringify(opened.title)}`);
   }
+  // ── 1a. the page is one centred reading column ───────────────────────────
+  // The centre is the sheet's own content box, not the window's: the rail and
+  // the dock have already taken their columns, and a page centred in the window
+  // would sit under one of them.
+  checks.centering = assertCentredColumn(opened.layout, "at the default window");
   await shot(win, "review-document.png");
 
   // ── 2. a blank line the operator typed reaches the file ──────────────────
@@ -563,7 +717,32 @@ async function main() {
     failure(`the rules write carried ${JSON.stringify(skillWrites[0])}`);
   }
 
-  // ── 8. nothing unexpected, nothing on fire ───────────────────────────────
+  // ── 8. a wide window: the column keeps its measure, and centres ──────────
+  // The operator's report is about wide monitors: a page run from the leading
+  // edge leaves every spare pixel on one side. The window is widened past the
+  // column's measure, so the only way the page can still be the 48rem column is
+  // if the auto margins are splitting the leftover room evenly.
+  await click(win, '[data-testid="review-skill-toggle"]');
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="review-skill-editor"]')`,
+    "the rules panel to fold away",
+  );
+  win.setContentSize(WIDE_SIZE.width, WIDE_SIZE.height);
+  await waitFor(
+    win,
+    `(document.querySelector(".shell__content")?.clientWidth ?? 0) > 900`,
+    "the sheet to take the wide window",
+  );
+  await frames(win);
+  const wide = await sample(win);
+  checks.wide = wide;
+  checks.wideCentering = assertCentredColumn(wide.layout, "in a wide window", {
+    expectRoom: true,
+  });
+  await shot(win, "review-wide.png");
+
+  // ── 9. nothing unexpected, nothing on fire ───────────────────────────────
   checks.kickoffs = await setHarness(win, "window.reviewRigKickoffs");
   const unexpected = await setHarness(win, "window.reviewRigUnexpectedCalls");
   checks.unexpectedBridgeCalls = unexpected;

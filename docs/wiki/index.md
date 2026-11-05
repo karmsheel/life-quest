@@ -72,7 +72,7 @@ wants to know what is on disk and what runs where.
 
 | Page | What it covers |
 |---|---|
-| [15 · Life-Chain](./15-life-chain.md) | Quick-fire capture, unassigned vs domain, edit/delete, make a task |
+| [15 · Life-Chain](./15-life-chain.md) | Quick-fire capture of text, pictures and links; unassigned vs domain, edit/delete, make a task |
 | [16 · Daily Note](./16-daily-note.md) | One journal note per local date, saving, analysis, review pack |
 | [17 · Automations](./17-automations.md) | One-click jobs that read a page and open a chat with the agent |
 | [18 · Reviews](./18-reviews.md) | Daily through yearly cadences, period packs, companion sessions, done/lock, planning stubs |

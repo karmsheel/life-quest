@@ -591,10 +591,12 @@ a {
   color: #fff;
 }
 
-/* The shortcuts control is a page selector, like the dock's own bar: while the
-   dock is showing that page it reads as the current surface. */
-.window-titlebar__shortcuts[aria-pressed="true"] {
+/* The day/night control opens its quick menu on hover: while the menu is up the
+   control keeps the same wash the window controls take under the pointer, so
+   the trigger and its menu read as one thing. */
+.window-titlebar__trailing .theme-mode-toggle[aria-expanded="true"] {
   background: var(--selected-soft);
+  color: var(--fg);
 }
 
 .window-titlebar__settings {
@@ -2267,10 +2269,12 @@ a {
 }
 
 /* —— A page's corner: the controls in a row ——
-   Every lockable page puts its lock switch at the title's own top-right edge,
-   with the Dashboard's pin board menu beside it. Both are one height so the
-   pair reads as one row of controls rather than two objects that happen to
-   share a corner. */
+   Every lockable page keeps one control at the title's own top-right edge: the
+   three-dot menu that holds the page's actions, with the lock as its first item.
+   The corner stays a row so a page can set its state badge beside the menu (the
+   Documents library does: its note has no heading of its own), and both wear one
+   height so they read as one row of controls rather than two objects that happen
+   to share a corner. */
 .page-corner {
   display: flex;
   flex-direction: row;
@@ -2286,90 +2290,115 @@ a {
   height: 2.25rem;
 }
 
-/* The pin board's menu is the page's only "add" path, so it is the one control
-   in the corner that wears the accent rather than the neutral border. It steps
-   off the page on hover with a shadow tinted by its own colour. */
-.page-corner__pinboard.btn {
+/* —— Page menu ——
+   The trigger is the ghost button primitive squared to the corner's height: an
+   icon well rather than a labelled pill, because the menu is a place actions
+   live and not an action of its own. The popover hangs under it, right-aligned
+   to the corner so its edge agrees with the page's, and floats over the content
+   like the card and settings menus do. */
+.page-menu {
+  position: relative;
+  display: flex;
+}
+
+.page-menu__trigger.btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  padding-block: 0;
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
-  background: color-mix(in srgb, var(--accent) 10%, var(--bg-panel));
-  color: var(--accent);
-  box-shadow: var(--shadow-xs);
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    border-color var(--dur-quick) var(--ease-out),
-    color var(--dur-quick) var(--ease-out),
-    box-shadow var(--dur-quick) var(--ease-out),
-    transform var(--dur-quick) var(--ease-out);
-}
-
-.page-corner__pinboard.btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 18%, var(--bg-panel));
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  box-shadow:
-    0 0.5rem 1.25rem color-mix(in srgb, var(--accent) 26%, transparent),
-    0 0.125rem 0.35rem color-mix(in srgb, var(--accent) 18%, transparent);
-  transform: translateY(-1px);
-}
-
-.page-corner__pinboard.btn:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow: var(--shadow-xs);
-}
-
-/* —— Lock switch ——
-   The page lock as one control: a caption and a track. At rest the thumb sits
-   left, the track is the page's own muted step and the caption is quiet; locked,
-   the thumb crosses, and the track and caption take the amber that means "held".
-   The badge beside the page's name says the same state in words, which is why
-   the caption can stay "Lock" in both positions. */
-.lock-switch.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.55rem;
-  padding: 0.3rem 0.42rem 0.3rem 0.62rem;
-  border-color: var(--border);
-  background: var(--bg-panel);
+  width: 2.25rem;
+  padding: 0;
   color: var(--text-muted);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  line-height: 1;
-  text-transform: uppercase;
-  box-shadow: var(--shadow-xs);
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    border-color var(--dur-quick) var(--ease-out),
-    color var(--dur-quick) var(--ease-out),
-    box-shadow var(--dur-quick) var(--ease-out);
 }
 
-.lock-switch.btn:hover:not(:disabled) {
-  border-color: var(--border-strong);
+.page-menu__trigger.btn:hover:not(:disabled),
+.page-menu__trigger.btn[aria-expanded="true"] {
   color: var(--fg);
-  box-shadow: var(--shadow-sm);
+  background: var(--selected-soft);
+  border-color: var(--border-strong);
 }
 
-.lock-switch.btn:focus-visible {
+.page-menu__trigger.btn:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
-.lock-switch.btn:disabled {
+.page-menu__popover {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 12rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-md);
+}
+
+/* One item's shape: an icon (when it has one), the words, and — for the lock —
+   its track. The label takes the free space so a switch sits at the far edge. */
+.page-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.page-menu__item:hover:not(:disabled) {
+  background: var(--selected-soft);
+}
+
+.page-menu__item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.page-menu__item:disabled {
   opacity: 0.55;
   cursor: progress;
 }
 
-.lock-switch__caption {
-  padding-left: 0.06rem;
+.page-menu__item svg {
+  flex: none;
 }
 
-.lock-switch__track {
+.page-menu__item-label {
+  flex: 1 1 auto;
+}
+
+/* Delete is the one item a note cannot be brought back from through this page, so
+   it wears the destructive ink while every other action stays plain. */
+.page-menu__item--danger {
+  color: var(--danger);
+}
+
+/* The lock row: the words left, the switch's track right. The caption stays
+   "Lock" in both positions — the track's position and the badge beside the
+   page's name carry the state, and a caption that changed with it would say the
+   state twice. Locked, the track and the caption take the amber that means
+   "held". */
+.page-menu__lock {
+  justify-content: space-between;
+}
+
+.page-menu__lock[data-locked="true"] {
+  color: var(--amber);
+}
+
+.page-menu__track {
   position: relative;
   display: block;
   width: 2.05rem;
@@ -2383,7 +2412,7 @@ a {
     border-color var(--dur-quick) var(--ease-out);
 }
 
-.lock-switch__thumb {
+.page-menu__thumb {
   position: absolute;
   top: 50%;
   left: 0.14rem;
@@ -2398,31 +2427,18 @@ a {
     background var(--dur-quick) var(--ease-out);
 }
 
-.lock-switch--on.btn {
-  color: var(--amber);
-  border-color: color-mix(in srgb, var(--amber) 38%, var(--border));
-  background: color-mix(in srgb, var(--amber-bg) 80%, var(--bg-panel));
-}
-
-.lock-switch--on.btn:hover:not(:disabled) {
-  color: var(--amber);
-  border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
-  background: var(--amber-bg);
-}
-
-.lock-switch--on .lock-switch__track {
+.page-menu__lock[data-locked="true"] .page-menu__track {
   border-color: color-mix(in srgb, var(--amber) 62%, var(--border));
   background: color-mix(in srgb, var(--amber) 44%, var(--bg-panel));
 }
 
-.lock-switch--on .lock-switch__thumb {
+.page-menu__lock[data-locked="true"] .page-menu__thumb {
   transform: translate(0.92rem, -50%);
   background: var(--background);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lock-switch__thumb,
-  .page-corner__pinboard.btn {
+  .page-menu__thumb {
     transition: none;
   }
 }
@@ -2809,7 +2825,14 @@ a {
   flex-wrap: wrap;
 }
 
+/* The intro is a flex item with a basis, so the page's corner shares its line:
+   the header is 48rem wide at most, and an auto-sized 40rem intro plus the
+   corner overflowed it, wrapping the menu under the title. A 18rem basis (the
+   same one .doc-editor__intro uses) lets the intro grow into the free space
+   while the corner keeps the title's right edge; at a genuinely narrow window
+   the header still wraps rather than squashing either one. */
 .documents-page__intro {
+  flex: 1 1 18rem;
   min-width: 0;
   max-width: 40rem;
 }
@@ -4787,7 +4810,7 @@ a.home-mini-list__link:hover {
 
 .home-dashboard .doc-status-badge {
   /* The badge keeps the pill the page's controls wear: the title and the
-     top-right row are read together, so a square badge beside a round switch
+     top-right menu are read together, so a square badge beside a round trigger
      would read as two vocabularies. */
   border-radius: var(--radius-pill);
 }
@@ -5353,7 +5376,7 @@ a.home-mini-list__link:hover {
   white-space: nowrap;
 }
 
-/* What the search landed on, when it was not the row's own label: "ember"
+/* What the search landed on, when it was not the row's own label: "gray"
    appearing under Appearance is the difference between a filter that looks
    arbitrary and one the operator can read. */
 .settings-nav-item__match {
@@ -7415,15 +7438,21 @@ button.chat-panel__activity-line:hover {
   border-radius: 0.45rem;
 }
 
-/* The side switch and the way out sit at the trailing end of the bar: the new
-   chat and the chain controls stay one group on the left, and the pair holds
-   the bottom-right corner, where the collapse control is one click from the
-   icon that brings the dock back. The auto margin is on the switch so the pair
-   travels together rather than splitting across the bar. */
-.chat-panel__action--side {
+/* The shortcuts control, the side switch and the way out sit at the trailing end
+   of the bar: the new chat and the chain controls stay one group on the left,
+   and this trio holds the bottom-right corner, where the collapse control is
+   one click from the icon that brings the dock back. The auto margin is on the
+   first of the three so they travel together rather than splitting across the
+   bar. */
+.chat-panel__action--shortcuts {
   margin-left: auto;
 }
 
+/* The selected surface, which in this bar is the chain or the shortcuts
+   reference. The side switch is a move rather than a state and carries no
+   `aria-pressed` at all: the dock living on the leading edge is not a mode the
+   operator switched on, so a pressed fill there would read as "active" for the
+   rest of the session. */
 .chat-panel__action[aria-pressed="true"] {
   background: var(--selected-soft);
   color: var(--fg);
@@ -8218,6 +8247,52 @@ button.chat-panel__activity-line:hover {
   word-break: break-word;
 }
 
+/* A chain row's picture, scaled for a 20rem column: enough to recognise the
+   capture, not enough to take the dock over. */
+.chat-panel__chain-image-wrap {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.chat-panel__chain-image {
+  display: block;
+  max-width: 100%;
+  max-height: 9rem;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--muted-surface);
+}
+
+.chat-panel__chain-image-missing {
+  font-size: 0.75rem;
+}
+
+.chat-panel__chain-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  margin-bottom: 0.3rem;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.chat-panel__chain-link span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel__chain-link:hover {
+  text-decoration: underline;
+}
+
 /* A titled signal keeps its title: the panel's composer never writes one, so a
    row that has one came from somewhere else — an import, or Hermes itself — and
    dropping it would hide data the record carries. */
@@ -8400,6 +8475,120 @@ button.chat-panel__activity-line:hover {
   min-height: 8rem;
 }
 
+/* A picture dropped on the box lights the box rather than a page-wide overlay:
+   the composer is the target, and the gesture lands where the capture does. */
+.signal-chain__composer--dragging {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm), 0 0 0 2px var(--accent-tint);
+}
+
+/* The picture waiting to be logged: the preview is what the drop was for, so it
+   leads the box and sits above the field the operator types into. */
+.signal-chain__attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.signal-chain__attachment-image {
+  display: block;
+  width: 5rem;
+  height: 5rem;
+  flex: none;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted-surface);
+}
+
+.signal-chain__attachment-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.signal-chain__attachment-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-chain__attachment-hint {
+  font-size: 0.72rem;
+}
+
+.signal-chain__attachment-remove {
+  padding: 0.3rem;
+  line-height: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The link's own line: the input only appears while the operator is adding a
+   link, and the chip replaces it once the URL is real. */
+.signal-chain__link-form {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.signal-chain__link-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.55rem;
+  background: var(--bg);
+  font: inherit;
+}
+
+.signal-chain__link-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-tint) 45%, transparent);
+  font-size: 0.82rem;
+}
+
+.signal-chain__link-host {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.signal-chain__link-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
+.signal-chain__composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.signal-chain__tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+
 .signal-chain__empty {
   margin: 0.25rem 0 0;
 }
@@ -8482,6 +8671,70 @@ button.chat-panel__activity-line:hover {
   line-height: 1.45;
 }
 
+/* A captured picture is the row's content, so it takes the column's width up to
+   a reading size rather than a thumbnail's. The name under it is the file's,
+   kept as the label because the description may be empty. */
+.signal-row__figure {
+  margin: 0 0 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.signal-row__image {
+  display: block;
+  max-width: min(100%, 32rem);
+  max-height: 22rem;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted-surface);
+}
+
+.signal-row__image-name {
+  font-size: 0.72rem;
+}
+
+.signal-row__image-missing {
+  font-size: 0.8rem;
+}
+
+/* A captured link is a card, not a run of text: the host is the label and the
+   address is the evidence, and one click opens the operator's own browser. */
+.signal-row__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  margin-bottom: 0.35rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--selected) 45%, transparent);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.82rem;
+}
+
+.signal-row__link:hover {
+  border-color: var(--accent);
+}
+
+.signal-row__link-host {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.signal-row__link-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
 .signal-row--editing {
   grid-template-columns: 1fr;
   grid-template-areas: "form";
@@ -8509,6 +8762,18 @@ button.chat-panel__activity-line:hover {
 }
 
 /* —— Theme switcher + settings popover (Hermes Forge) —— */
+/* The day/night control's quick menu reuses the settings popover's shell and
+   tile grid; only its two headings need spacing of their own, because the mode
+   switcher leads this menu where the skin grid leads the settings one. */
+.theme-quick-menu__starred-title {
+  margin-top: 0.75rem;
+  margin-bottom: 0.375rem;
+}
+
+.theme-quick-menu__popover .settings-menu__skin-hint {
+  margin-top: 0.4rem;
+}
+
 .theme-mode-toggle {
   display: inline-flex;
   align-items: center;

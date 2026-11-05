@@ -94,6 +94,15 @@ const SAMPLE = `(() => {
   const paperBackground = getComputedStyle(paperProbe).backgroundColor;
   paperProbe.remove();
 
+  // The muted ink the bottom bar's actions rest in, resolved the same way as the
+  // fills above so the side switch is compared against the token the CSS uses
+  // rather than a hard-coded colour.
+  const mutedProbe = document.createElement("div");
+  mutedProbe.style.background = "var(--muted)";
+  document.body.appendChild(mutedProbe);
+  const mutedBackground = getComputedStyle(mutedProbe).backgroundColor;
+  mutedProbe.remove();
+
   const rail = document.querySelector(".nav-rail");
   const main = document.querySelector(".shell__main");
   const chat = document.querySelector(".chat-panel");
@@ -115,9 +124,13 @@ const SAMPLE = `(() => {
   // carries it or the old collapse toggle, and the SAMPLE keeps both facts so
   // the assertions can say "here" and "not there" rather than only one.
   const sideSwitch = document.querySelector('[data-testid="chat-side-switch"]');
+  // The shortcuts reference moved into this same bar, beside the switch: the
+  // titlebar carries it no more, so both facts are sampled.
+  const shortcutsAction = document.querySelector('[data-testid="chat-shortcuts-action"]');
   const staleTitlebar = {
     side: Boolean(document.querySelector(".window-titlebar__side-switch")),
     collapse: Boolean(document.querySelector(".window-titlebar__chat-toggle")),
+    shortcuts: Boolean(document.querySelector(".window-titlebar__shortcuts")),
   };
   const titlebarHeight = px(root.getPropertyValue("--window-titlebar-height"));
   const frame = px(root.getPropertyValue("--shell-frame"));
@@ -163,6 +176,7 @@ const SAMPLE = `(() => {
     vaultText: (vault?.querySelector(".nav-rail__vault-name")?.textContent || "").trim(),
     accentBackground,
     paperBackground,
+    mutedBackground,
     shell: shell
       ? {
           className: shell.className,
@@ -273,8 +287,20 @@ const SAMPLE = `(() => {
           label: sideSwitch.getAttribute("aria-label"),
           title: sideSwitch.getAttribute("title"),
           pressed: sideSwitch.getAttribute("aria-pressed"),
+          background: getComputedStyle(sideSwitch).backgroundColor,
+          color: getComputedStyle(sideSwitch).color,
           icon: iconClass(sideSwitch),
           box: box(sideSwitch)
+        }
+      : { found: false },
+    shortcutsAction: shortcutsAction
+      ? {
+          found: true,
+          label: shortcutsAction.getAttribute("aria-label"),
+          title: shortcutsAction.getAttribute("title"),
+          pressed: shortcutsAction.getAttribute("aria-pressed"),
+          icon: iconClass(shortcutsAction),
+          box: box(shortcutsAction)
         }
       : { found: false },
     staleTitlebar,
@@ -514,15 +540,12 @@ function checkControls(label, state, side) {
       ? "Move chat to the right of the page"
       : "Move chat to the left of the page";
 
-  // The titlebar's trailing cluster: the theme toggle, the keyboard-shortcuts
-  // control, the settings menu. The two chat controls that used to follow the
-  // settings are gone; a stale copy anywhere in the strip is the regression this
-  // guards, because a "contained" control is not a correctly placed one.
-  const expectedTrailing = [
-    "theme-mode-toggle",
-    "window-titlebar__shortcuts",
-    "settings-menu",
-  ];
+  // The titlebar's trailing cluster is the theme control and the settings menu.
+  // The keyboard-shortcuts control, like the two chat controls that left before
+  // it, now lives in the dock's own bar; a stale copy anywhere in the strip is
+  // the regression this guards, because a "contained" control is not a correctly
+  // placed one.
+  const expectedTrailing = ["theme-mode-toggle", "settings-menu"];
   check(
     `${label}: the titlebar's trailing cluster is theme, shortcuts, settings`,
     controls.length === expectedTrailing.length &&
@@ -541,6 +564,11 @@ function checkControls(label, state, side) {
     state.staleTitlebar?.collapse === false,
     "a .window-titlebar__chat-toggle is still in the strip",
   );
+  check(
+    `${label}: the titlebar carries no keyboard-shortcuts control`,
+    state.staleTitlebar?.shortcuts === false,
+    "a .window-titlebar__shortcuts is still in the strip",
+  );
 
   // The switch itself, inside the open dock's bottom bar.
   check(
@@ -558,20 +586,50 @@ function checkControls(label, state, side) {
     state.sideSwitch?.label === expectedSwitchLabel,
     `switch label ${JSON.stringify(state.sideSwitch?.label)}`,
   );
+  // The switch is a move, not a toggle: it names the direction the next click
+  // takes the dock and must rest as bar chrome on either side. A highlighted
+  // switch would read as "active" for an operator whose dock simply lives on
+  // the leading edge, so no side may carry a pressed fill.
   check(
-    `${label}: the switch reads its own state`,
-    state.sideSwitch?.pressed === String(side === "left"),
+    `${label}: the switch carries no pressed state`,
+    state.sideSwitch?.pressed === null,
     `aria-pressed ${JSON.stringify(state.sideSwitch?.pressed)} with the dock on the ${side}`,
+  );
+  check(
+    `${label}: the switch rests neutral`,
+    state.sideSwitch?.background === "rgba(0, 0, 0, 0)" &&
+      state.sideSwitch?.color === state.mutedBackground,
+    `background ${JSON.stringify(state.sideSwitch?.background)} (want transparent), ink ${JSON.stringify(state.sideSwitch?.color)} vs muted ${JSON.stringify(state.mutedBackground)}`,
   );
 
   // The bar's order, read off the DOM rather than off the pixels: the new-chat
-  // slot, the chain, then the trailing pair. "Chat history" left the bar with
-  // the list surface, so its return is a stale slot rather than a shipped one.
+  // slot, the chain, then the trailing trio — the shortcuts reference, the side
+  // switch and the way out. "Chat history" left the bar with the list surface,
+  // so its return is a stale slot rather than a shipped one.
   const barLabels = (state.actions?.controls ?? []).map((control) => control.label);
   check(
-    `${label}: the bar carries its four actions in order`,
-    same(barLabels, ["New chat", "Life-Chain", expectedSwitchLabel, "Collapse chat"]),
+    `${label}: the bar carries its five actions in order`,
+    same(barLabels, [
+      "New chat",
+      "Life-Chain",
+      "Keyboard shortcuts",
+      expectedSwitchLabel,
+      "Collapse chat",
+    ]),
     `bar ${JSON.stringify(barLabels)}`,
+  );
+  check(
+    `${label}: the shortcuts control sits immediately before the switch`,
+    state.shortcutsAction?.found === true &&
+      state.shortcutsAction?.label === "Keyboard shortcuts" &&
+      state.shortcutsAction?.icon === "lucide-keyboard" &&
+      Boolean(state.shortcutsAction?.box && state.sideSwitch?.box) &&
+      state.shortcutsAction.box.right < state.sideSwitch.box.left &&
+      state.sideSwitch.box.left - state.shortcutsAction.box.right <= 8 &&
+      Boolean(state.actions?.box) &&
+      state.shortcutsAction.box.top >= state.actions.box.top &&
+      state.shortcutsAction.box.bottom <= state.actions.box.bottom,
+    `shortcuts ${JSON.stringify(state.shortcutsAction)} vs switch ${JSON.stringify(state.sideSwitch?.box)}`,
   );
   check(
     `${label}: the switch sits immediately before the collapse control`,
@@ -623,6 +681,21 @@ async function main() {
     const file = path.join(artifactsDir, name);
     fs.writeFileSync(file, image.toPNG());
     return file;
+  };
+
+  // The dock's bottom action bar, 1:1: the side switch lives here and nowhere
+  // else, so this crop is the picture the neutral-rest claim is about.
+  const barCrop = (state) => {
+    const bar = state.actions?.box;
+    if (!bar) return undefined;
+    const x = Math.max(0, bar.left);
+    const y = Math.max(0, bar.top);
+    return {
+      x,
+      y,
+      width: Math.min(bar.width, state.viewport.width - x),
+      height: Math.min(bar.height, state.viewport.height - y),
+    };
   };
 
   // Vite re-optimises dependencies the first time a new import appears and
@@ -717,12 +790,16 @@ async function main() {
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
     await new Promise((resolve) => setTimeout(resolve, 250));
     win.showInactive();
+    // The switch is checked for its resting look, not a hover: park the pointer
+    // in the window's leading corner before the first sample.
+    await parkPointer();
 
     at("shipped arrangement");
     const right = await settled();
     right.vaultName = vaultName;
     const { height: viewportHeight, width: viewportWidth } = right.viewport;
     const rightShot = await shot("chat-side-right.png");
+    const rightBarShot = await shot("chat-side-right-bar.png", barCrop(right));
     // A 1:1 crop of the shipped seam: the sheet's leading top corner, beside the
     // rail, on the arrangement every operator starts from.
     const rightSeamShot = await shot("chat-side-right-seam.png", {
@@ -746,6 +823,7 @@ async function main() {
     const left = await settled();
     left.vaultName = vaultName;
     const leftShot = await shot("chat-side-left.png");
+    const leftBarShot = await shot("chat-side-left-bar.png", barCrop(left));
     // The same seam, one column to the right and now between the dock and the
     // sheet: the arrangement's two visual claims — the one hairline and the
     // square corner above it — in a single crop.
@@ -1160,7 +1238,7 @@ async function main() {
       "collapsed swap: reopening returns the bar's switch",
       swappedOpenFromBar.launcher === null &&
         swappedOpenFromBar.sideSwitch?.found === true &&
-        swappedOpenFromBar.sideSwitch?.pressed === "false",
+        swappedOpenFromBar.sideSwitch?.pressed === null,
       `launcher ${JSON.stringify(swappedOpenFromBar.launcher)}, switch ${JSON.stringify(swappedOpenFromBar.sideSwitch)}`,
     );
     await click('[data-testid="chat-side-switch"]');
@@ -1255,8 +1333,10 @@ async function main() {
       barReopened,
       screenshots: [
         rightShot,
+        rightBarShot,
         rightSeamShot,
         leftShot,
+        leftBarShot,
         leftSeamShot,
         collapsedShot,
         hoverShot,

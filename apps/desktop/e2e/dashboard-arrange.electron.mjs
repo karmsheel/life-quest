@@ -44,9 +44,10 @@
  *                        restoring the wrapper's class takes it red on both view
  *                        pins and restoring the fix takes it green.
  *
- * The Add-pin row is behind the header's toggle, so the driver asks for it before
- * reading its heading. Landing on the page with it closed is `dashboard-card-
- * context`'s claim, not this rig's.
+ * The Add-pin row is behind the page menu's Pin board item, so the driver opens
+ * the three-dot menu and asks for it before reading its heading. Landing on the
+ * page with the menu and the row both closed is `dashboard-card-context`'s
+ * claim, not this rig's.
  *
  * NOT covered here: anything about dragging, and the vault-core half of a write.
  * A dev-server page has no preload, so the page's bridge is a stub and a drop's
@@ -473,11 +474,21 @@ async function beginScenario(win, options = {}) {
 /**
  * Ask the board for its Add-pin row.
  *
- * The row is behind the header's toggle, and every render lands it closed — the
- * page is keyed on the generation, so a fresh render is a fresh page. Called
- * only where the row itself is being judged; the arranging claims never touch it.
+ * The row is behind the page menu's second item now: open the three-dot menu,
+ * wait for its popover, choose Pin board, and wait for the row. Every render
+ * lands the menu closed — the page is keyed on the generation, so a fresh render
+ * is a fresh page. Called only where the row itself is being judged; the
+ * arranging claims never touch it.
  */
 async function openPinBoard(win) {
+  await win.webContents.executeJavaScript(
+    `document.querySelector('[data-testid="board-page-menu"]')?.click()`,
+  );
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="board-page-menu-popover"]'))`,
+    "the page menu to open",
+  );
   await win.webContents.executeJavaScript(
     `document.querySelector('[data-testid="board-add-toggle"]')?.click()`,
   );
@@ -1607,10 +1618,10 @@ async function main() {
   );
 
   await renderBoard(win, SEED, false);
-  // The Add-pin row lives behind the header's own toggle now: it is a control at
-  // the top of the page rather than permanent furniture below the board, and it
-  // lands closed. The heading-identity claim below is about the row, so the row
-  // has to be asked for first.
+  // The Add-pin row lives behind the page menu's Pin board item now: it is a
+  // control at the top right rather than permanent furniture below the board,
+  // and it lands closed. The heading-identity claim below is about the row, so
+  // the row has to be asked for first.
   await openPinBoard(win);
 
   const sample = await win.webContents.executeJavaScript(SAMPLE);

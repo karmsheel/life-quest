@@ -239,11 +239,12 @@ export default function AutomationsPage() {
         setPageError(created.error);
         return;
       }
-      chatDock.requestSession(
-        created.value.id,
-        renderAutomationPrompt(record.prompt, { date, dateLabel }),
-        context,
-      );
+      chatDock.requestSession({
+        id: created.value.id,
+        kickoff: renderAutomationPrompt(record.prompt, { date, dateLabel }),
+        automationContext: context,
+        session: created.value,
+      });
     } catch (err) {
       setPageError(err instanceof Error ? err.message : String(err));
     } finally {

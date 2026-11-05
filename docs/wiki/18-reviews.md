@@ -88,6 +88,12 @@ notes in this period. and offers Write today's note**.
 | **Review rules** | A collapsible panel: the cadence's standing rules and its `lifequest-snapshot` directives, with a count and whether they come from your file or the shipped defaults. |
 | **Daily notes in this period** | The journal entries whose dates fall inside the review window. |
 
+All five cadences open the same page, and the page is one centred reading
+column: the title and pager, the body, the actions and the daily-notes strip
+share a single 48rem measure, centred in the sheet. On a wide monitor the room
+the column does not use stays empty on both sides rather than stretching the
+prose across the window; a narrow window only shrinks the column to fit.
+
 The review page has no list of past reviews. You reach a period with the pager;
 the vault index of all review files exists for the companion and the snapshot,
 not as a screen.

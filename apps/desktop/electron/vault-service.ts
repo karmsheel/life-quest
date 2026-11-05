@@ -64,6 +64,7 @@ import {
   projectUpdate,
   readDocumentMedia,
   readImage,
+  readSignalImage,
   readLog,
   runScriptBlock,
   resolveDecision,
@@ -1220,6 +1221,12 @@ export async function signalChainDelete(
   id: string,
 ): Promise<Result<SignalRecord>> {
   return withVault((root) => deleteSignal(root, id));
+}
+
+export async function signalChainReadImage(
+  relPath: string,
+): Promise<Result<{ bytes: Uint8Array; mime: import("@lifequest/vault-core").ImageMimeType }>> {
+  return withVault((root) => readSignalImage(root, relPath));
 }
 
 export async function libraryListCall(): Promise<Result<LibraryListResult>> {

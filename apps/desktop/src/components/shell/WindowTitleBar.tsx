@@ -1,23 +1,17 @@
 import { useEffect, useState } from "react";
-import { Copy, Keyboard, Minus, Square, X } from "lucide-react";
+import { Copy, Minus, Square, X } from "lucide-react";
 import { SettingsMenu } from "@/components/settings/SettingsMenu";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useNavDock } from "@/state/NavDockProvider";
 import { useVault } from "@/state/VaultProvider";
 import { DomainSwitcher } from "./DomainSwitcher";
-import { NavThemeModeToggle } from "./NavThemeModeToggle";
+import { ThemeQuickMenu } from "./ThemeQuickMenu";
 import { windowTitleLabel } from "./window-title";
 
 export function WindowTitleBar() {
   const { snapshot } = useVault();
   const { collapsed: navCollapsed } = useNavDock();
-  const {
-    open: chatOpen,
-    setOpen: setChatOpen,
-    present: chatPresent,
-    surface: chatSurface,
-    setSurface: setChatSurface,
-  } = useChatDock();
+  const { present: chatPresent } = useChatDock();
   const label = windowTitleLabel(snapshot?.lifequest.name);
   const [fallbackControls, setFallbackControls] = useState(false);
   const [maximized, setMaximized] = useState(false);
@@ -80,27 +74,13 @@ export function WindowTitleBar() {
         <div className="window-titlebar__trailing">
           {chatPresent ? (
             <>
-              <NavThemeModeToggle className="window-titlebar__btn" />
               {/*
-                The shortcuts reference, beside the settings it belongs with.
-                The dock is where the page lives — the same bar that carries the
-                Life-Chain and the dock's own controls — so this control opens
-                the dock if it is collapsed and puts the reference on it. Pressed
-                when the dock is already showing it.
+                The day/night control, and the settings it belongs with. The
+                keyboard-shortcuts reference moved into the dock's own bottom
+                bar, where the surfaces it switches between live: the strip no
+                longer carries a second way to change what the dock shows.
               */}
-              <button
-                type="button"
-                className="window-titlebar__btn window-titlebar__shortcuts"
-                aria-label="Keyboard shortcuts"
-                title="Keyboard shortcuts"
-                aria-pressed={chatOpen && chatSurface === "shortcuts"}
-                onClick={() => {
-                  setChatOpen(true);
-                  setChatSurface("shortcuts");
-                }}
-              >
-                <Keyboard size={15} aria-hidden />
-              </button>
+              <ThemeQuickMenu className="window-titlebar__btn" />
               <SettingsMenu
                 className="window-titlebar__settings"
                 placement="bottom-end"

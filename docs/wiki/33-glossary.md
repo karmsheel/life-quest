@@ -35,8 +35,8 @@ Overview and one for each live domain. See [Dashboard](./03-the-studio.md).
 page, a document, a log card, and so on. Cards can be added to companion chat as
 context. See [The studio](./03-the-studio.md).
 
-**Capture** — a thought logged in Life-Chain before it evaporates. Capture is not
-the studio; it is a signal that can become a task. See
+**Capture** — a thought, a picture or a link logged in Life-Chain before it evaporates.
+Capture is not the studio; it is a signal that can become a task. See
 [Life-Chain](./15-life-chain.md).
 
 **Chat thread** — one conversation with the companion, listed in the rail's
@@ -201,8 +201,8 @@ are sheets, and closing one returns you to the page you were on.
 `.lifequest/signal-chain/`.
 
 **Skin / theme** — the visual palette of the studio, chosen in Settings →
-Appearance. Themes can be light or dark and include Nous, Nous Classic, Midnight,
-Ember, Mono, Cyberpunk and Forge OS.
+Appearance. Themes include Nous, Graphite and Forge; the shipped set ships
+both a day and a night palette.
 
 **Splash** — the launch surface shown while the vault and companion are coming
 up. It does not wait indefinitely on the companion.

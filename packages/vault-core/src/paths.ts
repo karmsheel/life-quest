@@ -268,6 +268,22 @@ export function vaultPaths(root: string) {
     get signalChainDir(): string {
       return build(".lifequest", "signal-chain");
     },
+    // A capture's picture is a file beside the records, not a base64 copy in
+    // JSON: the vault must keep the bytes the operator dropped. The directory
+    // sits inside signal-chain/ and the listing skips it because it is not a
+    // `.json` file.
+    get signalChainFilesDir(): string {
+      return build(".lifequest", "signal-chain", "files");
+    },
+    signalChainFile: (id: string, ext: string) =>
+      build(
+        ".lifequest",
+        "signal-chain",
+        "files",
+        assertSafeSegment(id, "signal attachment id") +
+          "." +
+          assertSafeSegment(ext, "signal attachment extension"),
+      ),
     domainDir: (slug: string) => build("domains", assertDomainSlug(slug)),
     domainJson: (slug: string) => build("domains", assertDomainSlug(slug), "domain.json"),
     documentMd: (slug: string, kind: string) =>

@@ -1,47 +1,14 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import {
-  ChevronRight,
-  Monitor,
-  Moon,
-  Palette,
-  Settings,
-  Sun,
-} from "lucide-react";
+import { ChevronRight, Palette, Settings } from "lucide-react";
 import { useTheme } from "@/components/theme/ThemeProvider";
+import { THEME_OPTIONS, themeHint } from "@/components/theme/theme-options";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import type { ThemePreference } from "@/lib/theme";
+import { useMenuPosition } from "@/components/ui/useMenuPosition";
 import { filterSkinsForPreference } from "@/lib/themes/presets";
 import type { ForgeSkin } from "@/lib/themes/types.ts";
 import { SkinTile } from "./SkinTile";
-
-const THEME_OPTIONS = [
-  {
-    value: "system" as ThemePreference,
-    label: "System",
-    icon: <Monitor size={14} />,
-  },
-  {
-    value: "light" as ThemePreference,
-    label: "Light",
-    icon: <Sun size={14} />,
-  },
-  {
-    value: "dark" as ThemePreference,
-    label: "Dark",
-    icon: <Moon size={14} />,
-  },
-];
-
-const POPOVER_WIDTH = 16.5 * 16;
 
 export function SettingsMenu({
   className,
@@ -62,10 +29,13 @@ export function SettingsMenu({
   } = useTheme();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { menuStyle, updateMenuPosition } = useMenuPosition(
+    triggerRef,
+    placement,
+  );
 
   const skins = useMemo(
     () => filterSkinsForPreference(availableSkins, preference),
@@ -83,55 +53,7 @@ export function SettingsMenu({
     [favoriteSkins, skins],
   );
 
-  const skinHint =
-    preference === "system"
-      ? "Follows system appearance · day & night palettes"
-      : `${resolved === "dark" ? "Night" : "Day"} palette · LifeQuest themes`;
-
-  const updateMenuPosition = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-
-    const rect = trigger.getBoundingClientRect();
-    const gap = 8;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const width = Math.min(POPOVER_WIDTH, vw - 16);
-
-    if (placement === "right-end") {
-      let left = rect.right + gap;
-      if (left + width > vw - 8) {
-        left = Math.max(8, rect.left - width - gap);
-      }
-      const bottom = Math.max(8, vh - rect.bottom);
-      setMenuStyle({
-        position: "fixed",
-        left,
-        bottom,
-        top: "auto",
-        width,
-        maxHeight: Math.max(160, vh - bottom - 8),
-      });
-      return;
-    }
-
-    let top = rect.bottom + gap;
-    let left = rect.right - width;
-    if (left < 8) left = 8;
-    if (left + width > vw - 8) left = Math.max(8, vw - 8 - width);
-    const estimatedMax = Math.min(420, vh - 16);
-    if (top + 200 > vh && rect.top > vh - rect.bottom) {
-      top = Math.max(8, rect.top - gap - estimatedMax);
-    }
-    setMenuStyle({
-      position: "fixed",
-      top,
-      left,
-      bottom: "auto",
-      width,
-      maxHeight: Math.max(160, vh - top - 8),
-    });
-  }, [placement]);
+  const skinHint = themeHint(preference, resolved);
 
   useEffect(() => {
     setMounted(true);
