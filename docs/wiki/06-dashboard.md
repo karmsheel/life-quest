@@ -86,22 +86,33 @@ watch; the board does not grade you.
 
 ### Hand a card to the companion
 
-1. Press the chat control in a card's corner. Its accessible name is **Ask the
-   companion about this card**.
-2. The chat pane opens with the card named in its context pill, and the card gains
-   a ring on the board so you can see which one the chat is holding.
-3. Press the control again — now named **Take this card out of the chat** — to
-   take it back off. Pressing another card's control puts *that* card in context
-   instead.
-4. The control works on a locked board too: asking about a card is not editing the
-   board.
+1. Click anywhere on a card — its body, a heading, a table cell, a chart — and it
+   goes into the companion chat's context. The chat dock opens, the card gains a
+   ring, and the caret lands in the composer.
+2. Click a card already in context and **that card only** comes back out. Click
+   another card to add it; the chat holds up to **three** cards at once.
+3. Each held card keeps its ring and gets its own pill above the composer, in the
+   order you picked it. Click a fourth card and nothing is added: a status line
+   says **Three cards are already in the chat context — take one out first.**
+4. Click empty board space — the board's background, its header text, the gap
+   between cards — and every card leaves the context at once. Pressing another
+   surface (the chat dock, the rail, another page) leaves the context alone.
+5. A card's own controls do their own job: its 3-dot menu, a link, a width or
+   height handle, an input, and so on never add or remove the card. The same is
+   true on a locked board: asking about a card is not editing the board.
+6. With the keyboard, each card carries one hidden context toggle. There is no
+   visible icon: focus it and press **Enter** or **Space**. Its accessible name
+   says what the press will do — **Add "<card name>" to the chat context**, or
+   **Take "<card name>" out of the chat context** when the card is held.
 
 ### Lock the board
 
 1. Press **Lock** in the header. The badge changes to **Locked** and the hint
    explains that the companion's changes now wait in Decisions.
 2. While locked: no **Pin board** row, no card menu, no Edit mode, no tab stop on
-   the cards. The chat control stays.
+   the card itself. Cards still go into and out of the chat's context — by
+   clicking them, by clicking empty board space, and from the hidden keyboard
+   toggle.
 3. Press **Unlock** to make it editable in place again.
 
 ## The screen
@@ -114,7 +125,7 @@ watch; the board does not grade you.
 | **Lock** / **Unlock** | Flips the board's page lock |
 | **Add pin** row | Built-in cards, page titles and saved views not yet on this board |
 | Cards | The pinned content: goals, deadline, today & this week, pending decisions, recent activity, doctrine progress, views, pages |
-| Card chat control | Adds or removes the card as companion chat context |
+| Card context | Click a card to add or remove it as companion chat context, up to three; empty board space clears them all |
 | **Card actions** menu | **Edit card**, **Archive**, **Delete** (where applicable) |
 | Card borders in Edit mode | Width (right) and height (bottom) handles |
 | **Active agents** card | Always shown; lists hired agents and links to Personnel |
@@ -146,8 +157,12 @@ title and domain and opens it.
   a locked board does not unlock it.
 - An unlocked board is reorderable by dragging a card to the position it is
   dropped in, and every card is reorderable from the keyboard.
-- Every pinned card can be added to companion chat as context; a card in context
-  is named in the chat before the turn is sent and marked on the board.
+- Every pinned card can be added to companion chat as context, up to three at a
+  time; a card in context is named in the chat before the turn is sent and marked
+  on the board. Clicking a card toggles it, clicking empty board space takes every
+  card out, and a card's own controls never change the context.
+- Selecting or removing context is not a board edit: it writes nothing and works
+  on a locked board too.
 - Removing a card from the board does not delete what the card draws. Deleting
   what a card draws is confirmed first.
 - The board file is `.lifequest/overview-pins.json` for Overview and
@@ -161,9 +176,11 @@ the contract.
 ## Tips and edge cases
 
 - A card's numbers are a function of the vault and the clock: a running companion
-  turn marks the card it is working on (a quiet live state), and a view card that
+  turn marks the cards it is working on (a quiet live state), and a view card that
   redraws with different content pulses once rather than animating every vault
   write.
+- The context is live dock state, not a saved setting: it survives turns while you
+  hold it, and nothing about it is written to the vault.
 - If a card's saved view or page is deleted from the vault, the card leaves every
   board that showed it on the next read. You do not have to unpin it by hand.
 - The board keeps your place when cards reflow: a write that changes a card's

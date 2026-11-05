@@ -363,7 +363,7 @@ const lifequest = {
       domainSlug: string | null;
       viewingBoard?: string | null;
       viewingBoardLocked?: boolean;
-      focusedCard?: {
+      focusedCards?: {
         label: string;
         pinId: string;
         kind: "system" | "view" | "page";
@@ -372,7 +372,7 @@ const lifequest = {
         viewId?: string;
         pageId?: string;
         system?: string;
-      } | null;
+      }[] | null;
       pageContext?: {
         route: string;
         label: string;

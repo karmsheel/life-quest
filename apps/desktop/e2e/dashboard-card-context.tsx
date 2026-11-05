@@ -402,6 +402,24 @@ function Harness({ generation }: { generation: number }) {
             {/* `key` forces VaultProvider to re-read the board, so a driver can
                 change the board behind the page and see it applied. */}
             <HomePage key={generation} />
+            {/* A surface that is NOT the Dashboard, for the rule that only the
+                Dashboard's own empty space clears the chat context. It stands in
+                for the chat dock and the rail, which live in the app's shell and
+                are not mounted around this page; it is deliberately outside
+                `.home-dashboard`, which is the boundary the page's handler is
+                scoped by. Fixed and small, so it never covers a card a claim
+                presses. */}
+            <div
+              data-testid="outside-the-dashboard"
+              style={{
+                position: "fixed",
+                top: 0,
+                right: 0,
+                width: 44,
+                height: 22,
+                zIndex: 2,
+              }}
+            />
           </ChatDockProvider>
         </VaultProvider>
       </MemoryRouter>

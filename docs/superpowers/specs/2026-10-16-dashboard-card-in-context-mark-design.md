@@ -1,6 +1,6 @@
 # A card in the chat's context is marked, and the control takes it back
 
-**Status:** design
+**Status:** design — superseded in part 2026-11-05 by `2026-11-05-dashboard-multi-card-context-design.md`: the context holds up to three cards, and the control is the card itself rather than the corner button this spec describes. The ring, its one-fact-drawn-twice derivation and the locked-board rule stand.
 **Date:** 2026-10-16
 **Touches:** `apps/desktop/src/pages/HomePage.tsx`,
 `apps/desktop/src/styles/global.css`, `LAWS/DASHBOARD.md`,

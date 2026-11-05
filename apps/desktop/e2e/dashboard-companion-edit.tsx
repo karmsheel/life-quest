@@ -362,6 +362,24 @@ const streamListeners: Array<(frame: CompanionStreamFrame) => void> = [];
 /** The one chat this board's dock opens, named on every frame main would stamp. */
 const STREAM_SESSION_ID = "harness-session";
 
+/**
+ * The chat the operator already has open when the turn starts.
+ *
+ * A run.started frame is only true of a real conversation — the main process
+ * stamps it with the chat the operator sent the turn from — so the dock has to be
+ * ON that chat for the turn's live ring to mean anything. A panel with no session
+ * has no thread and could not have started a turn. This is the same chat
+ * `companionSessionCreate` would make, so the hand-over and the turn address one
+ * conversation, exactly as the app's own panel does.
+ */
+const SESSION = {
+  id: STREAM_SESSION_ID,
+  title: "Harness",
+  preview: "Companion edit harness",
+  lastActive: 1_700_000_000,
+  pinned: false,
+};
+
 function emitTurn(event: ChatStreamEvent): void {
   for (const listener of [...streamListeners]) {
     listener({ sessionId: STREAM_SESSION_ID, event });
@@ -421,7 +439,7 @@ const stubs: Record<string, (...args: unknown[]) => Promise<unknown>> = {
    * be asserting its own idea of when a turn starts. These answer in the shapes the
    * panel expects and record their own names like every other stub here.
    */
-  companionSessionsList: async () => ok([]),
+  companionSessionsList: async () => ok([SESSION]),
   companionSessionMessages: async () => ok([]),
   companionSessionCreate: async () => ok({ id: "harness-session", title: "Harness" }),
   companionSessionPatch: async () => ok(null),
@@ -644,16 +662,21 @@ harness.dashboardCompanionEditLiveCards = () =>
     .filter(Boolean);
 
 /**
- * Hand a card to the chat the way the operator does: press the card's own chat
- * control. Reaching into the dock's setter instead would assert the rig's idea of
- * how a card becomes context, which is the one thing this rig is here to avoid.
+ * Hand a card to the chat the way the operator does: press the card itself.
+ *
+ * There is no corner chat control any more — the card body is the control — so
+ * the hand-over is a press on the card's own heading, never on one of its
+ * controls. Reaching into the dock's setter instead would assert the rig's idea
+ * of how a card becomes context, which is the one thing this rig is here to
+ * avoid.
  */
 harness.dashboardCompanionEditFocusCard = (pinId) => {
-  const button = document.querySelector<HTMLElement>(
-    `[data-pin-id="${CSS.escape(pinId)}"] [data-testid="pin-chat"]`,
+  const card = document.querySelector<HTMLElement>(`[data-pin-id="${CSS.escape(pinId)}"]`);
+  if (!card) return false;
+  const heading = card.querySelector<HTMLElement>(
+    ".home-card__title, .view-card__title, .deadline-banner__label",
   );
-  if (!button) return false;
-  button.click();
+  (heading ?? card).click();
   return true;
 };
 

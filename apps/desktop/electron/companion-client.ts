@@ -13,10 +13,11 @@ export type CompanionInstructionsInput = {
    */
   viewingBoardLocked?: boolean;
   /**
-   * The one card the operator put in front of the chat, if any. Absent means
-   * nobody pointed at a card, and the turn is the turn it always was.
+   * The cards the operator put in front of the chat, in the order they were
+   * chosen. Absent (or empty) means nobody pointed at a card, and the turn is
+   * the turn it always was.
    */
-  focusedCard?: FocusedCardContext | null;
+  focusedCards?: FocusedCardContext[] | null;
   /**
    * The page the operator has open, when the composer's page-context pill is
    * on. Absent means the operator turned that pill off, or no page is mounted,
@@ -534,17 +535,16 @@ export function formatMessageWhen(atMs: number | undefined, nowMs = Date.now()):
 }
 
 /**
- * The one card the operator put in front of this chat, said in the terms that
- * card can actually be changed in.
+ * One dashboard card, said in the terms that card can actually be changed in.
  *
  * The three kinds of card are changed three different ways, so one generic "a
  * card is in context" would teach a model to offer the wrong tool: a built-in
  * card has no spec for `save_view` to rewrite, and a page card is not a view at
- * all. Each branch names the card, says what "it" means, and gives the path that
- * works — or says plainly that there is not one, which is the honest answer and
- * the one that keeps a promise from being made and then broken.
+ * all. Each branch names the card, gives the path that works — or says plainly
+ * that there is not one, which is the honest answer and the one that keeps a
+ * promise from being made and then broken.
  */
-function focusedCardLine(card: FocusedCardContext): string {
+function cardFacts(card: FocusedCardContext): string {
   const where =
     card.boardSlug === null
       ? "the Overview dashboard"
@@ -555,30 +555,49 @@ function focusedCardLine(card: FocusedCardContext): string {
       : card.kind === "page"
         ? `(pinId "${card.pinId}", pageId "${card.pageId}", domainSlug "${card.domainSlug}")`
         : `(pinId "${card.pinId}", built-in card "${card.system}")`;
-  const named = `the card titled "${card.label}" on ${where}`;
-  const means = `When the operator says "this card", "it", or "this block", they mean that one — do not ask which card they mean.`;
-  const opening = `The operator has put ONE dashboard card in front of this chat as context: ${named} ${ids}.`;
+  return `the card titled "${card.label}" on ${where} ${ids}`;
+}
+
+/** How this kind of card is changed, in the words that are true for it. */
+function cardChangePath(card: FocusedCardContext): string {
   if (card.kind === "view") {
-    return [
-      opening,
-      means,
-      "Read it with get_view, then change it in place with save_view carrying the same viewId and the same boardSlug — that updates the card where it already sits.",
-      "save_view's reply carries the card's own rows, so explain the figures from that rather than reading them yourself.",
-    ].join(" ");
+    return "Read it with get_view, then change it in place with save_view carrying the same viewId and the same boardSlug — that updates the card where it already sits. save_view's reply carries the card's own rows, so explain the figures from that rather than reading them yourself.";
   }
   if (card.kind === "page") {
+    return "It is a page card, not a saved view: it has no viewId and save_view cannot change it, so read the page and edit the page instead.";
+  }
+  return "It is a built-in board card, not a saved view: it has no viewId and save_view cannot change it, so do not offer a spec for it. Say what it draws from the records behind it, and change those records with the tool that owns them.";
+}
+
+/**
+ * The cards the operator put in front of this chat.
+ *
+ * One card keeps the shipped wording, because "this card" then has exactly one
+ * answer. Two or three are laid out one per line with each card's own change
+ * path — a model told the wrong path for one of three will promise the wrong
+ * thing about it — and the block says plainly what "this card" means when
+ * several are named. With more than one on the table, guessing is the failure
+ * the context exists to prevent; asking which named card is meant is the honest
+ * answer, and it is not the same question as "which cards are in context".
+ */
+function focusedCardsLine(cards: FocusedCardContext[]): string {
+  if (cards.length === 1) {
+    const card = cards[0]!;
     return [
-      opening,
-      means,
-      "It is a page card, not a saved view: it has no viewId and save_view cannot change it, so read the page and edit the page instead.",
+      `The operator has put ONE dashboard card in front of this chat as context: ${cardFacts(card)}.`,
+      `When the operator says "this card", "it", or "this block", they mean that one — do not ask which card they mean.`,
+      cardChangePath(card),
     ].join(" ");
   }
+  const count = cards.length === 2 ? "TWO" : "THREE";
+  const listed = cards.map(
+    (card, index) => `${index + 1}. ${cardFacts(card)}. ${cardChangePath(card)}`,
+  );
   return [
-    opening,
-    means,
-    "It is a built-in board card, not a saved view: it has no viewId and save_view cannot change it, so do not offer a spec for it.",
-    "Say what it draws from the records behind it, and change those records with the tool that owns them.",
-  ].join(" ");
+    `The operator has put ${count} dashboard cards in front of this chat as context:`,
+    ...listed,
+    `When the operator says "these cards", they mean all ${cards.length} of them. When they say "this card", "it", or "this block", they mean the one they clearly refer to; if more than one could be meant, ask which of the named cards they mean rather than guessing. They are named above, so do not ask which cards are in context.`,
+  ].join("\n");
 }
 
 /**
@@ -673,11 +692,12 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
         "If the image does not give you an amount or an account, ask and post no row; the stored file stays.",
       ].join(" ")
     : "";
-  // The one card the operator pointed at, if they pointed at one. Absent is the
+  // The cards the operator pointed at, if they pointed at any. Absent is the
   // ordinary turn and must stay the ordinary turn: no line, no change in shape.
-  const focusedCard = input.focusedCard
-    ? focusedCardLine(input.focusedCard)
-    : "";
+  const focusedCards =
+    input.focusedCards && input.focusedCards.length > 0
+      ? focusedCardsLine(input.focusedCards)
+      : "";
   // The screen the operator has open, when the composer's page-context pill is
   // on. Absent is the ordinary turn and must stay the ordinary turn.
   const pageContext = input.pageContext
@@ -706,7 +726,7 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     "arrange_dashboard is for reordering or unpinning cards that already exist, and it takes the COMPLETE pin list from get_dashboard. It is not how you add a new card: save_view is. On a locked board neither one writes — both file a Decision.",
     boardLine,
     boardLock,
-    focusedCard,
+    focusedCards,
     pageContext,
     ...fenceRule,
   ].filter(Boolean).join("\n");
