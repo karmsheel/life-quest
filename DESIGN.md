@@ -69,32 +69,32 @@ The rail's collapse narrows it to an icon column (`--shell-sidebar-width-collaps
 
 Do not add dot-grid, Inter/Geist as default UI fonts, a pill composer, `PageShell`, or reclaim `--accent` as hover.
 
-## Nous and Nous Classic
+## Nous
 
-Both are **copies of Hermes Desktop's bundled presets**, taken from
-`apps/shared/src/theme-presets.ts` in the Hermes install. Hermes ships them as its
+`nous` is a **copy of Hermes Desktop's bundled preset**, taken from
+`apps/shared/src/theme-presets.ts` in the Hermes install. Hermes ships it as its
 product identity — `nous` is its `DEFAULT_SKIN_NAME` — so LifeQuest carries the
-same two names and the same palettes rather than a re-derivation of them, and a
-user moving between the two apps sees one look. Re-import from Hermes rather than
+same name and the same palette rather than a re-derivation of them, and a user
+moving between the two apps sees one look. Re-import from Hermes rather than
 hand-editing hexes here.
 
-Neither is a special skin. Both are **palettes and nothing else**: Hermes's theme
-model keeps layout, sizing, radius and typography out of the palette, and both
-themes declare only the system font stacks, no imagery and no second accent. So
-neither has a `[data-skin]` CSS layer, and the type treatment, orbit art and mat
+It is not a special skin. It is a **palette and nothing else**: Hermes's theme
+model keeps layout, sizing, radius and typography out of the palette, and the
+theme declares only the system font stacks, no imagery and no second accent. So
+it has no `[data-skin]` CSS layer, and the type treatment, orbit art and mat
 texture that this file once specified for Nous are retired.
 
-| | **Nous** | **Nous Classic** |
-| --- | --- | --- |
-| Hermes id | `nous` | `nous-alt` |
-| Idea | "GitHub chrome, Nous blue accent" | "Glass neutrals, cream on mission-blue" |
-| Light | GitHub Light Default + `#0053fd` | `#f8faff` glass + `#0053fd` |
-| Dark | GitHub Dark Default + `#4a84fe` | `#ffe6cb` cream on `#0d2f86` |
-| Brand blue | the accent only | the surface itself |
+| | **Nous** |
+| --- | --- |
+| Hermes id | `nous` |
+| Idea | "GitHub chrome, Nous blue accent" |
+| Light | GitHub Light Default + `#0053fd` |
+| Dark | GitHub Dark Default + `#4a84fe` |
+| Brand blue | the accent only |
 
 Two mapping notes, both deliberate:
 
-- **`background` and `card` are swapped in the light palettes.** LifeQuest's light
+- **`background` and `card` are swapped in the light palette.** LifeQuest's light
   ladder sinks the mat below the sheet: `background` becomes `--canvas-base` (the
   rail, and the titlebar by day) and `card` becomes `--background` (the sheet).
   Hermes has no such ladder. Read straight across, Nous would paint a white rail
@@ -103,10 +103,6 @@ Two mapping notes, both deliberate:
 - **`nous` declares `darkLadder: "inverted"`.** GitHub Dark Default puts its cards
   (`#010409`) below its page (`#0d1117`). See the exemption under Dark Ladder
   above.
-
-Classic's declared `color-mix(in srgb, …)` values are resolved to hex **in sRGB**,
-faithfully, so the violet cast Hermes's own preset carries is preserved rather
-than corrected. Fixing it would be a re-derivation, not a copy.
 
 ### Blending: OKLab, not sRGB
 

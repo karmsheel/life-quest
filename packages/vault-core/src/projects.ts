@@ -138,6 +138,33 @@ function parseSourceUrl(value: unknown, field: string): Result<string | null> {
   return ok(trimmed);
 }
 
+/**
+ * The project's repositories: zero or more absolute `http`/`https` URLs.
+ *
+ * Each entry goes through the same check as `sourceUrl`, so a repository the
+ * project page would render as a dead anchor is refused by name instead of
+ * stored. Absent or null means the project has no repositories, which is how
+ * every older project file reads.
+ */
+function parseRepoUrlList(value: unknown, field: string): Result<string[]> {
+  if (value === undefined || value === null) return ok([]);
+  if (!Array.isArray(value)) return fail(`${field} must be a list of absolute http or https URLs`);
+  const urls: string[] = [];
+  for (let i = 0; i < value.length; i += 1) {
+    const entry = value[i];
+    if (typeof entry !== "string") {
+      return fail(`${field}[${i}] must be an absolute http or https URL`);
+    }
+    const parsed = parseSourceUrl(entry, `${field}[${i}]`);
+    if (!parsed.ok) return parsed;
+    if (parsed.value === null) {
+      return fail(`${field}[${i}] must be an absolute http or https URL`);
+    }
+    urls.push(parsed.value);
+  }
+  return ok(urls);
+}
+
 function parseBody(value: unknown): Result<string> {
   if (value === undefined || value === null) return ok("");
   if (typeof value !== "string") return fail("bodyMarkdown must be a string");
@@ -286,6 +313,8 @@ function parseProjectFile(id: string, raw: string): Project | null {
   if (source === undefined) return null;
   const sourceUrl = parseSourceUrl(data.sourceUrl, "sourceUrl");
   if (!sourceUrl.ok) return null;
+  const repoUrls = parseRepoUrlList(data.repoUrls, "repoUrls");
+  if (!repoUrls.ok) return null;
 
   // serializeFrontmatter writes numbers as bare scalars and parseFrontmatter
   // hands every bare scalar back as a string, so a written `progress: 40` reads
@@ -326,6 +355,7 @@ function parseProjectFile(id: string, raw: string): Project | null {
     projectType,
     source,
     sourceUrl: sourceUrl.value,
+    repoUrls: repoUrls.value,
     bodyMarkdown: body,
     stateNote: typeof data.stateNote === "string" ? data.stateNote.trim() : "",
     goalId,
@@ -368,8 +398,9 @@ async function writeProjectFile(rootPath: string, record: Project): Promise<void
   const paths = vaultPaths(rootPath);
   await fs.mkdir(paths.projectsDir, { recursive: true });
   // Every field is persisted, including the ones this release added: the
-  // frontmatter IS the project. `updates` serialises as a one-line JSON array,
-  // which is what lets the parser read it back as structured data.
+  // frontmatter IS the project. `repoUrls` serialises as a YAML block sequence
+  // and `updates` as a one-line JSON array, which is what lets the parser read
+  // each back as structured data.
   const serialized = serializeFrontmatter(
     {
       title: record.title,
@@ -377,6 +408,7 @@ async function writeProjectFile(rootPath: string, record: Project): Promise<void
       projectType: record.projectType,
       source: record.source,
       sourceUrl: record.sourceUrl,
+      repoUrls: record.repoUrls,
       stateNote: record.stateNote,
       goalId: record.goalId,
       domain: record.domainSlug,
@@ -496,6 +528,8 @@ export async function projectCreate(
     if (!source.ok) return source;
     const sourceUrl = parseSourceUrl(raw.sourceUrl, "sourceUrl");
     if (!sourceUrl.ok) return sourceUrl;
+    const repoUrls = parseRepoUrlList(raw.repoUrls, "repoUrls");
+    if (!repoUrls.ok) return repoUrls;
     const stateNote = parseDefaultLine(raw.stateNote, "stateNote");
     if (!stateNote.ok) return stateNote;
     const bodyMarkdown = parseBody(raw.bodyMarkdown);
@@ -552,6 +586,7 @@ export async function projectCreate(
       projectType: projectType.value,
       source: source.value,
       sourceUrl: sourceUrl.value,
+      repoUrls: repoUrls.value,
       bodyMarkdown: bodyMarkdown.value,
       stateNote: stateNote.value,
       goalId: goalId.value,
@@ -627,6 +662,12 @@ export async function projectUpdate(
         const sourceUrl = parseSourceUrl(raw.sourceUrl, "sourceUrl");
         if (!sourceUrl.ok) return sourceUrl;
         next.sourceUrl = sourceUrl.value;
+        changed = true;
+      }
+      if (raw.repoUrls !== undefined) {
+        const repoUrls = parseRepoUrlList(raw.repoUrls, "repoUrls");
+        if (!repoUrls.ok) return repoUrls;
+        next.repoUrls = repoUrls.value;
         changed = true;
       }
       if (raw.stateNote !== undefined) {
@@ -800,7 +841,8 @@ export const PROJECT_TOOL_DEFS: MapToolDef[] = [
     name: "list_projects",
     description:
       "List the operator's Projects as compact records: status, priority, progress, summary, " +
-      "type, source and source link, current state note, next action, goal and domain, dates. " +
+      "type, source and source link, repository links, current state note, next action, goal " +
+      "and domain, dates. " +
       "No bodies and no progress timelines are included; use get_project for one project in " +
       "full. Filter by status, goalId, domainSlug or projectType (case-insensitive). " +
       "Reads the vault directly and creates nothing.",
@@ -852,6 +894,13 @@ export const PROJECT_TOOL_DEFS: MapToolDef[] = [
           type: ["string", "null"],
           description: "An absolute http or https URL the idea came from.",
         },
+        repoUrls: {
+          type: ["array", "null"],
+          items: { type: "string" },
+          description:
+            "The project's repositories: absolute http or https URLs, stored as a list. " +
+            "Replaces the whole list when given; null or [] clears it.",
+        },
         goalId: { type: ["string", "null"], description: "Optional live goal id." },
         domainSlug: { type: ["string", "null"], description: "Optional live domain slug." },
         body: { type: "string", description: "The project's context document." },
@@ -889,6 +938,13 @@ export const PROJECT_TOOL_DEFS: MapToolDef[] = [
         sourceUrl: {
           type: ["string", "null"],
           description: "An absolute http or https URL the idea came from.",
+        },
+        repoUrls: {
+          type: ["array", "null"],
+          items: { type: "string" },
+          description:
+            "The project's repositories: absolute http or https URLs. Replaces the whole " +
+            "list when given; null or [] clears it.",
         },
         goalId: { type: ["string", "null"] },
         domainSlug: { type: ["string", "null"] },
@@ -947,6 +1003,7 @@ function toListEntry(project: Project): ProjectListEntry {
     projectType: project.projectType,
     source: project.source,
     sourceUrl: project.sourceUrl,
+    repoUrls: project.repoUrls,
     stateNote: project.stateNote,
     goalId: project.goalId,
     domainSlug: project.domainSlug,
@@ -1169,6 +1226,7 @@ export function projectToolArgumentError(
     parseOptionalLine(rec.projectType, "projectType"),
     parseOptionalLine(rec.source, "source"),
     parseSourceUrl(rec.sourceUrl, "sourceUrl"),
+    parseRepoUrlList(rec.repoUrls, "repoUrls"),
   ];
   for (const check of checks) {
     if (!check.ok) return check.error;
@@ -1217,6 +1275,11 @@ function createProjectCommand(raw: Record<string, unknown>): ProjectCommand | nu
     const sourceUrl = parseSourceUrl(raw.sourceUrl, "sourceUrl");
     if (!sourceUrl.ok) return null;
     command.sourceUrl = sourceUrl.value;
+  }
+  if (raw.repoUrls !== undefined) {
+    const repoUrls = parseRepoUrlList(raw.repoUrls, "repoUrls");
+    if (!repoUrls.ok) return null;
+    command.repoUrls = repoUrls.value;
   }
   if (raw.stateNote !== undefined) {
     const stateNote = parseDefaultLine(raw.stateNote, "stateNote");
@@ -1285,6 +1348,11 @@ function updateProjectCommand(raw: Record<string, unknown>): ProjectCommand | nu
     const sourceUrl = parseSourceUrl(raw.sourceUrl, "sourceUrl");
     if (!sourceUrl.ok) return null;
     patch.sourceUrl = sourceUrl.value;
+  }
+  if (raw.repoUrls !== undefined) {
+    const repoUrls = parseRepoUrlList(raw.repoUrls, "repoUrls");
+    if (!repoUrls.ok) return null;
+    patch.repoUrls = repoUrls.value;
   }
   if (raw.stateNote !== undefined) {
     const stateNote = parseDefaultLine(raw.stateNote, "stateNote");

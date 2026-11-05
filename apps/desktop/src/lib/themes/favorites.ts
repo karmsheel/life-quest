@@ -12,7 +12,7 @@
  * leave a hole in the quick grid, and nothing else in the array is trusted enough
  * to be applied.
  */
-import { isBuiltinSkinName } from "./presets.ts";
+import { isBuiltinSkinName, resolveLegacySkinName } from "./presets.ts";
 import { isInstalledSkin } from "./user-themes.ts";
 
 export const SKIN_FAVORITES_STORAGE_KEY = "lifequest-skin-favorites";
@@ -34,12 +34,18 @@ export function getStoredSkinFavorites(): string[] | null {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return null;
     const seen = new Set<string>();
-    return parsed.filter((name): name is string => {
-      if (typeof name !== "string" || seen.has(name)) return false;
-      if (!isKnownSkinName(name)) return false;
+    const names: string[] = [];
+    for (const raw of parsed) {
+      if (typeof raw !== "string") continue;
+      // A name retired or renamed since the list was written is folded to the
+      // theme it moved to before it is proved, so a curated list never loses an
+      // entry to a rename.
+      const name = resolveLegacySkinName(raw);
+      if (!name || seen.has(name) || !isKnownSkinName(name)) continue;
       seen.add(name);
-      return true;
-    });
+      names.push(name);
+    }
+    return names;
   } catch {
     /* unreadable or not JSON: fall back to the default, which is the full set */
   }

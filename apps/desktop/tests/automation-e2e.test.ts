@@ -123,6 +123,8 @@ type Editor = {
 };
 type Sample = {
   route: string | null;
+  /** The chat the fixture already had on screen when the run started. */
+  priorChatTitle: string | null;
   rail: {
     wing: Link[];
     shelf: Link[];
@@ -157,6 +159,10 @@ type Sample = {
   chat: {
     open: boolean;
     title: string | null;
+    /** The dock's open tabs, in strip order, with the tab in front marked. */
+    tabs: { label: string | null; active: boolean }[];
+    /** The Chats list's live rows: each chat the store lists, by name. */
+    sidebarRows: { label: string | null; active: boolean }[];
     userMessages: string[];
   };
   sessionCalls: { id: string; title: string }[];
@@ -373,6 +379,20 @@ describe("automations e2e", () => {
       false,
       "the trigger is disabled while a note is on screen",
     );
+    assert.equal(
+      dayPage.chat.title,
+      dayPage.priorChatTitle,
+      "the conversation before the run is not the one the fixture left on screen",
+    );
+    assert.deepEqual(
+      dayPage.chat.tabs,
+      [],
+      "a single chat drew a tab strip before the run",
+    );
+    assert.ok(
+      dayPage.chat.sidebarRows.some((row) => row.label === dayPage.priorChatTitle),
+      "the chat on screen before the run is missing from Chats",
+    );
 
     const expectedTitle = `Analyze note · ${new Intl.DateTimeFormat("en-GB", {
       day: "numeric",
@@ -386,6 +406,29 @@ describe("automations e2e", () => {
     assert.ok(session, "the manual run did not create its chat");
     assert.equal(after.chat.open, true, "the dock did not open on the new chat");
     assert.equal(after.chat.title, expectedTitle, "the dock is not showing the new chat");
+    // The chat the page started takes a tab of its own: the conversation that was
+    // on screen keeps its tab, and the new tab wears the chat's own name. Taking
+    // that tab over, or a tab labelled "Chat", is what this rig refused before
+    // the store adopted the session the page created.
+    assert.deepEqual(
+      after.chat.tabs,
+      [
+        { label: after.priorChatTitle, active: false },
+        { label: expectedTitle, active: true },
+      ],
+      "the new chat did not open in its own tab beside the one on screen",
+    );
+    // The scheduled sweep's chat is in the list too — a scheduled run waits in
+    // Chats without opening the dock — so this asks that both of the chats this
+    // button's run cares about are there, not that the list holds nothing else.
+    assert.ok(
+      after.chat.sidebarRows.some((row) => row.label === expectedTitle),
+      `Chats does not list the new chat by name: ${JSON.stringify(after.chat.sidebarRows)}`,
+    );
+    assert.ok(
+      after.chat.sidebarRows.some((row) => row.label === after.priorChatTitle),
+      `Chats lost the chat that was on screen before the run: ${JSON.stringify(after.chat.sidebarRows)}`,
+    );
     assert.equal(after.chat.userMessages.length, 1);
     assert.match(after.chat.userMessages[0]!, /Analyze the Daily Note for/);
     assert.match(after.chat.userMessages[0]!, /Kanban board/);

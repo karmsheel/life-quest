@@ -19,16 +19,22 @@
  *     in the header, and the header's only paragraphs are the eyebrow and the
  *     lock hint. A doctrine line that came back — under a new class, even —
  *     fails the second half.
- *  2. `add-toggle-is-closed-on-landing` — the pin board is not furniture. The
- *     row is absent and the control says it is closed. A page that still renders
- *     the row permanently fails on the sample, not on a glance.
- *  3. `add-toggle-opens-and-closes` — it is a control, not a one-way door: the
- *     row appears with the board's own add buttons, and disappears again.
+ *  2. `add-toggle-is-closed-on-landing` — the pin board is not furniture, and it
+ *     is not a header control any more: the page's three-dot menu is shut, no
+ *     popover or item is in the document, and the Add-pin row is absent. A page
+ *     that still renders the row permanently, or a menu that renders closed,
+ *     fails on the sample, not on a glance.
+ *  3. `add-toggle-opens-and-closes` — choosing the menu's Pin board item is a
+ *     control, not a one-way door: the menu closes, the row appears with the
+ *     board's own add buttons, and reopening the menu shows the item as "Hide
+ *     pin board" with `aria-expanded="true"`; choosing it again closes the menu
+ *     and takes the row away.
  *  4. `pin-board-sits-above-the-grid` — proven with `compareDocumentPosition`,
  *     so "at the top" is a fact about the document and not about a screenshot.
- *  5. `locked-board-has-no-add-path` — a locked board has no toggle, no row and
- *     no add button anywhere. This is the claim the lock's whole meaning rests
- *     on: no second, hidden way to propose what Lock says is not editable.
+ *  5. `locked-board-has-no-add-path` — a locked board has no row and no add
+ *     button anywhere, and its menu holds ONLY the lock item, so there is no
+ *     second, hidden way to propose what Lock says is not editable. The menu
+ *     itself stays reachable, because that is the only way back.
  *  6. `add-pin-still-writes` — the moved row still does its job: one `pinsSet`,
  *     carrying the board plus exactly the pin that was asked for.
  *  7. `every-card-offers-the-chat-control` — every pinned card, of every kind,
@@ -132,7 +138,12 @@ const MENU = {
 };
 
 /**
- * The board and the pin board's controls, read straight off the rendered page.
+ * The board and the page menu's controls, read straight off the rendered page.
+ *
+ * The pin board is no longer a header control: it is the page menu's second
+ * item, behind the three-dot trigger at the title's top-right edge. The menu
+ * only exists while it is open, so its items are read from inside the popover —
+ * a closed menu has nothing to read, and that absence is itself a claim.
  *
  * The ordering claims are `compareDocumentPosition` bits, not index arithmetic:
  * "above the grid" is a fact about the document, and an index into a childNode
@@ -140,7 +151,8 @@ const MENU = {
  */
 const SAMPLE = `(() => {
   const section = document.querySelector('[data-testid="board-add-pin"]');
-  const toggle = document.querySelector('[data-testid="board-add-toggle"]');
+  const trigger = document.querySelector('[data-testid="board-page-menu"]');
+  const popover = document.querySelector('[data-testid="board-page-menu-popover"]');
   const grid = document.querySelector('.home-dashboard__grid');
   const follows = (a, b) => Boolean(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING));
   const cards = [...document.querySelectorAll('.home-dashboard__grid > .home-pin[data-pin-id]')];
@@ -160,9 +172,9 @@ const SAMPLE = `(() => {
       const badge = header.querySelector('[data-testid="board-lock-badge"]');
       return {
         eyebrow: (header.querySelector('.home-dashboard__eyebrow') || {}).textContent?.trim() ?? null,
-        // The title is the page's name and nothing else now that the lock badge
-        // and switch live in the page's own corner; a text-node read still says
-        // exactly the words the heading paints.
+        // The title is the page's name and nothing else: the lock badge now
+        // rides the heading and the lock itself is the menu's first item, so a
+        // text-node read still says exactly the words the heading paints.
         title: title
           ? [...title.childNodes]
               .filter((node) => node.nodeType === 3)
@@ -181,14 +193,43 @@ const SAMPLE = `(() => {
         })),
       };
     })(),
-    toggle: toggle
+    // The page's menu trigger: always there, whether the menu is open or closed.
+    pageMenu: trigger
       ? {
-          label: (toggle.textContent || '').trim(),
-          expanded: toggle.getAttribute('aria-expanded'),
-          svgs: toggle.querySelectorAll('svg').length,
-          icon: icon(toggle),
+          label: trigger.getAttribute('aria-label'),
+          haspopup: trigger.getAttribute('aria-haspopup'),
+          expanded: trigger.getAttribute('aria-expanded'),
+          svgs: trigger.querySelectorAll('svg').length,
+          icon: icon(trigger),
+          testid: trigger.dataset.testid || null,
         }
       : null,
+    // The popover and its items, only while the menu is open.
+    pageMenuPopover: popover
+      ? {
+          role: popover.getAttribute('role'),
+          label: popover.getAttribute('aria-label'),
+          testid: popover.dataset.testid || null,
+          classes: popover.className,
+          items: [...popover.querySelectorAll('[role="menuitemcheckbox"], [role="menuitem"]')].map(
+            (el) => el.dataset.testid || null,
+          ),
+        }
+      : null,
+    addItem: (() => {
+      const el = popover ? popover.querySelector('[data-testid="board-add-toggle"]') : null;
+      if (!el) return null;
+      const label = el.querySelector('.page-menu__item-label');
+      return {
+        testid: el.dataset.testid || null,
+        role: el.getAttribute('role'),
+        label: (label ? label.textContent : el.textContent || '').trim(),
+        ariaLabel: el.getAttribute('aria-label'),
+        expanded: el.getAttribute('aria-expanded'),
+        svgs: el.querySelectorAll('svg').length,
+        icon: icon(el),
+      };
+    })(),
     section: section
       ? {
           buttons: [...section.querySelectorAll('.home-pin-add__btn')].map((b) => (b.textContent || '').trim()),
@@ -196,7 +237,13 @@ const SAMPLE = `(() => {
         }
       : null,
     sectionBeforeGrid: follows(section, grid),
-    toggleBeforeSection: follows(toggle, section),
+    // The add control lives in the header's menu; the row it opens still has to
+    // sit above the grid it adds to.
+    triggerBeforeSection: follows(trigger, section),
+    // A closed menu puts no items in the document. Read over the whole document,
+    // so an item that leaked out of its popover is caught too.
+    addItemsInDocument: document.querySelectorAll('[data-testid="board-add-toggle"]').length,
+    lockItemsInDocument: document.querySelectorAll('[data-testid="board-lock-toggle"]').length,
     gridCards: cards.length,
     strayAddButtons: document.querySelectorAll('.home-pin-add__btn').length,
     chromeBars: document.querySelectorAll('.home-pin__chrome').length,
@@ -405,12 +452,49 @@ async function click(win, selector) {
   await sleep(60);
 }
 
+/** Open the page's three-dot menu and wait for its popover. */
+async function openPageMenu(win) {
+  await click(win, '[data-testid="board-page-menu"]');
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="board-page-menu-popover"]'))`,
+    "the page menu to open",
+  );
+}
+
+/** Close the page's menu by pressing its trigger again, if it is open. */
+async function closePageMenu(win) {
+  const open = await win.webContents.executeJavaScript(
+    `Boolean(document.querySelector('[data-testid="board-page-menu-popover"]'))`,
+  );
+  if (open) await click(win, '[data-testid="board-page-menu"]');
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="board-page-menu-popover"]')`,
+    "the page menu to close",
+  );
+}
+
+/**
+ * Ask the board for its Add-pin row.
+ *
+ * The row is behind the page menu's second item now: open the three-dot menu,
+ * choose Pin board (which closes the menu before it toggles the row), and wait
+ * for the row. Every render lands with the menu closed and the row closed — the
+ * page is keyed on the generation — so this is the only way to the row.
+ */
 async function openPinBoard(win) {
+  await openPageMenu(win);
   await click(win, '[data-testid="board-add-toggle"]');
   await waitFor(
     win,
     `Boolean(document.querySelector('[data-testid="board-add-pin"]'))`,
     "the pin board to open",
+  );
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="board-page-menu-popover"]')`,
+    "the page menu to close after choosing the pin board",
   );
 }
 
@@ -547,45 +631,69 @@ async function main() {
   );
 
   // ── 1. closed on landing ──────────────────────────────────────────────────
+  // The page's actions live behind one three-dot trigger now: the row is absent,
+  // the menu is shut, and a closed menu puts no items in the document at all.
   checks.landing = landing;
   check(
     "add-toggle-is-closed-on-landing",
     landing.section === null &&
-      landing.toggle !== null &&
-      landing.toggle.expanded === "false" &&
-      /^pin board$/i.test(landing.toggle.label) &&
-      landing.toggle.svgs === 1 &&
-      (landing.toggle.icon ?? "").includes("lucide-pin"),
-    `the landing board offered ${JSON.stringify({ toggle: landing.toggle, section: landing.section })}`,
+      landing.pageMenu !== null &&
+      landing.pageMenu.expanded === "false" &&
+      landing.pageMenu.haspopup === "menu" &&
+      landing.pageMenu.label === "Dashboard actions" &&
+      landing.pageMenu.svgs === 1 &&
+      landing.pageMenuPopover === null &&
+      landing.addItem === null &&
+      landing.addItemsInDocument === 0 &&
+      landing.lockItemsInDocument === 0,
+    `the landing board offered ${JSON.stringify({
+      menu: landing.pageMenu,
+      popover: landing.pageMenuPopover,
+      addItem: landing.addItem,
+      section: landing.section,
+    })}`,
   );
 
-  // ── 2. it opens and closes ────────────────────────────────────────────────
+  // ── 2. it opens and closes, from inside the menu ──────────────────────────
   await openPinBoard(win);
   const opened = await sample(win);
-  const closedAgain = await (async () => {
-    await click(win, '[data-testid="board-add-toggle"]');
-    await waitFor(
-      win,
-      `!document.querySelector('[data-testid="board-add-pin"]')`,
-      "the pin board to close",
-    );
-    return sample(win);
-  })();
+  // The row is open and the menu has closed; reopening the menu is what makes
+  // the item's "Hide pin board" / `aria-expanded="true"` a claim about the open
+  // row rather than about a label that happens to be on screen.
+  await openPageMenu(win);
+  const openedMenu = await sample(win);
+  await click(win, '[data-testid="board-add-toggle"]');
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="board-add-pin"]')`,
+    "the pin board to close",
+  );
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="board-page-menu-popover"]')`,
+    "the menu to close after hiding the pin board",
+  );
+  const closedAgain = await sample(win);
   checks.opened = opened;
+  checks.openedMenu = openedMenu;
   checks.closedAgain = closedAgain;
   check(
     "add-toggle-opens-and-closes",
-    opened.toggle?.expanded === "true" &&
-      /hide pin board/i.test(opened.toggle?.label ?? "") &&
-      opened.section !== null &&
+    opened.section !== null &&
       opened.section.buttons.length > 0 &&
       opened.section.headingSvgs >= 1 &&
       opened.strayAddButtons > 0 &&
+      opened.pageMenuPopover === null &&
+      opened.addItem === null &&
+      openedMenu.addItem?.expanded === "true" &&
+      /hide pin board/i.test(openedMenu.addItem?.label ?? "") &&
       closedAgain.section === null &&
-      closedAgain.toggle?.expanded === "false" &&
+      closedAgain.pageMenuPopover === null &&
+      closedAgain.addItem === null &&
       closedAgain.strayAddButtons === 0,
-    `open ${JSON.stringify(opened.section?.buttons)} expanded=${opened.toggle?.expanded}, ` +
-      `closed expanded=${closedAgain.toggle?.expanded} stray=${closedAgain.strayAddButtons}`,
+    `open ${JSON.stringify(opened.section?.buttons)} menu=${JSON.stringify(opened.pageMenuPopover)}, ` +
+      `reopened item ${JSON.stringify(openedMenu.addItem)}, ` +
+      `closed stray=${closedAgain.strayAddButtons} menu=${JSON.stringify(closedAgain.pageMenuPopover)}`,
   );
 
   // ── 3. the row sits above the grid it adds to ─────────────────────────────
@@ -593,11 +701,11 @@ async function main() {
   const above = await sample(win);
   checks.above = {
     sectionBeforeGrid: above.sectionBeforeGrid,
-    toggleBeforeSection: above.toggleBeforeSection,
+    triggerBeforeSection: above.triggerBeforeSection,
   };
   check(
     "pin-board-sits-above-the-grid",
-    above.sectionBeforeGrid === true && above.toggleBeforeSection === true,
+    above.sectionBeforeGrid === true && above.triggerBeforeSection === true,
     `document order was ${JSON.stringify(checks.above)}`,
   );
 
@@ -623,16 +731,36 @@ async function main() {
   );
 
   // ── 4. a locked board has no add path ─────────────────────────────────────
+  // The board is read-only; the honest place to check for a hidden add path is
+  // the menu itself, because a closed menu hides every item by design. The menu
+  // must still open — it is the only surface that can unlock the board.
   await render(win, true);
   const lockedBoard = await sample(win);
+  await openPageMenu(win);
+  const lockedMenu = await sample(win);
+  await closePageMenu(win);
   checks.lockedBoard = lockedBoard;
+  checks.lockedMenu = lockedMenu;
   check(
     "locked-board-has-no-add-path",
-    lockedBoard.toggle === null &&
+    lockedBoard.addItem === null &&
+      lockedBoard.addItemsInDocument === 0 &&
       lockedBoard.section === null &&
       lockedBoard.strayAddButtons === 0 &&
-      lockedBoard.gridCards === SEED.length,
-    `the locked board still offered ${JSON.stringify({ toggle: lockedBoard.toggle, section: lockedBoard.section, stray: lockedBoard.strayAddButtons })}`,
+      lockedBoard.gridCards === SEED.length &&
+      lockedBoard.pageMenuPopover === null &&
+      lockedBoard.pageMenu !== null &&
+      lockedMenu.pageMenuPopover !== null &&
+      lockedMenu.addItemsInDocument === 0 &&
+      JSON.stringify(lockedMenu.pageMenuPopover.items) === JSON.stringify(["board-lock-toggle"]) &&
+      lockedMenu.addItem === null,
+    `the locked board offered ${JSON.stringify({
+      addItem: lockedBoard.addItem,
+      section: lockedBoard.section,
+      stray: lockedBoard.strayAddButtons,
+      menuItems: lockedMenu.pageMenuPopover?.items,
+      menuAddItem: lockedMenu.addItem,
+    })}`,
   );
 
   // ── 6/7. the chat control, on every card, outside the editing chrome ──────
@@ -1203,7 +1331,7 @@ async function main() {
 
   console.log(
     `pin board: landing=${landing.section === null ? "closed" : "open"} ` +
-      `above-grid=${above.sectionBeforeGrid} lockedToggle=${lockedBoard.toggle === null ? "none" : "present"}`,
+      `above-grid=${above.sectionBeforeGrid} lockedAddItem=${lockedBoard.addItem === null ? "none" : "present"}`,
   );
   console.log(
     `cards: ${board.cards.length} cards, ${board.chatControls} chat control(s), ` +

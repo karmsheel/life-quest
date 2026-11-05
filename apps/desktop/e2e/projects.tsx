@@ -151,6 +151,10 @@ const PROJECTS: Project[] = [
     projectType: "Desktop/web",
     source: "Hermes",
     sourceUrl: "https://example.com/execute-wing",
+    repoUrls: [
+      "https://github.com/karmsheel/life-quest",
+      "https://gitlab.com/karmsheel/vault-core",
+    ],
     stateNote: "Tools landed; the wing is in progress.",
     bodyMarkdown:
       "## Context\n\nThe project's own document. The companion reads it with `get_project`.",
@@ -176,6 +180,7 @@ const PROJECTS: Project[] = [
     projectType: "Service",
     source: null,
     sourceUrl: null,
+    repoUrls: [],
     stateNote: "Waiting on the landlord's counter-offer.",
     bodyMarkdown: "",
     goalId: null,
@@ -197,6 +202,7 @@ const PROJECTS: Project[] = [
     projectType: "Mobile App",
     source: "An old CRM export",
     sourceUrl: null,
+    repoUrls: [],
     stateNote: "",
     bodyMarkdown: "",
     goalId: "g-money",
@@ -218,6 +224,7 @@ const PROJECTS: Project[] = [
     projectType: "Physical product",
     source: "A travel blog",
     sourceUrl: "https://example.com/winter-trip",
+    repoUrls: [],
     stateNote: "Shortlist three places by the end of the month.",
     bodyMarkdown: "",
     goalId: null,
@@ -456,6 +463,7 @@ function applyPatch(id: string, patch: Record<string, unknown>): Project | null 
     "projectType",
     "source",
     "sourceUrl",
+    "repoUrls",
     "stateNote",
     "bodyMarkdown",
     "goalId",
@@ -509,6 +517,9 @@ const bridge: Record<string, unknown> = {
       projectType: (typed.projectType as string | null) ?? null,
       source: (typed.source as string | null) ?? null,
       sourceUrl: (typed.sourceUrl as string | null) ?? null,
+      repoUrls: Array.isArray(typed.repoUrls)
+        ? (typed.repoUrls as string[]).filter((url) => typeof url === "string")
+        : [],
       stateNote: String(typed.stateNote ?? ""),
       bodyMarkdown: String(typed.bodyMarkdown ?? ""),
       goalId: (typed.goalId as string | null) ?? null,

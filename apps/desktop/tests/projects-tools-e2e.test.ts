@@ -35,7 +35,10 @@ import { ensureCompanionToken } from "../electron/pairing-secrets.ts";
  *      The idea-provenance fields (type, source, source link) survive the file
  *      round trip even when their text would read as YAML (`[]`, `true`), an
  *      invalid `sourceUrl` is refused by name and writes nothing, and
- *      `list_projects` filters by type case-insensitively.
+ *      `list_projects` filters by type case-insensitively. The `repoUrls` list
+ *      is written as a YAML block sequence, read back in order by both reads,
+ *      replaced whole by an update, and an entry that is not an absolute
+ *      http(s) URL is refused by its field and index.
  *   3. `update_project` with `stateNote` + `addUpdate` files a Decision; after
  *      approve the progress percent and the timeline entry are there.
  *   4. `close_project` files a Decision; after approve the status is `closed`.
@@ -235,6 +238,10 @@ describe("projects and harness tools over the real MCP door", () => {
         projectType: "Mobile App",
         source: "A friend's recommendation",
         sourceUrl: "https://example.com/ideas/execute-wing",
+        repoUrls: [
+          "https://github.com/karmsheel/life-quest",
+          "https://gitlab.com/karmsheel/vault-core",
+        ],
         stateNote: "Kickoff done; the tools are half-written",
         goalId,
         domainSlug: "health",
@@ -287,6 +294,7 @@ describe("projects and harness tools over the real MCP door", () => {
           entries[0]?.projectType === CREATE_ARGS.projectType &&
           entries[0]?.source === CREATE_ARGS.source &&
           entries[0]?.sourceUrl === CREATE_ARGS.sourceUrl &&
+          JSON.stringify(entries[0]?.repoUrls) === JSON.stringify(CREATE_ARGS.repoUrls) &&
           entries[0]?.stateNote === CREATE_ARGS.stateNote &&
           entries[0]?.status === "active" &&
           entries[0]?.priority === "high" &&
@@ -315,6 +323,7 @@ describe("projects and harness tools over the real MCP door", () => {
           readCreate.projectType === CREATE_ARGS.projectType &&
           readCreate.source === CREATE_ARGS.source &&
           readCreate.sourceUrl === CREATE_ARGS.sourceUrl &&
+          JSON.stringify(readCreate.repoUrls) === JSON.stringify(CREATE_ARGS.repoUrls) &&
           readCreate.stateNote === CREATE_ARGS.stateNote &&
           // The file's body gains the trailing newline the frontmatter
           // serializer writes; the content is what the tool must carry back.
@@ -342,6 +351,27 @@ describe("projects and harness tools over the real MCP door", () => {
         `the approved create Decision is not collated onto the project: ${JSON.stringify(
           readCreate.decisions,
         ).slice(0, 300)}`,
+      );
+
+      // The repositories are a YAML block sequence in the file itself, not a
+      // one-line JSON array: the vault is the operator's, so the list has to be
+      // readable there, and the read path hands the same order back.
+      const createdProjectText = fs.readFileSync(
+        path.join(vaultRoot, "projects", `${projectId}.md`),
+        "utf8",
+      );
+      const expectedRepoBlock = `repoUrls:\n${CREATE_ARGS.repoUrls
+        .map((url) => `  - ${url}`)
+        .join("\n")}`;
+      scenario(
+        "repo-urls-yaml-list",
+        createdProjectText.includes(expectedRepoBlock),
+        `the project file's repository block is ${JSON.stringify(
+          createdProjectText
+            .split("\n")
+            .filter((line) => line.includes("repoUrls") || /^\s*-\s/.test(line))
+            .join("\n"),
+        )}`,
       );
 
       // ── 2b. the idea-provenance fields ────────────────────────────────────
@@ -447,6 +477,38 @@ describe("projects and harness tools over the real MCP door", () => {
           directBadUrl.ok ? "ok" : directBadUrl.error
         }`,
       );
+
+      // A repository entry is validated the same way sourceUrl is; the refusal
+      // names the list and the entry, and nothing is filed or written.
+      const badRepoFiled = asRecord(
+        await callTool(bearer, "create_project", {
+          title: "Bad repo list",
+          repoUrls: ["https://github.com/karmsheel/life-quest", "example.com/not-a-url"],
+        }),
+        "create_project",
+      );
+      scenario(
+        "invalid-repo-url-refused",
+        /repoUrls\[1\]/.test(
+          String((badRepoFiled.error as { message?: string } | undefined)?.message ?? ""),
+        ) &&
+          projectFiles(vaultRoot).length === filesBeforeBadUrl &&
+          (await pendingFor(vaultRoot, "project")).length === 0,
+        `create_project with a bad repoUrls entry answered ${JSON.stringify(badRepoFiled).slice(0, 300)}`,
+      );
+      const directBadRepos = await projectCreate(vaultRoot, {
+        title: "Bad direct repos",
+        repoUrls: ["javascript:alert(1)"],
+      });
+      scenario(
+        "invalid-repo-url-operator",
+        !directBadRepos.ok &&
+          /repoUrls/.test(directBadRepos.error) &&
+          projectFiles(vaultRoot).length === filesBeforeBadUrl,
+        `projectCreate with a bad repoUrls entry answered ${
+          directBadRepos.ok ? "ok" : directBadRepos.error
+        }`,
+      );
       const beforeBadUpdate = asRecord(
         await callTool(bearer, "get_project", { id: projectId }),
         "get_project",
@@ -474,11 +536,40 @@ describe("projects and harness tools over the real MCP door", () => {
         `update_project with a bad sourceUrl answered ${JSON.stringify(badUrlUpdate).slice(0, 300)}`,
       );
 
+      const beforeBadRepoUpdate = asRecord(
+        await callTool(bearer, "get_project", { id: projectId }),
+        "get_project",
+      );
+      const badRepoUpdate = asRecord(
+        await callTool(bearer, "update_project", {
+          id: projectId,
+          stateNote: "A repo edit that must not land",
+          repoUrls: ["ftp://example.com/not-web"],
+        }),
+        "update_project",
+      );
+      const afterBadRepoUpdate = asRecord(
+        await callTool(bearer, "get_project", { id: projectId }),
+        "get_project",
+      );
+      scenario(
+        "invalid-repo-url-update-refused",
+        /repoUrls/.test(
+          String((badRepoUpdate.error as { message?: string } | undefined)?.message ?? ""),
+        ) &&
+          afterBadRepoUpdate.stateNote === beforeBadRepoUpdate.stateNote &&
+          JSON.stringify(afterBadRepoUpdate.repoUrls) ===
+            JSON.stringify(CREATE_ARGS.repoUrls) &&
+          (await pendingFor(vaultRoot, "project")).length === 0,
+        `update_project with a bad repoUrls entry answered ${JSON.stringify(badRepoUpdate).slice(0, 300)}`,
+      );
+
       // ── 3. update: stateNote + addUpdate → Decision → approve ────────────
       const UPDATE_PROVENANCE = {
         projectType: "Desktop/web",
         source: "First noticed on a YouTube channel",
         sourceUrl: "https://example.com/watch?v=execute-wing",
+        repoUrls: ["https://github.com/karmsheel/vault-core"],
       };
       const updateFiled = asRecord(
         await callTool(bearer, "update_project", {
@@ -522,11 +613,14 @@ describe("projects and harness tools over the real MCP door", () => {
         "update-project-provenance",
         readAfterUpdate.projectType === UPDATE_PROVENANCE.projectType &&
           readAfterUpdate.source === UPDATE_PROVENANCE.source &&
-          readAfterUpdate.sourceUrl === UPDATE_PROVENANCE.sourceUrl,
+          readAfterUpdate.sourceUrl === UPDATE_PROVENANCE.sourceUrl &&
+          JSON.stringify(readAfterUpdate.repoUrls) ===
+            JSON.stringify(UPDATE_PROVENANCE.repoUrls),
         `update_project carried ${JSON.stringify({
           projectType: readAfterUpdate.projectType,
           source: readAfterUpdate.source,
           sourceUrl: readAfterUpdate.sourceUrl,
+          repoUrls: readAfterUpdate.repoUrls,
         })}`,
       );
       scenario(

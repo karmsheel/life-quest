@@ -22,6 +22,8 @@ import {
   Eye,
   EyeOff,
   ImagePlus,
+  Keyboard,
+  Link2,
   MessageCircleQuestion,
   MessageSquare,
   MoreVertical,
@@ -44,9 +46,14 @@ import { copyText } from "@/lib/clipboard";
 import { api } from "@/lib/ipc";
 import { pageLabelFor } from "@/lib/page-context";
 import { WING_LABELS, wingForPath } from "@/components/shell/wing";
-import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
+import {
+  linkHost,
+  signalStampWhen,
+  signalVisible,
+} from "@/lib/signal-chain";
 import { summarizeToolRun, toolRowLabel } from "@/lib/tool-run";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
+import { useSignalImageUrls } from "@/components/signal-chain/useSignalImageUrls";
 import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
 import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
@@ -153,6 +160,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const {
     requestedSessionId,
     requestedKickoff,
+    requestedSession,
     requestedAutomationContext,
     clearRequestedSession,
     contextCard,
@@ -166,8 +174,8 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     // The two-pane move, in the bottom bar beside the collapse control: the
     // titlebar no longer carries a copy of it.
     swapSide,
-    // What the pane is showing. It sits on the dock because the titlebar's
-    // shortcuts control opens the dock onto that page from above this store.
+    // What the pane is showing. The dock's own bottom bar switches it, so the
+    // store sits above the panel whose bar reads it.
     surface: view,
     setSurface: setView,
   } = useChatDock();
@@ -357,6 +365,21 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   /** The same two-state rule as the chat field: the arrow needs some text. */
   const chainSendable = chainDraft.trim().length > 0;
   const chainControlVisible = chainBusy || chainSendable;
+  /**
+   * A capture may be a picture; the dock draws the same records the page does,
+   * so it reads their bytes through the same blob-URL path.
+   */
+  const signalImagePaths = useMemo(
+    () =>
+      signals
+        .map((s) =>
+          s.attachment?.kind === "image" ? s.attachment.relPath : null,
+        )
+        .filter((path): path is string => path !== null),
+    [signals],
+  );
+  const { urls: signalImageUrls, missing: missingSignalImages } =
+    useSignalImageUrls(signalImagePaths);
   const listRef = useRef<HTMLDivElement | null>(null);
   const activityRef = useRef<HTMLUListElement | null>(null);
   /** The chain's own scroller: the view follows the newest signal. */
@@ -530,7 +553,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * recent one, else show the list. The store guards the "already landed" case,
    * so a run's deltas re-rendering this panel cannot resume it a second time.
    *
-   * A surface the operator asked for by name — the titlebar's shortcuts
+   * A surface the operator asked for by name — the dock bar's shortcuts
    * reference — is not a landing: opening the dock onto it must not have a chat
    * resume over the top of it. The check reads a ref rather than a dependency:
    * landing is "the dock opened", not "the surface changed", and re-running
@@ -733,9 +756,16 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
   /**
    * An automation, a review or a saved question hands the dock a chat outside
-   * the panel's own navigation. The request is cleared only after the kickoff,
-   * so the landing pass cannot replace the prompt bubble with a transcript the
-   * gateway has not written yet.
+   * the panel's own navigation.
+   *
+   * The chat gets a tab of its own, beside the conversation on screen, rather
+   * than taking that tab over: the page asked the dock to start a conversation,
+   * and the one the operator was reading is not the price of it. A chat the page
+   * has just created also hands its own row along, so the tab and the sidebar
+   * carry its name from the first paint instead of showing a bare "Chat".
+   *
+   * The request is cleared only after the kickoff, so the landing pass cannot
+   * replace the prompt bubble with a transcript the gateway has not written yet.
    */
   useEffect(() => {
     if (!requestedSessionId) return;
@@ -744,7 +774,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     const kickoff = requestedKickoff;
     (async () => {
       onOpenChange(true);
-      await chatRef.current.openChat(targetId);
+      await chatRef.current.openChatInNewTab(targetId, requestedSession ?? undefined);
       if (cancelled) return;
       // Bind the automation's page material before the first turn is sent, so
       // that turn carries the same context every later turn in the chat will.
@@ -1151,7 +1181,41 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             </form>
           ) : (
             <>
-              <p className="chat-panel__chain-body">{s.body}</p>
+              {s.attachment?.kind === "image" ? (
+                <span className="chat-panel__chain-image-wrap">
+                  {signalImageUrls[s.attachment.relPath] ? (
+                    <img
+                      className="chat-panel__chain-image"
+                      src={signalImageUrls[s.attachment.relPath]}
+                      alt={s.body.trim() || s.attachment.name}
+                      loading="lazy"
+                      width={s.attachment.width ?? undefined}
+                      height={s.attachment.height ?? undefined}
+                    />
+                  ) : (
+                    <span className="chat-panel__chain-image-missing muted">
+                      {missingSignalImages[s.attachment.relPath]
+                        ? "Picture missing from the vault."
+                        : "Loading picture…"}
+                    </span>
+                  )}
+                </span>
+              ) : null}
+              {s.attachment?.kind === "link" ? (
+                <a
+                  className="chat-panel__chain-link"
+                  href={s.attachment.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={s.attachment.url}
+                >
+                  <Link2 size={13} aria-hidden />
+                  <span>{linkHost(s.attachment.url) || s.attachment.url}</span>
+                </a>
+              ) : null}
+              {s.body ? (
+                <p className="chat-panel__chain-body">{s.body}</p>
+              ) : null}
               <button
                 type="button"
                 className="chat-panel__chain-menu-btn"
@@ -1267,7 +1331,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             </div>
           ) : view === "shortcuts" ? (
             /*
-              The titlebar's shortcuts control opens the dock onto this page. It
+              The dock's bottom bar opens this page onto the panel. It
               shares the thread's header shape — a way back, the page's name, and
               the one control the page needs — but its body is a reference, not a
               conversation, so there is no composer under it and no tab strip
@@ -2140,12 +2204,33 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               <Radio size={20} aria-hidden />
             </button>
             {/*
+              The keyboard-shortcuts reference, at the head of the trailing
+              group and beside the switch it now shares the corner with: it is a
+              surface selector like the chain, and the dock is the only place it
+              belongs now that the titlebar no longer carries it. Pressed while
+              the reference is the surface in front of the operator.
+            */}
+            <button
+              type="button"
+              className="chat-panel__icon-btn chat-panel__action chat-panel__action--shortcuts"
+              data-testid="chat-shortcuts-action"
+              aria-label="Keyboard shortcuts"
+              title="Keyboard shortcuts"
+              aria-pressed={view === "shortcuts"}
+              onClick={() => setView("shortcuts")}
+            >
+              <Keyboard size={20} aria-hidden />
+            </button>
+            {/*
               The switch-position control, beside the collapse it belongs with:
               one click trades the dock's column for the sheet's, so the chat
               panel sits just past the rail and the page takes the window's
               trailing edge. The icon is the two panes swapping sides rather
               than the side they are on — the state it is in is read off the
-              layout in front of the operator.
+              layout in front of the operator. It is a move, not a toggle, so
+              it carries no pressed state: a dock living on the leading edge is
+              an arrangement to work in, not a mode left switched on, and the
+              bar must rest as plain chrome on either side.
             */}
             <button
               type="button"
@@ -2161,7 +2246,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   ? "Move chat to the right of the page"
                   : "Move chat to the left of the page"
               }
-              aria-pressed={dockSide === "left"}
               onClick={swapSide}
             >
               <ArrowLeftRight size={20} aria-hidden />

@@ -2,16 +2,16 @@ import { isDarkBackground, mix } from "./color.ts";
 import type { ForgeSkin, SkinColors } from "./types.ts";
 
 /**
- * The two Nous themes, taken verbatim from Hermes Desktop's bundled presets
+ * The Nous theme, taken verbatim from Hermes Desktop's bundled presets
  * (`apps/shared/src/theme-presets.ts` + `apps/desktop/src/themes/presets.ts`).
- * Hermes ships them as the product's identity — `nous` is its `DEFAULT_SKIN_NAME`
- * — so LifeQuest carries the same two names and the same palettes rather than a
+ * Hermes ships it as its product identity — `nous` is its `DEFAULT_SKIN_NAME` —
+ * so LifeQuest carries the same name and the same palette rather than a
  * re-derivation, and a user moving between the two apps sees one look.
  *
- * Neither ships a font opinion: Hermes's theme model keeps layout, sizing,
- * radius and typography out of the palette (`types.ts`: "Everything else ...
- * lives in styles.css"), and both themes declare only the system stacks. They
- * also carry no imagery and no second accent, so neither skin has a CSS layer.
+ * It ships no font opinion: Hermes's theme model keeps layout, sizing, radius
+ * and typography out of the palette (`types.ts`: "Everything else ...
+ * lives in styles.css"), and the theme declares only the system stacks. It also
+ * carries no imagery and no second accent, so the skin has no CSS layer.
  */
 
 /* ── Nous ────────────────────────────────────────────────────────────────────
@@ -111,208 +111,74 @@ export const nousSkin: ForgeSkin = {
   },
 };
 
-/* ── Nous Classic ────────────────────────────────────────────────────────────
- * Hermes calls this `nous-alt`: "the hand-authored Nous from before the GitHub
- * fork. Light is glass neutrals with brand blue; dark is cream on
- * mission-blue." It is the older Nous, kept because it is a different idea —
- * here the brand blue *is* the surface, where `nous` uses it only as an accent.
- *
- * Hermes declares its soft surfaces as CSS `color-mix(in srgb, …)` and lets the
- * browser blend them, so these are that mix computed to hex (LifeQuest's token
- * pipeline needs literals). Worth knowing: measured against the seed's OKLCH hue
- * of 262.7°, those particular sRGB blends land 1.7–4.0° violet. That drift is
- * Hermes's own, kept deliberately — the palette is a copy, not a correction.
+/* ── Graphite ───────────────────────────────────────────────────────────────
+ * The old dark-only `mono` grown into the two-palette Graphite theme: paper by
+ * day, charcoal and ash by night. Every token is neutral — including the
+ * semantic success/info inks, which is the one place the old mono still leaked
+ * colour — so the theme is what it says it is at both times of day.
  */
-const NOUS_CLASSIC_BLUE = "#0053fd";
-const NOUS_CLASSIC_NAVY = "#1540b1";
-const NOUS_CLASSIC_CREAM = "#ffe6cb";
-
-export const nousClassicSkin: ForgeSkin = {
-  name: "nous-classic",
-  label: "Nous Classic",
-  description: "Glass neutrals by day, cream on mission-blue by night",
-  // Same swap as `nous`, for the same reason: LifeQuest's light ladder reads
-  // `background` as the mat and `card` as the sheet, so Hermes's sidebar tone
-  // (`#F3F7FF`) lands in `background` and its page (`#F8FAFF`) in `card`.
+export const graphiteSkin: ForgeSkin = {
+  name: "graphite",
+  label: "Graphite",
+  description: "Paper and graphite by day, charcoal and ash by night — no colour at all",
   colors: {
-    background: "#f3f7ff",
-    foreground: "#17171a",
-    card: "#f8faff",
-    cardForeground: "#17171a",
-    muted: "#f2f6ff",
-    mutedForeground: "#666678",
-    popover: "#ffffff",
-    popoverForeground: "#17171a",
-    primary: NOUS_CLASSIC_BLUE,
-    primaryForeground: "#fcfcfc",
-    secondary: "#edf3ff",
-    secondaryForeground: "#242432",
-    accent: "#e6eeff",
-    accentForeground: "#202030",
-    border: "#c1d5ff",
-    input: "#aec8fe",
-    ring: NOUS_CLASSIC_BLUE,
-    midground: NOUS_CLASSIC_BLUE,
-    composerRing: NOUS_CLASSIC_BLUE,
-    destructive: "#c72e4d",
-    destructiveForeground: "#ffffff",
-    sidebarBackground: "#f3f7ff",
-    sidebarBorder: "#c7d9ff",
-    userBubble: "#f0f5ff",
-    userBubbleBorder: "#bcd2ff",
+    background: "#E7E7E7",
+    foreground: "#1B1B1B",
+    card: "#FAFAFA",
+    cardForeground: "#1B1B1B",
+    muted: "#EFEFEF",
+    mutedForeground: "#6B6B6B",
+    popover: "#FFFFFF",
+    popoverForeground: "#1B1B1B",
+    primary: "#2E2E2E",
+    primaryForeground: "#F7F7F7",
+    secondary: "#DCDCDC",
+    secondaryForeground: "#242424",
+    accent: "#D4D4D4",
+    accentForeground: "#141414",
+    border: "#C8C8C8",
+    input: "#BEBEBE",
+    ring: "#5A5A5A",
+    midground: "#5A5A5A",
+    midgroundForeground: "#FFFFFF",
+    destructive: "#3F3F3F",
+    destructiveForeground: "#FFFFFF",
+    sidebarBackground: "#E3E3E3",
+    sidebarBorder: "#CDCDCD",
+    success: "#4E4E4E",
+    info: "#4E4E4E",
   },
   darkColors: {
-    background: "#0d2f86",
-    foreground: NOUS_CLASSIC_CREAM,
-    card: "#12378f",
-    cardForeground: NOUS_CLASSIC_CREAM,
-    muted: "#183f9a",
-    mutedForeground: "#b5c7f3",
-    popover: "#123a96",
-    popoverForeground: NOUS_CLASSIC_CREAM,
-    primary: NOUS_CLASSIC_CREAM,
-    primaryForeground: "#0d2f86",
-    secondary: "#1b45a4",
-    secondaryForeground: "#e0e8ff",
-    accent: NOUS_CLASSIC_NAVY,
-    accentForeground: "#f0f4ff",
-    border: "#3158ad",
-    input: "#0b2566",
-    ring: NOUS_CLASSIC_CREAM,
-    midground: NOUS_CLASSIC_BLUE,
-    composerRing: NOUS_CLASSIC_CREAM,
-    destructive: "#c0473a",
-    destructiveForeground: "#fef2f2",
-    sidebarBackground: "#09286f",
-    sidebarBorder: "#234a9c",
-    userBubble: "#143b91",
-    userBubbleBorder: "#3a63bd",
-  },
-};
-
-
-export const midnightSkin: ForgeSkin = {
-  name: "midnight",
-  label: "Midnight",
-  description: "Deep blue-violet with cool accents",
-  colors: {
-    background: "#08081c",
-    foreground: "#ddd6ff",
-    card: "#0d0d28",
-    cardForeground: "#ddd6ff",
-    muted: "#13133a",
-    mutedForeground: "#7c7ab0",
-    popover: "#0f0f2e",
-    popoverForeground: "#ddd6ff",
-    primary: "#ddd6ff",
-    primaryForeground: "#08081c",
-    secondary: "#1a1a4a",
-    secondaryForeground: "#c4bff0",
-    accent: "#1a1a44",
-    accentForeground: "#d0c8ff",
-    border: "#1e1e52",
-    input: "#1e1e52",
-    ring: "#8b80e8",
-    midground: "#8b80e8",
-    destructive: "#b03060",
-    destructiveForeground: "#fef2f2",
-    sidebarBackground: "#06061a",
-    sidebarBorder: "#12123a",
-  },
-};
-
-export const emberSkin: ForgeSkin = {
-  name: "ember",
-  label: "Ember",
-  description: "Warm crimson and bronze — forge vibes",
-  colors: {
-    background: "#160800",
-    foreground: "#ffd8b0",
-    card: "#1e0e04",
-    cardForeground: "#ffd8b0",
-    muted: "#2a1408",
-    mutedForeground: "#aa7a56",
-    popover: "#221008",
-    popoverForeground: "#ffd8b0",
-    primary: "#ffd8b0",
-    primaryForeground: "#160800",
-    secondary: "#341800",
-    secondaryForeground: "#f0c090",
-    accent: "#301600",
-    accentForeground: "#e8c080",
-    border: "#3a1c08",
-    input: "#3a1c08",
-    ring: "#d97316",
-    midground: "#d97316",
-    destructive: "#c43010",
-    destructiveForeground: "#fef2f2",
-    sidebarBackground: "#100600",
-    sidebarBorder: "#2a1004",
-  },
-};
-
-export const monoSkin: ForgeSkin = {
-  name: "mono",
-  label: "Mono",
-  description: "Clean grayscale — minimal and focused",
-  colors: {
-    background: "#0e0e0e",
-    foreground: "#eaeaea",
+    background: "#0E0E0E",
+    foreground: "#EAEAEA",
     card: "#141414",
-    cardForeground: "#eaeaea",
-    muted: "#1e1e1e",
+    cardForeground: "#EAEAEA",
+    muted: "#1E1E1E",
     mutedForeground: "#808080",
     popover: "#181818",
-    popoverForeground: "#eaeaea",
-    primary: "#eaeaea",
-    primaryForeground: "#0e0e0e",
+    popoverForeground: "#EAEAEA",
+    primary: "#EAEAEA",
+    primaryForeground: "#0E0E0E",
     secondary: "#262626",
-    secondaryForeground: "#c8c8c8",
+    secondaryForeground: "#C8C8C8",
     accent: "#222222",
-    accentForeground: "#d8d8d8",
-    border: "#2a2a2a",
-    input: "#2a2a2a",
-    ring: "#9a9a9a",
-    midground: "#9a9a9a",
-    destructive: "#a84040",
-    destructiveForeground: "#fef2f2",
-    sidebarBackground: "#0a0a0a",
+    accentForeground: "#D8D8D8",
+    border: "#2A2A2A",
+    input: "#2A2A2A",
+    ring: "#9A9A9A",
+    midground: "#9A9A9A",
+    midgroundForeground: "#0E0E0E",
+    destructive: "#A0A0A0",
+    destructiveForeground: "#0E0E0E",
+    sidebarBackground: "#0A0A0A",
     sidebarBorder: "#202020",
+    success: "#C0C0C0",
+    info: "#C0C0C0",
   },
 };
 
-export const cyberpunkSkin: ForgeSkin = {
-  name: "cyberpunk",
-  label: "Cyberpunk",
-  description: "Neon green on black — matrix terminal",
-  colors: {
-    background: "#000a00",
-    foreground: "#00ff41",
-    card: "#001200",
-    cardForeground: "#00ff41",
-    muted: "#001a00",
-    mutedForeground: "#1a8a30",
-    popover: "#001000",
-    popoverForeground: "#00ff41",
-    primary: "#00ff41",
-    primaryForeground: "#000a00",
-    secondary: "#002800",
-    secondaryForeground: "#00cc34",
-    accent: "#002000",
-    accentForeground: "#00e038",
-    border: "#003000",
-    input: "#003000",
-    ring: "#00ff41",
-    midground: "#00ff41",
-    destructive: "#ff003c",
-    destructiveForeground: "#000a00",
-    sidebarBackground: "#000600",
-    sidebarBorder: "#001800",
-  },
-};
-
-/** Forge OS — cooling forge: steel, ash, and low embers. */
-const FORGE_OS_LIGHT = {
+/** Forge — cooling forge: steel, ash, and low embers. */
+const FORGE_LIGHT = {
   background: "#F0EEEA",
   card: "#F8F7F5",
   primary: "#B4532A",
@@ -328,7 +194,7 @@ const FORGE_OS_LIGHT = {
  * palette runs the other way — there the mat sinks below the paper — because night
  * inverts the ladder in every skin.
  */
-const FORGE_OS_DARK = {
+const FORGE_DARK = {
   background: "#111214",
   card: "#1A1D22",
   primary: "#A8552D",
@@ -344,14 +210,14 @@ const FORGE_OS_DARK = {
  * this band — the rail and the titlebar too. Both read as one material rather than
  * two greys that nearly match, and moving the band moves the frame with it.
  */
-const FORGE_OS_DARK_BAND = mix(
-  FORGE_OS_DARK.background,
-  FORGE_OS_DARK.card,
+const FORGE_DARK_BAND = mix(
+  FORGE_DARK.background,
+  FORGE_DARK.card,
   0.36,
 );
 
-function forgeOsLine(
-  tokens: typeof FORGE_OS_LIGHT | typeof FORGE_OS_DARK,
+function forgeLine(
+  tokens: typeof FORGE_LIGHT | typeof FORGE_DARK,
   pct: number,
 ): string {
   return mix(tokens.primary, tokens.background, (100 - pct) / 100);
@@ -361,99 +227,125 @@ function forgeOsLine(
  * Dark structural lines need more luminance than primary-on-black alone
  * provides — blend a warmer ember ink so sidebars/cards stay readable.
  */
-function forgeOsDarkLine(pct: number): string {
-  const ink = mix(FORGE_OS_DARK.primary, FORGE_OS_DARK.highlight, 0.42);
-  return mix(ink, FORGE_OS_DARK.background, (100 - pct) / 100);
+function forgeDarkLine(pct: number): string {
+  const ink = mix(FORGE_DARK.primary, FORGE_DARK.highlight, 0.42);
+  return mix(ink, FORGE_DARK.background, (100 - pct) / 100);
 }
 
-function forgeOsSurface(
-  tokens: typeof FORGE_OS_LIGHT | typeof FORGE_OS_DARK,
+function forgeSurface(
+  tokens: typeof FORGE_LIGHT | typeof FORGE_DARK,
   pct: number,
 ): string {
   return mix(tokens.accent, tokens.card, (100 - pct) / 100);
 }
 
-export const forgeOsSkin: ForgeSkin = {
-  name: "forge-os",
-  label: "Forge OS",
+export const forgeSkin: ForgeSkin = {
+  name: "forge",
+  label: "Forge",
   description: "Cooling steel and ash with low ember glow — modern industrial warmth",
   colors: {
-    background: FORGE_OS_LIGHT.background,
-    foreground: FORGE_OS_LIGHT.text,
-    card: FORGE_OS_LIGHT.card,
-    cardForeground: FORGE_OS_LIGHT.text,
-    muted: mix(FORGE_OS_LIGHT.background, FORGE_OS_LIGHT.card, 0.42),
-    mutedForeground: FORGE_OS_LIGHT.muted,
+    background: FORGE_LIGHT.background,
+    foreground: FORGE_LIGHT.text,
+    card: FORGE_LIGHT.card,
+    cardForeground: FORGE_LIGHT.text,
+    muted: mix(FORGE_LIGHT.background, FORGE_LIGHT.card, 0.42),
+    mutedForeground: FORGE_LIGHT.muted,
     popover: "#FFFFFF",
-    popoverForeground: FORGE_OS_LIGHT.text,
-    primary: FORGE_OS_LIGHT.primary,
+    popoverForeground: FORGE_LIGHT.text,
+    primary: FORGE_LIGHT.primary,
     primaryForeground: "#FFFFFF",
-    secondary: forgeOsSurface(FORGE_OS_LIGHT, 14),
-    secondaryForeground: FORGE_OS_LIGHT.highlight,
-    accent: forgeOsSurface(FORGE_OS_LIGHT, 26),
-    accentForeground: FORGE_OS_LIGHT.highlight,
-    border: forgeOsLine(FORGE_OS_LIGHT, 14),
-    input: forgeOsLine(FORGE_OS_LIGHT, 20),
-    ring: FORGE_OS_LIGHT.accent,
-    midground: FORGE_OS_LIGHT.accent,
-    composerRing: FORGE_OS_LIGHT.accent,
+    secondary: forgeSurface(FORGE_LIGHT, 14),
+    secondaryForeground: FORGE_LIGHT.highlight,
+    accent: forgeSurface(FORGE_LIGHT, 26),
+    accentForeground: FORGE_LIGHT.highlight,
+    border: forgeLine(FORGE_LIGHT, 14),
+    input: forgeLine(FORGE_LIGHT, 20),
+    ring: FORGE_LIGHT.accent,
+    midground: FORGE_LIGHT.accent,
+    composerRing: FORGE_LIGHT.accent,
     destructive: "#C43010",
     destructiveForeground: "#FFFFFF",
     sidebarBackground: "#EBE8E4",
-    sidebarBorder: forgeOsLine(FORGE_OS_LIGHT, 10),
+    sidebarBorder: forgeLine(FORGE_LIGHT, 10),
     // Day composer / user bubble: paper white with a firm dark outline
     userBubble: "#FFFFFF",
-    userBubbleBorder: FORGE_OS_LIGHT.text,
-    composerForeground: FORGE_OS_LIGHT.text,
-    composerPlaceholder: mix(FORGE_OS_LIGHT.muted, "#FFFFFF", 0.22),
+    userBubbleBorder: FORGE_LIGHT.text,
+    composerForeground: FORGE_LIGHT.text,
+    composerPlaceholder: mix(FORGE_LIGHT.muted, "#FFFFFF", 0.22),
     success: "#2F7A4A",
     info: "#3D6F94",
   },
   darkColors: {
-    background: FORGE_OS_DARK.background,
-    foreground: FORGE_OS_DARK.text,
-    card: FORGE_OS_DARK.card,
-    cardForeground: FORGE_OS_DARK.text,
+    background: FORGE_DARK.background,
+    foreground: FORGE_DARK.text,
+    card: FORGE_DARK.card,
+    cardForeground: FORGE_DARK.text,
     // The quiet band the mat reads: the rail and the titlebar wear the dock's own
     // bottom action row's ink, a step under the cards and clear of the page.
-    muted: FORGE_OS_DARK_BAND,
-    mutedForeground: FORGE_OS_DARK.muted,
+    muted: FORGE_DARK_BAND,
+    mutedForeground: FORGE_DARK.muted,
     popover: "#1E2229",
-    popoverForeground: FORGE_OS_DARK.text,
-    primary: FORGE_OS_DARK.primary,
-    primaryForeground: FORGE_OS_DARK.text,
-    secondary: forgeOsSurface(FORGE_OS_DARK, 16),
-    secondaryForeground: FORGE_OS_DARK.highlight,
-    accent: forgeOsSurface(FORGE_OS_DARK, 28),
-    accentForeground: FORGE_OS_DARK.highlight,
-    border: forgeOsDarkLine(28),
-    input: forgeOsDarkLine(34),
-    ring: FORGE_OS_DARK.accent,
-    midground: FORGE_OS_DARK.accent,
-    composerRing: FORGE_OS_DARK.accent,
+    popoverForeground: FORGE_DARK.text,
+    primary: FORGE_DARK.primary,
+    primaryForeground: FORGE_DARK.text,
+    secondary: forgeSurface(FORGE_DARK, 16),
+    secondaryForeground: FORGE_DARK.highlight,
+    accent: forgeSurface(FORGE_DARK, 28),
+    accentForeground: FORGE_DARK.highlight,
+    border: forgeDarkLine(28),
+    input: forgeDarkLine(34),
+    ring: FORGE_DARK.accent,
+    midground: FORGE_DARK.accent,
+    composerRing: FORGE_DARK.accent,
     destructive: "#D64545",
-    destructiveForeground: FORGE_OS_DARK.text,
-    sidebarBorder: forgeOsDarkLine(30),
-    userBubble: FORGE_OS_DARK.card,
-    userBubbleBorder: forgeOsDarkLine(42),
+    destructiveForeground: FORGE_DARK.text,
+    sidebarBorder: forgeDarkLine(30),
+    userBubble: FORGE_DARK.card,
+    userBubbleBorder: forgeDarkLine(42),
     success: "#5A9E6F",
     info: "#6B8FA8",
   },
 };
 
 export const BUILTIN_SKINS: Record<string, ForgeSkin> = {
-  "forge-os": forgeOsSkin,
+  forge: forgeSkin,
   nous: nousSkin,
-  "nous-classic": nousClassicSkin,
-  midnight: midnightSkin,
-  ember: emberSkin,
-  mono: monoSkin,
-  cyberpunk: cyberpunkSkin,
+  graphite: graphiteSkin,
 };
 
 export const BUILTIN_SKIN_LIST = Object.values(BUILTIN_SKINS);
 
-export const DEFAULT_SKIN_NAME = "forge-os";
+export const DEFAULT_SKIN_NAME = "forge";
+
+/**
+ * The theme the window hands itself to when the one it is wearing cannot paint
+ * the colour mode it is being asked for — a one-palette installed theme met by a
+ * day/night switch. Nous ships both palettes, so the switch always lands on a
+ * theme that can show the answer instead of leaving a light palette in the dark.
+ */
+export const FALLBACK_SKIN_NAME = "nous";
+
+/**
+ * Names that moved when themes were renamed or retired. Storage is read through
+ * this map before validation: an operator who was wearing `mono` or the later
+ * `grayscale` opens on Graphite, one who was wearing `forge-os` opens on Forge,
+ * a theme taken out of the product hands the window back to the fallback theme
+ * the day/night switch uses, and no old name leaves a hole in the quick menu.
+ */
+const LEGACY_SKIN_NAMES: Record<string, string> = {
+  mono: "graphite",
+  grayscale: "graphite",
+  "forge-os": "forge",
+  "nous-classic": FALLBACK_SKIN_NAME,
+  midnight: FALLBACK_SKIN_NAME,
+  ember: FALLBACK_SKIN_NAME,
+  cyberpunk: FALLBACK_SKIN_NAME,
+};
+
+export function resolveLegacySkinName(name: string | null): string | null {
+  if (!name) return null;
+  return LEGACY_SKIN_NAMES[name] ?? name;
+}
 
 export const BUILTIN_SKIN_NAMES = BUILTIN_SKIN_LIST.map((s) => s.name);
 

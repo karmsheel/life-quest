@@ -22,7 +22,12 @@ import {
   toggleSkinFavorite,
   withoutSkinFavorite,
 } from "@/lib/themes/favorites";
-import { DEFAULT_SKIN_NAME, isBuiltinSkinName } from "@/lib/themes/presets";
+import {
+  DEFAULT_SKIN_NAME,
+  FALLBACK_SKIN_NAME,
+  isBuiltinSkinName,
+  skinSupportsMode,
+} from "@/lib/themes/presets";
 import { listAllSkins, resolveSkin } from "@/lib/themes/registry";
 import { getStoredSkinName, persistSkinName } from "@/lib/themes/storage";
 import {
@@ -119,6 +124,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     syncTitleBarOverlay();
   }, []);
 
+  /**
+   * The skin the window can actually wear in `mode`.
+   *
+   * A one-palette theme has no answer for the other half of the day/night
+   * switch. Rather than paint a day palette at night, the window hands itself to
+   * the fallback theme — Nous, which ships both palettes — so the switch always
+   * lands on a theme that can show the answer. Callers persist the name they get
+   * back, not the one they asked about.
+   */
+  const skinForMode = useCallback((name: string, mode: "light" | "dark") => {
+    const skin = resolveSkin(name);
+    return skinSupportsMode(skin, mode) ? skin.name : FALLBACK_SKIN_NAME;
+  }, []);
+
   useLayoutEffect(() => {
     applyThemePreference(preference);
     const mode = resolveThemePreference(preference);
@@ -132,34 +151,48 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => {
       const mode = resolveThemePreference("system");
+      const worn = skinForMode(skinName, mode);
       setResolved(mode);
-      applyCurrentSkin(skinName, mode);
+      if (worn !== skinName) {
+        setSkinNameState(worn);
+        persistSkinName(worn);
+      }
+      applyCurrentSkin(worn, mode);
     };
     media.addEventListener("change", onChange);
     return () => media.removeEventListener("change", onChange);
-  }, [applyCurrentSkin, preference, skinName]);
+  }, [applyCurrentSkin, preference, skinForMode, skinName]);
 
   const setPreference = useCallback((next: ThemePreference) => {
     setPreferenceState(next);
     applyThemePreference(next);
     const mode = resolveThemePreference(next);
+    const worn = skinForMode(skinName, mode);
     setResolved(mode);
-    applyCurrentSkin(skinName, mode);
+    if (worn !== skinName) {
+      setSkinNameState(worn);
+      persistSkinName(worn);
+    }
+    applyCurrentSkin(worn, mode);
     try {
       localStorage.setItem(THEME_STORAGE_KEY, next);
     } catch {
       /* ignore */
     }
-  }, [applyCurrentSkin, skinName]);
+  }, [applyCurrentSkin, skinForMode, skinName]);
 
   const setSkin = useCallback(
     (nextName: string) => {
       const skin = resolveSkin(nextName);
-      setSkinNameState(skin.name);
-      persistSkinName(skin.name);
-      applyCurrentSkin(skin.name, resolved);
+      // The picker only offers skins that match the current mode, so this is a
+      // guard rather than a path: the window must never wear a theme in a colour
+      // mode the theme cannot paint.
+      const worn = skinForMode(skin.name, resolved);
+      setSkinNameState(worn);
+      persistSkinName(worn);
+      applyCurrentSkin(worn, resolved);
     },
-    [applyCurrentSkin, resolved],
+    [applyCurrentSkin, resolved, skinForMode],
   );
 
   const skin = useMemo(() => resolveSkin(skinName), [skinName]);
