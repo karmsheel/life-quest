@@ -270,7 +270,7 @@ const SAMPLE = `(() => {
     const need = round(card.getBoundingClientRect().width);
     card.style.width = widthBefore;
     return {
-      id: card.dataset.pinId ?? "(agents)",
+      id: card.dataset.pinId ?? "(no pin id)",
       label: (card.querySelector(".view-card__title, .home-card__title")?.textContent ?? "").trim(),
       left: round(box.left),
       top: round(box.top),
@@ -381,7 +381,7 @@ const SETTLED = `(() => {
    const cards = document.querySelectorAll(".home-dashboard__grid > .home-pin").length;
    const loading = [...document.querySelectorAll(".view-card")].some((c) => (c.textContent || "").includes("Loading"));
    const tables = document.querySelectorAll(".view-card__table").length;
-   return cards === ${SEED.length + 1} && !loading && tables >= 4;
+   return cards === ${SEED.length} && !loading && tables >= 4;
  })()`;
 
 /** Draw the board and wait for it to be the thing under test. */
@@ -393,7 +393,7 @@ async function drawBoard(win, { locked = false } = {}) {
   );
   await waitFor(
     win,
-    `document.querySelectorAll(".home-dashboard__grid > .home-pin").length === ${SEED.length + 1}`,
+    `document.querySelectorAll(".home-dashboard__grid > .home-pin").length === ${SEED.length}`,
     "the board to render its cards",
   );
   await waitFor(win, SETTLED, "every card to draw its content");
@@ -648,7 +648,7 @@ function checkBoardFloors(boards) {
 function checkStable(boards) {
   const problems = [];
   const readings = [];
-  for (const id of [...SEED, "(agents)"]) {
+  for (const id of SEED) {
     const seen = boards.map(({ name, board }) => ({ name, card: cardOf(board, id) }));
     if (seen.some((entry) => !entry.card)) {
       problems.push(`${id} is missing from at least one width`);
@@ -1035,8 +1035,7 @@ async function checkEditMode(win) {
   check(
     "edit-no-icon",
     chrome.spanIcons === 0 &&
-      // The board draws one extra card for the Active-agents panel, which is page
-      // furniture rather than a pin: every PIN has its menu, and the helper does not.
+      // Every card the board draws is a pin now, so every card has its menu.
       chrome.menus === SEED.length &&
       chrome.chromeButtons.every((id) => id === "pin-menu-toggle"),
     `the board draws ${chrome.spanIcons} Fill-the-row icon(s), ${chrome.menus} menu trigger(s) ` +
@@ -1508,7 +1507,7 @@ async function main() {
   const board = boards[0].board;
   check(
     "board",
-    board.cardCount === SEED.length + 1 &&
+    board.cardCount === SEED.length &&
       SEED.every((id, index) => board.cards[index]?.id === id),
     `the board drew ${board.cardCount} card(s): ${JSON.stringify(board.cards.map((card) => card.id))}`,
   );

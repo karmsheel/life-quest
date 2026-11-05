@@ -12,10 +12,12 @@
  *    table. The composed card is the one that matters: "change the order of the
  *    items" is a change to its `blocks`, which is a change to the card's own box,
  *    which is what makes "did it stay in its place" a question with an answer.
- *  - an OVERVIEW BOARD of seven pins, with the composed card THIRD. Third of seven
+ *  - an OVERVIEW BOARD of nine pins, with the composed card THIRD. Third of nine
  *    is the instrument: a card that leaves its slot and is appended lands LAST, and
  *    "third" and "last" are different places on a board this length — which they
- *    would not be on a board of two.
+ *    would not be on a board of two. The pins below the edited card are filler:
+ *    the board has to be longer than the glass so the edited card can be parked
+ *    under the operator's eye.
  *  - a throwaway `userData` (`LIFEQUEST_E2E`), so the operator's own profile,
  *    recent list, and pairing secrets are never read or written. No `recent.json`
  *    is seeded: the rig opens the vault through the app's own recent path, which
@@ -276,11 +278,14 @@ async function main() {
   const payeePinId = `view:financial:${tableZView.value.id}`;
 
   /**
-   * The board, seven pins, the edited card THIRD.
+   * The board, nine pins, the edited card THIRD.
    *
-   * Third of seven rather than first or last, and the two are not the same claim:
-   * a card that is appended lands at index 6, so "did it move" only has an answer
-   * on a board where index 2 and index 6 are different places.
+   * Third of nine rather than first or last, and the two are not the same claim:
+   * a card that is appended lands at index 8, so "did it move" only has an answer
+   * on a board where index 2 and index 8 are different places. The last four
+   * pins are filler below the edited card: the park puts that card at the top of
+   * the glass, which the board can only do when there is enough below it to
+   * scroll.
    */
   const board = [
     { id: "sys:goal-progress", kind: "system", system: "goal-progress" },
@@ -289,6 +294,8 @@ async function main() {
     { id: `page:financial:${pageId("Ledger")}`, kind: "page", domainSlug: "financial", pageId: pageId("Ledger") },
     { id: listPinId, kind: "view", domainSlug: "financial", viewId: listView.value.id, span: 1 },
     { id: payeePinId, kind: "view", domainSlug: "financial", viewId: tableZView.value.id, span: 1 },
+    { id: `page:financial:${pageId("Spend")}`, kind: "page", domainSlug: "financial", pageId: pageId("Spend") },
+    { id: "sys:recent-log", kind: "system", system: "recent-log" },
     { id: "sys:deadline", kind: "system", system: "deadline" },
   ];
 

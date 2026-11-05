@@ -210,11 +210,11 @@ async function checkCardShell(win) {
   );
 
   const problems = [];
-  if (pins.length !== SEED.length + 1) {
-    problems.push(`the board rendered ${pins.length} pins, expected ${SEED.length + 1}`);
+  if (pins.length !== SEED.length) {
+    problems.push(`the board rendered ${pins.length} pins, expected ${SEED.length}`);
   }
   for (const pin of pins) {
-    const where = pin.id ?? "the Active-agents card";
+    const where = pin.id ?? "a pin without an id";
     if (pin.shells !== 1) {
       problems.push(
         `${where} draws ${pin.shells} card frames (${JSON.stringify(pin.shellClass)})`,
@@ -397,16 +397,15 @@ async function renderBoard(win, pins, locked) {
     `(window.dashboardArrangeCommits ?? 0) > ${before}`,
     `the page to commit with ${pins.length} pins locked=${locked}`,
   );
-  // The board read is async, so the cards are the last thing to settle. The
-  // count is the pins plus the one card that is not a pin — the Active-agents
-  // card — which is why it is `pins.length + 1` rather than `pins.length`.
+  // The board read is async, so the cards are the last thing to settle. Every
+  // card the page draws is a pin now, so the count is the pin count.
   await waitFor(
     win,
     `(() => {
        const badge = document.querySelector('[data-testid="board-lock-badge"]');
        const settled = badge && badge.dataset.locked === '${locked ? "true" : "false"}';
        const cards = document.querySelectorAll('.home-dashboard__grid > .home-pin').length;
-       return settled && cards === ${pins.length + 1};
+       return settled && cards === ${pins.length};
      })()`,
     "the board to render its cards",
   );
@@ -497,14 +496,6 @@ async function openPinBoard(win) {
     `Boolean(document.querySelector('[data-testid="board-add-pin"]'))`,
     "the Add-pin row to open",
   );
-}
-
-/** Scroll the board so its far end is on screen; returns nothing. */
-async function scrollBoardToEnd(win) {
-  await win.webContents.executeJavaScript(
-    "(() => { const s = document.querySelector('.arrange-scroll'); s.scrollTop = s.scrollHeight; return s.scrollTop; })()",
-  );
-  await settleFrames(win);
 }
 
 /**
@@ -901,52 +892,7 @@ async function checkOrdering(win) {
       `${JSON.stringify(afterWide)} (${writesAfter} write(s))`,
   );
 
-  // 4. The board's one non-pinnable card is not a slot: dropping on it means the
-  //    end of the pins, and no pin is ever placed after it.
-  step("drop-on-the-agents-card");
-  await beginScenario(win);
-  await scrollBoardToEnd(win);
-  // Aimed after the lift, not before it: the lifted card leaves the board's
-  // flow, so the agents card moves up. A point measured beforehand would be
-  // below the grid by the time the hand lets go — and a mouseUp outside the
-  // grid never reaches the grid's own handler.
-  const agentsPoint = async () => {
-    const point = await win.webContents.executeJavaScript(
-      `(() => {
-         const el = [...document.querySelectorAll(".home-dashboard__grid > .home-pin")].find((c) => !c.dataset.pinId);
-         if (!el) return null;
-         const r = el.getBoundingClientRect();
-         return { x: r.left + 40, y: r.top + 20 };
-       })()`,
-    );
-    if (!point) throw new Error("the board has no Active-agents card");
-    return point;
-  };
-  await dragCard(win, "sys:pending-decisions", agentsPoint);
-  const ended = await restingOrder(win);
-  const endedWrites = writesOf(await pinWrites(win));
-  const lastChildIsAgents = await win.webContents.executeJavaScript(
-    `!document.querySelector(".home-dashboard__grid").lastElementChild.dataset.pinId`,
-  );
-  check(
-    "drop-on-the-agents-card",
-    ended.join(",") ===
-      [
-        "sys:goal-progress",
-        "view:financial:v-weekly",
-        "page:financial:ledger",
-        "sys:today-week",
-        "view:financial:v-summary",
-        "sys:recent-log",
-        "sys:pending-decisions",
-      ].join(",") &&
-      endedWrites.length === 1 &&
-      lastChildIsAgents === true,
-    `dropping on the agents card gave ${JSON.stringify(ended)} for ${endedWrites.length} write(s), ` +
-      `agents last: ${lastChildIsAgents}`,
-  );
-
-  // 5. A hold and release in place is not a change: the card goes back and the
+  // 4. A hold and release in place is not a change: the card goes back and the
   //    vault is never asked.
   step("hold-then-release-writes-nothing");
   await beginScenario(win);
@@ -962,7 +908,7 @@ async function checkOrdering(win) {
     `a hold and release gave ${JSON.stringify(stillOrder)} for ${(await pinWrites(win)).length} write(s)`,
   );
 
-  // 6. A drag backwards — onto the left half of the card before it — is one
+  // 5. A drag backwards — onto the left half of the card before it — is one
   //    write, and lands where it was aimed rather than where it started.
   step("hold-drag-writes-once");
   await beginScenario(win);

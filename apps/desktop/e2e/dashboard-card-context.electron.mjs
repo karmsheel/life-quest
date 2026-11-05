@@ -22,8 +22,8 @@
  *     name, not by look.
  *  2. `every-card-is-a-click-target` — each pin carries exactly one hidden
  *     keyboard/AT toggle named with its own heading and the action, and the card
- *     itself paints `cursor: pointer`. The static card with no pin id is not a
- *     click target, so "the card" means the pins and not their wrapper.
+ *     itself paints `cursor: pointer`. Every card the page draws is a pin, so
+ *     "the card" and "the pin" are the same set.
  *  3. `clicking-a-card-adds-it` — a real press on the card's own heading puts
  *     that pin, with the board slug, into the dock's `contextCards`, opens the
  *     dock, names the card off the heading, and draws the ring as a line. A
@@ -1019,12 +1019,9 @@ async function main() {
       board.contextToggles === SEED.length &&
       board.cards.every((card) => card.heading === nameFor(card.id)?.heading) &&
       badTargets.length === 0 &&
-      // The static card with no pin id is not a click target: "the card" means
-      // the pins, and the wrapper around the agents panel is not one.
-      board.staticPins.length === 1 &&
-      board.staticPins[0].toggles === 0 &&
-      board.staticPins[0].tools === 0 &&
-      board.staticPins[0].cursor !== "pointer",
+      // Every card on the board is a pin: a card the page draws for itself has
+      // no pin id, is not a click target, and has no place on the board.
+      board.staticPins.length === 0,
     `${board.contextToggles} toggle(s) over ${board.cards.length} card(s); ` +
       `offending: ${JSON.stringify(badTargets)}; static ${JSON.stringify(board.staticPins)}`,
   );

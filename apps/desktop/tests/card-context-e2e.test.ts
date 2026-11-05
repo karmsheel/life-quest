@@ -204,14 +204,13 @@ describe("dashboard card context e2e", () => {
       assert.equal(card.cursor, "pointer", `${card.id} did not paint a pointer cursor`);
       assert.equal(card.inContext, false, `${card.id} started in the chat context`);
     }
-    // "The card" means the pins: the static agents wrapper has no pin id and is
-    // not a click target.
+    // Every card on the board is a pin: the page draws no card of its own
+    // beside them.
     assert.deepEqual(
       board.staticPins.map((pin) => ({ toggles: pin.toggles, tools: pin.tools })),
-      [{ toggles: 0, tools: 0 }],
-      "the static card wrapper grew a context control",
+      [],
+      "the page drew a static card beside the pins",
     );
-    assert.notEqual(board.staticPins[0]?.cursor, "pointer", "the static wrapper became a click target");
 
     // The goals card paints its count inside the heading; the name is the words.
     assert.equal(

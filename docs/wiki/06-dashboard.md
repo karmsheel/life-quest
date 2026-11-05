@@ -128,7 +128,6 @@ watch; the board does not grade you.
 | Card context | Click a card to add or remove it as companion chat context, up to three; empty board space clears them all |
 | **Card actions** menu | **Edit card**, **Archive**, **Delete** (where applicable) |
 | Card borders in Edit mode | Width (right) and height (bottom) handles |
-| **Active agents** card | Always shown; lists hired agents and links to Personnel |
 | **Finance** install card | Shown on Overview and the Financial board when the kit is not installed yet |
 
 ### The built-in cards
@@ -168,7 +167,6 @@ title and domain and opens it.
 - The board file is `.lifequest/overview-pins.json` for Overview and
   `domains/<slug>/pins.json` for a domain. It stores the pins, their order and
   sizes, and the board's lock state.
-- The **Active agents** card is always present and is not a pin.
 
 These are the Dashboard laws; [`LAWS/DASHBOARD.md`](../../LAWS/DASHBOARD.md) is
 the contract.

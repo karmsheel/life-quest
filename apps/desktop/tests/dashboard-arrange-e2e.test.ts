@@ -28,7 +28,6 @@ const SCENARIOS = [
   "same-row-targets-by-x",
   "drop-past-a-full-row-card",
   "wide-card-left-and-right",
-  "drop-on-the-agents-card",
   "hold-then-release-writes-nothing",
   "hold-drag-writes-once",
   "escape-cancels",
