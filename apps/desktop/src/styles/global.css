@@ -7419,6 +7419,11 @@ button.chat-panel__activity-line:hover {
   margin-left: auto;
 }
 
+/* The selected surface, which in this bar is the chain or the shortcuts
+   reference. The side switch is a move rather than a state and carries no
+   `aria-pressed` at all: the dock living on the leading edge is not a mode the
+   operator switched on, so a pressed fill there would read as "active" for the
+   rest of the session. */
 .chat-panel__action[aria-pressed="true"] {
   background: var(--selected-soft);
   color: var(--fg);
