@@ -91,16 +91,20 @@ function writePinnedOrder(ids: string[]): void {
  * keyboard and rename/delete); a pinned row keeps a filled pin at rest in the
  * slot the hover pin button will occupy, so the state is legible without
  * hovering. Pinning fronts the row in the pinned band, unpinning drops it back
- * to the activity order, and archiving takes it out of the list.
+ * to the activity order, and archiving takes it out of the list. A pinned row
+ * hides the archive hover control and the Archive/Delete entries in its menu:
+ * a pin is a promise that the chat stays in the working set, so both gestures
+ * are one unpin away rather than hidden behind an accidental click. Every pin
+ * is also a tab in the dock's strip — see `ChatSessionsProvider.tabIds`.
  *
  * The header carries the two controls the list needs to stay usable as it
  * grows. The magnifier does not open a second row under the heading: the field
  * takes the header's own line, where the title and both icons were, focused and
  * ready for the query; the cross, a press anywhere outside it, or Escape hands
- * the usual header back. The sliders open the view menu that decides whether
- * archived chats are listed. Archived rows come back below the live ones in
- * their own greyed, tagged band, restorable but never openable — the chat is
- * out of the working set, but not lost.
+ * the usual header back. The sliders open the view menu that decides how
+ * archived chats are listed: hidden, listed below the live ones, or alone in
+ * their own greyed, tagged band. Archived rows are restorable but never
+ * openable — the chat is out of the working set, but not lost.
  *
  * Rows are the same Hermes sessions the dock's tabs are, read from
  * `ChatSessionsProvider`, so a pin from here is a pin in the dock, in Hermes
@@ -164,9 +168,19 @@ export function ChatsSidebar() {
   }, [shown, pinnedOrder]);
   const recent = shown.filter((s) => !s.pinned && !s.archived);
   const archived = shown.filter((s) => s.archived);
-  const ordered = [...pinned, ...recent];
+  /**
+   * The archived-only view drops the working list: the operator asked to work
+   * through the archive, and a live row between the archived ones would be the
+   * one thing that view is not for. The dock is untouched either way — its
+   * working list never carries an archived chat.
+   */
+  const onlyArchived = chat.archivedView === "only";
+  const ordered = onlyArchived ? [] : [...pinned, ...recent];
   const matchCount = ordered.length + archived.length;
-  const liveCount = chat.openTabs.filter((id) => chat.runOf(id).sending).length;
+  const liveCount = chat.tabIds.filter((id) => chat.runOf(id).sending).length;
+  const listEmpty =
+    chat.sessionsLoaded &&
+    (onlyArchived ? archived.length === 0 : chat.sessions.length === 0);
 
   /** Load one chat into the dock, opening the dock if it was put away. */
   async function openChat(id: string) {
@@ -441,8 +455,11 @@ export function ChatsSidebar() {
               replaces at rest sits there, and archive is its neighbour — the
               same pair, in the same places, as the reference client. Both are
               paint-only until the row is hovered (or focused, so the keyboard
-              can reach them), which is what keeps a quiet list quiet. An
-              archived row has no working verbs: its menu offers Unarchive.
+              can reach them), which is what keeps a quiet list quiet. A pinned
+              row has no archive control at all: unpinning first is what brings
+              archive back, so a pinned chat cannot leave the working set by
+              accident. An archived row has no working verbs: its menu offers
+              Unarchive.
             */}
             <span className="chats-rail__actions">
               <button
@@ -464,16 +481,18 @@ export function ChatsSidebar() {
               </button>
               {archived ? null : (
                 <>
-                  <button
-                    type="button"
-                    className="chats-rail__archive-btn"
-                    aria-label="Archive chat"
-                    title="Archive chat"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => archiveChat(s)}
-                  >
-                    <Archive size={14} aria-hidden />
-                  </button>
+                  {s.pinned ? null : (
+                    <button
+                      type="button"
+                      className="chats-rail__archive-btn"
+                      aria-label="Archive chat"
+                      title="Archive chat"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => archiveChat(s)}
+                    >
+                      <Archive size={14} aria-hidden />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="chats-rail__pin-btn"
@@ -548,7 +567,7 @@ export function ChatsSidebar() {
                 >
                   <Pencil size={12} aria-hidden /> Rename
                 </button>
-                {archived ? null : (
+                {archived || s.pinned ? null : (
                   <button
                     type="button"
                     role="menuitem"
@@ -558,15 +577,24 @@ export function ChatsSidebar() {
                     <Archive size={12} aria-hidden /> Archive
                   </button>
                 )}
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label="Delete chat"
-                  className="chats-rail__menu-danger"
-                  onClick={() => deleteChat(s)}
-                >
-                  Delete
-                </button>
+                {/*
+                  Archive and delete are one gesture further away while the chat
+                  is pinned: the menu keeps Unpin and Rename, and the row is out
+                  of the working set's reach until the operator unpins it. The
+                  commands are hidden rather than disabled so a pinned row does
+                  not offer a control that only refuses.
+                */}
+                {s.pinned ? null : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-label="Delete chat"
+                    className="chats-rail__menu-danger"
+                    onClick={() => deleteChat(s)}
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             ) : null}
           </>
@@ -662,32 +690,47 @@ export function ChatsSidebar() {
                   <button
                     type="button"
                     role="menuitemradio"
-                    aria-checked={!chat.showArchived}
+                    aria-checked={chat.archivedView === "hide"}
                     aria-label="Hide archived chats"
                     onClick={() => {
-                      chat.setShowArchived(false);
+                      chat.setArchivedView("hide");
                       setViewMenuOpen(false);
                     }}
                   >
                     <span className="chats-rail__check" aria-hidden>
-                      {!chat.showArchived ? <Check size={12} /> : null}
+                      {chat.archivedView === "hide" ? <Check size={12} /> : null}
                     </span>
                     Hide archived
                   </button>
                   <button
                     type="button"
                     role="menuitemradio"
-                    aria-checked={chat.showArchived}
+                    aria-checked={chat.archivedView === "show"}
                     aria-label="Show archived chats"
                     onClick={() => {
-                      chat.setShowArchived(true);
+                      chat.setArchivedView("show");
                       setViewMenuOpen(false);
                     }}
                   >
                     <span className="chats-rail__check" aria-hidden>
-                      {chat.showArchived ? <Check size={12} /> : null}
+                      {chat.archivedView === "show" ? <Check size={12} /> : null}
                     </span>
                     Show archived
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={chat.archivedView === "only"}
+                    aria-label="Only archived chats"
+                    onClick={() => {
+                      chat.setArchivedView("only");
+                      setViewMenuOpen(false);
+                    }}
+                  >
+                    <span className="chats-rail__check" aria-hidden>
+                      {chat.archivedView === "only" ? <Check size={12} /> : null}
+                    </span>
+                    Only archived
                   </button>
                 </div>
               ) : null}
@@ -721,8 +764,10 @@ export function ChatsSidebar() {
       ) : null}
 
       <div className="chats-rail__list" ref={listRef}>
-        {chat.sessionsLoaded && chat.sessions.length === 0 ? (
-          <p className="chats-rail__empty">No chats yet</p>
+        {listEmpty ? (
+          <p className="chats-rail__empty">
+            {onlyArchived ? "No archived chats" : "No chats yet"}
+          </p>
         ) : (
           <ul className="chats-rail__rows" aria-label="Chats">
             {ordered.map(renderRow)}

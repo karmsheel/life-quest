@@ -69,11 +69,28 @@ type Row = {
 
 type Tab = {
   label: string;
-  active: boolean;
+  /** The square's glyph; null on a normal tab. */
+  letter: string | null;
+  /** The tab's accessible name; the pinned square's names its chat. */
+  name: string;
+  /** A pinned chat is drawn as a square: letter + pin, no label, no close. */
+  pinned: boolean;
+  pin: boolean;
+  pinVisible: boolean;
+  active: boolean | null;
   live: boolean;
   approval: boolean;
   close: string | null;
+  hasClose: boolean;
   box: Box | null;
+};
+
+/** The open tab context menu, when the rig right-clicked a tab. */
+type TabMenu = {
+  box: Box | null;
+  menuFor: string | null;
+  tabId: string | null;
+  itemLabels: (string | null)[];
 };
 
 type State = {
@@ -81,6 +98,9 @@ type State = {
   rows: Row[];
   tabs: Tab[];
   tabCount: number;
+  /** The strip's own box; null when the strip is not drawn. */
+  strip: { box: Box | null } | null;
+  tabMenu: TabMenu | null;
   chatDivider: {
     label: string | null;
     now: number;
@@ -224,7 +244,8 @@ describe("chat dock tabs and sidebar chats", () => {
       pinned,
       hoveredPinned,
       unpinned,
-      repinned,
+      unpinnedPinnedNote,
+      baseline,
       hoveredAlpha,
       archived,
       asked,
@@ -311,7 +332,23 @@ describe("chat dock tabs and sidebar chats", () => {
       false,
       "pin/archive are not hover-only: a row shows its actions at rest",
     );
-    assert.equal(landing.tabCount, 0, "one open chat drew a tab strip");
+    // A pinned chat is a tab at boot — the pin is durable Hermes state — drawn
+    // as a square (letter + pin, no label, no close) ahead of the open chat.
+    assert.equal(
+      landing.tabCount,
+      2,
+      "the landing did not draw the pinned tab beside the open chat",
+    );
+    assert.equal(landing.tabs[0]?.pinned, true, "the first tab is not the pinned one");
+    assert.equal(landing.tabs[0]?.letter, "P", "the pinned square does not carry the chat's letter");
+    assert.equal(landing.tabs[0]?.pin, true, "the pinned square carries no pin icon");
+    assert.equal(landing.tabs[0]?.hasClose, false, "the pinned square has a close control");
+    assert.equal(landing.tabs[0]?.label, "", "the pinned square draws a text label");
+    assert.equal(landing.tabs[1]?.pinned, false, "the open chat's tab is marked pinned");
+    assert.equal(landing.tabs[1]?.label, "Alpha planning");
+    assert.equal(landing.tabs[1]?.hasClose, true, "the open chat's tab has no close control");
+    assert.equal(landing.tabs[1]?.active, true, "the open chat's tab is not the active one");
+    assert.notEqual(landing.strip, null, "the strip is not drawn for the pinned tab");
     assert.equal(landing.heading, "Alpha planning", "the dock landed on the wrong chat");
 
     // A real pointer over a row reveals its pin/archive controls and hides the
@@ -342,13 +379,13 @@ describe("chat dock tabs and sidebar chats", () => {
       "the hover pin control does not carry the pinned flag",
     );
     assert.equal(hoveredPinnedRow?.pin.filled, true, "the pinned hover pin is not filled");
+    // A pinned row hides Archive: a pin is a promise the chat stays in the
+    // working set, so archiving it is one Unpin away instead of one stray click.
     assert.equal(
       hoveredPinnedRow?.archive.visible,
-      true,
-      "the pinned row's hover archive is not visible",
+      false,
+      "the pinned row still shows its hover archive control",
     );
-    assert.equal(hoveredPinnedRow?.archive.label, "Archive chat");
-    assert.equal(hoveredPinnedRow?.archive.beforePin, true, "Archive does not sit right before Pin");
 
     const alphaHover = hoveredUnpinned.rows.find((row) => row.label === "Alpha planning");
     assert.equal(alphaHover?.actionsVisible, true, "hovering an unpinned row revealed no actions");
@@ -539,19 +576,39 @@ describe("chat dock tabs and sidebar chats", () => {
     const unpinnedBravo = unpinned.rows.find((row) => row.label === "Bravo budget");
     assert.equal(unpinnedBravo?.pinned, false, "the unpinned chat kept its pinned flag");
     assert.equal(unpinnedBravo?.pinState, false, "the unpinned chat still wears a pin mark");
+    // The fixture's own pin was unpinned and its tab closed at 1c, so no pinned
+    // row is left: the front of the list is the first of the activity order.
     assert.equal(
       unpinned.rows[0]?.label,
-      "Pinned note",
-      "unpinning did not hand the front back to the remaining pinned chat",
+      "Alpha planning",
+      "unpinning did not hand the front back to the activity order",
+    );
+    assert.equal(unpinned.tabCount, 3, "the unpinned tab left the strip");
+    assert.equal(
+      unpinned.tabs.every((tab) => tab.pinned === false),
+      true,
+      "a tab is still drawn as a pinned square",
+    );
+    assert.equal(
+      unpinned.tabs.find((tab) => tab.label === "Bravo budget")?.hasClose,
+      true,
+      "the unpinned chat's tab has no close control",
     );
 
-    // Pinned again, so the archive/delete/background states below run against
-    // the list they have always run against.
-    const repin = repinned.patchCalls.at(-1);
-    assert.equal(repin?.id, "chat-bravo", "the second Pin hit the wrong chat");
-    assert.equal(repin?.patch.pinned, true, "the second Pin never reached the bridge");
-    assert.equal(repinned.rows[0]?.label, "Bravo budget", "the re-pinned chat is not first");
-    assert.equal(repinned.rows[0]?.pinned, true, "the re-pinned chat is not marked pinned");
+    // 1c left a one-chat baseline: the fixture's pinned chat was unpinned from
+    // the sidebar and its now-normal tab closed, so the strip is gone again and
+    // every later tab count is the unpinned one it always was.
+    const pinnedNoteUnpin = unpinnedPinnedNote.patchCalls.at(-1);
+    assert.equal(pinnedNoteUnpin?.id, "chat-pinned", "the sidebar Unpin hit the wrong chat");
+    assert.equal(pinnedNoteUnpin?.patch.pinned, false, "the sidebar Unpin never reached the bridge");
+    assert.equal(
+      unpinnedPinnedNote.tabs.find((tab) => tab.label === "Pinned note")?.hasClose,
+      true,
+      "the unpinned square did not become a normal tab with a close control",
+    );
+    assert.equal(baseline.tabCount, 0, "closing the extra tab left the strip drawn");
+    assert.equal(baseline.strip, null, "the strip is drawn with one unpinned chat");
+    assert.equal(baseline.heading, "Alpha planning");
 
     // The hover archive control removes the row and the tab it had, and does not
     // move the open thread when the archived chat is a background tab.
@@ -728,16 +785,17 @@ describe("chat dock tabs and sidebar chats", () => {
       "Escape did not restore the header",
     );
 
-    // The view menu is the filter: hide the archived chats (the default), or
-    // show them as a greyed, restorable group.
+    // The view menu is the filter: hide the archived chats (the default), show
+    // them as a greyed, restorable group, or show the archive alone.
     assert.equal(viewMenu.rail?.viewMenu?.title, "View options");
     assert.deepEqual(
       viewMenu.rail?.viewMenu?.items,
       [
         { label: "Hide archived chats", checked: true },
         { label: "Show archived chats", checked: false },
+        { label: "Only archived chats", checked: false },
       ],
-      "the view menu does not offer hide/show archived, or marks the wrong one",
+      "the view menu does not offer hide/show/only archived, or marks the wrong one",
     );
     assert.equal(
       archivedShown.rowCount,
@@ -808,6 +866,7 @@ describe("chat dock tabs and sidebar chats", () => {
       [
         { label: "Hide archived chats", checked: false },
         { label: "Show archived chats", checked: true },
+        { label: "Only archived chats", checked: false },
       ],
       "the view menu does not mark the shown-archived view as current",
     );

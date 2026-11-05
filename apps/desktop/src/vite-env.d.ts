@@ -337,6 +337,9 @@ type LifequestApi = {
     patch: SignalUpdatePatch,
   ) => Promise<Result<SignalRecord>>;
   signalChainDelete: (id: string) => Promise<Result<SignalRecord>>;
+  signalChainReadImage: (
+    relPath: string,
+  ) => Promise<Result<{ bytes: Uint8Array; mime: ImageMimeType }>>;
   libraryList: () => Promise<Result<LibraryListResult>>;
   libraryCreate: (input: LibraryCreateInput) => Promise<Result<LibraryDocument>>;
   libraryGet: (id: string) => Promise<Result<LibraryDocument>>;

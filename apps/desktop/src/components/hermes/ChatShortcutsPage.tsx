@@ -2,8 +2,8 @@
  * The keyboard shortcuts, as the dock's page: the reference, and the two things
  * the operator can do with it — look a key up, or change one in place.
  *
- * The titlebar control opens this page when the operator wants to look a key up
- * without leaving the page they are on. Each row carries a small pencil: the
+ * The dock's bottom bar opens this page when the operator wants to look a key
+ * up without leaving the page they are on. Each row carries a small pencil: the
  * row then waits for the next key, exactly as a Settings row does, because both
  * pages edit through the one recorder in `ShortcutsProvider`. The header pencil
  * still opens the full Settings → Keyboard page, where the whole table can be

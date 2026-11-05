@@ -118,14 +118,39 @@ const SAMPLE = `(() => {
   // The tab's own box, not its label's: the equal-width claim is about the tab
   // element, and a content-sized tab would show up here as a box narrower than
   // its siblings whatever its title happens to be.
-  const tabs = Array.from(document.querySelectorAll(".chat-panel__tab")).map((tab) => ({
-    label: text(tab.querySelector(".chat-panel__tab-label")),
-    active: tab.querySelector("[role=tab]")?.getAttribute("aria-selected") === "true",
-    live: tab.hasAttribute("data-live"),
-    approval: tab.hasAttribute("data-approval"),
-    close: tab.querySelector(".chat-panel__tab-close")?.getAttribute("aria-label") ?? null,
-    box: box(tab)
-  }));
+  //
+  // A pinned chat draws as a square: a letter and a small pin, no label and no
+  // close. Those are reported separately so a square is read as a square rather
+  // than as a normal tab that lost its label.
+  const tabs = Array.from(document.querySelectorAll(".chat-panel__tab")).map((tab) => {
+    const main = tab.matches("[role=tab]") ? tab : tab.querySelector("[role=tab]");
+    const labelEl = tab.querySelector(".chat-panel__tab-label");
+    const letterEl = tab.querySelector(".chat-panel__tab-letter");
+    const pinEl = tab.querySelector(".chat-panel__tab-pin");
+    const closeEl = tab.querySelector(".chat-panel__tab-close");
+    return {
+      label: text(labelEl),
+      letter: letterEl ? text(letterEl) : null,
+      name: main
+        ? (main.getAttribute("aria-label") ?? main.getAttribute("title") ?? "").trim()
+        : "",
+      pinned: tab.getAttribute("data-pinned") === "true",
+      pin: Boolean(pinEl),
+      pinVisible: shown(pinEl),
+      close: closeEl ? (closeEl.getAttribute("aria-label") ?? "") : null,
+      hasClose: Boolean(closeEl),
+      active: main ? main.getAttribute("aria-selected") === "true" : null,
+      live: tab.hasAttribute("data-live"),
+      approval: tab.hasAttribute("data-approval"),
+      box: box(tab)
+    };
+  });
+
+  // The strip's own box, and the tab context menu when one is open: the menu is
+  // a fixed popover (not a strip child), so its on-screen box is read here
+  // instead of assumed.
+  const tabStrip = document.querySelector(".chat-panel__tabs");
+  const tabMenu = document.querySelector(".chat-panel__tab-menu");
 
   // The dock's resize handle: the drawn column, the range it is held to, and
   // where the divider currently sits. A narrow-strip claim is only worth
@@ -245,6 +270,17 @@ const SAMPLE = `(() => {
     rowCount: rows.length,
     tabs,
     tabCount: tabs.length,
+    strip: tabStrip ? { box: box(tabStrip) } : null,
+    tabMenu: tabMenu
+      ? {
+          box: box(tabMenu),
+          menuFor: tabMenu.getAttribute("data-menu-for"),
+          tabId: tabMenu.getAttribute("data-tab-id"),
+          itemLabels: Array.from(
+            tabMenu.querySelectorAll('[role="menuitem"]'),
+          ).map((item) => item.getAttribute("aria-label")),
+        }
+      : null,
     chatDivider: divider
       ? {
           label: divider.getAttribute("aria-label"),
@@ -866,7 +902,29 @@ async function main() {
         landing.surface === "thread",
       `heading "${landing.heading}", surface ${landing.surface}`,
     );
-    check("one open chat draws no tab strip", landing.tabCount === 0, `${landing.tabCount} tabs`);
+    // The pinned chat is a tab of its own before anything is opened: the pin is
+    // durable Hermes state, so a pinned chat is always in the strip. It draws as
+    // a square — first letter and a small pin, no label and no close — and sits
+    // first, ahead of the open chat's normal tab.
+    check(
+      "landing draws the pinned chat as a square tab ahead of the open chat",
+      landing.tabCount === 2 &&
+        landing.tabs[0]?.pinned === true &&
+        landing.tabs[0]?.letter === "P" &&
+        landing.tabs[0]?.pin === true &&
+        landing.tabs[0]?.hasClose === false &&
+        landing.tabs[0]?.label === "" &&
+        landing.tabs[1]?.pinned === false &&
+        landing.tabs[1]?.label === "Alpha planning" &&
+        landing.tabs[1]?.hasClose === true &&
+        landing.tabs[1]?.active === true,
+      JSON.stringify(landing.tabs),
+    );
+    check(
+      "the strip is drawn because of the pinned tab, with the open chat beside it",
+      landing.strip !== null,
+      JSON.stringify(landing.strip),
+    );
     check(
       "the composer is ready on landing",
       landing.composer !== null && !landing.composer.disabled,
@@ -890,16 +948,17 @@ async function main() {
       hoveredPinnedRow?.whenVisible === false && hoveredPinnedRow?.pinState === false,
       JSON.stringify({ when: hoveredPinnedRow?.whenVisible, pinState: hoveredPinnedRow?.pinState }),
     );
+    // A pinned chat cannot be archived from the sidebar: Archive would take a
+    // pinned chat out from under its permanent tab, so the hover control is the
+    // pin only, and Unpin is the way out.
     check(
-      "the pinned row's hover control is Unpin, filled, right after Archive",
+      "the pinned row's hover control is Unpin, filled, and it hides Archive",
       hoveredPinnedRow?.pin.exists === true &&
         hoveredPinnedRow?.pin.visible === true &&
         hoveredPinnedRow?.pin.label === "Unpin chat" &&
         hoveredPinnedRow?.pin.dataPinned === "true" &&
         hoveredPinnedRow?.pin.filled === true &&
-        hoveredPinnedRow?.archive.visible === true &&
-        hoveredPinnedRow?.archive.label === "Archive chat" &&
-        hoveredPinnedRow?.archive.beforePin === true,
+        hoveredPinnedRow?.archive.visible === false,
       JSON.stringify({ pin: hoveredPinnedRow?.pin, archive: hoveredPinnedRow?.archive }),
     );
 
@@ -938,6 +997,44 @@ async function main() {
       unhovered.rows.every((row) => row.whenVisible) &&
         unhovered.rows.find((row) => row.label === "Pinned note")?.pinState === true,
       JSON.stringify(unhovered.rows.map((r) => [r.label, r.whenVisible, r.pinState])),
+    );
+
+    // 1c — unpin the fixture's pinned chat from the sidebar, then close the tab
+    // the pin left behind. The pin is what forced a second tab onto the landing,
+    // so this is how the rest of the suite gets back to the one-chat baseline it
+    // was written against. The square has already become a normal tab with a
+    // close control by the time the unpin lands.
+    check("hovered the pinned row to unpin it", await hoverSidebarRow("Pinned note"), "no row to hover");
+    check(
+      "clicked the pinned row's Unpin control",
+      await clickRowControl("Pinned note", ".chats-rail__pin-btn"),
+      "no pin control",
+    );
+    check("moved the pointer off the rows after the unpin", await unhover(), "no neutral point");
+    const unpinnedPinnedNote = await settle();
+    check(
+      "Unpin reached the bridge for the pinned chat",
+      unpinnedPinnedNote.patchCalls.at(-1)?.id === "chat-pinned" &&
+        unpinnedPinnedNote.patchCalls.at(-1)?.patch.pinned === false,
+      JSON.stringify(unpinnedPinnedNote.patchCalls.at(-1)),
+    );
+    check(
+      "the unpinned chat's square became a normal tab with a close control",
+      unpinnedPinnedNote.tabCount === 2 &&
+        unpinnedPinnedNote.tabs.every((tab) => tab.pinned === false) &&
+        unpinnedPinnedNote.tabs.find((tab) => tab.label === "Pinned note")?.hasClose === true &&
+        unpinnedPinnedNote.tabs.find((tab) => tab.active)?.label === "Alpha planning",
+      JSON.stringify(unpinnedPinnedNote.tabs),
+    );
+    check("closed the unpinned chat's tab", await closeTab("Pinned note"), "no close control");
+    const baseline = await settle();
+    check(
+      "closing the extra tab lands on the one-chat baseline with no strip",
+      baseline.tabCount === 0 &&
+        baseline.strip === null &&
+        baseline.heading === "Alpha planning" &&
+        baseline.surface === "thread",
+      JSON.stringify({ tabs: baseline.tabs, strip: baseline.strip, heading: baseline.heading }),
     );
 
     // 2 — a plain click is navigation: the clicked chat takes over the main chat
@@ -1180,6 +1277,18 @@ async function main() {
       pinned.rows[0]?.pinState === true && pinned.rows.every((row) => !row.actionsVisible),
       JSON.stringify(pinned.rows.map((row) => [row.label, row.pinState, row.actionsVisible])),
     );
+    // Pinning a chat also squares off the tab it already had: pinned tabs come
+    // first in the strip, whatever order the working set was made in.
+    check(
+      "pinning a chat turns its open tab into a square at the front",
+      pinned.tabCount === 3 &&
+        pinned.tabs[0]?.pinned === true &&
+        pinned.tabs[0]?.letter === "B" &&
+        pinned.tabs[0]?.pin === true &&
+        pinned.tabs[0]?.hasClose === false &&
+        pinned.tabs.filter((tab) => tab.pinned).length === 1,
+      JSON.stringify(pinned.tabs),
+    );
 
     // 10b — the same control toggles: Unpin un-pins, and the row leaves the front.
     check("hovered the now-pinned Bravo", await hoverSidebarRow("Bravo budget"), "no row to hover");
@@ -1210,33 +1319,26 @@ async function main() {
     const unpinnedBravo = unpinned.rows.find((row) => row.label === "Bravo budget");
     check(
       "the unpinned chat left the front and lost its pin mark",
+      // The fixture's own pin was unpinned and closed at 1c, so the front of the
+      // list is the first of the activity order.
       unpinnedBravo?.pinned === false &&
         unpinnedBravo?.pinState === false &&
-        unpinned.rows[0]?.label === "Pinned note",
+        unpinned.rows[0]?.label === "Alpha planning",
       JSON.stringify(unpinned.rows.map((row) => [row.label, row.pinned, row.pinState])),
     );
+    check(
+      "the unpinned chat's tab is a normal tab again",
+      unpinned.tabCount === 3 &&
+        unpinned.tabs.every((tab) => tab.pinned === false) &&
+        unpinned.tabs.find((tab) => tab.label === "Bravo budget")?.hasClose === true,
+      JSON.stringify(unpinned.tabs),
+    );
 
-    // 10c — pin it again, so the archive/delete/background states below run
-    // against the same list they always did (Bravo pinned, three rows after).
-    check("hovered Bravo once more", await hoverSidebarRow("Bravo budget"), "no row to hover");
-    check(
-      "clicked Bravo's pin again",
-      await clickRowControl("Bravo budget", ".chats-rail__pin-btn"),
-      "no pin control",
-    );
-    check("moved the pointer off the rows after the re-pin", await unhover(), "no neutral point");
-    const repinned = await settle();
-    check(
-      "Bravo is pinned again and back at the front",
-      repinned.patchCalls.at(-1)?.id === "chat-bravo" &&
-        repinned.patchCalls.at(-1)?.patch.pinned === true &&
-        repinned.rows[0]?.label === "Bravo budget" &&
-        repinned.rows[0]?.pinned === true,
-      JSON.stringify({
-        patch: repinned.patchCalls.at(-1),
-        rows: repinned.rows.map((row) => [row.label, row.pinned]),
-      }),
-    );
+    // Bravo is deliberately left unpinned here: a pinned row has no hover
+    // Archive control (that is the point of the pin), and the rest of this
+    // suite archives Bravo from that control. Every pinned chat was unpinned and
+    // its extra tab closed at 1c, so from here the list and strip are the plain
+    // unpinned ones the remaining steps were written against.
 
     // 11 — the hover archive control removes the row and the tab it had.
     check("hovered Alpha", await hoverSidebarRow("Alpha planning"), "no row to hover");
@@ -1496,12 +1598,13 @@ async function main() {
     check("opened view options", await clickRailControl("View options"), "no view control");
     const viewMenu = await settle();
     check(
-      "the view menu names its two views",
+      "the view menu names its three views",
       viewMenu.rail?.viewMenu?.title === "View options" &&
         JSON.stringify(viewMenu.rail.viewMenu.items) ===
           JSON.stringify([
             { label: "Hide archived chats", checked: true },
             { label: "Show archived chats", checked: false },
+            { label: "Only archived chats", checked: false },
           ]),
       JSON.stringify(viewMenu.rail?.viewMenu),
     );
@@ -1601,6 +1704,7 @@ async function main() {
         JSON.stringify([
           { label: "Hide archived chats", checked: false },
           { label: "Show archived chats", checked: true },
+          { label: "Only archived chats", checked: false },
         ]),
       JSON.stringify(viewMenuShown.rail?.viewMenu),
     );
@@ -2102,7 +2206,8 @@ async function main() {
         pinned,
         hoveredPinned,
         unpinned,
-        repinned,
+        unpinnedPinnedNote,
+        baseline,
         hoveredAlpha,
         archived,
         asked,
@@ -2185,7 +2290,16 @@ async function main() {
       ["split", state.split.rowCount, state.split.tabCount, "alpha", state.split.heading, "", ""],
       ["pinned", state.pinned.rowCount, state.pinned.tabCount, "", state.pinned.heading, "", state.pinned.patchCalls.length],
       ["unpinned", state.unpinned.rowCount, state.unpinned.tabCount, "", state.unpinned.heading, "", state.unpinned.patchCalls.length],
-      ["repinned", state.repinned.rowCount, state.repinned.tabCount, "", state.repinned.heading, "", state.repinned.patchCalls.length],
+      [
+        "unpinned pinned-note",
+        state.unpinnedPinnedNote.rowCount,
+        state.unpinnedPinnedNote.tabCount,
+        "",
+        state.unpinnedPinnedNote.heading,
+        "",
+        state.unpinnedPinnedNote.patchCalls.length,
+      ],
+      ["baseline", state.baseline.rowCount, state.baseline.tabCount, "", state.baseline.heading, "", ""],
       ["archived", state.archived.rowCount, state.archived.tabCount, "", state.archived.heading, "", state.archived.patchCalls.length],
       ["deleted", state.deleted.rowCount, state.deleted.tabCount, "", state.deleted.heading, "", ""],
       ["background", state.background.rowCount, state.background.tabCount, "delta", state.background.heading, "", ""],

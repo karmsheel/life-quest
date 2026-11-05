@@ -192,6 +192,29 @@ function kindLabel(target: DecisionRecord["target"]): string {
  * the `approved · edited` status in History are how the record admits whose
  * words were approved.
  *
+ * ANSWERING SEVERAL AT ONCE
+ *
+ * The operator reported that pressing approve on a second proposal while the
+ * first was still processing made the first one look like it had stopped. It
+ * had not — the vault was still writing it — but the page tracked ONE resolving
+ * id, so the second press replaced the first card's "…" and re-enabled its
+ * buttons. Each card now owns its processing state (`resolvingIds`), so two
+ * answers in flight read as two answers in flight, and each card leaves the
+ * queue as its own write returns. There is also an `Approve all` control that
+ * dispatches every pending proposal at once; the vault still serializes the
+ * writes behind its one queue (two writers interleaving in one filesystem is
+ * exactly what that queue exists to prevent), but the page never makes the
+ * operator wait for one answer before starting the next.
+ *
+ * THE SWITCHER'S ROW
+ *
+ * The pill switcher, the line the page speaks through (approval, refusal,
+ * "saved changes"), and the `Approve all` control share one row. The notice used
+ * to sit under the switcher, so a sentence appearing pushed every card down and
+ * its disappearance pulled them back — the operator's complaint. Beside the
+ * switcher it changes nothing below it; the control sits at the far trailing
+ * edge, in line with the switcher.
+ *
  * WHAT IT DELIBERATELY DOES NOT DO
  *
  * It does not move the page. A prepend at the start of a list is where the
@@ -248,7 +271,26 @@ export function DecisionsInbox({
   const [manualLoading, setManualLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  /**
+   * Every Decision whose answer is in flight, by id.
+   *
+   * A SET, not one id. The page used to keep a single `resolvingId`, so pressing
+   * approve on a second card while the first was still writing overwrote it: the
+   * first card's "…" vanished, its buttons came back, and the operator watching
+   * it was told the answer had stopped processing. Two answers in flight are two
+   * facts, and each card owns its own state until its own write returns.
+   */
+  const [resolvingIds, setResolvingIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  /**
+   * The same set, readable from inside an event handler without waiting for the
+   * next render: Approve all uses it to skip a card that is already being
+   * answered.
+   */
+  const resolvingIdsRef = useRef<Set<string>>(new Set());
+  /** True while Approve all is dispatching its batch and waiting on it. */
+  const [approvingAll, setApprovingAll] = useState(false);
   /**
    * The card whose proposal is open in the editor, if any.
    *
@@ -294,6 +336,14 @@ export function DecisionsInbox({
    * counts as drawn.
    */
   const readSeqRef = useRef(0);
+  /**
+   * The one pending silent re-read while several answers land together.
+   *
+   * A batch (or two cards answered quickly) writes several times in a row, and
+   * one read is enough to draw the result. Coalescing them keeps a burst of
+   * approvals from racing a list read per card.
+   */
+  const reloadTimerRef = useRef<number | null>(null);
 
   /**
    * Read the inbox.
@@ -422,6 +472,31 @@ export function DecisionsInbox({
     [tab],
   );
 
+  /**
+   * Ask for one silent re-read soon.
+   *
+   * Several answers can land in the same breath — Approve all dispatches a
+   * batch, and two cards can be clicked quickly — so a burst is coalesced into
+   * one read instead of racing a list read per card. `live` mode is deliberate:
+   * a write landed, and what is on screen is added to rather than replaced.
+   */
+  const scheduleReload = useCallback(() => {
+    if (reloadTimerRef.current !== null) return;
+    reloadTimerRef.current = window.setTimeout(() => {
+      reloadTimerRef.current = null;
+      void load("live");
+    }, 60);
+  }, [load]);
+
+  // A queued re-read must not fire after the sheet (and this page) is gone.
+  useEffect(() => {
+    return () => {
+      if (reloadTimerRef.current !== null) {
+        window.clearTimeout(reloadTimerRef.current);
+      }
+    };
+  }, []);
+
   // The operator's own moves: the first paint and a tab. The lens is not one of
   // them — the page reads the same list under every lens.
   useEffect(() => {
@@ -484,36 +559,151 @@ export function DecisionsInbox({
     onClose();
   }
 
+  /** Note that one card's answer is in flight, or that it has settled. */
+  function markResolving(id: string, resolving: boolean): void {
+    const next = new Set(resolvingIdsRef.current);
+    if (resolving) next.add(id);
+    else next.delete(id);
+    resolvingIdsRef.current = next;
+    setResolvingIds(next);
+  }
+
+  /**
+   * Send one answer to the vault.
+   *
+   * The card leaves the queue as soon as ITS write returns, not when the slowest
+   * answer in the room returns: that is what makes several answers feel applied
+   * in parallel, even though the vault's own writes stay serialized behind one
+   * queue (one filesystem, and interleaving two writers in it is the bug that
+   * queue exists to prevent). The id is added and removed around the call and
+   * never around the whole page, so a second click cannot take the first card's
+   * processing state.
+   */
+  async function resolveOne(
+    id: string,
+    resolution: "approved" | "rejected",
+  ): Promise<{ ok: boolean; error?: string }> {
+    markResolving(id, true);
+    try {
+      const result = await api().decisionResolve(id, resolution);
+      if (!result.ok) return { ok: false, error: result.error };
+      // Drop the card now rather than after the list round-trip, so two answers
+      // that finish together each disappear on their own arrival.
+      setItems((previous) => previous.filter((item) => item.id !== id));
+      scheduleReload();
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed to resolve decision",
+      };
+    } finally {
+      markResolving(id, false);
+    }
+  }
+
   async function resolve(id: string, resolution: "approved" | "rejected") {
-    setResolvingId(id);
+    // A second press on an answer already in flight is a duplicate, not a new
+    // answer: the vault would refuse it or, worse, the two would race.
+    if (resolvingIdsRef.current.has(id)) return;
     setActionMessage(null);
     setError(null);
     // The arrival mark is about a card the operator is being asked to act on, and
     // the answer they just gave is the end of that moment.
     setArrival(null);
     try {
-      const result = await api().decisionResolve(id, resolution);
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      setActionMessage(
-        resolution === "approved" ? "Decision approved." : "Decision rejected.",
-      );
+      const outcome = await resolveOne(id, resolution);
+      // Read BEFORE saying anything: `load()` clears the page's error line, so an
+      // error set first would be wiped by the refresh that keeps the card up.
       await load();
       // Refresh vault snapshot so document editors pick up approved body.
       await refresh();
+      if (outcome.ok) {
+        setActionMessage(
+          resolution === "approved"
+            ? "Decision approved."
+            : "Decision rejected.",
+        );
+      } else {
+        setError(outcome.error ?? "Failed to resolve decision");
+      }
       await closeIfAnswered();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to resolve decision",
       );
+    }
+  }
+
+  /**
+   * Answer every pending proposal with one press.
+   *
+   * The dispatches are concurrent, not a loop that waits for each answer: the
+   * operator asked for the whole queue to be applied in parallel, and the vault
+   * serializes only the writes themselves. Cards already being answered are
+   * skipped rather than asked twice ("Decision is already approved" is not an
+   * answer the operator should ever have to read here). A batch that partly
+   * fails says how many landed and repeats the first refusal, and every failure
+   * leaves its card pending — nothing is silently dropped.
+   */
+  async function approveAll() {
+    const ids = items
+      .filter(
+        (decision) =>
+          decision.status === "pending" &&
+          !resolvingIdsRef.current.has(decision.id),
+      )
+      .map((decision) => decision.id);
+    if (ids.length === 0) return;
+    setApprovingAll(true);
+    setActionMessage(null);
+    setError(null);
+    setArrival(null);
+    try {
+      const outcomes = await Promise.all(
+        ids.map((id) => resolveOne(id, "approved")),
+      );
+      const failures = outcomes.filter((outcome) => !outcome.ok);
+      const approved = outcomes.length - failures.length;
+      // One read and one snapshot refresh for the whole batch, after every write.
+      await load();
+      await refresh();
+      if (failures.length === 0) {
+        setActionMessage(
+          approved === 1
+            ? "Decision approved."
+            : `All ${approved} decisions approved.`,
+        );
+      } else {
+        if (approved > 0) {
+          setActionMessage(`Approved ${approved} of ${outcomes.length} decisions.`);
+        }
+        setError(
+          failures.length === 1
+            ? failures[0]!.error ?? "Failed to resolve decision"
+            : `${failures.length} decisions could not be approved. ${
+                failures[0]!.error ?? ""
+              }`.trim(),
+        );
+      }
+      await closeIfAnswered();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to approve all decisions",
+      );
     } finally {
-      setResolvingId(null);
+      setApprovingAll(false);
     }
   }
 
   function selectTab(next: Tab) {
+    // A queued silent re-read was scheduled against the tab that was showing;
+    // the tab switch reads its own list, so drop the stale one rather than let
+    // it draw the previous tab's rows under the new tab.
+    if (reloadTimerRef.current !== null) {
+      window.clearTimeout(reloadTimerRef.current);
+      reloadTimerRef.current = null;
+    }
     setTab(next);
     setEditingId(null);
     setActionMessage(null);
@@ -669,6 +859,15 @@ export function DecisionsInbox({
    */
   const arrivedIds = new Set(arrival?.ids ?? []);
   const arrivedOnScreen = items.filter((d) => arrivedIds.has(d.id));
+  /**
+   * What Approve all would answer: pending, and not already being answered.
+   * Drawn from the list on screen so the control's label and disabled state
+   * agree with the cards the operator is looking at.
+   */
+  const pendingToApprove = items.filter(
+    (decision) =>
+      decision.status === "pending" && !resolvingIds.has(decision.id),
+  );
   const livedDomains = domains.filter((d) => !d.meta.archivedAt);
 
   // The manual store is global on this surface too: a decision the operator
@@ -724,49 +923,101 @@ export function DecisionsInbox({
         </header>
       ) : null}
 
-      <div className="decisions-inbox__tabs" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "pending"}
-          className={[
-            "decisions-inbox__tab",
-            tab === "pending" ? "decisions-inbox__tab--active" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          onClick={() => selectTab("pending")}
-        >
-          Pending
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "history"}
-          className={[
-            "decisions-inbox__tab",
-            tab === "history" ? "decisions-inbox__tab--active" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          onClick={() => selectTab("history")}
-        >
-          History
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "manual"}
-          className={[
-            "decisions-inbox__tab",
-            tab === "manual" ? "decisions-inbox__tab--active" : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          onClick={() => selectTab("manual")}
-        >
-          Manual
-        </button>
+      {/* The switcher's own row. The page's notice and the control that answers
+          the whole queue live BESIDE the switcher, not under it: a line of text
+          appearing must not change the height above the cards, or every proposal
+          moves while the operator is reading it. */}
+      <div className="decisions-inbox__bar">
+        <div className="decisions-inbox__tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "pending"}
+            className={[
+              "decisions-inbox__tab",
+              tab === "pending" ? "decisions-inbox__tab--active" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={() => selectTab("pending")}
+          >
+            Pending
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "history"}
+            className={[
+              "decisions-inbox__tab",
+              tab === "history" ? "decisions-inbox__tab--active" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={() => selectTab("history")}
+          >
+            History
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "manual"}
+            className={[
+              "decisions-inbox__tab",
+              tab === "manual" ? "decisions-inbox__tab--active" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={() => selectTab("manual")}
+          >
+            Manual
+          </button>
+        </div>
+
+        {/* The line the page speaks through, in the same row as the switcher.
+            It is clipped to one line so a long refusal cannot grow the bar. */}
+        <div className="decisions-inbox__notices">
+          {error ? (
+            <p className="form-error decisions-inbox__notice" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {actionMessage ? (
+            <p
+              className="doc-editor__message decisions-inbox__notice"
+              role="status"
+            >
+              {actionMessage}
+            </p>
+          ) : null}
+        </div>
+
+        {/* The one control that answers the whole queue: on the switcher's line,
+            against the cards' trailing edge. It stays rendered while the queue
+            is empty (disabled) so the bar never changes height. */}
+        {tab === "pending" ? (
+          <button
+            type="button"
+            className="btn btn-primary decisions-inbox__approve-all"
+            data-testid="btn-decisions-approve-all"
+            disabled={
+              approvingAll || editingId !== null || pendingToApprove.length === 0
+            }
+            title={
+              editingId !== null
+                ? "Save or cancel the open edit before approving everything."
+                : approvingAll
+                  ? "Approving the pending decisions…"
+                  : pendingToApprove.length === 0
+                    ? "There are no pending decisions to approve."
+                    : `Approve all ${pendingToApprove.length} pending decision${
+                        pendingToApprove.length === 1 ? "" : "s"
+                      }.`
+            }
+            onClick={() => void approveAll()}
+          >
+            {approvingAll ? "Approving…" : "Approve all"}
+          </button>
+        ) : null}
       </div>
 
       {/* The comparison the operator asked for, on the tab where both stores are
@@ -798,16 +1049,6 @@ export function DecisionsInbox({
         </div>
       ) : null}
 
-      {error ? (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {actionMessage ? (
-        <p className="doc-editor__message" role="status">
-          {actionMessage}
-        </p>
-      ) : null}
       {/* One line, above the list, for as long as the mark is on a card: the
           operator looking at the page is told what happened to it, and a screen
           reader is told the same thing in the same order. */}
@@ -996,17 +1237,17 @@ export function DecisionsInbox({
                           type="button"
                           className="btn btn-danger"
                           data-testid="btn-decision-reject"
-                          disabled={resolvingId === d.id || savingId === d.id}
+                          disabled={resolvingIds.has(d.id) || savingId === d.id}
                           onClick={() => void resolve(d.id, "rejected")}
                         >
-                          {resolvingId === d.id ? "…" : "Reject"}
+                          {resolvingIds.has(d.id) ? "…" : "Reject"}
                         </button>
                         {supportsAmendment(d) ? (
                           <button
                             type="button"
                             className="btn"
                             data-testid="btn-decision-edit"
-                            disabled={resolvingId === d.id || savingId === d.id}
+                            disabled={resolvingIds.has(d.id) || savingId === d.id}
                             onClick={() => beginEdit(d.id)}
                           >
                             Edit
@@ -1016,10 +1257,10 @@ export function DecisionsInbox({
                           type="button"
                           className="btn btn-primary"
                           data-testid="btn-decision-approve"
-                          disabled={resolvingId === d.id || savingId === d.id}
+                          disabled={resolvingIds.has(d.id) || savingId === d.id}
                           onClick={() => void resolve(d.id, "approved")}
                         >
-                          {resolvingId === d.id ? "…" : "Approve"}
+                          {resolvingIds.has(d.id) ? "…" : "Approve"}
                         </button>
                       </div>
                     ) : null}

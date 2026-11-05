@@ -7,8 +7,10 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent,
+  type MouseEvent,
 } from "react";
 import { Link } from "react-router-dom";
+import { createPortal } from "react-dom";
 import {
   Archive,
   ArrowLeft,
@@ -20,6 +22,8 @@ import {
   Eye,
   EyeOff,
   ImagePlus,
+  Keyboard,
+  Link2,
   MessageCircleQuestion,
   MessageSquare,
   MoreVertical,
@@ -42,9 +46,14 @@ import { copyText } from "@/lib/clipboard";
 import { api } from "@/lib/ipc";
 import { pageLabelFor } from "@/lib/page-context";
 import { WING_LABELS, wingForPath } from "@/components/shell/wing";
-import { signalStampWhen, signalVisible } from "@/lib/signal-chain";
+import {
+  linkHost,
+  signalStampWhen,
+  signalVisible,
+} from "@/lib/signal-chain";
 import { summarizeToolRun, toolRowLabel } from "@/lib/tool-run";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
+import { useSignalImageUrls } from "@/components/signal-chain/useSignalImageUrls";
 import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
 import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
@@ -151,6 +160,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const {
     requestedSessionId,
     requestedKickoff,
+    requestedSession,
     requestedAutomationContext,
     clearRequestedSession,
     contextCard,
@@ -164,15 +174,27 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     // The two-pane move, in the bottom bar beside the collapse control: the
     // titlebar no longer carries a copy of it.
     swapSide,
-    // What the pane is showing. It sits on the dock because the titlebar's
-    // shortcuts control opens the dock onto that page from above this store.
+    // What the pane is showing. The dock's own bottom bar switches it, so the
+    // store sits above the panel whose bar reads it.
     surface: view,
     setSurface: setView,
   } = useChatDock();
   const chat = useChatSessions();
   const sessions = chat.sessions;
   const sessionId = chat.activeId;
-  const openTabs = chat.openTabs;
+  /*
+    The strip's tabs, as the store draws them: the pinned band first, then the
+    open unpinned tabs. `tabIds` already comes in that order — a pinned chat is a
+    tab even on a launch where it was never opened — but the two bands are put
+    back together here so the strip never depends on the provider's ordering
+    being the only thing keeping a square in front.
+  */
+  const tabIds = chat.tabIds;
+  const pinnedTabIds = chat.pinnedTabIds;
+  const orderedTabIds = useMemo(() => {
+    const pinned = new Set(pinnedTabIds);
+    return [...pinnedTabIds, ...tabIds.filter((id) => !pinned.has(id))];
+  }, [tabIds, pinnedTabIds]);
   const run = chat.runOf(sessionId);
   const messages = run.messages;
   const sending = run.sending;
@@ -290,6 +312,33 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   /**
+   * A rename asked for from a tab's context menu. The tab may not be the one in
+   * front, so the field cannot open until that chat has been activated; this
+   * says which chat the field is owed to. It is consumed (or dropped) by the
+   * session-change effect below, which is also what stops the field following
+   * the header onto a chat nobody asked to rename.
+   */
+  const pendingRenameRef = useRef<string | null>(null);
+  /**
+   * The tab strip's context menu: the tab it was opened on, whether that tab is
+   * pinned, and the pointer point it anchors to. The strip scrolls sideways, so
+   * the menu is drawn fixed at the cursor rather than inside the strip — a menu
+   * inside a scroll port is clipped by it. One tab's menu at a time.
+   */
+  const [tabMenu, setTabMenu] = useState<{
+    id: string;
+    pinned: boolean;
+    x: number;
+    y: number;
+  } | null>(null);
+  /** Where the menu lands once the window's own edges have clamped it. */
+  const [tabMenuPos, setTabMenuPos] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+  const tabMenuRef = useRef<HTMLDivElement | null>(null);
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  /**
    * The dock's questions — a chat delete, a signal delete — are asked in the
    * app's own dialog, and gated on the dock being open: a question asked from
    * the dock cannot float over the window once the panel is collapsed.
@@ -316,6 +365,21 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   /** The same two-state rule as the chat field: the arrow needs some text. */
   const chainSendable = chainDraft.trim().length > 0;
   const chainControlVisible = chainBusy || chainSendable;
+  /**
+   * A capture may be a picture; the dock draws the same records the page does,
+   * so it reads their bytes through the same blob-URL path.
+   */
+  const signalImagePaths = useMemo(
+    () =>
+      signals
+        .map((s) =>
+          s.attachment?.kind === "image" ? s.attachment.relPath : null,
+        )
+        .filter((path): path is string => path !== null),
+    [signals],
+  );
+  const { urls: signalImageUrls, missing: missingSignalImages } =
+    useSignalImageUrls(signalImagePaths);
   const listRef = useRef<HTMLDivElement | null>(null);
   const activityRef = useRef<HTMLUListElement | null>(null);
   /** The chain's own scroller: the view follows the newest signal. */
@@ -489,7 +553,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * recent one, else show the list. The store guards the "already landed" case,
    * so a run's deltas re-rendering this panel cannot resume it a second time.
    *
-   * A surface the operator asked for by name — the titlebar's shortcuts
+   * A surface the operator asked for by name — the dock bar's shortcuts
    * reference — is not a landing: opening the dock onto it must not have a chat
    * resume over the top of it. The check reads a ref rather than a dependency:
    * landing is "the dock opened", not "the surface changed", and re-running
@@ -508,11 +572,81 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * changes — another chat is opened, a tab closes, or an archive hands the
    * header to its neighbour — the field must not follow the header onto the new
    * chat: saving it would write one chat's name onto another.
+   *
+   * The exception is a rename asked for from a tab's menu: that gesture named
+   * its chat first, so the field opens on the chat the gesture has just
+   * activated, prefilled from it — the same field the header's pencil opens.
    */
   useEffect(() => {
+    const pending = pendingRenameRef.current;
+    pendingRenameRef.current = null;
+    if (pending && pending === sessionId) {
+      const row = chatRef.current.sessions.find((s) => s.id === sessionId) ?? null;
+      setRenameDraft(row ? sessionLabel(row) : "");
+      setRenaming(true);
+      return;
+    }
     setRenaming(false);
     setRenameDraft("");
   }, [sessionId]);
+
+  /**
+   * The tab menu is fixed at the pointer, then pulled back inside the window:
+   * a right-click on the last tab must not open a menu that hangs off the right
+   * or bottom edge with its commands unreachable. It is measured after it mounts
+   * — a layout effect, so no frame paints in the wrong place — and only the
+   * first pass needs the anchor, after which the clamped position stands.
+   */
+  useLayoutEffect(() => {
+    if (!tabMenu) {
+      setTabMenuPos(null);
+      return;
+    }
+    const menu = tabMenuRef.current;
+    if (!menu) return;
+    const gap = 8;
+    const rect = menu.getBoundingClientRect();
+    setTabMenuPos({
+      left: Math.max(gap, Math.min(tabMenu.x, window.innerWidth - rect.width - gap)),
+      top: Math.max(gap, Math.min(tabMenu.y, window.innerHeight - rect.height - gap)),
+    });
+  }, [tabMenu]);
+
+  /**
+   * Every way a signal menu closes, the tab menu closes too: a press anywhere
+   * outside it (a tab, a transcript, another menu), Escape, a window resize, or
+   * a scroll of the strip it points at — the anchor would be stale after any of
+   * them. Choosing an item closes it in the item's own handler.
+   */
+  useEffect(() => {
+    if (!tabMenu) return;
+    const close = () => setTabMenu(null);
+    const onPointerDown = (event: PointerEvent) => {
+      const menu = tabMenuRef.current;
+      if (menu && event.target instanceof Node && menu.contains(event.target)) return;
+      close();
+    };
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      close();
+    };
+    const strip = tabsRef.current;
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", close);
+    strip?.addEventListener("scroll", close, { passive: true });
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", close);
+      strip?.removeEventListener("scroll", close);
+    };
+  }, [tabMenu]);
+
+  /** The strip is gone off the thread; a menu anchored to it has nothing to point at. */
+  useEffect(() => {
+    if (!open || view !== "thread") setTabMenu(null);
+  }, [open, view]);
 
   useEffect(() => {
     if (!open || view !== "thread" || !listRef.current) return;
@@ -622,9 +756,16 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
   /**
    * An automation, a review or a saved question hands the dock a chat outside
-   * the panel's own navigation. The request is cleared only after the kickoff,
-   * so the landing pass cannot replace the prompt bubble with a transcript the
-   * gateway has not written yet.
+   * the panel's own navigation.
+   *
+   * The chat gets a tab of its own, beside the conversation on screen, rather
+   * than taking that tab over: the page asked the dock to start a conversation,
+   * and the one the operator was reading is not the price of it. A chat the page
+   * has just created also hands its own row along, so the tab and the sidebar
+   * carry its name from the first paint instead of showing a bare "Chat".
+   *
+   * The request is cleared only after the kickoff, so the landing pass cannot
+   * replace the prompt bubble with a transcript the gateway has not written yet.
    */
   useEffect(() => {
     if (!requestedSessionId) return;
@@ -633,7 +774,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     const kickoff = requestedKickoff;
     (async () => {
       onOpenChange(true);
-      await chatRef.current.openChat(targetId);
+      await chatRef.current.openChatInNewTab(targetId, requestedSession ?? undefined);
       if (cancelled) return;
       // Bind the automation's page material before the first turn is sent, so
       // that turn carries the same context every later turn in the chat will.
@@ -874,6 +1015,79 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   }
 
   /**
+   * Right-clicking a tab opens its verbs where the pointer is. The browser's own
+   * menu never draws over the app: these are the same commands the sidebar's row
+   * menu names, scoped to the tab — a pinned tab offers only the way out of the
+   * band, because pinning, renaming, archiving and deleting are the unpinned
+   * tab's business here.
+   */
+  function openTabMenu(
+    event: MouseEvent<HTMLDivElement>,
+    id: string,
+    pinned: boolean,
+  ): void {
+    event.preventDefault();
+    setTabMenu({ id, pinned, x: event.clientX, y: event.clientY });
+  }
+
+  /** Close the tab menu, whether or not it was up. */
+  function closeTabMenu(): void {
+    setTabMenu(null);
+  }
+
+  /** Drop one chat out of the pinned band: the square goes back to a tab. */
+  function unpinTab(id: string): void {
+    closeTabMenu();
+    void patchSession(id, { pinned: false });
+  }
+
+  /** Raise one chat into the pinned band: its tab becomes a square. */
+  function pinTab(id: string): void {
+    closeTabMenu();
+    void patchSession(id, { pinned: true });
+  }
+
+  /**
+   * Rename from a tab's menu. The field lives in the thread header, so the chat
+   * is brought to the front first and the pending id tells the session-change
+   * effect above to open the field on it — the same field, and the same write,
+   * the header's pencil uses.
+   */
+  function renameTab(id: string): void {
+    closeTabMenu();
+    if (id === sessionId) {
+      startRename();
+      return;
+    }
+    pendingRenameRef.current = id;
+    void openSession(id);
+  }
+
+  /** Archive one chat from its tab, as the sidebar's menu does. */
+  function archiveTab(id: string): void {
+    closeTabMenu();
+    void patchSession(id, { archived: true });
+  }
+
+  /**
+   * Delete one chat from its tab. The question is the app's own dialog and says
+   * exactly what the sidebar's delete says: the chat leaves Hermes everywhere,
+   * and there is no undo.
+   */
+  function deleteTab(id: string): void {
+    closeTabMenu();
+    const row = sessions.find((s) => s.id === id) ?? null;
+    const label = row ? sessionLabel(row) : "Chat";
+    ask({
+      title: "Delete chat",
+      message: `Delete "${label}"? Its messages leave Hermes everywhere, and this cannot be undone.`,
+      confirmLabel: "Delete chat",
+      destructive: true,
+      run: () => void chat.deleteChat(id),
+    });
+  }
+
+  /**
    * The id of the blank chat the "New chat" slot lands on, or null when the
    * gateway refused to make one. Returning the id is what lets a saved question
    * be sent in the same gesture: the state setter would not be visible to the
@@ -967,7 +1181,41 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             </form>
           ) : (
             <>
-              <p className="chat-panel__chain-body">{s.body}</p>
+              {s.attachment?.kind === "image" ? (
+                <span className="chat-panel__chain-image-wrap">
+                  {signalImageUrls[s.attachment.relPath] ? (
+                    <img
+                      className="chat-panel__chain-image"
+                      src={signalImageUrls[s.attachment.relPath]}
+                      alt={s.body.trim() || s.attachment.name}
+                      loading="lazy"
+                      width={s.attachment.width ?? undefined}
+                      height={s.attachment.height ?? undefined}
+                    />
+                  ) : (
+                    <span className="chat-panel__chain-image-missing muted">
+                      {missingSignalImages[s.attachment.relPath]
+                        ? "Picture missing from the vault."
+                        : "Loading picture…"}
+                    </span>
+                  )}
+                </span>
+              ) : null}
+              {s.attachment?.kind === "link" ? (
+                <a
+                  className="chat-panel__chain-link"
+                  href={s.attachment.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={s.attachment.url}
+                >
+                  <Link2 size={13} aria-hidden />
+                  <span>{linkHost(s.attachment.url) || s.attachment.url}</span>
+                </a>
+              ) : null}
+              {s.body ? (
+                <p className="chat-panel__chain-body">{s.body}</p>
+              ) : null}
               <button
                 type="button"
                 className="chat-panel__chain-menu-btn"
@@ -1083,7 +1331,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             </div>
           ) : view === "shortcuts" ? (
             /*
-              The titlebar's shortcuts control opens the dock onto this page. It
+              The dock's bottom bar opens this page onto the panel. It
               shares the thread's header shape — a way back, the page's name, and
               the one control the page needs — but its body is a reference, not a
               conversation, so there is no composer under it and no tab strip
@@ -1182,15 +1430,23 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     >
                       <Pencil size={16} aria-hidden />
                     </button>
-                    <button
-                      type="button"
-                      className="chat-panel__icon-btn"
-                      aria-label="Archive chat"
-                      title="Archive chat"
-                      onClick={() => void archiveActive()}
-                    >
-                      <Archive size={16} aria-hidden />
-                    </button>
+                    {/*
+                      A pinned chat is left out of the archive: its tab is the
+                      band's, so taking it out of the history is a decision the
+                      operator makes after unpinning it, not one hidden behind a
+                      header icon.
+                    */}
+                    {activeSession?.pinned ? null : (
+                      <button
+                        type="button"
+                        className="chat-panel__icon-btn"
+                        aria-label="Archive chat"
+                        title="Archive chat"
+                        onClick={() => void archiveActive()}
+                      >
+                        <Archive size={16} aria-hidden />
+                      </button>
+                    )}
                   </div>
                 </>
               )}
@@ -1202,35 +1458,57 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             open) this is where the parallel sessions live: the dot is a turn
             still streaming, the amber dot a run waiting on an approval, and the
             close control stops a turn before it drops the tab.
+
+            The pinned band leads the strip and is drawn as squares. A pin is a
+            durable Hermes flag rather than a strip-local decoration, so a pinned
+            chat has a tab even on a launch where it was never opened — which is
+            why the strip shows with a single pinned chat and nothing else open.
+            A square carries the label's first letter and a filled pin in the
+            room the dot and label would take, and no close control: the way out
+            of the band is the menu's Unpin, so a pin is never dropped by a stray
+            press. Right-click opens that menu on any tab.
           */}
-          {view === "thread" && openTabs.length > 1 ? (
-            <div className="chat-panel__tabs" role="tablist" aria-label="Open chats">
-              {openTabs.map((id) => {
+          {view === "thread" && (tabIds.length > 1 || pinnedTabIds.length > 0) ? (
+            <div
+              className="chat-panel__tabs"
+              role="tablist"
+              aria-label="Open chats"
+              ref={tabsRef}
+            >
+              {orderedTabIds.map((id) => {
                 const row = sessions.find((s) => s.id === id) ?? null;
                 const tabRun = chat.runOf(id);
                 const label = row ? sessionLabel(row) : "Chat";
+                const pinned = row?.pinned === true;
                 const live = tabRun.sending;
                 const waiting = tabRun.approval !== null;
+                // The square has room for one glyph, so it takes the first
+                // letter of the whitespace-trimmed label, uppercased.
+                const letter = (Array.from(label.trim())[0] ?? "?").toUpperCase();
                 return (
                   <div
                     key={id}
                     role="presentation"
                     className={[
                       "chat-panel__tab",
+                      pinned ? "chat-panel__tab--pinned" : "",
                       id === sessionId ? "chat-panel__tab--active" : "",
                       live ? "chat-panel__tab--live" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
+                    data-pinned={pinned || undefined}
                     data-live={live || undefined}
                     data-approval={waiting || undefined}
+                    onContextMenu={(e) => openTabMenu(e, id, pinned)}
                   >
                     <button
                       type="button"
                       role="tab"
                       aria-selected={id === sessionId}
                       className="chat-panel__tab-main"
-                      title={label}
+                      aria-label={pinned ? `${label} — pinned tab` : undefined}
+                      title={pinned ? `${label} — pinned tab` : label}
                       onClick={() => {
                         if (id === sessionId) {
                           setView("thread");
@@ -1239,23 +1517,115 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                         void openSession(id);
                       }}
                     >
-                      <span className="chat-panel__tab-dot" aria-hidden />
-                      <span className="chat-panel__tab-label">{label}</span>
+                      {pinned ? (
+                        <>
+                          <span className="chat-panel__tab-letter" aria-hidden>
+                            {letter}
+                          </span>
+                          <Pin
+                            className="chat-panel__tab-pin"
+                            size={10}
+                            fill="currentColor"
+                            aria-hidden
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <span className="chat-panel__tab-dot" aria-hidden />
+                          <span className="chat-panel__tab-label">{label}</span>
+                        </>
+                      )}
                     </button>
-                    <button
-                      type="button"
-                      className="chat-panel__tab-close"
-                      aria-label={`Close ${label}`}
-                      title={`Close ${label}`}
-                      onClick={() => chat.closeTab(id)}
-                    >
-                      <X size={11} aria-hidden />
-                    </button>
+                    {pinned ? null : (
+                      <button
+                        type="button"
+                        className="chat-panel__tab-close"
+                        aria-label={`Close ${label}`}
+                        title={`Close ${label}`}
+                        onClick={() => chat.closeTab(id)}
+                      >
+                        <X size={11} aria-hidden />
+                      </button>
+                    )}
                   </div>
                 );
               })}
             </div>
           ) : null}
+
+          {/*
+            The tab's menu, drawn at the pointer in the window's own coordinates.
+            It is portalled to the document because the strip is a horizontal
+            scroll port and the dock is a z-indexed column: a menu laid out
+            inside either is clipped by the strip's edge or ordered under the
+            shell's own paint. The layout effect above clamps it inside the
+            window, and the stylesheet keeps it under the app's dialogs.
+          */}
+          {tabMenu
+            ? createPortal(
+                <div
+                  className="chat-panel__tab-menu"
+                  role="menu"
+                  aria-label="Tab actions"
+                  ref={tabMenuRef}
+                  data-menu-for={tabMenu.pinned ? "pinned" : "unpinned"}
+                  data-tab-id={tabMenu.id}
+                  style={{
+                    left: tabMenuPos?.left ?? tabMenu.x,
+                    top: tabMenuPos?.top ?? tabMenu.y,
+                    visibility: tabMenuPos ? "visible" : "hidden",
+                  }}
+                >
+                  {tabMenu.pinned ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      aria-label="Unpin chat"
+                      onClick={() => unpinTab(tabMenu.id)}
+                    >
+                      <Pin size={12} fill="currentColor" aria-hidden /> Unpin
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-label="Pin chat"
+                        onClick={() => pinTab(tabMenu.id)}
+                      >
+                        <Pin size={12} aria-hidden /> Pin
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-label="Rename chat"
+                        onClick={() => renameTab(tabMenu.id)}
+                      >
+                        <Pencil size={12} aria-hidden /> Rename
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-label="Archive chat"
+                        onClick={() => archiveTab(tabMenu.id)}
+                      >
+                        <Archive size={12} aria-hidden /> Archive
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-label="Delete chat"
+                        className="chat-panel__tab-menu-danger"
+                        onClick={() => deleteTab(tabMenu.id)}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>,
+                document.body,
+              )
+            : null}
 
           <div className="chat-panel__body" ref={listRef} hidden={view !== "thread"}>
             {errorBanner}
@@ -1834,12 +2204,33 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               <Radio size={20} aria-hidden />
             </button>
             {/*
+              The keyboard-shortcuts reference, at the head of the trailing
+              group and beside the switch it now shares the corner with: it is a
+              surface selector like the chain, and the dock is the only place it
+              belongs now that the titlebar no longer carries it. Pressed while
+              the reference is the surface in front of the operator.
+            */}
+            <button
+              type="button"
+              className="chat-panel__icon-btn chat-panel__action chat-panel__action--shortcuts"
+              data-testid="chat-shortcuts-action"
+              aria-label="Keyboard shortcuts"
+              title="Keyboard shortcuts"
+              aria-pressed={view === "shortcuts"}
+              onClick={() => setView("shortcuts")}
+            >
+              <Keyboard size={20} aria-hidden />
+            </button>
+            {/*
               The switch-position control, beside the collapse it belongs with:
               one click trades the dock's column for the sheet's, so the chat
               panel sits just past the rail and the page takes the window's
               trailing edge. The icon is the two panes swapping sides rather
               than the side they are on — the state it is in is read off the
-              layout in front of the operator.
+              layout in front of the operator. It is a move, not a toggle, so
+              it carries no pressed state: a dock living on the leading edge is
+              an arrangement to work in, not a mode left switched on, and the
+              bar must rest as plain chrome on either side.
             */}
             <button
               type="button"
@@ -1855,7 +2246,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   ? "Move chat to the right of the page"
                   : "Move chat to the left of the page"
               }
-              aria-pressed={dockSide === "left"}
               onClick={swapSide}
             >
               <ArrowLeftRight size={20} aria-hidden />

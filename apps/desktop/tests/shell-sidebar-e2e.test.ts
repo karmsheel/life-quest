@@ -53,6 +53,10 @@ type State = {
     skin: string | null;
     canvasBase: string;
     accent: string;
+    /** The palette's mid ink, which the vault chip's quiet label wears. */
+    muted: string;
+    /** The rail's soft neutral surface, which the vault chip's fill wears. */
+    bgSubtle: string;
     titlebarBg: string;
     background: string;
     card: string;
@@ -782,17 +786,21 @@ describe("shell sidebar (docked rail)", () => {
       (chip.ariaLabel ?? "").includes(report.vaultName),
       `the chip's accessible name (${JSON.stringify(chip.ariaLabel)}) does not carry the vault's name`,
     );
-    // Accent-tinted fill and accent ink: a chip on the mat, not the rail's own
-    // surface and not the old square strip tab.
+    // Quiet neutral fill and the palette's mid ink: the chip is still a shape on
+    // the mat — not the rail's own surface, not the old square strip tab — but
+    // changing the vault is a rare errand, so it must not wear the accent the
+    // page's real actions wear.
     assert.ok(
       alpha(chip.background) > 0.05 &&
-        chip.background !== expanded.rail!.background,
-      `the chip paints no fill on the rail (${chip.background} on ${expanded.rail!.background})`,
+        chip.background === expanded.theme.bgSubtle &&
+        chip.background !== expanded.rail!.background &&
+        chip.background !== expanded.theme.accent,
+      `the chip's fill (${chip.background}) is not the quiet --bg-subtle (${expanded.theme.bgSubtle}) on the rail (${expanded.rail!.background})`,
     );
     assert.equal(
       chip.color,
-      expanded.theme.accent,
-      `the chip's ink (${chip.color}) is not --accent (${expanded.theme.accent})`,
+      expanded.theme.muted,
+      `the chip's ink (${chip.color}) is not the muted ink (${expanded.theme.muted}), not the accent (${expanded.theme.accent})`,
     );
     assert.notEqual(
       chip.radius,
@@ -1466,8 +1474,9 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.ok(
       alpha(collapsed.vaultChip!.background) > 0.05 &&
+        collapsed.vaultChip!.background === collapsed.theme.bgSubtle &&
         collapsed.vaultChip!.background !== collapsed.rail!.background,
-      `the thin chip paints no fill on the rail (${collapsed.vaultChip!.background} on ${collapsed.rail!.background})`,
+      `the thin chip's fill (${collapsed.vaultChip!.background}) is not the quiet --bg-subtle (${collapsed.theme.bgSubtle}) on the rail (${collapsed.rail!.background})`,
     );
     assert.notEqual(
       collapsed.vaultChip!.radius,
@@ -1793,7 +1802,7 @@ describe("shell sidebar (docked rail)", () => {
     const { ladder } = report;
     assert.ok(ladder, "report carries no colour ladder");
     assert.equal(ladder.night.dataTheme, "dark", "the rig did not run at night");
-    assert.equal(ladder.night.skin, "forge-os", "the night rig is not on Forge OS");
+    assert.equal(ladder.night.skin, "forge", "the night rig is not on Forge");
     for (const surface of [
       "chrome",
       "titlebar",
@@ -1835,7 +1844,7 @@ describe("shell sidebar (docked rail)", () => {
         ladder.night.luminance.dockActions > ladder.night.luminance.page,
       `the dock's action band does not take the strip's step: bar ${ladder.night.surfaces.dockActions} (${ladder.night.luminance.dockActions}) vs mat ${ladder.night.surfaces.chrome} (${ladder.night.luminance.chrome}) / page ${ladder.night.luminance.page}`,
     );
-    // Forge OS's own band sits *under* its cards, so its sidebar and strip are the
+    // Forge's own band sits *under* its cards, so its sidebar and strip are the
     // darker chrome and the cards stay the lighter grey. That ordering is this
     // palette's — a palette whose quiet band sits above its cards is held only to
     // the sweep's claims below.
@@ -1906,8 +1915,8 @@ describe("shell sidebar (docked rail)", () => {
       `day lost its recessed panels: ${ladder.day.surfaces.card} (${ladder.day.luminance.card}) vs sheet (${ladder.day.luminance.page})`,
     );
     // Both passes are the same skin, so a run that fell back to the tokens.css
-    // palette — the one nobody ships — cannot pass as Forge OS.
-    assert.equal(ladder.day.skin, "forge-os", "the day rig is not on Forge OS");
+    // palette — the one nobody ships — cannot pass as Forge.
+    assert.equal(ladder.day.skin, "forge", "the day rig is not on Forge");
     assert.equal(
       ladder.night.surfaces.chrome,
       computedHex(ladder.night.tokens.canvasBase),
