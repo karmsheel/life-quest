@@ -261,6 +261,20 @@ const SAMPLE = `(() => {
               ? { text: text(link), href: attr(link, "href"), target: attr(link, "target") }
               : null;
           })(),
+          repositories: (() => {
+            const section = byTestId("project-repositories");
+            if (!section) return null;
+            return {
+              heading: text(section.querySelector(".project-detail__section-title")),
+              links: Array.from(
+                section.querySelectorAll('[data-testid="project-repo-link"]'),
+              ).map((link) => ({
+                text: text(link),
+                href: attr(link, "href"),
+                target: attr(link, "target"),
+              })),
+            };
+          })(),
           stateNote: text(document.querySelector(".project-detail__state-note")),
           nextAction: text(document.querySelector(".project-detail__next-text")),
           progress: text(byTestId("project-progress-value")),
@@ -642,6 +656,18 @@ async function main() {
     await waitFor(`Boolean(document.querySelector('[data-testid="project-detail"]'))`, "the project detail to render");
     win.setContentSize(DETAIL_SIZE.width, DETAIL_SIZE.height);
     await new Promise((resolve) => setTimeout(resolve, 250));
+    // The page is taller than the viewport: grow the capture until the whole
+    // detail page — the header through the Repositories section — fits in one
+    // shot, so the artifact itself proves the section reached the screen.
+    const pageHeight = await run(`(() => {
+      const content = document.querySelector(".shell__content");
+      if (!content) return 0;
+      return Math.ceil(content.getBoundingClientRect().top + content.scrollHeight);
+    })()`);
+    if (typeof pageHeight === "number" && pageHeight > DETAIL_SIZE.height) {
+      win.setContentSize(DETAIL_SIZE.width, Math.min(pageHeight + 16, 4000));
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
     const detail = await sample();
     const view = detail.detail;
     check("detail-route", detail.route === "/projects/p-exec", `route ${detail.route}`);
@@ -673,6 +699,21 @@ async function main() {
         source: view?.source,
         sourceLink: view?.sourceLink,
       })}`,
+    );
+    check(
+      "detail-repositories",
+      view?.repositories?.heading === "Repositories" &&
+        same(
+          view?.repositories?.links.map((link) => link.text),
+          [
+            "https://github.com/karmsheel/life-quest",
+            "https://gitlab.com/karmsheel/vault-core",
+          ],
+        ) &&
+        (view?.repositories?.links ?? []).every(
+          (link) => link.href === link.text && link.target === "_blank",
+        ),
+      `repositories ${JSON.stringify(view?.repositories)}`,
     );
     check(
       "detail-progress",

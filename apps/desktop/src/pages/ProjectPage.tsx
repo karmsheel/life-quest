@@ -830,6 +830,32 @@ export default function ProjectPage() {
         </form>
       </section>
 
+      {(project.repoUrls ?? []).length > 0 ? (
+        <section
+          className="project-detail__section"
+          data-testid="project-repositories"
+        >
+          <div className="project-detail__section-head">
+            <h2 className="project-detail__section-title">Repositories</h2>
+          </div>
+          <ul className="project-detail__repos">
+            {(project.repoUrls ?? []).map((url) => (
+              <li key={url}>
+                <a
+                  className="project-detail__repo-link"
+                  data-testid="project-repo-link"
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <h2 className="project-detail__group-title">Around this project</h2>
 
       <section className="project-detail__section" data-testid="project-tasks">

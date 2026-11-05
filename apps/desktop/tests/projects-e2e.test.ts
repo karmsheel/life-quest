@@ -64,6 +64,7 @@ const SCENARIOS = [
   "detail-route",
   "detail-header",
   "detail-source",
+  "detail-repositories",
   "detail-progress",
   "detail-context",
   "detail-attributes",
