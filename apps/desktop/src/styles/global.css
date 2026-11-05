@@ -422,10 +422,23 @@ a {
    edge. It wears `--titlebar-bg`: the mat by day, and at night one step darker
    than the mat the rail wears, still clear of the page canvas. The rail's box
    reaches over the titlebar row and paints the mat there, so the sidebar runs to
-   the window's top and the strip starts where the sheet does. */
+   the window's top and the strip starts where the sheet does.
+
+   The strip is three tracks: the empty drag handle over the rail's column, the
+   domain tab, and the trailing cluster. The two outer tracks are flex tracks of
+   the same weight, so each takes the same share of the space the tab leaves and
+   the tab lands on the strip's centre line instead of at its leading edge. Each
+   outer track also holds a floor of the chrome it must clear — the rail on the
+   leading side, the trailing cluster's own width on the trailing side — which
+   only bites on a window too narrow for the share, where the tab shifts aside
+   rather than covering either. */
 .window-titlebar {
   flex: 0 0 auto;
-  display: flex;
+  display: grid;
+  grid-template-columns:
+    minmax(var(--shell-nav-width), 1fr)
+    minmax(0, auto)
+    minmax(max-content, 1fr);
   align-items: center;
   height: env(titlebar-area-height, var(--window-titlebar-height));
   background: var(--titlebar-bg);
@@ -433,29 +446,38 @@ a {
   -webkit-app-region: drag;
   user-select: none;
   overflow: hidden;
+  /* Windows and Linux draw the window's caption buttons over the strip; the
+     `titlebar-area-*` env vars say how much of the trailing edge they own. It
+     is reserved as padding so the trailing cluster clears them and the strip
+     the operator sees is the box the tab centres in. Undefined env vars fall
+     back to 0px / 100%, which cancel to nothing. */
+  padding-right: calc(
+    100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%)
+  );
 }
 
+/* Thin rail: the leading track's floor is the icon column, so the tab keeps the
+   same centre line as the strip it sits in. */
+.window-titlebar[data-nav-collapsed] {
+  grid-template-columns:
+    minmax(var(--shell-nav-width-collapsed), 1fr)
+    minmax(0, auto)
+    minmax(max-content, 1fr);
+}
+
+/* The leading track is the window's drag handle and nothing else: the vault that
+   used to be named here lives at the foot of the sidebar now, so no control sits
+   in the strip's open room to be overlapped. The box stays because it is one
+   half of the pair whose equal share centres the tab. */
 .window-titlebar__leading {
+  grid-column: 1;
+  grid-row: 1;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   min-width: 0;
   height: 100%;
-  margin-left: env(titlebar-area-x, 0px);
-  width: env(titlebar-area-width, 100%);
-  max-width: 100%;
 }
-
-.window-titlebar:has(.window-titlebar__trailing) .window-titlebar__leading,
-.window-titlebar:has(.window-titlebar__controls) .window-titlebar__leading {
-  width: auto;
-  flex: 1 1 auto;
-}
-
-/* The strip's leading half is the window's drag handle and nothing else: the
-   vault that used to be named here lives at the foot of the sidebar now, so the
-   strip no longer reserves the rail's column for a chip and no control sits in
-   it to be overlapped. */
 
 /* —— The titlebar's domain tab —— */
 /* The domain lens left the sheet's top bar for the window's own strip. It is not
@@ -469,33 +491,37 @@ a {
    top corners are rounded by the same step — the strip shows through the two
    notches above them — so the silhouette is a tab at both ends rather than a
    block with only its base softened. It is `no-drag` because a control inside the
-   window's drag band must still take a click; the empty leading half of the strip
-   remains the handle.
+   window's drag band must still take a click; the open room on either side of it
+   is the handle.
 
-   Placement is the rail's own column plus a breath of mat: wide or thin, the tab
-   starts just past the sidebar's trailing hairline, so the flare on its leading
-   corner has strip to sit in rather than the rail's paint. The rail's collapse
-   moves the tab with it — the sidebar is the same chrome at both widths. */
+   Placement is the strip's middle track, flush with the window's top edge: the
+   tab sits on the window's centre line, with the rail's column on one side and
+   the trailing cluster on the other. The rail's floor keeps it off the sidebar
+   and the trailing floor keeps the controls clear, so it is never pushed against
+   either one; those floors only bite on a window too narrow to hold the centre.
+   Collapsing the rail widens the drag room beside the tab and leaves the tab where
+   it is. The side margins are the breath the bottom flares sit in: with them the
+   tab keeps 12px of strip on either side even when a narrow window squeezes it
+   against the rail, so the page still curves into the tab and never meets it on a
+   hard corner. */
 .window-titlebar__lens {
   --lens-fillet: 8px;
+  grid-column: 2;
+  grid-row: 1;
   position: relative;
   align-self: stretch;
+  justify-self: center;
   display: flex;
   align-items: center;
-  flex: 0 1 auto;
   min-width: 0;
   max-width: 40rem;
-  margin-left: calc(var(--shell-nav-width) + 0.75rem);
+  margin: 0 0.75rem;
   padding: 0 0.6rem;
   background: var(--background);
   /* The bottom corners stay square: their rounding is the concave flare the two
      pseudo-elements draw into the strip, not a radius carved out of this box. */
   border-radius: var(--lens-fillet) var(--lens-fillet) 0 0;
   -webkit-app-region: no-drag;
-}
-
-.window-titlebar[data-nav-collapsed] .window-titlebar__lens {
-  margin-left: calc(var(--shell-nav-width-collapsed) + 0.75rem);
 }
 
 .window-titlebar__lens::before,
@@ -549,14 +575,13 @@ a {
 }
 
 .window-titlebar__trailing {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
   -webkit-app-region: no-drag;
   display: flex;
   align-items: stretch;
   height: 100%;
-  flex: 0 0 auto;
-  margin-right: calc(
-    100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%)
-  );
 }
 
 .window-titlebar__controls {

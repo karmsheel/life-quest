@@ -63,10 +63,13 @@ const SAMPLE = `(() => {
   const main = document.querySelector(".shell__main");
   const shellContent = document.querySelector(".shell__content");
   const legacyTopBar = Boolean(document.querySelector(".top-bar"));
-  // Where the rail's own column ends: the lens must start a breath (12px) past
-  // it, wide or thin.
+  // Where the rail's own column ends and where the trailing cluster begins: the
+  // lens is centred between those two edges, so they are the claim it is read
+  // against — not the rail on its own.
   const railBoxNow = rail ? rail.getBoundingClientRect() : null;
   const lensBoxNow = lens ? lens.getBoundingClientRect() : null;
+  const trailing = document.querySelector(".window-titlebar__trailing");
+  const trailingBoxNow = trailing ? trailing.getBoundingClientRect() : null;
   /** One pseudo-element's painted box and fill, as Chromium computes it. */
   const pseudo = (el, which) => {
     if (!el) return null;
@@ -262,6 +265,8 @@ const SAMPLE = `(() => {
     bottomSection: box(document.querySelector(".nav-rail__section--bottom")),
     titlebar: box(titlebar),
     leading: box(leading),
+    // The trailing cluster the tab's centre line is measured against.
+    trailing: box(trailing),
     // Negative regression claim: the chip is not in the titlebar any more.
     titlebarVault: titlebarVault
       ? { box: box(titlebarVault), text: (titlebarVault.textContent || "").trim() }
@@ -406,8 +411,8 @@ const SAMPLE = `(() => {
     titlebarNavCollapsed,
     // The domain tab raised into the window's strip: its box, its page ink, its
     // no-drag carve-out, the two page-coloured fillets at its bottom corners, the
-    // rounded top corners that match them, and how far it starts past the rail's
-    // trailing hairline.
+    // rounded top corners that match them, and the two gaps that hold it clear of
+    // the rail and of the trailing cluster.
     lens: lens
       ? {
           box: box(lens),
@@ -418,6 +423,10 @@ const SAMPLE = `(() => {
           fromRail:
             lensBoxNow && railBoxNow
               ? Math.round(lensBoxNow.left - railBoxNow.right)
+              : null,
+          toTrailing:
+            lensBoxNow && trailingBoxNow
+              ? Math.round(trailingBoxNow.left - lensBoxNow.right)
               : null,
           borderTopLeftRadius: getComputedStyle(lens).borderTopLeftRadius,
           borderTopRightRadius: getComputedStyle(lens).borderTopRightRadius,
@@ -1584,11 +1593,10 @@ async function main() {
 
     // The domain tab. The sheet's top band is gone: the page now starts at the
     // strip's bottom edge, and the domain lens is raised into the window's strip
-    // as the strip's first child — painted on the page canvas, starting a breath
-    // past the rail's trailing hairline, filling the 32px strip and reaching the
-    // page's top edge. The two 8px fillets at its bottom corners are the page
-    // flaring into the strip, so the connection is a curve rather than two hard
-    // inside corners.
+    // as the strip's first child — painted on the page canvas, centred on the
+    // strip, filling the 32px strip and reaching the page's top edge. The two
+    // 8px fillets at its bottom corners are the page flaring into the strip, so
+    // the connection is a curve rather than two hard inside corners.
     at("titlebar lens");
     check(
       "the retired top bar is gone from the sheet",
@@ -1635,11 +1643,22 @@ async function main() {
       `lens bottom ${expanded.lens?.box.bottom}px vs page top ${expanded.shellContent?.top}px`,
     );
     check(
-      "the lens starts 12px past the rail's trailing hairline",
+      "the lens is centred on the strip",
+      Boolean(expanded.lens && expanded.titlebar) &&
+        Math.abs(
+          (expanded.lens.box.left + expanded.lens.box.right) / 2 -
+            (expanded.titlebar.left + expanded.titlebar.right) / 2,
+        ) <= 1,
+      `lens centre ${((expanded.lens?.box.left ?? 0) + (expanded.lens?.box.right ?? 0)) / 2}px vs strip centre ${((expanded.titlebar?.left ?? 0) + (expanded.titlebar?.right ?? 0)) / 2}px`,
+    );
+    check(
+      "the lens stays clear of both neighbours",
       Boolean(expanded.lens && expanded.rail) &&
-        expanded.lens.fromRail === 12 &&
-        expanded.lens.box.left === expanded.rail.box.right + 12,
-      `lens left ${expanded.lens?.box.left}px, rail right ${expanded.rail?.box.right}px, gap ${expanded.lens?.fromRail}px`,
+        expanded.lens.fromRail !== null &&
+        expanded.lens.toTrailing !== null &&
+        expanded.lens.fromRail > 0 &&
+        expanded.lens.toTrailing > 0,
+      `rail gap ${expanded.lens?.fromRail}px, trailing gap ${expanded.lens?.toTrailing}px`,
     );
     check(
       "the lens wears the page canvas",
@@ -1900,21 +1919,37 @@ async function main() {
       collapsed.titlebarToggle === null,
       `titlebar toggle present: ${JSON.stringify(collapsed.titlebarToggle)}`,
     );
-    // The lens is part of the chrome, not the sheet, so it follows the rail when
-    // the rail narrows: the strip signals the state on the header, which pulls the
-    // tab in to 68px — the 56px icon column plus the same 12px breath.
+    // The lens is centred on the strip, so narrowing the rail does not drag it
+    // along: the tab holds the window's centre line at both rail widths — the
+    // 56px icon column only widens the drag handle beside it.
     check(
       "the strip signals the collapsed rail",
       collapsed.titlebarNavCollapsed === "true",
       `data-nav-collapsed ${JSON.stringify(collapsed.titlebarNavCollapsed)}`,
     );
     check(
-      "the lens follows the collapsed rail",
+      "the collapsed lens holds the strip's centre line",
+      Boolean(collapsed.lens && collapsed.titlebar) &&
+        Math.abs(
+          (collapsed.lens.box.left + collapsed.lens.box.right) / 2 -
+            (collapsed.titlebar.left + collapsed.titlebar.right) / 2,
+        ) <= 1,
+      `lens centre ${((collapsed.lens?.box.left ?? 0) + (collapsed.lens?.box.right ?? 0)) / 2}px vs strip centre ${((collapsed.titlebar?.left ?? 0) + (collapsed.titlebar?.right ?? 0)) / 2}px`,
+    );
+    check(
+      "the lens does not slide when the rail collapses",
+      Boolean(expanded.lens && collapsed.lens) &&
+        Math.abs(expanded.lens.box.left - collapsed.lens.box.left) <= 1,
+      `lens left ${expanded.lens?.box.left}px wide rail vs ${collapsed.lens?.box.left}px thin rail`,
+    );
+    check(
+      "the collapsed lens stays clear of the thin rail",
       Boolean(collapsed.lens && collapsed.rail) &&
-        collapsed.lens.fromRail === 12 &&
-        collapsed.lens.box.left === collapsedTrack + 12 &&
-        collapsed.lens.box.left === collapsed.rail.box.right + 12,
-      `lens left ${collapsed.lens?.box.left}px, thin rail right ${collapsed.rail?.box.right}px, gap ${collapsed.lens?.fromRail}px`,
+        collapsed.lens.fromRail !== null &&
+        collapsed.lens.fromRail > 0 &&
+        collapsed.lens.toTrailing !== null &&
+        collapsed.lens.toTrailing > 0,
+      `rail gap ${collapsed.lens?.fromRail}px, trailing gap ${collapsed.lens?.toTrailing}px`,
     );
     check(
       "the collapsed lens still fills the strip and reaches the page",
@@ -2592,7 +2627,7 @@ async function main() {
   const railToggleLeft = (state) =>
     state.railToggle?.box ? String(state.railToggle.box.left) : "—";
   const table = [
-    ["state", "rail L/T/B", "rail size", "band ctrls", "toggle L", "foot dir", "chip L/W", "sheet L", "lens L/off", "page T", "corner"],
+    ["state", "rail L/T/B", "rail size", "band ctrls", "toggle L", "foot dir", "chip L/W", "sheet L", "lens L/gaps", "page T", "corner"],
   ];
   for (let i = 0; i < rows.length; i += 1) {
     const state = rows[i];
@@ -2608,7 +2643,7 @@ async function main() {
         : "—",
       String(state.main?.left ?? "—"),
       state.lens
-        ? `${state.lens.box.left}/${state.lens.fromRail}`
+        ? `${state.lens.box.left}/${state.lens.fromRail}<>${state.lens.toTrailing}`
         : "—",
       String(state.shellContent?.top ?? "—"),
       state.corner ? (state.corner.insideRail ? "rail" : "titlebar") : "—",
