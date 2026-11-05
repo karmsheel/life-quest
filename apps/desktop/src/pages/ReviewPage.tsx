@@ -412,7 +412,7 @@ export default function ReviewPage() {
         return;
       }
       const kickoff = start.value.created ? start.value.kickoff : undefined;
-      chatDock.requestSession(start.value.sessionId, kickoff);
+      chatDock.requestSession({ id: start.value.sessionId, kickoff });
       setNotice(
         [
           filledLine,
@@ -494,7 +494,7 @@ export default function ReviewPage() {
         return;
       }
       const kickoff = plan.value.created ? plan.value.kickoff : undefined;
-      chatDock.requestSession(plan.value.sessionId, kickoff);
+      chatDock.requestSession({ id: plan.value.sessionId, kickoff });
       navigate("/goals");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

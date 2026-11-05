@@ -117,8 +117,31 @@ const SAMPLE = `(() => {
     ),
   ).map((el) => (el.textContent || "").trim());
   const chatHeading = document.querySelector(".chat-panel__heading--thread");
+  // The dock's tabs, in strip order: a chat started by a page must take a tab of
+  // its own beside the one on screen, and that tab must wear the chat's name.
+  const tabs = Array.from(
+    document.querySelectorAll(".chat-panel__tabs [role=tab]"),
+  ).map((tab) => ({
+    label:
+      text(tab.querySelector(".chat-panel__tab-label")) ??
+      text(tab.querySelector(".chat-panel__tab-letter")) ??
+      text(tab),
+    active: tab.getAttribute("aria-selected") === "true",
+  }));
+  // The Chats list on the left is the same store the tabs read, so a chat the
+  // dock adopted is a row there — with its own name, not "Chat".
+  const sidebarRows = Array.from(
+    document.querySelectorAll(".chats-rail__rows > li.chats-rail__row"),
+  ).map((row) => {
+    const main = row.querySelector(".chats-rail__row-main");
+    return {
+      label: text(row.querySelector(".chats-rail__label")),
+      active: main?.getAttribute("aria-current") === "true",
+    };
+  });
   return {
     route: window.automationRoute ?? null,
+    priorChatTitle: window.automationPriorChatTitle ?? null,
     rail: {
       wing: links(wing),
       shelf: links(shelf),
@@ -191,6 +214,8 @@ const SAMPLE = `(() => {
         ? true
         : false,
       title: chatHeading ? text(chatHeading) : null,
+      tabs,
+      sidebarRows,
       userMessages,
       thinking: Boolean(document.querySelector(".chat-panel__thinking")),
     },
@@ -749,6 +774,21 @@ async function main() {
       dayPage.rail.shelf.find((l) => l.label === "Daily Note")?.active === true,
       JSON.stringify(dayPage.rail.shelf),
     );
+    check(
+      "a conversation from before the run is already on screen",
+      dayPage.chat.title === dayPage.priorChatTitle &&
+        dayPage.chat.sidebarRows.some((row) => row.label === dayPage.priorChatTitle),
+      JSON.stringify({
+        title: dayPage.chat.title,
+        prior: dayPage.priorChatTitle,
+        rows: dayPage.chat.sidebarRows,
+      }),
+    );
+    check(
+      "one chat draws no tab strip",
+      dayPage.chat.tabs.length === 0,
+      JSON.stringify(dayPage.chat.tabs),
+    );
 
     const clicked = await click(win, "daily-note-analyze");
     check("the Analyze note control was clicked", clicked === true, String(clicked));
@@ -766,8 +806,9 @@ async function main() {
     const after = await sample(win);
     checks.after = after;
 
+    const analyzeTitle = `Analyze note · ${dayLabel(today)}`;
     const session = after.sessionCalls.find(
-      (call) => call.title === `Analyze note · ${dayLabel(today)}`,
+      (call) => call.title === analyzeTitle,
     );
     check(
       "a fresh chat was created for the run",
@@ -776,9 +817,23 @@ async function main() {
     );
     check(
       "the dock opened on that chat",
-      after.chat.open === true &&
-        after.chat.title === `Analyze note · ${dayLabel(today)}`,
+      after.chat.open === true && after.chat.title === analyzeTitle,
       JSON.stringify({ open: after.chat.open, title: after.chat.title }),
+    );
+    check(
+      "the new chat opens in a tab of its own, beside the one that was on screen",
+      after.chat.tabs.length === 2 &&
+        after.chat.tabs[0]?.label === after.priorChatTitle &&
+        after.chat.tabs[0]?.active === false &&
+        after.chat.tabs[1]?.label === analyzeTitle &&
+        after.chat.tabs[1]?.active === true,
+      JSON.stringify(after.chat.tabs),
+    );
+    check(
+      "the new chat is listed in Chats under its own name, beside the previous chat",
+      after.chat.sidebarRows.some((row) => row.label === analyzeTitle) &&
+        after.chat.sidebarRows.some((row) => row.label === after.priorChatTitle),
+      JSON.stringify(after.chat.sidebarRows),
     );
     check(
       "the visible turn is the automation's prompt",

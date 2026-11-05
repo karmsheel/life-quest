@@ -86,6 +86,10 @@ not send an API key to the renderer.
    archived or deleted in Hermes Desktop in the meantime loses its tab, and if
    every tab was closed before quitting the dock opens on a blank thread rather
    than reopening one — unless a pinned chat remains, whose tab is permanent.
+   A chat a page starts — an automation's button, a review's or plan's interview,
+   a task sent to the agent — arrives the same way: a tab of its own beside the
+   conversation on screen, named after the job that started it and listed in
+   **Chats** under that name.
 4. Hover a chat for its own controls: the row menu has **Open in new tab**,
    **Pin** / **Unpin**, **Rename**, **Archive**, and **Delete**. Pinned chats sit
    at the top of the one list, above the recent chats. A chat streaming a turn

@@ -129,8 +129,10 @@ These rules are the Daily Notes law:
   and details that could update documents — and to name a new document or database only when
   an existing home does not fit.
 - Choosing it writes the day first, then creates a new chat named after the automation and
-  the date, opens the dock, and sends the prompt with the note quoted as hidden context
-  marked as reference, not as instructions.
+  the date. The chat opens in a tab of its own in the dock — the conversation already on
+  screen keeps its tab, and the new chat is listed in **Chats** under its name — and the
+  prompt is sent with the note quoted as hidden context marked as reference, not as
+  instructions.
 - The button is disabled while the day is empty or still loading. If the note has no prose
   when the run starts, the page says: "Write something in the note before running an
   automation."

@@ -16,8 +16,10 @@
  *     not name the Daily Note trigger and its own way back.
  *  4. The Daily Note draws no Analyze note control, or it is disabled while a
  *     note is on screen.
- *  5. Clicking it does not start a fresh chat: no session is created, the dock
- *     does not open on it, or the visible prompt is not the automation's prompt.
+ *  5. Clicking it does not start a fresh chat in a tab of its own, beside the
+ *     conversation on screen: no session is created, the chat takes over the tab
+ *     in front so the thread the operator was reading is gone, or the new tab and
+ *     its sidebar row are unnamed ("Chat") instead of carrying the chat's name.
  *  6. The note is not fed whole: a note longer than the page-context budget must
  *     appear in `instructionsContext.automationContext` from its first word to
  *     its last, and the prompt must name tasks, goals and details.
@@ -56,6 +58,7 @@ import { AutomationScheduler } from "@/state/AutomationScheduler";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { VaultProvider } from "@/state/VaultProvider";
 import { applyAppSkin } from "./apply-app-skin";
+import type { HermesSession } from "@/vite-env";
 import "@/styles/global.css";
 
 const skinName = applyAppSkin("dark");
@@ -83,6 +86,8 @@ type HarnessWindow = Window & {
   automationGoto?: (path: string) => void;
   automationToday?: string;
   automationNote?: string;
+  /** The name of the chat the fixture already has on screen when the rig clicks. */
+  automationPriorChatTitle?: string;
   automationJournal?: Map<string, DailyNote>;
   automationSessionCalls?: SessionCall[];
   automationChatCalls?: ChatCall[];
@@ -104,6 +109,22 @@ harness.automationCreateCalls = [];
 harness.automationUpdateCalls = [];
 harness.automationDeleteCalls = [];
 harness.automationMarkCalls = [];
+
+/*
+ * The chat memory the app keeps in the profile decides what the dock lands on
+ * before the rig has clicked anything: a remembered tab strip, or the last chat
+ * opened by a previous run, would put a different conversation on screen. Every
+ * run starts from the same place — the one live chat the fixture lists — so the
+ * tab the Daily Note opens is measured beside a known one.
+ */
+for (const key of [
+  "lifequest.companion.lastSessionId",
+  "lifequest.companion.runtimePins",
+  "lifequest.companion.pinnedOrder",
+  "lifequest.companion.openTabs",
+]) {
+  window.localStorage.removeItem(key);
+}
 
 /** The shelf the bridge serves. The built-in is the one every vault starts with. */
 let automations: AutomationRecord[] = [{ ...DEFAULT_ANALYZE_AUTOMATION }];
@@ -226,14 +247,24 @@ const SNAPSHOT: VaultSnapshot = {
   weeklyFileCount: 0,
 };
 
-/** The sessions the dock lists; the automation creates its own. */
-const sessions: Array<{
-  id: string;
-  title: string;
-  preview: string | null;
-  lastActive: number;
-  pinned: boolean;
-}> = [];
+/**
+ * The chats the dock lists before the run: one live conversation is already on
+ * screen when the Daily Note's button is pressed, so the driver can see the
+ * automation's chat take a tab of its own *beside* it rather than over it.
+ */
+const PRIOR_CHAT_TITLE = "Weekly plan";
+harness.automationPriorChatTitle = PRIOR_CHAT_TITLE;
+
+const sessions: HermesSession[] = [
+  {
+    id: "chat-weekly-plan",
+    title: PRIOR_CHAT_TITLE,
+    preview: "The thread that was already on screen",
+    lastActive: 1_700_000_000,
+    pinned: false,
+    archived: false,
+  },
+];
 
 /**
  * What the gateway has stored per chat. The real companion writes the user's
@@ -318,20 +349,27 @@ const bridge: Record<string, unknown> = {
     );
     return ok(automations);
   },
-  companionSessionsList: () => ok(sessions),
+  // Every read answers a copy, as the real IPC hop does: handing the store the
+  // fixture's own array would let a later `unshift` here silently teach the
+  // renderer about a chat the bridge never told it about — the very aliasing
+  // that hid a new chat with no name and no row in the sidebar.
+  companionSessionsList: () => ok(sessions.map((session) => ({ ...session }))),
   companionSessionCreate: (title: string) => {
     sessionCounter += 1;
-    const session = {
+    const session: HermesSession = {
       id: `automation-session-${sessionCounter}`,
       title,
       preview: null,
       lastActive: Date.now() / 1000,
       pinned: false,
+      archived: false,
     };
     sessions.unshift(session);
     storedMessages.set(session.id, []);
     harness.automationSessionCalls?.push({ id: session.id, title });
-    return ok(session);
+    // A copy on the way out for the same reason: the renderer must not hold a
+    // row this fixture can mutate behind its back.
+    return ok({ ...session });
   },
   companionSessionMessages: (id: string) =>
     ok(
