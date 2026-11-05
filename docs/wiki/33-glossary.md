@@ -201,8 +201,8 @@ are sheets, and closing one returns you to the page you were on.
 `.lifequest/signal-chain/`.
 
 **Skin / theme** — the visual palette of the studio, chosen in Settings →
-Appearance. Themes can be light or dark and include Nous, Nous Classic, Midnight,
-Ember, Mono, Cyberpunk and Forge OS.
+Appearance. Themes include Nous, Graphite and Forge; the shipped set ships
+both a day and a night palette.
 
 **Splash** — the launch surface shown while the vault and companion are coming
 up. It does not wait indefinitely on the companion.

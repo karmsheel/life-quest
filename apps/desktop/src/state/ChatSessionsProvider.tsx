@@ -74,11 +74,11 @@ export type SessionRun = {
 };
 
 /**
- * The dock's three chat surfaces — the all-chats list, the open conversation,
- * and the Life-Chain the same dock can show — live on `ChatDockProvider` now,
- * beside the dock's open state, because the titlebar's shortcuts control opens
- * the dock onto a fourth one. The chat store reads the surface it is on and
- * moves it as chats open and close.
+ * The dock's three surfaces — the open conversation, the Life-Chain the same
+ * dock can show, and the keyboard-shortcuts reference — live on
+ * `ChatDockProvider`, beside its open state, because the dock's own bottom bar
+ * switches them. The chat store reads the surface it is on and moves it as
+ * chats open and close.
  */
 const EMPTY_RUN: SessionRun = Object.freeze({
   messages: [] as ChatMessage[],

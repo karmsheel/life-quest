@@ -1763,7 +1763,7 @@ describe("shell sidebar (docked rail)", () => {
     const { ladder } = report;
     assert.ok(ladder, "report carries no colour ladder");
     assert.equal(ladder.night.dataTheme, "dark", "the rig did not run at night");
-    assert.equal(ladder.night.skin, "forge-os", "the night rig is not on Forge OS");
+    assert.equal(ladder.night.skin, "forge", "the night rig is not on Forge");
     for (const surface of [
       "chrome",
       "titlebar",
@@ -1805,7 +1805,7 @@ describe("shell sidebar (docked rail)", () => {
         ladder.night.luminance.dockActions > ladder.night.luminance.page,
       `the dock's action band does not take the strip's step: bar ${ladder.night.surfaces.dockActions} (${ladder.night.luminance.dockActions}) vs mat ${ladder.night.surfaces.chrome} (${ladder.night.luminance.chrome}) / page ${ladder.night.luminance.page}`,
     );
-    // Forge OS's own band sits *under* its cards, so its sidebar and strip are the
+    // Forge's own band sits *under* its cards, so its sidebar and strip are the
     // darker chrome and the cards stay the lighter grey. That ordering is this
     // palette's — a palette whose quiet band sits above its cards is held only to
     // the sweep's claims below.
@@ -1876,8 +1876,8 @@ describe("shell sidebar (docked rail)", () => {
       `day lost its recessed panels: ${ladder.day.surfaces.card} (${ladder.day.luminance.card}) vs sheet (${ladder.day.luminance.page})`,
     );
     // Both passes are the same skin, so a run that fell back to the tokens.css
-    // palette — the one nobody ships — cannot pass as Forge OS.
-    assert.equal(ladder.day.skin, "forge-os", "the day rig is not on Forge OS");
+    // palette — the one nobody ships — cannot pass as Forge.
+    assert.equal(ladder.day.skin, "forge", "the day rig is not on Forge");
     assert.equal(
       ladder.night.surfaces.chrome,
       computedHex(ladder.night.tokens.canvasBase),

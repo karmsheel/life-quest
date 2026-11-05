@@ -97,7 +97,7 @@ const stubbed = new Proxy(bridge, {
 
 /*
  * Dark, so the theme grid is deterministic: every built-in skin resolves a night
- * palette, so all seven tiles are in the quick menu's grid.
+ * palette, so all three tiles are in the quick menu's grid.
  */
 try {
   localStorage.setItem("lifequest-theme", "dark");
