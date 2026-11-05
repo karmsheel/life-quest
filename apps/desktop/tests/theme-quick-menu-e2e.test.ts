@@ -20,17 +20,9 @@ const REPORT = path.join(
   "e2e/artifacts/theme-quick-menu.json",
 );
 
-/** The themes the app ships, in registry order; the two with both palettes. */
-const ALL_THEMES = [
-  "Forge OS",
-  "Nous",
-  "Nous Classic",
-  "Midnight",
-  "Ember",
-  "Mono",
-  "Cyberpunk",
-];
-const DUAL_PALETTE_THEMES = ["Forge OS", "Nous", "Nous Classic"];
+/** The themes the app ships, in registry order; all three ship both palettes. */
+const ALL_THEMES = ["Forge OS", "Nous", "Grayscale"];
+const DUAL_PALETTE_THEMES = ["Forge OS", "Nous", "Grayscale"];
 
 type Box = {
   left: number;
@@ -214,6 +206,11 @@ describe("titlebar theme quick menu", () => {
     assert.deepEqual(tileLabels(night), ALL_THEMES, "an uncurated install does not star every theme");
     assert.equal(night.gridPresent, true, "the starred grid is missing");
     assert.equal(activeTiles(night), "forge-os", "the worn theme's tile is not marked active");
+    assert.deepEqual(
+      tileLabels(night),
+      ALL_THEMES,
+      "the theme grid is not the shipped set",
+    );
 
     // —— 3. A click is a switch, not a menu request: it flips the palette and
     //       leaves the open menu alone.
@@ -229,6 +226,15 @@ describe("titlebar theme quick menu", () => {
       "the day palette offered themes that cannot wear it",
     );
     assert.equal(dayToggle.menu?.hint, "Day palette · LifeQuest themes");
+
+    // —— 3b. Grayscale ships both palettes now: picked in daylight it wears the
+    //        paper half, and the same theme survives the switch to night.
+    const grayscaleDay = state("grayscaleDay");
+    assert.equal(grayscaleDay.skin.attr, "grayscale", "Grayscale has no day palette to wear");
+    assert.equal(grayscaleDay.skin.stored, "grayscale", "the day-time Grayscale pick was not stored");
+    assert.equal(grayscaleDay.theme.attr, "light", "Grayscale did not stay in the day palette");
+    assert.equal(grayscaleDay.menu?.hint, "Day palette · LifeQuest themes");
+    assert.equal(activeTiles(grayscaleDay.menu), "grayscale");
 
     // —— 4. The mode switcher writes the explicit preference: System clears the
     //       attribute, Dark pins the night palette again.
@@ -246,13 +252,15 @@ describe("titlebar theme quick menu", () => {
     assert.equal(darkMode.theme.attr, "dark", "Dark did not pin the night palette");
     assert.equal(darkMode.theme.stored, "dark");
     assert.equal(activeModes(darkMode.menu), "Dark");
+    assert.equal(darkMode.skin.attr, "grayscale", "the two-palette Grayscale theme fell off at night");
+    assert.equal(darkMode.skin.stored, "grayscale");
 
     // —— 5. A tile is a quick choice: it applies the theme, persists it, and
     //       reports itself active.
     const skinPicked = state("skinPicked");
-    assert.equal(skinPicked.skin.attr, "nous-classic", "the tile did not apply its theme");
-    assert.equal(skinPicked.skin.stored, "nous-classic", "the chosen theme was not persisted");
-    assert.equal(activeTiles(skinPicked.menu), "nous-classic");
+    assert.equal(skinPicked.skin.attr, "nous", "the tile did not apply its theme");
+    assert.equal(skinPicked.skin.stored, "nous", "the chosen theme was not persisted");
+    assert.equal(activeTiles(skinPicked.menu), "nous");
 
     // —— 6. The menu is a real menu: the pointer can travel into it, and
     //       leaving both parts closes it.
@@ -293,12 +301,67 @@ describe("titlebar theme quick menu", () => {
     assert.match(String(favoritesEmpty.menu?.empty), /No starred themes/);
     assert.equal(favoritesEmpty.menu?.appearanceLink, true, "the empty state has no way to Appearance");
 
-    // —— 9. A one-palette theme has nothing to switch: the control is absent.
-    const singleMode = state("singleModeSkin");
-    assert.equal(singleMode.trigger.present, false, "a one-palette theme still offers a day/night switch");
-    assert.equal(singleMode.menu, null);
-    assert.equal(singleMode.titlebar?.classes.length, 1, "the titlebar kept a control for the absent toggle");
-    assert.match(singleMode.titlebar?.classes[0] ?? "", /settings-menu/);
+    // —— 9. The switch never strands the operator. A one-palette installed theme
+    //       is wearable in its own mode, the control stays in the strip, and a
+    //       day/night press (by click or by the menu's mode switcher) hands the
+    //       window to the fallback theme, Nous, in the requested mode.
+    const nightOnly = state("nightOnlySkin");
+    assert.equal(nightOnly.skin.attr, "night-only", "the installed theme was not applied");
+    assert.equal(nightOnly.theme.attr, "dark", "the installed theme left the night palette");
+    assert.deepEqual(
+      tileLabels(nightOnly.menu),
+      ["Forge OS", "Nous", "Grayscale", "Night Only"],
+      "the installed theme is not in the quick grid under the night palette",
+    );
+    assert.equal(
+      nightOnly.trigger.present,
+      true,
+      "a one-palette theme hid the day/night control",
+    );
+    assert.equal(
+      nightOnly.trigger.inTrailing,
+      true,
+      "the day/night control left the titlebar on a one-palette theme",
+    );
+    assert.equal(
+      nightOnly.trigger.expanded,
+      "true",
+      "the quick menu closed while it was being used",
+    );
+
+    const fallbackToggle = state("fallbackOnToggle");
+    assert.equal(
+      fallbackToggle.skin.attr,
+      "nous",
+      "clicking the switch on a one-palette theme did not fall back to Nous",
+    );
+    assert.equal(fallbackToggle.skin.stored, "nous", "the fallback theme was not persisted");
+    assert.equal(fallbackToggle.theme.attr, "light", "the switch did not change the mode");
+    assert.equal(fallbackToggle.theme.stored, "light", "the new mode was not persisted");
+
+    const fallbackSwitcher = state("fallbackOnModeSwitcher");
+    assert.equal(
+      fallbackSwitcher.skin.attr,
+      "nous",
+      "the menu's mode switcher did not fall back to Nous",
+    );
+    assert.equal(fallbackSwitcher.skin.stored, "nous", "the switcher's fallback was not persisted");
+    assert.equal(fallbackSwitcher.theme.attr, "light", "the switcher did not change the mode");
+    assert.equal(fallbackSwitcher.theme.stored, "light", "the switcher's mode was not persisted");
+
+    // —— 10. The rename survives storage: a saved "mono" skin and star open on
+    //        Grayscale, so removing the old id does not reset the operator.
+    const legacyMono = state("legacyMono");
+    assert.equal(legacyMono.skin.attr, "grayscale", "a stored mono skin did not migrate to Grayscale");
+    assert.equal(legacyMono.theme.attr, "dark", "the migrated skin left the night palette");
+
+    const legacyMonoMenu = state("legacyMonoMenu");
+    assert.deepEqual(
+      tileLabels(legacyMonoMenu.menu),
+      ["Grayscale"],
+      "a starred mono name did not migrate into the quick grid",
+    );
+    assert.equal(activeTiles(legacyMonoMenu.menu), "grayscale");
 
     for (const file of report.screenshots) {
       assert.equal(fs.existsSync(path.join(desktopRoot, "e2e/artifacts", file)), true, `driver wrote no screenshot ${file}`);

@@ -16,9 +16,11 @@
  *     the starred themes.
  *
  * It also proves the menu is a real menu: the pointer can travel into it, a
- * press outside dismisses it, Escape closes it, a curated favourites list narrows
- * the grid, and a one-palette theme removes the control rather than leaving an
- * inert one.
+ * press outside dismisses it, Escape closes it, and a curated favourites list
+ * narrows the grid. And it proves the switch never strands the operator: the
+ * control is always in the strip, and on a one-palette theme (an installed
+ * dark-only skin here) a press hands the window to the fallback theme — Nous —
+ * for the palette the worn theme cannot paint.
  *
  * NOT covered here: the platform's own light/dark preference changing under the
  * app. The rig pins `nativeTheme.themeSource` to dark, so "System" is measured
@@ -43,16 +45,40 @@ const url =
   "http://127.0.0.1:5173/e2e/theme-quick-menu.html";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
-const ALL_THEMES = [
-  "Forge OS",
-  "Nous",
-  "Nous Classic",
-  "Midnight",
-  "Ember",
-  "Mono",
-  "Cyberpunk",
-];
-const DUAL_PALETTE_THEMES = ["Forge OS", "Nous", "Nous Classic"];
+const ALL_THEMES = ["Forge OS", "Nous", "Grayscale"];
+const DUAL_PALETTE_THEMES = ["Forge OS", "Nous", "Grayscale"];
+
+/**
+ * A dark-only theme, in the shape the Appearance page installs: every colour
+ * `applySkin` reads, no dark palette variant. It exists to prove the day/night
+ * switch still lands when the worn theme has only one palette.
+ */
+const NIGHT_ONLY_THEME = {
+  name: "night-only",
+  label: "Night Only",
+  description: "Installed by the theme quick-menu rig — one palette only",
+  colors: {
+    background: "#0b1220",
+    foreground: "#e8eef7",
+    card: "#121a2b",
+    cardForeground: "#e8eef7",
+    muted: "#1a2436",
+    mutedForeground: "#8fa0b8",
+    popover: "#121a2b",
+    popoverForeground: "#e8eef7",
+    primary: "#4aa3ff",
+    primaryForeground: "#06101f",
+    secondary: "#16304f",
+    secondaryForeground: "#e8eef7",
+    accent: "#4aa3ff",
+    accentForeground: "#06101f",
+    border: "#22304a",
+    input: "#2c3d5c",
+    ring: "#4aa3ff",
+    destructive: "#e5484d",
+    destructiveForeground: "#ffffff",
+  },
+};
 
 const SAMPLE = `(() => {
   const round = (n) => Math.round(n);
@@ -212,6 +238,10 @@ async function main() {
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,
+      // This rig rewrites localStorage between scenarios. Rigs share the
+      // dev-server origin, so without a session of its own it would paint other
+      // rigs' pages with whatever skin it last seeded (and read theirs).
+      partition: "theme-quick-menu",
     },
   });
 
@@ -362,7 +392,7 @@ async function main() {
     await frames();
   };
 
-  const seedAndReload = async ({ theme, skin, favorites }) => {
+  const seedAndReload = async ({ theme, skin, favorites, installed }) => {
     await run(`(() => {
       localStorage.clear();
       ${theme ? `localStorage.setItem("lifequest-theme", ${JSON.stringify(theme)});` : ""}
@@ -371,6 +401,11 @@ async function main() {
         favorites === null
           ? ""
           : `localStorage.setItem("lifequest-skin-favorites", ${JSON.stringify(JSON.stringify(favorites))});`
+      }
+      ${
+        installed
+          ? `localStorage.setItem("lifequest-installed-themes", ${JSON.stringify(JSON.stringify(installed))});`
+          : ""
       }
       return true;
     })()`);
@@ -512,6 +547,26 @@ async function main() {
       `tiles ${JSON.stringify(dayToggle.menu.tiles)}, hint ${JSON.stringify(dayToggle.menu.hint)}`,
     );
 
+    // —— 3b — the renamed Grayscale theme wears a day palette now; pick it in
+    //         daylight and photograph the paper-and-graphite half of the pair.
+    at("Grayscale has a day palette");
+    await click('[data-skin="grayscale"] .settings-menu__skin-option');
+    const grayscaleDay = await record(
+      "grayscaleDay",
+      'document.documentElement.getAttribute("data-skin") === "grayscale"',
+    );
+    await shot("theme-quick-menu-grayscale-day.png");
+    check(
+      "the Grayscale theme wears a light palette by day",
+      grayscaleDay.skin.attr === "grayscale" &&
+        grayscaleDay.skin.stored === "grayscale" &&
+        grayscaleDay.theme.attr === "light" &&
+        grayscaleDay.menu.hint === "Day palette · LifeQuest themes" &&
+        grayscaleDay.menu.tiles.filter((tile) => tile.active).map((tile) => tile.name).join(",") ===
+          "grayscale",
+      `skin ${JSON.stringify(grayscaleDay.skin)}, theme ${JSON.stringify(grayscaleDay.theme)}`,
+    );
+
     // —— 4 — the menu's mode switcher writes the preference the click left
     //        behind: System clears the attribute, Dark pins it back.
     at("the mode switcher");
@@ -533,6 +588,7 @@ async function main() {
     );
     await clickText(".theme-quick-menu__popover .ui-segmented", "Dark");
     const darkMode = await record("darkMode", 'document.documentElement.getAttribute("data-theme") === "dark"');
+    await shot("theme-quick-menu-grayscale-night.png");
     check(
       "choosing Dark pins the night palette",
       darkMode.theme.attr === "dark" &&
@@ -541,18 +597,23 @@ async function main() {
           "Dark",
       `theme ${JSON.stringify(darkMode.theme)}, mode ${JSON.stringify(darkMode.menu.mode)}`,
     );
+    check(
+      "the two-palette Grayscale theme survives the mode switch",
+      darkMode.skin.attr === "grayscale" && darkMode.skin.stored === "grayscale",
+      `skin ${JSON.stringify(darkMode.skin)}, theme ${JSON.stringify(darkMode.theme)}`,
+    );
 
     // —— 5 — a starred tile is a quick choice, not a preview: it applies the
     //        theme and persists it.
     at("quick-select a starred theme");
-    await click('[data-skin="nous-classic"] .settings-menu__skin-option');
-    const skinPicked = await record("skinPicked", 'document.documentElement.getAttribute("data-skin") === "nous-classic"');
+    await click('[data-skin="nous"] .settings-menu__skin-option');
+    const skinPicked = await record("skinPicked", 'document.documentElement.getAttribute("data-skin") === "nous"');
     check(
       "a tile press applies and stores the theme",
-      skinPicked.skin.attr === "nous-classic" &&
-        skinPicked.skin.stored === "nous-classic" &&
+      skinPicked.skin.attr === "nous" &&
+        skinPicked.skin.stored === "nous" &&
         skinPicked.menu.tiles.filter((tile) => tile.active).map((tile) => tile.name).join(",") ===
-          "nous-classic",
+          "nous",
       `skin ${JSON.stringify(skinPicked.skin)}, tiles ${JSON.stringify(skinPicked.menu.tiles)}`,
     );
 
@@ -661,25 +722,101 @@ async function main() {
       `menu ${JSON.stringify(favoritesEmpty.menu)}`,
     );
 
-    // —— 12 — a theme with only one palette has nothing to switch, so the
-    //         control is absent, exactly as the old toggle was.
-    at("a one-palette theme has no switch");
+    // —— 12 — the switch never strands the operator: a one-palette theme keeps
+    //         the control in the strip, and a day/night press hands the window
+    //         to the fallback theme (Nous) for the palette the worn theme cannot
+    //         paint. The menu's own mode switcher lands the same way.
+    at("a one-palette theme keeps the switch, and the switch falls back");
     await seedAndReload({
       theme: "dark",
-      skin: "midnight",
+      skin: "forge-os",
       favorites: null,
+      installed: [NIGHT_ONLY_THEME],
     });
-    const singleMode = await record("singleModeSkin");
-    check(
-      "a one-palette theme removes the day/night control",
-      singleMode.trigger.present === false && singleMode.menu === null,
-      `trigger ${JSON.stringify(singleMode.trigger)}`,
+    await hover(".theme-mode-toggle");
+    await record("installedThemeMenu", menuOpen);
+    await click('[data-skin="night-only"] .settings-menu__skin-option');
+    const nightOnly = await record(
+      "nightOnlySkin",
+      'document.documentElement.getAttribute("data-skin") === "night-only"',
     );
     check(
-      "the titlebar keeps the settings menu beside the absent control",
-      singleMode.titlebar.classes.length === 1 &&
-        singleMode.titlebar.classes[0].includes("settings-menu"),
-      `trailing ${JSON.stringify(singleMode.titlebar.classes)}`,
+      "a one-palette theme is wearable in its own mode",
+      nightOnly.skin.attr === "night-only" &&
+        nightOnly.theme.attr === "dark" &&
+        nightOnly.menu.tiles.some((tile) => tile.name === "night-only"),
+      `skin ${JSON.stringify(nightOnly.skin)}, theme ${JSON.stringify(nightOnly.theme)}`,
+    );
+    check(
+      "the day/night control stays in the strip on a one-palette theme",
+      nightOnly.trigger.present === true &&
+        nightOnly.trigger.inTrailing === true &&
+        nightOnly.trigger.expanded === "true",
+      `trigger ${JSON.stringify(nightOnly.trigger)}`,
+    );
+
+    at("the switch falls back to Nous for the unpaintable palette");
+    await click(".theme-mode-toggle");
+    const fallbackToggle = await record(
+      "fallbackOnToggle",
+      'document.documentElement.getAttribute("data-skin") === "nous" && document.documentElement.getAttribute("data-theme") === "light"',
+    );
+    await shot("theme-quick-menu-fallback.png");
+    check(
+      "a click on a one-palette theme hands the window to Nous in the new mode",
+      fallbackToggle.skin.attr === "nous" &&
+        fallbackToggle.skin.stored === "nous" &&
+        fallbackToggle.theme.attr === "light" &&
+        fallbackToggle.theme.stored === "light" &&
+        fallbackToggle.trigger.expanded === "true",
+      `skin ${JSON.stringify(fallbackToggle.skin)}, theme ${JSON.stringify(fallbackToggle.theme)}`,
+    );
+
+    at("the menu's mode switcher falls back the same way");
+    await clickText(".theme-quick-menu__popover .ui-segmented", "Dark");
+    await record("backToDark", 'document.documentElement.getAttribute("data-theme") === "dark"');
+    await click('[data-skin="night-only"] .settings-menu__skin-option');
+    await record(
+      "nightOnlyAgain",
+      'document.documentElement.getAttribute("data-skin") === "night-only"',
+    );
+    await clickText(".theme-quick-menu__popover .ui-segmented", "Light");
+    const fallbackSwitcher = await record(
+      "fallbackOnModeSwitcher",
+      'document.documentElement.getAttribute("data-skin") === "nous" && document.documentElement.getAttribute("data-theme") === "light"',
+    );
+    check(
+      "choosing a mode the worn theme cannot paint hands the window to Nous",
+      fallbackSwitcher.skin.attr === "nous" &&
+        fallbackSwitcher.skin.stored === "nous" &&
+        fallbackSwitcher.theme.attr === "light" &&
+        fallbackSwitcher.theme.stored === "light",
+      `skin ${JSON.stringify(fallbackSwitcher.skin)}, theme ${JSON.stringify(fallbackSwitcher.theme)}`,
+    );
+
+    // —— 13 — the rename is storage, not only the registry: a window that stored
+    //         `mono` opens on Grayscale, and an old starred list follows it.
+    at("a stored mono name opens on Grayscale");
+    await seedAndReload({
+      theme: "dark",
+      skin: "mono",
+      favorites: ["mono"],
+    });
+    const legacyMono = await record("legacyMono");
+    await hover(".theme-mode-toggle");
+    const legacyMonoMenu = await record("legacyMonoMenu", menuOpen);
+    check(
+      "a stored mono selection opens on the renamed Grayscale theme",
+      legacyMono.skin.attr === "grayscale" && legacyMono.theme.attr === "dark",
+      `skin ${JSON.stringify(legacyMono.skin)}, theme ${JSON.stringify(legacyMono.theme)}`,
+    );
+    check(
+      "an old starred mono name becomes the Grayscale tile",
+      same(
+        legacyMonoMenu.menu.tiles.map((tile) => tile.label),
+        ["Grayscale"],
+      ) && legacyMonoMenu.menu.tiles[0].active === true,
+      `tiles ${JSON.stringify(legacyMonoMenu.menu.tiles)}`,
     );
 
     report = {

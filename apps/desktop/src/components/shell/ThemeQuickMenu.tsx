@@ -7,7 +7,7 @@ import { THEME_OPTIONS, themeHint } from "@/components/theme/theme-options";
 import { SkinTile } from "@/components/settings/SkinTile";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useMenuPosition } from "@/components/ui/useMenuPosition";
-import { filterSkinsForPreference, skinSupportsBothModes } from "@/lib/themes/presets";
+import { filterSkinsForPreference } from "@/lib/themes/presets";
 import type { ForgeSkin } from "@/lib/themes/types.ts";
 
 const ICON_PROPS = {
@@ -36,6 +36,12 @@ const CLOSE_DELAY_MS = 220;
  *    switcher (System / Light / Dark) first, then the starred themes, so a
  *    theme can be tried without a trip to Settings.
  *
+ * The control is always in the strip. A theme that ships only one palette has no
+ * alternate day or night version, but hiding the switch there left the operator
+ * with no way to change the time of day from that theme; instead the switch stays
+ * put, and the provider hands the window to the fallback theme (Nous) when the
+ * worn theme cannot paint the mode being asked for.
+ *
  * The menu is portalled to the body for the same reason the settings popover
  * is: the window strip owns the trigger and must not decide where the menu is
  * drawn. It closes on Escape, on a press outside it, and when the pointer
@@ -47,7 +53,6 @@ export function ThemeQuickMenu({ className }: { className?: string }) {
     preference,
     setPreference,
     resolved,
-    skin,
     skinName,
     setSkin,
     availableSkins,
@@ -161,15 +166,6 @@ export function ThemeQuickMenu({ className }: { className?: string }) {
     favoriteSkins.includes(skin.name),
   );
   const skinHint = themeHint(preference, resolved);
-
-  /*
-   * A theme that only ships one palette has no day/night switch to offer, so the
-   * control is absent exactly as the old toggle was. The quick menu would not
-   * have a mode to switch between on such a theme either.
-   */
-  if (!skinSupportsBothModes(skin)) {
-    return null;
-  }
 
   const isDark = resolved === "dark";
   const label = isDark ? "Switch to day mode" : "Switch to night mode";

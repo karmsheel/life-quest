@@ -9,10 +9,10 @@
  * The index is the sections themselves plus two things a section label cannot
  * carry: the words for what each page holds (`keywords` beside each section) and
  * the themes, which are their own names and live on one page. A search for
- * "ember" is a search for the Appearance page, so theme names are folded into
+ * "gray" is a search for the Appearance page, so theme names are folded into
  * that one section's haystack rather than matched as results of their own — a
- * result list that offers "Ember" and then opens a page that does not contain the
- * word would be lying about where it is taking you.
+ * result list that offers "Grayscale" and then opens a page that does not contain
+ * the word would be lying about where it is taking you.
  *
  * Multiple words are ANDed, so "vault path" is narrower than either word.
  */

@@ -1,11 +1,15 @@
-import { DEFAULT_SKIN_NAME, isBuiltinSkinName } from "./presets.ts";
+import {
+  DEFAULT_SKIN_NAME,
+  isBuiltinSkinName,
+  resolveLegacySkinName,
+} from "./presets.ts";
 
 export const SKIN_STORAGE_KEY = "lifequest-skin";
 
 export function getStoredSkinName(): string {
   if (typeof window === "undefined") return DEFAULT_SKIN_NAME;
   try {
-    const stored = localStorage.getItem(SKIN_STORAGE_KEY);
+    const stored = resolveLegacySkinName(localStorage.getItem(SKIN_STORAGE_KEY));
     if (stored && isBuiltinSkinName(stored)) return stored;
   } catch {
     /* ignore */

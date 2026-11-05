@@ -944,15 +944,7 @@ async function main() {
    * measures a fixed set; the suite cross-checks this list against the skin
    * registry, so a new dark skin cannot land without being measured.
    */
-  const NIGHT_SKINS = [
-    "forge-os",
-    "nous",
-    "nous-classic",
-    "midnight",
-    "ember",
-    "mono",
-    "cyberpunk",
-  ];
+  const NIGHT_SKINS = ["forge-os", "nous", "grayscale"];
 
   let report;
   const timeout = setTimeout(() => {

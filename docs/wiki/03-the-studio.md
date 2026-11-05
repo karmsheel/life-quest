@@ -99,9 +99,9 @@ The window title bar:
   screens there is none. There the strip is the window's drag area, with its window
   controls when the overlay is unavailable, and with no vault the window title is
   `LifeQuest`.
-- The trailing controls, for a vault window: the day/night control (only on themes
-  with both palettes — *Switch to day mode* / *Switch to night mode*), and the
-  **Settings** gear (*Open settings*). The day/night control is two controls on one
+- The trailing controls, for a vault window: the day/night control (*Switch to
+  day mode* / *Switch to night mode*), and the **Settings** gear (*Open
+  settings*). The day/night control is two controls on one
   icon: a click switches the palette between day and night, and hovering it opens a
   quick menu with the **System** / **Light** / **Dark** switcher first and the
   starred themes underneath for quick selection. The dock's own controls are not
@@ -202,8 +202,10 @@ Window-level keys:
   means "make this pane bigger" on both sides. Arrow keys follow the same rule.
 - The sheet scrim closes on a press that starts on the scrim, so a drag that
   begins inside the panel and ends outside does not dismiss it.
-- The day/night control disappears on themes that do not ship both palettes; the
-  Appearance page still lets you choose a mode, but some themes only exist in one.
+- The day/night control is always in the strip. A theme with only one palette is
+  wearable in the palette it has; when the switch asks for the other one, the
+  window hands itself to the fallback theme, **Nous**, in the requested mode, so
+  the switch never leaves a light palette at night or a night palette by day.
 - Clicking the day/night control switches the palette immediately; hovering it
   opens the quick menu. The menu's starred grid is the same list the Settings
   popover shows, and stars are set on the Appearance page.

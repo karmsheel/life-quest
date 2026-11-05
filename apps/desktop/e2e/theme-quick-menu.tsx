@@ -31,9 +31,10 @@
  *     full set and an empty curation shows the empty state.
  *  8. **The menu never dismisses.** A press outside it, Escape, and the pointer
  *     leaving both its parts must all close it.
- *  9. **A one-palette theme still offers a switch.** A theme with no day palette
- *     has nothing to toggle, so the control must be absent rather than present
- *     and inert.
+ *  9. **A one-palette theme strands the switch.** The control must stay in the
+ *     strip, and a day/night press must hand the window to the fallback theme
+ *     (Nous) for the palette the worn theme cannot paint, rather than leaving a
+ *     light palette at night.
  */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";

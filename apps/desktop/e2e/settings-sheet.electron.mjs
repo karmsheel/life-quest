@@ -36,7 +36,7 @@ const url =
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
 /** The theme the driver stars, and the query that finds its page. */
-const STARRED_SKIN = "Ember";
+const STARRED_SKIN = "Grayscale";
 const SECTION_COUNT = 11;
 
 /**
@@ -459,9 +459,12 @@ async function main() {
     await win.loadURL(url);
     await waitReady();
 
-    // A favourites list left over from an earlier run would make "starring
-    // Ember" look like it worked before it was pressed.
-    await run("localStorage.removeItem('lifequest-skin-favorites')");
+    // A favourites list, an installed theme or a chosen skin left by an earlier
+    // run would decide the grid before anything here is pressed — rigs share the
+    // dev-server origin's localStorage, so the start state is cleared explicitly.
+    await run(
+      "(() => { for (const key of ['lifequest-skin-favorites', 'lifequest-installed-themes', 'lifequest-skin']) localStorage.removeItem(key); return true; })()",
+    );
     await win.webContents.reload();
     await waitReady();
     win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
@@ -481,7 +484,7 @@ async function main() {
     record("searchedVault", await settle());
 
     // 4 — a theme name finds the page that holds the themes.
-    await typeQuery("ember");
+    await typeQuery("gray");
     record("searchedTheme", await settle());
     await shot("search-theme");
 
@@ -534,7 +537,7 @@ async function main() {
     record("appearance", await settle());
 
     // 11 — curate down to one: the quick menu is the starred list, so the other
-    //      six should leave it.
+    //      two should leave it.
     const unstarred = await unstarAllExcept(STARRED_SKIN);
     record("curatedOne", await settle());
     step("unstarredCount", unstarred);
