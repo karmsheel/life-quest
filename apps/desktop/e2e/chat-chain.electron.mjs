@@ -45,12 +45,14 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
 
 /**
  * The dock's bottom action bar, in order: the new-chat slot, the chain, the
+ * keyboard-shortcuts reference (the titlebar no longer carries it), the
  * side-switch (the dock starts on the right, so its label asks for the left),
  * and the way out. There is no history slot: the whole history is the sidebar's.
  */
 const ACTION_SLOTS = [
   "New chat",
   "Life-Chain",
+  "Keyboard shortcuts",
   "Move chat to the left of the page",
   "Collapse chat"
 ];
@@ -451,7 +453,7 @@ async function main() {
       `${landing.signalListCalls} list calls`,
     );
     check(
-      "the action bar holds its four slots, in order",
+      "the action bar holds its five slots, in order",
       JSON.stringify(landing.actions.map((slot) => slot.label)) ===
         JSON.stringify(ACTION_SLOTS),
       `slots ${JSON.stringify(landing.actions.map((slot) => slot.label))}`,
@@ -462,7 +464,7 @@ async function main() {
       `disabled ${JSON.stringify(landing.actions.map((slot) => slot.disabled))}`,
     );
     check(
-      "the slots wear four distinct icons, all one size and undimmed",
+      "the slots wear five distinct icons, all one size and undimmed",
       new Set(landing.actions.map((slot) => slot.icon)).size === ACTION_SLOTS.length &&
         new Set(landing.actions.map((slot) => slot.iconSize)).size === 1 &&
         (landing.actions[0]?.iconSize ?? 0) >= 18 &&

@@ -62,8 +62,8 @@ LifeQuest has a shape, and the shape is the product:
 5. **Projects** break goals into real work, with attributes, context and
    companion tools.
 6. **Daily Schedule**, **Act** and **Life-Chain** turn the plan into a day:
-   today's blocks, the task board, and a place to catch a thought before it
-   evaporates.
+   today's blocks, the task board, and a place to catch a thought, a picture or a
+   link before it evaporates.
 7. **Reviews** (Daily, Weekly, Monthly, Quarterly, Yearly) read the period back,
    with the operator's **Daily Notes** as the journal inside the pack.
 8. **Data**, **Pages** and **Documents** hold the operator's own tables, pages

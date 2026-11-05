@@ -1,7 +1,7 @@
 /**
  * User-installed themes: the Forge skin JSON, dropped into the app.
  *
- * LifeQuest ships seven themes and shares its preset format with Hermes Desktop
+ * LifeQuest ships its own themes and shares the preset format with Hermes Desktop
  * (`types.ts`: "so presets and user-installed themes can be shared between
  * products"), so an operator who has a theme in that shape can bring it here and
  * curate it alongside the built-ins. This module is the whole of that path: read

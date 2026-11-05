@@ -128,8 +128,8 @@ export function sniffImageMime(bytes: Uint8Array): ImageMimeType | null {
   return null;
 }
 
-/** A label the page may show: one path segment's worth, no control characters. */
-function displayName(raw: unknown): string {
+/** A label a page may show: one path segment's worth, no control characters. */
+export function imageDisplayName(raw: unknown): string {
   const source = typeof raw === "string" ? raw : "";
   const base = source.split(/[/\\]/).pop() ?? "";
   const cleaned = base
@@ -209,7 +209,7 @@ function normalizeStoredImage(raw: unknown): VaultImage | null {
   return {
     id: entry.id.toLowerCase(),
     relPath: entry.relPath,
-    name: displayName(entry.name),
+    name: imageDisplayName(entry.name),
     caption: captionOf(entry.caption),
     mime,
     bytes: typeof entry.bytes === "number" && entry.bytes >= 0 ? entry.bytes : 0,
@@ -275,7 +275,7 @@ export async function saveImage(
       const image: VaultImage = {
         id,
         relPath: `images/files/${id}.${ext}`,
-        name: displayName(input.name),
+        name: imageDisplayName(input.name),
         caption: "",
         mime,
         bytes: input.bytes.byteLength,
@@ -342,7 +342,7 @@ export async function updateImage(
       const existing = library.value.images[index]!;
       const next: VaultImage = {
         ...existing,
-        name: patch.name === undefined ? existing.name : displayName(patch.name),
+        name: patch.name === undefined ? existing.name : imageDisplayName(patch.name),
         caption:
           patch.caption === undefined ? existing.caption : captionOf(patch.caption),
       };
