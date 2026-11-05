@@ -74,11 +74,11 @@ export type SessionRun = {
 };
 
 /**
- * The dock's three chat surfaces — the all-chats list, the open conversation,
- * and the Life-Chain the same dock can show — live on `ChatDockProvider` now,
- * beside the dock's open state, because the titlebar's shortcuts control opens
- * the dock onto a fourth one. The chat store reads the surface it is on and
- * moves it as chats open and close.
+ * The dock's three surfaces — the open conversation, the Life-Chain the same
+ * dock can show, and the keyboard-shortcuts reference — live on
+ * `ChatDockProvider`, beside its open state, because the dock's own bottom bar
+ * switches them. The chat store reads the surface it is on and moves it as
+ * chats open and close.
  */
 const EMPTY_RUN: SessionRun = Object.freeze({
   messages: [] as ChatMessage[],
@@ -192,6 +192,9 @@ function visibleTabOrder(
  * to another, and both keep arriving. Nothing here serialises the chats — the
  * gateway's own cap does that, and it is generous.
  */
+/** The sidebar's archived-row visibility, the three view options the menu offers. */
+export type ArchivedView = "hide" | "show" | "only";
+
 type ChatSessionsContextValue = {
   sessions: HermesSession[];
   sessionsLoaded: boolean;
@@ -225,12 +228,13 @@ type ChatSessionsContextValue = {
   updateRuntimePick: (id: string, pick: CompanionRuntimeOverride) => void;
 
   /**
-   * The sidebar's view option: when true the list also carries archived chats.
-   * They are shown greyed and restorable, never openable, and the dock's own
-   * working list stays live-only.
+   * The sidebar's archived view. "hide" is the working list; "show" adds the
+   * greyed archived band below it; "only" drops the live rows so the archive
+   * itself is the list. Archived rows are restorable, never openable, and the
+   * dock's own working list stays live-only in all three.
    */
-  showArchived: boolean;
-  setShowArchived: (show: boolean) => void;
+  archivedView: ArchivedView;
+  setArchivedView: (view: ArchivedView) => void;
 
   loadSessions: () => Promise<HermesSession[] | null>;
   /** Navigate the active tab to a chat, the way a link navigates a browser tab. */
@@ -286,7 +290,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   const [runtimePins, setRuntimePins] = useState<Record<string, CompanionRuntimeOverride>>(
     () => readStoredRuntimePins(),
   );
-  const [showArchived, setShowArchivedState] = useState(false);
+  const [archivedView, setArchivedViewState] = useState<ArchivedView>("hide");
 
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
@@ -296,8 +300,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   openTabsRef.current = openTabs;
   const runtimePinsRef = useRef(runtimePins);
   runtimePinsRef.current = runtimePins;
-  const showArchivedRef = useRef(showArchived);
-  showArchivedRef.current = showArchived;
+  const archivedViewRef = useRef(archivedView);
+  archivedViewRef.current = archivedView;
   const surfaceRef = useRef(surface);
   surfaceRef.current = surface;
   const contextCardRef = useRef<ChatCardContext | null>(contextCard);
@@ -414,7 +418,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
 
   const loadSessions = useCallback(async (): Promise<HermesSession[] | null> => {
     const listed = await api().companionSessionsList({
-      includeArchived: showArchivedRef.current,
+      includeArchived: archivedViewRef.current !== "hide",
     });
     if (!listed.ok) {
       setListError(listed.error);
@@ -427,15 +431,17 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /**
-   * Turn the sidebar's archived view on or off. The list is re-read rather than
-   * filtered from what is held: whether archived rows exist at all is the
-   * gateway's answer, and the read also refreshes the live rows beside them.
+   * Turn the sidebar's archived view on, off, or to archived-only. The list is
+   * re-read rather than filtered from what is held: whether archived rows exist
+   * at all is the store's answer (the gateway's page plus the profile's own
+   * archived rows, see `companion-archived.ts`), and the read also refreshes the
+   * live rows beside them.
    */
-  const setShowArchived = useCallback(
-    (show: boolean) => {
-      if (show === showArchivedRef.current) return;
-      showArchivedRef.current = show;
-      setShowArchivedState(show);
+  const setArchivedView = useCallback(
+    (view: ArchivedView) => {
+      if (view === archivedViewRef.current) return;
+      archivedViewRef.current = view;
+      setArchivedViewState(view);
       void loadSessions();
     },
     [loadSessions],
@@ -772,15 +778,15 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
                 }
               : s,
           )
-          // Archiving hides the row from the working view. The archived view
-          // keeps it, greyed: that view exists so the chat can be found and
-          // restored. Hermes keeps every message either way.
+          // Archiving hides the row from the working view. The archived views
+          // keep it, greyed: they exist so the chat can be found and restored.
+          // Hermes keeps every message either way.
           .filter(
             (s) =>
               !(
                 patch.archived === true &&
                 s.id === id &&
-                !showArchivedRef.current
+                archivedViewRef.current === "hide"
               ),
           ),
       );
@@ -1277,8 +1283,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       setReceiptFor,
       runtimePins,
       updateRuntimePick,
-      showArchived,
-      setShowArchived,
+      archivedView,
+      setArchivedView,
       loadSessions,
       openChat,
       openChatInNewTab,
@@ -1321,8 +1327,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       sendMessage,
       sessions,
       sessionsLoaded,
-      setShowArchived,
-      showArchived,
+      setArchivedView,
+      archivedView,
       setAutomationContext,
       setDraftFor,
       reportError,

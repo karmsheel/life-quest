@@ -944,15 +944,7 @@ async function main() {
    * measures a fixed set; the suite cross-checks this list against the skin
    * registry, so a new dark skin cannot land without being measured.
    */
-  const NIGHT_SKINS = [
-    "forge-os",
-    "nous",
-    "nous-classic",
-    "midnight",
-    "ember",
-    "mono",
-    "cyberpunk",
-  ];
+  const NIGHT_SKINS = ["forge", "nous", "graphite"];
 
   let report;
   const timeout = setTimeout(() => {
@@ -971,9 +963,9 @@ async function main() {
 
     // The rig pins the palette it measures. A rig shares this window's storage
     // with the operator's own dev profile, so whatever skin and mode they last
-    // chose would otherwise decide what "expanded" is painted in — and a forge-os
+    // chose would otherwise decide what "expanded" is painted in — and a forge
     // claim measured on another palette is worse than no claim at all.
-    await applyTheme("forge-os", "dark");
+    await applyTheme("forge", "dark");
 
     const expanded = await settled();
     const { track, collapsedTrack, titlebarHeight, topbarHeight } =
@@ -1523,7 +1515,7 @@ async function main() {
     const band = night.luminance.dockActions;
     check(
       "the rig is painted in the night skin",
-      night.dataTheme === "dark" && night.skin === "forge-os",
+      night.dataTheme === "dark" && night.skin === "forge",
       `theme ${night.dataTheme}, skin ${night.skin}`,
     );
     check(
@@ -2197,13 +2189,13 @@ async function main() {
     // and the panels sink below the sheet; the same rig, the same skin and only
     // the mode flipped, so a day that inherited the night inks fails here rather
     // than on the operator's screen.
-    await applyTheme("forge-os", "light");
+    await applyTheme("forge", "light");
     const day = await settled();
 
     const dawn = ladderOf(day);
     check(
       "day renders the same skin in its own mode",
-      dawn.dataTheme === "light" && dawn.skin === "forge-os",
+      dawn.dataTheme === "light" && dawn.skin === "forge",
       `theme ${dawn.dataTheme}, skin ${dawn.skin}`,
     );
     check(
@@ -2628,7 +2620,7 @@ async function main() {
     for (const [name, data] of Object.entries(report.ladder.skins ?? {})) {
       row(`night ${name}`, data);
     }
-    if (report.ladder.day) row("day forge-os", report.ladder.day);
+    if (report.ladder.day) row("day forge", report.ladder.day);
     const widths = rows[0].map((_, i) =>
       Math.max(...rows.map((row) => row[i].length)),
     );
@@ -2650,7 +2642,7 @@ async function main() {
         data?.transcript ? `${data.transcript.gutterX}px` : "—",
         data?.thumbToken || "—",
       ]);
-    row("day forge-os", report.scroll.day);
+    row("day forge", report.scroll.day);
     for (const [name, data] of Object.entries(report.scroll.night ?? {})) {
       row(`night ${name}`, data);
     }

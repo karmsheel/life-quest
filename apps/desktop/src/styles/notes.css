@@ -913,13 +913,25 @@
 
    None of these rules existed before — the page carried the class names and no
    stylesheet answered them, which is why the controls stacked as bare text under
-   the body. */
+   the body.
+
+   THE PAGE IS ONE CENTRED COLUMN. A review is prose, and prose has a measure:
+   48rem, the width the shared note box is drawn for and the same column the
+   Daily Note keeps. The page *is* that column — the title and pager, the mode
+   row, the body, the actions, the rules panel and the daily-notes strip all take
+   its width — so the whole page reads as one block, centred in whatever room the
+   sheet gives it rather than run from its leading edge. On a wide window the
+   width the column does not use is empty page on both sides, split evenly; the
+   column only ever shrinks to fit, and the measure is declared here once so no
+   child has to restate it. */
 
 .review-page {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  max-width: 60rem;
+  width: 100%;
+  max-width: 48rem;
+  margin-inline: auto;
 }
 
 .review-page .btn {
@@ -985,15 +997,10 @@
   font-size: 0.85rem;
 }
 
-.review-page__editor {
-  max-width: 48rem;
-}
-
 .review-page__preview {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  max-width: 48rem;
 }
 
 .review-page__preview > .md-view {
@@ -1015,7 +1022,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  max-width: 48rem;
   padding-top: 1rem;
   border-top: 1px solid var(--border);
 }
@@ -1069,7 +1075,6 @@
   flex-direction: column;
   gap: 0.5rem;
   margin-top: 1.5rem;
-  max-width: 48rem;
 }
 
 .review-notes__header {

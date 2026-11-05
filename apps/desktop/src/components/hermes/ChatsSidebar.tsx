@@ -101,10 +101,10 @@ function writePinnedOrder(ids: string[]): void {
  * grows. The magnifier does not open a second row under the heading: the field
  * takes the header's own line, where the title and both icons were, focused and
  * ready for the query; the cross, a press anywhere outside it, or Escape hands
- * the usual header back. The sliders open the view menu that decides whether
- * archived chats are listed. Archived rows come back below the live ones in
- * their own greyed, tagged band, restorable but never openable — the chat is
- * out of the working set, but not lost.
+ * the usual header back. The sliders open the view menu that decides how
+ * archived chats are listed: hidden, listed below the live ones, or alone in
+ * their own greyed, tagged band. Archived rows are restorable but never
+ * openable — the chat is out of the working set, but not lost.
  *
  * Rows are the same Hermes sessions the dock's tabs are, read from
  * `ChatSessionsProvider`, so a pin from here is a pin in the dock, in Hermes
@@ -168,9 +168,19 @@ export function ChatsSidebar() {
   }, [shown, pinnedOrder]);
   const recent = shown.filter((s) => !s.pinned && !s.archived);
   const archived = shown.filter((s) => s.archived);
-  const ordered = [...pinned, ...recent];
+  /**
+   * The archived-only view drops the working list: the operator asked to work
+   * through the archive, and a live row between the archived ones would be the
+   * one thing that view is not for. The dock is untouched either way — its
+   * working list never carries an archived chat.
+   */
+  const onlyArchived = chat.archivedView === "only";
+  const ordered = onlyArchived ? [] : [...pinned, ...recent];
   const matchCount = ordered.length + archived.length;
   const liveCount = chat.tabIds.filter((id) => chat.runOf(id).sending).length;
+  const listEmpty =
+    chat.sessionsLoaded &&
+    (onlyArchived ? archived.length === 0 : chat.sessions.length === 0);
 
   /** Load one chat into the dock, opening the dock if it was put away. */
   async function openChat(id: string) {
@@ -680,32 +690,47 @@ export function ChatsSidebar() {
                   <button
                     type="button"
                     role="menuitemradio"
-                    aria-checked={!chat.showArchived}
+                    aria-checked={chat.archivedView === "hide"}
                     aria-label="Hide archived chats"
                     onClick={() => {
-                      chat.setShowArchived(false);
+                      chat.setArchivedView("hide");
                       setViewMenuOpen(false);
                     }}
                   >
                     <span className="chats-rail__check" aria-hidden>
-                      {!chat.showArchived ? <Check size={12} /> : null}
+                      {chat.archivedView === "hide" ? <Check size={12} /> : null}
                     </span>
                     Hide archived
                   </button>
                   <button
                     type="button"
                     role="menuitemradio"
-                    aria-checked={chat.showArchived}
+                    aria-checked={chat.archivedView === "show"}
                     aria-label="Show archived chats"
                     onClick={() => {
-                      chat.setShowArchived(true);
+                      chat.setArchivedView("show");
                       setViewMenuOpen(false);
                     }}
                   >
                     <span className="chats-rail__check" aria-hidden>
-                      {chat.showArchived ? <Check size={12} /> : null}
+                      {chat.archivedView === "show" ? <Check size={12} /> : null}
                     </span>
                     Show archived
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={chat.archivedView === "only"}
+                    aria-label="Only archived chats"
+                    onClick={() => {
+                      chat.setArchivedView("only");
+                      setViewMenuOpen(false);
+                    }}
+                  >
+                    <span className="chats-rail__check" aria-hidden>
+                      {chat.archivedView === "only" ? <Check size={12} /> : null}
+                    </span>
+                    Only archived
                   </button>
                 </div>
               ) : null}
@@ -739,8 +764,10 @@ export function ChatsSidebar() {
       ) : null}
 
       <div className="chats-rail__list" ref={listRef}>
-        {chat.sessionsLoaded && chat.sessions.length === 0 ? (
-          <p className="chats-rail__empty">No chats yet</p>
+        {listEmpty ? (
+          <p className="chats-rail__empty">
+            {onlyArchived ? "No archived chats" : "No chats yet"}
+          </p>
         ) : (
           <ul className="chats-rail__rows" aria-label="Chats">
             {ordered.map(renderRow)}

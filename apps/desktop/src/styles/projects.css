@@ -575,6 +575,20 @@
   font-size: 0.75rem;
 }
 
+.project-detail__repos {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-detail__repo-link {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
 .project-detail__group-title {
   margin: 0.25rem 0 0;
   padding-top: 1rem;

@@ -8,9 +8,10 @@
  *   node e2e/live-editor.electron.mjs
  *
  * Exit code 0 = every invariant held. The JSON report is the repeatable artifact:
- * same command, same claims. It ships with three pictures of the same run: the
+ * same command, same claims. It ships with four pictures of the same run: the
  * document editor with a paragraph open as its own markdown
- * (`live-editor-document.png`), the same document locked
+ * (`live-editor-document.png`), the same document with its page menu open and
+ * locked (`live-editor-menu.png`), the document locked
  * (`live-editor-locked.png`), and the review editor (`live-editor-review.png`).
  *
  * What this rig claims, and what makes each claim falsifiable:
@@ -28,10 +29,14 @@
  *     blank line and all, is the body `documentSave` receives.
  *  5. A locked document has no writing line at all, and a click on its prose
  *     opens none: the engine refuses a locked write, so the UI must not offer one.
- *     The doctrine page's lock is the same badge-beside-the-name and switch-at-
- *     the-top-right pair the Dashboard wears: the switch is off on an unlocked
- *     document, flipping it sends `documentSetLocked`, and the page's own read
- *     turns read-only behind it.
+ *     The doctrine page's own actions are behind the three-dot menu in its
+ *     top-right corner, and the lock is that menu's FIRST item: the trigger opens
+ *     the popover, the menu item is a `menuitemcheckbox` whose track and thumb
+ *     draw its state, flipping it sends `documentSetLocked` once and leaves the
+ *     menu open, and the page behind turns read-only. While locked the menu's
+ *     second item is Propose change; choosing it closes the menu and opens the
+ *     propose dialog. The bottom actions row is Save while unlocked and absent
+ *     while locked.
  *  6. A pasted image is saved once, and its markdown lands in the note as its own
  *     paragraph, which the box then renders as an `<img>` resolved through
  *     `documentMediaRead`.
@@ -92,6 +97,27 @@ const SAMPLE = `(() => {
   const save = button(".doc-editor__actions", "Save");
   const edit = button(".review-page__actions", "Edit");
   const reviewSave = button(".review-page__actions", "Save");
+  // The doctrine page's actions, behind the three-dot menu in the page corner.
+  // Every one of these is read off the rendered DOM: a closed menu has no items
+  // in the document, which is itself a claim.
+  const pageMenu = document.querySelector('[data-testid="document-page-menu"]');
+  const popover = document.querySelector('[data-testid="document-page-menu-popover"]');
+  const lockItem = document.querySelector('[data-testid="document-lock-toggle"]');
+  const actionsRow = document.querySelector(".doc-editor__actions");
+  const dialog = document.querySelector('.propose-dialog[role="dialog"]');
+  const header = document.querySelector(".doc-editor__header");
+  const menuItem = (el) =>
+    el
+      ? {
+          testid: el.getAttribute("data-testid"),
+          role: el.getAttribute("role"),
+          text: (el.textContent || "").trim(),
+          label: el.getAttribute("aria-label"),
+          checked: el.getAttribute("aria-checked"),
+          expanded: el.getAttribute("aria-expanded"),
+          disabled: Boolean(el.disabled),
+        }
+      : null;
   return {
     heading: text(document.querySelector(".doc-editor__title")),
     body: parts.join("\\n\\n").trim(),
@@ -111,23 +137,66 @@ const SAMPLE = `(() => {
     renderedRect: rendered[0] ? rect(rendered[0]) : null,
     boxRect: box ? rect(box) : null,
     saveDisabled: save ? save.disabled : null,
-    // The document's lock: the badge beside the document's name and the switch
-    // in the page's top-right row, the same pair the Dashboard wears.
+    // The document's lock lives in the page's three-dot menu now: the trigger in
+    // the header's top-right corner, the popover it opens, and the lock as that
+    // menu's first item. The badge still sits beside the document's name.
     lockBadge: text(document.querySelector(".doc-editor__header .doc-status-badge")),
+    headerRect: rect(header),
     headingRect: rect(document.querySelector(".doc-editor__title")),
     lockBadgeRect: rect(document.querySelector(".doc-editor__header .doc-status-badge")),
-    lockSwitchRect: rect(document.querySelector('[data-testid="document-lock-toggle"]')),
-    lockSwitch: (() => {
-      const el = document.querySelector('[data-testid="document-lock-toggle"]');
-      if (!el) return null;
-      return {
-        role: el.getAttribute("role"),
-        checked: el.getAttribute("aria-checked"),
-        caption: (el.textContent || "").trim(),
-        locked: el.dataset.locked ?? null,
-        hasTrack: Boolean(el.querySelector(".lock-switch__track")),
-      };
-    })(),
+    pageMenu: pageMenu
+      ? {
+          tag: pageMenu.tagName,
+          classes: pageMenu.className,
+          haspopup: pageMenu.getAttribute("aria-haspopup"),
+          expanded: pageMenu.getAttribute("aria-expanded"),
+          label: pageMenu.getAttribute("aria-label"),
+          svgCount: pageMenu.querySelectorAll("svg").length,
+        }
+      : null,
+    pageMenuTriggerRect: rect(pageMenu),
+    pageMenuPopover: popover
+      ? {
+          role: popover.getAttribute("role"),
+          label: popover.getAttribute("aria-label"),
+          classes: popover.className,
+          firstItemTestId: popover.firstElementChild
+            ? popover.firstElementChild.getAttribute("data-testid")
+            : null,
+        }
+      : null,
+    pageMenuPopoverRect: rect(popover),
+    menuItems: popover
+      ? Array.from(
+          popover.querySelectorAll('[role="menuitemcheckbox"], [role="menuitem"]'),
+        ).map(menuItem)
+      : null,
+    lockSwitch: lockItem
+      ? {
+          role: lockItem.getAttribute("role"),
+          checked: lockItem.getAttribute("aria-checked"),
+          label: lockItem.getAttribute("aria-label"),
+          caption: (lockItem.querySelector(".page-menu__item-label")?.textContent || "").trim(),
+          locked: lockItem.dataset.locked ?? null,
+          hasTrack: Boolean(lockItem.querySelector(".page-menu__track")),
+          hasThumb: Boolean(lockItem.querySelector(".page-menu__track .page-menu__thumb")),
+        }
+      : null,
+    lockSwitchRect: rect(lockItem),
+    // The page's own bottom row: present (Save) while unlocked, absent while
+    // locked, because the locked document's action is the menu's Propose change.
+    docActions: actionsRow
+      ? Array.from(actionsRow.querySelectorAll("button")).map((b) =>
+          (b.textContent || "").trim(),
+        )
+      : null,
+    proposeDialog: dialog
+      ? {
+          role: dialog.getAttribute("role"),
+          heading: text(document.getElementById("propose-dialog-title")),
+          classes: dialog.className,
+        }
+      : null,
     reviewEditing: Boolean(document.querySelector(".review-page__actions")),
     reviewSaveDisabled: reviewSave ? reviewSave.disabled : null,
     reviewPeriod: text(document.querySelector(".review-page__period")),
@@ -409,60 +478,208 @@ async function main() {
     failure(`the box did not resolve the image it was given: ${JSON.stringify(mediaReads)}`);
   }
 
-  // ── 4b. the doctrine page's lock is the same switch ─────────────────────
-  if (!document.lockSwitch) {
-    failure("the doctrine page drew no lock switch");
+  // ── 4b. the doctrine page's actions are behind one three-dot menu ────────
+  // The menu is the page's only action surface: closed, it puts no items in the
+  // document; open, its first item is the document's lock.
+  const initialMenu = document.pageMenu;
+  if (!initialMenu) {
+    failure("the doctrine page drew no page menu trigger");
   } else {
-    const sw = document.lockSwitch;
-    if (sw.role !== "switch") {
-      failure(`the document's lock control had role ${JSON.stringify(sw.role)}`);
+    for (const cls of ["btn", "btn-ghost", "page-menu__trigger", "page-corner__action"]) {
+      if (!initialMenu.classes.split(/\s+/).includes(cls)) {
+        failure(
+          `the page menu trigger is missing class ${JSON.stringify(cls)}: ${JSON.stringify(initialMenu.classes)}`,
+        );
+      }
     }
-    if (sw.checked !== "false") {
-      failure(`the unlocked document's switch read aria-checked=${JSON.stringify(sw.checked)}`);
+    if (initialMenu.haspopup !== "menu") {
+      failure(`the page menu trigger's aria-haspopup read ${JSON.stringify(initialMenu.haspopup)}`);
     }
-    if (sw.caption !== "Lock") {
-      failure(`the document's switch caption read ${JSON.stringify(sw.caption)}`);
+    if (initialMenu.expanded !== "false") {
+      failure(
+        `the page menu was expanded on landing: aria-expanded=${JSON.stringify(initialMenu.expanded)}`,
+      );
     }
-    if (!sw.hasTrack) failure("the document's switch drew no track");
+    if (initialMenu.label !== "Document actions") {
+      failure(`the page menu trigger's aria-label read ${JSON.stringify(initialMenu.label)}`);
+    }
+    if (initialMenu.svgCount !== 1) {
+      failure(`the page menu trigger drew ${initialMenu.svgCount} icon(s), expected 1`);
+    }
+  }
+  if (document.pageMenuPopover !== null) {
+    failure("the page menu popover was in the document before the menu was opened");
+  }
+  if (document.menuItems !== null) {
+    failure(`a closed page menu still put ${document.menuItems.length} item(s) in the document`);
+  }
+  if (document.lockSwitch !== null) {
+    failure("a closed page menu still put its lock item in the document");
   }
   if (document.lockBadge !== "Unlocked") {
     failure(`the unlocked document's badge read ${JSON.stringify(document.lockBadge)}`);
   }
-  // The badge is beside the document's name again, and the switch is in the
-  // page's top-right row: their boxes say so, rather than the markup.
-  const lockHeading = document.headingRect;
-  const lockBadgeBox = document.lockBadgeRect;
-  const lockSwitchBox = document.lockSwitchRect;
-  if (!lockHeading || !lockBadgeBox || !lockSwitchBox) {
-    failure("the doctrine page's lock controls recorded no boxes");
+  if (JSON.stringify(document.docActions) !== JSON.stringify(["Save"])) {
+    failure(`the unlocked document's bottom row held ${JSON.stringify(document.docActions)}`);
+  }
+
+  // Open it the way a person does: one click on the trigger.
+  if (!(await click(win, '[data-testid="document-page-menu"]'))) {
+    failure("the page menu trigger could not be clicked");
+  }
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="document-page-menu-popover"]'))`,
+    "the document page menu to open",
+  );
+  const menuOpen = await sample(win);
+  checks.documentMenu = menuOpen;
+
+  if (menuOpen.pageMenu?.expanded !== "true") {
+    failure(
+      `the open menu's trigger read aria-expanded=${JSON.stringify(menuOpen.pageMenu?.expanded)}`,
+    );
+  }
+  if (menuOpen.pageMenuPopover?.role !== "menu") {
+    failure(`the page menu popover had role ${JSON.stringify(menuOpen.pageMenuPopover?.role)}`);
+  }
+  if (menuOpen.pageMenuPopover?.label !== "Document actions") {
+    failure(
+      `the page menu popover's aria-label read ${JSON.stringify(menuOpen.pageMenuPopover?.label)}`,
+    );
+  }
+  if (!(menuOpen.pageMenuPopover?.classes ?? "").split(/\s+/).includes("page-menu__popover")) {
+    failure(
+      `the page menu popover is not .page-menu__popover: ${JSON.stringify(menuOpen.pageMenuPopover?.classes)}`,
+    );
+  }
+  if (menuOpen.pageMenuPopover?.firstItemTestId !== "document-lock-toggle") {
+    failure(
+      `the page menu's first item is ${JSON.stringify(menuOpen.pageMenuPopover?.firstItemTestId)}, not the lock`,
+    );
+  }
+  const sw = menuOpen.lockSwitch;
+  if (!sw) {
+    failure("the open page menu drew no lock item");
   } else {
-    const headingMid = (lockHeading.top + lockHeading.bottom) / 2;
-    const badgeMid = (lockBadgeBox.top + lockBadgeBox.bottom) / 2;
-    if (Math.abs(headingMid - badgeMid) > 6) {
-      failure(
-        `the document badge is not on the name's line: badge mid ${badgeMid}, heading mid ${headingMid}`,
-      );
+    if (sw.role !== "menuitemcheckbox") {
+      failure(`the document's lock item had role ${JSON.stringify(sw.role)}`);
     }
-    if (lockBadgeBox.left < lockHeading.left) {
-      failure("the document badge sits left of the document's name");
+    if (sw.checked !== "false") {
+      failure(`the unlocked document's lock item read aria-checked=${JSON.stringify(sw.checked)}`);
     }
-    if (lockBadgeBox.right >= lockSwitchBox.left) {
-      failure(
-        `the badge (right ${lockBadgeBox.right}) is not left of the switch (left ${lockSwitchBox.left})`,
-      );
+    if (sw.locked !== "false") {
+      failure(`the unlocked document's lock item read data-locked=${JSON.stringify(sw.locked)}`);
     }
-    if (lockSwitchBox.left < lockHeading.right) {
-      failure(
-        `the switch (left ${lockSwitchBox.left}) is not in the page's right column (name ends ${lockHeading.right})`,
-      );
+    if (sw.label !== "Lock this document") {
+      failure(`the unlocked document's lock item was named ${JSON.stringify(sw.label)}`);
     }
-    if (Math.abs(headingMid - (lockSwitchBox.top + lockSwitchBox.bottom) / 2) > 40) {
-      failure("the switch is not on the heading's row");
+    if (sw.caption !== "Lock") {
+      failure(`the document's lock item caption read ${JSON.stringify(sw.caption)}`);
+    }
+    if (!sw.hasTrack) failure("the document's lock item drew no track");
+    if (!sw.hasThumb) failure("the document's lock item drew no thumb");
+  }
+  if (menuOpen.menuItems?.length !== 1) {
+    failure(
+      `the unlocked document's menu held ${menuOpen.menuItems?.length} item(s), expected the lock alone`,
+    );
+  }
+  if (menuOpen.lockBadge !== "Unlocked") {
+    failure(`the unlocked document's badge read ${JSON.stringify(menuOpen.lockBadge)}`);
+  }
+
+  // Geometry, measured rather than assumed: the trigger is the header's top-right
+  // control; the popover hangs under it, right-aligned, inside the page column;
+  // the badge is still on the document's name line, left of the trigger.
+  {
+    const headerBox = menuOpen.headerRect;
+    const headingBox = menuOpen.headingRect;
+    const badgeBox = menuOpen.lockBadgeRect;
+    const triggerBox = menuOpen.pageMenuTriggerRect;
+    const popoverBox = menuOpen.pageMenuPopoverRect;
+    if (!headerBox || !headingBox || !badgeBox || !triggerBox || !popoverBox) {
+      failure("the page menu or the page's lock chrome recorded no box");
+    } else {
+      const headingMid = (headingBox.top + headingBox.bottom) / 2;
+      const badgeMid = (badgeBox.top + badgeBox.bottom) / 2;
+      if (Math.abs(headingMid - badgeMid) > 6) {
+        failure(
+          `the document badge is not on the name's line: badge mid ${badgeMid}, heading mid ${headingMid}`,
+        );
+      }
+      if (badgeBox.left < headingBox.left) {
+        failure("the document badge sits left of the document's name");
+      }
+      if (badgeBox.right >= triggerBox.left) {
+        failure(
+          `the badge (right ${badgeBox.right}) is not left of the page menu (left ${triggerBox.left})`,
+        );
+      }
+      if (triggerBox.left < headingBox.right) {
+        failure(
+          `the page menu (left ${triggerBox.left}) is not in the page's right column (name ends ${headingBox.right})`,
+        );
+      }
+      if (Math.abs(headerBox.right - triggerBox.right) > 2) {
+        failure(
+          `the page menu trigger (right ${triggerBox.right}) is not at the page's right edge (${headerBox.right})`,
+        );
+      }
+      if (Math.abs(triggerBox.top - headerBox.top) > 4) {
+        failure(
+          `the page menu trigger (top ${triggerBox.top}) is not on the header's top row (${headerBox.top})`,
+        );
+      }
+      if (popoverBox.top < triggerBox.bottom) {
+        failure(
+          `the page menu popover (top ${popoverBox.top}) is not under the trigger (bottom ${triggerBox.bottom})`,
+        );
+      }
+      if (popoverBox.top - triggerBox.bottom > 14) {
+        failure(
+          `the page menu popover floats ${popoverBox.top - triggerBox.bottom}px below the trigger`,
+        );
+      }
+      if (Math.abs(popoverBox.right - triggerBox.right) > 2) {
+        failure(
+          `the page menu popover (right ${popoverBox.right}) is not right-aligned to the trigger (right ${triggerBox.right})`,
+        );
+      }
+      if (popoverBox.right > headerBox.right + 2 || popoverBox.left < headerBox.left) {
+        failure(
+          `the page menu popover [${popoverBox.left}, ${popoverBox.right}] leaves the page column [${headerBox.left}, ${headerBox.right}]`,
+        );
+      }
     }
   }
 
-  // The one gesture writes `documentSetLocked`, and the page's own read follows:
-  // locking from the header switch makes the box read-only, unlocking restores it.
+  // The trigger toggles: a second click closes the menu and takes its popover and
+  // items back out of the document; a third opens it again for the lock flow.
+  await click(win, '[data-testid="document-page-menu"]');
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="document-page-menu-popover"]')`,
+    "the document page menu to close",
+  );
+  const menuClosed = await sample(win);
+  if (menuClosed.pageMenu?.expanded !== "false") {
+    failure(
+      `the page menu trigger read aria-expanded=${JSON.stringify(menuClosed.pageMenu?.expanded)} after closing`,
+    );
+  }
+  if (menuClosed.pageMenuPopover !== null || menuClosed.lockSwitch !== null) {
+    failure("the closed page menu left its popover or its items in the document");
+  }
+  await click(win, '[data-testid="document-page-menu"]');
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="document-page-menu-popover"]'))`,
+    "the document page menu to reopen",
+  );
+
+  // One click on the lock writes the setting and leaves the menu open, so the
+  // operator watches the track move and the page behind it go read-only together.
   await click(win, '[data-testid="document-lock-toggle"]');
   await waitFor(
     win,
@@ -472,14 +689,21 @@ async function main() {
   await waitFor(
     win,
     `!document.querySelector('[data-testid="document-lock-toggle"]')?.disabled`,
-    "the document's switch to settle",
+    "the document's lock item to settle",
+  );
+  await waitFor(
+    win,
+    `document.querySelector('.note-live')?.getAttribute("data-read-only") === "true"`,
+    "the box to go read-only behind the menu",
   );
   const lockCalls = await win.webContents.executeJavaScript(
     "(window.liveEditorCalls ?? []).filter((c) => c.startsWith('documentSetLocked'))",
   );
   checks.documentLockCalls = lockCalls;
   if (lockCalls.length !== 1) {
-    failure(`the document's switch called documentSetLocked ${lockCalls.length} time(s), expected 1`);
+    failure(
+      `the document's lock item called documentSetLocked ${lockCalls.length} time(s), expected 1`,
+    );
   }
   if (lockCalls[0] !== "documentSetLocked:health:what:true") {
     failure(`locking the document sent ${JSON.stringify(lockCalls[0])}`);
@@ -489,15 +713,40 @@ async function main() {
   if (lockedDoc.lockBadge !== "Locked") {
     failure(`the locked document's badge read ${JSON.stringify(lockedDoc.lockBadge)}`);
   }
-  if (lockedDoc.lockSwitch?.checked !== "true") {
+  if (lockedDoc.lockSwitch?.checked !== "true" || lockedDoc.lockSwitch?.locked !== "true") {
     failure(
-      `the locked document's switch read aria-checked=${JSON.stringify(lockedDoc.lockSwitch?.checked)}`,
+      `the locked document's lock item read aria-checked=${JSON.stringify(lockedDoc.lockSwitch?.checked)}, data-locked=${JSON.stringify(lockedDoc.lockSwitch?.locked)}`,
+    );
+  }
+  if (lockedDoc.lockSwitch?.label !== "Unlock this document") {
+    failure(
+      `the locked document's lock item was named ${JSON.stringify(lockedDoc.lockSwitch?.label)}`,
     );
   }
   if (lockedDoc.readOnly !== true) {
-    failure("locking the document from the header switch left the box editable");
+    failure("locking the document from the menu left the box editable");
+  }
+  if (lockedDoc.docActions !== null) {
+    failure(
+      `the locked document still drew a bottom actions row: ${JSON.stringify(lockedDoc.docActions)}`,
+    );
+  }
+  // The menu stayed open, and the locked document's second item is Propose change.
+  if (lockedDoc.pageMenuPopover === null || lockedDoc.pageMenu?.expanded !== "true") {
+    failure("the page menu closed when its lock item was chosen");
+  }
+  if (lockedDoc.menuItems?.length !== 2) {
+    failure(`the locked document's menu held ${lockedDoc.menuItems?.length} item(s), expected 2`);
+  }
+  const proposeItem = lockedDoc.menuItems?.[1];
+  if (proposeItem?.testid !== "document-propose" || proposeItem?.role !== "menuitem") {
+    failure(`the locked menu's second item is ${JSON.stringify(proposeItem)}`);
+  }
+  if (proposeItem?.text !== "Propose change") {
+    failure(`the locked menu's second item read ${JSON.stringify(proposeItem?.text)}`);
   }
 
+  // Choosing the lock again unlocks in place: the same single write, the other way.
   await click(win, '[data-testid="document-lock-toggle"]');
   await waitFor(
     win,
@@ -507,17 +756,42 @@ async function main() {
   await waitFor(
     win,
     `!document.querySelector('[data-testid="document-lock-toggle"]')?.disabled`,
-    "the document's switch to settle after unlocking",
+    "the document's lock item to settle after unlocking",
   );
   const unlockCalls = await win.webContents.executeJavaScript(
     "(window.liveEditorCalls ?? []).filter((c) => c.startsWith('documentSetLocked'))",
   );
   checks.documentUnlockCalls = unlockCalls;
-  if (unlockCalls.at(-1) !== "documentSetLocked:health:what:false") {
-    failure(`unlocking the document sent ${JSON.stringify(unlockCalls.at(-1))}`);
+  if (unlockCalls.length !== 2 || unlockCalls.at(-1) !== "documentSetLocked:health:what:false") {
+    failure(`unlocking the document sent ${JSON.stringify(unlockCalls)}`);
   }
-  if ((await sample(win)).lockBadge !== "Unlocked") {
-    failure("unlocking the document from the header switch left the badge locked");
+  const unlockedDoc = await sample(win);
+  checks.documentUnlocked = unlockedDoc;
+  if (unlockedDoc.lockBadge !== "Unlocked") {
+    failure(
+      `unlocking the document from the menu left the badge ${JSON.stringify(unlockedDoc.lockBadge)}`,
+    );
+  }
+  if (unlockedDoc.readOnly !== false) {
+    failure("unlocking the document from the menu left the box read-only");
+  }
+  if (unlockedDoc.lockSwitch?.checked !== "false") {
+    failure(
+      `the unlocked document's lock item read aria-checked=${JSON.stringify(unlockedDoc.lockSwitch?.checked)}`,
+    );
+  }
+  if (unlockedDoc.menuItems?.length !== 1) {
+    failure(
+      `the unlocked document's menu held ${unlockedDoc.menuItems?.length} item(s), expected the lock alone`,
+    );
+  }
+  if (unlockedDoc.docActions === null || !unlockedDoc.docActions.includes("Save")) {
+    failure(
+      `the unlocked document's bottom row held ${JSON.stringify(unlockedDoc.docActions)}, expected Save`,
+    );
+  }
+  if (unlockedDoc.pageMenuPopover === null) {
+    failure("the page menu closed when its lock item was chosen");
   }
   // The write refreshes the vault snapshot, and the page re-reads its document
   // off that refresh. Let that settle so the round-trip is judged on the page
@@ -531,8 +805,83 @@ async function main() {
     );
   }
 
+  // Lock once more: claim 5's locked document is the one this menu locked, and
+  // its open menu is the picture that shows the lock leading the page's actions.
+  await click(win, '[data-testid="document-lock-toggle"]');
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="document-lock-toggle"]')?.getAttribute('aria-checked') === 'true'`,
+    "the document to lock again",
+  );
+  await waitFor(
+    win,
+    `!document.querySelector('[data-testid="document-lock-toggle"]')?.disabled`,
+    "the document's lock item to settle after re-locking",
+  );
+  await waitFor(
+    win,
+    `document.querySelector('.note-live')?.getAttribute("data-read-only") === "true"`,
+    "the box to go read-only after re-locking",
+  );
+  const relockCalls = await win.webContents.executeJavaScript(
+    "(window.liveEditorCalls ?? []).filter((c) => c.startsWith('documentSetLocked'))",
+  );
+  checks.documentRelockCalls = relockCalls;
+  if (relockCalls.length !== 3 || relockCalls.at(-1) !== "documentSetLocked:health:what:true") {
+    failure(`re-locking the document sent ${JSON.stringify(relockCalls)}`);
+  }
+  const menuLocked = await sample(win);
+  checks.documentMenuLocked = menuLocked;
+  if (menuLocked.lockBadge !== "Locked" || menuLocked.readOnly !== true) {
+    failure(
+      `the re-locked document read badge=${JSON.stringify(menuLocked.lockBadge)}, readOnly=${JSON.stringify(menuLocked.readOnly)}`,
+    );
+  }
+  if (menuLocked.menuItems?.[1]?.testid !== "document-propose") {
+    failure(`the re-locked menu's second item is ${JSON.stringify(menuLocked.menuItems?.[1])}`);
+  }
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const menuShot = await win.webContents.capturePage();
+  fs.writeFileSync(path.join(artifactsDir, "live-editor-menu.png"), menuShot.toPNG());
+
+  // Propose change is the locked document's action: choosing it closes the menu
+  // first (an action that opens a dialog must not leave a menu over it) and
+  // opens the dialog.
+  await click(win, '[data-testid="document-propose"]');
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('.propose-dialog[role="dialog"]'))`,
+    "the propose change dialog",
+  );
+  const proposed = await sample(win);
+  checks.proposeDialog = proposed;
+  if (proposed.proposeDialog?.role !== "dialog") {
+    failure(`the propose change dialog had role ${JSON.stringify(proposed.proposeDialog?.role)}`);
+  }
+  if (proposed.proposeDialog?.heading !== "Propose change") {
+    failure(
+      `the propose change dialog headed ${JSON.stringify(proposed.proposeDialog?.heading)}`,
+    );
+  }
+  if (proposed.pageMenuPopover !== null || proposed.menuItems !== null) {
+    failure("the page menu stayed open behind the propose change dialog");
+  }
+  // Close the dialog before moving on: the next section navigates.
+  if (!(await clickLabel(win, ".propose-dialog__actions", "Cancel"))) {
+    failure("the propose change dialog offered no Cancel control");
+  }
+  await waitFor(
+    win,
+    `!document.querySelector('.propose-dialog[role="dialog"]')`,
+    "the propose change dialog to close",
+  );
+
   // ── 5. a locked document has no writing line at all ─────────────────────
-  await win.webContents.executeJavaScript("window.liveEditorLocked = true");
+  // The document was locked from its own menu above, so arriving here after a
+  // round-trip through the review page proves the lock the menu wrote is the
+  // state the page reads back — not a harness flag set behind the UI's back.
   await win.webContents.executeJavaScript(`window.liveEditorGoto("/review/weekly")`);
   await waitFor(win, `Boolean(document.querySelector(".review-page__actions"))`, "the review page");
   await win.webContents.executeJavaScript(`window.liveEditorGoto("/vision/health/what")`);
@@ -549,10 +898,12 @@ async function main() {
   if (locked.lockBadge !== "Locked") {
     failure(`the locked document's badge read ${JSON.stringify(locked.lockBadge)}`);
   }
-  if (locked.lockSwitch?.checked !== "true") {
-    failure(
-      `the locked document's switch read aria-checked=${JSON.stringify(locked.lockSwitch?.checked)}`,
-    );
+  // A fresh visit arrives with the menu closed: its items are not furniture.
+  if (locked.pageMenu?.expanded !== "false") {
+    failure("the locked document arrived with its page menu open");
+  }
+  if (locked.lockSwitch !== null) {
+    failure("the locked document put its page menu items in the page before it was opened");
   }
   // A click on locked prose opens nothing: the engine refuses a locked write, so
   // the surface must not offer one.
@@ -681,6 +1032,9 @@ async function main() {
   console.log(`opened:    ${JSON.stringify(opened.inputValue)}`);
   console.log(`saved:     ${JSON.stringify(saves[0]?.body)}`);
   console.log(`pasted:    ${JSON.stringify(media[0])} → ${withImage.images} image(s)`);
+  console.log(
+    `menu:      ${JSON.stringify(menuLocked.menuItems?.map((item) => item.testid))} open=${menuLocked.pageMenu?.expanded}`,
+  );
   console.log(`locked:    readOnly=${locked.readOnly} writingLines=${afterClick.writingLines}`);
   console.log(`review:    ${review.blockCount} block(s), opened ${JSON.stringify(reviewOpened.inputValue)}`);
   console.log(`failures:  ${errors.length === 0 ? "none" : errors.join("; ")}`);

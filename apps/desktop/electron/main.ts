@@ -814,6 +814,11 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("signalChain:delete", (_e, id: string) =>
     vault.signalChainDelete(id),
   );
+  // A capture's picture is a file in the vault; the renderer draws it from a
+  // blob URL and never names a path. The vault refuses anything it did not mint.
+  ipcMain.handle("signalChain:readImage", (_e, relPath: string) =>
+    vault.signalChainReadImage(relPath),
+  );
 
   ipcMain.handle("library:list", () => vault.libraryListCall());
   ipcMain.handle(
