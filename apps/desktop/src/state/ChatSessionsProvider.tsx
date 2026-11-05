@@ -143,6 +143,41 @@ function nextId(): string {
 }
 
 /**
+ * The strip's tabs in drawing order: the pinned live chats first, then the open
+ * unpinned tabs.
+ *
+ * A pin is a durable Hermes flag, not a strip-local decoration: it says "keep
+ * this chat in front" on every channel. So a pinned chat is drawn as a tab even
+ * when this app never opened it this run — that is what makes the squares come
+ * back after a restart, with no second store to keep in step. The unpinned band
+ * is the provider's own `openTabs`, in the order the operator made them.
+ *
+ * The pinned band keeps tab order for the pins that already have a tab, and
+ * falls back to the list order for a pin that arrived without one (a pin made in
+ * Hermes Desktop, or on this profile while the app was shut), so the band is
+ * stable across renders instead of shuffling with activity.
+ */
+function visibleTabOrder(
+  sessions: readonly HermesSession[],
+  openTabs: readonly string[],
+): string[] {
+  const pinned = sessions.filter((s) => s.pinned && !s.archived);
+  const pinnedIds = pinned.map((s) => s.id);
+  const pinnedRank = new Map(pinnedIds.map((id, index) => [id, index]));
+  const tabRank = new Map(openTabs.map((id, index) => [id, index]));
+  const pinnedTabs = pinnedIds.slice().sort((a, b) => {
+    const aTab = tabRank.get(a);
+    const bTab = tabRank.get(b);
+    if (aTab !== undefined && bTab !== undefined) return aTab - bTab;
+    if (aTab !== undefined) return -1;
+    if (bTab !== undefined) return 1;
+    return (pinnedRank.get(a) ?? 0) - (pinnedRank.get(b) ?? 0);
+  });
+  const rest = openTabs.filter((id) => !pinnedRank.has(id));
+  return [...pinnedTabs, ...rest];
+}
+
+/**
  * The chats, their open tabs, and every live turn — one store for the whole app.
  *
  * The dock is not the only surface that needs a chat any more: the left
@@ -166,6 +201,16 @@ type ChatSessionsContextValue = {
   activeId: string | null;
   /** The chats the operator has open, in the order the tabs were made. */
   openTabs: string[];
+  /**
+   * The strip's tabs in drawing order: every pinned live chat first (a pinned
+   * chat is always a tab, even on a launch where it was never opened), then the
+   * open unpinned tabs in the order they were made. This is what the dock draws
+   * and what "the next tab" means when one closes; `openTabs` stays the explicit
+   * working set, so the two differ exactly by the pinned chats.
+   */
+  tabIds: string[];
+  /** The ids in `tabIds` that are pinned chats: the ones drawn as squares. */
+  pinnedTabIds: string[];
   activeSession: HermesSession | null;
 
   runOf: (id: string | null | undefined) => SessionRun;
@@ -276,6 +321,31 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    * either.
    */
   const tabsHydrated = useRef(false);
+
+  /**
+   * The strip the dock draws, and the pinned subset of it. Both are derived:
+   * the pins are Hermes state, the open tabs are this store's, and drawing the
+   * union is what makes a pinned chat a tab without a second persisted list.
+   */
+  const tabIds = useMemo(
+    () => visibleTabOrder(sessions, openTabs),
+    [sessions, openTabs],
+  );
+  const pinnedTabIds = useMemo(() => {
+    const pinned = new Set(
+      sessions.filter((s) => s.pinned && !s.archived).map((s) => s.id),
+    );
+    return tabIds.filter((id) => pinned.has(id));
+  }, [sessions, tabIds]);
+  /**
+   * The same order for callbacks that run before their state change commits:
+   * closing a tab, archiving the one in front or deleting the open chat all have
+   * to name the neighbour the operator can actually see.
+   */
+  const visibleTabsNow = useCallback(
+    () => visibleTabOrder(sessionsRef.current, openTabsRef.current),
+    [],
+  );
 
   const runOf = useCallback(
     (id: string | null | undefined): SessionRun =>
@@ -431,19 +501,28 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       setListError(null);
       const tabs = openTabsRef.current;
       if (!tabs.includes(id)) {
-        const active = activeIdRef.current;
-        const index = active ? tabs.indexOf(active) : -1;
-        if (index >= 0) {
-          // The clicked chat takes over the tab on screen. If that tab is
-          // mid-turn, the running chat is split into its own tab first: a live
-          // reply is never hidden by navigation, and it is exactly the parallel
-          // session the tab strip exists to show.
-          const next = tabs.slice();
-          if (active && (runs[active]?.sending ?? false)) next.push(active);
-          next[index] = id;
-          setOpenTabs(next);
-        } else {
+        const clicked = sessionsRef.current.find((s) => s.id === id) ?? null;
+        if (clicked?.pinned) {
+          // A pinned chat already has a tab in the strip even though it is not
+          // in the explicit working set. Opening it adds that tab to the set and
+          // leaves the tab in front alone: the operator asked to look at the
+          // pinned chat, not to throw the current conversation away.
           setOpenTabs([...tabs, id]);
+        } else {
+          const active = activeIdRef.current;
+          const index = active ? tabs.indexOf(active) : -1;
+          if (index >= 0) {
+            // The clicked chat takes over the tab on screen. If that tab is
+            // mid-turn, the running chat is split into its own tab first: a live
+            // reply is never hidden by navigation, and it is exactly the parallel
+            // session the tab strip exists to show.
+            const next = tabs.slice();
+            if (active && (runs[active]?.sending ?? false)) next.push(active);
+            next[index] = id;
+            setOpenTabs(next);
+          } else {
+            setOpenTabs([...tabs, id]);
+          }
         }
       }
       await loadMessages(id);
@@ -498,8 +577,19 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         // Every tab was closed before the app quit. That is a decision about the
         // working set, so the landing is the thread's blank slate — not a chat
         // resumed over the top of it, which is what made a closed chat look
-        // reopened.
+        // reopened. A pinned chat is the exception the operator made: its tab is
+        // permanent, so landing on one is not reopening what they closed.
         tabsHydrated.current = true;
+        const pinned = visibleTabOrder(listed, openTabsRef.current);
+        const first = pinned[0] ?? null;
+        if (first) {
+          setActiveId(first);
+          setSurface("thread");
+          setListError(null);
+          window.localStorage.setItem(LAST_SESSION_KEY, first);
+          await loadMessages(first);
+          return;
+        }
         setSurface("thread");
         return;
       }
@@ -591,6 +681,9 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    */
   const closeTab = useCallback(
     (id: string, emptySurface: ChatSurface = "thread") => {
+      // A pinned chat's square is the operator's chosen permanent tab: closing
+      // it is what Unpin is for, and nothing may drop it behind their back.
+      if (sessionsRef.current.find((s) => s.id === id)?.pinned) return;
       // A run left behind a closed tab would keep streaming into a chat nobody
       // can see, so closing one stops it. The frame stream continues until the
       // gateway acknowledges, which is why `closedTabs` also suppresses the
@@ -599,6 +692,11 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       if (run.sending && run.runId) void api().companionRunStop(run.runId);
       closedTabs.current.add(id);
       const current = openTabsRef.current;
+      // The neighbour is read from the drawn order, not from `openTabs`: pinned
+      // chats sit in that order without being in this state, and the tab beside
+      // the one closing is a fact about the strip.
+      const visible = visibleTabsNow();
+      const visibleIndex = visible.indexOf(id);
       const index = current.indexOf(id);
       if (index === -1) {
         setReceiptFor(id, null);
@@ -608,7 +706,12 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       setOpenTabs(next);
       setReceiptFor(id, null);
       if (activeIdRef.current !== id) return;
-      const neighbor = next[Math.min(index, next.length - 1)] ?? null;
+      const remaining = visible.filter((tab) => tab !== id);
+      const at =
+        visibleIndex === -1
+          ? remaining.length - 1
+          : Math.min(visibleIndex, remaining.length - 1);
+      const neighbor = remaining[at] ?? null;
       if (neighbor) {
         setActiveId(neighbor);
         window.localStorage.setItem(LAST_SESSION_KEY, neighbor);
@@ -619,7 +722,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         window.localStorage.removeItem(LAST_SESSION_KEY);
       }
     },
-    [runs, loadMessages, setReceiptFor],
+    [runs, loadMessages, setReceiptFor, setSurface, visibleTabsNow],
   );
 
   /**
@@ -666,7 +769,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         const wasActive = activeIdRef.current === id;
         // Read the strip and the surface before the close: this callback's own
         // state updates are not visible until the next render.
-        const remaining = openTabsRef.current.filter((tab) => tab !== id);
+        const remaining = visibleTabsNow().filter((tab) => tab !== id);
         const landingSurface = surfaceRef.current;
         // The archived chat leaves the working set, and its tab goes with it.
         // When it was the tab in front, the strip hands the screen to the tab
@@ -684,9 +787,20 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
           void newChat(id);
         }
       }
+      if (typeof patch.pinned === "boolean") {
+        // An unpin keeps the chat on screen: the square it wore as a pinned tab
+        // becomes an ordinary tab, so the operator can still see the
+        // conversation they just un-pinned (and reach Rename/Archive/Delete on
+        // it). A pin clears the same suppression, so a chat closed in an earlier
+        // frame can still be drawn again by its pin.
+        closedTabs.current.delete(id);
+        if (!patch.pinned) {
+          setOpenTabs((prev) => (prev.includes(id) ? prev : [...prev, id]));
+        }
+      }
       return true;
     },
-    [closeTab, newChat],
+    [closeTab, newChat, visibleTabsNow],
   );
 
   const deleteChat = useCallback(
@@ -720,16 +834,31 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         return pins;
       });
       if (activeIdRef.current === id) {
-        const remaining = openTabsRef.current.filter((tab) => tab !== id);
-        setActiveId(remaining[remaining.length - 1] ?? null);
-        if (remaining.length === 0) {
+        // The same neighbour rule as closing a tab: the next one to its right in
+        // the drawn strip, else the last one left. Pinned chats count — they are
+        // tabs — so deleting the chat in front never empties a strip that still
+        // has a square in it.
+        const visible = visibleTabsNow();
+        const at = visible.indexOf(id);
+        const remaining = visible.filter((tab) => tab !== id);
+        const neighbor =
+          remaining[at === -1 ? remaining.length - 1 : Math.min(at, remaining.length - 1)] ??
+          null;
+        setActiveId(neighbor);
+        if (neighbor) {
+          window.localStorage.setItem(LAST_SESSION_KEY, neighbor);
+          // A pinned chat may be the neighbour without ever having been opened
+          // this run (it is a tab because of the pin), so its transcript has to
+          // be read here the way closing a tab reads its neighbour's.
+          if (!(runs[neighbor] ?? EMPTY_RUN).messagesLoaded) void loadMessages(neighbor);
+        } else {
           setSurface("thread");
           window.localStorage.removeItem(LAST_SESSION_KEY);
         }
       }
       setReceiptFor(id, null);
     },
-    [setReceiptFor],
+    [loadMessages, runs, setReceiptFor, visibleTabsNow],
   );
 
   const setAutomationContext = useCallback((id: string, context: string) => {
@@ -1118,6 +1247,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       listError,
       activeId,
       openTabs,
+      tabIds,
+      pinnedTabIds,
       activeSession,
       runOf,
       updateRun,
@@ -1161,6 +1292,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       openChat,
       openChatInNewTab,
       openTabs,
+      pinnedTabIds,
+      tabIds,
       patchSession,
       receiptOf,
       resumeLast,

@@ -101,9 +101,18 @@ const SAMPLE = `(() => {
   };
 })()`;
 
+/**
+ * Every boot is `pinned=0`: this rig measures the remembered tab strip, and a
+ * pinned chat is always a tab in the strip (the pin is durable Hermes state, not
+ * strip memory). The fixture's default pinned chat would otherwise draw a square
+ * at every boot and the strip the rig seeds/restores would be about the pin
+ * rather than the three chats it opened. The harness page honours the switch by
+ * answering with every fixture row unpinned.
+ */
 const url = (extra = "") => {
   const separator = baseUrl.includes("?") ? "&" : "?";
-  return extra ? `${baseUrl}${separator}${extra}` : baseUrl;
+  const query = ["pinned=0", extra].filter(Boolean).join("&");
+  return `${baseUrl}${separator}${query}`;
 };
 
 const labels = (state) => state.tabs.map((tab) => tab.label).join(" | ");
