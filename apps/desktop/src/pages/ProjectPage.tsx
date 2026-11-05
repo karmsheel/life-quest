@@ -112,6 +112,18 @@ function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, Math.trunc(value)));
 }
 
+/**
+ * A linked signal's one-line summary. An attachment-only capture has no body to
+ * clip, so it names itself the way the Life-Chain row does: the file or the
+ * address. The task made from it already carries the same fallback.
+ */
+function signalSummary(signal: SignalRecord): string {
+  if (signal.body.trim()) return clip(signal.body);
+  if (signal.attachment?.kind === "link") return clip(signal.attachment.url);
+  if (signal.attachment?.kind === "image") return clip(signal.attachment.name);
+  return "";
+}
+
 function clip(value: string, max = 180): string {
   const line = value.trim().replace(/\s+/g, " ");
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
@@ -897,7 +909,7 @@ export default function ProjectPage() {
                     </strong>
                   ) : null}
                   {signal.title ? " — " : null}
-                  {clip(signal.body)}
+                  {signalSummary(signal)}
                   <span className="project-detail__signal-meta muted">
                     {formatProjectWhen(signal.createdAt)}
                   </span>

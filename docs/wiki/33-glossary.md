@@ -35,8 +35,8 @@ Overview and one for each live domain. See [Dashboard](./03-the-studio.md).
 page, a document, a log card, and so on. Cards can be added to companion chat as
 context. See [The studio](./03-the-studio.md).
 
-**Capture** — a thought logged in Life-Chain before it evaporates. Capture is not
-the studio; it is a signal that can become a task. See
+**Capture** — a thought, a picture or a link logged in Life-Chain before it evaporates.
+Capture is not the studio; it is a signal that can become a task. See
 [Life-Chain](./15-life-chain.md).
 
 **Chat thread** — one conversation with the companion, listed in the rail's

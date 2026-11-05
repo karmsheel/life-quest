@@ -119,7 +119,17 @@ export function filterSignals(
     }
     if (!q) return true;
     const title = (r.title ?? "").toLowerCase();
-    return title.includes(q) || r.body.toLowerCase().includes(q);
+    const attachmentText =
+      r.attachment?.kind === "link"
+        ? r.attachment.url.toLowerCase()
+        : r.attachment?.kind === "image"
+          ? r.attachment.name.toLowerCase()
+          : "";
+    return (
+      title.includes(q) ||
+      r.body.toLowerCase().includes(q) ||
+      attachmentText.includes(q)
+    );
   });
 }
 
@@ -154,6 +164,44 @@ export function taskFromSignalBody(body: string): { title: string; notes: string
   }
   if (title.length > 80) title = `${title.slice(0, 80)}...`;
   return { title, notes };
+}
+
+/** The host of a stored link, for a card's label. Empty when it cannot parse. */
+export function linkHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, "");
+  } catch {
+    return "";
+  }
+}
+
+/** The same 80-plus-ellipsis cap the body-derived title uses. */
+function capTaskTitle(title: string): string {
+  return title.length > 80 ? `${title.slice(0, 80)}...` : title;
+}
+
+/**
+ * What a capture becomes when it is made a task. The body leads; a capture that
+ * is only a picture or a link names itself from the attachment, so an image
+ * dropped with no words still has a handle on the Act board.
+ */
+export function taskFromSignal(signal: SignalRecord): {
+  title: string;
+  notes: string;
+} {
+  const body = signal.body.trim();
+  if (body) return taskFromSignalBody(body);
+  const attachment = signal.attachment;
+  if (attachment?.kind === "link") {
+    return {
+      title: capTaskTitle(`Link: ${linkHost(attachment.url) || attachment.url}`),
+      notes: attachment.url,
+    };
+  }
+  if (attachment?.kind === "image") {
+    return { title: capTaskTitle(`Image: ${attachment.name}`), notes: attachment.name };
+  }
+  return { title: "", notes: "" };
 }
 
 export function taskForSignal(

@@ -518,6 +518,29 @@ export type SignalType = (typeof SIGNAL_TYPES)[number];
 export const SIGNAL_SOURCES = ["manual", "automation", "notion"] as const;
 export type SignalSource = (typeof SIGNAL_SOURCES)[number];
 
+/**
+ * A picture a signal carries, stored as a file under `signal-chain/files/` and
+ * referenced from the signal's JSON by its vault-relative path. The bytes decide
+ * the kind and the extension, never the uploaded name; the name is a label.
+ */
+export type SignalImageAttachment = {
+  kind: "image";
+  /** Vault-relative, `.lifequest/signal-chain/files/<uuid>.<ext>`; never absolute. */
+  relPath: string;
+  name: string;
+  mime: ImageMimeType;
+  width: number | null;
+  height: number | null;
+};
+
+/** A web link a signal carries. Absolute http(s) only, as the page validates. */
+export type SignalLinkAttachment = {
+  kind: "link";
+  url: string;
+};
+
+export type SignalAttachment = SignalImageAttachment | SignalLinkAttachment;
+
 export type SignalRecord = {
   id: string;
   createdAt: string;
@@ -527,15 +550,37 @@ export type SignalRecord = {
   source: SignalSource;
   sourceRef: string | null;
   title: string | null;
+  /** The description. Empty is allowed only when an attachment says why. */
   body: string;
   domainSlug: string | null;
+  /** A picture or a link, or null for a plain text capture. */
+  attachment: SignalAttachment | null;
+};
+
+/**
+ * An attachment on its way in. The renderer hands over bytes for a picture — it
+ * never names a vault path — and the URL for a link; the vault mints the path.
+ */
+export type SignalImageInput = {
+  kind: "image";
+  bytes: Uint8Array;
+  name: string;
+  width?: number | null;
+  height?: number | null;
+};
+
+export type SignalLinkInput = {
+  kind: "link";
+  url: string;
 };
 
 export type SignalCreateInput = {
   type: SignalType;
+  /** May be empty only when `attachment` is present. */
   body: string;
   title?: string | null;
   domainSlug?: string | null;
+  attachment?: SignalImageInput | SignalLinkInput | null;
 };
 
 export type SignalUpdatePatch = {

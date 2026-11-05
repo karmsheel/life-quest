@@ -66,7 +66,8 @@ whose `schemaVersion` is not `1` is refused rather than half-read.
 | `.lifequest/log.jsonl` | The Life log, one JSON record per line |
 | `.lifequest/decisions/<id>.json` | Pending and decided proposals — the Decisions inbox |
 | `.lifequest/manual-decisions/<id>.json` | Decisions the operator records by hand, kept apart from the approval path |
-| `.lifequest/signal-chain/<id>.json` | Life-Chain captures |
+| `.lifequest/signal-chain/<id>.json` | Life-Chain captures, one JSON signal per file |
+| `.lifequest/signal-chain/files/<uuid>.<ext>` | Pictures attached to Life-Chain signals (PNG, JPEG, GIF or WebP, up to 8 MB each) |
 | `.lifequest/map.json` | The Life Map: years, months, events, tasks and recorded days |
 | `.lifequest/goals.json` | Goal records |
 | `.lifequest/automations.json` | The Automation shelf |
