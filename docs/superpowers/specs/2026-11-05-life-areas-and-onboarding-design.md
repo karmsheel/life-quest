@@ -1,7 +1,10 @@
 # Design: one life, five areas, and the onboarding interview
 
 **Date**: 2026-11-05
-**Status**: Draft — structure and vocabulary agreed in session; not implemented.
+**Status**: Draft — structure and vocabulary agreed in session. P0 (the one-Life
+surface: six-area seed, locked/unlocked hinge, hidden switcher, Settings → Areas
+unlock) is implemented on `feat/life-areas`; the onboarding interview (P1) and the
+suggestion rules (P2) are not.
 **Product**: LifeQuest — local-first life-management studio.
 **Depends on**: [Overview domain lens](./2026-08-31-overview-domain-lens-design.md)
 (superseded in naming only: "Overview" becomes **Life**), [local vault](./2026-07-19-local-vault-electron-design.md),
