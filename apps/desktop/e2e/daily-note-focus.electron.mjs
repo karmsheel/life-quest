@@ -21,9 +21,11 @@
  * title row and its distance from Analyze note; the sheet's own frame, panel
  * measure and centring in a 1280px window; the title's centre against the panel's
  * centre; the cross's corner; the scrim's computed backdrop-filter and its dim;
- * that the page behind is still mounted; which of the three dismissals closed
- * it; and that a sentence typed in the modal reaches the day's autosave ledger
- * on the day the page was showing, then reads back in the page editor behind.
+ * that the page behind is still mounted; that the page of paper is headed by the
+ * day's date and footed by the autosave band and the day's own acts, each in its
+ * own place; which of the three dismissals closed it; and that a sentence typed
+ * in the modal reaches the day's autosave ledger on the day the page was showing,
+ * then reads back in the page editor behind.
  *
  * ── How this rig can fail (written before the assertions) ────────────────────
  *
@@ -34,11 +36,15 @@
  *  2. Clicking it paints no sheet, or the sheet is not the shared frame: the
  *     root must carry both `data-focus-overlay` and `data-sheet-overlay`, and the
  *     panel must be `.focus-overlay__panel`.
- *  3. The panel is not the Daily Note's writing measure: not ~640px, wider than
- *     the window's narrow share, or not centred horizontally.
+ *  3. The panel is not a page of paper: not the page's own measure, narrower
+ *     than the writing column it replaced, or not centred horizontally.
  *  4. The title is not "Daily Note", not centred over the panel, or not at the
  *     panel's top; the cross is not inside the panel, not in its top-right,
  *     or not labelled "Close focus mode".
+ *  4a. The page shows two headings: the sheet's own title is still painted
+ *     above the date, so the page is headed twice instead of once.
+ *  4b. The date is not the page's one heading: not centred on the panel's true
+ *     centre, not a heading, or not above the prose it heads.
  *  5. The scrim does not blur or does not dim (no `blur(...)` in the computed
  *     backdrop-filter, an opaque background).
  *  6. Focus mode replaces the page instead of covering it: `.daily-note` or
@@ -55,7 +61,12 @@
  *     `window.dailyNoteToday`, or is written while the page shows another day.
  * 11. Closing loses the draft: the page editor behind must hold the sentence as
  *     prose or as its open writing line.
- * 12. A console error happened, or the page reached a bridge method this rig
+ * 12. The page of paper is not headed by the day, or the date sits under the
+ *     prose rather than over it.
+ * 13. The page of paper has no foot, the foot sits above the prose, the
+ *     autosave band is missing or collapses when it has no words (so the page
+ *     jumps when the notification lands), or the day's own acts are missing.
+ * 14. A console error happened, or the page reached a bridge method this rig
  *     does not model (`window.dailyNoteUnexpectedCalls`).
  */
 import fs from "node:fs";
@@ -73,8 +84,8 @@ const artifactsDir = path.join(here, "artifacts");
 const url =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/daily-note.html";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
-/** The sheet's narrow measure: 40rem at the app's 16px root. */
-const PANEL_MEASURE = 40 * 16;
+/** The page of paper's own measure: 56rem at the app's 16px root. */
+const PANEL_MEASURE = 56 * 16;
 /** The sentence typed in the modal: distinctive, and no markdown of its own. */
 const SENTENCE = "Focus mode: the note was written with the day on one surface.";
 /** The sheet's exit motion outlives the close request; the unmount is after it. */
@@ -114,13 +125,24 @@ const SAMPLE = `(() => {
   const overlay = document.querySelector("[data-focus-overlay]");
   const panel = document.querySelector(".focus-overlay__panel");
   const chrome = document.querySelector(".focus-overlay__chrome");
-  const sheetTitle = document.querySelector(".sheet-overlay__title");
+  // The sheet's title is looked up by its id, not by its class: the frame gives
+  // it the visually-hidden class instead of the title class when the title is
+  // hidden, and the id is what labels the dialog either way.
+  const sheetTitle = document.querySelector("#sheet-overlay-title");
   const close = document.querySelector(".focus-overlay__close");
   const sheetBody = document.querySelector(".focus-overlay__body");
   const note = document.querySelector(".focus-overlay__note");
   const editor = document.querySelector('[data-testid="daily-note-focus-editor"]');
   const focusInput = document.querySelector('[data-testid="daily-note-focus-editor-input"]');
   const overlayStyle = overlay ? getComputedStyle(overlay) : null;
+
+  // The page of paper: the day's date at the top, the prose in the middle, and
+  // the foot under it with the autosave band and the day's own acts.
+  const pageDate = document.querySelector('[data-testid="focus-overlay-date"]');
+  const foot = document.querySelector(".focus-overlay__foot");
+  const statusLine = document.querySelector('[data-testid="focus-overlay-status"]');
+  const focusActions = document.querySelector(".focus-overlay__actions");
+  const focusAction = focusActions ? focusActions.querySelector("button") : null;
 
   const page = document.querySelector(".daily-note");
   const rail = document.querySelector(".nav-rail");
@@ -144,6 +166,7 @@ const SAMPLE = `(() => {
   const automationsBox = box(automations);
   const analyzeBox = box(analyze);
   const panelBox = box(panel);
+  const footBox = box(foot);
 
   return {
     path: location.pathname,
@@ -225,6 +248,27 @@ const SAMPLE = `(() => {
           text: text(sheetTitle),
           inPanel: Boolean(panel && panel.contains(sheetTitle)),
           topOffset: panelBox ? round(box(sheetTitle).top - panelBox.top) : null,
+          className: sheetTitle.className,
+          // The sheet's title is the frame's accessible name, not a piece of
+          // chrome: it is hidden from view but must still be in the document,
+          // because the dialog is labelled by it.
+          hiddenFromView: Boolean(
+            sheetTitle.classList.contains("visually-hidden") ||
+              getComputedStyle(sheetTitle).position === "absolute",
+          ),
+          // A hidden title paints nothing: its box must not be a visible strip
+          // of the panel above the date. "Paints nothing" is read from the
+          // rendered box rather than from the class, so a rule that hid the
+          // title some other way would still be caught.
+          visibleBox: (() => {
+            const b = box(sheetTitle);
+            if (!b) return null;
+            const style = getComputedStyle(sheetTitle);
+            const clipped =
+              style.overflow === "hidden" &&
+              (b.width <= 2 || b.height <= 2 || style.clipPath !== "none");
+            return { ...b, clipped: clipped || b.width <= 2 || b.height <= 2 };
+          })(),
         }
       : null,
     close: close
@@ -240,7 +284,56 @@ const SAMPLE = `(() => {
     body: sheetBody
       ? { box: box(sheetBody), inPanel: Boolean(panel && panel.contains(sheetBody)) }
       : null,
+    // The page's heading: the day, centred over the prose.
+    pageDate: pageDate
+      ? {
+          box: box(pageDate),
+          centre: centre(box(pageDate)),
+          text: text(pageDate),
+          inPanel: Boolean(panel && panel.contains(pageDate)),
+          tag: pageDate.tagName,
+          // The date has to sit above the prose it heads, not under it.
+          aboveNote: Boolean(note && box(pageDate).bottom <= box(note).top + 1),
+          // It is the page's ONE heading, so it is centred on the page's true
+          // centre — the same centre the sheet's own title used to hold.
+          centredOnPanel: Boolean(
+            panelBox && Math.abs(centre(box(pageDate)).x - panelBox.left - panelBox.width / 2) <= 2,
+          ),
+          textAlign: getComputedStyle(pageDate).textAlign,
+          fontSize: getComputedStyle(pageDate).fontSize,
+        }
+      : null,
     note: note ? { box: box(note), inPanel: Boolean(panel && panel.contains(note)) } : null,
+    // The page's foot: the autosave band and the day's own acts, below the prose.
+    foot: foot
+      ? {
+          box: footBox,
+          inPanel: Boolean(panel && panel.contains(foot)),
+          belowNote: Boolean(note && footBox.top >= box(note).bottom - 1),
+        }
+      : null,
+    statusLine: statusLine
+      ? {
+          box: box(statusLine),
+          text: text(statusLine),
+          inFoot: Boolean(foot && foot.contains(statusLine)),
+          // The band is reserved whether or not it has words: a page whose foot
+          // changes height when the notification lands jumps under the hand.
+          minHeight: getComputedStyle(statusLine).minHeight,
+        }
+      : null,
+    focusActions: focusActions
+      ? {
+          present: true,
+          box: box(focusActions),
+          inFoot: Boolean(foot && foot.contains(focusActions)),
+          actionBox: box(focusAction),
+          actionTestId: focusAction ? focusAction.getAttribute("data-testid") : null,
+          actionText: focusAction ? text(focusAction) : null,
+          actionDisabled: focusAction ? Boolean(focusAction.disabled) : null,
+          actionSvg: focusAction ? Boolean(focusAction.querySelector("svg")) : null,
+        }
+      : { present: false, box: null, inFoot: false, actionBox: null, actionTestId: null },
     editor: editor
       ? {
           box: box(editor),
@@ -480,6 +573,58 @@ async function main() {
       true,
     );
 
+  /**
+   * Catch the autosave band while the write is in flight.
+   *
+   * The page's autosave is a debounce, so the "Saving…" words arrive only in
+   * the moment between the last keystroke and the write landing — a rig that
+   * sampled once after settling would read the band at rest and never see the
+   * notification at all.
+   *
+   * Two things make this catch work, and both are about the same race:
+   *
+   *  - The poll is on the band's own text, NOT a full `sample()`. `sample()`
+   *    waits on three animation frames, which is slow enough to step straight
+   *    over the window the notification lives in and read the band at rest
+   *    forever.
+   *  - The poll takes the band with it. The words vanish the instant the write
+   *    lands, so a poll that saw the words and then called `sample()` would
+   *    read the band empty by the time the sample landed — the notification
+   *    would be caught and lost in the same breath. So the poll reads the
+   *    words and the band's box together, in one call, and returns that.
+   */
+  const catchSavingBand = async () => {
+    const deadline = Date.now() + 8_000;
+    while (Date.now() < deadline) {
+      const caught = await run(
+        `(() => {
+          const el = document.querySelector('[data-testid="focus-overlay-status"]');
+          if (!el) return null;
+          const text = (el.textContent || "").trim();
+          if (!text.includes("Saving") && !text.includes("Not saved")) return null;
+          const r = el.getBoundingClientRect();
+          const round = (n) => Math.round(n * 100) / 100;
+          return {
+            text,
+            box: {
+              left: round(r.left),
+              top: round(r.top),
+              right: round(r.right),
+              bottom: round(r.bottom),
+              width: round(r.width),
+              height: round(r.height),
+            },
+            minHeight: getComputedStyle(el).minHeight,
+            inFoot: Boolean(el.closest(".focus-overlay__foot")),
+          };
+        })()`,
+      );
+      if (caught && caught.text) return caught;
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    }
+    return null;
+  };
+
   /** The day's autosave ledger, read as the write the focus editor's sentence owes. */
   const waitForFocusWrite = (today) =>
     waitFor(
@@ -559,11 +704,34 @@ async function main() {
     const reopenedForTyping = await openFocus();
     record("reopenedForTyping", reopenedForTyping);
     step("typedLineOpen", await ensureFocusLine());
+
+    // The autosave band, caught while the write is still in flight: the page's
+    // foot must show "Saving…" in a band that was already there.
+    //
+    // The catch runs CONCURRENTLY with the typing, not after it. The band shows
+    // its words only while the draft is dirty, and the dirty window is the
+    // page's autosave debounce — about 700ms. Typing first and catching after
+    // spends a third of that window on the typing's own settle, so the catch
+    // can arrive after the write landed and read the band at rest forever.
+    // Polling in parallel means the rig is already watching when the words land.
+    const savingCatch = catchSavingBand();
     step("typed", await typeInFocus(SENTENCE));
     record("typedModal", await settle());
     if (!states.typedModal.overlay) {
       throw new Error("the modal closed while the sentence was being typed into it");
     }
+
+    const savingSample = await savingCatch;
+    if (!savingSample) {
+      throw new Error(
+        "the saving notification never appeared on the page's foot while a write was in flight",
+      );
+    }
+    record("saving", savingSample);
+    step("savingBandText", savingSample.text ?? null);
+    step("savingBandHeight", savingSample.box?.height ?? null);
+    step("savingBandInFoot", savingSample.inFoot ?? null);
+    step("restBandHeight", reopenedForTyping.statusLine?.box?.height ?? null);
 
     await waitForFocusWrite(today);
     const writes = await run("(window.dailyNoteWrites ?? []).slice()");
@@ -600,14 +768,42 @@ async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
   fs.writeFileSync(reportFile, `${JSON.stringify(report, null, 2)}\n`);
 
-  const table = [["state", "page", "sheet", "body-overflow", "panel-width", "writes"]];
+  const table = [
+    [
+      "state",
+      "page",
+      "sheet",
+      "body-overflow",
+      "panel-width",
+      "date",
+      "foot",
+      "band",
+      "writes",
+    ],
+  ];
   for (const [name, state] of Object.entries(states)) {
+    // A state can be null when a catch missed its window: the summary table is
+    // printed after the report is written, so a crash here would leave a good
+    // report behind a non-zero exit — a failure the reader cannot account for.
+    if (!state) {
+      table.push([name, "—", "—", "—", "—", "—", "—", "—", "—"]);
+      continue;
+    }
     table.push([
       name,
       state.pageMounted ? "mounted" : "gone",
       state.overlay ? "open" : "closed",
       state.bodyOverflowStyle || "—",
       state.panel ? String(state.panel.box.width) : "—",
+      state.pageDate ? String(state.pageDate.text).slice(0, 22) : "—",
+      state.foot ? (state.foot.belowNote ? "below" : "above") : "—",
+      // The caught band is its own shape (text + box, taken in one poll); the
+      // sampled states carry the band under `statusLine`.
+      state.statusLine
+        ? JSON.stringify(state.statusLine.text)
+        : state.text
+          ? JSON.stringify(state.text)
+          : "—",
       String(state.writes ?? "—"),
     ]);
   }

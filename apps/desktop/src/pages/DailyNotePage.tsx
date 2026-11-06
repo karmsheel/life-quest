@@ -497,6 +497,33 @@ export default function DailyNotePage() {
   // like an empty page and then rewrite itself under the operator's hands.
   const canFocus = !loading && loadedDate === date;
 
+  /**
+   * The day's acts, as the focus page offers them.
+   *
+   * Focus mode is a page of paper, and a page of paper carries its own
+   * controls at its foot rather than in a bar belonging to the window behind
+   * it. So the same automations the page's title row offers are offered again
+   * here — the same runs, on the same draft, against the same day. The page
+   * keeps its own buttons: the two are two surfaces looking at one day, and
+   * closing one must not take the other's control away.
+   */
+  const focusActions = useMemo(
+    () =>
+      manualAutomations.map((automation) => ({
+        id: automation.id,
+        label: automation.name,
+        title:
+          automation.description ||
+          "Open a new chat with this note in context",
+        disabled: !canRunAutomation,
+        busy: runningId === automation.id,
+        busyLabel: "Opening chat…",
+        icon: <Sparkles size={14} aria-hidden />,
+        onPress: () => void onRunAutomation(automation),
+      })),
+    [canRunAutomation, manualAutomations, onRunAutomation, runningId],
+  );
+
   // The journal's own strip: days up to today, newest first. A file dated in the
   // future is on disk but is not offered — a note is written, not scheduled —
   // and a file that names no usable day is shown as unreadable, not as a link.
@@ -820,10 +847,12 @@ export default function DailyNotePage() {
         <FocusModeOverlay
           date={date}
           dateLabel={label}
+          weekday={weekday}
           value={draft}
           onChange={onDraftChange}
           status={status}
           error={error}
+          actions={focusActions}
           onClose={closeFocusMode}
         />
       ) : null}

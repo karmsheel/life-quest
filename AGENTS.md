@@ -1,6 +1,7 @@
 ## Use the CLI first
 
 - Use `./bin/agent-cli` first: prefer it over re-reading files or guessing commands. `agent-cli --help` shows the command set; `status`, `git`, `bench`, `e2e`, `check`, `flow`, `docs`, `find`, `where`, `map`, `db`, `logs`, `env` and `layout` answer the lookups past sessions repeated, and `--json` gives the same data for parsing.
+- The CLI's evidence behind it refreshes itself: `scripts/refresh-agent-cli.sh` re-mines the session corpus, re-runs the benchmark and re-runs the CLI's E2E once a week (`agent-cli-refresh.timer`), writing to `.scratch/agent-cli/`. Run `./scripts/refresh-agent-cli.sh --check` to see its state; the last run's summary is `/var/log/agent-cli-refresh/latest.md`.
 
 \- Never write unit tests after you write code.
 
