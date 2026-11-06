@@ -949,15 +949,18 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     (
       _e,
       id: string,
-      patch: { title?: string; pinned?: boolean; archived?: boolean },
+      patch: { title?: string; pinned?: boolean; archived?: boolean; revision?: number | null },
     ) =>
       companion.companionSessionPatch(
         typeof id === "string" ? id : "",
         patch && typeof patch === "object" ? patch : {},
       ),
   );
-  ipcMain.handle("companion:sessionDelete", (_e, id: string) =>
-    companion.companionSessionDelete(typeof id === "string" ? id : ""),
+  ipcMain.handle("companion:sessionDelete", (_e, id: string, options?: { revision?: number | null }) =>
+    companion.companionSessionDelete(
+      typeof id === "string" ? id : "",
+      options && typeof options === "object" ? options : {},
+    ),
   );
   ipcMain.handle("companion:modelOptions", () =>
     companion.companionModelOptions(),

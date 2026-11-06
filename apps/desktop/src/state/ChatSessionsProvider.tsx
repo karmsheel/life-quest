@@ -755,10 +755,16 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    * the write goes back to the gateway and Hermes Desktop sees the same state.
    * The row is patched from the patch itself, never from the reply: the reply
    * carries no `preview` and no `last_active` (the list query computes those).
+   *
+   * The write carries the chat's own revision counter, because the gateway
+   * fences every session mutation on it: a write with no revision is refused
+   * as a pre-fence client, and one whose revision has moved on is refused as a
+   * conflict. The number the list already read is the right one to send.
    */
   const patchSession = useCallback(
     async (id: string, patch: CompanionSessionPatch): Promise<boolean> => {
-      const result = await api().companionSessionPatch(id, patch);
+      const revision = sessionsRef.current.find((s) => s.id === id)?.revision ?? null;
+      const result = await api().companionSessionPatch(id, { ...patch, revision });
       if (!result.ok) {
         setListError(result.error);
         return false;
@@ -775,6 +781,10 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
                     typeof patch.archived === "boolean"
                       ? patch.archived
                       : s.archived,
+                  // The gateway's own receipt carries the revision it committed
+                  // to. A second write on this row must fence against that
+                  // number, not against the one the list read a moment ago.
+                  revision: result.value.revision ?? s.revision,
                 }
               : s,
           )
@@ -830,7 +840,10 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
 
   const deleteChat = useCallback(
     async (id: string) => {
-      const result = await api().companionSessionDelete(id);
+      // The gateway fences the delete the same way it fences every other
+      // session mutation, so the row's own revision goes with it.
+      const revision = sessionsRef.current.find((s) => s.id === id)?.revision ?? null;
+      const result = await api().companionSessionDelete(id, { revision });
       if (!result.ok) {
         setListError(result.error);
         return;
