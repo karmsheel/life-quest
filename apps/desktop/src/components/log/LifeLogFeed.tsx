@@ -5,6 +5,7 @@ import {
   recordVisible,
 } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
+import { displayEventType } from "@/lib/log-event-copy";
 import {
   useActiveDomain,
   useDomainLens,
@@ -19,13 +20,6 @@ function formatWhen(iso: string): string {
   } catch {
     return iso;
   }
-}
-
-/** Internal event names are data; the operator reads the same word everywhere. */
-function displayEventType(type: string): string {
-  return type.startsWith("domain.")
-    ? `area.${type.slice("domain.".length)}`
-    : type;
 }
 
 export function LifeLogFeed() {
