@@ -120,8 +120,24 @@ async function serveHealth(port) {
       return;
     }
     if (url.endsWith("/v1/capabilities")) {
+      // The app refuses a gateway that cannot list or stream chats ("Hermes is
+      // too old"), so the fake advertises exactly the feature set it needs.
       res.writeHead(200, { "content-type": "application/json" });
-      res.end("{}");
+      res.end(
+        JSON.stringify({
+          features: {
+            session_list: true,
+            session_resources: true,
+            session_chat: true,
+            session_chat_stream: true,
+          },
+        }),
+      );
+      return;
+    }
+    if (url.includes("/api/sessions")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end('{"sessions":[]}');
       return;
     }
     res.writeHead(404, { "content-type": "application/json" });
@@ -175,7 +191,15 @@ const LENS_EXPRESSION = `(() => {
           checked: b.getAttribute("aria-checked") === "true",
         }))
       : null,
-    homeTitle: (document.querySelector(".home-dashboard__title")?.textContent ?? "").trim(),
+    // The h1 carries the board's own lock badge ("Life" + "Unlocked" span); the
+    // title is its leading text node, not the badge welded onto it.
+    homeTitle: (() => {
+      const title = document.querySelector(".home-dashboard__title");
+      if (!title) return "";
+      const first = title.firstChild;
+      const text = first && first.nodeType === 3 ? first.textContent : title.textContent;
+      return (text ?? "").trim();
+    })(),
     lensBox: (() => {
       const box = document.querySelector(".window-titlebar__lens .domain-switcher");
       if (!box) return null;
@@ -218,10 +242,11 @@ async function run() {
   }
   delete process.env.ELECTRON_RUN_AS_NODE;
 
+  let win = null;
   try {
     await app.whenReady();
     const { bootForE2e } = await import("../dist-electron/main.js");
-    const win = await bootForE2e();
+    win = await bootForE2e();
 
     // ── 1. the app opens on Life, not on the persisted locked area ─────────
     await waitFor(win, `Boolean(document.querySelector(".window-titlebar__lens"))`, "the titlebar lens to mount", 120_000);
@@ -249,11 +274,16 @@ async function run() {
       lockedNames: Array.from(document.querySelectorAll(".locked-areas__name")).map((n) => (n.textContent ?? "").trim()),
       unlockButtons: Array.from(document.querySelectorAll(".locked-areas__item button")).filter((b) => (b.textContent ?? "").trim() === "Unlock").length,
       areasTitle: (document.querySelector(".settings-card__title, .settings-section__title")?.textContent ?? "").trim(),
+      overlay: Boolean(document.querySelector(".settings-overlay")),
     }))()`);
     states.settings = settings;
     check("the five locked areas are named exactly once each", JSON.stringify(settings.lockedNames) === JSON.stringify(["Health", "Mind", "Finance", "Business", "Relationships"]), settings.lockedNames);
     check("each locked area has its own Unlock control", settings.unlockButtons === 5, settings.unlockButtons);
+    check("the areas sheet is painted", settings.overlay === true, settings.overlay);
 
+    // Let the sheet's 200 ms arrival paint before the frame is captured: a
+    // screenshot taken on the same frame as the DOM read is the page beneath.
+    await sleep(700);
     const settingsBytes = await shot(win, SHOT_SETTINGS);
     check("the locked list was captured", settingsBytes > 20 * 1024, `${settingsBytes} bytes`);
 
@@ -298,6 +328,27 @@ async function run() {
     // The window keeps painting; nothing here writes to the vault after this.
     writeReport(checks.every((entry) => entry.pass));
     return checks.every((entry) => entry.pass);
+  } catch (error) {
+    // Name what the window actually held, so a failure says which surface never
+    // arrived (setup screen, welcome, a renderer error) instead of only the wait.
+    if (win) {
+      try {
+        states.diagnostic = await win.webContents.executeJavaScript(`(() => ({
+          href: location.href,
+          title: document.title,
+          rootHtml: (document.querySelector("#root")?.innerHTML ?? "").slice(0, 1200),
+          text: (document.body?.innerText ?? "").slice(0, 800),
+          hasTitlebar: Boolean(document.querySelector(".window-titlebar")),
+          hasLens: Boolean(document.querySelector(".window-titlebar__lens")),
+          hasChat: Boolean(document.querySelector(".chat-panel")),
+        }))()`);
+        const bytes = await shot(win, path.join(artifactsDir, "life-areas-diagnostic.png"));
+        states.diagnosticScreenshot = `${bytes} bytes`;
+      } catch (diagnosticError) {
+        states.diagnosticError = String(diagnosticError);
+      }
+    }
+    throw error;
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -310,6 +361,7 @@ run()
     process.exitCode = pass ? 0 : 1;
   })
   .catch((error) => {
+    if (states.diagnostic) console.error(`[life-areas] window held: ${JSON.stringify(states.diagnostic)}`);
     failures.push(error instanceof Error ? error.message : String(error));
     states.error = String(error?.stack ?? error);
     try {

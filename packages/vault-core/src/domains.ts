@@ -135,7 +135,7 @@ export async function createDomain(
     const logRes = await appendLog(paths.root, {
       domainSlug: slug,
       type: "domain.created",
-      summary: `Created domain ${name}`,
+      summary: `Created area ${name}`,
       payload: { name },
     });
     if (!logRes.ok) return logRes;
@@ -232,7 +232,7 @@ export async function archiveDomain(
     const logRes = await appendLog(paths.root, {
       domainSlug: slug,
       type: "domain.archived",
-      summary: `Archived domain ${meta.name}`,
+      summary: `Archived area ${meta.name}`,
       payload: { name: meta.name },
     });
     if (!logRes.ok) return logRes;
@@ -272,7 +272,7 @@ export async function unarchiveDomain(
       const logRes = await appendLog(paths.root, {
         domainSlug: slug,
         type: "domain.unarchived",
-        summary: `Unarchived domain ${meta.name}`,
+        summary: `Unarchived area ${meta.name}`,
         payload: { name: meta.name },
       });
       if (!logRes.ok) return logRes;
@@ -365,7 +365,7 @@ export async function deleteDomain(
     const logRes = await appendLog(paths.root, {
       domainSlug: slug,
       type: "domain.deleted",
-      summary: `Deleted domain ${name}`,
+      summary: `Deleted area ${name}`,
       payload: { name },
     });
     if (!logRes.ok) return logRes;

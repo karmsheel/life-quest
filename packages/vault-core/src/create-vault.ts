@@ -87,13 +87,17 @@ export async function createVault(
         await atomicWriteFile(paths.documentMd(seed.slug, kind), md);
       }
 
-      const logRes = await appendLog(paths.root, {
-        domainSlug: seed.slug,
-        type: "domain.created",
-        summary: `Created domain ${seed.name}`,
-        payload: { name: seed.name },
-      });
-      if (!logRes.ok) return logRes;
+      // A locked area has no log line: the Log is operator-visible, and a
+      // locked area must not be named there. Unlocking logs its own event.
+      if (!seed.locked) {
+        const logRes = await appendLog(paths.root, {
+          domainSlug: seed.slug,
+          type: "domain.created",
+          summary: `Created area ${seed.name}`,
+          payload: { name: seed.name },
+        });
+        if (!logRes.ok) return logRes;
+      }
     }
 
     return openVault(paths.root);

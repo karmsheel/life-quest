@@ -232,6 +232,17 @@ describe("one life: the locked areas unlock on the real app", () => {
         "health,mind,financial,business,relationships",
         "the five seeded areas are locked",
       );
+      // The Log is operator-visible, so seeding a LOCKED area must not name it.
+      const seedLog = await readLog(world.vaultDir);
+      assert.equal(seedLog.ok, true, seedLog.ok ? "" : seedLog.error);
+      if (!seedLog.ok) return;
+      assert.deepEqual(
+        seedLog.value
+          .filter((event) => event.type === "domain.created")
+          .map((event) => event.domainSlug),
+        ["life"],
+        "only the Life area is logged at creation",
+      );
 
       const outcome = await runDriver(world);
       assert.equal(
@@ -272,6 +283,13 @@ describe("one life: the locked areas unlock on the real app", () => {
         );
         assert.ok(recorded, `the report does not carry ${path.basename(file)}`);
       }
+
+      // ── the settings capture is its own frame, not a stale Home frame ─────
+      assert.notDeepEqual(
+        fs.readFileSync(SCREENSHOTS[0] as string),
+        fs.readFileSync(SCREENSHOTS[1] as string),
+        "the Settings screenshot is the frame under the sheet, not the sheet",
+      );
 
       // ── the vault on disk is the evidence, not the driver's self-report ───
       assert.equal(

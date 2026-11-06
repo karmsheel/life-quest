@@ -21,6 +21,13 @@ function formatWhen(iso: string): string {
   }
 }
 
+/** Internal event names are data; the operator reads the same word everywhere. */
+function displayEventType(type: string): string {
+  return type.startsWith("domain.")
+    ? `area.${type.slice("domain.".length)}`
+    : type;
+}
+
 export function LifeLogFeed() {
   const lens = useDomainLens();
   const activeDomain = useActiveDomain();
@@ -104,7 +111,7 @@ export function LifeLogFeed() {
               >
                 {formatWhen(e.createdAt)}
               </time>
-              <span className="life-log-event__type">{e.type}</span>
+              <span className="life-log-event__type">{displayEventType(e.type)}</span>
               <span className="life-log-event__summary">{e.summary}</span>
               {/* KAR-9: name the writer when the line has an actor. Old lines
                   with actor null render no name. */}
