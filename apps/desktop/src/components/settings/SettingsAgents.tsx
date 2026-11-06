@@ -1,6 +1,6 @@
 import type { AgentScope } from "@lifequest/vault-core/pure";
 import { agentIcon } from "@/lib/agent-icons";
-import { useAgents, type AgentEntry } from "@/state/AgentsProvider";
+import { useOptionalAgents, type AgentEntry } from "@/state/AgentsProvider";
 import { useVault } from "@/state/VaultProvider";
 
 /**
@@ -13,8 +13,11 @@ import { useVault } from "@/state/VaultProvider";
  * default for a domain it is hidden in.
  */
 export function SettingsAgents() {
-  const { agents, setScopes, saving, error } = useAgents();
+  const agentsContext = useOptionalAgents();
   const { snapshot } = useVault();
+  // The settings harness page mounts this panel without the agents provider.
+  if (!agentsContext) return null;
+  const { agents, setScopes, saving, error } = agentsContext;
   const domains = (snapshot?.domains ?? []).filter((domain) => !domain.meta.archivedAt);
 
   function save(next: AgentEntry[]) {
