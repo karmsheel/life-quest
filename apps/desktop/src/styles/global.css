@@ -5223,20 +5223,22 @@ a.home-mini-list__link:hover {
   max-width: 100%;
 }
 
-/* Focus mode is neither a workbench nor an inbox: it is the Daily Note's own
-   writing column, opened over the page it came from. The measure is narrower
-   than the decisions inbox's reading column on purpose — the operator asked for
-   the note and nothing around it, so the page behind is blur and mat and the
-   panel is one page of prose. The panel takes the frame's height rather than its
-   own: the box is what the operator came for, and it fills the panel under the
-   title. */
+/* Focus mode is neither a workbench nor an inbox: it is a page of notepaper,
+   opened over the page the note came from. The measure is a page's measure —
+   wider than the decisions inbox's reading column, because a day is written in
+   paragraphs and a narrow column turns each of them into a ribbon. It stops
+   at its own measure rather than filling the window, so an ultra-wide monitor
+   gets mat around the page instead of a page three thousand pixels wide, and
+   it shrinks on a narrow window where 56rem cannot fit. The panel takes the
+   frame's height rather than its own: the box is what the operator came for,
+   and it fills the panel under the title. */
 .sheet-overlay--focus {
   justify-content: center;
 }
 
 .sheet-overlay__panel--focus {
-  flex: 0 1 40rem;
-  width: 40rem;
+  flex: 0 1 56rem;
+  width: 56rem;
   max-width: 100%;
 }
 
