@@ -1260,34 +1260,42 @@ async function checkEditMode(win) {
   // 6. The ceiling is the row, and it is stored as the row. The card dragged here
   //    is the one standing at the board's own left edge, because a drag to the
   //    row's far end is only inside the window for a card that starts at its near
-  //    end — see the note on the window size above.
+  //    end — see the note on the window size above. That is the goals card: the
+  //    board's first pin, and no longer a full-row card, so it is the left-hand
+  //    end of the row rather than a row of its own.
   step("edit-drag-row");
   await drawBoard(win);
-  await enterEditMode(win, LISTING);
+  const rowPin = "sys:goal-progress";
+  await enterEditMode(win, rowPin);
   const rowGeo = await geometry(win);
-  const rowBox = await cardBox(win, LISTING);
+  const rowBox = await cardBox(win, rowPin);
   const rowTarget = rowGeo.left + rowGeo.width;
-  await dragHandle(win, LISTING, "width", rowTarget);
-  const filled = await cardBox(win, LISTING);
-  const rowWrite = await lastWrite(win, LISTING);
-  const rowSpills = await spillCount(win, LISTING);
+  await dragHandle(win, rowPin, "width", rowTarget);
+  const filled = await cardBox(win, rowPin);
+  // The board's own width can move between the two readings: a card that now
+  // owns a row can make the sheet taller, and a vertical scrollbar appearing
+  // takes a few pixels off the grid. The claim is that the card fills the row it
+  // is on, so it is made against the row as it stands AFTER the write.
+  const rowGeoAfter = await geometry(win);
+  const rowWrite = await lastWrite(win, rowPin);
+  const rowSpills = await spillCount(win, rowPin);
   check(
     "edit-drag-row",
     rowWrite.count === 1 &&
       rowWrite.pin?.span === 2 &&
       rowWrite.pin?.width === undefined &&
-      Math.abs(filled.width - rowGeo.width) <= 1 &&
+      Math.abs(filled.width - rowGeoAfter.width) <= 1 &&
       rowSpills === 0,
     `dragging ${Math.round(rowTarget)}px (the board's right edge) stored ` +
       `span=${rowWrite.pin?.span} width=${rowWrite.pin?.width} for ${Math.round(filled.width)}px ` +
-      `against the board's ${Math.round(rowGeo.width)}px, from a card at ` +
+      `against the board's ${Math.round(rowGeoAfter.width)}px, from a card at ` +
       `${Math.round(rowBox.left)}px, ${rowWrite.count} write(s), ${rowSpills} element(s) outside`,
   );
   summary.row = {
     pinSpan: rowWrite.pin?.span ?? null,
     storedWidthRem: rowWrite.pin?.width ?? null,
     width: Math.round(filled.width),
-    board: Math.round(rowGeo.width),
+    board: Math.round(rowGeoAfter.width),
     writes: rowWrite.count,
   };
 

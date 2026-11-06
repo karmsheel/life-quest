@@ -44,6 +44,7 @@ const SCENARIOS = [
   "siblings-animate",
   "auto-scroll-follows-the-pointer",
   "reduced-motion-is-still",
+  "an-empty-deadline-pin-draws-nothing",
 ];
 
 /**

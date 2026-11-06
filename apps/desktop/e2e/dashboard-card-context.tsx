@@ -33,6 +33,7 @@ import type {
   ComposedViewRunResult,
   DatabaseMeta,
   DomainRecord,
+  LifeEvent,
   PageListEntry,
   Pin,
   PinBoardRead,
@@ -88,6 +89,8 @@ type HarnessWindow = Window & {
   dashboardCardContextPinWrites?: Pin[][];
   /** Every destructive write the page made, in order. */
   dashboardCardContextDeletes?: { kind: "view" | "page"; slug: string; id: string }[];
+  /** Every map command the cards sent, in order — the Dashboard's task ticks. */
+  dashboardCardContextMapCommands?: unknown[];
   dashboardCardContextSetBoard?: (pins: Pin[], locked: boolean) => boolean;
   dashboardCardContextRender?: (generation: number) => boolean;
 };
@@ -98,6 +101,7 @@ harness.dashboardCardContextCalls = [];
 harness.dashboardCardContextUnexpectedCalls = [];
 harness.dashboardCardContextPinWrites = [];
 harness.dashboardCardContextDeletes = [];
+harness.dashboardCardContextMapCommands = [];
 
 const state: BoardState = { pins: [...SEED], locked: false };
 harness.dashboardCardContextState = state;
@@ -134,26 +138,76 @@ const SNAPSHOT: VaultSnapshot = {
   ],
   agents: [],
   decisions: [],
-  log: [],
-  map: null,
+  // Two log lines, so the recent-activity card draws its stacked rows rather
+  // than only its empty state.
+  log: [
+    {
+      id: "e-capture",
+      domainSlug: "financial",
+      type: "capture.posted",
+      summary: "Captured -85 ZAR at the corner shop",
+      payload: null,
+      createdAt: "2026-10-09T08:15:00.000Z",
+      actor: null,
+    },
+    {
+      id: "e-note",
+      domainSlug: null,
+      type: "note.added",
+      summary: "Wrote the morning page",
+      payload: null,
+      createdAt: "2026-10-09T07:05:00.000Z",
+      actor: null,
+    },
+  ],
+  // Three tasks in the two columns the card shows, so the card can be looked at
+  // with work on it and one tick can take one of them to Done.
+  map: {
+    tasks: [
+      {
+        id: "t-draft",
+        title: "Draft the ledger import",
+        notes: "",
+        column: "today",
+        links: {},
+        origin: "operator",
+      },
+      {
+        id: "t-reply",
+        title: "Reply to the accountant",
+        notes: "",
+        column: "today",
+        links: {},
+        origin: "operator",
+      },
+      {
+        id: "t-close",
+        title: "Close the books",
+        notes: "",
+        column: "this-week",
+        links: {},
+        origin: "agent",
+      },
+    ],
+  } as unknown as VaultSnapshot["map"],
   mapError: null,
   // Two open goals, so the goals card paints its count badge — the case that
-  // proves a card's name is its heading and not its whole subtree. The second
-  // carries a deadline three days out, which is what draws the deadline banner:
-  // that pin is not a card, and it is the one place the tool row is laid out
-  // differently, so it has to be reachable from a claim.
+  // proves a card's name is its heading and not its whole subtree. The first is
+  // a metric goal filed under a domain, so the card has a chip and a progress
+  // bar to draw; the second carries a deadline three days out (what draws the
+  // deadline banner) and no domain, so the unassigned chip has a card too.
   goals: [
     {
       id: "g-run",
       name: "Run 5k",
       notes: "",
       status: "open",
-      domainSlug: null,
+      domainSlug: "financial",
       deadline: null,
-      metric: null,
-      target: null,
+      metric: "runs",
+      target: 10,
       definitionOfDone: null,
-      current: null,
+      current: 4,
     },
     {
       id: "g-renew",
@@ -164,7 +218,7 @@ const SNAPSHOT: VaultSnapshot = {
       deadline: new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10),
       metric: null,
       target: null,
-      definitionOfDone: null,
+      definitionOfDone: "Passport renewed",
       current: null,
     },
   ],
@@ -306,12 +360,15 @@ function livePins(): Pin[] {
  * run reports it by name.
  */
 function bridge(): Record<string, (...args: unknown[]) => Promise<unknown>> {  return {
-    vaultGetSnapshot: async () => ok(SNAPSHOT),
+    // A fresh object per read, like the real IPC bridge hands the renderer: the
+    // page compares snapshots by identity, so returning the same mutable object
+    // would make a refresh that changed the store look like a no-op.
+    vaultGetSnapshot: async () => ok(structuredClone(SNAPSHOT)),
     vaultListRecent: async () => [],
     domainGetActive: async () => null,
     onVaultFileChanged: () => () => {},
     decisionList: async () => ok([]),
-    logList: async () => ok([]),
+    logList: async () => ok(SNAPSHOT.log),
     pageList: async () => ok(pages),
     viewList: async () => ok(views.slice()),
     viewGet: async (_slug: unknown, viewId: unknown) => {
@@ -327,6 +384,25 @@ function bridge(): Record<string, (...args: unknown[]) => Promise<unknown>> {  r
     deadlineMaybeNotify: async () => ok(null),
     deadlineDismiss: async () => ok(true),
     goalsApply: async () => ok({}),
+    /**
+     * The Dashboard's task tick. It applies the same `moveTask` the Act board's
+     * drag writes, to the harness's own store, so the card redraws from a task
+     * that really moved rather than from a command this rig recorded and ignored.
+     */
+    mapApply: async (command: unknown) => {
+      harness.dashboardCardContextMapCommands!.push(command);
+      const cmd = command as { type?: string; id?: string; column?: string };
+      const map = SNAPSHOT.map as unknown as {
+        tasks: { id: string; column: string }[];
+      } | null;
+      if (cmd?.type !== "moveTask" || !map) {
+        return { ok: false, error: `unsupported map command: ${String(cmd?.type)}` };
+      }
+      const task = map.tasks.find((entry) => entry.id === cmd.id);
+      if (!task) return { ok: false, error: `Task not found: ${String(cmd.id)}` };
+      task.column = String(cmd.column);
+      return ok(SNAPSHOT);
+    },
     pinsList: async () => ok({ pins: livePins(), locked: state.locked } satisfies PinBoardRead),
     pinsSetLocked: async (_boardSlug: unknown, locked: unknown) => {
       state.locked = locked === true;

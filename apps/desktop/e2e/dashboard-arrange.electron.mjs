@@ -844,27 +844,28 @@ async function checkActivation(win) {
   );
 
   // 5. A hold does not move the board, and a drag moves the *room* for the card
-  //    into the slot it will land in. `sys:goal-progress` is the board's first
-  //    card and a full-row one, so this is the strongest version of the claim:
-  //    the whole row it left is what the cards below move up into.
+  //    into the slot it will land in. `sys:today-week` is a full-row card and
+  //    `view:financial:v-summary` is the card in the row below it, so this is the
+  //    strongest version of the claim: the whole row it left is what the card
+  //    below moves up into.
   step("lift-leaves-a-gap");
   await beginScenario(win);
-  const restingGoal = await cardRect(win, "sys:goal-progress");
-  const restingWeekly = await cardRect(win, "view:financial:v-weekly");
-  const gapPoint = await pointOn(win, headingOf("sys:goal-progress"));
+  const restingWide = await cardRect(win, "sys:today-week");
+  const restingBelow = await cardRect(win, "view:financial:v-summary");
+  const gapPoint = await pointOn(win, headingOf("sys:today-week"));
   mouse(win, "mouseDown", gapPoint.x, gapPoint.y);
-  await waitForLift(win, "sys:goal-progress");
+  await waitForLift(win, "sys:today-week");
   // Still held, not yet moved: the card is lifted and nothing has shifted.
-  const heldWeekly = await cardRect(win, "view:financial:v-weekly");
-  const boardStoodStill = Math.abs(heldWeekly.top - restingWeekly.top) <= 2;
+  const heldBelow = await cardRect(win, "view:financial:v-summary");
+  const boardStoodStill = Math.abs(heldBelow.top - restingBelow.top) <= 2;
   // Now drag it into the row below. The card follows the pointer, and its slot
   // follows it: the layout box is the room it will land in.
-  const gapTarget = await pointIn(win, "page:financial:ledger", 0.5, 60);
+  const gapTarget = await pointIn(win, "view:financial:v-summary", 0.5, 60);
   mouse(win, "mouseMove", gapTarget.x, gapTarget.y);
   await settleFrames(win);
   const dragged = await cardMotion(win);
-  const goalNow = dragged.find((card) => card.id === "sys:goal-progress");
-  const weeklyNow = dragged.find((card) => card.id === "view:financial:v-weekly");
+  const wideNow = dragged.find((card) => card.id === "sys:today-week");
+  const belowNow = dragged.find((card) => card.id === "view:financial:v-summary");
   // A drag in progress is the one picture worth keeping: it shows the card in
   // the hand and the room the board has made for it in the same frame.
   try {
@@ -878,15 +879,15 @@ async function checkActivation(win) {
   mouse(win, "mouseUp", gapTarget.x, gapTarget.y);
   await sleep(200);
   const gapOrder = await restingOrder(win);
-  const closedUp = Boolean(weeklyNow) && Math.abs(weeklyNow.layoutTop - restingGoal.top) <= 2;
-  const roomMoved = Boolean(goalNow) && goalNow.layoutTop > restingGoal.top + 40;
-  const followsHand = Boolean(goalNow) && Math.abs(goalNow.ty) > 10;
+  const closedUp = Boolean(belowNow) && Math.abs(belowNow.layoutTop - restingWide.top) <= 2;
+  const roomMoved = Boolean(wideNow) && wideNow.layoutTop > restingWide.top + 40;
+  const followsHand = Boolean(wideNow) && Math.abs(wideNow.ty) > 10;
   check(
     "lift-leaves-a-gap",
-    boardStoodStill && closedUp && roomMoved && followsHand && gapOrder[0] !== "sys:goal-progress",
-    `held: the next card at ${heldWeekly.top} against its resting ${restingWeekly.top}; ` +
-      `dragged: the next card's slot at ${weeklyNow?.layoutTop} against the row it left (${restingGoal.top}), ` +
-      `the card's own slot at ${goalNow?.layoutTop} with a ${goalNow?.ty} translate, ` +
+    boardStoodStill && closedUp && roomMoved && followsHand && gapOrder[0] !== "sys:today-week",
+    `held: the card below at ${heldBelow.top} against its resting ${restingBelow.top}; ` +
+      `dragged: the card below's slot at ${belowNow?.layoutTop} against the row it left (${restingWide.top}), ` +
+      `the card's own slot at ${wideNow?.layoutTop} with a ${wideNow?.ty} translate, ` +
       `the board now ${JSON.stringify(gapOrder)}`,
   );
 
@@ -1570,16 +1571,44 @@ async function checkMotion(win) {
     `(() => { const s = document.querySelector('.arrange-scroll'); const r = s.getBoundingClientRect(); return { x: r.left + 120, y: r.bottom - 12 }; })()`,
   );
   mouse(win, "mouseMove", edge.x, edge.y);
-  await sleep(700);
+  // The board scrolls under a stationary hand at the renderer's frame rate, and
+  // this rig shares a loaded machine with every other Electron suite: wait until
+  // the board has really travelled rather than for one fixed sleep. Then nudge
+  // the pointer once — a hand at the edge is not frozen — so the transform is
+  // measured against the layout the last reorder actually landed.
+  {
+    const deadline = Date.now() + 6000;
+    for (;;) {
+      const now = await win.webContents.executeJavaScript(
+        "document.querySelector('.arrange-scroll').scrollTop",
+      );
+      if (now > scrollStart + 80 || Date.now() > deadline) break;
+      await sleep(60);
+    }
+  }
+  await sleep(160);
+  mouse(win, "mouseMove", edge.x + 1, edge.y);
+  await settleFrames(win);
+  await sleep(120);
   const scrollEnd = await win.webContents.executeJavaScript(
     "document.querySelector('.arrange-scroll').scrollTop",
   );
   const underPointer = await win.webContents.executeJavaScript(
     `(() => {
        const card = document.querySelector('[data-pin-id="view:financial:v-weekly"]');
-       if (!card) return false;
+       if (!card) return { present: false };
        const r = card.getBoundingClientRect();
-       return r.top <= ${Math.round(edge.y)} && r.bottom >= ${Math.round(edge.y)};
+       return {
+         present: true,
+         covers: r.top <= ${Math.round(edge.y)} && r.bottom >= ${Math.round(edge.y)},
+         top: Math.round(r.top),
+         bottom: Math.round(r.bottom),
+         height: Math.round(r.height),
+         offsetTop: card.offsetTop,
+         scrollTop: Math.round(document.querySelector('.arrange-scroll').scrollTop),
+         order: [...document.querySelectorAll('.home-dashboard__grid > .home-pin[data-pin-id]')].map((el) => el.dataset.pinId),
+         transform: getComputedStyle(card).transform,
+       };
      })()`,
   );
   mouse(win, "mouseUp", edge.x, edge.y);
@@ -1588,9 +1617,9 @@ async function checkMotion(win) {
   await sleep(250);
   check(
     "auto-scroll-follows-the-pointer",
-    scrollEnd > scrollStart && underPointer === true,
-    `the board scrolled from ${scrollStart} to ${scrollEnd} while the pointer sat at the edge; ` +
-      `the card still covers the pointer: ${underPointer}`,
+    scrollEnd > scrollStart && underPointer.present === true && underPointer.covers === true,
+    `the board scrolled from ${scrollStart} to ${scrollEnd} while the pointer sat at ${Math.round(edge.y)}; ` +
+      `the card is ${JSON.stringify(underPointer)}`,
   );
 
   // 3. Reduced motion: the same reorder, and no card is ever displaced.
@@ -1744,6 +1773,30 @@ async function main() {
   // removed would show it here.
   await renderBoard(win, DEFAULT_PINS, false);
   await settleFrames(win);
+  // A deadline pin with no pressure to show is a control with nothing to draw.
+  // It must not leave its three-dot floating in an empty cell; the pin stays on
+  // the board (and in the DOM), it just occupies nothing.
+  const emptyDeadline = await win.webContents.executeJavaScript(
+    `(() => {
+       const pin = document.querySelector('[data-pin-id="sys:deadline"]');
+       if (!pin) return { present: false };
+       return {
+         present: true,
+         banner: Boolean(pin.querySelector('.deadline-banner')),
+         display: getComputedStyle(pin).display,
+         height: Math.round(pin.getBoundingClientRect().height),
+         tools: Boolean(pin.querySelector(':scope > .home-pin__tools')),
+       };
+     })()`,
+  );
+  check(
+    "an-empty-deadline-pin-draws-nothing",
+    emptyDeadline.present === true &&
+      emptyDeadline.banner === false &&
+      emptyDeadline.display === "none" &&
+      emptyDeadline.height === 0,
+    `the empty deadline pin read ${JSON.stringify(emptyDeadline)}`,
+  );
   const defaultImage = await win.webContents.capturePage();
   fs.writeFileSync(
     path.join(artifactsDir, "dashboard-arrange-default-board.png"),

@@ -344,6 +344,76 @@ const SAMPLE = `(() => {
 })()`;
 
 /**
+ * The cards' own content, as one reading: what the goals card says about each
+ * goal (its domain and its progress), how the count sits in the heading, what a
+ * recent-activity line is made of, and what the task columns offer to press.
+ */
+const HOME_CARDS_SAMPLE = `(() => {
+  const card = (id) => document.querySelector('[data-pin-id="' + id + '"]');
+  const board = document.querySelector('.home-dashboard__grid');
+  const goals = card('sys:goal-progress');
+  const today = card('sys:today-week');
+  const log = card('sys:recent-log');
+  const heading = goals ? goals.querySelector(':scope > .home-card > .home-card__title') : null;
+  const marker = heading ? heading.querySelector(':scope > .home-pin__builtin') : null;
+  const count = heading ? heading.querySelector(':scope > .home-card__count') : null;
+  const rect = (el) => (el ? el.getBoundingClientRect() : null);
+  const headingBox = rect(heading);
+  const markerBox = rect(marker);
+  const countBox = rect(count);
+  const follows = (a, b) => Boolean(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING));
+  const text = (el) => (el ? (el.textContent || '').trim() : null);
+  const goalRows = goals
+    ? [...goals.querySelectorAll('.home-goal-row')].map((row) => ({
+        name: text(row.querySelector('.home-goal-row__name')),
+        domain: text(row.querySelector('.home-goal-row__domain')),
+        unassigned: row.querySelector('.home-goal-row__domain')?.classList.contains('is-unassigned') ?? null,
+        progress: row.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow') ?? null,
+        hasBar: Boolean(row.querySelector('.home-goal-row__bar')),
+      }))
+    : [];
+  const activityRows = log
+    ? [...log.querySelectorAll('.home-activity-row')].map((row) => ({
+        summary: text(row.querySelector('.home-activity-row__summary')),
+        type: text(row.querySelector('.home-activity-row__type')),
+        when: text(row.querySelector('.home-activity-row__when')),
+      }))
+    : [];
+  const columns = today
+    ? [...today.querySelectorAll('.home-task-cols > div')].map((column) => ({
+        heading: text(column.querySelector('.home-task-cols__head')),
+        tasks: [...column.querySelectorAll('.home-task-row')].map((row) => ({
+          title: text(row.querySelector('.home-task-row__title')),
+          checkbox: row.querySelector('input.home-task-row__check')?.getAttribute('aria-label') ?? null,
+        })),
+      }))
+    : [];
+  return {
+    boardWidth: board ? rect(board).width : null,
+    goals: {
+      present: Boolean(goals),
+      width: rect(goals)?.width ?? null,
+      rows: goalRows,
+    },
+    heading: {
+      markerBeforeCount: follows(marker, count),
+      countGapFromMarker: markerBox && countBox ? Math.round(countBox.left - markerBox.right) : null,
+      countOffsetFromStart: headingBox && countBox ? Math.round(countBox.left - headingBox.left) : null,
+      countInFirstHalf: headingBox && countBox ? countBox.left - headingBox.left < headingBox.width / 2 : null,
+    },
+    activity: {
+      present: Boolean(log),
+      width: rect(log)?.width ?? null,
+      rows: activityRows,
+    },
+    todayWeek: {
+      present: Boolean(today),
+      columns,
+    },
+  };
+})()`;
+
+/**
  * The deadline pin, which is not a card: it has no padded shell for a corner row
  * to sit in, so its controls take a line of their own above the banner. That is
  * the one place this layout differs, so it is measured rather than assumed.
@@ -1864,6 +1934,127 @@ async function main() {
       Math.abs(deadline.toolsRight - deadline.pinRight) <= 2 &&
       deadline.toolsBottom <= deadline.bannerTop,
     `the deadline pin's controls read ${JSON.stringify(deadline)}`,
+  );
+
+  step("home-cards");
+  // ── 24. the cards say what they are showing ──────────────────────────────
+  // A goal's domain and progress, a count that rides the heading rather than
+  // floating off to the menu, an activity line that reads as a line, and the
+  // task ticks. The cards the operator said were "plain" are read here as what
+  // they draw, not as what they are called.
+  await render(win, false);
+  await waitFor(
+    win,
+    `document.querySelectorAll('[data-pin-id="sys:goal-progress"] .home-goal-row').length === 2`,
+    "the goals card to draw its two rows",
+  );
+  await waitFor(
+    win,
+    `document.querySelectorAll('[data-pin-id="sys:today-week"] .home-task-row__check').length === 3`,
+    "the task card to draw its three ticks",
+  );
+  const homeCards = await win.webContents.executeJavaScript(HOME_CARDS_SAMPLE);
+  checks.homeCards = homeCards;
+  check(
+    "the-cards-say-what-they-show",
+    homeCards.boardWidth !== null &&
+      JSON.stringify(homeCards.goals.rows) ===
+        JSON.stringify([
+          {
+            name: "Run 5k",
+            domain: "Financial",
+            unassigned: false,
+            progress: "40",
+            hasBar: true,
+          },
+          {
+            name: "Renew the passport",
+            domain: "No domain",
+            unassigned: true,
+            progress: null,
+            hasBar: false,
+          },
+        ]) &&
+      // The goals card and the activity card are content-sized columns now, not
+      // full-row strips.
+      homeCards.goals.width < homeCards.boardWidth - 40 &&
+      homeCards.activity.width < homeCards.boardWidth - 40 &&
+      homeCards.heading.markerBeforeCount === true &&
+      homeCards.heading.countGapFromMarker !== null &&
+      homeCards.heading.countGapFromMarker <= 16 &&
+      homeCards.heading.countInFirstHalf === true &&
+      homeCards.activity.rows.length === 2 &&
+      homeCards.activity.rows.every((row) => row.summary && row.type && row.when) &&
+      JSON.stringify(homeCards.todayWeek.columns.map((column) => column.heading)) ===
+        JSON.stringify(["Today 2", "This week 1"]) &&
+      JSON.stringify(homeCards.todayWeek.columns[0]?.tasks.map((task) => task.title)) ===
+        JSON.stringify(["Draft the ledger import", "Reply to the accountant"]) &&
+      JSON.stringify(homeCards.todayWeek.columns[1]?.tasks.map((task) => task.title)) ===
+        JSON.stringify(["Close the books"]) &&
+      homeCards.todayWeek.columns.every((column) =>
+        column.tasks.every((task) => /^Mark ".+" done$/.test(task.checkbox ?? "")),
+      ),
+    `the cards read ${JSON.stringify(homeCards)}`,
+  );
+
+  step("task-tick");
+  // ── 25. a tick on the Dashboard finishes a task ──────────────────────────
+  // The write is the Act board's own `moveTask`: one command, to Done. The card
+  // redraws from the task store, so the task leaves the column and the heading's
+  // count follows it. Pressing on the card's control is not pressing the card
+  // itself, so the chat's context stays empty.
+  const tickBefore = await win.webContents.executeJavaScript(
+    "window.dashboardCardContextMapCommands.length",
+  );
+  await click(
+    win,
+    '[data-pin-id="sys:today-week"] .home-task-row input.home-task-row__check',
+  );
+  await waitFor(
+    win,
+    `window.dashboardCardContextMapCommands.length > ${tickBefore}`,
+    "the tick to write a map command",
+  );
+  // The redraw is asynchronous (the write, then a snapshot read): poll for it and
+  // record whatever the card settled on, so a card that did not redraw fails with
+  // its own state in the report rather than with a bare timeout.
+  const tick = await (async () => {
+    const deadline = Date.now() + 12_000;
+    for (;;) {
+      const state = await win.webContents.executeJavaScript(
+        `(() => {
+           const commands = window.dashboardCardContextMapCommands.slice(${tickBefore});
+           const headings = [...document.querySelectorAll('[data-pin-id="sys:today-week"] .home-task-cols__head')]
+             .map((el) => (el.textContent || '').trim());
+           const titles = [...document.querySelectorAll('[data-pin-id="sys:today-week"] .home-task-row__title')]
+             .map((el) => (el.textContent || '').trim());
+           const error = document.querySelector('[data-pin-id="sys:today-week"] .form-error');
+           const context = ((window.dashboardCardContextDock ?? {}).contextCards ?? []).length;
+           return {
+             commands,
+             headings,
+             titles,
+             rows: titles.length,
+             error: error ? (error.textContent || '').trim() : null,
+             context,
+           };
+         })()`,
+      );
+      if (state.rows === 2 || Date.now() > deadline) return state;
+      await sleep(120);
+    }
+  })();
+  checks.taskTick = tick;
+  check(
+    "a-task-tick-marks-it-done",
+    JSON.stringify(tick.commands) ===
+      JSON.stringify([{ type: "moveTask", id: "t-draft", column: "done" }]) &&
+      JSON.stringify(tick.headings) === JSON.stringify(["Today 1", "This week 1"]) &&
+      tick.titles.includes("Reply to the accountant") &&
+      !tick.titles.includes("Draft the ledger import") &&
+      tick.error === null &&
+      tick.context === 0,
+    `the tick wrote ${JSON.stringify(tick.commands)} and left ${JSON.stringify(tick)}`,
   );
 
   // ── nothing unexpected, nothing on fire ───────────────────────────────────

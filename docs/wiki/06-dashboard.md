@@ -135,11 +135,11 @@ watch; the board does not grade you.
 
 | Card | Shows |
 |---|---|
-| Goals (`goal-progress`) | Open goals in this lens with current value, pace and definition of done; a progress bar, not a score |
+| Goals (`goal-progress`) | Open goals in this lens with the domain each is filed under, its current value and pace, and a progress bar — a reading, not a score |
 | Deadline (`deadline`) | Deadline pressure for the lens; can be dismissed until tomorrow |
-| Today & this week (`today-week`) | Tasks scheduled for today and queued this week |
+| Today & this week (`today-week`) | Tasks scheduled for today and queued this week, each with a tick that marks it done |
 | Pending decisions (`pending-decisions`) | Pending Decisions visible in this lens, linked to the inbox |
-| Recent activity (`recent-log`) | The newest Life log entries |
+| Recent activity (`recent-log`) | The newest Life log entries, one line each: the summary, then the event type and its time |
 
 A saved **view** card draws its blocks — a number, a table, a trend — from a
 domain database and re-runs when the vault changes. A **page** card shows a page's
@@ -186,6 +186,9 @@ the contract.
   built-in card the app no longer ships leaves the board the same way.
 - The board keeps your place when cards reflow: a write that changes a card's
   height does not scroll you away from what you were reading.
+- A tick on **Today & this week** finishes the task: it writes the same move to
+  Done that the Act board's drag makes, and the task leaves the card with the
+  column's count following it.
 - A locked board is read-only *here*; the operator can still unlock it. Locking is
   not encryption and not a permission system — it is a statement that this board
   is finished for now.

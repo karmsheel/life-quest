@@ -11,6 +11,18 @@ import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { BuiltInBadge } from "@/components/home/BuiltInBadge";
 
+/**
+ * A goal's progress as a percentage of its target, clamped to the bar.
+ *
+ * The bar is a reading of the goal, not a score: it never exceeds its own width,
+ * and a goal with no target gets no bar at all.
+ */
+function goalPercent(goal: Goal): number | null {
+  if (goal.target === null || goal.target <= 0) return null;
+  const current = goal.current ?? 0;
+  return Math.max(0, Math.min(100, Math.round((current / goal.target) * 100)));
+}
+
 export function GoalProgressCard() {
   const { snapshot, refresh } = useVault();
   const lens = useDomainLens();
@@ -22,6 +34,14 @@ export function GoalProgressCard() {
     const goals = snapshot?.goals ?? [];
     return filterByLens(goals, lens).filter((g) => g.status === "open");
   }, [snapshot?.goals, lens]);
+
+  /** The domain a goal is filed under, if it still exists. */
+  function domainOf(goal: Goal) {
+    if (!goal.domainSlug) return null;
+    return (
+      (snapshot?.domains ?? []).find((d) => d.slug === goal.domainSlug) ?? null
+    );
+  }
 
   async function applyGoalUpdate(
     goalId: string,
@@ -67,7 +87,7 @@ export function GoalProgressCard() {
   }
 
   return (
-    <section className="home-card home-card--wide">
+    <section className="home-card home-goal-card">
       <h2 className="home-card__title">
         Goals
         <BuiltInBadge />
@@ -87,12 +107,39 @@ export function GoalProgressCard() {
           {openGoals.map((goal) => {
             const numeric = goal.metric !== null && goal.target !== null;
             const paceText = numeric ? formatGoalPace(goalPace(goal)) : null;
-            const busy = goalBusyId === goal.id;
+            const percent = goalPercent(goal);
+            const bus = goalBusyId === goal.id;
+            const domain = domainOf(goal);
             return (
               <li key={goal.id} className="home-mini-list__item home-goal-row">
-                <div className="home-goal-row__main">
-                  <span className="home-mini-list__link">{goal.name}</span>
-                  {numeric ? (
+                <div className="home-goal-row__head">
+                  <span className="home-goal-row__name">{goal.name}</span>
+                  <span
+                    className={
+                      domain
+                        ? "home-goal-row__domain"
+                        : "home-goal-row__domain is-unassigned"
+                    }
+                    title={
+                      domain
+                        ? `Filed under ${domain.meta.name}`
+                        : "Not filed under a domain"
+                    }
+                  >
+                    <span
+                      className="home-goal-row__domain-dot"
+                      style={
+                        domain?.meta.color
+                          ? { background: domain.meta.color }
+                          : undefined
+                      }
+                      aria-hidden
+                    />
+                    {domain?.meta.name ?? "No domain"}
+                  </span>
+                </div>
+                {numeric ? (
+                  <>
                     <div className="home-goal-row__measure muted">
                       <label className="home-goal-row__current">
                         <span className="visually-hidden">Current</span>
@@ -101,7 +148,7 @@ export function GoalProgressCard() {
                           className="home-goal-current-input"
                           defaultValue={goal.current ?? 0}
                           key={`${goal.id}-${goal.current ?? 0}`}
-                          disabled={busy}
+                          disabled={bus}
                           onBlur={(e) => onCurrentChange(goal, e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
@@ -110,25 +157,42 @@ export function GoalProgressCard() {
                           }}
                         />
                       </label>
-                      <span>/ {goal.target} {goal.metric}</span>
+                      <span>
+                        / {goal.target} {goal.metric}
+                      </span>
                       {paceText ? (
                         <span className="home-goal-row__pace">{paceText}</span>
                       ) : null}
                     </div>
-                  ) : goal.definitionOfDone ? (
-                    <label className="home-goal-row__dod">
-                      <input
-                        type="checkbox"
-                        checked={pendingDoneId === goal.id}
-                        disabled={busy}
-                        onChange={(e) => onDefinitionDone(goal, e.target.checked)}
-                      />
-                      <span className="muted">{goal.definitionOfDone}</span>
-                    </label>
-                  ) : (
-                    <span className="muted home-mini-list__meta">Open</span>
-                  )}
-                </div>
+                    {percent !== null ? (
+                      <div
+                        className="home-goal-row__bar"
+                        role="progressbar"
+                        aria-label={`${goal.name} progress`}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={percent}
+                      >
+                        <span
+                          className="home-goal-row__bar-fill"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                    ) : null}
+                  </>
+                ) : goal.definitionOfDone ? (
+                  <label className="home-goal-row__dod">
+                    <input
+                      type="checkbox"
+                      checked={pendingDoneId === goal.id}
+                      disabled={bus}
+                      onChange={(e) => onDefinitionDone(goal, e.target.checked)}
+                    />
+                    <span className="muted">{goal.definitionOfDone}</span>
+                  </label>
+                ) : (
+                  <span className="muted home-mini-list__meta">Open</span>
+                )}
               </li>
             );
           })}

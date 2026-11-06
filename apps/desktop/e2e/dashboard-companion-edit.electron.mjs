@@ -428,19 +428,22 @@ async function main() {
 
     // ── turn two: a card ABOVE the operator's eye grows ─────────────────────
     //
-    // The board is parked near its BOTTOM, with the card that will grow left well
-    // above the fold and off the screen. This is the leg the page has to own
-    // itself: nothing in view moves relative to anything else in view, so there is
-    // no relative distance for Chromium's own anchoring to hold — the whole board
-    // slips under the operator, and only a deliberate anchor catches it. The catch
-    // is visible in the offset: holding the operator's place against a card that
-    // grew above them means moving the offset by exactly the growth.
+    // The board is parked on the card just BELOW the one that will grow, so the
+    // growth happens off-screen above the operator's place: nothing in view moves
+    // relative to anything else in view, so there is no relative distance for
+    // Chromium's own anchoring to hold — the whole board slips under the
+    // operator, and only a deliberate anchor catches it. The catch is visible in
+    // the offset: holding the operator's place against a card that grew above
+    // them means moving the offset by exactly the growth.
     //
-    // Parked slightly OFF the bottom on purpose. At the very end of the board the
-    // scroll is clamped and there is nowhere to absorb the growth, so the leg would
-    // be testing the browser's limits rather than the page's anchor.
-    await win.webContents.executeJavaScript(`window.dashboardCompanionEditScrollToCard("sys:recent-log")`);
-    await win.webContents.executeJavaScript(`window.dashboardCompanionEditScrollBy(-160)`);
+    // The card after the growing one is the right place to park now that the
+    // cards above it are content-sized: parking on a LATER card (the old spot)
+    // can leave the fold inside the tall view card itself, and growing that
+    // card's own bottom is not a correction any anchor owes. There are cards
+    // under this one, so the offset has room to move.
+    await win.webContents.executeJavaScript(
+      `window.dashboardCompanionEditScrollToCard("page:financial:spend")`,
+    );
     await sleep(250);
     const beforeAbove = await win.webContents.executeJavaScript(MEASURE);
     checks.beforeAbove = beforeAbove;
