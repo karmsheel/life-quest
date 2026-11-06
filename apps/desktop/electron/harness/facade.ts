@@ -42,6 +42,12 @@ export const harnessModelOptions = () => activeHarness().modelCatalog();
  * The same signature the Hermes transport had, so its callers do not change:
  * main/vault-service pass the turn's parts and one event sink, and the facade
  * decides which companion receives them.
+ *
+ * The receipt (`attachment`) and the general attachments (`attachments`) are
+ * two different things and both ride the turn: the receipt is the one image
+ * the finance flow cites, the attachments are anything the operator attached
+ * for the agent to read. A dropped argument here loses the operator's files
+ * silently, so both are carried through.
  */
 export const harnessChatStream = (
   sessionId: string,
@@ -50,9 +56,10 @@ export const harnessChatStream = (
   onEvent: (event: ChatStreamEvent) => void,
   runtime?: CompanionRuntimeOverride | null,
   attachment?: TurnAttachment | null,
+  attachments?: TurnAttachment[] | null,
 ) =>
   activeHarness().chatStream(
-    { sessionId, input, instructionsContext, runtime, attachment },
+    { sessionId, input, instructionsContext, runtime, attachment, attachments },
     onEvent,
   );
 
@@ -60,3 +67,5 @@ export const harnessApproval = (runId: string, requestId: string, allow: boolean
   activeHarness().approve(runId, requestId, allow);
 export const harnessRunStop = (runId: string) =>
   activeHarness().stopRun(runId);
+export const harnessRunSteer = (runId: string, text: string) =>
+  activeHarness().steerRun(runId, text);

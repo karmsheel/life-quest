@@ -138,6 +138,19 @@ const lifequest = {
     ipcRenderer.invoke("receipt:attach", input) as Promise<
       Result<{ relPath: string; fileId: string; name: string; size: number }>
     >,
+  // The composer's general attachment: any media or file, stored in the vault
+  // before the turn is posted. Main answers with the id the turn names back.
+  attachmentAttach: (input: { bytes: Uint8Array; mime: string; name: string }) =>
+    ipcRenderer.invoke("attachment:attach", input) as Promise<
+      Result<{
+        id: string;
+        kind: "image" | "video" | "audio" | "file";
+        name: string;
+        size: number;
+        mime: string;
+        relPath: string;
+      }>
+    >,
   // KAR-53 ingest
   // KAR-61 finance kit
   kitInstallFinance: () =>
@@ -408,6 +421,15 @@ const lifequest = {
       reasoningEffort?: string;
     } | null;
     receiptRelPath?: string | null;
+    /** The files this turn carries, named by the id main minted for them. */
+    attachments?: Array<{
+      id: string;
+      kind: "image" | "video" | "audio" | "file";
+      name: string;
+      mime: string;
+      size: number;
+      relPath?: string;
+    }> | null;
   }) => ipcRenderer.invoke("companion:chatStream", payload),
   companionApproval: (payload: {
     runId: string;
@@ -416,6 +438,12 @@ const lifequest = {
   }) => ipcRenderer.invoke("companion:approval", payload),
   companionRunStop: (runId: string) =>
     ipcRenderer.invoke("companion:runStop", runId) as Promise<
+      { ok: true } | { ok: false; error: string }
+    >,
+  // Steer the live run: the operator's words go into the turn that is already
+  // working, instead of waiting for the next one.
+  companionRunSteer: (runId: string, text: string) =>
+    ipcRenderer.invoke("companion:runSteer", runId, text) as Promise<
       { ok: true } | { ok: false; error: string }
     >,
   companionOpenProfileFolder: () =>

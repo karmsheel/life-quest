@@ -665,6 +665,14 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
     (_e, input: { bytes: Uint8Array; mime: string; name: string }) =>
       vault.receiptAttach(input),
   );
+  // The composer's general attachment: any media or file. The original is
+  // written here, before the turn that names it is ever posted, so the agent
+  // always has bytes on disk to read.
+  ipcMain.handle(
+    "attachment:attach",
+    (_e, input: { bytes: Uint8Array; mime: string; name: string }) =>
+      vault.attachmentAttach(input),
+  );
 
   // KAR-58 books export and restore
   ipcMain.handle("db:exportBooks", (_e, slug: string) => vault.dbExportBooks(slug));
@@ -1028,6 +1036,15 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
         runtime?: CompanionRuntimeOverride | null;
         /** The pending receipt this turn carries, named by the path main minted. */
         receiptRelPath?: string | null;
+        /** The files this turn carries, named by the ids main minted. */
+        attachments?: Array<{
+          id: string;
+          kind: "image" | "video" | "audio" | "file";
+          name: string;
+          mime: string;
+          size: number;
+          relPath?: string;
+        }> | null;
       },
     ) => {
       return vault.companionChatStreamWithPack(
@@ -1048,6 +1065,7 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
         },
         payload.runtime ?? null,
         payload.receiptRelPath ?? null,
+        payload.attachments ?? null,
       );
     },
   );
@@ -1058,6 +1076,14 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   );
   ipcMain.handle("companion:runStop", (_e, runId: string) =>
     harness.harnessRunStop(runId),
+  );
+  // Steer the live run: the operator's words go into the turn that is already
+  // working, so a thought that arrives halfway through is not lost. It goes
+  // through the harness, because steering is a companion capability and not a
+  // Hermes one: the built-in companion steers its own agent, the external one
+  // asks its gateway.
+  ipcMain.handle("companion:runSteer", (_e, runId: string, text: string) =>
+    harness.harnessRunSteer(runId, text),
   );
   ipcMain.handle("companion:openProfileFolder", () =>
     companion.companionOpenProfileFolder(),

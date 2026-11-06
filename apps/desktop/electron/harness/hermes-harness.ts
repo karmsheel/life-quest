@@ -34,10 +34,18 @@ export const hermesHarness: ProfiledHarness = {
       onEvent,
       request.runtime ?? null,
       request.attachment ?? null,
+      // The general attachments ride the turn as pictures (images) and as
+      // named paths (everything else). They are the 7th argument, and dropping
+      // it here would lose the operator's files without a word.
+      request.attachments ?? null,
     ),
   approve: (runId, requestId, allow) =>
     companion.companionApproval(runId, requestId, allow),
   stopRun: (runId) => companion.companionRunStop(runId),
+  // The gateway's own steer endpoint. `companionRunSteer` already speaks the
+  // three answers the gateway gives (accepted / run gone / run finished) in
+  // the operator's own words, so the harness only carries the text across.
+  steerRun: (runId, text) => companion.companionRunSteer(runId, text),
 
   // Profile management: Hermes-only, and the reason the seam keeps a second
   // interface instead of putting these on every companion.

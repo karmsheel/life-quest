@@ -472,11 +472,40 @@ const runs = new Map<string, LiveRun>();
 
 const approvals = new Map<string, (allow: boolean) => void>();
 
+/**
+ * One attachment as an inline image part, or null when it cannot be inlined.
+ *
+ * Only an image with a data URL travels in the content array. A video, an
+ * audio file or a plain document has no inline form the providers decode, so
+ * it travels as a named path in the instructions instead - `buildInstructions`
+ * writes that line from the same attachment list.
+ */
 function imageOf(attachment?: TurnAttachment | null): ImageContent | null {
-  if (!attachment) return null;
+  if (!attachment?.dataUrl) return null;
   const match = /^data:([^;]+);base64,(.*)$/.exec(attachment.dataUrl);
   if (!match) return null;
   return { type: "image", mimeType: match[1]!, data: match[2]! };
+}
+
+/**
+ * Every image this turn carries, receipt first.
+ *
+ * The library's `prompt(input, images)` takes a LIST of images and sends them
+ * as one content array, so several pictures ride one turn. The receipt is an
+ * image like any other and comes first, the way the wire puts it first.
+ */
+function imagesOf(
+  receipt?: TurnAttachment | null,
+  attachments?: TurnAttachment[] | null,
+): ImageContent[] {
+  const images: ImageContent[] = [];
+  const receiptImage = imageOf(receipt);
+  if (receiptImage) images.push(receiptImage);
+  for (const attachment of attachments ?? []) {
+    const image = imageOf(attachment);
+    if (image) images.push(image);
+  }
+  return images;
 }
 
 async function agentFor(
@@ -521,9 +550,21 @@ async function chatStream(
   if (!session) session = await createPiSession("");
 
   const tools = await vaultTools();
-  const systemPrompt = request.instructionsContext
+  // The attachments have to reach the PROMPT, not only the content array: an
+  // image the model can see and a file the agent must read with its own tools
+  // are described by the same instruction block, and only the image is
+  // inlined. The receipt keeps its own wording on its own field.
+  const instructionsContext = request.instructionsContext
+    ? {
+        ...request.instructionsContext,
+        ...(request.attachments && request.attachments.length > 0
+          ? { attachments: request.attachments }
+          : {}),
+      }
+    : null;
+  const systemPrompt = instructionsContext
     ? (await import("../companion-client.ts")).buildInstructions(
-        request.instructionsContext,
+        instructionsContext,
         "pi",
       )
     : "";
@@ -557,9 +598,12 @@ async function chatStream(
     }
   });
 
-  const image = imageOf(request.attachment);
+  // Every picture this turn carries rides ONE content array: the receipt
+  // first, then the general attachments. The library takes a list of images
+  // and sends them alongside the text, so several pictures ride one turn.
+  const images = imagesOf(request.attachment, request.attachments);
   try {
-    await agent.prompt(request.input, image ? [image] : undefined);
+    await agent.prompt(request.input, images.length > 0 ? images : undefined);
   } catch (e) {
     failure = e instanceof Error ? e.message : String(e);
   } finally {
@@ -604,6 +648,44 @@ async function stopRun(runId: string): Promise<HarnessAck> {
   if (!run) return { ok: true };
   run.aborted = true;
   run.agent.abort();
+  return { ok: true };
+}
+
+/**
+ * Steer the turn that is already running.
+ *
+ * The agent loop takes the guidance through `Agent.steer`, which queues a
+ * message for the loop to pick up at its next drain point - the same moment
+ * the tool calls of the current assistant turn have finished. Nothing is
+ * cancelled, so the work already done is kept and the agent simply changes
+ * course.
+ *
+ * The queued message is the library's own user message shape: `steer` takes
+ * an `AgentMessage`, and the library builds one from a plain string exactly
+ * this way (`normalizePromptInput`), so this is the same message a normal
+ * turn sends - the operator's words as the user, with a timestamp.
+ *
+ * A run that is gone is the same dead end the gateway reports as 404: the
+ * operator's words went nowhere, and they are told so in the same sentence
+ * they would have seen from Hermes.
+ */
+async function steerRun(runId: string, text: string): Promise<HarnessAck> {
+  const run = runs.get(runId);
+  if (!run) {
+    return {
+      ok: false,
+      error: "That turn is no longer running, so the message could not be steered into it.",
+    };
+  }
+  const steerText = typeof text === "string" ? text.trim() : "";
+  if (!steerText) {
+    return { ok: false, error: "Type what you want the agent to do instead." };
+  }
+  run.agent.steer({
+    role: "user",
+    content: [{ type: "text", text: steerText }],
+    timestamp: Date.now(),
+  });
   return { ok: true };
 }
 
@@ -691,6 +773,7 @@ export const piHarness: AgentHarness = {
   chatStream,
   approve,
   stopRun,
+  steerRun,
 };
 
 // Re-exported for the Settings surface, which needs to write an endpoint without

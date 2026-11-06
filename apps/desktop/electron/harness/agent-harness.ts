@@ -61,6 +61,23 @@ export interface AgentHarness {
   ): Promise<HarnessAck>;
   approve(runId: string, requestId: string, allow: boolean): Promise<HarnessAck>;
   stopRun(runId: string): Promise<HarnessAck>;
+  /**
+   * Steer a turn that is already running.
+   *
+   * Steering is guidance, not a new turn: the companion is part-way through
+   * answering, and the operator's words are handed to it mid-flight so it can
+   * change course ("actually, keep it to the second page") without the work it
+   * has already done being thrown away by a cancel. The companion reads the
+   * steer at its next step.
+   *
+   * It is a COMPANION capability and not a Hermes one on purpose. Hermes happens
+   * to expose a steer endpoint on its gateway, but that is the gateway's
+   * transport, not the shape of the thing: the built-in companion queues the
+   * same guidance into its own agent loop. Putting it on the interface is what
+   * lets the operator steer whichever companion they picked, and it keeps the
+   * renderer from having to know which transport is underneath.
+   */
+  steerRun(runId: string, text: string): Promise<HarnessAck>;
 }
 
 /**

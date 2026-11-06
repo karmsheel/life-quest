@@ -496,7 +496,12 @@ async function main() {
     );
     check(
       "stopping does not fake the end of the turn",
-      stream.afterStopClick.state === "stop" && stream.afterStopClick.fieldDisabled === true,
+      // The control is the witness: it stays in its stop state while the
+      // gateway is still working. The composer itself stays OPEN during a
+      // turn — the operator must be able to steer the running turn or line
+      // the next message up behind it — so the field's own state says
+      // nothing about whether the turn ended.
+      stream.afterStopClick.state === "stop",
       `control while the gateway is still working: ${JSON.stringify(stream.afterStopClick)}`,
     );
     check(

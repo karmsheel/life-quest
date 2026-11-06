@@ -29,9 +29,11 @@ import {
   MoreVertical,
   PanelLeftClose,
   PanelRightClose,
+  Paperclip,
   Pencil,
   Pin,
   PinOff,
+  Plus,
   Radio,
   SquarePen,
   X,
@@ -216,6 +218,10 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const error = run.error ?? chat.listError;
   const draft = sessionId ? chat.draftOf(sessionId) : "";
   const receipt = chat.receiptOf(sessionId);
+  /** The files waiting to ride this chat's next turn. */
+  const attachments = sessionId ? chat.attachmentsOf(sessionId) : [];
+  /** The messages lined up behind the turn that is running now. */
+  const queued = sessionId ? chat.queuedMessages(sessionId) : [];
   const requestIdRef = useRef(requestedSessionId);
   requestIdRef.current = requestedSessionId;
   /** The store as of this render, for effects that must not re-bind per delta. */
@@ -227,6 +233,13 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * show and the path to name on the turn — the bytes never come back.
    */
   const receiptInputRef = useRef<HTMLInputElement | null>(null);
+  /**
+   * The general attachment picker: the plus sign inside the field's own
+   * top-right corner. It takes any media or file the operator picks — a
+   * picture, a clip, a recording, a document — because a prompt is not only
+   * words and the composer used to be able to carry nothing else.
+   */
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   /**
    * The bubble whose text was last copied, and whether the clipboard took it.
    * `ok: false` is shown for a moment too: a copy control that silently does
@@ -307,6 +320,54 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     }
     return null;
   }
+
+  /**
+   * Take one file into the composer as an attachment.
+   *
+   * Main stores the original and answers with what the turn has to name; the
+   * bytes never come back to the renderer, so the chip's picture is made here
+   * from the operator's own file.
+   *
+   * A refusal leaves the attachments exactly as they were: an attach that
+   * failed must not take the files that worked with it.
+   */
+  async function attachFile(file: File) {
+    if (!sessionId) return;
+    chat.reportError(null);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const result = await api().attachmentAttach({
+        bytes,
+        mime: file.type,
+        name: file.name,
+      });
+      if (!result.ok) {
+        chat.reportError(result.error);
+        return;
+      }
+      chat.addAttachmentFor(sessionId, {
+        id: result.value.id,
+        kind: result.value.kind,
+        name: result.value.name,
+        size: result.value.size,
+        mime: result.value.mime,
+        relPath: result.value.relPath,
+        ...(result.value.kind === "image"
+          ? { previewUrl: URL.createObjectURL(file) }
+          : {}),
+      });
+    } catch (err) {
+      chat.reportError(
+        err instanceof Error ? err.message : "Could not attach that file",
+      );
+    }
+  }
+
+  /** Take one attachment off the composer. */
+  function removeAttachment(id: string) {
+    if (!sessionId) return;
+    chat.removeAttachmentFor(sessionId, id);
+  }
   /**
    * The composer's model and thinking pills. The catalog is the gateway's own
    * inventory for this profile, so the menu cannot offer a model the gateway
@@ -355,7 +416,8 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    */
   const { ask, dialog, asking } = useConfirm(open);
   /** Drives the inline control: the arrow needs text, the stop square needs a run. */
-  const sendable = draft.trim().length > 0 || receipt !== null;
+  const sendable =
+    draft.trim().length > 0 || receipt !== null || attachments.length > 0;
   const controlVisible = sending || sendable;
   /** The chain's records, as the vault returned them: newest first. */
   const [signals, setSignals] = useState<SignalRecord[]>([]);
@@ -776,6 +838,38 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   }
 
   /**
+   * Steer the live turn: the operator's words go into the run that is already
+   * working, so a thought that arrives halfway through a long answer is not
+   * lost waiting for the next turn.
+   *
+   * The draft is cleared only when the steer lands. A refusal (the run ended
+   * between the keypress and the call) must leave the words in the field, or
+   * the operator loses them.
+   */
+  async function steerMessage(text: string) {
+    if (!sessionId || !text) return;
+    const ok = await chat.steerMessage(sessionId, text);
+    if (ok) setDraft("");
+  }
+
+  /**
+   * Line the message up behind the turn that is running. The queue lives in the
+   * store, so it survives a chat switch: the operator can write the next
+   * question now and find it waiting when the answer lands.
+   */
+  function queueMessage(text: string) {
+    if (!sessionId || !text) return;
+    chat.queueMessage(sessionId, text);
+    setDraft("");
+  }
+
+  /** Take one queued message off the queue. */
+  function removeQueued(queuedId: string) {
+    if (!sessionId) return;
+    chat.removeQueued(sessionId, queuedId);
+  }
+
+  /**
    * An automation, a review or a saved question hands the dock a chat outside
    * the panel's own navigation.
    *
@@ -965,20 +1059,36 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (sending || (!draft.trim() && !receipt)) return;
+    if (sending || (!draft.trim() && !receipt && attachments.length === 0)) return;
     const text = draft.trim();
     setDraft("");
     await sendMessage(text);
   }
 
+  /**
+   * The keyboard: Enter is a newline, Ctrl/Cmd+Enter sends.
+   *
+   * A prompt is a paragraph, not a telegram, so the key the operator reaches for
+   * while writing has to break the line rather than throw the thought away
+   * half-written. Sending moved to the modified key for the same reason: the
+   * send is now a decision, taken on purpose, and the plain key stays the
+   * writing key it has always been in every other editor.
+   *
+   * While a turn is running, the same modified key steers: the words go into
+   * the live turn instead of starting a second one, which is the answer to
+   * "the user is unable to steer the prompt once it's already sent".
+   */
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (sending || (!draft.trim() && !receipt)) return;
-      const text = draft.trim();
-      setDraft("");
-      void sendMessage(text);
+    if (e.key !== "Enter" || e.shiftKey || !(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    if (sending) {
+      void steerMessage(draft.trim());
+      return;
     }
+    if (!draft.trim() && !receipt && attachments.length === 0) return;
+    const text = draft.trim();
+    setDraft("");
+    void sendMessage(text);
   }
 
   /**
@@ -1756,6 +1866,15 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     >
                       <span className="chat-panel__message-role">
                         {m.role === "user" ? "You" : companionName}
+                        {m.steer ? (
+                          <span
+                            className="chat-panel__message-steer"
+                            data-testid="chat-steer-bubble"
+                            title="Steered into the turn that was running"
+                          >
+                            steered
+                          </span>
+                        ) : null}
                       </span>
                       <div className="chat-panel__message-content">
                         {m.receipt ? (
@@ -1955,10 +2074,19 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   if (e.dataTransfer.types.includes("Files")) e.preventDefault();
                 }}
                 onDrop={(e) => {
-                  const file = imageFrom(e.dataTransfer.files);
-                  if (!file) return;
+                  // A dropped picture is a receipt, the way a pasted one is:
+                  // the finance flow reads that chip. Anything else is a
+                  // general attachment, so a clip or a document dropped on the
+                  // composer is not silently ignored.
+                  const files = Array.from(e.dataTransfer?.files ?? []);
+                  if (files.length === 0) return;
                   e.preventDefault();
-                  void attachReceipt(file);
+                  const picture = imageFrom(e.dataTransfer.files);
+                  if (picture) {
+                    void attachReceipt(picture);
+                    return;
+                  }
+                  for (const file of files) void attachFile(file);
                 }}
               >
                 {/*
@@ -2000,6 +2128,55 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     ))}
                   </div>
                 ) : null}
+                {/*
+                  The attachments waiting to ride this chat's next turn, above the
+                  field: one chip per file, each with its own remove. They ride
+                  the field rather than a panel of their own, because they belong
+                  to the message being written — removing one is a small edit to
+                  that message, not a change to the chat.
+                */}
+                {attachments.length > 0 ? (
+                  <div
+                    className="chat-panel__attachments"
+                    data-testid="chat-attachments"
+                  >
+                    {attachments.map((attachment) => (
+                      <div
+                        key={attachment.id}
+                        className="chat-panel__attachment"
+                        data-testid="chat-attachment"
+                        data-attachment-kind={attachment.kind}
+                      >
+                        {attachment.kind === "image" && attachment.previewUrl ? (
+                          <img
+                            className="chat-panel__attachment-thumb"
+                            src={attachment.previewUrl}
+                            alt=""
+                          />
+                        ) : (
+                          <span className="chat-panel__attachment-icon" aria-hidden>
+                            <Paperclip size={12} />
+                          </span>
+                        )}
+                        <span className="chat-panel__attachment-name">
+                          {attachment.name}
+                        </span>
+                        <span className="chat-panel__receipt-size">
+                          {formatReceiptSize(attachment.size)}
+                        </span>
+                        <button
+                          type="button"
+                          className="chat-panel__attachment-remove"
+                          aria-label={`Remove ${attachment.name}`}
+                          title={`Remove ${attachment.name}`}
+                          onClick={() => removeAttachment(attachment.id)}
+                        >
+                          <X size={12} aria-hidden />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 <div
                   className={
                     controlVisible
@@ -2010,23 +2187,48 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   <textarea
                     ref={inputRef}
                     className="chat-panel__composer-input"
-                    placeholder={`Message ${companionName}…`}
+                    placeholder={
+                      sending
+                        ? "Steer the turn that is running…"
+                        : `Message ${companionName}…`
+                    }
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={onKeyDown}
                     onPaste={(e) => {
                       // A pasted screenshot is a receipt too: take the image and
-                      // leave any pasted text to the field's own handling.
+                      // leave any pasted text to the field's own handling. The
+                      // paste is a receipt and not a general attachment
+                      // because a receipt is what the finance flow reads: the
+                      // file is cited as a transaction's source, and that is a
+                      // different promise from "the agent may look at this".
                       const file = imageFrom(e.clipboardData?.files ?? null);
                       if (!file) return;
                       e.preventDefault();
                       void attachReceipt(file);
                     }}
-                    disabled={sending || !sessionId}
+                    disabled={!sessionId}
                     rows={2}
                     aria-label={`Message ${companionName}`}
                     autoComplete="off"
                   />
+                  {/*
+                    The attach control, inside the field's own top-right corner:
+                    the gesture belongs to the box the operator is writing in,
+                    and the top corner is the one the send control does not
+                    spend. It takes any media or file the operator picks.
+                  */}
+                  <button
+                    type="button"
+                    className="chat-panel__composer-plus"
+                    data-testid="chat-attachment-button"
+                    disabled={!sessionId}
+                    aria-label="Attach a file"
+                    title="Attach a file"
+                    onClick={() => attachmentInputRef.current?.click()}
+                  >
+                    <Plus size={14} aria-hidden />
+                  </button>
                   {controlVisible ? (
                     <button
                       type={sending ? "button" : "submit"}
@@ -2045,6 +2247,65 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     </button>
                   ) : null}
                 </div>
+                {/*
+                  While a turn is running, the composer stays open and gains the
+                  two ways a thought can follow the one that is already working:
+                  steer it into the live turn, or line it up to run next. The
+                  line only appears while there is something to say — an idle
+                  composer under a live turn is just the field.
+                */}
+                {sending && draft.trim() ? (
+                  <div className="chat-panel__composer-live">
+                    <button
+                      type="button"
+                      className="chat-panel__composer-live-action"
+                      data-testid="chat-steer-button"
+                      disabled={!runId}
+                      aria-label="Steer this turn"
+                      title="Send this to the turn that is running now"
+                      onClick={() => void steerMessage(draft.trim())}
+                    >
+                      Steer
+                    </button>
+                    <button
+                      type="button"
+                      className="chat-panel__composer-live-action"
+                      data-testid="chat-queue-button"
+                      aria-label="Queue this message"
+                      title="Run this message after the turn that is running now"
+                      onClick={() => queueMessage(draft.trim())}
+                    >
+                      Queue
+                    </button>
+                  </div>
+                ) : null}
+                {queued.length > 0 ? (
+                  <ul
+                    className="chat-panel__queued"
+                    data-testid="chat-queued"
+                    aria-label="Queued messages"
+                  >
+                    {queued.map((entry) => (
+                      <li
+                        key={entry.id}
+                        className="chat-panel__queued-row"
+                        data-testid="chat-queued-row"
+                      >
+                        <span className="chat-panel__queued-label">Queued</span>
+                        <span className="chat-panel__queued-text">{entry.text}</span>
+                        <button
+                          type="button"
+                          className="chat-panel__queued-remove"
+                          aria-label="Remove queued message"
+                          title="Remove queued message"
+                          onClick={() => removeQueued(entry.id)}
+                        >
+                          <X size={12} aria-hidden />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 <div className="chat-panel__composer-runtime">
                   {/*
                     The composer's footer line, under the field: the attach control
@@ -2055,6 +2316,21 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     riding beside it.
                   */}
                   <div className="chat-panel__receipts">
+                    <input
+                      ref={attachmentInputRef}
+                      className="chat-panel__attachment-input"
+                      type="file"
+                      multiple
+                      aria-label="Attach a file"
+                      data-testid="chat-attachment-input"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files ?? []);
+                        for (const file of files) void attachFile(file);
+                        // Clear the picker so choosing the same file twice still
+                        // fires a change event.
+                        e.target.value = "";
+                      }}
+                    />
                     <input
                       ref={receiptInputRef}
                       className="chat-panel__receipt-input"

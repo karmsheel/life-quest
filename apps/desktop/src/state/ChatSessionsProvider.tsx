@@ -47,6 +47,8 @@ export type ChatMessage = {
   at?: number;
   /** The receipt this turn carried, as the thread remembers it after sending. */
   receipt?: { name: string; size: number };
+  /** True when this guidance was injected into the live turn instead of starting one. */
+  steer?: boolean;
 };
 
 /** The receipt waiting in the composer for one chat's next turn. */
@@ -55,6 +57,27 @@ export type ChatReceipt = {
   name: string;
   size: number;
   previewUrl: string;
+};
+
+/**
+ * One file waiting in the composer. The renderer keeps only the metadata and a
+ * local preview; the bytes stay in main, addressed by `relPath`.
+ */
+export type ChatAttachment = {
+  id: string;
+  kind: "image" | "video" | "audio" | "file";
+  name: string;
+  size: number;
+  mime: string;
+  previewUrl?: string;
+  relPath?: string;
+};
+
+/** A message the operator lined up to send after the current turn settles. */
+export type QueuedMessage = {
+  id: string;
+  text: string;
+  at: number;
 };
 
 /** Everything one chat's turn is doing, kept per session so parallel runs stay apart. */
@@ -222,8 +245,15 @@ type ChatSessionsContextValue = {
 
   draftOf: (id: string | null | undefined) => string;
   setDraftFor: (id: string, text: string) => void;
+  /** The single finance receipt waiting for one chat's next turn. */
   receiptOf: (id: string | null | undefined) => ChatReceipt | null;
+  /** Replace (or drop) that single receipt, preserving its chip semantics. */
   setReceiptFor: (id: string, receipt: ChatReceipt | null) => void;
+  /** Every general attachment waiting on one chat's next turn, in composer order. */
+  attachmentsOf: (id: string | null | undefined) => ChatAttachment[];
+  setAttachmentsFor: (id: string, attachments: ChatAttachment[]) => void;
+  addAttachmentFor: (id: string, attachment: ChatAttachment) => void;
+  removeAttachmentFor: (id: string, attachmentId: string) => void;
 
   runtimePins: Record<string, CompanionRuntimeOverride>;
   updateRuntimePick: (id: string, pick: CompanionRuntimeOverride) => void;
@@ -255,6 +285,14 @@ type ChatSessionsContextValue = {
   patchSession: (id: string, patch: CompanionSessionPatch) => Promise<boolean>;
   deleteChat: (id: string) => Promise<void>;
   sendMessage: (id: string, text: string) => Promise<void>;
+  /** Inject guidance into the live turn without starting another turn. */
+  steerMessage: (id: string, text: string) => Promise<boolean>;
+  /** Line a message up to send when the current turn settles. */
+  queueMessage: (id: string, text: string) => void;
+  queuedMessages: (id: string | null | undefined) => QueuedMessage[];
+  removeQueued: (id: string, queuedId: string) => void;
+  /** Send the head of one chat's queue, if that chat is idle. */
+  drainQueue: (id: string) => Promise<void>;
   stopRun: (id: string) => Promise<void>;
   approve: (id: string, runId: string, requestId: string, allow: boolean) => void;
   dismissError: (id?: string | null) => void;
@@ -288,6 +326,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   const [runs, setRuns] = useState<Record<string, SessionRun>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [receipts, setReceipts] = useState<Record<string, ChatReceipt | null>>({});
+  const [attachments, setAttachments] = useState<Record<string, ChatAttachment[]>>({});
+  const [queues, setQueues] = useState<Record<string, QueuedMessage[]>>({});
   const [runtimePins, setRuntimePins] = useState<Record<string, CompanionRuntimeOverride>>(
     () => readStoredRuntimePins(),
   );
@@ -318,6 +358,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   /** The automation material each chat was opened with, carried by every turn. */
   const automationContexts = useRef(new Map<string, string>());
   const receiptPreviews = useRef(new Map<string, string>());
+  const attachmentPreviews = useRef(new Map<string, Set<string>>());
   const resuming = useRef(false);
   /**
    * The blank-chat request in flight, shared by every gesture that asks for one.
@@ -383,6 +424,67 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
 
   const setDraftFor = useCallback((id: string, text: string) => {
     setDrafts((prev) => (prev[id] === text ? prev : { ...prev, [id]: text }));
+  }, []);
+
+  const attachmentsOf = useCallback(
+    (id: string | null | undefined) => (id ? attachments[id] ?? [] : []),
+    [attachments],
+  );
+
+  const setAttachmentsFor = useCallback((id: string, next: ChatAttachment[]) => {
+    const previews = attachmentPreviews.current.get(id) ?? new Set<string>();
+    for (const item of attachments[id] ?? []) {
+      if (item.previewUrl && !next.some((kept) => kept.id === item.id)) {
+        URL.revokeObjectURL(item.previewUrl);
+        previews.delete(item.previewUrl);
+      }
+    }
+    for (const item of next) {
+      if (item.previewUrl) previews.add(item.previewUrl);
+    }
+    if (previews.size > 0) attachmentPreviews.current.set(id, previews);
+    else attachmentPreviews.current.delete(id);
+    setAttachments((prev) => {
+      const current = prev[id] ?? [];
+      if (
+        current.length === next.length &&
+        current.every((item, index) => item === next[index])
+      ) {
+        return prev;
+      }
+      return { ...prev, [id]: next };
+    });
+  }, [attachments]);
+
+  const addAttachmentFor = useCallback(
+    (id: string, attachment: ChatAttachment) => {
+      setAttachments((prev) => ({
+        ...prev,
+        [id]: [...(prev[id] ?? []), attachment],
+      }));
+      if (attachment.previewUrl) {
+        const previews = attachmentPreviews.current.get(id) ?? new Set<string>();
+        previews.add(attachment.previewUrl);
+        attachmentPreviews.current.set(id, previews);
+      }
+    },
+    [],
+  );
+
+  const removeAttachmentFor = useCallback((id: string, attachmentId: string) => {
+    setAttachments((prev) => {
+      const current = prev[id] ?? [];
+      const removed = current.find((item) => item.id === attachmentId);
+      const next = current.filter((item) => item.id !== attachmentId);
+      if (removed?.previewUrl) {
+        URL.revokeObjectURL(removed.previewUrl);
+        const previews = attachmentPreviews.current.get(id);
+        previews?.delete(removed.previewUrl);
+        if (previews?.size === 0) attachmentPreviews.current.delete(id);
+      }
+      if (next.length === current.length) return prev;
+      return { ...prev, [id]: next };
+    });
   }, []);
 
   const receiptOf = useCallback(
@@ -940,11 +1042,14 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    * out, so a chat that is switched away from still shows what was asked when
    * the operator comes back.
    */
+  const sendMessageRef = useRef<(id: string, text: string) => Promise<void>>(async () => {});
+  const settleTurnRef = useRef<(id: string) => void>(() => {});
   const sendMessage = useCallback(
-    async (id: string, text: string) => {
+    async (id: string, text: string): Promise<void> => {
       const content = text.trim();
-      const attached = receipts[id] ?? null;
-      if ((!content && !attached) || !id) return;
+      const attached = attachments[id] ?? [];
+      const receipt = receipts[id] ?? null;
+      if ((!content && attached.length === 0 && !receipt) || !id) return;
       const run = runs[id] ?? EMPTY_RUN;
       if (run.sending) return;
 
@@ -962,7 +1067,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
             role: "user",
             content,
             at: sentAt,
-            ...(attached ? { receipt: { name: attached.name, size: attached.size } } : {}),
+            ...(receipt ? { receipt: { name: receipt.name, size: receipt.size } } : {}),
           },
         ],
         sending: true,
@@ -975,11 +1080,12 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       }));
       assistantIds.current.delete(id);
       setReceiptFor(id, null);
+      setAttachmentsFor(id, []);
       setSessions((prev) =>
         prev
           .map((s) => {
             if (s.id !== id) return s;
-            const preview = content || attached?.name || "";
+            const preview = content || receipt?.name || attached[0]?.name || "";
             return {
               ...s,
               preview: s.preview?.trim() ? s.preview : preview,
@@ -1008,7 +1114,14 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
             vaultOpen: Boolean(snapshot),
           },
           runtime: pick,
-          receiptRelPath: attached?.relPath ?? null,
+          receiptRelPath: receipt?.relPath ?? null,
+          attachments: attached.map(({ id, kind, name, mime, size }) => ({
+            id,
+            kind,
+            name,
+            mime,
+            size,
+          })),
         });
         if ("ok" in result && result.ok === false) {
           updateRun(id, (current) => ({ ...current, error: result.error }));
@@ -1024,7 +1137,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         if (listed.ok) setSessions(listed.value);
         // The stream's terminal frame clears `sending` when it arrives; if the
         // transport settled without one, the composer must not stay stopped.
-        updateRun(id, (current) => (current.sending ? { ...current, sending: false } : current));
+        settleTurnRef.current(id);
       }
     },
     [
@@ -1032,14 +1145,155 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       boardLocked,
       boardSlug,
       pageContext,
+      attachments,
       receipts,
       refresh,
+      setAttachmentsFor,
       setReceiptFor,
       snapshot,
       updateRun,
       runs,
     ],
   );
+
+  /**
+   * Inject guidance into the turn that is already running.
+   *
+   * A steer is not another turn: the gateway folds the text into the live run,
+   * so the reply continues in the same bubble stream. The bubble is still
+   * recorded locally because the operator must see what they changed the agent's
+   * course with.
+   */
+  const steerMessage = useCallback(
+    async (id: string, text: string): Promise<boolean> => {
+      const content = text.trim();
+      if (!content || !id) return false;
+      const run = runs[id] ?? EMPTY_RUN;
+      if (!run.sending || !run.runId) {
+        updateRun(id, (current) => ({
+          ...current,
+          error: "There is no live turn to steer",
+        }));
+        return false;
+      }
+      try {
+        const result = await api().companionRunSteer(run.runId, content);
+        if (!result.ok) {
+          updateRun(id, (current) => ({ ...current, error: result.error }));
+          return false;
+        }
+        updateRun(id, (current) => ({
+          ...current,
+          messages: [
+            ...current.messages,
+            {
+              id: nextId(),
+              role: "user",
+              content,
+              at: Date.now(),
+              steer: true,
+            },
+          ],
+        }));
+        return true;
+      } catch (err) {
+        updateRun(id, (current) => ({
+          ...current,
+          error: err instanceof Error ? err.message : "Failed to steer Hermes",
+        }));
+        return false;
+      }
+    },
+    [runs, updateRun],
+  );
+
+  const queuedMessages = useCallback(
+    (id: string | null | undefined) => (id ? queues[id] ?? [] : []),
+    [queues],
+  );
+
+  const queueMessage = useCallback((id: string, text: string) => {
+    const content = text.trim();
+    if (!id || !content) return;
+    const queued: QueuedMessage = { id: nextId(), text: content, at: Date.now() };
+    setQueues((prev) => ({ ...prev, [id]: [...(prev[id] ?? []), queued] }));
+  }, []);
+
+  const removeQueued = useCallback((id: string, queuedId: string) => {
+    setQueues((prev) => {
+      const current = prev[id];
+      if (!current) return prev;
+      const next = current.filter((queued) => queued.id !== queuedId);
+      if (next.length === current.length) return prev;
+      return { ...prev, [id]: next };
+    });
+  }, []);
+
+  /**
+   * Send the head of one chat's queue, but only when that chat is idle.
+   *
+   * The head is removed before the request goes out. A failed turn keeps the
+   * operator's text rather than silently losing it: it is put back at the front
+   * of the queue, and the next settled turn tries it again.
+   *
+   * A drain in flight claims its head by id, so a second settle frame cannot
+   * send the same entry twice, and the chat is marked busy before the turn
+   * starts so a third settle cannot overtake it.
+   */
+  const draining = useRef(new Set<string>());
+  const drainQueue = useCallback(
+    async (id: string): Promise<void> => {
+      if (draining.current.has(id)) return;
+      // A turn that is still sending owns the composer: the queue waits for its
+      // terminal frame rather than racing it.
+      if ((runs[id] ?? EMPTY_RUN).sending) return;
+      const head = queues[id]?.[0];
+      if (!head) return;
+      draining.current.add(id);
+      setQueues((prev) => {
+        const current = prev[id];
+        if (!current || current[0]?.id !== head.id) return prev;
+        return { ...prev, [id]: current.slice(1) };
+      });
+      try {
+        await sendMessageRef.current(id, head.text);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to send queued message";
+        updateRun(id, (current) => ({ ...current, error: message }));
+        setQueues((prev) => {
+          const current = prev[id] ?? [];
+          if (current.some((queued) => queued.id === head.id)) return prev;
+          return { ...prev, [id]: [head, ...current] };
+        });
+      } finally {
+        draining.current.delete(id);
+      }
+    },
+    [queues, runs, updateRun],
+  );
+
+  // The drain and the turn reach each other through refs, so neither callback's
+  // initializer has to name the other.
+  sendMessageRef.current = sendMessage;
+
+  /**
+   * Drain a queue once a turn has settled.
+   *
+   * The terminal stream frame normally does this. This fallback covers a turn
+   * whose transport ended without a terminal frame: the composer was reopened,
+   * so the queue must not sit there until the next unrelated frame arrives.
+   */
+  const settleTurn = useCallback(
+    (id: string) => {
+      updateRun(id, (current) =>
+        current.sending ? { ...current, sending: false } : current,
+      );
+      void drainQueue(id);
+    },
+    [drainQueue, updateRun],
+  );
+
+  settleTurnRef.current = settleTurn;
 
   const stopRun = useCallback(async (id: string) => {
     const run = runs[id] ?? EMPTY_RUN;
@@ -1184,6 +1438,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         }));
         closedTabs.current.delete(id);
         if (isActive()) setLivePinIds([]);
+        void drainQueue(id);
         return;
       }
       if (evt.type === "run.incomplete") {
@@ -1197,10 +1452,12 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         }));
         closedTabs.current.delete(id);
         if (isActive()) setLivePinIds([]);
+        void drainQueue(id);
         return;
       }
       if (evt.type === "error") {
         updateRun(id, (current) => ({ ...current, sending: false, error: evt.message }));
+        void drainQueue(id);
         return;
       }
       if (evt.type === "run.completed") {
@@ -1212,6 +1469,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         closedTabs.current.delete(id);
         if (isActive()) setLivePinIds([]);
         void refresh();
+        void drainQueue(id);
         return;
       }
       /**
@@ -1251,7 +1509,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       }
     });
     return off;
-  }, [ensureTab, refresh, setLivePinIds, updateRun]);
+  }, [drainQueue, ensureTab, refresh, setLivePinIds, updateRun]);
 
   /**
    * The dock's landing is the provider's to arrange: the sidebar lists chats
@@ -1291,6 +1549,10 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     return () => {
       for (const url of receiptPreviews.current.values()) URL.revokeObjectURL(url);
       receiptPreviews.current.clear();
+      for (const urls of attachmentPreviews.current.values()) {
+        for (const url of urls) URL.revokeObjectURL(url);
+      }
+      attachmentPreviews.current.clear();
     };
   }, []);
 
@@ -1322,6 +1584,10 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       setDraftFor,
       receiptOf,
       setReceiptFor,
+      attachmentsOf,
+      setAttachmentsFor,
+      addAttachmentFor,
+      removeAttachmentFor,
       runtimePins,
       updateRuntimePick,
       archivedView,
@@ -1335,6 +1601,11 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       patchSession,
       deleteChat,
       sendMessage,
+      steerMessage,
+      queueMessage,
+      queuedMessages,
+      removeQueued,
+      drainQueue,
       stopRun,
       approve,
       dismissError,
@@ -1345,15 +1616,20 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     }),
     [
       approve,
+      addAttachmentFor,
+      attachmentsOf,
       activeId,
       activeSession,
       closeTab,
       deleteChat,
       dismissError,
+      drainQueue,
       draftOf,
       reportError,
       listError,
       loadSessions,
+      queueMessage,
+      queuedMessages,
       newChat,
       openChat,
       openChatInNewTab,
@@ -1373,9 +1649,13 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       setAutomationContext,
       setDraftFor,
       reportError,
+      removeAttachmentFor,
+      removeQueued,
       setErrorFor,
+      setAttachmentsFor,
       setReceiptFor,
       setToolsOpen,
+      steerMessage,
       stopRun,
       updateRun,
       updateRuntimePick,

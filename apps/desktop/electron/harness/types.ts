@@ -71,8 +71,22 @@ export type ChatTurnRequest = {
   instructionsContext: CompanionInstructionsInput;
   /** The composer's per-turn model and thinking pick, if any. */
   runtime?: CompanionRuntimeOverride | null;
-  /** A receipt already taken from the pending slot by main. */
+  /**
+   * A receipt already taken from the pending slot by main.
+   *
+   * The receipt is the one image the finance flow cites; it has its own
+   * instruction wording and rides the turn as a picture.
+   */
   attachment?: TurnAttachment | null;
+  /**
+   * The general attachments this turn carries, already resolved by main.
+   *
+   * A LIST, and not the receipt above: an attachment is anything the operator
+   * attached for the agent to read, and there may be several. The receipt is
+   * one of them when it is an image, but it arrives on its own argument and
+   * keeps its own wording. Both ride the turn.
+   */
+  attachments?: TurnAttachment[] | null;
 };
 
 /** Rename, pin or archive one chat. */

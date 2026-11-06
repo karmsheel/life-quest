@@ -499,6 +499,15 @@ type LifequestApi = {
     runtime?: CompanionRuntimeOverride | null;
     /** The receipt waiting in main for this turn, by the path main minted. */
     receiptRelPath?: string | null;
+    /** The files this turn carries, named by the ids main minted. */
+    attachments?: Array<{
+      id: string;
+      kind: "image" | "video" | "audio" | "file";
+      name: string;
+      mime: string;
+      size: number;
+      relPath?: string;
+    }> | null;
   }) => Promise<Result<true> | { ok: true } | { ok: false; error: string }>;
   companionApproval: (payload: {
     runId: string;
@@ -507,6 +516,14 @@ type LifequestApi = {
   }) => Promise<{ ok: true } | { ok: false; error: string }>;
   companionRunStop: (
     runId: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
+   * Steer the live run: the words go into the turn that is already working,
+   * rather than waiting for the next one.
+   */
+  companionRunSteer: (
+    runId: string,
+    text: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   companionOpenProfileFolder: () => Promise<void>;
   companionGetFiling: () => Promise<boolean>;
@@ -706,6 +723,25 @@ type LifequestApi = {
     mime: string;
     name: string;
   }) => Promise<Result<{ relPath: string; fileId: string; name: string; size: number }>>;
+  /**
+   * Stores one general attachment — any image, clip, recording or document — in
+   * the vault and leaves it waiting in main for the next turn. The bytes never
+   * come back through this bridge.
+   */
+  attachmentAttach: (input: {
+    bytes: Uint8Array;
+    mime: string;
+    name: string;
+  }) => Promise<
+    Result<{
+      id: string;
+      kind: "image" | "video" | "audio" | "file";
+      name: string;
+      size: number;
+      mime: string;
+      relPath: string;
+    }>
+  >;
   // KAR-58 books export and restore
   dbExportBooks: (slug: string) => Promise<Result<DomainBooksExport>>;
   dbRestoreBooks: (
