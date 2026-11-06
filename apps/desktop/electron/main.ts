@@ -1096,6 +1096,15 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("note:window", (_e, start: string, end: string) =>
     vault.dailyNoteWindow(start, end),
   );
+  // The companion's brief: the card reads it here, and the operator's only verb
+  // is dismissing one item. Writing is the companion's `set_companion_brief`
+  // tool and has no IPC path, so the renderer cannot author the brief.
+  ipcMain.handle("brief:get", () => vault.companionBriefGet());
+  ipcMain.handle(
+    "brief:dismiss",
+    (_e, itemId: string, reason: Parameters<typeof vault.companionBriefDismiss>[1]) =>
+      vault.companionBriefDismiss(itemId, reason),
+  );
   // Ideal State: any number of titled, freeform documents under Define.
   ipcMain.handle("ideal-state:list", () => vault.idealStateList());
   ipcMain.handle("ideal-state:get", (_e, id: string) =>

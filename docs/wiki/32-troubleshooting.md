@@ -264,7 +264,7 @@ than warning wrongly — silence is not a verdict.
 
 | Location | What is in it |
 |---|---|
-| Your vault folder | Everything you own: `.lifequest/` (settings, log, Decisions, map, goals, automations, signals, about, reviews, cache), `domains/<slug>/` (doctrine, media, SQLite, pages, pins, views), `documents/`, `projects/`, `reviews/`, `planning/`, `notes/daily/`, `notes/ideal-state/` |
+| Your vault folder | Everything you own: `.lifequest/` (settings, log, Decisions, map, goals, automations, signals, about, the companion brief, reviews, cache), `domains/<slug>/` (doctrine, media, SQLite, pages, pins, views), `documents/`, `projects/`, `reviews/`, `planning/`, `notes/daily/`, `notes/ideal-state/` |
 | `%APPDATA%\LifeQuest` (the app's `userData`) | `recent.json` (recent vaults, active lens per vault, companion profile choice), `secrets.json` (OS-encrypted API keys), `pairing-secrets/connected-agent-secrets.json` (the companion bearer and agent/invite hashes), `companion-filing.json` |
 | The Hermes home (`%LOCALAPPDATA%\hermes` or `~/.hermes`) | Hermes' own install, profiles, `config.yaml`, `SOUL.md`, `.env`; the app's profile is `profiles/lifequest` (or the root home for `default`) |
 | `%TEMP%\LifeQuest-update` | A downloaded installer, until launched or discarded |

@@ -2,9 +2,10 @@
 
 The Dashboard is the home pin board: a page of live cards for one lens. There is
 one board for **Overview** and one for each live domain. It is the surface you
-land on and the surface you arrange: goals, deadline pressure, the week, pending
-Decisions, recent activity, saved database views and your own pages, all as cards
-you can move, resize, lock and hand to the companion.
+land on and the surface you arrange: the companion's brief, goals,
+deadline pressure, the week, pending Decisions, recent activity, saved database
+views and your own pages, all as cards you can move, resize, lock and hand to
+the companion.
 
 The board is a control the operator can open and close, not a fixed layout. A new
 board starts with the built-in cards, and everything on it is meant to be
@@ -41,6 +42,42 @@ watch; the board does not grade you.
 3. Read the cards. Built-in cards update themselves when the vault changes, when
    a Decision is approved, and when the local day turns over.
 
+### Read the companion brief
+
+The **Companion brief** card is the companion's reading of your day: the durable
+things a daily note would otherwise lose — a decision, a watch, a commitment, a
+pattern — written as a short typed list rather than a paragraph. It is placed
+first on the board so it is the thing you read before the rest. The companion
+writes it, not you: there is no editor on the card.
+
+Every item has a **kind**, the line you read, and the **why** beneath it in
+muted text:
+
+| Kind | What it is |
+|---|---|
+| Watch | Something to keep an eye on: body, money, a risk |
+| Prompt | A question to think about, not a task to do |
+| Ahead | A deadline, renewal or follow-up falling due |
+| Commitment | You said you would do X and have not |
+| Pattern | The same thing said, done or avoided N times |
+
+- Items are in **priority order**, most important first.
+- An item that passes its expiry is drawn **faded with the word expired** for
+  one day, then leaves. The companion sees it in its dismissal log as
+  `expired-unseen`, so it learns what nobody acted on.
+- **Dismiss** settles one item — **Done**, **Not useful**, **Wrong** or
+  **Later** — and removes it from the card, leaving every other item in place.
+  Only you dismiss items; the companion cannot clear its own mistakes.
+- If the companion has not refreshed the brief in more than 48 hours, a quiet
+  **Not refreshed since <date>** line says so.
+- An empty brief still shows the card and says **Nothing on the brief today**, so
+  silence is visible rather than hidden.
+
+The brief is one record for the whole studio, not one per lens. Items can name a
+domain, in which case they show only on that board's lens; vault-wide items show
+everywhere. It is never task-work and it is not your own writing — if you want
+to keep something the companion says, put it in a page or a note.
+
 ### Add a card
 
 1. Choose the lens whose board you want to change.
@@ -48,8 +85,8 @@ watch; the board does not grade you.
    and when every available card is already pinned.)
 3. The **Add pin** row opens. Press a built-in card name, a page title, or a saved
    view title to pin it. Built-in cards appear under their internal names —
-   `goal-progress`, `deadline`, `today-week`, `pending-decisions`, `recent-log` —
-   because they are app furniture, not records.
+   `goal-progress`, `deadline`, `today-week`, `pending-decisions`, `recent-log`,
+   `companion-brief` — because they are app furniture, not records.
 4. The card appears on the board. Press **Hide pin board** to close the row.
 
 ### Move a card
@@ -124,7 +161,7 @@ watch; the board does not grade you.
 | **Pin board** / **Hide pin board** | Opens the **Add pin** row; absent on a locked or fully-pinned board |
 | **Lock** / **Unlock** | Flips the board's page lock |
 | **Add pin** row | Built-in cards, page titles and saved views not yet on this board |
-| Cards | The pinned content: goals, deadline, today & this week, pending decisions, recent activity, views, pages |
+| Cards | The pinned content: the companion brief, goals, deadline, today & this week, pending decisions, recent activity, views, pages |
 | Card context | Click a card to add or remove it as companion chat context, up to three; empty board space clears them all |
 | **Card actions** menu | **Edit card**, **Archive**, **Delete** (where applicable) |
 | **Built-in** marker | A small blocks icon in the card's first row, next to its heading, on the cards the app ships; a view or page you created yourself has none |
@@ -135,6 +172,7 @@ watch; the board does not grade you.
 
 | Card | Shows |
 |---|---|
+| Companion brief (`companion-brief`) | The companion's typed items — watch, prompt, ahead, commitment, pattern — in priority order with the reason beneath; items expire and you dismiss them. First on the board; an empty brief says so |
 | Goals (`goal-progress`) | Open goals in this lens with the domain each is filed under, its current value and pace, and a progress bar — a reading, not a score |
 | Deadline (`deadline`) | Deadline pressure for the lens; can be dismissed until tomorrow |
 | Today & this week (`today-week`) | Tasks scheduled for today and queued this week, each with a tick that marks it done |
@@ -169,6 +207,18 @@ created; a view or page card has no marker and its menu offers **Delete**.
 - The board file is `.lifequest/overview-pins.json` for Overview and
   `domains/<slug>/pins.json` for a domain. It stores the pins, their order and
   sizes, and the board's lock state.
+- The **companion brief** is one record for the studio, at
+  `.lifequest/companion-brief.json`. It is rewritten wholesale each time — a
+  write replaces the active set rather than appending to it — while the
+  dismissal log (last 200, kept 90 days) survives so the companion keeps its
+  feedback. The card is seeded first on every board; if you remove it, it stays
+  removed (the board remembers that it has been offered the card), and **Pin
+  board** offers it again by name.
+- Only the companion writes the brief, and only you dismiss its items. An item
+  lapses at its expiry; the next reader records it as `expired-unseen`. A
+  locked board does not stop the companion writing the brief: the lock governs
+  the cards, and the brief is a record a card draws. Locking keeps the companion
+  from moving, adding, resizing or removing cards.
 
 These are the Dashboard laws; [`LAWS/DASHBOARD.md`](../../LAWS/DASHBOARD.md) is
 the contract.

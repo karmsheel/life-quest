@@ -30,8 +30,8 @@ const electron = require("electron") as string;
 const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/daily-note-focus.json");
 const SHOT = path.join(desktopRoot, "e2e/artifacts/daily-note-focus.png");
-/** The sheet's narrow measure: 40rem at the app's 16px root. */
-const PANEL_MEASURE = 40 * 16;
+/** The page of paper's own measure: 56rem at the app's 16px root. */
+const PANEL_MEASURE = 56 * 16;
 
 type Box = {
   left: number;
@@ -101,6 +101,9 @@ type Sample = {
     text: string;
     inPanel: boolean;
     topOffset: number | null;
+    className: string;
+    hiddenFromView: boolean;
+    visibleBox: (Box & { clipped: boolean }) | null;
   } | null;
   close: {
     box: Box;
@@ -111,7 +114,35 @@ type Sample = {
     topOffset: number | null;
   } | null;
   body: { box: Box; inPanel: boolean } | null;
+  pageDate: {
+    box: Box;
+    centre: Centre;
+    text: string;
+    inPanel: boolean;
+    tag: string;
+    aboveNote: boolean;
+    centredOnPanel: boolean;
+    textAlign: string;
+    fontSize: string;
+  } | null;
   note: { box: Box; inPanel: boolean } | null;
+  foot: { box: Box; inPanel: boolean; belowNote: boolean } | null;
+  statusLine: {
+    box: Box;
+    text: string;
+    inFoot: boolean;
+    minHeight: string;
+  } | null;
+  focusActions: {
+    present: boolean;
+    box: Box | null;
+    inFoot: boolean;
+    actionBox: Box | null;
+    actionTestId: string | null;
+    actionText?: string | null;
+    actionDisabled?: boolean | null;
+    actionSvg?: boolean | null;
+  };
   editor: {
     box: Box;
     className: string;
@@ -129,13 +160,27 @@ type Sample = {
 /** A write to the vault, with the day the page was showing when it made it. */
 type Write = { date: string; body: string; shown: string | null };
 
+/**
+ * The autosave band, caught in the act of showing its words.
+ *
+ * Its own shape, not a full sample: the rig takes the band and its words in
+ * one poll, because the words vanish the instant the write lands and a sample
+ * taken afterwards would read the band empty.
+ */
+type CaughtBand = {
+  text: string;
+  box: Box;
+  minHeight: string;
+  inFoot: boolean;
+};
+
 type Report = {
   url: string;
   ranAt: string;
   window: { width: number; height: number };
   fixture: { sentence: string };
   checks: { today?: string; writes?: Write[] };
-  states: Record<string, Sample>;
+  states: Record<string, Sample | CaughtBand>;
   steps: {
     triggerPresent?: boolean;
     openedClick?: boolean;
@@ -150,6 +195,10 @@ type Report = {
     escapeSent?: boolean;
     typedLineOpen?: boolean;
     typed?: { value: string; focused: boolean } | null;
+    savingBandText?: string | null;
+    savingBandHeight?: number | null;
+    savingBandInFoot?: boolean | null;
+    restBandHeight?: number | null;
     focusWrite?: Write | null;
     screenshot?: {
       file: string;
@@ -250,6 +299,7 @@ describe("daily note focus mode", () => {
       closedByEscape,
       reopenedForTyping,
       typedModal,
+      saving,
       savedByFocus,
       pageAfterFocus,
     } = report.states;
@@ -347,38 +397,155 @@ describe("daily note focus mode", () => {
     assert.ok(panel, "the sheet painted no .focus-overlay__panel");
     if (!panel) return;
     assert.equal(panel.inOverlay, true, "the panel is not inside the focus overlay");
-    // The narrow measure is absolute (40rem) and a cap, not a share: at 1280px
-    // that is half the window, so "<= 60%" alone would pass a 700px box.
+    // The page's measure is absolute (56rem) and a cap, not a share: at 1280px
+    // that is under half the window, so "<= 60%" alone would pass a 700px box.
     assert.ok(
       Math.abs(panel.box.width - PANEL_MEASURE) <= 2,
-      `the panel is ${panel.box.width}px wide, not its 40rem (${PANEL_MEASURE}px) measure`,
+      `the panel is ${panel.box.width}px wide, not its 56rem (${PANEL_MEASURE}px) measure`,
     );
+    // A page of paper is wider than the reading column it replaced: the point of
+    // the change was that the note read as a page rather than as a narrow field.
     assert.ok(
-      panel.box.width <= 700,
-      `the panel is ${panel.box.width}px wide — wider than a narrow writing column`,
+      panel.box.width > 700,
+      `the panel is ${panel.box.width}px wide — still a narrow column, not a page`,
     );
+    // But it is still a *page*, not the whole window: the operator asked for the
+    // note and nothing around it, so the page behind stays blurred mat on either
+    // side rather than being stretched under the paper.
     assert.ok(
-      panel.box.width <= opened.viewport.width * 0.6,
-      `the panel is ${((panel.box.width / opened.viewport.width) * 100).toFixed(1)}% of the window — not narrow`,
+      panel.box.width <= opened.viewport.width * 0.75,
+      `the panel is ${((panel.box.width / opened.viewport.width) * 100).toFixed(1)}% of the window — it swallowed the page behind it`,
     );
     assert.ok(
       Math.abs(panel.centre.x - opened.viewport.width / 2) <= 2,
       `the panel is centred at ${panel.centre.x}, not the window's ${opened.viewport.width / 2}`,
     );
 
-    // The title is the page's own name, centred over the panel, at its top.
+    // ── 2a. the page of paper is headed by the day ───────────────────────────
+    // The date is the page's ONE heading, centred over the prose. Without it the
+    // operator has to keep the Daily Note page behind the sheet in their head to
+    // remember which day they are writing.
+    const pageDate = opened.pageDate;
+    assert.ok(pageDate, "the page of paper has no date at its top");
+    if (!pageDate) return;
+    assert.equal(pageDate.inPanel, true, "the date is outside the panel");
+    assert.equal(pageDate.tag, "H2", `the date is a ${pageDate.tag}, not the page's heading`);
+    assert.ok(pageDate.text.trim().length > 0, "the date prints nothing");
+    // The harness's own today, as the page prints it: the date on the page of
+    // paper has to be the day the page behind is showing.
+    assert.match(
+      pageDate.text,
+      /Thursday|Friday|Saturday|Sunday|Monday|Tuesday|Wednesday/,
+      `the date carries no weekday: ${JSON.stringify(pageDate.text)}`,
+    );
+    assert.ok(
+      pageDate.aboveNote,
+      "the date sits under the prose instead of heading it",
+    );
+    assert.ok(
+      pageDate.box.top < (opened.note?.box.top ?? Number.POSITIVE_INFINITY),
+      "the date is not above the note",
+    );
+    // It is the page's one heading, so it sits on the page's true centre — the
+    // centre the sheet's own title used to hold, now that the title is gone.
+    assert.equal(
+      pageDate.textAlign,
+      "center",
+      `the date is aligned ${pageDate.textAlign}, not centred`,
+    );
+    assert.ok(
+      pageDate.centredOnPanel,
+      `the date is centred at ${pageDate.centre?.x}, not the panel's ${panel.centre.x}`,
+    );
+    assert.ok(
+      Math.abs((pageDate.centre?.x ?? 0) - panel.centre.x) <= 2,
+      `the date is ${(pageDate.centre?.x ?? 0) - panel.centre.x}px off the panel's centre`,
+    );
+    // And it is a heading in weight: the page's own name, not a caption.
+    assert.ok(
+      parseFloat(pageDate.fontSize) >= 18,
+      `the heading is ${pageDate.fontSize}, too small to be the page's own name`,
+    );
+
+    // ── 2b. the page of paper has a foot, below the prose ───────────────────
+    const foot = opened.foot;
+    assert.ok(foot, "the page of paper has no foot");
+    if (!foot) return;
+    assert.equal(foot.inPanel, true, "the foot is outside the panel");
+    assert.equal(
+      foot.belowNote,
+      true,
+      "the foot sits above the prose instead of under it",
+    );
+    assert.ok(
+      foot.box.top >= (opened.note?.box.bottom ?? 0) - 1,
+      "the foot overlaps the prose it is supposed to sit under",
+    );
+
+    // The autosave band: the saving notification's own place. It is mounted
+    // whether or not it has words, so the page does not jump under the hand
+    // when the notification lands.
+    const statusLine = opened.statusLine;
+    assert.ok(statusLine, "the page of paper has no autosave band");
+    if (!statusLine) return;
+    assert.equal(statusLine.inFoot, true, "the autosave band is not in the page's foot");
+    assert.equal(
+      statusLine.text,
+      "",
+      `the band has words at rest: ${JSON.stringify(statusLine.text)}`,
+    );
+    assert.ok(
+      parseFloat(statusLine.minHeight) > 0,
+      `the autosave band reserves no height: min-height is ${statusLine.minHeight}`,
+    );
+    // The rendered height honours the reserve, up to the layout engine's own
+    // sub-pixel rounding (a 1.15rem reserve lands on 18.4px and measures 18.39).
+    assert.ok(
+      statusLine.box.height >= parseFloat(statusLine.minHeight) - 0.5,
+      `the autosave band is ${statusLine.box.height}px tall, shorter than its own ${statusLine.minHeight} reserve`,
+    );
+
+    // The day's own act, at the foot of the page: the same automation the page
+    // offers, on the same draft, for the same day.
+    const focusActions = opened.focusActions;
+    assert.equal(focusActions.present, true, "the page of paper offers no acts");
+    assert.equal(focusActions.inFoot, true, "the acts are not in the page's foot");
+    assert.ok(focusActions.actionBox, "the page of paper's act could not be measured");
+    assert.ok(
+      focusActions.actionBox!.top >= (opened.note?.box.bottom ?? 0) - 1,
+      "the act sits over the prose instead of under it",
+    );
+    assert.equal(
+      focusActions.actionTestId,
+      "focus-overlay-action-daily-note-analyze",
+      `the act's test id is ${JSON.stringify(focusActions.actionTestId)}`,
+    );
+    assert.equal(focusActions.actionText, "Analyze note", `the act reads ${JSON.stringify(focusActions.actionText)}`);
+    assert.equal(focusActions.actionSvg, true, "the act carries no icon");
+
+    // The sheet's title is the frame's ACCESSIBLE name, not a piece of chrome:
+    // the page the operator reads is headed by the date and nothing else. So the
+    // title must still be in the document (the dialog is labelled by it) but must
+    // paint nothing — a visible title above the date is a page with two
+    // headings, which is exactly what this change removed.
     const title = opened.title;
     assert.ok(title, "the sheet draws no .sheet-overlay__title");
     if (!title) return;
     assert.equal(title.text, "Daily Note", `the sheet's title reads ${JSON.stringify(title.text)}`);
     assert.equal(title.inPanel, true, "the title is outside the panel");
+    assert.equal(
+      title.hiddenFromView,
+      true,
+      "the sheet's title is still painted — the page has two headings",
+    );
+    assert.ok(title.visibleBox, "the title's box could not be measured");
     assert.ok(
-      Math.abs(title.centre.x - panel.centre.x) <= 2,
-      `the title is centred at ${title.centre.x}, ${title.centre.x - panel.centre.x}px from the panel's ${panel.centre.x}`,
+      title.visibleBox!.clipped,
+      `the hidden title still paints a ${title.visibleBox!.width}x${title.visibleBox!.height}px strip above the date`,
     );
     assert.ok(
-      (title.topOffset ?? Number.NaN) >= 0 && (title.topOffset ?? Number.NaN) <= 40,
-      `the title sits ${title.topOffset}px from the panel's top`,
+      (title.visibleBox!.width ?? 0) <= 2 && (title.visibleBox!.height ?? 0) <= 2,
+      `the hidden title occupies ${title.visibleBox!.width}x${title.visibleBox!.height}px of the panel`,
     );
 
     // The chrome is the panel's own, and the cross is in its top-right corner.
@@ -486,6 +653,39 @@ describe("daily note focus mode", () => {
       sentence,
       "the modal editor's line did not hold the sentence",
     );
+
+    // ── 4a. the saving notification has a place, and keeps it ───────────────
+    // The band is caught mid-write, when "Saving…" is actually on screen. Its
+    // height there must be the height it has at rest: a band that grows when the
+    // notification lands is a page that jumps under the operator's hands.
+    assert.ok(saving, "the rig never caught the saving notification on screen");
+    if (saving) {
+      assert.match(
+        String(report.steps.savingBandText),
+        /Saving…|Not saved/,
+        `the saving band reads ${JSON.stringify(report.steps.savingBandText)}`,
+      );      assert.ok(
+        (report.steps.savingBandHeight ?? 0) > 0,
+        "the saving band collapsed to nothing while it had words",
+      );
+      // The band's own reserve: the height it holds whether or not it is showing.
+      assert.ok(
+        (report.steps.restBandHeight ?? 0) > 0,
+        "the autosave band reserves no height at rest",
+      );
+      assert.ok(
+        Math.abs(
+          (report.steps.savingBandHeight ?? 0) - (report.steps.restBandHeight ?? 0),
+        ) <= 2,
+        `the autosave band is ${report.steps.savingBandHeight}px while saving and ${report.steps.restBandHeight}px at rest — the page jumps when the notification lands`,
+      );
+      // The band belongs to the foot, and the foot belongs under the prose.
+      assert.equal(
+        report.steps.savingBandInFoot,
+        true,
+        "the saving band is not in the page's foot",
+      );
+    }
 
     // The write is read from the harness's own ledger: the day must be today's,
     // the body must be what was typed, and the page must have been showing that

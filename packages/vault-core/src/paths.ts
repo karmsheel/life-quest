@@ -307,6 +307,16 @@ export function vaultPaths(root: string) {
     get aboutMd(): string {
       return build(".lifequest", "about.md");
     },
+    /**
+     * The companion's brief. One record for the whole studio — the card exists
+     * per board, the items do not — so it lives beside the other single-record
+     * vault files rather than inside a domain. It is rewritten wholesale on
+     * every write, which is why it is not inside map.json: that file carries
+     * the operator's hand-written map.
+     */
+    get companionBriefJson(): string {
+      return build(".lifequest", "companion-brief.json");
+    },
     get documentsDir(): string {
       return build("documents");
     },

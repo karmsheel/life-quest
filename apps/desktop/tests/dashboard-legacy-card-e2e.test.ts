@@ -36,6 +36,7 @@ const ARTIFACT = path.join(desktopRoot, "e2e/artifacts/dashboard-legacy-card.jso
 
 /** The built-in cards a fresh board seeds, in order — the app's current set. */
 const SEEDED_IDS = [
+  "sys:companion-brief",
   "sys:goal-progress",
   "sys:deadline",
   "sys:today-week",

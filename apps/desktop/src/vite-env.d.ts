@@ -51,6 +51,8 @@ import type {
   Pin,
   PinBoardRead,
   PinWriteResult,
+  CompanionBriefRead,
+  BriefDismissalReason,
   PlanningStub,
   Result,
   ReviewCadence,
@@ -538,6 +540,16 @@ type LifequestApi = {
   dailyNoteWrite: (date: string, body: string) => Promise<Result<DailyNote>>;
   dailyNoteList: () => Promise<Result<DailyNoteIndexEntry[]>>;
   dailyNoteWindow: (start: string, end: string) => Promise<Result<DailyNote[]>>;
+  /**
+   * The companion's brief: one record for the studio. The card reads it here;
+   * the companion's `set_companion_brief` tool is the only writer, and the
+   * operator's only verb is dismissing one item.
+   */
+  briefGet: () => Promise<Result<CompanionBriefRead>>;
+  briefDismiss: (
+    itemId: string,
+    reason: BriefDismissalReason,
+  ) => Promise<Result<CompanionBriefRead>>;
   /**
    * Ideal State: any number of titled, freeform markdown documents in the
    * Define wing. The operator is the only author.

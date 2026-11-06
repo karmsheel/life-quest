@@ -94,6 +94,11 @@ export const CONNECTED_READ_TOOLS: ReadonlySet<string> = new Set([
  * KAR-70: tools with no domain of their own. These stay on the companion for
  * good — they configure the vault rather than any domain of it — so a connected
  * agent that calls one is refused rather than filtered.
+ *
+ * The companion brief belongs here for both halves of its rule (2026-11-05):
+ * it is the studio's word, not a domain's, so there is no domain for a grant to
+ * contain it; and it has exactly one writer, the companion, so even the read
+ * stays with the companion rather than being filtered into a hire's lens.
  */
 export const COMPANION_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "create_year",
@@ -102,6 +107,8 @@ export const COMPANION_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "set_month_objectives",
   "set_month_notes",
   "set_about_me",
+  "get_companion_brief",
+  "set_companion_brief",
 ]);
 
 /**

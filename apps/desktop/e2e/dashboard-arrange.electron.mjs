@@ -114,6 +114,7 @@ const SEED = [
  * the operator sees on a vault whose board has never been edited.
  */
 const DEFAULT_PINS = [
+  { id: "sys:companion-brief", kind: "system", system: "companion-brief" },
   { id: "sys:goal-progress", kind: "system", system: "goal-progress" },
   { id: "sys:deadline", kind: "system", system: "deadline" },
   { id: "sys:today-week", kind: "system", system: "today-week" },
