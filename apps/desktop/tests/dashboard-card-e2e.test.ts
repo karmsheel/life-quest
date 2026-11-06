@@ -11,6 +11,7 @@ import {
   listPinBoard,
   listViews,
   runSavedView,
+  unlockDomain,
   upsertRow,
   VIEW_SPEC_SCHEMA,
   VIEW_VOCABULARY,

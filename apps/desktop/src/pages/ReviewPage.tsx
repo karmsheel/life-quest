@@ -11,6 +11,7 @@ import {
   type ReviewPrepopulateResult,
   type ReviewRecord,
   type ReviewSkill,
+  unlockedAreas,
 } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { asHeld, sameNote } from "@/lib/note-body";
@@ -563,9 +564,9 @@ export default function ReviewPage() {
     return <p className="muted">No vault open.</p>;
   }
 
-  const liveDomains = snapshot.domains
-    .filter((d) => !d.meta.archivedAt)
-    .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder);
+  // The overall review covers every area the operator can see. The base `life`
+  // area is the whole-vault container, not a scoped review, so it is not a row.
+  const liveDomains = unlockedAreas(snapshot.domains);
 
   const locked = record?.locked === true;
   const dirty = !sameNote(draft, savedBody);

@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   PROJECT_PRIORITIES,
   PROJECT_STATUSES,
+  unlockedAreas,
   type Project,
   type ProjectPriority,
   type ProjectStatus,
@@ -215,12 +216,9 @@ export default function ProjectPage() {
     );
   }, [project?.domainSlug, snapshot]);
 
+  // A project is assigned to an area: unlocked areas only, base hidden.
   const liveDomains = useMemo(
-    () =>
-      (snapshot?.domains ?? [])
-        .filter((d) => !d.meta.archivedAt)
-        .slice()
-        .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder),
+    () => unlockedAreas(snapshot?.domains ?? []),
     [snapshot],
   );
 
@@ -782,7 +780,7 @@ export default function ProjectPage() {
             </select>
           </label>
           <label className="field">
-            <span>Domain</span>
+            <span>Area</span>
             <select
               value={attrs.domainSlug}
               onChange={(e) =>

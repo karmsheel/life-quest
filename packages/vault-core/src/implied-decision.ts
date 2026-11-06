@@ -548,6 +548,16 @@ export async function fileImpliedChange(
 
   if (change.kind === "goal") {
     const slug = (change.command as { domainSlug?: unknown }).domainSlug;
+    if (typeof slug === "string" && slug.trim()) {
+      const domains = await listDomains(rootPath);
+      if (!domains.ok) return domains;
+      const live = domains.value.some(
+        (domain) => domain.slug === slug && isLiveAreaMeta(domain.meta),
+      );
+      if (!live) {
+        return { ok: false, error: `Area is locked or unavailable: ${slug}` };
+      }
+    }
     const domainSlugs = typeof slug === "string" && slug.trim() ? [slug] : undefined;
     return createDecision(rootPath, {
       target: { type: "goal" },

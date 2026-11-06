@@ -170,7 +170,7 @@ function Harness() {
       </div>
       <ConfirmDialog
         open={asking}
-        title="Delete domain"
+        title="Delete area"
         message="Career (old) leaves the switcher for good. This cannot be undone."
         confirmLabel="Delete"
         destructive

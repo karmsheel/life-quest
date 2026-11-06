@@ -31,10 +31,12 @@ const url =
   process.env.LIFEQUEST_E2E_URL ?? "http://127.0.0.1:5173/e2e/settings-domains.html";
 const DEFAULT_SIZE = { width: 1280, height: 900 };
 
-/** The live domain the rig archives, and the archived one it deletes. */
+/** The live area the rig archives, the archived one it deletes, and the one it unlocks. */
 const LIVE_SLUG = "health";
 const ARCHIVED_SLUG = "career-old";
 const ARCHIVED_NAME = "Career (old)";
+const LOCKED_SLUG = "mind";
+const LOCKED_NAME = "Mind";
 
 const SAMPLE = `(() => {
   const box = (el) => {
@@ -57,17 +59,29 @@ const SAMPLE = `(() => {
   const dialogBox = box(card);
   const confirmBtn = dialogBox ? card.querySelector(".confirm-dialog__confirm") : null;
   const cancelBtn = dialogBox ? card.querySelector(".confirm-dialog__cancel") : null;
-  const calls = window.domainCalls || { archive: [], remove: [] };
+  const calls = window.domainCalls || { archive: [], remove: [], unlock: [] };
+  const input = document.querySelector(".domains-manager__name-field input");
 
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
+    title: text(document.querySelector(".settings-panel__title")),
+    subtitle: text(document.querySelector(".settings-panel__subtitle")),
+    sectionTitles: Array.from(
+      document.querySelectorAll(".domains-manager__section-title")
+    ).map(text),
     cards: Array.from(document.querySelectorAll(".domain-card")).map((el) =>
       text(el.querySelector(".domain-card__name"))
     ),
+    locked: Array.from(document.querySelectorAll(".locked-areas__item")).map((el) => ({
+      name: text(el.querySelector(".locked-areas__name")),
+      slug: text(el.querySelector(".locked-areas__slug")),
+    })),
     archived: Array.from(document.querySelectorAll(".archived-list__item")).map(text),
+    createPlaceholder: input ? input.getAttribute("placeholder") : null,
     sheet: sheetBox,
     archiveCalls: [...calls.archive],
     deleteCalls: [...calls.remove],
+    unlockCalls: [...calls.unlock],
     dialog: dialogBox
       ? {
           title: text(card.querySelector(".confirm-dialog__title")),
@@ -192,7 +206,11 @@ async function main() {
     url,
     ranAt: new Date().toISOString(),
     window: { ...DEFAULT_SIZE },
-    fixture: { live: LIVE_SLUG, archived: ARCHIVED_SLUG },
+    fixture: {
+      live: LIVE_SLUG,
+      archived: ARCHIVED_SLUG,
+      locked: LOCKED_SLUG,
+    },
     states: {},
     screenshots,
     failures,
@@ -209,9 +227,47 @@ async function main() {
     // 1 — the page painted, the sheet is a real sheet, and nothing is asked yet.
     const landing = await settle();
     check(
+      "the settings page is Settings → Areas",
+      landing.title === "Areas" &&
+        /Life shows everything/.test(landing.subtitle ?? ""),
+      `title "${landing.title}", subtitle "${landing.subtitle}"`,
+    );
+    check(
+      "the four area sections are in contract order",
+      JSON.stringify(landing.sectionTitles) ===
+        JSON.stringify([
+          "Unlock another area",
+          "Your areas",
+          "Archived",
+          "Create area",
+        ]),
+      `sections ${JSON.stringify(landing.sectionTitles)}`,
+    );
+    check(
       "the settings page painted both lists",
       landing.cards.length === 2 && landing.archived.length === 1,
       `cards ${JSON.stringify(landing.cards)}, archived ${JSON.stringify(landing.archived)}`,
+    );
+    check(
+      "the locked seeded areas are offered to unlock, and no locked area is a card",
+      JSON.stringify(landing.locked) ===
+        JSON.stringify([
+          { name: "Mind", slug: LOCKED_SLUG },
+          { name: "Finance", slug: "financial" },
+        ]) && landing.cards.every((name) => !["Mind", "Finance"].includes(name)),
+      `locked ${JSON.stringify(landing.locked)}, cards ${JSON.stringify(landing.cards)}`,
+    );
+    check(
+      "the base Life area is never a card, a locked row, or an archived row",
+      !landing.cards.includes("Life") &&
+        !landing.locked.some((row) => row.name === "Life") &&
+        !landing.archived.some((row) => row.includes("Life")),
+      `cards ${JSON.stringify(landing.cards)}, locked ${JSON.stringify(landing.locked)}, archived ${JSON.stringify(landing.archived)}`,
+    );
+    check(
+      "the create form asks for an area by name",
+      landing.createPlaceholder === "e.g. Woodworking",
+      `placeholder ${JSON.stringify(landing.createPlaceholder)}`,
     );
     check(
       "the sheet is the window's own content pane, not the window",
@@ -222,8 +278,9 @@ async function main() {
       "nothing is asked, and nothing is written, before a click",
       landing.dialog === null &&
         landing.archiveCalls.length === 0 &&
-        landing.deleteCalls.length === 0,
-      `dialog ${JSON.stringify(landing.dialog)}, calls ${JSON.stringify(landing.archiveCalls)}`,
+        landing.deleteCalls.length === 0 &&
+        landing.unlockCalls.length === 0,
+      `dialog ${JSON.stringify(landing.dialog)}, calls ${JSON.stringify(landing.archiveCalls)}/${JSON.stringify(landing.unlockCalls)}`,
     );
 
     // 2 — Archive is the soft write: it asks, plainly, and writes nothing yet.
@@ -237,8 +294,15 @@ async function main() {
     );
     check(
       "the question is named for the write it guards",
-      asked.dialog?.title === "Archive domain",
-      `title "${asked.dialog?.title}"`,
+      asked.dialog?.title === "Archive area" &&
+        asked.dialog?.confirmLabel === "Archive area",
+      `title "${asked.dialog?.title}", confirm "${asked.dialog?.confirmLabel}"`,
+    );
+    check(
+      "the archive question says what archive does, in area words",
+      asked.dialog?.message ===
+        "The area leaves the active switcher list. Its folder and everything in it stay in the vault.",
+      `message "${asked.dialog?.message}"`,
     );
     check(
       "the card is centred in the window",
@@ -315,9 +379,12 @@ async function main() {
       `dialog ${JSON.stringify(deleteAsked.dialog)}, calls ${JSON.stringify(deleteAsked.deleteCalls)}`,
     );
     check(
-      "the question names the domain it will take",
-      (deleteAsked.dialog?.message ?? "").includes(ARCHIVED_NAME),
-      `message "${deleteAsked.dialog?.message}"`,
+      "the question names the area it will take",
+      (deleteAsked.dialog?.message ?? "").includes(ARCHIVED_NAME) &&
+        (deleteAsked.dialog?.message ?? "").includes("area") &&
+        deleteAsked.dialog?.title === "Delete area" &&
+        deleteAsked.dialog?.confirmLabel === "Delete area",
+      `title "${deleteAsked.dialog?.title}", message "${deleteAsked.dialog?.message}", confirm "${deleteAsked.dialog?.confirmLabel}"`,
     );
     check(
       "the final write wears the danger",
@@ -353,6 +420,36 @@ async function main() {
       `dialog ${JSON.stringify(deleted.dialog)}`,
     );
 
+    // 6 — Unlock is a reveal, not an activation: the locked row leaves the
+    // "Unlock another area" list and its area appears under "Your areas".
+    const unlockClicked = await clickButton(".locked-areas__item button", "Unlock");
+    const unlocked = await settle();
+    check(
+      "clicked Unlock on a locked area",
+      unlockClicked,
+      "no Unlock control in the locked row",
+    );
+    check(
+      "the unlock carried the slug of the row it was clicked on",
+      JSON.stringify(unlocked.unlockCalls) === JSON.stringify([LOCKED_SLUG]),
+      `unlock ${JSON.stringify(unlocked.unlockCalls)}`,
+    );
+    check(
+      "unlocking moved the area from the locked list to Your areas",
+      JSON.stringify(unlocked.locked) ===
+        JSON.stringify([{ name: "Finance", slug: "financial" }]) &&
+        unlocked.cards.includes(LOCKED_NAME),
+      `locked ${JSON.stringify(unlocked.locked)}, cards ${JSON.stringify(unlocked.cards)}`,
+    );
+    check(
+      "unlocking asked nothing and wrote nothing else",
+      unlocked.dialog === null &&
+        unlocked.archiveCalls.length === 1 &&
+        unlocked.deleteCalls.length === 1,
+      `dialog ${JSON.stringify(unlocked.dialog)}, calls ${JSON.stringify(unlocked.archiveCalls)}/${JSON.stringify(unlocked.deleteCalls)}`,
+    );
+    screenshots.push(await shot("after-unlock"));
+
     report.states = {
       landing,
       asked,
@@ -360,6 +457,7 @@ async function main() {
       archived,
       deleteAsked,
       deleted,
+      unlocked,
     };
     report.pass = failures.length === 0;
   } catch (error) {
@@ -384,6 +482,7 @@ async function main() {
       ["archive answered", states.archived],
       ["delete asked", states.deleteAsked],
       ["delete answered", states.deleted],
+      ["area unlocked", states.unlocked],
     ]) {
       table.push([
         name,

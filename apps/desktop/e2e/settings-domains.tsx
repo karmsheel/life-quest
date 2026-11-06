@@ -52,6 +52,7 @@ const domain = (
   name: string,
   sortOrder: number,
   archivedAt: string | null,
+  unlockedAt?: string | null,
 ) => ({
   slug,
   meta: {
@@ -60,13 +61,21 @@ const domain = (
     color: null,
     sortOrder,
     archivedAt: archived(archivedAt),
+    // Absent means unlocked (a vault written before areas had a lock state);
+    // `null` means locked and therefore never offered as a card.
+    ...(unlockedAt === undefined ? {} : { unlockedAt }),
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
   documents,
 });
 
-/** Two live domains and one that has already been archived, so both asks exist. */
+/**
+ * The vault as the settings page sees it: the base `life` area (never listed), two
+ * unlocked areas, one archived area, and two seeded areas still locked. So the
+ * page has all four blocks the contract names — Unlock another area, Your areas,
+ * Archived, Create area — and the base area must stay invisible in every one.
+ */
 const SNAPSHOT = {
   rootPath: "C:/harness-vault",
   lifequest: {
@@ -81,9 +90,12 @@ const SNAPSHOT = {
     weekStartDay: "monday" as const,
   },
   domains: [
+    domain("life", "Life", -1, null, "2026-01-01T00:00:00.000Z"),
     domain("health", "Health", 0, null),
     domain("career", "Career", 1, null),
-    domain("career-old", "Career (old)", 2, "2026-02-02T00:00:00.000Z"),
+    domain("mind", "Mind", 2, null, null),
+    domain("financial", "Finance", 3, null, null),
+    domain("career-old", "Career (old)", 4, "2026-02-02T00:00:00.000Z"),
   ],
   agents: [],
   decisions: [],
@@ -97,11 +109,14 @@ const SNAPSHOT = {
   weeklyFileCount: 0,
 };
 
-type Calls = { archive: string[]; remove: string[] };
-const calls: Calls = { archive: [], remove: [] };
+type Calls = { archive: string[]; remove: string[]; unlock: string[] };
+const calls: Calls = { archive: [], remove: [], unlock: [] };
 
 const bridge: Record<string, unknown> = {
-  vaultGetSnapshot: () => ok(SNAPSHOT),
+  // A fresh object each read, like the real snapshot: the page's own `refresh()`
+  // after an unlock must see the new flag, and React must see a new identity for
+  // its memos to recompute.
+  vaultGetSnapshot: () => ok(structuredClone(SNAPSHOT)),
   vaultListRecent: () => Promise.resolve([]),
   onVaultFileChanged: () => () => {},
   domainArchive: (slug: string) => {
@@ -111,6 +126,17 @@ const bridge: Record<string, unknown> = {
   domainDelete: (slug: string) => {
     calls.remove.push(slug);
     return ok(null);
+  },
+  // Unlocking flips the flag on the fixture the same way the engine does, then
+  // the page's own `refresh()` re-reads the snapshot: the row must leave the
+  // locked list and the area must appear under "Your areas" without activating.
+  domainUnlock: (slug: string) => {
+    calls.unlock.push(slug);
+    const target = SNAPSHOT.domains.find((entry) => entry.slug === slug) as
+      | { meta: { unlockedAt?: string | null } }
+      | undefined;
+    if (target) target.meta.unlockedAt = new Date().toISOString();
+    return ok(target ?? null);
   },
   // The theme provider talks to the window's own chrome, which a dev-server page
   // has no bridge for: the app always mounts it, so the rig does too.

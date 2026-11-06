@@ -16,6 +16,7 @@ import {
   projectCreate,
   resolveDecision,
   toolAllowed,
+  unlockDomain,
   updateConnectedAgent,
   type ConnectedAgent,
   type ConnectedGrant,
@@ -163,10 +164,18 @@ describe("connected agents read projects, pages and the Life-Chain inside their 
     assert.equal(created.ok, true, `createVault failed: ${created.ok ? "" : created.error}`);
     const vaultId = (created as { ok: true; value: { lifequest: { id: string } } }).value.lifequest.id;
 
+    // The harness files a financial grant and a Health record, so both seeded
+    // areas have to be unlocked before anything touches them.
+    for (const area of ["financial", "health"]) {
+      const unlock = await unlockDomain(vaultRoot, area);
+      assert.equal(unlock.ok, true, `unlockDomain(${area}) failed: ${unlock.ok ? "" : unlock.error}`);
+    }
+
     // ── the operator's own records, in and outside one domain ───────────────
-    // A fresh vault seeds health, intellectual, emotional and financial. The
-    // grant under test is financial, so health is a live domain the agent is
-    // NOT assigned — which is the state every projection below has to hide.
+    // A fresh vault seeds the base Life area plus five locked areas; this rig
+    // unlocks financial and health, the two it writes into. The grant under test
+    // is financial, so health is a live area the agent is NOT assigned — which is
+    // the state every projection below has to hide.
     const financialProject = await projectCreate(vaultRoot, {
       title: "Budget app",
       domainSlug: "financial",
@@ -617,7 +626,12 @@ describe("connected agents read projects, pages and the Life-Chain inside their 
         command:
           "cd apps/desktop && node --experimental-strip-types --test tests/connected-harness-tools-e2e.test.ts",
         doors: { local: doors.localPort, invite: doors.invitePort, livePorts: [8643, 8646] },
-        vault: { id: vaultId, temp: true, seededDomains: ["health", "intellectual", "emotional", "financial"] },
+        vault: {
+          id: vaultId,
+          temp: true,
+          seededAreas: ["life", "health", "mind", "financial", "business", "relationships"],
+          unlockedAreas: ["life", "financial", "health"],
+        },
         grant: {
           agent: "surfaces",
           domains: readGrant.domainSlugs,

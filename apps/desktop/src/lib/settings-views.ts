@@ -82,7 +82,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "domains",
-    label: "Domains",
+    label: "Areas",
     icon: Layers,
     keywords: ["domain", "lens", "area", "archive", "life area", "focus"],
   },

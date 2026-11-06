@@ -40,6 +40,7 @@ import {
   libraryGet,
   connectedDecisionVisible,
   connectedGoalVisible,
+  isLiveAreaMeta,
   connectedReviewVisible,
   connectedLibraryVisible,
   connectedSignalVisible,
@@ -275,9 +276,9 @@ async function executeToolInner(
   if (name === "get_state") return { state: snap.value.map };
   if (name === "get_doctrine") {
     const requested = rec.domainSlug as string | undefined;
-    const live = snap.value.domains.filter((d) => !d.meta.archivedAt);
+    const live = snap.value.domains.filter((d) => isLiveAreaMeta(d.meta));
     if (requested) {
-      const domain = snap.value.domains.find((d) => d.slug === requested);
+      const domain = live.find((d) => d.slug === requested);
       if (!domain) return { error: { code: "NOT_FOUND", message: "Domain not found" } };
       return {
         slug: domain.slug,
@@ -384,7 +385,7 @@ async function executeConnectedTool(
     }
     const snap = await openVault(root);
     if (!snap.ok) return { error: { code: "NOT_FOUND", message: snap.error } };
-    const live = snap.value.domains.filter((d) => !d.meta.archivedAt);
+    const live = snap.value.domains.filter((d) => isLiveAreaMeta(d.meta));
     const pick = (d: (typeof live)[number]) => ({
       slug: d.slug,
       name: d.meta.name,

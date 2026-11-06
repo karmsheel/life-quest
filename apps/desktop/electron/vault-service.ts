@@ -1490,7 +1490,7 @@ export async function hermesChatToolsCall(
   const map = snap.ok ? snap.value.map : null;
   const aboutMe = map?.aboutMe ?? "";
   const extraSystem = [
-    `Active domain: ${activeSlug ?? "overview"}`,
+    `Active area: ${activeSlug ?? "life"}`,
     `About me: ${aboutMe}`,
   ].join("\n");
 

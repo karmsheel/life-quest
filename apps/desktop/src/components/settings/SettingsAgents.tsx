@@ -1,16 +1,15 @@
-import type { AgentScope } from "@lifequest/vault-core/pure";
+import { unlockedAreas, type AgentScope } from "@lifequest/vault-core/pure";
 import { agentIcon } from "@/lib/agent-icons";
 import { useOptionalAgents, type AgentEntry } from "@/state/AgentsProvider";
 import { useVault } from "@/state/VaultProvider";
 
 /**
- * Which domains each agent is offered in, and where entering a domain selects
- * it.
+ * Which areas each agent is offered in, and where entering an area selects it.
  *
- * "Shown in" is the visibility rule: no chips selected means every domain. A
- * narrowed agent is simply absent from the switcher outside its domains, not
+ * "Shown in" is the visibility rule: no chips selected means every area. A
+ * narrowed agent is simply absent from the switcher outside its areas, not
  * greyed out. "Default in" is a subset of that list, so an agent cannot be the
- * default for a domain it is hidden in.
+ * default for an area it is hidden in.
  */
 export function SettingsAgents() {
   const agentsContext = useOptionalAgents();
@@ -18,7 +17,9 @@ export function SettingsAgents() {
   // The settings harness page mounts this panel without the agents provider.
   if (!agentsContext) return null;
   const { agents, setScopes, saving, error } = agentsContext;
-  const domains = (snapshot?.domains ?? []).filter((domain) => !domain.meta.archivedAt);
+  // An agent is offered in areas; the base `life` container is not a choice,
+  // and locked areas stay invisible until unlocked.
+  const domains = unlockedAreas(snapshot?.domains ?? []);
 
   function save(next: AgentEntry[]) {
     const scopes: AgentScope[] = next.map((agent) => ({
@@ -57,10 +58,10 @@ export function SettingsAgents() {
 
   return (
     <section className="settings-agents" data-testid="settings-agents">
-      <h3 className="settings-hermes__heading">Agents by domain</h3>
+      <h3 className="settings-hermes__heading">Agents by area</h3>
       <p className="settings-card__desc">
-        An agent with no domains selected is offered everywhere. An agent set as
-        the default for a domain is selected when you enter it.
+        An agent with no areas selected is offered everywhere. An agent set as
+        the default for an area is selected when you enter it.
       </p>
       {agents.map((agent) => {
         const icon = agentIcon(agent.id);
@@ -94,11 +95,11 @@ export function SettingsAgents() {
                       : "settings-chip"
                   }
                   aria-pressed={agent.domains.length === 0}
-                  aria-label={`${agent.name}: all domains`}
+                  aria-label={`${agent.name}: all areas`}
                   disabled={saving}
                   onClick={() => setDomains(agent, [])}
                 >
-                  All domains
+                  All areas
                 </button>
                 {domains.map((domain) => (
                   <button

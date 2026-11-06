@@ -60,15 +60,15 @@ export function LifeLogFeed() {
       <header className="life-log-feed__header">
         <h1 className="stub-page__title">Life log</h1>
         <p className="stub-page__desc muted">
-          Append-only feed of domain, document, decision, and agent events.
+          Append-only feed of area, document, decision, and agent events.
         </p>
       </header>
 
       <div className="life-log-feed__toolbar">
         <span className="muted life-log-feed__scope">
           {lens.kind === "overview"
-            ? "Overview"
-            : `Scoped to: ${activeDomain?.meta.name ?? "domain"}`}
+            ? "Life"
+            : `Scoped to: ${activeDomain?.meta.name ?? "area"}`}
         </span>
         <button
           type="button"

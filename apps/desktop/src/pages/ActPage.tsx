@@ -11,6 +11,7 @@ import {
   canDispatchAgent,
   DOCUMENT_KIND_LABELS,
   DOCTRINE_ORDER,
+  liveAreas,
   recordVisible,
 } from "@lifequest/vault-core/pure";
 import type { MapCommand, Task } from "@lifequest/vault-core/map";
@@ -78,12 +79,9 @@ function ActContent() {
   const activeDomain = useActiveDomain();
   const chatDock = useChatDock();
 
+  // Every live area, base included: the brief on Life carries all of them.
   const liveDomains = useMemo(
-    () =>
-      (snapshot?.domains ?? [])
-        .filter((d) => !d.meta.archivedAt)
-        .slice()
-        .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder),
+    () => liveAreas(snapshot?.domains ?? []),
     [snapshot],
   );
 
@@ -101,7 +99,7 @@ function ActContent() {
   const [recentEvents, setRecentEvents] = useState<LifeEvent[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
 
-  const title = activeDomain?.meta.name ?? "Overview";
+  const title = activeDomain?.meta.name ?? "Life";
 
   useEffect(() => {
     void (async () => {
@@ -148,10 +146,10 @@ function ActContent() {
     (agent: AgentHire): string => {
       const head = `You are acting as "${agent.name}"${
         agent.roleLabel ? ` (${agent.roleLabel})` : ""
-      } for the domain "${title}".`;
+      } for the area "${title}".`;
       const brief = buildBrief(activeDomain, liveDomains);
       return `${head}\n\nExecute against this doctrine — stay aligned with Premise → Vision → Purpose → Strategy (How):\n\n${brief}\n\nTask: ${
-        promptDraft.trim() || "Propose the next concrete action for this domain."
+        promptDraft.trim() || "Propose the next concrete action for this area."
       }`;
     },
     [activeDomain, liveDomains, promptDraft, title],

@@ -42,6 +42,7 @@ import {
   createVault,
   saveView,
   setFinanceCaptureAccount,
+  unlockDomain,
   upsertRow,
 } from "@lifequest/vault-core";
 
@@ -153,6 +154,9 @@ async function main() {
 
   const created = await createVault(vaultDir, "Live dashboard");
   if (!created.ok) throw new Error(`createVault failed: ${created.error}`);
+  // The Finance area seeds locked on a new vault; the kit lives in it.
+  const unlock = await unlockDomain(vaultDir, "financial");
+  if (!unlock.ok) throw new Error(`unlockDomain(financial) failed: ${unlock.error}`);
   const kit = await applyFinanceKitInstall(vaultDir);
   if (!kit.ok) throw new Error(`applyFinanceKitInstall failed: ${kit.error}`);
 

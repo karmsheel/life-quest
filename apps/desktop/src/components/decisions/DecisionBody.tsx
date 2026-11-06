@@ -232,7 +232,7 @@ function ViewBody({ body }: { body: Record<string, unknown> }) {
   const pinned = typeof body.boardSlug === "string" || body.boardSlug === null;
   const boardName =
     body.boardSlug === null
-      ? "the Overview dashboard"
+      ? "the Life dashboard"
       : typeof body.boardSlug === "string"
         ? `the ${body.boardSlug} dashboard`
         : "";

@@ -18,6 +18,7 @@ import { ImagePlus, Link2, Pencil, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { unlockedAreas } from "@lifequest/vault-core/pure";
 import {
   IMAGE_ACCEPT,
   looksLikeImage,
@@ -87,7 +88,9 @@ function parseLink(raw: string): { url: string } | { error: string } {
 export function SignalChainFeed() {
   const { snapshot, refresh } = useVault();
   const lens = useDomainLens();
-  const liveDomains = (snapshot?.domains ?? []).filter((d) => !d.meta.archivedAt);
+  // A capture or a row is assigned to an area; the base container and locked
+  // areas are never offered.
+  const liveDomains = unlockedAreas(snapshot?.domains ?? []);
   const allDomains = (snapshot?.domains ?? []).map((d) => ({
     slug: d.slug,
     name: d.meta.name,
@@ -612,7 +615,7 @@ export function SignalChainFeed() {
 
         <div className="signal-chain__composer-footer">
           <label className="field">
-            Domain
+            Area
             <select
               value={domainSlug}
               onChange={(e) => setDomainSlug(e.target.value)}
@@ -663,7 +666,7 @@ export function SignalChainFeed() {
         </p>
       ) : visible.length === 0 ? (
         <p className="muted signal-chain__empty">
-          No unassigned or matching signals in this domain.
+          No unassigned or matching signals in this area.
         </p>
       ) : (
         <ul className="signal-chain__list">
@@ -779,7 +782,7 @@ function SignalRow(props: {
             />
           </label>
           <label className="field">
-            Domain
+            Area
             <select
               value={domainSlug}
               onChange={(e) => setDomainSlug(e.target.value)}
@@ -872,7 +875,7 @@ function SignalRow(props: {
       <div className="signal-row__side">
         <select
           className="signal-row__domain"
-          aria-label="Domain"
+          aria-label="Area"
           value={s.domainSlug ?? ""}
           disabled={props.busy}
           onChange={(e) => {

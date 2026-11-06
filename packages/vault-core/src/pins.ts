@@ -78,7 +78,7 @@ export const DEFAULT_BOARD_LOCKED = false;
 
 /** How a board is named in copy and in Decision headlines. */
 export function boardLabel(domainSlug: string | null): string {
-  return domainSlug == null ? "Overview dashboard" : `${domainSlug} dashboard`;
+  return domainSlug == null ? "Life dashboard" : `${domainSlug} dashboard`;
 }
 
 /**

@@ -16,6 +16,7 @@ import {
   refreshFxRate,
   runViewBlocks,
   setFxRateSource,
+  unlockDomain,
   upsertRow,
 } from "@lifequest/vault-core";
 
@@ -186,6 +187,12 @@ describe("finance fx rate e2e", () => {
 
     const created = await createVault(vaultRoot, "E2E");
     assert.equal(created.ok, true, `createVault failed: ${created.ok ? "" : created.error}`);
+    const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+    assert.equal(
+      unlockFinancial.ok,
+      true,
+      `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+    );
     const kit = await applyFinanceKitInstall(vaultRoot);
     assert.equal(kit.ok, true, `applyFinanceKitInstall failed: ${kit.ok ? "" : kit.error}`);
 
@@ -426,6 +433,8 @@ describe("finance fx rate e2e", () => {
     const vaultRoot = path.join(workDir, "vault");
     try {
       await createVault(vaultRoot, "E2E");
+      const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+      assert.equal(unlockFinancial.ok, true, "unlockDomain(financial) failed");
       await applyFinanceKitInstall(vaultRoot);
       const res = await refreshFxRate(vaultRoot);
       assert.equal(res.ok, true, "the default source could not be read into a vault");
