@@ -15,6 +15,7 @@ import type {
   Result,
 } from "./types.ts";
 import { USER_ACTOR } from "./types.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
 
 const STATUSES: GoalStatus[] = ["open", "done"];
 
@@ -260,7 +261,7 @@ async function liveDomainSlugsFromDisk(rootPath: string): Promise<Result<string[
   if (!listed.ok) return listed;
   return {
     ok: true,
-    value: listed.value.filter((d) => !d.meta.archivedAt).map((d) => d.slug),
+    value: listed.value.filter((d) => isLiveAreaMeta(d.meta)).map((d) => d.slug),
   };
 }
 

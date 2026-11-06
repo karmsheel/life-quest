@@ -11,7 +11,7 @@ import {
   DOCUMENT_KIND_LABELS,
   DOCUMENT_KINDS,
   SCHEMA_VERSION,
-  SEED_DOMAINS,
+  AREA_SEEDS,
   type DomainMeta,
   type LifequestJson,
   type Result,
@@ -61,13 +61,13 @@ export async function createVault(
     await atomicWriteFile(paths.agentsJson, `${JSON.stringify({ hires: [] }, null, 2)}\n`);
     await atomicWriteFile(paths.logJsonl, "");
 
-    for (let i = 0; i < SEED_DOMAINS.length; i++) {
-      const seed = SEED_DOMAINS[i]!;
+    for (const seed of AREA_SEEDS) {
       const meta: DomainMeta = {
         name: seed.name,
         description: null,
         color: null,
-        sortOrder: i,
+        sortOrder: seed.sortOrder,
+        unlockedAt: seed.locked ? null : now,
         archivedAt: null,
         createdAt: now,
         updatedAt: now,

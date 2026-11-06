@@ -6,6 +6,7 @@ import { serializeFrontmatter } from "./frontmatter.ts";
 import { appendLog } from "./log.ts";
 import { vaultPaths } from "./paths.ts";
 import {
+  BASE_AREA_SLUG,
   DOCUMENT_KIND_LABELS,
   DOCUMENT_KINDS,
   type DocumentKind,
@@ -111,6 +112,7 @@ export async function createDomain(
       color: null,
       sortOrder: maxOrder + 1,
       archivedAt: null,
+      unlockedAt: now,
       createdAt: now,
       updatedAt: now,
     };
@@ -218,6 +220,9 @@ export async function archiveDomain(
       }
       throw e;
     }
+    if (slug === BASE_AREA_SLUG) {
+      return { ok: false, error: "The Life area cannot be archived" };
+    }
 
     const now = new Date().toISOString();
     meta.archivedAt = now;
@@ -280,6 +285,53 @@ export async function unarchiveDomain(
   }
 }
 
+/**
+ * Unlock a seeded area. Unlocking is a flag flip: the folder, its four
+ * doctrine documents and its database already exist, so nothing is created or
+ * moved. Idempotent — unlocking an unlocked area returns it unchanged.
+ */
+export async function unlockDomain(
+  rootPath: string,
+  slug: string,
+): Promise<Result<DomainRecord>> {
+  try {
+    const located = locateDomainDir(rootPath, slug);
+    if ("error" in located) return { ok: false, error: located.error };
+    const { paths } = located;
+    const metaPath = paths.domainJson(slug);
+    let meta: DomainMeta;
+    try {
+      meta = JSON.parse(await fs.readFile(metaPath, "utf8")) as DomainMeta;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+        return { ok: false, error: `Domain not found: ${slug}` };
+      }
+      throw e;
+    }
+
+    if (meta.unlockedAt != null) {
+      return { ok: true, value: await loadDomainRecord(rootPath, slug) };
+    }
+
+    const now = new Date().toISOString();
+    meta.unlockedAt = now;
+    meta.updatedAt = now;
+    await atomicWriteFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`);
+
+    const logRes = await appendLog(paths.root, {
+      domainSlug: slug,
+      type: "domain.unlocked",
+      summary: `Unlocked area ${meta.name}`,
+      payload: { name: meta.name },
+    });
+    if (!logRes.ok) return logRes;
+
+    return { ok: true, value: await loadDomainRecord(rootPath, slug) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function deleteDomain(
   rootPath: string,
   slug: string,
@@ -298,6 +350,9 @@ export async function deleteDomain(
         return { ok: false, error: `Domain not found: ${slug}` };
       }
       throw e;
+    }
+    if (slug === BASE_AREA_SLUG) {
+      return { ok: false, error: "The Life area cannot be deleted" };
     }
     if (meta.archivedAt == null) {
       return { ok: false, error: `Archive this domain before deleting it: ${slug}` };
