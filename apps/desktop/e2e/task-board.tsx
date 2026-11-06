@@ -435,6 +435,7 @@ const stubs: Record<string, (...args: unknown[]) => unknown> = {
       lastActive: null,
       pinned: false,
       archived: false,
+      revision: 0,
     };
     harness.taskBoardSessions!.push({ id: session.id, title: session.title });
     return ok(session);

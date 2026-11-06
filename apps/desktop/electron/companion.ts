@@ -1,4 +1,5 @@
 import { spawn, execFile, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -1184,9 +1185,14 @@ export async function companionSessionMessages(
   | { ok: false; error: string }
 > {
   try {
-    const res = await hermesFetch(`/api/sessions/${encodeURIComponent(id)}/messages`);
-    if (!res.ok) return { ok: false, error: `Messages failed (${res.status})` };
-    return { ok: true, value: messagesFromPayload(await res.json()) };
+    const res = await gatewayCall("Reading a chat", () =>
+      hermesFetch(`/api/sessions/${encodeURIComponent(id)}/messages`),
+    );
+    const unreachable = unreachableOf(res);
+    if (unreachable) return { ok: false, error: unreachable };
+    const response = res as Response;
+    if (!response.ok) return { ok: false, error: `Messages failed (${response.status})` };
+    return { ok: true, value: messagesFromPayload(await response.json()) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -1197,6 +1203,16 @@ export type CompanionSessionPatch = {
   title?: string;
   pinned?: boolean;
   archived?: boolean;
+  /**
+   * The gateway's revision counter for the chat, as the list read it.
+   *
+   * Hermes fences every session mutation on it: a write that carries no
+   * `expected_revision` is refused as a pre-fence client (409), and one whose
+   * revision no longer matches the row is refused as a conflict (409). This is
+   * the number the sidebar's list already read, so an archive can be sent with
+   * the fence it needs.
+   */
+  revision?: number | null;
 };
 
 /**
@@ -1204,6 +1220,18 @@ export type CompanionSessionPatch = {
  *
  * All three are durable Hermes-side flags, so Hermes Desktop (and every other
  * channel on this profile) sees the same state; LifeQuest keeps no copy.
+ *
+ * THE FENCE
+ *
+ * The gateway refuses a session write that carries no mutation identity: it
+ * answers 409 `mutation_identity_required` (or `CLIENT_UPGRADE_REQUIRED` for a
+ * client old enough to predate the fence). So every write here carries a
+ * `request_id` — the idempotency key, so a retry of the same gesture commits
+ * once — and an `expected_revision`, the row's own revision counter. A chat
+ * whose revision the caller does not know (a row the list did not carry, or an
+ * older host that reports no counter) is written unfenced: the gateway's own
+ * answer is then the verdict, which is better than refusing the operator's
+ * gesture on this app's side.
  */
 export async function companionSessionPatch(
   id: string,
@@ -1217,14 +1245,28 @@ export async function companionSessionPatch(
     if (Object.keys(body).length === 0) {
       return { ok: false, error: "Session update had nothing to change" };
     }
-    const res = await hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      return { ok: false, error: await errorDetail(res, `Session update failed (${res.status})`) };
+    // The receipt key. The gateway deduplicates on it, so a retried gesture
+    // commits once instead of racing itself.
+    body.request_id = randomUUID();
+    if (typeof patch.revision === "number" && Number.isInteger(patch.revision)) {
+      body.expected_revision = patch.revision;
     }
-    const updated = sessionFromPayload(await res.json());
+    const res = await gatewayCall("Updating a chat", () =>
+      hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    );
+    const unreachable = unreachableOf(res);
+    if (unreachable) return { ok: false, error: unreachable };
+    const response = res as Response;
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: await errorDetail(response, `Session update failed (${response.status})`),
+      };
+    }
+    const updated = sessionFromPayload(await response.json());
     if (!updated) return { ok: false, error: "Session update returned no session" };
     return { ok: true, value: updated };
   } catch (e) {
@@ -1238,24 +1280,65 @@ export async function companionSessionPatch(
  * This is not `archived` in a stronger key: the store's own delete, so the row
  * is gone from Hermes everywhere and nothing brings it back. LifeQuest keeps no
  * copy of a chat, so there is nothing to reconcile here afterwards.
+ *
+ * The gateway fences this write the same way it fences every other session
+ * mutation, and it takes the fence as query parameters: a delete with no
+ * `request_id` and no `expected_revision` is refused as a pre-fence client. So
+ * the same identity goes out here.
  */
 export async function companionSessionDelete(
   id: string,
+  patch: { revision?: number | null } = {},
 ): Promise<
   { ok: true; value: { id: string; deleted: boolean } } | { ok: false; error: string }
 > {
   try {
-    const res = await hermesFetch(`/api/sessions/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
-      return { ok: false, error: await errorDetail(res, `Delete session failed (${res.status})`) };
+    const query = new URLSearchParams();
+    query.set("request_id", randomUUID());
+    if (typeof patch.revision === "number" && Number.isInteger(patch.revision)) {
+      query.set("expected_revision", String(patch.revision));
     }
-    const body = (await res.json()) as { id?: unknown; deleted?: unknown };
-    // The gateway answers `{object, id, deleted}`; `deleted: false` means the row
-    // was already gone, which is the outcome the caller wanted either way.
-    if (typeof body?.id !== "string") return { ok: false, error: "Delete session returned no id" };
-    return { ok: true, value: { id: body.id, deleted: body.deleted !== false } };
+    const res = await gatewayCall("Deleting a chat", () =>
+      hermesFetch(`/api/sessions/${encodeURIComponent(id)}?${query.toString()}`, {
+        method: "DELETE",
+      }),
+    );
+    const unreachable = unreachableOf(res);
+    if (unreachable) return { ok: false, error: unreachable };
+    const response = res as Response;
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: await errorDetail(response, `Delete session failed (${response.status})`),
+      };
+    }
+    const body = (await response.json()) as {
+      id?: unknown;
+      session_id?: unknown;
+      deleted?: unknown;
+      deleted_ids?: unknown;
+      already_absent?: unknown;
+    };
+    /**
+     * The gateway's receipt names the row it retired. A delete answers
+     * `{ok, session_id, revision, deleted_ids}` — the id is `session_id`, not
+     * `id` — and a row that was already gone answers `{ok, already_absent}`,
+     * which is the outcome the caller wanted either way.
+     *
+     * Older hosts answered `{object, id, deleted}`; both shapes are read, so a
+     * delete is not reported as failed just because the host words its receipt
+     * differently. What matters is that the receipt names a row at all: a
+     * reply that names none is not a delete this app can claim.
+     */
+    const named = [body?.id, body?.session_id].find(
+      (value): value is string => typeof value === "string" && value.length > 0,
+    );
+    if (!named) {
+      const alreadyAbsent = body?.deleted === false || body?.already_absent === true;
+      if (alreadyAbsent) return { ok: true, value: { id, deleted: true } };
+      return { ok: false, error: "Delete session returned no id" };
+    }
+    return { ok: true, value: { id: named, deleted: body.deleted !== false } };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
