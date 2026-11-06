@@ -1164,7 +1164,6 @@ export const SYSTEM_PIN_KINDS = [
   "today-week",
   "pending-decisions",
   "recent-log",
-  "doctrine-progress",
   "companion-brief",
 ] as const;
 export type SystemPinKind = (typeof SYSTEM_PIN_KINDS)[number];

@@ -238,7 +238,7 @@ describe("dashboard tile e2e", () => {
       assert.equal(scenario.pass, true, `${scenario.name}: ${scenario.detail ?? ""}`);
     }
 
-    // The board is the seeded nine, in the seeded order: the reported card last,
+    // The board is the seeded eight, in the seeded order: the reported card last,
     // and the cards that must stay narrow beside the wide ones.
     assert.deepEqual(
       report.checks.widths[0]?.cards.map((card) => card.id),
@@ -251,7 +251,6 @@ describe("dashboard tile e2e", () => {
         "view:financial:v-ledger",
         "sys:pending-decisions",
         "view:financial:v-real",
-        "(agents)",
       ],
     );
 
@@ -363,9 +362,8 @@ describe("dashboard tile e2e", () => {
     const { chrome, menu, handles, width, height, floor, row, keys, outside, escape, noop, locked } =
       report.checks.edits;
     assert.equal(chrome.spanIcons, 0, "the Fill-the-row icon is still on the board");
-    // One card on the board is the Active-agents panel, which is page furniture
-    // rather than a pin: every pin has its menu, and the helper has none.
-    assert.equal(chrome.menus, chrome.cards - 1, "not every pin offers its 3-dot menu");
+    // Every card on the board is a pin, and every pin has its menu.
+    assert.equal(chrome.menus, chrome.cards, "not every pin offers its 3-dot menu");
     assert.deepEqual(
       chrome.chromeButtons,
       Array(chrome.menus).fill("pin-menu-toggle"),

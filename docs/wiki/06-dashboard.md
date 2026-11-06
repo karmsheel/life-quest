@@ -3,9 +3,9 @@
 The Dashboard is the home pin board: a page of live cards for one lens. There is
 one board for **Overview** and one for each live domain. It is the surface you
 land on and the surface you arrange: the companion's brief, goals,
-deadline pressure, the week, pending Decisions, recent activity, doctrine
-progress, saved database views and your own pages, all as cards you can move,
-resize, lock and hand to the companion.
+deadline pressure, the week, pending Decisions, recent activity, saved database
+views and your own pages, all as cards you can move, resize, lock and hand to
+the companion.
 
 The board is a control the operator can open and close, not a fixed layout. A new
 board starts with the built-in cards, and everything on it is meant to be
@@ -86,8 +86,7 @@ to keep something the companion says, put it in a page or a note.
 3. The **Add pin** row opens. Press a built-in card name, a page title, or a saved
    view title to pin it. Built-in cards appear under their internal names —
    `goal-progress`, `deadline`, `today-week`, `pending-decisions`, `recent-log`,
-   `doctrine-progress`, `companion-brief` — because they are app furniture, not
-   records.
+   `companion-brief` — because they are app furniture, not records.
 4. The card appears on the board. Press **Hide pin board** to close the row.
 
 ### Move a card
@@ -162,11 +161,11 @@ to keep something the companion says, put it in a page or a note.
 | **Pin board** / **Hide pin board** | Opens the **Add pin** row; absent on a locked or fully-pinned board |
 | **Lock** / **Unlock** | Flips the board's page lock |
 | **Add pin** row | Built-in cards, page titles and saved views not yet on this board |
-| Cards | The pinned content: the companion brief, goals, deadline, today & this week, pending decisions, recent activity, doctrine progress, views, pages |
+| Cards | The pinned content: the companion brief, goals, deadline, today & this week, pending decisions, recent activity, views, pages |
 | Card context | Click a card to add or remove it as companion chat context, up to three; empty board space clears them all |
 | **Card actions** menu | **Edit card**, **Archive**, **Delete** (where applicable) |
+| **Built-in** marker | A small blocks icon in the card's first row, next to its heading, on the cards the app ships; a view or page you created yourself has none |
 | Card borders in Edit mode | Width (right) and height (bottom) handles |
-| **Active agents** card | Always shown; lists hired agents and links to Personnel |
 | **Finance** install card | Shown on Overview and the Financial board when the kit is not installed yet |
 
 ### The built-in cards
@@ -174,16 +173,17 @@ to keep something the companion says, put it in a page or a note.
 | Card | Shows |
 |---|---|
 | Companion brief (`companion-brief`) | The companion's typed items — watch, prompt, ahead, commitment, pattern — in priority order with the reason beneath; items expire and you dismiss them. First on the board; an empty brief says so |
-| Goals (`goal-progress`) | Open goals in this lens with current value, pace and definition of done; a progress bar, not a score |
+| Goals (`goal-progress`) | Open goals in this lens with the domain each is filed under, its current value and pace, and a progress bar — a reading, not a score |
 | Deadline (`deadline`) | Deadline pressure for the lens; can be dismissed until tomorrow |
-| Today & this week (`today-week`) | Tasks scheduled for today and queued this week |
+| Today & this week (`today-week`) | Tasks scheduled for today and queued this week, each with a tick that marks it done |
 | Pending decisions (`pending-decisions`) | Pending Decisions visible in this lens, linked to the inbox |
-| Recent activity (`recent-log`) | The newest Life log entries |
-| Doctrine (`doctrine-progress`) | How much of the lens's doctrine is filled and locked |
+| Recent activity (`recent-log`) | The newest Life log entries, one line each: the summary, then the event type and its time |
 
 A saved **view** card draws its blocks — a number, a table, a trend — from a
 domain database and re-runs when the vault changes. A **page** card shows a page's
-title and domain and opens it.
+title and domain and opens it. The built-in cards wear a small blocks marker in
+their heading row, so you can tell the app's own furniture from a card you
+created; a view or page card has no marker and its menu offers **Delete**.
 
 ## Rules and behaviour
 
@@ -219,7 +219,6 @@ title and domain and opens it.
   locked board does not stop the companion writing the brief: the lock governs
   the cards, and the brief is a record a card draws. Locking keeps the companion
   from moving, adding, resizing or removing cards.
-- The **Active agents** card is always present and is not a pin.
 
 These are the Dashboard laws; [`LAWS/DASHBOARD.md`](../../LAWS/DASHBOARD.md) is
 the contract.
@@ -233,12 +232,19 @@ the contract.
 - The context is live dock state, not a saved setting: it survives turns while you
   hold it, and nothing about it is written to the vault.
 - If a card's saved view or page is deleted from the vault, the card leaves every
-  board that showed it on the next read. You do not have to unpin it by hand.
+  board that showed it on the next read. You do not have to unpin it by hand. A
+  built-in card the app no longer ships leaves the board the same way.
 - The board keeps your place when cards reflow: a write that changes a card's
   height does not scroll you away from what you were reading.
+- A tick on **Today & this week** finishes the task: it writes the same move to
+  Done that the Act board's drag makes, and the task leaves the card with the
+  column's count following it.
 - A locked board is read-only *here*; the operator can still unlock it. Locking is
   not encryption and not a permission system — it is a statement that this board
   is finished for now.
+- The blocks marker on a built-in card is information, not chrome: a locked board
+  keeps it while the card menu goes away, so you can still tell the app's own
+  cards from the ones you created.
 - The lens is the filter, not the wing. Switching to another wing and back returns
   you to the same board.
 

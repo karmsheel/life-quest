@@ -4173,6 +4173,15 @@ a {
   gap: 0.15rem;
 }
 
+/* The banner's first row: the label and the built-in marker beside it, on one
+   line. The banner is a built-in card with a different shape, and this is where
+   its heading sits. */
+.deadline-banner__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .deadline-banner__label {
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -4257,33 +4266,6 @@ a {
   line-height: 1.45;
 }
 
-.home-dashboard__progress {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-width: 12rem;
-}
-
-.home-dashboard__progress-label {
-  font-size: 0.8rem;
-  white-space: nowrap;
-}
-
-.home-progress-bar {
-  flex: 1;
-  height: 0.35rem;
-  border-radius: var(--home-radius);
-  background: var(--bg-subtle);
-  border: 1px solid var(--border-soft);
-  overflow: hidden;
-}
-
-.home-progress-bar__fill {
-  height: 100%;
-  background: var(--accent);
-  transition: width 0.25s ease;
-}
-
 /* The board's tiles.
    `--home-tile-unit-rem` is the layout step a card's width is a whole number of,
    and it is written down exactly once: the tracks below are sized from it, and
@@ -4324,6 +4306,14 @@ a {
   grid-column: 1 / -1;
 }
 
+/* The deadline pin is a control for pressure, not a card: when there is no
+   deadline to show, its banner draws nothing and the pin must not leave its
+   three-dot floating in an empty cell. The pin stays in the DOM — it is still
+   on the board, and the board read counts it — but it occupies nothing. */
+.home-pin[data-pin-id="sys:deadline"]:not(:has(.deadline-banner)) {
+  display: none;
+}
+
 .home-card__title {
   margin: 0;
   font-size: 0.72rem;
@@ -4336,8 +4326,10 @@ a {
   gap: 0.5rem;
 }
 
+/* A card's count rides its heading: the words, the built-in marker, then the
+   number — not floated to the far edge where the three-dot menu reads it as one
+   of its own controls. */
 .home-card__count {
-  margin-left: auto;
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0;
@@ -4376,7 +4368,6 @@ a {
   font-weight: 600;
 }
 
-.home-doctrine-list,
 .home-mini-list,
 .home-activity-list {
   list-style: none;
@@ -4385,51 +4376,6 @@ a {
   display: flex;
   flex-direction: column;
   gap: 0;
-}
-
-.home-doctrine-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.6rem 0.95rem;
-  border: 0;
-  border-top: 1px solid var(--border-soft);
-  border-left: 2px solid transparent;
-  border-radius: 0;
-  background: transparent;
-}
-
-.home-doctrine-list > .home-doctrine-row:first-child {
-  border-top: 0;
-}
-
-.home-doctrine-row:hover {
-  border-left-color: var(--accent);
-  background: var(--bg-subtle);
-}
-
-.home-doctrine-row__main {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  text-decoration: none;
-  color: var(--fg);
-  flex: 1;
-  min-width: 0;
-}
-
-a.home-doctrine-row__main:hover .home-doctrine-row__label {
-  color: var(--accent);
-}
-
-.home-doctrine-row__label {
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-
-.home-doctrine-row__meta {
-  font-size: 0.75rem;
 }
 
 .home-mini-list__item {
@@ -4463,34 +4409,44 @@ a.home-mini-list__link:hover {
   white-space: nowrap;
 }
 
+/* One log line: what happened, then the event type and the time that recorded
+   it, stacked. The four-column strip this replaces set a time column and a type
+   column beside the summary, which is what kept the card a full row wide; a line
+   of history belongs in a column, not across the board. */
 .home-activity-row {
-  display: grid;
-  grid-template-columns: minmax(8rem, auto) minmax(6rem, auto) 1fr;
-  gap: 0.3rem 0.75rem;
-  align-items: baseline;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
   padding: 0.55rem 0.95rem;
   border-bottom: 1px solid var(--border-soft);
-  font-size: 0.875rem;
 }
 
 .home-activity-row:last-child {
   border-bottom: none;
 }
 
+.home-activity-row__summary {
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.home-activity-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.5rem;
+}
+
 .home-activity-row__when {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   white-space: nowrap;
 }
 
 .home-activity-row__type {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: var(--accent);
-}
-
-.home-activity-row__summary {
-  line-height: 1.4;
 }
 
 /* The companion brief: the operator's first card, typed items with a reason.
@@ -4649,7 +4605,6 @@ a.home-mini-list__link:hover {
    taller than the content, so an untouched card is laid out exactly as before. */
 .home-pin > .view-card,
 .home-pin > .home-card,
-.home-pin > .home-doctrine-pin,
 .home-pin > .deadline-banner {
   flex: 1 1 auto;
 }
@@ -4763,6 +4718,33 @@ a.home-mini-list__link:hover {
   position: relative;
   display: flex;
   gap: 0.2rem;
+}
+
+/* The built-in marker: a small blocks glyph in the card's first row, after the
+   heading, saying this card shipped with the app rather than being a view or
+   page the operator made. A card the operator created wears none, so the
+   marker's absence is the other half of the fact.
+
+   It is INFORMATION, not editing chrome, which is why it lives in the heading
+   rather than in the tools row: a locked board hides the menu and keeps this.
+   It is not a control — `pointer-events: none` makes a press here a press on the
+   card, so clicking the marker asks the companion about the card like the rest
+   of the body. The heading is a flex row, so the marker is one more item in it;
+   it stays on the baseline of the words it follows and never widens the card by
+   more than its glyph. */
+.home-pin__builtin {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--muted-foreground);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.home-pin__builtin svg {
+  width: 0.8rem;
+  height: 0.8rem;
+  display: block;
 }
 
 /* The card's context toggle, for the keyboard and the screen reader.
@@ -5042,8 +5024,7 @@ a.home-mini-list__link:hover {
    width, a title that ignored the corner row would be a title the measurement did
    not know about. */
 .home-pin:has(.home-pin__tools) .home-card__title,
-.home-pin:has(.home-pin__tools) .view-card__title,
-.home-pin:has(.home-pin__tools) .home-dashboard__progress {
+.home-pin:has(.home-pin__tools) .view-card__title {
   padding-right: 2.1rem;
 }
 
@@ -5053,13 +5034,6 @@ a.home-mini-list__link:hover {
   position: static;
   justify-content: flex-end;
   margin-bottom: 0.35rem;
-}
-
-.home-doctrine-pin {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-  min-width: 0;
 }
 
 .home-dashboard .doc-status-badge {
@@ -5114,18 +5088,76 @@ a.home-mini-list__link:hover {
   color: var(--muted-foreground);
 }
 
-.home-card--wide {
-  container-type: inline-size;
+/* The card is a column now, not a full-row board: Today and This week stack as
+   two labelled groups, so the card is as wide as its tasks and sits beside its
+   neighbours instead of pushing them off the row. A rule between the groups
+   keeps the two lists from reading as one. */
+.home-task-card .home-task-cols {
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
 }
 
-@container (max-width: 520px) {
-  .home-task-cols {
-    grid-template-columns: 1fr;
-  }
+.home-task-card .home-task-cols > div + div {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.7rem;
+}
 
-  .home-activity-row {
-    grid-template-columns: 1fr;
-  }
+/* A column's own count: the number of tasks the head stands for, on the same
+   line and in a smaller voice, so the heading still reads first. */
+.home-task-cols__count {
+  margin-left: 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One task on the Dashboard: a tick, then the words. The tick is the card's one
+   action — it writes the same move to Done the Act board's drag does. */
+.home-task-list {
+  list-style: none;
+  margin: 0 -0.95rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.home-task-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.45rem 0.95rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.home-task-row:last-child {
+  border-bottom: none;
+}
+
+.home-task-row:hover {
+  background: var(--bg-subtle);
+}
+
+.home-task-row__check {
+  flex: none;
+  width: 0.95rem;
+  height: 0.95rem;
+  margin: 0.18rem 0 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.home-task-row__check:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.home-task-row__title {
+  font-size: 0.88rem;
+  line-height: 1.35;
+  color: var(--fg);
+  min-width: 0;
 }
 
 /* —— Form feedback —— */
@@ -9638,18 +9670,67 @@ button.chat-panel__activity-line:hover {
 }
 
 /* —— Home goal progress (KAR-8) —— */
+/*
+ * A goal row is its identity first — the goal and the domain it is filed under
+ * — then what it takes to see progress. The domain is a chip rather than a
+ * column: on a card this narrow, the area a goal belongs to is a label on the
+ * goal, not a second list beside it.
+ */
 .home-goal-list .home-goal-row {
   align-items: flex-start;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.4rem;
 }
 
-.home-goal-row__main {
+.home-goal-row__head {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
   width: 100%;
+}
+
+.home-goal-row__name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--fg);
+  min-width: 0;
+}
+
+.home-goal-row__domain {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: none;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--home-radius);
+  background: var(--bg-subtle);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.home-goal-row__domain-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+
+.home-goal-row__domain.is-unassigned {
+  background: transparent;
+  border-style: dashed;
+}
+
+.home-goal-row__domain.is-unassigned .home-goal-row__domain-dot {
+  background: transparent;
+  border: 1px dashed var(--border);
 }
 
 .home-goal-row__measure {
@@ -9672,6 +9753,26 @@ button.chat-panel__activity-line:hover {
 
 .home-goal-row__pace {
   font-size: 0.78rem;
+}
+
+/* How far along a metric goal is: a hairline of accent under its own measure
+   line, filled to the target. It is a reading, not a score — no number is
+   printed on it beyond the measure line above. */
+.home-goal-row__bar {
+  width: 100%;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+}
+
+.home-goal-row__bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 0.25s ease;
 }
 
 .home-goal-row__dod {

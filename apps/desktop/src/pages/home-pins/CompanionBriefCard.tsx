@@ -15,6 +15,7 @@ import { api } from "@/lib/ipc";
 import { useLiveData } from "@/state/LiveDataProvider";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { BuiltInBadge } from "@/components/home/BuiltInBadge";
 
 /**
  * The companion's brief, on the dashboard.
@@ -156,7 +157,10 @@ export function CompanionBriefCard() {
       role="status"
       aria-live="polite"
     >
-      <h2 className="home-card__title">Companion brief</h2>
+      <h2 className="home-card__title">
+        Companion brief
+        <BuiltInBadge />
+      </h2>
       {stale && read?.writtenAt ? (
         <p className="companion-brief__stale muted" data-testid="companion-brief-stale">
           Not refreshed since {formatDay(read.writtenAt)}

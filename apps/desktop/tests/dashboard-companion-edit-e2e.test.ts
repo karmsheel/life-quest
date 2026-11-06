@@ -74,6 +74,8 @@ type Report = {
     aboveGrewBy: number;
     aboveOffsetDelta: number;
     boardOffsetDelta: number;
+    boardOrderChanged: boolean;
+    boardAnchorHeld: boolean;
     growSamples: { sawLoading: boolean };
     aboveFrames: Array<{ top: number; max: number; recent: number }>;
     rebuiltCards: string[];
@@ -189,11 +191,15 @@ describe("dashboard companion edit e2e", () => {
       `the edited card did not grow on screen: ${firstFrame!.recent} → ${lastFrame!.recent}`,
     );
 
-    // A re-pin carries the operator's place with the card: the offset moves by the
-    // card's own change of slot, which is where the pre-fix build slid the board.
-    assert.ok(
-      Math.abs(checks.boardOffsetDelta) > 2,
-      `the re-pin moved the card and the board did not follow (${checks.boardOffsetDelta}px)`,
+    // A re-pin carries the operator's place with the card: the order really
+    // changes, and the card under the eye stays under it. How far the offset has
+    // to move is the card's own change of slot — which is zero when the re-pin
+    // happens to leave the card in the same row, so the hold is the claim.
+    assert.equal(checks.boardOrderChanged, true, "the companion's re-pin did not change the board's order");
+    assert.equal(
+      checks.boardAnchorHeld,
+      true,
+      `the card under the eye moved when the board was re-pinned (offset ${checks.boardOffsetDelta}px)`,
     );
 
     // ...and the control: an event with nothing behind it moves nothing.

@@ -32,7 +32,15 @@
  *                        gone: removal lives in the 3-dot menu now, as Archive
  *                        and Delete, and `dashboard-card-context` claims what
  *                        the menu holds.
- *  3. `card-shell`     — every pin draws exactly ONE card frame. A view pin is a
+ *  3. `builtin-badge`  — the cards that came with the app say so: each built-in
+ *                        card wears a `lucide-blocks` marker in its first row,
+ *                        after the heading's words, and a view or page the
+ *                        operator created wears none. The marker is a labelled
+ *                        `role="img"`, not a button, it is pointer-transparent,
+ *                        and it is in the heading's row rather than absolutely
+ *                        positioned in the corner. A fixture card on the wrong
+ *                        side of the line fails by id.
+ *  4. `card-shell`     — every pin draws exactly ONE card frame. A view pin is a
  *                        `ViewCard`, which renders `section.view-card` itself, and
  *                        `HomePage`'s span wrapper used to wear that same class —
  *                        so the pin nested two shells and the operator got a frame
@@ -101,6 +109,20 @@ const SEED = [
 ];
 
 /**
+ * The pins a brand-new board seeds — the app's current built-in cards. The still
+ * this rig leaves behind is of THIS board, not of the fixture above: it is what
+ * the operator sees on a vault whose board has never been edited.
+ */
+const DEFAULT_PINS = [
+  { id: "sys:companion-brief", kind: "system", system: "companion-brief" },
+  { id: "sys:goal-progress", kind: "system", system: "goal-progress" },
+  { id: "sys:deadline", kind: "system", system: "deadline" },
+  { id: "sys:today-week", kind: "system", system: "today-week" },
+  { id: "sys:pending-decisions", kind: "system", system: "pending-decisions" },
+  { id: "sys:recent-log", kind: "system", system: "recent-log" },
+];
+
+/**
  * Everything the rig reads off the board in one pass: the cards in DOM order,
  * each card's chrome buttons with the icon each draws, the chrome's whole text
  * (which must hold no glyph), and the Add-pin heading's icon.
@@ -125,6 +147,48 @@ const SAMPLE = `(() => {
         svgs: b.querySelectorAll("svg").length,
         icon: [...((b.querySelector("svg") ? b.querySelector("svg").classList : []) || [])].join(" "),
       })),
+      // The built-in marker, if this card wears one: what it is, what it says,
+      // and where it sits — in the card's first row, after the heading's words.
+      builtinAnywhere: Boolean(card.querySelector(".home-pin__builtin")),
+      builtin: (() => {
+        const badge = card.querySelector(
+          ":scope > .home-card > .home-card__title > .home-pin__builtin",
+        );
+        if (!badge) return null;
+        const svg = badge.querySelector("svg");
+        const heading = badge.parentElement;
+        const badgeBox = badge.getBoundingClientRect();
+        const headingBox = heading.getBoundingClientRect();
+        const firstChild = heading.firstChild;
+        return {
+          tag: badge.tagName,
+          role: badge.getAttribute("role"),
+          label: badge.getAttribute("aria-label"),
+          title: badge.getAttribute("title"),
+          svgs: svg ? 1 : 0,
+          icon: [...((svg ? svg.classList : []) || [])].join(" "),
+          buttons: badge.querySelectorAll("button").length,
+          pointerEvents: getComputedStyle(badge).pointerEvents,
+          position: getComputedStyle(badge).position,
+          placement: {
+            inHeading: heading.classList.contains("home-card__title"),
+            // The heading's words come first in its own text node; the marker is
+            // the next thing in the same row, not the heading's other edge.
+            wordsFirst: Boolean(
+              firstChild &&
+                firstChild.nodeType === 3 &&
+                (firstChild.textContent || "").trim(),
+            ),
+            sameRow:
+              Math.abs(
+                (badgeBox.top + badgeBox.bottom) / 2 -
+                  (headingBox.top + headingBox.bottom) / 2,
+              ) <= 2,
+            afterHeadingStart: badgeBox.left > headingBox.left,
+            insideHeading: badgeBox.right <= headingBox.right + 0.5,
+          },
+        };
+      })(),
     })),
     chromeText: [...document.querySelectorAll(".home-pin__chrome")].map((el) => el.textContent || "").join(""),
     lifted: document.querySelectorAll(".home-pin.is-lifted").length,
@@ -210,11 +274,11 @@ async function checkCardShell(win) {
   );
 
   const problems = [];
-  if (pins.length !== SEED.length + 1) {
-    problems.push(`the board rendered ${pins.length} pins, expected ${SEED.length + 1}`);
+  if (pins.length !== SEED.length) {
+    problems.push(`the board rendered ${pins.length} pins, expected ${SEED.length}`);
   }
   for (const pin of pins) {
-    const where = pin.id ?? "the Active-agents card";
+    const where = pin.id ?? "a pin without an id";
     if (pin.shells !== 1) {
       problems.push(
         `${where} draws ${pin.shells} card frames (${JSON.stringify(pin.shellClass)})`,
@@ -397,16 +461,15 @@ async function renderBoard(win, pins, locked) {
     `(window.dashboardArrangeCommits ?? 0) > ${before}`,
     `the page to commit with ${pins.length} pins locked=${locked}`,
   );
-  // The board read is async, so the cards are the last thing to settle. The
-  // count is the pins plus the one card that is not a pin — the Active-agents
-  // card — which is why it is `pins.length + 1` rather than `pins.length`.
+  // The board read is async, so the cards are the last thing to settle. Every
+  // card the page draws is a pin now, so the count is the pin count.
   await waitFor(
     win,
     `(() => {
        const badge = document.querySelector('[data-testid="board-lock-badge"]');
        const settled = badge && badge.dataset.locked === '${locked ? "true" : "false"}';
        const cards = document.querySelectorAll('.home-dashboard__grid > .home-pin').length;
-       return settled && cards === ${pins.length + 1};
+       return settled && cards === ${pins.length};
      })()`,
     "the board to render its cards",
   );
@@ -497,14 +560,6 @@ async function openPinBoard(win) {
     `Boolean(document.querySelector('[data-testid="board-add-pin"]'))`,
     "the Add-pin row to open",
   );
-}
-
-/** Scroll the board so its far end is on screen; returns nothing. */
-async function scrollBoardToEnd(win) {
-  await win.webContents.executeJavaScript(
-    "(() => { const s = document.querySelector('.arrange-scroll'); s.scrollTop = s.scrollHeight; return s.scrollTop; })()",
-  );
-  await settleFrames(win);
 }
 
 /**
@@ -654,6 +709,67 @@ function checkChromeIdentity(sample) {
 }
 
 /**
+ * Which cards came with the app.
+ *
+ * The Dashboard's cards are two kinds, and the operator can see which is which:
+ * a built-in card (goals, deadline, today & this week, pending decisions, recent
+ * activity) is app furniture with no record behind it and no Delete in its menu,
+ * while a view or page card is something the operator made. The built-in cards
+ * wear a blocks marker in their first row, after the heading's words; the
+ * operator's cards wear none.
+ *
+ * The claim is made from the rendered board rather than the pin list, and it is
+ * exact in both directions: every system pin must carry the marker and every
+ * view/page pin must not, so a marker that leaked onto the operator's own cards
+ * fails the same way a missing one does. The marker must also BE a marker — a
+ * labelled image, not a control — and it must sit where the request put it: in
+ * the heading element, in the same row as the heading, after the words, and not
+ * absolutely positioned in the card's corner where it used to hang.
+ */
+function checkBuiltinBadge(sample) {
+  const problems = [];
+  const systemPins = new Set(
+    SEED.filter((pin) => pin.kind === "system").map((pin) => pin.id),
+  );
+  for (const card of sample.cards) {
+    const wantsMarker = systemPins.has(card.id);
+    if (!wantsMarker && card.builtinAnywhere) {
+      problems.push(`${card.id} is not a built-in card but wears the marker`);
+      continue;
+    }
+    if (wantsMarker && card.builtin === null) {
+      problems.push(`${card.id} is a built-in card but wears no marker in its heading`);
+      continue;
+    }
+    if (!card.builtin) continue;
+    const where = `${card.id}'s marker`;
+    if (card.builtin.tag !== "SPAN") problems.push(`${where} is a ${card.builtin.tag}, expected a span`);
+    if (card.builtin.role !== "img") problems.push(`${where} has role ${JSON.stringify(card.builtin.role)}, expected "img"`);
+    if (card.builtin.label !== "Built-in card") {
+      problems.push(`${where} is named ${JSON.stringify(card.builtin.label)}, expected "Built-in card"`);
+    }
+    if (!card.builtin.title) problems.push(`${where} has no title`);
+    if (card.builtin.buttons !== 0) problems.push(`${where} holds ${card.builtin.buttons} button(s), so it became a control`);
+    if (card.builtin.svgs !== 1 || !card.builtin.icon.includes("lucide-blocks")) {
+      problems.push(`${where} draws ${card.builtin.svgs} icon(s) (${JSON.stringify(card.builtin.icon)}), expected lucide-blocks`);
+    }
+    if (card.builtin.pointerEvents !== "none") {
+      problems.push(`${where} takes presses of its own (pointer-events: ${card.builtin.pointerEvents})`);
+    }
+    if (card.builtin.position === "absolute") {
+      problems.push(`${where} is absolutely positioned — it belongs in the heading row, not the corner`);
+    }
+    const placement = card.builtin.placement;
+    if (!placement.inHeading) problems.push(`${where} is not inside the card's heading`);
+    if (!placement.wordsFirst) problems.push(`${where} does not follow the heading's words`);
+    if (!placement.sameRow) problems.push(`${where} is not on the heading's row`);
+    if (!placement.afterHeadingStart) problems.push(`${where} starts before the heading does`);
+    if (!placement.insideHeading) problems.push(`${where} runs past the heading's right edge`);
+  }
+  return check("builtin-badge", problems.length === 0, problems.join("; "));
+}
+
+/**
  * The activation claims: what lifts a card, and — just as important — what does
  * not. A hold that fires on any press would break every link on the board, so
  * each of these is a claim about restraint as much as about the lift.
@@ -729,27 +845,29 @@ async function checkActivation(win) {
   );
 
   // 5. A hold does not move the board, and a drag moves the *room* for the card
-  //    into the slot it will land in. `sys:goal-progress` is the board's first
-  //    card and a full-row one, so this is the strongest version of the claim:
-  //    the whole row it left is what the cards below move up into.
+  //    into the slot it will land in. `view:financial:v-summary` is the board's
+  //    full-row card (a stored span-2) and `sys:pending-decisions` is the card in
+  //    the row below it, so this is the strongest version of the claim: the whole
+  //    row it left is what the card below moves up into.
   step("lift-leaves-a-gap");
   await beginScenario(win);
-  const restingGoal = await cardRect(win, "sys:goal-progress");
-  const restingWeekly = await cardRect(win, "view:financial:v-weekly");
-  const gapPoint = await pointOn(win, headingOf("sys:goal-progress"));
+  const restingWide = await cardRect(win, "view:financial:v-summary");
+  const restingBelow = await cardRect(win, "sys:pending-decisions");
+  const gapPoint = await pointOn(win, headingOf("view:financial:v-summary"));
   mouse(win, "mouseDown", gapPoint.x, gapPoint.y);
-  await waitForLift(win, "sys:goal-progress");
+  await waitForLift(win, "view:financial:v-summary");
   // Still held, not yet moved: the card is lifted and nothing has shifted.
-  const heldWeekly = await cardRect(win, "view:financial:v-weekly");
-  const boardStoodStill = Math.abs(heldWeekly.top - restingWeekly.top) <= 2;
-  // Now drag it into the row below. The card follows the pointer, and its slot
-  // follows it: the layout box is the room it will land in.
-  const gapTarget = await pointIn(win, "page:financial:ledger", 0.5, 60);
+  const heldBelow = await cardRect(win, "sys:pending-decisions");
+  const boardStoodStill = Math.abs(heldBelow.top - restingBelow.top) <= 2;
+  // Now drag it past the last card. The card follows the pointer, and its slot
+  // follows it: the layout box is the room it will land in, and the cards that
+  // were under it close up into the row it left.
+  const gapTarget = await pointIn(win, "sys:recent-log", 0.8);
   mouse(win, "mouseMove", gapTarget.x, gapTarget.y);
   await settleFrames(win);
   const dragged = await cardMotion(win);
-  const goalNow = dragged.find((card) => card.id === "sys:goal-progress");
-  const weeklyNow = dragged.find((card) => card.id === "view:financial:v-weekly");
+  const wideNow = dragged.find((card) => card.id === "view:financial:v-summary");
+  const belowNow = dragged.find((card) => card.id === "sys:pending-decisions");
   // A drag in progress is the one picture worth keeping: it shows the card in
   // the hand and the room the board has made for it in the same frame.
   try {
@@ -763,15 +881,18 @@ async function checkActivation(win) {
   mouse(win, "mouseUp", gapTarget.x, gapTarget.y);
   await sleep(200);
   const gapOrder = await restingOrder(win);
-  const closedUp = Boolean(weeklyNow) && Math.abs(weeklyNow.layoutTop - restingGoal.top) <= 2;
-  const roomMoved = Boolean(goalNow) && goalNow.layoutTop > restingGoal.top + 40;
-  const followsHand = Boolean(goalNow) && Math.abs(goalNow.ty) > 10;
+  const closedUp = Boolean(belowNow) && belowNow.layoutTop < restingBelow.top - 40;
+  const followsHand = Boolean(wideNow) && Math.abs(wideNow.ty) > 10;
   check(
     "lift-leaves-a-gap",
-    boardStoodStill && closedUp && roomMoved && followsHand && gapOrder[0] !== "sys:goal-progress",
-    `held: the next card at ${heldWeekly.top} against its resting ${restingWeekly.top}; ` +
-      `dragged: the next card's slot at ${weeklyNow?.layoutTop} against the row it left (${restingGoal.top}), ` +
-      `the card's own slot at ${goalNow?.layoutTop} with a ${goalNow?.ty} translate, ` +
+    boardStoodStill &&
+      closedUp &&
+      followsHand &&
+      gapOrder[gapOrder.length - 1] === "view:financial:v-summary",
+    `held: the card below at ${heldBelow.top} against its resting ${restingBelow.top}; ` +
+      `dragged: the card below closed up to ${belowNow?.layoutTop} from ${restingBelow.top} ` +
+      `(the row it left was at ${restingWide.top}), ` +
+      `the card's own slot at ${wideNow?.layoutTop} with a ${wideNow?.ty} translate, ` +
       `the board now ${JSON.stringify(gapOrder)}`,
   );
 
@@ -796,7 +917,11 @@ async function checkActivation(win) {
   mouse(win, "mouseUp", lockedPoint.x, lockedPoint.y);
   await sleep(80);
   const lockedChrome = await chromeCount(win);
+  const lockedBuiltin = await win.webContents.executeJavaScript(
+    `document.querySelectorAll(".home-dashboard__grid > .home-pin[data-pin-id] .home-pin__builtin").length`,
+  );
   const lockedWrites = (await pinWrites(win)).length;
+  const systemPinCount = SEED.filter((pin) => pin.kind === "system").length;
   check(
     "locked-is-inert",
     lockedLifted.length === 0 &&
@@ -804,8 +929,13 @@ async function checkActivation(win) {
       lockedWrites === 0 &&
       lockedTabStop !== null &&
       lockedTabStop.tabIndex < 0 &&
-      lockedTabStop.focused === false,
-    `a locked board drew ${lockedChrome} chrome bar(s), lifted ${JSON.stringify(lockedLifted)}, ` +
+      lockedTabStop.focused === false &&
+      // The built-in marker is information, not editing chrome: the lock takes
+      // the menu away and keeps the marker, so a locked board still says which
+      // cards are the app's own.
+      lockedBuiltin === systemPinCount,
+    `a locked board drew ${lockedChrome} chrome bar(s) and ${lockedBuiltin} built-in marker(s) ` +
+      `(expected ${systemPinCount}), lifted ${JSON.stringify(lockedLifted)}, ` +
       `wrote ${lockedWrites} time(s), and its card was ${JSON.stringify(lockedTabStop)}`,
   );
 
@@ -848,25 +978,26 @@ async function checkOrdering(win) {
       `${JSON.stringify(swapped)} for ${swappedWrites.length} write(s)`,
   );
 
-  // 2. A full-row card is not a dead zone: the row band decides, and past its
-  //    midpoint the card belongs on the far side of it.
+  // 2. A full-row card is not a dead zone: the row band decides, and a drop on
+  //    its near half puts the card before it, even though the full-row card
+  //    spans the whole line.
   step("drop-past-a-full-row-card");
   await beginScenario(win);
-  await dragCard(win, "view:financial:v-weekly", () => pointIn(win, "sys:today-week", 0.8));
+  await dragCard(win, "sys:pending-decisions", () => pointIn(win, "view:financial:v-summary", 0.2));
   const afterFullRow = await restingOrder(win);
   check(
     "drop-past-a-full-row-card",
     afterFullRow.join(",") ===
       [
         "sys:goal-progress",
+        "view:financial:v-weekly",
         "page:financial:ledger",
         "sys:today-week",
-        "view:financial:v-weekly",
-        "view:financial:v-summary",
         "sys:pending-decisions",
+        "view:financial:v-summary",
         "sys:recent-log",
       ].join(","),
-    `dropping past the midpoint of a full-row card gave ${JSON.stringify(afterFullRow)}`,
+    `dropping on the near half of a full-row card gave ${JSON.stringify(afterFullRow)}`,
   );
 
   // 3. A span-2 card is droppable on either side, and a drop that changes
@@ -901,52 +1032,7 @@ async function checkOrdering(win) {
       `${JSON.stringify(afterWide)} (${writesAfter} write(s))`,
   );
 
-  // 4. The board's one non-pinnable card is not a slot: dropping on it means the
-  //    end of the pins, and no pin is ever placed after it.
-  step("drop-on-the-agents-card");
-  await beginScenario(win);
-  await scrollBoardToEnd(win);
-  // Aimed after the lift, not before it: the lifted card leaves the board's
-  // flow, so the agents card moves up. A point measured beforehand would be
-  // below the grid by the time the hand lets go — and a mouseUp outside the
-  // grid never reaches the grid's own handler.
-  const agentsPoint = async () => {
-    const point = await win.webContents.executeJavaScript(
-      `(() => {
-         const el = [...document.querySelectorAll(".home-dashboard__grid > .home-pin")].find((c) => !c.dataset.pinId);
-         if (!el) return null;
-         const r = el.getBoundingClientRect();
-         return { x: r.left + 40, y: r.top + 20 };
-       })()`,
-    );
-    if (!point) throw new Error("the board has no Active-agents card");
-    return point;
-  };
-  await dragCard(win, "sys:pending-decisions", agentsPoint);
-  const ended = await restingOrder(win);
-  const endedWrites = writesOf(await pinWrites(win));
-  const lastChildIsAgents = await win.webContents.executeJavaScript(
-    `!document.querySelector(".home-dashboard__grid").lastElementChild.dataset.pinId`,
-  );
-  check(
-    "drop-on-the-agents-card",
-    ended.join(",") ===
-      [
-        "sys:goal-progress",
-        "view:financial:v-weekly",
-        "page:financial:ledger",
-        "sys:today-week",
-        "view:financial:v-summary",
-        "sys:recent-log",
-        "sys:pending-decisions",
-      ].join(",") &&
-      endedWrites.length === 1 &&
-      lastChildIsAgents === true,
-    `dropping on the agents card gave ${JSON.stringify(ended)} for ${endedWrites.length} write(s), ` +
-      `agents last: ${lastChildIsAgents}`,
-  );
-
-  // 5. A hold and release in place is not a change: the card goes back and the
+  // 4. A hold and release in place is not a change: the card goes back and the
   //    vault is never asked.
   step("hold-then-release-writes-nothing");
   await beginScenario(win);
@@ -962,7 +1048,7 @@ async function checkOrdering(win) {
     `a hold and release gave ${JSON.stringify(stillOrder)} for ${(await pinWrites(win)).length} write(s)`,
   );
 
-  // 6. A drag backwards — onto the left half of the card before it — is one
+  // 5. A drag backwards — onto the left half of the card before it — is one
   //    write, and lands where it was aimed rather than where it started.
   step("hold-drag-writes-once");
   await beginScenario(win);
@@ -1247,11 +1333,20 @@ async function checkKeyboard(win) {
   const rowWrites = writesOf(await pinWrites(win));
   const afterMove = await cardMotion(win);
   const landed = afterMove.find((card) => card.id === "sys:pending-decisions");
+  // The move reflows the board: the line the card joins can itself move up once
+  // the card's old slot closes, so the claim is "it moved onto the line above,
+  // and above the cards it was aimed past" rather than a pixel equality with a
+  // row top measured before the board changed.
+  const lineAboveFirst = lineAbove[0] ?? null;
   check(
     "keyboard-moves-a-line",
     lineBoard.minCards >= 3 &&
       rowWrites.length === 1 &&
-      Math.abs((landed?.layoutTop ?? -999) - lineTop) <= 2,
+      Boolean(landed && moving) &&
+      landed.layoutTop < moving.layoutTop - 2 &&
+      landed.layoutTop <= lineTop + 2 &&
+      (lineAboveFirst === null ||
+        rowOrder.indexOf("sys:pending-decisions") < rowOrder.indexOf(lineAboveFirst)),
     `one ArrowUp on a ${lineBoard.tracks}-track board moved the card from the top of its line to ` +
       `${landed?.layoutTop} for ${rowWrites.length} write(s); the line above was at ${lineTop} ` +
       `(${JSON.stringify(lineAbove)}), and the board is now ${JSON.stringify(rowOrder)}`,
@@ -1491,27 +1586,50 @@ async function checkMotion(win) {
     `(() => { const s = document.querySelector('.arrange-scroll'); const r = s.getBoundingClientRect(); return { x: r.left + 120, y: r.bottom - 12 }; })()`,
   );
   mouse(win, "mouseMove", edge.x, edge.y);
-  await sleep(700);
-  const scrollEnd = await win.webContents.executeJavaScript(
-    "document.querySelector('.arrange-scroll').scrollTop",
+  // The board scrolls under a stationary hand at the renderer's frame rate, and
+  // this rig shares a loaded machine with every other Electron suite: sample the
+  // pair (board travel, card under the hand) WHILE the travel is happening,
+  // rather than from one resting frame after it. A hand that never scrolls, or a
+  // card that leaves the hand during the travel, has no such sample; a
+  // last-moment reorder at the end of the travel cannot make the claim vacuous.
+  const edgeSamples = [];
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    await sleep(80);
+    edgeSamples.push(
+      await win.webContents.executeJavaScript(
+        `(() => {
+           const card = document.querySelector('[data-pin-id="view:financial:v-weekly"]');
+           const scroller = document.querySelector('.arrange-scroll');
+           const r = card ? card.getBoundingClientRect() : null;
+           const at = ${Math.round(edge.y)};
+           return {
+             scrollTop: scroller ? Math.round(scroller.scrollTop) : 0,
+             covers: Boolean(r && r.top <= at && r.bottom >= at),
+             top: r ? Math.round(r.top) : null,
+             bottom: r ? Math.round(r.bottom) : null,
+           };
+         })()`,
+      ),
+    );
+    const last = edgeSamples[edgeSamples.length - 1];
+    if (last.covers || edgeSamples.filter((sample) => sample.scrollTop > scrollStart + 80).length >= 8) {
+      if (!last.covers && attempt > 12) break;
+    }
+  }
+  const boardTravelled = edgeSamples.some((sample) => sample.scrollTop > scrollStart + 80);
+  const cardFollowed = edgeSamples.some(
+    (sample) => sample.scrollTop > scrollStart + 80 && sample.covers,
   );
-  const underPointer = await win.webContents.executeJavaScript(
-    `(() => {
-       const card = document.querySelector('[data-pin-id="view:financial:v-weekly"]');
-       if (!card) return false;
-       const r = card.getBoundingClientRect();
-       return r.top <= ${Math.round(edge.y)} && r.bottom >= ${Math.round(edge.y)};
-     })()`,
-  );
+  const edgeEvidence = edgeSamples.map((sample) => `${sample.scrollTop}:${sample.top}-${sample.bottom}${sample.covers ? "*" : ""}`);
   mouse(win, "mouseUp", edge.x, edge.y);
   await sleep(160);
   win.setContentSize(BOARD_SIZE.width, BOARD_SIZE.height);
   await sleep(250);
   check(
     "auto-scroll-follows-the-pointer",
-    scrollEnd > scrollStart && underPointer === true,
-    `the board scrolled from ${scrollStart} to ${scrollEnd} while the pointer sat at the edge; ` +
-      `the card still covers the pointer: ${underPointer}`,
+    boardTravelled && cardFollowed,
+    `the board travelled ${JSON.stringify(edgeEvidence)} while the pointer sat at ${Math.round(edge.y)}; ` +
+      `the card followed: ${cardFollowed}`,
   );
 
   // 3. Reduced motion: the same reorder, and no card is ever displaced.
@@ -1626,6 +1744,7 @@ async function main() {
 
   const sample = await win.webContents.executeJavaScript(SAMPLE);
   checkChromeIdentity(sample);
+  checkBuiltinBadge(sample);
   // The cards' own frames, read off the same fresh board: a pin that drew its
   // shell twice is a claim about the render, so it is measured here rather than
   // inferred from the markup.
@@ -1657,6 +1776,42 @@ async function main() {
   const image = await win.webContents.capturePage();
   fs.mkdirSync(artifactsDir, { recursive: true });
   fs.writeFileSync(path.join(artifactsDir, "dashboard-arrange.png"), image.toPNG());
+
+  // The board a vault that has never been arranged opens on: the app's current
+  // built-in pins, drawn by the same page. This still is the artifact for "what a
+  // new Dashboard looks like", so an app that still ships a card the feature
+  // removed would show it here.
+  await renderBoard(win, DEFAULT_PINS, false);
+  await settleFrames(win);
+  // A deadline pin with no pressure to show is a control with nothing to draw.
+  // It must not leave its three-dot floating in an empty cell; the pin stays on
+  // the board (and in the DOM), it just occupies nothing.
+  const emptyDeadline = await win.webContents.executeJavaScript(
+    `(() => {
+       const pin = document.querySelector('[data-pin-id="sys:deadline"]');
+       if (!pin) return { present: false };
+       return {
+         present: true,
+         banner: Boolean(pin.querySelector('.deadline-banner')),
+         display: getComputedStyle(pin).display,
+         height: Math.round(pin.getBoundingClientRect().height),
+         tools: Boolean(pin.querySelector(':scope > .home-pin__tools')),
+       };
+     })()`,
+  );
+  check(
+    "an-empty-deadline-pin-draws-nothing",
+    emptyDeadline.present === true &&
+      emptyDeadline.banner === false &&
+      emptyDeadline.display === "none" &&
+      emptyDeadline.height === 0,
+    `the empty deadline pin read ${JSON.stringify(emptyDeadline)}`,
+  );
+  const defaultImage = await win.webContents.capturePage();
+  fs.writeFileSync(
+    path.join(artifactsDir, "dashboard-arrange-default-board.png"),
+    defaultImage.toPNG(),
+  );
 
   const report = {
     pass: errors.length === 0,

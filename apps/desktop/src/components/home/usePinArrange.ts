@@ -344,6 +344,24 @@ export function usePinArrange(input: {
     armRef.current = null;
   }, []);
 
+  /**
+   * Keep the lifted card under the hand when the board reflows beneath it.
+   *
+   * A reorder changes the lifted card's slot, and its transform is measured from
+   * that slot — so a reflow without a pointer move leaves the card displaced by
+   * however far the slot travelled. That is invisible while the hand keeps moving
+   * (every move re-measures), and it is exactly what a hand parked at the board's
+   * edge sees when the last auto-scroll frame reflows the board: the board stops,
+   * no more pointer moves arrive, and the card is left a card's height away from
+   * the finger. Re-running `followPointer` after the committed layout is the fix;
+   * it is a no-op when the card is not in the air.
+   */
+  useLayoutEffect(() => {
+    const lifted = liftRef.current;
+    const pointer = pointerRef.current;
+    if (lifted && pointer) followPointer(lifted, pointer.x, pointer.y);
+  }, [order, followPointer]);
+
   /** Stop the board scrolling under a drag. */
   const stopAutoScroll = useCallback(() => {
     if (scrollFrameRef.current != null) {
@@ -384,8 +402,14 @@ export function usePinArrange(input: {
     if (delta !== 0) {
       const was = scroller.scrollTop;
       scroller.scrollTop = was + delta;
-      if (scroller.scrollTop !== was) {
-        followPointer(current, pointer.x, pointer.y);
+      const moved = scroller.scrollTop !== was;
+      // The card is re-placed every frame the hand is in the band, not only on
+      // the frames the board actually moved. A reorder can land after the last
+      // scroll — a board at the end of its travel reflows once more — and a
+      // hand that is parked there sends no pointer move to re-measure it, so
+      // skipping the write would leave the card one slot away from the finger.
+      followPointer(current, pointer.x, pointer.y);
+      if (moved) {
         const to = insertionIndex(slots(current.pinId), pointer);
         if (to !== current.to) {
           const next: Lift = { ...current, to };

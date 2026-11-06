@@ -20,12 +20,10 @@ import { useChatDock, type ChatCardContext } from "@/state/ChatDockProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { GoalProgressCard } from "@/pages/home-pins/GoalProgressCard";
 import { DeadlineBanner } from "@/pages/home-pins/DeadlineBanner";
-import { DoctrineProgressCard } from "@/pages/home-pins/DoctrineProgressCard";
 import { PendingDecisionsCard } from "@/pages/home-pins/PendingDecisionsCard";
 import { TodayWeekCard } from "@/pages/home-pins/TodayWeekCard";
 import { RecentLogCard } from "@/pages/home-pins/RecentLogCard";
 import { CompanionBriefCard } from "@/pages/home-pins/CompanionBriefCard";
-import { ActiveAgentsCard } from "@/pages/home-pins/ActiveAgentsCard";
 import { PinChrome } from "@/components/home/PinChrome";
 import { cardNameIn } from "@/components/home/card-name";
 import {
@@ -201,8 +199,6 @@ export default function HomePage() {
         return "Goals";
       case "deadline":
         return "Deadline";
-      case "doctrine-progress":
-        return "Doctrine";
       case "pending-decisions":
         return "Pending decisions";
       case "today-week":
@@ -790,8 +786,6 @@ export default function HomePage() {
           return <GoalProgressCard key={pin.id} />;
         case "deadline":
           return <DeadlineBanner key={pin.id} />;
-        case "doctrine-progress":
-          return <DoctrineProgressCard key={pin.id} />;
         case "pending-decisions":
           return <PendingDecisionsCard key={pin.id} decisions={decisions} />;
         case "today-week":
@@ -1136,10 +1130,6 @@ export default function HomePage() {
             )}
           </div>
         ))}
-
-        <div className="home-pin">
-          <ActiveAgentsCard />
-        </div>
         </div>
 
         {showFinanceInstall ? (

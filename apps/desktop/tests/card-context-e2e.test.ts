@@ -48,7 +48,12 @@ function runDriver(name: string): Promise<number> {
       electron,
       [path.join(desktopRoot, `e2e/${name}.electron.mjs`)],
       { cwd: desktopRoot, timeout: 120_000 },
-      (error) => {
+      (error, stdout, stderr) => {
+        // A rig that exits without writing its report has to say why: its own
+        // output is the only account of the step it was on.
+        if (error && (typeof error.code !== "number" || error.code !== 0)) {
+          console.error(`[${name}] driver output:\n${stdout}\n${stderr}`);
+        }
         if (error && typeof error.code !== "number") {
           reject(error);
           return;
@@ -161,6 +166,8 @@ describe("dashboard card context e2e", () => {
       "deleting-a-view-takes-the-card-with-it",
       "deleting-a-page-takes-the-card-with-it",
       "the-deadline-pin-keeps-its-controls-out-of-the-way",
+      "the-cards-say-what-they-show",
+      "a-task-tick-marks-it-done",
     ]);
 
     // ── the old chat control is gone ────────────────────────────────────────
@@ -204,14 +211,13 @@ describe("dashboard card context e2e", () => {
       assert.equal(card.cursor, "pointer", `${card.id} did not paint a pointer cursor`);
       assert.equal(card.inContext, false, `${card.id} started in the chat context`);
     }
-    // "The card" means the pins: the static agents wrapper has no pin id and is
-    // not a click target.
+    // Every card on the board is a pin: the page draws no card of its own
+    // beside them.
     assert.deepEqual(
       board.staticPins.map((pin) => ({ toggles: pin.toggles, tools: pin.tools })),
-      [{ toggles: 0, tools: 0 }],
-      "the static card wrapper grew a context control",
+      [],
+      "the page drew a static card beside the pins",
     );
-    assert.notEqual(board.staticPins[0]?.cursor, "pointer", "the static wrapper became a click target");
 
     // The goals card paints its count inside the heading; the name is the words.
     assert.equal(
@@ -471,6 +477,110 @@ describe("dashboard card context e2e", () => {
     assert.ok(deadline.toolsBottom <= deadline.bannerTop, "the deadline pin's controls sat on the banner");
     assert.equal(deadline.chatControls, 0, "the deadline pin kept a chat icon");
     assert.equal(deadline.messageIcons, 0, "the deadline pin kept a MessageSquare glyph");
+
+    // ── the cards' content: domains, the inline count, the task tick ────────
+    const homeCards = report.checks.homeCards as {
+      boardWidth: number;
+      goals: {
+        width: number;
+        rows: {
+          name: string;
+          domain: string;
+          unassigned: boolean;
+          progress: string | null;
+          hasBar: boolean;
+        }[];
+      };
+      heading: {
+        markerBeforeCount: boolean;
+        countGapFromMarker: number | null;
+        countInFirstHalf: boolean;
+      };
+      activity: { width: number; rows: { summary: string; type: string; when: string }[] };
+      todayWeek: {
+        width: number;
+        columns: { heading: string; tasks: { title: string; checkbox: string }[] }[];
+      };
+    };
+    assert.deepEqual(
+      homeCards.goals.rows,
+      [
+        {
+          name: "Run 5k",
+          domain: "Financial",
+          unassigned: false,
+          progress: "40",
+          hasBar: true,
+        },
+        {
+          name: "Renew the passport",
+          domain: "No domain",
+          unassigned: true,
+          progress: null,
+          hasBar: false,
+        },
+      ],
+      "the goals card does not say what each goal is filed under or how far along it is",
+    );
+    assert.ok(
+      homeCards.goals.width < homeCards.boardWidth - 40,
+      "the goals card is still a full-row card",
+    );
+    assert.ok(
+      homeCards.activity.width < homeCards.boardWidth - 40,
+      "the activity card is still a full-row card",
+    );
+    assert.ok(
+      homeCards.todayWeek.width < homeCards.boardWidth - 40,
+      "the today-and-this-week card is still a full-row card",
+    );
+    assert.equal(homeCards.heading.markerBeforeCount, true, "the count no longer follows the card's marker");
+    assert.ok(
+      (homeCards.heading.countGapFromMarker ?? 99) <= 16,
+      `the count sits ${homeCards.heading.countGapFromMarker}px from the heading's marker`,
+    );
+    assert.equal(homeCards.heading.countInFirstHalf, true, "the count drifted to the card's far edge");
+    assert.equal(homeCards.activity.rows.length, 2, "the activity card did not draw its lines");
+    assert.ok(
+      homeCards.activity.rows.every((row) => row.summary && row.type && row.when),
+      "an activity line lost its summary, its type or its time",
+    );
+    assert.deepEqual(
+      homeCards.todayWeek.columns.map((column) => column.heading),
+      ["Today 2", "This week 1"],
+      "the task columns do not count their tasks",
+    );
+    assert.deepEqual(
+      homeCards.todayWeek.columns.map((column) => column.tasks.map((task) => task.title)),
+      [["Draft the ledger import", "Reply to the accountant"], ["Close the books"]],
+      "the task columns do not list the tasks in their columns",
+    );
+    assert.ok(
+      homeCards.todayWeek.columns.every((column) =>
+        column.tasks.every((task) => /^Mark ".+" done$/.test(task.checkbox)),
+      ),
+      "a task has no tick of its own",
+    );
+
+    const tick = report.checks.taskTick as {
+      commands: unknown[];
+      headings: string[];
+      titles: string[];
+      context: number;
+    };
+    assert.deepEqual(
+      tick.commands,
+      [{ type: "moveTask", id: "t-draft", column: "done" }],
+      "the Dashboard's tick did not write the Act board's own move to Done",
+    );
+    assert.deepEqual(
+      tick.headings,
+      ["Today 1", "This week 1"],
+      "the tick did not move the count with the task",
+    );
+    assert.ok(tick.titles.includes("Reply to the accountant"), "the tick removed the wrong task");
+    assert.ok(!tick.titles.includes("Draft the ledger import"), "the done task stayed on the card");
+    assert.equal(tick.context, 0, "pressing a task's tick put the card in the chat's context");
 
     assert.deepEqual(report.checks.unexpectedBridgeCalls, []);
     assert.deepEqual(report.checks.consoleErrors, []);

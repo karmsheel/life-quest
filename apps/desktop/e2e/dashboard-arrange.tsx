@@ -297,6 +297,18 @@ function bridge(): Record<string, (...args: unknown[]) => Promise<unknown>> {
     },
     dbGet: async () => ok(DATABASE),
     kitList: async () => ok([]),
+    // The companion brief is seeded first on a new board; this harness seeds no
+    // brief, but the default-board still is worth knowing about if a claim ever
+    // renders one. An empty brief answers like a vault that has never had one.
+    briefGet: async () =>
+      ok({
+        writtenAt: null,
+        writtenBy: null,
+        items: [],
+        recentlyExpired: [],
+        dismissals: [],
+        problems: [],
+      }),
     deadlineGetDismissed: async () => ok(false),
     deadlineMaybeNotify: async () => ok(null),
     deadlineDismiss: async () => ok(true),
