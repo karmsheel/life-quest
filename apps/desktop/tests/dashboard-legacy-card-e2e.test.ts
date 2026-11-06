@@ -73,8 +73,8 @@ describe("dashboard legacy card e2e", () => {
     checks.oldBoardOnRead = oldPins.map((pin) => pin.id);
     assert.deepEqual(
       oldPins.map((pin) => pin.id),
-      ["sys:goal-progress", "sys:recent-log"],
-      "a board naming a removed built-in card still drew it",
+      ["sys:companion-brief", "sys:goal-progress", "sys:recent-log"],
+      "a board naming a removed built-in card still drew it (the brief is seeded first on read)",
     );
 
     // A read is not a migration: the operator's file is byte-for-byte unchanged
