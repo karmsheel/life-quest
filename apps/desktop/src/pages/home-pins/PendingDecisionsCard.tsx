@@ -3,6 +3,7 @@ import { recordVisibleMulti, DOCUMENT_KIND_LABELS } from "@lifequest/vault-core/
 import type { DecisionRecord } from "@lifequest/vault-core";
 import { Link } from "react-router-dom";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { BuiltInBadge } from "@/components/home/BuiltInBadge";
 
 export function PendingDecisionsCard({ decisions }: { decisions: DecisionRecord[] }) {
   const lens = useDomainLens();
@@ -16,6 +17,7 @@ export function PendingDecisionsCard({ decisions }: { decisions: DecisionRecord[
     <section className="home-card">
       <h2 className="home-card__title">
         Pending decisions
+        <BuiltInBadge />
         {pendingForDomain.length > 0 ? (
           <span className="home-card__count">{pendingForDomain.length}</span>
         ) : null}

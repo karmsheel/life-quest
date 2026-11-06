@@ -25,11 +25,13 @@ import {
   deleteRow,
   deleteSignal,
   dismissAgent,
+  dismissBriefItem,
   DOCUMENT_KINDS,
   ensurePlanningStub,
   ensureReview,
   fileImpliedChanges,
   getDailyNote,
+  readCompanionBrief,
   getDatabase,
   getDocument,
   getIdealState,
@@ -251,6 +253,7 @@ import {
   type McpDoors,
 } from "./mcp-server.js";
 import * as companion from "./companion.js";
+import * as harness from "./harness/facade.js";
 import type {
   ChatStreamEvent,
   CompanionInstructionsInput,
@@ -1620,6 +1623,29 @@ export async function dailyNoteGet(date: string): Promise<Result<DailyNote>> {
   return withVault((root) => getDailyNote(root, date));
 }
 
+/**
+ * The companion's brief, as the card reads it.
+ *
+ * Reading is not writing here: the card only asks. The writer is the companion's
+ * `set_companion_brief` tool; the operator's own verb is `companionBriefDismiss`.
+ */
+export async function companionBriefGet(): Promise<
+  Result<import("@lifequest/vault-core").CompanionBriefRead>
+> {
+  return withVault((root) => readCompanionBrief(root));
+}
+
+/**
+ * The operator dismissing one brief item, carried as the user actor so the vault
+ * refuses any agent that tries to settle its own item.
+ */
+export async function companionBriefDismiss(
+  itemId: string,
+  reason: import("@lifequest/vault-core").BriefDismissalReason,
+): Promise<Result<import("@lifequest/vault-core").CompanionBriefRead>> {
+  return withVault((root) => dismissBriefItem(root, USER_ACTOR, itemId, reason));
+}
+
 /** Write the one note that day has. The operator is the author, always. */
 export async function dailyNoteWrite(
   date: string,
@@ -1761,9 +1787,9 @@ export async function planningEnsure(
 }
 
 const companionSessionFns = {
-  open: () => companion.companionSessionsOpen(),
-  list: () => companion.companionSessionsList(),
-  create: (title: string) => companion.companionSessionCreate(title),
+  open: () => harness.harnessSessionsOpen(),
+  list: () => harness.harnessSessionsList(),
+  create: (title: string) => harness.harnessSessionCreate(title),
 };
 
 export async function reviewStartOrResume(
@@ -1904,7 +1930,7 @@ export async function companionChatStreamWithPack(
     onEvent(evt);
   };
 
-  const result = await companion.companionChatStream(
+  const result = await harness.harnessChatStream(
     sessionId,
     input,
     ctx,

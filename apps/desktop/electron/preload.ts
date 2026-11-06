@@ -359,6 +359,21 @@ const lifequest = {
   companionProfilesList: () => ipcRenderer.invoke("companion:profilesList"),
   companionUseProfile: (name: string) =>
     ipcRenderer.invoke("companion:useProfile", name),
+  /**
+   * Which companion the dock is talking to, and the switch. A chat belongs to
+   * the harness that made it, so the picker is app-level, not per chat.
+   */
+  companionHarnesses: () => ipcRenderer.invoke("companion:harnesses"),
+  companionUseHarness: (id: "hermes" | "pi") =>
+    ipcRenderer.invoke("companion:useHarness", id),
+  /** The built-in companion's endpoint. The key is write-only in this direction. */
+  companionPiSettings: () => ipcRenderer.invoke("companion:piSettings"),
+  companionPiSettingsSave: (input: {
+    baseUrl?: string;
+    model?: string;
+    providerName?: string;
+    apiKey?: string | null;
+  }) => ipcRenderer.invoke("companion:piSettingsSave", input),
   companionSessionsList: (options?: { includeArchived?: boolean }) =>
     ipcRenderer.invoke("companion:sessionsList", options),
   companionSessionCreate: (title: string) =>
@@ -367,10 +382,10 @@ const lifequest = {
     ipcRenderer.invoke("companion:sessionMessages", id),
   companionSessionPatch: (
     id: string,
-    patch: { title?: string; pinned?: boolean; archived?: boolean },
+    patch: { title?: string; pinned?: boolean; archived?: boolean; revision?: number | null },
   ) => ipcRenderer.invoke("companion:sessionPatch", id, patch),
-  companionSessionDelete: (id: string) =>
-    ipcRenderer.invoke("companion:sessionDelete", id),
+  companionSessionDelete: (id: string, options?: { revision?: number | null }) =>
+    ipcRenderer.invoke("companion:sessionDelete", id, options),
   companionModelOptions: () => ipcRenderer.invoke("companion:modelOptions"),
   companionChatStream: (payload: {
     sessionId: string;
@@ -527,6 +542,13 @@ const lifequest = {
     ipcRenderer.invoke("note:list") as Promise<Result<unknown>>,
   dailyNoteWindow: (start: string, end: string) =>
     ipcRenderer.invoke("note:window", start, end) as Promise<Result<unknown>>,
+
+  // The companion's brief is read from the renderer, and the operator's only
+  // verb is dismissing one item; the companion's `set_companion_brief` tool is
+  // the only writer.
+  briefGet: () => ipcRenderer.invoke("brief:get") as Promise<Result<unknown>>,
+  briefDismiss: (itemId: string, reason: string) =>
+    ipcRenderer.invoke("brief:dismiss", itemId, reason) as Promise<Result<unknown>>,
 
   idealStateList: () =>
     ipcRenderer.invoke("ideal-state:list") as Promise<Result<unknown>>,

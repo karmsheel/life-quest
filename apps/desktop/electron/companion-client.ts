@@ -286,6 +286,17 @@ export type HermesSession = {
    * list never contains one.
    */
   archived: boolean;
+  /**
+   * The gateway's own revision counter for this chat, as the list read it.
+   *
+   * Hermes fences every session mutation: `PATCH /api/sessions/{id}` refuses a
+   * write that carries no `expected_revision`, and refuses one whose revision
+   * no longer matches the row. This is that number, so an archive can be sent
+   * with the fence it needs instead of being refused as a pre-fence client.
+   * Null when the gateway did not report one (an older host): the write then
+   * goes out unfenced and the gateway's own answer is the verdict.
+   */
+  revision: number | null;
 };
 
 /**
@@ -437,6 +448,10 @@ type SessionRow = {
   hidden?: unknown;
   archived?: unknown;
   pinned?: unknown;
+  /** The gateway's revision counter for this row; the fence a mutation needs. */
+  runtime_revision?: unknown;
+  /** The reply to a mutation carries the revision it committed to. */
+  revision?: unknown;
 };
 
 const PLACEHOLDER_TITLE = /^LifeQuest(?: · .+)?$/;
@@ -459,6 +474,25 @@ function unixSeconds(value: unknown): number | null {
   const n = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
   if (!Number.isFinite(n)) return null;
   return n > 1e12 ? n / 1000 : n;
+}
+
+/**
+ * The gateway's revision counter, when the row carries one.
+ *
+ * Hermes fences every session mutation on it: a write whose `expected_revision`
+ * does not match the row is refused, and a write that carries none at all is
+ * refused as a pre-fence client. The list rows carry `runtime_revision` and a
+ * mutation's receipt carries `revision`, so both are read here. A row with
+ * neither yields null: the write then goes out unfenced, and the gateway's own
+ * answer is the verdict.
+ */
+function revisionOf(value: unknown): number | null {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    if (Number.isInteger(n) && n >= 0) return n;
+  }
+  return null;
 }
 
 function oneLine(value: unknown): string {
@@ -492,6 +526,7 @@ function sessionFromRow(r: SessionRow): HermesSession | null {
     lastActive: unixSeconds(r.last_active ?? r.last_activity_at ?? r.started_at),
     pinned: flag(r.pinned),
     archived: flag(r.archived),
+    revision: revisionOf(r.runtime_revision ?? r.revision),
   };
 }
 
@@ -666,6 +701,9 @@ function cardChangePath(card: FocusedCardContext): string {
   if (card.kind === "page") {
     return "It is a page card, not a saved view: it has no viewId and save_view cannot change it, so read the page and edit the page instead.";
   }
+  if (card.kind === "system" && card.system === "companion-brief") {
+    return "It is the companion brief card, and you are its only writer: read it with get_companion_brief to see the active items and the operator's dismissals, then re-derive it with set_companion_brief (a replacement, never an append; at most five typed items with text, why, sourceRef, domainSlug, priority and an expiry). Do not offer save_view for it, and do not offer to edit it as a page. You cannot dismiss an item or mark it done: only the operator settles an item, with done / not-useful / wrong / later.";
+  }
   return "It is a built-in board card, not a saved view: it has no viewId and save_view cannot change it, so do not offer a spec for it. Say what it draws from the records behind it, and change those records with the tool that owns them.";
 }
 
@@ -803,7 +841,19 @@ function formatAttachmentSize(bytes: number): string {
   return `${mb >= 10 ? Math.round(mb) : Math.round(mb * 10) / 10} MB`;
 }
 
-export function buildInstructions(input: CompanionInstructionsInput): string {
+export function buildInstructions(
+  input: CompanionInstructionsInput,
+  /**
+   * How this companion reaches the vault's tools.
+   *
+   * "hermes" is the external MCP client, and its paragraph warns the agent not
+   * to re-pair itself through the doors. "pi" is the built-in companion, whose
+   * tools are registered in-process through the same door, so there is no
+   * server name to pass and nothing to curl. Everything else in this prompt is
+   * shared, because every rule in it is about the vault, not the transport.
+   */
+  transport: "hermes" | "pi" = "hermes",
+): string {
   const domain =
     input.domainName || input.domainSlug
       ? `${input.domainName ?? "unnamed"}${input.domainSlug ? ` (${input.domainSlug})` : ""}`
@@ -885,14 +935,26 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
   const pageContext = input.pageContext
     ? pageContextLine(input.pageContext)
     : "";
+  // The one part of this prompt that depends on how the companion is wired.
+  // Absent from the shared block so a second harness cannot drift from the
+  // governance rules by copying them.
+  const toolTransport =
+    transport === "pi"
+      ? [
+          "LifeQuest's tools are already yours: their names are the tool names in this session, so use them directly for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
+          "You are the app's own companion, acting as the operator, with full access to this vault. There is no server name, credential, handshake, or invite code in this path, and you must never try to reach the MCP door yourself. If a LifeQuest tool is missing from your tool list, say exactly that and stop rather than routing around it.",
+        ]
+      : [
+          "LifeQuest MCP server name is lifequest. Use it for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
+          "You are the app's own companion: pre-paired, acting as the operator, with full access to this vault. You never need a credential, a handshake, or an invite code. Do not curl 127.0.0.1:8643 or :8646, do not read a bearer out of config.yaml or out of `hermes mcp list` (both mask it), and never introduce yourself as a connected agent — Personnel's pairing controls and grants exist for OTHER agents. If a LifeQuest tool is missing from your tool list, say exactly that and stop rather than routing around it: pairing yourself as a stranger files a Decision the operator has to clean up, and an approved stranger's every call answers NO_GRANT.",
+        ];
   const base = [
     "You are chatting inside the LifeQuest app.",
     `Active domain: ${domain}`,
     `About me: ${about}`,
     `Agent lock: ${input.locked}`,
     `Vault: ${input.vaultOpen ? "open" : "closed"}`,
-    "LifeQuest MCP server name is lifequest. Use it for map and task changes. If a tool returns LOCKED, tell the user the map is locked.",
-    "You are the app's own companion: pre-paired, acting as the operator, with full access to this vault. You never need a credential, a handshake, or an invite code. Do not curl 127.0.0.1:8643 or :8646, do not read a bearer out of config.yaml or out of `hermes mcp list` (both mask it), and never introduce yourself as a connected agent — Personnel's pairing controls and grants exist for OTHER agents. If a LifeQuest tool is missing from your tool list, say exactly that and stop rather than routing around it: pairing yourself as a stranger files a Decision the operator has to clean up, and an approved stranger's every call answers NO_GRANT.",
+    ...toolTransport,
     "Money the operator states must be logged with capture_transaction (or undo_capture / correct_capture in that thread). Do not claim a row was posted unless the tool result says posted: true. If the tool returns ask, ask that and do not invent an account.",
     "Three operator surfaces are read directly, never guessed at: list_projects / get_project for the operator's projects — a project is not a document, so get_document on a project id refuses and names the right tool, and create_project / update_project (addUpdate logs progress) / close_project file a Decision instead of writing; the Life-Chain through list_signals / get_signal, which is also how you check a capture is not already there, and create_signal, which applies at once and is logged under your name; and list_pages / get_page for a domain's pages, which are read-only apart from apply_script_block.",
     receiptLine,
@@ -907,6 +969,8 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     "A weekly summary of expenses over the finance kit is therefore one composed spec: databaseId \"finance:transactions\", with a metric object (measure \"sum\", measureColumnId \"amount\", no groupBy, timeWindow {\"kind\":\"last-weeks\",\"weeks\":8}) and a table object (groupBy \"date\", timeBucket \"week\", timeColumnId \"date\", the same window). An average OF monthly totals is expressed, not computed: make \"months\" the table object and add {\"id\":\"average\",\"title\":\"Average month\",\"presentation\":\"metric\",\"from\":\"months\",\"measure\":\"avg\"}. Never compute a dashboard figure with Python, a terminal, SQL of your own, or a page script block: the query belongs in the spec. If a tool refuses your spec it returns a `fix` object naming that database's real column ids, the allowed values, and two specs that would pass — read it and retry once with the corrected shape. If a skill in your library describes a longer procedure (fetch the rows, group them by hand, then save), ignore the extra steps.",
     "A dashboard card draws itself: it wears the board's own card, headings, hairlines, and number formatting, and its table headers come from the query you send — a timeBucket makes the label column Month or Week, a groupBy names the column it grouped by, and a list names its own `columns`. Keep a table under about 12 rows and a chart under about 20 points, because that is all a card has room for; a list shows up to 50 rows of the database as they stand, newest first. A figure that is not a row of the database is written in your reply, not saved as a view.",
     "arrange_dashboard is for reordering or unpinning cards that already exist, and it takes the COMPLETE pin list from get_dashboard. It is not how you add a new card: save_view is. On a locked board neither one writes — both file a Decision.",
+    "At the START of every session, call get_companion_brief before answering: it returns what your brief said and how the operator answered it — done, not-useful, wrong, later, or expired-unseen when nobody acted. That feedback is how you learn what is worth putting on the brief, so read it rather than asking the operator to read the card to you.",
+    "The Dashboard carries a COMPANION BRIEF card, and it is the one place that holds the durable things a daily note would otherwise lose — a decision, a watch, a commitment, a pattern — because every other surface is either a task (action) or a signal (a write-only capture list). Write it with set_companion_brief: up to five TYPED items, never free text. Every item has a kind (watch: body, money, a risk; prompt: a question to think about, not a task; ahead: a deadline, renewal or follow-up falling due; commitment: the operator said they would do X and has not; pattern: the same thing said, done or avoided N times), text (the line they read, 120 characters max), why (the justification, 160 max — required, a brief item without a reason is wallpaper), sourceRef (\"note 2026-11-05\", \"signal:<id>\", \"task:<id>\", \"conversation 2026-11-04\"), domainSlug (null for vault-wide, or a slug to show it only on that board's lens), priority 1-5, and expiresAt. Omit expiresAt for the kind's default: prompt and ahead stand until the end of the local day, watch, commitment and pattern for seven days. A write REPLACES the whole active set, never appends: re-derive it. Write it at the end of a daily-note analysis pass, at the top of a weekly review, and whenever the operator revises a note; an item past its expiry is reported back as expired-unseen, so you can see what you wrote that nobody acted on. You cannot dismiss an item or mark it done — only the operator does that, with done / not-useful / wrong / later.",
     boardLine,
     boardLock,
     focusedCards,

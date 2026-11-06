@@ -55,6 +55,7 @@ export async function createVault(
       autoApproveInserts: [],
       chatQuestions: [],
       decisionInbox: { ...DEFAULT_DECISION_INBOX_SETTINGS },
+      agentScopes: [],
     };
     await atomicWriteFile(paths.settingsJson, `${JSON.stringify(settings, null, 2)}\n`);
     await atomicWriteFile(paths.agentsJson, `${JSON.stringify({ hires: [] }, null, 2)}\n`);

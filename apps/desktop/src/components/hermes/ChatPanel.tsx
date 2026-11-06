@@ -62,6 +62,8 @@ import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { UpdateBadge } from "@/components/shell/UpdateBadge";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
+import { useOptionalCompanion } from "@/state/CompanionProvider";
+import { AgentSwitcher } from "@/components/hermes/AgentSwitcher";
 import {
   ChatSessionsProvider,
   useChatSessions,
@@ -182,6 +184,14 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     setSurface: setView,
   } = useChatDock();
   const chat = useChatSessions();
+  // What this dock calls the agent that answers. The setup screen and Settings
+  // choose it; here it is only a name.
+  const companionContext = useOptionalCompanion();
+  const knownHarnesses = Array.isArray(companionContext?.harnesses)
+    ? companionContext.harnesses
+    : null;
+  const companionName =
+    knownHarnesses?.find((entry) => entry.active)?.name ?? "Hermes";
   const sessions = chat.sessions;
   const sessionId = chat.activeId;
   /*
@@ -1442,9 +1452,10 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
       ref={panelRef}
       className="chat-panel"
       role="complementary"
-      aria-label="Hermes chat"
+      aria-label={`${companionName} chat`}
       data-chat-surface={view}
     >
+        <AgentSwitcher />
         <div className="chat-panel__open">
           {view === "chain" ? (
             <div className="chat-panel__header">
@@ -1528,47 +1539,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   >
                     {activeLabel}
                   </p>
-                  <div className="chat-panel__header-actions">
-                    <button
-                      type="button"
-                      className="chat-panel__icon-btn"
-                      aria-label={activeSession?.pinned ? "Unpin chat" : "Pin chat"}
-                      title={activeSession?.pinned ? "Unpin chat" : "Pin chat"}
-                      onClick={() => void togglePin()}
-                    >
-                      {activeSession?.pinned ? (
-                        <PinOff size={16} aria-hidden />
-                      ) : (
-                        <Pin size={16} aria-hidden />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      className="chat-panel__icon-btn"
-                      aria-label="Rename chat"
-                      title="Rename chat"
-                      onClick={startRename}
-                    >
-                      <Pencil size={16} aria-hidden />
-                    </button>
-                    {/*
-                      A pinned chat is left out of the archive: its tab is the
-                      band's, so taking it out of the history is a decision the
-                      operator makes after unpinning it, not one hidden behind a
-                      header icon.
-                    */}
-                    {activeSession?.pinned ? null : (
-                      <button
-                        type="button"
-                        className="chat-panel__icon-btn"
-                        aria-label="Archive chat"
-                        title="Archive chat"
-                        onClick={() => void archiveActive()}
-                      >
-                        <Archive size={16} aria-hidden />
-                      </button>
-                    )}
-                  </div>
                 </>
               )}
             </div>
@@ -1792,7 +1762,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             {messages.length === 0 && !sending ? (
               <div className="chat-panel__empty">
                 <div className="chat-panel__empty-orb" aria-hidden />
-                <p className="chat-panel__empty-title">Ask Hermes</p>
+                <p className="chat-panel__empty-title">{`Ask ${companionName}`}</p>
                 <p className="chat-panel__empty-copy">
                   This is your LifeQuest companion on the lifequest Hermes
                   profile. Active domain: {domainName}.
@@ -1895,7 +1865,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                       className={`chat-panel__message chat-panel__message--${m.role}`}
                     >
                       <span className="chat-panel__message-role">
-                        {m.role === "user" ? "You" : "Hermes"}
+                        {m.role === "user" ? "You" : companionName}
                         {m.steer ? (
                           <span
                             className="chat-panel__message-steer"
@@ -1933,7 +1903,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                           className="chat-panel__message-copy"
                           data-copy-state={copyOk ? "copied" : copyFailed ? "failed" : "idle"}
                           aria-label={
-                            m.role === "user" ? `${copyLabel} (your message)` : `${copyLabel} (Hermes)`
+                            m.role === "user" ? `${copyLabel} (your message)` : `${copyLabel} (${companionName})`
                           }
                           title={copyLabel}
                           onClick={() => void copyMessage(m)}
@@ -1950,7 +1920,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 })}
                 {sending && tools.length === 0 ? (
                   <div className="chat-panel__message chat-panel__message--assistant">
-                    <span className="chat-panel__message-role">Hermes</span>
+                    <span className="chat-panel__message-role">{companionName}</span>
                     <div className="chat-panel__message-content">
                       <span className="chat-panel__thinking muted">
                         Thinking…
@@ -2218,7 +2188,9 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     ref={inputRef}
                     className="chat-panel__composer-input"
                     placeholder={
-                      sending ? "Steer the turn that is running…" : "Message Hermes…"
+                      sending
+                        ? "Steer the turn that is running…"
+                        : `Message ${companionName}…`
                     }
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
@@ -2237,7 +2209,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     }}
                     disabled={!sessionId}
                     rows={2}
-                    aria-label="Message Hermes"
+                    aria-label={`Message ${companionName}`}
                     autoComplete="off"
                   />
                   {/*

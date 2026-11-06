@@ -263,6 +263,7 @@ const sessions: HermesSession[] = [
     lastActive: 1_700_000_000,
     pinned: false,
     archived: false,
+    revision: 0,
   },
 ];
 
@@ -363,6 +364,7 @@ const bridge: Record<string, unknown> = {
       lastActive: Date.now() / 1000,
       pinned: false,
       archived: false,
+      revision: 0,
     };
     sessions.unshift(session);
     storedMessages.set(session.id, []);

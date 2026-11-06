@@ -194,10 +194,10 @@ describe("pinned chats in the dock's tab strip", () => {
     assert.equal(landing.tabs[1]?.label, "Alpha planning");
     assert.equal(landing.tabs[1]?.hasClose, true, "the open chat's tab has no close control");
     assert.equal(landing.heading, "Alpha planning", "the landing opened the wrong chat");
-    assert.equal(
-      landing.header?.actions.includes("Archive chat"),
-      true,
-      "the header hid Archive for an unpinned active chat",
+    assert.deepEqual(
+      landing.header?.actions,
+      [],
+      "the dock header still carries chat controls",
     );
 
     // Clicking the square opens the pinned chat; the header hides Archive while
@@ -208,10 +208,10 @@ describe("pinned chats in the dock's tab strip", () => {
       true,
       "the clicked pinned tab is not the active one",
     );
-    assert.equal(
-      activePinned.header?.actions.includes("Archive chat"),
-      false,
-      "the dock header kept its Archive icon for a pinned active chat",
+    assert.deepEqual(
+      activePinned.header?.actions,
+      [],
+      "the dock header grew chat controls for a pinned active chat",
     );
 
     // The sidebar pinned row: Unpin only on hover, no Archive, and no
@@ -263,10 +263,10 @@ describe("pinned chats in the dock's tab strip", () => {
     const normalTab = unpinnedTab.tabs.find((tab) => tab.label === "Pinned note");
     assert.equal(normalTab?.hasClose, true, "the unpinned tab has no close control");
     assert.equal(normalTab?.letter, null, "the unpinned tab still draws a letter");
-    assert.equal(
-      unpinnedTab.header?.actions.includes("Archive chat"),
-      true,
-      "the header did not regain its Archive icon after the unpin",
+    assert.deepEqual(
+      unpinnedTab.header?.actions,
+      [],
+      "the dock header grew chat controls after the unpin",
     );
 
     const nowUnpinnedRow = unpinnedRowHover.rows.find(

@@ -236,6 +236,20 @@ export type DecisionInboxSettings = {
   autoClose: boolean;
 };
 
+/**
+ * One agent's domain rules.
+ *
+ * `domains` empty means "every domain": the agent is offered everywhere. A
+ * non-empty list narrows it to those slugs. `defaultFor` is a subset of the
+ * operator's domains where entering the domain also selects this agent.
+ */
+export type AgentScope = {
+  /** The harness/agent id, e.g. "pi" or "hermes". */
+  agentId: string;
+  domains: string[];
+  defaultFor: string[];
+};
+
 export type VaultSettings = {
   hermesBaseUrl: string;
   theme: "system" | "light" | "dark";
@@ -252,6 +266,12 @@ export type VaultSettings = {
   chatQuestions: ChatQuestion[];
   /** Whether the Decisions inbox opens and closes itself. */
   decisionInbox: DecisionInboxSettings;
+  /**
+   * Which domains each agent is offered in, and where it is the domain's
+   * default. Absent/empty means every agent is offered everywhere and none is a
+   * domain default; Pi remains the app's main agent.
+   */
+  agentScopes: AgentScope[];
 };
 
 export type ReviewScopeStatus = "missing" | "draft" | "done";
@@ -1149,15 +1169,163 @@ export type PageListEntry = {
   page: PageRecord;
 };
 
+/**
+ * The built-in cards a board can carry.
+ *
+ * The order is the order the pin row offers them in, so a kind added later sits
+ * at the end of that row rather than pushing the ones the operator already knows
+ * down. Where a card is SEEDED is a different question, answered in `pins.ts`:
+ * the companion brief is first on a new board even though it is last here,
+ * because it is the card the operator is meant to read before the others.
+ */
 export const SYSTEM_PIN_KINDS = [
   "goal-progress",
   "deadline",
   "today-week",
   "pending-decisions",
   "recent-log",
-  "doctrine-progress",
+  "companion-brief",
 ] as const;
 export type SystemPinKind = (typeof SYSTEM_PIN_KINDS)[number];
+
+/**
+ * The companion's brief: the answer to "what would you tell me if you had thirty
+ * seconds with me this morning".
+ *
+ * It exists because the durable things in a daily note — a decision, a watch, a
+ * commitment, a pattern — have nowhere to live: every other surface is either a
+ * task (which is action) or a signal (a write-only capture list). The brief is
+ * the companion's reading of the day, re-derived each day rather than appended
+ * to, and the operator is the one who dismisses what it got right or wrong.
+ *
+ * An ITEM is typed, sourced and expiring. Free text is deliberately not allowed:
+ * a line with no kind cannot be measured, a line with no source cannot be
+ * checked, and a line with no expiry becomes furniture.
+ *
+ * A DISMISSAL is the operator's answer to one item — or, for `expired-unseen`,
+ * the reader's own record that nobody acted on it. The log is how the companion
+ * learns what it got wrong; it is not a second list of items.
+ */
+export const BRIEF_KINDS = ["watch", "prompt", "ahead", "commitment", "pattern"] as const;
+export type BriefKind = (typeof BRIEF_KINDS)[number];
+
+/** How each kind is named on the card. */
+export const BRIEF_KIND_LABELS: Record<BriefKind, string> = {
+  watch: "Watch",
+  prompt: "Prompt",
+  ahead: "Ahead",
+  commitment: "Commitment",
+  pattern: "Pattern",
+};
+
+/** One way the operator answered an item. */
+export const BRIEF_DISMISSAL_REASONS = [
+  "done",
+  "not-useful",
+  "wrong",
+  "later",
+  "expired-unseen",
+] as const;
+export type BriefDismissalReason = (typeof BRIEF_DISMISSAL_REASONS)[number];
+
+/**
+ * The reasons the operator can choose. `expired-unseen` is absent on purpose:
+ * it is not clicked by anyone, it is recorded by the reader when an item passes
+ * its expiry with no answer.
+ */
+export const BRIEF_OPERATOR_REASONS = ["done", "not-useful", "wrong", "later"] as const;
+export type BriefOperatorReason = (typeof BRIEF_OPERATOR_REASONS)[number];
+
+export const BRIEF_REASON_LABELS: Record<BriefDismissalReason, string> = {
+  done: "Done",
+  "not-useful": "Not useful",
+  wrong: "Wrong",
+  later: "Later",
+  "expired-unseen": "Expired unseen",
+};
+
+/** The most items one brief may carry. A brief is a glance, not a report. */
+export const BRIEF_ITEMS_MAX = 5;
+/** The item's line, as the operator reads it. */
+export const BRIEF_TEXT_MAX = 120;
+/** The justification beneath the line. */
+export const BRIEF_WHY_MAX = 160;
+/** The card's quiet "not refreshed since <date>" line after this long. */
+export const BRIEF_STALE_MS = 48 * 60 * 60 * 1000;
+
+export type BriefItem = {
+  id: string;
+  kind: BriefKind;
+  /** The line the operator reads. */
+  text: string;
+  /** The justification: why this line is on the brief. */
+  why: string;
+  /** Where it came from: "note 2026-11-05", "signal:<id>", "task:<id>",
+   * "conversation 2026-11-04". Free-form on purpose — the brief cites a place
+   * in the operator's own record, and those places do not share an id space. */
+  sourceRef: string;
+  /** null = vault-wide; a slug filters the item to that board's lens. */
+  domainSlug: string | null;
+  /** 1 is read first, 5 last. */
+  priority: number;
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type BriefDismissal = {
+  itemId: string;
+  dismissedAt: string;
+  reason: BriefDismissalReason;
+};
+
+/**
+ * The brief as stored in `.lifequest/companion-brief.json`, rewritten wholesale
+ * on every write.
+ *
+ * `dismissalLog` is the only part that survives a replacement: a new brief
+ * replaces the items, but the record of what the operator did with yesterday's
+ * items is the companion's feedback and must not be erased by its next write.
+ */
+export type CompanionBrief = {
+  /** When the companion last wrote the brief; null while nothing is stored. */
+  writtenAt: string | null;
+  writtenBy: "companion" | null;
+  items: BriefItem[];
+  dismissalLog: BriefDismissal[];
+};
+
+/** One item as the writer sends it. The server mints `id` and `createdAt`, and
+ * fills `expiresAt` from the kind when the writer omits it. */
+export type BriefItemInput = {
+  id?: string;
+  kind: BriefKind;
+  text: string;
+  why: string;
+  sourceRef?: string;
+  domainSlug?: string | null;
+  priority: number;
+  expiresAt?: string;
+};
+
+/**
+ * The brief as the card and the tool read it.
+ *
+ * `items` is the ACTIVE set: current, not dismissed, sorted by priority. An item
+ * whose expiry has passed is not active — it appears in `recentlyExpired` for
+ * one day, so the card can draw it faded with the word expired before it
+ * disappears, and in `dismissalLog` as `expired-unseen` forever after (inside
+ * the log's retention).
+ */
+export type CompanionBriefRead = {
+  writtenAt: string | null;
+  writtenBy: "companion" | null;
+  items: BriefItem[];
+  recentlyExpired: BriefItem[];
+  /** The newest twenty, newest first, as the companion tool reports them. */
+  dismissals: BriefDismissal[];
+  /** Files that could not be trusted (a corrupt record), never a throw. */
+  problems: string[];
+};
 
 /**
  * The size the operator gave a card by hand, if any.
@@ -1220,11 +1388,21 @@ export type Pin =
  * no field and reads as unlocked, and the flag is persisted on the next write.
  * That is the read-migration the document lock already uses, and it keeps
  * `schemaVersion: 1`.
+ *
+ * `companionBriefSeeded` is the same kind of read-migration for the companion
+ * brief card (2026-11-05). A board written before that card existed has no
+ * marker, so the read path puts the brief first, exactly as a new board starts;
+ * the marker is written on the board's next write. `true` means the seed has
+ * happened, so a brief the operator archives stays archived instead of
+ * returning on every read. A board that never carried the card and is never
+ * written still gets it, which is the half that makes the feature arrive
+ * without a migration step.
  */
 export type PinBoard = {
   schemaVersion: 1;
   pins: Pin[];
   locked?: boolean;
+  companionBriefSeeded?: boolean;
 };
 
 /** One board as a reader sees it: the pins, and whether the page is locked. */

@@ -18,6 +18,7 @@ const REPORT = path.join(desktopRoot, "e2e/artifacts/dashboard-arrange.json");
 const SCENARIOS = [
   "skin",
   "chrome-identity",
+  "builtin-badge",
   "card-shell",
   "short-press-is-not-a-drag",
   "movement-cancels-the-hold",
@@ -28,7 +29,6 @@ const SCENARIOS = [
   "same-row-targets-by-x",
   "drop-past-a-full-row-card",
   "wide-card-left-and-right",
-  "drop-on-the-agents-card",
   "hold-then-release-writes-nothing",
   "hold-drag-writes-once",
   "escape-cancels",
@@ -44,6 +44,7 @@ const SCENARIOS = [
   "siblings-animate",
   "auto-scroll-follows-the-pointer",
   "reduced-motion-is-still",
+  "an-empty-deadline-pin-draws-nothing",
 ];
 
 /**

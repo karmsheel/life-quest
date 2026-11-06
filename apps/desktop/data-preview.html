@@ -92,11 +92,18 @@
                     </button>
                   </div>
                 </div>
-                <section class="home-card home-card--wide">
-                  <h2 class="home-card__title">Goals <span class="home-card__count">2</span></h2>
-                  <ul class="home-mini-list">
-                    <li class="home-mini-list__item"><span class="home-mini-list__link">Run the books</span><span class="muted home-mini-list__meta">4 / 12 weeks</span></li>
-                    <li class="home-mini-list__item"><span class="home-mini-list__link">Write the premise</span><span class="muted home-mini-list__meta">Open</span></li>
+                <section class="home-card home-goal-card">
+                  <h2 class="home-card__title">Goals <span class="home-pin__builtin" role="img" aria-label="Built-in card" title="Built-in card — part of the app, not a card you created"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-blocks" aria-hidden="true"><rect width="7" height="7" x="14" y="3" rx="1" /><path d="M10 21V8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H3" /></svg></span> <span class="home-card__count">2</span></h2>
+                  <ul class="home-mini-list home-goal-list">
+                    <li class="home-mini-list__item home-goal-row">
+                      <div class="home-goal-row__head"><span class="home-goal-row__name">Run the books</span><span class="home-goal-row__domain"><span class="home-goal-row__domain-dot" aria-hidden></span>Financial</span></div>
+                      <div class="home-goal-row__measure muted"><span>/ 12 weeks</span><span class="home-goal-row__pace">On pace</span></div>
+                      <div class="home-goal-row__bar" role="progressbar" aria-label="Run the books progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="33"><span class="home-goal-row__bar-fill" style="width: 33%"></span></div>
+                    </li>
+                    <li class="home-mini-list__item home-goal-row">
+                      <div class="home-goal-row__head"><span class="home-goal-row__name">Write the premise</span><span class="home-goal-row__domain is-unassigned"><span class="home-goal-row__domain-dot" aria-hidden></span>No domain</span></div>
+                      <span class="muted home-mini-list__meta">Open</span>
+                    </li>
                   </ul>
                   <a class="home-card__more" href="#">Open Goals →</a>
                 </section>
@@ -121,7 +128,7 @@
                 </div>
                 <div class="deadline-banner" role="status">
                   <div class="deadline-banner__content">
-                    <span class="deadline-banner__label muted">Deadline pressure</span>
+                    <span class="deadline-banner__row"><span class="deadline-banner__label muted">Deadline pressure</span><span class="home-pin__builtin" role="img" aria-label="Built-in card" title="Built-in card — part of the app, not a card you created"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-blocks" aria-hidden="true"><rect width="7" height="7" x="14" y="3" rx="1" /><path d="M10 21V8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H3" /></svg></span></span>
                     <span class="deadline-banner__text">Ship the ledger and 1 other</span>
                   </div>
                   <button class="deadline-banner__dismiss">Dismiss</button>
@@ -146,7 +153,7 @@
                   </div>
                 </div>
                 <section class="home-card">
-                  <h2 class="home-card__title">Pending decisions <span class="home-card__count">1</span></h2>
+                  <h2 class="home-card__title">Pending decisions <span class="home-pin__builtin" role="img" aria-label="Built-in card" title="Built-in card — part of the app, not a card you created"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-blocks" aria-hidden="true"><rect width="7" height="7" x="14" y="3" rx="1" /><path d="M10 21V8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H3" /></svg></span> <span class="home-card__count">1</span></h2>
                   <ul class="home-mini-list">
                     <li class="home-mini-list__item"><a class="home-mini-list__link" href="#">Map the import</a><span class="muted home-mini-list__meta">Library</span></li>
                   </ul>
@@ -186,16 +193,6 @@
                     <li class="home-mini-list__item"><span class="home-mini-list__link">2026-W39</span><span class="muted home-mini-list__meta">1 265</span></li>
                   </ul>
                   <a class="home-card__more" href="#">Open view →</a>
-                </section>
-              </div>
-
-              <div class="home-pin">
-                <section class="home-card">
-                  <h2 class="home-card__title">Active agents <span class="home-card__count">1</span></h2>
-                  <ul class="home-mini-list">
-                    <li class="home-mini-list__item"><span class="home-mini-list__link">Hermes</span><span class="muted home-mini-list__meta">Companion</span></li>
-                  </ul>
-                  <a class="home-card__more" href="#">Open Personnel →</a>
                 </section>
               </div>
             </div>

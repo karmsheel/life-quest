@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { recordVisible } from "@lifequest/vault-core/pure";
 import type { LifeEvent } from "@lifequest/vault-core";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { BuiltInBadge } from "@/components/home/BuiltInBadge";
 
 function formatWhen(iso: string): string {
   try {
@@ -27,19 +28,30 @@ export function RecentLogCard({ events }: { events: LifeEvent[] }) {
   }, [events, lens]);
 
   return (
-    <section className="home-card home-card--wide">
-      <h2 className="home-card__title">Recent activity</h2>
+    <section className="home-card">
+      <h2 className="home-card__title">
+        Recent activity
+        <BuiltInBadge />
+      </h2>
       {scoped.length === 0 ? (
         <p className="muted home-card__empty">No activity yet.</p>
       ) : (
         <ul className="home-activity-list">
+          {/*
+            A line of the log is its summary first and its paperwork second: the
+            entry is what happened, and the event type and the timestamp are how
+            it was recorded. Stacking them keeps the card to a readable column
+            instead of the four-column strip that made it a full-row card.
+          */}
           {scoped.map((e) => (
             <li key={e.id} className="home-activity-row">
-              <time className="home-activity-row__when muted" dateTime={e.createdAt}>
-                {formatWhen(e.createdAt)}
-              </time>
-              <span className="home-activity-row__type">{e.type}</span>
               <span className="home-activity-row__summary">{e.summary}</span>
+              <span className="home-activity-row__meta">
+                <span className="home-activity-row__type">{e.type}</span>
+                <time className="home-activity-row__when muted" dateTime={e.createdAt}>
+                  {formatWhen(e.createdAt)}
+                </time>
+              </span>
             </li>
           ))}
         </ul>

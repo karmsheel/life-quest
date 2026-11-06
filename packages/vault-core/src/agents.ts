@@ -8,7 +8,7 @@ import {
 } from "./decision-inbox.ts";
 import { vaultPaths } from "./paths.ts";
 import { isWeekStartDay } from "./period.ts";
-import type { AgentHire, AutoApproveInsert, ChatQuestion, Result, VaultSettings, WeekStartDay } from "./types.ts";
+import type { AgentHire, AgentScope, AutoApproveInsert, ChatQuestion, Result, VaultSettings, WeekStartDay } from "./types.ts";
 
 type AgentsFile = { hires: AgentHire[] };
 
@@ -177,6 +177,40 @@ export async function readAutoApproveInserts(rootPath: string): Promise<AutoAppr
   }
 }
 
+/**
+ * Validate the stored scopes.
+ *
+ * A malformed entry is dropped rather than failing the whole settings write: a
+ * scope list is configuration, and one bad row must not make the vault's other
+ * settings unsavable.
+ */
+export function agentScopesFromUnknown(value: unknown): AgentScope[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: AgentScope[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const entry = raw as { agentId?: unknown; domains?: unknown; defaultFor?: unknown };
+    const agentId = typeof entry.agentId === "string" ? entry.agentId.trim() : "";
+    if (!agentId || seen.has(agentId)) continue;
+    const clean = (list: unknown): string[] =>
+      Array.isArray(list)
+        ? Array.from(
+            new Set(
+              list.filter(
+                (slug): slug is string => typeof slug === "string" && slug.trim() !== "",
+              ),
+            ),
+          )
+        : [];
+    const domains = clean(entry.domains);
+    const defaultFor = clean(entry.defaultFor).filter((slug) => domains.length === 0 || domains.includes(slug));
+    seen.add(agentId);
+    out.push({ agentId, domains, defaultFor });
+  }
+  return out;
+}
+
 export async function updateSettings(
   rootPath: string,
   patch: Partial<VaultSettings>,
@@ -207,6 +241,7 @@ export async function updateSettings(
     // unrelated write. The new switches therefore have to be carried through
     // explicitly, normalized so a legacy vault gains the defaults.
     const currentInbox = decisionInboxFromUnknown(current.decisionInbox);
+    const currentScopes = agentScopesFromUnknown(current.agentScopes);
     const next: VaultSettings = {
       hermesBaseUrl:
         patch.hermesBaseUrl !== undefined ? patch.hermesBaseUrl : current.hermesBaseUrl,
@@ -215,6 +250,7 @@ export async function updateSettings(
       autoApproveInserts: currentInserts,
       chatQuestions: currentQuestions,
       decisionInbox: currentInbox,
+      agentScopes: currentScopes,
     };
 
     if (patch.hermesBaseUrl !== undefined) {
@@ -263,6 +299,10 @@ export async function updateSettings(
       const parsedQuestions = parseChatQuestionsPatch(patch.chatQuestions);
       if (!parsedQuestions.ok) return parsedQuestions;
       next.chatQuestions = parsedQuestions.value;
+    }
+
+    if (patch.agentScopes !== undefined) {
+      next.agentScopes = agentScopesFromUnknown(patch.agentScopes);
     }
 
     if (patch.decisionInbox !== undefined) {

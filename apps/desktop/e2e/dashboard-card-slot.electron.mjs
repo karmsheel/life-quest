@@ -172,10 +172,8 @@ const MEASURE = `(() => {
     maxScrollTop: Math.round(port.scrollHeight - port.clientHeight),
     scrollHeight: port.scrollHeight,
     clientHeight: port.clientHeight,
-    // Only the cards that ARE pins. HomePage draws one more .home-pin that has
-    // no data-pin-id — the always-present agents card, which is app furniture
-    // rather than something the operator put on the board — and counting it as a
-    // pin would make the board one card longer than the vault says it is.
+    // Every card the board draws is a pin, so the ordered ids are exactly the
+    // pins the vault holds.
     order: boxes.filter((box) => box.id).map((box) => box.id),
     boxes,
     anchor,

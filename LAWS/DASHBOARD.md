@@ -37,3 +37,13 @@ Taking a card into or out of the companion chat's context MUST NOT edit the Dash
 Deleting what a Dashboard card draws MUST be confirmed by the operator first.
 
 Taking a card off a Dashboard MUST NOT delete what the card draws.
+
+The companion brief MUST be written only by the companion.
+
+Only the operator MUST be able to dismiss a brief item, and the companion MUST NOT be able to dismiss, complete or hide one.
+
+A brief item MUST stop being active when it expires, and its lapse MUST be recorded as an `expired-unseen` dismissal for the companion.
+
+The companion brief card MUST be offered first on every Dashboard, and a brief the operator removes MUST stay removed until they pin it again.
+
+A locked Dashboard MUST NOT stop the companion writing the companion brief: the lock governs the cards, and the brief is a record a card draws.

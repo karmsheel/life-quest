@@ -190,6 +190,25 @@ export {
   executeDailyNoteTool,
 } from "./daily-note-tools.ts";
 export {
+  COMPANION_BRIEF_TOOL_DEFS,
+  executeCompanionBriefTool,
+} from "./companion-brief-tools.ts";
+export {
+  readCompanionBrief,
+  setCompanionBrief,
+  dismissBriefItem,
+  expireBriefItems,
+  defaultBriefExpiry,
+  endOfLocalDay,
+  BRIEF_DISMISSAL_LOG_MAX,
+  BRIEF_DISMISSAL_RETENTION_MS,
+  BRIEF_EXPIRED_VISIBLE_MS,
+  BRIEF_LONG_KIND_MS,
+  BRIEF_DISMISSALS_SHOWN,
+  COMPANION_BRIEF_WRITER_ID,
+} from "./companion-brief.ts";
+export type { CompanionBriefWriteResult } from "./companion-brief.ts";
+export {
   createDatabase,
   listDatabases,
   getDatabase,
@@ -350,6 +369,7 @@ import { PROJECT_TOOL_DEFS } from "./projects.ts";
 import { DATABASE_TOOL_DEFS } from "./database-tools.ts";
 import { VIEW_TOOL_DEFS } from "./views-tools.ts";
 import { DAILY_NOTE_TOOL_DEFS } from "./daily-note-tools.ts";
+import { COMPANION_BRIEF_TOOL_DEFS } from "./companion-brief-tools.ts";
 import { PAGE_TOOL_DEFS } from "./pages-tools.ts";
 import { SIGNAL_TOOL_DEFS } from "./signal-tools.ts";
 import type { MapToolDef } from "./map/tools.ts";
@@ -372,4 +392,5 @@ export const ALL_TOOL_DEFS: MapToolDef[] = [
   ...DAILY_NOTE_TOOL_DEFS,
   ...PAGE_TOOL_DEFS,
   ...SIGNAL_TOOL_DEFS,
+  ...COMPANION_BRIEF_TOOL_DEFS,
 ];
