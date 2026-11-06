@@ -117,6 +117,8 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   // the boards themselves
   "pins:set",
   "pins:setLocked",
+  // the brief's operator verb (dismiss one item)
+  "brief:dismiss",
   // saved view cards
   "view:save",
   "view:delete",
@@ -206,6 +208,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "get_document",
   "list_daily_notes",
   "get_daily_note",
+  "get_companion_brief",
   "get_review",
   "list_reviews",
   "get_period_pack",

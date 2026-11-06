@@ -180,6 +180,9 @@ export function formatReviewContext(input: {
     "Skeleton rules: overall uses ## Look-back / ## Keep / ## Change / ## Next-period intent; domain sections use the same four ### headings.",
   );
   if (input.kind === "review") {
+    lines.push(
+      "A review starts by re-deriving the companion brief from what this period held, with set_companion_brief: typed, sourced, expiring items — at most five — so the Dashboard's brief is current before the session goes deep. Read get_companion_brief first when you need to see what the operator dismissed or let lapse.",
+    );
     lines.push("When the report is ready, propose mark_review_done.");
   } else {
     lines.push("Do not write a plan file yet.");

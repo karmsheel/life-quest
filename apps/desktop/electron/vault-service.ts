@@ -24,11 +24,13 @@ import {
   deleteRow,
   deleteSignal,
   dismissAgent,
+  dismissBriefItem,
   DOCUMENT_KINDS,
   ensurePlanningStub,
   ensureReview,
   fileImpliedChanges,
   getDailyNote,
+  readCompanionBrief,
   getDatabase,
   getDocument,
   getIdealState,
@@ -1562,6 +1564,29 @@ export async function reviewPeriodPack(
 /** The day's note, or `Daily note not found` for a day never written. */
 export async function dailyNoteGet(date: string): Promise<Result<DailyNote>> {
   return withVault((root) => getDailyNote(root, date));
+}
+
+/**
+ * The companion's brief, as the card reads it.
+ *
+ * Reading is not writing here: the card only asks. The writer is the companion's
+ * `set_companion_brief` tool; the operator's own verb is `companionBriefDismiss`.
+ */
+export async function companionBriefGet(): Promise<
+  Result<import("@lifequest/vault-core").CompanionBriefRead>
+> {
+  return withVault((root) => readCompanionBrief(root));
+}
+
+/**
+ * The operator dismissing one brief item, carried as the user actor so the vault
+ * refuses any agent that tries to settle its own item.
+ */
+export async function companionBriefDismiss(
+  itemId: string,
+  reason: import("@lifequest/vault-core").BriefDismissalReason,
+): Promise<Result<import("@lifequest/vault-core").CompanionBriefRead>> {
+  return withVault((root) => dismissBriefItem(root, USER_ACTOR, itemId, reason));
 }
 
 /** Write the one note that day has. The operator is the author, always. */

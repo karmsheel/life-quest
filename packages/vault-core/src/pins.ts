@@ -18,12 +18,54 @@ function isSystemPinKind(kind: string): kind is SystemPinKind {
   return (SYSTEM_PIN_KINDS as readonly string[]).includes(kind);
 }
 
+/**
+ * The companion brief, as a pin.
+ *
+ * It is seeded first on a new board and first on a board written before the
+ * card existed (see `seedCompanionBrief`), because the brief is the one card the
+ * operator is meant to read before the rest of the board. `SYSTEM_PIN_KINDS`
+ * keeps its own order for the Add-pin row, where a new kind is offered last.
+ */
+export const COMPANION_BRIEF_PIN: Pin = {
+  id: "sys:companion-brief",
+  kind: "system",
+  system: "companion-brief",
+};
+
+/** The order a brand-new board starts in: the brief, then the rest of the
+ * furniture in the order the vault has always seeded it. */
+const DEFAULT_PIN_ORDER: SystemPinKind[] = [
+  "companion-brief",
+  ...SYSTEM_PIN_KINDS.filter((kind) => kind !== "companion-brief"),
+];
+
 export function defaultPins(): Pin[] {
-  return SYSTEM_PIN_KINDS.map((kind) => ({
+  return DEFAULT_PIN_ORDER.map((kind) => ({
     id: `sys:${kind}`,
     kind: "system" as const,
     system: kind,
   }));
+}
+
+/**
+ * One board's pins with the companion brief seeded if it has never been offered
+ * the card.
+ *
+ * `companionBriefSeeded` is the whole memory this needs. A board file written before the
+ * card existed has no flag, so the brief is put first — the read-migration that
+ * brings the feature to an operator's existing vault without a migration step,
+ * and the reason the card arrives where it is meant to be read. The flag is
+ * persisted by the next board write; from then on the operator's arrangement is
+ * the only truth, so a brief they archived stays archived rather than returning
+ * on every read. A board that already carries the card is left exactly as it is
+ * (its own position included).
+ */
+export function seedCompanionBrief(pins: Pin[], companionBriefSeeded: boolean | undefined): Pin[] {
+  if (companionBriefSeeded === true) return pins;
+  if (pins.some((pin) => pin.kind === "system" && pin.system === "companion-brief")) {
+    return pins;
+  }
+  return [COMPANION_BRIEF_PIN, ...pins];
 }
 
 /**
@@ -251,7 +293,16 @@ export async function listPinBoard(
       }
     }
 
-    return { ok: true, value: { pins: validPins, locked: board.locked === true } };
+    return {
+      ok: true,
+      value: {
+        // The brief is seeded here, not persisted: a read never writes, and the
+        // next board write records `companionBriefSeeded` so the operator's arrangement
+        // wins from that point on.
+        pins: seedCompanionBrief(validPins, board.companionBriefSeeded),
+        locked: board.locked === true,
+      },
+    };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -372,8 +423,10 @@ export async function setPins(
     }
 
     // Unlocked (or an approval landing through the gate) → write file. The lock
-    // flag is carried over: a pin write must never silently unlock the page.
-    const next: PinBoard = { schemaVersion: 1, pins, locked };
+    // flag is carried over: a pin write must never silently unlock the page. The
+    // brief's seed marker is recorded here, because every write of this file is
+    // a board the operator has now arranged: a brief they left out stays out.
+    const next: PinBoard = { schemaVersion: 1, pins, locked, companionBriefSeeded: true };
     await atomicWriteFile(filePath, `${JSON.stringify(next, null, 2)}\n`);
     // Fort-Knox AGENT-09: a board write is an attributable write. Before this it
     // logged nothing at all, so an agent's arrange/save_view landing on an
@@ -417,8 +470,10 @@ export async function setPinBoardLocked(
     // that has never been arranged must keep the seeded pins, not empty it.
     // The stored pins are taken as-is — listPins is the validated view, and a
     // pin dropped for pointing at a dead domain must not be deleted by a lock.
-    const pins = board?.pins ?? defaultPins();
-    const next: PinBoard = { schemaVersion: 1, pins, locked };
+    // The brief seed runs for the same reason it runs on a read: locking a board
+    // written before the card existed must not be the write that hides it.
+    const pins = board ? seedCompanionBrief(board.pins, board.companionBriefSeeded) : defaultPins();
+    const next: PinBoard = { schemaVersion: 1, pins, locked, companionBriefSeeded: true };
     await atomicWriteFile(filePath, `${JSON.stringify(next, null, 2)}\n`);
 
     await appendLog(root, {
