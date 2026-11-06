@@ -352,10 +352,19 @@ async function main() {
     throw new Error(`timed out waiting for ${label}`);
   };
 
-  /** A send while a turn is live lands on the stop square, not the composer. */
+  /**
+   * Wait for the running turn to close.
+   *
+   * The composer no longer goes inert while a turn is live — the operator has
+   * to be able to steer the running turn, or line the next message up behind
+   * it — so "the field is enabled" says nothing about whether a turn is
+   * running. The SEND CONTROL is the witness: it wears the stop square while
+   * the turn is live, and it is either the arrow or absent once the turn is
+   * over. Only the stop state means "a turn is still running".
+   */
   const settle = () =>
     waitFor(
-      `document.querySelector(".chat-panel__composer-input").disabled === false`,
+      `document.querySelector(".chat-panel__send")?.getAttribute("data-state") !== "stop"`,
       "the running turn to close",
       12_000,
     );

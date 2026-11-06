@@ -1268,9 +1268,11 @@ export async function companionSessionDelete(
  * composer's own stored preference, so a chat that is opened in Hermes Desktop
  * keeps running whatever that client asks for.
  *
- * A receipt rides the same call when the operator attached one. The attachment
- * is already in hand here: main took it out of the pending slot, so this
- * function never sees a path it cannot also produce the bytes for.
+ * Attachments ride the same call. The attachments are already in hand here:
+ * main took them out of the pending slot, so this function never sees a path it
+ * cannot also produce the bytes for. A receipt arrives on the older
+ * `attachment` argument and keeps its own wording; the general attachments
+ * arrive as a list and are described by kind.
  */
 export async function companionChatStream(
   sessionId: string,
@@ -1279,17 +1281,22 @@ export async function companionChatStream(
   onEvent: (evt: ChatStreamEvent) => void,
   runtime?: CompanionRuntimeOverride | null,
   attachment?: TurnAttachment | null,
+  attachments?: TurnAttachment[] | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const instructions = attachment
-      ? { ...ctx, attachedFile: { relPath: attachment.relPath, name: attachment.name } }
-      : ctx;
+    const instructions: CompanionInstructionsInput = {
+      ...ctx,
+      ...(attachment
+        ? { attachedFile: { relPath: attachment.relPath, name: attachment.name } }
+        : {}),
+      ...(attachments && attachments.length > 0 ? { attachments } : {}),
+    };
     const res = await hermesFetch(
       `/api/sessions/${encodeURIComponent(sessionId)}/chat/stream`,
       {
         method: "POST",
         body: JSON.stringify({
-          input: buildTurnInput(input, attachment),
+          input: buildTurnInput(input, attachments, attachment),
           instructions: buildInstructions(instructions),
           ...runtimeRequestBody(runtime),
         }),
@@ -1373,6 +1380,68 @@ export async function companionRunStop(
     });
     if (!res.ok) return { ok: false, error: `Stop failed (${res.status})` };
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Steer a live run: add guidance to a turn that is already running.
+ *
+ * The gateway takes the text and hands it to the running agent, which reads it
+ * at its next step - the agent abandons what it was doing and answers the
+ * steer. That is how the operator says "actually, keep it to the second page"
+ * without cancelling the turn and losing the work already done.
+ *
+ * The gateway answers in three ways that mean different things to the
+ * operator, and each one gets its own sentence, because "steer failed" tells
+ * the operator nothing about whether their message went anywhere:
+ *
+ *  - 200: the steer was accepted and the agent has it;
+ *  - 404 `run_not_found`: the run id is unknown to the gateway. The gateway
+ *    resolves the run BEFORE it looks at the text, so this also answers 404
+ *    for an empty steer;
+ *  - 409 `run_not_accepting_steer`: the run is known but is not running - it
+ *    finished between the keypress and this call, or it is waiting for an
+ *    approval, or it is already stopping;
+ *  - 400 `invalid_steer_input`: the text was empty.
+ *
+ * The empty text is refused HERE, before the call, so the operator is told
+ * what is wrong with their own input rather than being sent to the far end
+ * for a verdict about a run they may never have heard of.
+ */
+export async function companionRunSteer(
+  runId: string,
+  text: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const steerText = typeof text === "string" ? text.trim() : "";
+  if (!steerText) {
+    return { ok: false, error: "Type what you want the agent to do instead." };
+  }
+  try {
+    const res = await hermesFetch(`/v1/runs/${encodeURIComponent(runId)}/steer`, {
+      method: "POST",
+      body: JSON.stringify({ input: steerText }),
+    });
+    if (res.ok) return { ok: true };
+    if (res.status === 404) {
+      return {
+        ok: false,
+        error: "That turn is no longer running, so the message could not be steered into it.",
+      };
+    }
+    if (res.status === 409) {
+      return {
+        ok: false,
+        error: "That turn has already finished, so the message could not be steered into it.",
+      };
+    }
+    // Anything else: the gateway's own message names the reason in one
+    // sentence, and the status alone does not.
+    return {
+      ok: false,
+      error: await errorDetail(res, `Steer failed (${res.status})`),
+    };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

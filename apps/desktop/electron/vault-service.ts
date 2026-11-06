@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import {
   amendDecision,
   applyScriptBlock,
@@ -207,6 +208,12 @@ import { getFileUnsolicited } from "./companion-filing.js";
 import { prepareReceipt } from "./receipt-image.js";
 import { pendingReceipt } from "./pending-receipt.js";
 import {
+  attachmentAbsolutePath,
+  storeAttachment,
+  type AttachmentKind,
+} from "./attachment-store.js";
+import { pendingAttachments } from "./pending-attachment.js";
+import {
   getActiveDomain,
   listRecentVaults,
   recordRecentVault,
@@ -249,6 +256,7 @@ import type {
   CompanionInstructionsInput,
   CompanionRuntimeOverride,
   TurnAttachment,
+  TurnAttachmentRequest,
 } from "./companion-client.js";
 import {
   buildBoundReviewContext,
@@ -876,6 +884,54 @@ export async function receiptAttach(input: {
       bytes: modelCopy.byteLength,
     });
     return { ok: true, value: { relPath, fileId, name, size } };
+  });
+}
+
+/**
+ * Attach any file to the chat.
+ *
+ * The general path, next to the receipt path and not instead of it: a receipt
+ * is a picture with a meaning, re-encoded and cited by a finance-domain path,
+ * and it keeps its own behaviour. This accepts anything - a video, a
+ * recording, a PDF, a photo - and stores the ORIGINAL bytes in the vault so
+ * the agent can reach the file with its own tools.
+ *
+ * The id minted here is the join key. The renderer sends it back with the
+ * turn, and main resolves the stored path from the pending store, so the path
+ * the agent is told about and the file on disk cannot come from two different
+ * places. The pending store is updated with the attachment that was just
+ * added, so several attachments may be waiting at once and each turn takes
+ * exactly the ones it names.
+ */
+export async function attachmentAttach(input: {
+  bytes: Uint8Array;
+  mime: string;
+  name: string;
+}): Promise<
+  Result<{
+    id: string;
+    kind: AttachmentKind;
+    name: string;
+    size: number;
+    mime: string;
+    relPath: string;
+  }>
+> {
+  return withVault(async (root) => {
+    const stored = await storeAttachment(root, input);
+    if (!stored.ok) return stored;
+    const { fileId, relPath, name, size, mime, kind, dataUrl } = stored.value;
+    const id = randomUUID();
+    pendingAttachments.add({
+      id,
+      kind,
+      name,
+      size,
+      mime,
+      relPath,
+      dataUrl,
+    });
+    return { ok: true, value: { id, kind, name, size, mime, relPath } };
   });
 }
 
@@ -1738,6 +1794,48 @@ export async function planningStartOrResume(
   );
 }
 
+/**
+ * The general attachments a turn named, as the chat call needs them.
+ *
+ * The renderer sends the ids it attached; main resolves them here, against
+ * the pending store. The absolute path is computed HERE, from the vault that
+ * is open right now, because the agent's file tools resolve a relative path
+ * against the gateway process's working directory - which is neither the
+ * vault nor stable - and a relative path in the instruction would be a path
+ * the agent cannot open.
+ *
+ * An id the pending store does not know is refused rather than skipped: a
+ * turn that silently drops one of the operator's files is a turn that reads
+ * as though the attachment was ignored.
+ */
+function resolveTurnAttachments(
+  root: string,
+  requested: TurnAttachmentRequest[],
+): Result<TurnAttachment[]> {
+  const ids = requested.map((value) => value.id);
+  const found = pendingAttachments.take(ids);
+  const missing = ids.filter((id) => !found.some((value) => value.id === id));
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      error: "Attach that file again.",
+    };
+  }
+  return {
+    ok: true,
+    value: found.map((value) => ({
+      id: value.id,
+      kind: value.kind,
+      relPath: value.relPath,
+      name: value.name,
+      size: value.size,
+      mime: value.mime,
+      dataUrl: value.dataUrl,
+      absolutePath: attachmentAbsolutePath(root, value.relPath),
+    })),
+  };
+}
+
 export async function companionChatStreamWithPack(
   sessionId: string,
   input: string,
@@ -1745,16 +1843,41 @@ export async function companionChatStreamWithPack(
   onEvent: (evt: ChatStreamEvent) => void,
   runtime?: CompanionRuntimeOverride | null,
   receiptRelPath?: string | null,
+  attachmentRequests?: TurnAttachmentRequest[] | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   // The slot is the only source of the image, so a turn that names a receipt
   // main is not holding is refused rather than sent as a text-only turn the
   // operator would read as "the agent ignored my photo".
   let attachment: TurnAttachment | null = null;
   if (receiptRelPath) {
-    attachment = pendingReceipt.take(receiptRelPath);
-    if (!attachment) {
+    const taken = pendingReceipt.take(receiptRelPath);
+    if (!taken) {
       return { ok: false, error: "Attach that receipt again." };
     }
+    attachment = {
+      id: taken.relPath,
+      kind: "image",
+      relPath: taken.relPath,
+      name: taken.name,
+      size: taken.bytes,
+      mime: "image/jpeg",
+      dataUrl: taken.dataUrl,
+      absolutePath: currentRoot
+        ? attachmentAbsolutePath(currentRoot, taken.relPath)
+        : taken.relPath,
+    };
+  }
+  // The general attachments ride the same turn. They are resolved before the
+  // turn is posted, so a file the app no longer holds is reported rather than
+  // sent as a turn that quietly lacks it.
+  let attachments: TurnAttachment[] | null = null;
+  if (attachmentRequests && attachmentRequests.length > 0) {
+    if (!currentRoot) {
+      return { ok: false, error: "No vault is open" };
+    }
+    const resolved = resolveTurnAttachments(currentRoot, attachmentRequests);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    attachments = resolved.value;
   }
 
   const fileUnsolicited = await getFileUnsolicited().catch(() => true);
@@ -1788,6 +1911,7 @@ export async function companionChatStreamWithPack(
     forward,
     runtime,
     attachment,
+    attachments,
   );
   if (result.ok && currentRoot) {
     const root = currentRoot;

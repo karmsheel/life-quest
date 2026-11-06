@@ -39,7 +39,21 @@ export type CompanionInstructionsInput = {
    * cite and the path main holds cannot come from two different places.
    */
   attachedFile?: { relPath: string; name: string } | null;
+  /**
+   * The general attachments this turn carries.
+   *
+   * Set by the chat call from the pending-attachment store, not by the
+   * renderer, for the same reason the receipt is: the path the agent is told
+   * about and the file on disk must not be able to come from two different
+   * places. `absolutePath` is there because the agent's file tools resolve a
+   * relative path against the gateway process's working directory, which is
+   * neither the vault nor stable - so the instruction names the absolute path
+   * and the vault-relative one beside it.
+   */
+  attachments?: TurnAttachment[] | null;
 };
+
+
 
 /**
  * The dashboard card the chat is about.
@@ -85,31 +99,117 @@ export type PageContextInput = {
   body: string;
 };
 
-/** One receipt riding a turn: what the model sees, and where the original is. */
+/**
+ * What the model is shown, and what the agent is told about, one attachment.
+ *
+ * The receipt was the first thing that could ride a turn, and it was an image
+ * and nothing else. A general attachment is one of four kinds, and the kind
+ * decides how it travels:
+ *
+ *  - `image` - the bytes ride the turn as an `image_url` part, so the model
+ *    SEES it, and the stored path rides the instructions, so the agent can
+ *    open the original;
+ *  - `video`, `audio`, `file` - the bytes cannot ride the turn at all. The
+ *    gateway's content array accepts text and image parts only
+ *    (`api_server._normalize_multimodal_content` refuses a `file` part with
+ *    `unsupported_content_type`), so these travel as a stored path the agent
+ *    reads with its own file tools.
+ *
+ * `dataUrl` is therefore null for everything that is not an inlineable image,
+ * and `relPath` is always present: the file is on disk before the turn that
+ * names it is posted.
+ */
 export type TurnAttachment = {
+  /** The join key the renderer sent back; stable for the life of the attach. */
+  id: string;
+  kind: "image" | "video" | "audio" | "file";
   relPath: string;
   name: string;
-  /** The re-encoded copy, as a `data:image/jpeg;base64,` URL. */
-  dataUrl: string;
+  /** The byte length of the original. */
+  size: number;
+  /** The mime the store settled on. */
+  mime: string;
+  /**
+   * The inline copy, as a `data:image/...;base64,` URL. Null for everything
+   * that may not be inlined, and for an image whose format the providers do
+   * not decode.
+   */
+  dataUrl: string | null;
+  /**
+   * The absolute path on this machine.
+   *
+   * The agent reads an attachment with its own file tools, and those resolve a
+   * relative path against the gateway process's working directory, which is
+   * neither the vault nor stable. So the instruction names the absolute path
+   * and the vault-relative one beside it.
+   */
+  absolutePath: string;
+};
+
+/**
+ * What the renderer says a turn carries, at the IPC boundary.
+ *
+ * The id is the whole of it. The renderer never names a path or sends bytes
+ * for a turn: it names the attachments it attached, by the ids main minted
+ * when they were attached, and main resolves everything else from the pending
+ * store. That is what keeps the path the agent is told about and the file on
+ * disk from coming from two different places.
+ *
+ * The other fields ride along so the renderer can render the turn's own
+ * attachment chips without a second round trip. They are NOT what main trusts:
+ * the stored file's own name, size and mime are the facts.
+ */
+export type TurnAttachmentRequest = {
+  id: string;
+  kind: "image" | "video" | "audio" | "file";
+  name: string;
+  mime: string;
+  size: number;
+  /** The stored path, when the renderer knows it. Main resolves its own. */
+  relPath?: string;
 };
 
 /**
  * What `/chat/stream` receives as `input`.
  *
- * A turn with no receipt stays the plain string it has always been: the
+ * A turn with nothing attached stays the plain string it has always been: the
  * gateway collapses text-only content to a string for its own logging, and
- * sending a one-part array would be a different shape for no gain. A turn with
- * a receipt becomes the two-part vision form the gateway validates — the words
- * first, then the image.
+ * sending a one-part array would be a different shape for no gain.
+ *
+ * A turn with attachments becomes the vision form the gateway validates - the
+ * words first, then ONE `image_url` part per image. The gateway accepts a
+ * LIST of parts and more than one image among them
+ * (`_normalize_multimodal_content` walks every part and refuses only the
+ * types it cannot read), so several pictures ride one turn. The receipt is
+ * one of those images and rides it too.
+ *
+ * Non-image attachments are NOT here and must never be: the gateway rejects a
+ * `file` part outright, and a video or an audio file has no inlined form at
+ * all. They ride the turn as a stored path in the instructions instead - see
+ * `buildInstructions`.
  */
 export function buildTurnInput(
   text: string,
-  attachment?: TurnAttachment | null,
+  attachments?: TurnAttachment[] | null,
+  receipt?: TurnAttachment | null,
 ): unknown {
-  if (!attachment) return text;
+  // The receipt is an image like any other, and it rides the turn the same way:
+  // as an `image_url` part the model can see. It is passed separately because
+  // it comes from its own pending slot and keeps its own instruction wording,
+  // but the WIRE does not know that - the gateway sees one list of parts.
+  const images = [
+    ...(receipt && receipt.dataUrl ? [receipt] : []),
+    ...(attachments ?? []).filter(
+      (attachment) => attachment.kind === "image" && attachment.dataUrl,
+    ),
+  ];
+  if (images.length === 0) return text;
   return [
     { type: "text", text },
-    { type: "image_url", image_url: { url: attachment.dataUrl, detail: "high" } },
+    ...images.map((attachment) => ({
+      type: "image_url",
+      image_url: { url: attachment.dataUrl, detail: "high" },
+    })),
   ];
 }
 
@@ -633,6 +733,76 @@ function pageContextLine(page: PageContextInput): string {
   return [where, ...quoted].join("\n");
 }
 
+/**
+ * How the turn's attachments are described to the agent.
+ *
+ * An IMAGE is described twice, because it travels twice: the model sees the
+ * picture inline, and the agent may also want the original on disk (a receipt
+ * photo that is hard to read inline is still a receipt photo). So the line
+ * says the picture is attached AND gives its stored path.
+ *
+ * Everything else is described once, as a stored file: the name, the kind, the
+ * size, and the absolute path. The kind is in the line because it is what
+ * tells the agent which tool to reach for - a video is read with a media
+ * extractor, an audio file with a transcriber, a document with a text
+ * extractor - and a file named `voice memo.m4a` does not say so by itself.
+ *
+ * The instruction says where the file lives in the vault's own layout as well
+ * as where it lives on this machine, because the operator asks about stored
+ * files by their vault path and the agent answers with them.
+ */
+function attachmentsInstructions(attachments?: TurnAttachment[] | null): string {
+  if (!attachments || attachments.length === 0) return "";
+  const facts = attachments.map((attachment) => {
+    const kind = ATTACHMENT_KIND_WORDS[attachment.kind] ?? "file";
+    const where = `the file "${attachment.name}" (${kind}, ${attachment.mime}, ${formatAttachmentSize(attachment.size)})`;
+    if (attachment.kind === "image" && attachment.dataUrl) {
+      return [
+        `${where} is attached to this turn as a picture, so you can see it.`,
+        `Its original is stored in the vault at ${attachment.relPath} and on this machine at ${attachment.absolutePath}.`,
+        `Read that path with your own file tools if you need the original at full resolution rather than the picture above.`,
+      ].join(" ");
+    }
+    return [
+      `${where} is attached to this turn.`,
+      `It is stored in the vault at ${attachment.relPath} and on this machine at ${attachment.absolutePath}.`,
+      "It cannot be sent to the model as an inline part, so read it with your own file tools at that absolute path.",
+      "Say what you read, and name the file when you refer to it.",
+    ].join(" ");
+  });
+  const count = facts.length;
+  return [
+    count === 1
+      ? "One file is attached to this turn:"
+      : `${count} files are attached to this turn:`,
+    ...facts.map((fact, index) => `${index + 1}. ${fact}`),
+    "Every path above was given to you by the app. Do not invent a path for a file that was not attached, and do not read a path that was not named here.",
+  ].join("\n");
+}
+
+/** The word the instruction uses for each kind of attachment. */
+const ATTACHMENT_KIND_WORDS: Record<TurnAttachment["kind"], string> = {
+  image: "image",
+  video: "video",
+  audio: "audio recording",
+  file: "file",
+};
+
+/**
+ * A size an operator can read.
+ *
+ * The bytes are what the store knows; a human reads "2.4 MB". Rounded to one
+ * decimal place, and in bytes only for something small enough that bytes are
+ * the friendlier number.
+ */
+function formatAttachmentSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "unknown size";
+  if (bytes < 1024) return `${bytes} bytes`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  const mb = bytes / (1024 * 1024);
+  return `${mb >= 10 ? Math.round(mb) : Math.round(mb * 10) / 10} MB`;
+}
+
 export function buildInstructions(input: CompanionInstructionsInput): string {
   const domain =
     input.domainName || input.domainSlug
@@ -692,6 +862,18 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
         "If the image does not give you an amount or an account, ask and post no row; the stored file stays.",
       ].join(" ")
     : "";
+  // The general attachments this turn carries. Two shapes, because the
+  // gateway has exactly two: an image rides the turn as an `image_url` part
+  // and the model SEES it, and anything else cannot ride the turn at all
+  // (`_normalize_multimodal_content` refuses a `file` part with
+  // `unsupported_content_type`), so it travels as a stored path.
+  //
+  // The path is named ABSOLUTE as well as vault-relative because the agent
+  // reads it with its own file tools, and those resolve a relative path
+  // against the gateway process's working directory, which is neither the
+  // vault nor stable. A relative path here would be a path the agent cannot
+  // open, and the turn would read as though the attachment had been ignored.
+  const attachmentsLine = attachmentsInstructions(input.attachments);
   // The cards the operator pointed at, if they pointed at any. Absent is the
   // ordinary turn and must stay the ordinary turn: no line, no change in shape.
   const focusedCards =
@@ -714,6 +896,7 @@ export function buildInstructions(input: CompanionInstructionsInput): string {
     "Money the operator states must be logged with capture_transaction (or undo_capture / correct_capture in that thread). Do not claim a row was posted unless the tool result says posted: true. If the tool returns ask, ask that and do not invent an account.",
     "Three operator surfaces are read directly, never guessed at: list_projects / get_project for the operator's projects — a project is not a document, so get_document on a project id refuses and names the right tool, and create_project / update_project (addUpdate logs progress) / close_project file a Decision instead of writing; the Life-Chain through list_signals / get_signal, which is also how you check a capture is not already there, and create_signal, which applies at once and is logged under your name; and list_pages / get_page for a domain's pages, which are read-only apart from apply_script_block.",
     receiptLine,
+    attachmentsLine,
     "Database writes split by what they touch. ADDING DATA is written at once, with no Decision: create_database writes a new database and its columns, upsert_row without an id creates a row, and insert_rows adds up to 200 new rows; their results say applied: true / posted: true. CHANGING OR REMOVING DATA THAT ALREADY EXISTS still files a pending Decision and writes nothing until the operator approves it: upsert_row WITH an id (an update), delete_row, and add_column. The chat confirmation is the operator's yes, so call a direct write only after the operator has agreed in this chat to that exact database or those exact rows — never create a database or add rows speculatively, and never claim a database or row exists unless the tool result says applied: true / posted: true. For a write that became a Decision, say a decision is waiting and name it; a rejected Decision must not be retried as a silent write.",
     "When adding many new rows to one database, call insert_rows once. Use upsert_row without an id for a single new row. With an id, upsert_row is an EDIT of existing data and files a Decision instead of writing; say the decision is waiting.",
     "A page script block is the one page change you apply yourself: use apply_script_block, then name the script you applied in your reply, and do not file a Decision for it. Every other page edit still goes through a Decision. Do not claim a script ran unless run_script_block returned queries or fetches.",

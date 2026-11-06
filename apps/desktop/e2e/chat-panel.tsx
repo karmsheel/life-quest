@@ -75,6 +75,13 @@ type ChatCall = {
   input: string;
   runtime?: unknown;
   receiptRelPath?: string | null;
+  attachments?: Array<{
+    id: string;
+    kind: "image" | "video" | "audio" | "file";
+    name: string;
+    mime: string;
+    size: number;
+  }> | null;
 };
 
 /**
@@ -148,6 +155,10 @@ type HarnessWindow = {
   __lqParseSse?: (raw: string) => unknown;
   /** Every `receiptAttach` the panel made, in order. */
   __lqAttachCalls?: { mime: string; name: string; bytes: number }[];
+  /** Every `attachmentAttach` the panel made, in order. */
+  __lqAttachmentCalls?: { mime: string; name: string; bytes: number }[];
+  /** Every `companionRunSteer` the panel made, in order. */
+  __lqSteerCalls?: { runId: string; text: string }[];
   chatPanelHarnessReady?: Promise<void>;
 };
 
@@ -155,6 +166,8 @@ const harness = window as unknown as HarnessWindow;
 harness.__lqChatDelay = 0;
 harness.__lqParseSse = parseSseBlock;
 harness.__lqAttachCalls = [];
+harness.__lqAttachmentCalls = [];
+harness.__lqSteerCalls = [];
 
 /**
  * The chat the panel has open, as far as the bridge can see: its transcript was
@@ -221,6 +234,36 @@ const bridge: Record<string, unknown> = {
   },
   companionRunStop: async (runId: string) => {
     harness.__lqStopCalls = [...(harness.__lqStopCalls ?? []), runId];
+    return ok(true);
+  },
+  // The general attachment: any media or file, stored in main and named back
+  // by an id the turn can carry. The kind is decided by the mime, the way main
+  // decides it, so a rig that picks a clip gets a clip.
+  attachmentAttach: async (input: { bytes: Uint8Array; mime: string; name: string }) => {
+    harness.__lqAttachmentCalls = [
+      ...(harness.__lqAttachmentCalls ?? []),
+      { mime: input.mime, name: input.name, bytes: input.bytes?.byteLength ?? 0 },
+    ];
+    const mime = input.mime ?? "";
+    const kind = mime.startsWith("image/")
+      ? "image"
+      : mime.startsWith("video/")
+        ? "video"
+        : mime.startsWith("audio/")
+          ? "audio"
+          : "file";
+    return ok({
+      id: `att-${(harness.__lqAttachmentCalls ?? []).length}`,
+      kind,
+      name: input.name,
+      size: input.bytes?.byteLength ?? 0,
+      mime,
+      relPath: `attachments/${input.name}`,
+    });
+  },
+  // The steer: the words go into the run that is already working.
+  companionRunSteer: async (runId: string, text: string) => {
+    harness.__lqSteerCalls = [...(harness.__lqSteerCalls ?? []), { runId, text }];
     return ok(true);
   },
   onCompanionStream: (cb: (frame: CompanionStreamFrame) => void) => {

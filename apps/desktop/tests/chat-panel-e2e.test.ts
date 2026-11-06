@@ -74,7 +74,18 @@ function runDriver(): Promise<number> {
  * server down the test skips; `npm run dev` in another shell turns it on.
  */
 
-describe("chat panel rigs", { concurrency: true }, () => {
+/**
+ * The rigs run a couple at a time, not all of them at once.
+ *
+ * Each rig is its own Electron app driving a real window with real timers,
+ * and several of them wait on a window to settle before they measure it. Run
+ * all of them at once on one box, those waits stop being waits and become
+ * coin tosses: the rig that measures a settled composer reads one that is
+ * still settling, and fails for a reason that has nothing to do with the code
+ * under test. Two at a time keeps the machine's load inside what the rigs'
+ * own timing budgets were written for.
+ */
+describe("chat panel rigs", { concurrency: 2 }, () => {
   describe("composer autogrow", () => {
     it("grows the field with the draft and clamps it at half the panel", async (t) => {
       if (!(await devServerUp())) {
@@ -944,6 +955,276 @@ describe("chat panel rigs", { concurrency: true }, () => {
   });
 
   const RECEIPT_REPORT = path.join(desktopRoot, "e2e/artifacts/receipt-attach.json");
+
+  const KEYS_REPORT = path.join(
+    desktopRoot,
+    "e2e/artifacts/composer-keys-attachments.json",
+  );
+
+  const ATTACHMENTS_REPORT = path.join(
+    desktopRoot,
+    "e2e/artifacts/attachments.json",
+  );
+
+  function runAttachmentsDriver(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      execFile(
+        electron,
+        [path.join(desktopRoot, "e2e/attachments.electron.mjs")],
+        { cwd: desktopRoot, timeout: 180_000 },
+        (error) => {
+          if (error && typeof error.code !== "number") {
+            reject(error);
+            return;
+          }
+          resolve(error ? (error.code as number) : 0);
+        },
+      );
+    });
+  }
+
+  type AttachmentsReport = {
+    pass: boolean;
+    failures: string[];
+    scenarios: { name: string; pass: boolean; detail: string | null }[];
+    measurements?: {
+      turnBody?: unknown;
+      instructions?: string;
+      stored?: Record<string, { relPath: string; name: string; size: number; kind: string }>;
+    };
+    picture?: string | null;
+  };
+
+  /**
+   * The attachment rig drives the main process against a real throwaway vault:
+   * the stored bytes, the pending store, the turn body the gateway receives
+   * and the instructions the agent is given. It needs no dev server.
+   */
+  describe("general attachments and the steer verb", () => {
+    it("stores a file the agent can read and posts an image inline", async () => {
+      fs.rmSync(ATTACHMENTS_REPORT, { force: true });
+      const exitCode = await runAttachmentsDriver();
+      assert.equal(
+        fs.existsSync(ATTACHMENTS_REPORT),
+        true,
+        "driver wrote no report artifact",
+      );
+
+      const report = JSON.parse(
+        fs.readFileSync(ATTACHMENTS_REPORT, "utf8"),
+      ) as AttachmentsReport;
+
+      assert.equal(
+        exitCode,
+        0,
+        `the attachments rig exited ${exitCode}: ${report.failures.join("; ")}`,
+      );
+      assert.equal(
+        report.pass,
+        true,
+        `the rig reported failures: ${report.failures.join("; ")}`,
+      );
+      assert.deepEqual(report.failures, []);
+
+      // Every scenario the rig names must have run and passed: a rig that
+      // quietly stops checking one is a shorter green run, not a green run.
+      const byName = new Map(report.scenarios.map((s) => [s.name, s]));
+      assert.ok(
+        report.scenarios.length >= 30,
+        `the rig reported only ${report.scenarios.length} scenario(s)`,
+      );
+      for (const scenario of report.scenarios) {
+        assert.equal(
+          scenario.pass,
+          true,
+          `"${scenario.name}" failed: ${scenario.detail ?? "no detail"}`,
+        );
+      }
+      assert.ok(byName.size >= 30, "the rig's scenarios have no names");
+
+      // The stored file: in the vault, under its own name, with its own bytes.
+      const stored = report.measurements?.stored ?? {};
+      assert.ok(stored.image, "no image was stored");
+      assert.ok(stored.video, "no video was stored");
+      assert.match(
+        stored.image.relPath ?? "",
+        /^attachments\/files\/[0-9a-f-]{36}\/.+/,
+        `the image was stored at ${stored.image.relPath}`,
+      );
+      assert.equal(stored.video.kind, "video", "the video was not stored as a video");
+
+      // The turn body: the image rides inline, and the video does not — the
+      // gateway rejects a file part outright.
+      const body = JSON.stringify(report.measurements?.turnBody ?? "");
+      assert.match(body, /image_url/, "the image did not ride the turn inline");
+      assert.doesNotMatch(
+        body,
+        /clip\.mp4/,
+        "a non-image attachment was inlined into the turn",
+      );
+
+      // The instructions: the agent is told where every file is, on this
+      // machine, because a relative path is a path it cannot open.
+      const instructions = report.measurements?.instructions ?? "";
+      assert.match(instructions, /attachments\/files\//, "the file's vault path is missing");
+      assert.match(instructions, /clip\.mp4/, "the attached file is not named");
+      assert.match(
+        instructions,
+        /absolute path|on this machine at \//,
+        "the absolute path is missing",
+      );
+    });
+  });
+
+  function runKeysDriver(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      execFile(
+        electron,
+        [path.join(desktopRoot, "e2e/composer-keys-attachments.electron.mjs")],
+        { cwd: desktopRoot, timeout: 180_000 },
+        (error) => {
+          if (error && typeof error.code !== "number") {
+            reject(error);
+            return;
+          }
+          resolve(error ? (error.code as number) : 0);
+        },
+      );
+    });
+  }
+
+  type KeysReport = {
+    pass: boolean;
+    failures: string[];
+    initial: {
+      fieldPresent: boolean;
+      plusPresent: boolean;
+      plusInside: boolean;
+      plusTopRight: boolean;
+      plusLabel: string | null;
+    };
+    afterEnter: { sends: number; before: string; after: string };
+    afterRealEnter: { value: string; lines: number; sends: number };
+    afterCtrlEnter: { sends: number; value: string; calls: { input: string }[] };
+    attached: {
+      calls: { mime: string; name: string; bytes: number }[];
+      chip: string | null;
+      chipKind: string | null;
+      chipPresent: boolean;
+    };
+    turnWithAttachment: {
+      last: {
+        input?: string;
+        attachments?: { id: string; kind: string; name: string }[] | null;
+      };
+    };
+    live: {
+      whileEmpty?: { disabled: boolean; steerButton: boolean };
+      during: { disabled: boolean; steerButton: boolean; queueButton: boolean };
+    };
+    steered: {
+      armed?: boolean;
+      calls: { runId: string; text: string }[];
+      draft: string;
+      transcript: string[];
+    };
+    queued: { armed?: boolean; rows: string[]; draft: string };
+    screenshots: string[];
+  };
+
+  /**
+   * The keys/attachments rig drives the real ChatPanel in a real window, so it
+   * needs the Vite dev server. With the server down the test skips.
+   */
+  describe("composer keys, attachments and live-turn gestures", () => {
+    it("sends on Ctrl+Enter, steers and queues while a turn runs", async (t) => {
+      if (!(await devServerUp())) {
+        t.skip(`dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`);
+        return;
+      }
+
+      fs.rmSync(KEYS_REPORT, { force: true });
+      const exitCode = await runKeysDriver();
+      assert.equal(fs.existsSync(KEYS_REPORT), true, "driver wrote no report artifact");
+
+      const report = JSON.parse(fs.readFileSync(KEYS_REPORT, "utf8")) as KeysReport;
+      assert.equal(
+        exitCode,
+        0,
+        `the keys rig exited ${exitCode}: ${report.failures.join("; ")}`,
+      );
+      assert.deepEqual(report.failures, []);
+      assert.equal(report.pass, true);
+
+      // The attach control: inside the field's own box, in its top-right corner.
+      assert.equal(report.initial.fieldPresent, true, "the composer field never rendered");
+      assert.equal(report.initial.plusPresent, true, "the attach control never rendered");
+      assert.equal(report.initial.plusInside, true, "the attach control sat outside the field");
+      assert.equal(report.initial.plusTopRight, true, "the attach control was not top-right");
+      assert.match(report.initial.plusLabel ?? "", /attach/i, "the attach control names itself");
+
+      // The keys: Enter breaks the line and sends nothing; Ctrl+Enter sends.
+      assert.equal(report.afterEnter.sends, 0, "Enter sent the message");
+      assert.equal(report.afterRealEnter.sends, 0, "a typed Enter sent the message");
+      assert.ok(
+        report.afterRealEnter.lines >= 2,
+        `a typed Enter did not break the line: ${JSON.stringify(report.afterRealEnter.value)}`,
+      );
+      assert.equal(report.afterCtrlEnter.sends, 1, "Ctrl+Enter did not send");
+      assert.equal(
+        report.afterCtrlEnter.calls[0]?.input,
+        "the whole prompt",
+        "the sent message lost its text",
+      );
+      assert.equal(report.afterCtrlEnter.value, "", "Ctrl+Enter left the draft behind");
+
+      // The attachment: any kind of file, shown as a chip and carried by the turn.
+      assert.equal(report.attached.calls.length, 1, "the picked file never reached main");
+      assert.equal(report.attached.calls[0]?.name, "clip.mp4", "the file lost its name");
+      assert.equal(report.attached.calls[0]?.mime, "video/mp4", "the file lost its kind");
+      assert.equal(report.attached.chipPresent, true, "the attachment showed no chip");
+      assert.equal(report.attached.chipKind, "video", "the chip lost the file's kind");
+      assert.equal(
+        report.turnWithAttachment.last?.attachments?.length,
+        1,
+        "the turn did not carry the attachment",
+      );
+      assert.equal(
+        report.turnWithAttachment.last?.attachments?.[0]?.kind,
+        "video",
+        "the turn did not carry the attachment's kind",
+      );
+
+      // While a turn runs: the composer stays open and grows the two gestures.
+      assert.equal(report.live.during.disabled, false, "the composer closed during the turn");
+      assert.equal(report.live.during.steerButton, true, "no steer gesture during the turn");
+      assert.equal(report.live.during.queueButton, true, "no queue gesture during the turn");
+
+      // The steer: it reached the live run, carried the words, and showed them.
+      assert.equal(report.steered.armed, true, "the steer gesture never armed");
+      assert.equal(report.steered.calls.length, 1, "the steer never reached the run");
+      assert.equal(report.steered.calls[0]?.runId, "run_harness_steer", "the steer named the wrong run");
+      assert.equal(
+        report.steered.calls[0]?.text,
+        "actually, focus on the budget",
+        "the steer lost the operator's words",
+      );
+      assert.equal(report.steered.draft, "", "the steer left the draft behind");
+      assert.ok(
+        report.steered.transcript.some((text) => text.includes("focus on the budget")),
+        `the steer never showed in the thread: ${JSON.stringify(report.steered.transcript)}`,
+      );
+
+      // The queue: the message waits, and says so.
+      assert.equal(report.queued.armed, true, "the queue gesture never appeared");
+      assert.ok(
+        report.queued.rows.some((row) => row.includes("summarise it")),
+        `the queued message was not shown: ${JSON.stringify(report.queued.rows)}`,
+      );
+      assert.equal(report.queued.draft, "", "queueing left the draft behind");
+    });
+  });
+
 
   /**
    * Every scenario the receipt rig must report as passing. The names are the
