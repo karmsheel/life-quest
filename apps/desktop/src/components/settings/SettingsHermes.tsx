@@ -5,6 +5,7 @@ import { CompanionProfilePicker } from "@/components/hermes/CompanionProfilePick
 import { SettingsFact } from "@/components/ui/SettingsFact";
 import { HarnessPicker } from "@/components/hermes/HarnessPicker";
 import { PiEndpointForm } from "@/components/settings/PiEndpointForm";
+import { SettingsAgents } from "@/components/settings/SettingsAgents";
 import { SettingsRow } from "@/components/ui/SettingsRow";
 import { SettingsSection } from "@/components/ui/SettingsSection";
 import { Toggle } from "@/components/ui/Toggle";
@@ -222,6 +223,8 @@ export function SettingsHermes() {
         </p>
         <HarnessPicker />
       </section>
+
+      <SettingsAgents />
 
       {harness === "pi" ? (
         <section className="settings-hermes__block" data-testid="pi-endpoint">

@@ -144,6 +144,8 @@ type HarnessSummary = {
   blurb: string;
   kind: "external" | "embedded";
   active: boolean;
+  /** Which mark the switcher draws. */
+  icon: string;
 };
 
 /** The built-in companion's endpoint, as Settings reads it. The key is never returned. */

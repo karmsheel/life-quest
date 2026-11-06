@@ -279,37 +279,110 @@ async function main() {
   const threadImage = await win.webContents.capturePage();
   fs.writeFileSync(path.join(artifactsDir, "pi-companion-thread.png"), threadImage.toPNG());
 
-  // The picker itself: the list header carries it, so the second picture is the
-  // screen that offers the two companions.
-  // Land on the list, whatever surface the thread left us on.
-  for (let i = 0; i < 20; i += 1) {
-    const found = await js(`(() => {
-      if (document.querySelector('.chat-panel__agent-btn')) return true;
-      const back =
-        document.querySelector('[aria-label="All chats"]') ??
-        document.querySelector('[aria-label="Previous chats"]');
-      if (back) back.click();
-      return false;
-    })()`);
-    if (found) break;
-    await sleep(200);
-  }
-  await sleep(400);
-  const pickerButton = await js(`(() => {
-    const button = document.querySelector('.chat-panel__agent-btn');
-    if (!button) return false;
-    button.click();
-    return true;
-  })()`);
-  await sleep(500);
+  // The switcher: a vertical pill of agent blocks in the dock's corner. Both
+  // agents are unscoped here, so both are offered on Overview.
   const pickerShown = await js(`(() => ({
-    shown: ${pickerButton ? 'true' : 'false'},
-    items: [...document.querySelectorAll('.chat-panel__agent-item-name')].map(
-      (el) => el.textContent,
+    shown: Boolean(document.querySelector(".agent-switcher")),
+    items: [...document.querySelectorAll(".agent-switcher__pill")].map(
+      (el) => el.getAttribute("aria-label"),
     ),
   }))()`);
   const pickerImage = await win.webContents.capturePage();
   fs.writeFileSync(path.join(artifactsDir, "pi-companion-picker.png"), pickerImage.toPNG());
+
+  // Domain scoping, end to end through the Settings UI (the real writer is
+  // VaultProvider, so the switcher sees the change). Hermes is narrowed to
+  // Health and made that domain's default; Pi stays everywhere and becomes
+  // Financial's default. The harness switch is stubbed while the domains are
+  // entered: this world has no Hermes gateway, and the rule under test is the
+  // renderer's, not that gateway.
+  await js(`(() => { window.location.hash = "#/settings?tab=hermes"; return true; })()`);
+  for (let i = 0; i < 100; i += 1) {
+    if (await js("Boolean(document.querySelector('.settings-agents'))")) break;
+    await sleep(100);
+  }
+  const settingsDebug = await js(`(() => ({
+    hash: window.location.hash,
+    panel: Boolean(document.querySelector(".settings-agents")),
+    labels: [...document.querySelectorAll(".settings-agents [aria-label]")].map(
+      (el) => el.getAttribute("aria-label"),
+    ).slice(0, 24),
+    body: document.body.innerText.slice(0, 120),
+  }))()`);
+  const clickOption = (label) =>
+    js(`(() => {
+      const el = [...document.querySelectorAll("[aria-label]")].find(
+        (node) => node.getAttribute("aria-label") === ${JSON.stringify(label)},
+      );
+      if (!el) return false;
+      el.click();
+      return true;
+    })()`);
+  const scopedHermes = await clickOption("Hermes: Health");
+  await sleep(500);
+  const defaultedHermes = await clickOption("Hermes: default in Health");
+  await sleep(500);
+  // Pi is offered everywhere already; it only needs Financial as its default.
+  const defaultedPi = await clickOption("Pi: default in Financial");
+  await sleep(600);
+  const persisted = await js(`(async () => {
+    const snap = await window.lifequest.vaultGetSnapshot();
+    return snap && snap.ok ? snap.value.settings.agentScopes ?? null : null;
+  })()`);
+
+  // Back to the studio. The switch into a defaulted domain is real; a world
+  // without a ready Hermes gate on the setup screen instead, and that screen
+  // naming Hermes is the same rule having fired.
+  await js(`(() => { window.location.hash = "#/home"; return true; })()`);
+  for (let i = 0; i < 100; i += 1) {
+    if (await js("Boolean(document.querySelector('.domain-switcher'))")) break;
+    await sleep(100);
+  }
+
+  const readSwitcher = () =>
+    js(`(() => ({
+      pills: [...document.querySelectorAll(".agent-switcher__pill")].map((el) => ({
+        name: el.getAttribute("aria-label"),
+        active: el.getAttribute("aria-checked") === "true",
+      })),
+      heading: document.querySelector(".chat-panel__heading--thread")?.textContent ?? null,
+    }))()`);
+  await sleep(700);
+  const scopeOverview = await readSwitcher();
+  fs.writeFileSync(
+    path.join(artifactsDir, "pi-companion-scope-overview.png"),
+    (await win.webContents.capturePage()).toPNG(),
+  );
+
+  const clickedHealth = await js(`(() => {
+    const chip = [...document.querySelectorAll(".domain-switcher .ui-segmented__option")].find(
+      (el) => (el.textContent ?? "").trim() === "Health",
+    );
+    if (!chip) return false;
+    chip.click();
+    return true;
+  })()`);
+  await sleep(1600);
+  const healthGated = await js(`(() => {
+    const lead = document.querySelector(".welcome-lead")?.textContent ?? "";
+    return { gated: Boolean(document.querySelector(".welcome")), lead };
+  })()`);
+  const scopeHealth = await readSwitcher();
+  fs.writeFileSync(
+    path.join(artifactsDir, "pi-companion-scope-domain.png"),
+    (await win.webContents.capturePage()).toPNG(),
+  );
+
+  const clickedFinancial = await js(`(() => {
+    const chip = [...document.querySelectorAll(".domain-switcher .ui-segmented__option")].find(
+      (el) => (el.textContent ?? "").trim() === "Financial",
+    );
+    if (!chip) return false;
+    chip.click();
+    return true;
+  })()`);
+  await sleep(1600);
+  const scopeFinancial = await readSwitcher();
 
   const report = {
     ok:
@@ -323,7 +396,19 @@ async function main() {
       stored.some((line) => line.includes(REPLY)) &&
       completed === true &&
       threadText.includes(REPLY) &&
-      pickerShown.shown === true,
+      pickerShown.shown === true &&
+      scopedHermes === true &&
+      defaultedHermes === true &&
+      defaultedPi === true &&
+      Array.isArray(persisted) &&
+      persisted.some((scope) => scope.agentId === "hermes" && scope.domains.includes("health")) &&
+      scopeOverview.pills.length === 1 &&
+      (healthGated.gated
+        ? /hermes/i.test(healthGated.lead)
+        : scopeHealth.pills.length === 2 &&
+          scopeHealth.pills.some((pill) => pill.name === "Hermes" && pill.active)) &&
+      scopeFinancial.pills.length === 1 &&
+      scopeFinancial.pills.some((pill) => pill.name === "Pi" && pill.active),
     configured,
     mounted,
     turn: {
@@ -337,8 +422,26 @@ async function main() {
     stored,
     threadHasReply: threadText.includes(REPLY),
     picker: pickerShown,
+    scopes: {
+      settingsDebug,
+      scopedHermes,
+      defaultedHermes,
+      defaultedPi,
+      persisted,
+      clickedHealth,
+      clickedFinancial,
+      overview: scopeOverview,
+      health: scopeHealth,
+      healthGated,
+      financial: scopeFinancial,
+    },
     endpoint: baseUrl,
-    screenshots: ["pi-companion-thread.png", "pi-companion-picker.png"],
+    screenshots: [
+      "pi-companion-thread.png",
+      "pi-companion-picker.png",
+      "pi-companion-scope-overview.png",
+      "pi-companion-scope-domain.png",
+    ],
   };
   fs.writeFileSync(
     path.join(artifactsDir, "pi-companion.json"),

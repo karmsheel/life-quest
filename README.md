@@ -143,6 +143,8 @@ The studio does not open without the companion. Capture is not the studio. There
 - **Pi — built in.** No install. On a fresh machine the setup screen asks for an OpenAI-compatible endpoint and a model; a local server (Ollama, LM Studio, llama.cpp) needs no key. The endpoint, the model and the key live in app userData; the key is sealed by OS secure storage and never enters the vault.
 - **Hermes — external sidekick.** Run a Hermes gateway (default **`http://localhost:8642`**) and pick Hermes in the chat bar. The app attaches to its `lifequest` profile or starts it, and Settings → Hermes manages the profile, the model and the MCP doors.
 
+The chat bar carries a vertical **agent switcher** (one block per agent, with its own mark). Agents can be scoped to domains in Settings → Hermes → Agents by domain: an agent scoped to Health is only offered while the operator is in Health, and an agent set as a domain's default is selected when that domain is entered. Pi is the main and default agent.
+
 Whichever answers, the vault is written through the **Electron main process** and the same MCP door, under the same lock and Decision rules; the renderer never holds a raw key. LifeQuest owns the vault, the MCP door, and the UI. The companion owns the agent loop and the transcripts, in app userData rather than in the vault.
 
 Why: [Pi as a built-in companion](docs/superpowers/specs/2026-10-21-pi-companion-decision.md) and [the harness seam](docs/superpowers/specs/2026-10-21-agent-harness-seam-design.md).

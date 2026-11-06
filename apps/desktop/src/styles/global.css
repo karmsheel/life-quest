@@ -11182,3 +11182,153 @@ button.chat-panel__activity-line:hover {
   content: " ·";
   color: var(--muted);
 }
+
+/* The agent switcher: a vertical pill of icon blocks in the dock's top corner.
+   One block per agent offered in the current domain; the active one wears the
+   accent ring, so the answering agent is legible without reading a label. */
+.agent-switcher {
+  position: absolute;
+  top: calc(var(--shell-topbar-height) + 0.7rem);
+  right: 0.7rem;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.28rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.agent-switcher__pill {
+  width: 2.05rem;
+  height: 2.05rem;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--panel, var(--card));
+  color: var(--fg);
+  cursor: pointer;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.agent-switcher__pill:hover {
+  border-color: var(--border-strong, var(--border));
+}
+
+.agent-switcher__pill--active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-fill);
+}
+
+.agent-switcher__pill:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.agent-switcher__icon {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.agent-switcher__initial {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+/* Agents by domain: one card per agent, chips for the shows/defaults. */
+.settings-agent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.settings-agent + .settings-agent {
+  margin-top: 0.5rem;
+}
+
+.settings-agent__head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.settings-agent__mark {
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 999px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--panel, var(--card));
+  border: 1px solid var(--border);
+  font-weight: 700;
+}
+
+.settings-agent__mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.settings-agent__name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  font-size: 0.82rem;
+}
+
+.settings-agent__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.settings-agent__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.settings-agent__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.settings-chip {
+  padding: 0.18rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.settings-chip:hover {
+  border-color: var(--accent);
+}
+
+.settings-chip--on {
+  border-color: var(--accent);
+  background: var(--accent-fill);
+}
+
+.settings-chip:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

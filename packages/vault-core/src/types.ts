@@ -236,6 +236,20 @@ export type DecisionInboxSettings = {
   autoClose: boolean;
 };
 
+/**
+ * One agent's domain rules.
+ *
+ * `domains` empty means "every domain": the agent is offered everywhere. A
+ * non-empty list narrows it to those slugs. `defaultFor` is a subset of the
+ * operator's domains where entering the domain also selects this agent.
+ */
+export type AgentScope = {
+  /** The harness/agent id, e.g. "pi" or "hermes". */
+  agentId: string;
+  domains: string[];
+  defaultFor: string[];
+};
+
 export type VaultSettings = {
   hermesBaseUrl: string;
   theme: "system" | "light" | "dark";
@@ -252,6 +266,12 @@ export type VaultSettings = {
   chatQuestions: ChatQuestion[];
   /** Whether the Decisions inbox opens and closes itself. */
   decisionInbox: DecisionInboxSettings;
+  /**
+   * Which domains each agent is offered in, and where it is the domain's
+   * default. Absent/empty means every agent is offered everywhere and none is a
+   * domain default; Pi remains the app's main agent.
+   */
+  agentScopes: AgentScope[];
 };
 
 export type ReviewScopeStatus = "missing" | "draft" | "done";

@@ -61,7 +61,7 @@ import { UpdateBadge } from "@/components/shell/UpdateBadge";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useChatDock } from "@/state/ChatDockProvider";
 import { useOptionalCompanion } from "@/state/CompanionProvider";
-import { HarnessPicker } from "@/components/hermes/HarnessPicker";
+import { AgentSwitcher } from "@/components/hermes/AgentSwitcher";
 import {
   ChatSessionsProvider,
   useChatSessions,
@@ -1345,6 +1345,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
       aria-label={`${companionName} chat`}
       data-chat-surface={view}
     >
+        <AgentSwitcher />
         <div className="chat-panel__open">
           {view === "chain" ? (
             <div className="chat-panel__header">
@@ -1428,10 +1429,6 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   >
                     {activeLabel}
                   </p>
-                  <div className="chat-panel__header-agent">
-                    <span className="chat-panel__header-divider" aria-hidden />
-                    <HarnessPicker />
-                  </div>
                 </>
               )}
             </div>

@@ -36,6 +36,16 @@ type Report = {
   stored: string[];
   threadHasReply: boolean;
   picker: { shown: boolean; items?: string[] };
+  scopes: {
+    scopedHermes: boolean;
+    defaultedHermes: boolean;
+    defaultedPi: boolean;
+    persisted: { agentId: string; domains: string[]; defaultFor: string[] }[];
+    overview: { pills: { name: string; active: boolean }[] };
+    health: { pills: { name: string; active: boolean }[] };
+    healthGated: { gated: boolean; lead: string };
+    financial: { pills: { name: string; active: boolean }[] };
+  };
   screenshots: string[];
 };
 
@@ -83,15 +93,68 @@ describe("built-in companion (Pi)", () => {
     );
     assert.equal(report.threadHasReply, true, "the dock did not show the reply");
 
-    assert.equal(report.picker.shown, true, "the dock offers no companion picker");
+    assert.equal(report.picker.shown, true, "the dock offers no agent switcher");
     assert.deepEqual(
       (report.picker.items ?? []).sort(),
       ["Hermes", "Pi"],
-      "the picker does not offer both companions",
+      "the switcher does not offer both agents",
+    );
+
+    // Domain scoping: Hermes narrowed to Health and default there; Pi everywhere
+    // and default in Financial.
+    assert.equal(report.scopes.scopedHermes, true, "no Hermes scope chip");
+    assert.equal(report.scopes.defaultedHermes, true, "no Hermes default chip");
+    assert.equal(report.scopes.defaultedPi, true, "no Pi default chip");
+    assert.ok(
+      report.scopes.persisted.some(
+        (scope) => scope.agentId === "hermes" && scope.domains.includes("health"),
+      ),
+      `the scope did not reach the vault: ${JSON.stringify(report.scopes.persisted)}`,
+    );
+    assert.deepEqual(
+      report.scopes.overview.pills.map((pill) => pill.name),
+      ["Pi"],
+      "Overview offered an agent scoped to another domain",
+    );
+    if (report.scopes.healthGated.gated) {
+      // No ready Hermes in this world: the gate naming Hermes is the domain
+      // default having fired.
+      assert.match(
+        report.scopes.healthGated.lead,
+        /hermes/i,
+        "entering Health did not attempt its default agent",
+      );
+    } else {
+      assert.deepEqual(
+        report.scopes.health.pills.map((pill) => pill.name).sort(),
+        ["Hermes", "Pi"],
+        "the Health domain did not offer both agents",
+      );
+      assert.equal(
+        report.scopes.health.pills.find((pill) => pill.name === "Hermes")?.active,
+        true,
+        "entering Health did not select its default agent",
+      );
+    }
+    assert.deepEqual(
+      report.scopes.financial.pills.map((pill) => pill.name),
+      ["Pi"],
+      "the Financial domain offered an agent scoped away from it",
+    );
+    assert.equal(
+      report.scopes.financial.pills.find((pill) => pill.name === "Pi")?.active,
+      true,
+      "entering Financial did not return to its default agent",
     );
 
     assert.equal(fs.existsSync(THREAD_SHOT), true, "no thread screenshot");
     assert.equal(fs.existsSync(PICKER_SHOT), true, "no picker screenshot");
+    for (const name of [
+      "pi-companion-scope-overview.png",
+      "pi-companion-scope-domain.png",
+    ]) {
+      assert.equal(fs.existsSync(path.join(desktopRoot, "e2e/artifacts", name)), true, `no ${name}`);
+    }
     t.diagnostic(`artifact: ${REPORT}`);
   });
 });

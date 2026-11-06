@@ -402,8 +402,23 @@ Departures from the design above, and why:
 | Design said | Landed | Why |
 |---|---|---|
 | Session reset effect in `ChatPanel` | Reset in `ChatSessionsProvider` | Master moved the dock's chats into that store before this branch merged; the panel no longer owns them. |
-| Picker in the dock list header | The dock's **thread header**, after a hairline, plus a `Companion` section in Settings | The chat list moved to the sidebar after this design was written; the thread header is the surface that is always on screen while chatting. The three chat controls that used to sit there (pin, rename, archive) moved to the tab and row menus. |
+| Picker in the dock list header | A **vertical pill switcher** of agent blocks in the dock's top corner, plus per-agent scope controls in Settings | The chat list moved to the sidebar after this design was written, and the switcher had to grow with the number of agents. The three chat controls that used to sit in the thread header (pin, rename, archive) moved to the tab and row menus. |
 | Move types into `harness/types.ts` | Types re-exported; `CompanionStatus` aliases to `HarnessStatus` | Zero churn in 17 channels and the panel; a rename can follow when nothing else is moving. |
 | `statusMessage` per harness | Same, plus `detail` on the ready status | The renderer formats no transport field; a built-in companion has no port to print. |
 | Unhydrated default "pi" | **"hermes"** | Direct callers that never boot main (rigs, harness pages) were written against the external companion; the boot path is what decides. |
 | `beforeToolCall` policy | Not used yet | The only tools registered are the MCP door's, so there is nothing to block that the door would not block itself. |
+
+### 14.1 Domain-scoped agents (2026-11-06)
+
+Agents are not a flat list any more. Each agent carries a scope in the vault's `settings.json` (`agentScopes`), so the rule travels with the vault:
+
+| Field | Meaning |
+|---|---|
+| `agentId` | The harness id (`pi`, `hermes`, or a future one). |
+| `domains` | Slugs the agent is offered in. Empty means every domain. |
+| `defaultFor` | Slugs that select this agent on entry; always a subset of `domains`. |
+
+- The switcher draws only the agents offered in the current domain; an agent scoped elsewhere is absent, not greyed.
+- Entering a domain with a default agent selects it (the first observation after launch only records the domain, so a global choice is not immediately overridden). If the answering agent is scoped away from a domain, the domain default wins, then Pi, then the first offered agent.
+- **Pi is the main agent**: with no stored choice the registry lands on Pi, except on a machine that has a working Hermes install and no Pi endpoint configured — there the existing Hermes setup keeps the studio usable until the operator configures Pi.
+

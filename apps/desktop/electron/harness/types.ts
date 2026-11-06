@@ -90,6 +90,8 @@ export type HarnessSummary = {
   blurb: string;
   kind: "external" | "embedded";
   active: boolean;
+  /** Which mark the switcher draws; unknown ids fall back to their initial. */
+  icon: string;
 };
 
 // The dock's shapes are harness-neutral already; these aliases let the seam

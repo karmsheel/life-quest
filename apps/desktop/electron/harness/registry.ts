@@ -8,6 +8,7 @@ import type { AgentHarness } from "./agent-harness.ts";
 import { hermesHarness } from "./hermes-harness.ts";
 import { piHarness } from "./pi-harness.ts";
 import { resolveHermesCli } from "../companion-profile.ts";
+import { readPiSettings } from "./pi-settings.ts";
 import { getHarnessId, setHarnessId } from "../recent-vaults.ts";
 import { publishHarnessStatus } from "./status-bus.ts";
 import type { HarnessId, HarnessStatus, HarnessSummary } from "./types.ts";
@@ -57,9 +58,14 @@ export async function loadHarnessSelection(): Promise<HarnessId> {
   } catch {
     // An unreadable prefs file falls through to the probe.
   }
+  // Pi is the app's main agent. The one exception is a machine that already has
+  // Hermes working and no Pi endpoint configured: landing such an operator on
+  // Pi's setup screen would take a working app away from them, so the existing
+  // install keeps the companion it has until they choose Pi.
   try {
+    const configuredPi = (await readPiSettings()).model.trim() !== "";
     const cli = await resolveHermesCli(process.env, os.homedir());
-    active = cli ? "hermes" : "pi";
+    active = configuredPi || !cli ? "pi" : "hermes";
   } catch {
     active = "pi";
   }
@@ -87,6 +93,7 @@ export function harnessSummaries(): HarnessSummary[] {
       blurb: "External sidekick",
       kind: "external",
       active: active === "hermes",
+      icon: "hermes",
     },
     {
       id: "pi",
@@ -94,6 +101,7 @@ export function harnessSummaries(): HarnessSummary[] {
       blurb: "Built in",
       kind: "embedded",
       active: active === "pi",
+      icon: "pi",
     },
   ];
 }
