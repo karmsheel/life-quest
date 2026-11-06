@@ -53,6 +53,23 @@ function unixSeconds(value: unknown): number | null {
   return n > 1e12 ? n / 1000 : n;
 }
 
+/**
+ * The gateway's revision counter, when the store's row carries one.
+ *
+ * Hermes fences every session mutation on it, so restoring an archived chat
+ * needs the number the row had. A store from an older schema has no such
+ * column: the read is then unfenced and the gateway's own answer is the
+ * verdict.
+ */
+function revisionOf(value: unknown): number | null {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    if (Number.isInteger(n) && n >= 0) return n;
+  }
+  return null;
+}
+
 function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
   try {
     const rows = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as {
@@ -111,6 +128,15 @@ export async function readArchivedSessions(
       : "s.started_at";
     const pinned = hasColumn(db, "sessions", "pinned") ? "s.pinned" : "0";
     /**
+     * The gateway fences every session mutation on this counter, so restoring an
+     * archived chat needs it too. A store from an older Hermes schema has no
+     * such column: that read is then unfenced and the gateway's own answer is
+     * the verdict.
+     */
+    const revision = hasColumn(db, "sessions", "runtime_revision")
+      ? "s.runtime_revision"
+      : "NULL";
+    /**
      * The same admissions the gateway's list applies before it pages: hidden
      * rows never cross, tool sessions are scaffolding, and a compression
      * continuation is not a second conversation. Archiving a chat stamps its
@@ -143,7 +169,7 @@ export async function readArchivedSessions(
     const rows = db
       .prepare(
         `SELECT s.id AS id, s.title AS title, ${lastActive} AS last_active,
-                ${pinned} AS pinned, ${preview}
+                ${pinned} AS pinned, ${revision} AS runtime_revision, ${preview}
            FROM sessions s
           WHERE s.archived = 1 ${filters.join(" ")}
           ORDER BY last_active DESC, s.started_at DESC
@@ -163,6 +189,7 @@ export async function readArchivedSessions(
         lastActive: unixSeconds(row.last_active),
         pinned: Number(row.pinned ?? 0) !== 0,
         archived: true,
+        revision: revisionOf(row.runtime_revision),
       });
     }
     return out;
@@ -211,6 +238,9 @@ export function mergeArchivedSessions(
       archived: true,
       preview: current.preview ?? row.preview,
       lastActive: current.lastActive ?? row.lastActive,
+      // The gateway's own read is the freshest revision of the two; the store
+      // copy is a fallback for a row the gateway list did not carry.
+      revision: current.revision ?? row.revision,
     };
   }
   return merged;
