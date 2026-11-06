@@ -319,6 +319,11 @@ const SAMPLE = `(() => {
     })(),
     messages,
     renaming: Boolean(document.querySelector(".chat-panel__rename-input")),
+    rowRenaming: Boolean(document.querySelector(".chats-rail__rename")),
+    rowRenameValue: (() => {
+      const field = document.querySelector(".chats-rail__rename-input");
+      return field ? field.value : null;
+    })(),
     renameValue: document.querySelector(".chat-panel__rename-input")?.value ?? null,
     dialog: dialog
       ? {
@@ -700,6 +705,49 @@ async function main() {
       setter.call(el, ${JSON.stringify(text)});
       el.dispatchEvent(new Event("input", { bubbles: true }));
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return true;
+    })()`);
+
+  /** Type into the sidebar row's rename field, through React's own input. */
+  const typeRowRename = (text) =>
+    run(`(async () => {
+      const el = document.querySelector(".chats-rail__rename-input");
+      if (!el) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      setter.call(el, ${JSON.stringify(text)});
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return true;
+    })()`);
+
+  /** Open one tab's menu with a right-click, the way the operator does. */
+  const openTabMenu = (label) =>
+    run(`(async () => {
+      // A pinned tab is a square with a letter and no text label, so fall back
+      // to the active tab when the name does not match one.
+      const tab =
+        Array.from(document.querySelectorAll(".chat-panel__tab")).find((el) =>
+          (el.textContent ?? "").includes(${JSON.stringify(label)})
+        ) ?? document.querySelector(".chat-panel__tab--active");
+      if (!tab) return { ok: false, tabs: Array.from(document.querySelectorAll(".chat-panel__tab")).length, menu: false };
+      tab.dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 40 })
+      );
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return {
+        ok: Boolean(document.querySelector(".chat-panel__tab-menu")),
+        tabs: Array.from(document.querySelectorAll(".chat-panel__tab")).length,
+        menu: Boolean(document.querySelector(".chat-panel__tab-menu")),
+      };
+    })()`);
+
+  /** One item of the open tab menu, by the aria-label it wears. */
+  const clickTabMenuItem = (label) =>
+    run(`(async () => {
+      const el = document.querySelector('.chat-panel__tab-menu [aria-label=' + ${JSON.stringify(JSON.stringify(label))} + ']');
+      if (!el) return false;
+      el.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
       return true;
     })()`);
 
@@ -2136,51 +2184,61 @@ async function main() {
     );
     screenshots.push(await shot("archived-from-chain"));
 
-    // 24 — a rename field belongs to the chat it was opened on. Archiving that
-    // chat from the sidebar hands the header to another chat; the field must
-    // close with its chat, not follow the header and write one chat's name onto
-    // the next one.
+    // 24 — a rename field belongs to the chat it was opened on. The dock header
+    // lost its Rename control with the rest of its chat controls, so rename now
+    // starts on the row; the field it opens is that row's, and switching the
+    // header to another chat must not carry it across or write one chat's name
+    // onto the next.
     check("opened Pinned note", await clickSidebarRow("Pinned note"), "no row");
-    const renameTargetOpen = await settle();
-    check(
-      "the chat to rename is open",
-      renameTargetOpen.heading === "Pinned note" && renameTargetOpen.renaming === false,
-      JSON.stringify({ heading: renameTargetOpen.heading, renaming: renameTargetOpen.renaming }),
-    );
-    // The dock header no longer carries the chat controls: rename starts from
-    // the row's own menu, which is where a chat is managed now.
+    await settle();
     check(
       "opened the row menu",
-      await clickRowControl("Pinned note", ".chats-rail__menu-btn"),
+      await clickRowControl("Seed chat 09", ".chats-rail__menu-btn"),
       "no row menu control",
     );
     check("opened the rename field", await clickSidebarMenuItem("Rename chat"), "no Rename chat item");
-    check("typed a name", await typeThreadRename("Wrong chat name"), "no rename field");
+    check("typed a name", await typeRowRename("Wrong chat name"), "no rename field");
     const renameOpen = await settle();
     check(
       "the rename field is open on the chat it was opened for",
-      renameOpen.renaming === true && renameOpen.renameValue === "Wrong chat name",
-      JSON.stringify({ renaming: renameOpen.renaming, value: renameOpen.renameValue }),
+      renameOpen.rowRenaming === true && renameOpen.rowRenameValue === "Wrong chat name",
+      JSON.stringify({ rowRenaming: renameOpen.rowRenaming, value: renameOpen.rowRenameValue }),
     );
-    const patchesBeforeRenameArchive = renameOpen.patchCalls.length;
+    const patchesBeforeSwitch = renameOpen.patchCalls.length;
+    check("switched the header to another chat", await clickSidebarRow("Seed chat 10"), "no row");
+    const renameSwitched = await settle(300);
     check(
-      "archived the chat being renamed from the sidebar",
-      await clickRowControl("Pinned note", ".chats-rail__archive-btn"),
-      "no archive control",
-    );
-    const renameArchived = await settle(420);
-    check(
-      "archiving the renamed chat closes the field instead of moving it to the next chat",
-      renameArchived.renaming === false &&
-        renameArchived.heading === "New chat" &&
-        renameArchived.patchCalls.length === patchesBeforeRenameArchive + 1 &&
-        !renameArchived.patchCalls.some((call) => typeof call.patch.title === "string"),
+      "the field stays on its own row when the header moves to another chat",
+      renameSwitched.rowRenaming === true &&
+        renameSwitched.rowRenameValue === "Wrong chat name" &&
+        renameSwitched.heading === "Seed chat 10" &&
+        renameSwitched.patchCalls.length === patchesBeforeSwitch &&
+        !renameSwitched.patchCalls.some((call) => typeof call.patch.title === "string"),
       JSON.stringify({
-        renaming: renameArchived.renaming,
-        value: renameArchived.renameValue,
-        heading: renameArchived.heading,
-        patches: renameArchived.patchCalls.slice(-2),
+        rowRenaming: renameSwitched.rowRenaming,
+        value: renameSwitched.rowRenameValue,
+        heading: renameSwitched.heading,
+        patches: renameSwitched.patchCalls.slice(-2),
       }),
+    );
+    check(
+      "cancelled the rename",
+      await run(`(async () => {
+        const el = document.querySelector('.chats-rail__rename [aria-label="Cancel rename"]');
+        if (!el) return false;
+        el.click();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return true;
+      })()`),
+      "no cancel control",
+    );
+    const renameCancelled = await settle(300);
+    check(
+      "cancelling closes the field and writes nothing",
+      renameCancelled.rowRenaming === false &&
+        renameCancelled.patchCalls.length === patchesBeforeSwitch &&
+        !renameCancelled.patchCalls.some((call) => typeof call.patch.title === "string"),
+      JSON.stringify({ rowRenaming: renameCancelled.rowRenaming }),
     );
     screenshots.push(await shot("archived-while-renaming"));
 
@@ -2256,7 +2314,8 @@ async function main() {
         chainUp,
         archivedFromChain,
         renameOpen,
-        renameArchived,
+        renameSwitched,
+        renameCancelled,
       },
       failures,
       pass: failures.length === 0,
@@ -2395,13 +2454,13 @@ async function main() {
         `surface ${state.archivedFromChain.surface}, creates ${state.archivedFromChain.createCalls.length}`,
       ],
       [
-        "archived while renaming",
-        state.renameArchived.rowCount,
-        state.renameArchived.tabCount,
+        "rename while switching chat",
+        state.renameSwitched.rowCount,
+        state.renameSwitched.tabCount,
         "",
-        state.renameArchived.heading,
+        state.renameSwitched.heading,
         "",
-        `renaming ${state.renameArchived.renaming}`,
+        `renaming ${state.renameSwitched.rowRenaming}`,
       ],
     ];
     console.log(table.map((row) => row.join(" | ")).join("\n"));

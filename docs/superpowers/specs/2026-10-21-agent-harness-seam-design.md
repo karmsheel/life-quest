@@ -402,7 +402,7 @@ Departures from the design above, and why:
 | Design said | Landed | Why |
 |---|---|---|
 | Session reset effect in `ChatPanel` | Reset in `ChatSessionsProvider` | Master moved the dock's chats into that store before this branch merged; the panel no longer owns them. |
-| Picker in the dock list header | Same, plus a `Companion` section in Settings | The list header is where the chats are; Settings is where an operator looks when the picker is not on screen. |
+| Picker in the dock list header | The dock's **thread header**, after a hairline, plus a `Companion` section in Settings | The chat list moved to the sidebar after this design was written; the thread header is the surface that is always on screen while chatting. The three chat controls that used to sit there (pin, rename, archive) moved to the tab and row menus. |
 | Move types into `harness/types.ts` | Types re-exported; `CompanionStatus` aliases to `HarnessStatus` | Zero churn in 17 channels and the panel; a rename can follow when nothing else is moving. |
 | `statusMessage` per harness | Same, plus `detail` on the ready status | The renderer formats no transport field; a built-in companion has no port to print. |
 | Unhydrated default "pi" | **"hermes"** | Direct callers that never boot main (rigs, harness pages) were written against the external companion; the boot path is what decides. |
