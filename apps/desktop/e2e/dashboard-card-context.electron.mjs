@@ -408,6 +408,7 @@ const HOME_CARDS_SAMPLE = `(() => {
     },
     todayWeek: {
       present: Boolean(today),
+      width: rect(today)?.width ?? null,
       columns,
     },
   };
@@ -1979,6 +1980,7 @@ async function main() {
       // full-row strips.
       homeCards.goals.width < homeCards.boardWidth - 40 &&
       homeCards.activity.width < homeCards.boardWidth - 40 &&
+      homeCards.todayWeek.width < homeCards.boardWidth - 40 &&
       homeCards.heading.markerBeforeCount === true &&
       homeCards.heading.countGapFromMarker !== null &&
       homeCards.heading.countGapFromMarker <= 16 &&

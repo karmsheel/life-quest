@@ -530,6 +530,9 @@ async function main() {
     // browser's limits rather than the page's anchor.
     await win.webContents.executeJavaScript(`window.dashboardCompanionEditScrollToCard(${JSON.stringify(EDIT_PIN)})`);
     await sleep(250);
+    const beforeOrder = await win.webContents.executeJavaScript(
+      "window.dashboardCompanionEditOrder()",
+    );
     const beforeBoard = await win.webContents.executeJavaScript(MEASURE);
     await win.webContents.executeJavaScript(`window.dashboardCompanionEditWrite("board")`);
     await waitFor(
@@ -538,14 +541,33 @@ async function main() {
       "the board to take the companion's new order",
     );
     await sleep(400);
+    const afterOrder = await win.webContents.executeJavaScript(
+      "window.dashboardCompanionEditOrder()",
+    );
     const afterBoard = await win.webContents.executeJavaScript(MEASURE);
     checks.afterBoard = compare(beforeBoard, afterBoard, "board");
     const boardDelta = afterBoard.scrollTop - beforeBoard.scrollTop;
     checks.boardOffsetDelta = boardDelta;
-    if (Math.abs(boardDelta) <= SLACK) {
+    checks.boardOrderChanged =
+      JSON.stringify(afterOrder) !== JSON.stringify(beforeOrder);
+    // The contract is "the card under the eye stays under it". The offset moves
+    // to compensate for however far the board's own reorder moved that card — and
+    // on a board where the re-pin happens to leave the card in the same row, no
+    // compensation is owed and zero is the right number. So the claim is the
+    // hold, plus the reorder actually landing, not a non-zero offset.
+    const anchorHeld =
+      Boolean(beforeBoard.anchor && afterBoard.anchor) &&
+      beforeBoard.anchor.id === afterBoard.anchor.id &&
+      Math.abs(afterBoard.anchor.offsetInCard - beforeBoard.anchor.offsetInCard) <= SLACK;
+    checks.boardAnchorHeld = anchorHeld;
+    if (!checks.boardOrderChanged) {
+      failure("the companion's re-pin did not change the board's order");
+    }
+    if (!anchorHeld) {
       failure(
-        `the card was re-pinned and the board's offset did not move (${boardDelta}px): ` +
-          "the operator's place was not carried across the board's own change",
+        `the card was re-pinned and the operator's place moved: anchor ` +
+          `${JSON.stringify(beforeBoard.anchor)} → ${JSON.stringify(afterBoard.anchor)}, ` +
+          `offset ${boardDelta}px`,
       );
     }
 

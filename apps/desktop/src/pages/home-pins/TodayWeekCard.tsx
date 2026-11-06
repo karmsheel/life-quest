@@ -78,7 +78,7 @@ export function TodayWeekCard() {
   }
 
   return (
-    <section className="home-card home-card--wide home-task-card">
+    <section className="home-card home-task-card">
       <h2 className="home-card__title">
         Today &amp; this week
         <BuiltInBadge />

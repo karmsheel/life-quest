@@ -4957,6 +4957,20 @@ a.home-mini-list__link:hover {
   color: var(--muted-foreground);
 }
 
+/* The card is a column now, not a full-row board: Today and This week stack as
+   two labelled groups, so the card is as wide as its tasks and sits beside its
+   neighbours instead of pushing them off the row. A rule between the groups
+   keeps the two lists from reading as one. */
+.home-task-card .home-task-cols {
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+}
+
+.home-task-card .home-task-cols > div + div {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.7rem;
+}
+
 /* A column's own count: the number of tasks the head stands for, on the same
    line and in a smaller voice, so the heading still reads first. */
 .home-task-cols__count {
@@ -5013,16 +5027,6 @@ a.home-mini-list__link:hover {
   line-height: 1.35;
   color: var(--fg);
   min-width: 0;
-}
-
-.home-card--wide {
-  container-type: inline-size;
-}
-
-@container (max-width: 520px) {
-  .home-task-cols {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* —— Form feedback —— */

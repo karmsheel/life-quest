@@ -844,28 +844,29 @@ async function checkActivation(win) {
   );
 
   // 5. A hold does not move the board, and a drag moves the *room* for the card
-  //    into the slot it will land in. `sys:today-week` is a full-row card and
-  //    `view:financial:v-summary` is the card in the row below it, so this is the
-  //    strongest version of the claim: the whole row it left is what the card
-  //    below moves up into.
+  //    into the slot it will land in. `view:financial:v-summary` is the board's
+  //    full-row card (a stored span-2) and `sys:pending-decisions` is the card in
+  //    the row below it, so this is the strongest version of the claim: the whole
+  //    row it left is what the card below moves up into.
   step("lift-leaves-a-gap");
   await beginScenario(win);
-  const restingWide = await cardRect(win, "sys:today-week");
-  const restingBelow = await cardRect(win, "view:financial:v-summary");
-  const gapPoint = await pointOn(win, headingOf("sys:today-week"));
+  const restingWide = await cardRect(win, "view:financial:v-summary");
+  const restingBelow = await cardRect(win, "sys:pending-decisions");
+  const gapPoint = await pointOn(win, headingOf("view:financial:v-summary"));
   mouse(win, "mouseDown", gapPoint.x, gapPoint.y);
-  await waitForLift(win, "sys:today-week");
+  await waitForLift(win, "view:financial:v-summary");
   // Still held, not yet moved: the card is lifted and nothing has shifted.
-  const heldBelow = await cardRect(win, "view:financial:v-summary");
+  const heldBelow = await cardRect(win, "sys:pending-decisions");
   const boardStoodStill = Math.abs(heldBelow.top - restingBelow.top) <= 2;
-  // Now drag it into the row below. The card follows the pointer, and its slot
-  // follows it: the layout box is the room it will land in.
-  const gapTarget = await pointIn(win, "view:financial:v-summary", 0.5, 60);
+  // Now drag it past the last card. The card follows the pointer, and its slot
+  // follows it: the layout box is the room it will land in, and the cards that
+  // were under it close up into the row it left.
+  const gapTarget = await pointIn(win, "sys:recent-log", 0.8);
   mouse(win, "mouseMove", gapTarget.x, gapTarget.y);
   await settleFrames(win);
   const dragged = await cardMotion(win);
-  const wideNow = dragged.find((card) => card.id === "sys:today-week");
-  const belowNow = dragged.find((card) => card.id === "view:financial:v-summary");
+  const wideNow = dragged.find((card) => card.id === "view:financial:v-summary");
+  const belowNow = dragged.find((card) => card.id === "sys:pending-decisions");
   // A drag in progress is the one picture worth keeping: it shows the card in
   // the hand and the room the board has made for it in the same frame.
   try {
@@ -879,14 +880,17 @@ async function checkActivation(win) {
   mouse(win, "mouseUp", gapTarget.x, gapTarget.y);
   await sleep(200);
   const gapOrder = await restingOrder(win);
-  const closedUp = Boolean(belowNow) && Math.abs(belowNow.layoutTop - restingWide.top) <= 2;
-  const roomMoved = Boolean(wideNow) && wideNow.layoutTop > restingWide.top + 40;
+  const closedUp = Boolean(belowNow) && belowNow.layoutTop < restingBelow.top - 40;
   const followsHand = Boolean(wideNow) && Math.abs(wideNow.ty) > 10;
   check(
     "lift-leaves-a-gap",
-    boardStoodStill && closedUp && roomMoved && followsHand && gapOrder[0] !== "sys:today-week",
+    boardStoodStill &&
+      closedUp &&
+      followsHand &&
+      gapOrder[gapOrder.length - 1] === "view:financial:v-summary",
     `held: the card below at ${heldBelow.top} against its resting ${restingBelow.top}; ` +
-      `dragged: the card below's slot at ${belowNow?.layoutTop} against the row it left (${restingWide.top}), ` +
+      `dragged: the card below closed up to ${belowNow?.layoutTop} from ${restingBelow.top} ` +
+      `(the row it left was at ${restingWide.top}), ` +
       `the card's own slot at ${wideNow?.layoutTop} with a ${wideNow?.ty} translate, ` +
       `the board now ${JSON.stringify(gapOrder)}`,
   );
@@ -973,25 +977,26 @@ async function checkOrdering(win) {
       `${JSON.stringify(swapped)} for ${swappedWrites.length} write(s)`,
   );
 
-  // 2. A full-row card is not a dead zone: the row band decides, and past its
-  //    midpoint the card belongs on the far side of it.
+  // 2. A full-row card is not a dead zone: the row band decides, and a drop on
+  //    its near half puts the card before it, even though the full-row card
+  //    spans the whole line.
   step("drop-past-a-full-row-card");
   await beginScenario(win);
-  await dragCard(win, "view:financial:v-weekly", () => pointIn(win, "sys:today-week", 0.8));
+  await dragCard(win, "sys:pending-decisions", () => pointIn(win, "view:financial:v-summary", 0.2));
   const afterFullRow = await restingOrder(win);
   check(
     "drop-past-a-full-row-card",
     afterFullRow.join(",") ===
       [
         "sys:goal-progress",
+        "view:financial:v-weekly",
         "page:financial:ledger",
         "sys:today-week",
-        "view:financial:v-weekly",
-        "view:financial:v-summary",
         "sys:pending-decisions",
+        "view:financial:v-summary",
         "sys:recent-log",
       ].join(","),
-    `dropping past the midpoint of a full-row card gave ${JSON.stringify(afterFullRow)}`,
+    `dropping on the near half of a full-row card gave ${JSON.stringify(afterFullRow)}`,
   );
 
   // 3. A span-2 card is droppable on either side, and a drop that changes
@@ -1327,11 +1332,20 @@ async function checkKeyboard(win) {
   const rowWrites = writesOf(await pinWrites(win));
   const afterMove = await cardMotion(win);
   const landed = afterMove.find((card) => card.id === "sys:pending-decisions");
+  // The move reflows the board: the line the card joins can itself move up once
+  // the card's old slot closes, so the claim is "it moved onto the line above,
+  // and above the cards it was aimed past" rather than a pixel equality with a
+  // row top measured before the board changed.
+  const lineAboveFirst = lineAbove[0] ?? null;
   check(
     "keyboard-moves-a-line",
     lineBoard.minCards >= 3 &&
       rowWrites.length === 1 &&
-      Math.abs((landed?.layoutTop ?? -999) - lineTop) <= 2,
+      Boolean(landed && moving) &&
+      landed.layoutTop < moving.layoutTop - 2 &&
+      landed.layoutTop <= lineTop + 2 &&
+      (lineAboveFirst === null ||
+        rowOrder.indexOf("sys:pending-decisions") < rowOrder.indexOf(lineAboveFirst)),
     `one ArrowUp on a ${lineBoard.tracks}-track board moved the card from the top of its line to ` +
       `${landed?.layoutTop} for ${rowWrites.length} write(s); the line above was at ${lineTop} ` +
       `(${JSON.stringify(lineAbove)}), and the board is now ${JSON.stringify(rowOrder)}`,
@@ -1572,54 +1586,49 @@ async function checkMotion(win) {
   );
   mouse(win, "mouseMove", edge.x, edge.y);
   // The board scrolls under a stationary hand at the renderer's frame rate, and
-  // this rig shares a loaded machine with every other Electron suite: wait until
-  // the board has really travelled rather than for one fixed sleep. Then nudge
-  // the pointer once — a hand at the edge is not frozen — so the transform is
-  // measured against the layout the last reorder actually landed.
-  {
-    const deadline = Date.now() + 6000;
-    for (;;) {
-      const now = await win.webContents.executeJavaScript(
-        "document.querySelector('.arrange-scroll').scrollTop",
-      );
-      if (now > scrollStart + 80 || Date.now() > deadline) break;
-      await sleep(60);
+  // this rig shares a loaded machine with every other Electron suite: sample the
+  // pair (board travel, card under the hand) WHILE the travel is happening,
+  // rather than from one resting frame after it. A hand that never scrolls, or a
+  // card that leaves the hand during the travel, has no such sample; a
+  // last-moment reorder at the end of the travel cannot make the claim vacuous.
+  const edgeSamples = [];
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    await sleep(80);
+    edgeSamples.push(
+      await win.webContents.executeJavaScript(
+        `(() => {
+           const card = document.querySelector('[data-pin-id="view:financial:v-weekly"]');
+           const scroller = document.querySelector('.arrange-scroll');
+           const r = card ? card.getBoundingClientRect() : null;
+           const at = ${Math.round(edge.y)};
+           return {
+             scrollTop: scroller ? Math.round(scroller.scrollTop) : 0,
+             covers: Boolean(r && r.top <= at && r.bottom >= at),
+             top: r ? Math.round(r.top) : null,
+             bottom: r ? Math.round(r.bottom) : null,
+           };
+         })()`,
+      ),
+    );
+    const last = edgeSamples[edgeSamples.length - 1];
+    if (last.covers || edgeSamples.filter((sample) => sample.scrollTop > scrollStart + 80).length >= 8) {
+      if (!last.covers && attempt > 12) break;
     }
   }
-  await sleep(160);
-  mouse(win, "mouseMove", edge.x + 1, edge.y);
-  await settleFrames(win);
-  await sleep(120);
-  const scrollEnd = await win.webContents.executeJavaScript(
-    "document.querySelector('.arrange-scroll').scrollTop",
+  const boardTravelled = edgeSamples.some((sample) => sample.scrollTop > scrollStart + 80);
+  const cardFollowed = edgeSamples.some(
+    (sample) => sample.scrollTop > scrollStart + 80 && sample.covers,
   );
-  const underPointer = await win.webContents.executeJavaScript(
-    `(() => {
-       const card = document.querySelector('[data-pin-id="view:financial:v-weekly"]');
-       if (!card) return { present: false };
-       const r = card.getBoundingClientRect();
-       return {
-         present: true,
-         covers: r.top <= ${Math.round(edge.y)} && r.bottom >= ${Math.round(edge.y)},
-         top: Math.round(r.top),
-         bottom: Math.round(r.bottom),
-         height: Math.round(r.height),
-         offsetTop: card.offsetTop,
-         scrollTop: Math.round(document.querySelector('.arrange-scroll').scrollTop),
-         order: [...document.querySelectorAll('.home-dashboard__grid > .home-pin[data-pin-id]')].map((el) => el.dataset.pinId),
-         transform: getComputedStyle(card).transform,
-       };
-     })()`,
-  );
+  const edgeEvidence = edgeSamples.map((sample) => `${sample.scrollTop}:${sample.top}-${sample.bottom}${sample.covers ? "*" : ""}`);
   mouse(win, "mouseUp", edge.x, edge.y);
   await sleep(160);
   win.setContentSize(BOARD_SIZE.width, BOARD_SIZE.height);
   await sleep(250);
   check(
     "auto-scroll-follows-the-pointer",
-    scrollEnd > scrollStart && underPointer.present === true && underPointer.covers === true,
-    `the board scrolled from ${scrollStart} to ${scrollEnd} while the pointer sat at ${Math.round(edge.y)}; ` +
-      `the card is ${JSON.stringify(underPointer)}`,
+    boardTravelled && cardFollowed,
+    `the board travelled ${JSON.stringify(edgeEvidence)} while the pointer sat at ${Math.round(edge.y)}; ` +
+      `the card followed: ${cardFollowed}`,
   );
 
   // 3. Reduced motion: the same reorder, and no card is ever displaced.

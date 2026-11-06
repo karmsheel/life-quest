@@ -497,7 +497,10 @@ describe("dashboard card context e2e", () => {
         countInFirstHalf: boolean;
       };
       activity: { width: number; rows: { summary: string; type: string; when: string }[] };
-      todayWeek: { columns: { heading: string; tasks: { title: string; checkbox: string }[] }[] };
+      todayWeek: {
+        width: number;
+        columns: { heading: string; tasks: { title: string; checkbox: string }[] }[];
+      };
     };
     assert.deepEqual(
       homeCards.goals.rows,
@@ -526,6 +529,10 @@ describe("dashboard card context e2e", () => {
     assert.ok(
       homeCards.activity.width < homeCards.boardWidth - 40,
       "the activity card is still a full-row card",
+    );
+    assert.ok(
+      homeCards.todayWeek.width < homeCards.boardWidth - 40,
+      "the today-and-this-week card is still a full-row card",
     );
     assert.equal(homeCards.heading.markerBeforeCount, true, "the count no longer follows the card's marker");
     assert.ok(
