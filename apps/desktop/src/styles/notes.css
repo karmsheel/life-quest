@@ -467,10 +467,10 @@
 /* —— Focus mode: the day alone, over the page ——
    The frame, the scrim and the page's measure live in global.css with the app's
    other sheets. This is the note's half of it: a page of notepaper filling the
-   panel under the centred title, because focus mode is the one surface with
-   nothing under the note to leave room for.
+   panel, because focus mode is the one surface with nothing under the note to
+   leave room for.
 
-   The body is a column so the box can take the height the title leaves. The
+   The body is a column so the box can take the height the heading leaves. The
    page is headed by the day's own date and footed by the day's own acts, with
    the autosave band between them: the three bands the page has, in the order a
    page of a journal has them. */
@@ -479,19 +479,23 @@
   flex-direction: column;
   gap: 0.6rem;
   min-height: 0;
-  padding: 0.15rem 2.25rem 1.75rem;
+  /* The chrome band takes no height now, so the body's own top padding is what
+     keeps the date clear of the panel's edge and of the cross in the corner. */
+  padding: 2.5rem 2.25rem 1.75rem;
 }
 
-/* The page's heading: the day, printed over the prose. It is the page's own
-   name — a notepad page headed with its date — so it takes a heading's weight
-   rather than the chrome's, and it sits at the page's leading edge rather than
-   centred, because a page is written down the page rather than across it. */
+/* The page's one heading: the day, centred over the prose.
+   The sheet's own title is hidden — it still names the surface for a screen
+   reader, but the page the operator reads is headed by the day and nothing
+   else, so the date takes the weight a heading takes and sits on the page's
+   true centre, the way the head of a sheet of paper does. */
 .focus-overlay__date {
   margin: 0;
   flex: 0 0 auto;
-  font-size: 1.05rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  text-align: center;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--fg);
 }
 

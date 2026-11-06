@@ -96,7 +96,6 @@ export function FocusModeOverlay({
     <SheetOverlay
       sheet="focus"
       title="Daily Note"
-      showTitle
       closeLabel="Close focus mode"
       onClose={onClose}
       bodyClassName="focus-overlay__body"
@@ -106,12 +105,14 @@ export function FocusModeOverlay({
           {error}
         </p>
       ) : null}
-      {/* The page's own heading: the day, printed over the prose. The sheet's
-          title above it names the surface; this names the page of it. */}
-      <h3 className="focus-overlay__date" data-testid="focus-overlay-date">
+      {/* The page's one heading: the day, centred over the prose. The sheet's
+          own title is hidden rather than removed — it still names the surface
+          for a screen reader and for the frame's accessible name, but the page
+          the operator sees is headed by the day and nothing else. */}
+      <h2 className="focus-overlay__date" data-testid="focus-overlay-date">
         {weekday ? `${weekday}, ` : ""}
         {dateLabel}
-      </h3>
+      </h2>
       <div className="focus-overlay__note">
         <LiveMarkdownEditor
           testId="daily-note-focus-editor"

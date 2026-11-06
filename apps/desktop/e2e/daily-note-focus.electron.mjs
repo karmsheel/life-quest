@@ -41,6 +41,10 @@
  *  4. The title is not "Daily Note", not centred over the panel, or not at the
  *     panel's top; the cross is not inside the panel, not in its top-right,
  *     or not labelled "Close focus mode".
+ *  4a. The page shows two headings: the sheet's own title is still painted
+ *     above the date, so the page is headed twice instead of once.
+ *  4b. The date is not the page's one heading: not centred on the panel's true
+ *     centre, not a heading, or not above the prose it heads.
  *  5. The scrim does not blur or does not dim (no `blur(...)` in the computed
  *     backdrop-filter, an opaque background).
  *  6. Focus mode replaces the page instead of covering it: `.daily-note` or
@@ -121,7 +125,10 @@ const SAMPLE = `(() => {
   const overlay = document.querySelector("[data-focus-overlay]");
   const panel = document.querySelector(".focus-overlay__panel");
   const chrome = document.querySelector(".focus-overlay__chrome");
-  const sheetTitle = document.querySelector(".sheet-overlay__title");
+  // The sheet's title is looked up by its id, not by its class: the frame gives
+  // it the visually-hidden class instead of the title class when the title is
+  // hidden, and the id is what labels the dialog either way.
+  const sheetTitle = document.querySelector("#sheet-overlay-title");
   const close = document.querySelector(".focus-overlay__close");
   const sheetBody = document.querySelector(".focus-overlay__body");
   const note = document.querySelector(".focus-overlay__note");
@@ -241,6 +248,27 @@ const SAMPLE = `(() => {
           text: text(sheetTitle),
           inPanel: Boolean(panel && panel.contains(sheetTitle)),
           topOffset: panelBox ? round(box(sheetTitle).top - panelBox.top) : null,
+          className: sheetTitle.className,
+          // The sheet's title is the frame's accessible name, not a piece of
+          // chrome: it is hidden from view but must still be in the document,
+          // because the dialog is labelled by it.
+          hiddenFromView: Boolean(
+            sheetTitle.classList.contains("visually-hidden") ||
+              getComputedStyle(sheetTitle).position === "absolute",
+          ),
+          // A hidden title paints nothing: its box must not be a visible strip
+          // of the panel above the date. "Paints nothing" is read from the
+          // rendered box rather than from the class, so a rule that hid the
+          // title some other way would still be caught.
+          visibleBox: (() => {
+            const b = box(sheetTitle);
+            if (!b) return null;
+            const style = getComputedStyle(sheetTitle);
+            const clipped =
+              style.overflow === "hidden" &&
+              (b.width <= 2 || b.height <= 2 || style.clipPath !== "none");
+            return { ...b, clipped: clipped || b.width <= 2 || b.height <= 2 };
+          })(),
         }
       : null,
     close: close
@@ -256,15 +284,23 @@ const SAMPLE = `(() => {
     body: sheetBody
       ? { box: box(sheetBody), inPanel: Boolean(panel && panel.contains(sheetBody)) }
       : null,
-    // The page's heading: the day, printed over the prose.
+    // The page's heading: the day, centred over the prose.
     pageDate: pageDate
       ? {
           box: box(pageDate),
+          centre: centre(box(pageDate)),
           text: text(pageDate),
           inPanel: Boolean(panel && panel.contains(pageDate)),
           tag: pageDate.tagName,
           // The date has to sit above the prose it heads, not under it.
           aboveNote: Boolean(note && box(pageDate).bottom <= box(note).top + 1),
+          // It is the page's ONE heading, so it is centred on the page's true
+          // centre — the same centre the sheet's own title used to hold.
+          centredOnPanel: Boolean(
+            panelBox && Math.abs(centre(box(pageDate)).x - panelBox.left - panelBox.width / 2) <= 2,
+          ),
+          textAlign: getComputedStyle(pageDate).textAlign,
+          fontSize: getComputedStyle(pageDate).fontSize,
         }
       : null,
     note: note ? { box: box(note), inPanel: Boolean(panel && panel.contains(note)) } : null,

@@ -5251,22 +5251,36 @@ a.home-mini-list__link:hover {
   backdrop-filter: blur(11px) saturate(0.9);
 }
 
-/* One centred title, and the cross pinned into the corner rather than riding
-   the heading's row: a cross in the flow would push the title off the panel's
-   true centre, which is the whole of what focus mode's chrome has to be. The
-   selector carries the panel's variant class because the frame's own chrome
+/* The chrome band holds nothing the operator can see: the sheet's title is
+   hidden (it still names the surface for a screen reader) and the cross is
+   pinned into the corner rather than riding the heading's row, because a cross
+   in the flow would push the date off the panel's true centre, which is the
+   whole of what focus mode's chrome has to be. The band therefore takes no
+   height of its own — the date below it is the page's heading, and the page
+   starts at the panel's top edge.
+
+   The selector carries the panel's variant class because the frame's own chrome
    rule is declared after this block and would otherwise take the padding and
    the border back. */
 .sheet-overlay__panel--focus .focus-overlay__chrome {
   position: relative;
   justify-content: center;
-  padding: 1.4rem 3.5rem 0.75rem;
+  padding: 0;
   border-bottom: 0;
   background: transparent;
 }
 
+/* The hidden title must not leave a gap in the band: it is the frame's
+   accessible name, not a piece of chrome, so the heading box around it is
+   taken out of the flow entirely. */
 .sheet-overlay__panel--focus .focus-overlay__chrome .sheet-overlay__heading {
   align-items: center;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .sheet-overlay__panel--focus .focus-overlay__chrome .sheet-overlay__title {

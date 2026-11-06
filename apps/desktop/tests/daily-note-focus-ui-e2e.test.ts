@@ -101,6 +101,9 @@ type Sample = {
     text: string;
     inPanel: boolean;
     topOffset: number | null;
+    className: string;
+    hiddenFromView: boolean;
+    visibleBox: (Box & { clipped: boolean }) | null;
   } | null;
   close: {
     box: Box;
@@ -113,10 +116,14 @@ type Sample = {
   body: { box: Box; inPanel: boolean } | null;
   pageDate: {
     box: Box;
+    centre: Centre;
     text: string;
     inPanel: boolean;
     tag: string;
     aboveNote: boolean;
+    centredOnPanel: boolean;
+    textAlign: string;
+    fontSize: string;
   } | null;
   note: { box: Box; inPanel: boolean } | null;
   foot: { box: Box; inPanel: boolean; belowNote: boolean } | null;
@@ -415,14 +422,14 @@ describe("daily note focus mode", () => {
     );
 
     // ── 2a. the page of paper is headed by the day ───────────────────────────
-    // The date is the page's own heading, printed over the prose. Without it the
+    // The date is the page's ONE heading, centred over the prose. Without it the
     // operator has to keep the Daily Note page behind the sheet in their head to
     // remember which day they are writing.
     const pageDate = opened.pageDate;
     assert.ok(pageDate, "the page of paper has no date at its top");
     if (!pageDate) return;
     assert.equal(pageDate.inPanel, true, "the date is outside the panel");
-    assert.equal(pageDate.tag, "H3", `the date is a ${pageDate.tag}, not a heading`);
+    assert.equal(pageDate.tag, "H2", `the date is a ${pageDate.tag}, not the page's heading`);
     assert.ok(pageDate.text.trim().length > 0, "the date prints nothing");
     // The harness's own today, as the page prints it: the date on the page of
     // paper has to be the day the page behind is showing.
@@ -438,6 +445,26 @@ describe("daily note focus mode", () => {
     assert.ok(
       pageDate.box.top < (opened.note?.box.top ?? Number.POSITIVE_INFINITY),
       "the date is not above the note",
+    );
+    // It is the page's one heading, so it sits on the page's true centre — the
+    // centre the sheet's own title used to hold, now that the title is gone.
+    assert.equal(
+      pageDate.textAlign,
+      "center",
+      `the date is aligned ${pageDate.textAlign}, not centred`,
+    );
+    assert.ok(
+      pageDate.centredOnPanel,
+      `the date is centred at ${pageDate.centre?.x}, not the panel's ${panel.centre.x}`,
+    );
+    assert.ok(
+      Math.abs((pageDate.centre?.x ?? 0) - panel.centre.x) <= 2,
+      `the date is ${(pageDate.centre?.x ?? 0) - panel.centre.x}px off the panel's centre`,
+    );
+    // And it is a heading in weight: the page's own name, not a caption.
+    assert.ok(
+      parseFloat(pageDate.fontSize) >= 18,
+      `the heading is ${pageDate.fontSize}, too small to be the page's own name`,
     );
 
     // ── 2b. the page of paper has a foot, below the prose ───────────────────
@@ -496,19 +523,29 @@ describe("daily note focus mode", () => {
     assert.equal(focusActions.actionText, "Analyze note", `the act reads ${JSON.stringify(focusActions.actionText)}`);
     assert.equal(focusActions.actionSvg, true, "the act carries no icon");
 
-    // The title is the page's own name, centred over the panel, at its top.
+    // The sheet's title is the frame's ACCESSIBLE name, not a piece of chrome:
+    // the page the operator reads is headed by the date and nothing else. So the
+    // title must still be in the document (the dialog is labelled by it) but must
+    // paint nothing — a visible title above the date is a page with two
+    // headings, which is exactly what this change removed.
     const title = opened.title;
     assert.ok(title, "the sheet draws no .sheet-overlay__title");
     if (!title) return;
     assert.equal(title.text, "Daily Note", `the sheet's title reads ${JSON.stringify(title.text)}`);
     assert.equal(title.inPanel, true, "the title is outside the panel");
+    assert.equal(
+      title.hiddenFromView,
+      true,
+      "the sheet's title is still painted — the page has two headings",
+    );
+    assert.ok(title.visibleBox, "the title's box could not be measured");
     assert.ok(
-      Math.abs(title.centre.x - panel.centre.x) <= 2,
-      `the title is centred at ${title.centre.x}, ${title.centre.x - panel.centre.x}px from the panel's ${panel.centre.x}`,
+      title.visibleBox!.clipped,
+      `the hidden title still paints a ${title.visibleBox!.width}x${title.visibleBox!.height}px strip above the date`,
     );
     assert.ok(
-      (title.topOffset ?? Number.NaN) >= 0 && (title.topOffset ?? Number.NaN) <= 40,
-      `the title sits ${title.topOffset}px from the panel's top`,
+      (title.visibleBox!.width ?? 0) <= 2 && (title.visibleBox!.height ?? 0) <= 2,
+      `the hidden title occupies ${title.visibleBox!.width}x${title.visibleBox!.height}px of the panel`,
     );
 
     // The chrome is the panel's own, and the cross is in its top-right corner.

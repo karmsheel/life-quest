@@ -46,10 +46,10 @@ so a second note for a day cannot exist.
    **Analyze note** — choose it to open a new chat with the day in context. While the chat
    opens, the button reads **Opening chat…**.
 7. Choose the **Focus mode** icon beside **Analyze note** to write the day on its own. The
-   page blurs behind a sheet of notepaper with the day's date printed at the top over the
+   page blurs behind a sheet of notepaper headed by the day's date, centred over the
    editor — the same note, in the same draft, without the pager, the automation or the
-   earlier-notes journal around it. The day's own acts sit at the foot of the page, and the
-   autosave band keeps its place under them whether or not it has something to say.
+   earlier-notes journal around it. The day's own acts sit at the foot of the page, and
+   the autosave band keeps its place under them whether or not it has something to say.
    Close it with the cross in the top-right corner, a click outside the sheet, or
    **Escape**; the day is written on the way out, and the page is exactly where you left it.
 
@@ -63,7 +63,7 @@ An empty day is an empty editor, not an error and not a page of instructions.
 | **Daily Note** heading | The page title. |
 | Pager | **‹ Prev day**, the date and weekday with "(Today)" on today, **Next day ›**, and a **Today** button when you are away from today. |
 | Automation buttons | One button per enabled manual automation whose page is **Daily Note**; the built-in is **Analyze note**. Disabled while there is no prose. |
-| **Focus mode** | The icon beside **Analyze note**. Opens the day as a page of notepaper over the blurred page — the date at the top, the editor in the middle, the autosave band and the day's acts at the foot — for writing without the page around it. |
+| **Focus mode** | The icon beside **Analyze note**. Opens the day as a page of notepaper over the blurred page — the date as its one centred heading, the editor in the middle, the autosave band and the day's acts at the foot — for writing without the page around it. |
 | Editor | A live markdown box opening at twice the height of the studio's other note boxes, focused on an empty day. |
 | Status line | **Saving…**, **Saved**, **Not saved**, or **No note for this day yet**. |
 | **Earlier notes** | The journal index: **Date**, **Day**, **Last edited**; this week open, earlier weeks folded; unreadable files shown in place as "unreadable". |
