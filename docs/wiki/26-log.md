@@ -76,6 +76,7 @@ grouped by prefix. The families you will see:
 | `ingest.*`, `mapping.*`, `adapter.*` | `ingest.accepted`, `mapping.accepted`, `adapter.linked`, `adapter.unlinked`. |
 | `books.*`, `kit.*` | `books.exported`, `books.restored`, `kit.installed`. |
 | `signal.*` | `signal.created` — a Life-Chain capture. |
+| `brief.*` | `brief.written` — the companion replaced the Dashboard brief; `brief.dismissed` — the operator settled one item (done, not-useful, wrong or later). |
 
 Two things deliberately do not write a line: a change that did not change
 anything (a card dragged back to where it started, a review saved with identical

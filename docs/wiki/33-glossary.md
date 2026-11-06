@@ -36,6 +36,12 @@ page, a document, a log card, and so on. Clicking a card puts it in the companio
 chat's context, up to three at once, and clicking it again takes that card out.
 See [Dashboard](./06-dashboard.md).
 
+**Companion brief** — the Dashboard's first card: the companion's typed, sourced,
+expiring items (watch, prompt, ahead, commitment, pattern) about the operator's
+day, re-derived rather than appended to. The companion writes it; the operator
+dismisses items with Done / Not useful / Wrong / Later. See
+[Dashboard](./06-dashboard.md).
+
 **Capture** — a thought, a picture or a link logged in Life-Chain before it evaporates.
 Capture is not the studio; it is a signal that can become a task. See
 [Life-Chain](./15-life-chain.md).

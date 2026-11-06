@@ -15,6 +15,8 @@ import {
   executeReviewTool,
   DAILY_NOTE_TOOL_DEFS,
   executeDailyNoteTool,
+  COMPANION_BRIEF_TOOL_DEFS,
+  executeCompanionBriefTool,
   CAPTURE_TOOL_DEFS,
   executeCaptureTool,
   SCRIPT_TOOL_DEFS,
@@ -253,6 +255,15 @@ async function executeToolInner(
   // document change, and the chain is where the companion files what it noticed.
   if (SIGNAL_TOOL_DEFS.some((t) => t.name === name)) {
     return executeSignalTool(root, actor, name, rec);
+  }
+
+  // get_companion_brief, set_companion_brief — the companion brief. The write
+  // tool is companion-only, and `setCompanionBrief` enforces that itself; a
+  // connected agent is refused both tools by name in `toolAllowed` (the record
+  // belongs to the studio, not to any one domain). Dismissal is intentionally
+  // absent: it is the operator's verb and travels over IPC, not the tool door.
+  if (COMPANION_BRIEF_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeCompanionBriefTool(root, actor, name, rec);
   }
 
   // list_projects, get_project — direct reads of the operator's projects and the

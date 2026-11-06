@@ -194,8 +194,13 @@ path. Attaching a receipt to a vault without the Finance kit is refused with
   records, Architecture templates, pins, ingest mappings, posted ledger edits and
   dashboard views go through [Decisions](./23-decisions.md). Direct writes are
   limited to Daily Schedule tasks, a conversational transaction whose amount and
-  account are unambiguous, and page script blocks — and each of those is named in
-  chat afterwards. If an amount or an account is missing, the companion asks and
+  account are unambiguous, page script blocks, and the companion brief — and each
+  of those is named in chat afterwards. The brief is the one place the companion
+  owns: it is written with `set_companion_brief` (a replacement of at most five
+  typed, sourced, expiring items), read with `get_companion_brief` at the start
+  of a session, shown first on the Dashboard, and the operator alone dismisses
+  its items (Done / Not useful / Wrong / Later). The companion cannot dismiss an
+  item or mark it done. If an amount or an account is missing, the companion asks and
   does not post. Pages other than script blocks and Finance kit installs are not
   agent-writable surfaces in this build: the shipped tools have no page-write or
   kit-install call.

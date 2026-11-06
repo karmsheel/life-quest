@@ -500,6 +500,13 @@ const lifequest = {
   dailyNoteWindow: (start: string, end: string) =>
     ipcRenderer.invoke("note:window", start, end) as Promise<Result<unknown>>,
 
+  // The companion's brief is read from the renderer, and the operator's only
+  // verb is dismissing one item; the companion's `set_companion_brief` tool is
+  // the only writer.
+  briefGet: () => ipcRenderer.invoke("brief:get") as Promise<Result<unknown>>,
+  briefDismiss: (itemId: string, reason: string) =>
+    ipcRenderer.invoke("brief:dismiss", itemId, reason) as Promise<Result<unknown>>,
+
   idealStateList: () =>
     ipcRenderer.invoke("ideal-state:list") as Promise<Result<unknown>>,
   idealStateGet: (id: string) =>

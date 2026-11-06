@@ -24,6 +24,7 @@ import { DoctrineProgressCard } from "@/pages/home-pins/DoctrineProgressCard";
 import { PendingDecisionsCard } from "@/pages/home-pins/PendingDecisionsCard";
 import { TodayWeekCard } from "@/pages/home-pins/TodayWeekCard";
 import { RecentLogCard } from "@/pages/home-pins/RecentLogCard";
+import { CompanionBriefCard } from "@/pages/home-pins/CompanionBriefCard";
 import { ActiveAgentsCard } from "@/pages/home-pins/ActiveAgentsCard";
 import { PinChrome } from "@/components/home/PinChrome";
 import { cardNameIn } from "@/components/home/card-name";
@@ -208,6 +209,8 @@ export default function HomePage() {
         return "Today & this week";
       case "recent-log":
         return "Recent activity";
+      case "companion-brief":
+        return "Companion brief";
       default:
         return "This card";
     }
@@ -795,6 +798,8 @@ export default function HomePage() {
           return <TodayWeekCard key={pin.id} />;
         case "recent-log":
           return <RecentLogCard key={pin.id} events={events} />;
+        case "companion-brief":
+          return <CompanionBriefCard key={pin.id} />;
         default:
           return null;
       }
