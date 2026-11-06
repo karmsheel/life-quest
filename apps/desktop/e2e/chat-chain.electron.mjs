@@ -222,7 +222,9 @@ const SAMPLE = `(() => {
       return el ? getComputedStyle(el).backgroundColor : null;
     })(),
     headerIconSize: (() => {
-      const svg = document.querySelector(".chat-panel__header--thread button svg");
+      // The header's last chrome icon is the agent picker's chevron: its chat
+      // controls moved to the tab and row menus.
+      const svg = document.querySelector(".chat-panel__header--thread svg");
       return svg ? Math.round(svg.getBoundingClientRect().width) : null;
     })(),
     actions: Array.from(document.querySelectorAll(".chat-panel__action")).map((b) => {
@@ -473,7 +475,11 @@ async function main() {
     );
     check(
       "the action icons are larger than the thread header's",
-      (landing.actions[0]?.iconSize ?? 0) > (landing.headerIconSize ?? 99),
+      // A header with no chrome icon at all is the shipped shape now (a title
+      // and the agent picker): nothing to be larger than, so the check stands
+      // down rather than inventing a comparison.
+      landing.headerIconSize === null ||
+        (landing.actions[0]?.iconSize ?? 0) > landing.headerIconSize,
       `${landing.actions[0]?.iconSize}px in the bar vs ${landing.headerIconSize}px in the header`,
     );
     check(

@@ -29,6 +29,13 @@ export type UserPrefs = {
    * behaving exactly as it did.
    */
   companionProfile?: string;
+  /**
+   * Which companion the studio talks to: the built-in one or the external
+   * Hermes gateway. Absent means "never chosen", which the registry resolves by
+   * asking whether Hermes is installed — so an existing install keeps working
+   * and a fresh machine gets the built-in companion.
+   */
+  harness?: "hermes" | "pi";
 };
 
 const MAX_RECENT = 20;
@@ -73,6 +80,11 @@ export async function loadPrefs(): Promise<UserPrefs> {
       // good. Read it, keep it.
       ...(typeof parsed.companionProfile === "string"
         ? { companionProfile: parsed.companionProfile }
+        : {}),
+      // Same rule as the profile: a field this reader drops is a field the next
+      // write erases. The harness choice must survive an unrelated prefs write.
+      ...(parsed.harness === "hermes" || parsed.harness === "pi"
+        ? { harness: parsed.harness }
         : {}),
     };
   } catch (e) {
@@ -167,5 +179,17 @@ export async function getCompanionProfile(): Promise<string | null> {
 export async function setCompanionProfile(name: string): Promise<void> {
   const prefs = await loadPrefs();
   prefs.companionProfile = name;
+  await savePrefs(prefs);
+}
+
+/** The companion the operator chose; null = never chosen, let the registry probe. */
+export async function getHarnessId(): Promise<"hermes" | "pi" | null> {
+  const prefs = await loadPrefs();
+  return prefs.harness ?? null;
+}
+
+export async function setHarnessId(id: "hermes" | "pi"): Promise<void> {
+  const prefs = await loadPrefs();
+  prefs.harness = id;
   await savePrefs(prefs);
 }

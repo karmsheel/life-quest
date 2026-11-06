@@ -22,6 +22,7 @@ import {
   restoredChatTabs,
   writeStoredChatTabs,
 } from "@/state/chat-tabs-persistence";
+import { useOptionalCompanion } from "@/state/CompanionProvider";
 import { useVault } from "@/state/VaultProvider";
 import type {
   CompanionRuntimeOverride,
@@ -429,6 +430,33 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     setSessions(listed.value);
     return listed.value;
   }, []);
+
+  /**
+   * A chat belongs to the companion that made it.
+   *
+   * Switching harness changes which store the list comes from, so the sessions,
+   * the open tabs and every per-session run are stale by definition. The stored
+   * tab list goes with them: restoring Hermes chat ids onto Pi (or the reverse)
+   * would ask for chats the new companion has never heard of.
+   */
+  const companion = useOptionalCompanion();
+  const harness = companion?.harness ?? null;
+  const seenHarness = useRef(harness);
+  useEffect(() => {
+    if (!harness || seenHarness.current === harness) {
+      seenHarness.current = harness;
+      return;
+    }
+    seenHarness.current = harness;
+    setSessions([]);
+    setSessionsLoaded(false);
+    setListError(null);
+    setActiveId(null);
+    setOpenTabs([]);
+    setRuns({});
+    writeStoredChatTabs([], null);
+    void loadSessions();
+  }, [harness, loadSessions]);
 
   /**
    * Turn the sidebar's archived view on, off, or to archived-only. The list is

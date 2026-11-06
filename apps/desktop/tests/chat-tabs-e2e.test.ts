@@ -287,7 +287,8 @@ describe("chat dock tabs and sidebar chats", () => {
       chainUp,
       archivedFromChain,
       renameOpen,
-      renameArchived,
+      renameSwitched,
+      renameCancelled,
     } = report.states;
 
     // The sidebar is one flat list of the profile's chats, pinned first; the
@@ -1285,28 +1286,30 @@ describe("chat dock tabs and sidebar chats", () => {
       "archiving from the chain minted a blank chat",
     );
 
-    // A rename field belongs to the chat it was opened on: archiving that chat
-    // hands the header to another chat, and the field must close with its chat
-    // rather than follow the header and write one chat's name onto the next.
-    assert.equal(renameOpen.renaming, true, "the thread rename field never opened");
-    assert.equal(renameOpen.renameValue, "Wrong chat name");
+    // A rename field belongs to the chat it was opened on. With the dock header
+    // no longer carrying chat controls, rename starts on the row; switching the
+    // header to another chat must leave the field on its own row and write
+    // nothing across.
+    assert.equal(renameOpen.rowRenaming, true, "the row rename field never opened");
+    assert.equal(renameOpen.rowRenameValue, "Wrong chat name");
     assert.equal(
-      renameArchived.renaming,
-      false,
-      "the rename field followed the header onto the next chat",
+      renameSwitched.heading,
+      "Seed chat 10",
+      `switching chats did not move the header ("${renameSwitched.heading}")`,
     );
     assert.equal(
-      renameArchived.heading,
-      "New chat",
-      `archiving the renamed chat did not land on the blank New chat ("${renameArchived.heading}")`,
+      renameSwitched.rowRenaming,
+      true,
+      "the rename field disappeared when the header moved",
     );
     assert.equal(
-      renameArchived.patchCalls.some(
+      renameSwitched.patchCalls.some(
         (call) => typeof call.patch.title === "string",
       ),
       false,
       "a rename was written to the wrong chat",
     );
+    assert.equal(renameCancelled.rowRenaming, false, "Cancel left the rename field open");
 
     for (const file of report.screenshots) {
       assert.equal(fs.existsSync(file), true, `driver wrote no screenshot ${file}`);

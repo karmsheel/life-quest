@@ -11092,3 +11092,243 @@ button.chat-panel__activity-line:hover {
 .chat-panel__tab-menu button.chat-panel__tab-menu-danger {
   color: var(--danger);
 }
+
+/* The thread header's agent corner: a hairline, then the companion picker. */
+.chat-panel__header-agent {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.chat-panel__header-divider {
+  width: 1px;
+  height: 1.15rem;
+  background: var(--border);
+  flex: 0 0 auto;
+}
+
+/* Which companion answers: a compact name + menu in the thread header. */
+.chat-panel__agent {
+  position: relative;
+}
+
+.chat-panel__agent-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  cursor: pointer;
+}
+
+.chat-panel__agent-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.chat-panel__agent-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  z-index: 30;
+  min-width: 10rem;
+  padding: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-panel__agent-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  padding: 0.35rem 0.45rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-panel__agent-item:hover,
+.chat-panel__agent-item--active {
+  background: var(--border);
+}
+
+.chat-panel__agent-item-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.chat-panel__agent-item-blurb {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.chat-panel__agent-item--active .chat-panel__agent-item-name::after {
+  content: " ·";
+  color: var(--muted);
+}
+
+/* The agent switcher: a vertical pill of icon blocks in the dock's top corner.
+   One block per agent offered in the current domain; the active one wears the
+   accent ring, so the answering agent is legible without reading a label. */
+.agent-switcher {
+  position: absolute;
+  top: calc(var(--shell-topbar-height) + 0.7rem);
+  right: 0.7rem;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.28rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.agent-switcher__pill {
+  width: 2.05rem;
+  height: 2.05rem;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--panel, var(--card));
+  color: var(--fg);
+  cursor: pointer;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.agent-switcher__pill:hover {
+  border-color: var(--border-strong, var(--border));
+}
+
+.agent-switcher__pill--active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-fill);
+}
+
+.agent-switcher__pill:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.agent-switcher__icon {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.agent-switcher__initial {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+/* Agents by domain: one card per agent, chips for the shows/defaults. */
+.settings-agent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.settings-agent + .settings-agent {
+  margin-top: 0.5rem;
+}
+
+.settings-agent__head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.settings-agent__mark {
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 999px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--panel, var(--card));
+  border: 1px solid var(--border);
+  font-weight: 700;
+}
+
+.settings-agent__mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.settings-agent__name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  font-size: 0.82rem;
+}
+
+.settings-agent__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.settings-agent__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.settings-agent__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.settings-chip {
+  padding: 0.18rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.settings-chip:hover {
+  border-color: var(--accent);
+}
+
+.settings-chip--on {
+  border-color: var(--accent);
+  background: var(--accent-fill);
+}
+
+.settings-chip:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

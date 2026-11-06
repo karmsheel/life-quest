@@ -95,12 +95,13 @@ A pin board of spend and net worth is welcome, including on Overview after kit i
 A Home that feels like a metrics terminal is not.
 It does not restyle toward BERD glass, dot-grid, or novelty-first AI visuals.
 
-## Hermes is required for the studio, and is not the product
+## The companion is required for the studio, and is not the product
 
 The studio does not open without the companion.
 Capture is not the studio.
 LifeQuest owns the vault, the MCP door, and the UI.
-Hermes owns the agent loop, memory, skills, and transcripts, through one named lifequest profile in the chat pane.
+The companion owns the agent loop, memory, skills, and transcripts, wherever it runs.
+The built-in companion is Pi; a Hermes gateway on the operator's machine is an optional external sidekick.
 The desktop attaches to that profile if it is up and starts it if it is not.
 It does not bundle Hermes, and it does not kill a gateway it did not start.
 The renderer never holds the raw API key.

@@ -346,6 +346,21 @@ const lifequest = {
   companionProfilesList: () => ipcRenderer.invoke("companion:profilesList"),
   companionUseProfile: (name: string) =>
     ipcRenderer.invoke("companion:useProfile", name),
+  /**
+   * Which companion the dock is talking to, and the switch. A chat belongs to
+   * the harness that made it, so the picker is app-level, not per chat.
+   */
+  companionHarnesses: () => ipcRenderer.invoke("companion:harnesses"),
+  companionUseHarness: (id: "hermes" | "pi") =>
+    ipcRenderer.invoke("companion:useHarness", id),
+  /** The built-in companion's endpoint. The key is write-only in this direction. */
+  companionPiSettings: () => ipcRenderer.invoke("companion:piSettings"),
+  companionPiSettingsSave: (input: {
+    baseUrl?: string;
+    model?: string;
+    providerName?: string;
+    apiKey?: string | null;
+  }) => ipcRenderer.invoke("companion:piSettingsSave", input),
   companionSessionsList: (options?: { includeArchived?: boolean }) =>
     ipcRenderer.invoke("companion:sessionsList", options),
   companionSessionCreate: (title: string) =>

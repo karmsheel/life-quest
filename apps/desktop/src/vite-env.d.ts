@@ -93,23 +93,38 @@ type RecentVaultEntry = {
   lastOpenedAt: string;
 };
 
+type HarnessId = "hermes" | "pi";
+
+/**
+ * One companion's status, whichever companion answered.
+ *
+ * `harness` and `detail` are the harness-neutral part: the renderer shows the
+ * sentence and never formats a port or a profile path itself. The Hermes fields
+ * are optional because a built-in companion has neither.
+ */
 type CompanionStatus =
   | {
       kind: "ready";
-      port: number;
-      baseUrl: string;
-      startedByLifeQuest: boolean;
-      profilePath: string;
-      cliPath: string;
-      childPid: number | null;
+      harness: HarnessId;
+      /** One sentence: "Ready · <provider> · <model>" or "Ready · <url> · attached". */
+      detail: string;
       /**
        * Set when the model probe found the pinned model missing from this
-       * profile's catalog. Arrives AFTER the first ready status, on
+       * companion's catalog. Arrives AFTER the first ready status, on
        * `onCompanionStatusChanged`, so the splash never waits for it.
        */
       modelWarning?: string;
+      // Hermes-only facts.
+      port?: number;
+      baseUrl?: string;
+      startedByLifeQuest?: boolean;
+      profilePath?: string;
+      cliPath?: string;
+      childPid?: number | null;
     }
   | { kind: "needs_install" }
+  /** Built in, but no endpoint/model/key configured yet. */
+  | { kind: "needs_setup"; message?: string }
   | { kind: "profile_error"; message: string; path?: string }
   | { kind: "port_busy"; port: number }
   /**
@@ -121,6 +136,27 @@ type CompanionStatus =
   | { kind: "disconnected" }
   | { kind: "hermes_too_old"; version?: string }
   | { kind: "auth_error" };
+
+/** One companion the picker offers. */
+type HarnessSummary = {
+  id: HarnessId;
+  name: string;
+  blurb: string;
+  kind: "external" | "embedded";
+  active: boolean;
+  /** Which mark the switcher draws. */
+  icon: string;
+};
+
+/** The built-in companion's endpoint, as Settings reads it. The key is never returned. */
+type PiSettings = {
+  baseUrl: string;
+  model: string;
+  providerName: string;
+  hasKey: boolean;
+  /** False when OS secure storage is unavailable and the key is session-only. */
+  keyPersisted: boolean;
+};
 
 /** One installed Hermes profile, as the picker lists it. */
 type CompanionProfileInfo = {
@@ -420,6 +456,15 @@ type LifequestApi = {
    * the new status, so the caller re-renders from one call.
    */
   companionUseProfile: (name: string) => Promise<CompanionStatus>;
+  companionHarnesses: () => Promise<HarnessSummary[]>;
+  companionUseHarness: (id: HarnessId) => Promise<CompanionStatus>;
+  companionPiSettings: () => Promise<PiSettings>;
+  companionPiSettingsSave: (input: {
+    baseUrl?: string;
+    model?: string;
+    providerName?: string;
+    apiKey?: string | null;
+  }) => Promise<CompanionStatus>;
   companionSessionsList: (options?: {
     includeArchived?: boolean;
   }) => Promise<Result<HermesSession[]>>;
@@ -809,9 +854,12 @@ export type {
   CompanionSkill,
   CompanionStatus,
   FocusedCardContext,
+  HarnessId,
+  HarnessSummary,
   HermesSession,
   LifequestApi,
   PageContextInput,
+  PiSettings,
   RecentVaultEntry,
   Result,
   UpdateAsset,

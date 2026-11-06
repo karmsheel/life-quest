@@ -41,6 +41,7 @@ import { CompanionSetupScreen } from "@/components/hermes/CompanionSetupScreen";
 import { DecisionInboxAutoOpen } from "@/components/decisions/DecisionInboxAutoOpen";
 import { useSheetBackground } from "@/components/shell/useSheetBackground";
 import { ChatDockProvider } from "@/state/ChatDockProvider";
+import { AgentsProvider } from "@/state/AgentsProvider";
 import { AutomationScheduler } from "@/state/AutomationScheduler";
 import { NavDockProvider } from "@/state/NavDockProvider";
 import { ShortcutsProvider } from "@/state/ShortcutsProvider";
@@ -176,6 +177,7 @@ export default function App() {
                   function of the vault and the clock, and this is the one place
                   both are watched for the whole app. */}
               <LiveDataProvider>
+                <AgentsProvider>
                 <AutomationScheduler />
                 <SplashGate />
                 <ChatDockProvider>
@@ -190,6 +192,7 @@ export default function App() {
                     </ShortcutsProvider>
                   </NavDockProvider>
                 </ChatDockProvider>
+                </AgentsProvider>
               </LiveDataProvider>
             </VaultProvider>
           </CompanionProvider>
