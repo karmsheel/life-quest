@@ -8,9 +8,9 @@ away. [The wiki home](./index.md) has the full page index.
 
 ## Where it lives
 
-- Press the gear at the trailing end of the window title bar (*Open settings*),
-  then **All settings** in the popover. The same popover holds the quick theme
-  picker.
+- Press the gear at the trailing end of the window title bar (*Open settings*).
+  The gear is a link to the settings sheet itself; the quick theme picker lives
+  under the day/night control next to it.
 - The sheet is the route `/settings`, and the tab is the query string:
   `/settings?tab=<view>`. The legacy path `/domains` redirects to
   `/settings?tab=domains`.
@@ -31,7 +31,7 @@ immediately — there is no Save button for the sheet as a whole.
 
 ## How to use it
 
-1. Open the gear popover and choose **All settings**.
+1. Press the gear in the window title bar.
 2. Choose a tab in the left column (or the segmented control on a narrow window).
    The address bar becomes `/settings?tab=<id>`, so a tab can be linked or
    revisited.
@@ -52,9 +52,9 @@ panel:
 - The left column carries the kicker **App**, the title **Settings**, then the
   tabs.
 - The panel shows the selected tab, titled by its own heading.
-- The title bar's gear opens a smaller popover before the sheet: **Skin**, the
-  starred themes, the colour mode control (**System**, **Light**, **Dark**) and
-  **All settings**.
+- The title bar's gear opens the sheet itself. The quick theme menu — the
+  starred themes and the colour mode control (**System**, **Light**, **Dark**) —
+  hangs off the day/night control beside it.
 
 The search matches tab labels, the words each tab declares for what it holds, and
 the names of installed themes. Multiple words are ANDed, so `vault path` is
@@ -281,11 +281,11 @@ real feed, and a real release outranks the preview.
 
 ## Tips and edge cases
 
-- The gear popover is not the sheet. It offers the starred themes and the colour
-  mode; everything else is behind **All settings**.
+- The gear is a link, not a menu: it opens the sheet directly. The quick theme
+  menu lives under the day/night control in the same strip.
 - An uncurated install has every theme starred, so the quick menu opens on the
   full set until you clear a star.
-- If the quick menu is empty, the popover explains why and links to **Appearance**
+- If the quick menu is empty, it explains why and links to **Appearance**
   to star a theme.
 - `Ctrl+R` reloads the whole app, not the sheet; a reload returns to the same tab
   because the tab is in the URL.

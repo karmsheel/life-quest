@@ -167,7 +167,7 @@ createRoot(root).render(
 
 // The driver waits on this rather than on a timer, so a slow first Vite
 // transform cannot be mistaken for "the titlebar never rendered". The settings
-// trigger stands in for the strip having painted in either theme: it is present
+// gear stands in for the strip having painted in either theme: it is present
 // even when a single-palette skin removes the day/night control.
 let settle: () => void = () => {};
 const ready = new Promise<void>((resolve) => {
