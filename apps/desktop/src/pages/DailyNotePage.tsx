@@ -631,7 +631,7 @@ export default function DailyNotePage() {
               the cluster: the page stays one line of chrome, and the box keeps
               the trailing edge for what commits it. */}
           <div className="daily-note__title-row">
-            <h1>Daily Note</h1>
+            <h1>Daily Journal</h1>
             <div className="daily-note__actions">
               <Button
                 variant="ghost"

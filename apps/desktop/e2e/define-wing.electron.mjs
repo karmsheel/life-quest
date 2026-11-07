@@ -272,9 +272,9 @@ async function main() {
     check(
       "the governed shelf and the Log are untouched",
       same(home.pinned.map((l) => l.label), [
-        "Life-Chain",
+        "Quick Notes",
         "Decisions",
-        "Daily Note",
+        "Daily Journal",
         "Automations",
       ]) && same(home.pinnedBottom.map((l) => l.label), ["Log"]),
       `shelf ${JSON.stringify(home.pinned.map((l) => l.label))} footer ${JSON.stringify(home.pinnedBottom.map((l) => l.label))}`,

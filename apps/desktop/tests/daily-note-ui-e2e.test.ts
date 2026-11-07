@@ -323,21 +323,21 @@ describe("daily note ui e2e", () => {
     // icon, and it is the active link on /notes.
     assert.deepEqual(
       report.checks.rail.map((entry) => entry.label),
-      ["Life-Chain", "Decisions", "Daily Note", "Automations"],
-      "the governed shelf is not Life-Chain, Decisions, Daily Note, Automations",
+      ["Quick Notes", "Decisions", "Daily Journal", "Automations"],
+      "the governed shelf is not Quick Notes, Decisions, Daily Journal, Automations",
     );
     const note = report.checks.rail[2]!;
     assert.ok(
       (note.href ?? "").endsWith("/notes"),
       `the rail entry points at ${JSON.stringify(note.href)}`,
     );
-    assert.equal(note.icon, true, "the Daily Note entry has no icon");
-    assert.equal(note.active, true, "Daily Note is not the active rail link on /notes");
-    assert.equal(report.checks.rail[1]!.label, "Decisions", "Daily Note is not directly under Decisions");
+    assert.equal(note.icon, true, "the Daily Journal entry has no icon");
+    assert.equal(note.active, true, "Daily Journal is not the active rail link on /notes");
+    assert.equal(report.checks.rail[1]!.label, "Decisions", "Daily Journal is not directly under Decisions");
     assert.equal(
       report.checks.rail[3]!.label,
       "Automations",
-      "Automations is not directly under Daily Note",
+      "Automations is not directly under Daily Journal",
     );
 
     // ── the page's chrome is the page's, not the engine's ───────────────────

@@ -38,7 +38,7 @@
  *     panel must be `.focus-overlay__panel`.
  *  3. The panel is not a page of paper: not the page's own measure, narrower
  *     than the writing column it replaced, or not centred horizontally.
- *  4. The title is not "Daily Note", not centred over the panel, or not at the
+ *  4. The title is not "Daily Journal", not centred over the panel, or not at the
  *     panel's top; the cross is not inside the panel, not in its top-right,
  *     or not labelled "Close focus mode".
  *  4a. The page shows two headings: the sheet's own title is still painted

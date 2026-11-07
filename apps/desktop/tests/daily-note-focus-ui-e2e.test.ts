@@ -531,7 +531,7 @@ describe("daily note focus mode", () => {
     const title = opened.title;
     assert.ok(title, "the sheet draws no .sheet-overlay__title");
     if (!title) return;
-    assert.equal(title.text, "Daily Note", `the sheet's title reads ${JSON.stringify(title.text)}`);
+    assert.equal(title.text, "Daily Journal", `the sheet's title reads ${JSON.stringify(title.text)}`);
     assert.equal(title.inPanel, true, "the title is outside the panel");
     assert.equal(
       title.hiddenFromView,

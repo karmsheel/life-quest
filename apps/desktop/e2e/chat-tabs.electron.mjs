@@ -2156,7 +2156,7 @@ async function main() {
     // the chain up and mints no blank chat: the operator asked to put a chat
     // away, not to be handed a new one. There is no history page in the dock for
     // that archive to land on any more — the whole history is the sidebar's.
-    check("switched the dock to the chain", await clickDockControl("Life-Chain"), "no Life-Chain control");
+    check("switched the dock to the chain", await clickDockControl("Quick Notes"), "no Quick Notes control");
     const chainUp = await settle();
     check(
       "the chain is the surface",
