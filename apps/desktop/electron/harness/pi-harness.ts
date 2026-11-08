@@ -12,7 +12,7 @@
 //   * The only tools registered are the ones the MCP door serves. There is no
 //     filesystem tool to talk around them.
 //   * Credentials come from app userData via `pi-settings`, never from the vault.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import {
   createModels,
@@ -508,6 +508,27 @@ function imagesOf(
   return images;
 }
 
+/**
+ * A short fingerprint of the assembled system prompt, for the session cache key.
+ *
+ * WHY IT IS PART OF THE KEY (reported, not imagined): the cache below used to be
+ * keyed on endpoint, model and tool names alone, and a hit only refreshed
+ * `agent.state.tools`. The `systemPrompt` state field is read-only — the pi
+ * library replays it from the transcript's leading system message — so a prompt
+ * that changed between two turns (the active area, the board lock, the
+ * onboarding rubric) was silently dropped for any chat that had already run
+ * once. The operator's first-run interview paragraph is exactly that kind of
+ * prompt change: it appears when the record moves to `not_started`, and it must
+ * reach a chat that is already open, not only a fresh one.
+ *
+ * Hashing rather than embedding the prompt keeps the key small; a hash collision
+ * would only mean one stale prompt, which is shorter-lived than the session and
+ * disappears on the next prompt change.
+ */
+function promptFingerprint(prompt: string): string {
+  return createHash("sha1").update(prompt).digest("base64url").slice(0, 22);
+}
+
 async function agentFor(
   session: PiStoredSession,
   settings: PiEndpointSettings,
@@ -568,7 +589,11 @@ async function chatStream(
         "pi",
       )
     : "";
-  const signature = `${settings.baseUrl}|${modelId}|${tools.length}|${tools.map((t) => t.name).join(",")}`;
+  // The prompt is part of the signature, not just the tool list: a changed
+  // prompt has to rebuild the agent, because `state.systemPrompt` is read-only
+  // and a cache hit would otherwise keep replaying the old one (see
+  // `promptFingerprint`).
+  const signature = `${settings.baseUrl}|${modelId}|${tools.length}|${tools.map((t) => t.name).join(",")}|${promptFingerprint(systemPrompt)}`;
   const { agent } = await agentFor(session, settings, modelId, signature, tools, systemPrompt);
 
   const runId = randomUUID();

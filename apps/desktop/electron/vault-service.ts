@@ -17,6 +17,7 @@ import {
   createPage,
   createSignal,
   createVault,
+  confirmOnboarding,
   dailyNotesInWindow,
   deleteDomain,
   deleteIdealState,
@@ -24,6 +25,7 @@ import {
   deletePage,
   deleteRow,
   deleteSignal,
+  discardOnboardingProposal,
   dismissAgent,
   dismissBriefItem,
   DOCUMENT_KINDS,
@@ -68,6 +70,7 @@ import {
   readDocumentMedia,
   readImage,
   readSignalImage,
+  readOnboardingRecord,
   readLog,
   runScriptBlock,
   resolveDecision,
@@ -81,6 +84,7 @@ import {
   setPins,
   setPinBoardLocked,
   isAreaLive,
+  startOnboarding,
   unarchiveDomain,
   unlockDomain,
   unlockReview,
@@ -189,6 +193,9 @@ import {
   type ProjectUpdatePatch,
   type LifeEvent,
   type MappingWriteResult,
+  type OnboardingConfirmOptions,
+  type OnboardingConfirmResult,
+  type OnboardingRecord,
   type PeriodPack,
   type PlanningStub,
   type Result,
@@ -263,6 +270,7 @@ import type {
   TurnAttachment,
   TurnAttachmentRequest,
 } from "./companion-client.js";
+import { onboardingContextOf } from "./companion-client.js";
 import {
   buildBoundReviewContext,
   startOrResumePlanSession as startOrResumePlanSessionCore,
@@ -726,6 +734,53 @@ export async function domainUnarchive(
 /** Unlock a seeded area. A flag flip: nothing is created or moved. */
 export async function domainUnlock(slug: string): Promise<Result<DomainRecord>> {
   return withVault((root) => unlockDomain(root, slug));
+}
+
+/**
+ * Begin the onboarding interview. Idempotent: `in_progress` and `completed`
+ * come back unchanged, and `onboarding.started` is logged exactly once.
+ *
+ * The actor is the operator: *Begin* is their click, and a chat that types
+ * first starts the interview before it sends their words. Nothing the engine
+ * writes here is new vault data — the record file is the interview's own memory
+ * — so the only refresh the renderer needs is the data revision the IPC
+ * registrar emits for every mutating channel.
+ */
+export async function onboardingStart(): Promise<Result<OnboardingRecord>> {
+  return withVault((root) => startOnboarding(root));
+}
+
+/**
+ * Apply the pending confirmation as one operator-confirmed batch: unlock the
+ * heard areas, write their doctrine with the companion as author, create the
+ * one table and the one note, then complete the record.
+ *
+ * Doctrine files are rewritten, so the mtime snapshot is re-captured: without
+ * it the next focus check would read the interview's own writes as an external
+ * edit and prompt the operator to reload a vault that is already current.
+ */
+export async function onboardingConfirm(
+  options?: OnboardingConfirmOptions,
+): Promise<Result<OnboardingConfirmResult>> {
+  return withVault(async (root) => {
+    const res = await confirmOnboarding(root, options);
+    if (res.ok) await captureDoctrineMtimes(root);
+    return res;
+  });
+}
+
+/**
+ * Decline the pending proposal. The record stays `in_progress`, so the dock
+ * returns to *Continue the interview* rather than the welcome card; the
+ * returned record is read after the delete so the caller never has to guess
+ * which status it is looking at.
+ */
+export async function onboardingDiscard(): Promise<Result<OnboardingRecord>> {
+  return withVault(async (root) => {
+    const discarded = await discardOnboardingProposal(root);
+    if (!discarded.ok) return discarded;
+    return readOnboardingRecord(root);
+  });
 }
 
 export async function domainDelete(
@@ -1937,6 +1992,16 @@ export async function companionChatStreamWithPack(
         sessionId,
       );
       if (reviewContext) ctx.reviewContext = reviewContext;
+      // The onboarding rubric is vault truth, so main resolves it from the
+      // snapshot it just read rather than trusting the renderer's copy: a
+      // renderer that confirmed the card a moment ago would otherwise send the
+      // pre-confirm status back and re-offer an interview the vault considers
+      // done. Null once complete, which is what keeps the rubric out of every
+      // later turn.
+      ctx.onboarding = onboardingContextOf(
+        snap.value.onboarding,
+        snap.value.onboardingProposal !== null,
+      );
     }
   }
 

@@ -651,6 +651,19 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   );
   ipcMain.handle("domain:getActive", () => vault.domainGetActive());
 
+  // The onboarding interview. Three operator verbs, each one a vault write, so
+  // each is a mutating channel in data-revision.ts and every window repaints
+  // from the fresh snapshot — the welcome, continue and confirmation cards are
+  // gated on it, and a card that only appeared after a reload would be the
+  // first-run bug this whole slice exists to avoid.
+  ipcMain.handle("onboarding:start", () => vault.onboardingStart());
+  ipcMain.handle(
+    "onboarding:confirm",
+    (_e, options?: Parameters<typeof vault.onboardingConfirm>[0]) =>
+      vault.onboardingConfirm(options),
+  );
+  ipcMain.handle("onboarding:discard", () => vault.onboardingDiscard());
+
   // KAR-55 domain databases
   ipcMain.handle("db:list", (_e, domainSlug: string | null) => vault.dbList(domainSlug));
   ipcMain.handle("db:get", (_e, slug: string, dbId: string) => vault.dbGet(slug, dbId));

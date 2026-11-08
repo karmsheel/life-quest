@@ -92,6 +92,12 @@ export const MUTATING_CHANNELS: ReadonlySet<string> = new Set([
   "domain:archive",
   "domain:unarchive",
   "domain:delete",
+  // the onboarding interview: starting, confirming and declining all move what
+  // the dock's first-run cards show, and confirm also unlocks areas, writes
+  // doctrine, a table and a note. An unseen card is a stale card here.
+  "onboarding:start",
+  "onboarding:confirm",
+  "onboarding:discard",
   // databases, their schema, their rows, and the adapter sync that writes rows
   "db:create",
   "db:addColumn",

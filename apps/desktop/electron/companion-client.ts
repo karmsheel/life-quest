@@ -31,6 +31,23 @@ export type CompanionInstructionsInput = {
    * ordinary turn, and on every chat no automation opened.
    */
   automationContext?: string;
+  /**
+   * The vault's onboarding interview, while it is still owed.
+   *
+   * Present only while the interview is unfinished: `not_started` (the welcome
+   * card is showing and nobody has pressed Begin) or `in_progress` (it began
+   * and was left). Absent or null means complete — the ordinary turn, and the
+   * legacy vault whose onboarding predates the interview — and the paragraph
+   * carrying the private rubric is then not sent at all.
+   *
+   * `proposalPending` is the confirmation card: the operator is looking at the
+   * one proposal right now, so the companion revises by calling
+   * `propose_onboarding_unlock` again rather than proposing a second one.
+   */
+  onboarding?: {
+    status: "not_started" | "in_progress";
+    proposalPending: boolean;
+  } | null;
   /** Session pref: may this turn file an implied Decision? Omitted means on. */
   fileUnsolicited?: boolean;
   /**
@@ -53,7 +70,27 @@ export type CompanionInstructionsInput = {
   attachments?: TurnAttachment[] | null;
 };
 
-
+/**
+ * The onboarding field a vault snapshot produces, or null once it is complete.
+ *
+ * One function because three callers assemble the same instructions context
+ * from the same snapshot — the chat path, the Settings preview, and the
+ * renderer's own payload — and a rubric that reached only two of them would be
+ * a companion that knows the areas on one screen and not on another. `status`
+ * is widened to a string so the caller can pass a snapshot record without this
+ * module importing the engine; anything that is not one of the two unfinished
+ * statuses (including the synthetic `completed` a legacy vault reads as) gives
+ * null, which omits the paragraph entirely.
+ */
+export function onboardingContextOf(
+  record: { status: string },
+  proposalPending: boolean,
+): CompanionInstructionsInput["onboarding"] {
+  if (record.status !== "not_started" && record.status !== "in_progress") {
+    return null;
+  }
+  return { status: record.status, proposalPending };
+}
 
 /**
  * The dashboard card the chat is about.
@@ -841,6 +878,46 @@ function formatAttachmentSize(bytes: number): string {
   return `${mb >= 10 ? Math.round(mb) : Math.round(mb * 10) / 10} MB`;
 }
 
+/**
+ * The onboarding interview, as the companion's private rubric and its rules.
+ *
+ * This block exists because the areas are deliberately absent from every tool
+ * result: a locked area is invisible in `list_domains`, `list_databases` and
+ * `list_documents`, so the only way the companion can know the five areas — and
+ * the only way it can propose one from what the operator actually said — is to
+ * be told them here. It is prompt-side on purpose, exactly like the operator's
+ * copy: the app never names a locked area to them, and neither does a tool.
+ *
+ * The block is omitted entirely once the record is `completed`, which is what
+ * "never bring the interview up again" means in code: there is nothing left in
+ * the prompt to bring it up with.
+ */
+function onboardingInstructions(onboarding: {
+  status: "not_started" | "in_progress";
+  proposalPending: boolean;
+}): string {
+  const lines = [
+    "The operator has not finished the onboarding interview: the one first-run conversation that opens the areas of life this vault will hold. It is a conversation, never a form, and nothing is written until they confirm on the card.",
+    "The five areas are your PRIVATE RUBRIC, never a list you read out to them: Health (health) — the body: sleep, training, nutrition, medical; Mind (mind) — inner life: mood, attention, learning, study; Finance (financial) — money: accounts, transactions, budgets; Business (business) — work, ventures, clients, offers; Relationships (relationships) — people, interactions, cadences. Never enumerate these to the operator, never name a locked area, and never ask which area they want.",
+    "Run it as a conversation: four to six open questions with follow-ups, never a form — what's on your mind right now, what's bothering or worrying you, who matters to you at the moment, what you're working on, what you'd like to be different in a year, anything you're proud of or want more of. Each answer may point at zero or more areas; an area opens on one clear signal in the operator's own words (\"I'm exhausted, I never sleep\" → Health), never on a keyword.",
+    "Before proposing anything, reflect back what you heard in their words. Then open ONE to THREE areas — never more, never all five: a first session that opens five is a taxonomy delivery in disguise. Unlocking creates nothing and moves nothing.",
+    "propose_onboarding_unlock is the one way to propose. For each area, draft the four doctrine bodies from what they actually said — premise (\"Beliefs & Premise\"), what (\"Vision & Desire\"), why (\"Purpose\") and how (\"Strategy (How)\") — plus at most one table if the conversation clearly asked for one, and one short note of the interview. Never write anything they did not say; a line you cannot source from their words stays thin rather than invented. Call the tool once, then let the card do the talking: nothing is written until the operator confirms.",
+  ];
+  if (onboarding.proposalPending) {
+    lines.push(
+      "The confirmation card is in front of the operator right now. If they ask for a change, call propose_onboarding_unlock again with the revised proposal — it replaces the pending one; if they decline, that is fine, let it go and keep helping with whatever they asked for.",
+    );
+  } else if (onboarding.status === "not_started") {
+    lines.push(
+      "They have not pressed Begin yet. If they type first, offer the interview in one sentence and then continue with their request — never block them, and never turn their first message into the interview's first question.",
+    );
+  }
+  lines.push(
+    "Never write anything the operator did not say, and never file the interview into a Decision. If their answers surface real distress, step out of interview mode and point at real help instead of sorting it into an area: this is not therapy. Once the interview is complete, never bring it up again.",
+  );
+  return lines.join("\n");
+}
+
 export function buildInstructions(
   input: CompanionInstructionsInput,
   /**
@@ -935,6 +1012,10 @@ export function buildInstructions(
   const pageContext = input.pageContext
     ? pageContextLine(input.pageContext)
     : "";
+  // The first-run interview, while it is still owed. Absent (complete, or the
+  // legacy vault) is the ordinary turn: the paragraph carries the five-area
+  // rubric, which must never reach a turn after the record is done.
+  const onboarding = input.onboarding ? onboardingInstructions(input.onboarding) : "";
   // The one part of this prompt that depends on how the companion is wired.
   // Absent from the shared block so a second harness cannot drift from the
   // governance rules by copying them.
@@ -975,6 +1056,7 @@ export function buildInstructions(
     boardLock,
     focusedCards,
     pageContext,
+    onboarding,
     ...fenceRule,
   ].filter(Boolean).join("\n");
   // The page material an automation opened this chat with. It is appended the
