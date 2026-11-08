@@ -84,8 +84,8 @@ function runDriver(): Promise<number> {
 
 const labels = (links: Link[]) => links.map((link) => link.label);
 
-describe("wing eyebrow (every wing page names its wing, then its own page)", () => {
-  it("opens every wing page with `wing · page`, and moves Images under Home", async (t) => {
+describe("wing eyebrow (every wing page opens with its own name)", () => {
+  it("opens every wing page with its page name, and keeps Images under Home", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` to include this e2e`,

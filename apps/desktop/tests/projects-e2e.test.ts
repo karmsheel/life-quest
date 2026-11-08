@@ -305,7 +305,7 @@ describe("Projects on the Execute wing e2e", () => {
     assert.deepEqual(labels(report.checks.initial.rail), EXECUTE_RAIL, "the Execute rail moved");
     assert.equal(report.checks.initial.rail[0]?.href, "/projects", "the Projects rail row points elsewhere");
     assert.equal(report.checks.initial.rail[0]?.active, true, "the Projects row is not the active one");
-    assert.equal(report.checks.initial.eyebrow, "Act · Projects", "the page's eyebrow does not read Act · Projects");
+    assert.equal(report.checks.initial.eyebrow, "Projects", "the page's eyebrow does not read Projects");
 
     // ── The heading's New project button, measured as boxes ────────────────
     const newButton = report.checks.initial.newButton;

@@ -547,8 +547,8 @@ export default function ReviewPage() {
         null;
 
   /**
-   * The eyebrow names the cadence's own page: "Review · Daily" for the daily
-   * review, "Review · Weekly" for the weekly one, and so on. The cadence is
+   * The eyebrow names the cadence's own page: "Daily" for the daily review,
+   * "Weekly" for the weekly one, and so on. The cadence is
    * already one of the review page names, so the label is its capitalised
    * form.
    */

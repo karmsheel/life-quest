@@ -192,7 +192,7 @@ describe("Home → Images, and the vision board on Vision", () => {
     // It is the Home wing's page, and it is the library — not the board.
     assert.equal(checks.activeRail, "Images");
     assert.equal(checks.route, "/images");
-    assert.equal(checks.imagesPage.eyebrow, "Home · Images");
+    assert.equal(checks.imagesPage.eyebrow, "Images");
     assert.equal(checks.imagesPage.title, "Images");
     assert.equal(checks.imagesPage.presence.library, true);
     assert.equal(checks.imagesPage.presence.board, 0);

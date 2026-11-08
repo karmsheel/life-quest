@@ -1730,7 +1730,7 @@ a {
 
 /* —— The wing eyebrow —— */
 /* Every page under a wing opens with the same small uppercase eyebrow: the
-   wing it belongs to, a dot, then the page's own name — "Home · Dashboard".
+   page's own name — "Dashboard" — in capitals, the same on every wing.
    One rule for all of them, so a page moving between wings looks the same
    there as it did here. */
 .wing-eyebrow {

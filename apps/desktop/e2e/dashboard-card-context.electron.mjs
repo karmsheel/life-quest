@@ -872,7 +872,7 @@ async function main() {
   check(
     "the-header-drops-the-doctrine-line",
     landing.header !== null &&
-      landing.header.eyebrow === "Home · Dashboard" &&
+      landing.header.eyebrow === "Dashboard" &&
       landing.header.title === "Overview" &&
       landing.header.badge === "Unlocked" &&
       landing.header.hint === true &&

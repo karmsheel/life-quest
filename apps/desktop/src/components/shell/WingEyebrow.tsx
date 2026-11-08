@@ -1,8 +1,8 @@
 import { eyebrowFor, type EyebrowPage } from "./wing-eyebrow.ts";
 
 /**
- * The eyebrow every wing page opens with: the wing it belongs to, a dot, then
- * the page's own name — `Home · Dashboard`.
+ * The eyebrow every wing page opens with: the page's own name, uppercase —
+ * `Dashboard`, `Dream`, `Task Manager`.
  *
  * The class is the one every wing page styles alike, so a page under a new
  * wing looks the same as a page under an old one without touching its CSS.

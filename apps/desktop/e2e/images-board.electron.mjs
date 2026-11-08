@@ -391,7 +391,7 @@ async function main() {
   );
   check(
     "images eyebrow",
-    first.eyebrow === "Home · Images",
+    first.eyebrow === "Images",
     `eyebrow read ${JSON.stringify(first.eyebrow)}`,
   );
   check("images title", first.imagesTitle === "Images", `title read ${JSON.stringify(first.imagesTitle)}`);

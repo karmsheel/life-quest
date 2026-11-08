@@ -3,7 +3,7 @@
  *
  * The claim under test is the chrome every wing page opens with: a small
  * uppercase eyebrow naming the wing it sits under, a dot, then the page's own
- * name — "Home · Dashboard", "Define · Dream", "Act · Task Manager".
+ * name — "Dashboard", "Dream", "Task Manager".
  *
  * This rig mounts the SHIPPING shell and the SHIPPING pages, because the
  * eyebrow is a property of the real page, not of a description of it. The

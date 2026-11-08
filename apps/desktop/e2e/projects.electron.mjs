@@ -530,7 +530,7 @@ async function main() {
     );
     check(
       "page-eyebrow",
-      initial.eyebrow === "Act · Projects" && initial.pageHeading === "Projects",
+      initial.eyebrow === "Projects" && initial.pageHeading === "Projects",
       `eyebrow ${JSON.stringify(initial.eyebrow)}, heading ${JSON.stringify(initial.pageHeading)}`,
     );
 

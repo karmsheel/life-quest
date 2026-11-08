@@ -11,10 +11,9 @@
  *
  * What this rig claims:
  *
- *  1. Every page under every wing opens with the eyebrow convention: the wing
- *     it belongs to, a dot, then the page's own name — "Home · Dashboard",
- *     "Define · Dream", "Plan · Life Map", "Act · Task Manager",
- *     "Review · Daily".
+ *  1. Every page under every wing opens with the eyebrow convention: the
+ *     page's own name — "Dashboard", "Dream", "Life Map", "Task Manager",
+ *     "Daily". The wing is not in the eyebrow; the rail's selected tab is.
  *  2. The eyebrow is drawn in capitals by CSS, not by the markup, and it sits
  *     above the page's own title.
  *  3. The wing a page belongs to is the wing the RAIL says it belongs to: the
@@ -47,36 +46,36 @@ const SIZE = { width: 1280, height: 900 };
 /**
  * Every wing page, and the eyebrow it must open with.
  *
- * The eyebrow is `wing · page`. The list is the claim: a page missing from it
- * is a page whose eyebrow the rig does not check, and a page in it with the
+ * The eyebrow is the page's own name. The list is the claim: a page missing
+ * from it is a page whose eyebrow the rig does not check, and a page in it with the
  * wrong text is a failure.
  */
 const PAGES = [
   // Home
-  { route: "/home", eyebrow: "Home · Dashboard", wing: "Home", heading: "Overview" },
-  { route: "/data", eyebrow: "Home · Data", wing: "Home", heading: "Databases" },
-  { route: "/pages", eyebrow: "Home · Pages", wing: "Home", heading: "Pages" },
-  { route: "/documents", eyebrow: "Home · Documents", wing: "Home", heading: "Documents" },
-  { route: "/personnel", eyebrow: "Home · Agents", wing: "Home", heading: "Agents" },
-  { route: "/images", eyebrow: "Home · Images", wing: "Home", heading: "Images" },
+  { route: "/home", eyebrow: "Dashboard", wing: "Home", heading: "Overview" },
+  { route: "/data", eyebrow: "Data", wing: "Home", heading: "Databases" },
+  { route: "/pages", eyebrow: "Pages", wing: "Home", heading: "Pages" },
+  { route: "/documents", eyebrow: "Documents", wing: "Home", heading: "Documents" },
+  { route: "/personnel", eyebrow: "Agents", wing: "Home", heading: "Agents" },
+  { route: "/images", eyebrow: "Images", wing: "Home", heading: "Images" },
   // Define
-  { route: "/dream", eyebrow: "Define · Dream", wing: "Define", heading: "Dream" },
-  { route: "/vision", eyebrow: "Define · Vision", wing: "Define", heading: "Vision" },
-  { route: "/ideal-state", eyebrow: "Define · Ideal State", wing: "Define", heading: "Ideal State" },
+  { route: "/dream", eyebrow: "Dream", wing: "Define", heading: "Dream" },
+  { route: "/vision", eyebrow: "Vision", wing: "Define", heading: "Vision" },
+  { route: "/ideal-state", eyebrow: "Ideal State", wing: "Define", heading: "Ideal State" },
   // Plan
-  { route: "/goals", eyebrow: "Plan · Goals", wing: "Plan", heading: "Goals" },
-  { route: "/chart", eyebrow: "Plan · Life Map", wing: "Plan", heading: "Life Map" },
-  { route: "/track", eyebrow: "Plan · Architecture", wing: "Plan", heading: "Architecture" },
+  { route: "/goals", eyebrow: "Goals", wing: "Plan", heading: "Goals" },
+  { route: "/chart", eyebrow: "Life Map", wing: "Plan", heading: "Life Map" },
+  { route: "/track", eyebrow: "Architecture", wing: "Plan", heading: "Architecture" },
   // Act
-  { route: "/projects", eyebrow: "Act · Projects", wing: "Act", heading: "Projects" },
-  { route: "/daily", eyebrow: "Act · Daily Schedule", wing: "Act", heading: "Daily Schedule" },
-  { route: "/act", eyebrow: "Act · Task Manager", wing: "Act", heading: "Overview" },
+  { route: "/projects", eyebrow: "Projects", wing: "Act", heading: "Projects" },
+  { route: "/daily", eyebrow: "Daily Schedule", wing: "Act", heading: "Daily Schedule" },
+  { route: "/act", eyebrow: "Task Manager", wing: "Act", heading: "Overview" },
   // Review
-  { route: "/review/daily", eyebrow: "Review · Daily", wing: "Review", heading: "Daily review" },
-  { route: "/review/weekly", eyebrow: "Review · Weekly", wing: "Review", heading: "Weekly review" },
-  { route: "/review/monthly", eyebrow: "Review · Monthly", wing: "Review", heading: "Monthly review" },
-  { route: "/review/quarterly", eyebrow: "Review · Quarterly", wing: "Review", heading: "Quarterly review" },
-  { route: "/review/yearly", eyebrow: "Review · Yearly", wing: "Review", heading: "Yearly review" },
+  { route: "/review/daily", eyebrow: "Daily", wing: "Review", heading: "Daily review" },
+  { route: "/review/weekly", eyebrow: "Weekly", wing: "Review", heading: "Weekly review" },
+  { route: "/review/monthly", eyebrow: "Monthly", wing: "Review", heading: "Monthly review" },
+  { route: "/review/quarterly", eyebrow: "Quarterly", wing: "Review", heading: "Quarterly review" },
+  { route: "/review/yearly", eyebrow: "Yearly", wing: "Review", heading: "Yearly review" },
 ];
 
 /** The rail labels, per wing — the claim that Images moved to Home. */
@@ -242,7 +241,7 @@ async function main() {
         `h1 read ${JSON.stringify(state.heading)}, expected ${JSON.stringify(page.heading)}`,
       );
 
-      // The eyebrow says the wing, a dot, and the page's own name.
+      // The eyebrow is the page's own name — the rail carries the wing.
       check(
         `${page.route} eyebrow reads "${page.eyebrow}"`,
         state.eyebrow === page.eyebrow,
@@ -268,7 +267,7 @@ async function main() {
         `eyebrow above title read ${JSON.stringify(state.eyebrowAboveTitle)}`,
       );
 
-      // The wing the eyebrow names is the wing the rail has selected.
+      // The page sits under the wing the rail has selected.
       check(
         `${page.route} belongs to the ${page.wing} wing`,
         state.activeTab === page.wing,
