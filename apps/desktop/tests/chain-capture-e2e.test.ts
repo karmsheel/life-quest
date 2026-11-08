@@ -252,10 +252,10 @@ describe("Life-Chain page — general capture", () => {
 
     // The shipped shell page: Life-Chain active, composer and its three arms.
     assert.equal(checks.page.route, "/chain");
-    assert.equal(checks.page.activeRail, "Life-Chain");
+    assert.equal(checks.page.activeRail, "Quick Notes");
     assert.ok(
-      checks.page.rail.some((item) => item.label === "Life-Chain" && item.href === "/chain"),
-      "no Life-Chain row on the rail",
+      checks.page.rail.some((item) => item.label === "Quick Notes" && item.href === "/chain"),
+      "no Quick Notes row on the rail",
     );
     assert.equal(checks.page.presence.page, true);
     assert.equal(checks.page.presence.composer, true);

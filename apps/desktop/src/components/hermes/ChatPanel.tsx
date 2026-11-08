@@ -1459,7 +1459,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
         <div className="chat-panel__open">
           {view === "chain" ? (
             <div className="chat-panel__header">
-              <p className="chat-panel__heading">Life-Chain</p>
+              <p className="chat-panel__heading">Quick Notes</p>
             </div>
           ) : view === "shortcuts" ? (
             /*
@@ -1992,7 +1992,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             ) : (
               <ul
                 className="chat-panel__chain-list"
-                aria-label="Life-Chain signals"
+                aria-label="Quick Notes signals"
               >
                 {chainItems.map(signalRow)}
               </ul>
@@ -2463,8 +2463,8 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             <button
               type="button"
               className="chat-panel__icon-btn chat-panel__action"
-              aria-label="Life-Chain"
-              title="Life-Chain"
+              aria-label="Quick Notes"
+              title="Quick Notes"
               aria-pressed={view === "chain"}
               onClick={() => setView(view === "chain" ? "thread" : "chain")}
             >

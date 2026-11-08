@@ -770,15 +770,15 @@ async function main() {
   if (labels[labels.length - 1] !== "Automations") {
     failure(`the governed shelf does not end with Automations: ${JSON.stringify(labels)}`);
   }
-  if (labels[labels.length - 2] !== "Daily Note") {
-    failure(`Automations is not directly under Daily Note: ${JSON.stringify(labels)}`);
+  if (labels[labels.length - 2] !== "Daily Journal") {
+    failure(`Automations is not directly under Daily Journal: ${JSON.stringify(labels)}`);
   }
   if (labels[labels.length - 3] !== "Decisions") {
-    failure(`Daily Note is not directly under Decisions: ${JSON.stringify(labels)}`);
+    failure(`Daily Journal is not directly under Decisions: ${JSON.stringify(labels)}`);
   }
-  const noteLink = landing.links.find((entry) => entry.label === "Daily Note");
+  const noteLink = landing.links.find((entry) => entry.label === "Daily Journal");
   if (!noteLink) {
-    failure("the rail carries no Daily Note entry at all");
+    failure("the rail carries no Daily Journal entry at all");
   } else {
     // The href is read as the route it names: this rig mounts MemoryRouter, so
     // the studio's HashRouter `#/notes` appears here as `/notes`.
@@ -786,7 +786,7 @@ async function main() {
       failure(`the rail entry points at ${JSON.stringify(noteLink.href)}, expected the notes route`);
     }
     if (!noteLink.icon) failure("the rail entry drew no icon");
-    if (!noteLink.active) failure("the rail did not mark Daily Note active on its own route");
+    if (!noteLink.active) failure("the rail did not mark Daily Journal active on its own route");
   }
   const decisionsLink = landing.links.find((entry) => entry.label === "Decisions");
   if (decisionsLink && !decisionsLink.icon) failure("the Decisions entry lost its icon");
@@ -800,12 +800,12 @@ async function main() {
       );
     }
     if (!automationsLink.icon) failure("the Automations entry drew no icon");
-    if (automationsLink.active) failure("Automations is marked active on the Daily Note route");
+    if (automationsLink.active) failure("Automations is marked active on the Daily Journal route");
   }
 
   // ── 2. the page lands on today, in ONE box, empty, and writes nothing ────
   checks.landing = landing;
-  if (landing.heading !== "Daily Note") {
+  if (landing.heading !== "Daily Journal") {
     failure(`the page heading read ${JSON.stringify(landing.heading)}`);
   }
   // The date is the label; "Today" is a parenthetical on the end, not a prefix
