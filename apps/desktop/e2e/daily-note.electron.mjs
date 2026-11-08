@@ -252,7 +252,22 @@ const SAMPLE = `(() => {
   const shell = document.querySelector(".shell");
   return {
     links,
-    heading: text(".daily-note__header h1"),
+    heading: text(".daily-note .wing-eyebrow"),
+    // The date IS the page's heading now, so it is read as one: the tag it is
+    // painted as, and the size it is painted at. "Daily Note" is a label
+    // above it, not a second heading.
+    headingTag: (() => {
+      const el = document.querySelector(".daily-note__header h1");
+      return el ? el.tagName : null;
+    })(),
+    headingSize: (() => {
+      const el = document.querySelector(".daily-note__header h1");
+      return el ? px(getComputedStyle(el).fontSize) : null;
+    })(),
+    eyebrowSize: (() => {
+      const el = document.querySelector(".daily-note .wing-eyebrow");
+      return el ? px(getComputedStyle(el).fontSize) : null;
+    })(),
     day: text('[data-testid="daily-note-day"]'),
     dayDate: day ? day.getAttribute("data-date") : null,
     body,
@@ -284,7 +299,71 @@ const SAMPLE = `(() => {
     writes: (window.dailyNoteWrites ?? []).length,
     nextDisabled: next ? next.disabled : null,
     prevDisabled: prev ? prev.disabled : null,
+    // The two steps are keys: an arrow and nothing else. Their words, their
+    // frames and — on today — their absence are all part of the contract, so
+    // each is read rather than assumed.
+    prevPresent: Boolean(prev),
+    nextPresent: Boolean(next),
+    prevText: prev ? (prev.textContent || "").trim() : null,
+    nextText: next ? (next.textContent || "").trim() : null,
+    prevLabel: prev ? prev.getAttribute("aria-label") : null,
+    nextLabel: next ? next.getAttribute("aria-label") : null,
+    prevBorder: prev ? getComputedStyle(prev).borderTopStyle : null,
+    nextBorder: next ? getComputedStyle(next).borderTopStyle : null,
+    // The calendar beside the day: the key, and whether it says it is open.
+    calendar: (() => {
+      const el = document.querySelector('[data-testid="daily-note-calendar"]');
+      if (!el) return { present: false };
+      return {
+        present: true,
+        label: el.getAttribute("aria-label"),
+        expanded: el.getAttribute("aria-expanded"),
+        border: getComputedStyle(el).borderTopStyle,
+        text: (el.textContent || "").trim(),
+      };
+    })(),
     todayButton: Boolean(document.querySelector('[data-testid="daily-note-today"]')),
+    // Where the shortcut back to today lives: in the header's own action
+    // cluster, at its leading end — beside the day's other acts rather than
+    // down in the pager.
+    todayPlacement: (() => {
+      const btn = document.querySelector('[data-testid="daily-note-today"]');
+      const actions = document.querySelector(".daily-note__actions");
+      const pager = document.querySelector(".daily-note__pager");
+      if (!btn) return { present: false };
+      const inActions = Boolean(actions && actions.contains(btn));
+      const inPager = Boolean(pager && pager.contains(btn));
+      // The acts are read through their own boxes: a key may be given a slot to
+      // fill (focus mode is, so it can take the row's height and stay square),
+      // so the order is the order of the acts rather than of the boxes.
+      const focusBtn = document.querySelector('[data-testid="daily-note-focus"]');
+      const order = actions
+        ? Array.from(actions.children).map((el) => {
+            const inner = el.matches("button") ? el : el.querySelector("button");
+            return (
+              (inner && inner.getAttribute("data-testid")) ??
+              el.getAttribute("data-testid") ??
+              el.className
+            );
+          })
+        : [];
+      const index = actions
+        ? Array.from(actions.children).findIndex((el) => el.contains(btn))
+        : -1;
+      const focusIndex =
+        actions && focusBtn
+          ? Array.from(actions.children).findIndex((el) => el.contains(focusBtn))
+          : -1;
+      return {
+        present: true,
+        inActions,
+        inPager,
+        order,
+        index,
+        focusIndex,
+        leftOfFocus: index >= 0 && focusIndex >= 0 && index < focusIndex,
+      };
+    })(),
     error: text(".form-error"),
     rows,
     // The weekly fold: one entry per earlier week, with the label it wears and
@@ -310,6 +389,14 @@ const SAMPLE = `(() => {
       prev: prev ? rect(prev) : null,
       next: next ? rect(next) : null,
       dayLabel: day ? rect(day) : null,
+      // The day as the pager sees it: the heading and its calendar key together,
+      // which is the block that must sit on the box's centre.
+      dayBlock: pager
+        ? (() => {
+            const block = pager.querySelector(".daily-note__day");
+            return block ? rect(block) : null;
+          })()
+        : null,
       workspace: workspace ? rect(workspace) : null,
       editor: box ? rect(box) : null,
       history: history ? rect(history) : null,
@@ -337,6 +424,52 @@ const SAMPLE = `(() => {
     boxRect: box ? rect(box) : null,
     inputRect: input ? rect(input) : null,
     renderedRect: rendered[0] ? rect(rendered[0]) : null,
+  };
+})()`;
+
+/**
+ * The calendar key's popover, read off the rendered DOM.
+ *
+ * Every day in the month is read back with its own date, whether it is drawn as
+ * a day that can be chosen, and whether it is the day the page is on — the
+ * operator's whole contract with this surface is "earlier days only", and that
+ * is a claim about every cell rather than about the shape of the grid.
+ */
+const PICKER_SAMPLE = `(() => {
+  const picker = document.querySelector('[data-testid="day-picker"]');
+  if (!picker) return { open: false };
+  const rect = (el) => {
+    const r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+  };
+  const month = document.querySelector('[data-testid="day-picker-month"]');
+  const nextMonth = document.querySelector('[data-testid="day-picker-next-month"]');
+  const style = getComputedStyle(picker);
+  const days = Array.from(picker.querySelectorAll('[data-testid^="day-picker-day-"]'));
+  const trigger = document.querySelector('[data-testid="daily-note-calendar"]');
+  return {
+    open: true,
+    box: rect(picker),
+    trigger: trigger ? rect(trigger) : null,
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    rowWidths: Array.from(picker.querySelectorAll(".day-picker__row")).map(
+      (row) => row.children.length,
+    ),
+    role: picker.getAttribute("role"),
+    label: picker.getAttribute("aria-label"),
+    month: month ? (month.textContent ?? "").trim() : null,
+    nextMonthDisabled: nextMonth ? nextMonth.disabled : null,
+    position: style.position,
+    radius: style.borderTopLeftRadius,
+    days: days.map((el) => ({
+      date: el.getAttribute("data-date"),
+      day: Number((el.textContent ?? "").trim()),
+      disabled: el.disabled,
+      selected: el.getAttribute("aria-current") === "date",
+      today: el.classList.contains("is-today"),
+      background: getComputedStyle(el).backgroundColor,
+      ariaLabel: el.getAttribute("aria-label"),
+    })),
   };
 })()`;
 
@@ -513,6 +646,10 @@ function sample(win) {
   return win.webContents.executeJavaScript(SAMPLE);
 }
 
+function pickerSample(win) {
+  return win.webContents.executeJavaScript(PICKER_SAMPLE);
+}
+
 function writesOf(win) {
   return win.webContents.executeJavaScript("window.dailyNoteWrites");
 }
@@ -677,9 +814,9 @@ function assertRows(rows, today, when) {
  * journal when the page widens, and this is the reading that catches that.
  */
 function assertPagerOnBox(layout, when) {
-  const { editor, header, prev, next, dayLabel } = layout;
-  if (!editor || !header || !prev || !next || !dayLabel) {
-    return failure(`${when}: the box, header or pager could not be measured`);
+  const { editor, header, prev, next, dayBlock } = layout;
+  if (!editor || !header || !prev || !dayBlock) {
+    return failure(`${when}: the box, header or day row could not be measured`);
   }
   if (Math.abs(header.left - editor.left) > 2 || Math.abs(header.width - editor.width) > 2) {
     failure(
@@ -688,21 +825,28 @@ function assertPagerOnBox(layout, when) {
   }
   if (Math.abs(prev.left - editor.left) > 2) {
     failure(
-      `${when}: Prev day opens at ${prev.left}, not on the box's leading edge ${editor.left}`,
+      `${when}: the step back opens at ${prev.left}, not on the box's leading edge ${editor.left}`,
     );
   }
-  const nextRight = next.left + next.width;
-  const editorRight = editor.left + editor.width;
-  if (Math.abs(nextRight - editorRight) > 2) {
-    failure(
-      `${when}: Next day closes at ${nextRight}, not on the box's trailing edge ${editorRight}`,
-    );
+  // The forward key is drawn only while there is a day to go to: on today it is
+  // not there at all, so this edge is checked where the key exists.
+  if (next) {
+    const nextRight = next.left + next.width;
+    const editorRight = editor.left + editor.width;
+    if (Math.abs(nextRight - editorRight) > 2) {
+      failure(
+        `${when}: the step forward closes at ${nextRight}, not on the box's trailing edge ${editorRight}`,
+      );
+    }
   }
-  const dateCentre = dayLabel.left + dayLabel.width / 2;
+  // The day and its calendar are one block. The date is the heading, but it is
+  // the block that centres over the prose, so the key cannot pull the day off
+  // the middle of the box.
+  const dayCentre = dayBlock.left + dayBlock.width / 2;
   const editorCentre = editor.left + editor.width / 2;
-  if (Math.abs(dateCentre - editorCentre) > 2) {
+  if (Math.abs(dayCentre - editorCentre) > 2) {
     failure(
-      `${when}: the date is centred at ${dateCentre}, ${dateCentre - editorCentre}px from the box's ${editorCentre}`,
+      `${when}: the day is centred at ${dayCentre}, ${dayCentre - editorCentre}px from the box's ${editorCentre}`,
     );
   }
   return undefined;
@@ -806,7 +950,18 @@ async function main() {
   // ── 2. the page lands on today, in ONE box, empty, and writes nothing ────
   checks.landing = landing;
   if (landing.heading !== "Daily Journal") {
-    failure(`the page heading read ${JSON.stringify(landing.heading)}`);
+    failure(`the page name read ${JSON.stringify(landing.heading)}`);
+  }
+  // The date is the page's ONE heading, and it is the big one: the name above
+  // it is a label, so the name must read smaller than the day it sits over.
+  if (landing.headingTag !== "H1") {
+    failure(`the date is painted as a ${JSON.stringify(landing.headingTag)}, not the page's H1`);
+  }
+  if (!(landing.headingSize > landing.eyebrowSize)) {
+    failure(
+      `the date heading is ${landing.headingSize}px and the page name ${landing.eyebrowSize}px — the date is not the larger one`,
+    );
+
   }
   // The date is the label; "Today" is a parenthetical on the end, not a prefix
   // that pushes the date off the centre of the box.
@@ -972,11 +1127,36 @@ async function main() {
   if (landing.writes !== 0) {
     failure(`the page wrote ${landing.writes} time(s) before anything was typed`);
   }
-  if (landing.nextDisabled !== true) {
+  // The steps are keys — an arrow, no frame — and the forward one is not drawn
+  // at all on today: with no day to go to there is nothing to click, so the row
+  // leaves no empty control for the operator to try.
+  if (landing.nextPresent !== false) {
+    failure("a step forward was drawn on today, where there is no day to go to");
+  }
+  if (landing.nextDisabled === false) {
     failure("Next day was live on today — the future is reachable");
   }
-  if (landing.prevDisabled !== false) {
-    failure("Prev day was inert on today, so no past day can be opened");
+  if (landing.prevPresent !== true || landing.prevDisabled !== false) {
+    failure("the step back was missing or inert on today, so no past day can be opened");
+  }
+  if (landing.prevText !== "") {
+    failure(`the step back still wears words: ${JSON.stringify(landing.prevText)}`);
+  }
+  if (landing.prevBorder !== "none") {
+    failure(`the step back still wears a ${landing.prevBorder} frame`);
+  }
+  if (landing.prevLabel !== "Previous day") {
+    failure(`the step back is labelled ${JSON.stringify(landing.prevLabel)} to a screen reader`);
+  }
+  if (!landing.calendar.present) {
+    failure("the day wore no calendar to choose another one by");
+  } else {
+    if (landing.calendar.text !== "") {
+      failure(`the calendar key still wears words: ${JSON.stringify(landing.calendar.text)}`);
+    }
+    if (landing.calendar.expanded !== "false") {
+      failure(`a closed calendar key reported aria-expanded=${JSON.stringify(landing.calendar.expanded)}`);
+    }
   }
   if (landing.todayButton) {
     failure("the Today control was offered while already on today");
@@ -1326,6 +1506,15 @@ async function main() {
   );
   const previous = await sample(win);
   checks.previousDay = previous;
+  // The day that is not today is the only state the shortcut back to today is
+  // on screen in, so it gets its own picture: a review of the day's acts that
+  // only ever saw today would never see the three-button row.
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const pastDayShot = await win.webContents.capturePage();
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(path.join(artifactsDir, "daily-note-past-day.png"), pastDayShot.toPNG());
   if (previous.dayDate !== yesterday) {
     failure(`Prev day landed on ${JSON.stringify(previous.dayDate)}, not ${yesterday}`);
   }
@@ -1335,8 +1524,17 @@ async function main() {
   if (previous.status !== "Saved") {
     failure(`a day with a saved note reported ${JSON.stringify(previous.status)}`);
   }
-  if (previous.nextDisabled !== false) {
-    failure("Next day was inert on a past day, so today cannot be reached forward");
+  if (previous.nextPresent !== true || previous.nextDisabled !== false) {
+    failure("the step forward was missing or inert on a past day, so today cannot be reached forward");
+  }
+  if (previous.nextText !== "") {
+    failure(`the step forward still wears words: ${JSON.stringify(previous.nextText)}`);
+  }
+  if (previous.nextBorder !== "none") {
+    failure(`the step forward still wears a ${previous.nextBorder} frame`);
+  }
+  if (previous.nextLabel !== "Next day") {
+    failure(`the step forward is labelled ${JSON.stringify(previous.nextLabel)} to a screen reader`);
   }
   if (previous.editing) {
     failure("a day with a note opened its writing line instead of reading as prose");
@@ -1345,6 +1543,24 @@ async function main() {
   // the box's centre.
   if (!previous.todayButton) {
     failure("a past day drew no shortcut back to today");
+  }
+  // The shortcut lives with the day's other acts, at the leading end of the
+  // cluster — to the LEFT of focus mode, which is the cluster's trailing key.
+  const todayPlacement = previous.todayPlacement ?? {};
+  if (todayPlacement.present !== true) {
+    failure("a past day drew no shortcut back to today");
+  } else {
+    if (todayPlacement.inActions !== true) {
+      failure("the shortcut back to today is not in the header's action cluster");
+    }
+    if (todayPlacement.inPager) {
+      failure("the shortcut back to today is still down in the pager");
+    }
+    if (todayPlacement.leftOfFocus !== true) {
+      failure(
+        `the shortcut back to today is not left of focus mode — the cluster reads ${JSON.stringify(todayPlacement.order)}`,
+      );
+    }
   }
   assertPagerOnBox(previous.layout, "on a past day");
 
@@ -1554,7 +1770,7 @@ async function main() {
   if (back.dayDate !== today) {
     failure(`returning to today landed on ${JSON.stringify(back.dayDate)}`);
   }
-  if (back.nextDisabled !== true) failure("Next day was live again on today");
+  if (back.nextPresent !== false) failure("a step forward was drawn again on today");
   if (!(back.body ?? "").includes(firstParagraph)) {
     failure(`returning to today lost the note: ${JSON.stringify(back.body)}`);
   }
@@ -1937,12 +2153,19 @@ async function main() {
   // measured here — inside the header, above the box, on the heading's own line
   // — and the face is still measured in the palette the page is painted in, so
   // the key stays legible wherever it sits.
+  //
+  // The heading is the date now, and the date rides in the pager below the
+  // title row; the day's acts stay on the title row's own line, level with the
+  // page's name above them. So the level is measured against that row rather
+  // than against the date.
   const automation = await win.webContents.executeJavaScript(`(() => {
     const row = document.querySelector(".daily-note__automations");
+    const actions = document.querySelector(".daily-note__actions");
     const editor = document.querySelector(".daily-note__editor");
     const compose = document.querySelector(".daily-note__compose");
     const header = document.querySelector(".daily-note__header");
-    const heading = document.querySelector(".daily-note__header h1");
+    const titleRow = document.querySelector(".daily-note__title-row");
+    const eyebrow = document.querySelector(".daily-note .wing-eyebrow");
     const button = document.querySelector('[data-testid="daily-note-analyze"]');
     if (!row || !editor || !button) return { present: false };
     const rect = (el) => {
@@ -1978,15 +2201,30 @@ async function main() {
       aboveBox: rowBox.bottom <= editorBox.top + 1,
       gapAboveBox: Math.round(editorBox.top - rowBox.bottom),
       levelWithHeading: Boolean(
-        heading &&
+        titleRow &&
           Math.abs(
             (rowBox.top + rowBox.bottom) / 2 -
-              (heading.getBoundingClientRect().top +
-                heading.getBoundingClientRect().bottom) /
+              (titleRow.getBoundingClientRect().top +
+                titleRow.getBoundingClientRect().bottom) /
                 2,
-          ) <= 4,
+          ) <= 8,
       ),
-      rightEdgeOffBy: Math.round(rowBox.right - editorBox.right),
+      levelWithEyebrow: Boolean(
+        eyebrow &&
+          Math.abs(
+            (rowBox.top + rowBox.bottom) / 2 -
+              (eyebrow.getBoundingClientRect().top +
+                eyebrow.getBoundingClientRect().bottom) /
+                2,
+          ) <= 8,
+      ),
+      // The day's acts end on the box's trailing edge — the whole cluster does,
+      // not the automations alone: focus mode is the last key in it, so it is
+      // the cluster's trailing edge that answers.
+      rightEdgeOffBy: Math.round(
+        (actions ? rect(actions).right : rowBox.right) - editorBox.right,
+      ),
+      automationsRightEdgeOffBy: Math.round(rowBox.right - editorBox.right),
       insideBoxColumn:
         rowBox.left >= editorBox.left - 1 && rowBox.right <= editorBox.right + 1,
       buttonRadius: parseFloat(style.borderTopLeftRadius),
@@ -2031,7 +2269,7 @@ async function main() {
     }
     if (Math.abs(automation.rightEdgeOffBy) > 2) {
       failure(
-        `the day's automation ends ${automation.rightEdgeOffBy}px from the box's trailing edge, not on it`,
+        `the day's acts end ${automation.rightEdgeOffBy}px from the box's trailing edge, not on it`,
       );
     }
     if (!automation.insideBoxColumn) {
@@ -2069,6 +2307,148 @@ async function main() {
       failure("the Analyze note button's face is one flat stop, not a lit key");
     }
   }
+
+  // ── 12. the calendar: this month, and only the days that have happened ──
+  // The pager walks a day at a time; the calendar is how the operator reaches
+  // the note they half remember. It opens on the month the page is on, reaches
+  // back as far as they like, and cannot walk forward past today.
+  await click(win, "daily-note-calendar");
+  await waitFor(
+    win,
+    `Boolean(document.querySelector('[data-testid="day-picker"]'))`,
+    "the calendar to open",
+  );
+  const picker = await pickerSample(win);
+  checks.calendar = picker;
+  // The artifact for this claim: the calendar open over the day, its month in
+  // the header and every day after today drawn inert.
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const calendarShot = await win.webContents.capturePage();
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(path.join(artifactsDir, "daily-note-calendar.png"), calendarShot.toPNG());
+  if (!picker.open) {
+    failure("the calendar key opened nothing");
+  } else {
+    if (picker.role !== "dialog" || picker.label !== "Choose a day") {
+      failure(
+        `the calendar opened as ${JSON.stringify(picker.role)} labelled ${JSON.stringify(picker.label)}`,
+      );
+    }
+    if (picker.position !== "fixed") {
+      failure(`the calendar is ${JSON.stringify(picker.position)} rather than floating over the page`);
+    }
+    // The month hangs under the key it was opened from, and it stays inside the
+    // window: a picker that opened over the calendar key or off the edge would
+    // be a menu the operator cannot read.
+    const { box, trigger: keyBox, viewport, rowWidths } = picker;
+    if (!box || !keyBox || !viewport) {
+      failure("the calendar's own box, its key's box or the window could not be measured");
+    } else {
+      if (box.top < keyBox.bottom - 1) {
+        failure(
+          `the calendar opens at ${box.top}, over the key it hangs from (${keyBox.bottom})`,
+        );
+      }
+      if (box.left < 0 || box.top < 0 || box.right > viewport.width || box.bottom > viewport.height) {
+        failure(
+          `the calendar spills outside the window: ${box.left}…${box.right} × ${box.top}…${box.bottom} in ${viewport.width} × ${viewport.height}`,
+        );
+      }
+      if (Math.abs(box.right - keyBox.right) > 8) {
+        failure(
+          `the calendar's trailing edge is ${box.right}, ${box.right - keyBox.right}px from its key's ${keyBox.right}`,
+        );
+      }
+    }
+    const rows = rowWidths ?? [];
+    if (rows.length === 0) {
+      failure("the calendar drew no week rows");
+    }
+    for (const width of rows) {
+      if (width !== 7) {
+        failure(`a week row of the calendar holds ${width} cells, not the seven days`);
+      }
+    }
+    const monthLabel = new Intl.DateTimeFormat("en-US", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(`${today}T00:00:00Z`));
+    if (picker.month !== monthLabel) {
+      failure(
+        `the calendar opened on ${JSON.stringify(picker.month)}, not on the month the page is in (${JSON.stringify(monthLabel)})`,
+      );
+    }
+    if (picker.nextMonthDisabled !== true) {
+      failure("the calendar walks forward into months that hold no day it can choose");
+    }
+    const futureDays = picker.days.filter((day) => day.date > today);
+    const liveFutureDays = futureDays.filter((day) => !day.disabled);
+    if (futureDays.length === 0) {
+      failure("the calendar drew no future days in this month, so the closed future was not tested");
+    }
+    if (liveFutureDays.length > 0) {
+      failure(
+        `the calendar offers ${liveFutureDays.map((day) => day.date).join(", ")} — days that have not happened`,
+      );
+    }
+    const chosen = picker.days.find((day) => day.date === yesterday);
+    if (!chosen) {
+      failure("the calendar drew no cell for yesterday");
+    } else if (chosen.disabled) {
+      failure("the calendar refuses yesterday, a day that has happened");
+    }
+    const onScreen = picker.days.find((day) => day.today);
+    if (!onScreen) {
+      failure("the calendar did not mark today");
+    } else if (onScreen.disabled) {
+      failure("the calendar refuses today, the day the page is on");
+    } else if (!onScreen.selected) {
+      failure("the calendar did not mark the day the page is showing");
+    } else if (onScreen.background === "rgba(0, 0, 0, 0)") {
+      failure("the day the page is showing is painted like every other day");
+    }
+  }
+  // The key reports that it is open, so the row says where the calendar hangs.
+  const openKey = await sample(win);
+  if (openKey.calendar.expanded !== "true") {
+    failure(
+      `the open calendar key reported aria-expanded=${JSON.stringify(openKey.calendar.expanded)}`,
+    );
+  }
+  // Choosing a day the calendar drew lands the page on it — a day the pager
+  // would have taken a press per day to reach.
+  await click(win, `day-picker-day-${yesterday}`);
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="daily-note-day"]').getAttribute("data-date") === ${JSON.stringify(yesterday)}`,
+    "the calendar to land the page on yesterday",
+  );
+  await waitFor(
+    win,
+    `(document.querySelector('[data-testid="daily-note-editor"]')?.textContent ?? "").includes("Yesterday: a walk")`,
+    "the chosen day's note to load",
+  );
+  const picked = await sample(win);
+  checks.calendarPick = picked;
+  if (picked.dayDate !== yesterday) {
+    failure(`the calendar chose ${JSON.stringify(picked.dayDate)}, not yesterday`);
+  }
+  if (await pickerSample(win).then((state) => state.open)) {
+    failure("the calendar stayed open after a day was chosen");
+  }
+  if (!picked.todayButton) {
+    failure("after choosing a past day the shortcut back to today was not offered");
+  }
+  // Back to today for the artifacts.
+  await click(win, "daily-note-today");
+  await waitFor(
+    win,
+    `document.querySelector('[data-testid="daily-note-day"]').getAttribute("data-date") === ${JSON.stringify(today)}`,
+    "the page to return to today",
+  );
 
   // The artifact for this claim: the day's page with the note written, the act
   // beside the heading, in the operator's own palette.

@@ -193,6 +193,10 @@ const SAMPLE = `(() => {
         : null,
     },
     note: {
+      // The page's name is a label above the day now: the date is the page's one
+      // heading, so the name the surface is known by is read off the eyebrow and
+      // the day off the heading.
+      name: text(document.querySelector(".daily-note .wing-eyebrow")),
       heading: text(document.querySelector("[data-page-context-root] h1")),
       day: text(document.querySelector('[data-testid="daily-note-day"]')),
       automationButtons: Array.from(
@@ -754,8 +758,15 @@ async function main() {
     checks.dayPage = dayPage;
     check(
       "the Daily Journal page is on screen",
-      dayPage.note.heading === "Daily Journal" && dayPage.note.bodyLength > 4000,
-      JSON.stringify({ heading: dayPage.note.heading, bodyLength: dayPage.note.bodyLength }),
+      dayPage.note.name === "Daily Journal" &&
+        dayPage.note.heading === dayPage.note.day &&
+        dayPage.note.bodyLength > 4000,
+      JSON.stringify({
+        name: dayPage.note.name,
+        heading: dayPage.note.heading,
+        day: dayPage.note.day,
+        bodyLength: dayPage.note.bodyLength,
+      }),
     );
     check(
       "the Analyze note control is on the page and usable",

@@ -1,9 +1,10 @@
 /**
  * The eyebrow convention: every page under a wing opens with a small
  * uppercase eyebrow carrying the page's own name — `Dashboard`, `Dream`,
- * `Task Manager`.
+ * `Task Manager` — and the journal, which belongs to no wing, opens with its
+ * own name the same way.
  *
- * It is the one piece of chrome every wing page shares, so it lives in one
+ * It is the one piece of chrome every such page shares, so it lives in one
  * place: a page asks for its label here and never spells its own name out
  * again. The rendered text is the page name in capitals via CSS
  * `text-transform`, so the DOM keeps the readable form and the style keeps
@@ -39,7 +40,9 @@ export type EyebrowPage =
   | "Weekly"
   | "Monthly"
   | "Quarterly"
-  | "Yearly";
+  | "Yearly"
+  // The bottom shelf — governance pages, which belong to no wing
+  | "Daily Journal";
 
 /**
  * The eyebrow text for a page: the page's own name, and nothing else —

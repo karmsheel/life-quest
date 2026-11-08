@@ -7,9 +7,11 @@ import {
   shiftLocalIsoDate,
   type IsoWeek,
 } from "@lifequest/vault-core/pure";
-import { Focus, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Focus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
+import { DayPicker } from "@/components/notes/DayPicker";
 import { FocusModeOverlay } from "@/components/notes/FocusModeOverlay";
 import {
   automationContextFor,
@@ -641,28 +643,38 @@ export default function DailyNotePage() {
     <div className="daily-note">
       <div className="daily-note__layout">
         <header className="daily-note__header">
-          {/* The title row: the page's name and the day's own acts on one line.
-              The automations sit here, level with the heading, so the day's verb
-              reads as the page's own rather than as a stray control under the
-              prose — above the box it commits rather than below it. Focus mode
-              is the day's second act and sits beside them, at the leading end of
-              the cluster: the page stays one line of chrome, and the box keeps
-              the trailing edge for what commits it. */}
+          {/* The title row: the page's name as a quiet label, and the day's own
+              acts on the same line. The day's date is the page's one heading and
+              rides below, centred over the prose it heads — a journal's page is
+              headed by the day, not by the word "Daily Note", so the date takes
+              the heading's size and the page's name steps down to a label. The
+              automations sit here, level with the name, so the day's verb reads
+              as the page's own rather than as a stray control under the prose —
+              above the box it commits rather than below it. */}
           <div className="daily-note__title-row">
-            <h1>Daily Journal</h1>
+            {/* The page's name, in the shell's one grey eyebrow: the day below
+                it is the page's heading, so the name is a label rather than a
+                second title, and it wears the same rule and colour every other
+                page's name wears. */}
+            <WingEyebrow page="Daily Journal" />
             <div className="daily-note__actions">
-              <Button
-                variant="ghost"
-                className="daily-note__focus-mode"
-                data-testid="daily-note-focus"
-                aria-label="Focus mode"
-                aria-haspopup="dialog"
-                title="Focus mode — write the day on its own"
-                onClick={() => setFocusMode(true)}
-                disabled={!canFocus}
-              >
-                <Focus size={16} aria-hidden />
-              </Button>
+              {/* The day's way back to today. It only exists on a day that is
+                  not today, and it lives with the day's other acts rather than
+                  down in the pager: the pager walks the journal a day at a time,
+                  and this is a jump rather than a step. It is the leading end of
+                  the cluster, so the acts read left to right as "back to today,
+                  then on to the day". */}
+              {date !== today ? (
+                <Button
+                  variant="outline"
+                  className="daily-note__today"
+                  data-testid="daily-note-today"
+                  title="Go to today"
+                  onClick={() => void goToDay(today)}
+                >
+                  Today
+                </Button>
+              ) : null}
               {manualAutomations.length > 0 ? (
                 <div className="daily-note__automations">
                   {manualAutomations.map((automation) => (
@@ -684,50 +696,79 @@ export default function DailyNotePage() {
                   ))}
                 </div>
               ) : null}
-            </div>
-          </div>
-          <div className="daily-note__pager">
-            <div className="daily-note__pager-start">
+              {/* Focus mode is the day's last act: it takes the day as it is and
+                  writes it on its own, so it sits after the control that commits
+                  the day to the vault. */}
               <Button
                 variant="outline"
-                data-testid="daily-note-prev"
-                onClick={() => {
-                  if (prevDate) void goToDay(prevDate);
-                }}
-                disabled={!prevDate}
+                className="daily-note__focus-mode"
+                data-testid="daily-note-focus"
+                aria-label="Focus mode"
+                aria-haspopup="dialog"
+                title="Focus mode — write the day on its own"
+                onClick={() => setFocusMode(true)}
+                disabled={!canFocus}
               >
-                ‹ Prev day
+                <Focus size={16} aria-hidden />
               </Button>
-              {date !== today ? (
-                <Button
-                  variant="ghost"
-                  data-testid="daily-note-today"
-                  onClick={() => void goToDay(today)}
-                >
-                  Today
-                </Button>
-              ) : null}
             </div>
-            <span
-              className="daily-note__date"
-              data-testid="daily-note-day"
-              data-date={date}
-            >
-              {weekday ? `${weekday}, ` : ""}
-              {label}
-              {date === today ? " (Today)" : ""}
-            </span>
+          </div>
+          {/* The day row: the journal's two steps, the day itself, and the
+              calendar that jumps to another one. The arrows are keys rather
+              than labelled buttons — the page has no words to spare in its
+              chrome, and a day back or forward is the one thing the shapes say
+              — and they carry no frame at all, so they read as the edge of the
+              prose rather than as two more controls on it.
+
+              Next day is drawn only when there is a day to go to: the future is
+              closed, so on today its key would be a control with nothing behind
+              it. It is not disabled and greyed — it is not there, and the row
+              keeps its shape because the three tracks are declared. */}
+          <div className="daily-note__pager">
             <Button
-              variant="outline"
-              className="daily-note__pager-next"
-              data-testid="daily-note-next"
+              variant="ghost"
+              className="daily-note__pager-prev"
+              data-testid="daily-note-prev"
+              aria-label="Previous day"
+              title="Previous day"
               onClick={() => {
-                if (nextDate) void goToDay(nextDate);
+                if (prevDate) void goToDay(prevDate);
               }}
-              disabled={!nextDate || atToday}
+              disabled={!prevDate}
             >
-              Next day ›
+              <ChevronLeft size={20} aria-hidden />
             </Button>
+            {/* The day is the page's heading — the one `h1` on the page — and the
+                calendar beside it chooses another. The pair is centred over the
+                prose as one block, so the key does not pull the date off the
+                middle of the box. */}
+            <div className="daily-note__day">
+              <h1
+                className="daily-note__date"
+                data-testid="daily-note-day"
+                data-date={date}
+              >
+                {weekday ? `${weekday}, ` : ""}
+                {label}
+                {date === today ? " (Today)" : ""}
+              </h1>
+              <DayPicker date={date} today={today} onSelect={(day) => void goToDay(day)} />
+            </div>
+            {atToday ? null : (
+              <Button
+                variant="ghost"
+                className="daily-note__pager-next"
+                data-testid="daily-note-next"
+                aria-label="Next day"
+                title="Next day"
+                onClick={() => {
+                  if (nextDate) void goToDay(nextDate);
+                }}
+                disabled={!nextDate}
+              >
+                <ChevronRight size={20} aria-hidden />
+              </Button>
+            )}
           </div>
         </header>
 
