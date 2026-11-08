@@ -150,6 +150,7 @@ type Sample = {
     editor: Editor | null;
   };
   note: {
+    name: string | null;
     heading: string | null;
     day: string | null;
     automationButtons: string[] | null;
@@ -367,7 +368,14 @@ describe("automations e2e", () => {
     assert.match(String(scheduledRow!.meta), /Last run/);
 
     // ── the Daily Note's manual button still opens the chat ─────────────────
-    assert.equal(dayPage.note.heading, "Daily Note");
+    // The page is named by its label and headed by the day: the date is the
+    // page's one heading now, so the name is not what the `h1` carries.
+    assert.equal(dayPage.note.name, "Daily Note");
+    assert.equal(
+      dayPage.note.heading,
+      dayPage.note.day,
+      "the page's heading is not the day it is showing",
+    );
     assert.deepEqual(
       dayPage.note.automationButtons,
       ["Analyze note", "Morning focus"],

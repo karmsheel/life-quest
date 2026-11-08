@@ -157,6 +157,10 @@ type Panel = {
 
 /** What one read of the page's DOM reports. Only the fields this file asserts. */
 type Sample = {
+  heading: string | null;
+  headingTag: string | null;
+  headingSize: number | null;
+  eyebrowSize: number | null;
   day: string | null;
   dayDate: string | null;
   body: string | null;
@@ -166,6 +170,15 @@ type Sample = {
   nextDisabled: boolean | null;
   prevDisabled: boolean | null;
   todayButton: boolean;
+  todayPlacement: {
+    present: boolean;
+    inActions?: boolean;
+    inPager?: boolean;
+    order?: string[];
+    index?: number;
+    focusIndex?: number;
+    leftOfFocus?: boolean;
+  };
   error: string | null;
   rows: Row[];
   weeks: WeekRow[];
@@ -201,6 +214,7 @@ type AutomationSample =
       gapAboveBox: number;
       levelWithHeading: boolean;
       rightEdgeOffBy: number;
+      automationsRightEdgeOffBy: number;
       insideBoxColumn: boolean;
       buttonRadius: number;
       step: number;
@@ -340,6 +354,22 @@ describe("daily note ui e2e", () => {
       "Automations is not directly under Daily Note",
     );
 
+    // ── the heading: the DAY is the heading, the page's name is a label ─────
+    // The operator asked for the date to be the page's main heading and for the
+    // words "Daily Note" to step down. So the date is the page's one `h1` and
+    // the name above it is painted smaller — a label, not a second name.
+    const landingSample = report.checks.landing;
+    assert.equal(landingSample.heading, "Daily Note", "the page's name is not on the page");
+    assert.equal(
+      landingSample.headingTag,
+      "H1",
+      `the date is painted as a ${JSON.stringify(landingSample.headingTag)}, not the page's H1`,
+    );
+    assert.ok(
+      (landingSample.headingSize ?? 0) > (landingSample.eyebrowSize ?? 0),
+      `the date heading is ${landingSample.headingSize}px and the page's name ${landingSample.eyebrowSize}px — the date is not the larger one`,
+    );
+
     // ── the page's chrome is the page's, not the engine's ───────────────────
     // Four things the operator named and this rig can measure: a Save control
     // that should not be there, corners rounded past the design's own step into a
@@ -397,7 +427,7 @@ describe("daily note ui e2e", () => {
     );
     assert.ok(
       Math.abs(automation.rightEdgeOffBy) <= 2,
-      `the Analyze note control ends ${automation.rightEdgeOffBy}px from the box's trailing edge`,
+      `the day's acts end ${automation.rightEdgeOffBy}px from the box's trailing edge`,
     );
     assert.equal(
       automation.insideBoxColumn,

@@ -58,7 +58,10 @@ type TriggerSample =
       inHeader: boolean;
       inTitleRow: boolean;
       inActions: boolean;
-      domImmediatelyBeforeAutomations: boolean;
+      immediatelyAfterAutomations: boolean;
+      borderStyle: string;
+      borderWidth: number;
+      radius: number;
     };
 type AutomationsSample = {
   present: boolean;
@@ -89,6 +92,7 @@ type Sample = {
   pageEditorBody: string | null;
   trigger: TriggerSample;
   automations: AutomationsSample;
+  actionOrder: string[];
   titleRow: Box | null;
   overlay: OverlaySample | null;
   panel:
@@ -304,10 +308,12 @@ describe("daily note focus mode", () => {
       pageAfterFocus,
     } = report.states;
 
-    // ── 1. the trigger: in the header's title row, directly before Analyze ───
+    // ── 1. the trigger: in the header's title row, directly after Analyze ────
     // Falsifiable from the DOM order and the rendered boxes: it must be a button
     // (not a word or an icon), carry the label the operator was told it has, and
-    // sit no more than the row's own gap away from the automations on its right.
+    // sit no more than the row's own gap away from the automations on its left.
+    // Focus mode is the day's LAST act — it takes the day as it is and writes it
+    // on its own — so it reads after the control that commits the day.
     assert.ok(landing.trigger.present, "the page draws no focus-mode trigger");
     if (!landing.trigger.present) return;
     const trigger = landing.trigger;
@@ -343,11 +349,41 @@ describe("daily note focus mode", () => {
     assert.equal(trigger.inTitleRow, true, "the trigger is not on the title row");
     assert.equal(trigger.inActions, true, "the trigger is outside the title row's action cluster");
     assert.equal(
-      trigger.domImmediatelyBeforeAutomations,
+      trigger.immediatelyAfterAutomations,
       true,
-      "the automations are not the trigger's next sibling — Analyze note is not immediately right of it",
+      "the automations do not stand immediately left of the trigger — Analyze note is not immediately before it",
+    );
+    // The cluster reads in the order the day's acts happen: the commit first,
+    // then the page that writes the day on its own.
+    const order = landing.actionOrder;
+    // The automations cluster is read through to the key it holds, so the act
+    // itself — Analyze note — is the entry that stands before focus mode.
+    const automationIndex = order.findIndex(
+      (entry) => entry.includes("daily-note-analyze") || entry.includes("daily-note__automations"),
+    );
+    const focusIndex = order.findIndex((entry) => entry.includes("daily-note-focus"));
+    assert.ok(
+      automationIndex >= 0 && focusIndex === automationIndex + 1,
+      `the acts are out of order: ${JSON.stringify(order)} — Analyze note must come directly before focus mode`,
     );
     assert.equal(trigger.disabled, false, "the trigger is disabled on a loaded day");
+
+    // The square framed key: the operator asked for a button-like border and a
+    // square UI, so the frame has to be there and the box has to be square.
+    assert.notEqual(
+      trigger.borderStyle,
+      "none",
+      `the trigger paints no border — border-style is ${JSON.stringify(trigger.borderStyle)}`,
+    );
+    assert.ok(
+      (trigger.borderWidth ?? 0) >= 1,
+      `the trigger's border is ${trigger.borderWidth}px — no frame to see`,
+    );
+    // Square: the key is as wide as it is tall, within a pixel of the paint.
+    assert.ok(
+      Math.abs(trigger.box.width - trigger.box.height) <= 1,
+      `the trigger's box is ${trigger.box.width}x${trigger.box.height} — not a square`,
+    );
 
     assert.equal(landing.automations.present, true, "Analyze note's container is not on the page");
     assert.ok(landing.automations.analyzeBox, "Analyze note's button could not be measured");
@@ -360,13 +396,20 @@ describe("daily note focus mode", () => {
       `the trigger is ${rowDelta}px off Analyze note's row`,
     );
     assert.ok(
-      edgeGap(trigger.box, landing.automations.box!) >= 0,
-      "the trigger is not left of the automations",
+      edgeGap(landing.automations.box!, trigger.box) >= 0,
+      "the trigger is not right of the automations",
     );
-    const gap = edgeGap(trigger.box, landing.automations.box!);
+    const gap = edgeGap(landing.automations.box!, trigger.box);
     assert.ok(
       gap <= 12.5,
-      `the trigger sits ${gap}px from Analyze note — not immediately left of it`,
+      `the trigger sits ${gap}px from Analyze note — not immediately right of it`,
+    );
+    // The key stands the height of the control beside it, so the row reads as one
+    // line of keys rather than as a row with one short square in it.
+    const analyzeHeight = landing.automations.analyzeBox!.height;
+    assert.ok(
+      Math.abs(trigger.box.height - analyzeHeight) <= 1,
+      `the trigger is ${trigger.box.height}px tall and Analyze note is ${analyzeHeight}px — not the same height`,
     );
     // The page behind is where it was, and no sheet was up before the press.
     assert.equal(landing.overlay, null, "a sheet was open on arrival");

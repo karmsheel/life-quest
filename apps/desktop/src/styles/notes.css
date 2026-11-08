@@ -47,17 +47,36 @@
   gap: 0.6rem;
 }
 
-.daily-note__header h1 {
+/* The page's name, as a label rather than as the page's heading. A journal's
+   page is headed by the day the operator is on; the name only says which
+   surface this is. It wears the studio's own eyebrow treatment — the accent,
+   the small caps and the tracking the Data, Pages, Home and Decisions pages
+   already give their names — so this page's chrome reads as the same family. */
+.daily-note__eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* The date is the page's heading, so it wears the studio's own title treatment:
+   the same size, weight and tracking the Data and Pages pages give the name
+   this page has stepped down from. The day is the page's real title. */
+.daily-note__date {
   margin: 0;
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--fg);
 }
 
-/* The title row: the page's name and the day's own act on one line. The heading
-   keeps the leading edge and the automations take the trailing one, so the day's
-   verb reads level with the title, over the box it commits, rather than as a
-   control left under the prose. It wraps instead of squeezing the button when
+/* The title row: the page's name and the day's own acts on one line. The name
+   keeps the leading edge and the acts take the trailing one, so the day's
+   verbs read level with it, over the box they commit, rather than as
+   controls left under the prose. It wraps instead of squeezing the buttons when
    the column is narrow. */
 .daily-note__title-row {
   display: flex;
@@ -70,8 +89,7 @@
 /* The pager is two edges and a centre. The box's own leading and trailing edges
    are the buttons' edges — Prev day opens the row, Next day closes it — and the
    day's date sits in the middle column, over the prose the box holds. The two
-   outer tracks are equal, so the date stays on the box's centre even while one
-   side carries the extra Today shortcut. */
+   outer tracks are equal, so the date stays on the box's centre. */
 .daily-note__pager {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -92,13 +110,6 @@
   justify-self: end;
 }
 
-.daily-note__date {
-  text-align: center;
-  font-size: 0.95rem;
-  font-weight: 500;
-  color: var(--fg);
-}
-
 /* The box's foot: the autosave line alone. The day's own automations live up in
    the title row now, level with the heading. */
 .daily-note__footer {
@@ -114,8 +125,8 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: stretch;
   gap: 0.5rem;
-  margin-left: auto;
 }
 
 .daily-note__analyze {
@@ -124,31 +135,51 @@
   gap: 0.35rem;
 }
 
-/* The day's acts share the header's trailing end: focus mode's key, then the
-   automation that commits the note. The cluster takes the row's free space so
-   the acts stay on the box's trailing edge, which the automations' own right
-   edge has to keep matching. */
+/* The day's acts share the header's trailing end, in the order they happen:
+   back to today, then the act that commits the note to the vault, then focus
+   mode, which takes the day as it is and writes it on its own. The cluster takes
+   the row's free space so the acts stay on the box's trailing edge, which the
+   cluster's own right edge has to keep matching. The gap is the row's own
+   rhythm: enough air that the three read as three controls and not as one band.
+
+   A key's height is the primitive's padding twice over plus the line its words
+   sit on. That line is pinned on the cluster rather than left to the type's own
+   default, because the icon-only key has no words and has to be told the same
+   height: a flex item resolves its main size before a stretch lands, so a
+   square derived from a stretched neighbour comes out a rectangle. One
+   expression, worn by every key here, is what makes the two exactly the same
+   height instead of nearly so. */
 .daily-note__actions {
+  --daily-note-act-height: calc(2 * 0.55rem + 1.25em + 2px);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: 0.75rem;
   margin-left: auto;
 }
 
-/* The icon-only key beside Analyze note. It is the ghost primitive at the
-   page's square step, square rather than a pill because a control with no word
-   in it should read as the same family as the pager beside it, and it takes the
-   height of a control rather than the width of a word. The selector carries the
-   page's class so the size wins over `.btn`'s own padding: notes.css is imported
-   ahead of the primitive in global.css, so one class here would lose. */
+.daily-note__actions .btn {
+  line-height: 1.25;
+}
+
+/* The icon-only key at the trailing end of the day's acts. It is the outline
+   primitive at the page's square step — a key with a visible frame, square
+   rather than a pill because a control with no word in it should read as the
+   same family as the pager below it — and it stands the height of the control
+   beside it, so the row reads as one line of keys rather than as a row with one
+   short one in it.
+
+   Both dimensions are that shared height, so the icon sits in a true square
+   rather than in a rectangle. The selector carries the page's class so the size
+   wins over `.btn`'s own padding: notes.css is imported ahead of the primitive
+   in global.css, so one class here would lose. */
 .daily-note .daily-note__focus-mode {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.15rem;
-  height: 2.15rem;
+  width: var(--daily-note-act-height);
+  height: var(--daily-note-act-height);
   padding: 0;
 }
 

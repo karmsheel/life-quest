@@ -623,28 +623,34 @@ export default function DailyNotePage() {
     <div className="daily-note">
       <div className="daily-note__layout">
         <header className="daily-note__header">
-          {/* The title row: the page's name and the day's own acts on one line.
-              The automations sit here, level with the heading, so the day's verb
-              reads as the page's own rather than as a stray control under the
-              prose — above the box it commits rather than below it. Focus mode
-              is the day's second act and sits beside them, at the leading end of
-              the cluster: the page stays one line of chrome, and the box keeps
-              the trailing edge for what commits it. */}
+          {/* The title row: the page's name as a quiet label, and the day's own
+              acts on the same line. The day's date is the page's one heading and
+              rides below, centred over the prose it heads — a journal's page is
+              headed by the day, not by the word "Daily Note", so the date takes
+              the heading's size and the page's name steps down to a label. The
+              automations sit here, level with the name, so the day's verb reads
+              as the page's own rather than as a stray control under the prose —
+              above the box it commits rather than below it. */}
           <div className="daily-note__title-row">
-            <h1>Daily Note</h1>
+            <p className="daily-note__eyebrow">Daily Note</p>
             <div className="daily-note__actions">
-              <Button
-                variant="ghost"
-                className="daily-note__focus-mode"
-                data-testid="daily-note-focus"
-                aria-label="Focus mode"
-                aria-haspopup="dialog"
-                title="Focus mode — write the day on its own"
-                onClick={() => setFocusMode(true)}
-                disabled={!canFocus}
-              >
-                <Focus size={16} aria-hidden />
-              </Button>
+              {/* The day's way back to today. It only exists on a day that is
+                  not today, and it lives with the day's other acts rather than
+                  down in the pager: the pager walks the journal a day at a time,
+                  and this is a jump rather than a step. It is the leading end of
+                  the cluster, so the acts read left to right as "back to today,
+                  then on to the day". */}
+              {date !== today ? (
+                <Button
+                  variant="outline"
+                  className="daily-note__today"
+                  data-testid="daily-note-today"
+                  title="Go to today"
+                  onClick={() => void goToDay(today)}
+                >
+                  Today
+                </Button>
+              ) : null}
               {manualAutomations.length > 0 ? (
                 <div className="daily-note__automations">
                   {manualAutomations.map((automation) => (
@@ -666,6 +672,21 @@ export default function DailyNotePage() {
                   ))}
                 </div>
               ) : null}
+              {/* Focus mode is the day's last act: it takes the day as it is and
+                  writes it on its own, so it sits after the control that commits
+                  the day to the vault. */}
+              <Button
+                variant="outline"
+                className="daily-note__focus-mode"
+                data-testid="daily-note-focus"
+                aria-label="Focus mode"
+                aria-haspopup="dialog"
+                title="Focus mode — write the day on its own"
+                onClick={() => setFocusMode(true)}
+                disabled={!canFocus}
+              >
+                <Focus size={16} aria-hidden />
+              </Button>
             </div>
           </div>
           <div className="daily-note__pager">
@@ -680,17 +701,11 @@ export default function DailyNotePage() {
               >
                 ‹ Prev day
               </Button>
-              {date !== today ? (
-                <Button
-                  variant="ghost"
-                  data-testid="daily-note-today"
-                  onClick={() => void goToDay(today)}
-                >
-                  Today
-                </Button>
-              ) : null}
             </div>
-            <span
+            {/* The date is the page's heading: the day being written, centred
+                over the prose it heads. It is the one `h1` on the page, and the
+                word "Daily Note" above it is a label rather than a second name. */}
+            <h1
               className="daily-note__date"
               data-testid="daily-note-day"
               data-date={date}
@@ -698,7 +713,7 @@ export default function DailyNotePage() {
               {weekday ? `${weekday}, ` : ""}
               {label}
               {date === today ? " (Today)" : ""}
-            </span>
+            </h1>
             <Button
               variant="outline"
               className="daily-note__pager-next"

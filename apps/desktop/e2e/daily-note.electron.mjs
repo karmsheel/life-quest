@@ -252,7 +252,22 @@ const SAMPLE = `(() => {
   const shell = document.querySelector(".shell");
   return {
     links,
-    heading: text(".daily-note__header h1"),
+    heading: text(".daily-note__eyebrow"),
+    // The date IS the page's heading now, so it is read as one: the tag it is
+    // painted as, and the size it is painted at. "Daily Note" is a label
+    // above it, not a second heading.
+    headingTag: (() => {
+      const el = document.querySelector(".daily-note__header h1");
+      return el ? el.tagName : null;
+    })(),
+    headingSize: (() => {
+      const el = document.querySelector(".daily-note__header h1");
+      return el ? px(getComputedStyle(el).fontSize) : null;
+    })(),
+    eyebrowSize: (() => {
+      const el = document.querySelector(".daily-note__eyebrow");
+      return el ? px(getComputedStyle(el).fontSize) : null;
+    })(),
     day: text('[data-testid="daily-note-day"]'),
     dayDate: day ? day.getAttribute("data-date") : null,
     body,
@@ -285,6 +300,47 @@ const SAMPLE = `(() => {
     nextDisabled: next ? next.disabled : null,
     prevDisabled: prev ? prev.disabled : null,
     todayButton: Boolean(document.querySelector('[data-testid="daily-note-today"]')),
+    // Where the shortcut back to today lives: in the header's own action
+    // cluster, at its leading end — beside the day's other acts rather than
+    // down in the pager.
+    todayPlacement: (() => {
+      const btn = document.querySelector('[data-testid="daily-note-today"]');
+      const actions = document.querySelector(".daily-note__actions");
+      const pager = document.querySelector(".daily-note__pager");
+      if (!btn) return { present: false };
+      const inActions = Boolean(actions && actions.contains(btn));
+      const inPager = Boolean(pager && pager.contains(btn));
+      // The acts are read through their own boxes: a key may be given a slot to
+      // fill (focus mode is, so it can take the row's height and stay square),
+      // so the order is the order of the acts rather than of the boxes.
+      const focusBtn = document.querySelector('[data-testid="daily-note-focus"]');
+      const order = actions
+        ? Array.from(actions.children).map((el) => {
+            const inner = el.matches("button") ? el : el.querySelector("button");
+            return (
+              (inner && inner.getAttribute("data-testid")) ??
+              el.getAttribute("data-testid") ??
+              el.className
+            );
+          })
+        : [];
+      const index = actions
+        ? Array.from(actions.children).findIndex((el) => el.contains(btn))
+        : -1;
+      const focusIndex =
+        actions && focusBtn
+          ? Array.from(actions.children).findIndex((el) => el.contains(focusBtn))
+          : -1;
+      return {
+        present: true,
+        inActions,
+        inPager,
+        order,
+        index,
+        focusIndex,
+        leftOfFocus: index >= 0 && focusIndex >= 0 && index < focusIndex,
+      };
+    })(),
     error: text(".form-error"),
     rows,
     // The weekly fold: one entry per earlier week, with the label it wears and
@@ -806,7 +862,17 @@ async function main() {
   // ── 2. the page lands on today, in ONE box, empty, and writes nothing ────
   checks.landing = landing;
   if (landing.heading !== "Daily Note") {
-    failure(`the page heading read ${JSON.stringify(landing.heading)}`);
+    failure(`the page name read ${JSON.stringify(landing.heading)}`);
+  }
+  // The date is the page's ONE heading, and it is the big one: the name above
+  // it is a label, so the name must read smaller than the day it sits over.
+  if (landing.headingTag !== "H1") {
+    failure(`the date is painted as a ${JSON.stringify(landing.headingTag)}, not the page's H1`);
+  }
+  if (!(landing.headingSize > landing.eyebrowSize)) {
+    failure(
+      `the date heading is ${landing.headingSize}px and the page name ${landing.eyebrowSize}px — the date is not the larger one`,
+    );
   }
   // The date is the label; "Today" is a parenthetical on the end, not a prefix
   // that pushes the date off the centre of the box.
@@ -1345,6 +1411,24 @@ async function main() {
   // the box's centre.
   if (!previous.todayButton) {
     failure("a past day drew no shortcut back to today");
+  }
+  // The shortcut lives with the day's other acts, at the leading end of the
+  // cluster — to the LEFT of focus mode, which is the cluster's trailing key.
+  const todayPlacement = previous.todayPlacement ?? {};
+  if (todayPlacement.present !== true) {
+    failure("a past day drew no shortcut back to today");
+  } else {
+    if (todayPlacement.inActions !== true) {
+      failure("the shortcut back to today is not in the header's action cluster");
+    }
+    if (todayPlacement.inPager) {
+      failure("the shortcut back to today is still down in the pager");
+    }
+    if (todayPlacement.leftOfFocus !== true) {
+      failure(
+        `the shortcut back to today is not left of focus mode — the cluster reads ${JSON.stringify(todayPlacement.order)}`,
+      );
+    }
   }
   assertPagerOnBox(previous.layout, "on a past day");
 
@@ -1937,12 +2021,19 @@ async function main() {
   // measured here — inside the header, above the box, on the heading's own line
   // — and the face is still measured in the palette the page is painted in, so
   // the key stays legible wherever it sits.
+  //
+  // The heading is the date now, and the date rides in the pager below the
+  // title row; the day's acts stay on the title row's own line, level with the
+  // page's name above them. So the level is measured against that row rather
+  // than against the date.
   const automation = await win.webContents.executeJavaScript(`(() => {
     const row = document.querySelector(".daily-note__automations");
+    const actions = document.querySelector(".daily-note__actions");
     const editor = document.querySelector(".daily-note__editor");
     const compose = document.querySelector(".daily-note__compose");
     const header = document.querySelector(".daily-note__header");
-    const heading = document.querySelector(".daily-note__header h1");
+    const titleRow = document.querySelector(".daily-note__title-row");
+    const eyebrow = document.querySelector(".daily-note__eyebrow");
     const button = document.querySelector('[data-testid="daily-note-analyze"]');
     if (!row || !editor || !button) return { present: false };
     const rect = (el) => {
@@ -1978,15 +2069,30 @@ async function main() {
       aboveBox: rowBox.bottom <= editorBox.top + 1,
       gapAboveBox: Math.round(editorBox.top - rowBox.bottom),
       levelWithHeading: Boolean(
-        heading &&
+        titleRow &&
           Math.abs(
             (rowBox.top + rowBox.bottom) / 2 -
-              (heading.getBoundingClientRect().top +
-                heading.getBoundingClientRect().bottom) /
+              (titleRow.getBoundingClientRect().top +
+                titleRow.getBoundingClientRect().bottom) /
                 2,
-          ) <= 4,
+          ) <= 8,
       ),
-      rightEdgeOffBy: Math.round(rowBox.right - editorBox.right),
+      levelWithEyebrow: Boolean(
+        eyebrow &&
+          Math.abs(
+            (rowBox.top + rowBox.bottom) / 2 -
+              (eyebrow.getBoundingClientRect().top +
+                eyebrow.getBoundingClientRect().bottom) /
+                2,
+          ) <= 8,
+      ),
+      // The day's acts end on the box's trailing edge — the whole cluster does,
+      // not the automations alone: focus mode is the last key in it, so it is
+      // the cluster's trailing edge that answers.
+      rightEdgeOffBy: Math.round(
+        (actions ? rect(actions).right : rowBox.right) - editorBox.right,
+      ),
+      automationsRightEdgeOffBy: Math.round(rowBox.right - editorBox.right),
       insideBoxColumn:
         rowBox.left >= editorBox.left - 1 && rowBox.right <= editorBox.right + 1,
       buttonRadius: parseFloat(style.borderTopLeftRadius),
@@ -2031,7 +2137,7 @@ async function main() {
     }
     if (Math.abs(automation.rightEdgeOffBy) > 2) {
       failure(
-        `the day's automation ends ${automation.rightEdgeOffBy}px from the box's trailing edge, not on it`,
+        `the day's acts end ${automation.rightEdgeOffBy}px from the box's trailing edge, not on it`,
       );
     }
     if (!automation.insideBoxColumn) {

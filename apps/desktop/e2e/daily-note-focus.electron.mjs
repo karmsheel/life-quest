@@ -195,11 +195,25 @@ const SAMPLE = `(() => {
           inHeader: Boolean(header && header.contains(trigger)),
           inTitleRow: Boolean(titleRow && titleRow.contains(trigger)),
           inActions: Boolean(actions && actions.contains(trigger)),
-          // The contract's "immediately before the automations": same cluster,
-          // with the automations as the very next sibling.
-          domImmediatelyBeforeAutomations: Boolean(
-            trigger.nextElementSibling && trigger.nextElementSibling === automations
+          // The contract's "immediately after the automations": same cluster,
+          // with the automations standing directly before it. Focus mode is the
+          // day's LAST act — it takes the day as it is and writes it on its own
+          // — so it sits after the control that commits the day to the vault.
+          // The key is given a slot to fill so it can take the row's height and
+          // stay square, so the order is read from the positions of the two in
+          // the cluster rather than from raw sibling identity.
+          immediatelyAfterAutomations: Boolean(
+            triggerBox &&
+              automationsBox &&
+              triggerBox.left >= automationsBox.right - 1 &&
+              triggerBox.top < automationsBox.bottom &&
+              triggerBox.bottom > automationsBox.top
           ),
+          // The square framed key: a visible border, and a box that stands the
+          // height of the control beside it and no wider than it is tall.
+          borderStyle: getComputedStyle(trigger).borderStyle,
+          borderWidth: parseFloat(getComputedStyle(trigger).borderTopWidth),
+          radius: parseFloat(getComputedStyle(trigger).borderTopLeftRadius),
         }
       : { present: false },
     automations: automations
@@ -211,6 +225,20 @@ const SAMPLE = `(() => {
           analyzeTestId: analyze ? analyze.getAttribute("data-testid") : null,
         }
       : { present: false, box: null, centre: null, analyzeBox: null, analyzeTestId: null },
+    // The cluster's own order, as the DOM has it: the day's acts read left to
+    // right as "back to today, then commit the day, then write it on its own".
+    // A slot wrapping a key is read through to the key it holds, so the order is
+    // the order of the acts rather than of the boxes holding them.
+    actionOrder: actions
+      ? Array.from(actions.children).map((el) => {
+          const inner = el.matches("button") ? el : el.querySelector("button");
+          return (
+            (inner && inner.getAttribute("data-testid")) ??
+            el.getAttribute("data-testid") ??
+            el.className
+          );
+        })
+      : [],
     titleRow: box(titleRow),
     overlay: overlay
       ? {
