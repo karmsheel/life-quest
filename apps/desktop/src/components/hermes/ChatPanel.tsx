@@ -45,6 +45,7 @@ import {
   type DomainRecord,
   type SignalRecord,
 } from "@lifequest/vault-core/pure";
+import type { OnboardingConfirmOptions } from "@lifequest/vault-core";
 import { copyText } from "@/lib/clipboard";
 import { api } from "@/lib/ipc";
 import { pageLabelFor } from "@/lib/page-context";
@@ -58,6 +59,7 @@ import { summarizeToolRun, toolRowLabel } from "@/lib/tool-run";
 import { onComposerKeyDown } from "@/components/signal-chain/SignalChainFeed";
 import { useSignalImageUrls } from "@/components/signal-chain/useSignalImageUrls";
 import { ComposerModelControls } from "@/components/hermes/ComposerModelControls";
+import { OnboardingCards } from "@/components/hermes/OnboardingCards";
 import { ChatShortcutsPage } from "@/components/hermes/ChatShortcutsPage";
 import { useActiveDomain } from "@/components/shell/useActiveDomain";
 import { UpdateBadge } from "@/components/shell/UpdateBadge";
@@ -161,7 +163,7 @@ export function ChatPanel(props: ChatPanelProps) {
 function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const activeDomain = useActiveDomain();
   const domainName = activeDomain?.meta.name ?? "Life";
-  const { snapshot, reloadGeneration, lens } = useVault();
+  const { snapshot, reloadGeneration, lens, refresh } = useVault();
   const {
     requestedSessionId,
     requestedKickoff,
@@ -247,6 +249,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * nothing is worse than one that admits it failed.
    */
   const [copied, setCopied] = useState<{ id: string; ok: boolean } | null>(null);
+  /**
+   * One of the onboarding card's writes is in flight. It disables the card's
+   * buttons so a double click cannot start the interview twice or confirm a
+   * batch that is already being applied.
+   */
+  const [onboardingBusy, setOnboardingBusy] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setDraft = useCallback(
@@ -831,8 +839,19 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * this is the gesture's thin end.
    */
   async function sendMessage(text: string, overrideSessionId?: string) {
-    const target = overrideSessionId ?? sessionId;
+    // A first turn typed before the interview was opened starts the record
+    // silently: the welcome card is an offer, and it must not fight the message
+    // the operator was already writing.
+    const target =
+      overrideSessionId ?? sessionId ?? (await chat.newChat());
     if (!target) return;
+    if (snapshot?.onboarding?.status === "not_started") {
+      try {
+        await api().onboardingStart();
+      } catch {
+        // The turn still sends; the card waits for the next visit.
+      }
+    }
     await chat.sendMessage(target, text);
   }
 
@@ -1243,8 +1262,138 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     if (sending) return;
     const target = sessionId ?? (await chat.newChat());
     if (!target) return;
-    await chat.sendMessage(target, question.text);
+    await sendMessage(question.text, target);
   }
+
+  /**
+   * The onboarding cards' three writes, and the two interview kickoffs.
+   *
+   * The dock's own turns are the operator speaking: *Begin* starts the record
+   * and then sends "I'm ready to begin the interview." through the composer's
+   * send path, so the transcript shows the operator's own bubble and the
+   * companion answers it like any other turn. Nothing here fabricates a reply.
+   */
+  async function beginOnboarding(): Promise<void> {
+    if (onboardingBusy) return;
+    setOnboardingBusy(true);
+    chat.reportError(null);
+    try {
+      const result = await api().onboardingStart();
+      if (!result.ok) {
+        chat.reportError(result.error);
+        return;
+      }
+      await refresh();
+      await sendMessage("I'm ready to begin the interview.");
+    } catch (err) {
+      chat.reportError(
+        err instanceof Error ? err.message : "Could not begin the interview",
+      );
+    } finally {
+      setOnboardingBusy(false);
+    }
+  }
+
+  async function continueOnboarding(): Promise<void> {
+    if (onboardingBusy) return;
+    setOnboardingBusy(true);
+    chat.reportError(null);
+    try {
+      // Idempotent on the engine side: an open record is left exactly as it is.
+      const result = await api().onboardingStart();
+      if (!result.ok) {
+        chat.reportError(result.error);
+        return;
+      }
+      await refresh();
+      await sendMessage("Let's continue the interview.");
+    } catch (err) {
+      chat.reportError(
+        err instanceof Error ? err.message : "Could not continue the interview",
+      );
+    } finally {
+      setOnboardingBusy(false);
+    }
+  }
+
+  /**
+   * Apply the confirmation card's ticked lines as the interview's one batch,
+   * then re-read the snapshot: the unlocks would not otherwise reach the band,
+   * the switcher or this card until the next reload.
+   */
+  async function confirmOnboarding(
+    options: OnboardingConfirmOptions,
+  ): Promise<void> {
+    if (onboardingBusy) return;
+    setOnboardingBusy(true);
+    chat.reportError(null);
+    try {
+      const result = await api().onboardingConfirm(options);
+      if (!result.ok) {
+        chat.reportError(result.error);
+        return;
+      }
+      await refresh();
+    } catch (err) {
+      chat.reportError(
+        err instanceof Error ? err.message : "Could not apply the interview",
+      );
+    } finally {
+      setOnboardingBusy(false);
+    }
+  }
+
+  async function discardOnboarding(): Promise<void> {
+    if (onboardingBusy) return;
+    setOnboardingBusy(true);
+    chat.reportError(null);
+    try {
+      const result = await api().onboardingDiscard();
+      if (!result.ok) {
+        chat.reportError(result.error);
+        return;
+      }
+      // Back to the quiet Continue card: the record stays open.
+      await refresh();
+    } catch (err) {
+      chat.reportError(
+        err instanceof Error ? err.message : "Could not set the interview aside",
+      );
+    } finally {
+      setOnboardingBusy(false);
+    }
+  }
+
+  /**
+   * The companion writes the proposal through its own tool, not through an IPC
+   * call the dock made, so the vault's data revision is the only announcement
+   * that the confirmation card now exists. While the record is open and no card
+   * is up yet, a revision is worth one re-read. Once a card is showing, it is
+   * not: a refresh there would throw away the operator's ticked lines, and a
+   * revision proposal arrives after the chat turn whose own send already
+   * refreshes the snapshot.
+   */
+  useEffect(() => {
+    if (!open || view !== "thread") return;
+    const record = snapshot?.onboarding;
+    if (!record || record.status === "completed") return;
+    if (snapshot.onboardingProposal !== null) return;
+    let stopped = false;
+    let stop: (() => void) | undefined;
+    try {
+      stop = api().onVaultDataChanged(() => {
+        if (!stopped) void refresh();
+      });
+    } catch {
+      // No bridge (a harness page): the card still appears on the next turn or
+      // the next launch, which is the old behaviour.
+      stop = undefined;
+    }
+    return () => {
+      stopped = true;
+      stop?.();
+    };
+  }, [open, view, snapshot?.onboarding?.status, snapshot?.onboardingProposal, refresh]);
 
   /**
    * One signal: its stamp on the rail, the message beside it, and the
@@ -2019,6 +2168,24 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             className="chat-panel__footer"
             hidden={view === "shortcuts"}
           >
+            {/*
+              The interview, above the composer rather than in the transcript:
+              it is the app speaking, it must not scroll away with the
+              conversation, and the thread's `aria-live` must not announce it as
+              if the companion had said it. Thread surface only — the chain and
+              the shortcuts reference have no interview to open.
+            */}
+            {view === "thread" ? (
+              <OnboardingCards
+                status={snapshot?.onboarding?.status ?? "completed"}
+                proposal={snapshot?.onboardingProposal ?? null}
+                busy={onboardingBusy}
+                onBegin={() => void beginOnboarding()}
+                onContinue={() => void continueOnboarding()}
+                onConfirm={(options) => void confirmOnboarding(options)}
+                onDiscard={() => void discardOnboarding()}
+              />
+            ) : null}
             {view === "chain" ? (
               /*
                 The chain's composer: the same field, the same inline arrow, the

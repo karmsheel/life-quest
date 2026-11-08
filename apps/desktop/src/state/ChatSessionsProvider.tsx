@@ -1109,6 +1109,19 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
               : {}),
             ...(page ? { pageContext: page } : {}),
             ...(automationContext ? { automationContext } : {}),
+            // The interview's state rides every turn while it is unfinished:
+            // the companion offers it, continues it and revises the proposal
+            // from here, and knows when a card is already in front of the
+            // operator. Absent once complete, so no later turn re-offers a
+            // finished interview.
+            onboarding:
+              snapshot?.onboarding &&
+              snapshot.onboarding.status !== "completed"
+                ? {
+                    status: snapshot.onboarding.status,
+                    proposalPending: snapshot.onboardingProposal !== null,
+                  }
+                : null,
             aboutMe: snapshot?.map?.aboutMe ?? "",
             locked: false,
             vaultOpen: Boolean(snapshot),
