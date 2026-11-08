@@ -952,6 +952,80 @@ export type GoalsApplyContext = {
   liveDomainSlugs: readonly string[];
 };
 
+// ---------------------------------------------------------------------------
+// The onboarding interview (P1, 2026-11-08). The record is the vault's memory
+// that the first-run interview happened; the proposal is the companion's single
+// confirmation card, written once and applied only when the operator confirms.
+// Both live under `.lifequest/` and both are read on every `openVault`, because
+// the dock's cards are gated on them.
+// ---------------------------------------------------------------------------
+
+export const ONBOARDING_STATUSES = ["not_started", "in_progress", "completed"] as const;
+export type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number];
+
+/**
+ * The onboarding interview's record, `.lifequest/onboarding.json`.
+ *
+ * A vault with no file reads as `completed`: that is how every vault written
+ * before the interview existed avoids being shown a first-run card. A new vault
+ * gets the file at creation with `not_started`. Reading never creates the file.
+ */
+export type OnboardingRecord = {
+  status: OnboardingStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  /** The seeded areas the interview unlocked, in the order they were confirmed. */
+  unlockedAreas: string[];
+};
+
+/** One seeded area the interview heard, with the four doctrine drafts. */
+export type OnboardingAreaProposal = {
+  slug: string; // seeded, currently-locked area slug, one of the five
+  name: string; // derived from AREA_SEEDS, not trusted from the model
+  doctrine: { kind: DocumentKind; bodyMarkdown: string }[];
+};
+
+/** The one table the interview's clearest ask produced, if it produced one. */
+export type OnboardingTableProposal = {
+  areaSlug: string; // one of this proposal's area slugs
+  name: string;
+  columns: { name: string; type: DatabaseColumnType; options?: string[] }[];
+};
+
+/** The interview's one note — the first "life picture", written to the base area. */
+export type OnboardingNoteProposal = { title: string; bodyMarkdown: string };
+
+/**
+ * The pending confirmation card as stored, `.lifequest/onboarding-proposal.json`.
+ *
+ * The companion writes it through `propose_onboarding_unlock`; the app renders it
+ * as one card; nothing it contains is written to the vault until the operator
+ * confirms. A later write replaces it (the operator asked for a change).
+ */
+export type OnboardingProposal = {
+  areas: OnboardingAreaProposal[]; // 1..3
+  table: OnboardingTableProposal | null;
+  note: OnboardingNoteProposal; // required: the interview's one note
+  createdAt: string;
+};
+
+/** What the confirmation card's unticked lines mean to the apply path. */
+export type OnboardingConfirmOptions = {
+  /** Doctrine kinds to leave unwritten (the card's unticked lines). */
+  skipDoctrineKinds?: DocumentKind[];
+  /** Include the proposal's table (default true). */
+  includeTable?: boolean;
+  /** Include the interview note (default true). */
+  includeNote?: boolean;
+};
+
+/** What one confirmed batch actually did. */
+export type OnboardingConfirmResult = {
+  areas: string[]; // slugs unlocked
+  table: boolean; // created or not
+  note: boolean; // written or not
+};
+
 export type VaultSnapshot = {
   rootPath: string;
   lifequest: LifequestJson;
@@ -967,6 +1041,10 @@ export type VaultSnapshot = {
   reviews: ReviewIndexEntry[];
   planning: PlanningIndexEntry[];
   weeklyFileCount: number;
+  /** The onboarding record; a vault with no file reads as `completed`. */
+  onboarding: OnboardingRecord;
+  /** The pending confirmation, or null. Drives the dock card. */
+  onboardingProposal: OnboardingProposal | null;
 };
 
 export const DATABASE_COLUMN_TYPES = [
