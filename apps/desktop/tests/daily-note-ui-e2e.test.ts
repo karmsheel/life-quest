@@ -52,6 +52,12 @@ const SPLIT_LEFT_SHOT = path.join(
 /** The day's page with its own act under the box — the artifact for the report
  *  that this control was black-on-black and sat up with the pager. */
 const ANALYZE_SHOT = path.join(desktopRoot, "e2e/artifacts/daily-note-analyze.png");
+/** A day that is not today: the only state the shortcut back to today is on
+ *  screen in, so the only picture that shows all three of the day's acts. */
+const PAST_DAY_SHOT = path.join(
+  desktopRoot,
+  "e2e/artifacts/daily-note-past-day.png",
+);
 
 function devServerUp(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -322,9 +328,15 @@ describe("daily note ui e2e", () => {
     fs.rmSync(SPLIT_RIGHT_SHOT, { force: true });
     fs.rmSync(SPLIT_LEFT_SHOT, { force: true });
     fs.rmSync(ANALYZE_SHOT, { force: true });
+    fs.rmSync(PAST_DAY_SHOT, { force: true });
     const exitCode = await runDriver();
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
     assert.equal(fs.existsSync(ANALYZE_SHOT), true, "driver captured no picture of the day's act");
+    assert.equal(
+      fs.existsSync(PAST_DAY_SHOT),
+      true,
+      "driver captured no picture of a day that is not today",
+    );
 
     const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
     assert.deepEqual(report.failures, []);

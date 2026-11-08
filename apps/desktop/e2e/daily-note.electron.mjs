@@ -1392,6 +1392,15 @@ async function main() {
   );
   const previous = await sample(win);
   checks.previousDay = previous;
+  // The day that is not today is the only state the shortcut back to today is
+  // on screen in, so it gets its own picture: a review of the day's acts that
+  // only ever saw today would never see the three-button row.
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  const pastDayShot = await win.webContents.capturePage();
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(path.join(artifactsDir, "daily-note-past-day.png"), pastDayShot.toPNG());
   if (previous.dayDate !== yesterday) {
     failure(`Prev day landed on ${JSON.stringify(previous.dayDate)}, not ${yesterday}`);
   }
