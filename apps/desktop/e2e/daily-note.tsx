@@ -62,6 +62,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import type { DailyNote, DailyNoteIndexEntry, VaultSnapshot } from "@lifequest/vault-core";
+import type { HermesSession } from "@/vite-env";
 import { DEFAULT_ANALYZE_AUTOMATION } from "@lifequest/vault-core/pure";
 import { AppShell } from "@/components/shell/AppShell";
 import { WindowTitleBar } from "@/components/shell/WindowTitleBar";
@@ -87,6 +88,22 @@ const fail = (error: string): Result<never> => ({ ok: false, error });
 
 type WriteCall = { date: string; body: string; shown: string | null };
 
+/**
+ * One turn the page handed the dock: the first turn of an automation's new
+ * chat. Recorded so a rig can prove the act left focus mode *and* that the
+ * agent was actually asked, rather than only that a chat pane appeared.
+ */
+type ChatCall = {
+  sessionId: string;
+  input: string;
+  instructionsContext: {
+    pageContext?: { route: string; label: string; body: string } | null;
+    automationContext?: string;
+    aboutMe: string;
+    [key: string]: unknown;
+  };
+};
+
 type HarnessWindow = Window & {
   dailyNoteReady?: boolean;
   dailyNoteSkin?: string;
@@ -98,6 +115,8 @@ type HarnessWindow = Window & {
   dailyNoteUnexpectedCalls?: string[];
   dailyNoteWrites?: WriteCall[];
   dailyNoteGets?: string[];
+  /** The turns the dock sent, in order, so an act's prompt can be read back. */
+  dailyNoteChatCalls?: ChatCall[];
   /** When true, the next write is refused, to prove a draft survives a failure. */
   dailyNoteFailWrite?: boolean;
   /** When true, the next write rejects the way a dropped bridge does. */
@@ -126,6 +145,7 @@ harness.dailyNoteCalls = [];
 harness.dailyNoteUnexpectedCalls = [];
 harness.dailyNoteWrites = [];
 harness.dailyNoteGets = [];
+harness.dailyNoteChatCalls = [];
 harness.dailyNoteFailWrite = false;
 harness.dailyNoteThrowWrite = false;
 harness.dailyNoteUnreadable = ["2026-02-31"];
@@ -227,12 +247,36 @@ const SNAPSHOT: VaultSnapshot = {
   weeklyFileCount: 0,
 };
 
-const SESSION = {
+const SESSION: HermesSession = {
   id: "harness-session",
   title: "Harness",
   preview: "Daily note rig",
   lastActive: 1_700_000_000,
+  pinned: false,
+  archived: false,
+  revision: 0,
 };
+
+/**
+ * The chats the dock lists. One is on screen from the first paint — that is what
+ * the page's own rig measures around — and an automation's act adds its own, so
+ * the dock can be read back on the chat the act opened rather than on the one
+ * that happened to be there.
+ */
+const sessions: HermesSession[] = [SESSION];
+
+/**
+ * What the gateway holds per chat. The real companion writes the user's turn
+ * before answering, and the dock re-reads a chat when it lands back on it; a
+ * harness that always answered an empty transcript would wipe the prompt bubble
+ * the moment the request cleared, which is not what the shipped app does.
+ */
+const storedMessages = new Map<
+  string,
+  { role: "user" | "assistant"; content: string; at?: number }[]
+>();
+
+let chatCounter = 0;
 
 /** Every bridge method the page is allowed to reach. Anything else is named. */
 const bridge: Record<string, unknown> = {
@@ -241,9 +285,34 @@ const bridge: Record<string, unknown> = {
   onVaultFileChanged: () => () => {},
   domainGetActive: () => ok(null),
   domainSetActive: () => ok(null),
-  companionSessionsList: () => ok([SESSION]),
-  companionSessionCreate: () => ok(SESSION),
-  companionSessionMessages: () => ok([]),
+  // Every read answers a copy, as the real IPC hop does: handing the renderer
+  // this fixture's own rows would let a later write here teach it about a chat
+  // the bridge never told it about.
+  companionSessionsList: () => ok(sessions.map((session) => ({ ...session }))),
+  companionSessionCreate: (title: string) => {
+    chatCounter += 1;
+    const session: HermesSession = {
+      id: `harness-chat-${chatCounter}`,
+      title,
+      preview: null,
+      lastActive: Date.now() / 1000,
+      pinned: false,
+      archived: false,
+      revision: 0,
+    };
+    sessions.unshift(session);
+    storedMessages.set(session.id, []);
+    return ok({ ...session });
+  },
+  companionSessionMessages: (id: string) =>
+    ok((storedMessages.get(id) ?? []).map((message) => ({ ...message }))),
+  companionChatStream: (payload: ChatCall) => {
+    harness.dailyNoteChatCalls?.push(payload);
+    const messages = storedMessages.get(payload.sessionId) ?? [];
+    messages.push({ role: "user", content: payload.input, at: Date.now() });
+    storedMessages.set(payload.sessionId, messages);
+    return ok(true);
+  },
   // The shell's own dependencies: the dock reads the open board's lock, the
   // composer asks which models the profile offers, and the rail reads the
   // Decisions inbox for its pending badge. None is this rig's subject; all are

@@ -30,6 +30,8 @@ const electron = require("electron") as string;
 const DEV_PORT = 5173;
 const REPORT = path.join(desktopRoot, "e2e/artifacts/daily-note-focus.json");
 const SHOT = path.join(desktopRoot, "e2e/artifacts/daily-note-focus.png");
+/** The page and the act's chat, after the sheet was asked to leave. */
+const ANALYZE_SHOT = path.join(desktopRoot, "e2e/artifacts/daily-note-focus-analyze.png");
 /** The page of paper's own measure: 56rem at the app's 16px root. */
 const PANEL_MEASURE = 56 * 16;
 
@@ -153,6 +155,22 @@ type Sample = {
   } | null;
   focusInput: { value: string; focused: boolean; ariaLabel: string | null } | null;
   noteLiveInsideOverlay: number;
+  /** The dock behind the sheet: whether the act's chat is really on screen. */
+  chat: {
+    mounted: boolean;
+    open: boolean;
+    visible: boolean;
+    surface: string | null;
+    title: string | null;
+    userMessages: string[];
+  };
+  /** The turns the page handed the dock, so the act's prompt is checkable. */
+  chatCalls: {
+    sessionId: string;
+    input: string;
+    automationContext: string | null;
+    pageRoute: string | null;
+  }[];
   writes: number;
   unexpectedCalls: string[];
 };
@@ -208,7 +226,13 @@ type Report = {
       whileOpen: boolean;
     } | null;
     screenshotWhileOpen?: boolean;
-    closeAfterTypingSent?: boolean;
+    analyzeClicked?: boolean;
+    analyzeShot?: {
+      file: string;
+      bytes: number;
+      width: number;
+      height: number;
+    } | null;
   };
   screenshots: string[];
   consoleErrors: string[];
@@ -276,6 +300,7 @@ describe("daily note focus mode", () => {
 
     fs.rmSync(REPORT, { force: true });
     fs.rmSync(SHOT, { force: true });
+    fs.rmSync(ANALYZE_SHOT, { force: true });
     const exitCode = await runDriver();
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
 
@@ -301,6 +326,7 @@ describe("daily note focus mode", () => {
       typedModal,
       saving,
       savedByFocus,
+      analyzeFromFocus,
       pageAfterFocus,
     } = report.states;
 
@@ -701,7 +727,74 @@ describe("daily note focus mode", () => {
     assert.equal(report.steps.screenshotWhileOpen, true, "the picture was not captured with the sheet open");
     assert.equal(savedByFocus.overlay !== null, true, "the sheet closed itself while the save landed");
 
-    // ── 5. closing hands the typed draft back to the page editor ─────────────
+    // ── 5. the day's act, pressed in the sheet: focus mode leaves and the
+    //       operator is handed the chat it opens, in the dock behind ──────────
+    // The operator's ask in one sentence: press Analyze note on the page of
+    // paper and the sheet goes, so the new chat is visible while the agent
+    // starts on the note. Each half is measured: the sheet's unmount, and a
+    // dock that is open, wide and carrying the act's own turn.
+    assert.equal(report.steps.analyzeClicked, true, "the sheet's day-act could not be pressed");
+    assert.equal(analyzeFromFocus.overlay, null, "pressing the day's act left focus mode up");
+    assert.notEqual(
+      analyzeFromFocus.bodyOverflowStyle,
+      "hidden",
+      "the page stayed locked after the act left the sheet",
+    );
+    assert.equal(analyzeFromFocus.pageMounted, true, "leaving the sheet lost the page behind");
+    assert.equal(analyzeFromFocus.pageEditorMounted, true, "the act's exit lost the page's editor");
+    assert.equal(analyzeFromFocus.chat.mounted, true, "the dock left the DOM");
+    assert.equal(analyzeFromFocus.chat.open, true, "the dock did not open for the act's chat");
+    assert.equal(
+      analyzeFromFocus.chat.visible,
+      true,
+      "the dock is collapsed, so the act's chat is not on screen",
+    );
+    assert.equal(
+      analyzeFromFocus.chat.surface,
+      "thread",
+      `the dock is on ${JSON.stringify(analyzeFromFocus.chat.surface)}, not its thread`,
+    );
+    assert.match(
+      String(analyzeFromFocus.chat.title ?? ""),
+      /^Analyze note · /,
+      `the act's chat is titled ${JSON.stringify(analyzeFromFocus.chat.title)}`,
+    );
+    assert.equal(
+      analyzeFromFocus.chat.userMessages.length,
+      1,
+      `the dock shows ${analyzeFromFocus.chat.userMessages.length} turns, expected the act's one`,
+    );
+    assert.match(
+      analyzeFromFocus.chat.userMessages[0] ?? "",
+      /Analyze the Daily Journal for/,
+      `the turn on screen is not the automation's prompt: ${JSON.stringify(analyzeFromFocus.chat.userMessages[0])}`,
+    );
+
+    // The turn actually reached the agent, on the day the page was showing, with
+    // the note the sheet wrote as its hidden context — not a chat pane that
+    // opened on the previous conversation.
+    const turn = analyzeFromFocus.chatCalls[0];
+    assert.ok(turn, "the act opened a chat but sent no turn");
+    if (turn) {
+      assert.match(turn.input, /Analyze the Daily Journal for/);
+      assert.equal(turn.pageRoute, "/notes", `the turn's page context is ${JSON.stringify(turn.pageRoute)}`);
+      assert.match(
+        String(turn.automationContext ?? ""),
+        new RegExp(`--- DAILY JOURNAL \\(${today}\\) ---`),
+        "the turn's context does not fence the day's own journal",
+      );
+      assert.ok(
+        String(turn.automationContext ?? "").includes(sentence),
+        "the turn's context does not carry the sentence the sheet wrote",
+      );
+    }
+    assert.equal(report.steps.analyzeShot?.file, "daily-note-focus-analyze.png");
+    assert.ok(
+      (report.steps.analyzeShot?.bytes ?? 0) > 10_000,
+      `the act's picture is ${report.steps.analyzeShot?.bytes} bytes`,
+    );
+
+    // ── 6. the page the sheet was covering is back, draft and all ────────────
     assert.equal(pageAfterFocus.overlay, null, "the final close left the sheet mounted");
     assert.equal(pageAfterFocus.pageEditorMounted, true, "the page's editor is gone after closing");
     assert.match(
@@ -711,11 +804,17 @@ describe("daily note focus mode", () => {
     );
     assert.notEqual(pageAfterFocus.bodyOverflowStyle, "hidden", "the page stayed locked after closing");
 
-    // ── 6. nothing unmodelled, nothing on fire, and the picture exists ────────
+    // ── 7. nothing unmodelled, nothing on fire, and the pictures exist ────────
     assert.deepEqual(report.unexpectedCalls, [], "the page reached unmodelled bridge methods");
     assert.deepEqual(report.consoleErrors, [], "the run logged a console error");
 
     assert.ok(report.screenshots.includes("daily-note-focus.png"), "the run recorded no screenshot");
+    assert.ok(
+      report.screenshots.includes("daily-note-focus-analyze.png"),
+      "the run recorded no picture of the page the act handed back",
+    );
+    assert.equal(fs.existsSync(ANALYZE_SHOT), true, "driver captured no act picture");
+    assert.ok(fs.statSync(ANALYZE_SHOT).size > 10_000, "the act picture is empty");
     assert.equal(fs.existsSync(SHOT), true, "driver captured no screenshot");
     const png = fs.readFileSync(SHOT);
     assert.ok(png.length > 10_000, `the screenshot is only ${png.length} bytes`);
