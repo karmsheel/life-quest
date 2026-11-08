@@ -11,6 +11,7 @@ import {
   type ReviewPrepopulateResult,
   type ReviewRecord,
   type ReviewSkill,
+  unlockedAreas,
 } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { asHeld, sameNote } from "@/lib/note-body";
@@ -22,6 +23,8 @@ import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
 import { MarkdownView } from "@/components/documents/MarkdownView";
 import { DailyNotesPanel } from "@/components/reviews/DailyNotesPanel";
 import { ReviewPreview } from "@/components/reviews/ReviewPreview";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
+import type { EyebrowPage } from "@/components/shell/wing-eyebrow";
 
 const VALID_CADENCES: ReviewCadence[] = [
   "daily",
@@ -544,6 +547,15 @@ export default function ReviewPage() {
       : snapshot?.domains.find((d) => d.slug === activeScope)?.meta.name ??
         null;
 
+  /**
+   * The eyebrow names the cadence's own page: "Daily" for the daily review,
+   * "Weekly" for the weekly one, and so on. The cadence is
+   * already one of the review page names, so the label is its capitalised
+   * form.
+   */
+  const cadenceLabel =
+    cadence.charAt(0).toUpperCase() + cadence.slice(1);
+
   if (!cadenceParam) {
     return <Navigate to="/review/weekly" replace />;
   }
@@ -552,9 +564,9 @@ export default function ReviewPage() {
     return <p className="muted">No vault open.</p>;
   }
 
-  const liveDomains = snapshot.domains
-    .filter((d) => !d.meta.archivedAt)
-    .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder);
+  // The overall review covers every area the operator can see. The base `life`
+  // area is the whole-vault container, not a scoped review, so it is not a row.
+  const liveDomains = unlockedAreas(snapshot.domains);
 
   const locked = record?.locked === true;
   const dirty = !sameNote(draft, savedBody);
@@ -573,6 +585,7 @@ export default function ReviewPage() {
   return (
     <div className="review-page">
       <header className="review-page__header">
+        <WingEyebrow page={cadenceLabel as EyebrowPage} />
         <h1 className="review-page__title">
           {cadence.charAt(0).toUpperCase() + cadence.slice(1)} review
         </h1>

@@ -28,7 +28,13 @@ const PICKER_SHOT = path.join(desktopRoot, "e2e/artifacts/pi-companion-picker.pn
 
 type Report = {
   ok: boolean;
-  configured: { settings: string; switched: string; openedOk: boolean };
+  configured: {
+    settings: string;
+    switched: string;
+    openedOk: boolean;
+    /** The rig unlocks the two seeded areas it scopes agents in. */
+    unlocked: boolean;
+  };
   mounted: boolean;
   turn: { ok: boolean; sessionId: string | null; eventTypes: string[] };
   deltas: string;
@@ -79,6 +85,11 @@ describe("built-in companion (Pi)", () => {
     assert.equal(report.configured.settings, "ready");
     assert.equal(report.configured.switched, "ready");
     assert.equal(report.configured.openedOk, true);
+    assert.equal(
+      report.configured.unlocked,
+      true,
+      "the rig could not unlock the seeded Health and Finance areas",
+    );
     assert.equal(report.mounted, true, "the dock never mounted");
     assert.equal(report.turn.ok, true);
     assert.ok(

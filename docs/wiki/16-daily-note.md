@@ -50,6 +50,9 @@ so a second note for a day cannot exist.
    editor — the same note, in the same draft, without the pager, the automation or the
    earlier-notes journal around it. The day's own acts sit at the foot of the page, and
    the autosave band keeps its place under them whether or not it has something to say.
+   Choosing an act there — **Analyze note**, or another manual job hosted on the day —
+   closes the sheet and hands the page back, so the new chat it opens in the dock is on
+   screen while the agent starts on the note.
    Close it with the cross in the top-right corner, a click outside the sheet, or
    **Escape**; the day is written on the way out, and the page is exactly where you left it.
 

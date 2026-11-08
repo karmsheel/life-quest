@@ -120,7 +120,7 @@ const SAMPLE = `(() => {
     const text = (el) => (el && el.textContent ? el.textContent.trim() : null);
     return {
       hostWidth: host.clientWidth,
-      eyebrow: g(q(rootSel + "__eyebrow"), ["fontSize", "fontWeight", "letterSpacing", "textTransform", "color"]),
+      eyebrow: g(q(rootSel + " .wing-eyebrow") || q(rootSel + "__eyebrow"), ["fontSize", "fontWeight", "letterSpacing", "textTransform", "color"]),
       title: g(q(rootSel + "__title"), ["fontSize", "fontWeight", "letterSpacing", "lineHeight"]),
       lead: g(q(rootSel + "__lead"), ["fontSize", "lineHeight", "color", "maxWidth"]),
       panel: g(panel, ["borderTopWidth", "borderTopStyle", "borderTopColor", "backgroundColor", "boxShadow", "paddingTop", "paddingLeft", "paddingBottom", "paddingRight", "borderTopLeftRadius"]),
@@ -374,7 +374,7 @@ async function main() {
 
   // ── 5. the header says what the page is ───────────────────────────────────
   checks.eyebrowText = await win.webContents.executeJavaScript(
-    'document.querySelector("#pages-sample .pages-studio__eyebrow").textContent.trim()',
+    'document.querySelector("#pages-sample .wing-eyebrow").textContent.trim()',
   );
   checks.createPanelHead = await win.webContents.executeJavaScript(
     'document.querySelector("#pages-domains-heading").textContent.trim()',
@@ -477,15 +477,15 @@ async function main() {
     win,
     click(".pages-studio__submit"),
     "the domain-less refusal",
-    '/Select a domain to create a page in/.test((document.querySelector("#pages-sample .pages-studio__banner--error") || {}).textContent || "")',
+    '/Select an area to create a page in/.test((document.querySelector("#pages-sample .pages-studio__banner--error") || {}).textContent || "")',
   );
   const refused = await sample(win);
   const callsAfterRefusal = await win.webContents.executeJavaScript(
     "window.pagesStudioCalls.filter((c) => c.startsWith('pageCreate')).length",
   );
   checks.refusal = { text: refused.pages.errorText, calls: callsAfterRefusal - callsBeforeRefusal };
-  if (!/Select a domain to create a page in/.test(refused.pages.errorText ?? "")) {
-    failure(`submitting without a domain said "${refused.pages.errorText}"`);
+  if (!/Select an area to create a page in/.test(refused.pages.errorText ?? "")) {
+    failure(`submitting without an area said "${refused.pages.errorText}"`);
   }
   if (checks.refusal.calls !== 0) {
     failure(`submitting without a domain still called pageCreate ${checks.refusal.calls} time(s)`);

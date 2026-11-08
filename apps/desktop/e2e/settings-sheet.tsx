@@ -49,7 +49,7 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { SettingsMenu } from "@/components/settings/SettingsMenu";
+import { ThemeQuickMenu } from "@/components/shell/ThemeQuickMenu";
 import { useSettingsBackground } from "@/components/settings/useSettingsBackground";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -153,7 +153,13 @@ function Harness() {
           Ask a question
         </button>
         <div className="rig-chrome__spacer" />
-        <SettingsMenu placement="bottom-end" />
+        {/*
+          The quick theme menu hangs off the day/night control now: the gear in
+          the titlebar opens the settings sheet and nothing else. The rig mounts
+          the day/night control so the starred-theme list still has somewhere to
+          be read from.
+        */}
+        <ThemeQuickMenu />
       </header>
       <div className="app-root__body">
         <Routes location={background}>
@@ -164,7 +170,7 @@ function Harness() {
       </div>
       <ConfirmDialog
         open={asking}
-        title="Delete domain"
+        title="Delete area"
         message="Career (old) leaves the switcher for good. This cannot be undone."
         confirmLabel="Delete"
         destructive

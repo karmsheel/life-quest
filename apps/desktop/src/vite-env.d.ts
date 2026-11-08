@@ -327,6 +327,8 @@ type LifequestApi = {
   ) => Promise<Result<DomainRecord>>;
   domainArchive: (slug: string) => Promise<Result<DomainRecord>>;
   domainUnarchive: (slug: string) => Promise<Result<DomainRecord>>;
+  /** Unlock a seeded area. A flag flip: nothing is created or moved. */
+  domainUnlock: (slug: string) => Promise<Result<DomainRecord>>;
   domainDelete: (slug: string) => Promise<Result<{ slug: string }>>;
   domainSetActive: (slug: string | null) => Promise<Result<string | null>>;
   domainGetActive: () => Promise<string | null>;

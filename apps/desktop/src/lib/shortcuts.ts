@@ -78,7 +78,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
     group: "wings",
     label: "Go to Home",
     description:
-      "Jump to the Home wing's last page. Home holds the Dashboard, Data, Pages, Documents and Personnel.",
+      "Jump to the Home wing's last page. Home holds the Dashboard, Data, Pages, Documents, Agents and Images.",
     defaultBinding: "Mod+1",
   },
   {

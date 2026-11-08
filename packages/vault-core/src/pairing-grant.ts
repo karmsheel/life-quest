@@ -33,6 +33,7 @@ import type {
   SignalRecord,
   Task,
 } from "./types.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
 import type { MapStoreState, ResolvedWeek } from "./map/public.ts";
 import type { ConnectedAgent } from "./connected-agents.ts";
 
@@ -323,7 +324,7 @@ export async function effectiveGrant(
   const listed = await listDomains(rootPath);
   const live = new Set(
     listed.ok
-      ? listed.value.filter((d) => !d.meta.archivedAt).map((d) => d.slug)
+      ? listed.value.filter((d) => isLiveAreaMeta(d.meta)).map((d) => d.slug)
       : [],
   );
   return {

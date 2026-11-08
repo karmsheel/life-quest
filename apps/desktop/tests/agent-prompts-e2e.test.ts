@@ -226,9 +226,9 @@ describe("companion prompts e2e", () => {
     assert.equal(checks.instructionsHasCardSkill, true, "the instructions do not teach the one-call card path");
     assert.equal(checks.instructionsHasEditPath, true, "the instructions do not teach how to change an existing card");
     assert.equal(
-      text.includes("Active domain: Financial (financial)"),
+      text.includes("Active area: Financial (financial)"),
       true,
-      "the instructions lost the active domain line",
+      "the instructions lost the active area line",
     );
 
     // ── 6b. the database write split, and the confirmation it depends on ──
@@ -377,14 +377,14 @@ describe("companion prompts e2e", () => {
       // The shipped one-card wording, character for character: the old turn is
       // the turn it always was when one card is in front of the chat.
       opening: oneCard.includes(
-        'The operator has put ONE dashboard card in front of this chat as context: the card titled "Weekly expenses" on the Overview dashboard (pinId "view:financial:v-weekly", viewId "v-weekly", domainSlug "financial").',
+        'The operator has put ONE dashboard card in front of this chat as context: the card titled "Weekly expenses" on the Life dashboard (pinId "view:financial:v-weekly", viewId "v-weekly", domainSlug "financial").',
       ),
       names: oneCard.includes('the card titled "Weekly expenses"'),
       ids:
         oneCard.includes('pinId "view:financial:v-weekly"') &&
         oneCard.includes('viewId "v-weekly"') &&
         oneCard.includes('domainSlug "financial"'),
-      board: oneCard.includes("the Overview dashboard"),
+      board: oneCard.includes("the Life dashboard"),
       means: oneCard.includes(
         'When the operator says "this card", "it", or "this block", they mean that one — do not ask which card they mean.',
       ),
@@ -413,7 +413,7 @@ describe("companion prompts e2e", () => {
       lines: twoLines,
       oneLinePerCard: twoLines.length === 2,
       first:
-        twoLines[0]?.includes('the card titled "Weekly expenses" on the Overview dashboard') === true &&
+        twoLines[0]?.includes('the card titled "Weekly expenses" on the Life dashboard') === true &&
         twoLines[0]?.includes('viewId "v-weekly"') === true &&
         twoLines[0]?.includes('domainSlug "financial"') === true &&
         /get_view/.test(twoLines[0] ?? "") &&

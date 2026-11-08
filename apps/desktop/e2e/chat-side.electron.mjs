@@ -611,7 +611,7 @@ function checkControls(label, state, side) {
     `${label}: the bar carries its five actions in order`,
     same(barLabels, [
       "New chat",
-      "Life-Chain",
+      "Quick Notes",
       "Keyboard shortcuts",
       expectedSwitchLabel,
       "Collapse chat",

@@ -299,6 +299,35 @@ async function main() {
       return true;
     })()`);
 
+  /**
+   * Real pointer motion onto the day/night control, so the quick menu opens the
+   * way it opens for an operator: the control answers a pointer, not a
+   * scripted click, and `el.click()` would never reach its `pointerenter`.
+   */
+  const hoverQuickMenu = async () => {
+    const point = await run(`(() => {
+      const el = document.querySelector(".theme-mode-toggle");
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+    if (!point) throw new Error("no day/night control to hover");
+    win.webContents.sendInputEvent({
+      type: "mouseMove",
+      x: Math.round(point.x),
+      y: Math.round(point.y),
+    });
+    // The control waits out a short rest before the menu appears, so the
+    // pointer has to stay put for a moment before the state is read.
+    await new Promise((resolve) => setTimeout(resolve, 260));
+  };
+
+  /** Take the pointer off the control and the menu, so the menu closes. */
+  const parkPointer = async () => {
+    win.webContents.sendInputEvent({ type: "mouseMove", x: 2, y: 2 });
+    await new Promise((resolve) => setTimeout(resolve, 320));
+  };
+
   const clickNav = (label) =>
     run(`(() => {
       const el = Array.from(document.querySelectorAll(".settings-nav-item")).find(
@@ -546,13 +575,13 @@ async function main() {
     const crossClick = await click(".settings-overlay__close");
     record("closedByCross", await settle());
     step("crossClick", crossClick);
-    await click(".settings-menu__trigger");
+    await parkPointer();
+    await hoverQuickMenu();
     record("menuCurated", await settle());
     await shot("quick-menu-curated");
 
     // 13 — unstar the last one: the menu has nothing to offer, and says so.
-    await pressEscape();
-    await settle();
+    await parkPointer();
     await click("[data-rig-open-settings]");
     await settle();
     const unstarredLast = await clickStar(STARRED_SKIN);
@@ -560,14 +589,14 @@ async function main() {
     step("unstarredLast", unstarredLast);
     await click(".settings-overlay__close");
     await settle();
-    await click(".settings-menu__trigger");
+    await parkPointer();
+    await hoverQuickMenu();
     record("menuEmpty", await settle());
     await shot("quick-menu-empty");
 
     // 14 — star it again, then install a theme from a file. Installing stars it,
     //      so the new theme is reachable from the quick menu immediately.
-    await pressEscape();
-    await settle();
+    await parkPointer();
     await click("[data-rig-open-settings]");
     await settle();
     const reStarred = await clickStar(STARRED_SKIN);
@@ -598,12 +627,14 @@ async function main() {
     // 17 — the curated list is storage, not session state.
     await click(".settings-overlay__close");
     await settle();
-    await click(".settings-menu__trigger");
+    await parkPointer();
+    await hoverQuickMenu();
     record("menuAfterInstall", await settle());
     await win.webContents.reload();
     await waitReady();
     await settle();
-    await click(".settings-menu__trigger");
+    await parkPointer();
+    await hoverQuickMenu();
     record("menuAfterReload", await settle());
     await shot("quick-menu-after-reload");
 

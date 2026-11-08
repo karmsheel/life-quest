@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { AgentHire, ConnectedAgent } from "@lifequest/vault-core";
-import { lensSlug, recordVisible } from "@lifequest/vault-core/pure";
+import {
+  lensSlug,
+  recordVisible,
+  unlockedAreas,
+} from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { useVault } from "@/state/VaultProvider";
 
 type ScannedAgent = {
@@ -25,8 +30,9 @@ export function PersonnelStudio() {
   const { snapshot, refresh } = useVault();
   const lens = useDomainLens();
   const domains = snapshot?.domains ?? [];
-  // Assignment takes a live domain only; an archived one is not offered.
-  const liveDomains = domains.filter((d) => !d.meta.archivedAt);
+  // A caller is scoped to areas; the base `life` container is not one of them,
+  // and locked areas are invisible until unlocked.
+  const liveDomains = unlockedAreas(domains);
 
   const [hires, setHires] = useState<AgentHire[]>([]);
   const [scanned, setScanned] = useState<ScannedAgent[]>([]);
@@ -285,7 +291,8 @@ export function PersonnelStudio() {
   return (
     <div className="personnel-studio">
       <header className="personnel-studio__header">
-        <h1 className="stub-page__title">Personnel</h1>
+        <WingEyebrow page="Agents" />
+        <h1 className="stub-page__title">Agents</h1>
         <p className="stub-page__desc muted">
           The companion, the agents connected over MCP, and the Hermes agents you
           have hired.
@@ -442,9 +449,9 @@ export function PersonnelStudio() {
                   ) : (
                     <>
                       <fieldset className="personnel-studio__domains">
-                        <legend className="muted">Domains</legend>
+                        <legend className="muted">Areas</legend>
                         {liveDomains.length === 0 ? (
-                          <p className="muted">No live domains.</p>
+                          <p className="muted">No live areas.</p>
                         ) : (
                           liveDomains.map((d) => (
                             <label

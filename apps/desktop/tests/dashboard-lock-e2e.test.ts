@@ -17,6 +17,7 @@ import {
   resolveDecision,
   runSavedView,
   setPinBoardLocked,
+  unlockDomain,
   upsertRow,
 } from "@lifequest/vault-core";
 
@@ -79,6 +80,12 @@ describe("dashboard page lock e2e", () => {
     // ── a real vault, one row per week for five weeks ───────────────────────
     const created = await createVault(vaultRoot, "E2E");
     assert.equal(created.ok, true, `createVault failed: ${created.ok ? "" : created.error}`);
+    const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+    assert.equal(
+      unlockFinancial.ok,
+      true,
+      `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+    );
 
     const db = await createDatabase(vaultRoot, "financial", { name: "Transactions" });
     assert.equal(db.ok, true, `createDatabase failed: ${db.ok ? "" : db.error}`);

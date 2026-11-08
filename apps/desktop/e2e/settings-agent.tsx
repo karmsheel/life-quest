@@ -78,7 +78,7 @@ const SEEDED = {
   },
   instructions: {
     text:
-      "You are chatting inside the LifeQuest app.\nActive domain: Financial (financial)\nAbout me: I like tea\n" +
+      "You are chatting inside the LifeQuest app.\nActive area: Financial (financial)\nAbout me: I like tea\n" +
       'The operator is looking at the financial dashboard (domainSlug: "financial") right now — when they say "the Dashboard", they mean that board.\n' +
       "That dashboard is UNLOCKED: your view and pin changes land at once, so do not say a decision is waiting for them.\n",
     context: {

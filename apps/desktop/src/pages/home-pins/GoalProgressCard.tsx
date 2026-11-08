@@ -123,7 +123,7 @@ export function GoalProgressCard() {
                     title={
                       domain
                         ? `Filed under ${domain.meta.name}`
-                        : "Not filed under a domain"
+                        : "Not filed under an area"
                     }
                   >
                     <span
@@ -135,7 +135,7 @@ export function GoalProgressCard() {
                       }
                       aria-hidden
                     />
-                    {domain?.meta.name ?? "No domain"}
+                    {domain?.meta.name ?? "No area"}
                   </span>
                 </div>
                 {numeric ? (

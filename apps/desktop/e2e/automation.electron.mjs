@@ -196,7 +196,7 @@ const SAMPLE = `(() => {
       // The page's name is a label above the day now: the date is the page's one
       // heading, so the name the surface is known by is read off the eyebrow and
       // the day off the heading.
-      name: text(document.querySelector(".daily-note__eyebrow")),
+      name: text(document.querySelector(".daily-note .wing-eyebrow")),
       heading: text(document.querySelector("[data-page-context-root] h1")),
       day: text(document.querySelector('[data-testid="daily-note-day"]')),
       automationButtons: Array.from(
@@ -391,14 +391,14 @@ async function main() {
     checks.landing = landing;
     check("the harness landed on /automations", landing.route === "/automations", landing.route);
     check(
-      "the shelf is Life-Chain, Decisions, Daily Note, Automations",
+      "the shelf is Quick Notes, Decisions, Daily Journal, Automations",
       JSON.stringify(landing.rail.shelf.map((l) => l.label)) ===
-        JSON.stringify(["Life-Chain", "Decisions", "Daily Note", "Automations"]),
+        JSON.stringify(["Quick Notes", "Decisions", "Daily Journal", "Automations"]),
       JSON.stringify(landing.rail.shelf.map((l) => l.label)),
     );
     check(
-      "Daily Note is directly under Decisions and Automations directly under it",
-      landing.rail.shelf[2]?.label === "Daily Note" &&
+      "Daily Journal is directly under Decisions and Automations directly under it",
+      landing.rail.shelf[2]?.label === "Daily Journal" &&
         landing.rail.shelf[3]?.label === "Automations",
       JSON.stringify(landing.rail.shelf.map((l) => l.label)),
     );
@@ -454,10 +454,10 @@ async function main() {
     );
     check("the built-in row is on the shelf", Boolean(builtIn), JSON.stringify(landing.automations.rows));
     check(
-      "the built-in is a manual job that reads the Daily Note",
+      "the built-in is a manual job that reads the Daily Journal",
       builtIn?.trigger === "manual" &&
         /Manual/.test(builtIn?.meta ?? "") &&
-        /Daily Note/.test(builtIn?.meta ?? ""),
+        /Daily Journal/.test(builtIn?.meta ?? ""),
       JSON.stringify(builtIn),
     );
     check(
@@ -666,13 +666,13 @@ async function main() {
     const manualCreated = await sample(win);
     checks.manualCreated = manualCreated.automations;
     check(
-      "the manual job lands in the Manual group on the Daily Note",
+      "the manual job lands in the Manual group on the Daily Journal",
       manualCreated.automations.groups[0]?.title === "Manual 2" &&
         manualCreated.automations.rows.some(
           (row) =>
             row.testId === "automation-automation-created-2" &&
             row.trigger === "manual" &&
-            /Daily Note/.test(row.meta ?? ""),
+            /Daily Journal/.test(row.meta ?? ""),
         ),
       JSON.stringify(manualCreated.automations),
     );
@@ -757,8 +757,8 @@ async function main() {
     const dayPage = await sample(win);
     checks.dayPage = dayPage;
     check(
-      "the Daily Note page is on screen",
-      dayPage.note.name === "Daily Note" &&
+      "the Daily Journal page is on screen",
+      dayPage.note.name === "Daily Journal" &&
         dayPage.note.heading === dayPage.note.day &&
         dayPage.note.bodyLength > 4000,
       JSON.stringify({
@@ -781,8 +781,8 @@ async function main() {
       JSON.stringify(dayPage.note.automationButtons),
     );
     check(
-      "Daily Note is the active rail row on its route",
-      dayPage.rail.shelf.find((l) => l.label === "Daily Note")?.active === true,
+      "Daily Journal is the active rail row on its route",
+      dayPage.rail.shelf.find((l) => l.label === "Daily Journal")?.active === true,
       JSON.stringify(dayPage.rail.shelf),
     );
     check(
@@ -849,7 +849,7 @@ async function main() {
     check(
       "the visible turn is the automation's prompt",
       after.chat.userMessages.length === 1 &&
-        /Analyze the Daily Note for/.test(after.chat.userMessages[0] ?? "") &&
+        /Analyze the Daily Journal for/.test(after.chat.userMessages[0] ?? "") &&
         /Kanban board/.test(after.chat.userMessages[0] ?? "") &&
         /Goals at different timeframes/.test(after.chat.userMessages[0] ?? "") &&
         /propose the document, page or database/.test(
@@ -902,8 +902,8 @@ async function main() {
     );
     check(
       "the automation context names the page's own day",
-      context.includes(`--- DAILY NOTE (${today}) ---`) &&
-        context.includes("--- END DAILY NOTE ---"),
+      context.includes(`--- DAILY JOURNAL (${today}) ---`) &&
+        context.includes("--- END DAILY JOURNAL ---"),
       JSON.stringify({ today }),
     );
     check(
@@ -956,7 +956,7 @@ async function main() {
   console.log(`created:   ${JSON.stringify(checks.created?.createCalls?.[0]?.name)}`);
   console.log(`scheduled: ${JSON.stringify(checks.scheduled?.markCalls)}`);
   console.log(
-    `note:      ${checks.noteLength} chars, fed ${checks.after?.chatCalls?.find((c) => c.input.startsWith("Analyze the Daily Note"))?.instructionsContext?.automationContext?.length ?? 0} chars`,
+    `note:      ${checks.noteLength} chars, fed ${checks.after?.chatCalls?.find((c) => c.input.startsWith("Analyze the Daily Journal"))?.instructionsContext?.automationContext?.length ?? 0} chars`,
   );
   console.log(`failures:  ${errors.length === 0 ? "none" : errors.join("; ")}`);
 

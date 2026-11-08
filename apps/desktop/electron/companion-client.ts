@@ -682,7 +682,7 @@ export function formatMessageWhen(atMs: number | undefined, nowMs = Date.now()):
 function cardFacts(card: FocusedCardContext): string {
   const where =
     card.boardSlug === null
-      ? "the Overview dashboard"
+      ? "the Life dashboard"
       : `the ${card.boardSlug} dashboard`;
   const ids =
     card.kind === "view"
@@ -865,7 +865,7 @@ export function buildInstructions(
     input.viewingBoard === undefined
       ? null // caller did not say; fall back to the domain line only
       : input.viewingBoard === null
-        ? "the Overview dashboard (domainSlug: null)"
+        ? "the Life dashboard (domainSlug: null)"
         : `the ${input.viewingBoard} dashboard (domainSlug: "${input.viewingBoard}")`;
   const boardLine = board
     ? `The operator is looking at ${board} right now — when they say "the Dashboard", they mean that board, and the boardSlug you pass to save_view is that domainSlug (null for Overview).`
@@ -950,7 +950,7 @@ export function buildInstructions(
         ];
   const base = [
     "You are chatting inside the LifeQuest app.",
-    `Active domain: ${domain}`,
+    `Active area: ${domain}`,
     `About me: ${about}`,
     `Agent lock: ${input.locked}`,
     `Vault: ${input.vaultOpen ? "open" : "closed"}`,

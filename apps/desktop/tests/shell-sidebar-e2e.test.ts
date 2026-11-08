@@ -223,6 +223,21 @@ type State = {
     height: number;
   } | null;
   /**
+   * The first-run band: with fewer than two unlocked areas the lens is one inert
+   * word, "Life", in the same tab. Absent when the segmented control rendered.
+   */
+  quietLens: {
+    text: string;
+    box: Box;
+    inLens: boolean;
+    offsetFromLensCentreX: number;
+    height: number;
+    gapAbove: number;
+    gapBelow: number;
+  } | null;
+  /** The quiet state's negative claim: no `.domain-switcher__tabs` in the lens. */
+  lensHasTabs: boolean;
+  /**
    * The rail's first level: the five-wing switcher and the band it sits in.
    * The band's own bottom border is measured because it must stay unpainted —
    * the hairline in that row belongs to the dock's header.
@@ -333,6 +348,8 @@ type Report = {
   expanded: State;
   collapsed: State;
   restored: State;
+  /** The quiet `Life` lens at 0 and 1 unlocked areas. */
+  quiet: { none: State; one: State };
   /** The rail switcher's own trip: Define, then back to Home. */
   wingSwitch: { defined: State; home: State };
   day: State;
@@ -418,7 +435,7 @@ function runDriver(): Promise<number> {
     execFile(
       electron,
       [path.join(desktopRoot, "e2e/shell-sidebar.electron.mjs")],
-      { cwd: desktopRoot, timeout: 120_000 },
+      { cwd: desktopRoot, timeout: 180_000 },
       (error) => {
         if (error && typeof error.code !== "number") {
           reject(error);
@@ -1177,13 +1194,13 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.deepEqual(
       lensSwitcher!.labels,
-      ["Overview", ...report.domains],
-      `the lens offers ${JSON.stringify(lensSwitcher!.labels)}, not Overview then the vault's domains ${JSON.stringify(report.domains)}`,
+      ["Life", ...report.domains],
+      `the lens offers ${JSON.stringify(lensSwitcher!.labels)}, not Life then the vault's areas ${JSON.stringify(report.domains)}`,
     );
     assert.equal(
       lensSwitcher!.optionCount,
       report.domains.length + 1,
-      `the lens exposes ${lensSwitcher!.optionCount} options, not Overview plus the vault's ${report.domains.length} domains`,
+      `the lens exposes ${lensSwitcher!.optionCount} options, not Life plus the vault's ${report.domains.length} areas`,
     );
     // The lens's own segmented control: no outer frame inside the page-ink tab,
     // with the fill and the active tab's line still carrying it.
@@ -1209,7 +1226,7 @@ describe("shell sidebar (docked rail)", () => {
     assert.equal(
       lensTabs.optionCount,
       report.domains.length + 1,
-      `the lens's control renders ${lensTabs.optionCount} options, expected Overview plus the vault's ${report.domains.length} domains`,
+      `the lens's control renders ${lensTabs.optionCount} options, expected Life plus the vault's ${report.domains.length} areas`,
     );
     assert.notEqual(
       lensTabs.activeBorderWidth,
@@ -1220,6 +1237,52 @@ describe("shell sidebar (docked rail)", () => {
       alphaOf(lensTabs.activeBackground) > 0.05,
       `the lens's active tab lost its fill (${lensTabs.activeBackground})`,
     );
+
+    // The first-run band: the switcher is hidden below two unlocked areas, so the
+    // same tab carries one inert word instead of a control. The driver opens the
+    // same harness with `?areas=none` (0 unlocked) and `?areas=one` (1 unlocked);
+    // both must render the quiet label, centred, in the strip's height, with no
+    // segmented control — the rule is "hidden below two", not "hidden when empty".
+    const quietModes = [
+      { mode: "none", unlocked: 0, state: report.quiet?.none },
+      { mode: "one", unlocked: 1, state: report.quiet?.one },
+    ];
+    for (const { mode, unlocked, state } of quietModes) {
+      const label = `${mode} (${unlocked} unlocked area${unlocked === 1 ? "" : "s"})`;
+      assert.ok(state, `the rig did not record the quiet lens at ${label}`);
+      const quiet = state!.quietLens;
+      assert.ok(quiet, `the lens rendered no quiet Life label at ${label}`);
+      assert.equal(quiet!.inLens, true, `the quiet label is not inside the lens at ${label}`);
+      assert.equal(
+        quiet!.text,
+        "Life",
+        `the quiet label reads ${JSON.stringify(quiet!.text)}, not "Life" at ${label}`,
+      );
+      assert.equal(state!.lensHasTabs, false, `a segmented control rendered at ${label}`);
+      assert.equal(state!.lensTabs, null, `the rig measured a segmented control at ${label}`);
+      assert.equal(state!.domainLens?.optionCount ?? 0, 0, `the quiet lens offered options at ${label}`);
+      assert.ok(
+        Math.abs(quiet!.offsetFromLensCentreX) <= 2,
+        `the quiet label is ${quiet!.offsetFromLensCentreX}px off the lens's centre line at ${label}`,
+      );
+      assert.ok(
+        quiet!.height > 0 && quiet!.height <= report.tokens.titlebarHeight,
+        `the quiet label is ${quiet!.height}px high in a ${report.tokens.titlebarHeight}px strip at ${label}`,
+      );
+      assert.ok(
+        quiet!.gapAbove >= 0 && quiet!.gapBelow >= 0,
+        `the quiet label leaves its tab's band: ${quiet!.gapAbove}px above, ${quiet!.gapBelow}px below at ${label}`,
+      );
+      assert.ok(
+        (state!.lens?.fromRail ?? 0) > 0 && (state!.lens?.toTrailing ?? 0) > 0,
+        `the quiet lens is not the strip's centred tab: ${JSON.stringify(
+          state!.lens && {
+            fromRail: state!.lens.fromRail,
+            toTrailing: state!.lens.toTrailing,
+          },
+        )} at ${label}`,
+      );
+    }
 
     // The switcher is live where it now sits: clicking Define in the rail turns
     // the rows under it into the Define pages, and Home brings the Home pages
@@ -1237,7 +1300,7 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.deepEqual(
       wingSwitch.defined.wingRows.map((row) => row.label),
-      ["Dream", "Vision", "Ideal State", "Images"],
+      ["Dream", "Vision", "Ideal State"],
       "the Define wing's rows did not replace the Home wing's under the switcher",
     );
     assert.equal(
@@ -1247,7 +1310,7 @@ describe("shell sidebar (docked rail)", () => {
     );
     assert.deepEqual(
       wingSwitch.home.wingRows.map((row) => row.label),
-      ["Dashboard", "Data", "Pages", "Documents", "Personnel"],
+      ["Dashboard", "Data", "Pages", "Documents", "Agents", "Images"],
       "the Home wing's rows did not come back",
     );
 

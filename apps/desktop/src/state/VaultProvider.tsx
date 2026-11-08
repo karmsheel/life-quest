@@ -11,6 +11,7 @@ import {
 import type { Result, VaultSettings, VaultSnapshot } from "@lifequest/vault-core";
 import {
   domainLens,
+  isAreaLive,
   lensSlug,
   overviewLens,
   type DomainLens,
@@ -27,9 +28,9 @@ import {
 export type VaultContextValue = {
   /** Null when no vault is open (welcome flow). */
   snapshot: VaultSnapshot | null;
-  /** Domain lens for the open vault. Overview when none is saved. */
+  /** Area lens for the open vault. Life (the overview lens) when none is saved. */
   lens: DomainLens;
-  /** Active domain slug derived from the lens; null in Overview. */
+  /** Active area slug derived from the lens; null on the Life lens. */
   activeSlug: string | null;
   /** True until first vaultGetSnapshot completes. */
   booting: boolean;
@@ -62,6 +63,8 @@ const VaultContext = createContext<VaultContextValue | null>(null);
 
 export function VaultProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
   const [lens, setLensState] = useState<DomainLens>(overviewLens());
   const lensRef = useRef(lens);
   lensRef.current = lens;
@@ -88,8 +91,18 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setLens = useCallback(async (next: DomainLens) => {
-    setLensState(next);
-    const result = await api().domainSetActive(lensSlug(next));
+    // A locked or archived area is invisible, so it cannot be the lens: any
+    // request for one lands on Life instead (the engine makes the same call
+    // for the persisted pref).
+    const current = snapshotRef.current;
+    const resolved =
+      next.kind === "domain" &&
+      current !== null &&
+      !current.domains.some((d) => d.slug === next.slug && isAreaLive(d))
+        ? overviewLens()
+        : next;
+    setLensState(resolved);
+    const result = await api().domainSetActive(lensSlug(resolved));
     if (!result.ok) {
       setError(result.error);
     } else {
@@ -114,7 +127,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     }
     const previousVaultId = vaultIdRef.current;
     vaultIdRef.current = next.lifequest.id;
-    // Same-vault refresh only. A vault switch must not write Overview
+    // Same-vault refresh only. A vault switch must not write Life
     // onto the destination; restoreLens applies that vault's own lens.
     if (shouldClearLensForSnapshot(previousVaultId, next, lensRef.current)) {
       setLensState(overviewLens());
@@ -137,7 +150,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       try {
         await api().domainSetActive(null);
       } catch {
-        // Screen is already Overview. A stale slug is cleared on the next open.
+        // Screen is already Life. A stale slug is cleared on the next open.
       }
     }
   }, [applySnapshot]);

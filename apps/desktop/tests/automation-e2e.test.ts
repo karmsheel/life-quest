@@ -235,7 +235,7 @@ describe("automations e2e", () => {
     // ── the shelf is its own cordoned group, above the Log ──────────────────
     assert.deepEqual(
       landing.rail.shelf.map((link) => link.label),
-      ["Life-Chain", "Decisions", "Daily Note", "Automations"],
+      ["Quick Notes", "Decisions", "Daily Journal", "Automations"],
       "the governed shelf is not the four icons the operator named",
     );
     assert.deepEqual(
@@ -284,7 +284,7 @@ describe("automations e2e", () => {
     assert.ok(builtIn, "the built-in row is missing");
     assert.equal(builtIn!.trigger, "manual");
     assert.match(String(builtIn!.meta), /Manual/);
-    assert.match(String(builtIn!.meta), /Daily Note/);
+    assert.match(String(builtIn!.meta), /Daily Journal/);
     assert.deepEqual(
       ["Run now", "Edit", "Pause", "Delete"].filter(
         (label) => !builtIn!.actions.some((action) => action.includes(label)),
@@ -368,9 +368,9 @@ describe("automations e2e", () => {
     assert.match(String(scheduledRow!.meta), /Last run/);
 
     // ── the Daily Note's manual button still opens the chat ─────────────────
-    // The page is named by its label and headed by the day: the date is the
+    // The page is named by its eyebrow and headed by the day: the date is the
     // page's one heading now, so the name is not what the `h1` carries.
-    assert.equal(dayPage.note.name, "Daily Note");
+    assert.equal(dayPage.note.name, "Daily Journal");
     assert.equal(
       dayPage.note.heading,
       dayPage.note.day,
@@ -438,7 +438,7 @@ describe("automations e2e", () => {
       `Chats lost the chat that was on screen before the run: ${JSON.stringify(after.chat.sidebarRows)}`,
     );
     assert.equal(after.chat.userMessages.length, 1);
-    assert.match(after.chat.userMessages[0]!, /Analyze the Daily Note for/);
+    assert.match(after.chat.userMessages[0]!, /Analyze the Daily Journal for/);
     assert.match(after.chat.userMessages[0]!, /Kanban board/);
     assert.match(after.chat.userMessages[0]!, /Goals at different timeframes/);
     assert.match(after.chat.userMessages[0]!, /no place for yet/);
@@ -456,8 +456,8 @@ describe("automations e2e", () => {
     assert.equal(call.sessionId, session.id);
     const context = call.instructionsContext.automationContext ?? "";
     assert.match(context, /AUTOMATION — ANALYZE NOTE/);
-    assert.match(context, /--- DAILY NOTE \(/);
-    assert.match(context, /--- END DAILY NOTE ---/);
+    assert.match(context, /--- DAILY JOURNAL \(/);
+    assert.match(context, /--- END DAILY JOURNAL ---/);
     assert.match(context, /^Friday: a long day, and a lot of it belongs somewhere else in LifeQuest\./m);
     assert.match(context, /Context note 1:/);
     assert.match(context, /Context note 55:/);

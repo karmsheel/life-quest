@@ -47,21 +47,13 @@
   gap: 0.6rem;
 }
 
-/* The page's name, as a label rather than as the page's heading. A journal's
-   page is headed by the day the operator is on; the name only says which
-   surface this is. It wears the studio's own eyebrow treatment — the accent,
-   the small caps and the tracking the Data, Pages, Home and Decisions pages
-   already give their names — so this page's chrome reads as the same family. */
-.daily-note__eyebrow {
-  margin: 0;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-}
+/* The page's name, as a label rather than as the page's heading, is the shell's
+   one grey eyebrow (`.wing-eyebrow` in `global.css`): a journal's page is
+   headed by the day the operator is on, and the name only says which surface
+   this is. It takes the shared rule rather than a page-local copy of it, so the
+   journal's name is the same grey as every other page's.
 
-/* The date is the page's heading, so it wears the studio's own title treatment:
+   The date is the page's heading, so it wears the studio's own title treatment:
    the same weight and tracking the Data and Pages pages give the name this page
    has stepped down from, one step smaller — the day is a line of chrome above
    the prose, not a banner over it, and the calendar key beside it has to sit as
@@ -836,6 +828,11 @@
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.02em;
+}
+
+/* The wing eyebrow is the title's own label, so it sits just above it. */
+.ideal-state__header .wing-eyebrow {
+  margin-bottom: 0.15rem;
 }
 
 .ideal-state__workspace {

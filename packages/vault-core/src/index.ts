@@ -209,6 +209,7 @@ export {
 } from "./companion-brief.ts";
 export type { CompanionBriefWriteResult } from "./companion-brief.ts";
 export {
+  isDomainLive,
   createDatabase,
   listDatabases,
   getDatabase,

@@ -48,7 +48,7 @@ export function AutomationScheduler() {
         if (!body.trim()) {
           await api().automationMarkRun(record.id, {
             status: "skipped",
-            error: "No Daily Note for today.",
+            error: "No Daily Journal for today.",
           });
           return;
         }

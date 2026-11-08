@@ -153,11 +153,27 @@ export type DatabaseBatchDecisionBody = {
 
 export const ROOM_IDS = ["dream", "chart", "track", "act"] as const;
 export type RoomId = (typeof ROOM_IDS)[number];
-export const SEED_DOMAINS = [
-  { slug: "health", name: "Health" },
-  { slug: "intellectual", name: "Intellectual" },
-  { slug: "emotional", name: "Emotional" },
-  { slug: "financial", name: "Financial" },
+/**
+ * The vault's always-unlocked base area. It is the whole-life container that
+ * owns records created before any area is unlocked, and it is never a chip of
+ * its own: the "Life" lens is the union of every live area, and `life` is the
+ * area the union falls back to for records with no narrower home.
+ */
+export const BASE_AREA_SLUG = "life";
+
+/**
+ * What a new vault seeds. A locked area exists on disk — identity and four
+ * empty doctrine documents — but is invisible to the operator until the
+ * onboarding interview or Settings unlocks it. Locked areas are deliberately
+ * absent from the switcher, the doctrine index and every domain-scoped list.
+ */
+export const AREA_SEEDS = [
+  { slug: BASE_AREA_SLUG, name: "Life", sortOrder: 0, locked: false },
+  { slug: "health", name: "Health", sortOrder: 1, locked: true },
+  { slug: "mind", name: "Mind", sortOrder: 2, locked: true },
+  { slug: "financial", name: "Finance", sortOrder: 3, locked: true },
+  { slug: "business", name: "Business", sortOrder: 4, locked: true },
+  { slug: "relationships", name: "Relationships", sortOrder: 5, locked: true },
 ] as const;
 export const DEFAULT_HERMES_URL = "http://localhost:8642";
 
@@ -174,6 +190,14 @@ export type DomainMeta = {
   color: string | null;
   sortOrder: number;
   archivedAt: string | null;
+  /**
+   * When the operator unlocked this area. `null` means locked: seeded on disk
+   * but hidden from the switcher, the doctrine index and every domain-scoped
+   * list until the onboarding interview or Settings unlocks it. An absent field
+   * means unlocked, so a vault written before areas had a lock state reads
+   * exactly as it always did.
+   */
+  unlockedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };

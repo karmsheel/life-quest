@@ -10,6 +10,7 @@ import {
 import { ChevronLeft, ChevronRight, Focus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { DayPicker } from "@/components/notes/DayPicker";
 import { FocusModeOverlay } from "@/components/notes/FocusModeOverlay";
 import {
@@ -487,6 +488,23 @@ export default function DailyNotePage() {
     [chatDock, date, draft, flush, label, runningId],
   );
 
+  /**
+   * Run one of the day's acts from the focus page.
+   *
+   * Focus mode is a sheet over the whole workspace, the dock included: a chat
+   * opened from under the sheet would start behind the paper, where the
+   * operator cannot see it. So the day's act leaves focus mode first — the page
+   * and its dock are handed back — and the run proceeds on the same draft the
+   * sheet was writing, for the same day.
+   */
+  const runFocusAction = useCallback(
+    (automation: AutomationRecord) => {
+      closeFocusMode();
+      void onRunAutomation(automation);
+    },
+    [closeFocusMode, onRunAutomation],
+  );
+
   const canRunAutomation =
     !loading &&
     loadedDate === date &&
@@ -506,7 +524,8 @@ export default function DailyNotePage() {
    * it. So the same automations the page's title row offers are offered again
    * here — the same runs, on the same draft, against the same day. The page
    * keeps its own buttons: the two are two surfaces looking at one day, and
-   * closing one must not take the other's control away.
+   * closing one must not take the other's control away. Pressing one of these
+   * leaves the sheet, because the act's result is a chat in the dock behind it.
    */
   const focusActions = useMemo(
     () =>
@@ -520,9 +539,9 @@ export default function DailyNotePage() {
         busy: runningId === automation.id,
         busyLabel: "Opening chat…",
         icon: <Sparkles size={14} aria-hidden />,
-        onPress: () => void onRunAutomation(automation),
+        onPress: () => runFocusAction(automation),
       })),
-    [canRunAutomation, manualAutomations, onRunAutomation, runningId],
+    [canRunAutomation, manualAutomations, runFocusAction, runningId],
   );
 
   // The journal's own strip: days up to today, newest first. A file dated in the
@@ -633,7 +652,11 @@ export default function DailyNotePage() {
               as the page's own rather than as a stray control under the prose —
               above the box it commits rather than below it. */}
           <div className="daily-note__title-row">
-            <p className="daily-note__eyebrow">Daily Note</p>
+            {/* The page's name, in the shell's one grey eyebrow: the day below
+                it is the page's heading, so the name is a label rather than a
+                second title, and it wears the same rule and colour every other
+                page's name wears. */}
+            <WingEyebrow page="Daily Journal" />
             <div className="daily-note__actions">
               {/* The day's way back to today. It only exists on a day that is
                   not today, and it lives with the day's other acts rather than

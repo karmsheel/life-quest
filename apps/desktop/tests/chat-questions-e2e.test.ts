@@ -245,7 +245,7 @@ describe("saved chat questions", () => {
     );
     assert.deepEqual(
       added.questions.map((row) => row.scope),
-      ["Financial domain", "Health domain", "Review wing", "Dashboard page", "Everywhere"],
+      ["Financial area", "Health area", "Review wing", "Dashboard page", "Everywhere"],
       "a scope was lost between the form and the list",
     );
     assert.equal(added.patches.length, 5, "each add must write settings once");

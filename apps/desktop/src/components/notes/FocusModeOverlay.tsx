@@ -31,7 +31,7 @@ import { Button } from "@/components/ui/Button";
  * page of paper rather than a reading column:
  *
  *  - The day is printed at the top of the page, over the prose, in the page's
- *    own date form. The sheet's title stays "Daily Note" — that is the
+ *    own date form. The sheet's title stays "Daily Journal" — that is the
  *    surface's name, and the sheet frame needs one — and the date becomes the
  *    page's heading, the way a page of a journal is headed.
  *  - The day's own act — Analyze note — moves to the foot of the page, under
@@ -95,7 +95,7 @@ export function FocusModeOverlay({
   return (
     <SheetOverlay
       sheet="focus"
-      title="Daily Note"
+      title="Daily Journal"
       closeLabel="Close focus mode"
       onClose={onClose}
       bodyClassName="focus-overlay__body"

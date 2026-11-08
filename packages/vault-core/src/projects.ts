@@ -29,6 +29,7 @@ import {
   type SignalRecord,
   type Task,
 } from "./types.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
 
 function fail<T>(error: string): Result<T> {
   return { ok: false, error };
@@ -219,7 +220,7 @@ async function assertDomainLive(
   if (domainSlug === null) return ok(undefined);
   const domains = await listDomains(rootPath);
   if (!domains.ok) return fail(domains.error);
-  const live = domains.value.some((d) => d.slug === domainSlug && !d.meta.archivedAt);
+  const live = domains.value.some((d) => d.slug === domainSlug && isLiveAreaMeta(d.meta));
   if (!live) return fail(`Domain not found or archived: ${domainSlug}`);
   return ok(undefined);
 }

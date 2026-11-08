@@ -191,7 +191,7 @@ function PairingBody({ body }: { body: Record<string, unknown> }) {
     <div className="decision-proposal">
       <p className="decision-lead">
         Connect this agent. It starts read-only, with no domain assigned and
-        Schedule off — you grant what it may reach from Personnel.
+        Schedule off — you grant what it may reach from Agents.
       </p>
       <dl className="settings-hermes">
         <div className="settings-field">
@@ -232,7 +232,7 @@ function ViewBody({ body }: { body: Record<string, unknown> }) {
   const pinned = typeof body.boardSlug === "string" || body.boardSlug === null;
   const boardName =
     body.boardSlug === null
-      ? "the Overview dashboard"
+      ? "the Life dashboard"
       : typeof body.boardSlug === "string"
         ? `the ${body.boardSlug} dashboard`
         : "";

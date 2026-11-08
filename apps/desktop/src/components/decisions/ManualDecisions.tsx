@@ -35,7 +35,7 @@ function domainLabel(
 }
 
 export type ManualDecisionPanelProps = {
-  /** The live domains, for the optional domain field. */
+  /** The unlocked areas, for the optional area field. */
   domains: { slug: string; meta: { name: string } }[];
   /** The lens the operator is looking through, so the field starts where they are. */
   defaultDomainSlug: string | null;
@@ -78,7 +78,7 @@ export function ManualDecisionCard({
             <span
               className="decision-domain"
               data-domain-slug={domain}
-              title={`Domain: ${domainLabel(domain, domains)}`}
+              title={`Area: ${domainLabel(domain, domains)}`}
             >
               {domainLabel(domain, domains)}
             </span>
@@ -189,14 +189,14 @@ export function ManualDecisionsPanel({
           />
         </label>
         <label className="field manual-decisions__domain">
-          <span>Domain (optional)</span>
+          <span>Area (optional)</span>
           <select
             value={domainSlug}
             onChange={(e) => setDomainSlug(e.target.value)}
             disabled={pending}
-            aria-label="Domain"
+            aria-label="Area"
           >
-            <option value="">No domain</option>
+            <option value="">No area</option>
             {domains.map((domain) => (
               <option key={domain.slug} value={domain.slug}>
                 {domain.meta.name}

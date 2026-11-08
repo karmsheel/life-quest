@@ -46,6 +46,7 @@ import {
   listRows,
   readLog,
   resolveDecision,
+  unlockDomain,
 } from "@lifequest/vault-core";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -88,6 +89,12 @@ describe("database write policy", () => {
     try {
       const created = await createVault(root, "Write Policy");
       assert.equal(created.ok, true, created.ok ? "" : created.error);
+      const unlockFinancial = await unlockDomain(root, "financial");
+      assert.equal(
+        unlockFinancial.ok,
+        true,
+        `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+      );
 
       const checks: Record<string, Check> = {};
 

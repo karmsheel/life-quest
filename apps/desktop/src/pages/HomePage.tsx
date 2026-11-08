@@ -9,7 +9,12 @@ import {
 import { Link } from "react-router-dom";
 import { Pin as PinIcon } from "lucide-react";
 import type { DecisionRecord, LifeEvent, PageListEntry, Pin } from "@lifequest/vault-core";
-import { SYSTEM_PIN_KINDS, type SystemPinKind } from "@lifequest/vault-core/pure";
+import {
+  isAreaLive,
+  liveAreas,
+  SYSTEM_PIN_KINDS,
+  type SystemPinKind,
+} from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { Button } from "@/components/ui/Button";
 import { PageMenu } from "@/components/ui/PageMenu";
@@ -18,6 +23,7 @@ import { useVault } from "@/state/VaultProvider";
 import { useLiveData } from "@/state/LiveDataProvider";
 import { useChatDock, type ChatCardContext } from "@/state/ChatDockProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { GoalProgressCard } from "@/pages/home-pins/GoalProgressCard";
 import { DeadlineBanner } from "@/pages/home-pins/DeadlineBanner";
 import { PendingDecisionsCard } from "@/pages/home-pins/PendingDecisionsCard";
@@ -82,8 +88,8 @@ export default function HomePage() {
   const lens = useDomainLens();
   const title =
     lens.kind === "domain"
-      ? (snapshot?.domains.find((d) => d.slug === lens.slug)?.meta.name ?? "Overview")
-      : "Overview";
+      ? (snapshot?.domains.find((d) => d.slug === lens.slug)?.meta.name ?? "Life")
+      : "Life";
   /**
    * The app's own yes/no question, for the one thing on this page that cannot be
    * undone. It is asked in the window rather than by the platform, so it lands
@@ -355,17 +361,17 @@ export default function HomePage() {
         api().logList(),
         api().pinsList(boardSlug),
         api().pageList(boardSlug),
-        // Views exist per domain; Overview lists all domains' views so a card
-        // can be pinned there from any lens. Each one is tagged with the domain
+        // Views exist per area; Life lists every live area's views so a card
+        // can be pinned there from any lens. Each one is tagged with the area
         // it came from, because that is what its pin has to name.
         lens.kind === "domain"
           ? api()
               .viewList(lens.slug)
               .then((r) => (r.ok ? (r.value as SavedView[]).map((v) => ({ ...v, domainSlug: lens.slug })) : []))
           : (async () => {
-              const slugs = (snapshot?.domains ?? [])
-                .filter((d) => !d.meta.archivedAt)
-                .map((d) => d.slug);
+              const slugs = liveAreas(snapshot?.domains ?? []).map(
+                (d) => d.slug,
+              );
               const all: BoardView[] = [];
               for (const s of slugs) {
                 const res = await api().viewList(s);
@@ -480,8 +486,9 @@ export default function HomePage() {
   }, [editingPinId, pins]);
 
   const boardSlug = lens.kind === "domain" ? lens.slug : null;
+  // A locked Finance area offers no kit: liveness is the whole test.
   const financialLive = (snapshot?.domains ?? []).some(
-    (d) => d.slug === "financial" && !d.meta.archivedAt,
+    (d) => d.slug === "financial" && isAreaLive(d),
   );
   const showFinanceInstall =
     financialLive &&
@@ -859,7 +866,7 @@ export default function HomePage() {
     <div className="home-dashboard" onClick={onDashboardClick}>
       <header className="home-dashboard__header">
         <div className="home-dashboard__intro">
-          <p className="home-dashboard__eyebrow">Dashboard</p>
+          <WingEyebrow page="Dashboard" />
           <h1 className="home-dashboard__title">
             {title}
             {/* The state badge stays beside the page's name: it labels the board
@@ -1136,7 +1143,7 @@ export default function HomePage() {
         <section className="home-card home-rail__finance-cta">
           <h2 className="home-card__title">Finance</h2>
           <p className="home-card__empty">
-            Install the kit into the Financial domain. It adds the ledger databases and starter pages.
+            Install the kit into the Finance area. It adds the ledger databases and starter pages.
           </p>
           <Button
             variant="primary"

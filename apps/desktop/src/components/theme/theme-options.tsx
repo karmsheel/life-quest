@@ -3,10 +3,10 @@ import type { SegmentedOption } from "@/components/ui/SegmentedControl";
 import type { ThemePreference } from "@/lib/theme";
 
 /**
- * The three colour modes, in the order both quick menus offer them: the system
- * answer first, then the two explicit palettes. The settings popover and the
- * titlebar's day/night menu are the two places the operator meets this choice,
- * and they must never disagree about its order, wording or icons.
+ * The three colour modes, in the order both places that offer them do: the
+ * system answer first, then the two explicit palettes. The Appearance tab and
+ * the titlebar's day/night menu are the two places the operator meets this
+ * choice, and they must never disagree about its order, wording or icons.
  */
 export const THEME_OPTIONS: SegmentedOption<ThemePreference>[] = [
   {

@@ -11,6 +11,7 @@ import {
   canDispatchAgent,
   DOCUMENT_KIND_LABELS,
   DOCTRINE_ORDER,
+  liveAreas,
   recordVisible,
 } from "@lifequest/vault-core/pure";
 import type { MapCommand, Task } from "@lifequest/vault-core/map";
@@ -28,6 +29,7 @@ import {
 } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 
 /**
  * The doctrine headings the agent prompt carries. The page no longer renders
@@ -77,12 +79,9 @@ function ActContent() {
   const activeDomain = useActiveDomain();
   const chatDock = useChatDock();
 
+  // Every live area, base included: the brief on Life carries all of them.
   const liveDomains = useMemo(
-    () =>
-      (snapshot?.domains ?? [])
-        .filter((d) => !d.meta.archivedAt)
-        .slice()
-        .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder),
+    () => liveAreas(snapshot?.domains ?? []),
     [snapshot],
   );
 
@@ -100,7 +99,7 @@ function ActContent() {
   const [recentEvents, setRecentEvents] = useState<LifeEvent[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
 
-  const title = activeDomain?.meta.name ?? "Overview";
+  const title = activeDomain?.meta.name ?? "Life";
 
   useEffect(() => {
     void (async () => {
@@ -147,10 +146,10 @@ function ActContent() {
     (agent: AgentHire): string => {
       const head = `You are acting as "${agent.name}"${
         agent.roleLabel ? ` (${agent.roleLabel})` : ""
-      } for the domain "${title}".`;
+      } for the area "${title}".`;
       const brief = buildBrief(activeDomain, liveDomains);
       return `${head}\n\nExecute against this doctrine — stay aligned with Premise → Vision → Purpose → Strategy (How):\n\n${brief}\n\nTask: ${
-        promptDraft.trim() || "Propose the next concrete action for this domain."
+        promptDraft.trim() || "Propose the next concrete action for this area."
       }`;
     },
     [activeDomain, liveDomains, promptDraft, title],
@@ -252,7 +251,7 @@ function ActContent() {
     <div className="act-page">
       <header className="act-page__header">
         <div>
-          <p className="act-page__eyebrow muted">Act</p>
+          <WingEyebrow page="Task Manager" />
           <h1 className="act-page__title">{title}</h1>
         </div>
       </header>
@@ -281,11 +280,11 @@ function ActContent() {
         {activeAgents.length === 0 ? (
           <div className="act-page__empty">
             <p className="muted">
-              No active agents. Scan Hermes and hire agents in Personnel, then
+              No active agents. Scan Hermes and hire agents in Agents, then
               return here to dispatch them against this doctrine.
             </p>
             <Link to="/personnel" className="act-page__link">
-              Go to Personnel →
+              Go to Agents →
             </Link>
           </div>
         ) : (

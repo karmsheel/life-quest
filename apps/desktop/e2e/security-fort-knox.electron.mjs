@@ -456,20 +456,29 @@ async function main() {
   check("vault.create", created?.ok === true, JSON.stringify(created));
   const opened = await run(`window.lifequest.vaultOpen(${JSON.stringify(vaultPath)})`);
   check("vault.open", opened?.ok === true, JSON.stringify(opened));
-  const healthPage = await run(`window.lifequest.pageCreate("health", { title: "Health page" })`);
-  const intelPage = await run(
-    `window.lifequest.pageCreate("intellectual", { title: "Intel page" })`,
+  // A new vault seeds Health and Mind LOCKED. This rig writes a page into each
+  // and then probes containment across them, so both areas are unlocked first.
+  const unlockedHealth = await run(`window.lifequest.domainUnlock("health")`);
+  const unlockedMind = await run(`window.lifequest.domainUnlock("mind")`);
+  check(
+    "vault.areasUnlocked",
+    unlockedHealth?.ok === true && unlockedMind?.ok === true,
+    JSON.stringify({ health: unlockedHealth, mind: unlockedMind }),
   );
-  state.pages = { healthPage, intelPage };
+  const healthPage = await run(`window.lifequest.pageCreate("health", { title: "Health page" })`);
+  const mindPage = await run(
+    `window.lifequest.pageCreate("mind", { title: "Mind page" })`,
+  );
+  state.pages = { healthPage, mindPage };
   const healthId = healthPage?.value?.id;
-  const intelId = intelPage?.value?.id;
-  check("vault.pagesCreated", Boolean(healthId && intelId), `ids ${healthId}/${intelId}`);
+  const mindId = mindPage?.value?.id;
+  check("vault.pagesCreated", Boolean(healthId && mindId), `ids ${healthId}/${mindId}`);
   if (healthId) {
     const own = await run(`window.lifequest.pageGet("health", ${JSON.stringify(healthId)})`);
     check("vault.ownPageReadable", own?.ok === true, JSON.stringify(own));
   }
   const traversal = await run(
-    `window.lifequest.pageGet("intellectual", ${JSON.stringify(`../../health/pages/${healthId}`)})`,
+    `window.lifequest.pageGet("mind", ${JSON.stringify(`../../health/pages/${healthId}`)})`,
   );
   state.traversal = traversal;
   check("vault01.crossDomainPageRefused", traversal?.ok === false, JSON.stringify(traversal));

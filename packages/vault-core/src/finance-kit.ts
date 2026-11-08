@@ -26,6 +26,7 @@ import {
   type PageRecord,
 } from "./types.ts";
 import { USER_ACTOR } from "./types.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
 
 // Re-export constants
 export const FINANCE_KIT_ID_CONST = FINANCE_KIT_ID;
@@ -386,7 +387,7 @@ export async function applyFinanceKitInstall(
   }
   try {
     const meta = JSON.parse(metaRaw);
-    if (meta.archivedAt != null) {
+    if (!isLiveAreaMeta(meta)) {
       return { ok: false, error: `Domain not found or archived: ${slug}` };
     }
   } catch {
@@ -475,7 +476,7 @@ export async function installFinanceKit(root: string, actor: Actor): Promise<Res
   try {
     const metaRaw = await fs.readFile(paths.domainJson(slug), "utf8");
     const meta = JSON.parse(metaRaw);
-    if (meta.archivedAt != null) {
+    if (!isLiveAreaMeta(meta)) {
       return { ok: false, error: `Domain not found or archived: ${slug}` };
     }
   } catch {
@@ -540,7 +541,7 @@ export async function setFinanceCaptureAccount(
   }
   try {
     const meta = JSON.parse(metaRaw);
-    if (meta.archivedAt != null) {
+    if (!isLiveAreaMeta(meta)) {
       return { ok: false, error: `Domain not found or archived: ${slug}` };
     }
   } catch {

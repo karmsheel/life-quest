@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import {
   matchingChatQuestions,
+  unlockedAreas,
   type ChatQuestion,
   type DomainRecord,
   type SignalRecord,
@@ -107,7 +108,7 @@ function starterScopeLabel(
   }
   if (question.scope === "domain") {
     const domain = domains.find((row) => row.slug === question.value);
-    return domain ? domain.meta.name : (question.value ?? "Domain");
+    return domain ? domain.meta.name : (question.value ?? "Area");
   }
   return `${pageLabelFor(question.value ?? "/")} page`;
 }
@@ -159,7 +160,7 @@ export function ChatPanel(props: ChatPanelProps) {
 
 function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   const activeDomain = useActiveDomain();
-  const domainName = activeDomain?.meta.name ?? "Overview";
+  const domainName = activeDomain?.meta.name ?? "Life";
   const { snapshot, reloadGeneration, lens } = useVault();
   const {
     requestedSessionId,
@@ -490,7 +491,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
 
   /**
    * The chain, lensed the way the Life-Chain page lenses it: everything in
-   * Overview, and unassigned plus the open domain in a domain tab. Logging here
+   * Life, and unassigned plus the open area in an area tab. Logging here
    * files a signal unassigned, so what the panel writes is never hidden from it.
    */
   const visibleSignals = useMemo(
@@ -504,20 +505,18 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
    * hands records back newest first, hence the flip.
    */
   const chainItems = useMemo(() => visibleSignals.slice().reverse(), [visibleSignals]);
-  /** What a signal can be assigned to: live domains, as the picker offers them. */
-  const domainNames = (snapshot?.domains ?? [])
-    .filter((d) => !d.meta.archivedAt)
-    .map((d) => ({
-      slug: d.slug,
-      name: d.meta.name,
-    }));
+  /** What a signal can be assigned to: unlocked areas, as the picker offers them. */
+  const domainNames = unlockedAreas(snapshot?.domains ?? []).map((d) => ({
+    slug: d.slug,
+    name: d.meta.name,
+  }));
   /**
    * The saved questions that belong on the screen in front of the operator.
    *
    * Read live from the vault snapshot, so a question added in Settings is in
    * the dock the moment the sheet closes — no reload, no second list to keep in
    * step. The scope is matched here rather than filtered by the page: the dock
-   * is the one place that knows the wing, the domain lens and the route at once.
+   * is the one place that knows the wing, the area lens and the route at once.
    */
   const starters = useMemo(
     () =>
@@ -1044,8 +1043,8 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   }
 
   /**
-   * The domains a signal can be assigned to: the live ones, plus the one it
-   * already names when that domain has since been archived — the page makes the
+   * The areas a signal can be assigned to: the unlocked ones, plus the one it
+   * already names when that area has since been archived — the page makes the
    * same exception, so an archived assignment is shown rather than silently
    * dropped the moment this panel renders it.
    */
@@ -1385,7 +1384,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
         </div>
         <select
           className="chat-panel__chain-assign"
-          aria-label="Assign to domain"
+          aria-label="Assign to area"
           value={s.domainSlug ?? ""}
           disabled={busy || editing}
           onChange={(e) => void onAssignSignal(s.id, e.target.value.trim() || null)}
@@ -1459,7 +1458,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
         <div className="chat-panel__open">
           {view === "chain" ? (
             <div className="chat-panel__header">
-              <p className="chat-panel__heading">Life-Chain</p>
+              <p className="chat-panel__heading">Quick Notes</p>
             </div>
           ) : view === "shortcuts" ? (
             /*
@@ -1765,7 +1764,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 <p className="chat-panel__empty-title">{`Ask ${companionName}`}</p>
                 <p className="chat-panel__empty-copy">
                   This is your LifeQuest companion on the lifequest Hermes
-                  profile. Active domain: {domainName}.
+                  profile. Active area: {domainName}.
                 </p>
                 {/*
                   The saved questions that fit this screen. One click sends the
@@ -1987,12 +1986,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
               <p className="chat-panel__chain-empty muted">
                 {signals.length === 0
                   ? "Nothing on the chain yet. Write something below."
-                  : "No unassigned or matching signals in this domain."}
+                  : "No unassigned or matching signals in this area."}
               </p>
             ) : (
               <ul
                 className="chat-panel__chain-list"
-                aria-label="Life-Chain signals"
+                aria-label="Quick Notes signals"
               >
                 {chainItems.map(signalRow)}
               </ul>
@@ -2463,8 +2462,8 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             <button
               type="button"
               className="chat-panel__icon-btn chat-panel__action"
-              aria-label="Life-Chain"
-              title="Life-Chain"
+              aria-label="Quick Notes"
+              title="Quick Notes"
               aria-pressed={view === "chain"}
               onClick={() => setView(view === "chain" ? "thread" : "chain")}
             >

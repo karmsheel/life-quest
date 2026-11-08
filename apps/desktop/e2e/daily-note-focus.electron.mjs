@@ -23,9 +23,11 @@
  * centre; the cross's corner; the scrim's computed backdrop-filter and its dim;
  * that the page behind is still mounted; that the page of paper is headed by the
  * day's date and footed by the autosave band and the day's own acts, each in its
- * own place; which of the three dismissals closed it; and that a sentence typed
- * in the modal reaches the day's autosave ledger on the day the page was showing,
- * then reads back in the page editor behind.
+ * own place; which of the three dismissals closed it; that a sentence typed in
+ * the modal reaches the day's autosave ledger on the day the page was showing,
+ * then reads back in the page editor behind; and that pressing the day's act on
+ * the page of paper leaves the sheet and puts the act's chat, with its first
+ * turn on screen, in the dock behind.
  *
  * ── How this rig can fail (written before the assertions) ────────────────────
  *
@@ -38,7 +40,7 @@
  *     panel must be `.focus-overlay__panel`.
  *  3. The panel is not a page of paper: not the page's own measure, narrower
  *     than the writing column it replaced, or not centred horizontally.
- *  4. The title is not "Daily Note", not centred over the panel, or not at the
+ *  4. The title is not "Daily Journal", not centred over the panel, or not at the
  *     panel's top; the cross is not inside the panel, not in its top-right,
  *     or not labelled "Close focus mode".
  *  4a. The page shows two headings: the sheet's own title is still painted
@@ -66,7 +68,11 @@
  * 13. The page of paper has no foot, the foot sits above the prose, the
  *     autosave band is missing or collapses when it has no words (so the page
  *     jumps when the notification lands), or the day's own acts are missing.
- * 14. A console error happened, or the page reached a bridge method this rig
+ * 14. Pressing the day's act (Analyze note) inside the sheet leaves focus mode
+ *     up, or opens no chat — or opens one the operator cannot see: the dock is
+ *     collapsed, the pane is on another surface, the thread is not the act's,
+ *     or its turn was never sent with the day's note as context.
+ * 15. A console error happened, or the page reached a bridge method this rig
  *     does not model (`window.dailyNoteUnexpectedCalls`).
  */
 import fs from "node:fs";
@@ -143,6 +149,18 @@ const SAMPLE = `(() => {
   const statusLine = document.querySelector('[data-testid="focus-overlay-status"]');
   const focusActions = document.querySelector(".focus-overlay__actions");
   const focusAction = focusActions ? focusActions.querySelector("button") : null;
+
+  // The dock, where an act's chat lands: the panel itself, the shell's own
+  // "dock is open" class, the thread header that names the chat, and the turn
+  // bubbles the page's act put there.
+  const chatPanel = document.querySelector(".chat-panel");
+  const shell = document.querySelector(".shell");
+  const chatHeading = document.querySelector(".chat-panel__heading--thread");
+  const chatUserMessages = Array.from(
+    document.querySelectorAll(
+      ".chat-panel__message--user .chat-panel__message-content",
+    ),
+  ).map((el) => (el.textContent || "").trim());
 
   const page = document.querySelector(".daily-note");
   const rail = document.querySelector(".nav-rail");
@@ -380,6 +398,23 @@ const SAMPLE = `(() => {
         }
       : null,
     noteLiveInsideOverlay: overlay ? overlay.querySelectorAll(".note-live").length : 0,
+    // The dock behind the sheet: whether the act's chat is actually on screen
+    // for the operator, and what it says. A narrow panel is the collapsed dock's
+    // floating mark, not a chat, so "visible" is read from a real box.
+    chat: {
+      mounted: Boolean(chatPanel),
+      open: Boolean(shell && shell.classList.contains("shell--chat-open")),
+      visible: Boolean(chatPanel && chatPanel.getBoundingClientRect().width > 0),
+      surface: chatPanel ? chatPanel.getAttribute("data-chat-surface") : null,
+      title: chatHeading ? text(chatHeading) : null,
+      userMessages: chatUserMessages,
+    },
+    chatCalls: (window.dailyNoteChatCalls ?? []).map((call) => ({
+      sessionId: call.sessionId,
+      input: call.input,
+      automationContext: call.instructionsContext?.automationContext ?? null,
+      pageRoute: call.instructionsContext?.pageContext?.route ?? null,
+    })),
     writes: (window.dailyNoteWrites ?? []).length,
     unexpectedCalls: [...(window.dailyNoteUnexpectedCalls ?? [])],
   };
@@ -545,6 +580,38 @@ async function main() {
       "!document.querySelector('[data-focus-overlay]')",
       label,
       EXIT_MS + 5_000,
+    );
+    return settle();
+  };
+
+  /**
+   * The day's act was pressed in the sheet: the sheet must leave, and the chat
+   * it opens must be on screen in the dock behind it — the two facts the act is
+   * asked for. The chat is awaited by its own user turn, because a dock that
+   * merely reopened on the previous thread would show a panel with no bubble.
+   */
+  const waitForActChat = async () => {
+    await waitFor(
+      win,
+      "!document.querySelector('[data-focus-overlay]')",
+      "the sheet to leave when the day's act is pressed",
+      EXIT_MS + 5_000,
+    );
+    await waitFor(
+      win,
+      `(() => {
+        const panel = document.querySelector(".chat-panel");
+        const shell = document.querySelector(".shell");
+        return Boolean(
+          panel &&
+            shell &&
+            shell.classList.contains("shell--chat-open") &&
+            panel.getBoundingClientRect().width > 0 &&
+            panel.querySelector(".chat-panel__message--user"),
+        );
+      })()`,
+      "the act's chat to open in the dock",
+      15_000,
     );
     return settle();
   };
@@ -776,9 +843,19 @@ async function main() {
     step("screenshot", { ...shotInfo, whileOpen: Boolean(states.savedByFocus.overlay) });
     step("screenshotWhileOpen", Boolean(states.savedByFocus.overlay));
 
-    // 7 — close it and hand the draft back to the page behind.
-    step("closeAfterTypingSent", await pressEscape());
-    record("pageAfterFocus", await waitClosed("the sheet to leave after typing"));
+    // 7 — the day's own act, pressed on the page of paper: Analyze note leaves
+    //     focus mode and hands the operator the chat it opens, in the dock
+    //     behind — the operator sees the agent start on the note, not a sheet
+    //     with a chat hidden under it.
+    step(
+      "analyzeClicked",
+      await click('[data-testid="focus-overlay-action-daily-note-analyze"]'),
+    );
+    record("analyzeFromFocus", await waitForActChat());
+    step("analyzeShot", await shot("daily-note-focus-analyze.png"));
+
+    // The page the sheet was covering is back, with the same draft behind it.
+    record("pageAfterFocus", await settle());
 
     report.unexpectedCalls = await run(
       "(window.dailyNoteUnexpectedCalls ?? []).slice()",

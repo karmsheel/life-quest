@@ -81,7 +81,7 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
     description:
       "Read one dashboard (pin board) as it currently stands: whether the page is locked, and " +
       "every pin in order with its human label, kind, and span. domainSlug names a domain's " +
-      "dashboard; null names the Overview dashboard. Call this before arranging so you change the " +
+      "dashboard; null names the Life dashboard. Call this before arranging so you change the " +
       "real board, not an imagined one. The `locked` field is the whole write rule: unlocked, your " +
       "view and pin changes land at once; locked, the same call files one pending Decision. " +
       "A view pin's `viewId` is what you pass to save_view to change that card in place.",
@@ -90,7 +90,7 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
       properties: {
         domainSlug: {
           type: "string",
-          description: "The dashboard: a domain slug like 'financial', or null for the Overview dashboard.",
+          description: "The dashboard: an area slug like 'financial', or null for the Life dashboard.",
         },
       },
       required: ["domainSlug"],
@@ -227,7 +227,7 @@ export const VIEW_TOOL_DEFS: MapToolDef[] = [
       properties: {
         domainSlug: {
           type: "string",
-          description: "The dashboard: a domain slug like 'financial', or null for the Overview dashboard.",
+          description: "The dashboard: an area slug like 'financial', or null for the Life dashboard.",
         },
         pins: {
           type: "array",

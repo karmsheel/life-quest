@@ -242,7 +242,7 @@ describe("chat sessions harness", () => {
       // bar is gone with the dock's list.
       const slots = [
         "New chat",
-        "Life-Chain",
+        "Quick Notes",
         "Keyboard shortcuts",
         "Move chat to the left of the page",
         "Collapse chat",
@@ -292,10 +292,10 @@ describe("chat sessions harness", () => {
         channelDelta(landing.actionsBarBackground, landing.footerBackground) >= 8,
         `the action bar shares the composer's surface: ${landing.actionsBarBackground} vs ${landing.footerBackground}`,
       );
-      assert.equal(landing.actions[1]?.label, "Life-Chain", "the chain slot is not the second slot");
+      assert.equal(landing.actions[1]?.label, "Quick Notes", "the chain slot is not the second slot");
       assert.equal(landing.actions[1]?.pressed, false, "the chain slot starts active");
 
-      assert.equal(chain.heading, "Life-Chain", "the chain header names the wrong surface");
+      assert.equal(chain.heading, "Quick Notes", "the chain header names the wrong surface");
       assert.equal(chain.actions[1]?.pressed, true, "the chain slot is not marked active");
       assert.equal(chain.chatField.present, false, "both composers are mounted at once");
       assert.equal(chain.transcript.length, 0, "the chat transcript paints behind the chain");

@@ -32,9 +32,11 @@ const CLOSE_DELAY_MS = 220;
  *  - A click switches the palette now, straight between night and day — the
  *    same press the old toggle made, and the one the operator reaches for
  *    without breaking stride.
- *  - Hovering opens the quick menu the settings button carries: the colour-mode
- *    switcher (System / Light / Dark) first, then the starred themes, so a
- *    theme can be tried without a trip to Settings.
+ *  - Hovering opens the quick menu: the colour-mode switcher
+ *    (System / Light / Dark) first, then the starred themes, so a theme can be
+ *    tried without a trip to Settings. The menu used to hang off the settings
+ *    gear instead; the gear is a plain link to the settings sheet now, so the
+ *    strip offers one way into each.
  *
  * The control is always in the strip. A theme that ships only one palette has no
  * alternate day or night version, but hiding the switch there left the operator
@@ -42,10 +44,9 @@ const CLOSE_DELAY_MS = 220;
  * put, and the provider hands the window to the fallback theme (Nous) when the
  * worn theme cannot paint the mode being asked for.
  *
- * The menu is portalled to the body for the same reason the settings popover
- * is: the window strip owns the trigger and must not decide where the menu is
- * drawn. It closes on Escape, on a press outside it, and when the pointer
- * leaves both the control and the menu.
+ * The menu is portalled to the body because the window strip owns the trigger
+ * and must not decide where the menu is drawn. It closes on Escape, on a press
+ * outside it, and when the pointer leaves both the control and the menu.
  */
 export function ThemeQuickMenu({ className }: { className?: string }) {
   const navigate = useNavigate();
@@ -157,7 +158,7 @@ export function ThemeQuickMenu({ className }: { className?: string }) {
 
   /*
    * The menu lists the palettes that match the preference the operator is
-   * wearing, the same filter the settings popover applies, and then narrows that
+   * wearing, the same filter the Appearance page applies, and then narrows that
    * to the starred names: the quick menu is the favourites, not a second theme
    * browser.
    */

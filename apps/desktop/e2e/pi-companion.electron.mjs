@@ -181,11 +181,19 @@ async function main() {
     const switched = await api.companionUseHarness("pi");
     const created = await api.vaultCreate(${JSON.stringify(vaultDir)}, "Pi rig");
     const opened = await api.vaultOpen(${JSON.stringify(vaultDir)});
+    // A new vault seeds the base Life area unlocked and Health/Mind/Finance/
+    // Business/Relationships locked. This rig scopes agents by area and switches
+    // the lens, so the two areas it uses are unlocked first — the same
+    // domainUnlock IPC the onboarding and Settings call.
+    const unlockedHealth = await api.domainUnlock("health");
+    const unlockedFinance = await api.domainUnlock("financial");
     return {
       settings: settings && settings.kind,
       switched: switched && switched.kind,
       createdOk: created && created.ok,
       openedOk: opened && opened.ok,
+      unlocked: unlockedHealth && unlockedHealth.ok === true &&
+        unlockedFinance && unlockedFinance.ok === true,
     };
   })()`);
 
@@ -322,8 +330,8 @@ async function main() {
   await sleep(500);
   const defaultedHermes = await clickOption("Hermes: default in Health");
   await sleep(500);
-  // Pi is offered everywhere already; it only needs Financial as its default.
-  const defaultedPi = await clickOption("Pi: default in Financial");
+  // Pi is offered everywhere already; it only needs Finance as its default.
+  const defaultedPi = await clickOption("Pi: default in Finance");
   await sleep(600);
   const persisted = await js(`(async () => {
     const snap = await window.lifequest.vaultGetSnapshot();
@@ -375,7 +383,7 @@ async function main() {
 
   const clickedFinancial = await js(`(() => {
     const chip = [...document.querySelectorAll(".domain-switcher .ui-segmented__option")].find(
-      (el) => (el.textContent ?? "").trim() === "Financial",
+      (el) => (el.textContent ?? "").trim() === "Finance",
     );
     if (!chip) return false;
     chip.click();
@@ -389,6 +397,7 @@ async function main() {
       configured.settings === "ready" &&
       configured.switched === "ready" &&
       configured.openedOk === true &&
+      configured.unlocked === true &&
       mounted === true &&
       turn.ok === true &&
       deltas.includes(REPLY) &&

@@ -224,10 +224,10 @@ async function main() {
           JSON.stringify([
             "What did you decide?",
             "Why? (optional)",
-            "Domain (optional)",
+            "Area (optional)",
           ]) &&
         JSON.stringify(manualTab.form.domainOptions) ===
-          JSON.stringify(["No domain", "Financial", "Health"]) &&
+          JSON.stringify(["No area", "Financial", "Health"]) &&
         manualTab.form.domain === "" &&
         manualTab.manualRows.length === 0 &&
         manualTab.manualEmpty === "No manual decisions logged yet.",

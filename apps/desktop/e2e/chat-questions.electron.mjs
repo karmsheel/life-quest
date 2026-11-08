@@ -394,8 +394,8 @@ async function main() {
       added.questions.map((row) => row.text).join(" | "),
     );
     check(
-      "the domain scope is stored and shown as a domain",
-      added.questions[0]?.scope === "Financial domain",
+      "the area scope is stored and shown as an area",
+      added.questions[0]?.scope === "Financial area",
       `first scope is "${added.questions[0]?.scope}"`,
     );
     check(

@@ -9,12 +9,14 @@ import {
   currentPeriod,
   filterByLens,
   lensSlug,
+  unlockedAreas,
   type Goal,
   type GoalStatus,
   type GoalsCommand,
   type ReviewCadence,
 } from "@lifequest/vault-core/pure";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { api } from "@/lib/ipc";
@@ -68,12 +70,10 @@ export default function GoalsPage() {
   const { ask, dialog } = useConfirm();
   const weekStartDay = snapshot?.settings.weekStartDay ?? "monday";
 
+  // A goal is assigned to an area, so the picker offers unlocked areas only —
+  // never the base `life` container, whose records read as unassigned here.
   const liveDomains = useMemo(
-    () =>
-      (snapshot?.domains ?? [])
-        .filter((d) => !d.meta.archivedAt)
-        .slice()
-        .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder),
+    () => unlockedAreas(snapshot?.domains ?? []),
     [snapshot],
   );
 
@@ -281,6 +281,7 @@ export default function GoalsPage() {
   return (
     <div className="goals-page">
       <header className="goals-page__header">
+        <WingEyebrow page="Goals" />
         <h1 className="stub-page__title">Goals</h1>
         <p className="stub-page__desc muted">
           Vault-wide outcomes. A deadline and either a metric or a definition of
@@ -368,7 +369,7 @@ export default function GoalsPage() {
             />
           </label>
           <label className="field">
-            Domain
+            Area
             <select
               value={domainValue}
               onChange={(e) => {

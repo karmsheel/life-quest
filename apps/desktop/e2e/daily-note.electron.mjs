@@ -252,7 +252,7 @@ const SAMPLE = `(() => {
   const shell = document.querySelector(".shell");
   return {
     links,
-    heading: text(".daily-note__eyebrow"),
+    heading: text(".daily-note .wing-eyebrow"),
     // The date IS the page's heading now, so it is read as one: the tag it is
     // painted as, and the size it is painted at. "Daily Note" is a label
     // above it, not a second heading.
@@ -265,7 +265,7 @@ const SAMPLE = `(() => {
       return el ? px(getComputedStyle(el).fontSize) : null;
     })(),
     eyebrowSize: (() => {
-      const el = document.querySelector(".daily-note__eyebrow");
+      const el = document.querySelector(".daily-note .wing-eyebrow");
       return el ? px(getComputedStyle(el).fontSize) : null;
     })(),
     day: text('[data-testid="daily-note-day"]'),
@@ -914,15 +914,15 @@ async function main() {
   if (labels[labels.length - 1] !== "Automations") {
     failure(`the governed shelf does not end with Automations: ${JSON.stringify(labels)}`);
   }
-  if (labels[labels.length - 2] !== "Daily Note") {
-    failure(`Automations is not directly under Daily Note: ${JSON.stringify(labels)}`);
+  if (labels[labels.length - 2] !== "Daily Journal") {
+    failure(`Automations is not directly under Daily Journal: ${JSON.stringify(labels)}`);
   }
   if (labels[labels.length - 3] !== "Decisions") {
-    failure(`Daily Note is not directly under Decisions: ${JSON.stringify(labels)}`);
+    failure(`Daily Journal is not directly under Decisions: ${JSON.stringify(labels)}`);
   }
-  const noteLink = landing.links.find((entry) => entry.label === "Daily Note");
+  const noteLink = landing.links.find((entry) => entry.label === "Daily Journal");
   if (!noteLink) {
-    failure("the rail carries no Daily Note entry at all");
+    failure("the rail carries no Daily Journal entry at all");
   } else {
     // The href is read as the route it names: this rig mounts MemoryRouter, so
     // the studio's HashRouter `#/notes` appears here as `/notes`.
@@ -930,7 +930,7 @@ async function main() {
       failure(`the rail entry points at ${JSON.stringify(noteLink.href)}, expected the notes route`);
     }
     if (!noteLink.icon) failure("the rail entry drew no icon");
-    if (!noteLink.active) failure("the rail did not mark Daily Note active on its own route");
+    if (!noteLink.active) failure("the rail did not mark Daily Journal active on its own route");
   }
   const decisionsLink = landing.links.find((entry) => entry.label === "Decisions");
   if (decisionsLink && !decisionsLink.icon) failure("the Decisions entry lost its icon");
@@ -944,12 +944,12 @@ async function main() {
       );
     }
     if (!automationsLink.icon) failure("the Automations entry drew no icon");
-    if (automationsLink.active) failure("Automations is marked active on the Daily Note route");
+    if (automationsLink.active) failure("Automations is marked active on the Daily Journal route");
   }
 
   // ── 2. the page lands on today, in ONE box, empty, and writes nothing ────
   checks.landing = landing;
-  if (landing.heading !== "Daily Note") {
+  if (landing.heading !== "Daily Journal") {
     failure(`the page name read ${JSON.stringify(landing.heading)}`);
   }
   // The date is the page's ONE heading, and it is the big one: the name above
@@ -961,6 +961,7 @@ async function main() {
     failure(
       `the date heading is ${landing.headingSize}px and the page name ${landing.eyebrowSize}px — the date is not the larger one`,
     );
+
   }
   // The date is the label; "Today" is a parenthetical on the end, not a prefix
   // that pushes the date off the centre of the box.
@@ -2164,7 +2165,7 @@ async function main() {
     const compose = document.querySelector(".daily-note__compose");
     const header = document.querySelector(".daily-note__header");
     const titleRow = document.querySelector(".daily-note__title-row");
-    const eyebrow = document.querySelector(".daily-note__eyebrow");
+    const eyebrow = document.querySelector(".daily-note .wing-eyebrow");
     const button = document.querySelector('[data-testid="daily-note-analyze"]');
     if (!row || !editor || !button) return { present: false };
     const rect = (el) => {

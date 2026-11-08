@@ -480,6 +480,31 @@ const SAMPLE = `(() => {
             domainSwitcher.getBoundingClientRect().height
         }
       : null,
+    // The first-run band: with fewer than two unlocked areas the lens is not a
+    // control at all — one inert word, "Life", centred in the same tab and the
+    // same height as the segmented control it replaces. Measured separately so
+    // "quiet" cannot be satisfied by a control that merely lost its options.
+    quietLens: (() => {
+      const quietEl = lens ? lens.querySelector(".domain-switcher--quiet") : null;
+      const lifeEl = quietEl ? quietEl.querySelector(".domain-switcher__life") : null;
+      if (!quietEl || !lensBoxNow) return null;
+      const quietBox = quietEl.getBoundingClientRect();
+      return {
+        text: (lifeEl ? lifeEl.textContent : "").trim(),
+        box: box(quietEl),
+        inLens: Boolean(lens && lens.contains(quietEl)),
+        // The word must sit on the tab's own centre line, not against one edge.
+        offsetFromLensCentreX: Math.round(
+          quietBox.left + quietBox.width / 2 - (lensBoxNow.left + lensBoxNow.right) / 2,
+        ),
+        height: quietBox.height,
+        gapAbove: Math.round(quietBox.top - lensBoxNow.top),
+        gapBelow: Math.round(lensBoxNow.bottom - quietBox.bottom)
+      };
+    })(),
+    // A negative claim for the quiet state: the segmented control is absent,
+    // not merely empty. Read on every sample so the mode cannot pass by mismatch.
+    lensHasTabs: Boolean(lensTabsEl),
     // The rail's first level: the five-wing switcher, in a band of its own above
     // the active wing's pages, under the window strip. Wide, the control is
     // horizontal; thin, it turns vertical and stays in the icon column — the
@@ -972,9 +997,9 @@ async function main() {
 
   let report;
   const timeout = setTimeout(() => {
-    console.error("shell-sidebar: timed out after 90s");
+    console.error("shell-sidebar: timed out after 150s");
     app.exit(1);
-  }, 90_000);
+  }, 150_000);
 
   try {
     await win.loadURL(url);
@@ -1725,12 +1750,12 @@ async function main() {
       `switcher ${JSON.stringify(lensSwitcher?.box)} in lens ${JSON.stringify(expanded.lens?.box)}`,
     );
     check(
-      "the lens is a real multi-option domain tab",
+      "the lens is a real multi-option area tab",
       Boolean(lensSwitcher) &&
         Array.isArray(domainNames) &&
         lensSwitcher.optionCount === domainNames.length + 1 &&
         JSON.stringify(lensSwitcher.labels) ===
-          JSON.stringify(["Overview", ...domainNames]),
+          JSON.stringify(["Life", ...domainNames]),
       `labels ${JSON.stringify(lensSwitcher?.labels)} for harness domains ${JSON.stringify(domainNames)}`,
     );
     // The lens's own segmented control: no outer frame inside the page-ink tab,
@@ -1816,7 +1841,7 @@ async function main() {
       "the rail switcher moves to the Define wing",
       defined.wingSwitcher?.active === "Define" &&
         JSON.stringify(defined.wingRows?.map((row) => row.label)) ===
-          JSON.stringify(["Dream", "Vision", "Ideal State", "Images"]),
+          JSON.stringify(["Dream", "Vision", "Ideal State"]),
       `active ${JSON.stringify(defined.wingSwitcher?.active)}, rows ${JSON.stringify(defined.wingRows?.map((row) => row.label))}`,
     );
     at("wing switcher: Home");
@@ -1836,7 +1861,8 @@ async function main() {
             "Data",
             "Pages",
             "Documents",
-            "Personnel",
+            "Agents",
+            "Images",
           ]),
       `active ${JSON.stringify(homeAgain.wingSwitcher?.active)}, rows ${JSON.stringify(homeAgain.wingRows?.map((row) => row.label))}`,
     );
@@ -2546,6 +2572,71 @@ async function main() {
       }
     }
 
+    // 10 — first run: fewer than two unlocked areas is one Life surface. The tab
+    // keeps the band's height and centres one inert word; the control is absent.
+    // Both 0 and 1 unlocked areas are measured, because the rule is "hidden below
+    // two" and a one-area vault must not regress into an empty control.
+    const quietStates = {};
+    const quietShots = [];
+    for (const mode of ["none", "one"]) {
+      await win.loadURL(`${url}?areas=${mode}`);
+      await waitForHarness();
+      win.setContentSize(DEFAULT_SIZE.width, DEFAULT_SIZE.height);
+      const quietSample = await settled(320);
+      const quietMode = await run("window.shellHarnessAreasMode ?? null");
+      check(
+        `quiet[${mode}]: the harness opened the expected snapshot`,
+        quietMode === mode,
+        `mode ${JSON.stringify(quietMode)}`,
+      );
+      const quiet = quietSample.quietLens;
+      check(
+        `quiet[${mode}]: the lens is the quiet Life label`,
+        Boolean(quiet) && quiet.inLens === true && quiet.text === "Life",
+        `quiet lens ${JSON.stringify(quiet)}`,
+      );
+      check(
+        `quiet[${mode}]: no segmented control renders`,
+        quietSample.lensTabs === null && quietSample.lensHasTabs === false,
+        `lensTabs ${JSON.stringify(quietSample.lensTabs)}, lensHasTabs ${JSON.stringify(quietSample.lensHasTabs)}`,
+      );
+      check(
+        `quiet[${mode}]: the word is centred in the lens`,
+        Boolean(quiet) && Math.abs(quiet.offsetFromLensCentreX) <= 2,
+        `offset ${quiet?.offsetFromLensCentreX}px`,
+      );
+      check(
+        `quiet[${mode}]: the quiet label fits the strip`,
+        Boolean(quiet) &&
+          quiet.height > 0 &&
+          quiet.height <= titlebarHeight &&
+          quiet.gapAbove >= 0 &&
+          quiet.gapBelow >= 0,
+        `height ${quiet?.height} in ${titlebarHeight}px strip, gaps ${quiet?.gapAbove}/${quiet?.gapBelow}`,
+      );
+      // The tab itself is still the strip's centred tab: both gaps stay positive,
+      // so the quiet word did not pull it into the rail or the trailing cluster.
+      check(
+        `quiet[${mode}]: the lens is still the strip's centred tab`,
+        Boolean(quietSample.lens) &&
+          (quietSample.lens.fromRail ?? 0) > 0 &&
+          (quietSample.lens.toTrailing ?? 0) > 0,
+        `lens ${JSON.stringify(
+          quietSample.lens && {
+            fromRail: quietSample.lens.fromRail,
+            toTrailing: quietSample.lens.toTrailing,
+          },
+        )}`,
+      );
+      const quietFile = path.join(
+        artifactsDir,
+        `shell-sidebar-quiet-${mode}.png`,
+      );
+      fs.writeFileSync(quietFile, (await win.webContents.capturePage()).toPNG());
+      quietShots.push(quietFile);
+      quietStates[mode] = quietSample;
+    }
+
     report = {
       url,
       ranAt: new Date().toISOString(),
@@ -2588,6 +2679,10 @@ async function main() {
         pseudoReadable: dayScroll.sheet?.thumbBackground !== null,
       },
       reclaimedPx: (expanded.main?.left ?? 0) - (collapsed.main?.left ?? 0),
+      // The first-run band at 0 and 1 unlocked areas: the quiet Life label, its
+      // centring and the absent control. The tests read these rather than the
+      // screenshots, so "hidden below two" is a measured claim in the artifact.
+      quiet: quietStates,
       screenshots: [
         expandedFile,
         cornerFile,
@@ -2596,6 +2691,7 @@ async function main() {
         collapsedFile,
         dayFile,
         ...skinShots,
+        ...quietShots,
       ],
       failures,
       pass: failures.length === 0,

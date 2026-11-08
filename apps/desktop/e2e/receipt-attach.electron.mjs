@@ -131,6 +131,9 @@ async function makeVault(mod, dir) {
   fs.mkdirSync(dir, { recursive: true });
   const created = await mod.createVault(dir, "Receipt rig");
   if (!created.ok) throw new Error(`createVault failed: ${created.error}`);
+  // The Finance area seeds locked on a new vault; the kit lives in it.
+  const unlocked = await mod.unlockDomain(dir, mod.FINANCE_DOMAIN_SLUG);
+  if (!unlocked.ok) throw new Error(`unlockDomain(financial) failed: ${unlocked.error}`);
   const kit = await mod.installFinanceKit(dir, mod.USER_ACTOR);
   if (!kit.ok) throw new Error(`installFinanceKit failed: ${kit.error}`);
   if (!kit.value.applied) throw new Error("installFinanceKit filed a Decision instead of applying");

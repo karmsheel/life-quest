@@ -670,7 +670,7 @@ async function main() {
   await press(win, await pointAt(win, ".chat-panel__heading"));
   await press(win, await pointAt(win, ".nav-rail"));
   const afterOtherSurfaces = await sample(win);
-  await press(win, await pointAt(win, ".home-dashboard__eyebrow"));
+  await press(win, await pointAt(win, '[data-testid="wing-eyebrow"]'));
   await waitFor(
     win,
     `((window.cardContextDock ?? {}).contextCards ?? []).length === 0`,

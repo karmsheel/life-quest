@@ -80,7 +80,9 @@ import {
   setLibraryLocked,
   setPins,
   setPinBoardLocked,
+  isAreaLive,
   unarchiveDomain,
+  unlockDomain,
   unlockReview,
   updateConnectedAgent,
   updateDomain,
@@ -399,7 +401,17 @@ async function rememberOpen(snapshot: VaultSnapshot): Promise<void> {
   currentVaultId = snapshot.lifequest.id;
   // Restore the persisted lens for this vault (KAR-6).
   const persisted = await getActiveDomain(snapshot.lifequest.id);
-  currentLens = persisted;
+  // A persisted lens that is locked or archived no longer names a lens: the
+  // area the studio reopens on is Life, not a hidden one.
+  const persistedDomain =
+    persisted === null
+      ? undefined
+      : snapshot.domains.find((d) => d.slug === persisted);
+  currentLens =
+    persistedDomain && isAreaLive(persistedDomain) ? persisted : null;
+  if (persisted !== null && currentLens === null) {
+    await setActiveDomain(snapshot.lifequest.id, null);
+  }
   await captureDoctrineMtimes(snapshot.rootPath);
   await recordRecentVault({
     id: snapshot.lifequest.id,
@@ -711,6 +723,11 @@ export async function domainUnarchive(
   return withVault((root) => unarchiveDomain(root, slug));
 }
 
+/** Unlock a seeded area. A flag flip: nothing is created or moved. */
+export async function domainUnlock(slug: string): Promise<Result<DomainRecord>> {
+  return withVault((root) => unlockDomain(root, slug));
+}
+
 export async function domainDelete(
   slug: string,
 ): Promise<Result<{ slug: string }>> {
@@ -805,6 +822,9 @@ export async function domainSetActive(slug: string | null): Promise<Result<strin
     }
     if (domain.meta.archivedAt) {
       return { ok: false, error: `Domain is archived: ${slug}` };
+    }
+    if (domain.meta.unlockedAt === null) {
+      return { ok: false, error: `Area is locked: ${slug}` };
     }
     currentLens = slug;
     await setActiveDomain(currentVaultId, slug);
@@ -1470,7 +1490,7 @@ export async function hermesChatToolsCall(
   const map = snap.ok ? snap.value.map : null;
   const aboutMe = map?.aboutMe ?? "";
   const extraSystem = [
-    `Active domain: ${activeSlug ?? "overview"}`,
+    `Active area: ${activeSlug ?? "life"}`,
     `About me: ${aboutMe}`,
   ].join("\n");
 

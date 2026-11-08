@@ -14,7 +14,7 @@
  *
  * What this rig claims:
  *
- *  1. `/chain` is the shipped shell page: the rail marks Life-Chain, the page
+ *  1. `/chain` is the shipped shell page: the rail marks Quick Notes, the page
  *     carries the capture box, the composer textarea and the image/link
  *     controls. Shift+Enter leaves the draft alone, Enter logs a text capture,
  *     and the row carries `data-attachment="text"` with the typed body.
@@ -259,7 +259,7 @@ const SAMPLE = `(() => {
       surface: q(".chat-panel")
         ? q(".chat-panel").getAttribute("data-chat-surface")
         : null,
-      action: Boolean(q('.chat-panel [aria-label="Life-Chain"]')),
+      action: Boolean(q('.chat-panel [aria-label="Quick Notes"]')),
       items: all(".chat-panel__chain-item").map((item) => {
         const linkEl = item.querySelector(".chat-panel__chain-link");
         return {
@@ -323,7 +323,7 @@ const setValue = (selector, value) => `(() => {
  * bar; clicking the rail row would only stay on the page.
  */
 const clickDockChain = `(() => {
-  const el = document.querySelector('.chat-panel [aria-label="Life-Chain"]');
+  const el = document.querySelector('.chat-panel [aria-label="Quick Notes"]');
   if (!el) return false;
   el.click();
   return true;
@@ -522,13 +522,13 @@ async function main() {
     };
     check("chain route", landing.route === "/chain", `route is ${JSON.stringify(landing.route)}`);
     check(
-      "the rail marks Life-Chain",
-      landing.activeRail === "Life-Chain",
+      "the rail marks Quick Notes",
+      landing.activeRail === "Quick Notes",
       `active rail row is ${JSON.stringify(landing.activeRail)}`,
     );
     check(
       "the rail carries the chain row",
-      landing.rail.some((item) => item.label === "Life-Chain" && item.href === "/chain"),
+      landing.rail.some((item) => item.label === "Quick Notes" && item.href === "/chain"),
       `rail is ${JSON.stringify(landing.rail)}`,
     );
     check("the chain page is up", landing.presence.page, "no .signal-chain on the page");

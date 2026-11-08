@@ -13,6 +13,7 @@ import {
   PROJECT_PRIORITIES,
   PROJECT_STATUSES,
   recordVisible,
+  unlockedAreas,
   type Project,
   type ProjectPriority,
   type ProjectStatus,
@@ -20,6 +21,7 @@ import {
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
 import { Button, buttonClassName } from "@/components/ui/Button";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { api } from "@/lib/ipc";
 import {
   formatProjectDay,
@@ -103,12 +105,9 @@ export default function ProjectsPage() {
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
+  // The composer assigns a project to an area: unlocked areas only, base hidden.
   const liveDomains = useMemo(
-    () =>
-      (snapshot?.domains ?? [])
-        .filter((d) => !d.meta.archivedAt)
-        .slice()
-        .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder),
+    () => unlockedAreas(snapshot?.domains ?? []),
     [snapshot],
   );
 
@@ -132,8 +131,8 @@ export default function ProjectsPage() {
     void load();
   }, [load, reloadGeneration, liveRevision]);
 
-  // The domain lens is the app's, not a second filter on the page: Overview shows
-  // every project, a domain lens shows that domain's own.
+  // The area lens is the app's, not a second filter on the page: Life shows
+  // every project, an area lens shows that area's own.
   const visible = useMemo(
     () => projects.filter((p) => recordVisible(lens, p.domainSlug)),
     [projects, lens],
@@ -254,7 +253,7 @@ export default function ProjectsPage() {
     <div className="projects-page" data-testid="projects-page">
       <header className="act-page__header">
         <div>
-          <p className="act-page__eyebrow muted">Execute</p>
+          <WingEyebrow page="Projects" />
           <h1 className="act-page__title">Projects</h1>
         </div>
         <div className="projects-page__header-actions">
@@ -308,7 +307,7 @@ export default function ProjectsPage() {
         </div>
         <p className="muted projects-page__scope">
           {lens.kind === "overview"
-            ? "Overview — every domain"
+            ? "Life — every area"
             : `Scoped to ${domainName(lens.slug)}`}
         </p>
       </div>
@@ -518,7 +517,7 @@ export default function ProjectsPage() {
                   </select>
                 </label>
                 <label className="field">
-                  <span>Domain</span>
+                  <span>Area</span>
                   <select
                     value={composer.domainSlug}
                     onChange={(e) => {
