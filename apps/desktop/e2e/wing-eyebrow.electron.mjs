@@ -55,7 +55,9 @@ const SIZE = { width: 1280, height: 900 };
  */
 const PAGES = [
   // Home
-  { route: "/home", eyebrow: "Dashboard", wing: "Home", heading: "Overview" },
+  // The Home board is headed by the area it is showing, and the base area is
+  // Life; its own name is the eyebrow above it.
+  { route: "/home", eyebrow: "Dashboard", wing: "Home", heading: "Life" },
   { route: "/data", eyebrow: "Data", wing: "Home", heading: "Databases" },
   { route: "/pages", eyebrow: "Pages", wing: "Home", heading: "Pages" },
   { route: "/documents", eyebrow: "Documents", wing: "Home", heading: "Documents" },
@@ -72,7 +74,7 @@ const PAGES = [
   // Act
   { route: "/projects", eyebrow: "Projects", wing: "Act", heading: "Projects" },
   { route: "/daily", eyebrow: "Daily Schedule", wing: "Act", heading: "Daily Schedule" },
-  { route: "/act", eyebrow: "Task Manager", wing: "Act", heading: "Overview" },
+  { route: "/act", eyebrow: "Task Manager", wing: "Act", heading: "Life" },
   // Review
   { route: "/review/daily", eyebrow: "Daily", wing: "Review", heading: "Daily review" },
   { route: "/review/weekly", eyebrow: "Weekly", wing: "Review", heading: "Weekly review" },
@@ -118,7 +120,7 @@ const SAMPLE = `(() => {
   }));
   const h1 = root ? root.querySelector("h1") : null;
   // The title's OWN text: the Dashboard's h1 also carries the board's state
-  // badge, and "OverviewUnlocked" is not the page's name.
+  // badge, and "LifeUnlocked" is not the page's name.
   const h1OwnText = h1
     ? Array.from(h1.childNodes)
         .filter((n) => n.nodeType === Node.TEXT_NODE)
