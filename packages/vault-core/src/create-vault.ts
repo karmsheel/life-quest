@@ -14,6 +14,7 @@ import {
   AREA_SEEDS,
   type DomainMeta,
   type LifequestJson,
+  type OnboardingRecord,
   type Result,
   type VaultSettings,
   type VaultSnapshot,
@@ -60,6 +61,17 @@ export async function createVault(
     await atomicWriteFile(paths.settingsJson, `${JSON.stringify(settings, null, 2)}\n`);
     await atomicWriteFile(paths.agentsJson, `${JSON.stringify({ hires: [] }, null, 2)}\n`);
     await atomicWriteFile(paths.logJsonl, "");
+
+    // A new vault has not run the interview yet. The file is what makes it
+    // eligible for the first-run card: a vault with no onboarding file reads as
+    // `completed`, which is the rule that keeps existing vaults quiet.
+    const onboarding: OnboardingRecord = {
+      status: "not_started",
+      startedAt: null,
+      completedAt: null,
+      unlockedAreas: [],
+    };
+    await atomicWriteFile(paths.onboardingJson, `${JSON.stringify(onboarding, null, 2)}\n`);
 
     for (const seed of AREA_SEEDS) {
       const meta: DomainMeta = {

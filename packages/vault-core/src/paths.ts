@@ -317,6 +317,17 @@ export function vaultPaths(root: string) {
     get companionBriefJson(): string {
       return build(".lifequest", "companion-brief.json");
     },
+    /**
+     * The onboarding interview's record (P1, 2026-11-08). A vault with no file
+     * reads as `completed`; a new vault writes it at creation.
+     */
+    get onboardingJson(): string {
+      return build(".lifequest", "onboarding.json");
+    },
+    /** The companion's pending confirmation card, awaiting the operator's answer. */
+    get onboardingProposalJson(): string {
+      return build(".lifequest", "onboarding-proposal.json");
+    },
     get documentsDir(): string {
       return build("documents");
     },

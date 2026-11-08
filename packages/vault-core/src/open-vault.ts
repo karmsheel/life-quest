@@ -6,6 +6,7 @@ import { decisionInboxFromUnknown } from "./decision-inbox.ts";
 import { readOrCreateDoctrineFile } from "./domain-documents.ts";
 import { loadGoals } from "./goals.ts";
 import { readLog } from "./log.ts";
+import { legacyOnboardingRecord, readOnboardingProposal, readOnboardingRecord } from "./onboarding.ts";
 import { vaultPaths } from "./paths.ts";
 import { ensureMapOnOpen } from "./map/persist.ts";
 import { listPlanningIndex } from "./planning-stubs.ts";
@@ -21,6 +22,8 @@ import {
   type DomainRecord,
   type Goal,
   type LifequestJson,
+  type OnboardingProposal,
+  type OnboardingRecord,
   type PlanningIndexEntry,
   type Result,
   type ReviewIndexEntry,
@@ -155,6 +158,19 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
       weeklyFileCount = 0;
     }
 
+    // Onboarding drives the dock's first-run cards, so both are filled on every
+    // open. A missing or malformed record already reads as completed inside
+    // `readOnboardingRecord`; the fallback here is defence in depth so a bad file
+    // can never fail the whole open. A malformed proposal simply means no card.
+    const onboardingRes = await readOnboardingRecord(paths.root);
+    const onboarding: OnboardingRecord = onboardingRes.ok
+      ? onboardingRes.value
+      : legacyOnboardingRecord();
+    const onboardingProposalRes = await readOnboardingProposal(paths.root);
+    const onboardingProposal: OnboardingProposal | null = onboardingProposalRes.ok
+      ? onboardingProposalRes.value
+      : null;
+
     return {
       ok: true,
       value: {
@@ -172,6 +188,8 @@ export async function openVault(rootPath: string): Promise<Result<VaultSnapshot>
         reviews,
         planning,
         weeklyFileCount,
+        onboarding,
+        onboardingProposal,
       },
     };
   } catch (e) {

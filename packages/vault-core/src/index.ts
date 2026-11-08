@@ -10,6 +10,7 @@ export * from "./atomic-write.ts";
 export * from "./log.ts";
 export * from "./create-vault.ts";
 export * from "./open-vault.ts";
+export * from "./onboarding.ts";
 export * from "./domains.ts";
 export * from "./domain-documents.ts";
 export * from "./decisions.ts";
@@ -81,6 +82,10 @@ export {
   DOCUMENT_TOOL_DEFS,
   executeDocumentTool,
 } from "./document-tools.ts";
+export {
+  ONBOARDING_TOOL_DEFS,
+  executeOnboardingTool,
+} from "./onboarding-tools.ts";
 export {
   COMPANION_ACTOR,
   collectImpliedTurn,
@@ -373,6 +378,7 @@ import { DAILY_NOTE_TOOL_DEFS } from "./daily-note-tools.ts";
 import { COMPANION_BRIEF_TOOL_DEFS } from "./companion-brief-tools.ts";
 import { PAGE_TOOL_DEFS } from "./pages-tools.ts";
 import { SIGNAL_TOOL_DEFS } from "./signal-tools.ts";
+import { ONBOARDING_TOOL_DEFS } from "./onboarding-tools.ts";
 import type { MapToolDef } from "./map/tools.ts";
 
 /**
@@ -394,4 +400,5 @@ export const ALL_TOOL_DEFS: MapToolDef[] = [
   ...PAGE_TOOL_DEFS,
   ...SIGNAL_TOOL_DEFS,
   ...COMPANION_BRIEF_TOOL_DEFS,
+  ...ONBOARDING_TOOL_DEFS,
 ];

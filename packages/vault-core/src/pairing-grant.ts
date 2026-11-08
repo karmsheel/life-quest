@@ -110,6 +110,9 @@ export const COMPANION_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "set_about_me",
   "get_companion_brief",
   "set_companion_brief",
+  // The onboarding interview is the companion's own door: a connected agent has
+  // no interview to run, and the proposal is the studio's word, not a domain's.
+  "propose_onboarding_unlock",
 ]);
 
 /**
