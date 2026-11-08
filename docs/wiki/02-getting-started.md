@@ -20,8 +20,8 @@ whenever the Hermes companion is not connected. You cannot reach the welcome
 screen, and therefore cannot reach any vault, until it is satisfied.
 
 Later, settings live in the **Settings** sheet: press the gear at the top right
-of the title bar, then **All settings** (or use the sheet from the chat pane's
-error banner). See [Settings](./28-settings.md) for every tab.
+of the title bar (or use the sheet from the chat pane's error banner). See
+[Settings](./28-settings.md) for every tab.
 
 ## What it is for
 

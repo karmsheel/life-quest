@@ -79,12 +79,13 @@ export function WindowTitleBar() {
                 keyboard-shortcuts reference moved into the dock's own bottom
                 bar, where the surfaces it switches between live: the strip no
                 longer carries a second way to change what the dock shows.
+
+                The gear is a plain link to the settings sheet now: the palette
+                and theme quick menu that once opened under it hangs off the
+                day/night control instead, so the strip offers one way into each.
               */}
               <ThemeQuickMenu className="window-titlebar__btn" />
-              <SettingsMenu
-                className="window-titlebar__settings"
-                placement="bottom-end"
-              />
+              <SettingsMenu className="window-titlebar__settings" />
             </>
           ) : null}
           {fallbackControls && chrome ? (

@@ -166,6 +166,25 @@ const SAMPLE = `(() => {
           themeInTrailing: Boolean(trailing.querySelector(".theme-mode-toggle"))
         }
       : null,
+    /*
+     * The gear in the strip. It is a link to the settings sheet and nothing
+     * more: the quick menu that once opened under it lives on the day/night
+     * control now, so the strip offers one way into each.
+     */
+    settings: (() => {
+      const gear = document.querySelector(".settings-menu__trigger");
+      if (!gear) return { present: false };
+      return {
+        present: true,
+        tag: gear.tagName,
+        href: attr(gear, "href"),
+        label: attr(gear, "aria-label"),
+        title: attr(gear, "title"),
+        hasPopup: attr(gear, "aria-haspopup"),
+        expanded: attr(gear, "aria-expanded"),
+        opensMenu: Boolean(document.querySelector(".settings-menu__popover:not(.theme-quick-menu__popover)"))
+      };
+    })(),
     menu: popover
       ? {
           box: menuBox,
@@ -466,6 +485,17 @@ async function main() {
       "the keyboard-shortcuts control left the titlebar",
       landing.titlebar.shortcutsInStrip === false,
       `titlebar ${JSON.stringify(landing.titlebar)}`,
+    );
+    check(
+      "the gear is a link to the settings sheet, not a menu trigger",
+      landing.settings.present === true &&
+        landing.settings.tag === "A" &&
+        landing.settings.href === "/settings" &&
+        landing.settings.label === "Open settings" &&
+        landing.settings.hasPopup === null &&
+        landing.settings.expanded === null &&
+        landing.settings.opensMenu === false,
+      `gear ${JSON.stringify(landing.settings)}`,
     );
 
     // —— 2 — the pointer rests on the control and the quick menu opens under

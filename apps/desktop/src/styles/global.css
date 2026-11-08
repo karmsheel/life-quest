@@ -9371,6 +9371,11 @@ button.chat-panel__activity-line:hover {
   position: relative;
 }
 
+/* The gear is a link to the settings sheet, not a button that opens a menu, so
+   it carries the anchor resets: no underline, and the browser's own focus ring
+   rather than a drawn one. The colour rule below already covers a visited
+   link — a visited link still matches `.settings-menu__trigger` — and the
+   titlebar's own rule paints the gear in the strip's colour regardless. */
 .settings-menu__trigger {
   display: inline-flex;
   align-items: center;
@@ -9381,6 +9386,7 @@ button.chat-panel__activity-line:hover {
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
+  text-decoration: none;
   cursor: pointer;
   transition:
     color var(--dur-quick) var(--ease-out),
@@ -9432,10 +9438,6 @@ button.chat-panel__activity-line:hover {
   margin: -0.125rem 0 0.5rem;
   font-size: 0.6875rem;
   color: var(--text-soft);
-}
-
-.settings-menu__mode-switcher {
-  margin-top: 0.75rem;
 }
 
 .settings-menu__skin-grid {
@@ -9523,34 +9525,6 @@ button.chat-panel__activity-line:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.settings-menu__footer {
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border-soft);
-}
-
-.settings-menu__all-settings {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  width: 100%;
-  padding: 0.4375rem 0.5rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  font: inherit;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.settings-menu__all-settings:hover {
-  color: var(--text);
-  background: var(--bg-subtle);
 }
 
 .ui-segmented {
