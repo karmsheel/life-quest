@@ -42,7 +42,7 @@ export function notifyAutomationsChanged(): void {
 
 /** The host's name in a row, an editor or a chat title. */
 export function automationHostLabel(host: AutomationRecord["host"]): string {
-  return host === "daily-note" ? "Daily Note" : "No page";
+  return host === "daily-note" ? "Daily Journal" : "No page";
 }
 
 /** The built-in's button keeps its original test id; user rows get their own. */

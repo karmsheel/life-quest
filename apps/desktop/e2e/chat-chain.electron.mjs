@@ -51,7 +51,7 @@ const DEFAULT_SIZE = { width: 1280, height: 900 };
  */
 const ACTION_SLOTS = [
   "New chat",
-  "Life-Chain",
+  "Quick Notes",
   "Keyboard shortcuts",
   "Move chat to the left of the page",
   "Collapse chat"
@@ -495,15 +495,15 @@ async function main() {
     );
 
     // 2 — the slot swaps the panel to the chain and reads it.
-    const clicked = await clickAria("Life-Chain");
+    const clicked = await clickAria("Quick Notes");
     const chain = await waitFor(
       (state) => state.chainBody?.hidden === false && state.items.length === expected.total,
       "the chain view lists every signal",
     );
-    check("clicked the Life-Chain slot", clicked, "no Life-Chain slot in the bottom bar");
+    check("clicked the Quick Notes slot", clicked, "no Quick Notes slot in the bottom bar");
     check(
       "the chain header names the surface",
-      chain.heading === "Life-Chain",
+      chain.heading === "Quick Notes",
       `heading "${chain.heading}"`,
     );
     check(
@@ -960,10 +960,10 @@ async function main() {
     screenshots.push(await shot("row-controls"));
 
     // 6 — a short chain rests on the composer instead of hanging from the top.
-    await clickAria("Life-Chain");
+    await clickAria("Quick Notes");
     const backToThread = await waitFor(
       (state) => state.threadHeader && state.chatField.present === true,
-      "the Life-Chain slot toggles back to the thread",
+      "the Quick Notes slot toggles back to the thread",
     );
     check(
       "the chain slot toggles the panel back",
@@ -971,7 +971,7 @@ async function main() {
       `chain body hidden ${backToThread.chainBody?.hidden}, chat field ${backToThread.chatField.present}`,
     );
     await run("window.__lqSignalLimit = 3");
-    await clickAria("Life-Chain");
+    await clickAria("Quick Notes");
     const short = await waitFor(
       (state) => state.chainBody?.hidden === false && state.items.length === 3,
       "the short chain lists three signals",
@@ -1011,12 +1011,12 @@ async function main() {
     // There is no chats list to leave for — the history is the sidebar's — so
     // the slot toggles between the chain and the thread it was opened from.
     await run("window.__lqSignalLimit = null");
-    const backClicked = await clickAria("Life-Chain");
+    const backClicked = await clickAria("Quick Notes");
     const chainClosed = await waitFor(
       (state) => state.surface === "thread" && state.threadHeader === true,
       "the chain slot toggles back to the thread",
     );
-    check("clicked the chain slot to leave the chain", backClicked, "no Life-Chain slot");
+    check("clicked the chain slot to leave the chain", backClicked, "no Quick Notes slot");
     check(
       "the thread replaces the chain",
       chainClosed.surface === "thread" &&
@@ -1031,7 +1031,7 @@ async function main() {
       `${chainClosed.signalListCalls} list calls vs ${short.signalListCalls}`,
     );
 
-    await clickAria("Life-Chain");
+    await clickAria("Quick Notes");
     const reread = await waitFor(
       (state) => state.chainBody?.hidden === false && state.items.length === afterDelete,
       "the chain re-reads both logged signals",

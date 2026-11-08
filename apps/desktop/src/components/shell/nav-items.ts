@@ -38,7 +38,7 @@ export type NavItem = {
   /**
    * Where the row sits on the rail.
    *
-   * `bottom` is the governed shelf: Life-Chain, Decisions, Daily Note and
+   * `bottom` is the governed shelf: Quick Notes, Decisions, Daily Journal and
    * Automations, cordoned above the Log. `footer` is the Log itself — the one
    * row that closes the rail — so the shelf can carry a divider above it without
    * counting the Log as one of its entries.
@@ -46,12 +46,12 @@ export type NavItem = {
   pin?: "top" | "bottom" | "footer";
 };
 
-/** Home: Dashboard, Data, Pages, Documents, Personnel. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Architecture. Execute: Projects, Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom shelf: Life-Chain, Decisions, Daily Note, Automations. Footer: Log. */
+/** Home: Dashboard, Data, Pages, Documents, Personnel. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Architecture. Execute: Projects, Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom shelf: Quick Notes, Decisions, Daily Journal, Automations. Footer: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
     href: "/chain",
-    label: "Life-Chain",
+    label: "Quick Notes",
     icon: Radio,
     section: "main",
     pin: "bottom",
@@ -69,14 +69,14 @@ export const NAV_ITEMS: NavItem[] = [
     // reads back. Governance, not a wing — it belongs to no domain.
     id: "note",
     href: "/notes",
-    label: "Daily Note",
+    label: "Daily Journal",
     icon: NotebookPen,
     section: "governance",
     pin: "bottom",
   },
   {
-    // Directly under Daily Note: the shelf of one-click jobs that read a page
-    // and open a chat with the agent. The Daily Note's "Analyze note" is the
+    // Directly under Daily Journal: the shelf of one-click jobs that read a page
+    // and open a chat with the agent. The Daily Journal's "Analyze note" is the
     // first of them.
     id: "automations",
     href: "/automations",

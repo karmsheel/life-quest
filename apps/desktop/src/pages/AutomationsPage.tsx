@@ -39,7 +39,7 @@ const WEEKDAYS = [
 ] as const;
 
 const NEW_PROMPT =
-  "Summarize what changed in the Daily Note for {{dateLabel}} and name the three things I should do next.";
+  "Summarize what changed in the Daily Journal for {{dateLabel}} and name the three things I should do next.";
 
 type Draft = {
   id: string | null;
@@ -226,7 +226,7 @@ export default function AutomationsPage() {
         const body = note.ok ? note.value.bodyMarkdown : "";
         if (!body.trim()) {
           setPageError(
-            "No Daily Note for today. Write today's note first, or run this from its page.",
+            "No Daily Journal for today. Write today's note first, or run this from its page.",
           );
           return;
         }
@@ -439,7 +439,7 @@ export default function AutomationsPage() {
                   })
                 }
               >
-                <option value="daily-note">Daily Note</option>
+                <option value="daily-note">Daily Journal</option>
                 <option value="none">No page (prompt only)</option>
               </select>
             </label>
@@ -558,7 +558,7 @@ export default function AutomationsPage() {
           </label>
           <p className="automation-editor__hint muted">
             Use {"{{dateLabel}}"} for the day the automation runs, and{" "}
-            {"{{date}}"} for its ISO date. With the Daily Note in context, the
+            {"{{date}}"} for its ISO date. With the Daily Journal in context, the
             whole note is handed to the agent.
           </p>
 

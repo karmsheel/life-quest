@@ -344,7 +344,7 @@ describe("keyboard shortcuts settings and runner", () => {
       (dockThread.dock?.bar ?? []).map((entry) => entry.label),
       [
         "New chat",
-        "Life-Chain",
+        "Quick Notes",
         "Keyboard shortcuts",
         "Move chat to the left of the page",
         "Collapse chat",

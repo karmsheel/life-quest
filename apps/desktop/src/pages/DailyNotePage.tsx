@@ -486,6 +486,23 @@ export default function DailyNotePage() {
     [chatDock, date, draft, flush, label, runningId],
   );
 
+  /**
+   * Run one of the day's acts from the focus page.
+   *
+   * Focus mode is a sheet over the whole workspace, the dock included: a chat
+   * opened from under the sheet would start behind the paper, where the
+   * operator cannot see it. So the day's act leaves focus mode first — the page
+   * and its dock are handed back — and the run proceeds on the same draft the
+   * sheet was writing, for the same day.
+   */
+  const runFocusAction = useCallback(
+    (automation: AutomationRecord) => {
+      closeFocusMode();
+      void onRunAutomation(automation);
+    },
+    [closeFocusMode, onRunAutomation],
+  );
+
   const canRunAutomation =
     !loading &&
     loadedDate === date &&
@@ -505,7 +522,8 @@ export default function DailyNotePage() {
    * it. So the same automations the page's title row offers are offered again
    * here — the same runs, on the same draft, against the same day. The page
    * keeps its own buttons: the two are two surfaces looking at one day, and
-   * closing one must not take the other's control away.
+   * closing one must not take the other's control away. Pressing one of these
+   * leaves the sheet, because the act's result is a chat in the dock behind it.
    */
   const focusActions = useMemo(
     () =>
@@ -519,9 +537,9 @@ export default function DailyNotePage() {
         busy: runningId === automation.id,
         busyLabel: "Opening chat…",
         icon: <Sparkles size={14} aria-hidden />,
-        onPress: () => void onRunAutomation(automation),
+        onPress: () => runFocusAction(automation),
       })),
-    [canRunAutomation, manualAutomations, onRunAutomation, runningId],
+    [canRunAutomation, manualAutomations, runFocusAction, runningId],
   );
 
   // The journal's own strip: days up to today, newest first. A file dated in the
@@ -631,7 +649,7 @@ export default function DailyNotePage() {
               the cluster: the page stays one line of chrome, and the box keeps
               the trailing edge for what commits it. */}
           <div className="daily-note__title-row">
-            <h1>Daily Note</h1>
+            <h1>Daily Journal</h1>
             <div className="daily-note__actions">
               <Button
                 variant="ghost"

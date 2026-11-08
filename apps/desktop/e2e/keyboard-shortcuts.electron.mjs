@@ -749,7 +749,7 @@ async function main() {
           : []),
         [
           "New chat",
-          "Life-Chain",
+          "Quick Notes",
           "Keyboard shortcuts",
           "Move chat to the left of the page",
           "Collapse chat",
