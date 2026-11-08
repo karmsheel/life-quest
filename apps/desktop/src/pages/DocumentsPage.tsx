@@ -13,6 +13,7 @@ import {
   type LibraryDocument,
 } from "@lifequest/vault-core/pure";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { doctrineMarkdownToHtml } from "@/lib/doctrine-markdown";
 import { containMarkdownLink } from "@/lib/markdown-links";
@@ -321,6 +322,7 @@ export default function DocumentsPage() {
     <div className="documents-page">
       <header className="documents-page__header">
         <div className="documents-page__intro">
+          <WingEyebrow page="Documents" />
           <h1 className="stub-page__title">Documents</h1>
           <p className="stub-page__desc muted">
             Markdown notes. Tag a domain, or leave unassigned to keep them in

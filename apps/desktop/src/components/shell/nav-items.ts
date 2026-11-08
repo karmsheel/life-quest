@@ -46,7 +46,7 @@ export type NavItem = {
   pin?: "top" | "bottom" | "footer";
 };
 
-/** Home: Dashboard, Data, Pages, Documents, Personnel. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Architecture. Execute: Projects, Daily Schedule, Act. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom shelf: Quick Notes, Decisions, Daily Journal, Automations. Footer: Log. */
+/** Home: Dashboard, Data, Pages, Documents, Agents, Images. Define: Dream, Vision, Ideal State. Plan: Goals, Life Map, Architecture. Act: Projects, Daily Schedule, Task Manager. Review: Daily, Weekly, Monthly, Quarterly, Yearly. Bottom shelf: Quick Notes, Decisions, Daily Journal, Automations. Footer: Log. */
 export const NAV_ITEMS: NavItem[] = [
   {
     id: "chain",
@@ -120,8 +120,19 @@ export const NAV_ITEMS: NavItem[] = [
   {
     id: "personnel",
     href: "/personnel",
-    label: "Personnel",
+    label: "Agents",
     icon: Users,
+    section: "main",
+    wing: "home",
+  },
+  {
+    // The pictures a vision is made of, and the one document they are written
+    // beside. Under Home, not Define: the library is part of what the operator
+    // already has, not part of what they are defining.
+    id: "images",
+    href: "/images",
+    label: "Images",
+    icon: ImageIcon,
     section: "main",
     wing: "home",
   },
@@ -148,16 +159,6 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/ideal-state",
     label: "Ideal State",
     icon: Compass,
-    section: "main",
-    wing: "define",
-  },
-  {
-    // The pictures a vision is made of, and the one document they are written
-    // beside. Last under Define: after the words, the life as it should look.
-    id: "images",
-    href: "/images",
-    label: "Images",
-    icon: ImageIcon,
     section: "main",
     wing: "define",
   },
@@ -204,9 +205,12 @@ export const NAV_ITEMS: NavItem[] = [
     wing: "execute",
   },
   {
+    // The task board itself: what to do next, and what the agents are doing
+    // about it. The row's id stays "act" — that is the wing's own name in the
+    // loop, and it keeps stored paths and settings resolving.
     id: "act",
     href: "/act",
-    label: "Act",
+    label: "Task Manager",
     icon: Zap,
     section: "main",
     wing: "execute",

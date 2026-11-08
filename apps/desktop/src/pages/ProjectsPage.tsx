@@ -20,6 +20,7 @@ import {
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
 import { Button, buttonClassName } from "@/components/ui/Button";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { api } from "@/lib/ipc";
 import {
   formatProjectDay,
@@ -254,7 +255,7 @@ export default function ProjectsPage() {
     <div className="projects-page" data-testid="projects-page">
       <header className="act-page__header">
         <div>
-          <p className="act-page__eyebrow muted">Execute</p>
+          <WingEyebrow page="Projects" />
           <h1 className="act-page__title">Projects</h1>
         </div>
         <div className="projects-page__header-actions">

@@ -1,6 +1,7 @@
 import { VISION_DOCUMENT_KINDS } from "@lifequest/vault-core/pure";
 import { DoctrineIndex } from "@/components/doctrine/DoctrineIndex";
 import { VisionBoardPanel } from "@/components/images/VisionBoardPanel";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 
 /**
  * Vision, under Define: the doctrine card per domain, and below it the one
@@ -13,6 +14,7 @@ import { VisionBoardPanel } from "@/components/images/VisionBoardPanel";
 export default function VisionPage() {
   return (
     <div className="doctrine-page">
+      <WingEyebrow page="Vision" />
       <h1>Vision</h1>
       <DoctrineIndex
         kinds={[...VISION_DOCUMENT_KINDS]}

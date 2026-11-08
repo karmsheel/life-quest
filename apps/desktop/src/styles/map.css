@@ -28,6 +28,20 @@
   margin-right: auto;
 }
 
+/* The eyebrow sits above the title, so the two stack in one column and the
+   title's own `margin-right: auto` (which pushed it away from the year
+   control) moves to the wrapper instead. */
+.life-map__title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-right: auto;
+}
+
+.life-map__title h1 {
+  margin-right: 0;
+}
+
 .life-map__chrome label {
   display: inline-flex;
   align-items: center;

@@ -1728,6 +1728,20 @@ a {
   font-size: 0.8rem;
 }
 
+/* —— The wing eyebrow —— */
+/* Every page under a wing opens with the same small uppercase eyebrow: the
+   page's own name — "Dashboard" — in capitals and the same muted grey on
+   every wing, the Dashboard included. One rule for all of them, so a page
+   moving between wings looks the same there as it did here. */
+.wing-eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
 .act-page__header {
   max-width: 90rem;
   display: flex;
@@ -4234,15 +4248,6 @@ a {
 .home-dashboard__intro {
   min-width: 0;
   max-width: 46rem;
-}
-
-.home-dashboard__eyebrow {
-  margin: 0;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
 }
 
 .home-dashboard__title {
@@ -9726,6 +9731,13 @@ button.chat-panel__activity-line:hover {
 
 .doctrine-page h1 {
   margin: 0;
+}
+
+/* The wing eyebrow opens the page, so it reads as the title's own label
+   rather than as another block of the page: it sits right above the title.
+   The column's own gap is what the rule below pulls back. */
+.doctrine-page > .wing-eyebrow {
+  margin-bottom: -0.6rem;
 }
 
 .doctrine-index {

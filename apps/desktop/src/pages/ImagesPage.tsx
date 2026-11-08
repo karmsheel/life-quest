@@ -16,6 +16,7 @@ import {
   prepareImageFile,
 } from "@/components/images/image-files";
 import { useImageUrls } from "@/components/images/useImageUrls";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { api } from "@/lib/ipc";
 
 /** How long a caption edit waits before it is written to the library. */
@@ -246,7 +247,7 @@ export default function ImagesPage() {
         onDrop={onDrop}
       >
         <header className="images-studio__header">
-          <p className="images-studio__eyebrow">Define</p>
+          <WingEyebrow page="Images" />
           <h1 className="images-studio__title">Images</h1>
           <p className="images-studio__lead">
             The pictures of the life you are defining. Upload them here; the

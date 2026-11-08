@@ -28,6 +28,7 @@ import {
 } from "@/components/shell/useActiveDomain";
 import { useVault } from "@/state/VaultProvider";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 
 /**
  * The doctrine headings the agent prompt carries. The page no longer renders
@@ -252,7 +253,7 @@ function ActContent() {
     <div className="act-page">
       <header className="act-page__header">
         <div>
-          <p className="act-page__eyebrow muted">Act</p>
+          <WingEyebrow page="Task Manager" />
           <h1 className="act-page__title">{title}</h1>
         </div>
       </header>
@@ -281,11 +282,11 @@ function ActContent() {
         {activeAgents.length === 0 ? (
           <div className="act-page__empty">
             <p className="muted">
-              No active agents. Scan Hermes and hire agents in Personnel, then
+              No active agents. Scan Hermes and hire agents in Agents, then
               return here to dispatch them against this doctrine.
             </p>
             <Link to="/personnel" className="act-page__link">
-              Go to Personnel →
+              Go to Agents →
             </Link>
           </div>
         ) : (

@@ -211,7 +211,7 @@ const SAMPLE = `(() => {
       const title = header.querySelector('.home-dashboard__title');
       const badge = header.querySelector('[data-testid="board-lock-badge"]');
       return {
-        eyebrow: (header.querySelector('.home-dashboard__eyebrow') || {}).textContent?.trim() ?? null,
+        eyebrow: (header.querySelector('[data-testid="wing-eyebrow"]') || {}).textContent?.trim() ?? null,
         title: title
           ? [...title.childNodes]
               .filter((node) => node.nodeType === 3)
@@ -880,7 +880,7 @@ async function main() {
       // The header's only paragraphs are the eyebrow and the lock hint, so a
       // doctrine line that came back — under any class — fails here.
       landing.header.paragraphs.length === 2 &&
-      landing.header.paragraphs[0].cls === "home-dashboard__eyebrow" &&
+      landing.header.paragraphs[0].cls.includes("wing-eyebrow") &&
       landing.header.paragraphs[1].cls.includes("home-dashboard__lock-hint") &&
       /unlocked/i.test(landing.header.paragraphs[1].text),
     `the header read ${JSON.stringify(landing.header)}`,
@@ -1293,7 +1293,7 @@ async function main() {
   checks.emptyGap = { point: gapPoint, inContextCards: afterGap.inContextCards, status: afterGap.status };
 
   await seedThree();
-  const headerPoint = await pointAt(win, ".home-dashboard__eyebrow");
+  const headerPoint = await pointAt(win, '[data-testid="wing-eyebrow"]');
   mouse(win, "mouseDown", headerPoint.x, headerPoint.y);
   await sleep(40);
   mouse(win, "mouseUp", headerPoint.x, headerPoint.y);
@@ -1493,7 +1493,7 @@ async function main() {
   const lockedTwo = await sample(win);
   await pressCard(win, "view:financial:v-weekly", 1);
   const lockedRemoved = await sample(win);
-  await press(win, await pointAt(win, ".home-dashboard__eyebrow"));
+  await press(win, await pointAt(win, '[data-testid="wing-eyebrow"]'));
   await waitFor(
     win,
     `((window.dashboardCardContextDock ?? {}).contextCards ?? []).length === 0`,

@@ -2,6 +2,7 @@ import { Dashboard } from "@/components/map/Dashboard";
 import { MonthPage } from "@/components/map/MonthPage";
 import { DoctrineStrip } from "@/components/doctrine/DoctrineStrip";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useVault } from "@/state/VaultProvider";
 import { useMapYear } from "@/state/MapYearProvider";
@@ -54,7 +55,10 @@ function ChartContent() {
   return (
     <div className="life-map">
       <header className="life-map__chrome">
-        <h1>Life Map</h1>
+        <div className="life-map__title">
+          <WingEyebrow page="Life Map" />
+          <h1>Life Map</h1>
+        </div>
         <label>
           Year
           <select

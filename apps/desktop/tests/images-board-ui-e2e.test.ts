@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 /**
- * Images under Define, and the Vision board on the Vision page, rendered by the
+ * Images under Home, and the Vision board on the Vision page, rendered by the
  * real shell in a real layout engine. The claims themselves live in
  * `e2e/images-board.electron.mjs`, which drives the harness; this file runs that
  * driver and refuses a report that does not hold.
@@ -152,7 +152,7 @@ const PICTURES = [
   "images-board-narrow.png",
 ];
 
-describe("Define → Images, and the vision board on Vision", () => {
+describe("Home → Images, and the vision board on Vision", () => {
   it("keeps the library on Images, writes the board on Vision, and keeps a removed picture's place", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
@@ -189,10 +189,10 @@ describe("Define → Images, and the vision board on Vision", () => {
 
     const { checks } = report;
 
-    // It is the Define wing's page, and it is the library — not the board.
+    // It is the Home wing's page, and it is the library — not the board.
     assert.equal(checks.activeRail, "Images");
     assert.equal(checks.route, "/images");
-    assert.equal(checks.imagesPage.eyebrow, "Define");
+    assert.equal(checks.imagesPage.eyebrow, "Images");
     assert.equal(checks.imagesPage.title, "Images");
     assert.equal(checks.imagesPage.presence.library, true);
     assert.equal(checks.imagesPage.presence.board, 0);
@@ -202,9 +202,11 @@ describe("Define → Images, and the vision board on Vision", () => {
       checks.rail.some((item) => item.label === "Images" && item.href === "/images"),
       "no Images row on the rail",
     );
+    // Vision is under Define, so its row is not in this wing's rail; the
+    // page's own crosslink above is how the operator crosses over.
     assert.ok(
-      checks.rail.some((item) => item.label === "Vision" && item.href === "/vision"),
-      "no Vision row on the rail",
+      !checks.rail.some((item) => item.label === "Vision"),
+      "the Home rail carried a Vision row",
     );
 
     // The vault starts empty, and the page says so.

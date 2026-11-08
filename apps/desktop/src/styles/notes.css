@@ -624,6 +624,11 @@
   letter-spacing: -0.02em;
 }
 
+/* The wing eyebrow is the title's own label, so it sits just above it. */
+.ideal-state__header .wing-eyebrow {
+  margin-bottom: 0.15rem;
+}
+
 .ideal-state__workspace {
   width: 100%;
   display: flex;

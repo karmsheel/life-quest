@@ -389,7 +389,7 @@ export default function ProjectPage() {
 
       <header className="act-page__header project-detail__header">
         <div>
-          <p className="act-page__eyebrow muted">Execute · Project</p>
+          <p className="act-page__eyebrow muted">Project</p>
           <h1 className="act-page__title" data-testid="project-title">
             {project.title}
           </h1>

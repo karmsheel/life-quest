@@ -8,6 +8,7 @@ import type {
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { Button } from "@/components/ui/Button";
 import { FxRatePanel } from "@/components/data/FxRatePanel";
 
@@ -210,7 +211,7 @@ export default function DataPage() {
   return (
     <div className="page-content data-studio">
       <header className="data-studio__header">
-        <p className="data-studio__eyebrow">Data</p>
+        <WingEyebrow page="Data" />
         <h1 className="data-studio__title">Databases</h1>
         <p className="data-studio__lead">
           Domain books in this vault. Create one here, or import rows from a file.
