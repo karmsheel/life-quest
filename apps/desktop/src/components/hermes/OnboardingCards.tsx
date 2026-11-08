@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
+// Values must come from the renderer's pure entry: the package index pulls
+// `node:fs`/`node:crypto`, which the browser bundle externalizes, and importing
+// it here silently killed the whole app at the module graph.
 import {
   DOCUMENT_KIND_LABELS,
   DOCTRINE_ORDER,
-  type DocumentKind,
-  type OnboardingConfirmOptions,
-  type OnboardingProposal,
-  type OnboardingStatus,
+} from "@lifequest/vault-core/pure";
+import type {
+  DocumentKind,
+  OnboardingConfirmOptions,
+  OnboardingProposal,
+  OnboardingStatus,
 } from "@lifequest/vault-core";
 import { Button } from "@/components/ui/Button";
 
