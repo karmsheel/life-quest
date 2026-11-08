@@ -2,6 +2,7 @@ import { DayTypes } from "@/components/architecture/DayTypes";
 import { DefaultWeek } from "@/components/architecture/DefaultWeek";
 import { RealWeek } from "@/components/architecture/RealWeek";
 import { DoctrineIndex } from "@/components/doctrine/DoctrineIndex";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { useVault } from "@/state/VaultProvider";
 import { useMapYear } from "@/state/MapYearProvider";
 import { api } from "@/lib/ipc";
@@ -30,7 +31,10 @@ function ArchitectureContent() {
   return (
     <div className={selected?.status === "archive" ? "architecture is-archive" : "architecture"}>
       <header className="life-map__chrome">
-        <h1>Architecture</h1>
+        <div className="life-map__title">
+          <WingEyebrow page="Architecture" />
+          <h1>Architecture</h1>
+        </div>
         <label>
           Year
           <select value={yearNum} onChange={(e) => setYearNum(Number(e.target.value))}>

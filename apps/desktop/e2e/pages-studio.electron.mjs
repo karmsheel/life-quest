@@ -120,7 +120,7 @@ const SAMPLE = `(() => {
     const text = (el) => (el && el.textContent ? el.textContent.trim() : null);
     return {
       hostWidth: host.clientWidth,
-      eyebrow: g(q(rootSel + "__eyebrow"), ["fontSize", "fontWeight", "letterSpacing", "textTransform", "color"]),
+      eyebrow: g(q(rootSel + " .wing-eyebrow") || q(rootSel + "__eyebrow"), ["fontSize", "fontWeight", "letterSpacing", "textTransform", "color"]),
       title: g(q(rootSel + "__title"), ["fontSize", "fontWeight", "letterSpacing", "lineHeight"]),
       lead: g(q(rootSel + "__lead"), ["fontSize", "lineHeight", "color", "maxWidth"]),
       panel: g(panel, ["borderTopWidth", "borderTopStyle", "borderTopColor", "backgroundColor", "boxShadow", "paddingTop", "paddingLeft", "paddingBottom", "paddingRight", "borderTopLeftRadius"]),
@@ -374,7 +374,7 @@ async function main() {
 
   // ── 5. the header says what the page is ───────────────────────────────────
   checks.eyebrowText = await win.webContents.executeJavaScript(
-    'document.querySelector("#pages-sample .pages-studio__eyebrow").textContent.trim()',
+    'document.querySelector("#pages-sample .wing-eyebrow").textContent.trim()',
   );
   checks.createPanelHead = await win.webContents.executeJavaScript(
     'document.querySelector("#pages-domains-heading").textContent.trim()',

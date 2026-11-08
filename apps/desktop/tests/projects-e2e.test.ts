@@ -89,7 +89,7 @@ const SCENARIOS = [
   "clean",
 ];
 
-const EXECUTE_RAIL = ["Projects", "Daily Schedule", "Act"];
+const EXECUTE_RAIL = ["Projects", "Daily Schedule", "Task Manager"];
 const PLAN_RAIL = ["Goals", "Life Map", "Architecture"];
 
 type RailRow = { label: string | null; href: string | null; active: boolean };
@@ -305,7 +305,7 @@ describe("Projects on the Execute wing e2e", () => {
     assert.deepEqual(labels(report.checks.initial.rail), EXECUTE_RAIL, "the Execute rail moved");
     assert.equal(report.checks.initial.rail[0]?.href, "/projects", "the Projects rail row points elsewhere");
     assert.equal(report.checks.initial.rail[0]?.active, true, "the Projects row is not the active one");
-    assert.equal(report.checks.initial.eyebrow, "Execute", "the page's eyebrow does not read Execute");
+    assert.equal(report.checks.initial.eyebrow, "Act · Projects", "the page's eyebrow does not read Act · Projects");
 
     // ── The heading's New project button, measured as boxes ────────────────
     const newButton = report.checks.initial.newButton;

@@ -13,10 +13,10 @@
  *
  *  1. The wing is called Define. The rail carries exactly
  *     Home / Define / Plan / Act / Review — no tab still says "Vision".
- *  2. The Define wing's rail carries Dream, Vision, Ideal State and Images, and
- *     the Home wing's
- *     rail carries Dashboard / Data / Pages / Documents / Personnel — Documents
- *     moved, it was not duplicated.
+ *  2. The Define wing's rail carries Dream, Vision and Ideal State, and the
+ *     Home wing's
+ *     rail carries Dashboard / Data / Pages / Documents / Agents / Images — Images
+ *     moved to Home, it was not duplicated.
  *  3. Dream lost the Vision & Desire card and kept the other three; Vision
  *     carries exactly that one card, and no page carries a card twice.
  *  4. The Vision card opens the `what` document of its own domain under
@@ -51,8 +51,8 @@ const SIZE = { width: 1280, height: 900 };
 /** The wings the rail must carry, in order — the rename's whole point. */
 const WING_TABS = ["Home", "Define", "Plan", "Act", "Review"];
 /** The wing rails, as the operator sees them. */
-const HOME_RAIL = ["Dashboard", "Data", "Pages", "Documents", "Personnel"];
-const DEFINE_RAIL = ["Dream", "Vision", "Ideal State", "Images"];
+const HOME_RAIL = ["Dashboard", "Data", "Pages", "Documents", "Agents", "Images"];
+const DEFINE_RAIL = ["Dream", "Vision", "Ideal State"];
 /** Dream keeps three of the four doctrine cards; Vision carries the fourth. */
 const DREAM_CARDS = ["Beliefs & Premise", "Purpose", "Strategy (How)"];
 const VISION_CARD = "Vision & Desire";
@@ -291,7 +291,7 @@ async function main() {
     check("the Define wing landed on Dream", dream.route === "/dream", `route ${dream.route}`);
     check("Define is the active wing", dream.activeTab === "Define", `active ${dream.activeTab}`);
     check(
-      "the Define rail carries Dream, Vision, Ideal State and Images",
+      "the Define rail carries Dream, Vision and Ideal State",
       same(dream.rail.map((l) => l.label), DEFINE_RAIL),
       `rail ${JSON.stringify(dream.rail.map((l) => l.label))}`,
     );
@@ -348,7 +348,7 @@ async function main() {
     check("the Vision page belongs to Define", vision.activeTab === "Define", `active ${vision.activeTab}`);
     check("the Vision page rendered", vision.pageHeading === "Vision", `h1 ${vision.pageHeading}`);
     check(
-      "the Define rail still reads Dream, Vision, Ideal State, Images",
+      "the Define rail still reads Dream, Vision, Ideal State",
       same(vision.rail.map((l) => l.label), DEFINE_RAIL),
       `rail ${JSON.stringify(vision.rail.map((l) => l.label))}`,
     );

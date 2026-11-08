@@ -18,6 +18,7 @@ import { useVault } from "@/state/VaultProvider";
 import { useLiveData } from "@/state/LiveDataProvider";
 import { useChatDock, type ChatCardContext } from "@/state/ChatDockProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { GoalProgressCard } from "@/pages/home-pins/GoalProgressCard";
 import { DeadlineBanner } from "@/pages/home-pins/DeadlineBanner";
 import { PendingDecisionsCard } from "@/pages/home-pins/PendingDecisionsCard";
@@ -859,7 +860,7 @@ export default function HomePage() {
     <div className="home-dashboard" onClick={onDashboardClick}>
       <header className="home-dashboard__header">
         <div className="home-dashboard__intro">
-          <p className="home-dashboard__eyebrow">Dashboard</p>
+          <WingEyebrow page="Dashboard" variant="accent" />
           <h1 className="home-dashboard__title">
             {title}
             {/* The state badge stays beside the page's name: it labels the board

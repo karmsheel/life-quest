@@ -34,10 +34,13 @@ const PATH_WING: Record<string, WingId> = {
   "/pages": "home",
   "/documents": "home",
   "/personnel": "home",
+  // Images moved from Define to Home: the picture library is part of what the
+  // operator already has, not part of what they are defining. The route is
+  // unchanged — only the wing it opens under.
+  "/images": "home",
   "/dream": "define",
   "/vision": "define",
   "/ideal-state": "define",
-  "/images": "define",
   "/goals": "plan",
   "/projects": "execute",
   "/chart": "plan",

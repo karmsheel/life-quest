@@ -17,7 +17,7 @@ import {
 } from "@lifequest/vault-core";
 
 /**
- * Define → Images, end to end, against a real vault on disk.
+ * Home → Images, end to end, against a real vault on disk.
  *
  * This is the storage half of the new Define surface: the operator's uploaded
  * pictures live as real image files under `images/files/`, the library index

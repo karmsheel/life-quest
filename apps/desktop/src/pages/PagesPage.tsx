@@ -4,6 +4,7 @@ import type { PageListEntry } from "@lifequest/vault-core";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { Button } from "@/components/ui/Button";
 
 export default function PagesPage() {
@@ -99,7 +100,7 @@ export default function PagesPage() {
   return (
     <div className="page-content pages-studio">
       <header className="pages-studio__header">
-        <p className="pages-studio__eyebrow">Pages</p>
+        <WingEyebrow page="Pages" variant="accent" />
         <h1 className="pages-studio__title">Pages</h1>
         <p className="pages-studio__lead">
           Canvases in this vault. Create one here, then open it to add blocks.

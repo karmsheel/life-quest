@@ -15,6 +15,7 @@ import {
   type ReviewCadence,
 } from "@lifequest/vault-core/pure";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { api } from "@/lib/ipc";
@@ -281,6 +282,7 @@ export default function GoalsPage() {
   return (
     <div className="goals-page">
       <header className="goals-page__header">
+        <WingEyebrow page="Goals" />
         <h1 className="stub-page__title">Goals</h1>
         <p className="stub-page__desc muted">
           Vault-wide outcomes. A deadline and either a metric or a definition of

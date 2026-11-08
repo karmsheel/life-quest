@@ -4,6 +4,7 @@ import type { AgentHire, ConnectedAgent } from "@lifequest/vault-core";
 import { lensSlug, recordVisible } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
+import { WingEyebrow } from "@/components/shell/WingEyebrow";
 import { useVault } from "@/state/VaultProvider";
 
 type ScannedAgent = {
@@ -285,7 +286,8 @@ export function PersonnelStudio() {
   return (
     <div className="personnel-studio">
       <header className="personnel-studio__header">
-        <h1 className="stub-page__title">Personnel</h1>
+        <WingEyebrow page="Agents" variant="accent" />
+        <h1 className="stub-page__title">Agents</h1>
         <p className="stub-page__desc muted">
           The companion, the agents connected over MCP, and the Hermes agents you
           have hired.

@@ -64,7 +64,7 @@ const SIZE = { width: 1280, height: 1000 };
 const DETAIL_SIZE = { width: 1280, height: 1180 };
 
 const WING_TABS = ["Home", "Define", "Plan", "Act", "Review"];
-const EXECUTE_RAIL = ["Projects", "Daily Schedule", "Act"];
+const EXECUTE_RAIL = ["Projects", "Daily Schedule", "Task Manager"];
 const PLAN_RAIL = ["Goals", "Life Map", "Architecture"];
 const LIST_ORDER = ["p-exec", "p-paused", "p-closed", "p-trip"];
 
@@ -199,7 +199,7 @@ const SAMPLE = `(() => {
     pinned: links("governance"),
     footer: links("footer"),
     pageHeading: text(page && page.querySelector("h1")),
-    eyebrow: text(page && page.querySelector(".act-page__eyebrow")),
+    eyebrow: text(page && page.querySelector("[data-testid='wing-eyebrow']")),
     count: text(page && page.querySelector(".projects-page__count")),
     headingRect: rect(heading),
     headerRect: rect(header),
@@ -530,7 +530,7 @@ async function main() {
     );
     check(
       "page-eyebrow",
-      initial.eyebrow === "Execute" && initial.pageHeading === "Projects",
+      initial.eyebrow === "Act · Projects" && initial.pageHeading === "Projects",
       `eyebrow ${JSON.stringify(initial.eyebrow)}, heading ${JSON.stringify(initial.pageHeading)}`,
     );
 

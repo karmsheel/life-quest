@@ -1,5 +1,5 @@
 /**
- * Drives the images-board harness — Images under Define, and the Vision board on
+ * Drives the images-board harness — Images under Home, and the Vision board on
  * the Vision page — in a real Electron window and writes
  * `e2e/artifacts/images-board.json`, `images-board-*.png` and `vision-board.png`.
  *
@@ -11,9 +11,9 @@
  *
  * What this rig claims:
  *
- *  1. Define's rail carries Images at `/images` and Vision at `/vision`; the
- *     Images page is the picture library and nothing else — the board is NOT
- *     there, which is the placement the operator asked for.
+ *  1. Home's rail carries Images at `/images` and Define's carries Vision at
+ *     `/vision`; the Images page is the picture library and nothing else — the
+ *     board is NOT there, which is the placement the operator asked for.
  *  2. An empty vault shows the library's own empty state, the count says zero,
  *     and the page offers the way to the Vision page.
  *  3. Dropped pictures upload: cards appear, the count/summary follow, and every
@@ -114,7 +114,7 @@ const SAMPLE = `(() => {
     rail: railItems,
     activeRail: railItems.find((item) => item.active)?.label ?? null,
     wings,
-    eyebrow: text(q(".images-studio__eyebrow")),
+    eyebrow: text(q('[data-testid="wing-eyebrow"]')),
     imagesTitle: text(q(".images-studio__title")),
     visionTitle: text(q(".doctrine-page h1")),
     crosslink: crosslink ? crosslink.getAttribute("href") : null,
@@ -218,6 +218,36 @@ const click = (selector) => `(() => {
 const clickRail = (label) => `(() => {
   const links = Array.from(document.querySelectorAll(".nav-rail__link"));
   const link = links.find((el) => (el.querySelector(".nav-rail__label")?.textContent ?? "").trim() === ${JSON.stringify(label)});
+  if (!link) return false;
+  link.click();
+  return true;
+})()`;
+
+/**
+ * Click a wing tab by its visible label.
+ *
+ * Images lives under Home now, so the rail carries Home's rows on the Images
+ * page and Define's on the Vision page — a row in another wing is not on the
+ * rail at all. Moving between the two pages therefore means moving wings
+ * first, exactly as the operator does.
+ */
+const clickWing = (label) => `(() => {
+  const tabs = Array.from(document.querySelectorAll(".nav-rail__wings .ui-segmented__option"));
+  const tab = tabs.find((el) => (el.textContent ?? "").trim() === ${JSON.stringify(label)});
+  if (!tab) return false;
+  tab.click();
+  return true;
+})()`;
+
+/**
+ * The Images page's own way to the Vision page.
+ *
+ * The page offers the link itself ("Open the Vision page"), and the rig
+ * exercises that affordance rather than reaching into the rail for a row that
+ * belongs to another wing.
+ */
+const clickVisionCrosslink = `(() => {
+  const link = document.querySelector(".images-studio__crosslink a");
   if (!link) return false;
   link.click();
   return true;
@@ -344,19 +374,26 @@ async function main() {
     first.rail.some((item) => item.label === "Images" && item.href === "/images"),
     `no Images row at /images in ${JSON.stringify(first.rail)}`,
   );
+  // Images is under Home, and Vision is under Define: the two pages are in
+  // different wings now, so the rail on this page carries neither the Home
+  // rows alone nor a Vision row — the page's own crosslink is the way across.
   check(
-    "vision rail row",
-    first.rail.some((item) => item.label === "Vision" && item.href === "/vision"),
-    `no Vision row at /vision in ${JSON.stringify(first.rail)}`,
+    "vision is not in the Home rail",
+    !first.rail.some((item) => item.label === "Vision"),
+    `the Home rail carried Vision: ${JSON.stringify(first.rail)}`,
   );
   check("active rail row", first.activeRail === "Images", `active row is ${JSON.stringify(first.activeRail)}`);
   check("images route", first.route === "/images", `route is ${JSON.stringify(first.route)}`);
   check(
-    "define wing",
-    first.wings.some((wing) => wing.label === "Define" && wing.selected),
+    "home wing",
+    first.wings.some((wing) => wing.label === "Home" && wing.selected),
     `wing tabs ${JSON.stringify(first.wings)}`,
   );
-  check("images eyebrow", first.eyebrow === "Define", `eyebrow read ${JSON.stringify(first.eyebrow)}`);
+  check(
+    "images eyebrow",
+    first.eyebrow === "Home · Images",
+    `eyebrow read ${JSON.stringify(first.eyebrow)}`,
+  );
   check("images title", first.imagesTitle === "Images", `title read ${JSON.stringify(first.imagesTitle)}`);
   check("library on images", first.presence.library, "the Images page drew no library");
   check(
@@ -463,7 +500,7 @@ async function main() {
   check("picture removed from the vault", removed.store?.images.length === 1, `vault still holds ${removed.store?.images.length}`);
 
   // ── 6. the board is on the Vision page, under the doctrine card ─────────
-  await js(clickRail("Vision"));
+  await js(clickVisionCrosslink);
   await waitFor(win, `window.imagesBoardRoute === "/vision"`, "the Vision route");
   await waitFor(win, `Boolean(document.querySelector('[data-testid="vision-board"]'))`, "the vision board");
   await waitFor(
@@ -682,6 +719,10 @@ async function main() {
   await capture(win, "vision");
 
   // ── 13. deleting the picture leaves the board's block in place ──────────
+  // Images is under Home now, so the Vision page's rail does not carry its
+  // row: move to the Home wing, then click Images there.
+  await js(clickWing("Home"));
+  await waitFor(win, `window.imagesBoardRoute !== "/vision"`, "the Home wing to take over");
   await js(clickRail("Images"));
   await waitFor(win, `window.imagesBoardRoute === "/images"`, "the Images route again");
   await waitFor(win, `document.querySelectorAll('[data-testid^="image-card-"]').length === 2`, "the library after the board drop");
@@ -690,7 +731,7 @@ async function main() {
   await js(click(".confirm-dialog__confirm"));
   await waitFor(win, `document.querySelectorAll('[data-testid^="image-card-"]').length === 1`, "the used picture to leave the library");
 
-  await js(clickRail("Vision"));
+  await js(clickVisionCrosslink);
   await waitFor(win, `window.imagesBoardRoute === "/vision"`, "the Vision route after the delete");
   await waitFor(win, `Boolean(document.querySelector('[data-testid="vision-board"]'))`, "the board after returning");
   await waitFor(
