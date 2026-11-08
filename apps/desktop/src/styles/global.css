@@ -1730,9 +1730,9 @@ a {
 
 /* —— The wing eyebrow —— */
 /* Every page under a wing opens with the same small uppercase eyebrow: the
-   page's own name — "Dashboard" — in capitals, the same on every wing.
-   One rule for all of them, so a page moving between wings looks the same
-   there as it did here. */
+   page's own name — "Dashboard" — in capitals and the same muted grey on
+   every wing, the Dashboard included. One rule for all of them, so a page
+   moving between wings looks the same there as it did here. */
 .wing-eyebrow {
   margin: 0;
   font-size: 0.72rem;
@@ -1740,10 +1740,6 @@ a {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted-foreground);
-}
-
-.wing-eyebrow--accent {
-  color: var(--accent);
 }
 
 .act-page__header {

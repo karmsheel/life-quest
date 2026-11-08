@@ -247,7 +247,7 @@ export default function ImagesPage() {
         onDrop={onDrop}
       >
         <header className="images-studio__header">
-          <WingEyebrow page="Images" variant="accent" />
+          <WingEyebrow page="Images" />
           <h1 className="images-studio__title">Images</h1>
           <p className="images-studio__lead">
             The pictures of the life you are defining. Upload them here; the

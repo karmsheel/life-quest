@@ -100,7 +100,7 @@ export default function PagesPage() {
   return (
     <div className="page-content pages-studio">
       <header className="pages-studio__header">
-        <WingEyebrow page="Pages" variant="accent" />
+        <WingEyebrow page="Pages" />
         <h1 className="pages-studio__title">Pages</h1>
         <p className="pages-studio__lead">
           Canvases in this vault. Create one here, then open it to add blocks.

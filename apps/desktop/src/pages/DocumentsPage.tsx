@@ -322,7 +322,7 @@ export default function DocumentsPage() {
     <div className="documents-page">
       <header className="documents-page__header">
         <div className="documents-page__intro">
-          <WingEyebrow page="Documents" variant="accent" />
+          <WingEyebrow page="Documents" />
           <h1 className="stub-page__title">Documents</h1>
           <p className="stub-page__desc muted">
             Markdown notes. Tag a domain, or leave unassigned to keep them in

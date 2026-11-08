@@ -211,7 +211,7 @@ export default function DataPage() {
   return (
     <div className="page-content data-studio">
       <header className="data-studio__header">
-        <WingEyebrow page="Data" variant="accent" />
+        <WingEyebrow page="Data" />
         <h1 className="data-studio__title">Databases</h1>
         <p className="data-studio__lead">
           Domain books in this vault. Create one here, or import rows from a file.

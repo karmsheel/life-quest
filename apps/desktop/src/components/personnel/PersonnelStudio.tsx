@@ -286,7 +286,7 @@ export function PersonnelStudio() {
   return (
     <div className="personnel-studio">
       <header className="personnel-studio__header">
-        <WingEyebrow page="Agents" variant="accent" />
+        <WingEyebrow page="Agents" />
         <h1 className="stub-page__title">Agents</h1>
         <p className="stub-page__desc muted">
           The companion, the agents connected over MCP, and the Hermes agents you

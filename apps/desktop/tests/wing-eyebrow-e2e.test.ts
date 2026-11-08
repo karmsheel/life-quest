@@ -25,6 +25,10 @@ type State = {
   eyebrowCount: number;
   eyebrowUpper: string | null;
   eyebrowPage: string | null;
+  /** The eyebrow's painted colour, as the browser resolves it. */
+  eyebrowColor: string | null;
+  /** `--muted-foreground` painted onto a probe element, same resolution. */
+  mutedColor: string | null;
   heading: string | null;
   eyebrowAboveTitle: boolean | null;
   activeTab: string | null;
@@ -129,6 +133,13 @@ describe("wing eyebrow (every wing page opens with its own name)", () => {
         true,
         `${page.route}'s eyebrow does not sit above the title`,
       );
+      // The Dashboard's eyebrow used to be accent-coloured; every page's is
+      // the shell's muted grey now, resolved to what the browser paints.
+      assert.equal(
+        state.eyebrowColor,
+        state.mutedColor,
+        `${page.route}'s eyebrow is ${state.eyebrowColor}, not the muted grey ${state.mutedColor}`,
+      );
       assert.equal(
         state.activeTab,
         page.wing,
@@ -141,6 +152,12 @@ describe("wing eyebrow (every wing page opens with its own name)", () => {
       );
       assert.deepEqual(state.errors, [], `${page.route} logged an error`);
     }
+
+    // One grey, not twenty nearby greys: the painted colour across every page
+    // is a single value, so no page can quietly keep a colour of its own.
+    const greys = new Set(PAGES.map((page) => report.states[page.route].eyebrowColor));
+    assert.equal(greys.size, 1, `eyebrows painted ${JSON.stringify([...greys])}`);
+    assert.notEqual([...greys][0], null, "no eyebrow reported a colour");
 
     // The renames and the move, read off the rails the rig sampled.
     assert.ok(

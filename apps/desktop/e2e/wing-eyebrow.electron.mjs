@@ -16,13 +16,16 @@
  *     "Daily". The wing is not in the eyebrow; the rail's selected tab is.
  *  2. The eyebrow is drawn in capitals by CSS, not by the markup, and it sits
  *     above the page's own title.
- *  3. The wing a page belongs to is the wing the RAIL says it belongs to: the
+ *  3. Every eyebrow is the same muted grey — `--muted-foreground`, the shell's
+ *     secondary text colour — the Dashboard's included, and no page keeps a
+ *     colour of its own.
+ *  4. The wing a page belongs to is the wing the RAIL says it belongs to: the
  *     Images page is under Home (it moved from Define), and no Define page
  *     claims to be one.
- *  4. Personnel is renamed Agents, and the Act page is renamed Task Manager —
+ *  5. Personnel is renamed Agents, and the Act page is renamed Task Manager —
  *     in the rail and in the eyebrow.
- *  5. The five review cadences each carry their own name.
- *  6. No page under a wing is missing its eyebrow, and no page carries two.
+ *  6. The five review cadences each carry their own name.
+ *  7. No page under a wing is missing its eyebrow, and no page carries two.
  *
  * NOT covered here: the real vault. The IPC bridge is stubbed, so this rig
  * proves chrome and navigation — not that a page's data loads from disk.
@@ -134,6 +137,22 @@ const SAMPLE = `(() => {
     eyebrowSize: style ? style.fontSize : null,
     eyebrowLetterSpacing: style ? style.letterSpacing : null,
     eyebrowPage: eyebrow ? eyebrow.getAttribute("data-wing-page") : null,
+    // The painted colour, resolved to the "rgb(...)" form the browser uses,
+    // so the rig compares what is on screen rather than the class that asked
+    // for it.
+    eyebrowColor: style ? style.color : null,
+    // The muted grey the shell's secondary text uses, resolved the same way:
+    // a probe element painted with the token, read back as the browser paints
+    // it. Comparing the token string to "rgb(...)" directly would not work.
+    mutedColor: (() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--muted-foreground)";
+      probe.style.display = "none";
+      document.body.appendChild(probe);
+      const grey = getComputedStyle(probe).color;
+      probe.remove();
+      return grey;
+    })(),
     heading: h1OwnText,
     eyebrowAboveTitle:
       eyebrowRect && h1Rect ? eyebrowRect.bottom <= h1Rect.top + 1 : null,
@@ -284,12 +303,35 @@ async function main() {
         `rail read ${JSON.stringify(state.rail.map((link) => link.label))}`,
       );
 
+      // One grey for every eyebrow, the Dashboard's included: the colour is
+      // `--muted-foreground`, the token the shell's secondary text uses, and
+      // not the accent the studio pages used to paint theirs with.
+      check(
+        `${page.route} eyebrow is the muted grey`,
+        state.eyebrowColor !== null &&
+          state.eyebrowColor === state.mutedColor,
+        `colour read ${JSON.stringify(state.eyebrowColor)}, --muted-foreground ${JSON.stringify(state.mutedColor)}`,
+      );
+
       check(
         `${page.route} rendered no error`,
         state.errors.length === 0 && state.errorBanner === null,
         `errors ${JSON.stringify(state.errors)}, banner ${JSON.stringify(state.errorBanner)}`,
       );
     }
+
+    // The colour is not just "a grey on each page": it is one grey. Read every
+    // page's painted colour and prove the set has a single member, so a page
+    // that quietly re-colours its own eyebrow is a failed check even if it
+    // still matches its own claim.
+    const colours = [
+      ...new Set(PAGES.map((page) => states[page.route]?.eyebrowColor)),
+    ];
+    check(
+      "every page's eyebrow paints the same colour",
+      colours.length === 1 && colours[0] !== null,
+      `colours ${JSON.stringify(colours)}`,
+    );
 
     // The renames, read off the rail itself.
     const homeRail = states["/home"].rail.map((link) => link.label);

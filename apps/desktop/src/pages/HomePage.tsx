@@ -860,7 +860,7 @@ export default function HomePage() {
     <div className="home-dashboard" onClick={onDashboardClick}>
       <header className="home-dashboard__header">
         <div className="home-dashboard__intro">
-          <WingEyebrow page="Dashboard" variant="accent" />
+          <WingEyebrow page="Dashboard" />
           <h1 className="home-dashboard__title">
             {title}
             {/* The state badge stays beside the page's name: it labels the board
