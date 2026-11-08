@@ -303,3 +303,53 @@ work stays on the branch.
 - Spec updated: P1 marked implemented (only after the Lead's final run), open
   questions 3–6 closed with the decisions above.
 - Handover per AGENTS.md; nothing merged or pushed.
+
+## Built (2026-11-08)
+
+All five workstreams landed on `feat/onboarding-interview` as separate commits:
+types `35f2c71`, engine `a856ae8`, main process `1e2f2fd`, renderer
+`325ced6` + `70ea156`, rigs `0a475bd`. Nothing is merged or pushed.
+
+Build decisions taken during implementation, on top of the decisions above:
+
+- **First chat:** the composer's send path did not create a session on a
+  brand-new vault (it silently dropped the turn), so Begin/Continue and
+  typing-first now fall back to `chat.newChat()` exactly as the saved-question
+  starter does. Without this the first-run card would be a dead button.
+- **Bundle boundary:** renderer *value* imports from `@lifequest/vault-core`
+  must come from `/pure`; importing the root index pulls `node:crypto`/`node:fs`
+  into the browser bundle and leaves the app on its splash. `OnboardingCards.tsx`
+  hit this; the split is now a comment in the file so it cannot regress silently.
+- **Engine tolerance:** `validateOnboardingProposal` accepts both the tool-arg
+  shape (`doctrine` object, `note.body`) and the stored shape (`doctrine` array,
+  `note.bodyMarkdown`) in one enforcement point; `note.title` defaults to
+  `First conversation — <local date>` while the body stays required;
+  `writeOnboardingProposal` auto-starts a `not_started` vault first.
+- **Confirm retries:** an area unlocked mid-flight (Settings) is tolerated, the
+  table is found-or-created by name with columns added only when missing, the
+  note page is found-or-created by title, and the completed record + proposal
+  removal come last — a mid-batch failure leaves the proposal intact.
+- **Card ticks** are bound per doctrine *kind* (the engine's consent is
+  `skipDoctrineKinds`, not a per-area matrix), so the card displays exactly what
+  Confirm will apply.
+- **Prompt cache:** the Pi session signature now includes a sha1 fingerprint of
+  the assembled system prompt; a changed prompt rebuilds the agent (the
+  library's `systemPrompt` is read-only), so the rubric reaches an already-open
+  chat, not just a fresh session.
+
+### Verification (all green, run by the Lead against this checkout)
+
+- `npx tsc -p apps/desktop/tsconfig.json --noEmit` and
+  `npx tsc -p apps/desktop/tsconfig.node.json --noEmit`.
+- `tests/onboarding-engine-e2e.test.ts` — 4/4 subtests, 54/54 checks
+  (`e2e/artifacts/onboarding-engine.json`).
+- `tests/onboarding-e2e.test.ts` — passes; artifact `e2e/artifacts/onboarding.json`
+  plus `onboarding-welcome.png`, `onboarding-confirm.png`,
+  `onboarding-unlocked.png`. The report records the instructions the app really
+  sent (the five-area rubric and `propose_onboarding_unlock`) before the
+  scripted tool call, then the unlocked band and the vault files on disk.
+- Regression rigs still pass through `lifequest-e2e` on this checkout:
+  `life-areas`, `life-areas-engine`, `pi-companion`, `settings-domains`,
+  `shell-sidebar`, `chat-panel`, `chat-sessions`, `agent-prompts`.
+- Handover per AGENTS.md; the branch stays off the bench until the operator asks
+  for it.

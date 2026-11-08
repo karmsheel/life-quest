@@ -3,10 +3,13 @@
 **Date**: 2026-11-05
 **Status**: Draft, in build. P0 (the one-Life surface: six-area seed,
 locked/unlocked hinge, hidden switcher, Settings → Areas unlock) is merged to
-master (2026-11-08). P1 (the onboarding interview) is in build on
-`feat/onboarding-interview`; the suggestion rules (P2) are not started. The build
-contract for P1 is
-[2026-11-08-onboarding-interview.md](../plans/2026-11-08-onboarding-interview.md).
+master (2026-11-08). P1 (the onboarding interview) is built on
+`feat/onboarding-interview` and every rig is green; it is not merged — operator
+QC is pending, and the evidence is `apps/desktop/e2e/artifacts/onboarding.json`
+plus the welcome/confirm/unlocked screenshots. The suggestion rules (P2) are not
+started. The build contract for P1 is
+[2026-11-08-onboarding-interview.md](../plans/2026-11-08-onboarding-interview.md),
+whose "Built" section records what landed and the deviations.
 **Product**: LifeQuest — local-first life-management studio.
 **Depends on**: [Overview domain lens](./2026-08-31-overview-domain-lens-design.md)
 (superseded in naming only: "Overview" becomes **Life**), [local vault](./2026-07-19-local-vault-electron-design.md),
