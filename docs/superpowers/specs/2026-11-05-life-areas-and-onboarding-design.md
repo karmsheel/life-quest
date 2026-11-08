@@ -1,10 +1,12 @@
 # Design: one life, five areas, and the onboarding interview
 
 **Date**: 2026-11-05
-**Status**: Draft — structure and vocabulary agreed in session. P0 (the one-Life
-surface: six-area seed, locked/unlocked hinge, hidden switcher, Settings → Areas
-unlock) is implemented on `feat/life-areas`; the onboarding interview (P1) and the
-suggestion rules (P2) are not.
+**Status**: Draft, in build. P0 (the one-Life surface: six-area seed,
+locked/unlocked hinge, hidden switcher, Settings → Areas unlock) is merged to
+master (2026-11-08). P1 (the onboarding interview) is in build on
+`feat/onboarding-interview`; the suggestion rules (P2) are not started. The build
+contract for P1 is
+[2026-11-08-onboarding-interview.md](../plans/2026-11-08-onboarding-interview.md).
 **Product**: LifeQuest — local-first life-management studio.
 **Depends on**: [Overview domain lens](./2026-08-31-overview-domain-lens-design.md)
 (superseded in naming only: "Overview" becomes **Life**), [local vault](./2026-07-19-local-vault-electron-design.md),
@@ -305,14 +307,16 @@ Rules:
   from `list_databases`, `list_documents` and every other agent read, so the companion
   cannot leak them by accident; it learns them from its rubric, exactly as the
   operator's copy never names them.
-- **Onboarding consent**: the confirmation card is the write's consent record. It
-  should be attributable to the companion (a Decision), not silently to the
-  operator; today's Decision targets do not fit a batch of unlocks and doctrine
-  writes, so the build needs either a small `onboarding` Decision target or an
-  explicitly operator-confirmed batch with the agent recorded as author. Decide at
-  build time; do not let it become five inbox items.
-- **Log events**: `onboarding.started`, `onboarding.completed`, `area.unlocked`,
-  `area.archived`, `structure.suggested`, `structure.declined`, `structure.ignored`.
+- **Onboarding consent (decided)**: an *operator-confirmed batch*. The companion
+  writes one proposal to `.lifequest/onboarding-proposal.json` through a
+  `propose_onboarding_unlock` tool; the app renders it as one confirmation card
+  with tickable lines; the operator's Confirm is the consent. The batch applies
+  the unlocks, the doctrine drafts (written with the companion as `actor`), at
+  most one table and the one interview note, then logs a single
+  `onboarding.completed`. Nothing becomes an inbox Decision.
+- **Log events (as built)**: `onboarding.started`, `onboarding.completed`, and
+  P0's `domain.unlocked` / `domain.archived` (the vault keeps the `domain.`
+  spelling; the Log's renderer prints `area.`). `structure.*` events arrive with P2.
 - **Docs to update when this ships**: `docs/wiki/01-overview.md`,
   `docs/wiki/04-the-vault.md`, `docs/wiki/05-domains.md`, `docs/wiki/19-data-and-databases.md`,
   `docs/wiki/28-settings.md`, `VISION.md` (the four-domain sentence),
@@ -348,13 +352,20 @@ Rules:
 
 ## Open questions for the build
 
+Closed by the P0/P1 builds (2026-11-08):
+
 1. What fills the top band when the switcher is hidden — a static "Life" label, the
-   vault name, or nothing?
+   vault name, or nothing? **A quiet static "Life" label** (P0).
 2. Is the base area listed in Settings → Areas (as a non-removable row), or hidden
-   entirely?
+   entirely? **Hidden** (P0).
 3. The onboarding consent mechanism: a new Decision target, or an explicit
-   operator-confirmed batch recorded as the companion's write?
-4. The interview cap: one to three areas, or exactly two?
+   operator-confirmed batch recorded as the companion's write? **The batch** — one
+   proposal file, one confirmation card, no inbox Decision (P1).
+4. The interview cap: one to three areas, or exactly two? **One to three**,
+   enforced by the proposal validator, not the prompt (P1).
 5. Does a re-run of the interview exist after onboarding (and where is it offered)?
+   **Not in P1.** While the record is `in_progress` the dock offers *Continue the
+   interview*; once `completed`, no card returns. A Settings entry can come later.
 6. Does unlocking a seeded area offer adoption of matching base-area tables, or is
-   adoption reserved for custom areas?
+   adoption reserved for custom areas? **Reserved for P4.** A P1 unlock is a flag
+   flip plus the interview's own drafts; nothing is adopted.
