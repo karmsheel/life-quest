@@ -58,6 +58,11 @@ const PAST_DAY_SHOT = path.join(
   desktopRoot,
   "e2e/artifacts/daily-note-past-day.png",
 );
+/** The calendar open over the day: the month, and the days it offers. */
+const CALENDAR_SHOT = path.join(
+  desktopRoot,
+  "e2e/artifacts/daily-note-calendar.png",
+);
 
 function devServerUp(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -140,6 +145,8 @@ type Layout = {
   prev: Box | null;
   next: Box | null;
   dayLabel: Box | null;
+  /** The day and its calendar key as one block — the thing that centres. */
+  dayBlock: Box | null;
   workspace: Box | null;
   editor: Box | null;
   history: Box | null;
@@ -161,6 +168,33 @@ type Panel = {
   onFire: string | null;
 };
 
+/** One day the calendar drew: its date, and whether it may be chosen. */
+type PickerDay = {
+  date: string | null;
+  day: number;
+  disabled: boolean;
+  selected: boolean;
+  today: boolean;
+  background: string;
+  ariaLabel: string | null;
+};
+
+/** One read of the calendar key's popover. */
+type PickerSample = {
+  open: boolean;
+  role?: string | null;
+  label?: string | null;
+  month?: string | null;
+  nextMonthDisabled?: boolean | null;
+  position?: string | null;
+  radius?: string | null;
+  box?: Box | null;
+  trigger?: Box | null;
+  viewport?: { width: number; height: number } | null;
+  rowWidths?: number[];
+  days?: PickerDay[];
+};
+
 /** What one read of the page's DOM reports. Only the fields this file asserts. */
 type Sample = {
   heading: string | null;
@@ -175,6 +209,21 @@ type Sample = {
   writes: number;
   nextDisabled: boolean | null;
   prevDisabled: boolean | null;
+  prevPresent: boolean;
+  nextPresent: boolean;
+  prevText: string | null;
+  nextText: string | null;
+  prevLabel: string | null;
+  nextLabel: string | null;
+  prevBorder: string | null;
+  nextBorder: string | null;
+  calendar: {
+    present: boolean;
+    label?: string | null;
+    expanded?: string | null;
+    border?: string | null;
+    text?: string | null;
+  };
   todayButton: boolean;
   todayPlacement: {
     present: boolean;
@@ -270,6 +319,10 @@ type Report = {
     } | null;
     wideRight: Layout;
     wideLeft: Layout;
+    /** The calendar key's popover, as the rig read it while it was open. */
+    calendar: PickerSample;
+    /** The page after a day was chosen from the calendar. */
+    calendarPick: Sample;
     automation: AutomationSample;
     emptyParagraphs: Sample;
     box: { boxes: number; splits: number; previews: number; writingLines: number };
@@ -329,6 +382,7 @@ describe("daily note ui e2e", () => {
     fs.rmSync(SPLIT_LEFT_SHOT, { force: true });
     fs.rmSync(ANALYZE_SHOT, { force: true });
     fs.rmSync(PAST_DAY_SHOT, { force: true });
+    fs.rmSync(CALENDAR_SHOT, { force: true });
     const exitCode = await runDriver();
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
     assert.equal(fs.existsSync(ANALYZE_SHOT), true, "driver captured no picture of the day's act");
@@ -336,6 +390,11 @@ describe("daily note ui e2e", () => {
       fs.existsSync(PAST_DAY_SHOT),
       true,
       "driver captured no picture of a day that is not today",
+    );
+    assert.equal(
+      fs.existsSync(CALENDAR_SHOT),
+      true,
+      "driver captured no picture of the calendar",
     );
 
     const report = JSON.parse(fs.readFileSync(REPORT, "utf8")) as Report;
@@ -380,6 +439,17 @@ describe("daily note ui e2e", () => {
     assert.ok(
       (landingSample.headingSize ?? 0) > (landingSample.eyebrowSize ?? 0),
       `the date heading is ${landingSample.headingSize}px and the page's name ${landingSample.eyebrowSize}px — the date is not the larger one`,
+    );
+    // A step down from the studio's 1.5rem title: the day is a line of chrome
+    // over the prose, not a banner across it, so that the calendar key beside it
+    // reads as its control rather than as a badge pinned to a display face.
+    assert.ok(
+      (landingSample.headingSize ?? 99) <= 22,
+      `the date heading stands ${landingSample.headingSize}px tall — still at the page-title scale`,
+    );
+    assert.ok(
+      (landingSample.headingSize ?? 0) >= 20,
+      `the date heading shrank to ${landingSample.headingSize}px — past a heading and into a label`,
     );
 
     // ── the page's chrome is the page's, not the engine's ───────────────────
@@ -558,8 +628,33 @@ describe("daily note ui e2e", () => {
     assert.equal(landing.body, "", "today's editor did not open empty");
     assert.equal(landing.status, "No note for this day yet");
     assert.equal(landing.writes, 0, "landing on a day wrote it without anything being typed");
-    assert.equal(landing.nextDisabled, true, "the future is reachable from today");
-    assert.equal(landing.prevDisabled, false);
+    // The steps are keys, and the forward one is not drawn on today at all:
+    // with nothing to click there is nothing to show.
+    assert.equal(landing.nextPresent, false, "a step forward was drawn on today");
+    assert.equal(landing.prevPresent, true, "the step back was not drawn on today");
+    assert.equal(landing.prevDisabled, false, "the step back was inert on today");
+    assert.equal(
+      String(landing.prevText).trim(),
+      "",
+      `the step back still wears words: ${JSON.stringify(landing.prevText)}`,
+    );
+    assert.equal(
+      landing.prevBorder,
+      "none",
+      `the step back still wears a ${landing.prevBorder} frame`,
+    );
+    assert.equal(landing.prevLabel, "Previous day", "the step back is unnamed to a screen reader");
+    assert.equal(landing.calendar.present, true, "the day wore no calendar");
+    assert.equal(
+      String(landing.calendar.text).trim(),
+      "",
+      "the calendar key wears words instead of an icon",
+    );
+    assert.equal(
+      landing.calendar.expanded,
+      "false",
+      "a closed calendar key said it was open",
+    );
 
     // ── the two sections are centred, and the box is twice its old height ───
     // Centred on the content column, not the window: the rail and the dock have
@@ -574,14 +669,16 @@ describe("daily note ui e2e", () => {
       Math.abs(centering.historyOffBy ?? 999) <= 2,
       `the earlier-notes strip sits ${centering.historyOffBy}px off the page's centre`,
     );
-    // The pager is the box's own width: Prev day opens on its leading edge, Next
-    // day closes on its trailing edge, and the date sits over the middle of the
-    // prose rather than over the journal beside it.
+    // The day row is the box's own width: the step back sits on its leading
+    // edge, the day and its calendar centre over the prose rather than over the
+    // journal beside it. The step forward is not on screen on today, so there is
+    // no trailing key to measure here.
     const landingLayout = landing.layout;
     assert.ok(landingLayout.header, "the header's own box could not be measured");
-    assert.ok(landingLayout.prev, "Prev day's box could not be measured");
-    assert.ok(landingLayout.next, "Next day's box could not be measured");
+    assert.ok(landingLayout.prev, "the step back's box could not be measured");
+    assert.equal(landingLayout.next, null, "a step forward was drawn on today");
     assert.ok(landingLayout.dayLabel, "the date's own box could not be measured");
+    assert.ok(landingLayout.dayBlock, "the day's own block could not be measured");
     assert.ok(
       Math.abs(landingLayout.header!.left - landingLayout.editor!.left) <= 2,
       "the header does not share the text box's leading edge",
@@ -596,19 +693,11 @@ describe("daily note ui e2e", () => {
     );
     assert.ok(
       Math.abs(
-        landingLayout.next!.left +
-          landingLayout.next!.width -
-          (landingLayout.editor!.left + landingLayout.editor!.width),
-      ) <= 2,
-      "Next day does not close on the text box's trailing edge",
-    );
-    assert.ok(
-      Math.abs(
-        landingLayout.dayLabel!.left +
-          landingLayout.dayLabel!.width / 2 -
+        landingLayout.dayBlock!.left +
+          landingLayout.dayBlock!.width / 2 -
           (landingLayout.editor!.left + landingLayout.editor!.width / 2),
       ) <= 2,
-      "the date is not centred over the text box",
+      "the day and its calendar are not centred over the text box",
     );
     assert.ok(
       (report.checks.editorMinHeight ?? 0) >= 512,
@@ -820,7 +909,22 @@ describe("daily note ui e2e", () => {
 
     // ── a day that already has a note loads it ─────────────────────────────
     const previous = report.checks.previousDay;
-    assert.equal(previous.dayDate, yesterday, "Prev day did not open yesterday");
+    assert.equal(previous.dayDate, yesterday, "the step back did not open yesterday");
+    // On a day behind today there is a day to go to, so the step forward is
+    // drawn — still a key, still no frame.
+    assert.equal(previous.nextPresent, true, "the step forward was missing on a past day");
+    assert.equal(previous.nextDisabled, false, "the step forward was inert on a past day");
+    assert.equal(
+      String(previous.nextText).trim(),
+      "",
+      `the step forward still wears words: ${JSON.stringify(previous.nextText)}`,
+    );
+    assert.equal(
+      previous.nextBorder,
+      "none",
+      `the step forward still wears a ${previous.nextBorder} frame`,
+    );
+    assert.equal(previous.nextLabel, "Next day", "the step forward is unnamed to a screen reader");
     assert.equal(previous.body?.trimEnd(), "Yesterday: a walk, then the rig.");
     assert.equal(previous.status, "Saved");
     assert.equal(
@@ -887,7 +991,7 @@ describe("daily note ui e2e", () => {
     // ── the future is closed, the unusable day is text rather than a link ──
     const back = report.checks.backToToday;
     assert.equal(back.dayDate, today);
-    assert.equal(back.nextDisabled, true);
+    assert.equal(back.nextPresent, false, "a step forward was drawn again on today");
     assert.match(String(back.body), /Rig day: wrote the note/);
     assert.match(String(back.body), /Live preview: the box renders as it is written\./);
     // What the vault kept is markdown, while what the box painted is prose: the
@@ -932,6 +1036,82 @@ describe("daily note ui e2e", () => {
     assert.match(String(report.checks.afterRetry.body), /^Rig day: the vault refused/);
     assert.equal(report.checks.afterRetry.error, null, "the refusal stayed on screen");
     assert.equal(report.checks.afterRetry.status, "Saved");
+
+    // ── the calendar: this month, and only the days that have happened ──────
+    // The pager walks the journal a day at a time; the calendar is how the
+    // operator reaches a note they half remember. It opens on the month the page
+    // is in, and it offers no day after today — the future is closed, and the
+    // surface says so by drawing those days inert rather than by refusing them
+    // on press.
+    const picker = report.checks.calendar;
+    assert.equal(picker.open, true, "the calendar key opened nothing");
+    assert.equal(picker.role, "dialog", "the calendar is not a dialog");
+    assert.equal(picker.label, "Choose a day", "the calendar is unnamed to a screen reader");
+    assert.equal(picker.position, "fixed", "the calendar is in the flow rather than over the page");
+    // It hangs under its key and stays inside the window: a month drawn over
+    // the key or off the edge is a menu the operator cannot read.
+    assert.ok(picker.box, "the calendar's own box could not be measured");
+    assert.ok(picker.trigger, "the calendar key's box could not be measured");
+    assert.ok(
+      picker.box!.top >= picker.trigger!.bottom - 1,
+      `the calendar opens at ${picker.box!.top}, over the key it hangs from (${picker.trigger!.bottom})`,
+    );
+    assert.ok(
+      picker.box!.left >= 0 &&
+        picker.box!.top >= 0 &&
+        picker.box!.right <= (picker.viewport?.width ?? 0) &&
+        picker.box!.bottom <= (picker.viewport?.height ?? 0),
+      "the calendar spills outside the window",
+    );
+    assert.ok(
+      Math.abs(picker.box!.right - picker.trigger!.right) <= 8,
+      "the calendar is not hung off its key's trailing edge",
+    );
+    assert.ok((picker.rowWidths ?? []).length > 0, "the calendar drew no week rows");
+    for (const width of picker.rowWidths ?? []) {
+      assert.equal(width, 7, `a week row of the calendar holds ${width} cells, not seven`);
+    }
+    const monthLabel = new Intl.DateTimeFormat("en-US", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(`${today}T00:00:00Z`));
+    assert.equal(
+      picker.month,
+      monthLabel,
+      `the calendar opened on ${JSON.stringify(picker.month)}, not on the month the page is in`,
+    );
+    assert.equal(
+      picker.nextMonthDisabled,
+      true,
+      "the calendar walks forward into months that hold no day it can choose",
+    );
+    const pickerDays = picker.days ?? [];
+    assert.ok(pickerDays.length > 0, "the calendar drew no days");
+    const futureDays = pickerDays.filter((day) => String(day.date) > today);
+    assert.ok(futureDays.length > 0, "the calendar drew no future days, so the closed future was not tested");
+    for (const day of futureDays) {
+      assert.equal(day.disabled, true, `the calendar offers ${day.date} — a day that has not happened`);
+    }
+    const pastDays = pickerDays.filter((day) => String(day.date) <= today);
+    assert.ok(pastDays.length > 0, "the calendar drew no day the operator could choose");
+    for (const day of pastDays) {
+      assert.equal(day.disabled, false, `the calendar refuses ${day.date}, a day that has happened`);
+    }
+    const todayCell = pickerDays.find((day) => day.today);
+    assert.ok(todayCell, "the calendar did not mark today");
+    assert.equal(todayCell!.disabled, false, "the calendar refuses today");
+    assert.equal(todayCell!.selected, true, "the calendar did not mark the day the page is showing");
+    assert.notEqual(
+      todayCell!.background,
+      "rgba(0, 0, 0, 0)",
+      "the day the page is showing is painted like every other day",
+    );
+    // Choosing a day lands the page on it — and the calendar closes behind it.
+    const picked = report.checks.calendarPick;
+    assert.equal(picked.dayDate, yesterday, "the calendar did not land the page on the day chosen");
+    assert.match(String(picked.body), /Yesterday: a walk/, "the chosen day's note did not load");
+    assert.equal(picked.todayButton, true, "after choosing a past day the calendar did not offer today back");
 
     // ── the whole ledger ────────────────────────────────────────────────────
     // Every write this run made names the day the page was showing when it made
@@ -1041,9 +1221,9 @@ describe("daily note ui e2e", () => {
       assert.ok(layout.history, `${when}: the wide page drew no earlier-notes strip`);
       assert.ok(layout.header, `${when}: the wide page drew no header`);
       assert.ok(layout.page, `${when}: the wide page's own box could not be read`);
-      assert.ok(layout.prev, `${when}: Prev day's box could not be measured`);
-      assert.ok(layout.next, `${when}: Next day's box could not be measured`);
+      assert.ok(layout.prev, `${when}: the step back's box could not be measured`);
       assert.ok(layout.dayLabel, `${when}: the date's box could not be measured`);
+      assert.ok(layout.dayBlock, `${when}: the day's own block could not be measured`);
       const chatLeft = String(layout.shellClass).includes("shell--chat-left");
       const editorCentre = layout.editor!.left + layout.editor!.width / 2;
       const boxRight = layout.editor!.left + layout.editor!.width;
@@ -1075,22 +1255,21 @@ describe("daily note ui e2e", () => {
           Math.abs(layout.header!.width - layout.editor!.width) <= 2,
         `${when}: the header does not ride the text box's column`,
       );
-      // The pager wears the box's own edges, and the date its centre.
+      // The day row wears the box's own edges, and the day and its calendar
+      // centre over it. These wide samples are taken on today, where the step
+      // forward is not drawn.
       assert.ok(
         Math.abs(layout.prev!.left - layout.editor!.left) <= 2,
-        `${when}: Prev day does not open on the box's leading edge`,
+        `${when}: the step back does not open on the box's leading edge`,
+      );
+      assert.equal(
+        layout.next,
+        null,
+        `${when}: a step forward was drawn on today`,
       );
       assert.ok(
-        Math.abs(
-          layout.next!.left +
-            layout.next!.width -
-            (layout.editor!.left + layout.editor!.width),
-        ) <= 2,
-        `${when}: Next day does not close on the box's trailing edge`,
-      );
-      assert.ok(
-        Math.abs(layout.dayLabel!.left + layout.dayLabel!.width / 2 - editorCentre) <= 2,
-        `${when}: the date is not centred over the box`,
+        Math.abs(layout.dayBlock!.left + layout.dayBlock!.width / 2 - editorCentre) <= 2,
+        `${when}: the day and its calendar are not centred over the box`,
       );
       // The strip is on the side away from the dock, and the space between it and
       // the box is the space between the box and the dock — the page's own gutter.

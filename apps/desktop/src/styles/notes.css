@@ -62,11 +62,13 @@
 }
 
 /* The date is the page's heading, so it wears the studio's own title treatment:
-   the same size, weight and tracking the Data and Pages pages give the name
-   this page has stepped down from. The day is the page's real title. */
+   the same weight and tracking the Data and Pages pages give the name this page
+   has stepped down from, one step smaller — the day is a line of chrome above
+   the prose, not a banner over it, and the calendar key beside it has to sit as
+   its equal rather than as a badge pinned to a display face. */
 .daily-note__date {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.35rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.15;
@@ -86,28 +88,209 @@
   gap: 0.5rem 0.75rem;
 }
 
-/* The pager is two edges and a centre. The box's own leading and trailing edges
-   are the buttons' edges — Prev day opens the row, Next day closes it — and the
-   day's date sits in the middle column, over the prose the box holds. The two
-   outer tracks are equal, so the date stays on the box's centre. */
+/* The day row is three tracks: the step back, the day itself with its calendar,
+   and the step forward. The outer tracks are equal, so the day stays on the
+   box's centre — and they are declared, not filled, so a day row drawn without
+   its forward step is still the same three-track row and the day does not
+   shift.
+
+   The columns are named rather than positional for the same reason: the middle
+   track always holds the day whatever is or is not drawn on either side. */
 .daily-note__pager {
   display: grid;
+  grid-template-areas: "prev day next";
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   column-gap: 0.75rem;
 }
 
-.daily-note__pager-start {
-  display: flex;
-  flex-wrap: wrap;
+/* The journal's steps are keys, not buttons: no frame, no fill, and the arrow
+   itself is the whole control. They sit on the box's own edges — a step back at
+   the leading edge, a step forward at the trailing one — so they read as the
+   page's margins rather than as another row of chrome. The primitive's own
+   padding is what gives them a target; the height matches the day they sit
+   beside. */
+.daily-note .daily-note__pager-prev,
+.daily-note .daily-note__pager-next {
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.daily-note .daily-note__pager-prev:hover:not(:disabled),
+.daily-note .daily-note__pager-next:hover:not(:disabled) {
+  background: var(--selected-soft);
+}
+
+.daily-note__pager-prev {
+  grid-area: prev;
   justify-self: start;
-  min-width: 0;
 }
 
 .daily-note__pager-next {
+  grid-area: next;
   justify-self: end;
+}
+
+/* The day and the calendar that accompanies it are one block: the date is the
+   heading and the key is its one control, so they centre together over the
+   prose instead of the key pulling the date off the middle of the box. */
+.daily-note__day {
+  grid-area: day;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+/* The calendar key beside the day. It is the same wordless key as the steps on
+   either side — no frame, the icon alone — because it belongs to the day rather
+   than to the page's acts, and it hands back to the day when it closes. */
+.daily-note__calendar-slot {
+  display: inline-flex;
+}
+
+.daily-note .daily-note__calendar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.daily-note .daily-note__calendar:hover:not(:disabled),
+.daily-note .daily-note__calendar[aria-expanded="true"] {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+/* —— The day picker ——
+   The calendar key's popover: one month, Monday first — the same week the Life
+   Map's month grid draws — with the days of that month as the buttons. It is
+   the quick menus' shape (portalled, fixed, the card step and the popover's own
+   radius), because a surface that hangs off a control is the same kind of
+   surface wherever it hangs.
+
+   The future is not drawn as an available day: a day after today is inert and
+   quiet, never a control that refuses on press. Today is ringed, so the operator
+   can see where the edge of the journal is. */
+.day-picker {
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.day-picker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.day-picker__month {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--fg);
+}
+
+.day-picker__arrow {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.day-picker__arrow:hover:not(:disabled) {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+.day-picker__arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.day-picker__weekdays,
+.day-picker__row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.day-picker__weekday {
+  padding: 0.15rem 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--muted-foreground);
+}
+
+.day-picker__blank {
+  display: block;
+}
+
+.day-picker__day {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.day-picker__day:hover:not(:disabled) {
+  background: var(--selected-soft);
+}
+
+.day-picker__day.is-today {
+  border-color: var(--accent);
+}
+
+.day-picker__day.is-selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+.day-picker__day:disabled {
+  color: var(--text-faint);
+  cursor: default;
 }
 
 /* The box's foot: the autosave line alone. The day's own automations live up in

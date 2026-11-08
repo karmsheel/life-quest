@@ -7,9 +7,10 @@ import {
   shiftLocalIsoDate,
   type IsoWeek,
 } from "@lifequest/vault-core/pure";
-import { Focus, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Focus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { LiveMarkdownEditor } from "@/components/documents/LiveMarkdownEditor";
+import { DayPicker } from "@/components/notes/DayPicker";
 import { FocusModeOverlay } from "@/components/notes/FocusModeOverlay";
 import {
   automationContextFor,
@@ -689,42 +690,62 @@ export default function DailyNotePage() {
               </Button>
             </div>
           </div>
+          {/* The day row: the journal's two steps, the day itself, and the
+              calendar that jumps to another one. The arrows are keys rather
+              than labelled buttons — the page has no words to spare in its
+              chrome, and a day back or forward is the one thing the shapes say
+              — and they carry no frame at all, so they read as the edge of the
+              prose rather than as two more controls on it.
+
+              Next day is drawn only when there is a day to go to: the future is
+              closed, so on today its key would be a control with nothing behind
+              it. It is not disabled and greyed — it is not there, and the row
+              keeps its shape because the three tracks are declared. */}
           <div className="daily-note__pager">
-            <div className="daily-note__pager-start">
-              <Button
-                variant="outline"
-                data-testid="daily-note-prev"
-                onClick={() => {
-                  if (prevDate) void goToDay(prevDate);
-                }}
-                disabled={!prevDate}
-              >
-                ‹ Prev day
-              </Button>
-            </div>
-            {/* The date is the page's heading: the day being written, centred
-                over the prose it heads. It is the one `h1` on the page, and the
-                word "Daily Note" above it is a label rather than a second name. */}
-            <h1
-              className="daily-note__date"
-              data-testid="daily-note-day"
-              data-date={date}
-            >
-              {weekday ? `${weekday}, ` : ""}
-              {label}
-              {date === today ? " (Today)" : ""}
-            </h1>
             <Button
-              variant="outline"
-              className="daily-note__pager-next"
-              data-testid="daily-note-next"
+              variant="ghost"
+              className="daily-note__pager-prev"
+              data-testid="daily-note-prev"
+              aria-label="Previous day"
+              title="Previous day"
               onClick={() => {
-                if (nextDate) void goToDay(nextDate);
+                if (prevDate) void goToDay(prevDate);
               }}
-              disabled={!nextDate || atToday}
+              disabled={!prevDate}
             >
-              Next day ›
+              <ChevronLeft size={20} aria-hidden />
             </Button>
+            {/* The day is the page's heading — the one `h1` on the page — and the
+                calendar beside it chooses another. The pair is centred over the
+                prose as one block, so the key does not pull the date off the
+                middle of the box. */}
+            <div className="daily-note__day">
+              <h1
+                className="daily-note__date"
+                data-testid="daily-note-day"
+                data-date={date}
+              >
+                {weekday ? `${weekday}, ` : ""}
+                {label}
+                {date === today ? " (Today)" : ""}
+              </h1>
+              <DayPicker date={date} today={today} onSelect={(day) => void goToDay(day)} />
+            </div>
+            {atToday ? null : (
+              <Button
+                variant="ghost"
+                className="daily-note__pager-next"
+                data-testid="daily-note-next"
+                aria-label="Next day"
+                title="Next day"
+                onClick={() => {
+                  if (nextDate) void goToDay(nextDate);
+                }}
+                disabled={!nextDate}
+              >
+                <ChevronRight size={20} aria-hidden />
+              </Button>
+            )}
           </div>
         </header>
 

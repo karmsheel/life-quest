@@ -20,8 +20,13 @@ const POPOVER_WIDTH = 16.5 * 16;
 export function useMenuPosition(
   triggerRef: RefObject<HTMLElement | null>,
   placement: "bottom-end" | "right-end",
+  options: { width?: number } = {},
 ) {
   const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
+  // The quick menus are one tile grid of a fixed width; a caller that draws
+  // something wider (the journal's day picker is seven day cells across) says so
+  // rather than having its width overridden by the shared default.
+  const requestedWidth = options.width ?? POPOVER_WIDTH;
 
   const updateMenuPosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -31,7 +36,7 @@ export function useMenuPosition(
     const gap = 8;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const width = Math.min(POPOVER_WIDTH, vw - 16);
+    const width = Math.min(requestedWidth, vw - 16);
 
     if (placement === "right-end") {
       let left = rect.right + gap;
@@ -66,7 +71,7 @@ export function useMenuPosition(
       width,
       maxHeight: Math.max(160, vh - top - 8),
     });
-  }, [placement, triggerRef]);
+  }, [placement, requestedWidth, triggerRef]);
 
   return { menuStyle, updateMenuPosition };
 }
