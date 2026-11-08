@@ -15,6 +15,7 @@ import {
   parseSnapshotDirectives,
   prepopulateReview,
   upsertSnapshotBlock,
+  unlockDomain,
   writeReview,
   writeReviewSkill,
 } from "@lifequest/vault-core";
@@ -75,6 +76,12 @@ describe("review snapshot e2e", () => {
     try {
       const created = await createVault(vaultRoot, "Review Rig");
       assert.equal(created.ok, true, "the rig could not create a vault");
+      const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+      assert.equal(
+        unlockFinancial.ok,
+        true,
+        `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+      );
 
       // The finance kit, then three rows: two inside the review's week and one
       // in the month before it, so a snapshot that ignores its window reports a
@@ -148,7 +155,7 @@ describe("review snapshot e2e", () => {
         "## Keep",
         "## Change",
         "## Next-period intent",
-        "## Financial",
+        "## Finance",
         "### Look-back",
         "Kept the grocery run to one trip.",
         "### Keep",
@@ -321,7 +328,7 @@ describe("review snapshot e2e", () => {
 
       // A directive whose section is not in the review is skipped, not forced in.
       const orphan = upsertSnapshotBlock(
-        "# T\n\n## Financial\n\n### Look-back\n\nmine\n",
+        "# T\n\n## Finance\n\n### Look-back\n\nmine\n",
         {
           id: "nowhere",
           domain: "financial",
@@ -330,7 +337,7 @@ describe("review snapshot e2e", () => {
           window: "period",
           spec: {} as never,
         },
-        "Financial",
+        "Finance",
         "**x**",
       );
       checks.orphan = orphan.status;

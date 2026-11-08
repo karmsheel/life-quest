@@ -11,6 +11,7 @@ import {
   listPinBoard,
   listViews,
   runSavedView,
+  unlockDomain,
   upsertRow,
   VIEW_SPEC_SCHEMA,
   VIEW_VOCABULARY,
@@ -178,6 +179,10 @@ describe("companion dashboard card e2e", () => {
     const created = await createVault(vaultRoot, "E2E");
     assert.equal(created.ok, true, `createVault failed: ${created.ok ? "" : created.error}`);
     const vaultId = (created as { ok: true; value: { lifequest: { id: string } } }).value.lifequest.id;
+
+    // A new vault seeds Finance locked; the kit and the rows need it live.
+    const finance = await unlockDomain(vaultRoot, "financial");
+    assert.equal(finance.ok, true, `unlock financial failed: ${finance.ok ? "" : finance.error}`);
 
     // ── a real finance kit, with one expense row per week ────────────────────
     const kit = await applyFinanceKitInstall(vaultRoot);

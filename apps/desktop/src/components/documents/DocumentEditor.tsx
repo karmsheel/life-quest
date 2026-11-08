@@ -210,7 +210,7 @@ export function DocumentEditor({
   if (!slug) {
     return (
       <p className="muted doc-editor__status">
-        Select a domain to edit its {DOCUMENT_KIND_LABELS[kind]} document.
+        Select an area to edit its {DOCUMENT_KIND_LABELS[kind]} document.
       </p>
     );
   }

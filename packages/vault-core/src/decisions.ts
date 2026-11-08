@@ -493,6 +493,12 @@ export async function createDecision(
       if (!input.target.domainSlug.trim()) {
         return { ok: false, error: "domainSlug is required" };
       }
+      if (!(await isDomainLive(rootPath, input.target.domainSlug))) {
+        return {
+          ok: false,
+          error: `Area is locked or unavailable: ${input.target.domainSlug}`,
+        };
+      }
     } else if (input.target.type === "library") {
       if (!input.target.id.trim()) {
         return { ok: false, error: "library id is required" };
@@ -1719,6 +1725,13 @@ async function applyApprovedBody(
       return { ok: false, error: `Unknown database op: ${body.op}`, terminal: false };
     }
     if (decision.target.type === "doctrine") {
+      if (!(await isDomainLive(rootPath, decision.target.domainSlug))) {
+        return {
+          ok: false,
+          error: `Area is locked or unavailable: ${decision.target.domainSlug}`,
+          terminal: false,
+        };
+      }
       const paths = vaultPaths(rootPath);
       const docPath = paths.documentMd(decision.target.domainSlug, decision.target.kind);
       await assertPhysicalContainment(rootPath, docPath, "read");

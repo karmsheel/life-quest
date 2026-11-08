@@ -15,6 +15,7 @@ import {
   runSavedView,
   runViewBlocks,
   saveView,
+  unlockDomain,
   upsertRow,
   windowBounds,
 } from "@lifequest/vault-core";
@@ -97,6 +98,12 @@ describe("view windows and period averages e2e", () => {
 
     const created = await createVault(vaultRoot, "E2E Period Average");
     assert.equal(created.ok, true, created.ok ? "" : created.error);
+    const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+    assert.equal(
+      unlockFinancial.ok,
+      true,
+      `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+    );
 
     const db = await createDatabase(vaultRoot, "financial", { name: "Transactions" });
     assert.equal(db.ok, true, db.ok ? "" : db.error);

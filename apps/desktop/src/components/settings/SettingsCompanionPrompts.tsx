@@ -48,7 +48,7 @@ export function SettingsCompanionPrompts() {
   }, []);
 
   // Re-read when the open vault changes: the per-turn instructions carry the
-  // active domain lens and that board's lock, so they are a function of the vault.
+  // active area lens and that board's lock, so they are a function of the vault.
   useEffect(() => {
     void load();
   }, [load, snapshot?.rootPath]);
@@ -136,14 +136,14 @@ export function SettingsCompanionPrompts() {
             {context ? (
               <dl className="settings-hermes">
                 <div className="settings-field">
-                  <span>Domain lens</span>
-                  <p className="muted">{context.domainSlug ?? "Overview"}</p>
+                  <span>Area lens</span>
+                  <p className="muted">{context.domainSlug ?? "Life"}</p>
                 </div>
                 <div className="settings-field">
                   <span>Dashboard board</span>
                   <p className="muted">
                     {context.viewingBoard == null
-                      ? "Overview board (domainSlug: null)"
+                      ? "Life board (no area)"
                       : `${context.viewingBoard} board`}
                     {context.viewingBoardLocked === undefined
                       ? ""

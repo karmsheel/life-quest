@@ -6,7 +6,7 @@ import type {
   DocumentKind,
   UnlockDoc,
 } from "@lifequest/vault-core/pure";
-import { DOCUMENT_KINDS } from "@lifequest/vault-core/pure";
+import { DOCUMENT_KINDS, isAreaLive } from "@lifequest/vault-core/pure";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
 
@@ -15,15 +15,17 @@ export function useDomainLens(): DomainLens {
   return lens;
 }
 
-/** Live domain for a domain lens; null in Overview (no first-live fallback). */
+/**
+ * Live area for an area lens; null on the Life lens (no first-live fallback).
+ * A locked or archived area is not live, so the lens never resolves to one.
+ */
 export function useActiveDomain(): DomainRecord | null {
   const { snapshot, lens } = useVault();
   return useMemo(() => {
     if (!snapshot || lens.kind === "overview") return null;
     return (
-      snapshot.domains.find(
-        (d) => d.slug === lens.slug && !d.meta.archivedAt,
-      ) ?? null
+      snapshot.domains.find((d) => d.slug === lens.slug && isAreaLive(d)) ??
+      null
     );
   }, [snapshot, lens]);
 }

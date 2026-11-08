@@ -6,6 +6,7 @@ import { loadGoals } from "../goals.ts";
 import { appendLog } from "../log.ts";
 import { vaultPaths } from "../paths.ts";
 import type { Result } from "../types.ts";
+import { isLiveAreaMeta } from "../domain-lens.ts";
 import { USER_ACTOR, type Actor } from "../types.ts";
 import { applyCommand } from "./commands.ts";
 import { emptyState } from "./empty.ts";
@@ -280,7 +281,7 @@ export async function applyMapCommand(
   if (!ensured.ok) return ensured;
   const domains = await listDomains(rootPath);
   const live = domains.ok
-    ? domains.value.filter((d) => !d.meta.archivedAt).map((d) => d.slug)
+    ? domains.value.filter((d) => isLiveAreaMeta(d.meta)).map((d) => d.slug)
     : [];
   const goals = await loadGoals(rootPath);
   const goalIds = goals.ok ? goals.value.map((g) => g.id) : [];

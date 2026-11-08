@@ -873,7 +873,8 @@ async function main() {
     "the-header-drops-the-doctrine-line",
     landing.header !== null &&
       landing.header.eyebrow === "Dashboard" &&
-      landing.header.title === "Overview" &&
+      // The Life surface's page title, never Overview (the word is internal now).
+      landing.header.title === "Life" &&
       landing.header.badge === "Unlocked" &&
       landing.header.hint === true &&
       landing.header.subtitles === 0 &&
@@ -1970,7 +1971,7 @@ async function main() {
           },
           {
             name: "Renew the passport",
-            domain: "No domain",
+            domain: "No area",
             unassigned: true,
             progress: null,
             hasBar: false,

@@ -11,6 +11,7 @@ import {
   listManualDecisions,
   openVault,
   readLog,
+  unlockDomain,
   vaultPaths,
 } from "@lifequest/vault-core";
 
@@ -76,6 +77,12 @@ async function freshVault(label: string): Promise<string> {
     true,
     created.ok ? "" : `createVault failed: ${created.error}`,
   );
+  // The rig logs one decision against Finance and proves that an archived
+  // Health area is refused, so both seeded areas are unlocked first.
+  for (const area of ["financial", "health"]) {
+    const unlock = await unlockDomain(root, area);
+    assert.equal(unlock.ok, true, unlock.ok ? "" : `unlockDomain(${area}) failed: ${unlock.error}`);
+  }
   return root;
 }
 

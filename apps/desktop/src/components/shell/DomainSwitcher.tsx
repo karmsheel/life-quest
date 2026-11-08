@@ -1,10 +1,22 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { domainLens, overviewLens } from "@lifequest/vault-core/pure";
+import {
+  domainLens,
+  overviewLens,
+  unlockedAreas,
+} from "@lifequest/vault-core/pure";
 import { useVault } from "@/state/VaultProvider";
 import { useDomainLens } from "./useActiveDomain";
 
 const OVERVIEW_KEY = "__overview__";
 
+/**
+ * The window's area lens.
+ *
+ * One life is the product's first surface, so the strip says "Life" and offers
+ * nothing to switch until a second area is unlocked. With two or more unlocked
+ * areas the same band becomes the segmented control: Life first, then the areas
+ * the operator can actually see. Locked and archived areas are never chips.
+ */
 export function DomainSwitcher() {
   const { snapshot, setLens, booting } = useVault();
   const lens = useDomainLens();
@@ -12,17 +24,14 @@ export function DomainSwitcher() {
   const [error, setError] = useState<string | null>(null);
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
 
-  const domains = useMemo(() => {
+  const areas = useMemo(() => {
     if (!snapshot) return [];
-    return snapshot.domains
-      .filter((d) => !d.meta.archivedAt)
-      .slice()
-      .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder);
+    return unlockedAreas(snapshot.domains);
   }, [snapshot]);
 
   const order: Array<string | null> = useMemo(
-    () => [null, ...domains.map((d) => d.slug)],
-    [domains],
+    () => [null, ...areas.map((d) => d.slug)],
+    [areas],
   );
 
   async function onChange(nextSlug: string | null) {
@@ -42,7 +51,7 @@ export function DomainSwitcher() {
         setError(result.error);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to switch domain");
+      setError(err instanceof Error ? err.message : "Failed to switch area");
     } finally {
       setPending(false);
     }
@@ -73,10 +82,21 @@ export function DomainSwitcher() {
     }
   }
 
+  // Fewer than two unlocked areas: one surface, so the band is a quiet label
+  // rather than a control. It keeps the tab's height and centres the word, so
+  // the strip reads the same before and after the switcher appears.
   if (booting && !snapshot) {
     return (
-      <div className="domain-switcher muted" aria-busy="true">
-        Loading domains…
+      <div className="domain-switcher domain-switcher--quiet" aria-busy="true">
+        <span className="domain-switcher__life">Life</span>
+      </div>
+    );
+  }
+
+  if (areas.length < 2) {
+    return (
+      <div className="domain-switcher domain-switcher--quiet">
+        <span className="domain-switcher__life">Life</span>
       </div>
     );
   }
@@ -88,7 +108,7 @@ export function DomainSwitcher() {
       <div
         className="ui-segmented domain-switcher__tabs"
         role="radiogroup"
-        aria-label="Domain lens"
+        aria-label="Area lens"
       >
         <button
           type="button"
@@ -103,9 +123,9 @@ export function DomainSwitcher() {
           onClick={() => void onChange(null)}
           onKeyDown={(event) => onKeyDown(null, event)}
         >
-          <span className="domain-switcher__name">Overview</span>
+          <span className="domain-switcher__name">Life</span>
         </button>
-        {domains.map((d) => {
+        {areas.map((d) => {
           const selected = lens.kind === "domain" && lens.slug === d.slug;
           return (
             <button

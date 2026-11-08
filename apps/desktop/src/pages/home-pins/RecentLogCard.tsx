@@ -4,6 +4,7 @@ import { recordVisible } from "@lifequest/vault-core/pure";
 import type { LifeEvent } from "@lifequest/vault-core";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
 import { BuiltInBadge } from "@/components/home/BuiltInBadge";
+import { displayEventType } from "@/lib/log-event-copy";
 
 function formatWhen(iso: string): string {
   try {
@@ -47,7 +48,7 @@ export function RecentLogCard({ events }: { events: LifeEvent[] }) {
             <li key={e.id} className="home-activity-row">
               <span className="home-activity-row__summary">{e.summary}</span>
               <span className="home-activity-row__meta">
-                <span className="home-activity-row__type">{e.type}</span>
+                <span className="home-activity-row__type">{displayEventType(e.type)}</span>
                 <time className="home-activity-row__when muted" dateTime={e.createdAt}>
                   {formatWhen(e.createdAt)}
                 </time>

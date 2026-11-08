@@ -11,6 +11,7 @@ import {
   resolveViewBlocks,
   runViewBlocks,
   saveView,
+  unlockDomain,
   upsertRow,
 } from "@lifequest/vault-core";
 
@@ -28,6 +29,12 @@ describe("views: the original single-aggregate shape", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "lq-single-view-"));
     const created = await createVault(root, "T");
     assert.equal(created.ok, true);
+    const unlockFinancial = await unlockDomain(root, "financial");
+    assert.equal(
+      unlockFinancial.ok,
+      true,
+      `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+    );
 
     const db = await createDatabase(root, "financial", { name: "Transactions" });
     assert.equal(db.ok, true, db.ok ? "" : db.error);

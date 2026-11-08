@@ -640,6 +640,9 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("domain:unarchive", (_e, slug: string) =>
     vault.domainUnarchive(slug),
   );
+  ipcMain.handle("domain:unlock", (_e, slug: string) =>
+    vault.domainUnlock(slug),
+  );
   ipcMain.handle("domain:delete", (_e, slug: string) =>
     vault.domainDelete(slug),
   );

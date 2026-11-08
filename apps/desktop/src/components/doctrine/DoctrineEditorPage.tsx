@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   DOCUMENT_KIND_LABELS,
   DOCUMENT_KINDS,
+  isAreaLive,
   type DocumentKind,
 } from "@lifequest/vault-core/pure";
 import { DocumentEditor } from "@/components/documents/DocumentEditor";
@@ -14,8 +15,9 @@ function isKind(value: string | undefined): value is DocumentKind {
 export function DoctrineEditorPage({ backTo }: { backTo: string }) {
   const { slug, kind } = useParams();
   const { snapshot } = useVault();
+  // A locked area's doctrine does not exist for the operator: not found.
   const domain = snapshot?.domains.find(
-    (d) => d.slug === slug && !d.meta.archivedAt,
+    (d) => d.slug === slug && isAreaLive(d),
   );
   if (!slug || !isKind(kind) || !domain) {
     return (

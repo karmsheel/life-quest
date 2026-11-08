@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import type { CSSProperties } from "react";
 import {
   DOCUMENT_KIND_LABELS,
+  liveAreas,
   type DocumentKind,
 } from "@lifequest/vault-core/pure";
 import { DocumentLockBadge } from "@/components/documents/DocumentLockBadge";
@@ -33,14 +34,13 @@ export function DoctrineIndex({
   const { snapshot } = useVault();
   const lens = useDomainLens();
 
-  const domains = (snapshot?.domains ?? [])
-    .filter((d) => !d.meta.archivedAt)
-    .filter((d) => (lens.kind === "domain" ? d.slug === lens.slug : true))
-    .slice()
-    .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder);
+  // Life shows every live area's doctrine, base included (its heading is "Life").
+  const domains = liveAreas(snapshot?.domains ?? []).filter((d) =>
+    lens.kind === "domain" ? d.slug === lens.slug : true,
+  );
 
   if (domains.length === 0) {
-    return <p className="muted">No live domains yet.</p>;
+    return <p className="muted">No live areas yet.</p>;
   }
 
   return (

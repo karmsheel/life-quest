@@ -135,10 +135,11 @@
  *     `--window-titlebar-height`, poking out of the lens, or the lens shoving the
  *     trailing cluster (theme, shortcuts, settings, side and chat toggles) off
  *     the window.
- * 20f. The lens list wrong — the tab not naming the vault's live domains, an
- *     archived domain offered, or the "Overview" option missing. The harness seeds
- *     three domains so "a tab" cannot be satisfied by a control with nothing to
- *     choose.
+ * 20f. The lens list wrong — the tab not naming the vault's live areas, an
+ *     archived or locked area offered, or the "Life" option missing. The harness
+ *     seeds three areas so "a tab" cannot be satisfied by a control with nothing
+ *     to choose; a second pass with `?areas=one` asserts the quiet label the
+ *     same tab renders below two unlocked areas.
  * 20g. The band row broken by the reclaim — the rail's wing band or the dock's
  *     header dragged up with the page (losing the 44px band), or the dock's
  *     header losing its own hairline.
@@ -180,12 +181,24 @@ const SEEDED_AT = "2026-01-01T00:00:00.000Z";
 
 /**
  * The live domains the titlebar's lens must offer. The tab is a real choice, not
- * a decoration: with an empty list the switcher renders "Overview" alone and every
+ * a decoration: with an empty list the lens is the quiet "Life" label and every
  * "it is a tab" claim would pass on a control with nothing to pick. Three of them,
  * so the compacted segmented control also has to fit more than one label inside
  * the 32px strip. The driver reads the same names off `window.shellHarnessDomainNames`.
+ *
+ * The driver also opens this page with `?areas=none` and `?areas=one`: a vault
+ * with no unlocked area, and one with a single unlocked area, are both the Life
+ * surface — the switcher is hidden below two (see `DomainSwitcher`).
  */
 const DOMAIN_NAMES = ["Health", "Financial", "Craft"];
+
+const AREAS_MODE = new URLSearchParams(window.location.search).get("areas");
+const HARNESS_DOMAIN_NAMES =
+  AREAS_MODE === "none"
+    ? []
+    : AREAS_MODE === "one"
+      ? DOMAIN_NAMES.slice(0, 1)
+      : DOMAIN_NAMES.slice();
 
 function domainDocuments(name: string): DomainRecord["documents"] {
   const doc = (
@@ -234,7 +247,9 @@ const SNAPSHOT = {
     theme: "dark" as const,
     weekStartDay: "monday" as const,
   },
-  domains: DOMAINS,
+  domains: DOMAINS.filter((d) =>
+    HARNESS_DOMAIN_NAMES.includes(d.meta.name),
+  ),
   agents: [],
   decisions: [],
   log: [],
@@ -397,11 +412,19 @@ requestAnimationFrame(waitForShell);
   window as unknown as { shellHarnessVaultName: string }
 ).shellHarnessVaultName = VAULT_NAME;
 
-// ...and the titlebar lens's claims need the domain list it was handed: the tab
-// must name them, in order, after "Overview".
+// ...and the titlebar lens's claims need the domain list it was handed: with
+// two or more areas the tab must name them, in order, after "Life".
 (
   window as unknown as { shellHarnessDomainNames: string[] }
-).shellHarnessDomainNames = DOMAIN_NAMES.slice();
+).shellHarnessDomainNames = HARNESS_DOMAIN_NAMES;
+
+// The mode the driver opened: "all" (the segmented lens), "one" or "none" (the
+// quiet Life label). Read by the driver so a pass cannot silently measure the
+// other snapshot.
+(
+  window as unknown as { shellHarnessAreasMode: string }
+).shellHarnessAreasMode =
+  AREAS_MODE === "none" ? "none" : AREAS_MODE === "one" ? "one" : "all";
 
 /**
  * Switch the harness's skin and mode for the rig's night sweep — the same two

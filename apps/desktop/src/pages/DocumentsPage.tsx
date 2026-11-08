@@ -9,7 +9,9 @@ import {
 } from "react";
 import {
   lensSlug,
+  liveAreas,
   recordVisibleMulti,
+  unlockedAreas,
   type LibraryDocument,
 } from "@lifequest/vault-core/pure";
 import { useDomainLens } from "@/components/shell/useActiveDomain";
@@ -61,12 +63,14 @@ export default function DocumentsPage() {
   /** The note's delete asks in the app's own dialog, not the platform's. */
   const { ask, dialog } = useConfirm();
 
+  /** Everything the operator can see, base included: its name renders as "Life". */
   const liveDomains = useMemo(
-    () =>
-      (snapshot?.domains ?? [])
-        .filter((d) => !d.meta.archivedAt)
-        .slice()
-        .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder),
+    () => liveAreas(snapshot?.domains ?? []),
+    [snapshot],
+  );
+  /** A note is tagged with areas; the base `life` container is the unassigned state. */
+  const pickerAreas = useMemo(
+    () => unlockedAreas(snapshot?.domains ?? []),
     [snapshot],
   );
 
@@ -155,7 +159,7 @@ export default function DocumentsPage() {
   }
 
   const pickerDomains = useMemo(() => {
-    const live = liveDomains.map((d) => ({
+    const live = pickerAreas.map((d) => ({
       slug: d.slug,
       name: d.meta.name,
     }));
@@ -172,7 +176,7 @@ export default function DocumentsPage() {
       });
     }
     return [...live, ...extras];
-  }, [liveDomains, editingId, editingOriginalSlugs, snapshot]);
+  }, [pickerAreas, editingId, editingOriginalSlugs, snapshot]);
 
   function toggleSlug(slug: string) {
     tagsDirty.current = true;
@@ -325,8 +329,8 @@ export default function DocumentsPage() {
           <WingEyebrow page="Documents" />
           <h1 className="stub-page__title">Documents</h1>
           <p className="stub-page__desc muted">
-            Markdown notes. Tag a domain, or leave unassigned to keep them in
-            Overview only.
+            Markdown notes. Tag an area, or leave unassigned to keep them in
+            Life only.
           </p>
         </div>
         {/* The open note's actions, behind one three-dot menu in the page's
@@ -400,11 +404,10 @@ export default function DocumentsPage() {
           dangerouslySetInnerHTML={{ __html: previewHtml }}
         />
         <div className="field">
-          <span>Domains</span>
+          <span>Areas</span>
           {pickerDomains.length === 0 ? (
             <p className="muted">
-              No live domains. Leave unassigned to keep this note in Overview
-              only.
+              No live areas. Leave unassigned to keep this note in Life
             </p>
           ) : (
             <div className="library-tag-picker">
@@ -467,7 +470,7 @@ export default function DocumentsPage() {
         <p className="muted">No notes yet. Create one above.</p>
       ) : visible.length === 0 ? (
         <p className="muted">
-          No notes in this domain. Unassigned notes stay in Overview.
+          No notes in this area. Unassigned notes stay in Life.
         </p>
       ) : (
         <ul className="library-list">

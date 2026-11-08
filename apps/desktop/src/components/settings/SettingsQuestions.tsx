@@ -1,9 +1,10 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { MessageCircleQuestion } from "lucide-react";
-import type {
-  ChatQuestion,
-  ChatQuestionScope,
-  DomainRecord,
+import {
+  unlockedAreas,
+  type ChatQuestion,
+  type ChatQuestionScope,
+  type DomainRecord,
 } from "@lifequest/vault-core/pure";
 import { Button } from "@/components/ui/Button";
 import { SettingsSection } from "@/components/ui/SettingsSection";
@@ -59,7 +60,7 @@ function scopeLabel(question: ChatQuestion, domains: readonly DomainRecord[]): s
   }
   if (question.scope === "domain") {
     const domain = domains.find((row) => row.slug === question.value);
-    return `${domain?.meta.name ?? question.value ?? "Unknown"} domain`;
+    return `${domain?.meta.name ?? question.value ?? "Unknown"} area`;
   }
   const page = question.value ?? "";
   return `${pageLabelFor(page)} page`;
@@ -86,12 +87,9 @@ export function SettingsQuestions() {
     () => snapshot?.settings.chatQuestions ?? [],
     [snapshot],
   );
+  // A question can be offered in an area, never in the base `life` container.
   const liveDomains = useMemo(
-    () =>
-      (snapshot?.domains ?? [])
-        .filter((domain) => !domain.meta.archivedAt)
-        .slice()
-        .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder),
+    () => unlockedAreas(snapshot?.domains ?? []),
     [snapshot],
   );
   const allDomains = useMemo(
@@ -191,7 +189,7 @@ export function SettingsQuestions() {
     }));
     const domains = liveDomains.map((domain) => ({
       value: `domain:${domain.slug}`,
-      label: `${domain.meta.name} domain`,
+      label: `${domain.meta.name} area`,
       archived: false,
     }));
     // A question already pointed at an archived domain must still render its
@@ -205,7 +203,7 @@ export function SettingsQuestions() {
       const archived = allDomains.find((domain) => domain.slug === keep.value);
       domains.push({
         value: `domain:${keep.value}`,
-        label: `${archived?.meta.name ?? keep.value} domain (archived)`,
+        label: `${archived?.meta.name ?? keep.value} area (not live)`,
         archived: true,
       });
     }
@@ -422,7 +420,7 @@ function ScopeGroups({
         ))}
       </optgroup>
       {options.domains.length > 0 ? (
-        <optgroup label="Domains">
+        <optgroup label="Areas">
           {options.domains.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}

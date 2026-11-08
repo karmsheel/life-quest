@@ -1,4 +1,8 @@
-import { DOCUMENT_KIND_LABELS, type DocumentKind } from "@lifequest/vault-core/pure";
+import {
+  DOCUMENT_KIND_LABELS,
+  isAreaLive,
+  type DocumentKind,
+} from "@lifequest/vault-core/pure";
 
 const KINDS: readonly DocumentKind[] = ["premise", "what", "why", "how"];
 
@@ -21,7 +25,7 @@ export type WikiLink = {
 
 export type WikiDomain = {
   slug: string;
-  meta: { name: string; archivedAt: string | null };
+  meta: { name: string; archivedAt: string | null; unlockedAt?: string | null };
 };
 
 export type WikiNote = { id: string; title: string };
@@ -51,7 +55,7 @@ function resolveDoctrine(
   if (!kind) return null;
   const domain = domains.find(
     (d) =>
-      !d.meta.archivedAt &&
+      isAreaLive(d) &&
       (d.slug.toLowerCase() === domainKey ||
         d.meta.name.toLowerCase() === domainKey),
   );

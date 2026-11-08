@@ -23,6 +23,7 @@ import {
   type DomainDatabaseRegistry,
   type Result,
 } from "./types.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
 
 function isColumnType(v: unknown): v is DatabaseColumnType {
   return (
@@ -141,7 +142,7 @@ export async function isDomainLive(root: string, slug: string): Promise<boolean>
     await assertNoSymlinkLeaf(metaPath);
     const raw = await fs.readFile(metaPath, "utf8");
     const meta = JSON.parse(raw);
-    return meta.archivedAt == null;
+    return isLiveAreaMeta(meta);
   } catch {
     return false;
   }
@@ -291,7 +292,7 @@ export async function listDatabases(
           try {
             const raw = await fs.readFile(metaPath, "utf8");
             const meta = JSON.parse(raw);
-            if (meta.archivedAt == null) slugs.push(entry.name);
+            if (isLiveAreaMeta(meta)) slugs.push(entry.name);
           } catch {}
         }
       } catch {}

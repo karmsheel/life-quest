@@ -13,6 +13,7 @@ import {
   type Result,
   type SystemPinKind,
 } from "./types.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
 
 function isSystemPinKind(kind: string): kind is SystemPinKind {
   return (SYSTEM_PIN_KINDS as readonly string[]).includes(kind);
@@ -77,7 +78,7 @@ export const DEFAULT_BOARD_LOCKED = false;
 
 /** How a board is named in copy and in Decision headlines. */
 export function boardLabel(domainSlug: string | null): string {
-  return domainSlug == null ? "Overview dashboard" : `${domainSlug} dashboard`;
+  return domainSlug == null ? "Life dashboard" : `${domainSlug} dashboard`;
 }
 
 /**
@@ -265,7 +266,7 @@ export async function listPinBoard(
         try {
           const raw = await fs.readFile(metaPath, "utf8");
           const meta = JSON.parse(raw);
-          if (meta.archivedAt == null) liveSlugs.add(entry.name);
+          if (isLiveAreaMeta(meta)) liveSlugs.add(entry.name);
         } catch {}
       }
     } catch {}
@@ -349,7 +350,7 @@ export async function setPins(
         try {
           const raw = await fs.readFile(metaPath, "utf8");
           const meta = JSON.parse(raw);
-          if (meta.archivedAt == null) liveSlugs.add(entry.name);
+          if (isLiveAreaMeta(meta)) liveSlugs.add(entry.name);
         } catch {}
       }
     } catch {}

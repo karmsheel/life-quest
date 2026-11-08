@@ -9,6 +9,7 @@ import {
   currentPeriod,
   filterByLens,
   lensSlug,
+  unlockedAreas,
   type Goal,
   type GoalStatus,
   type GoalsCommand,
@@ -69,12 +70,10 @@ export default function GoalsPage() {
   const { ask, dialog } = useConfirm();
   const weekStartDay = snapshot?.settings.weekStartDay ?? "monday";
 
+  // A goal is assigned to an area, so the picker offers unlocked areas only —
+  // never the base `life` container, whose records read as unassigned here.
   const liveDomains = useMemo(
-    () =>
-      (snapshot?.domains ?? [])
-        .filter((d) => !d.meta.archivedAt)
-        .slice()
-        .sort((a, b) => a.meta.sortOrder - b.meta.sortOrder),
+    () => unlockedAreas(snapshot?.domains ?? []),
     [snapshot],
   );
 
@@ -370,7 +369,7 @@ export default function GoalsPage() {
             />
           </label>
           <label className="field">
-            Domain
+            Area
             <select
               value={domainValue}
               onChange={(e) => {

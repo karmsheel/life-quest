@@ -574,6 +574,15 @@ a {
   padding: 0.2rem 0.5rem;
 }
 
+/* The quiet label occupies the same band the segmented control does, so the
+   strip's height and the tab's centred word are unchanged by the switcher
+   appearing. */
+.window-titlebar__lens .domain-switcher--quiet {
+  min-height: 1.375rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.6875rem;
+}
+
 .window-titlebar__trailing {
   grid-column: 3;
   grid-row: 1;
@@ -1475,6 +1484,29 @@ a {
   font-size: 0.7rem;
 }
 
+/* —— Quiet Life lens —— */
+/* Before a second area unlocks, the titlebar band is not a control: one word,
+   centred, inert, and the same height as the segmented control it replaces, so
+   the tab does not jump when the switcher appears. */
+.domain-switcher--quiet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  min-height: 1.475rem;
+  padding: 0.2rem 0.6rem;
+  color: var(--muted);
+  cursor: default;
+  user-select: none;
+}
+
+.domain-switcher__life {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 /* —— Stub / page chrome —— */
 .stub-page {
   max-width: 40rem;
@@ -1650,6 +1682,39 @@ a {
 }
 
 .archived-list__actions .btn {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+/* —— Unveiled areas (Settings → Areas → Unlock another area) —— */
+/* A locked area is not a card: one row, its name and slug, and the one act
+   that gives it a folder, a lens and a place in the switcher. */
+.locked-areas {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.locked-areas__item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+}
+
+.locked-areas__name {
+  font-weight: 600;
+}
+
+.locked-areas__slug {
+  flex: 1 1 auto;
+  font-size: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.locked-areas .btn {
   padding: 0.35rem 0.7rem;
   font-size: 0.8rem;
 }

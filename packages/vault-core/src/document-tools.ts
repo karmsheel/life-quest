@@ -15,6 +15,8 @@ import {
 } from "./library-documents.ts";
 import { getDocument, saveDocument } from "./domain-documents.ts";
 import { listDomains } from "./domains.ts";
+import { isLiveAreaMeta } from "./domain-lens.ts";
+import { isDomainLive } from "./domain-databases.ts";
 import { createDecision } from "./decisions.ts";
 import { projectGet } from "./projects.ts";
 
@@ -114,6 +116,9 @@ export async function executeDocumentTool(
         }
       }
       for (const domain of domainsResult.value) {
+        // Locked areas do not exist for the companion either: their doctrine is
+        // not a document it can read or list.
+        if (!isLiveAreaMeta(domain.meta)) continue;
         for (const kind of ["premise", "what", "why", "how"] as DocumentKind[]) {
           const doc = await getDocument(root, domain.slug, kind);
           if (doc.ok) {
@@ -155,6 +160,9 @@ export async function executeDocumentTool(
       }
       if (!isDocumentKind(kind)) {
         return { error: { code: "MALFORMED", message: `Unknown document kind: ${kind}` } };
+      }
+      if (!(await isDomainLive(root, domainSlug))) {
+        return { error: { code: "NOT_FOUND", message: `Document not found: ${domainSlug}/${kind}` } };
       }
       const docResult = await getDocument(root, domainSlug, kind);
       if (!docResult.ok) {

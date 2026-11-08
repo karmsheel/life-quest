@@ -477,15 +477,15 @@ async function main() {
     win,
     click(".pages-studio__submit"),
     "the domain-less refusal",
-    '/Select a domain to create a page in/.test((document.querySelector("#pages-sample .pages-studio__banner--error") || {}).textContent || "")',
+    '/Select an area to create a page in/.test((document.querySelector("#pages-sample .pages-studio__banner--error") || {}).textContent || "")',
   );
   const refused = await sample(win);
   const callsAfterRefusal = await win.webContents.executeJavaScript(
     "window.pagesStudioCalls.filter((c) => c.startsWith('pageCreate')).length",
   );
   checks.refusal = { text: refused.pages.errorText, calls: callsAfterRefusal - callsBeforeRefusal };
-  if (!/Select a domain to create a page in/.test(refused.pages.errorText ?? "")) {
-    failure(`submitting without a domain said "${refused.pages.errorText}"`);
+  if (!/Select an area to create a page in/.test(refused.pages.errorText ?? "")) {
+    failure(`submitting without an area said "${refused.pages.errorText}"`);
   }
   if (checks.refusal.calls !== 0) {
     failure(`submitting without a domain still called pageCreate ${checks.refusal.calls} time(s)`);

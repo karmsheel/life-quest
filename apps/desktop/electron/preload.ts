@@ -48,6 +48,8 @@ const lifequest = {
     ipcRenderer.invoke("domain:archive", slug) as Promise<Result<unknown>>,
   domainUnarchive: (slug: string) =>
     ipcRenderer.invoke("domain:unarchive", slug) as Promise<Result<unknown>>,
+  domainUnlock: (slug: string) =>
+    ipcRenderer.invoke("domain:unlock", slug) as Promise<Result<unknown>>,
   domainDelete: (slug: string) =>
     ipcRenderer.invoke("domain:delete", slug) as Promise<Result<unknown>>,
   domainSetActive: (slug: string | null) =>

@@ -14,6 +14,7 @@ import {
   parseFrontmatter,
   readLog,
   resolveDecision,
+  unlockDomain,
   vaultPaths,
   type DecisionRecord,
   type LifeEvent,
@@ -97,6 +98,12 @@ async function freshVault(label: string): Promise<string> {
   roots.push(root);
   const created = await createVault(root, "Decision amend E2E");
   assert.equal(created.ok, true, created.ok ? "" : `createVault failed: ${created.error}`);
+  // The rig files against the seeded Finance and Health areas, so both are
+  // unlocked on the fresh vault before the first fixture is written.
+  for (const area of ["financial", "health"]) {
+    const unlock = await unlockDomain(root, area);
+    assert.equal(unlock.ok, true, unlock.ok ? "" : `unlockDomain(${area}) failed: ${unlock.error}`);
+  }
   return root;
 }
 

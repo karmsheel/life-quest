@@ -12,6 +12,7 @@ import {
   loadGoals,
   projectCreate,
   resolveDecision,
+  unlockDomain,
 } from "@lifequest/vault-core";
 import { startPairingDoors } from "../electron/pairing-door.ts";
 import { ensureCompanionToken } from "../electron/pairing-secrets.ts";
@@ -173,6 +174,13 @@ describe("projects and harness tools over the real MCP door", () => {
     const created = await createVault(vaultRoot, "Projects E2E");
     assert.equal(created.ok, true, `createVault failed: ${created.ok ? "" : created.error}`);
     const vaultId = (created as { ok: true; value: { lifequest: { id: string } } }).value.lifequest.id;
+
+    // This rig projects into the seeded Health and Finance areas, so both are
+    // unlocked before the door opens.
+    for (const area of ["health", "financial"]) {
+      const unlock = await unlockDomain(vaultRoot, area);
+      assert.equal(unlock.ok, true, `unlockDomain(${area}) failed: ${unlock.ok ? "" : unlock.error}`);
+    }
 
     const doors = await startPairingDoors({
       root: vaultRoot,
@@ -872,7 +880,7 @@ describe("projects and harness tools over the real MCP door", () => {
         command:
           "cd apps/desktop && node --experimental-strip-types --test tests/projects-tools-e2e.test.ts",
         doors: { local: doors.localPort, invite: doors.invitePort, livePorts: [8643, 8646] },
-        vault: { id: vaultId, liveSeedDomains: ["health", "financial"], temp: true },
+        vault: { id: vaultId, liveSeedDomains: ["life", "health", "financial"], temp: true },
         scenarios,
         tools: { advertised: EXPECTED_TOOLS.filter((name) => toolNames.includes(name)), missing },
         ids: {

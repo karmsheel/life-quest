@@ -133,7 +133,7 @@ export function ReviewPreview({
             })}
 
         <section className="review-preview__domains">
-          <h2 className="review-preview__heading">Domains</h2>
+          <h2 className="review-preview__heading">Areas</h2>
           <ul className="review-preview__list">
             {liveDomains.map((d) => {
               const scopeState = record.scopes[d.slug];
@@ -181,8 +181,8 @@ export function ReviewPreview({
     );
   }
 
-  // Domain scope. The whole file is already drawn above this in Preview, so the
-  // domain view has nothing left to say and stays out of the way.
+  // Area scope. The whole file is already drawn above this in Preview, so the
+  // area view has nothing left to say and stays out of the way.
   if (domainsOnly) return null;
 
   const targetName = domainName ?? scope;
@@ -192,7 +192,7 @@ export function ReviewPreview({
   if (h2Sections.length === 0 || !scopeState) {
     return (
       <p className="muted">
-        {targetName} section not started yet. Start the domain interview to begin.
+        {targetName} section not started yet. Start the area interview to begin.
       </p>
     );
   }

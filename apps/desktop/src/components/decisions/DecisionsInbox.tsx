@@ -8,6 +8,7 @@ import {
   actorDisplayName,
   DEFAULT_DECISION_INBOX_SETTINGS,
   DOCUMENT_KIND_LABELS,
+  unlockedAreas,
 } from "@lifequest/vault-core/pure";
 import type {
   DecisionAmendment,
@@ -868,12 +869,14 @@ export function DecisionsInbox({
     (decision) =>
       decision.status === "pending" && !resolvingIds.has(decision.id),
   );
-  const livedDomains = domains.filter((d) => !d.meta.archivedAt);
+  // The manual form's optional field assigns to an area; the base container and
+  // locked areas are never offered.
+  const livedDomains = unlockedAreas(domains);
 
   // The manual store is global on this surface too: a decision the operator
-  // logged under one domain is still theirs to read on the governance shelf, and
-  // one logged with no domain is the Overview's own. Newest first, like the
-  // proposals; the tab and the history filter are the only things that narrow it.
+  // logged under one area is still theirs to read on the governance shelf, and
+  // one logged with no area is Life's own. Newest first, like the proposals;
+  // the tab and the history filter are the only things that narrow it.
   const manualDecisions = manualItems
     .slice()
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -1158,7 +1161,7 @@ export function DecisionsInbox({
                         key={chip.slug}
                         className="decision-domain"
                         data-domain-slug={chip.slug}
-                        title={`Domain: ${chip.name}`}
+                        title={`Area: ${chip.name}`}
                       >
                         {chip.name}
                       </span>

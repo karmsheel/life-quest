@@ -15,6 +15,7 @@ import {
   getView,
   runViewBlocks,
   saveView,
+  unlockDomain,
   upsertRow,
 } from "@lifequest/vault-core";
 
@@ -79,6 +80,12 @@ describe("dashboard data objects e2e", () => {
     try {
       const created = await createVault(vaultRoot, "E2E Objects");
       assert.equal(created.ok, true, created.ok ? "" : created.error);
+      const unlockFinancial = await unlockDomain(vaultRoot, "financial");
+      assert.equal(
+        unlockFinancial.ok,
+        true,
+        `unlockDomain(financial) failed: ${unlockFinancial.ok ? "" : unlockFinancial.error}`,
+      );
 
       const transactions = await createDatabase(vaultRoot, "financial", { name: "Transactions" });
       assert.equal(transactions.ok, true, transactions.ok ? "" : transactions.error);

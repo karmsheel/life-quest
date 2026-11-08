@@ -7,7 +7,7 @@ import { SettingsSection } from "@/components/ui/SettingsSection";
 import { Toggle } from "@/components/ui/Toggle";
 import { api } from "@/lib/ipc";
 import { useVault } from "@/state/VaultProvider";
-import type { WeekStartDay } from "@lifequest/vault-core/pure";
+import { liveAreas, type WeekStartDay } from "@lifequest/vault-core/pure";
 
 const WEEK_START_OPTIONS = [
   { value: "monday" as WeekStartDay, label: "Monday" },
@@ -21,7 +21,7 @@ const WEEK_START_OPTIONS = [
  * operator reading one row would not see them.
  */
 const RESTORE_NOTE =
-  "Restore replaces the live SQLite book for this domain from books.json.";
+  "Restore replaces the live SQLite book for this area from books.json.";
 
 export function SettingsVault() {
   const { snapshot, updateSettings, openVault, busy, error, clearError } =
@@ -175,75 +175,73 @@ export function SettingsVault() {
       <SettingsSection
         icon={<Database size={16} />}
         title="Books"
-        subtitle="Export a git-portable JSON of domain tables. Restore replaces the live SQLite book from books.json."
+        subtitle="Export a git-portable JSON of area tables. Restore replaces the live SQLite book from books.json."
       >
-        {snapshot.domains
-          .filter((d) => !d.meta.archivedAt)
-          .map((domain) => {
-            const armed = restoreArmed[domain.slug] ?? false;
-            const exportMessage = exportMessages[domain.slug];
-            const restoreError = restoreErrors[domain.slug];
-            return (
-              <SettingsRow
-                key={domain.slug}
-                className="settings-card__row--books"
-                label={domain.meta.name}
-                description={RESTORE_NOTE}
-                action={
-                  <div className="settings-books__actions">
-                    <div className="settings-books__buttons">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => void onExportBooks(domain.slug)}
-                      >
-                        Export books
-                      </Button>
-                      {/* The destructive control's own gate: the app's Toggle
-                          at its large step, captioned because this row's label
-                          is the domain, not the switch. */}
-                      <Toggle
-                        label={`Allow restore for ${domain.meta.name}`}
-                        caption="Allow restore"
-                        checked={armed}
-                        onChange={(checked) =>
-                          setRestoreArmed((prev) => ({
-                            ...prev,
-                            [domain.slug]: checked,
-                          }))
-                        }
-                      />
-                      <Button
-                        type="button"
-                        destructive
-                        disabled={!armed}
-                        onClick={() => void onRestoreBooks(domain.slug)}
-                      >
-                        Restore books
-                      </Button>
-                    </div>
-                    {exportMessage ? (
-                      <p
-                        className={
-                          exportMessage.startsWith("Exported")
-                            ? "settings-books__message muted"
-                            : "settings-books__message form-error"
-                        }
-                        role={exportMessage.startsWith("Exported") ? "status" : "alert"}
-                      >
-                        {exportMessage}
-                      </p>
-                    ) : null}
-                    {restoreError ? (
-                      <p className="settings-books__message form-error" role="alert">
-                        {restoreError}
-                      </p>
-                    ) : null}
+        {liveAreas(snapshot.domains).map((domain) => {
+          const armed = restoreArmed[domain.slug] ?? false;
+          const exportMessage = exportMessages[domain.slug];
+          const restoreError = restoreErrors[domain.slug];
+          return (
+            <SettingsRow
+              key={domain.slug}
+              className="settings-card__row--books"
+              label={domain.meta.name}
+              description={RESTORE_NOTE}
+              action={
+                <div className="settings-books__actions">
+                  <div className="settings-books__buttons">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void onExportBooks(domain.slug)}
+                    >
+                      Export books
+                    </Button>
+                    {/* The destructive control's own gate: the app's Toggle
+                        at its large step, captioned because this row's label
+                        is the domain, not the switch. */}
+                    <Toggle
+                      label={`Allow restore for ${domain.meta.name}`}
+                      caption="Allow restore"
+                      checked={armed}
+                      onChange={(checked) =>
+                        setRestoreArmed((prev) => ({
+                          ...prev,
+                          [domain.slug]: checked,
+                        }))
+                      }
+                    />
+                    <Button
+                      type="button"
+                      destructive
+                      disabled={!armed}
+                      onClick={() => void onRestoreBooks(domain.slug)}
+                    >
+                      Restore books
+                    </Button>
                   </div>
-                }
-              />
-            );
-          })}
+                  {exportMessage ? (
+                    <p
+                      className={
+                        exportMessage.startsWith("Exported")
+                          ? "settings-books__message muted"
+                          : "settings-books__message form-error"
+                      }
+                      role={exportMessage.startsWith("Exported") ? "status" : "alert"}
+                    >
+                      {exportMessage}
+                    </p>
+                  ) : null}
+                  {restoreError ? (
+                    <p className="settings-books__message form-error" role="alert">
+                      {restoreError}
+                    </p>
+                  ) : null}
+                </div>
+              }
+            />
+          );
+        })}
       </SettingsSection>
     </>
   );

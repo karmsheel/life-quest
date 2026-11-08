@@ -108,7 +108,7 @@ describe("settings agent e2e", () => {
     // The page answers the question: both prompts, on screen.
     assert.equal(seeded.hasSection, true);
     assert.match(seeded.soul?.text ?? "", /LifeQuest companion/);
-    assert.match(seeded.instructions?.text ?? "", /Active domain/);
+    assert.match(seeded.instructions?.text ?? "", /Active area/);
     assert.equal(seeded.soulBadge, "LifeQuest seed");
 
     // Readable, not clipped, and it wraps rather than widening the settings page.

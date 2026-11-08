@@ -307,7 +307,7 @@ async function main() {
       `root class ${dream.pageRootClass}`,
     );
     check(
-      "the lens is Overview: both live domains listed",
+      "the Life lens lists both live areas",
       same(dream.groups.map((g) => g.heading), ["Health", "Financial"]),
       `groups ${JSON.stringify(dream.groups.map((g) => g.heading))}`,
     );
