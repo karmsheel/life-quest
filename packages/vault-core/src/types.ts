@@ -996,11 +996,14 @@ export type OnboardingTableProposal = {
 export type OnboardingNoteProposal = { title: string; bodyMarkdown: string };
 
 /**
- * The pending confirmation card as stored, `.lifequest/onboarding-proposal.json`.
+ * The onboard proposal as stored, `.lifequest/onboarding-proposal.json`.
  *
- * The companion writes it through `propose_onboarding_unlock`; the app renders it
- * as one card; nothing it contains is written to the vault until the operator
- * confirms. A later write replaces it (the operator asked for a change).
+ * The companion writes it through `propose_onboarding_unlock`, and that call now
+ * APPLIES it: the areas are opened and the doctrine, table and note are written
+ * in the same request (P1 Amendment 2, 2026-11-09). The file is then kept as the
+ * announcement card's RECEIPT — the dock reads it to say what was opened, and it
+ * survives a reload until the operator acknowledges it. A legacy/first-run
+ * proposal is one written but not yet applied; the apply path treats both alike.
  */
 export type OnboardingProposal = {
   areas: OnboardingAreaProposal[]; // 1..3
@@ -1009,7 +1012,7 @@ export type OnboardingProposal = {
   createdAt: string;
 };
 
-/** What the confirmation card's unticked lines mean to the apply path. */
+/** What the confirmation/announcement card's unticked lines mean to the apply path. */
 export type OnboardingConfirmOptions = {
   /** Doctrine kinds to leave unwritten (the card's unticked lines). */
   skipDoctrineKinds?: DocumentKind[];
@@ -1017,6 +1020,15 @@ export type OnboardingConfirmOptions = {
   includeTable?: boolean;
   /** Include the interview note (default true). */
   includeNote?: boolean;
+  /**
+   * Keep `.lifequest/onboarding-proposal.json` after the batch applies (default
+   * false). The passive-open path sets this: the companion opens the areas itself,
+   * and the kept proposal is the announcement card's RECEIPT — it is what the dock
+   * reads to say what was opened, and it survives a reload until the operator
+   * acknowledges it (`discardOnboardingProposal`). A kept receipt never changes
+   * the record: that is already `completed`.
+   */
+  keepProposal?: boolean;
 };
 
 /** What one confirmed batch actually did. */

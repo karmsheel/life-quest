@@ -39,12 +39,12 @@ import {
 import { todayLocalIso } from "./map/public.ts";
 
 /**
- * The onboarding interview (P1, 2026-11-08).
+ * The onboarding interview (P1, 2026-11-08; passive opening 2026-11-09).
  *
  * The vault remembers, in `.lifequest/onboarding.json`, that the first-run
- * interview happened; the companion's single confirmation card is
- * `.lifequest/onboarding-proposal.json`. The rules below live here rather than in
- * the prompt because a prompt drifts:
+ * interview happened; `.lifequest/onboarding-proposal.json` carries what was
+ * opened. The rules below live here rather than in the prompt because a prompt
+ * drifts:
  *
  *  - A vault with NO onboarding file reads as `completed` — the migration rule
  *    that keeps every existing vault out of the first-run card. A new vault gets
@@ -55,12 +55,14 @@ import { todayLocalIso } from "./map/public.ts";
  *    here", and answering it would hide the locked areas the interview exists to
  *    offer. The area's display name always comes from `AREA_SEEDS`, never from
  *    the model.
- *  - Nothing the proposal contains is written until the operator confirms; the
- *    confirm is the consent record, and the companion is the author
- *    (`COMPANION_ACTOR`), so the batch is attributable without becoming five
- *    inbox Decisions.
+ *  - The companion is the author: it applies the batch through
+ *    `propose_onboarding_unlock` (P1 Amendment 2 — the operator is never asked to
+ *    unlock anything), and the app's card only ANNOUNCES what was opened. Doctrine
+ *    is written as `COMPANION_ACTOR`, so the batch is attributable without
+ *    becoming five inbox Decisions; a proposal kept after the apply is the
+ *    announcement card's receipt (`keepProposal`).
  *  - Confirm's ordering is unlock → doctrine → table → note → completed record →
- *    delete proposal → log. A mid-batch failure returns an error with the
+ *    delete-or-keep proposal → log. A mid-batch failure returns an error with the
  *    proposal intact; every step is idempotent, so the retry is safe.
  */
 
@@ -588,8 +590,16 @@ export async function writeOnboardingProposal(
 }
 
 /**
- * Drop the pending proposal and nothing else: the record stays `in_progress`, so
- * the dock returns to *Continue the interview*. Idempotent (no file is fine).
+ * Drop the onboarding proposal; the record is never touched.
+ *
+ * Two callers, one file:
+ *  - while `in_progress` this is "not now": the dock returns to *Continue the
+ *    interview* and nothing about the interview is lost;
+ *  - after the passive open (P1 Amendment 2) this is the announcement card's
+ *    acknowledgement: the record is already `completed`, and deleting the receipt
+ *    is all this does — the record stays completed, so no card ever returns.
+ *
+ * Idempotent (no file is fine).
  */
 export async function discardOnboardingProposal(root: string): Promise<Result<true>> {
   try {
@@ -670,17 +680,22 @@ async function applyNote(root: string, note: OnboardingNoteProposal): Promise<Re
 }
 
 /**
- * Apply the confirmed proposal as ONE operator-confirmed batch.
+ * Apply the proposal as ONE batch.
  *
- * Refuses unless the record is `not_started`/`in_progress` AND a proposal exists.
- * Order: unlock → doctrine → table → note → completed record → delete proposal →
- * `onboarding.completed` with the manifest. A mid-batch failure returns an error
- * and leaves the proposal in place; a retry is safe because unlock is
- * idempotent, doctrine is an overwrite, and the table and note steps find-or-
- * create by name/title.
+ * Two callers share this path: the companion's passive open (onboard tool →
+ * `keepProposal: true`, the record completes and the proposal stays as the
+ * announcement's receipt) and the draft-state confirmation card (keyboard-driven
+ * untick options, proposal deleted after applying). Refuses unless the record is
+ * `not_started`/`in_progress` AND a proposal exists.
  *
- * The completed record is written and the proposal deleted LAST, so a batch can
- * never be marked complete while part of it was not applied.
+ * Order: unlock → doctrine → table → note → completed record → delete proposal
+ * (unless `keepProposal`) → `onboarding.completed` with the manifest. A mid-batch
+ * failure returns an error and leaves the proposal in place; a retry is safe
+ * because unlock is idempotent, doctrine is an overwrite, and the table and note
+ * steps find-or-create by name/title.
+ *
+ * The completed record is written last among the writes, so a batch can never be
+ * marked complete while part of it was not applied.
  */
 export async function confirmOnboarding(
   root: string,
@@ -787,9 +802,13 @@ export async function confirmOnboarding(
     await assertPhysicalContainment(root, paths.onboardingJson, "write");
     await atomicWriteFile(paths.onboardingJson, `${JSON.stringify(completed, null, 2)}\n`);
 
-    // 6. Only now is the proposal spent.
-    await assertPhysicalContainment(root, paths.onboardingProposalJson, "write");
-    await fs.rm(paths.onboardingProposalJson, { force: true });
+    // 6. Only now is the proposal spent — unless the caller asked for it to stay
+    // as the announcement card's receipt (the passive-open path: the record is
+    // completed, and the kept file is what the dock reads to say what was opened).
+    if (options.keepProposal !== true) {
+      await assertPhysicalContainment(root, paths.onboardingProposalJson, "write");
+      await fs.rm(paths.onboardingProposalJson, { force: true });
+    }
 
     // 7. One event for the whole batch, with the manifest.
     const logRes = await appendLog(root, {
