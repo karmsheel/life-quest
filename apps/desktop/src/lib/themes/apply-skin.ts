@@ -275,6 +275,19 @@ export function applySkinVars(
   }
 }
 
+/**
+ * Take a skin off the element: remove every token a skin may write, so the
+ * defaults in `tokens.css` are what is left.
+ *
+ * `applySkin` calls this before it writes the next palette. A skin writes only
+ * the tokens it declares, and some tokens are conditional: a palette with a
+ * `composerRing` also gets the accent-tinted shadows and fills from
+ * `shadowVars`, while the other built-ins leave those to `tokens.css`. Without
+ * the clear, switching from such a skin to one that declares no line accent
+ * leaves the old accent's shadows behind — Forge's orange glow survived a
+ * switch to the colourless Graphite and hung around every raised control as an
+ * orange halo.
+ */
 export function clearSkinVars(el: HTMLElement = document.documentElement): void {
   const toRemove = [
     "--background",
@@ -347,8 +360,16 @@ export function applySkin(
   mode: "light" | "dark",
   el: HTMLElement = document.documentElement,
 ): void {
-  // Clear previous skin typography so non-display skins fall back to tokens.css.
-  for (const key of FONT_VARS) el.style.removeProperty(key);
+  // The old palette leaves before the new one arrives. A skin only writes the
+  // tokens it declares, so a token the last skin wrote — and this one leaves to
+  // `tokens.css` — would otherwise survive the switch. The conditional
+  // `shadowVars`/fill block is the one that bites: Forge and Nous carry a
+  // `composerRing`, so they write accent-tinted shadows on top of the shipped
+  // ones, while Graphite writes none and would inherit them — the orange halo a
+  // Forge → Graphite switch left around the Daily Note's raised Analyze key.
+  // Clearing first means a switch lands on the same tokens a fresh window in
+  // that skin would paint.
+  clearSkinVars(el);
   applySkinVars(forgeVarsFromSkin(skin, mode), el);
   el.setAttribute("data-skin", skin.name);
 }
