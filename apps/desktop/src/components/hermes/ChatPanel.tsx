@@ -45,7 +45,6 @@ import {
   type DomainRecord,
   type SignalRecord,
 } from "@lifequest/vault-core/pure";
-import type { OnboardingConfirmOptions } from "@lifequest/vault-core";
 import { copyText } from "@/lib/clipboard";
 import { api } from "@/lib/ipc";
 import { pageLabelFor } from "@/lib/page-context";
@@ -1317,33 +1316,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   }
 
   /**
-   * Apply the confirmation card's ticked lines as the interview's one batch,
-   * then re-read the snapshot: the unlocks would not otherwise reach the band,
-   * the switcher or this card until the next reload.
+   * Acknowledge the announcement: the companion has already opened the areas
+   * and written the receipt, so this only clears the receipt. The record stays
+   * completed and the card never returns.
    */
-  async function confirmOnboarding(
-    options: OnboardingConfirmOptions,
-  ): Promise<void> {
-    if (onboardingBusy) return;
-    setOnboardingBusy(true);
-    chat.reportError(null);
-    try {
-      const result = await api().onboardingConfirm(options);
-      if (!result.ok) {
-        chat.reportError(result.error);
-        return;
-      }
-      await refresh();
-    } catch (err) {
-      chat.reportError(
-        err instanceof Error ? err.message : "Could not apply the interview",
-      );
-    } finally {
-      setOnboardingBusy(false);
-    }
-  }
-
-  async function discardOnboarding(): Promise<void> {
+  async function acknowledgeOnboarding(): Promise<void> {
     if (onboardingBusy) return;
     setOnboardingBusy(true);
     chat.reportError(null);
@@ -1353,11 +1330,10 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
         chat.reportError(result.error);
         return;
       }
-      // Back to the quiet Continue card: the record stays open.
       await refresh();
     } catch (err) {
       chat.reportError(
-        err instanceof Error ? err.message : "Could not set the interview aside",
+        err instanceof Error ? err.message : "Could not close the announcement",
       );
     } finally {
       setOnboardingBusy(false);
@@ -1365,19 +1341,23 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
   }
 
   /**
-   * The companion writes the proposal through its own tool, not through an IPC
-   * call the dock made, so the vault's data revision is the only announcement
-   * that the confirmation card now exists. While the record is open and no card
-   * is up yet, a revision is worth one re-read. Once a card is showing, it is
-   * not: a refresh there would throw away the operator's ticked lines, and a
-   * revision proposal arrives after the chat turn whose own send already
-   * refreshes the snapshot.
+   * The companion opens the areas through its own tool, in the main process,
+   * not through an IPC call the dock made, so the vault's data revision is the
+   * only announcement that the receipt (and with it the opened card) exists.
+   *
+   * Listen while the record is unfinished or a receipt is still on screen.
+   * A re-read is cheap, and the announcement keeps no local state to lose: the
+   * old confirmation card's ticked lines were the only thing a refresh could
+   * have reset. Once the receipt is acknowledged and the record is completed the
+   * watcher detaches for good.
    */
   useEffect(() => {
     if (!open || view !== "thread") return;
     const record = snapshot?.onboarding;
-    if (!record || record.status === "completed") return;
-    if (snapshot.onboardingProposal !== null) return;
+    if (!record) return;
+    if (record.status === "completed" && snapshot.onboardingProposal === null) {
+      return;
+    }
     let stopped = false;
     let stop: (() => void) | undefined;
     try {
@@ -2182,8 +2162,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 busy={onboardingBusy}
                 onBegin={() => void beginOnboarding()}
                 onContinue={() => void continueOnboarding()}
-                onConfirm={(options) => void confirmOnboarding(options)}
-                onDiscard={() => void discardOnboarding()}
+                onAcknowledge={() => void acknowledgeOnboarding()}
               />
             ) : null}
             {view === "chain" ? (

@@ -1,64 +1,45 @@
-import { useEffect, useMemo, useState } from "react";
-// Values must come from the renderer's pure entry: the package index pulls
-// `node:fs`/`node:crypto`, which the browser bundle externalizes, and importing
-// it here silently killed the whole app at the module graph.
-import {
-  DOCUMENT_KIND_LABELS,
-  DOCTRINE_ORDER,
-} from "@lifequest/vault-core/pure";
-import type {
-  DocumentKind,
-  OnboardingConfirmOptions,
-  OnboardingProposal,
-  OnboardingStatus,
-} from "@lifequest/vault-core";
 import { Button } from "@/components/ui/Button";
+// Types only: the package index pulls `node:fs`/`node:crypto`, which the browser
+// bundle externalizes. Nothing in this file needs a vault-core value, so the
+// renderer's module graph never touches that entry; a value import would have to
+// come from `@lifequest/vault-core/pure`.
+import type { OnboardingProposal, OnboardingStatus } from "@lifequest/vault-core";
 
 /**
  * The onboarding interview, as the chat dock renders it.
  *
- * Three quiet cards, never a modal and never a chat message: the interview is
- * an offer the operator can take up at any time, so it lives above the composer
- * where a chat bubble would scroll away and where `aria-live` cannot announce it
- * as if the companion had spoken. Which card shows is decided by the vault
- * record, never inferred from the areas list — the snapshot deliberately carries
- * locked areas too, and the welcome card must not name them.
+ * The interview is passive: the companion opens the areas itself once it has
+ * heard enough, and the dock only announces what happened. Nothing here asks
+ * the operator to consent to a batch, so there is no confirmation card and no
+ * tickable line — one announcement with one **Continue** that acknowledges the
+ * receipt, plus the two offers that are not the interview's result:
  *
- * The card draws the proposal's own payload and nothing else: `snapshot.domains`
- * includes the locked areas by design, so deriving the list from it would leak
- * the taxonomy the interview exists to reveal only when it is heard.
+ *  - **Welcome** (`not_started`): the spec's copy and *Begin the interview*.
+ *  - **Continue the interview** (`in_progress`, no receipt): a quiet way back in.
+ *  - **Opened** (`completed` with a receipt): what the companion just opened.
+ *
+ * Which card shows is decided by the vault record and the pending receipt,
+ * never inferred from the areas list: `snapshot.domains` deliberately carries
+ * the locked areas too, and the welcome card must not name them. The opened
+ * card's names come from the proposal payload — the receipt is what the
+ * companion wrote, and it is the only place those names may come from.
  */
 export type OnboardingCardsProps = {
   status: OnboardingStatus;
-  /** The pending proposal, or null; drives the confirmation card. */
+  /** The pending receipt, or null; drives the announcement card. */
   proposal: OnboardingProposal | null;
-  /** True while one of the card's own writes is in flight. */
+  /** True while the card's own write (start, continue, acknowledge) is in flight. */
   busy?: boolean;
   onBegin: () => void;
+  /** The `in_progress` card: send the operator's "let's continue" turn. */
   onContinue: () => void;
-  onConfirm: (options: OnboardingConfirmOptions) => void;
-  onDiscard: () => void;
+  /** The opened card's **Continue**: acknowledge the receipt. */
+  onAcknowledge: () => void;
 };
-
-const TABLE_LINE = "table";
-const NOTE_LINE = "note";
-
-/**
- * One doctrine kind's tick key.
- *
- * The engine's consent is a kind list — `skipDoctrineKinds` — not a
- * matrix, so unticking a kind untickes it for every proposed area. The card
- * binds the same state to each area's line so what the operator sees is exactly
- * what Confirm will do, rather than a per-area gesture that silently falls back
- * to a batch-wide skip.
- */
-function doctrineKey(kind: DocumentKind): string {
-  return `kind:${kind}`;
-}
 
 /**
  * "Health and Business", "Health, Business and Mind": the areas as one phrase,
- * so the primary button names the act rather than the taxonomy.
+ * the way the announcement names what was opened.
  */
 function joinNames(names: string[]): string {
   if (names.length === 0) return "";
@@ -68,31 +49,13 @@ function joinNames(names: string[]): string {
 }
 
 /**
- * Four kinds in the order the doctrine chain reads, then anything unexpected:
- * the engine writes exactly the four, but a card that silently dropped a line
- * would be worse than one that shows it last.
+ * The announcement's first line, verbatim apart from the names the companion
+ * opened. "area" when the interview heard one; "areas" for the usual two or
+ * three, so the sentence stays a sentence.
  */
-function orderedDoctrine(
-  lines: OnboardingProposal["areas"][number]["doctrine"],
-): OnboardingProposal["areas"][number]["doctrine"] {
-  const rank = (kind: DocumentKind) => {
-    const at = DOCTRINE_ORDER.indexOf(kind);
-    return at === -1 ? DOCTRINE_ORDER.length : at;
-  };
-  return lines
-    .slice()
-    .sort((a, b) => rank(a.kind) - rank(b.kind));
-}
-
-/** The first readable line of a draft, so a tick has something to point at. */
-function excerpt(markdown: string): string {
-  const line =
-    markdown
-      .split("\n")
-      .map((part) => part.replace(/^[\s#>*+-]+/, "").trim())
-      .find((part) => part.length > 0) ?? "";
-  if (line.length <= 140) return line;
-  return `${line.slice(0, 137).trimEnd()}…`;
+export function openedAnnouncement(names: string[]): string {
+  const noun = names.length === 1 ? "area" : "areas";
+  return `After analyzing our conversation, I've opened up the ${joinNames(names)} ${noun} for you.`;
 }
 
 /**
@@ -134,7 +97,7 @@ export function OnboardingWelcomeCard({
 }
 
 /**
- * The quiet way back in: while the record is open and no proposal is waiting,
+ * The quiet way back in: while the record is open and no receipt is waiting,
  * one line and one button, so the dock does not keep asking for attention.
  */
 export function OnboardingContinueCard({
@@ -166,180 +129,42 @@ export function OnboardingContinueCard({
 }
 
 /**
- * The confirmation card: the one consent record for the interview's batch.
+ * What the companion opened, announced after the fact.
  *
- * It lists exactly what will be unlocked, what doctrine will be drafted and what
- * (at most one) table and note will be created, and every drafted line can be
- * unticked. Nothing here is written by opening it — Confirm is the write.
+ * The areas are already unlocked and their doctrine, the one table and the one
+ * note are already written when this card paints — the companion applied the
+ * batch, the card is the receipt's face, and **Continue** only acknowledges it.
+ * That is why there is exactly one button and no question: there is nothing
+ * left to decide.
  */
-export function OnboardingConfirmCard({
+export function OnboardingOpenedCard({
   proposal,
   busy = false,
-  onConfirm,
-  onDiscard,
-}: Pick<
-  OnboardingCardsProps,
-  "proposal" | "busy" | "onConfirm" | "onDiscard"
-> & { proposal: OnboardingProposal }) {
-  /**
-   * What the operator has unticked: a doctrine kind (`kind:<kind>`), `table` or
-   * `note`. It resets when the proposal itself changes: a revised proposal is a
-   * new sheet, not the old one with the operator's objections carried over.
-   */
-  const [dropped, setDropped] = useState<ReadonlySet<string>>(
-    () => new Set<string>(),
-  );
-  useEffect(() => {
-    setDropped(new Set<string>());
-  }, [proposal]);
-
-  const toggle = (key: string) => {
-    setDropped((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  const choices = useMemo<OnboardingConfirmOptions>(() => {
-    // In the order the card lists them, so the engine's batch reads the way the
-    // sheet did.
-    const skip: DocumentKind[] = [];
-    for (const area of proposal.areas) {
-      for (const line of orderedDoctrine(area.doctrine)) {
-        if (dropped.has(doctrineKey(line.kind)) && !skip.includes(line.kind)) {
-          skip.push(line.kind);
-        }
-      }
-    }
-    return {
-      skipDoctrineKinds: skip,
-      includeTable: proposal.table !== null && !dropped.has(TABLE_LINE),
-      includeNote: !dropped.has(NOTE_LINE),
-    };
-  }, [proposal, dropped]);
-
-  const unlockLabel = `Unlock ${joinNames(proposal.areas.map((area) => area.name))}`;
-
+  onAcknowledge,
+}: Pick<OnboardingCardsProps, "proposal" | "busy" | "onAcknowledge"> & {
+  proposal: OnboardingProposal;
+}) {
   return (
     <div
-      className="onboarding-card onboarding-card--confirm"
+      className="onboarding-card onboarding-card--opened"
       data-testid="onboarding-card"
-      data-onboarding-status="confirm"
+      data-onboarding-status="opened"
       aria-busy={busy || undefined}
-      aria-labelledby="onboarding-confirm-title"
     >
-      <h3 className="onboarding-card__title" id="onboarding-confirm-title">
-        Here&apos;s what I heard.
-      </h3>
-      <p className="onboarding-card__question">
-        {unlockLabel}?
+      <p className="onboarding-card__lead">
+        {openedAnnouncement(proposal.areas.map((area) => area.name))}
       </p>
       <p className="onboarding-card__copy">
-        {proposal.table
-          ? "I'll draft their premise, vision, purpose and strategy from your answers, and add the one table the conversation asked for."
-          : "I'll draft their premise, vision, purpose and strategy from your answers."}
+        These let you hone in and focus on different areas in your life.
       </p>
-      {/*
-        The manifest scrolls inside the card, not with it: the heading and the
-        two buttons stay put, so a three-area proposal can never push Confirm off
-        the bottom of the dock.
-      */}
-      <div className="onboarding-card__sheet">
-        <ul className="onboarding-card__groups">
-          {proposal.areas.map((area) => (
-            <li
-              key={area.slug}
-              className="onboarding-card__group"
-              data-onboarding-area={area.slug}
-            >
-              <p className="onboarding-card__area-name">{area.name}</p>
-              <ul className="onboarding-card__lines">
-                {orderedDoctrine(area.doctrine).map((line) => {
-                  const key = doctrineKey(line.kind);
-                  const label = DOCUMENT_KIND_LABELS[line.kind];
-                  return (
-                    <li key={line.kind} className="onboarding-card__line">
-                      <label className="onboarding-card__tick">
-                        <input
-                          type="checkbox"
-                          checked={!dropped.has(key)}
-                          onChange={() => toggle(key)}
-                          aria-label={`Draft ${label} for ${area.name}`}
-                          data-onboarding-toggle={`doctrine:${key}`}
-                        />
-                        <span className="onboarding-card__line-body">
-                          <span className="onboarding-card__line-title">
-                            {label}
-                          </span>
-                          <span className="onboarding-card__line-detail">
-                            {excerpt(line.bodyMarkdown)}
-                          </span>
-                        </span>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
-            </li>
-          ))}
-        </ul>
-        {proposal.table ? (
-          <label className="onboarding-card__tick onboarding-card__tick--extra">
-            <input
-              type="checkbox"
-              checked={!dropped.has(TABLE_LINE)}
-              onChange={() => toggle(TABLE_LINE)}
-              aria-label={`Create the ${proposal.table.name} table`}
-              data-onboarding-toggle={TABLE_LINE}
-            />
-            <span className="onboarding-card__line-body">
-              <span className="onboarding-card__line-title">
-                {proposal.table.name}
-                <span className="onboarding-card__line-kind"> table</span>
-              </span>
-              <span className="onboarding-card__line-detail">
-                {proposal.table.columns.map((column) => column.name).join(" · ")}
-              </span>
-            </span>
-          </label>
-        ) : null}
-        <label className="onboarding-card__tick onboarding-card__tick--extra">
-          <input
-            type="checkbox"
-            checked={!dropped.has(NOTE_LINE)}
-            onChange={() => toggle(NOTE_LINE)}
-            aria-label="Save the interview note"
-            data-onboarding-toggle={NOTE_LINE}
-          />
-          <span className="onboarding-card__line-body">
-            <span className="onboarding-card__line-title">
-              {proposal.note.title}
-              <span className="onboarding-card__line-kind"> note</span>
-            </span>
-            <span className="onboarding-card__line-detail">
-              A short record of this conversation, kept in Life.
-            </span>
-          </span>
-        </label>
-      </div>
       <div className="onboarding-card__actions">
         <Button
           variant="primary"
-          onClick={() => onConfirm(choices)}
+          onClick={onAcknowledge}
           disabled={busy}
-          data-testid="onboarding-confirm"
+          data-testid="onboarding-opened-continue"
         >
-          {unlockLabel}
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={onDiscard}
-          disabled={busy}
-          data-testid="onboarding-discard"
-        >
-          Not now
+          Continue
         </Button>
       </div>
     </div>
@@ -349,20 +174,25 @@ export function OnboardingConfirmCard({
 /**
  * The dock's onboarding surface: the one card the vault record earns.
  *
- * `completed` draws nothing — after the interview the dock never mentions it
- * again, which is why the component returns null rather than an empty shell.
+ * - a receipt with the record completed is the announcement (the companion has
+ *   already applied it; only the acknowledgement is left);
+ * - otherwise `not_started` is the welcome and `in_progress` is the way back in;
+ * - `completed` with no receipt draws nothing, ever again.
  */
 export function OnboardingCards(props: OnboardingCardsProps) {
-  if (props.status === "completed") return null;
-  if (props.proposal !== null) {
-    return (
-      <OnboardingConfirmCard
+  if (props.status === "completed") {
+    return props.proposal !== null ? (
+      <OnboardingOpenedCard
         proposal={props.proposal}
         busy={props.busy}
-        onConfirm={props.onConfirm}
-        onDiscard={props.onDiscard}
+        onAcknowledge={props.onAcknowledge}
       />
-    );
+    ) : null;
+  }
+  if (props.proposal !== null) {
+    // A receipt without a completed record is a mid-apply read, not a state an
+    // operator should see a card for; the next snapshot settles it.
+    return null;
   }
   if (props.status === "not_started") {
     return <OnboardingWelcomeCard busy={props.busy} onBegin={props.onBegin} />;

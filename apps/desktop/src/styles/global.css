@@ -8134,7 +8134,8 @@ button.chat-panel__activity-line:hover {
    as words the companion just said. A quiet glass card on the dock's own
    material — the starter's fill, the error's radius — tinted a whisper of the
    accent so it reads as an offer rather than an error. Never a modal: the
-   field below stays live and typing is the other way in. */
+   field below stays live and typing is the other way in. The opened card is the
+   same material saying what already happened, with one acknowledgement. */
 .onboarding-card {
   display: flex;
   flex-direction: column;
@@ -8155,8 +8156,9 @@ button.chat-panel__activity-line:hover {
   letter-spacing: -0.01em;
 }
 
-/* The spec's welcome copy, verbatim: an offer in the operator's language, no
-   taxonomy and no locked-area names. */
+/* The card's prose: the spec's welcome copy and the announcement's second line,
+   in the operator's language — no taxonomy, and no locked-area names before the
+   companion has opened them. */
 .onboarding-card__copy {
   margin: 0;
   color: var(--text-soft);
@@ -8164,140 +8166,14 @@ button.chat-panel__activity-line:hover {
   line-height: 1.5;
 }
 
-/* The one bold line the confirmation card leads with: the act, named. */
-.onboarding-card__question {
+/* The announcement's leading line: the act the companion already took, said
+   plainly. It carries the area names, from the receipt the companion wrote. */
+.onboarding-card__lead {
   margin: 0;
   color: var(--fg);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.onboarding-card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.15rem;
-}
-
-/* The manifest scrolls inside the card rather than growing it: the heading and
-   the two buttons stay put, so a three-area proposal can never push Confirm off
-   the bottom of the dock and take the composer with it. */
-.onboarding-card__sheet {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  min-height: 0;
-  max-height: min(46vh, 22rem);
-  overflow-y: auto;
-  padding-right: 0.1rem;
-}
-
-.onboarding-card__groups {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.onboarding-card__group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
-}
-
-/* The area's name is the heading of what was heard, so it is the one accented
-   line on the sheet — the taxonomy is now allowed, because the card is the
-   interview's reflection rather than its questions. */
-.onboarding-card__area-name {
-  margin: 0;
-  padding-left: 0.25rem;
-  color: var(--accent);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.onboarding-card__lines {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.onboarding-card__line {
-  min-width: 0;
-}
-
-/* One tickable line. The whole row is the label, so a click anywhere on the
-   device, the name or the draft's first line toggles it. */
-.onboarding-card__tick {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.45rem;
-  min-width: 0;
-  padding: 0.18rem 0.25rem;
-  border-radius: 0.3rem;
-  cursor: pointer;
-}
-
-.onboarding-card__tick:hover {
-  background: color-mix(in srgb, var(--fg) 5%, transparent);
-}
-
-.onboarding-card__tick input[type="checkbox"] {
-  flex: 0 0 auto;
-  width: 0.85rem;
-  height: 0.85rem;
-  margin: 0.16rem 0 0;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-.onboarding-card__tick input[type="checkbox"]:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-.onboarding-card__tick--extra {
-  border-top: 1px solid var(--border-soft);
-  padding-top: 0.4rem;
-}
-
-.onboarding-card__line-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.05rem;
-  min-width: 0;
-}
-
-.onboarding-card__line-title {
-  color: var(--fg);
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.onboarding-card__line-kind {
-  color: var(--muted);
-  font-size: 0.625rem;
+  font-size: 0.84rem;
   font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.onboarding-card__line-detail {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 0.72rem;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.5;
 }
 
 /* The quiet Continue card: one line and one button, no heading — the interview
