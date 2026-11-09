@@ -1,10 +1,17 @@
 # Design: one life, five areas, and the onboarding interview
 
 **Date**: 2026-11-05
-**Status**: Draft — structure and vocabulary agreed in session. P0 (the one-Life
-surface: six-area seed, locked/unlocked hinge, hidden switcher, Settings → Areas
-unlock) is implemented on `feat/life-areas`; the onboarding interview (P1) and the
-suggestion rules (P2) are not.
+**Status**: Draft, in build. P0 (the one-Life surface: six-area seed,
+locked/unlocked hinge, hidden switcher, Settings → Areas unlock) is merged to
+master (2026-11-08). P1 (the onboarding interview) is built on
+`feat/onboarding-interview` and every rig is green; it is not merged — operator
+QC is pending, and the evidence is `apps/desktop/e2e/artifacts/onboarding.json`
+plus the welcome/opened/unlocked screenshots. Operator feedback on 2026-11-09
+removed the consent question: the companion now opens the areas itself and the
+dock announces it with one Continue (see "Amendment 2" in the plan). The suggestion rules (P2) are not
+started. The build contract for P1 is
+[2026-11-08-onboarding-interview.md](../plans/2026-11-08-onboarding-interview.md),
+whose "Built" section records what landed and the deviations.
 **Product**: LifeQuest — local-first life-management studio.
 **Depends on**: [Overview domain lens](./2026-08-31-overview-domain-lens-design.md)
 (superseded in naming only: "Overview" becomes **Life**), [local vault](./2026-07-19-local-vault-electron-design.md),
@@ -141,26 +148,26 @@ exhausted, I never sleep" → Health), not on a keyword.
 opens all five is a taxonomy delivery in disguise.
 
 The interview closes by reflecting back what was heard, in the operator's words, and
-then showing **one** confirmation card:
+then the companion opens the areas — it does not ask. The dock shows **one**
+announcement card:
 
-> Here's what I heard. **Unlock Health and Business?** I'll draft their premise,
-> vision, purpose and strategy from your answers, and add the one table the
-> conversation asked for.
+> After analyzing our conversation, I've opened up the **Health and Business**
+> areas for you. These let you hone in and focus on different areas in your life.
 
-The card lists exactly what will be unlocked, what doctrine will be drafted, and
-what (at most one) table will be created. It is amendable line by line. Nothing is
-written before the operator confirms.
+The card is a receipt, not a question: the unlocks, the doctrine drafts and the one
+table are already written when it appears, and a single **Continue** dismisses it.
+
 
 ### What the interview produces
 
 1. The unlocked areas (flag flip).
-2. Doctrine drafts in those areas, written from the operator's words — by Decision,
-   because the companion is the author. The confirmation card is the consent; it
-   must not become five separate Decisions in the inbox.
-3. At most one database, from the conversation's clearest ask. Databases created
-   after chat agreement write immediately (the direct-writes policy); the card makes
-   the agreement explicit. The verified template library is a later spec; until it
-   exists the companion hands-writes the one table's columns.
+2. Doctrine drafts in those areas, written immediately from the operator's words
+   with the companion as `actor`. The announcement card is the record of what was
+   done; it must not become five separate Decisions in the inbox.
+3. At most one database, from the conversation's clearest ask. Databases write
+   immediately (the direct-writes policy); the announcement card records it. The
+   verified template library is a later spec; until it exists the companion
+   hands-writes the one table's columns.
 4. One short note of the interview in the vault (the first "life picture"), so the
    session has a record outside the chat transcript.
 
@@ -305,14 +312,16 @@ Rules:
   from `list_databases`, `list_documents` and every other agent read, so the companion
   cannot leak them by accident; it learns them from its rubric, exactly as the
   operator's copy never names them.
-- **Onboarding consent**: the confirmation card is the write's consent record. It
-  should be attributable to the companion (a Decision), not silently to the
-  operator; today's Decision targets do not fit a batch of unlocks and doctrine
-  writes, so the build needs either a small `onboarding` Decision target or an
-  explicitly operator-confirmed batch with the agent recorded as author. Decide at
-  build time; do not let it become five inbox items.
-- **Log events**: `onboarding.started`, `onboarding.completed`, `area.unlocked`,
-  `area.archived`, `structure.suggested`, `structure.declined`, `structure.ignored`.
+- **Onboarding opening (decided; amended 2026-11-09)**: passive. The companion
+  opens the 1–3 areas itself through a `propose_onboarding_unlock` tool call: the
+  batch applies immediately (unlocks, the doctrine drafts with the companion as
+  `actor`, at most one table, the one interview note, one `onboarding.completed`),
+  and the proposal file stays as the receipt for one announcement card with a
+  single **Continue**. No consent question, no tickable lines, no inbox Decision.
+  A failed apply leaves nothing announced and returns an error to the companion.
+- **Log events (as built)**: `onboarding.started`, `onboarding.completed`, and
+  P0's `domain.unlocked` / `domain.archived` (the vault keeps the `domain.`
+  spelling; the Log's renderer prints `area.`). `structure.*` events arrive with P2.
 - **Docs to update when this ships**: `docs/wiki/01-overview.md`,
   `docs/wiki/04-the-vault.md`, `docs/wiki/05-domains.md`, `docs/wiki/19-data-and-databases.md`,
   `docs/wiki/28-settings.md`, `VISION.md` (the four-domain sentence),
@@ -328,7 +337,7 @@ Rules:
    hinge, switcher hidden below two, Life labelling, Settings → Areas with
    **Unlock another area** and no interview yet. This is the shell the rest hangs on.
 2. **P1 — onboarding**: welcome card, interview skill, onboarding record, one
-   confirmation card, doctrine drafts, one-table cap.
+   announcement card, doctrine drafts, one-table cap.
 3. **P2 — suggestions**: ledger, suggestion tool/card, settings switch, log events.
 4. **P3 — template library and presets** (separate spec): the verified database
    catalog, and the five areas' starter content.
@@ -348,13 +357,21 @@ Rules:
 
 ## Open questions for the build
 
+Closed by the P0/P1 builds (2026-11-08):
+
 1. What fills the top band when the switcher is hidden — a static "Life" label, the
-   vault name, or nothing?
+   vault name, or nothing? **A quiet static "Life" label** (P0).
 2. Is the base area listed in Settings → Areas (as a non-removable row), or hidden
-   entirely?
-3. The onboarding consent mechanism: a new Decision target, or an explicit
-   operator-confirmed batch recorded as the companion's write?
-4. The interview cap: one to three areas, or exactly two?
+   entirely? **Hidden** (P0).
+3. The onboarding consent mechanism: a new Decision target, an explicit
+   operator-confirmed batch, or a passive opening? **Passive opening** (amended
+   2026-11-09): the companion applies the batch, the proposal file is the receipt
+   for one announcement card with Continue, no inbox Decision (P1).
+4. The interview cap: one to three areas, or exactly two? **One to three**,
+   enforced by the proposal validator, not the prompt (P1).
 5. Does a re-run of the interview exist after onboarding (and where is it offered)?
+   **Not in P1.** While the record is `in_progress` the dock offers *Continue the
+   interview*; once `completed`, no card returns. A Settings entry can come later.
 6. Does unlocking a seeded area offer adoption of matching base-area tables, or is
-   adoption reserved for custom areas?
+   adoption reserved for custom areas? **Reserved for P4.** A P1 unlock is a flag
+   flip plus the interview's own drafts; nothing is adopted.

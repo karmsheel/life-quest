@@ -57,6 +57,20 @@ const lifequest = {
   domainGetActive: () =>
     ipcRenderer.invoke("domain:getActive") as Promise<string | null>,
 
+  // The onboarding interview's three operator verbs. Each re-reads the vault on
+  // the way through and the IPC door announces the write, so the dock's
+  // welcome/continue/confirmation cards redraw without a reload.
+  onboardingStart: () =>
+    ipcRenderer.invoke("onboarding:start") as Promise<Result<unknown>>,
+  onboardingConfirm: (options?: {
+    skipDoctrineKinds?: string[];
+    includeTable?: boolean;
+    includeNote?: boolean;
+  }) =>
+    ipcRenderer.invoke("onboarding:confirm", options) as Promise<Result<unknown>>,
+  onboardingDiscard: () =>
+    ipcRenderer.invoke("onboarding:discard") as Promise<Result<unknown>>,
+
   // KAR-55 domain databases
   dbList: (domainSlug: string | null) =>
     ipcRenderer.invoke("db:list", domainSlug) as Promise<Result<unknown>>,
@@ -413,6 +427,16 @@ const lifequest = {
         body: string;
       } | null;
       automationContext?: string;
+      /**
+       * The vault's onboarding interview, while it is unfinished. The renderer
+       * sends it for the same reason it sends the board: the paragraph has to
+       * be in the turn. Main re-derives it from the snapshot before the turn is
+       * sent, so a stale value here cannot re-offer a finished interview.
+       */
+      onboarding?: {
+        status: "not_started" | "in_progress";
+        proposalPending: boolean;
+      } | null;
       aboutMe: string;
       locked: boolean;
       vaultOpen: boolean;

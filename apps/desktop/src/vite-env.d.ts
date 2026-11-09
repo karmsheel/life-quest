@@ -20,6 +20,9 @@ import type {
   LibraryListResult,
   LibraryUpdatePatch,
   ManualDecisionRecord,
+  OnboardingConfirmOptions,
+  OnboardingConfirmResult,
+  OnboardingRecord,
   Project,
   ProjectCreateInput,
   ProjectListResult,
@@ -203,6 +206,16 @@ type CompanionInstructionsContext = {
   reviewContext?: string;
   /** The page material an automation opened this chat with, already fenced. */
   automationContext?: string;
+  /**
+   * The vault's onboarding interview, while it is unfinished. Absent or null
+   * once the record is complete, which is what keeps the five-area rubric out
+   * of every later turn. Main re-derives it from the snapshot before sending, so
+   * a stale renderer value cannot re-offer a finished interview.
+   */
+  onboarding?: {
+    status: "not_started" | "in_progress";
+    proposalPending: boolean;
+  } | null;
   fileUnsolicited?: boolean;
 };
 
@@ -332,6 +345,25 @@ type LifequestApi = {
   domainDelete: (slug: string) => Promise<Result<{ slug: string }>>;
   domainSetActive: (slug: string | null) => Promise<Result<string | null>>;
   domainGetActive: () => Promise<string | null>;
+  /**
+   * Begin the onboarding interview. Idempotent: `in_progress` and `completed`
+   * come back unchanged, and `onboarding.started` is logged exactly once.
+   * *Begin* is the operator's click, so this is the actor it records.
+   */
+  onboardingStart: () => Promise<Result<OnboardingRecord>>;
+  /**
+   * Apply the pending confirmation card as one operator-confirmed batch:
+   * unlock the heard areas, write their doctrine (the companion is the author),
+   * create the one table and the one note, and complete the record.
+   */
+  onboardingConfirm: (
+    options?: OnboardingConfirmOptions,
+  ) => Promise<Result<OnboardingConfirmResult>>;
+  /**
+   * Decline the pending proposal. Nothing is written; the record stays
+   * `in_progress` so the dock returns to *Continue the interview*.
+   */
+  onboardingDiscard: () => Promise<Result<OnboardingRecord>>;
   documentGet: (
     slug: string,
     kind: DocumentKind,

@@ -39,6 +39,7 @@ import {
   createdSessionFromPayload,
   messagesFromPayload,
   modelCatalogFromPayload,
+  onboardingContextOf,
   runtimeRequestBody,
   sessionFromPayload,
   sessionsFromPayload,
@@ -1589,6 +1590,15 @@ async function currentInstructionsContext(): Promise<CompanionInstructionsInput>
       locked: false,
       vaultOpen: Boolean(snapshot),
       fileUnsolicited,
+      // The Settings preview has to show the same paragraph the turn would: a
+      // companion that is told the rubric on one screen and not the other is
+      // the drift this page exists to end. Null once the record is complete.
+      onboarding: snapshot
+        ? onboardingContextOf(
+            snapshot.onboarding,
+            snapshot.onboardingProposal !== null,
+          )
+        : null,
     };
   } catch {
     return {

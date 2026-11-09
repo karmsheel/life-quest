@@ -17,6 +17,8 @@ import {
   executeDailyNoteTool,
   COMPANION_BRIEF_TOOL_DEFS,
   executeCompanionBriefTool,
+  ONBOARDING_TOOL_DEFS,
+  executeOnboardingTool,
   CAPTURE_TOOL_DEFS,
   executeCaptureTool,
   SCRIPT_TOOL_DEFS,
@@ -265,6 +267,17 @@ async function executeToolInner(
   // absent: it is the operator's verb and travels over IPC, not the tool door.
   if (COMPANION_BRIEF_TOOL_DEFS.some((t) => t.name === name)) {
     return executeCompanionBriefTool(root, actor, name, rec);
+  }
+
+  // propose_onboarding_unlock — the interview's one confirmation card. The tool
+  // writes `.lifequest/onboarding-proposal.json` and nothing else; the card is
+  // the consent, and the operator's Confirm is what unlocks, drafts and writes
+  // through the IPC verbs. It is companion-only (the grant gate refuses it
+  // before this point) because the areas it may open are not any one hire's.
+  // The `executeTool` wrapper above already announces the write, so the dock's
+  // confirmation card appears on the operator's open window without a reload.
+  if (ONBOARDING_TOOL_DEFS.some((t) => t.name === name)) {
+    return executeOnboardingTool(root, actor, name, rec);
   }
 
   // list_projects, get_project — direct reads of the operator's projects and the

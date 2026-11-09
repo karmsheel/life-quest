@@ -8128,6 +8128,60 @@ button.chat-panel__activity-line:hover {
   outline-offset: 1px;
 }
 
+/* —— The onboarding interview, above the composer ——
+   The interview is the app speaking, not a chat message: it sits above the
+   field so the transcript cannot scroll it away and `aria-live` cannot read it
+   as words the companion just said. A quiet glass card on the dock's own
+   material — the starter's fill, the error's radius — tinted a whisper of the
+   accent so it reads as an offer rather than an error. Never a modal: the
+   field below stays live and typing is the other way in. The opened card is the
+   same material saying what already happened, with one acknowledgement. */
+.onboarding-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.65rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border-soft));
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--accent) 3%, var(--bg-elevated));
+  box-shadow: var(--shadow-sm);
+}
+
+.onboarding-card__title {
+  margin: 0;
+  color: var(--fg);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* The card's prose: the spec's welcome copy and the announcement's second line,
+   in the operator's language — no taxonomy, and no locked-area names before the
+   companion has opened them. */
+.onboarding-card__copy {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+/* The announcement's leading line: the act the companion already took, said
+   plainly. It carries the area names, from the receipt the companion wrote. */
+.onboarding-card__lead {
+  margin: 0;
+  color: var(--fg);
+  font-size: 0.84rem;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+/* The quiet Continue card: one line and one button, no heading — the interview
+   is already known to the operator, so it only has to stay reachable. */
+.onboarding-card--continue .onboarding-card__copy {
+  font-size: 0.78rem;
+}
+
 .chat-panel__composer {
   display: flex;
   flex-direction: column;
