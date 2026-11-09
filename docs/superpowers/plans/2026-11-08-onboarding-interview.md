@@ -14,13 +14,10 @@ section and the shared contract; do not edit files outside your scope.
 1. **Top band when the switcher is hidden** — settled in P0: a quiet static
    "Life" label. No change.
 2. **Base `life` area in Settings → Areas** — settled in P0: hidden. No change.
-3. **Onboarding consent** — an *operator-confirmed batch*, not a Decision per
-   write. The companion writes one proposal (`.lifequest/onboarding-proposal.json`)
-   through a tool; the app renders it as one confirmation card; the operator's
-   Confirm is the consent record. Doctrine is written with the companion as the
-   `actor` (`{type:"agent", name:"LifeQuest companion"}`) and one
-   `onboarding.completed` log event carries the whole batch. Nothing becomes an
-   inbox Decision.
+3. **Onboarding consent** — *superseded 2026-11-09: passive opening* (see
+   "Amendment 2" at the end). The companion opens the areas itself; the dock shows
+   one announcement card with a single **Continue**, never a question. Nothing
+   becomes an inbox Decision.
 4. **Interview cap** — one to three areas (`1 <= areas.length <= 3`), enforced by
    the proposal validator, not the prompt.
 5. **Re-running the interview** — not in P1. While the record is `in_progress`
@@ -351,5 +348,90 @@ Build decisions taken during implementation, on top of the decisions above:
 - Regression rigs still pass through `lifequest-e2e` on this checkout:
   `life-areas`, `life-areas-engine`, `pi-companion`, `settings-domains`,
   `shell-sidebar`, `chat-panel`, `chat-sessions`, `agent-prompts`.
+- After Amendment 2 (passive opening), re-run green: both typechecks; the engine
+  rig 5/5 subtests (tool applies + keeps the receipt, second call refused,
+  acknowledgement clears only the receipt); the real-app rig 38/38 checks with
+  the receipt proved BEFORE Continue — band already `Life · Health · Business`,
+  record completed, proposal file present, doctrine on disk — and Continue
+  clearing only the receipt. Screenshot set is now
+  `onboarding-welcome.png`, `onboarding-opened.png`, `onboarding-unlocked.png`.
 - Handover per AGENTS.md; the branch stays off the bench until the operator asks
   for it.
+
+## Amendment 2 — passive opening (2026-11-09)
+
+Operator feedback: the interview must not ask the operator to "unlock" anything.
+After analyzing the conversation the companion has already opened the areas; the
+dock says so and offers **Continue**. This supersedes decision 3's consent gate
+and the confirmation card's tickable lines.
+
+Copy (exact, areas joined with "and", both lines):
+
+> After analyzing our conversation, I've opened up the Health and Business areas
+> for you. These let you hone in and focus on different areas in your life.
+
+### Engine delta (`packages/vault-core/src/**`)
+
+- `OnboardingConfirmOptions.keepProposal?: boolean` (default `false`). When true,
+  `confirmOnboarding` applies the whole batch and writes the completed record but
+  **leaves `.lifequest/onboarding-proposal.json` in place** — it becomes the
+  announcement's receipt, so the card survives a reload until acknowledged.
+- `executeOnboardingTool("propose_onboarding_unlock", args)` now applies instead of
+  only proposing: validate+write the proposal, then
+  `confirmOnboarding(root, { keepProposal: true })`. Success returns
+  `{ proposal, opened: { areas, table, note } }` (receipt included). If the apply
+  fails, delete the proposal and return `{error:{code,message}}` — never leave a
+  receipt for a batch that did not land, and let the companion retry.
+- On success the record is already `completed`, `onboarding.completed` is logged
+  once and the areas are unlocked before the renderer paints anything.
+- The tool name stays `propose_onboarding_unlock` (historical; it now opens). Its
+  description must say it opens the areas immediately and that the app shows the
+  operator a card confirming what was opened.
+- `discardOnboardingProposal` is the acknowledgement: when the record is
+  `completed` it deletes the receipt and leaves the record completed (existing
+  behaviour for `in_progress` is unchanged).
+- Tool input shape is unchanged (areas+doctrine object, optional table, note).
+
+### Main-process delta (`apps/desktop/electron/**`)
+
+- Only the companion paragraph in `companion-client.ts` changes: the rule is now
+  "calling `propose_onboarding_unlock` opens the 1–3 areas immediately, writes
+  their doctrine drafts, at most one table and the one note; the app then shows the
+  operator a card that says what was opened — no question, no consent step. So
+  call it once, and only when you have genuinely heard enough." Remove the
+  "nothing is written until they confirm" and "proposalPending revise" branches.
+- IPC, preload and data revision are unchanged; the receipt card's Continue reuses
+  `onboardingDiscard()`.
+
+### Renderer delta (`apps/desktop/src/**`)
+
+- Replace the confirmation card with an announcement card (`OnboardingOpenedCard`
+  in `OnboardingCards.tsx`): `data-testid="onboarding-card"`,
+  `data-onboarding-status="opened"`, the two copy lines above, area names derived
+  from the proposal, and ONE button whose text is exactly `Continue`.
+  No checkboxes, no `Not now`, no `onboardingConfirm` call.
+- Gating: the opened card shows when
+  `snapshot.onboarding.status === "completed" && snapshot.onboardingProposal !== null`.
+  Otherwise the existing welcome (`not_started`) / continue (`in_progress`) cards
+  apply. Continue → `onboardingDiscard()` → `refresh()`; the card must be gone once
+  the proposal is null.
+- Delete the confirmation card's tick state / option building and the now-unused
+  checkbox styles.
+
+### E2E delta (Lead)
+
+- Engine rig: the tool applies and leaves the receipt; a second tool call is
+  refused (completed); discard after completion deletes the receipt and keeps the
+  record completed.
+- Real-app rig: after the scripted tool call the card is the *opened* card, the
+  band is ALREADY `Life · Health · Business` and the vault on disk already has the
+  unlocks/doctrine/table/note/record **before** Continue; the card has one button
+  (`Continue`, no `Not now`, no checkboxes); Continue removes the card and the
+  receipt; reload shows no card; the legacy vault still shows none. Screenshots:
+  `onboarding-welcome.png`, `onboarding-opened.png`, `onboarding-unlocked.png`.
+- Regression rigs re-run as before.
+
+### Docs (Lead)
+
+- This amendment; the spec's interview/consent/log sections say *applied by the
+  companion, announced by a card*, not operator-confirmed.
