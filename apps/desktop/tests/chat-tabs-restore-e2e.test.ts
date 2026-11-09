@@ -38,6 +38,8 @@ type State = {
   heading: string;
   tabs: Tab[];
   tabCount: number;
+  /** Whether the dock's tab strip band is drawn at all. */
+  strip: boolean;
   thread: boolean;
   /** The blank "Ask Hermes" slate the thread shows with no chat in front. */
   emptySlate: string;
@@ -220,8 +222,13 @@ describe("the dock's tab strip across a restart", () => {
     assert.equal(oneLeft.heading, "Alpha planning");
     assert.equal(
       blankChat.tabCount,
-      0,
-      "the blank New chat drew a tab strip for a single tab",
+      1,
+      "the blank New chat did not draw its one tab",
+    );
+    assert.equal(
+      labels(blankChat)[0],
+      "New chat",
+      "the blank New chat's tab is not the chat on screen",
     );
     assert.equal(
       blankChat.surface,
@@ -233,6 +240,7 @@ describe("the dock's tab strip across a restart", () => {
     assert.equal(blankStored.tabs.length, 1, "the blank New chat was not remembered");
     assert.equal(blankStored.activeId, blankStored.tabs[0]);
     assert.equal(closed.tabCount, 0);
+    assert.equal(closed.strip, false, "an empty strip band was left drawn");
     assert.equal(
       closed.surface,
       "thread",
@@ -249,6 +257,7 @@ describe("the dock's tab strip across a restart", () => {
     // A closed strip stays closed through another restart, and no chat is
     // resumed over it.
     assert.equal(relaunch.tabCount, 0);
+    assert.equal(relaunch.strip, false, "the relaunch drew an empty strip band");
     assert.equal(
       relaunch.surface,
       "thread",

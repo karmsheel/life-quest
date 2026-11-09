@@ -89,6 +89,9 @@ const SAMPLE = `(() => {
     ),
     tabs,
     tabCount: tabs.length,
+    // The strip itself, not only its tabs: with no tab open the band must be
+    // absent, and a strip dragged in without a tab would otherwise pass a count.
+    strip: Boolean(document.querySelector(".chat-panel__tabs")),
     thread: Boolean(document.querySelector(".chat-panel__header--thread")),
     // The blank "Ask Hermes" slate the thread shows when there is no chat in
     // front: a closed strip lands there, never on a history page.
@@ -306,7 +309,9 @@ async function main() {
       check(
         "a profile with no memory lands on one open chat",
         landing.surface === "thread" &&
-          landing.tabCount === 0 &&
+          landing.tabCount === 1 &&
+          landing.tabs[0]?.label === "Alpha planning" &&
+          landing.tabs[0]?.active === true &&
           landing.heading === "Alpha planning",
         JSON.stringify({
           surface: landing.surface,
@@ -477,7 +482,8 @@ async function main() {
       check(
         "archiving the last open chat leaves a blank New chat on the thread",
         blankChat.surface === "thread" &&
-          blankChat.tabCount === 0 &&
+          blankChat.tabCount === 1 &&
+          blankChat.tabs[0]?.label === "New chat" &&
           blankChat.heading === "New chat",
         JSON.stringify({
           tabs: blankChat.tabCount,
@@ -504,6 +510,7 @@ async function main() {
       check(
         "deleting the last open chat lands on the thread's blank slate",
         closed.tabCount === 0 &&
+          closed.strip === false &&
           closed.surface === "thread" &&
           closed.emptySlate === "Ask Hermes" &&
           closed.heading === "Chat",
@@ -530,6 +537,7 @@ async function main() {
       check(
         "a closed strip stays closed across a restart",
         relaunch.tabCount === 0 &&
+          relaunch.strip === false &&
           relaunch.surface === "thread" &&
           relaunch.emptySlate === "Ask Hermes" &&
           relaunch.heading === "Chat",

@@ -1585,100 +1585,20 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     >
         <AgentSwitcher />
         <div className="chat-panel__open">
-          {view === "chain" ? (
-            <div className="chat-panel__header">
-              <p className="chat-panel__heading">Quick Notes</p>
-            </div>
-          ) : view === "shortcuts" ? (
-            /*
-              The dock's bottom bar opens this page onto the panel. It
-              shares the thread's header shape — a way back, the page's name, and
-              the one control the page needs — but its body is a reference, not a
-              conversation, so there is no composer under it and no tab strip
-              above it.
-            */
-            <div className="chat-panel__header chat-panel__header--shortcuts">
-              <button
-                type="button"
-                className="chat-panel__icon-btn"
-                aria-label="Back to chat"
-                title="Back to chat"
-                onClick={() => setView("thread")}
-              >
-                <ArrowLeft size={16} aria-hidden />
-              </button>
-              <p className="chat-panel__heading chat-panel__heading--thread">
-                Keyboard shortcuts
-              </p>
-              <div className="chat-panel__header-actions">
-                <Link
-                  to="/settings?tab=shortcuts"
-                  className="chat-panel__icon-btn"
-                  aria-label="Change keyboard shortcuts in Settings"
-                  title="Change in Settings"
-                >
-                  <Pencil size={16} aria-hidden />
-                </Link>
-              </div>
-            </div>
-          ) : (
-            <div className="chat-panel__header chat-panel__header--thread">
-              {renaming ? (
-                <form
-                  className="chat-panel__rename"
-                  onSubmit={(e) => void commitRename(e)}
-                >
-                  <input
-                    className="chat-panel__rename-input"
-                    value={renameDraft}
-                    onChange={(e) => setRenameDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        cancelRename();
-                      }
-                    }}
-                    aria-label="Chat name"
-                    autoFocus
-                  />
-                  <button
-                    type="submit"
-                    className="chat-panel__icon-btn"
-                    aria-label="Save name"
-                    title="Save name"
-                  >
-                    <Check size={16} aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    className="chat-panel__icon-btn"
-                    aria-label="Cancel rename"
-                    title="Cancel rename"
-                    onClick={cancelRename}
-                  >
-                    <X size={16} aria-hidden />
-                  </button>
-                </form>
-              ) : (
-                <>
-                  <p
-                    className="chat-panel__heading chat-panel__heading--thread"
-                    title={activeLabel}
-                  >
-                    {activeLabel}
-                  </p>
-                </>
-              )}
-            </div>
-          )}
           {/*
-            The open chats, as tabs. One chat needs no strip — the header names
-            it — but the moment a second turn is in the air (or a second chat is
-            open) this is where the parallel sessions live: the dot is a turn
-            still streaming, the amber dot a run waiting on an approval, and the
-            close control stops a turn before it drops the tab.
+            The open chats, as tabs, in the dock's top band. The strip leads the
+            dock — above the thread's header — so the chats in the air are the
+            first thing the operator sees, and the name row below belongs to the
+            tab in front, the way a browser draws its tabs above the page.
 
-            The pinned band leads the strip and is drawn as squares. A pin is a
+            It is drawn whenever the thread has a tab, even a single one: the
+            plus at its trailing edge is the second tab's door, and a strip that
+            only appeared once a second tab existed would hide that door behind
+            the very gesture it exists for.
+
+            A live tab's dot pulses, a tab waiting on an approval keeps a ring,
+            and the close control stops a turn before it drops the tab. The
+            pinned band leads the strip and is drawn as squares. A pin is a
             durable Hermes flag rather than a strip-local decoration, so a pinned
             chat has a tab even on a launch where it was never opened — which is
             why the strip shows with a single pinned chat and nothing else open.
@@ -1687,7 +1607,7 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             of the band is the menu's Unpin, so a pin is never dropped by a stray
             press. Right-click opens that menu on any tab.
           */}
-          {view === "thread" && (tabIds.length > 1 || pinnedTabIds.length > 0) ? (
+          {view === "thread" && tabIds.length > 0 ? (
             <div
               className="chat-panel__tabs"
               role="tablist"
@@ -1769,9 +1689,111 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                   </div>
                 );
               })}
+              {/*
+                The strip's own door: a new blank conversation in a tab of its
+                own, beside the chat in front. It is the sidebar's New chat slot
+                in miniature — the same store action, the same one-blank-at-a-
+                time rule — set after the last tab the way a browser sets its
+                plus. It sticks to the band's trailing edge while the strip
+                scrolls, so a full strip never hides the way to a new one.
+              */}
+              <button
+                type="button"
+                className="chat-panel__tab-new"
+                aria-label="New chat tab"
+                title="New chat tab"
+                onClick={() => void newSession()}
+              >
+                <Plus size={13} aria-hidden />
+              </button>
             </div>
           ) : null}
-
+          {view === "chain" ? (
+            <div className="chat-panel__header">
+              <p className="chat-panel__heading">Quick Notes</p>
+            </div>
+          ) : view === "shortcuts" ? (
+            /*
+              The dock's bottom bar opens this page onto the panel. It
+              shares the thread's header shape — a way back, the page's name, and
+              the one control the page needs — but its body is a reference, not a
+              conversation, so there is no composer under it and the tab strip
+              is not drawn with it.
+            */
+            <div className="chat-panel__header chat-panel__header--shortcuts">
+              <button
+                type="button"
+                className="chat-panel__icon-btn"
+                aria-label="Back to chat"
+                title="Back to chat"
+                onClick={() => setView("thread")}
+              >
+                <ArrowLeft size={16} aria-hidden />
+              </button>
+              <p className="chat-panel__heading chat-panel__heading--thread">
+                Keyboard shortcuts
+              </p>
+              <div className="chat-panel__header-actions">
+                <Link
+                  to="/settings?tab=shortcuts"
+                  className="chat-panel__icon-btn"
+                  aria-label="Change keyboard shortcuts in Settings"
+                  title="Change in Settings"
+                >
+                  <Pencil size={16} aria-hidden />
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="chat-panel__header chat-panel__header--thread">
+              {renaming ? (
+                <form
+                  className="chat-panel__rename"
+                  onSubmit={(e) => void commitRename(e)}
+                >
+                  <input
+                    className="chat-panel__rename-input"
+                    value={renameDraft}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        cancelRename();
+                      }
+                    }}
+                    aria-label="Chat name"
+                    autoFocus
+                  />
+                  <button
+                    type="submit"
+                    className="chat-panel__icon-btn"
+                    aria-label="Save name"
+                    title="Save name"
+                  >
+                    <Check size={16} aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-panel__icon-btn"
+                    aria-label="Cancel rename"
+                    title="Cancel rename"
+                    onClick={cancelRename}
+                  >
+                    <X size={16} aria-hidden />
+                  </button>
+                </form>
+              ) : (
+                <>
+                  <p
+                    className="chat-panel__heading chat-panel__heading--thread"
+                    title={activeLabel}
+                  >
+                    {activeLabel}
+                  </p>
+                </>
+              )}
+            </div>
+          )}
           {/*
             The tab's menu, drawn at the pointer in the window's own coordinates.
             It is portalled to the document because the strip is a horizontal

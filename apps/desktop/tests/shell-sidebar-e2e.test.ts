@@ -276,6 +276,11 @@ type State = {
     borderBottomColor: string;
     background: string;
   } | null;
+  chatStrip: {
+    box: Box;
+    borderBottomWidth: string;
+    background: string;
+  } | null;
   sheet: {
     box: Box;
     borderRadius: string;
@@ -1006,24 +1011,40 @@ describe("shell sidebar (docked rail)", () => {
       `dock t/r/b/l ${expanded.chat.borderTopWidth}/${expanded.chat.borderRightWidth}/${expanded.chat.borderBottomWidth}/${expanded.chat.borderLeftWidth}`,
     );
     // The sheet's retired band. The page now starts at the strip's bottom edge,
-    // and the dock's header keeps the hairline that is now its own — in the same
-    // 44px band as the rail's wing switcher, so the chrome rows stay level across
-    // the pane seam while the page reclaims its band.
-    assert.ok(expanded.chatHeader, "the dock rendered no header band");
+    // and the dock's tab strip wears the band the header used to — the same 44px
+    // as the rail's wing switcher, so the chrome rows stay level across the pane
+    // seam — while the thread's name row keeps the hairline directly under it.
+    assert.ok(expanded.chatStrip, "the dock rendered no tab strip band");
+    assert.equal(
+      expanded.chatStrip.box.top,
+      titlebarHeight,
+      `the dock tab strip starts at ${expanded.chatStrip.box.top}px, not the strip's bottom edge (${titlebarHeight}px)`,
+    );
+    assert.equal(
+      expanded.chatStrip.box.bottom,
+      titlebarHeight + topbarHeight,
+      `the dock tab strip ends at ${expanded.chatStrip.box.bottom}px, not ${titlebarHeight + topbarHeight}px down`,
+    );
+    assert.ok(
+      parseFloat(expanded.chatStrip.borderBottomWidth) > 0 &&
+        parseFloat(expanded.chatStrip.borderBottomWidth) <= 1,
+      `the dock tab strip lost its underline (${expanded.chatStrip.borderBottomWidth})`,
+    );
+    assert.ok(expanded.chatHeader, "the dock rendered no name row");
     assert.equal(
       expanded.chatHeader.box.top,
-      titlebarHeight,
-      `the dock header starts at ${expanded.chatHeader.box.top}px, not the strip's bottom edge (${titlebarHeight}px)`,
+      expanded.chatStrip.box.bottom,
+      `the dock name row starts at ${expanded.chatHeader.box.top}px, not directly under the tab strip (${expanded.chatStrip.box.bottom}px)`,
     );
     assert.equal(
       expanded.chatHeader.box.bottom,
-      titlebarHeight + topbarHeight,
-      `the dock header ends at ${expanded.chatHeader.box.bottom}px, not ${titlebarHeight + topbarHeight}px down`,
+      expanded.chatStrip.box.bottom + topbarHeight,
+      `the dock name row ends at ${expanded.chatHeader.box.bottom}px, not ${expanded.chatStrip.box.bottom + topbarHeight}px down`,
     );
     assert.ok(
       parseFloat(expanded.chatHeader.borderBottomWidth) > 0 &&
         parseFloat(expanded.chatHeader.borderBottomWidth) <= 1,
-      `the dock header lost its underline (${expanded.chatHeader.borderBottomWidth})`,
+      `the dock name row lost its underline (${expanded.chatHeader.borderBottomWidth})`,
     );
 
     // The domain tab raised into the window strip. The sheet's `.top-bar` is gone

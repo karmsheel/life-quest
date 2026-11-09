@@ -7104,11 +7104,14 @@ a.home-mini-list__link:hover {
   }
 }
 
-/* The dock's own band: the rail's wing-switcher band wears the same
-   `--shell-topbar-height`, so the rail and the dock share one band under the
-   window strip. The sheet has no band of its own any more — the domain lens
-   moved into the titlebar — so this hairline is the dock's own, and it stops at
-   the sheet seam. No vertical padding — the contents centre in the band. */
+/* The dock's name row: under the tab strip on the thread, and the panel's own
+   top band on the chain and shortcuts surfaces, where no strip is drawn. The
+   rail's wing-switcher band wears the same `--shell-topbar-height`, so on those
+   two surfaces the rail and the dock share one band under the window strip; on
+   the thread the strip takes that band and this row sits directly beneath it.
+   The sheet has no band of its own any more — the domain lens moved into the
+   titlebar — so this hairline is the dock's own, and it stops at the sheet seam.
+   No vertical padding — the contents centre in the band. */
 .chat-panel__header {
   display: flex;
   align-items: center;
@@ -11162,25 +11165,33 @@ button.chat-panel__activity-line:hover {
 
 /* —— The dock's tabs ————————————————————————————————————————————————
  *
- * The open chats, one tab each, under the thread's header. The strip only
- * exists once a second chat is open — with one conversation the header already
- * names it — so its arrival is itself the signal that a parallel run is in the
- * air. A live tab's dot pulses; a tab whose run is waiting on an approval keeps
- * a ring instead, so a background question is findable without reading the log.
+ * The open chats, one tab each, in the dock's top band: the strip leads the
+ * panel, above the thread's header, so the chats in the air are the first thing
+ * the operator sees and the name row under them belongs to the tab in front —
+ * the browser's order, tabs then page. The band wears the same
+ * `--shell-topbar-height` as the rail's wing switcher, so the two panes still
+ * share one band under the window strip.
+ *
+ * The strip is drawn whenever the thread has a tab, even a single one: the plus
+ * at its trailing edge is how a second chat gets a tab, and a strip that waited
+ * for a second tab would hide that door behind the gesture it exists for. A
+ * live tab's dot pulses; a tab whose run is waiting on an approval keeps a ring
+ * instead, so a background question is findable without reading the log.
  *
  * The strip leads with the pinned band. A pin is durable Hermes state, not a
  * strip decoration: a pinned chat is drawn as a tab on every launch, whether or
  * not this run opened it, which is what keeps the squares in front across a
- * restart. That is also why the strip can be up with a single chat in it — one
- * pinned square and no open unpinned tab — and stays up when every other tab is
- * closed. The squares never stretch: they are a fixed leading column, and the
- * unpinned tabs share what is left of the strip between them.
+ * restart. That is also why the strip can be up with a single pinned square and
+ * no open unpinned tab, and stays up when every other tab is closed. The squares
+ * never stretch: they are a fixed leading column, and the unpinned tabs (and the
+ * plus after them) share what is left of the strip between them.
  */
 .chat-panel__tabs {
   display: flex;
   align-items: stretch;
   gap: 0.2rem;
   flex: 0 0 auto;
+  min-height: var(--shell-topbar-height);
   padding: 0.3rem 0.5rem;
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
@@ -11342,6 +11353,39 @@ button.chat-panel__activity-line:hover {
 }
 
 /*
+ * The strip's own door to a new chat: the browser's plus, set after the last tab
+ * and a share of the band rather than a tab itself — it opens a conversation, it
+ * does not represent one. It sticks to the band's trailing edge, so a strip with
+ * more tabs than the dock is wide still ends with the one control that makes
+ * another; the dock's canvas behind it keeps a tab sliding under it from showing
+ * through.
+ */
+.chat-panel__tab-new {
+  position: sticky;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex: 0 0 auto;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin-left: 0.15rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.35rem;
+  background: var(--background);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.chat-panel__tab-new:hover,
+.chat-panel__tab-new:focus-visible {
+  background: var(--selected-soft);
+  color: var(--fg);
+}
+
+/*
  * A tab's right-click menu: the same popover language as the sidebar's row menu
  * (`.chats-rail__menu`), anchored to the pointer instead of a row. It is fixed
  * in the window's coordinates because the strip it belongs to scrolls
@@ -11496,6 +11540,13 @@ button.chat-panel__activity-line:hover {
   border-radius: 999px;
   background: var(--card);
   box-shadow: var(--shadow-sm);
+}
+
+/* The thread stacks the tab strip on top of the name row, so the floating
+   switcher clears both bands there; the chain and shortcuts surfaces still draw
+   one band, and keep the single-band offset above. */
+.chat-panel[data-chat-surface="thread"] .agent-switcher {
+  top: calc(var(--shell-topbar-height) * 2 + 0.7rem);
 }
 
 .agent-switcher__pill {
