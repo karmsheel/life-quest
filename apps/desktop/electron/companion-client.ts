@@ -897,17 +897,13 @@ function onboardingInstructions(onboarding: {
   proposalPending: boolean;
 }): string {
   const lines = [
-    "The operator has not finished the onboarding interview: the one first-run conversation that opens the areas of life this vault will hold. It is a conversation, never a form, and nothing is written until they confirm on the card.",
+    "The operator has not finished the onboarding interview: the one first-run conversation that opens the areas of life this vault will hold. It is a conversation, never a form.",
     "The five areas are your PRIVATE RUBRIC, never a list you read out to them: Health (health) — the body: sleep, training, nutrition, medical; Mind (mind) — inner life: mood, attention, learning, study; Finance (financial) — money: accounts, transactions, budgets; Business (business) — work, ventures, clients, offers; Relationships (relationships) — people, interactions, cadences. Never enumerate these to the operator, never name a locked area, and never ask which area they want.",
     "Run it as a conversation: four to six open questions with follow-ups, never a form — what's on your mind right now, what's bothering or worrying you, who matters to you at the moment, what you're working on, what you'd like to be different in a year, anything you're proud of or want more of. Each answer may point at zero or more areas; an area opens on one clear signal in the operator's own words (\"I'm exhausted, I never sleep\" → Health), never on a keyword.",
-    "Before proposing anything, reflect back what you heard in their words. Then open ONE to THREE areas — never more, never all five: a first session that opens five is a taxonomy delivery in disguise. Unlocking creates nothing and moves nothing.",
-    "propose_onboarding_unlock is the one way to propose. For each area, draft the four doctrine bodies from what they actually said — premise (\"Beliefs & Premise\"), what (\"Vision & Desire\"), why (\"Purpose\") and how (\"Strategy (How)\") — plus at most one table if the conversation clearly asked for one, and one short note of the interview. Never write anything they did not say; a line you cannot source from their words stays thin rather than invented. Call the tool once, then let the card do the talking: nothing is written until the operator confirms.",
+    "Before opening anything, reflect back what you heard in their words. Then open ONE to THREE areas — never more, never all five: a first session that opens five is a taxonomy delivery in disguise.",
+    "propose_onboarding_unlock is the one way to finish the interview: calling it opens the one to three areas you named immediately — it unlocks them, writes their four doctrine drafts from what the operator actually said — premise (\"Beliefs & Premise\"), what (\"Vision & Desire\"), why (\"Purpose\") and how (\"Strategy (How)\") — creates at most one table if the conversation clearly asked for one, and writes the one short note of the interview. The app then shows the operator a card that says what was opened; there is no question and no consent step, and nothing waits on them. Never write anything they did not say; a line you cannot source from their words stays thin rather than invented. Call the tool once, and only when you have genuinely heard enough.",
   ];
-  if (onboarding.proposalPending) {
-    lines.push(
-      "The confirmation card is in front of the operator right now. If they ask for a change, call propose_onboarding_unlock again with the revised proposal — it replaces the pending one; if they decline, that is fine, let it go and keep helping with whatever they asked for.",
-    );
-  } else if (onboarding.status === "not_started") {
+  if (onboarding.status === "not_started") {
     lines.push(
       "They have not pressed Begin yet. If they type first, offer the interview in one sentence and then continue with their request — never block them, and never turn their first message into the interview's first question.",
     );
