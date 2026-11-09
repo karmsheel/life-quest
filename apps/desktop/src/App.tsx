@@ -68,7 +68,7 @@ function RequireVault({ children }: { children: ReactNode }) {
 
 function AppRoutes() {
   const { snapshot, booting } = useVault();
-  const { status, ensuring } = useCompanion();
+  const { status, ensuring, readyOnce } = useCompanion();
   /*
    * Settings and Decisions are sheets over the app, not pages of it (see
    * `SheetOverlay`), so the routes keep rendering the page the operator was on
@@ -76,7 +76,19 @@ function AppRoutes() {
    */
   const { background, sheet, sheetOverBackground } = useSheetBackground();
 
-  if (ensuring || !status || status.kind !== "ready") {
+  /*
+   * The connect screen is the BOOT surface, not a mode the app can be thrown
+   * back into.
+   *
+   * Once a companion has answered `ready`, the studio stays: switching agents,
+   * a late status, even an agent that is coming up must never replace the page
+   * the operator is looking at. That teardown — the dashboard unmounting and
+   * the "Connecting…" screen reappearing for a moment — was the jitter an
+   * operator read as every agent reconnecting. A first boot with no companion
+   * still lands here, because the studio may not open without one
+   * (LAWS/COMPANION.md).
+   */
+  if (!readyOnce && (ensuring || !status || status.kind !== "ready")) {
     return <CompanionSetupScreen />;
   }
 
