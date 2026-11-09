@@ -63,6 +63,16 @@ const CALENDAR_SHOT = path.join(
   desktopRoot,
   "e2e/artifacts/daily-note-calendar.png",
 );
+/** The day's page and its focus sheet after a Forge → Graphite switch: the
+ *  artifact for the report that the raised key kept Forge's orange halo. */
+const GRAPHITE_SHOT = path.join(
+  desktopRoot,
+  "e2e/artifacts/daily-note-graphite.png",
+);
+const GRAPHITE_FOCUS_SHOT = path.join(
+  desktopRoot,
+  "e2e/artifacts/daily-note-graphite-focus.png",
+);
 
 function devServerUp(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -288,6 +298,35 @@ type AutomationSample =
       distinctStops: boolean;
     };
 
+/** One surface's painted ink, and how far any of it is from grey. */
+type PaintedInk = {
+  backgroundImage: string;
+  borderColor: string;
+  color: string;
+  boxShadow: string;
+  disabled: boolean;
+  chroma: number;
+};
+
+/** One skin's tokens and the two raised keys the operator named, read twice. */
+type SkinSample = {
+  skin: string | null;
+  mode: string | null;
+  tokens: Record<string, { inline: string; computed: string }>;
+  page: PaintedInk | null;
+  focus: PaintedInk | null;
+};
+
+type SkinSwitch = {
+  /** Whether the titlebar's own menu managed the Forge → Graphite switch. */
+  switched: boolean;
+  skin: string | null;
+  cold: { page: SkinSample; focus: SkinSample };
+  live: { page: SkinSample; focus: SkinSample } | null;
+  tokenMismatches: string[];
+  paintMismatches: string[];
+};
+
 type Report = {
   pass: boolean;
   failures: string[];
@@ -361,6 +400,8 @@ type Report = {
     panelExpectedDays: string[];
     unexpectedBridgeCalls: string[];
     consoleErrors: string[];
+    /** The Forge → Graphite switch, read cold and live. */
+    graphiteSwitch: SkinSwitch;
   };
 };
 
@@ -383,9 +424,21 @@ describe("daily note ui e2e", () => {
     fs.rmSync(ANALYZE_SHOT, { force: true });
     fs.rmSync(PAST_DAY_SHOT, { force: true });
     fs.rmSync(CALENDAR_SHOT, { force: true });
+    fs.rmSync(GRAPHITE_SHOT, { force: true });
+    fs.rmSync(GRAPHITE_FOCUS_SHOT, { force: true });
     const exitCode = await runDriver();
     assert.equal(fs.existsSync(REPORT), true, "driver wrote no report artifact");
     assert.equal(fs.existsSync(ANALYZE_SHOT), true, "driver captured no picture of the day's act");
+    assert.equal(
+      fs.existsSync(GRAPHITE_SHOT),
+      true,
+      "driver captured no picture of the page after the Graphite switch",
+    );
+    assert.equal(
+      fs.existsSync(GRAPHITE_FOCUS_SHOT),
+      true,
+      "driver captured no picture of the focus page after the Graphite switch",
+    );
     assert.equal(
       fs.existsSync(PAST_DAY_SHOT),
       true,
@@ -1295,6 +1348,45 @@ describe("daily note ui e2e", () => {
     // logged nothing while the note was being written.
     assert.deepEqual(report.checks.unexpectedBridgeCalls, []);
     assert.deepEqual(report.checks.consoleErrors, []);
+
+    // ── a skin switch takes the old palette with it ─────────────────────────
+    // The report the operator filed: in Graphite, the raised Analyze key on the
+    // Daily Note page and on the focus page wore a thin orange halo — Forge's
+    // ember glow, left behind by the skin they had switched away from. The
+    // switch is proved against a cold Graphite window, so the claim is not "it
+    // looks grey to me" but "it paints exactly what a fresh Graphite window
+    // paints, and that paint carries no chroma at all".
+    const graphite = report.checks.graphiteSwitch;
+    assert.equal(
+      graphite.switched,
+      true,
+      "the titlebar's theme menu could not switch the window from Forge to Graphite",
+    );
+    assert.equal(
+      graphite.skin,
+      "graphite",
+      `the switch settled on ${JSON.stringify(graphite.skin)}, not Graphite`,
+    );
+    assert.deepEqual(
+      graphite.tokenMismatches,
+      [],
+      "a Forge token survived the switch to Graphite instead of the shipped one",
+    );
+    assert.deepEqual(
+      graphite.paintMismatches,
+      [],
+      "a raised key kept painting like Forge after the switch to Graphite",
+    );
+    for (const [surface, paint] of [
+      ["the page's Analyze key", graphite.live?.page.page],
+      ["the focus page's Analyze key", graphite.live?.focus.focus],
+    ] as const) {
+      assert.ok(paint, `${surface} could not be read after the switch`);
+      assert.ok(
+        paint.chroma <= 2,
+        `${surface} paints ${paint.chroma} units of chroma in Graphite (${paint.boxShadow})`,
+      );
+    }
 
     assert.equal(fs.existsSync(SHOT), true, "driver captured no screenshot");
     assert.equal(

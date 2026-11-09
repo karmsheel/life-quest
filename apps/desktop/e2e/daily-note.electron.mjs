@@ -101,6 +101,16 @@
  *     whole run is judged in Nous, the palette the operator asked about, because
  *     a control that reads black-on-black in the theme they run is the defect
  *     this claim exists to catch.
+ * 23. A skin switch takes the skin it left behind with it. The operator saw
+ *     Graphite's raised Analyze key — on the page and on the focus page — wearing
+ *     a thin orange halo after switching away from Forge, whose line accent
+ *     writes ember-tinted shadows over the shipped ones; Graphite writes none and
+ *     used to inherit them. So the rig loads Graphite cold and records its paint,
+ *     then loads Forge, switches to Graphite through the titlebar's own menu, and
+ *     requires every conditional token *and* every colour painted on those two
+ *     keys to match the cold window. `chroma` (the channel spread of the paint,
+ *     oklab's a/b included) must stay at zero in the colourless theme, so any
+ *     warm ink left behind is a failure rather than a matter of eye.
  *
  * NOT covered here: that the note reaches disk as `notes/daily/{date}.md`, that a
  * second write edits one file, and that a review's period pack reads the window
@@ -538,6 +548,18 @@ function idle(win, ms) {
   );
 }
 
+/** Let the paint settle — two frames and longer than a quick transition
+ *  (`--dur-quick: 120ms`) — so a reading is of the state, not of the motion
+ *  towards it. The raised key runs its shadow on that transition when it turns
+ *  live or when the palette underneath it changes. */
+function settle(win) {
+  return win.webContents
+    .executeJavaScript(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    )
+    .then(() => idle(win, 250));
+}
+
 const INPUT = `[data-testid="daily-note-editor-input"]`;
 /** The page's autosave waits this long after the last keystroke; a rig that
  *  waits less than this would read a write as missing rather than as pending. */
@@ -850,6 +872,162 @@ function assertPagerOnBox(layout, when) {
     );
   }
   return undefined;
+}
+
+/**
+ * Read the tokens and the painted ink of the surfaces a skin switch must not
+ * leave behind, plus how far any of that ink is from grey.
+ *
+ * A switch is only clean if the window lands on the same paint a *cold* window
+ * in the target skin would have: `applySkin` writes the tokens the new palette
+ * declares, and one that leaves a token to tokens.css must not inherit the one
+ * the old palette wrote. So this sample is taken twice — once from a cold load
+ * of the target skin, once after switching to it in the running window — and the
+ * two are compared whole.
+ *
+ * `chroma` is the widest channel spread any colour in the paint names, with
+ * oklab's a/b axes read as the chroma they are. A grey is 0; Forge's ember
+ * shadows and fills are tens of units. It is the measurement that catches a warm
+ * ink surviving into the colourless theme.
+ */
+const SKIN_SAMPLE = `(() => {
+  const root = document.documentElement;
+  const style = getComputedStyle(root);
+  const tokens = {};
+  for (const name of [
+    "--shadow-xs",
+    "--shadow-sm",
+    "--shadow-md",
+    "--shadow-nous",
+    "--stroke-nous",
+    "--bg-fill-tertiary",
+    "--bg-fill-secondary",
+  ]) {
+    tokens[name] = {
+      inline: root.style.getPropertyValue(name),
+      computed: style.getPropertyValue(name).trim(),
+    };
+  }
+  const spreadOf = (value) => {
+    let worst = 0;
+    for (const match of String(value).matchAll(/rgba?\\(([^)]+)\\)/g)) {
+      const parts = match[1].split(",").map(Number);
+      if (parts.length >= 4 && parts[3] === 0) continue;
+      const channels = parts.slice(0, 3);
+      worst = Math.max(worst, Math.max(...channels) - Math.min(...channels));
+    }
+    for (const match of String(value).matchAll(/color\\(srgb\\s+([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)/g)) {
+      const channels = match.slice(1, 4).map((part) => Number(part) * 255);
+      worst = Math.max(worst, Math.max(...channels) - Math.min(...channels));
+    }
+    for (const match of String(value).matchAll(/oklab\\(([\\d.]+)\\s+(-?[\\d.]+)\\s+(-?[\\d.]+)/g)) {
+      worst = Math.max(worst, Math.hypot(Number(match[2]), Number(match[3])) * 255);
+    }
+    return worst;
+  };
+  const paint = (el) => {
+    if (!el) return null;
+    const s = getComputedStyle(el);
+    const ink = [s.backgroundImage, s.borderColor, s.color, s.boxShadow].join(" ");
+    return {
+      backgroundImage: s.backgroundImage,
+      borderColor: s.borderColor,
+      color: s.color,
+      boxShadow: s.boxShadow,
+      disabled: el.disabled === true,
+      chroma: Math.round(spreadOf(ink) * 100) / 100,
+    };
+  };
+  return {
+    skin: root.dataset.skin ?? null,
+    mode: root.dataset.theme ?? null,
+    tokens,
+    page: paint(document.querySelector('[data-testid="daily-note-analyze"]')),
+    focus: paint(document.querySelector(".focus-overlay__action")),
+  };
+})()`;
+
+/** The quick-menu tiles are how the operator actually changes skin. */
+async function switchToSkin(win, name) {
+  const point = await win.webContents.executeJavaScript(`(() => {
+    const control = document.querySelector(".theme-mode-toggle");
+    if (!control) return null;
+    const box = control.getBoundingClientRect();
+    return {
+      x: Math.round(box.left + box.width / 2),
+      y: Math.round(box.top + box.height / 2),
+    };
+  })()`);
+  if (!point) return false;
+  win.webContents.sendInputEvent({ type: "mouseMove", x: point.x, y: point.y });
+  const tile = `[data-skin=${JSON.stringify(name)}] .settings-menu__skin-option`;
+  try {
+    await waitFor(win, `Boolean(document.querySelector('${tile}'))`, `the ${name} tile`, 5_000);
+  } catch {
+    return false;
+  }
+  const chosen = await win.webContents.executeJavaScript(`(() => {
+    const el = document.querySelector('${tile}');
+    if (!el) return false;
+    el.click();
+    return true;
+  })()`);
+  if (!chosen) return false;
+  try {
+    await waitFor(
+      win,
+      `document.documentElement.dataset.skin === ${JSON.stringify(name)}`,
+      `the ${name} skin to land`,
+    );
+  } catch {
+    return false;
+  }
+  // The menu stays where the pointer put it. Take the pointer away so the page
+  // behind it is the page, and wait the close delay out.
+  win.webContents.sendInputEvent({ type: "mouseMove", x: 2, y: 2 });
+  try {
+    await waitFor(
+      win,
+      `document.querySelector(".theme-quick-menu__popover") === null`,
+      "the quick menu to close",
+    );
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+/** Open focus mode on the day the page holds, and wait for its act to be live. */
+async function openFocusMode(win) {
+  await click(win, "daily-note-focus");
+  await waitFor(
+    win,
+    `Boolean(document.querySelector(".focus-overlay__action"))`,
+    "the focus page's act",
+  );
+  await waitFor(
+    win,
+    `(document.querySelector(".focus-overlay__action") || {}).disabled === false`,
+    "the focus page's act to be live",
+  );
+  await win.webContents.executeJavaScript(
+    "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  await idle(win, 250);
+}
+
+/** Leave focus mode through its own cross, and wait for the frame to go. */
+async function closeFocusMode(win) {
+  await win.webContents.executeJavaScript(`(() => {
+    const cross = document.querySelector(".focus-overlay__close");
+    if (cross) cross.click();
+    return Boolean(cross);
+  })()`);
+  await waitFor(
+    win,
+    `!document.querySelector(".focus-overlay__panel")`,
+    "focus mode to close",
+  );
 }
 
 async function main() {
@@ -2467,6 +2645,142 @@ async function main() {
   await win.webContents.executeJavaScript(
     "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
   );
+  const image = await win.webContents.capturePage();
+  fs.writeFileSync(path.join(artifactsDir, "daily-note.png"), image.toPNG());
+
+  // ── 13. a skin switch leaves no ink of the skin it left behind ───────────
+  // The operator's report: in Graphite, the Daily Note's raised Analyze key wore
+  // a thin orange halo, and the focus page's key the same — the ember glow of
+  // Forge, the palette they had switched away from. The test is the comparison a
+  // cold window gives: load Graphite and note its paint, then load Forge, switch
+  // to Graphite through the titlebar's own menu, and require every token and
+  // every painted colour to match the cold window, with no warm chroma left in
+  // either raised key.
+  const GRAPHITE_NOTE = "Graphite day: the act and the sheet stay grey.";
+  const noteIn = async (skin, label) => {
+    await win.loadURL(`${url}?v=${Date.now()}&skin=${skin}`);
+    await waitFor(win, "Boolean(window.dailyNoteReady)", `a ${label} page`);
+    await type(win, GRAPHITE_NOTE);
+    await waitFor(
+      win,
+      `(document.querySelector('[data-testid="daily-note-analyze"]') || {}).disabled === false`,
+      `the ${label} act to be live`,
+    );
+    // The key grows its shadow back on the primitive's own transition when it
+    // turns live, so the sample is taken after that has landed; a reading in the
+    // middle would measure the transition, not the palette.
+    await settle(win);
+  };
+
+  await noteIn("graphite", "cold Graphite");
+  const coldPage = await win.webContents.executeJavaScript(SKIN_SAMPLE);
+  await openFocusMode(win);
+  const coldFocus = await win.webContents.executeJavaScript(SKIN_SAMPLE);
+  await closeFocusMode(win);
+
+  await noteIn("forge", "Forge");
+  const switched = await switchToSkin(win, "graphite");
+  const graphite = {
+    switched,
+    skin: null,
+    cold: { page: coldPage, focus: coldFocus },
+    live: null,
+    tokenMismatches: [],
+    paintMismatches: [],
+  };
+  checks.graphiteSwitch = graphite;
+  if (!switched) {
+    failure("the titlebar's theme menu could not switch the window from Forge to Graphite");
+  } else {
+    // The switch repaints over the raised key's shadow transition too: read the
+    // settled window, which is the window the operator is left sitting in.
+    await settle(win);
+    const livePage = await win.webContents.executeJavaScript(SKIN_SAMPLE);
+    await win.webContents.executeJavaScript(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    );
+    const graphiteShot = await win.webContents.capturePage();
+    fs.mkdirSync(artifactsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(artifactsDir, "daily-note-graphite.png"),
+      graphiteShot.toPNG(),
+    );
+    await openFocusMode(win);
+    const liveFocus = await win.webContents.executeJavaScript(SKIN_SAMPLE);
+    const focusShot = await win.webContents.capturePage();
+    fs.writeFileSync(
+      path.join(artifactsDir, "daily-note-graphite-focus.png"),
+      focusShot.toPNG(),
+    );
+    await closeFocusMode(win);
+
+    graphite.skin = livePage.skin;
+    graphite.live = { page: livePage, focus: liveFocus };
+    if (livePage.skin !== "graphite" || livePage.mode !== coldPage.mode) {
+      failure(
+        `the switch left the window in ${JSON.stringify(livePage.skin)}/${JSON.stringify(livePage.mode)}, not Graphite/${JSON.stringify(coldPage.mode)}`,
+      );
+    }
+    // A palette that hands a token to tokens.css must hand it back to tokens.css:
+    // every one of these is written inline by Forge's line accent and by nothing
+    // in Graphite, so a cold Graphite window carries none of it and a switch has
+    // to land on the same values.
+    for (const name of Object.keys(coldPage.tokens)) {
+      const cold = coldPage.tokens[name].computed;
+      const live = livePage.tokens[name].computed;
+      if (cold !== live) {
+        graphite.tokenMismatches.push(`${name}: ${JSON.stringify(live)} (cold ${JSON.stringify(cold)})`);
+      }
+    }
+    // And the surfaces the operator named: the paint on the page's raised key and
+    // on the focus page's must be the cold window's paint, not a memory of Forge.
+    if (!coldPage.page || !coldFocus.focus) {
+      failure("a cold Graphite window did not draw both raised keys, so the switch had nothing to be measured against");
+    }
+    if (coldPage.page) {
+      for (const property of ["backgroundImage", "borderColor", "color", "boxShadow"]) {
+        if (coldPage.page[property] !== livePage.page?.[property]) {
+          graphite.paintMismatches.push(
+            `page ${property}: ${JSON.stringify(livePage.page?.[property])} (cold ${JSON.stringify(coldPage.page[property])})`,
+          );
+        }
+      }
+    }
+    if (coldFocus.focus) {
+      for (const property of ["backgroundImage", "borderColor", "color", "boxShadow"]) {
+        if (coldFocus.focus[property] !== liveFocus.focus?.[property]) {
+          graphite.paintMismatches.push(
+            `focus ${property}: ${JSON.stringify(liveFocus.focus?.[property])} (cold ${JSON.stringify(coldFocus.focus[property])})`,
+          );
+        }
+      }
+    }
+    if (graphite.tokenMismatches.length > 0) {
+      failure(
+        `the Forge palette survived the switch to Graphite: ${graphite.tokenMismatches.join("; ")}`,
+      );
+    }
+    if (graphite.paintMismatches.length > 0) {
+      failure(
+        `a raised key still paints like Forge after the switch to Graphite: ${graphite.paintMismatches.join("; ")}`,
+      );
+    }
+    // The colourless theme's key is grey. Any warm ink at all is the bleed back.
+    for (const [surface, paint] of [
+      ["the page's Analyze key", livePage.page],
+      ["the focus page's Analyze key", liveFocus.focus],
+    ]) {
+      if (!paint) {
+        failure(`${surface} could not be read in Graphite`);
+      } else if (paint.disabled) {
+        failure(`${surface} is inert in Graphite, so its raised face was never painted`);
+      } else if (paint.chroma > 2) {
+        failure(
+          `${surface} paints ${paint.chroma} units of chroma in Graphite (${JSON.stringify(paint.boxShadow)}) — colour in the colourless theme`,
+        );
+      }
+    }
+  }
 
   const report = {
     pass: errors.length === 0,
@@ -2479,8 +2793,6 @@ async function main() {
     path.join(artifactsDir, "daily-note.json"),
     `${JSON.stringify(report, null, 2)}\n`,
   );
-  const image = await win.webContents.capturePage();
-  fs.writeFileSync(path.join(artifactsDir, "daily-note.png"), image.toPNG());
 
   console.log(`rail:      ${JSON.stringify(labels)}`);
   console.log(
