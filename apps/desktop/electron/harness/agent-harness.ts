@@ -44,10 +44,7 @@ export interface AgentHarness {
   createSession(title: string): Promise<HarnessResult<HarnessSession>>;
   sessionMessages(id: string): Promise<HarnessResult<TranscriptMessage[]>>;
   patchSession(id: string, patch: SessionPatch): Promise<HarnessResult<HarnessSession>>;
-  deleteSession(
-    id: string,
-    options?: { revision?: number | null },
-  ): Promise<HarnessResult<{ id: string; deleted: boolean }>>;
+  deleteSession(id: string): Promise<HarnessResult<{ id: string; deleted: boolean }>>;
   /** Re-establish the companion before a page (a review) promises a chat. */
   openSession(): Promise<HarnessAck>;
 

@@ -393,9 +393,6 @@ function toHarnessSession(session: {
     lastActive: Math.round(session.lastActive / 1000),
     pinned: session.pinned,
     archived: session.archived === true,
-    // Pi sessions have no gateway-side revision counter. Null is the shape
-    // Hermes uses for "no optimistic guard", so callers treat it the same.
-    revision: null,
   };
 }
 
@@ -449,7 +446,6 @@ async function patchSession(
 
 async function deleteSession(
   id: string,
-  _options?: { revision?: number | null },
 ): Promise<HarnessResult<{ id: string; deleted: boolean }>> {
   try {
     const deleted = await deletePiSession(id);

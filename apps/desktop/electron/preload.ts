@@ -398,10 +398,10 @@ const lifequest = {
     ipcRenderer.invoke("companion:sessionMessages", id),
   companionSessionPatch: (
     id: string,
-    patch: { title?: string; pinned?: boolean; archived?: boolean; revision?: number | null },
+    patch: { title?: string; pinned?: boolean; archived?: boolean },
   ) => ipcRenderer.invoke("companion:sessionPatch", id, patch),
-  companionSessionDelete: (id: string, options?: { revision?: number | null }) =>
-    ipcRenderer.invoke("companion:sessionDelete", id, options),
+  companionSessionDelete: (id: string) =>
+    ipcRenderer.invoke("companion:sessionDelete", id),
   companionModelOptions: () => ipcRenderer.invoke("companion:modelOptions"),
   companionChatStream: (payload: {
     sessionId: string;

@@ -10,39 +10,38 @@ import { describe, it } from "node:test";
 import { createVault } from "@lifequest/vault-core";
 
 /**
- * The archive fence, end to end, through the REAL main process, preload bridge
- * and renderer — the write that archives a chat, and the message an operator
- * gets when the gateway is gone.
+ * The archive contract, end to end, through the REAL main process, preload
+ * bridge and renderer — the write that archives a chat, and the message an
+ * operator gets when the gateway is gone.
  *
  * WHY THIS RIG EXISTS
  *
- * The operator pressed Archive in the left sidebar and got "Fetch failed". Two
- * defects sat behind that one symptom:
+ * The operator pressed Archive in the left sidebar and got "Unsupported session
+ * fields: request_id". Two defects sat behind that one symptom:
  *
- *   1. `companionSessionPatch` called `hermesFetch` directly while every other
- *      session call went through the `gatewayCall` wrapper. A gateway that was
- *      not answering therefore produced undici's raw "fetch failed", which the
- *      sidebar's error banner showed verbatim — the operator was given a
- *      transport string and nothing about what to do about it.
+ *   1. `companionSessionPatch` sent `request_id` and `expected_revision` with
+ *      every session PATCH. Those are the mutation identity of Hermes'
+ *      DASHBOARD backend (`hermes_cli/web_server_sessions.py`, which fences its
+ *      `session.mutate` RPC), not of the host gateway's `/api/sessions` API
+ *      that this app attaches to. That gateway's PATCH is a strict allowlist
+ *      and answers any other field with 400 `unsupported_session_field` before
+ *      a write is attempted — so the archive was refused and the operator was
+ *      shown the gateway's words.
  *
- *   2. The Hermes host gateway FENCES every session mutation: `PATCH
- *      /api/sessions/{id}` refuses a write with no `request_id` and no
- *      `expected_revision` (409 `mutation_identity_required`), and refuses one
- *      whose revision has moved on (409 `revision_conflict`). The app sent
- *      only `{archived: true}`, so even against a healthy gateway the archive
- *      was refused as a pre-fence client. The revision the fence needs was
- *      already in the list read (`runtime_revision`); the app dropped it.
+ *   2. The archive path had once bypassed the `gatewayCall` wrapper every other
+ *      session call uses, so a gateway that was not answering produced undici's
+ *      raw "fetch failed". That half is still guarded here.
  *
- * This file builds a throwaway world, runs `e2e/archive-fence.electron.mjs` in
- * Electron against it, and then judges the artifact from outside the app.
+ * This file builds a throwaway world, runs `e2e/archive-contract.electron.mjs`
+ * in Electron against it, and then judges the artifact from outside the app.
  *
  * THE WAYS THIS COULD PASS WHILE PROVING NOTHING, WRITTEN DOWN FIRST
  *
- *   1. The fake gateway accepts anything, so the fence is never exercised. It
- *      does NOT: it refuses a write with no mutation identity exactly as the
- *      real host does, and refuses one whose revision does not match the row.
- *      The judge reads the gateway's own request log — so "the PATCH arrived
- *      with a fence" is a fact about the wire.
+ *   1. The fake gateway accepts anything, so the field problem is never
+ *      exercised. It does NOT: it enforces the real allowlist and answers an
+ *      unknown field with the real 400. The judge reads the gateway's own
+ *      request log — "the PATCH arrived with accepted fields" is a fact about
+ *      the wire.
  *   2. The rig passes because the app never archived. The judge requires the
  *      PATCH to be in the log, and requires the row to have left the working
  *      list.
@@ -53,23 +52,24 @@ import { createVault } from "@lifequest/vault-core";
  *   4. The error check is satisfied by any string. The judge requires the
  *      message to name the agent AND the control that retries it, and
  *      separately requires that it does NOT contain the raw transport words.
- *   5. The screenshot is stale, blank, or of another window. It is this
- *      window's own `capturePage()` after the error banner painted, and the
- *      judge requires >10 KB on disk.
+ *   5. The screenshots are stale, blank, or of another window. They are this
+ *      window's own `capturePage()` — one after the archive landed, one after
+ *      the error banner painted — and the judge requires >10 KB on each.
  *   6. The rig attaches to the operator's real Hermes, vault, or app.
  *      `HERMES_HOME` is a temp dir, a stub `hermes` is first on PATH, the
- *      profile is one no real install has (`lq-fence-e2e`), the vault is a
+ *      profile is one no real install has (`lq-archive-e2e`), the vault is a
  *      throwaway `createVault()` copy, and the MCP door ports are moved by
  *      `LIFEQUEST_E2E`. 8642/8643/8646 are never bound.
  *
  * SKIP: only when the Vite dev server is not listening on 5173, because the app
  * is started from source and loads its renderer from that server. Run it through
- * `/root/.local/bin/lifequest-e2e <checkout> tests/archive-fence-e2e.test.ts`,
+ * `/root/.local/bin/lifequest-e2e <checkout> tests/archive-contract-e2e.test.ts`,
  * which puts that server up and builds `dist-electron/main.js`; a bare
  * `npm test` with no server would otherwise pass by skipping this rig.
  *
- * Artifacts: `e2e/artifacts/archive-fence.json` and
- * `e2e/artifacts/archive-fence.png` (the shipped screen, captured by the rig).
+ * Artifacts: `e2e/artifacts/archive-contract.json`,
+ * `e2e/artifacts/archive-contract.png` (the successful archive) and
+ * `e2e/artifacts/archive-contract-dead.png` (the actionable error).
  */
 
 const desktopRoot = path.resolve(
@@ -77,19 +77,33 @@ const desktopRoot = path.resolve(
   "..",
 );
 const ARTIFACTS = path.join(desktopRoot, "e2e/artifacts");
-const DRIVER = path.join(desktopRoot, "e2e/archive-fence.electron.mjs");
-const REPORT = path.join(ARTIFACTS, "archive-fence.json");
-const SCREENSHOT = path.join(ARTIFACTS, "archive-fence.png");
+const DRIVER = path.join(desktopRoot, "e2e/archive-contract.electron.mjs");
+const REPORT = path.join(ARTIFACTS, "archive-contract.json");
+const SCREENSHOT = path.join(ARTIFACTS, "archive-contract.png");
+const DEAD_SCREENSHOT = path.join(ARTIFACTS, "archive-contract-dead.png");
 const SCREENSHOT_MIN_BYTES = 10 * 1024;
 const DEV_PORT = 5173;
 
-/** The profile no real Hermes install has; also the string `recent.json` names. */
-const PROFILE = "lq-fence-e2e";
+/**
+ * The fields the host gateway's PATCH accepts, as the rig's fake gateway
+ * enforces them and the artifact records them.
+ */
+const SUPPORTED_SESSION_FIELDS = [
+  "title",
+  "end_reason",
+  "pinned",
+  "archived",
+  "hidden",
+  "unread",
+];
 
-/** The one chat this world owns. Its row's revision is 7 (the driver's world). */
+/** The profile no real Hermes install has; also the string `recent.json` names. */
+const PROFILE = "lq-archive-e2e";
+
+/** The one chat this world owns: the one the operator archives. */
 const LIVE = {
-  id: "live-fence-chat",
-  title: "Live fence chat",
+  id: "live-archive-chat",
+  title: "Live archive chat",
   preview: "The chat the operator archived",
 };
 
@@ -98,13 +112,10 @@ const LIVE = {
  * leave the dead-gateway gesture with nothing to aim at.
  */
 const SECOND = {
-  id: "second-fence-chat",
-  title: "Second fence chat",
+  id: "second-archive-chat",
+  title: "Second archive chat",
   preview: "The chat archived against a gateway that is gone",
 };
-
-/** The row's revision in the fake gateway's list. The fence must carry it. */
-const ROW_REVISION = 7;
 
 type Check = { label: string; pass: boolean; detail: string | null };
 
@@ -119,6 +130,7 @@ type Report = {
   pass: boolean;
   failures: string[];
   checks: Check[];
+  supportedSessionFields?: string[];
   states: {
     ready: { rows: { label: string; archived: boolean }[] } | null;
     archived: { rows: { label: string; archived: boolean }[] } | null;
@@ -176,7 +188,7 @@ function freePort(): Promise<number> {
  * `hermes` first on PATH so no real CLI is ever run.
  */
 async function buildWorld(): Promise<World> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lq-archive-fence-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lq-archive-contract-"));
   const hermesHome = path.join(dir, "hermes-home");
   const userData = path.join(dir, "userdata");
   const vaultDir = path.join(dir, "vault");
@@ -200,7 +212,7 @@ async function buildWorld(): Promise<World> {
     "utf8",
   );
 
-  const created = await createVault(vaultDir, "Archive fence rig");
+  const created = await createVault(vaultDir, "Archive contract rig");
   if (!created.ok) throw new Error(`createVault failed: ${created.error}`);
   const vault = created.value.lifequest;
 
@@ -234,8 +246,8 @@ async function buildWorld(): Promise<World> {
   // fight the bench app for 8643/8646.
   const mcpPorts = { local: await freePort(), invite: await freePort() };
 
-  // What the driver needs to know that cannot be inferred (which row is the
-  // proof, which profile, which port, where the fake CLI is).
+  // What the driver needs to know that cannot be inferred (which rows are the
+  // proof, which profile, where the fake CLI is).
   const worldFile = path.join(dir, "world.json");
   fs.writeFileSync(
     worldFile,
@@ -250,7 +262,6 @@ async function buildWorld(): Promise<World> {
         profile: PROFILE,
         live: LIVE,
         second: SECOND,
-        rowRevision: ROW_REVISION,
         mcpPorts,
       },
       null,
@@ -287,7 +298,7 @@ function runDriver(world: World): Promise<DriverOutcome> {
     showWindow: true,
     mcpPorts: world.mcpPorts,
   });
-  env.LQ_FENCE_WORLD = world.dir;
+  env.LQ_ARCHIVE_WORLD = world.dir;
   env.ELECTRON_DISABLE_SANDBOX = env.ELECTRON_DISABLE_SANDBOX ?? "1";
 
   return new Promise((resolve) => {
@@ -336,8 +347,8 @@ function assertArtifactExists(outcome: DriverOutcome): Report {
   return report;
 }
 
-describe("archiving a chat (the fence the gateway demands, and the message when it is gone)", () => {
-  it("sends a fenced archive the gateway accepts, and names a silent gateway in words the operator can act on", async (t) => {
+describe("archiving a chat (the host gateway's field allowlist, and the message when it is gone)", () => {
+  it("sends an archive the gateway accepts, and names a silent gateway in words the operator can act on", async (t) => {
     if (!(await devServerUp())) {
       t.skip(
         `dev server not listening on ${DEV_PORT} — run \`npm run dev\` (or lifequest-dev) to include this e2e`,
@@ -356,6 +367,7 @@ describe("archiving a chat (the fence the gateway demands, and the message when 
     fs.mkdirSync(ARTIFACTS, { recursive: true });
     fs.rmSync(REPORT, { force: true });
     fs.rmSync(SCREENSHOT, { force: true });
+    fs.rmSync(DEAD_SCREENSHOT, { force: true });
 
     const world = await buildWorld();
     try {
@@ -377,8 +389,13 @@ describe("archiving a chat (the fence the gateway demands, and the message when 
         );
       }
 
-      // ── (1) the fence, read from the gateway's OWN request log ───────────
-      // Not the app's account of itself: the wire.
+      // ── (1) the wire, read from the gateway's OWN request log ────────────
+      // Not the app's account of itself: the request bodies the gateway saw.
+      assert.deepEqual(
+        report.supportedSessionFields,
+        SUPPORTED_SESSION_FIELDS,
+        "the artifact does not record the field allowlist the rig enforced",
+      );
       const patches = report.gateway?.patches ?? [];
       assert.ok(
         patches.length > 0,
@@ -390,24 +407,10 @@ describe("archiving a chat (the fence the gateway demands, and the message when 
         patch.path.endsWith(`/${encodeURIComponent(LIVE.id)}`),
         `the archive hit the wrong chat: ${patch.path}`,
       );
-      assert.equal(
-        patch.body?.archived,
-        true,
-        `the archive never reached the gateway as a flag: ${JSON.stringify(patch.body)}`,
-      );
-      assert.equal(
-        typeof patch.body?.request_id,
-        "string",
-        `the PATCH carries no request_id, so the gateway refuses it as a pre-fence client: ${JSON.stringify(patch.body)}`,
-      );
-      assert.ok(
-        (patch.body?.request_id as string).length > 0,
-        "the PATCH's request_id is empty",
-      );
-      assert.equal(
-        patch.body?.expected_revision,
-        ROW_REVISION,
-        `the PATCH's expected_revision is ${String(patch.body?.expected_revision)}, not the row's own revision (${ROW_REVISION}) as the list read it: ${JSON.stringify(patch.body)}`,
+      assert.deepEqual(
+        patch.body,
+        { archived: true },
+        `the archive's body is not the plain flag the gateway accepts: ${JSON.stringify(patch.body)}`,
       );
 
       // ── (2) the archive landed: the row left the working list ────────────
@@ -444,21 +447,23 @@ describe("archiving a chat (the fence the gateway demands, and the message when 
         `the message does not name the control that retries it: ${JSON.stringify(deadError)}`,
       );
 
-      // ── (4) the picture is of the shipped screen ──────────────────────────
-      assert.equal(
-        fs.existsSync(SCREENSHOT),
-        true,
-        "the rig wrote no screenshot",
-      );
-      const bytes = fs.statSync(SCREENSHOT).size;
-      assert.ok(
-        bytes > SCREENSHOT_MIN_BYTES,
-        `the screenshot is ${bytes} bytes (expected > ${SCREENSHOT_MIN_BYTES})`,
-      );
+      // ── (4) the pictures are of the shipped screen ────────────────────────
+      for (const screenshot of [SCREENSHOT, DEAD_SCREENSHOT]) {
+        assert.equal(
+          fs.existsSync(screenshot),
+          true,
+          `the rig wrote no ${path.basename(screenshot)}`,
+        );
+        const bytes = fs.statSync(screenshot).size;
+        assert.ok(
+          bytes > SCREENSHOT_MIN_BYTES,
+          `${path.basename(screenshot)} is ${bytes} bytes (expected > ${SCREENSHOT_MIN_BYTES})`,
+        );
+      }
       assert.deepEqual(
         report.screenshots ?? [],
-        ["archive-fence.png"],
-        "the report does not name the screenshot it took",
+        ["archive-contract.png", "archive-contract-dead.png"],
+        "the report does not name the screenshots it took",
       );
     } finally {
       fs.rmSync(world.dir, { recursive: true, force: true });

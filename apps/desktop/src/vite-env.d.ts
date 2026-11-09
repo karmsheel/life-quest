@@ -276,12 +276,6 @@ type HermesSession = {
    * restorable rather than openable.
    */
   archived: boolean;
-  /**
-   * The gateway's revision counter for this chat, as the list read it. Hermes
-   * fences every session mutation on it, so a write carries this number.
-   * Null when the gateway reported none.
-   */
-  revision: number | null;
 };
 
 /**
@@ -510,17 +504,9 @@ type LifequestApi = {
   >;
   companionSessionPatch: (
     id: string,
-    patch: {
-      title?: string;
-      pinned?: boolean;
-      archived?: boolean;
-      revision?: number | null;
-    },
+    patch: { title?: string; pinned?: boolean; archived?: boolean },
   ) => Promise<Result<HermesSession>>;
-  companionSessionDelete: (
-    id: string,
-    options?: { revision?: number | null },
-  ) => Promise<Result<{ id: string; deleted: boolean }>>;
+  companionSessionDelete: (id: string) => Promise<Result<{ id: string; deleted: boolean }>>;
   /** The gateway's model inventory for this profile, for the composer's pills. */
   companionModelOptions: () => Promise<
     { ok: true; value: CompanionModelCatalog } | { ok: false; error: string }
