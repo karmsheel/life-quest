@@ -141,9 +141,13 @@ The chat dock:
 
 - The thread, a Life-Chain view, and the keyboard-shortcuts reference. The history
   is not a dock surface: the whole chat list lives in the rail's **Chats** section.
-- The composer at the foot (*Message Hermes…*) with the bottom action row:
-  **New chat**, **Life-Chain**, **Keyboard shortcuts** (opens the reference as a
-  dock surface), the two-panes side switch (*Move chat to the left of the page* /
+- The composer: one bordered box at the foot of the dock, the field
+  (*Message Hermes…*) at the top and a control row inside its bottom edge — the
+  add and receipt controls and the page pill at the bottom left, the model and
+  thinking pills and send/stop at the bottom right.
+- The dock's bottom action row under the composer: **New chat**, **Life-Chain**,
+  **Keyboard shortcuts** (opens the reference as a dock surface), the two-panes
+  side switch (*Move chat to the left of the page* /
   *Move chat to the right of the page*), **Collapse chat**, and the version badge
   (*Check for updates*).
 - The divider between page and dock: an invisible strip at rest, an accent bar

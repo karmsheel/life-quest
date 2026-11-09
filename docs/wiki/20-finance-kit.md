@@ -19,7 +19,8 @@ existing domain.
   at `/pages/financial/<pageId>`.
 - Rate and capture account: Home → **Data**, right rail — **Exchange rate**
   and **Capture** panels.
-- **Receipts**: the chat dock composer, beside the field.
+- **Receipts**: the chat dock composer's control row, at the bottom left, beside
+  the add control.
 - **Restore**: **Settings → Vault → Books**.
 
 Back to [Wiki home](./index.md).
@@ -104,10 +105,11 @@ happens.
 ### Log a purchase from chat
 
 1. In the chat dock, type what happened — "Bought food for R85 today" — and send.
-2. Or attach a photo: use **Attach a receipt** (the image button at the left of
-   the composer's footer), drop one image on the form, or paste one into the
-   field. One receipt rides one turn; a second attach replaces the first. The
-   chip shows the file name and size, and **Remove receipt** clears it.
+2. Or attach a photo: use **Attach a receipt** (the picture-plus control in the
+   composer's control row at the bottom left, beside the add control), drop one
+   image on the form, or paste one into the field. One receipt rides one turn; a
+   second attach replaces the first. The chip shows the file name and size, and
+   **Remove receipt** clears it.
 3. The companion reads the turn, including the image when one is attached, and
    calls its capture tool. A posted capture answers with a receipt line naming
    the amount, currency, date, account, category and payee — for example
@@ -157,7 +159,7 @@ confirmation. The mechanics — validation, backup, registry merge — are cover
 | Data **Exchange rate** panel | The rate source, the rate in force, the last read and the last error. |
 | Finance databases | Ordinary database pages; no separate finance screen. |
 | Starter pages | Ordinary page canvases with finance blocks: ledger table, spend metric and chart, budget vs actual, net worth, scenario compare. |
-| Chat composer | **Attach a receipt**, the chip, **Remove receipt**; the posted receipt line in the reply. |
+| Chat composer | In the control row at the bottom left, beside the add control: **Attach a receipt**, the chip, **Remove receipt**; the posted receipt line in the reply. |
 
 ## Rules and behaviour
 
