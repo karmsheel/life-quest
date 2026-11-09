@@ -18,8 +18,8 @@ import {
 } from "@lifequest/vault-core";
 
 /**
- * P1 on the REAL app: the first-run card, the one confirmation card, and the
- * one batch that unlocks a life.
+ * P1 on the REAL app: the first-run card, the one announcement card, and the
+ * one batch that opens a life — the areas are already open when the card appears.
  *
  * The rig (`e2e/onboarding.electron.mjs`) boots the real main process, preload
  * and renderer on a throwaway world, points the built-in companion at a fake
@@ -29,7 +29,7 @@ import {
  * window drew something.
  *
  * Artifact: `e2e/artifacts/onboarding.json` plus `onboarding-welcome.png`,
- * `onboarding-confirm.png`, `onboarding-unlocked.png`. A skipped rig is evidence
+ * `onboarding-opened.png`, `onboarding-unlocked.png`. A skipped rig is evidence
  * of nothing (AGENTS.md): run it through
  * `/root/.local/bin/lifequest-e2e <checkout> tests/onboarding-e2e.test.ts`.
  */
@@ -43,7 +43,7 @@ const DRIVER = path.join(desktopRoot, "e2e/onboarding.electron.mjs");
 const REPORT = path.join(ARTIFACTS, "onboarding.json");
 const SCREENSHOTS = [
   path.join(ARTIFACTS, "onboarding-welcome.png"),
-  path.join(ARTIFACTS, "onboarding-confirm.png"),
+  path.join(ARTIFACTS, "onboarding-opened.png"),
   path.join(ARTIFACTS, "onboarding-unlocked.png"),
 ];
 const SCREENSHOT_MIN_BYTES = 20 * 1024;
@@ -207,7 +207,7 @@ function readMeta(vaultDir: string, slug: string): Record<string, unknown> {
 }
 
 describe("onboarding interview (real app)", () => {
-  it("unlocks the heard areas through one card and one confirm, then never returns", async (t) => {
+  it("opens the heard areas itself, announces them once, then never returns", async (t) => {
     if (!(await devServerUp())) {
       t.skip("no dev server on 127.0.0.1:5173 — run through lifequest-e2e");
       return;
@@ -237,6 +237,45 @@ describe("onboarding interview (real app)", () => {
     const promptSample = String((report.states as { promptSample?: unknown }).promptSample ?? "");
     assert.match(promptSample, /propose_onboarding_unlock/, "the rubric block names no proposal tool");
     assert.match(promptSample, /Relationships/, "the rubric block does not carry the five areas");
+
+    // ── the card is a receipt: the vault was already open when it appeared ─
+    const pre = report.states.preContinueVault as {
+      status?: string;
+      unlockedAreas?: string[];
+      receipt?: boolean;
+      health?: unknown;
+      business?: unknown;
+    };
+    assert.equal(pre.status, "completed", "the record was not completed when the card appeared");
+    assert.deepEqual(pre.unlockedAreas, ["health", "business"]);
+    assert.equal(typeof pre.health, "string", "Health was not unlocked when the card appeared");
+    assert.equal(typeof pre.business, "string", "Business was not unlocked when the card appeared");
+    assert.equal(pre.receipt, true, "the card had no proposal receipt to render from");
+    const band = report.states.preContinueBand as { tabs?: { label: string }[] };
+    assert.deepEqual(
+      (band.tabs ?? []).map((tab) => tab.label),
+      ["Life", "Health", "Business"],
+      "the band was not already the switcher when the card appeared",
+    );
+    const opened = report.states.opened as {
+      status?: string;
+      buttons?: string[];
+      checkboxLines?: number;
+      text?: string;
+    };
+    assert.equal(opened.status, "opened", "the card is not the announcement card");
+    assert.deepEqual(opened.buttons, ["Continue"], "the card offers something other than Continue");
+    assert.equal(opened.checkboxLines, 0, "the card asks the operator to tick something");
+    assert.match(
+      opened.text ?? "",
+      /After analyzing our conversation, I've opened up the Health and Business areas for you/,
+      "the card does not say what was opened",
+    );
+    assert.match(
+      opened.text ?? "",
+      /These let you hone in and focus on different areas in your life/,
+      "the card does not say what the areas are for",
+    );
 
     // ── the vault on disk agrees: unlock, doctrine, table, note, record ──
     const healthMeta = readMeta(world.vaultDir, "health");
@@ -294,7 +333,7 @@ describe("onboarding interview (real app)", () => {
     assert.equal(
       fs.existsSync(path.join(world.vaultDir, ".lifequest", "onboarding-proposal.json")),
       false,
-      "the proposal file survived the confirm",
+      "Continue did not clear the receipt",
     );
 
     // ── the legacy vault: no record, no card ─────────────────────────────
@@ -304,9 +343,11 @@ describe("onboarding interview (real app)", () => {
     const states = report.states as {
       legacy?: { present?: boolean };
       reloaded?: { present?: boolean };
+      postContinueCard?: { present?: boolean };
     };
     assert.equal(states.legacy?.present, false, "the existing vault was shown a first-run card");
     assert.equal(states.reloaded?.present, false, "the completed vault brought the card back after a reload");
+    assert.equal(states.postContinueCard?.present, false, "the card survived Continue");
 
     // ── the screenshots are this window's and non-blank ──────────────────
     for (const file of SCREENSHOTS) {

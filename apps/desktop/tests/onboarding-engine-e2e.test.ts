@@ -11,6 +11,7 @@ import {
   confirmOnboarding,
   createVault,
   discardOnboardingProposal,
+  executeOnboardingTool,
   getDocument,
   listDatabases,
   listDomains,
@@ -376,7 +377,7 @@ describe("onboarding: one proposal, one confirmation, one completed record", () 
   it("discards a proposal without unlocking or completing", async () => {
     const root = await freshVault("lq-onboarding-discard-");
     await startOnboarding(root);
-    const proposed = await writeOnboardingProposal(root, goodProposal([area("mind")]));
+    const proposed = await writeOnboardingProposal(root, { ...goodProposal([area("mind")]), table: null });
     check("the discard proposal is accepted", proposed.ok === true, proposed.ok ? "" : proposed.error);
     const discarded = await discardOnboardingProposal(root);
     check("discard succeeds", discarded.ok === true, discarded.ok ? "" : discarded.error);
@@ -386,5 +387,61 @@ describe("onboarding: one proposal, one confirmation, one completed record", () 
     check("discarding unlocks nothing", domainMeta(root, "mind").unlockedAt === null, domainMeta(root, "mind").unlockedAt);
     const confirmedWithNothing = await confirmOnboarding(root);
     check("confirm with no proposal is refused", confirmedWithNothing.ok === false, confirmedWithNothing.ok ? "accepted" : confirmedWithNothing.error);
+  });
+
+  it("the companion's tool opens the batch itself and leaves a receipt, then refuses a second call", async () => {
+    const root = await freshVault("lq-onboarding-tool-");
+    await startOnboarding(root);
+
+    type ToolResult = Record<string, unknown> & {
+      error?: { code: string; message: string };
+      opened?: { areas?: { slug: string; name: string }[]; table?: boolean; note?: boolean };
+    };
+    const called = (await executeOnboardingTool(
+      root,
+      COMPANION_ACTOR,
+      "propose_onboarding_unlock",
+      goodProposal(),
+    )) as ToolResult;
+
+    check("the tool succeeds instead of only proposing", called.error === undefined, called.error?.message);
+    check(
+      "the tool reports what it opened",
+      JSON.stringify(called.opened?.areas?.map((entry) => entry.slug)) === JSON.stringify(["health", "business"]),
+      called.opened?.areas,
+    );
+    check("the tool reports the table was opened", called.opened?.table === true, called.opened?.table);
+    check("the tool reports the note was opened", called.opened?.note === true, called.opened?.note);
+
+    const record = await readOnboardingRecord(root);
+    check("the record is completed the moment the tool returns", record.ok && record.value.status === "completed", record.ok ? record.value.status : record.error);
+    check("Health is unlocked the moment the tool returns", typeof domainMeta(root, "health").unlockedAt === "string", domainMeta(root, "health").unlockedAt);
+    check("Business is unlocked the moment the tool returns", typeof domainMeta(root, "business").unlockedAt === "string", domainMeta(root, "business").unlockedAt);
+    check(
+      "the proposal file stays as the receipt",
+      fs.existsSync(proposalPath(root)),
+      proposalPath(root),
+    );
+
+    const second = (await executeOnboardingTool(
+      root,
+      COMPANION_ACTOR,
+      "propose_onboarding_unlock",
+      goodProposal([area("mind")]),
+    )) as ToolResult;
+    check("a second tool call after completion is refused", second.error !== undefined, second.error?.message);
+    check("the refused call opened nothing", domainMeta(root, "mind").unlockedAt === null, domainMeta(root, "mind").unlockedAt);
+
+    // Continue is the acknowledgement: it clears the receipt, nothing else.
+    const acknowledged = await discardOnboardingProposal(root);
+    check("acknowledging the receipt succeeds", acknowledged.ok === true, acknowledged.ok ? "" : acknowledged.error);
+    check("the receipt is gone", !fs.existsSync(proposalPath(root)), fs.existsSync(proposalPath(root)));
+    const afterAck = await readOnboardingRecord(root);
+    check("acknowledging leaves the record completed", afterAck.ok && afterAck.value.status === "completed", afterAck.ok ? afterAck.value.status : afterAck.error);
+    check("acknowledging keeps the areas open", typeof domainMeta(root, "health").unlockedAt === "string", domainMeta(root, "health").unlockedAt);
+    const doctrineAfterAck = await getDocument(root, "business", "why");
+    check("acknowledging keeps the doctrine", doctrineAfterAck.ok && doctrineAfterAck.value.bodyMarkdown.trim().length > 0, doctrineAfterAck.ok ? doctrineAfterAck.value.bodyMarkdown.slice(0, 20) : doctrineAfterAck.error);
+
+    assert.deepEqual(checks.filter((c) => !c.pass), [], "all tool checks must hold");
   });
 });

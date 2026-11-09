@@ -6,26 +6,28 @@
  *
  * A new vault opens on Life with five areas seeded but LOCKED, and the chat dock
  * carries one quiet first-run card. The companion interviews the operator and
- * writes ONE proposal; the app renders it as ONE confirmation card listing what
- * would unlock, what doctrine would be drafted and the one table it would
- * create; nothing is written until the operator confirms; confirming applies the
- * batch, completes the record, and the band becomes the switcher. This rig is
- * the only one that proves that whole join over the real IPC bridge, a real
- * vault, and a real chat turn through the built-in companion.
+ * then OPENS the areas itself: one tool call applies the whole batch — unlocks,
+ * doctrine drafts, at most one table, one note, a completed record — and leaves
+ * the proposal file as the receipt for ONE announcement card. The card says
+ * "I've opened up the Health and Business areas for you" and offers a single
+ * Continue; the areas are already open when it appears. This rig is the only one
+ * that proves that whole join over the real IPC bridge, a real vault, and a real
+ * chat turn through the built-in companion.
  *
  * THE WAYS THIS COULD LOOK GREEN WHILE PROVING NOTHING, WRITTEN DOWN FIRST
  *
  *  1. The card is a mock, not the app. Every card is the real dock's DOM, gated
- *     on the vault's `.lifequest/onboarding.json`, and the confirm click goes
- *     through the real preload channel.
+ *     on the vault's record and receipt, and Continue goes through the real
+ *     preload channel.
  *  2. The model is faked and therefore the interview is faked. The fake endpoint
  *     logs the request bodies: the rig asserts the system prompt the app actually
  *     sent carried the five-area rubric and the `propose_onboarding_unlock`
  *     instruction BEFORE scripting the tool call back. The prompt is real; only
  *     the model's choice is scripted.
- *  3. Unlocking is a no-op that redraws. Every claim about the unlock, doctrine,
- *     table, note, record and log is re-read from the vault's files by the test
- *     after the window exits, not just from the DOM.
+ *  3. The announcement is a lie that redraws. The rig asserts the vault is
+ *     ALREADY unlocked (band and disk) while the card is on screen, and every
+ *     claim about the unlock, doctrine, table, note, record and log is re-read
+ *     from the vault's files by the test after the window exits.
  *  4. The screenshot is stale, blank, or another window's. Each is this window's
  *     own capturePage() at the moment named; the test requires > 20 KB.
  *  5. The rig touches the operator's app, vault or Hermes. HERMES_HOME is a temp
@@ -52,7 +54,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
 const REPORT = path.join(artifactsDir, "onboarding.json");
 const SHOT_WELCOME = path.join(artifactsDir, "onboarding-welcome.png");
-const SHOT_CONFIRM = path.join(artifactsDir, "onboarding-confirm.png");
+const SHOT_OPENED = path.join(artifactsDir, "onboarding-opened.png");
 const SHOT_UNLOCKED = path.join(artifactsDir, "onboarding-unlocked.png");
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:5173";
 const MODEL = "rig-model";
@@ -209,7 +211,7 @@ function startFakeModel() {
         const chunks = [];
         if (!wantsToolCall) {
           const text = hasToolResult
-            ? "Here's what I heard. The card in front of you has the details — unlock Health and Business?"
+            ? "I've opened up Health and Business for you — the card has the details whenever you want them."
             : "The onboarding interview is ready when you are.";
           if (hasToolResult) finalTextServed = true;
           const words = text.split(" ");
@@ -285,7 +287,7 @@ function startFakeModel() {
                   role: "assistant",
                   content: wantsToolCall
                     ? null
-                    : "Here's what I heard. The card in front of you has the details.",
+                    : "I've opened up Health and Business for you — the card has the details.",
                   ...(wantsToolCall
                     ? {
                         tool_calls: [
@@ -555,8 +557,8 @@ async function run() {
     await waitFor(win, `document.querySelectorAll(".chat-panel__message").length > 0`, "the operator's opening turn");
     await waitFor(
       win,
-      `document.querySelector('[data-testid="onboarding-card"]')?.getAttribute("data-onboarding-status") === "confirm"`,
-      "the confirmation card after the proposal",
+      `document.querySelector('[data-testid="onboarding-card"]')?.getAttribute("data-onboarding-status") === "opened"`,
+      "the announcement card after the tool opened the areas",
       120_000,
     );
     await sleep(700);
@@ -579,90 +581,115 @@ async function run() {
       toolCallServed,
     );
 
-    // ── 3. the card: what was heard, nothing applied yet ─────────────────
-    const confirmCard = await js(CARD_EXPRESSION);
-    states.confirm = confirmCard;
-    check("the confirmation card replaces the welcome card", confirmCard.status === "confirm", confirmCard.status);
+    // ── 3. the receipt: already opened, and the card says so ─────────────
+    const openedCard = await js(CARD_EXPRESSION);
+    states.opened = openedCard;
+    check("the announcement card replaces the welcome card", openedCard.status === "opened", openedCard.status);
     check(
       "the card names both heard areas",
-      confirmCard.text.includes("Health") && confirmCard.text.includes("Business"),
-      confirmCard.text,
+      openedCard.text.includes("Health") && openedCard.text.includes("Business"),
+      openedCard.text,
     );
     check(
-      "the card says what the interview heard",
-      confirmCard.text.includes("Here's what I heard"),
-      confirmCard.text,
+      "the card says the companion opened them",
+      openedCard.text.includes("After analyzing our conversation, I've opened up the Health and Business areas for you"),
+      openedCard.text,
     );
     check(
-      "the card carries tickable lines",
-      confirmCard.checkboxLines >= 1,
-      confirmCard.checkboxLines,
+      "the card says what the areas are for",
+      openedCard.text.includes("These let you hone in and focus on different areas in your life"),
+      openedCard.text,
     );
     check(
-      "the card offers the unlock and Not now",
-      confirmCard.buttons.some((label) => label.startsWith("Unlock")) &&
-        confirmCard.buttons.includes("Not now"),
-      confirmCard.buttons,
+      "the card asks for no ticks and no permission",
+      openedCard.checkboxLines === 0 &&
+        JSON.stringify(openedCard.buttons) === JSON.stringify(["Continue"]),
+      { buttons: openedCard.buttons, checkboxes: openedCard.checkboxLines },
     );
 
-    check("Health is still locked before the confirm", domainMeta(world.vaultDir, "health").unlockedAt === null, domainMeta(world.vaultDir, "health").unlockedAt);
-    check("Business is still locked before the confirm", domainMeta(world.vaultDir, "business").unlockedAt === null, domainMeta(world.vaultDir, "business").unlockedAt);
-    const preRecord = JSON.parse(fs.readFileSync(path.join(world.vaultDir, ".lifequest", "onboarding.json"), "utf8"));
-    check("the record is in progress, not completed, before the confirm", preRecord.status === "in_progress", preRecord.status);
-
-    // A proposal file now exists while the areas stay locked — write nothing.
+    // The areas are ALREADY open while the card is up. That is the whole point:
+    // the companion did it, not the operator.
+    const openedBand = await js(LENS_EXPRESSION);
+    states.preContinueBand = openedBand;
+    check("the band is already Life · Health · Business while the card is up", openedBand.quiet === false, openedBand);
     check(
-      "the proposal exists and nothing has been applied",
-      fs.existsSync(path.join(world.vaultDir, ".lifequest", "onboarding-proposal.json")) &&
-        domainMeta(world.vaultDir, "health").unlockedAt === null,
-      null,
+      "the band already reads Life, Health, Business",
+      JSON.stringify((openedBand.tabs ?? []).map((tab) => tab.label)) ===
+        JSON.stringify(["Life", "Health", "Business"]),
+      openedBand.tabs,
     );
 
-    const confirmBytes = await shot(win, SHOT_CONFIRM);
-    check("the confirmation card was captured", confirmBytes > 20 * 1024, `${confirmBytes} bytes`);
+    const openedRecord = JSON.parse(fs.readFileSync(path.join(world.vaultDir, ".lifequest", "onboarding.json"), "utf8"));
+    const openedReceipt = fs.existsSync(path.join(world.vaultDir, ".lifequest", "onboarding-proposal.json"));
+    states.preContinueVault = {
+      status: openedRecord.status,
+      unlockedAreas: openedRecord.unlockedAreas,
+      receipt: openedReceipt,
+      health: domainMeta(world.vaultDir, "health").unlockedAt,
+      business: domainMeta(world.vaultDir, "business").unlockedAt,
+      doctrine: fs
+        .readdirSync(path.join(world.vaultDir, "domains", "health"))
+        .filter((name) => ["premise.md", "what.md", "why.md", "how.md"].includes(name)),
+    };
+    check("the record is already completed while the card is up", openedRecord.status === "completed", openedRecord.status);
+    check(
+      "the record lists the areas that were opened",
+      JSON.stringify(openedRecord.unlockedAreas) === JSON.stringify(["health", "business"]),
+      openedRecord.unlockedAreas,
+    );
+    check(
+      "Health is already unlocked before Continue",
+      typeof domainMeta(world.vaultDir, "health").unlockedAt === "string",
+      domainMeta(world.vaultDir, "health").unlockedAt,
+    );
+    check(
+      "Business is already unlocked before Continue",
+      typeof domainMeta(world.vaultDir, "business").unlockedAt === "string",
+      domainMeta(world.vaultDir, "business").unlockedAt,
+    );
+    check(
+      "the doctrine drafts are already written before Continue",
+      ["premise.md", "what.md", "why.md", "how.md"].every((name) =>
+        fs.existsSync(path.join(world.vaultDir, "domains", "health", name)),
+      ),
+      states.preContinueVault.doctrine,
+    );
+    check(
+      "the proposal file is the receipt while the card is up",
+      openedReceipt === true,
+      openedReceipt,
+    );
 
-    // ── 4. Confirm: the batch applies, the band becomes the switcher ─────
-    const confirmed = await clickCardButton(win, "^Unlock");
-    check("the confirmation card's unlock button is clickable", confirmed === true, confirmed);
+    const openedBytes = await shot(win, SHOT_OPENED);
+    check("the announcement card was captured", openedBytes > 20 * 1024, `${openedBytes} bytes`);
+
+    // ── 4. Continue acknowledges the receipt; nothing new is applied ─────
+    const acknowledged = await clickCardButton(win, "^Continue$");
+    check("the card's Continue is clickable", acknowledged === true, acknowledged);
     await waitFor(
       win,
-      `(() => {
-        const tabs = document.querySelector(".domain-switcher__tabs");
-        if (!tabs) return false;
-        const labels = Array.from(tabs.querySelectorAll(".ui-segmented__option")).map((b) => (b.textContent ?? "").trim());
-        return labels.length === 3 && labels.includes("Health") && labels.includes("Business");
-      })()`,
-      "the band to become Life · Health · Business",
-      60_000,
+      `!document.querySelector('[data-testid="onboarding-card"]')`,
+      "the announcement card to go away",
+      30_000,
     );
-    await sleep(800);
+    await sleep(500);
 
-    const unlocked = await js(LENS_EXPRESSION);
-    states.unlocked = unlocked;
-    check("the switcher appears at two unlocked areas", unlocked.quiet === false, unlocked);
+    const afterContinueRecord = JSON.parse(fs.readFileSync(path.join(world.vaultDir, ".lifequest", "onboarding.json"), "utf8"));
+    check("Continue leaves the record completed", afterContinueRecord.status === "completed", afterContinueRecord.status);
     check(
-      "the switcher reads Life, Health, Business",
-      JSON.stringify((unlocked.tabs ?? []).map((tab) => tab.label)) ===
-        JSON.stringify(["Life", "Health", "Business"]),
-      unlocked.tabs,
-    );
-
-    const completedRecord = JSON.parse(fs.readFileSync(path.join(world.vaultDir, ".lifequest", "onboarding.json"), "utf8"));
-    check("the record is completed", completedRecord.status === "completed", completedRecord.status);
-    check("the record lists the heard areas", JSON.stringify(completedRecord.unlockedAreas) === JSON.stringify(["health", "business"]), completedRecord.unlockedAreas);
-    check("Health unlocked on disk", typeof domainMeta(world.vaultDir, "health").unlockedAt === "string", domainMeta(world.vaultDir, "health").unlockedAt);
-    check("Business unlocked on disk", typeof domainMeta(world.vaultDir, "business").unlockedAt === "string", domainMeta(world.vaultDir, "business").unlockedAt);
-    check(
-      "the proposal is gone after the confirm",
+      "Continue removes the receipt",
       !fs.existsSync(path.join(world.vaultDir, ".lifequest", "onboarding-proposal.json")),
       null,
     );
+    const afterContinueBand = await js(LENS_EXPRESSION);
+    states.unlocked = afterContinueBand;
+    check("the switcher stays Life, Health, Business", afterContinueBand.quiet === false, afterContinueBand);
     const postCard = await js(CARD_EXPRESSION);
-    states.postConfirmCard = postCard;
-    check("no onboarding card after the confirm", postCard.present === false, postCard);
+    states.postContinueCard = postCard;
+    check("no onboarding card after Continue", postCard.present === false, postCard);
 
     const unlockedBytes = await shot(win, SHOT_UNLOCKED);
-    check("the unlocked band was captured", unlockedBytes > 20 * 1024, `${unlockedBytes} bytes`);
+    check("the opened Life was captured", unlockedBytes > 20 * 1024, `${unlockedBytes} bytes`);
 
     // ── 5. a reload never brings the card back ───────────────────────────
     win.webContents.reload();
