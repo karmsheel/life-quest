@@ -1232,6 +1232,8 @@ export function DecisionsInbox({
                       previous={d.previousBodyMarkdown}
                       goalName={(id) => snapshot?.goals.find((goal) => goal.id === id)?.name ?? null}
                       domainName={(slug) => domainLabel(slug, domains)}
+                      proposedDomainSlugs={d.proposedDomainSlugs ?? null}
+                      previousDomainSlugs={d.previousDomainSlugs ?? null}
                     />
 
                     {tab === "pending" && d.status === "pending" ? (

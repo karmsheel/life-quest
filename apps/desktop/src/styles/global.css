@@ -3541,7 +3541,10 @@ a {
   font-weight: 700;
 }
 
-.decision-card__title-change {
+/* What a proposal would change, stated above the body it belongs to: the title
+   on one line, the note's domains on another. */
+.decision-card__title-change,
+.decision-card__domain-change {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
