@@ -1,5 +1,12 @@
 # Plugin system analysis — extensions, agent authoring, and the marketplace question
 
+**Update 2026-11-11:** the product decision is made — **a more customizable studio whose point is a
+more personal agent experience**; marketplace stays out of scope; the spike-and-gate process is
+accepted. The design that follows from those answers, including the ten-day Milestone 0, is
+[the personal agent experience spec](../superpowers/specs/2026-11-11-personal-agent-experience-packs-design.md).
+Two things in this memo changed in that spec: kits are deferred out of v1 (§3.7 there), and the
+spike proves the format with a theme/page/automation round-trip rather than a Finance-kit export.
+
 Research date: 2026-11-09. Sources: this repo at `ac0cadd`, the installed DSH 0.2.1-rc.2 tree
 (`/root/.nvm/versions/node/v22.22.0/lib/node_modules/@deepseek-ai/dsh/`), the npm registry, and
 public web. Claims are marked **[read]** (verified in this repo's code or docs), **[dsh]** (verified
