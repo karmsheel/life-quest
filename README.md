@@ -104,7 +104,7 @@ Windows SmartScreen may warn on first launch (unsigned private build). Choose **
 | `npm run build` | Production Vite build + Electron main bundle (produces no artifact by itself) |
 | `npm run typecheck` | Typecheck desktop renderer + main |
 | `npm run docs:check` | Check the wiki against the app: version, routes, rail labels, Settings tabs, links and nav (also run by `npm run release` and CI) |
-| `npm run docs:serve` | Preview the wiki locally with MkDocs Material |
+| `npm run docs:serve` | Preview the wiki locally with MkDocs Material (install `requirements-docs.txt` first) |
 | `npm run docs:build` | Build the wiki site into `site/` (what GitHub Pages deploys) |
 
 ### Acceptance against a real vault

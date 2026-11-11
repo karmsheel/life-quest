@@ -1,18 +1,18 @@
 # Pages
 
-A page is a domain-owned canvas: a title and an ordered list of blocks that shows
+A page is an area-owned canvas: a title and an ordered list of blocks that shows
 live pieces of the vault — markdown, a bound database table, a metric, a chart,
 goal progress, finance reports, a script — arranged by you. Pages live in the
-vault as JSON, one file per page under the domain that owns it, and a page can be
+vault as JSON, one file per page under the area that owns it, and a page can be
 pinned to a Dashboard so one click gets you back to it.
 
 ## Where it lives
 
 **Home** wing → **Pages** (route `/pages`). It opens in the centre pane as a page.
 
-- The domain lens in the window title bar filters the list: **Overview** shows
-  pages from every live domain, a domain lens shows that domain's pages and
-  creates into it.
+- The **area lens** in the window title bar filters the list: **Life** shows pages
+  from every unlocked area, an area's chip shows that area's pages. Locked and
+  archived areas never appear in the lens or the list.
 - Clicking a page opens `/pages/:slug/:pageId` — the page canvas.
 - A page pin appears on a Dashboard board and opens the same canvas. Pins are
   added from the Dashboard, not from the Pages page.
@@ -22,25 +22,29 @@ Back to [Wiki home](./index.md).
 ## What it is for
 
 The Dashboard is the board the app draws for you; a page is the board you draw
-yourself. It is the place for a domain's own working surface — "what my money did
+yourself. It is the place for an area's own working surface — "what my money did
 this month", "my health numbers" — assembled from blocks that read the vault
 rather than from prose copied out of it. The blocks are live: a table bound to a
 database re-reads when rows change, a metric recomputes, and a script runs
-against the domain's SQLite.
+against the area's SQLite.
 
 ## How to use it
 
 ### Create and find a page
 
-1. Open **Pages**. With **Overview** selected, the **New page** panel asks for a
-   **Domain**; with a domain lens selected it uses that domain.
+1. Open **Pages**. With **Life** selected on a current vault, the page is created
+   into the base **Life** area and no area field is shown. A vault from before
+   areas has no base area, so the **New page** panel keeps an **Area** select
+   (**Select area…**).
 2. Type a **Title** and choose **New page**. The page is created empty and opens
    from the list.
 3. The **All pages** list is ordered most recently updated first, shows each
-   page's block count and update date, and carries the domain name on
-   **Overview**. **Filter by title…** narrows the list. Empty: **No pages yet.**
-   with the hint to create one from the panel beside the list. No match: `No pages match “…”`.
-4. On **Overview**, **By domain** counts the pages in each live domain.
+   page's block count and update date, and carries the area name when the lens is
+   **Life**. **Filter by title…** narrows the list. Empty: **No pages yet.** with
+   the hint to create one from the panel beside the list. No match: `No pages
+   match “…”`.
+4. On a vault without the base area, **By area** counts the pages in each
+   unlocked area.
 
 ### Build the canvas
 
@@ -61,7 +65,7 @@ against the domain's SQLite.
      the vault as it stands. Finance blocks offer **Install Finance kit** until
      the kit exists.
    - **Script** — a human name, a read-only SQL `SELECT` (or a small JSON object
-     of queries and https fetches), and **Run** to read the domain's database
+     of queries and https fetches), and **Run** to read the area's database
      without saving. **Save** is what writes the page; **Run** only reads.
 4. Choose **Remove** on a block to take it out.
 5. Choose **Save** to write the title and the whole block list to
@@ -72,17 +76,19 @@ There is no autosave on a page. Editing blocks changes only the screen until
 
 ### Pin a page to a Dashboard
 
-1. Open the Dashboard board you want the page on — Overview or a domain.
-2. Choose **Pin board** in the header, then, under **Add pin**, choose the page's
-   title. The card appears at the end of the board.
-3. The card shows the page's title, its domain, and **Open page →**. The card's
+1. Open the Dashboard board you want the page on — a board per area lens.
+2. Open the page's **Dashboard actions** menu at the top right and turn on
+   **Pin board**, then, under **Add pin**, choose the page's title. The card
+   appears at the end of the board.
+3. The card shows the page's title, its area, and **Open page →**. The card's
    card-actions menu offers **Edit card**, **Archive** and **Delete**.
 4. **Delete** on a page pin asks `Delete “<title>”?` and then deletes the page
    and its blocks; the card leaves every board that showed it. This cannot be
    undone. **Archive** only takes the card off that board.
 
 A locked Dashboard board has no **Pin board** control and no card menu; its pins
-are arranged only after **Unlock**.
+are arranged only after the board's lock is turned off — see
+[Dashboard](./06-dashboard.md).
 
 ## The screen
 
@@ -90,10 +96,10 @@ Pages list (`/pages`)
 
 | Part | What it does |
 |---|---|
-| Header | Eyebrow **Pages**, title **Pages**, one line of description. |
+| Header | Wing eyebrow **Pages**, title **Pages**, the line "Canvases in this vault. Create one here, then open it to add blocks." |
 | **All pages** | The list for the active lens, with a count and the title filter. |
-| **New page** | **Title** field, **Domain** select on **Overview**, **New page**. |
-| **By domain** | Counts per live domain (shown on **Overview**). |
+| **New page** | **Title** field, **Area** select only on a vault with no base area, **New page**. |
+| **By area** | Counts per unlocked area (vaults without the base area). |
 
 Page canvas (`/pages/:slug/:pageId`)
 
@@ -107,11 +113,12 @@ Page canvas (`/pages/:slug/:pageId`)
 
 ## Rules and behaviour
 
-A page is JSON in its domain. One file per page at
+A page is JSON in its area. One file per page at
 `domains/<slug>/pages/<pageId>.json` with `id`, `domainSlug`, `title`, `blocks`,
-`createdAt` and `updatedAt`. A page belongs to a live domain; an archived domain's
-pages are not listed. Deleting a page removes the file and strips its pins from
-that domain's board and the Overview board.
+`createdAt` and `updatedAt`. A page belongs to an unlocked area; a locked area's
+pages are invisible to every read, and an archived area's pages are not listed.
+Deleting a page removes the file and strips its pins from that area's board and
+the Life board.
 
 Block kinds. The stored schema has twelve kinds, and the picker offers all of
 them: **Markdown**, **Bound table**, **Metric**, **Date range**, **Chart**,
@@ -121,7 +128,7 @@ them: **Markdown**, **Bound table**, **Metric**, **Date range**, **Chart**,
 - A page may hold at most one **Date range** block. Its start and end must be
   `YYYY-MM-DD` and start must not be after end. Bound-table, metric and chart
   blocks filter their rows by it, using the database's `date` columns.
-- A **Bound table** needs an existing database in the same domain. A **Metric**
+- A **Bound table** needs an existing database in the same area. A **Metric**
   needs an existing database and one of its columns. A **Chart** needs an
   existing database plus X and Y columns. A **Scenario compare** block needs a
   non-empty assumption set id.
@@ -135,19 +142,23 @@ them: **Markdown**, **Bound table**, **Metric**, **Date range**, **Chart**,
   else on a page is the operator's arrangement. The block's name must be
   non-empty and its source a string. Source is capped at 16 KB.
 
-Order is append-only. Blocks render in the order stored, and the canvas
-offers add and remove — there is no drag or move control. To reorder, remove and
-re-add in the order you want.
+Order is append-only. Blocks render in the order stored, and the canvas offers
+add and remove — there is no drag or move control. To reorder, remove and re-add
+in the order you want.
 
 The canvas does not render markdown. A **Markdown** block is an editable text
 area; the page has no preview mode. Rendered markdown with `[[wiki links]]` is a
 [Documents](./22-documents.md) feature, not a page feature; a `[[target]]` typed
 into a page block stays literal text.
 
-Pages have no lock of their own. A page canvas has no **Lock** control in this
-build: it is an operator surface, and the companion has no general page write.
-The "page lock" in the app is the Dashboard board's lock, and it governs pins and
-cards on that board — see [Dashboard](./06-dashboard.md). Its law is
+**A page has no lock of its own.** The page canvas has no three-dot menu and no
+lock control: it is an operator surface, and the companion has no general page
+write. The lockable surfaces in the studio are the Dashboard board, a doctrine
+document and a library note — each wears one **Lock** switch as the first item of
+its three-dot page menu (**Dashboard actions**, **Document actions**, **Note
+actions**) — and the review, which locks from its own **Mark done** control and
+offers an **Unlock** button beside it. A page is not one of them. The board's lock
+is the one that governs page pins, and its law is
 [LAWS/DASHBOARD.md](../../LAWS/DASHBOARD.md): a locked board is read-only for
 agents, their changes wait in Decisions, and approving a Decision does not unlock
 the board. Page pins inherit the board's lock because adding or removing one is a
@@ -176,7 +187,7 @@ JSON object with `queries` and `fetches`):
 - At most five queries and five https fetches per run. Query results are capped
   at 200 rows (with a truncation warning) and each fetch body at 64 KB.
 - A query runs against `domains/<slug>/data/domain.sqlite` read-only. When the
-  domain has no database yet, the queries come back empty with the warning
+  area has no database yet, the queries come back empty with the warning
   **No database for this domain yet.**
 - On the canvas, **Run** calls the same engine the page renders with. **Run**
   does not save the source; **Save** writes the page.
@@ -210,16 +221,15 @@ open page without a reload. Page JSON itself is only re-read when the page loads
   page from the Pages list is not offered.
 - Pages survive a restart as files. If the vault is in git, the page JSON moves
   with the vault; the SQLite data it reads is gitignored.
+- Locked areas are not a filter you can widen from here. Unlock an area in
+  **Settings → Areas** and its pages appear; until then they do not exist to any
+  list, lens or agent.
 
 ## Related
 
-- [Dashboard](./06-dashboard.md) — the board a page can be pinned to, and the
-  lock that governs it
-- [Data and databases](./19-data-and-databases.md) — the tables and views the
-  blocks read
+- [Dashboard](./06-dashboard.md) — the board a page can be pinned to, and the lock that governs it
+- [Data and databases](./19-data-and-databases.md) — the tables and views the blocks read
 - [Finance kit](./20-finance-kit.md) — the starter pages this page list contains
-- [Documents](./22-documents.md) — the other knowledge surface, where markdown
-  and wiki links are rendered
-- [The Companion](./24-companion.md) — how the companion reaches pages and
-  scripts
+- [Documents](./22-documents.md) — the other knowledge surface, where markdown and wiki links are rendered
+- [Companion](./24-companion.md) — how the companion reaches pages and scripts
 - [The Vault](./04-the-vault.md) — where page JSON sits in the folder layout

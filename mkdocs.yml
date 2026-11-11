@@ -12,7 +12,7 @@
 # to GitHub Pages on every push to `master`.
 
 site_name: LifeQuest
-site_description: The operator's guide to the LifeQuest studio, its vault, and the Hermes companion.
+site_description: The operator's guide to the LifeQuest studio, its vault, and its companion.
 site_url: https://karmsheel.github.io/life-quest/
 repo_url: https://github.com/karmsheel/life-quest
 repo_name: karmsheel/life-quest
@@ -66,6 +66,14 @@ markdown_extensions:
 
 validation:
   nav:
+    omitted_files: ignore
+  links:
+    not_found: warn
+    anchors: ignore
+    absolute_links: ignore
+    unrecognized_links: ignore
+
+nav:
   - LifeQuest wiki: index.md
   - Foundations:
       - Overview: 01-overview.md
@@ -76,6 +84,7 @@ validation:
   - Home:
       - Dashboard: 06-dashboard.md
       - Data and databases: 19-data-and-databases.md
+      - Finance kit: 20-finance-kit.md
       - Pages: 21-pages.md
       - Documents: 22-documents.md
       - Agents: 25-agents.md
