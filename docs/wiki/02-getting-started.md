@@ -195,7 +195,7 @@ the buttons. Nothing is modified.
 2. **Add a domain.** Still in Settings, open **Domains**, type a name in
    **Create domain** (for example `Career`) and press **Create**. The four seeded
    domains are already there; this is for the life area they do not cover. See
-   [Domains](./05-domains.md).
+   [Domains](./05-areas.md).
 3. **Write doctrine.** At the top of the window, choose the **Define** wing, open
    **Dream**, and pick a card for one domain — **Beliefs & Premise** is the place
    to start. Type in the editor and press **Save**. The other doctrine documents
@@ -274,6 +274,6 @@ The exact on-disk layout is on [The vault](./04-the-vault.md).
 - [Overview](./01-overview.md)
 - [The studio](./03-the-studio.md)
 - [The vault](./04-the-vault.md)
-- [Domains](./05-domains.md)
+- [Domains](./05-areas.md)
 - [Settings](./28-settings.md)
 - [Troubleshooting](./32-troubleshooting.md)

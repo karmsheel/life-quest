@@ -100,7 +100,7 @@ travel with the folder.
 **Domains** manages the life areas: create, activate, rename, archive and delete.
 It carries the same information as the window title bar's domain lens. The full
 procedure, the exact confirmation titles and the archive-versus-delete rule are on
-[Domains](./05-domains.md).
+[Domains](./05-areas.md).
 
 Its subtitle is *Activate a domain to filter the app. Overview shows everything.*
 
@@ -168,7 +168,7 @@ the profile's pinned one (the probe only warns when the host cannot route it), a
 the companion's credential lives in the Hermes profile's `.env`; it never enters
 the vault ([LAWS/SECRETS.md](../../LAWS/SECRETS.md)). See
 [Companion](./24-companion.md) for the chat pane and
-[Personnel and agents](./25-personnel-and-agents.md) for the roster.
+[Personnel and agents](./25-agents.md) for the roster.
 
 ## Agent
 
@@ -301,7 +301,7 @@ real feed, and a real release outranks the preview.
 
 - [The studio](./03-the-studio.md)
 - [The vault](./04-the-vault.md)
-- [Domains](./05-domains.md)
+- [Domains](./05-areas.md)
 - [Companion](./24-companion.md)
 - [Updates](./27-updates.md)
 - [Security](./29-security.md)

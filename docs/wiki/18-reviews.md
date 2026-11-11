@@ -219,7 +219,7 @@ entry (`review.ensured`, `review.written`, `review.marked-done`,
 
 ## Related
 
-- [Daily Note](./16-daily-note.md) — the journal a review reads back
+- [Daily Note](./16-daily-journal.md) — the journal a review reads back
 - [Goals](./10-goals.md) — where planning sessions start and where intent lands
 - [Decisions](./23-decisions.md) — where an edit to a locked review waits
 - [The Companion](./24-companion.md) — the interview, sessions and models

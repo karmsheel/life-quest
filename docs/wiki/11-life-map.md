@@ -2,7 +2,7 @@
 
 The Life Map is the year canvas: one page that shows a year as four quarters and twelve month grids, opens any month as a Monday–Sunday calendar, and keeps the year's events. It is the place a single date lives — a deadline, a trip, a launch, a birthday — with notes, an optional domain, and an optional link to a Goal. Months also carry their own short text and a Main Objectives / Notes pair.
 
-The Life Map draws events, not tasks and not goal records. Tasks are on [Act](./14-act.md), [Daily Schedule](./13-daily-schedule.md), and the Dashboard's **Today & this week** card. A goal's deadline pressure is a Dashboard banner; an event linked to a goal is how a goal's date appears on the calendar. Weeks as a rhythm belong to [Architecture](./08-architecture.md).
+The Life Map draws events, not tasks and not goal records. Tasks are on [Act](./14-task-manager.md), [Daily Schedule](./13-daily-schedule.md), and the Dashboard's **Today & this week** card. A goal's deadline pressure is a Dashboard banner; an event linked to a goal is how a goal's date appears on the calendar. Weeks as a rhythm belong to [Architecture](./08-architecture.md).
 
 ## Where it lives
 
@@ -116,5 +116,5 @@ The **Add event** and **Add** buttons are shown only on a live year. On an archi
 - [Architecture](./08-architecture.md)
 - [Goals](./10-goals.md)
 - [Daily Schedule](./13-daily-schedule.md)
-- [Act](./14-act.md)
+- [Act](./14-task-manager.md)
 - [Projects](./12-projects.md)

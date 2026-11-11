@@ -263,7 +263,7 @@ secret store described in [Security](./29-security.md).
   newer vault. It is checked on open and refused.
 - Archiving a domain keeps its folder and database; deleting it removes the folder
   recursively, and only archived domains can be deleted. See
-  [Domains](./05-domains.md).
+  [Domains](./05-areas.md).
 - Removing the app, or `%APPDATA%\LifeQuest`, does not remove a vault. Only the
   folder itself does.
 - The vault's `theme` and `hermesBaseUrl` settings keys are not what the current
@@ -274,7 +274,7 @@ secret store described in [Security](./29-security.md).
 
 - [Getting started](./02-getting-started.md)
 - [The studio](./03-the-studio.md)
-- [Domains](./05-domains.md)
+- [Domains](./05-areas.md)
 - [Data and databases](./19-data-and-databases.md)
 - [Decisions](./23-decisions.md)
 - [Security](./29-security.md)

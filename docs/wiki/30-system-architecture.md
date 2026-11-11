@@ -345,6 +345,6 @@ surface renders instead of the studio.
 - [The vault](./04-the-vault.md)
 - [Decisions](./23-decisions.md)
 - [Companion](./24-companion.md)
-- [Personnel and agents](./25-personnel-and-agents.md)
+- [Personnel and agents](./25-agents.md)
 - [Security](./29-security.md)
 - [Development](./31-development.md)

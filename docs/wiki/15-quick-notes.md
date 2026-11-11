@@ -205,7 +205,7 @@ A signal is a vault file at `.lifequest/signal-chain/<id>.json`, one JSON object
   attachment to name the task from.
 - The new task is not placed on Daily Schedule; that remains the **Today** column's move.
 
-See [Act](./14-act.md) for the board.
+See [Act](./14-task-manager.md) for the board.
 
 ### The companion and the chain
 
@@ -231,7 +231,7 @@ this page, not a second store.
 
 The domain lens carves the chain up without hiding unfiled captures: Overview shows all, a
 domain shows unassigned + that domain. This is the domain-filter law — see
-[`LAWS/DOMAIN-FILTER.md`](../../LAWS/DOMAIN-FILTER.md) and [Domains](./05-domains.md). Wing
+[`LAWS/DOMAIN-FILTER.md`](../../LAWS/DOMAIN-FILTER.md) and [Domains](./05-areas.md). Wing
 tabs never filter the chain ([`LAWS/WINGS.md`](../../LAWS/WINGS.md)).
 
 ## Tips and edge cases
@@ -261,8 +261,8 @@ tabs never filter the chain ([`LAWS/WINGS.md`](../../LAWS/WINGS.md)).
 
 ## Related
 
-- [Act](./14-act.md) — the board where **Make task** lands.
-- [Domains](./05-domains.md) — domain tags and the lens that filters the chain.
+- [Act](./14-task-manager.md) — the board where **Make task** lands.
+- [Domains](./05-areas.md) — domain tags and the lens that filters the chain.
 - [Decisions](./23-decisions.md) — why task and signal writes do not appear here.
 - [The vault](./04-the-vault.md) — where `.lifequest/signal-chain/` sits on disk.
 - [Log](./26-log.md) — the `signal.created` lines a capture writes.

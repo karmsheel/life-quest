@@ -57,7 +57,7 @@ Full detail: [Doctrine](./07-doctrine.md).
    capture a thought on **Life-Chain** and choose **Make task**.
 
 Full detail: [Goals](./10-goals.md), [Projects](./12-projects.md),
-[Act](./14-act.md).
+[Act](./14-task-manager.md).
 
 ## Design a week and plan today
 
@@ -97,7 +97,7 @@ Full detail: [Goals](./10-goals.md), [Projects](./12-projects.md),
    cadence receives.
 7. **Daily notes in this period** lists the journal days in the window.
 
-Full detail: [Reviews](./18-reviews.md), [Daily Note](./16-daily-note.md).
+Full detail: [Reviews](./18-reviews.md), [Daily Note](./16-daily-journal.md).
 
 ## Capture a thought and turn it into a task
 
@@ -110,7 +110,7 @@ Full detail: [Reviews](./18-reviews.md), [Daily Note](./16-daily-note.md).
 4. Choose **Make task** to create a backlog task from it; the button then reads
    **Open task** and takes you to **Act** with the card expanded.
 
-Full detail: [Life-Chain](./15-life-chain.md).
+Full detail: [Life-Chain](./15-quick-notes.md).
 
 ## Log a purchase from chat
 
@@ -181,7 +181,7 @@ Full detail: [Pages](./21-pages.md).
 5. The companion's own write rules are unchanged: document changes go through
    Decisions, schedule and clear captures apply directly.
 
-Full detail: [Personnel and agents](./25-personnel-and-agents.md).
+Full detail: [Personnel and agents](./25-agents.md).
 
 ## Ask the companion to change a document
 

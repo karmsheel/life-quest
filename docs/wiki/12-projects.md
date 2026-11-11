@@ -50,7 +50,7 @@ Decisions that already point at it. The companion reads projects directly, so it
    - **Repositories** — when the project carries repository URLs (the companion's
      **create_project** and **update_project** tools write them), each is listed as a
      link that opens in a new tab.
-6. To put a task against the project, open [Act](./14-act.md), expand a card, and set its
+6. To put a task against the project, open [Act](./14-task-manager.md), expand a card, and set its
    **Project** field. The task then appears in the project page's **Tasks** section, and
    choosing its title opens the board with that card expanded.
 
@@ -137,7 +137,7 @@ The project list is domain-scoped: the domain lens is the data filter, so Overvi
 every project and a domain lens shows that domain's projects. An unassigned project appears
 only in Overview, because a domain lens shows exactly its own slug. This is the domain-filter
 law: the switcher is the data filter for domain-scoped lists. See
-[`LAWS/DOMAIN-FILTER.md`](../../LAWS/DOMAIN-FILTER.md) and [Domains](./05-domains.md). Wing
+[`LAWS/DOMAIN-FILTER.md`](../../LAWS/DOMAIN-FILTER.md) and [Domains](./05-areas.md). Wing
 tabs only switch the rail and never filter page data
 ([`LAWS/WINGS.md`](../../LAWS/WINGS.md)).
 
@@ -158,8 +158,8 @@ tabs only switch the rail and never filter page data
 
 ## Related
 
-- [Act](./14-act.md) — the task board whose cards can point at a project.
-- [Life-Chain](./15-life-chain.md) — the captures that reach a project through its tasks.
+- [Act](./14-task-manager.md) — the task board whose cards can point at a project.
+- [Life-Chain](./15-quick-notes.md) — the captures that reach a project through its tasks.
 - [Goals](./10-goals.md) — the goal a project can be filed under.
-- [Domains](./05-domains.md) — the domain lens that filters the register.
+- [Domains](./05-areas.md) — the domain lens that filters the register.
 - [Decisions](./23-decisions.md) — where the companion's project proposals wait.

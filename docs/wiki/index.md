@@ -24,7 +24,7 @@ wants to know what is on disk and what runs where.
 | Install it and open your first vault | [Getting started](./02-getting-started.md) |
 | Learn the window, rail, wings and chat pane | [The studio](./03-the-studio.md) |
 | Know exactly what lands on disk | [The vault](./04-the-vault.md) |
-| Set up your life areas | [Domains](./05-domains.md) |
+| Set up your life areas | [Domains](./05-areas.md) |
 | Arrange the home board | [Dashboard](./06-dashboard.md) |
 
 ## All pages
@@ -37,7 +37,7 @@ wants to know what is on disk and what runs where.
 | [02 · Getting started](./02-getting-started.md) | Prerequisites, Hermes, install, create/open a vault, first run |
 | [03 · The studio](./03-the-studio.md) | Window chrome, rail, wings, lens, three panes, sheets, splash |
 | [04 · The vault](./04-the-vault.md) | Vault layout, settings, recent vaults, moving, backup, git, restore |
-| [05 · Domains](./05-domains.md) | Seeded domains, adding and archiving, the domain lens, Overview |
+| [05 · Domains](./05-areas.md) | Seeded domains, adding and archiving, the domain lens, Overview |
 
 ### Home
 
@@ -66,14 +66,14 @@ wants to know what is on disk and what runs where.
 |---|---|
 | [12 · Projects](./12-projects.md) | Projects list and project page, attributes, goal link, collated context |
 | [13 · Daily Schedule](./13-daily-schedule.md) | Picking a day template, recording the actual day, placing and unplacing blocks |
-| [14 · Act](./14-act.md) | The task board: columns, drag and keyboard, task editor, menu |
+| [14 · Act](./14-task-manager.md) | The task board: columns, drag and keyboard, task editor, menu |
 
 ### Daily capture and review
 
 | Page | What it covers |
 |---|---|
-| [15 · Life-Chain](./15-life-chain.md) | Quick-fire capture of text, pictures and links; unassigned vs domain, edit/delete, make a task |
-| [16 · Daily Note](./16-daily-note.md) | One journal note per local date, saving, analysis, review pack |
+| [15 · Life-Chain](./15-quick-notes.md) | Quick-fire capture of text, pictures and links; unassigned vs domain, edit/delete, make a task |
+| [16 · Daily Note](./16-daily-journal.md) | One journal note per local date, saving, analysis, review pack |
 | [17 · Automations](./17-automations.md) | One-click jobs that read a page and open a chat with the agent |
 | [18 · Reviews](./18-reviews.md) | Daily through yearly cadences, period packs, companion sessions, done/lock, planning stubs |
 
@@ -92,7 +92,7 @@ wants to know what is on disk and what runs where.
 |---|---|
 | [23 · Decisions](./23-decisions.md) | The approval inbox, pending/approved/rejected, manual decisions, auto-approve |
 | [24 · Companion](./24-companion.md) | Hermes, chat, composer, models, threads, context, page context, questions |
-| [25 · Personnel and agents](./25-personnel-and-agents.md) | Scanning Hermes, hiring agents, roles, MCP pairing, connected agents |
+| [25 · Personnel and agents](./25-agents.md) | Scanning Hermes, hiring agents, roles, MCP pairing, connected agents |
 | [26 · Log](./26-log.md) | The Life log feed and what writes to it |
 | [27 · Updates](./27-updates.md) | The version badge, release check, update dialog, preview flag |
 

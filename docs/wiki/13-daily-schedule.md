@@ -143,7 +143,7 @@ day is an empty **Clock** and an empty **Leftover** list.
 
 - [Architecture](./08-architecture.md) — the day types and default week the live day copies
   from, and the real week it leaves alone.
-- [Act](./14-act.md) — the **Today** column that appears in **Leftover**.
+- [Act](./14-task-manager.md) — the **Today** column that appears in **Leftover**.
 - [Life Map](./11-life-map.md) — the calendar the live day is deliberately not drawn on.
 - [Log](./26-log.md) — the `map.liveDay.*` entries each action writes.
 - [The studio](./03-the-studio.md) — wings, the rail and the three panes.

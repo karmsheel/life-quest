@@ -116,7 +116,7 @@ is stored, not rejected, and shown as missing until you clear it.
   there sets the task to **Done**. See [Daily Schedule](./13-daily-schedule.md).
 - A task made from a Life-Chain signal is created in **Backlog** with its `signalId` set;
   the chain row then reads **Open task** and links back to `/act?task=<id>`, which opens the
-  board with that card expanded. See [Life-Chain](./15-life-chain.md).
+  board with that card expanded. See [Life-Chain](./15-quick-notes.md).
 - Projects collate the tasks that point at them on the project page. See
   [Projects](./12-projects.md).
 - The [Life Map](./11-life-map.md) does not draw task cards in this release. Dates on a task
@@ -144,8 +144,8 @@ is stored, not rejected, and shown as missing until you clear it.
 ## Related
 
 - [Daily Schedule](./13-daily-schedule.md) — the day's clock, fed by the **Today** column.
-- [Life-Chain](./15-life-chain.md) — captures that become backlog tasks.
+- [Life-Chain](./15-quick-notes.md) — captures that become backlog tasks.
 - [Projects](./12-projects.md) — the project a task can point at.
 - [Goals](./10-goals.md) — the goal a task can point at.
-- [Personnel and agents](./25-personnel-and-agents.md) — hiring the agents **Run an agent**
+- [Personnel and agents](./25-agents.md) — hiring the agents **Run an agent**
   dispatches.

@@ -250,7 +250,7 @@ the contract.
 
 ## Related
 
-- [Domains](./05-domains.md)
+- [Domains](./05-areas.md)
 - [Goals](./10-goals.md)
 - [Data and databases](./19-data-and-databases.md)
 - [Pages](./21-pages.md)

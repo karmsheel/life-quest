@@ -172,7 +172,7 @@ can change it — the assistant has no tool that reads or writes it.
 
 ## Related
 
-- [Daily Note](./16-daily-note.md) — the host page and the **Analyze note** button.
+- [Daily Note](./16-daily-journal.md) — the host page and the **Analyze note** button.
 - [Companion](./24-companion.md) — the chat each run opens or fills.
 - [Decisions](./23-decisions.md) — what does and does not wait for approval.
 - [Settings](./28-settings.md) — **Apply assistant inserts immediately** and the rest of the

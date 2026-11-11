@@ -244,7 +244,7 @@ path. Attaching a receipt to a vault without the Finance kit is refused with
   about anything it cannot read as an amount and an account.
 - **The dock's Life-Chain surface is the second way into capture.** It hosts the
   same records as the Life-Chain page, with its own composer; see
-  [Life-Chain](./15-life-chain.md).
+  [Life-Chain](./15-quick-notes.md).
 - **A chat you open in Hermes Desktop is the same chat.** Renames, pins and
   archives are Hermes-side; do not expect a LifeQuest-only copy.
 - **The archived view reads the profile's own store.** The host gateway's
@@ -256,8 +256,8 @@ path. Attaching a receipt to a vault without the Finance kit is refused with
 ## Related
 
 - [Decisions](./23-decisions.md)
-- [Personnel and Agents](./25-personnel-and-agents.md)
+- [Personnel and Agents](./25-agents.md)
 - [The Studio](./03-the-studio.md)
 - [Settings](./28-settings.md)
 - [Security](./29-security.md)
-- [Life-Chain](./15-life-chain.md)
+- [Life-Chain](./15-quick-notes.md)

@@ -116,7 +116,7 @@ With no live domains, either index says **No live domains yet.**
 ## Related
 
 - [Wiki home](./index.md)
-- [Domains](./05-domains.md)
+- [Domains](./05-areas.md)
 - [Architecture](./08-architecture.md)
 - [Ideal State](./09-ideal-state.md)
 - [Decisions](./23-decisions.md)

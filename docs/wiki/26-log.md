@@ -132,6 +132,6 @@ entry of its own.
 
 - [Decisions](./23-decisions.md)
 - [The Vault](./04-the-vault.md)
-- [Domains](./05-domains.md)
+- [Domains](./05-areas.md)
 - [Reviews](./18-reviews.md)
 - [The Companion](./24-companion.md)

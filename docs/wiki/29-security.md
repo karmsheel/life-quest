@@ -117,7 +117,7 @@ taken: the welcome screen for an open, the editor's error line for a save.
 
 The app exposes its vault tools to Hermes and to other agents through two loopback
 HTTP doors that speak the Model Context Protocol on `POST /mcp`. They are described
-from the operator's side in [Personnel and agents](./25-personnel-and-agents.md);
+from the operator's side in [Personnel and agents](./25-agents.md);
 this is what they enforce.
 
 | | Local door | Invite door |
@@ -319,7 +319,7 @@ The same code has limits, and hiding them would be worse than stating them:
 - [The vault](./04-the-vault.md)
 - [Decisions](./23-decisions.md)
 - [Companion](./24-companion.md)
-- [Personnel and agents](./25-personnel-and-agents.md)
+- [Personnel and agents](./25-agents.md)
 - [Updates](./27-updates.md)
 - [Settings](./28-settings.md)
 - [System architecture](./30-system-architecture.md)

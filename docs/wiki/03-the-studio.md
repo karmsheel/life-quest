@@ -226,7 +226,7 @@ Window-level keys:
 
 - [Getting started](./02-getting-started.md)
 - [The vault](./04-the-vault.md)
-- [Domains](./05-domains.md)
+- [Domains](./05-areas.md)
 - [Companion](./24-companion.md)
 - [Settings](./28-settings.md)
 - [System architecture](./30-system-architecture.md)

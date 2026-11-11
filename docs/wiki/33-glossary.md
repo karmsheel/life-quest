@@ -6,7 +6,7 @@ definition links there for the full story.
 Return to [Wiki home](./index.md).
 
 **Act** — the Execute wing's task board. Columns of tasks, drag and keyboard
-reordering, and a task editor. See [Act](./14-act.md).
+reordering, and a task editor. See [Act](./14-task-manager.md).
 
 **Adapter / linked source** — a domain database whose rows come from somewhere
 else: a Google Sheet, a Notion database, an operator-chosen URL, or a local file.
@@ -15,7 +15,7 @@ Writes queue in the vault while offline and conflicts prompt on reconnect. See
 
 **Agent** — a Hermes agent the operator has hired in Personnel. An agent can be
 an advisor or own a domain; when it acts, the vault records which agent. See
-[Personnel and agents](./25-personnel-and-agents.md).
+[Personnel and agents](./25-agents.md).
 
 **Architecture** — the Plan wing page (`/track`) where the operator designs day
 types, the default week and the real week, and edits the domain's Strategy (How)
@@ -44,7 +44,7 @@ dismisses items with Done / Not useful / Wrong / Later. See
 
 **Capture** — a thought, a picture or a link logged in Life-Chain before it evaporates.
 Capture is not the studio; it is a signal that can become a task. See
-[Life-Chain](./15-life-chain.md).
+[Life-Chain](./15-quick-notes.md).
 
 **Chat thread** — one conversation with the companion, listed in the rail's
 **Chats** sidebar. Threads can be renamed, pinned, archived and deleted. See
@@ -60,7 +60,7 @@ default is `lifequest`; the app creates it if it does not exist. See
 
 **Daily Note** — the operator's journal for one local date, stored at
 `notes/daily/{YYYY-MM-DD}.md`. The operator is the only author; reviews read it
-back. See [Daily Note](./16-daily-note.md).
+back. See [Daily Note](./16-daily-journal.md).
 
 **Daily Schedule** — the Execute wing page (`/daily`) that turns a day template
 into today's plan and records the day as it actually unfolds. See
@@ -83,7 +83,7 @@ which real weeks are planned.
 
 **Domain** — a life area. A new vault seeds Health, Intellectual, Emotional and
 Financial. A domain owns doctrine, databases, pages, pins and views. See
-[Domains](./05-domains.md).
+[Domains](./05-areas.md).
 
 **Domain lens** — the filter in the window title bar's domain tab that scopes
 domain-owned lists to Overview or one domain. The rail's wing switcher is
@@ -125,7 +125,7 @@ Finance is the first kit. An agent-proposed kit install goes through Decisions.
 See [Finance kit](./20-finance-kit.md).
 
 **Life-Chain** — the capture surface on the governance shelf (`/chain`). See
-[Life-Chain](./15-life-chain.md).
+[Life-Chain](./15-quick-notes.md).
 
 **Life Map** — the Plan wing's year canvas and month calendar (`/chart`): years,
 months, days and single-date events. It draws no tasks and no goal deadlines;
@@ -144,10 +144,10 @@ page. See [Log](./26-log.md).
 
 **MCP** — Model Context Protocol, the door through which paired agents read and
 write the vault. The studio runs the MCP server; the door is protected by pairing
-secrets. See [Personnel and agents](./25-personnel-and-agents.md).
+secrets. See [Personnel and agents](./25-agents.md).
 
 **Overview** — the virtual lens that shows the union of databases and pages
-across domains. It is not a vault folder. See [Domains](./05-domains.md).
+across domains. It is not a vault folder. See [Domains](./05-areas.md).
 
 **Page** — an operator-built surface at `domains/{slug}/pages/{id}.json`, made of
 blocks and shown on the Pages page. See [Pages](./21-pages.md).
@@ -162,7 +162,7 @@ vault data (goals, log, Daily Notes, reviews, and so on) the companion is handed
 for that window. See [Reviews](./18-reviews.md).
 
 **Personnel** — the Home wing's roster of agents (`/personnel`). See
-[Personnel and agents](./25-personnel-and-agents.md).
+[Personnel and agents](./25-agents.md).
 
 **Pin** — a card placed on a Dashboard board. Taking a card off a board does not
 delete what the card draws.

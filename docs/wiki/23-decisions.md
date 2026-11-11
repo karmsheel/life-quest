@@ -180,7 +180,7 @@ Two settings shape what gets filed, both under **Settings → Hermes**:
 ## Related
 
 - [The Companion](./24-companion.md)
-- [Personnel and Agents](./25-personnel-and-agents.md)
+- [Personnel and Agents](./25-agents.md)
 - [Doctrine](./07-doctrine.md)
 - [Documents](./22-documents.md)
 - [Reviews](./18-reviews.md)
