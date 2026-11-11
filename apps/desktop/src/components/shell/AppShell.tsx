@@ -39,7 +39,6 @@ export function AppShell() {
   return (
     <MapYearProvider>
       <WingProvider>
-        <ShortcutRunner />
         {/*
           The chats outlive the panel: the sidebar lists them, the dock's tabs
           name them, and a running turn must keep streaming while the operator
@@ -48,6 +47,12 @@ export function AppShell() {
           from.
         */}
         <ChatSessionsProvider>
+          {/*
+            The runner sits inside the chat store because one of its keys is the
+            dock's own: Mod+W closes the tab in front, and the strip it closes
+            from is the store's.
+          */}
+          <ShortcutRunner />
           <div
             ref={shellRef}
             style={chatColumn.shellStyle}

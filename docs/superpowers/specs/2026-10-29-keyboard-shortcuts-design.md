@@ -72,6 +72,29 @@ A conflict keeps the row recording, so the operator can press another combinatio
 without walking back to the button. A cleared binding (`null`) is a deliberate
 choice and survives reload.
 
+## Keys the chat dock owns (added 2026-11-09)
+
+Not every key is a movement. The composer already owns Ctrl/Cmd+Enter as the
+send key without putting it in the table, and the dock's tabs now own the
+browser's own close gesture the same way:
+
+- **Ctrl/Cmd+W** closes the chat tab in front. It is handled by
+  `ShortcutRunner`, not by a movement row, and it fires only while the strip the
+  operator can see is drawn: the dock open on the thread surface, more than one
+  open chat or a pinned band, a chat in front, and that chat not pinned (a pinned
+  square leaves the band only through **Unpin**). With nothing to close the key
+  is left to the platform — `defaultPrevented` is not set.
+- **A middle click** on a tab closes that tab, the way a browser closes the tab
+  under the pointer. A pinned square swallows the press and closes nothing.
+
+Both gestures are deliberately outside the movement table. Browsers do not let
+Ctrl/Cmd+W be rebound, `RESERVED_BINDINGS` keeps `Mod+W` out of every movement
+row, and the gesture needs state the table does not have — which dock surface is
+showing and which tab is in front — so it lives beside the runner's other guard
+rails (recording, modal, repeat, `defaultPrevented`) instead. `ShortcutRunner`
+therefore moved inside `ChatSessionsProvider` in `AppShell`: the key has to read
+the strip it closes from.
+
 ## The dock's reference page
 
 A titlebar control — the keyboard icon immediately before the settings gear —
@@ -114,7 +137,8 @@ the default rather than leaving a movement dead.
 
 ## The runner's guard rails
 
-The listener is mounted once, inside `AppShell`. It stands down while:
+The listener is mounted once, inside `AppShell` (inside `ChatSessionsProvider`,
+because the dock's tab key reads the strip). It stands down while:
 
 - a settings row is recording (the keys belong to the page);
 - a modal sheet or dialog is up (`aria-modal`, the sheet frame, confirm and update
@@ -132,7 +156,7 @@ The listener is mounted once, inside `AppShell`. It stands down while:
 | --- | --- |
 | `apps/desktop/src/lib/shortcuts.ts` | Movement table, parser, keycap formatter, reserved space, storage, matching |
 | `apps/desktop/src/state/ShortcutsProvider.tsx` | Bindings, overrides, the one recorder, refusals |
-| `apps/desktop/src/components/shell/ShortcutRunner.tsx` | The listener and what each movement does |
+| `apps/desktop/src/components/shell/ShortcutRunner.tsx` | The listener and what each movement does, plus the dock's Mod+W tab close |
 | `apps/desktop/src/components/settings/SettingsShortcuts.tsx` | The page |
 | `apps/desktop/src/components/hermes/ChatShortcutsPage.tsx` | The dock's reference page, with per-row editing |
 | `apps/desktop/src/state/ChatDockProvider.tsx` | The dock's surface, including the reference page |
@@ -153,3 +177,9 @@ dock and after a binding changed), and editing a binding from a dock row
 (recording, conflict, reserved, clear and the new key actually moving the app).
 Its report and screenshots land in
 `apps/desktop/e2e/artifacts/keyboard-shortcuts.*`.
+
+The dock's tab gestures are driven by `tests/chat-tabs-e2e.test.ts` in the
+chat-tabs harness: a middle click closes the tab under the pointer and is
+swallowed, a middle press on a pinned square closes and unpins nothing, and
+Ctrl+W (a real key press through the window's input pipeline) closes the tab in
+front while being left alone when no strip is drawn.

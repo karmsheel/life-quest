@@ -1178,6 +1178,23 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
     setTabMenu({ id, pinned, x: event.clientX, y: event.clientY });
   }
 
+  /**
+   * The browser's other tab gesture: the middle button closes the tab under the
+   * pointer. A pinned square is not a closable tab — Unpin is the way out of the
+   * band, exactly as the close control's absence says — so that press is
+   * swallowed but closes nothing. Swallowing matters on Linux, where a middle
+   * press otherwise starts X11's primary-selection paste or autoscroll.
+   */
+  function closeTabOnMiddlePress(
+    event: MouseEvent<HTMLDivElement>,
+    id: string,
+    pinned: boolean,
+  ): void {
+    if (event.button !== 1) return;
+    event.preventDefault();
+    if (!pinned) chat.closeTab(id);
+  }
+
   /** Close the tab menu, whether or not it was up. */
   function closeTabMenu(): void {
     setTabMenu(null);
@@ -1676,7 +1693,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
             it — but the moment a second turn is in the air (or a second chat is
             open) this is where the parallel sessions live: the dot is a turn
             still streaming, the amber dot a run waiting on an approval, and the
-            close control stops a turn before it drops the tab.
+            close control stops a turn before it drops the tab. The browser's
+            tab gestures come with it: a middle click on a tab closes it, and
+            Ctrl/Cmd+W closes the one in front (that key lives in the shortcut
+            runner, because only it can see the strip and stand down under a
+            modal or a recording row).
 
             The pinned band leads the strip and is drawn as squares. A pin is a
             durable Hermes flag rather than a strip-local decoration, so a pinned
@@ -1720,6 +1741,12 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                     data-live={live || undefined}
                     data-approval={waiting || undefined}
                     onContextMenu={(e) => openTabMenu(e, id, pinned)}
+                    onAuxClick={(e) => closeTabOnMiddlePress(e, id, pinned)}
+                    onMouseDown={(e) => {
+                      // The press half of the middle-click close: without this
+                      // the browser's autoscroll quest starts under the strip.
+                      if (e.button === 1) e.preventDefault();
+                    }}
                   >
                     <button
                       type="button"
@@ -1727,7 +1754,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                       aria-selected={id === sessionId}
                       className="chat-panel__tab-main"
                       aria-label={pinned ? `${label} — pinned tab` : undefined}
-                      title={pinned ? `${label} — pinned tab` : label}
+                      title={
+                        pinned
+                          ? `${label} — pinned tab`
+                          : `${label} — middle-click to close`
+                      }
                       onClick={() => {
                         if (id === sessionId) {
                           setView("thread");

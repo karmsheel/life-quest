@@ -90,6 +90,10 @@ not send an API key to the renderer.
    a task sent to the agent — arrives the same way: a tab of its own beside the
    conversation on screen, named after the job that started it and listed in
    **Chats** under that name.
+   Close a tab with its **×**, a middle click on the tab itself, or **Ctrl+W**
+   (**Cmd+W** on macOS) for the tab in front — the browser's own close gestures.
+   A pinned square has no close control and ignores the middle button:
+   **Unpin** is its way out.
 4. Hover a chat for its own controls: the row menu has **Open in new tab**,
    **Pin** / **Unpin**, **Rename**, **Archive**, and **Delete**. Pinned chats sit
    at the top of the one list, above the recent chats. A chat streaming a turn
@@ -172,7 +176,7 @@ path. Attaching a receipt to a vault without the Finance kit is refused with
 |---|---|
 | Chats list (rail) | **New chat**; rows pinned first, then recent, with archived rows in their own greyed band under **Show archived** or alone under **Only archived** (both from **View options**); per-row **Chat actions** menu; a running dot; a **Dismiss** for a failed list read. The rail is the window's only chat history. |
 | Dock header | The active chat's name and **Pin chat** / **Rename chat** / **Archive chat** — the archive control steps away while the chat is pinned. |
-| Tab strip | One tab per open chat, each closable, with a live dot while it streams and an amber dot while it waits on an approval. Pinned chats lead as squares (first letter + pin, no close control) and are unpinned from their right-click menu; any tab's right-click menu carries the chat's own verbs. |
+| Tab strip | One tab per open chat, each closable by its **×**, a middle click, or **Ctrl+W** (**Cmd+W** on macOS) for the tab in front, with a live dot while it streams and an amber dot while it waits on an approval. Pinned chats lead as squares (first letter + pin, no close control) and are unpinned from their right-click menu; any tab's right-click menu carries the chat's own verbs. |
 | Transcript | Bubbles with **You** / **Hermes** labels, times, copy controls; the tool activity line; approval and error panels. |
 | Composer | One bordered box: the field at the top, with the card pills and attachment chips above it, and the control row inside its bottom edge — add and receipt controls, the page pill and the waiting receipt chip at the bottom left, the model and thinking pills and send/stop at the bottom right. |
 | Dock actions | **New chat**, **Life-Chain**, the two-panes side switch, **Collapse chat**, and the version badge (*Check for updates*). |
