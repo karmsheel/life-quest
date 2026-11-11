@@ -21,7 +21,7 @@ export const hermesHarness: ProfiledHarness = {
   createSession: (title) => companion.companionSessionCreate(title),
   sessionMessages: (id) => companion.companionSessionMessages(id),
   patchSession: (id, patch: SessionPatch) => companion.companionSessionPatch(id, patch),
-  deleteSession: (id, options) => companion.companionSessionDelete(id, options),
+  deleteSession: (id) => companion.companionSessionDelete(id),
   openSession: () => companion.companionSessionsOpen(),
 
   modelCatalog: () => companion.companionModelOptions(),

@@ -1,4 +1,4 @@
-import { agentIcon } from "@/lib/agent-icons";
+import { AgentMark } from "@/components/ui/AgentMark";
 import { useOptionalAgents } from "@/state/AgentsProvider";
 import { useOptionalCompanion } from "@/state/CompanionProvider";
 import type { HarnessId } from "@/vite-env";
@@ -33,7 +33,6 @@ export function AgentSwitcher() {
         const id = agent.id as HarnessId;
         const active = agent.active || id === harness;
         const pending = switching === id;
-        const icon = agentIcon(agent.id);
         return (
           <button
             key={agent.id}
@@ -62,18 +61,12 @@ export function AgentSwitcher() {
               if (!active) void switchHarness(id);
             }}
           >
-            {icon ? (
-              <img
-                className="agent-switcher__icon"
-                src={icon}
-                alt=""
-                draggable={false}
-              />
-            ) : (
-              <span className="agent-switcher__initial" aria-hidden>
-                {agent.name.trim().charAt(0).toUpperCase() || "?"}
-              </span>
-            )}
+            <AgentMark
+              id={agent.id}
+              name={agent.name}
+              className={`agent-switcher__icon agent-switcher__icon--${agent.id}`}
+              initialClassName="agent-switcher__initial"
+            />
           </button>
         );
       })}

@@ -11654,6 +11654,16 @@ button.chat-panel__activity-line:hover {
   display: block;
 }
 
+/* Pi's mark is the press kit's primary logo drawn as one ink, and its 800-unit
+   canvas keeps the brand's own ~40% margins. Drawn at 110% in the block, the
+   whole drawing stays inside the circle — its corners sit inside the ring with
+   a little air — and reads as a peer of the full-bleed portraits. The same
+   rule repeats on the Settings roster. */
+.agent-switcher__icon.agent-switcher__icon--pi {
+  width: 110%;
+  height: 110%;
+}
+
 .agent-switcher__initial {
   font-size: 0.82rem;
   font-weight: 700;
@@ -11692,11 +11702,18 @@ button.chat-panel__activity-line:hover {
   font-weight: 700;
 }
 
-.settings-agent__mark img {
+.settings-agent__mark img,
+.settings-agent__mark svg {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* See the Pi rule under `.agent-switcher__icon` above. */
+.settings-agent__mark .settings-agent__mark-icon--pi {
+  width: 110%;
+  height: 110%;
 }
 
 .settings-agent__name {
