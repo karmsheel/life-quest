@@ -270,7 +270,7 @@ and **Try again** (or **Check again** when you are up to date).
 
 ### The update notice appears while you work
 
-That is the hourly watch finding a release: **LifeQuest 0.2.8 is available**, with
+That is the hourly watch finding a release: **LifeQuest 0.3.0 is available**, with
 **View update** and a dismissal. It is announced once per release per session, a
 dismissal is final for that release, and a release the feed stops offering clears the
 notice. If the window is not focused you also get a native notification. A collapsed

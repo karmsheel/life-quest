@@ -26,7 +26,7 @@ the install.
 
 This page gets one vault open with a companion answering, names the two things
 that stop that happening — no usable companion configuration, and a folder that
-is not a vault — and then walks the first five minutes of a 0.2.8 vault. The
+is not a vault — and then walks the first five minutes of a 0.2.9 vault. The
 feature pages teach the surfaces themselves.
 
 ## Before you start
@@ -84,10 +84,10 @@ npm run release
 
 | Asset | What it is |
 |---|---|
-| `LifeQuest-0.2.8-setup.exe` | NSIS installer. Per-user, assisted, and it asks where to install; it creates desktop and Start menu shortcuts |
-| `LifeQuest-0.2.8-win-x64.zip` | Portable build: extract it and run `LifeQuest.exe` |
+| `LifeQuest-0.2.9-setup.exe` | NSIS installer. Per-user, assisted, and it asks where to install; it creates desktop and Start menu shortcuts |
+| `LifeQuest-0.2.9-win-x64.zip` | Portable build: extract it and run `LifeQuest.exe` |
 
-The version comes from `apps/desktop/package.json` (`0.2.8`). The build prints
+The version comes from `apps/desktop/package.json` (`0.2.9`). The build prints
 each file's size and SHA-256, and writes `release/release-manifest.json`.
 
 On a private unsigned build, Windows SmartScreen may warn on first launch.

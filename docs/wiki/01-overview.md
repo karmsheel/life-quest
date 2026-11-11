@@ -6,7 +6,7 @@ want down to what they do today: doctrine, goals, projects, the timeline, daily
 work, journals, reviews, and the operator's own tables, pages and pictures, all in
 one folder on disk.
 
-Release 0.2.8 opens a new vault on one surface, **Life**, with five further areas
+A new vault opens on one surface, **Life**, with five further areas
 already on disk but locked — **Health**, **Mind**, **Finance**, **Business** and
 **Relationships**. A first-run interview in the chat dock opens the one to three
 areas the conversation actually heard. The built-in **Pi** companion runs the
@@ -45,7 +45,7 @@ Most life apps put your life in their database. LifeQuest puts it in yours.
 This is the difference between a product that stores your data and a product that
 opens your data. The app is replaceable; the vault is not.
 
-The one surface is the point of 0.2.8. A new operator is not asked to design a
+The one surface is the point. A new operator is not asked to design a
 taxonomy before living in it: they land on **Life**, and the five narrower areas
 stay on disk, invisible, until the interview or the operator reveals them.
 
