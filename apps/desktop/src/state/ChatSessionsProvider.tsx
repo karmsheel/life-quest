@@ -27,6 +27,7 @@ import { useVault } from "@/state/VaultProvider";
 import type {
   CompanionRuntimeOverride,
   CompanionStreamFrame,
+  HarnessId,
   HermesSession,
 } from "@/vite-env";
 import type { FocusedCardContext } from "../../electron/companion-client.ts";
@@ -519,13 +520,30 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  /**
+   * The chat list, from whichever agent is in front.
+   *
+   * The read carries the agent it was started for. A switch can land while it is
+   * in flight, and the answer for the agent that is no longer in front must be
+   * dropped rather than painted over the new one's list.
+   */
   const loadSessions = useCallback(async (): Promise<HermesSession[] | null> => {
+    const epoch = listEpoch.current;
+    const agent = harnessRef.current;
     const listed = await api().companionSessionsList({
       includeArchived: archivedViewRef.current !== "hide",
     });
+    if (epoch !== listEpoch.current) return null;
     if (!listed.ok) {
+      // A read that failed while the agent was still coming up is not an error
+      // to paint: the rail says "loading", and the list is read again when the
+      // agent reports ready. Anything else is the agent's own answer.
+      if (agent && switchingRef.current === agent) return null;
       setListError(listed.error);
       return null;
+    }
+    if (agent) {
+      for (const session of listed.value) agentOfSession.current.set(session.id, agent);
     }
     setSessionsLoaded(true);
     setListError(null);
@@ -534,31 +552,53 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /**
-   * A chat belongs to the companion that made it.
+   * A chat belongs to the agent that made it.
    *
-   * Switching harness changes which store the list comes from, so the sessions,
-   * the open tabs and every per-session run are stale by definition. The stored
-   * tab list goes with them: restoring Hermes chat ids onto Pi (or the reverse)
-   * would ask for chats the new companion has never heard of.
+   * So a switch changes the sessions list and the tab strip, and nothing else:
+   * the transcripts, drafts, receipts and queued turns stay where they are,
+   * keyed by session id, because an agent that is not in front is not gone. A
+   * turn that is streaming on the other agent keeps landing in its own chat's
+   * run while the operator works here.
    */
   const companion = useOptionalCompanion();
   const harness = companion?.harness ?? null;
-  const seenHarness = useRef(harness);
-  useEffect(() => {
-    if (!harness || seenHarness.current === harness) {
-      seenHarness.current = harness;
-      return;
-    }
-    seenHarness.current = harness;
-    setSessions([]);
-    setSessionsLoaded(false);
-    setListError(null);
-    setActiveId(null);
-    setOpenTabs([]);
-    setRuns({});
-    writeStoredChatTabs([], null);
-    void loadSessions();
-  }, [harness, loadSessions]);
+  const harnessStatus = companion?.status ?? null;
+  const switching = companion?.switching ?? null;
+  const harnessRef = useRef<HarnessId | null>(harness);
+  harnessRef.current = harness;
+  const switchingRef = useRef<HarnessId | null>(switching);
+  switchingRef.current = switching;
+  /**
+   * Which agent's store this is. Bumped on every switch so a list read that was
+   * started for the agent being left cannot set state for the one being entered.
+   */
+  const listEpoch = useRef(0);
+  /**
+   * The last list and strip seen for each agent, so switching back paints that
+   * agent's chats at once and refreshes underneath, instead of showing an empty
+   * rail while the store is read.
+   */
+  const harnessSnapshots = useRef(
+    new Map<HarnessId, { sessions: HermesSession[]; openTabs: string[]; activeId: string | null }>(),
+  );
+  /** The agent a landing is in flight for, so two landings cannot fight. */
+  const landingFor = useRef<string | null>(null);
+  const seenHarness = useRef<HarnessId | null>(null);
+  /**
+   * Which agent each chat belongs to.
+   *
+   * A turn that is still streaming on the agent the operator left must keep
+   * landing in its own chat's run — and must not grow a tab in the strip of the
+   * agent they switched to. The frames carry a session id, not an agent, so the
+   * list read is what says whose chat it is.
+   */
+  const agentOfSession = useRef(new Map<string, HarnessId>());
+  const ownsSession = useCallback((id: string): boolean => {
+    const owner = agentOfSession.current.get(id);
+    const current = harnessRef.current;
+    if (!owner || !current) return true;
+    return owner === current;
+  }, []);
 
   /**
    * Turn the sidebar's archived view on, off, or to archived-only. The list is
@@ -685,6 +725,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
     async (id: string, session?: HermesSession) => {
       closedTabs.current.delete(id);
       if (session) {
+        const owner = harnessRef.current;
+        if (owner) agentOfSession.current.set(session.id, owner);
         setSessions((prev) =>
           prev.some((s) => s.id === id) ? prev : [session, ...prev],
         );
@@ -700,8 +742,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   );
 
   /**
-   * Landing behaviour, once per mount: bring back the tab strip the operator
-   * left (every open chat, in tab order, with the tab that was in front), else
+   * Land on one agent's chats: bring back the tab strip that agent last had
+   * open (every open chat, in tab order, with the tab that was in front), else
    * resume the chat this dock opened last, else the most recent one, else the
    * thread's blank slate. Never mints a session — an empty chat made on every
    * open is how the working set filled with "New chat" tabs nobody wrote in.
@@ -710,65 +752,183 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    * deleted or archived elsewhere while the app was shut cannot come back as a
    * tab pointing at nothing. The rest of the restored transcripts are read when
    * their tab is clicked, as any other unopened chat's is.
+   *
+   * `agent` is null only on a harness page, which has no companion provider at
+   * all; those pages keep the pre-agent memory slot, exactly as before.
+   * `fresh` forces a list read (a switch always does one), while a mount landing
+   * takes the list the provider has already read. `allowSurface` lets a landing
+   * put the dock on the thread; a switch leaves the dock's surface where the
+   * operator put it — only the chats under the agent are supposed to move.
    */
+  const landOnAgent = useCallback(
+    async (
+      agent: HarnessId | null,
+      cached: { sessions: HermesSession[]; openTabs: string[]; activeId: string | null } | null,
+      fresh: boolean,
+      allowSurface: boolean,
+    ) => {
+      const key = agent ?? "legacy";
+      if (landingFor.current === key) return;
+      landingFor.current = key;
+      try {
+        // Read the remembered strip BEFORE the list goes out. The strip is the
+        // last thing the dock wrote for this agent, and a write from the
+        // in-flight switch could otherwise land first and blank it.
+        const stored = readStoredChatTabs(agent);
+        const listed =
+          !fresh && sessionsRef.current.length
+            ? sessionsRef.current
+            : await loadSessions();
+        // No list, no landing: leave the memory alone and let the store finish
+        // the mount it already started rather than clearing the strip over a
+        // hiccup.
+        if (!listed) return;
+        const lastSessionId = window.localStorage.getItem(LAST_SESSION_KEY);
+        const live = new Set(listed.map((s) => s.id));
+        // A tab a live turn opened while the list was in flight belongs to the
+        // run that is happening now. On a switch, the strip already carried is
+        // the incoming agent's own cached strip.
+        const openNow = cached ? cached.openTabs : openTabsRef.current;
+        const landing = restoredChatTabs(stored, live, { openNow, lastSessionId });
+        if (landing.closedStrip) {
+          // Every tab was closed before the app quit. That is a decision about
+          // the working set, so the landing is the thread's blank slate — not a
+          // chat resumed over the top of it, which is what made a closed chat
+          // look reopened. A pinned chat is the exception the operator made:
+          // its tab is permanent, so landing on one is not reopening what they
+          // closed.
+          tabsHydrated.current = true;
+          const pinned = visibleTabOrder(listed, openNow);
+          const first = pinned[0] ?? null;
+          setOpenTabs([]);
+          setActiveId(first);
+          if (first) {
+            window.localStorage.setItem(LAST_SESSION_KEY, first);
+            setListError(null);
+            await loadMessages(first);
+          } else if (allowSurface) {
+            setSurface("thread");
+          }
+          return;
+        }
+        if (landing.activeId) {
+          tabsHydrated.current = true;
+          setOpenTabs(landing.tabs);
+          setActiveId(landing.activeId);
+          window.localStorage.setItem(LAST_SESSION_KEY, landing.activeId);
+          setListError(null);
+          if (allowSurface) setSurface("thread");
+          // A live turn's bubbles are arriving, not yet written down: its run is
+          // already on screen and must not be replaced by the stored page.
+          if (!runOf(landing.activeId).messagesLoaded) await loadMessages(landing.activeId);
+          return;
+        }
+        // Nothing remembered: the cached tab in front if the agent still has
+        // it, else the chat this dock opened last, else the most recent one,
+        // else the thread's blank slate.
+        tabsHydrated.current = true;
+        const resumeId =
+          (cached?.activeId && live.has(cached.activeId) ? cached.activeId : null) ??
+          (lastSessionId && live.has(lastSessionId) ? lastSessionId : null) ??
+          listed[0]?.id ??
+          null;
+        // The chat in front is a tab, like every other landing in this dock: an
+        // active chat with no square in the strip is the strip having lost it.
+        // Built from the target agent's own strip rather than from
+        // `openTabsRef`, which still holds the agent being left in this frame.
+        const kept = (cached?.openTabs ?? []).filter((id) => live.has(id));
+        setOpenTabs(
+          resumeId && !kept.includes(resumeId) ? [...kept, resumeId] : kept,
+        );
+        setActiveId(resumeId);
+        if (resumeId) {
+          window.localStorage.setItem(LAST_SESSION_KEY, resumeId);
+          setListError(null);
+          if (!runOf(resumeId).messagesLoaded) await loadMessages(resumeId);
+        } else if (allowSurface) {
+          setSurface("thread");
+        }
+      } finally {
+        landingFor.current = null;
+      }
+    },
+    [loadMessages, loadSessions, runOf, setSurface],
+  );
+
+  /** The mount landing, asked for by the dock when it opens. */
   const resumeLast = useCallback(async () => {
     if (resuming.current || activeIdRef.current) return;
     resuming.current = true;
     try {
-      const listed = sessionsRef.current.length
-        ? sessionsRef.current
-        : await loadSessions();
-      // No list, no landing: leave the memory alone and let the store finish the
-      // mount it already started rather than clearing the strip over a hiccup.
-      if (!listed) return;
-      const stored = readStoredChatTabs();
-      const lastSessionId = window.localStorage.getItem(LAST_SESSION_KEY);
-      const landing = restoredChatTabs(
-        stored,
-        new Set(listed.map((s) => s.id)),
-        { openNow: openTabsRef.current, lastSessionId },
+      const agent = harnessRef.current;
+      await landOnAgent(
+        agent,
+        agent ? harnessSnapshots.current.get(agent) ?? null : null,
+        false,
+        true,
       );
-      if (landing.closedStrip) {
-        // Every tab was closed before the app quit. That is a decision about the
-        // working set, so the landing is the thread's blank slate — not a chat
-        // resumed over the top of it, which is what made a closed chat look
-        // reopened. A pinned chat is the exception the operator made: its tab is
-        // permanent, so landing on one is not reopening what they closed.
-        tabsHydrated.current = true;
-        const pinned = visibleTabOrder(listed, openTabsRef.current);
-        const first = pinned[0] ?? null;
-        if (first) {
-          setActiveId(first);
-          setSurface("thread");
-          setListError(null);
-          window.localStorage.setItem(LAST_SESSION_KEY, first);
-          await loadMessages(first);
-          return;
-        }
-        setSurface("thread");
-        return;
-      }
-      if (landing.activeId) {
-        tabsHydrated.current = true;
-        setOpenTabs(landing.tabs);
-        setActiveId(landing.activeId);
-        setSurface("thread");
-        setListError(null);
-        window.localStorage.setItem(LAST_SESSION_KEY, landing.activeId);
-        await loadMessages(landing.activeId);
-        return;
-      }
-      // No strip to restore: a first landing, or a profile from before the strip
-      // was remembered. The old rule still holds — the last chat, the most
-      // recent one, else the thread's blank slate.
-      tabsHydrated.current = true;
-      const resume = listed.find((s) => s.id === lastSessionId) ?? listed[0] ?? null;
-      if (resume) await openChat(resume.id);
-      else setSurface("thread");
     } finally {
       resuming.current = false;
     }
-  }, [loadMessages, loadSessions, openChat, setSurface]);
+  }, [landOnAgent]);
+
+  /**
+   * The swap, when the operator changes agent.
+   *
+   * A chat belongs to the agent that made it, so the sessions list and the tab
+   * strip follow the new agent — but nothing is erased. The agent being left
+   * keeps its strip in memory and in storage, the per-session transcripts and
+   * drafts stay put, and the agent being entered paints its own cached strip at
+   * once and refreshes underneath. What this used to do — blank the list, clear
+   * the strip, write an empty strip to storage — is what made a switch read as
+   * the chat column reloading and lost the other agent's tabs for good.
+   */
+  useEffect(() => {
+    if (!harness) return;
+    const previous = seenHarness.current;
+    if (previous === harness) return;
+    seenHarness.current = harness;
+    listEpoch.current += 1;
+    if (previous) {
+      harnessSnapshots.current.set(previous, {
+        sessions: sessionsRef.current,
+        openTabs: openTabsRef.current,
+        activeId: activeIdRef.current,
+      });
+      writeStoredChatTabs(previous, openTabsRef.current, activeIdRef.current);
+    }
+    const cached = harnessSnapshots.current.get(harness) ?? null;
+    // The incoming agent's remembered strip is read HERE, before any state is
+    // written for it: the persistence effect would otherwise write this empty
+    // seed under the new agent's key and the landing would read back a strip the
+    // operator never closed.
+    const stored = readStoredChatTabs(harness);
+    const seedTabs = cached?.openTabs ?? (stored.known ? stored.tabs : []);
+    const seedActive = cached?.activeId ?? stored.activeId ?? null;
+    setListError(null);
+    setSessionsLoaded(Boolean(cached));
+    setSessions(cached?.sessions ?? []);
+    setOpenTabs(seedTabs);
+    setActiveId(seedActive);
+    resuming.current = true;
+    void landOnAgent(harness, cached, true, false).finally(() => {
+      resuming.current = false;
+    });
+  }, [harness, landOnAgent]);
+
+  /**
+   * The agent that a switch entered was still coming up, so its list read could
+   * not answer. Now it is ready: read it again, and the chats appear without the
+   * operator seeing an error banner for a state that was only "still starting".
+   */
+  const harnessReady =
+    Boolean(harness) &&
+    harnessStatus?.kind === "ready" &&
+    harnessStatus.harness === harness;
+  useEffect(() => {
+    if (!harness || !harnessReady || sessionsLoaded) return;
+    void landOnAgent(harness, harnessSnapshots.current.get(harness) ?? null, true, false);
+  }, [harness, harnessReady, sessionsLoaded, landOnAgent]);
 
   /**
    * The "New chat" slot: a blank conversation, always in a tab of its own.
@@ -806,6 +966,8 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
           setListError(created.error);
           return null;
         }
+        const creator = harnessRef.current;
+        if (creator) agentOfSession.current.set(created.value.id, creator);
         setSessions((prev) => [
           created.value,
           ...prev.filter((s) => s.id !== created.value.id),
@@ -1039,6 +1201,10 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       if ((!content && attached.length === 0 && !receipt) || !id) return;
       const run = runs[id] ?? EMPTY_RUN;
       if (run.sending) return;
+      // The agent whose store this turn's chat lives in, as of the send. The turn
+      // is not cancelled by a switch (it is already running in that agent), but
+      // its settle must not write the old agent's list over the new one's.
+      const turnEpoch = listEpoch.current;
 
       const page = pageContext.on ? readPageContext(pageContext.route) : null;
       const automationContext = automationContexts.current.get(id);
@@ -1133,8 +1299,22 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         }));
       } finally {
         void refresh();
-        const listed = await api().companionSessionsList();
-        if (listed.ok) setSessions(listed.value);
+        // The list this turn's chat lives in is only re-read if the operator is
+        // still on that agent. After a switch the new agent's own list is the
+        // one on screen, and writing this answer over it would hand the new
+        // agent's rail the old agent's chats.
+        if (turnEpoch === listEpoch.current) {
+          const listed = await api().companionSessionsList();
+          if (listed.ok && turnEpoch === listEpoch.current) {
+            const owner = harnessRef.current;
+            if (owner) {
+              for (const session of listed.value) {
+                agentOfSession.current.set(session.id, owner);
+              }
+            }
+            setSessions(listed.value);
+          }
+        }
         // The stream's terminal frame clears `sending` when it arrives; if the
         // transport settled without one, the composer must not stay stopped.
         settleTurnRef.current(id);
@@ -1243,6 +1423,10 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   const draining = useRef(new Set<string>());
   const drainQueue = useCallback(
     async (id: string): Promise<void> => {
+      // Queued text belongs to the chat that queued it, and a chat belongs to the
+      // agent that made it. Switching agent must not hand the old agent's queued
+      // turn to the new one's channel.
+      if (!ownsSession(id)) return;
       if (draining.current.has(id)) return;
       // A turn that is still sending owns the composer: the queue waits for its
       // terminal frame rather than racing it.
@@ -1269,7 +1453,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
         draining.current.delete(id);
       }
     },
-    [queues, runs, updateRun],
+    [queues, runs, updateRun, ownsSession],
   );
 
   // The drain and the turn reach each other through refs, so neither callback's
@@ -1356,13 +1540,20 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       const { sessionId: id, event: evt } = frame;
       if (!id) return;
       const isActive = () => activeIdRef.current === id;
+      // A frame for a chat belonging to the agent the operator has switched
+      // away from still lands in that chat's run — the turn is not cancelled by
+      // looking elsewhere — but it must not grow a tab in the strip of the agent
+      // now in front, nor clear a closed-tab mark there.
+      const onThisAgent = ownsSession(id);
 
       if (evt.type === "run.started") {
         // A new turn is a new reason to show the chat: a tab the operator closed
         // after the last run belongs to that run, not to this one. (The marks
         // exist only to keep the frames still on the wire from resurrecting it.)
-        closedTabs.current.delete(id);
-        ensureTab(id);
+        if (onThisAgent) {
+          closedTabs.current.delete(id);
+          ensureTab(id);
+        }
         updateRun(id, (current) => ({
           ...current,
           runId: evt.runId || null,
@@ -1509,7 +1700,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       }
     });
     return off;
-  }, [drainQueue, ensureTab, refresh, setLivePinIds, updateRun]);
+  }, [drainQueue, ensureTab, ownsSession, refresh, setLivePinIds, updateRun]);
 
   /**
    * The dock's landing is the provider's to arrange: the sidebar lists chats
@@ -1521,19 +1712,26 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
   }, [loadSessions]);
 
   /**
-   * Remember the strip for the next run: the chats that were open, in tab order,
-   * and the one in front.
+   * Remember the strip for the agent in front, for the next run.
    *
    * Written here rather than from each gesture so every path that changes the
    * strip is covered — opening, navigating, splitting, closing, deleting,
    * archiving, a run opening a tab of its own. The pair is written together: an
    * active id naming a tab the strip does not carry is not a memory to restore,
    * it is a landing into nothing. Held off until the first landing has read the
-   * profile (`tabsHydrated`), because the mount before it has no tabs yet.
+   * profile (`tabsHydrated`), because the mount before it has no tabs yet. The
+   * key carries the agent, so the strip a switch leaves behind is written by the
+   * switch itself (before this store moves on) and never overwrites the other
+   * agent's.
    */
   useEffect(() => {
     if (!tabsHydrated.current) return;
-    writeStoredChatTabs(openTabs, activeId);
+    // A landing is still deciding what this agent's strip is. Writing the seed
+    // it started from would persist an empty strip over the memory it is about
+    // to restore (and a mid-landing tab would be written under a strip the
+    // landing is about to replace).
+    if (landingFor.current) return;
+    writeStoredChatTabs(harnessRef.current, openTabs, activeId);
     if (activeId) window.localStorage.setItem(LAST_SESSION_KEY, activeId);
   }, [openTabs, activeId]);
 

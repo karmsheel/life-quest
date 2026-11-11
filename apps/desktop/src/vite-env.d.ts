@@ -104,6 +104,11 @@ type HarnessId = "hermes" | "pi";
  * `harness` and `detail` are the harness-neutral part: the renderer shows the
  * sentence and never formats a port or a profile path itself. The Hermes fields
  * are optional because a built-in companion has neither.
+ *
+ * Every status on the wire is tagged with the agent that produced it, so a late
+ * answer from an agent the operator has since switched away from can be
+ * dropped instead of painted over the one now in front. `switching` is the
+ * answer a switch gives at once, before the target has come up.
  */
 type CompanionStatus =
   | {
@@ -125,20 +130,22 @@ type CompanionStatus =
       cliPath?: string;
       childPid?: number | null;
     }
-  | { kind: "needs_install" }
+  | { kind: "needs_install"; harness?: HarnessId }
   /** Built in, but no endpoint/model/key configured yet. */
-  | { kind: "needs_setup"; message?: string }
-  | { kind: "profile_error"; message: string; path?: string }
-  | { kind: "port_busy"; port: number }
+  | { kind: "needs_setup"; message?: string; harness?: HarnessId }
+  | { kind: "profile_error"; message: string; path?: string; harness?: HarnessId }
+  | { kind: "port_busy"; port: number; harness?: HarnessId }
   /**
    * What the Hermes CLI said when the gateway could not be brought up. Whichever
    * stream carried it — Hermes prints its refusals on stdout — plus the exit-code
    * fallback when it said nothing at all.
    */
-  | { kind: "gateway_exited"; detail: string }
-  | { kind: "disconnected" }
-  | { kind: "hermes_too_old"; version?: string }
-  | { kind: "auth_error" };
+  | { kind: "gateway_exited"; detail: string; harness?: HarnessId }
+  | { kind: "disconnected"; harness?: HarnessId }
+  | { kind: "hermes_too_old"; version?: string; harness?: HarnessId }
+  | { kind: "auth_error"; harness?: HarnessId }
+  /** Chosen from the switcher, not up yet: the ensure is running in the background. */
+  | { kind: "switching"; harness: HarnessId };
 
 /** One companion the picker offers. */
 type HarnessSummary = {
@@ -485,7 +492,17 @@ type LifequestApi = {
    */
   companionUseProfile: (name: string) => Promise<CompanionStatus>;
   companionHarnesses: () => Promise<HarnessSummary[]>;
+  /**
+   * The BOOT path: pick a companion and wait for it to come up, so the setup
+   * screen can report a failure in that agent's own words.
+   */
   companionUseHarness: (id: HarnessId) => Promise<CompanionStatus>;
+  /**
+   * The switch made from the open studio. Answers at once with what is already
+   * known about the target (or a `switching` status); the target's ensure lands
+   * later on `onCompanionStatusChanged`.
+   */
+  companionSwitchHarness: (id: HarnessId) => Promise<CompanionStatus>;
   companionPiSettings: () => Promise<PiSettings>;
   companionPiSettingsSave: (input: {
     baseUrl?: string;

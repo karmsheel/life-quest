@@ -12,6 +12,8 @@ export function HarnessPicker() {
   const companion = useOptionalCompanion();
   const harnesses = Array.isArray(companion?.harnesses) ? companion.harnesses : null;
   const useHarness = companion?.useHarness;
+  const switchHarness = companion?.switchHarness;
+  const readyOnce = companion?.readyOnce ?? false;
   const ensuring = companion?.ensuring ?? false;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -32,7 +34,16 @@ export function HarnessPicker() {
     };
   }, [open]);
 
-  if (!harnesses || harnesses.length === 0 || !useHarness) return null;
+  if (!harnesses || harnesses.length === 0 || (!useHarness && !switchHarness)) {
+    return null;
+  }
+  /*
+   * On the connect screen this picker is part of a boot: waiting for the agent
+   * to answer is how that screen reports its own failure. In Settings, with the
+   * studio already open, it is a switch — so it takes the fast path and lets the
+   * agent come up behind the app, exactly like the dock's switcher.
+   */
+  const switchTo = readyOnce && switchHarness ? switchHarness : useHarness!;
   const active = harnesses.find((h) => h.active) ?? harnesses[0]!;
 
   return (
@@ -64,7 +75,7 @@ export function HarnessPicker() {
               }
               onClick={() => {
                 setOpen(false);
-                if (!entry.active) void useHarness(entry.id);
+                if (!entry.active) void switchTo(entry.id);
               }}
             >
               <span className="chat-panel__agent-item-name">{entry.name}</span>

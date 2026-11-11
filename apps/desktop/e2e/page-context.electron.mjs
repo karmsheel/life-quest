@@ -23,27 +23,32 @@
  *     pressed, naming the screen the rail names it, wearing the "seeing" glyph.
  *     A pill that only appears once clicked fails here.
  *  2. `the-pill-sits-beside-the-attach-control` — the receipt control is still
- *     the first control of the composer's footer line, the pill is its immediate
- *     next sibling in that line, on the same row, and the attach control itself
- *     is untouched. Proven with `compareDocumentPosition` and measured boxes, so
- *     "beside" is a fact about the document and not about a screenshot.
- *  3. `clicking-the-pill-turns-it-off` — it is a toggle, not a one-way door: the
+ *     the control before the pill inside the composer's receipts group, the
+ *     pill is its immediate next sibling in that group, on the same row, and
+ *     the attach control itself is untouched. Proven with
+ *     `compareDocumentPosition` and measured boxes, so "beside" is a fact about
+ *     the document and not about a screenshot.
+ *  3. `the-pill-sits-inside-the-composer-box` — the pill is part of the one
+ *     bordered composer box now, not a footer line under it: its box is inside
+ *     `.chat-panel__composer-box`, under the field, on the box's bottom-left
+ *     half. A pill that floated background-level on the form fails here.
+ *  4. `clicking-the-pill-turns-it-off` — it is a toggle, not a one-way door: the
  *     pill stays on the line in its off state, unpressed, with the same name and
  *     the "not seeing" glyph. A control that vanished when used would fail here.
- *  4. `a-turn-sent-while-off-quotes-nothing` — the recorded turn has no
+ *  5. `a-turn-sent-while-off-quotes-nothing` — the recorded turn has no
  *     `pageContext` key at all, and the instruction text main would post has no
  *     page block in it. This is the claim that the pill really gates the read.
- *  5. `walking-to-another-page-turns-it-back-on` — the off state does not survive
+ *  6. `walking-to-another-page-turns-it-back-on` — the off state does not survive
  *     navigation: the pill re-arms on arrival and names the new screen.
- *  6. `the-turn-carries-the-screen` — the turn sent from the Goals screen has a
+ *  7. `the-turn-carries-the-screen` — the turn sent from the Goals screen has a
  *     `pageContext` whose route and label are that screen's, whose body quotes
  *     that screen's heading, sentence, list and table, and whose built
  *     instruction carries the whole thing between the page markers.
- *  7. `the-outline-is-the-page-and-not-the-chrome` — the nav rail's own marker
+ *  8. `the-outline-is-the-page-and-not-the-chrome` — the nav rail's own marker
  *     text, which is on screen the whole time, never reaches the body, and the
  *     body opens on the page's own heading. Without this the "read the screen"
  *     claim would also pass on a rig that quoted the entire document.
- *  8. `the-dashboard-says-what-is-already-there` — the reported failure, made
+ *  9. `the-dashboard-says-what-is-already-there` — the reported failure, made
  *     falsifiable: back on the Dashboard, the turn quotes the existing expense
  *     card by name and its rendered weeks, and the instruction tells the model
  *     that what the block names already exists and to work with it rather than
@@ -52,7 +57,7 @@
  *     an affordance, and quoted as content those four words read like four
  *     charts that are on the screen; and the heading's badge is joined with a
  *     space rather than welded into "OverviewUnlocked".
- *  9. `the-pill-survives-the-turns-it-sends` — three turns later the pill is
+ * 10. `the-pill-survives-the-turns-it-sends` — three turns later the pill is
  *     still on and still naming the screen, so a turn does not quietly spend it.
  *
  * The bridge is a stub (a dev-server page has no preload), so this rig ends at
@@ -91,7 +96,9 @@ const DASHBOARD_TURN = "Add me an expense summary widget";
  * `follows` is a document-order bit rather than an index: "beside the attach
  * control" is a fact about the document, and an index into a child list is a
  * fact about markup. The row claim compares the two boxes' vertical spans, so a
- * pill that wrapped onto its own line is not "on the same row".
+ * pill that wrapped onto its own line is not "on the same row". The composer
+ * claims compare the pill's box against the composer box's own rect: the pill
+ * is part of the one bordered composer now, inside the box's bottom edge.
  */
 const SAMPLE = `(() => {
   const pill = document.querySelector('[data-testid="chat-page-context"]');
@@ -99,15 +106,19 @@ const SAMPLE = `(() => {
   const kind = pill ? pill.querySelector('.chat-panel__page-kind') : null;
   const attach = document.querySelector('.chat-panel__attach');
   const line = document.querySelector('.chat-panel__receipts');
+  const composerBox = document.querySelector('.chat-panel__composer-box');
+  const field = document.querySelector('.chat-panel__composer-input');
   const root = document.querySelector('[data-page-context-root]');
   const follows = (a, b) => Boolean(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING));
-  const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, height: r.height }; };
+  const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
   const glyph = (el) => {
     const svg = el ? el.querySelector('svg') : null;
     return svg ? [...svg.classList].join(' ') : null;
   };
   const pillBox = box(pill);
   const attachBox = box(attach);
+  const composerRect = box(composerBox);
+  const fieldRect = box(field);
   const heading = root ? root.querySelector('h1, h2, .home-card__title, .view-card__title') : null;
   return {
     path: window.pageContextPath ?? null,
@@ -133,6 +144,22 @@ const SAMPLE = `(() => {
     attachBeforePill: follows(attach, pill),
     attachLeftOfPill: Boolean(pillBox && attachBox && pillBox.left >= attachBox.right - 1),
     sameRow: Boolean(pillBox && attachBox && attachBox.top < pillBox.bottom && pillBox.top < attachBox.bottom),
+    // The pill is part of the composer box, inside its bottom edge, under the
+    // field and on its left half.
+    box: composerRect,
+    fieldBottom: fieldRect ? fieldRect.bottom : null,
+    pillInBox: Boolean(
+      pillBox &&
+        composerRect &&
+        pillBox.left >= composerRect.left - 0.5 &&
+        pillBox.right <= composerRect.right + 0.5 &&
+        pillBox.top >= composerRect.top - 0.5 &&
+        pillBox.bottom <= composerRect.bottom + 0.5
+    ),
+    pillBelowField: Boolean(pillBox && fieldRect && pillBox.top >= fieldRect.bottom - 0.5),
+    pillOnBoxLeftHalf: Boolean(
+      pillBox && composerRect && pillBox.left < composerRect.left + composerRect.width / 2
+    ),
     pageHeading: heading ? (heading.textContent || '').trim() : null,
     railText: (document.querySelector('.nav-rail') || {}).textContent ?? null,
     calls: (window.__pageContextChatCalls ?? []).length,
@@ -296,7 +323,7 @@ async function main() {
     `the landing pill read ${JSON.stringify(landing.pill)} on ${landing.path}`,
   );
 
-  // ── 2. beside the receipt control, in its line ────────────────────────────
+  // ── 2. beside the receipt control, in the composer's receipts group ───────
   check(
     "the-pill-sits-beside-the-attach-control",
     landing.attach !== null &&
@@ -311,7 +338,19 @@ async function main() {
       `sameRow=${landing.sameRow}, line ${JSON.stringify(landing.line)}`,
   );
 
-  // ── 3. it toggles, and stays where a toggle can be found again ────────────
+  // ── 3. inside the composer box, at its bottom left ────────────────────────
+  check(
+    "the-pill-sits-inside-the-composer-box",
+    landing.pill !== null &&
+      landing.pillInBox === true &&
+      landing.pillBelowField === true &&
+      landing.pillOnBoxLeftHalf === true,
+    `pill ${JSON.stringify(landing.pill)} in box ${JSON.stringify(landing.box)}, ` +
+      `field bottom ${landing.fieldBottom}, pillBelowField=${landing.pillBelowField}, ` +
+      `leftHalf=${landing.pillOnBoxLeftHalf}`,
+  );
+
+  // ── 4. it toggles, and stays where a toggle can be found again ────────────
   await togglePill(win);
   const off = await sample(win);
   checks.off = off.pill;
@@ -328,7 +367,7 @@ async function main() {
     `the pill read ${JSON.stringify(off.pill)} in line ${JSON.stringify(off.line)}`,
   );
 
-  // ── 4. off means the turn quotes nothing ──────────────────────────────────
+  // ── 5. off means the turn quotes nothing ──────────────────────────────────
   const whileOff = await send(win, OFF_TURN);
   const offContext = whileOff?.instructionsContext ?? {};
   checks.offTurn = {
@@ -509,8 +548,8 @@ async function main() {
 
   console.log(
     `pill: default=${landing.pill?.state} label=${JSON.stringify(landing.pill?.label)} ` +
-      `beside-attach=${landing.attachBeforePill} after-${afterTurns.calls}-turns=` +
-      `${afterTurns.pill?.state}`,
+      `in-box=${landing.pillInBox} beside-attach=${landing.attachBeforePill} ` +
+      `after-${afterTurns.calls}-turns=${afterTurns.pill?.state}`,
   );
   console.log(
     `turns: off=${checks.offTurn.hasKey ? "carried the page" : "carried nothing"} ` +

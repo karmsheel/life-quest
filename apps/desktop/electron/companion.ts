@@ -106,7 +106,10 @@ export function onCompanionStatusChanged(
 /** Store the status and tell everyone. Returns the wire shape (no API key). */
 function publish(status: CompanionStatus): PublicCompanionStatus {
   current = status;
-  return publishHarnessStatus(publicStatus(status));
+  // Tagged with this harness: a switch may already have moved the app to the
+  // other companion, and a late answer from a gateway that was restarting when
+  // the operator clicked must not be painted as the agent they are now on.
+  return publishHarnessStatus("hermes", publicStatus(status));
 }
 
 /**
