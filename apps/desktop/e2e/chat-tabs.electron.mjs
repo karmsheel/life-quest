@@ -1239,25 +1239,21 @@ async function main() {
       JSON.stringify({ tabs: baseline.tabs, strip: baseline.strip, heading: baseline.heading }),
     );
 
-    // 1d — the strip is drawn even with one tab, so Mod+W is the dock's here:
-    // it closes that tab and hands the screen to the blank slate. On the slate
-    // there is no strip and no tab to close, so the same key must be left to the
-    // platform instead of being swallowed in a corner of the app that has
-    // nothing to offer it.
-    const swallowedWithStrip = await dispatchKeyDown({ key: "w", ctrlKey: true });
+    // 1d — the strip is drawn even with one tab, so its one tab's close control
+    // is on screen and Mod+W must match it: a real press closes that tab and
+    // hands the screen to the blank slate. On the slate nothing is left to
+    // close, and a real press there would be taken by the platform (closing the
+    // rig's window), so the "left alone" half is probed with a synthetic
+    // keydown — the only safe probe for a key the app declines.
+    await pressKey("W", ["control"]);
     const closedOnlyTab = await settle();
     check(
       "Mod+W closes the only tab while the strip is drawn",
-      swallowedWithStrip === true &&
-        closedOnlyTab.tabCount === 0 &&
+      closedOnlyTab.tabCount === 0 &&
         closedOnlyTab.strip === null &&
         closedOnlyTab.surface === "thread" &&
         closedOnlyTab.heading === "Chat",
-      JSON.stringify({
-        swallowedWithStrip,
-        heading: closedOnlyTab.heading,
-        tabs: closedOnlyTab.tabCount,
-      }),
+      JSON.stringify({ heading: closedOnlyTab.heading, tabs: closedOnlyTab.tabCount }),
     );
     const swallowedWithoutStrip = await dispatchKeyDown({ key: "w", ctrlKey: true });
     const noStripKey = await settle();

@@ -11636,10 +11636,10 @@ button.chat-panel__activity-line:hover {
   box-shadow: var(--shadow-sm);
 }
 
-/* The thread stacks the tab strip on top of the name row, so the floating
-   switcher clears both bands there; the chain and shortcuts surfaces still draw
-   one band, and keep the single-band offset above. */
-.chat-panel[data-chat-surface="thread"] .agent-switcher {
+/* When the thread draws its tab strip, the strip and the name row stack: the
+   floating switcher clears both bands. A thread with no tab draws no strip and
+   keeps the single-band offset, as do the chain and shortcuts surfaces. */
+.chat-panel[data-chat-surface="thread"]:has(.chat-panel__tabs) .agent-switcher {
   top: calc(var(--shell-topbar-height) * 2 + 0.7rem);
 }
 
