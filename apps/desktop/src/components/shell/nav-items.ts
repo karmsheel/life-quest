@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Blocks,
   Calendar,
   CalendarCheck,
   CalendarClock,
@@ -13,7 +14,6 @@ import {
   FileText,
   FolderKanban,
   Goal,
-  Home,
   Image as ImageIcon,
   Map,
   NotebookPen,
@@ -86,10 +86,13 @@ export const NAV_ITEMS: NavItem[] = [
     pin: "bottom",
   },
   {
+    // The rail row wears the mark a built-in card's heading wears (BuiltInBadge):
+    // the Dashboard is the pin board, so its icon is the board's own badge, not
+    // the house glyph it used to carry.
     id: "dashboard",
     href: "/home",
     label: "Dashboard",
-    icon: Home,
+    icon: Blocks,
     section: "main",
     wing: "home",
   },
