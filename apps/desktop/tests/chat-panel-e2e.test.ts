@@ -103,14 +103,23 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
         restHeightPx: number;
         capPx: number;
         restPanelHeight: number;
-        samples: { step: string; fieldHeight: number; fieldSpansRow: boolean }[];
+        samples: { step: string; fieldHeight: number; fieldSpansRow: boolean; rowIsComposerBox: boolean }[];
         resizeChecks: { step: string; fieldHeight: number; expectedCap: number }[];
         send: {
           hiddenWhileEmpty: boolean;
           controlPx: number;
-          gutterPx: number;
-          removedColumnPx: number;
-          insideField: { inside: boolean };
+          paddingRestPx: { left: number; right: number };
+          paddingWithTextPx: { left: number; right: number };
+          fieldWidthPx: number;
+          fieldUsableWidthPx: number;
+          inBox: {
+            left: number;
+            top: number;
+            rightGap: number;
+            bottomGap: number;
+            belowField: boolean;
+            inside: boolean;
+          } | null;
           click: { present: boolean; enabled: boolean; calls: string[]; draftAfter: string; sendPresentAfter: boolean };
           stream: {
             decoded: { type: string; runId: string } | null;
@@ -137,8 +146,10 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
             outlineStyle: string;
             focused: boolean;
             matchesFocus: boolean;
-            matchesFocusVisible: boolean;
+            matchesFocusWithin: boolean;
             documentFocused: boolean;
+            fieldBorderWidth: string;
+            fieldBoxShadow: string;
           };
           focused: {
             borderWidth: string;
@@ -148,14 +159,17 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
             outlineStyle: string;
             focused: boolean;
             matchesFocus: boolean;
-            matchesFocusVisible: boolean;
+            matchesFocusWithin: boolean;
             documentFocused: boolean;
+            fieldBorderWidth: string;
+            fieldBoxShadow: string;
           };
           accent: string;
           border: string;
           ring: { reference1px: string; reference2px: string };
           devicePixelRatio: number;
           borderWidthDevicePx: number;
+          fieldBorderWidthDevicePx: number;
           footerBackground: string;
           footerBorderTopWidth: string;
           footerPaddingTop: number;
@@ -187,16 +201,34 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
         );
       }
 
-      // The inline send control: hidden while the composer is empty, inside the
-      // field's own box when it shows, and still submitting the form.
+      // The send control: hidden while the composer is empty; with text it sits
+      // in the composer box's own control row, at the box's bottom-right corner
+      // under the field, so the field keeps its whole writing width and its
+      // padding does not change when the control appears.
       assert.equal(report.send.hiddenWhileEmpty, true, "send control rendered on an empty composer");
-      assert.equal(report.send.insideField.inside, true, "send control sat outside the field");
+      assert.ok(report.send.inBox, "the send control's place in the composer box was not measured");
+      assert.equal(report.send.inBox!.inside, true, "send control sat outside the composer box");
+      assert.equal(report.send.inBox!.belowField, true, "send control was not below the field");
       assert.ok(
-        report.send.gutterPx < report.send.removedColumnPx,
-        `gutter ${report.send.gutterPx}px did not beat the removed ${report.send.removedColumnPx}px column`,
+        report.send.inBox!.rightGap >= 0 && report.send.inBox!.rightGap <= 12,
+        `send control is ${report.send.inBox!.rightGap}px from the box's right edge`,
+      );
+      assert.ok(
+        report.send.inBox!.bottomGap >= 0 && report.send.inBox!.bottomGap <= 12,
+        `send control is ${report.send.inBox!.bottomGap}px from the box's bottom edge`,
+      );
+      assert.deepEqual(
+        report.send.paddingRestPx,
+        report.send.paddingWithTextPx,
+        "the field's padding changed when the send control appeared (a gutter survived)",
       );
       for (const sample of report.samples) {
-        assert.equal(sample.fieldSpansRow, true, `${sample.step} did not give the field the full row width`);
+        assert.equal(sample.fieldSpansRow, true, `${sample.step} did not give the field the full box width`);
+        assert.equal(
+          sample.rowIsComposerBox,
+          true,
+          `${sample.step}'s field did not sit directly in the composer box`,
+        );
       }
       assert.equal(report.send.click.present && report.send.click.enabled, true, "send control unusable");
       assert.equal(report.send.click.calls.length, 1, "icon button did not submit exactly once");
@@ -242,9 +274,10 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
         "the marker vanished when the stream closed",
       );
 
-      // The composer's own chrome: the accent ring lives on the field, the band
-      // around it paints nothing of its own, and selecting the field adds light
-      // rather than a second colour.
+      // The composer's own chrome: the accent ring lives on the composer box,
+      // the field inside it is frameless, the band around it paints nothing of
+      // its own, and selecting anything in the box adds light rather than a
+      // second colour.
       assert.equal(
         alphaOf(report.composer.footerBackground),
         0,
@@ -252,14 +285,14 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       );
       assert.equal(report.composer.footerBorderTopWidth, "0px", "the composer band kept its hairline");
       assert.ok(report.composer.footerPaddingTop > 0, "the composer band lost its gutter");
-      assert.equal(report.composer.restingRing.borderStyle, "solid", "the field's ring is not solid");
+      assert.equal(report.composer.restingRing.borderStyle, "solid", "the composer box's ring is not solid");
       // Thickness is checked against a reference element measured in the same
       // renderer, never a hard-coded string: Chromium snaps a used border width
       // down to whole device pixels, so 2px renders as 1.6px on a 125% display.
       assert.equal(
         report.composer.restingRing.borderWidth,
         report.composer.ring.reference2px,
-        `the field's ring is not the 2px reference: ${report.composer.restingRing.borderWidth} vs ${report.composer.ring.reference2px}`,
+        `the composer box's ring is not the 2px reference: ${report.composer.restingRing.borderWidth} vs ${report.composer.ring.reference2px}`,
       );
       assert.ok(
         parseFloat(report.composer.ring.reference2px) >
@@ -268,19 +301,41 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       );
       assert.ok(
         report.composer.borderWidthDevicePx >= 2,
-        `the field's ring is under 2 device px: ${report.composer.borderWidthDevicePx} at dpr ${report.composer.devicePixelRatio}`,
+        `the composer box's ring is under 2 device px: ${report.composer.borderWidthDevicePx} at dpr ${report.composer.devicePixelRatio}`,
       );
       assert.equal(
         report.composer.restingRing.borderColor,
         report.composer.accent,
-        `the field's ring is not the accent: ${report.composer.restingRing.borderColor} vs ${report.composer.accent}`,
+        `the composer box's ring is not the accent: ${report.composer.restingRing.borderColor} vs ${report.composer.accent}`,
       );
       assert.notEqual(
         report.composer.restingRing.borderColor,
         report.composer.border,
-        "the field still wears the neutral hairline",
+        "the composer box still wears the neutral hairline",
       );
-      assert.equal(report.composer.restingRing.boxShadow, "none", "an unselected field already glows");
+      assert.equal(report.composer.restingRing.boxShadow, "none", "an unselected composer box already glows");
+      assert.equal(
+        report.composer.restingRing.matchesFocusWithin,
+        false,
+        "an unselected composer box already matches :focus-within",
+      );
+      // The field is a bare writing surface inside the box: the box owns the
+      // ring and the glow, so the field has neither.
+      assert.equal(
+        report.composer.restingRing.fieldBorderWidth,
+        "0px",
+        `the field kept a border of ${report.composer.restingRing.fieldBorderWidth}`,
+      );
+      assert.equal(
+        report.composer.fieldBorderWidthDevicePx,
+        0,
+        `the field's border renders as ${report.composer.fieldBorderWidthDevicePx} device px`,
+      );
+      assert.equal(
+        report.composer.focused.fieldBoxShadow,
+        "none",
+        `the field painted a shadow of its own: ${report.composer.focused.fieldBoxShadow}`,
+      );
       assert.equal(
         report.composer.focused.focused,
         true,
@@ -291,12 +346,22 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
         true,
         "the field held activeElement without matching :focus, so a glow would measure nothing",
       );
+      assert.equal(
+        report.composer.focused.matchesFocusWithin,
+        true,
+        "the composer box did not light up for the focused field (:focus-within)",
+      );
       assert.match(report.composer.focused.boxShadow, /0px 0px 0px 3px/, "no focus ring in the glow");
       assert.match(report.composer.focused.boxShadow, /0px 0px 14px 2px/, "no soft halo in the glow");
       assert.equal(
         report.composer.focused.borderColor,
         report.composer.restingRing.borderColor,
         "selection changed the ring's colour instead of adding light",
+      );
+      assert.equal(
+        report.composer.focused.fieldBorderWidth,
+        report.composer.restingRing.fieldBorderWidth,
+        "selection changed the field's border instead of lighting the box",
       );
       assert.equal(report.composer.focused.outlineStyle, "none", "the focus outline was not suppressed");
     });
@@ -350,15 +415,29 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       rowBelowField: boolean;
       menuClosed: boolean;
       pills: Pill[];
-      /** The line under the field: its box, and where the attach control and
-       *  the runtime pick sit on it. Null when either end is missing. */
+      /** The row inside the composer box's bottom edge: the dock, the add,
+       *  receipt and page controls leading it, and the runtime pick trailing
+       *  it. Null when any required control is missing. */
       line: {
         fieldBottom: number;
-        line: { left: number; right: number; top: number; bottom: number };
-        attach: { left: number; right: number; top: number; bottom: number };
-        pick: { left: number; right: number; top: number; bottom: number };
-        sameLine: boolean;
+        box: { left: number; right: number; top: number; bottom: number; width: number };
+        dock: { left: number; right: number; top: number; bottom: number; width: number };
+        plus: { left: number; right: number; top: number; bottom: number; width: number };
+        attach: { left: number; right: number; top: number; bottom: number; width: number };
+        page: { left: number; right: number; top: number; bottom: number; width: number } | null;
+        pick: { left: number; right: number; top: number; bottom: number; width: number };
+        dockInsideBox: boolean;
+        dockBelowField: boolean;
+        controlsInsideBox: boolean;
+        controlsBelowField: boolean;
+        sameRow: boolean;
+        plusLeftOfAttach: boolean;
+        attachLeftOfPage: boolean | null;
+        pageLeftOfPick: boolean | null;
+        plusLeadsRow: boolean;
+        pickRightGap: number;
         attachGroup: boolean;
+        attachInReceipts: boolean;
       } | null;
     };
     defaultThinking: { rows: string[]; closedByEscape: boolean };
@@ -450,22 +529,39 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       );
       assert.equal(report.initial.rowBorderTopWidth, "0px", "the runtime row painted a hairline");
       assert.equal(report.initial.rowBelowField, true, "the pills are not under the field");
-      assert.ok(report.initial.line, "the footer line under the field was not measured");
-      assert.ok(
-        report.initial.line!.attach.top >= report.initial.line!.fieldBottom,
-        `the attach control is not under the field: ${JSON.stringify(report.initial.line!.attach)} vs field bottom ${report.initial.line!.fieldBottom}`,
+      assert.ok(report.initial.line, "the composer box's control row was not measured");
+      assert.equal(
+        report.initial.line!.dockInsideBox && report.initial.line!.dockBelowField,
+        true,
+        `the dock is not the box's bottom row under the field: dock ${JSON.stringify(report.initial.line!.dock)} box ${JSON.stringify(report.initial.line!.box)}`,
       );
-      assert.ok(
-        Math.abs(report.initial.line!.attach.left - report.initial.line!.line.left) <= 1 &&
-          report.initial.line!.attach.right < report.initial.line!.pick.left,
-        `the attach control is not at the left end of the line: attach ${JSON.stringify(report.initial.line!.attach)} pick left ${report.initial.line!.pick.left}`,
+      assert.equal(
+        report.initial.line!.controlsInsideBox && report.initial.line!.controlsBelowField,
+        true,
+        "the add/receipt/pick controls are not inside the box below the field",
       );
-      assert.equal(report.initial.line!.sameLine, true, "the attach control and the pick are not on one line");
+      assert.equal(
+        report.initial.line!.plusLeadsRow && report.initial.line!.plusLeftOfAttach,
+        true,
+        `the add control does not lead the row: plus ${JSON.stringify(report.initial.line!.plus)} attach ${JSON.stringify(report.initial.line!.attach)}`,
+      );
+      assert.equal(
+        report.initial.line!.attachLeftOfPage,
+        true,
+        `the receipt control is not left of the page pill: attach ${JSON.stringify(report.initial.line!.attach)} page ${JSON.stringify(report.initial.line!.page)}`,
+      );
+      assert.equal(
+        report.initial.line!.pageLeftOfPick,
+        true,
+        `the page pill is not left of the runtime pick: page ${JSON.stringify(report.initial.line!.page)} pick ${JSON.stringify(report.initial.line!.pick)}`,
+      );
+      assert.equal(report.initial.line!.sameRow, true, "the dock's controls are not on one row");
       assert.ok(
-        Math.abs(report.initial.line!.pick.right - report.initial.line!.line.right) <= 1,
-        `the runtime pick is not at the right end of the line: pick ${JSON.stringify(report.initial.line!.pick)} line right ${report.initial.line!.line.right}`,
+        report.initial.line!.pickRightGap >= 0 && report.initial.line!.pickRightGap <= 12,
+        `the runtime pick is ${report.initial.line!.pickRightGap}px from the dock's right end`,
       );
       assert.equal(report.initial.line!.attachGroup, true, "the attach control left its receipt group");
+      assert.equal(report.initial.line!.attachInReceipts, true, "the attach control is not inside the receipts group");
       assert.equal(report.initial.pills.length, 2, "expected exactly the model and thinking pills");
       assert.equal(report.initial.pills[0]?.label, "space-bunny-alpha", "the model pill lost the default label");
       assert.equal(report.initial.pills[0]?.override, "false", "an unpicked model pill claimed an override");
@@ -1099,9 +1195,24 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
     initial: {
       fieldPresent: boolean;
       plusPresent: boolean;
-      plusInside: boolean;
-      plusTopRight: boolean;
       plusLabel: string | null;
+      plusBackground: string | null;
+      plusRadiusPx: number | null;
+      plusBox: { left: number; right: number; top: number; bottom: number; width: number; height: number } | null;
+      boxBox: { left: number; right: number; top: number; bottom: number; width: number; height: number } | null;
+      dockBox: { left: number; right: number; top: number; bottom: number; width: number; height: number } | null;
+      plusInsideBox: boolean;
+      plusInsideDock: boolean;
+      plusBelowField: boolean;
+      plusOnLeftHalf: boolean;
+      plusBottomLeft: boolean;
+      plusCircular: boolean;
+      attachmentInputPresent: boolean;
+      attachmentAccept: string | null;
+      attachmentMultiple: boolean;
+      receiptInputPresent: boolean;
+      receiptAccept: string | null;
+      distinctPickers: boolean;
     };
     afterEnter: { sends: number; before: string; after: string };
     afterRealEnter: { value: string; lines: number; sends: number };
@@ -1156,12 +1267,47 @@ describe("chat panel rigs", { concurrency: 2 }, () => {
       assert.deepEqual(report.failures, []);
       assert.equal(report.pass, true);
 
-      // The attach control: inside the field's own box, in its top-right corner.
-      assert.equal(report.initial.fieldPresent, true, "the composer field never rendered");
-      assert.equal(report.initial.plusPresent, true, "the attach control never rendered");
-      assert.equal(report.initial.plusInside, true, "the attach control sat outside the field");
-      assert.equal(report.initial.plusTopRight, true, "the attach control was not top-right");
-      assert.match(report.initial.plusLabel ?? "", /attach/i, "the attach control names itself");
+      // The add control: inside the composer box's own control row, at the
+      // box's bottom left, wearing a circular muted surface.
+      assert.equal(report.initial.fieldPresent, true, "the composer box never rendered");
+      assert.equal(report.initial.plusPresent, true, "the add control never rendered");
+      assert.equal(report.initial.plusInsideBox, true, "the add control sat outside the composer box");
+      assert.equal(report.initial.plusInsideDock, true, "the add control is not on the box's control row");
+      assert.equal(report.initial.plusBelowField, true, "the add control is not under the field");
+      assert.equal(report.initial.plusOnLeftHalf, true, "the add control is not on the box's left half");
+      assert.equal(report.initial.plusBottomLeft, true, "the add control is not at the box's bottom left");
+      assert.equal(
+        report.initial.plusCircular,
+        true,
+        `the add control is not circular: ${JSON.stringify(report.initial.plusBox)} radius ${report.initial.plusRadiusPx}px`,
+      );
+      assert.ok(
+        alphaOf(report.initial.plusBackground) > 0,
+        `the add control's surface is transparent: ${report.initial.plusBackground}`,
+      );
+      assert.ok(
+        (report.initial.plusRadiusPx ?? 0) >= (report.initial.plusBox?.height ?? Infinity) / 2,
+        `the add control's radius ${report.initial.plusRadiusPx}px is under half its ` +
+          `${report.initial.plusBox?.height}px height`,
+      );
+      assert.match(report.initial.plusLabel ?? "", /attach/i, "the add control names itself");
+
+      // Both attach flows survive, as two pickers: the add control takes any
+      // file; the receipt control takes one picture the ledger can cite.
+      assert.equal(report.initial.attachmentInputPresent, true, "the general attachment picker vanished");
+      assert.equal(report.initial.attachmentAccept, null, "the general picker grew an accept filter");
+      assert.equal(
+        report.initial.attachmentMultiple,
+        true,
+        "the general picker stopped taking several files",
+      );
+      assert.equal(report.initial.receiptInputPresent, true, "the receipt picker vanished");
+      assert.equal(
+        report.initial.receiptAccept,
+        "image/png,image/jpeg",
+        `the receipt picker is not image-only: ${report.initial.receiptAccept}`,
+      );
+      assert.equal(report.initial.distinctPickers, true, "the two attach flows share one picker");
 
       // The keys: Enter breaks the line and sends nothing; Ctrl+Enter sends.
       assert.equal(report.afterEnter.sends, 0, "Enter sent the message");
