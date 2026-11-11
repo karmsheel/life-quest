@@ -11146,6 +11146,14 @@ button.chat-panel__activity-line:hover {
   font-size: 0.74rem;
 }
 
+/* The rail while a switch reads the new agent's store: a sentence, not a
+   skeleton, because the wait is normally one list read and a flash of grey
+   blocks would be the third thing the eye catches in a switch that should feel
+   like nothing happened. */
+.chats-rail__empty--loading {
+  color: var(--muted-foreground, var(--muted));
+}
+
 .chats-rail__error {
   flex: 0 0 auto;
   margin: 0 0.15rem 0.2rem;
@@ -11520,6 +11528,32 @@ button.chat-panel__activity-line:hover {
 .agent-switcher__pill--active {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-fill);
+}
+
+/* A switch that is still coming up. The ring is already on the target (the
+   choice moved on the click); this is the quiet second signal that its ensure
+   has not answered yet. It never blocks the control — a pill that goes dead
+   under the pointer is the jitter this surface exists to avoid. */
+.agent-switcher__pill--pending {
+  border-color: var(--accent);
+  animation: agent-switcher-breathe 1.1s ease-in-out infinite;
+}
+
+@keyframes agent-switcher-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px var(--accent-fill);
+  }
+  50% {
+    box-shadow: 0 0 0 3px var(--accent-fill), 0 0 0 1px var(--accent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-switcher__pill--pending {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--accent-fill);
+  }
 }
 
 .agent-switcher__pill:disabled {

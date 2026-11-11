@@ -1892,8 +1892,11 @@ function ChatPanelView({ open, onOpenChange }: ChatPanelProps) {
                 <div className="chat-panel__empty-orb" aria-hidden />
                 <p className="chat-panel__empty-title">{`Ask ${companionName}`}</p>
                 <p className="chat-panel__empty-copy">
-                  This is your LifeQuest companion on the lifequest Hermes
-                  profile. Active area: {domainName}.
+                  {companionContext?.harness === "pi"
+                    ? `This is the built-in LifeQuest companion. Active area: ${domainName}.`
+                    : `This is your LifeQuest companion on the ${
+                        companionContext?.profile ?? "lifequest"
+                      } Hermes profile. Active area: ${domainName}.`}
                 </p>
                 {/*
                   The saved questions that fit this screen. One click sends the

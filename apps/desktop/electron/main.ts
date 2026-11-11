@@ -965,6 +965,15 @@ function registerIpcHandlers() {  ipcMain.handle("vault:create", (_e, rootPath: 
   ipcMain.handle("companion:useHarness", (_e, id: string) =>
     harness.useHarness(id === "hermes" ? "hermes" : "pi"),
   );
+  /*
+   * The switch made from the studio itself. It answers at once instead of
+   * waiting for the target agent to come up: a switch that held the app still
+   * while a gateway restarted read as a reconnection. The target's ensure keeps
+   * running and reports on `companion:statusChanged`, tagged with its agent.
+   */
+  ipcMain.handle("companion:switchHarness", (_e, id: string) =>
+    harness.switchHarness(id === "hermes" ? "hermes" : "pi"),
+  );
   // The built-in companion's endpoint. The key is write-only: it goes to OS
   // secure storage and never travels back to the renderer.
   ipcMain.handle("companion:piSettings", async () => {
