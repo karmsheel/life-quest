@@ -1,50 +1,50 @@
 /**
- * The archive fence rig: does archiving a chat actually reach the gateway as a
- * write the gateway will accept, and does a dead gateway say something the
- * operator can act on?
+ * The archive contract rig: does archiving a chat reach the host gateway as a
+ * write it actually accepts, and does a dead gateway say something the operator
+ * can act on?
  *
  * WHY THIS RIG EXISTS
  *
- * The operator pressed Archive in the left sidebar and got "Fetch failed".
- * Two separate defects sat behind that one symptom:
+ * The operator pressed Archive in the left sidebar and got
+ * "Unsupported session fields: request_id". Two defects sat behind that one
+ * symptom:
  *
- *   1. `companionSessionPatch` called `hermesFetch` directly, while every other
- *      session call went through the `gatewayCall` wrapper. So when the Hermes
- *      host was not answering, the raw undici message ("fetch failed") went
- *      straight into the sidebar's error banner — the operator was told a
- *      transport string and nothing about what to do about it.
+ *   1. `companionSessionPatch` sent a `request_id` and an `expected_revision`
+ *      with every session PATCH. Those are the mutation identity of Hermes'
+ *      DASHBOARD backend (`hermes_cli/web_server_sessions.py`, which fences its
+ *      `session.mutate` RPC, 409 `mutation_identity_required`). This app does
+ *      not attach to that backend: it speaks to the host gateway's
+ *      `/p/<profile>/api/sessions` API, whose PATCH is a strict field
+ *      allowlist (`title`, `end_reason`, `pinned`, `archived`, `hidden`,
+ *      `unread`) and answers anything else with 400
+ *      `unsupported_session_field` BEFORE a write is attempted. So the archive
+ *      body was refused and the operator saw the gateway's own words.
  *
- *   2. The Hermes host gateway FENCES every session mutation. `PATCH
- *      /api/sessions/{id}` refuses a write that carries no `request_id` and no
- *      `expected_revision` (409 `mutation_identity_required`, or 409
- *      `CLIENT_UPGRADE_REQUIRED` for a pre-fence client), and refuses one whose
- *      revision no longer matches the row (`revision_conflict`). The app sent
- *      only `{archived: true}`, so even against a healthy gateway the archive
- *      was refused as a pre-fence client. The revision the fence needs is
- *      already in the list read (`runtime_revision`); the app just dropped it.
+ *   2. The archive path had once bypassed the `gatewayCall` wrapper every other
+ *      session call uses, so a gateway that was not answering produced undici's
+ *      raw "fetch failed" in the sidebar. That half is still guarded here: a
+ *      dead gateway must be named in words the operator can act on.
  *
  * So the rig drives the REAL main process and the REAL sidebar against a fake
  * gateway that behaves like the real one, and asserts:
  *
- *   - the archive PATCH carries a `request_id` and an `expected_revision`;
- *   - the `expected_revision` is the row's own revision, as the list read it;
- *   - the gateway's own refusal (a 409) is surfaced as the gateway said it,
- *     not swallowed;
+ *   - the archive PATCH carries ONLY fields the host gateway accepts (and no
+ *     mutation identity);
+ *   - the archive lands: the row leaves the working list and no error banner
+ *     appears;
  *   - a gateway that is GONE produces a named, actionable message — and never
  *     the raw words "fetch failed".
  *
  * THE WAYS THIS COULD LOOK GREEN WHILE PROVING NOTHING, WRITTEN DOWN FIRST
  *
- *   1. The fake gateway accepts anything, so the fence is never exercised. It
- *      does NOT: it refuses a write with no mutation identity exactly as the
- *      real host does (409 `mutation_identity_required`), and refuses one whose
- *      `expected_revision` does not match the row (`revision_conflict`). The
- *      rig records every PATCH it received, body and all, and the judge reads
- *      that log — so a rig that never archived anything fails on the log, not
- *      on a self-report.
+ *   1. The fake gateway accepts anything, so the field problem is never
+ *      exercised. It does NOT: it enforces the real allowlist and answers an
+ *      unknown field with the real 400 body and code. The rig records every
+ *      PATCH it received, body and all, and the judge reads that log — so a
+ *      rig that never archived anything fails on the log, not on a self-report.
  *   2. The rig passes because the app never archived. Every check reads the
- *      gateway's own request log, so "the PATCH arrived" is a fact about the
- *      wire, not about the app's state.
+ *      gateway's own request log, so "the PATCH arrived with accepted fields"
+ *      is a fact about the wire, not about the app's state.
  *   3. The dead-gateway check passes because the app was never ready. The rig
  *      waits for the sidebar to mount and for the gateway's live chat to be
  *      painted FIRST — that proves the app attached to a live gateway — and
@@ -53,25 +53,27 @@
  *   4. The error message check is satisfied by any string. The judge requires
  *      the message to NAME the agent and the control that retries it, and
  *      separately requires that it does NOT contain the raw undici words.
- *   5. The screenshot is stale, blank, or of another window. It is this
- *      window's own `capturePage()` after the error banner painted, and the
- *      judge requires >10 KB on disk.
+ *   5. The screenshots are stale, blank, or of another window. They are this
+ *      window's own `capturePage()`: one after the archive landed (the shipped
+ *      sidebar with the chat gone) and one after the dead gateway painted its
+ *      error. The judge requires >10 KB for each.
  *   6. The rig attaches to the operator's real Hermes, vault, or app.
  *      `HERMES_HOME` is a temp dir, a stub `hermes` is first on PATH, the
- *      profile is one no real install has (`lq-fence-e2e`), the vault is a
+ *      profile is one no real install has (`lq-archive-e2e`), the vault is a
  *      throwaway `createVault()` copy, and the MCP doors are moved to free
  *      ports by `LIFEQUEST_E2E`. 8642/8643/8646 are never bound.
  *
- * Run by `tests/archive-fence-e2e.test.ts`, which builds the world (temp
+ * Run by `tests/archive-contract-e2e.test.ts`, which builds the world (temp
  * `HERMES_HOME`, throwaway vault, `recent.json`, fake `hermes` on PATH) and
- * passes it as `LQ_FENCE_WORLD`:
+ * passes it as `LQ_ARCHIVE_WORLD`:
  *
- *   LQ_FENCE_WORLD=<dir> <electron> e2e/archive-fence.electron.mjs
+ *   LQ_ARCHIVE_WORLD=<dir> <electron> e2e/archive-contract.electron.mjs
  *
  * The driver starts the fake gateway on its own free port (the port has to be
  * known before `.env` is written), boots the REAL main process through
  * `bootForE2e`, drives the REAL sidebar, and writes
- * `e2e/artifacts/archive-fence.json` plus `e2e/artifacts/archive-fence.png`.
+ * `e2e/artifacts/archive-contract.json`, `archive-contract.png` (the successful
+ * archive) and `archive-contract-dead.png` (the actionable error).
  * Exit 0 = its checks held.
  */
 import fs from "node:fs";
@@ -85,10 +87,28 @@ app.commandLine.appendSwitch("disable-background-timer-throttling");
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const artifactsDir = path.join(here, "artifacts");
-const REPORT_NAME = "archive-fence.json";
-const SCREENSHOT_NAME = "archive-fence.png";
+const REPORT_NAME = "archive-contract.json";
+const SCREENSHOT_NAME = "archive-contract.png";
+const DEAD_SCREENSHOT_NAME = "archive-contract-dead.png";
 const MIN_SCREENSHOT_BYTES = 10 * 1024;
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL ?? "http://127.0.0.1:5173";
+
+/**
+ * The fields the host gateway's `PATCH /api/sessions/{id}` accepts.
+ *
+ * Copied from `gateway/platforms/api_server.py::_handle_patch_session`, where
+ * the body is checked against exactly this set before any write. Anything else
+ * — including a mutation identity such as `request_id` or `expected_revision` —
+ * is a 400 `unsupported_session_field`, not a fenced write.
+ */
+const SUPPORTED_SESSION_FIELDS = [
+  "title",
+  "end_reason",
+  "pinned",
+  "archived",
+  "hidden",
+  "unread",
+];
 
 const failures = [];
 const checks = [];
@@ -98,7 +118,7 @@ function check(label, pass, detail = null) {
   const ok = Boolean(pass);
   checks.push({ label, pass: ok, detail: detail ?? null });
   if (!ok) failures.push(detail ? `${label}: ${detail}` : label);
-  if (!ok) console.error(`[archive-fence] FAIL ${label}${detail ? ` — ${detail}` : ""}`);
+  if (!ok) console.error(`[archive-contract] FAIL ${label}${detail ? ` — ${detail}` : ""}`);
   return ok;
 }
 
@@ -115,21 +135,20 @@ function listen(server) {
 }
 
 /**
- * The fake Hermes host gateway, with the real host's FENCES.
+ * The fake Hermes host gateway, as this app actually finds it.
  *
  * `/health` and `/v1/capabilities` are the attach probes; `/api/sessions` is
- * the list, and it carries each row's `runtime_revision` because the real
- * host's list rows do (the app needs it to fence the archive).
+ * the list, with rows in the host's shape (no `runtime_revision`: the host's
+ * list rows do not carry one).
  *
  * The PATCH is the point of this rig, and it behaves like the real host:
  *
- *   - a write with no `request_id` and no `expected_revision` is refused with
- *     409 `mutation_identity_required` (the real host's pre-fence refusal);
- *   - a write whose `expected_revision` does not match the row is refused with
- *     409 `revision_conflict`;
- *   - a properly fenced write commits, bumps the row's revision, and answers
- *     the receipt the real host answers (`ok`, `session_id`, `revision`,
- *     `operation`, and the flag that was written).
+ *   - the body is checked against the allowlist above and an unknown field is
+ *     refused with the real 400 body and `unsupported_session_field` code;
+ *   - a flag that is not a boolean is refused with the real
+ *     `invalid_session_field` 400;
+ *   - an accepted write commits and answers the real receipt shape
+ *     (`{object: "hermes.session", session: row}`).
  *
  * Every PATCH is recorded — method, path, body — so the judge reads the wire
  * rather than the app's own account of itself.
@@ -139,6 +158,7 @@ function serveGateway(world) {
   const rows = [
     {
       id: world.live.id,
+      source: "api_server",
       title: world.live.title,
       preview: world.live.preview ?? "",
       started_at: Math.floor(Date.now() / 1000) - 900,
@@ -147,12 +167,12 @@ function serveGateway(world) {
       archived: false,
       hidden: false,
       message_count: 1,
-      runtime_revision: world.rowRevision ?? 7,
     },
     {
       // A second working chat, so archiving one does not empty the sidebar
       // and leave the dead-gateway gesture with nothing to aim at.
       id: world.second.id,
+      source: "api_server",
       title: world.second.title,
       preview: world.second.preview ?? "",
       started_at: Math.floor(Date.now() / 1000) - 800,
@@ -161,7 +181,6 @@ function serveGateway(world) {
       archived: false,
       hidden: false,
       message_count: 1,
-      runtime_revision: world.rowRevision ?? 7,
     },
   ];
 
@@ -221,41 +240,46 @@ function serveGateway(world) {
           json({ detail: "not_found" }, 404);
           return;
         }
-        // The real host's pre-fence refusal.
-        if (
-          body?.request_id === undefined &&
-          body?.expected_revision === undefined
-        ) {
-          json({ detail: "mutation_identity_required" }, 409);
+        // The real host's allowlist, checked before any write.
+        const unknown = Object.keys(body ?? {}).filter(
+          (field) => !SUPPORTED_SESSION_FIELDS.includes(field),
+        );
+        if (unknown.length > 0) {
+          json(
+            {
+              error: {
+                message: `Unsupported session fields: ${unknown.join(", ")}`,
+                type: "invalid_request_error",
+                param: null,
+                code: "unsupported_session_field",
+              },
+            },
+            400,
+          );
           return;
         }
-        if (
-          body?.request_id === undefined ||
-          body?.expected_revision === undefined
-        ) {
-          json({ detail: "mutation_identity_required" }, 409);
-          return;
-        }
-        // The real host's conflict refusal.
-        if (body.expected_revision !== row.runtime_revision) {
-          json({ detail: "revision_conflict" }, 409);
-          return;
+        for (const flag of ["pinned", "archived", "hidden", "unread"]) {
+          if (flag in body && typeof body[flag] !== "boolean") {
+            json(
+              {
+                error: {
+                  message: `'${flag}' must be a boolean`,
+                  type: "invalid_request_error",
+                  param: null,
+                  code: "invalid_session_field",
+                },
+              },
+              400,
+            );
+            return;
+          }
         }
         if (typeof body.archived === "boolean") row.archived = body.archived;
         if (typeof body.pinned === "boolean") row.pinned = body.pinned;
+        if (typeof body.hidden === "boolean") row.hidden = body.hidden;
         if (typeof body.title === "string") row.title = body.title;
-        row.runtime_revision += 1;
-        // The receipt the real host answers.
-        json({
-          ok: true,
-          session_id: row.id,
-          revision: row.runtime_revision,
-          execution_generation: 0,
-          operation: "sidebar",
-          archived: row.archived,
-          pinned: row.pinned,
-          title: row.title,
-        });
+        // The receipt the real host answers: the row, nested under `session`.
+        json({ object: "hermes.session", session: row });
       });
       return;
     }
@@ -268,6 +292,7 @@ function serveGateway(world) {
         void readBody(req).then((body) => {
           const row = {
             id: `chat-created-${rows.length + 1}`,
+            source: "api_server",
             title: typeof body?.title === "string" ? body.title : "New chat",
             preview: "",
             started_at: Math.floor(Date.now() / 1000),
@@ -276,10 +301,9 @@ function serveGateway(world) {
             archived: false,
             hidden: false,
             message_count: 0,
-            runtime_revision: 0,
           };
           rows.unshift(row);
-          json({ session: row });
+          json({ object: "hermes.session", session: row }, 201);
         });
         return;
       }
@@ -288,7 +312,7 @@ function serveGateway(world) {
         method,
         path: url.url ?? req.url ?? "",
       });
-      const payload = { object: "list", data: rows };
+      const payload = { object: "list", data: rows, limit: 200, offset: 0, has_more: false };
       state.sessionsResponses = state.sessionsResponses ?? [];
       state.sessionsResponses.push(payload);
       json(payload);
@@ -322,10 +346,10 @@ function writeHostEnv(hermesHome, port) {
 
 /** The one file the test left for this process: where the world is. */
 function readWorld() {
-  const dir = process.env.LQ_FENCE_WORLD;
+  const dir = process.env.LQ_ARCHIVE_WORLD;
   if (!dir) {
     throw new Error(
-      "LQ_FENCE_WORLD is required — run this through tests/archive-fence-e2e.test.ts",
+      "LQ_ARCHIVE_WORLD is required — run this through tests/archive-contract-e2e.test.ts",
     );
   }
   const file = path.join(dir, "world.json");
@@ -377,7 +401,6 @@ const ERROR_TEXT = `(() => {
   return texts.join(" | ");
 })()`;
 
-/** The live row's title as the sidebar painted it, for the ready proof. */
 /**
  * Is the named chat on the sidebar right now?
  *
@@ -415,11 +438,18 @@ async function clickArchive(win, label) {
     );
     if (!row) return { clicked: false, reason: "no such row" };
     const buttons = Array.from(row.querySelectorAll("button, [role='button']"));
-    const archive = buttons.find((button) =>
-      /archiv/i.test(
-        (button.getAttribute("aria-label") ?? "") + " " + (button.textContent ?? "")
-      )
-    );
+    // The row itself is a button whose text is the chat's title, so a loose
+    // /archiv/i match on the combined label can hit the row (a world whose chat
+    // name contains "archive" does) and open the chat instead of archiving it.
+    // Match the control by its exact accessible name, and fall back to its
+    // class only for a build that words the label differently.
+    const archive = buttons.find((button) => {
+      const label = (button.getAttribute("aria-label") ?? "").trim();
+      return (
+        /^archive chat$/i.test(label) ||
+        button.classList.contains("chats-rail__archive-btn")
+      );
+    });
     if (!archive) {
       return {
         clicked: false,
@@ -448,6 +478,7 @@ async function run() {
   const world = readWorld();
   const host = await serveGateway(world);
   const screenshotFile = path.join(artifactsDir, SCREENSHOT_NAME);
+  const deadScreenshotFile = path.join(artifactsDir, DEAD_SCREENSHOT_NAME);
   fs.mkdirSync(artifactsDir, { recursive: true });
   const states = { ready: null, archived: null, dead: null };
 
@@ -500,15 +531,8 @@ async function run() {
     await sleep(300);
     states.ready = { rows: await win.webContents.executeJavaScript(ROWS) };
 
-    // ── (1) the archive reaches the gateway as a FENCED write ───────────────
+    // ── (1) the archive reaches the gateway with fields it accepts ──────────
     await clickArchive(win, world.live.title);
-    // The PATCH lands on the wire; wait for the gateway to have seen it.
-    await waitFor(
-      win,
-      "true",
-      "the archive gesture to be dispatched",
-      5_000,
-    );
     const patchDeadline = Date.now() + 20_000;
     while (host.state.patches.length === 0 && Date.now() < patchDeadline) {
       await sleep(100);
@@ -530,28 +554,20 @@ async function run() {
       patch !== null && patch.body?.archived === true,
       `patch body: ${JSON.stringify(patch?.body ?? null)}`,
     );
+    const unsupportedFields =
+      patch === null
+        ? ["(no patch)"]
+        : Object.keys(patch.body ?? {}).filter(
+            (field) => !SUPPORTED_SESSION_FIELDS.includes(field),
+          );
     check(
-      "the PATCH carries a request_id (the mutation identity Hermes demands)",
-      patch !== null &&
-        typeof patch.body?.request_id === "string" &&
-        patch.body.request_id.length > 0,
-      `patch body: ${JSON.stringify(patch?.body ?? null)}`,
-    );
-    check(
-      "the PATCH carries an expected_revision (the fence Hermes demands)",
-      patch !== null &&
-        typeof patch.body?.expected_revision === "number" &&
-        Number.isInteger(patch.body.expected_revision),
-      `patch body: ${JSON.stringify(patch?.body ?? null)}`,
-    );
-    check(
-      "the expected_revision is the row's own revision, as the list read it",
-      patch !== null && patch.body?.expected_revision === (world.rowRevision ?? 7),
-      `expected_revision: ${String(patch?.body?.expected_revision ?? "(none)")} (the list row's runtime_revision was ${world.rowRevision ?? 7})`,
+      "the PATCH carries only fields the host gateway accepts",
+      patch !== null && unsupportedFields.length === 0,
+      `unsupported fields ${JSON.stringify(unsupportedFields)} in body ${JSON.stringify(patch?.body ?? null)}`,
     );
 
     // ── (2) the archive landed: the row is gone from the working list ───────
-    await sleep(500);
+    await sleep(600);
     states.archived = { rows: await win.webContents.executeJavaScript(ROWS) };
     check(
       "the archived chat left the working list",
@@ -565,12 +581,21 @@ async function run() {
       `the sidebar's error banner said: ${JSON.stringify(archivedError)}`,
     );
 
+    // The shipped screen after a successful archive, for the operator.
+    const successImage = await win.webContents.capturePage();
+    fs.writeFileSync(screenshotFile, successImage.toPNG());
+    const successBytes = fs.existsSync(screenshotFile)
+      ? fs.statSync(screenshotFile).size
+      : 0;
+    check(
+      "the screenshot shows the sidebar after the archive",
+      successBytes > MIN_SCREENSHOT_BYTES,
+      `${screenshotFile} is ${successBytes} bytes (expected > ${MIN_SCREENSHOT_BYTES})`,
+    );
+
     // ── (3) the gateway dies: the message must be actionable ───────────────
     // The second working chat is still on the list, so the gesture has
     // somewhere to land after the gateway is gone.
-    const second = host.rows.find((row) => row.id === world.second.id);
-    if (second) second.runtime_revision = world.rowRevision ?? 7;
-
     await host.close();
     await sleep(300);
 
@@ -597,17 +622,19 @@ async function run() {
     );
 
     // ── (4) the screenshot is of this window, with the error banner up ─────
-    const image = await win.webContents.capturePage();
-    fs.writeFileSync(screenshotFile, image.toPNG());
-    const screenshotBytes = fs.existsSync(screenshotFile) ? fs.statSync(screenshotFile).size : 0;
+    const deadImage = await win.webContents.capturePage();
+    fs.writeFileSync(deadScreenshotFile, deadImage.toPNG());
+    const deadBytes = fs.existsSync(deadScreenshotFile)
+      ? fs.statSync(deadScreenshotFile).size
+      : 0;
     check(
       "the screenshot shows the sidebar with the error banner",
-      screenshotBytes > MIN_SCREENSHOT_BYTES,
-      `${screenshotFile} is ${screenshotBytes} bytes (expected > ${MIN_SCREENSHOT_BYTES})`,
+      deadBytes > MIN_SCREENSHOT_BYTES,
+      `${deadScreenshotFile} is ${deadBytes} bytes (expected > ${MIN_SCREENSHOT_BYTES})`,
     );
 
     notes.push(
-      `the archive's PATCH body was ${JSON.stringify(patch?.body ?? null)}; the row's runtime_revision was ${world.rowRevision ?? 7}`,
+      `the archive's PATCH body was ${JSON.stringify(patch?.body ?? null)}; the accepted fields are ${SUPPORTED_SESSION_FIELDS.join(", ")}`,
     );
   } catch (error) {
     failures.push(
@@ -616,13 +643,17 @@ async function run() {
     console.error(error);
   }
 
+  const screenshots = [SCREENSHOT_NAME, DEAD_SCREENSHOT_NAME].filter((name) =>
+    fs.existsSync(path.join(artifactsDir, name)),
+  );
   const report = {
     pass: failures.length === 0,
     failures: [...failures],
     checks: [...checks],
     ranAt: new Date().toISOString(),
-    what: "archiving a chat sends a fenced PATCH the Hermes gateway accepts, and a gateway that is gone is named in words the operator can act on",
-    why: "the Hermes host gateway refuses a session mutation that carries no request_id and no expected_revision, and the app's archive path also bypassed the wrapper that names a silent gateway, so the operator saw 'fetch failed'",
+    what: "archiving a chat sends the host gateway only the session fields it accepts, the chat leaves the working list, and a gateway that is gone is named in words the operator can act on",
+    why: "the host gateway's PATCH /api/sessions/{id} is a strict allowlist and answers request_id/expected_revision with 400 unsupported_session_field; those fields fence Hermes' dashboard backend, not the API gateway this app attaches to",
+    supportedSessionFields: SUPPORTED_SESSION_FIELDS,
     world: {
       profile: world.profile,
       profilePath: path.join(world.hermesHome, "profiles", world.profile),
@@ -634,7 +665,7 @@ async function run() {
       sessionsRequests: host.state.sessionsRequests,
       patches: host.state.patches,
     },
-    screenshots: fs.existsSync(screenshotFile) ? [SCREENSHOT_NAME] : [],
+    screenshots,
     notes,
   };
 
@@ -645,7 +676,7 @@ async function run() {
       "utf8",
     );
   } catch (error) {
-    console.error(`[archive-fence] could not write the artifact: ${error}`);
+    console.error(`[archive-contract] could not write the artifact: ${error}`);
   }
   console.log(JSON.stringify(report, null, 2));
 

@@ -31,10 +31,8 @@ export const harnessSessionMessages = (id: string) =>
   activeHarness().sessionMessages(id);
 export const harnessSessionPatch = (id: string, patch: SessionPatch) =>
   activeHarness().patchSession(id, patch);
-export const harnessSessionDelete = (
-  id: string,
-  options?: { revision?: number | null },
-) => activeHarness().deleteSession(id, options);
+export const harnessSessionDelete = (id: string) =>
+  activeHarness().deleteSession(id);
 export const harnessSessionsOpen = () => activeHarness().openSession();
 
 export const harnessModelOptions = () => activeHarness().modelCatalog();
