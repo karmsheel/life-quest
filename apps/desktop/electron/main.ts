@@ -106,6 +106,13 @@ const E2E: {
    */
   updatePollMs?: number;
   /**
+   * How long a chat stream may produce no bytes before the app declares it lost,
+   * in milliseconds. Present only for the stalled-turn rig: the product's bound
+   * is `PRODUCT_STREAM_IDLE_MS` (45 s), and a rig that waited 45 real seconds for
+   * it would spend more time proving the clock than the behaviour.
+   */
+  streamIdleMs?: number;
+  /**
    * Where the install's bytes are allowed to come from. Present only for the
    * auto-update rig, which serves them over loopback; the product leaves the
    * policy at GitHub over https.
@@ -141,6 +148,7 @@ if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
         updateFeedUrl?: unknown;
         updateLauncher?: { exe?: unknown; args?: unknown };
         updatePollMs?: unknown;
+        streamIdleMs?: unknown;
         updateTrust?: {
           hosts?: unknown;
           allowHttp?: unknown;
@@ -174,6 +182,13 @@ if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
         parsed.updatePollMs >= MIN_UPDATE_POLL_MS
       ) {
         E2E.updatePollMs = Math.round(parsed.updatePollMs);
+      }
+      if (
+        typeof parsed.streamIdleMs === "number" &&
+        Number.isFinite(parsed.streamIdleMs) &&
+        parsed.streamIdleMs >= 500
+      ) {
+        E2E.streamIdleMs = Math.round(parsed.streamIdleMs);
       }
       // A rig cannot let the app launch a real installer, and cannot read an
       // assertion out of a process it did not start: the launcher is replaced
@@ -217,6 +232,11 @@ if (__LIFEQUEST_E2E_SEAM__ && !app.isPackaged) {
   if (E2E.mcpPorts) {
     // Before any window or vault: a door binds with whatever is set here.
     setMcpPorts(E2E.mcpPorts);
+  }
+  if (E2E.streamIdleMs !== undefined) {
+    // The chat stream's silence bound, shortened for the stalled-turn rig only.
+    // The product keeps its own 45 seconds because this line never runs.
+    companion.setChatStreamIdleMs(E2E.streamIdleMs);
   }
   if (E2E.updateFeedUrl) {
     setUpdateFeedUrl(E2E.updateFeedUrl);

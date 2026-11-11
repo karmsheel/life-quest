@@ -630,9 +630,15 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
    * must not be replaced: its bubbles are arriving, not yet written down.
    */
   const loadMessages = useCallback(
-    async (id: string) => {
+    async (id: string, force = false) => {
       const run = runs[id] ?? EMPTY_RUN;
-      if (run.sending) return;
+      // `force` exists for the one caller that re-reads a transcript straight
+      // after a turn has been settled: the settle is a state update, so this
+      // callback's own `runs` is still the pre-settle value for one commit, and
+      // an unforced read would refuse to repair a transcript the turn left
+      // behind. The in-flight guard inside the update below still applies, so a
+      // forced read can never paint over a newer turn's live bubbles.
+      if (run.sending && !force) return;
       const result = await api().companionSessionMessages(id);
       if (!result.ok) {
         updateRun(id, (current) => ({ ...current, error: result.error }));
@@ -1248,6 +1254,10 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
           .sort((a, b) => (b.lastActive ?? 0) - (a.lastActive ?? 0)),
       );
 
+      // Whether this turn ended without a clean completion. A failed or lost
+      // stream can still have left the answer on the companion's side, so the
+      // finally below reads the transcript back when this is true.
+      let failed = false;
       try {
         const result = await api().companionChatStream({
           sessionId: id,
@@ -1290,34 +1300,55 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
           })),
         });
         if ("ok" in result && result.ok === false) {
+          failed = true;
           updateRun(id, (current) => ({ ...current, error: result.error }));
         }
       } catch (err) {
+        failed = true;
         updateRun(id, (current) => ({
           ...current,
           error: err instanceof Error ? err.message : "Failed to reach Hermes",
         }));
       } finally {
+        // THE TURN IS SETTLED FIRST, BEFORE ANYTHING THAT CAN WAIT.
+        //
+        // `sending` is the composer's lock and the rail's dot. The stream's
+        // terminal frame normally clears it, but a transport that settles
+        // without one (the gateway wedged mid-turn, the connection was cut) has
+        // nobody else to do it. Settling it after the list read below is what
+        // used to leave a finished turn pulsing as running for as long as the
+        // read took — and forever, when the read waited on a companion that was
+        // not answering. The refresh is a nicety; the settle is the promise.
+        settleTurnRef.current(id);
+        if (failed) {
+          // Repair what the operator can see: a turn that failed its transport
+          // may still have written its reply down. The forced read is skipped
+          // by the provider when a queued message has already opened the next
+          // turn in this chat.
+          void loadMessages(id, true);
+        }
         void refresh();
         // The list this turn's chat lives in is only re-read if the operator is
         // still on that agent. After a switch the new agent's own list is the
         // one on screen, and writing this answer over it would hand the new
-        // agent's rail the old agent's chats.
-        if (turnEpoch === listEpoch.current) {
-          const listed = await api().companionSessionsList();
-          if (listed.ok && turnEpoch === listEpoch.current) {
-            const owner = harnessRef.current;
-            if (owner) {
-              for (const session of listed.value) {
-                agentOfSession.current.set(session.id, owner);
+        // agent's rail the old agent's chats. A read that fails is not an error
+        // to paint here: the turn is settled, and the rail keeps its rows.
+        try {
+          if (turnEpoch === listEpoch.current) {
+            const listed = await api().companionSessionsList();
+            if (listed.ok && turnEpoch === listEpoch.current) {
+              const owner = harnessRef.current;
+              if (owner) {
+                for (const session of listed.value) {
+                  agentOfSession.current.set(session.id, owner);
+                }
               }
+              setSessions(listed.value);
             }
-            setSessions(listed.value);
           }
+        } catch {
+          // The rail keeps the rows it already has.
         }
-        // The stream's terminal frame clears `sending` when it arrives; if the
-        // transport settled without one, the composer must not stay stopped.
-        settleTurnRef.current(id);
       }
     },
     [
@@ -1327,6 +1358,7 @@ export function ChatSessionsProvider({ children }: { children: ReactNode }) {
       pageContext,
       attachments,
       receipts,
+      loadMessages,
       refresh,
       setAttachmentsFor,
       setReceiptFor,
