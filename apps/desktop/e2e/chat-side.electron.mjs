@@ -916,8 +916,8 @@ async function main() {
       `launcher ${JSON.stringify(dockCollapsed.launcher)} in ${JSON.stringify(dockCollapsed.viewport)}`,
     );
     check(
-      "left/collapsed dock: the night mark is black on the orange button",
-      dockCollapsed.launcher?.color === "rgb(0, 0, 0)",
+      "left/collapsed dock: the night mark is the white version on the orange button",
+      dockCollapsed.launcher?.color === "rgb(255, 255, 255)",
       `night ink ${JSON.stringify(dockCollapsed.launcher?.color)}`,
     );
     check(
@@ -963,7 +963,7 @@ async function main() {
     await settled();
 
     // 3c — the same mark in day mode: it keeps the dark gray the paper field
-    // needs rather than night's black, and the day button keeps the accent at rest.
+    // needs rather than night's white, and the day button keeps the accent at rest.
     at("collapsed launcher light theme");
     await click(".theme-mode-toggle");
     const dockCollapsedLight = await settled();
@@ -985,7 +985,7 @@ async function main() {
     await click(".theme-mode-toggle");
     const dockCollapsedDarkAgain = await settled();
     check(
-      "left/collapsed dock: returning to night restores the lowered fill and black mark",
+      "left/collapsed dock: returning to night restores the lowered fill and white mark",
       dockCollapsedDarkAgain.launcher.background === dockCollapsed.launcher.background &&
         dockCollapsedDarkAgain.launcher.color === dockCollapsed.launcher.color,
       `night ${dockCollapsedDarkAgain.launcher.background}/${dockCollapsedDarkAgain.launcher.color} vs ${dockCollapsed.launcher.background}/${dockCollapsed.launcher.color}`,
