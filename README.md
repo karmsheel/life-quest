@@ -1,5 +1,8 @@
 # LifeQuest
 
+[![docs](https://github.com/karmsheel/life-quest/actions/workflows/docs.yml/badge.svg)](https://github.com/karmsheel/life-quest/actions/workflows/docs.yml)
+[![docs-check](https://github.com/karmsheel/life-quest/actions/workflows/docs-check.yml/badge.svg)](https://github.com/karmsheel/life-quest/actions/workflows/docs-check.yml)
+
 **Local-first life-management studio** for the desktop. Open or create a **vault folder** on your machine; Domains, doctrine (Premise → Vision → Purpose → Strategy), Decisions, Life log, and agent roster live as plain files beside each other. The studio does not open without the companion. Capture is not the studio.
 
 The product runtime is **Electron + Vite + React**. There is no cloud account and no Prisma. Domain database rows live in a SQLite file inside the vault folder: that SQLite is the domain book, not the archived Prisma app, and it is not hosted.
